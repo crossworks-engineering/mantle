@@ -14,7 +14,7 @@
  */
 import PgBoss from 'pg-boss';
 import { eq } from 'drizzle-orm';
-import { backfillSender, gmail, imap, syncAccount } from '@mantle/email';
+import { backfillSender, imap, syncAccount } from '@mantle/email';
 import { db, emailAccounts } from '@mantle/db';
 
 const SYNC_QUEUE = 'mantle.email.sync';
@@ -31,14 +31,15 @@ interface BackfillJob {
 }
 
 function pickProvider(provider: 'imap' | 'gmail' | 'microsoft') {
-  switch (provider) {
-    case 'imap':
-      return imap;
-    case 'gmail':
-      return gmail;
-    default:
-      throw new Error(`provider ${provider} not implemented yet`);
-  }
+  if (provider === 'imap') return imap;
+  // The `email_provider` enum still includes 'gmail' and 'microsoft' for
+  // historical reasons (we shipped OAuth then ripped it out — IMAP works
+  // for both providers with app passwords). If you see this error, that
+  // means a row in email_accounts somehow got a non-imap provider value.
+  throw new Error(
+    `Unsupported provider: '${provider}'. Mantle uses IMAP for everything; ` +
+      `connect Gmail and Outlook via app passwords through Add IMAP.`,
+  );
 }
 
 async function main() {

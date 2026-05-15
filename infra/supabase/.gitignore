@@ -1,0 +1,4 @@
+# Live database + storage data. Bind-mounted by the Supabase CLI on
+# this host. Never commit — these are gigabytes of binary state that
+# move via rsync / snapshot scripts, not git.
+volumes/

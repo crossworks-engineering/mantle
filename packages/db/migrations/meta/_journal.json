@@ -50,6 +50,13 @@
       "when": 1747526600000,
       "tag": "0006_drop_decision_function",
       "breakpoints": false
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1747613000000,
+      "tag": "0007_drop_oauth_tokens",
+      "breakpoints": false
     }
   ]
 }

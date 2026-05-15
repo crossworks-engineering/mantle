@@ -7,8 +7,6 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./providers/gmail": "./src/providers/gmail.ts",
-    "./providers/microsoft": "./src/providers/microsoft.ts",
     "./providers/imap": "./src/providers/imap.ts",
     "./sync": "./src/sync.ts"
   },
@@ -21,11 +19,8 @@
     "@mantle/rules": "workspace:*",
     "@mantle/storage": "workspace:*",
     "drizzle-orm": "^0.38.3",
-    "googleapis": "^144.0.0",
-    "@microsoft/microsoft-graph-client": "^3.0.7",
     "imapflow": "^1.0.171",
     "mailparser": "^3.7.2",
-    "isomorphic-fetch": "^3.0.0",
     "sanitize-html": "^2.13.1"
   },
   "devDependencies": {

@@ -29,6 +29,13 @@ pnpm-debug.log*
 # local env files
 .env*.local
 .env
+# defensive: catch a no-leading-dot env file at the repo root
+/env.local
+# the live server .env for self-hosted Supabase
+infra/supabase/.env
+
+# database snapshots — multi-GB local-only artefacts
+backups/
 
 # vercel
 .vercel

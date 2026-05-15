@@ -50,51 +50,41 @@ pnpm dev                # web (3000) + mcp + email worker
 Studio: http://localhost:54323
 App: http://localhost:3000
 
-## Connecting Gmail
+## Connecting an email account
 
-Gmail uses OAuth, so you need Google Cloud OAuth credentials before the
-**Connect Gmail** button on `/settings/accounts` will work. One-time setup:
+Mantle uses **IMAP for every provider** — Gmail, Outlook, custom
+domains, all of them. No OAuth, no Google Cloud Console setup, no
+refresh tokens to babysit. The cost is one app-password per account.
 
-1. **Create a Google Cloud project** at https://console.cloud.google.com.
-   Free tier is fine. Pick any name.
+For each account:
 
-2. **Enable the Gmail API**: APIs & Services → Library → search "Gmail
-   API" → Enable.
+1. **Enable 2FA** on the account if it isn't already (provider requires
+   this before issuing app passwords).
+2. **Generate an app password** in the provider's account-security UI:
+   - Gmail / Workspace: https://myaccount.google.com/apppasswords
+     (also: Gmail Settings → Forwarding and POP/IMAP → IMAP access: Enable)
+   - Outlook / Microsoft personal:
+     https://account.live.com → Security → Advanced → App passwords
+   - Fastmail / iCloud / Zoho / Proton (via Bridge): same idea —
+     account security → app passwords
+3. **Open `/settings/accounts` → Add IMAP account**:
+   - **Host** depends on provider:
+     - Gmail: `imap.gmail.com`
+     - Outlook personal: `outlook.office365.com`
+     - Your own domain: whatever your registrar set up
+   - **Port**: 993, TLS on
+   - **Username**: full email address
+   - **Password**: the app password from step 2
+4. Hit **Test connection** to verify before saving.
 
-3. **Configure the OAuth consent screen**: APIs & Services → OAuth consent
-   screen.
-   - User type: **External**
-   - App name: anything (e.g. "Mantle (local)")
-   - User support email: yours
-   - Developer contact email: yours
-   - Add scopes: `gmail.readonly` and `userinfo.email`
-   - **Test users**: add your own Gmail address. (Apps in "Testing" mode
-     can only be used by listed test users — that's fine for local use.)
+The first sync starts within ~2 min and scans 12 months of headers
+without ingesting any bodies — those wait until you approve a sender
+at `/settings/senders`.
 
-4. **Create OAuth credentials**: APIs & Services → Credentials →
-   "Create Credentials" → **OAuth client ID**.
-   - Application type: **Web application**
-   - Authorized redirect URI: `http://localhost:3000/api/oauth/google/callback`
-   - Save and copy the **Client ID** and **Client secret**.
-
-5. **Paste into `apps/web/.env.local`**:
-   ```
-   GOOGLE_CLIENT_ID=<your-client-id>.apps.googleusercontent.com
-   GOOGLE_CLIENT_SECRET=<your-client-secret>
-   GOOGLE_REDIRECT_URI=http://localhost:3000/api/oauth/google/callback
-   ```
-
-6. **Restart `pnpm dev`** so Next.js picks up the new env vars.
-
-7. Go to `/settings/accounts` → click **Connect Gmail** → consent →
-   you'll redirect back with a success banner.
-
-### If you previously connected and need a fresh refresh token
-
-Google won't re-issue a refresh token if you've already granted access.
-If you see "No refresh_token returned" in the connect error, **revoke
-Mantle's access** at https://myaccount.google.com/permissions and try
-again — the next consent will include the refresh token.
+**Microsoft 365 corporate caveat**: some tenants have basic-auth IMAP
+disabled by admin policy. If you can't get IMAP working from a paid
+M365 mailbox, the easiest workaround is to ask your admin to enable
+it for your mailbox — Mantle does not implement Microsoft OAuth.
 
 ## Plan
 

@@ -40,8 +40,7 @@ export const emailAccounts = pgTable(
     provider: emailProvider('provider').notNull(),
     address: text('address').notNull(),
     displayName: text('display_name'),
-    // OAuth tokens (Gmail / Microsoft Graph) or IMAP credentials, AES-GCM-encrypted.
-    oauthTokensEnc: bytea('oauth_tokens_enc'),
+    // IMAP credentials, AES-GCM-encrypted (currently just the app password).
     imapConfigEnc: bytea('imap_config_enc'),
     // Non-secret IMAP knobs kept plaintext so the worker can connect without
     // unsealing per use. Password lives in `imapConfigEnc`.

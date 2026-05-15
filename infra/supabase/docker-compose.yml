@@ -1,0 +1,227 @@
+# Mantle production Supabase stack — minimal subset of the official
+# self-hosting compose, trimmed to what the app actually uses, with
+# Caddy fronting Kong for auto-TLS.
+#
+# Included:   caddy (TLS, public 80/443), db, kong, auth, storage, meta, studio
+# Excluded:   rest (Mantle uses Drizzle direct), realtime, functions,
+#             imgproxy, analytics/vector, supavisor pooler
+#
+# Public surface:
+#   * https://${PUBLIC_HOSTNAME}/  → Studio (basic-auth)
+#   * https://${PUBLIC_HOSTNAME}/auth/v1/*    → GoTrue
+#   * https://${PUBLIC_HOSTNAME}/storage/v1/* → Storage
+#
+# Internal (loopback on server):
+#   * 127.0.0.1:5432  → Postgres (for `ssh -L` from a dev laptop)
+#
+# Image versions pinned to match the local Supabase CLI so the bind-mounted
+# data dir loads without a Postgres upgrade dance. If you ever upgrade
+# the image, run pg_dump first.
+#
+# Usage on the server:
+#   cp .env.example .env && $EDITOR .env
+#   mkdir -p volumes/db volumes/storage caddy_data caddy_config
+#   # rsync the laptop's volumes/* into matching paths
+#   docker compose up -d
+
+name: mantle_supabase
+
+networks:
+  default:
+    name: mantle_supabase
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+services:
+  # ── Postgres ────────────────────────────────────────────────────────
+  db:
+    image: public.ecr.aws/supabase/postgres:17.6.1.106
+    container_name: mantle_db
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - pg_isready
+        - -U
+        - postgres
+        - -h
+        - localhost
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: postgres
+      POSTGRES_USER: supabase_admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--allow-group-access --locale-provider=icu --encoding=UTF-8 --icu-locale=en_US.UTF-8"
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXP: ${JWT_EXP:-3600}
+    volumes:
+      # Bind-mounted from the host — the rsync'd data dir from your laptop.
+      - ./volumes/db:/var/lib/postgresql/data
+    ports:
+      # Loopback-only on the server. Nothing public. Local dev reaches
+      # this via `ssh -L 54322:127.0.0.1:5432 cwe@mcp.crossworks.network`
+      # (see scripts/dev-tunnel.sh). The local Mantle worker, MCP server,
+      # and Drizzle queries all hit 127.0.0.1:54322 on the laptop side.
+      - "127.0.0.1:5432:5432"
+
+  # ── Caddy (TLS + reverse proxy) ─────────────────────────────────────
+  # Owns the public-facing 80/443. Acquires Let's Encrypt certs for the
+  # three subdomains declared in Caddyfile (db., mantle., mcp.) and
+  # renews automatically. Routes everything to internal services via
+  # the docker network — Kong itself is not exposed to the host.
+  caddy:
+    image: caddy:2-alpine
+    container_name: mantle_caddy
+    restart: unless-stopped
+    depends_on:
+      kong:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # ── Kong API gateway ────────────────────────────────────────────────
+  # Single entry point inside the docker network. Routes /auth/v1/* →
+  # auth, /storage/v1/* → storage, /pg/* → meta, / → studio. NOT exposed
+  # to the host — Caddy reaches it via the docker network at kong:8000.
+  kong:
+    image: public.ecr.aws/supabase/kong:2.8.1
+    container_name: mantle_kong
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      DASHBOARD_USERNAME: ${DASHBOARD_USERNAME}
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD}
+    volumes:
+      - ./kong/kong.yml:/home/kong/kong.yml:ro
+
+  # ── Auth (GoTrue) ───────────────────────────────────────────────────
+  auth:
+    image: public.ecr.aws/supabase/gotrue:v2.188.1
+    container_name: mantle_auth
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${API_EXTERNAL_URL}
+
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@db:5432/postgres
+
+      GOTRUE_SITE_URL: ${SITE_URL}
+      GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS}
+      # Mantle is single-user. Anyone hitting /signup would otherwise be
+      # allowed to register an unprivileged account; the ALLOWED_USER_ID
+      # gate keeps them out of the app, but stopping signup here avoids
+      # the spam.
+      GOTRUE_DISABLE_SIGNUP: ${DISABLE_SIGNUP:-true}
+
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: ${JWT_EXP:-3600}
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "false"
+      GOTRUE_MAILER_AUTOCONFIRM: ${ENABLE_EMAIL_AUTOCONFIRM:-true}
+
+      # Google sign-in (optional — only relevant if you use OAuth for
+      # the Supabase login itself, which we don't currently). Gmail-data
+      # OAuth happens via Mantle's own /api/oauth/google/* routes.
+      GOTRUE_EXTERNAL_GOOGLE_ENABLED: ${GOTRUE_EXTERNAL_GOOGLE_ENABLED:-false}
+      GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID:-}
+      GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOTRUE_EXTERNAL_GOOGLE_SECRET:-}
+      GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: ${GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI:-}
+
+  # ── Storage ─────────────────────────────────────────────────────────
+  # Attachment bytes live in ./volumes/storage. Storage talks to Postgres
+  # for the `storage.objects` table (filename → owner mapping) and the
+  # filesystem for the bytes. We don't include imgproxy — Mantle never
+  # asks for image transforms.
+  storage:
+    image: public.ecr.aws/supabase/storage-api:v1.54.1
+    container_name: mantle_storage
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ANON_KEY: ${ANON_KEY}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      POSTGREST_URL: http://kong:8000/rest/v1
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@db:5432/postgres
+      FILE_SIZE_LIMIT: 52428800
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /mnt
+      TENANT_ID: stub
+      REGION: stub
+      GLOBAL_S3_BUCKET: stub
+      ENABLE_IMAGE_TRANSFORMATION: "false"
+    volumes:
+      - ./volumes/storage:/mnt
+
+  # ── Postgres-meta (powers Studio) ────────────────────────────────────
+  meta:
+    image: public.ecr.aws/supabase/postgres-meta:v0.96.4
+    container_name: mantle_meta
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: supabase_admin
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
+
+  # ── Studio (admin UI) ───────────────────────────────────────────────
+  # Optional — Mantle works fine without it. Useful for browsing the
+  # tree, hand-running queries, watching sync_runs. Behind Kong's basic-
+  # auth so a public URL isn't a free admin console.
+  studio:
+    image: public.ecr.aws/supabase/studio:2026.04.28-sha-89d08a2
+    container_name: mantle_studio
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      meta:
+        condition: service_started
+    environment:
+      STUDIO_PG_META_URL: http://meta:8080
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DEFAULT_ORGANIZATION_NAME: Mantle
+      DEFAULT_PROJECT_NAME: Mantle
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_PUBLIC_URL: ${API_EXTERNAL_URL}
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      AUTH_JWT_SECRET: ${JWT_SECRET}

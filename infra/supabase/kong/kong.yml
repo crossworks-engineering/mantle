@@ -1,0 +1,98 @@
+_format_version: "2.1"
+_transform: true
+
+# Kong declarative config for Mantle's production Supabase.
+#
+# This is a trimmed copy of the upstream Supabase kong.yml — only the
+# routes Mantle actually uses are kept. Removed:
+#   /rest/v1/*       — Mantle uses Drizzle direct against Postgres
+#   /realtime/v1/*   — no websocket subscriptions
+#   /functions/v1/*  — no Edge Functions
+#   /graphql/v1      — no Supabase GraphQL
+#
+# Two consumer roles, both auth'd via API key:
+#   anon          — public, low-privilege (the browser uses this)
+#   service_role  — server-side full access (the Mantle worker + RSC use this)
+#
+# The keys themselves are JWTs signed with JWT_SECRET. Set ANON_KEY and
+# SERVICE_ROLE_KEY in .env; kong references them by environment in the
+# compose file.
+
+###
+### Consumers
+###
+consumers:
+  - username: anon
+    keyauth_credentials:
+      - key: $SUPABASE_ANON_KEY
+  - username: service_role
+    keyauth_credentials:
+      - key: $SUPABASE_SERVICE_KEY
+
+###
+### Access Control
+###
+acls:
+  - consumer: anon
+    group: anon
+  - consumer: service_role
+    group: admin
+
+# Dashboard basic-auth removed alongside the dropped / and /pg/* routes.
+# Studio is no longer publicly exposed; admin happens via SSH tunnel.
+
+###
+### Services & Routes
+###
+services:
+  ## Auth — three flavours of route depending on what auth context is
+  ## required. Most callers hit `/auth/v1/*` which is anon-keyed.
+  - name: auth-v1-open
+    url: http://auth:9999/
+    routes:
+      - name: auth-v1-open
+        strip_path: true
+        paths:
+          - /auth/v1/verify
+          - /auth/v1/callback
+          - /auth/v1/authorize
+          - /auth/v1/.well-known/jwks.json
+    plugins:
+      - name: cors
+
+  - name: auth-v1
+    _comment: "GoTrue: /auth/v1/* -> http://auth:9999/*"
+    url: http://auth:9999/
+    routes:
+      - name: auth-v1-all
+        strip_path: true
+        paths:
+          - /auth/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+            - anon
+
+  ## Storage
+  - name: storage-v1
+    _comment: "Storage: /storage/v1/* -> http://storage:5000/*"
+    url: http://storage:5000/
+    routes:
+      - name: storage-v1-all
+        strip_path: true
+        paths:
+          - /storage/v1/
+    plugins:
+      - name: cors
+
+  # The /pg/* (pg-meta) and / (Studio) routes were removed alongside
+  # the public-exposure decision. The Studio + meta containers still
+  # run inside the docker network, reachable from a future SSH-tunnel
+  # → Kong setup, but Caddy doesn't proxy to them.

@@ -1,0 +1,109 @@
+# Caddy config for Mantle's three-subdomain layout.
+#
+# All three subdomains resolve to this server's public IP.
+# Caddy acquires Let's Encrypt certs on first start and renews
+# automatically (state in the caddy_data Docker volume).
+#
+# Requirements before bringing this up:
+#   * DNS records for all three subdomains already pointing at this host
+#   * Ports 80 and 443 open to the internet (for ACME + HTTPS)
+#
+# To turn a placeholder into a live route once you've deployed Mantle:
+#   1. Add the relevant service to docker-compose.yml
+#      (mantle-web for the Next.js app; mantle-mcp for the MCP server)
+#   2. Swap the `respond ... 503` for the `reverse_proxy ...` line
+#   3. `docker compose up -d caddy` to reload
+
+# ── db.crossworks.network — Supabase API (live) ─────────────────────────
+#
+# Exposes ONLY the two routes Mantle's browser-side code calls:
+#
+#   /auth/v1/*    → Kong → GoTrue
+#   /storage/v1/* → Kong → Storage
+#
+# Studio (/), pg-meta (/pg/*), and any other Kong route are intentionally
+# NOT exposed. Server admin happens via:
+#   * the existing SSH-tunnelled Postgres (./scripts/dev-tunnel.sh)
+#   * `pnpm db:studio` from the laptop (Drizzle's table browser)
+#   * `psql` against the tunnel
+#
+# If you ever need the actual Supabase Studio UI, bind Kong on the
+# server's loopback (add `127.0.0.1:8000:8000` under kong.ports in
+# docker-compose.yml), then forward it: `ssh -L 3001:127.0.0.1:8000`
+# and open http://localhost:3001/.
+db.crossworks.network {
+	encode zstd gzip
+
+	# Storage uploads need a larger body limit; the auth path doesn't.
+	handle /storage/v1/* {
+		request_body {
+			max_size 60MB
+		}
+		reverse_proxy kong:8000 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			transport http {
+				read_timeout 5m
+				write_timeout 5m
+			}
+		}
+	}
+
+	handle /auth/v1/* {
+		reverse_proxy kong:8000 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	# Anything else on this domain is intentionally not routed. A 404
+	# with a friendly hint, so accidental visits aren't confusing and
+	# scanners get no useful information about what's running.
+	handle {
+		respond "Mantle Supabase API. App lives at https://mantle.crossworks.network" 404
+	}
+
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options    "nosniff"
+		Referrer-Policy           "strict-origin-when-cross-origin"
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
+
+# ── mantle.crossworks.network — Next.js app (reserved) ──────────────────
+#
+# When you add a mantle-web service to docker-compose.yml, replace the
+# `respond` line with:
+#   reverse_proxy mantle-web:3000 { header_up Host {host} }
+mantle.crossworks.network {
+	respond "Mantle app not yet deployed to this host — develop locally at http://localhost:3000" 503
+
+	log {
+		output stdout
+		format console
+	}
+}
+
+# ── mcp.crossworks.network — MCP server over HTTP/SSE (reserved) ────────
+#
+# The MCP server currently runs over stdio (Claude Code / Claude Desktop
+# launch it as a subprocess). When you wire up the HTTP/SSE transport
+# and add a mantle-mcp service, replace the `respond` line with:
+#   reverse_proxy mantle-mcp:8765 { header_up Host {host} }
+mcp.crossworks.network {
+	respond "MCP HTTP transport not yet wired up — use the stdio MCP from your Mantle clone" 503
+
+	log {
+		output stdout
+		format console
+	}
+}

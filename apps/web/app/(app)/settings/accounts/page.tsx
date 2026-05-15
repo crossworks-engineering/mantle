@@ -15,7 +15,6 @@ export default async function AccountsSettingsPage({
 }) {
   const user = await requireOwner();
   const params = (await searchParams) ?? {};
-  const googleConfigured = !!process.env['GOOGLE_CLIENT_ID'] && !!process.env['GOOGLE_CLIENT_SECRET'];
   const rows = await db
     .select()
     .from(emailAccounts)
@@ -158,29 +157,18 @@ export default async function AccountsSettingsPage({
           </p>
         )}
 
-        <div className="grid grid-cols-3 gap-3">
-          {googleConfigured ? (
-            <Button asChild variant="outline">
-              <a href="/api/oauth/google/start">Connect Gmail</a>
-            </Button>
-          ) : (
-            <Button variant="outline" disabled title="Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env.local">
-              Connect Gmail
-            </Button>
-          )}
-          <Button asChild variant="outline" disabled title="Microsoft 365 adapter not implemented yet">
-            <span>Connect Microsoft 365</span>
-          </Button>
-          <Button asChild variant="outline">
-            <a href="/settings/accounts/imap">Add IMAP</a>
-          </Button>
-        </div>
-        {!googleConfigured && (
-          <p className="text-xs text-muted-foreground">
-            Gmail needs Google Cloud OAuth credentials. See <code className="font-mono">README.md</code>{' '}
-            "Connecting Gmail" for the setup steps.
-          </p>
-        )}
+        <Button asChild className="w-full">
+          <a href="/settings/accounts/imap">Add IMAP account</a>
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          Mantle uses IMAP for every provider — Gmail and Outlook included.
+          Generate an app password for the account
+          (<a className="underline" href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer">Google</a>
+          {' '}/
+          {' '}<a className="underline" href="https://account.live.com" target="_blank" rel="noreferrer">Microsoft</a>),
+          enable 2FA if it isn't already, then paste it into the IMAP form
+          along with the provider's host (e.g. <code className="font-mono">imap.gmail.com</code>).
+        </p>
       </section>
     </div>
   );
