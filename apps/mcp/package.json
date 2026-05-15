@@ -1,0 +1,25 @@
+{
+  "name": "@mantle/mcp",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/server.ts",
+  "scripts": {
+    "dev": "tsx --watch --env-file-if-exists=../../apps/web/.env.local src/server.ts",
+    "start": "tsx --env-file-if-exists=../../apps/web/.env.local src/server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mantle/db": "workspace:*",
+    "@mantle/search": "workspace:*",
+    "@mantle/storage": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "drizzle-orm": "^0.38.3",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

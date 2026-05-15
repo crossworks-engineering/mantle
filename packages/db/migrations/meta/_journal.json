@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1747180800000,
+      "tag": "0000_init",
+      "breakpoints": false
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1747267200000,
+      "tag": "0001_senders",
+      "breakpoints": false
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1747353600000,
+      "tag": "0002_folder_exclusions",
+      "breakpoints": false
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1747440000000,
+      "tag": "0003_branch_unique",
+      "breakpoints": false
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1747526400000,
+      "tag": "0004_branch_path",
+      "breakpoints": false
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1747526500000,
+      "tag": "0005_sync_runs",
+      "breakpoints": false
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1747526600000,
+      "tag": "0006_drop_decision_function",
+      "breakpoints": false
+    }
+  ]
+}

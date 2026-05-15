@@ -1,0 +1,37 @@
+{
+  "name": "@mantle/email",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./providers/gmail": "./src/providers/gmail.ts",
+    "./providers/microsoft": "./src/providers/microsoft.ts",
+    "./providers/imap": "./src/providers/imap.ts",
+    "./sync": "./src/sync.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mantle/crypto": "workspace:*",
+    "@mantle/db": "workspace:*",
+    "@mantle/rules": "workspace:*",
+    "@mantle/storage": "workspace:*",
+    "drizzle-orm": "^0.38.3",
+    "googleapis": "^144.0.0",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "imapflow": "^1.0.171",
+    "mailparser": "^3.7.2",
+    "isomorphic-fetch": "^3.0.0",
+    "sanitize-html": "^2.13.1"
+  },
+  "devDependencies": {
+    "@types/mailparser": "^3.4.5",
+    "@types/node": "^22.10.5",
+    "@types/sanitize-html": "^2.13.0",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,69 @@
+import { sql } from 'drizzle-orm';
+import {
+  index,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
+import { ltree, tsvector, vector } from './_shared';
+
+/**
+ * The tree of everything. Every storable thing in Mantle is a node; specialised
+ * tables (emails, secrets, …) hang off `node_id`. `path` is materialised so we
+ * can climb instantly with ltree's `<@` / `@>` operators.
+ */
+export const nodeType = pgEnum('node_type', [
+  'branch',
+  'email',
+  'email_thread',
+  'file',
+  'note',
+  'sermon',
+  'contact',
+  'secret',
+  'task',
+  'event',
+  'printer_project',
+]);
+
+export const nodes = pgTable(
+  'nodes',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    ownerId: uuid('owner_id').notNull(), // FK to auth.users.id, enforced in SQL migration.
+    parentId: uuid('parent_id'), // self-FK, enforced in SQL migration.
+    type: nodeType('type').notNull(),
+    title: text('title').notNull(),
+    slug: text('slug'),
+    data: jsonb('data').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+    path: ltree('path').notNull(),
+    tags: text('tags').array().default(sql`'{}'::text[]`).notNull(),
+    embedding: vector(1536)('embedding'),
+    // `search_tsv` is a GENERATED ALWAYS column — declared here as a regular
+    // tsvector so SELECTs can read it; the actual `GENERATED` clause is in
+    // the SQL migration since Drizzle doesn't model that yet.
+    searchTsv: tsvector('search_tsv'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index('nodes_owner_idx').on(t.ownerId),
+    index('nodes_parent_idx').on(t.parentId),
+    index('nodes_type_idx').on(t.type),
+    uniqueIndex('nodes_owner_slug_uq').on(t.ownerId, t.slug).where(sql`${t.slug} is not null`),
+    // One branch per (owner, path). Emails and files legitimately share
+    // paths so this is a partial index gated on type='branch'.
+    uniqueIndex('nodes_branch_owner_path_uq')
+      .on(t.ownerId, t.path)
+      .where(sql`${t.type} = 'branch'`),
+    // GiST on path, GIN on tags + tsvector, IVFFlat on embedding live in the
+    // SQL migration (Drizzle can't emit those operator classes yet).
+  ],
+);
+
+export type Node = typeof nodes.$inferSelect;
+export type NewNode = typeof nodes.$inferInsert;

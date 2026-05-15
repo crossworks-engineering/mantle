@@ -1,0 +1,136 @@
+/**
+ * Email-sync worker. Runs as a separate Node process during `pnpm dev`.
+ *
+ * Three queues:
+ *   - mantle.email.sync       — single-flight per-account incremental sync
+ *   - mantle.email.backfill   — per-sender 90-day backfill when a sender is approved
+ *   - mantle.email.scheduler  — fan-out: enqueues a `sync` job for every enabled account
+ *
+ * The scheduler is itself a recurring pg-boss job (every 2 minutes). The
+ * sync queue uses `singletonKey: accountId` so two ticks can't stomp on
+ * each other.
+ *
+ * Env loading is handled by Node's `--env-file-if-exists=.env.local` flag.
+ */
+import PgBoss from 'pg-boss';
+import { eq } from 'drizzle-orm';
+import { backfillSender, gmail, imap, syncAccount } from '@mantle/email';
+import { db, emailAccounts } from '@mantle/db';
+
+const SYNC_QUEUE = 'mantle.email.sync';
+const BACKFILL_QUEUE = 'mantle.email.backfill';
+const SCHEDULER_QUEUE = 'mantle.email.scheduler';
+
+interface SyncJob {
+  accountId: string;
+}
+
+interface BackfillJob {
+  accountId: string;
+  senderAddress: string;
+}
+
+function pickProvider(provider: 'imap' | 'gmail' | 'microsoft') {
+  switch (provider) {
+    case 'imap':
+      return imap;
+    case 'gmail':
+      return gmail;
+    default:
+      throw new Error(`provider ${provider} not implemented yet`);
+  }
+}
+
+async function main() {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error('DATABASE_URL must be set');
+
+  const boss = new PgBoss({ connectionString: url, schema: 'pgboss' });
+  boss.on('error', (err) => console.error('[pg-boss]', err));
+  await boss.start();
+
+  await boss.createQueue(SYNC_QUEUE);
+  await boss.createQueue(BACKFILL_QUEUE);
+  await boss.createQueue(SCHEDULER_QUEUE);
+
+  // ── scheduler ────────────────────────────────────────────────────────
+  // Fan-out: every 2 minutes, enqueue a sync job for each enabled account.
+  await boss.schedule(SCHEDULER_QUEUE, '*/2 * * * *');
+  await boss.work(SCHEDULER_QUEUE, async () => {
+    const accounts = await db
+      .select({ id: emailAccounts.id, provider: emailAccounts.provider })
+      .from(emailAccounts)
+      .where(eq(emailAccounts.enabled, true));
+    for (const a of accounts) {
+      // singletonKey collapses concurrent enqueues for the same account.
+      await boss.send(SYNC_QUEUE, { accountId: a.id } satisfies SyncJob, {
+        singletonKey: `sync:${a.id}`,
+      });
+    }
+    console.log(`[scheduler] queued ${accounts.length} sync jobs`);
+  });
+
+  // ── sync worker ──────────────────────────────────────────────────────
+  await boss.work<SyncJob>(SYNC_QUEUE, async (jobs) => {
+    for (const job of jobs) {
+      const [account] = await db
+        .select()
+        .from(emailAccounts)
+        .where(eq(emailAccounts.id, job.data.accountId))
+        .limit(1);
+      if (!account || !account.enabled) {
+        console.log('[sync] skip', job.data.accountId, 'disabled or missing');
+        continue;
+      }
+      const provider = pickProvider(account.provider);
+      try {
+        const t0 = Date.now();
+        const { scanned, ingested, newSenders } = await syncAccount(account, provider);
+        console.log(
+          `[sync] ${account.address} done in ${Date.now() - t0}ms — scanned=${scanned} ingested=${ingested} newSenders=${newSenders}`,
+        );
+      } catch (err) {
+        console.error('[sync] error on', account.address, err);
+        throw err; // let pg-boss record failure + retry
+      }
+    }
+  });
+
+  // ── backfill worker ──────────────────────────────────────────────────
+  await boss.work<BackfillJob>(BACKFILL_QUEUE, async (jobs) => {
+    for (const job of jobs) {
+      const [account] = await db
+        .select()
+        .from(emailAccounts)
+        .where(eq(emailAccounts.id, job.data.accountId))
+        .limit(1);
+      if (!account) continue;
+      const provider = pickProvider(account.provider);
+      try {
+        const t0 = Date.now();
+        const { ingested } = await backfillSender(account, provider, job.data.senderAddress);
+        console.log(
+          `[backfill] ${account.address} ← ${job.data.senderAddress}: ingested ${ingested} in ${Date.now() - t0}ms`,
+        );
+      } catch (err) {
+        console.error('[backfill] error', err);
+        throw err;
+      }
+    }
+  });
+
+  console.log('[email-sync] worker up. Queues:', [SYNC_QUEUE, BACKFILL_QUEUE, SCHEDULER_QUEUE].join(', '));
+
+  const shutdown = async () => {
+    console.log('[email-sync] shutting down…');
+    await boss.stop({ graceful: true, timeout: 10_000 });
+    process.exit(0);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

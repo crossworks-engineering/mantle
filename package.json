@@ -1,0 +1,35 @@
+{
+  "name": "mantle",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Mantle — Jason's AI-queryable life tree.",
+  "packageManager": "pnpm@10.0.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "concurrently -n web,mcp,worker -c blue,magenta,green \"pnpm -C apps/web dev\" \"pnpm -C apps/mcp dev\" \"pnpm -C apps/web worker:dev\"",
+    "dev:web": "pnpm -C apps/web dev",
+    "dev:mcp": "pnpm -C apps/mcp dev",
+    "dev:worker": "pnpm -C apps/web worker:dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:migrate": "pnpm -C packages/db migrate",
+    "db:studio": "pnpm -C packages/db studio",
+    "sb:start": "npx supabase start",
+    "sb:stop": "npx supabase stop",
+    "sb:reset": "npx supabase db reset"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "sharp", "unrs-resolver"]
+  }
+}
