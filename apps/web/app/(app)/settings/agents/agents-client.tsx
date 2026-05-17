@@ -36,6 +36,14 @@ const ROLES = [
 
 type Role = (typeof ROLES)[number]['value'];
 
+type MemoryConfig = {
+  history_limit?: number;
+  history_window_hours?: number | null;
+  digest_limit?: number;
+  summarize_threshold?: number;
+  summarize_batch?: number;
+};
+
 type AgentSummary = {
   id: string;
   slug: string;
@@ -46,7 +54,7 @@ type AgentSummary = {
   apiKeyId: string | null;
   systemPrompt: string;
   tools: string[];
-  memoryConfig: { history_limit?: number; history_window_hours?: number | null };
+  memoryConfig: MemoryConfig;
   params: { temperature?: number; max_tokens?: number; top_p?: number };
   priority: number;
   enabled: boolean;
@@ -60,6 +68,47 @@ type ApiKeyOption = { id: string; service: string; label: string; masked: string
 
 const DEFAULT_SYSTEM_PROMPT = `You are an assistant helping the user via Telegram. You have memory of the recent conversation in this chat. Be concise and conversational — short paragraphs, no headers, no bullet lists unless explicitly useful. Match the tone of the incoming message. Skip pleasantries unless they fit naturally. If you don't know something or can't help, say so plainly.`;
 
+const DEFAULT_SUMMARIZER_PROMPT = `You are a memory compressor for an ongoing Telegram conversation. You will be given a chronological transcript of a chat between the user and an AI assistant.
+
+Produce a SHORT, factual summary (3-6 sentences, no headers, no bullet lists) capturing:
+  - Topics discussed
+  - Decisions made or commitments mentioned
+  - Specific facts about people, places, dates, or numbers
+  - Notable shifts in tone or context
+
+Do NOT include conversational filler ("the user said hi"). Be specific — write "Jason is preaching on Romans 8 this Sunday" not "they discussed church plans." Use the user's name when known.
+
+This summary will be loaded into the assistant's context on future replies, so write it as a reference, not a narrative.`;
+
+/** Defaults for a fresh agent row, keyed by role. */
+function defaultsForRole(role: Role): {
+  model: string;
+  systemPrompt: string;
+  historyLimit: string;
+  digestLimit: string;
+  summarizeThreshold: string;
+  summarizeBatch: string;
+} {
+  if (role === 'summarizer') {
+    return {
+      model: 'anthropic/claude-haiku-4.5',
+      systemPrompt: DEFAULT_SUMMARIZER_PROMPT,
+      historyLimit: '0', // summarizer doesn't use history; the transcript IS the input
+      digestLimit: '0',
+      summarizeThreshold: '30',
+      summarizeBatch: '20',
+    };
+  }
+  return {
+    model: 'anthropic/claude-sonnet-4.6',
+    systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    historyLimit: '20',
+    digestLimit: '3',
+    summarizeThreshold: '30',
+    summarizeBatch: '20',
+  };
+}
+
 type FormState = {
   slug: string;
   name: string;
@@ -72,29 +121,37 @@ type FormState = {
   enabled: boolean;
   historyLimit: string;
   historyWindowHours: string;
+  digestLimit: string;
+  summarizeThreshold: string;
+  summarizeBatch: string;
   temperature: string;
   maxTokens: string;
 };
 
-function emptyForm(): FormState {
+function emptyForm(role: Role = 'responder'): FormState {
+  const d = defaultsForRole(role);
   return {
     slug: '',
     name: '',
     description: '',
-    role: 'responder',
-    model: 'anthropic/claude-sonnet-4.6',
+    role,
+    model: d.model,
     apiKeyId: '',
-    systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    systemPrompt: d.systemPrompt,
     priority: '100',
     enabled: true,
-    historyLimit: '20',
+    historyLimit: d.historyLimit,
     historyWindowHours: '',
+    digestLimit: d.digestLimit,
+    summarizeThreshold: d.summarizeThreshold,
+    summarizeBatch: d.summarizeBatch,
     temperature: '0.7',
     maxTokens: '',
   };
 }
 
 function formFromAgent(a: AgentSummary): FormState {
+  const d = defaultsForRole(a.role);
   return {
     slug: a.slug,
     name: a.name,
@@ -105,8 +162,11 @@ function formFromAgent(a: AgentSummary): FormState {
     systemPrompt: a.systemPrompt,
     priority: String(a.priority),
     enabled: a.enabled,
-    historyLimit: a.memoryConfig.history_limit?.toString() ?? '20',
+    historyLimit: a.memoryConfig.history_limit?.toString() ?? d.historyLimit,
     historyWindowHours: a.memoryConfig.history_window_hours?.toString() ?? '',
+    digestLimit: a.memoryConfig.digest_limit?.toString() ?? d.digestLimit,
+    summarizeThreshold: a.memoryConfig.summarize_threshold?.toString() ?? d.summarizeThreshold,
+    summarizeBatch: a.memoryConfig.summarize_batch?.toString() ?? d.summarizeBatch,
     temperature: a.params.temperature?.toString() ?? '0.7',
     maxTokens: a.params.max_tokens?.toString() ?? '',
   };
@@ -168,18 +228,49 @@ export function AgentsClient({
     }));
   };
 
+  /** When the user picks a different role on a freshly-created agent, swap
+   *  the default model + system prompt to match the new role — but only
+   *  if the user hasn't customised them yet (best-effort heuristic). */
+  const onRoleChange = (next: Role) => {
+    setForm((f) => {
+      const prevDefaults = defaultsForRole(f.role);
+      const nextDefaults = defaultsForRole(next);
+      const isUntouchedModel = f.model === prevDefaults.model;
+      const isUntouchedPrompt =
+        f.systemPrompt === prevDefaults.systemPrompt ||
+        f.systemPrompt === DEFAULT_SYSTEM_PROMPT ||
+        f.systemPrompt === DEFAULT_SUMMARIZER_PROMPT;
+      return {
+        ...f,
+        role: next,
+        model: isUntouchedModel ? nextDefaults.model : f.model,
+        systemPrompt: isUntouchedPrompt ? nextDefaults.systemPrompt : f.systemPrompt,
+      };
+    });
+  };
+
   const submitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editing) return;
     setError(undefined);
 
-    const memoryConfig: { history_limit?: number; history_window_hours?: number | null } = {};
+    const memoryConfig: MemoryConfig = {};
     const limit = parseInt(form.historyLimit, 10);
     if (!Number.isNaN(limit)) memoryConfig.history_limit = limit;
     const win = form.historyWindowHours.trim();
     if (win) {
       const n = parseFloat(win);
       if (!Number.isNaN(n)) memoryConfig.history_window_hours = n;
+    }
+    if (form.role === 'responder') {
+      const dl = parseInt(form.digestLimit, 10);
+      if (!Number.isNaN(dl)) memoryConfig.digest_limit = dl;
+    }
+    if (form.role === 'summarizer') {
+      const st = parseInt(form.summarizeThreshold, 10);
+      if (!Number.isNaN(st)) memoryConfig.summarize_threshold = st;
+      const sb = parseInt(form.summarizeBatch, 10);
+      if (!Number.isNaN(sb)) memoryConfig.summarize_batch = sb;
     }
 
     const params: { temperature?: number; max_tokens?: number } = {};
@@ -300,7 +391,18 @@ export function AgentsClient({
                   <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                     <code className="font-mono">{a.model}</code>
                     <span>priority {a.priority}</span>
-                    <span>history {a.memoryConfig.history_limit ?? 20} turns</span>
+                    {a.role === 'responder' && (
+                      <>
+                        <span>history {a.memoryConfig.history_limit ?? 20} turns</span>
+                        <span>{a.memoryConfig.digest_limit ?? 3} digests</span>
+                      </>
+                    )}
+                    {a.role === 'summarizer' && (
+                      <span>
+                        rolls up every {a.memoryConfig.summarize_threshold ?? 30} turns ·
+                        batch {a.memoryConfig.summarize_batch ?? 20}
+                      </span>
+                    )}
                     <span>
                       key:{' '}
                       {key ? (
@@ -401,7 +503,7 @@ export function AgentsClient({
                 <select
                   id="role"
                   value={form.role}
-                  onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as Role }))}
+                  onChange={(e) => onRoleChange(e.target.value as Role)}
                   className={SELECT_CLASS}
                 >
                   {ROLES.map((r) => (
@@ -498,7 +600,11 @@ export function AgentsClient({
                     min={0}
                     step={1}
                   />
-                  <p className="text-xs text-muted-foreground">Default 20.</p>
+                  <p className="text-xs text-muted-foreground">
+                    {form.role === 'summarizer'
+                      ? 'Unused for summarizers — leave at 0.'
+                      : 'Default 20.'}
+                  </p>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="historyWindowHours">Time window (hours)</Label>
@@ -515,6 +621,59 @@ export function AgentsClient({
                   />
                 </div>
               </div>
+
+              {form.role === 'responder' && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="digestLimit">Digest count</Label>
+                  <Input
+                    id="digestLimit"
+                    type="number"
+                    value={form.digestLimit}
+                    onChange={(e) => setForm((f) => ({ ...f, digestLimit: e.target.value }))}
+                    min={0}
+                    step={1}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    How many recent Tier-2 digests to prepend to the prompt. Default 3.
+                    Requires a <code>summarizer</code> agent to exist and produce digests.
+                  </p>
+                </div>
+              )}
+
+              {form.role === 'summarizer' && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="summarizeThreshold">Trigger threshold</Label>
+                    <Input
+                      id="summarizeThreshold"
+                      type="number"
+                      value={form.summarizeThreshold}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, summarizeThreshold: e.target.value }))
+                      }
+                      min={1}
+                      step={1}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Undigested turns per chat before summarization fires. Default 30.
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="summarizeBatch">Batch size</Label>
+                    <Input
+                      id="summarizeBatch"
+                      type="number"
+                      value={form.summarizeBatch}
+                      onChange={(e) => setForm((f) => ({ ...f, summarizeBatch: e.target.value }))}
+                      min={1}
+                      step={1}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      How many of the oldest turns to fold into one digest. Default 20.
+                    </p>
+                  </div>
+                </div>
+              )}
             </fieldset>
 
             <fieldset className="space-y-3 rounded-md border border-border p-3">

@@ -11,6 +11,9 @@ const MemoryConfig = z
   .object({
     history_limit: z.number().int().min(0).max(500).optional(),
     history_window_hours: z.number().min(0).max(24 * 365).nullable().optional(),
+    digest_limit: z.number().int().min(0).max(20).optional(),
+    summarize_threshold: z.number().int().min(1).max(10_000).optional(),
+    summarize_batch: z.number().int().min(1).max(1_000).optional(),
   })
   .strict();
 
