@@ -136,6 +136,9 @@ export const telegramMessages = pgTable(
     agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
     modelUsed: text('model_used'),
     replyToId: uuid('reply_to_id'),
+    /** Once this row is folded into a Tier-2 digest, points at the `note` node
+     * that represents the digest. NULL = not yet summarized. */
+    digestNodeId: uuid('digest_node_id').references(() => nodes.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [

@@ -34,6 +34,15 @@ export type AgentMemoryConfig = {
   history_limit?: number;
   /** Optional time-window cap (hours). null = count-only. */
   history_window_hours?: number | null;
+  /** Responder-only: how many recent digest nodes to prepend as Tier-2 context.
+   *  Default 3. */
+  digest_limit?: number;
+  /** Summarizer-only: undigested-turn count that triggers a summarization.
+   *  Default 30. */
+  summarize_threshold?: number;
+  /** Summarizer-only: how many of the oldest undigested turns to fold into
+   *  one digest per run. Default 20. */
+  summarize_batch?: number;
 };
 
 export type AgentParams = {

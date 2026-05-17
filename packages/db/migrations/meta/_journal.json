@@ -92,6 +92,13 @@
       "when": 1747699900000,
       "tag": "0012_telegram_outbound",
       "breakpoints": false
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1747700000000,
+      "tag": "0013_conversation_digests",
+      "breakpoints": false
     }
   ]
 }
