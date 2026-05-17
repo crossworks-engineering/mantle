@@ -14,6 +14,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { nodes } from './nodes';
+import { agents } from './agents';
 
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   dataType() {
@@ -33,6 +34,13 @@ export const telegramAllowlistStatus = pgEnum('telegram_allowlist_status', [
   'pending',
   'denied',
 ]);
+
+/**
+ * `inbound`  — DMs received from the user; trigger pg_notify.
+ * `outbound` — replies emitted by an agent; persisted so the agent can see its
+ *              own prior turns when assembling conversation history.
+ */
+export const telegramDirection = pgEnum('telegram_direction', ['inbound', 'outbound']);
 
 export const telegramAccounts = pgTable(
   'telegram_accounts',
@@ -107,9 +115,11 @@ export const telegramMessages = pgTable(
       .references(() => telegramChats.id, { onDelete: 'cascade' }),
     /** Telegram's message_id within the chat. */
     telegramMessageId: text('telegram_message_id').notNull(),
-    /** Telegram's update_id — globally unique per bot, used for dedup + ack. */
-    telegramUpdateId: bigint('telegram_update_id', { mode: 'number' }).notNull(),
-    fromUserId: text('from_user_id').notNull(),
+    /** Telegram's update_id — globally unique per bot, used for dedup + ack.
+     * Inbound rows have this; outbound rows leave it null. */
+    telegramUpdateId: bigint('telegram_update_id', { mode: 'number' }),
+    /** Inbound rows only; outbound replies leave these null. */
+    fromUserId: text('from_user_id'),
     fromUsername: text('from_username'),
     fromName: text('from_name'),
     text: text('text').notNull(),
@@ -119,15 +129,26 @@ export const telegramMessages = pgTable(
     /** True once Claude (or any client) has responded / acknowledged this message. */
     processed: boolean('processed').default(false).notNull(),
     processedAt: timestamp('processed_at', { withTimezone: true }),
+    /** inbound = received DM; outbound = reply emitted by an agent. */
+    direction: telegramDirection('direction').default('inbound').notNull(),
+    /** Outbound provenance: which agent produced this reply, on which model,
+     * and which inbound message it was replying to. Null for inbound rows. */
+    agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
+    modelUsed: text('model_used'),
+    replyToId: uuid('reply_to_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     // Dedupe — Telegram occasionally retransmits an update.
-    uniqueIndex('telegram_messages_account_update_uq').on(t.accountId, t.telegramUpdateId),
+    // Partial unique: outbound rows have null telegram_update_id.
+    uniqueIndex('telegram_messages_account_update_uq')
+      .on(t.accountId, t.telegramUpdateId)
+      .where(sql`${t.telegramUpdateId} is not null`),
     index('telegram_messages_chat_idx').on(t.chatId),
     index('telegram_messages_node_idx').on(t.nodeId),
     index('telegram_messages_processed_idx').on(t.processed),
     index('telegram_messages_sent_at_idx').on(t.sentAt),
+    index('telegram_messages_chat_sent_idx').on(t.chatId, t.sentAt),
   ],
 );
 

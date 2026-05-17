@@ -9,3 +9,4 @@ export * from './filters';
 export * from './senders';
 export * from './sync-runs';
 export * from './telegram';
+export * from './agents';

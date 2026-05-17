@@ -78,6 +78,20 @@
       "when": 1747699700000,
       "tag": "0010_api_keys",
       "breakpoints": false
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1747699800000,
+      "tag": "0011_agents",
+      "breakpoints": false
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1747699900000,
+      "tag": "0012_telegram_outbound",
+      "breakpoints": false
     }
   ]
 }
