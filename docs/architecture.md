@@ -321,46 +321,67 @@ outbound is gated to allowlisted chats only.
 
 ## 9b. The agent — auto-replies to Telegram
 
-`apps/agent/src/main.ts` (~150 LOC) is the event-driven reply loop.
+`apps/agent/src/main.ts` is the event-driven reply loop. As of migration
+0011/0012 (May 2026) the agent is **DB-driven, multi-turn, and emits
+prompt-caching markers.**
 
 ```
 inbound DM
-  → telegram-poll worker INSERTs into telegram_messages
-  → trigger pg_notify('telegram_message_inserted', new.id::text)
+  → telegram-poll worker INSERTs into telegram_messages (direction='inbound')
+  → trigger pg_notify('telegram_message_inserted', new.id::text)   (inbound only)
   → apps/agent's LISTEN connection wakes up
-  → fetch message + chat + last_used api_key
+  → resolve responder agent  (highest-priority enabled row in `agents`)
+  → load conversation history  (last N inbound+outbound turns, chronological)
+  → buildChatMessages(...)  (cache_control on system block for anthropic/*)
   → @openrouter/sdk call
   → @mantle/telegram sendMessage
-  → mark processed
+  → INSERT outbound row + matching node
+  → mark inbound processed
 ```
 
 Key properties:
 
+- **DB-driven config.** No more `AGENT_MODEL` / `AGENT_PERSONA` env vars.
+  Each agent is a row in the `agents` table: model, system prompt,
+  `api_key_id` (FK into the encrypted vault), `memory_config`, `params`,
+  `priority`, `enabled`. Managed at `/settings/agents`.
+- **Priority ranking.** When multiple agents share a role (e.g. several
+  `responder` rows), the highest-priority enabled one wins. Priority is a
+  plain int, higher = higher priority. Switching the active responder is a
+  toggle in the UI.
+- **Conversational memory.** Both inbound and outbound messages live in
+  `telegram_messages` now, distinguished by the `direction` column. The
+  runner loads the last `memory_config.history_limit ?? 20` turns for
+  context. The pg_notify trigger fires only on inbound rows so the agent
+  doesn't react to its own replies.
+- **Prompt caching.** For `anthropic/*` models the system block is sent with
+  `cache_control: { type: 'ephemeral' }`. Anthropic caches the prefix for
+  ~5 minutes; subsequent turns within that window read cache at ~10% cost.
+  Caching for non-Anthropic models is implicit (OpenAI, DeepSeek auto-cache)
+  or unsupported (most open-source routes) — no marker needed.
 - **Event-driven, not polled.** The pg_notify trigger is fired inside the
   worker's INSERT transaction, so the agent gets the message id within
   milliseconds of it landing in the DB.
 - **Per-chat serialized.** An in-memory `Map<chatId, Promise>` ensures two
   inbound messages from the same chat don't fire two outbound replies
   racing each other.
-- **Drains on boot.** On startup the agent looks for `processed=false`
-  messages and handles them in order, so it catches up after downtime.
+- **Drains on boot.** On startup the agent processes the backlog of
+  `direction='inbound' AND processed=false` rows in `sent_at` order.
 - **Owner-scoped.** Reads `ALLOWED_USER_ID` at startup; only handles
   messages whose chat belongs to that user.
-- **Reads its key from the encrypted vault** (`@mantle/api-keys`,
-  service=`openrouter`). If no key is set it logs a clear "skipping"
-  message instead of crashing.
 
-v1 is intentionally minimal:
+Sharp edges still open:
 
-- **Single-turn.** The agent sees the current inbound message + system
-  prompt only. Its own previous replies aren't stored anywhere (the
-  `telegram_messages` table is inbound-only). Multi-turn coherence
-  would need an outbound table or a direction flag.
-- **One default model.** `AGENT_MODEL` env var, defaults to
-  `deepseek/deepseek-chat`. No multi-model routing.
+- **No Tier-2 rollups.** Recency-only retrieval. Long conversations
+  truncate at the history limit. Per-thread / per-week digests would
+  unlock much deeper continuity without blowing the token budget.
+- **Single cache breakpoint.** Only the system prompt is marked
+  `ephemeral`. Marking the history prefix too would cut cost again, but
+  needs the prefix to be byte-stable turn-to-turn — easy to break
+  accidentally.
 - **No cost ceiling.** Each inbound triggers exactly one OpenRouter call.
-- **No memory retrieval.** Persona-tier and embedding-retrieval context
-  weren't wired (see future work).
+- **No semantic retrieval.** `nodes.embedding` exists but isn't used in
+  the agent's context assembly.
 
 ## 9c. Encrypted API key vault
 

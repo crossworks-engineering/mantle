@@ -163,32 +163,50 @@ The agent reads its OpenRouter key as `getApiKey(userId, 'openrouter')`.
 Storage is per-user, and the unique constraint is `(user_id, service,
 label)` so you can swap a key without affecting another label.
 
-## Auto-responding to Telegram
+## Agents & auto-responding to Telegram
 
 `apps/agent` is a tiny Node process that listens on
-`pg_notify('telegram_message_inserted')` and replies via OpenRouter:
+`pg_notify('telegram_message_inserted')` and replies via OpenRouter. As of
+2026-05 it's **DB-driven and has memory**:
 
 ```
-inbound DM → telegram-poll worker → INSERT into telegram_messages
-          → pg_notify('telegram_message_inserted', new.id::text)
+inbound DM → telegram-poll worker → INSERT inbound telegram_messages row
+          → pg_notify('telegram_message_inserted', new.id::text)   (inbound only)
           → apps/agent picks up
-          → fetches message + persona
-          → @openrouter/sdk call
+          → resolve responder agent  (highest-priority enabled row in `agents`)
+          → load conversation history  (last N inbound+outbound turns)
+          → @openrouter/sdk call  (cache_control on system prompt for anthropic/*)
           → telegram_send via @mantle/telegram
-          → marks processed
+          → INSERT outbound telegram_messages row
+          → mark inbound processed
 ```
 
-**Configuration:**
+**Configuration** lives in the `agents` table — manage it at
+[`/settings/agents`](http://localhost:3000/settings/agents). Each row carries:
 
-| Env var          | Default                       | What |
-|------------------|-------------------------------|------|
-| `AGENT_MODEL`    | `deepseek/deepseek-chat`     | Any OpenRouter model slug |
-| `AGENT_PERSONA`  | "concise Telegram assistant" | System prompt for every reply |
+- `slug`, `name`, `description`
+- `role` — `responder` for Telegram replies (`assistant`, `extractor`, `summarizer`, `custom` are also defined)
+- `model` — any OpenRouter slug (e.g. `anthropic/claude-sonnet-4.6`)
+- `api_key_id` — which entry in `api_keys` to use
+- `system_prompt` — persona
+- `memory_config.history_limit` — turns to replay (default 20)
+- `params` — `temperature`, `max_tokens`, `top_p`
+- `priority` — higher wins when multiple `responder` agents are enabled
+- `enabled` — kill switch
 
-v1 is intentionally minimal: single-turn (agent doesn't see its own
-prior replies in context), one default model, per-chat serialized.
-Multi-turn memory, cost caps, and multi-model routing are noted in
-[`docs/architecture.md`](./docs/architecture.md#16-known-sharp-edges--future-work).
+First-time setup: add an OpenRouter key at `/settings/keys`, then create a
+responder at `/settings/agents`. The default seed values in the form
+(`anthropic/claude-sonnet-4.6`, history limit 20) are a good starting point.
+
+**Prompt caching.** For `anthropic/*` models the runner emits
+`cache_control: { type: 'ephemeral' }` on the system block. OpenRouter forwards
+this to Anthropic, which caches the prefix for 5 minutes and reuses it on the
+next turn at ~10% the cost. The agent logs cache-read tokens at INFO level so
+you can confirm it's working.
+
+What v1 doesn't have yet (see [`docs/architecture.md`](./docs/architecture.md#16-known-sharp-edges--future-work)):
+Tier-2 summary rollups, semantic retrieval over older context, per-chat agent
+overrides, multi-turn cache breakpoints, cost ceilings.
 
 ## Docs
 
