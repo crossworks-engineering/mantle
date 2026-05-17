@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -196,6 +196,13 @@ export function AgentsClient({
   const [agents, setAgents] = useState<AgentSummary[]>(initialAgents);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string>();
+
+  // After a create/edit, we call router.refresh() to re-run the server
+  // component; this hook propagates the new list into our local state.
+  // (useState's initialValue is only read on first mount.)
+  useEffect(() => {
+    setAgents(initialAgents);
+  }, [initialAgents]);
 
   const [editing, setEditing] = useState<{ mode: 'create' } | { mode: 'edit'; agent: AgentSummary }>();
   const [form, setForm] = useState<FormState>(emptyForm());

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { RefreshCw, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -38,6 +38,12 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
   const router = useRouter();
   const [keys, setKeys] = useState<KeyRow[]>(initialKeys);
   const [pending, startTransition] = useTransition();
+
+  // Sync local state to the prop after a create/rotate refresh.
+  // useState's initialValue is only read on first mount.
+  useEffect(() => {
+    setKeys(initialKeys);
+  }, [initialKeys]);
 
   const [service, setService] = useState('openrouter');
   const [label, setLabel] = useState('default');
