@@ -29,9 +29,9 @@ import {
   isMultimodalModel,
   MULTIMODAL_MODELS,
   type EmbedInput,
-} from './client.js';
+} from './client';
 
-export { MULTIMODAL_MODELS, isMultimodalModel, type EmbedInput } from './client.js';
+export { MULTIMODAL_MODELS, isMultimodalModel, type EmbedInput } from './client';
 
 const FALLBACK_MODEL = 'openai/text-embedding-3-small';
 export const DEFAULT_EMBEDDING_MODEL =

@@ -4,6 +4,6 @@ export {
   type Digest,
   type FactSnippet,
   type ContentHit,
-} from './messages.js';
+} from './messages';
 
-export { captureLlmUsage } from './llm-usage.js';
+export { captureLlmUsage } from './llm-usage';

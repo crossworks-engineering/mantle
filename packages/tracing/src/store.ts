@@ -13,7 +13,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { eq, sql } from 'drizzle-orm';
 import { db, traces, traceSteps } from '@mantle/db';
-import { truncateJson } from './truncate.js';
+import { truncateJson } from './truncate';
 
 export type TraceKind =
   | 'responder_turn'

@@ -13,7 +13,7 @@ export {
   type FactsOptions,
   type MentionsOptions,
   type EntityMention,
-} from './entities.js';
+} from './entities';
 
 export interface SearchOptions {
   ownerId: string;

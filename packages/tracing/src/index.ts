@@ -10,6 +10,6 @@ export {
   type StartStepInit,
   type StepHandle,
   type TokenDelta,
-} from './store.js';
+} from './store';
 
-export { fallbackCostMicroUsd } from './pricing.js';
+export { fallbackCostMicroUsd } from './pricing';
