@@ -34,7 +34,7 @@ import {
   TEXT_EXTS,
   writeFile as writeFileOnDisk,
   deleteFile as deleteFileOnDisk,
-} from './index.js';
+} from './index';
 import { db, nodes, type Node } from '@mantle/db';
 
 export type FolderRow = {

@@ -14,7 +14,7 @@ import {
   diskPathForLtree,
   filesRoot,
   isFilesPath,
-} from './paths.js';
+} from './paths';
 
 /** Ensure the root + an arbitrary descendant directory exist. mkdir -p. */
 export async function ensureDir(ltreePath: string): Promise<string> {

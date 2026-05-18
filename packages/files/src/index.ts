@@ -8,7 +8,7 @@ export {
   TEXT_EXTS,
   INGESTABLE_EXTS,
   PREVIEWABLE_MARKDOWN_EXTS,
-} from './slug.js';
+} from './slug';
 
 export {
   filesRoot,
@@ -16,7 +16,7 @@ export {
   diskPathForLtree,
   diskPathForFile,
   FILES_ROOT_LABEL,
-} from './paths.js';
+} from './paths';
 
 export {
   ensureRoot,
@@ -26,7 +26,7 @@ export {
   deleteFile,
   renameFile,
   removeFolder,
-} from './disk.js';
+} from './disk';
 
 export {
   ensureFilesRootBranch,
@@ -46,4 +46,4 @@ export {
   fileById,
   type FolderRow,
   type FileRow,
-} from './ops.js';
+} from './ops';

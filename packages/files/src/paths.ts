@@ -9,7 +9,7 @@
  */
 
 import path from 'node:path';
-import { ltreeToDash } from './slug.js';
+import { ltreeToDash } from './slug';
 
 /** The single ltree label that marks the host-filesystem root branch. */
 export const FILES_ROOT_LABEL = 'files';
