@@ -25,6 +25,8 @@
     "@mantle/storage": "workspace:*",
     "@mantle/telegram": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.4",
+    "@xyflow/react": "^12.3.5",
+    "dagre": "^0.8.5",
     "@radix-ui/react-dropdown-menu": "^2.1.4",
     "@radix-ui/react-label": "^2.1.1",
     "@radix-ui/react-scroll-area": "^1.2.2",
@@ -46,6 +48,7 @@
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
+    "@types/dagre": "^0.7.52",
     "@types/node": "^22.10.5",
     "@types/react": "^19.0.5",
     "@types/react-dom": "^19.0.3",
