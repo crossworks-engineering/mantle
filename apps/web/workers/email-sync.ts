@@ -21,6 +21,19 @@ const SYNC_QUEUE = 'mantle.email.sync';
 const BACKFILL_QUEUE = 'mantle.email.backfill';
 const SCHEDULER_QUEUE = 'mantle.email.scheduler';
 
+/** Mask the local-part of an email address before logging. Operators
+ *  see enough to match the row in the DB ("@gmail.com (1f2…)") without
+ *  the full PII landing in journalctl / centralised log shipping. */
+function maskEmail(addr: string | null | undefined): string {
+  if (!addr) return '(none)';
+  const at = addr.lastIndexOf('@');
+  if (at <= 0) return '***';
+  const local = addr.slice(0, at);
+  const domain = addr.slice(at);
+  const hint = local.length <= 2 ? '*' : `${local[0]}${'*'.repeat(Math.min(local.length - 2, 6))}${local[local.length - 1]}`;
+  return `${hint}${domain}`;
+}
+
 interface SyncJob {
   accountId: string;
 }
@@ -88,10 +101,10 @@ async function main() {
         const t0 = Date.now();
         const { scanned, ingested, newSenders } = await syncAccount(account, provider);
         console.log(
-          `[sync] ${account.address} done in ${Date.now() - t0}ms — scanned=${scanned} ingested=${ingested} newSenders=${newSenders}`,
+          `[sync] ${maskEmail(account.address)} done in ${Date.now() - t0}ms — scanned=${scanned} ingested=${ingested} newSenders=${newSenders}`,
         );
       } catch (err) {
-        console.error('[sync] error on', account.address, err);
+        console.error('[sync] error on', maskEmail(account.address), err);
         throw err; // let pg-boss record failure + retry
       }
     }
@@ -111,7 +124,7 @@ async function main() {
         const t0 = Date.now();
         const { ingested } = await backfillSender(account, provider, job.data.senderAddress);
         console.log(
-          `[backfill] ${account.address} ← ${job.data.senderAddress}: ingested ${ingested} in ${Date.now() - t0}ms`,
+          `[backfill] ${maskEmail(account.address)} ← ${maskEmail(job.data.senderAddress)}: ingested ${ingested} in ${Date.now() - t0}ms`,
         );
       } catch (err) {
         console.error('[backfill] error', err);

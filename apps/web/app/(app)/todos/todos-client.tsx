@@ -202,7 +202,9 @@ export function TodosClient({ initialTodos }: { initialTodos: TodoRow[] }) {
 
       {filtered.length === 0 ? (
         <div className="rounded-md border border-dashed border-border bg-muted/30 px-6 py-12 text-center text-sm text-muted-foreground">
-          {todos.length === 0 ? 'No todos yet.' : 'No todos match your filters.'}
+          {todos.length === 0
+            ? 'No todos yet. Click “New todo” or ask your assistant to add one.'
+            : 'No todos match your filters.'}
         </div>
       ) : (
         <ul className="divide-y divide-border rounded-md border border-border">
@@ -272,7 +274,8 @@ export function TodosClient({ initialTodos }: { initialTodos: TodoRow[] }) {
                     <button
                       onClick={() => toggleExpand(t.id)}
                       className="text-muted-foreground hover:text-foreground"
-                      aria-label="Expand"
+                      aria-label={isOpen ? 'Collapse todo' : 'Expand todo'}
+                      aria-expanded={isOpen}
                     >
                       {isOpen ? (
                         <ChevronDown className="size-4" />
@@ -285,6 +288,7 @@ export function TodosClient({ initialTodos }: { initialTodos: TodoRow[] }) {
                       size="sm"
                       onClick={() => handleDelete(t.id)}
                       className="opacity-0 transition-opacity group-hover:opacity-100"
+                      aria-label={`Delete ${t.title}`}
                     >
                       <Trash2 className="size-4" />
                     </Button>

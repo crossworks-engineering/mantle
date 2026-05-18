@@ -24,13 +24,15 @@ const KNOWN_NODE_TYPES = [
   'email',
   'email_thread',
   'secret',
-  'sermon',
-  'contact',
   'task',
   'event',
-  'printer_project',
   'telegram_message',
 ] as const;
+// `sermon`, `contact`, `printer_project` remain in the Postgres
+// `node_type` enum but have no writer code. Hidden from the chip picker
+// so the UI doesn't suggest types that produce no nodes. Re-add here
+// (and a matching `case` in extractor.ts:readNodeBodyRaw) if a surface
+// for one of them is ever built.
 
 /** Curated embedding models — all output (or can be coerced to) 1536 dims to
  *  match the `nodes.embedding vector(1536)` column. Empty value = fall back to

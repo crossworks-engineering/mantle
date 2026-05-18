@@ -350,6 +350,7 @@ function EventList({
             size="sm"
             onClick={() => onDelete(e.id)}
             className="opacity-0 transition-opacity group-hover:opacity-100"
+            aria-label={`Delete ${e.title}`}
           >
             <Trash2 className="size-4" />
           </Button>

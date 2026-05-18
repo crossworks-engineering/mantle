@@ -104,7 +104,8 @@ export function AssistantClient({
               <li
                 key={m.id}
                 className={
-                  m.direction === 'inbound' ? 'flex justify-end' : 'flex justify-start'
+                  'group/msg ' +
+                  (m.direction === 'inbound' ? 'flex justify-end' : 'flex justify-start')
                 }
               >
                 <div
@@ -120,11 +121,23 @@ export function AssistantClient({
                       {m.text}
                     </ReactMarkdown>
                   </div>
-                  <div className="mt-1 flex items-baseline gap-2 text-[10px] text-muted-foreground">
-                    <span>{new Date(m.createdAt).toLocaleTimeString()}</span>
+                  {/* Meta strip is hidden until hover/focus — keeps long
+                      threads visually quiet. The pending "sending…"
+                      indicator is the one exception, always shown. */}
+                  <div className="mt-1 flex items-baseline gap-2 text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover/msg:opacity-100 group-focus-within/msg:opacity-100">
+                    <span title={new Date(m.createdAt).toLocaleString()}>
+                      {new Date(m.createdAt).toLocaleTimeString()}
+                    </span>
                     {m.model && <code className="font-mono">{m.model}</code>}
-                    {m.pending && <span className="italic">sending…</span>}
                   </div>
+                  {/* Always-visible affordance for the optimistic send
+                      state. Sits outside the hover-meta strip so the
+                      user sees feedback without needing to hover. */}
+                  {m.pending && (
+                    <div className="mt-1 text-[10px] italic text-muted-foreground">
+                      sending…
+                    </div>
+                  )}
                 </div>
               </li>
             ))}

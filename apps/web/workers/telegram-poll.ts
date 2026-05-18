@@ -74,9 +74,16 @@ function startLoop(initial: TelegramAccount): { stop: () => void } {
 
   void (async () => {
     while (!stopped) {
-      // Re-read the account from DB on each iteration so we pick up offset
-      // updates from concurrent pollOnce calls (we have only one, but this
-      // keeps lastUpdateOffset honest) and disable-flag changes.
+      // Re-read the account from DB on each iteration so we pick up
+      // offset updates from concurrent pollOnce calls (we have only
+      // one, but this keeps lastUpdateOffset honest) and disable-flag
+      // changes.
+      //
+      // Disable race: there's a ≤25s window between this check and
+      // pollOnce returning where a disable via the UI won't take
+      // effect — the long-poll completes, delivers any updates, then
+      // the next iteration sees enabled=false and exits. Mild;
+      // tolerating it lets pollOnce stay a simple async call.
       const [account] = await db
         .select()
         .from(telegramAccounts)

@@ -103,7 +103,9 @@ export function NotesClient({ initialNotes }: { initialNotes: NoteRow[] }) {
 
       {filtered.length === 0 ? (
         <div className="rounded-md border border-dashed border-border bg-muted/30 px-6 py-12 text-center text-sm text-muted-foreground">
-          {notes.length === 0 ? 'No notes yet.' : 'No notes match your search.'}
+          {notes.length === 0
+            ? 'No notes yet. Click “New note” or ask your assistant to add one.'
+            : 'No notes match your search.'}
         </div>
       ) : (
         <ul className="divide-y divide-border rounded-md border border-border">
@@ -135,6 +137,7 @@ export function NotesClient({ initialNotes }: { initialNotes: NoteRow[] }) {
                 size="sm"
                 onClick={() => handleDelete(n.id)}
                 className="opacity-0 transition-opacity group-hover:opacity-100"
+                aria-label={`Delete ${n.title}`}
               >
                 <Trash2 className="size-4" />
               </Button>

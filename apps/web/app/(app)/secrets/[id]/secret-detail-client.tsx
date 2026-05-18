@@ -234,7 +234,7 @@ export function SecretDetailClient({ initial }: { initial: SecretRow }) {
                 <Button variant="outline" size="sm" onClick={startEdit}>
                   <Pencil className="mr-1 size-3" /> Edit
                 </Button>
-                <Button variant="ghost" size="sm" onClick={handleDelete}>
+                <Button variant="ghost" size="sm" onClick={handleDelete} aria-label="Delete secret">
                   <Trash2 className="size-4" />
                 </Button>
               </div>

@@ -91,9 +91,19 @@ export function PendingClient({ initialRows }: { initialRows: PendingRow[] }) {
                     </a>
                   )}
                 </div>
-                <pre className="overflow-x-auto rounded-md bg-muted/40 px-2 py-1 text-xs font-mono">
-                  {JSON.stringify(r.args, null, 2)}
-                </pre>
+                {/* Heavy JSON payloads (tool calls with nested
+                    objects) used to fill the page. Collapsed by
+                    default with `details`; expand inline without
+                    losing scroll position. */}
+                <details className="rounded-md bg-muted/40 px-2 py-1 text-xs">
+                  <summary className="cursor-pointer select-none font-mono text-muted-foreground hover:text-foreground">
+                    args ({Object.keys(r.args ?? {}).length} field
+                    {Object.keys(r.args ?? {}).length === 1 ? '' : 's'})
+                  </summary>
+                  <pre className="mt-1 max-h-64 overflow-auto font-mono">
+                    {JSON.stringify(r.args, null, 2)}
+                  </pre>
+                </details>
                 <div className="flex gap-2">
                   <Button
                     onClick={() => decide(r.id, 'approve')}

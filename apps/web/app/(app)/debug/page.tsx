@@ -82,7 +82,7 @@ export default async function DebugPage() {
       </header>
 
       {/* ─── Dashboard widgets ──────────────────────────────────────────── */}
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         <StatCard
           title="Last 24h"
           primary={`${traffic24h.count} traces`}

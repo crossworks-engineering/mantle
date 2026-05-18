@@ -105,9 +105,13 @@ export default async function TracesPage(props: {
           some activity (DM the bot, insert a note).
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
+        <div className="max-h-[70vh] overflow-auto rounded-md border border-border">
           <table className="w-full text-sm">
-            <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+            {/* `sticky top-0` pins the header inside the scroll
+                container so it stays visible while scanning long
+                runs. bg has to be solid (not /40) or rows show
+                through during the scroll. */}
+            <thead className="sticky top-0 z-10 bg-muted text-xs uppercase tracking-wider text-muted-foreground shadow-[inset_0_-1px_0_var(--border)]">
               <tr>
                 <th className="px-3 py-2 text-left font-semibold">Started</th>
                 <th className="px-3 py-2 text-left font-semibold">Kind</th>

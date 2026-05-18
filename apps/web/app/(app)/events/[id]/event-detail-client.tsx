@@ -157,7 +157,7 @@ export function EventDetailClient({ initial }: { initial: EventRow }) {
                 <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
                   <Pencil className="mr-1 size-3" /> Edit
                 </Button>
-                <Button variant="ghost" size="sm" onClick={handleDelete}>
+                <Button variant="ghost" size="sm" onClick={handleDelete} aria-label="Delete event">
                   <Trash2 className="size-4" />
                 </Button>
               </div>

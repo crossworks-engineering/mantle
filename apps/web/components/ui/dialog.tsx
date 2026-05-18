@@ -34,8 +34,14 @@ export const DialogContent = React.forwardRef<
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
+      // Height: cap at 92vh so the dialog never escapes the viewport,
+      // but DON'T also fix it to 92vh — small forms then have a giant
+      // empty pane below the content. Content overflow scrolls
+      // internally, so call sites no longer need their own
+      // `max-h-[90vh] overflow-y-auto` wrappers (some still have them,
+      // harmlessly).
       className={cn(
-        'fixed left-1/2 top-1/2 z-50 flex h-[92vh] max-h-[92vh] w-[94vw] max-w-5xl -translate-x-1/2 -translate-y-1/2 flex-col gap-3 overflow-hidden rounded-lg border border-border bg-background p-5 shadow-lg',
+        'fixed left-1/2 top-1/2 z-50 flex max-h-[92vh] w-[94vw] max-w-5xl -translate-x-1/2 -translate-y-1/2 flex-col gap-3 overflow-y-auto rounded-lg border border-border bg-background px-5 pb-5 pt-4 shadow-lg',
         className,
       )}
       {...props}

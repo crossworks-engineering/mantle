@@ -118,8 +118,13 @@ async function main(): Promise<void> {
   }
   console.log(`[events-reminders] up. Polling every ${TICK_MS / 1000}s.`);
   let running = false;
-  const interval = setInterval(async () => {
-    if (running) return; // skip overlapping ticks
+  // Shared runner so the immediate boot-time tick goes through the
+  // same single-flight guard as scheduled ones. Previously the initial
+  // `tick()` was fire-and-forget — if it took longer than TICK_MS
+  // (slow Telegram send, retried-network), the first scheduled tick
+  // could overlap with it.
+  const runOnce = async () => {
+    if (running) return;
     running = true;
     try {
       await tick();
@@ -128,10 +133,11 @@ async function main(): Promise<void> {
     } finally {
       running = false;
     }
-  }, TICK_MS);
+  };
+  const interval = setInterval(runOnce, TICK_MS);
   // Fire one tick immediately so a freshly-created event doesn't have
   // to wait 30s when it's already overdue.
-  void tick().catch((err) => console.error('[events-reminders] initial tick error:', err));
+  void runOnce();
 
   const shutdown = () => {
     console.log('[events-reminders] shutting down…');
