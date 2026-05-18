@@ -47,6 +47,8 @@ const PatchBody = z
     apiKeyId: z.string().uuid().nullable(),
     systemPrompt: z.string().min(1).max(40_000),
     tools: z.array(z.string()).max(64),
+    toolSlugs: z.array(z.string().min(1).max(120)).max(64),
+    skillSlugs: z.array(z.string().min(1).max(120)).max(32),
     memoryConfig: MemoryConfig,
     params: Params,
     priority: z.number().int().min(0).max(1_000_000),

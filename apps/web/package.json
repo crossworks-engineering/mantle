@@ -23,6 +23,7 @@
     "@mantle/email": "workspace:*",
     "@mantle/embeddings": "workspace:*",
     "@mantle/files": "workspace:*",
+    "@mantle/tools": "workspace:*",
     "@mantle/rules": "workspace:*",
     "@mantle/search": "workspace:*",
     "@mantle/storage": "workspace:*",

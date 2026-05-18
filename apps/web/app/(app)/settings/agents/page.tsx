@@ -1,3 +1,5 @@
+import { eq } from 'drizzle-orm';
+import { db, tools } from '@mantle/db';
 import { requireOwner } from '@/lib/auth';
 import { listAgents } from '@/lib/agents';
 import { listApiKeys } from '@/lib/api-keys';
@@ -5,7 +7,21 @@ import { AgentsClient } from './agents-client';
 
 export default async function AgentsSettingsPage() {
   const user = await requireOwner();
-  const [agents, keys] = await Promise.all([listAgents(user.id), listApiKeys(user.id)]);
+  const [agents, keys, toolRows] = await Promise.all([
+    listAgents(user.id),
+    listApiKeys(user.id),
+    db
+      .select({
+        slug: tools.slug,
+        name: tools.name,
+        description: tools.description,
+        requiresConfirm: tools.requiresConfirm,
+        handler: tools.handler,
+      })
+      .from(tools)
+      .where(eq(tools.ownerId, user.id))
+      .orderBy(tools.slug),
+  ]);
 
   // The active responder is whatever the runner picks: highest priority among
   // enabled rows with role='responder'. Surface it so the user can see which
@@ -45,6 +61,13 @@ export default async function AgentsSettingsPage() {
           service: k.service,
           label: k.label,
           masked: k.masked,
+        }))}
+        availableTools={toolRows.map((t) => ({
+          slug: t.slug,
+          name: t.name,
+          description: t.description,
+          requiresConfirm: t.requiresConfirm,
+          kind: (t.handler as { kind: string }).kind,
         }))}
       />
     </div>

@@ -108,8 +108,15 @@ export const agents = pgTable(
     /** Which entry in api_keys to use. SET NULL on key delete, not cascade. */
     apiKeyId: uuid('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
     systemPrompt: text('system_prompt').notNull(),
-    /** Allowlist of MCP tool names. Unused in v1. */
+    /** Legacy free-form MCP tool name array. Superseded by `tool_slugs` /
+     *  `skill_slugs` below; kept for back-compat with existing rows. */
     tools: jsonb('tools').$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
+    /** Slugs of `tools` rows this agent may call during a turn. The runtime
+     *  unions this with the toolSlugs of every attached skill. */
+    toolSlugs: text('tool_slugs').array().default(sql`'{}'::text[]`).notNull(),
+    /** Slugs of `skills` rows attached to this agent. Instructions are
+     *  always-loaded into the system prompt (v1 activation model). */
+    skillSlugs: text('skill_slugs').array().default(sql`'{}'::text[]`).notNull(),
     memoryConfig: jsonb('memory_config').$type<AgentMemoryConfig>().default(sql`'{}'::jsonb`).notNull(),
     params: jsonb('params').$type<AgentParams>().default(sql`'{}'::jsonb`).notNull(),
     /** Reflector appends notes here. */

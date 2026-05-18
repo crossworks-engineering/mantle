@@ -48,7 +48,15 @@ export type ContentHit = {
   nodeId: string;
 };
 
-type ChatMessage =
+/** Tool call request emitted by the assistant. Matches the OpenRouter
+ *  ChatToolCall shape — id + function name + JSON-stringified arguments. */
+export type ToolCallRequest = {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+};
+
+export type ChatMessage =
   | {
       role: 'system';
       content:
@@ -56,7 +64,8 @@ type ChatMessage =
         | Array<{ type: 'text'; text: string; cacheControl?: { type: 'ephemeral' } }>;
     }
   | { role: 'user'; content: string }
-  | { role: 'assistant'; content: string };
+  | { role: 'assistant'; content: string | null; toolCalls?: ToolCallRequest[] }
+  | { role: 'tool'; toolCallId: string; content: string };
 
 export function buildChatMessages(args: {
   model: string;

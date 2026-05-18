@@ -17,3 +17,5 @@ export * from './facts';
 export * from './traces';
 export * from './trace-steps';
 export * from './assistant-messages';
+export * from './tools';
+export * from './skills';

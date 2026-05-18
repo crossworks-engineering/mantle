@@ -40,12 +40,14 @@ import { embed } from '@mantle/embeddings';
 import { startTrace, step } from '@mantle/tracing';
 import {
   buildChatMessages,
-  captureLlmUsage,
+  resolveAgentTools,
+  runToolLoop,
   type ContentHit,
   type Digest,
   type FactSnippet,
   type HistoryTurn,
 } from '@mantle/agent-runtime';
+import { seedBuiltinTools } from '@mantle/tools';
 import { summarizeChat } from './summarizer.js';
 import { extractNode } from './extractor.js';
 import { reflect } from './reflector.js';
@@ -406,36 +408,28 @@ async function handleMessage(messageId: string): Promise<void> {
           `[agent] → ${row.fromName ?? 'unknown'} via ${agent.model} (${row.text.length}c, ${history.length} turns, ${digests.length} digests, ${relevantFacts.length} facts, ${contentHits.length} content)`,
         );
 
-        const result = await step(
-          { name: 'openrouter_chat', kind: 'llm_call', input: { model: agent.model } },
-          async (h) => {
-            const r = await client.chat.send({
-              chatRequest: {
-                model: agent.model,
-                messages,
-                ...(typeof agent.params?.temperature === 'number'
-                  ? { temperature: agent.params.temperature }
-                  : {}),
-                ...(typeof agent.params?.max_tokens === 'number'
-                  ? { maxTokens: agent.params.max_tokens }
-                  : {}),
-                ...(typeof agent.params?.top_p === 'number' ? { topP: agent.params.top_p } : {}),
-              },
-            });
-            captureLlmUsage(h, r, agent.model);
-            return r;
-          },
-        );
+        // Resolve the agent's tool allowlist. Empty array → tool-loop
+        // sends no `tools` and behaves identically to the old single-call.
+        const allowedTools = await resolveAgentTools(USER_ID!, agent.toolSlugs ?? []);
 
-        if (!('choices' in result)) {
-          console.error('[agent] unexpected streaming response — skipping');
-          return;
-        }
-        const rawContent = result.choices[0]?.message?.content;
-        const reply = typeof rawContent === 'string' ? rawContent.trim() : '';
+        const loopOutcome = await runToolLoop({
+          client,
+          model: agent.model,
+          params: (agent.params ?? {}) as Record<string, never>,
+          ownerId: USER_ID!,
+          initialMessages: messages,
+          tools: allowedTools,
+        });
+        const reply = loopOutcome.reply;
         if (!reply) {
           console.error('[agent] empty reply from model — not sending');
           return;
+        }
+        if (loopOutcome.toolCalls.length > 0) {
+          console.log(
+            `[agent] tool loop: ${loopOutcome.iterations} round(s), ` +
+              `tool calls: ${loopOutcome.toolCalls.map((c) => c.slug).join(', ')}`,
+          );
         }
 
         const account = await accountForChat(row.telegramChatId);
@@ -606,6 +600,21 @@ function scheduleExtract(nodeId: string): void {
 async function main() {
   const pg = postgres(DATABASE_URL!, { max: 2 });
   console.log('[agent] starting — config from agents table');
+
+  // Seed / refresh built-in tool definitions for this owner. Idempotent —
+  // updates name/description/schema on each boot so registry edits in
+  // packages/tools/src/builtins.ts propagate without manual DB work.
+  try {
+    const seedResult = await seedBuiltinTools(USER_ID!);
+    console.log(
+      `[agent] tools: ${seedResult.inserted} inserted, ${seedResult.updated} updated`,
+    );
+  } catch (err) {
+    console.error(
+      '[agent] tool seed failed:',
+      err instanceof Error ? err.message : err,
+    );
+  }
 
   await pg.listen('telegram_message_inserted', (payload: string) => {
     if (!payload) return;

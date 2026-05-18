@@ -39,6 +39,8 @@ import { getApiKeyById } from '@mantle/api-keys';
 import { embed } from '@mantle/embeddings';
 import {
   buildChatMessages,
+  resolveAgentTools,
+  runToolLoop,
   type ContentHit,
   type FactSnippet,
   type HistoryTurn,
@@ -250,21 +252,19 @@ export async function runAssistantTurn(
   });
 
   const params = (agent.params ?? {}) as AgentParams;
-  const result = await client.chat.send({
-    chatRequest: {
-      model: agent.model,
-      messages,
-      ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
-      ...(typeof params.max_tokens === 'number' ? { maxTokens: params.max_tokens } : {}),
-      ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
-    },
-  });
+  // Resolve the agent's tool allowlist. Empty array → tool-loop sends
+  // no `tools` and the loop reduces to one LLM call (same as before).
+  const allowedTools = await resolveAgentTools(ownerId, agent.toolSlugs ?? []);
 
-  if (!('choices' in result)) {
-    throw new Error('assistant: unexpected streaming response');
-  }
-  const rawContent = result.choices[0]?.message?.content;
-  const reply = typeof rawContent === 'string' ? rawContent.trim() : '';
+  const loopOutcome = await runToolLoop({
+    client,
+    model: agent.model,
+    params,
+    ownerId,
+    initialMessages: messages,
+    tools: allowedTools,
+  });
+  const reply = loopOutcome.reply;
   if (!reply) {
     throw new Error('assistant: empty reply from model');
   }

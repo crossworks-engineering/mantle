@@ -87,6 +87,8 @@ type AgentSummary = {
   apiKeyId: string | null;
   systemPrompt: string;
   tools: string[];
+  toolSlugs: string[];
+  skillSlugs: string[];
   memoryConfig: MemoryConfig;
   params: { temperature?: number; max_tokens?: number; top_p?: number };
   priority: number;
@@ -98,6 +100,14 @@ type AgentSummary = {
 };
 
 type ApiKeyOption = { id: string; service: string; label: string; masked: string };
+
+export type ToolOption = {
+  slug: string;
+  name: string;
+  description: string;
+  requiresConfirm: boolean;
+  kind: string;
+};
 
 const DEFAULT_SYSTEM_PROMPT = `You are an assistant helping the user via Telegram. You have memory of the recent conversation in this chat. Be concise and conversational — short paragraphs, no headers, no bullet lists unless explicitly useful. Match the tone of the incoming message. Skip pleasantries unless they fit naturally. If you don't know something or can't help, say so plainly.`;
 
@@ -242,6 +252,8 @@ type FormState = {
   extractCostCapCents: string;
   /** OpenRouter slug. Empty = use the env default. */
   embeddingModel: string;
+  /** Slugs this agent may call during a turn. */
+  toolSlugs: string[];
   temperature: string;
   maxTokens: string;
 };
@@ -269,6 +281,7 @@ function emptyForm(role: Role = 'responder'): FormState {
     extractFacts: true,
     extractCostCapCents: '',
     embeddingModel: '',
+    toolSlugs: [],
     temperature: '0.7',
     maxTokens: '',
   };
@@ -300,6 +313,7 @@ function formFromAgent(a: AgentSummary): FormState {
         ? (a.memoryConfig.extract_cost_cap_micro_usd / 10_000).toString()
         : '',
     embeddingModel: a.memoryConfig.embedding_model ?? '',
+    toolSlugs: a.toolSlugs ?? [],
     temperature: a.params.temperature?.toString() ?? '0.7',
     maxTokens: a.params.max_tokens?.toString() ?? '',
   };
@@ -321,9 +335,11 @@ const TEXTAREA_CLASS =
 export function AgentsClient({
   initialAgents,
   apiKeys,
+  availableTools,
 }: {
   initialAgents: AgentSummary[];
   apiKeys: ApiKeyOption[];
+  availableTools: ToolOption[];
 }) {
   const router = useRouter();
   const [agents, setAgents] = useState<AgentSummary[]>(initialAgents);
@@ -467,6 +483,7 @@ export function AgentsClient({
       params,
       priority: Number.isNaN(priority) ? 100 : priority,
       enabled: form.enabled,
+      toolSlugs: form.toolSlugs,
       ...(editing.mode === 'create' ? { slug: form.slug.trim() } : {}),
     };
 
@@ -950,6 +967,30 @@ export function AgentsClient({
 
             <fieldset className="space-y-3 rounded-md border border-border p-3">
               <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Tools
+              </legend>
+              {availableTools.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No tools registered yet. The agent runner seeds built-ins on boot — start
+                  <code> pnpm dev</code> and revisit.
+                </p>
+              ) : (
+                <ToolPicker
+                  available={availableTools}
+                  selected={form.toolSlugs}
+                  onChange={(next) => setForm((f) => ({ ...f, toolSlugs: next }))}
+                />
+              )}
+              <p className="text-xs text-muted-foreground">
+                The agent may call these mid-turn. Empty selection = the agent never sees a
+                <code> tools</code> parameter (behaves like before). Tools marked{' '}
+                <em>requires confirm</em> will eventually pause for approval; auto-runs
+                in v1.
+              </p>
+            </fieldset>
+
+            <fieldset className="space-y-3 rounded-md border border-border p-3">
+              <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Model params
               </legend>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -1134,6 +1175,78 @@ function NodeTypePicker({
           Add
         </Button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Multi-select chip picker for tools. Each chip carries the slug; click
+ * to toggle. Tools marked `requiresConfirm` get a small badge so the
+ * operator can see at a glance which ones will (eventually) pause for
+ * approval. Hovering shows the description.
+ */
+function ToolPicker({
+  available,
+  selected,
+  onChange,
+}: {
+  available: ToolOption[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const set = new Set(selected);
+  const toggle = (slug: string) => {
+    const next = new Set(set);
+    if (next.has(slug)) next.delete(slug);
+    else next.add(slug);
+    onChange(Array.from(next));
+  };
+
+  // Group by handler kind so built-ins, http, shell each cluster.
+  const groups = available.reduce<Record<string, ToolOption[]>>((acc, t) => {
+    const k = t.kind;
+    (acc[k] ??= []).push(t);
+    return acc;
+  }, {});
+
+  return (
+    <div className="space-y-3">
+      {Object.entries(groups).map(([kind, tools]) => (
+        <div key={kind} className="space-y-1.5">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            {kind} · {tools.length}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {tools.map((t) => {
+              const on = set.has(t.slug);
+              return (
+                <button
+                  key={t.slug}
+                  type="button"
+                  onClick={() => toggle(t.slug)}
+                  title={t.description}
+                  className={
+                    'rounded-full border px-2.5 py-0.5 text-xs font-mono transition ' +
+                    (on
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-input bg-background text-muted-foreground hover:border-muted-foreground/50')
+                  }
+                >
+                  {t.slug}
+                  {t.requiresConfirm && (
+                    <span className="ml-1 text-[9px] uppercase opacity-70">⚠</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      {selected.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {selected.length} tool{selected.length === 1 ? '' : 's'} selected
+        </p>
+      )}
     </div>
   );
 }

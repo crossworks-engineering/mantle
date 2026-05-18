@@ -14,6 +14,7 @@ const nextConfig: NextConfig = {
     '@mantle/search',
     '@mantle/storage',
     '@mantle/telegram',
+    '@mantle/tools',
     '@mantle/tracing',
   ],
   experimental: {

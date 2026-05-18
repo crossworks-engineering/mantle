@@ -54,6 +54,8 @@ const CreateBody = z.object({
   apiKeyId: z.string().uuid().nullable(),
   systemPrompt: z.string().min(1).max(40_000),
   tools: z.array(z.string()).max(64).optional(),
+  toolSlugs: z.array(z.string().min(1).max(120)).max(64).optional(),
+  skillSlugs: z.array(z.string().min(1).max(120)).max(32).optional(),
   memoryConfig: MemoryConfig.optional(),
   params: Params.optional(),
   priority: z.number().int().min(0).max(1_000_000).optional(),

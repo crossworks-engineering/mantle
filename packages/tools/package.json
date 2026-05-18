@@ -1,5 +1,5 @@
 {
-  "name": "@mantle/agent-runtime",
+  "name": "@mantle/tools",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -13,9 +13,10 @@
   },
   "dependencies": {
     "@mantle/db": "workspace:*",
-    "@mantle/tools": "workspace:*",
-    "@mantle/tracing": "workspace:*",
-    "@openrouter/sdk": "^0.12.35"
+    "@mantle/files": "workspace:*",
+    "@mantle/search": "workspace:*",
+    "@mantle/telegram": "workspace:*",
+    "drizzle-orm": "^0.38.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

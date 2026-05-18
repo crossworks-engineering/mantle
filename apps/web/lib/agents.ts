@@ -17,6 +17,8 @@ export type AgentSummary = {
   apiKeyId: string | null;
   systemPrompt: string;
   tools: string[];
+  toolSlugs: string[];
+  skillSlugs: string[];
   memoryConfig: AgentMemoryConfig;
   params: AgentParams;
   priority: number;
@@ -38,6 +40,8 @@ function toSummary(a: Agent): AgentSummary {
     apiKeyId: a.apiKeyId,
     systemPrompt: a.systemPrompt,
     tools: a.tools ?? [],
+    toolSlugs: a.toolSlugs ?? [],
+    skillSlugs: a.skillSlugs ?? [],
     memoryConfig: a.memoryConfig ?? {},
     params: a.params ?? {},
     priority: a.priority,
@@ -76,6 +80,8 @@ export type CreateAgentInput = {
   apiKeyId: string | null;
   systemPrompt: string;
   tools?: string[];
+  toolSlugs?: string[];
+  skillSlugs?: string[];
   memoryConfig?: AgentMemoryConfig;
   params?: AgentParams;
   priority?: number;
@@ -98,6 +104,8 @@ export async function createAgent(
       apiKeyId: input.apiKeyId,
       systemPrompt: input.systemPrompt,
       tools: input.tools ?? [],
+      toolSlugs: input.toolSlugs ?? [],
+      skillSlugs: input.skillSlugs ?? [],
       memoryConfig: input.memoryConfig ?? {},
       params: input.params ?? {},
       priority: input.priority ?? 100,
@@ -123,6 +131,8 @@ export async function updateAgent(
   if (patch.apiKeyId !== undefined) next.apiKeyId = patch.apiKeyId;
   if (patch.systemPrompt !== undefined) next.systemPrompt = patch.systemPrompt;
   if (patch.tools !== undefined) next.tools = patch.tools;
+  if (patch.toolSlugs !== undefined) next.toolSlugs = patch.toolSlugs;
+  if (patch.skillSlugs !== undefined) next.skillSlugs = patch.skillSlugs;
   if (patch.memoryConfig !== undefined) next.memoryConfig = patch.memoryConfig;
   if (patch.params !== undefined) next.params = patch.params;
   if (patch.priority !== undefined) next.priority = patch.priority;
