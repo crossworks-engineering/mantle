@@ -1,0 +1,22 @@
+# Drop everything that doesn't belong in the build context.
+.git
+.gitignore
+.claude
+.husky
+.vscode
+.idea
+.env
+.env.local
+**/.env
+**/.env.local
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/coverage
+**/.DS_Store
+**/*.log
+backups
+docs
+README.md
+*.dump

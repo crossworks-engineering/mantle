@@ -663,10 +663,13 @@ stack. `pg_restore --data-only` loads the latest backup. Insert your
 
 In rough priority order:
 
-- **`docker-compose.yml` is incomplete** — `web` and `workers` services
-  are commented stubs. `pnpm up` (which uses `docker-compose.dev.yml` +
-  native Node) is the only fully-wired path today. Adding web/worker
-  Dockerfiles is the work to make a "deploy this anywhere" target.
+- **Production Dockerfile is in place** (`Dockerfile` at repo root,
+  multi-target: `web`, `agent`, `worker-email`, `worker-telegram`).
+  `docker-compose.yml` wires all four behind `postgres + minio`.
+  Still untested end-to-end on a real VPS; refine env handling +
+  ergonomics there as needed. `pnpm up` (which uses
+  `docker-compose.dev.yml` + native Node) remains the dev path for
+  hot-reload.
 - **Rate limiting** on `/api/auth/login`. Acceptable for localhost-only;
   needs to land before any remote exposure. Either at the reverse proxy
   layer (Caddy with `rate_limit` directive) or in the route handler.
