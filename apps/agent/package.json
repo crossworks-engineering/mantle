@@ -13,6 +13,7 @@
     "@mantle/api-keys": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/embeddings": "workspace:*",
+    "@mantle/files": "workspace:*",
     "@mantle/telegram": "workspace:*",
     "@mantle/tracing": "workspace:*",
     "@openrouter/sdk": "^0.12.35",

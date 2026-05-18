@@ -10,6 +10,9 @@ Companion docs:
 - [`observability.md`](./observability.md) — the tracing layer: how every
   agent run becomes a `traces` row + `trace_steps` tree, the reactflow
   visual, the dashboard widgets, and how to add a new trace kind.
+- [`files.md`](./files.md) — the host-mirrored filesystem layer:
+  folders + files on disk under `MANTLE_FILES_ROOT`, the editor, the
+  ingestion handoff, and the MCP tools.
 - [`telegram.md`](./telegram.md) — a frozen handoff covering the Telegram
   bridge build. Project diary; durable details have moved here.
 
@@ -458,6 +461,15 @@ the new value with no restart.
 | `search`                      | Hybrid full-text + tree search across all node types                   |
 | `email_get`                   | Fetch one email by id                                                  |
 | `email_list`                  | Recent emails, optional `accountId`/`since` filters                    |
+| `folder_list`                 | List folders (children of one, or the whole `files.*` tree)            |
+| `folder_create`               | Create a folder under a parent path                                     |
+| `folder_describe`             | Set/clear a folder's description                                       |
+| `folder_delete`               | Delete an empty folder                                                  |
+| `file_list`                   | Files in a folder                                                       |
+| `file_upload`                 | Create/overwrite a file (`content_text` or `content_base64`)            |
+| `file_read`                   | File metadata + bytes                                                   |
+| `file_get`                    | File metadata only                                                      |
+| `file_delete`                 | Delete a file                                                           |
 | `entity_search`               | Resolve a name/alias to entities (exact + trigram fuzzy)               |
 | `entity_neighbors`            | First-hop entity↔entity edges, both directions                         |
 | `entity_facts`                | Currently-valid facts on an entity (+ optional retired history)        |

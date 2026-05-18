@@ -48,14 +48,19 @@ import {
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { embed } from '@mantle/embeddings';
+import { diskPathForFile, extOf, INGESTABLE_EXTS } from '@mantle/files';
 import { currentTrace, startTrace, step } from '@mantle/tracing';
 import { captureLlmUsage } from '@mantle/agent-runtime';
 
 /** Types we will NEVER extract from, no matter what the agent config says. */
 const HARD_SKIP_TYPES = new Set(['secret', 'branch']);
 
-/** Default allowlist; per-agent override via memory_config.extract_types. */
-const DEFAULT_EXTRACT_TYPES = ['note'];
+/** Default allowlist; per-agent override via memory_config.extract_types.
+ *  `file` is in by default — text files (.md/.txt/.json/.yaml) are read
+ *  via the disk fallback in readNodeBody. Binaries return no usable body
+ *  and the 20-char body-length guard skips them. PDFs land here too;
+ *  they currently get skipped until a PDF parser is wired in. */
+const DEFAULT_EXTRACT_TYPES = ['note', 'file'];
 
 /** Top-K near-neighbours considered when classifying a candidate fact. */
 const CLASSIFIER_NEIGHBOURS = 3;
@@ -171,6 +176,25 @@ async function readNodeBody(node: typeof nodes.$inferSelect): Promise<string> {
   const candidates = [data.content, data.text, data.body, data.markdown];
   for (const c of candidates) {
     if (typeof c === 'string' && c.trim().length > 0) return c;
+  }
+  // file fallback: if data.content wasn't cached (binary uploads, or
+  // text > 1MB), try the disk. Only ingestable extensions — anything
+  // binary returns empty and the caller skips. PDFs land here too; the
+  // parser hook lives behind `extOf(filename) === 'pdf'` and is wired
+  // in a follow-up.
+  if (node.type === 'file' && typeof data.filename === 'string') {
+    const ext = extOf(data.filename as string);
+    if (INGESTABLE_EXTS.has(ext)) {
+      const diskPath = diskPathForFile(node.path, data.filename as string);
+      if (diskPath) {
+        try {
+          const { promises: fs } = await import('node:fs');
+          return await fs.readFile(diskPath, 'utf8');
+        } catch {
+          // Disk read failed (file missing, permissions). Fall through to title.
+        }
+      }
+    }
   }
   return node.title;
 }

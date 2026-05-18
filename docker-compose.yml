@@ -22,6 +22,10 @@ name: mantle
 volumes:
   mantle_pg_data:
   mantle_minio_data:
+  # Host-mirrored filesystem: real folders + files visible to ingestion,
+  # MCP, and the web /files UI. Mount this somewhere on the host you can
+  # back up / sync from (Syncthing, restic, etc.).
+  mantle_files_data:
 
 # Shared env block for app services — anchor + alias keeps the four
 # services in lockstep.
@@ -38,6 +42,7 @@ x-app-env: &app-env
   S3_FORCE_PATH_STYLE: 'true'
   NODE_ENV: production
   MANTLE_EMBEDDING_MODEL: ${MANTLE_EMBEDDING_MODEL:-}
+  MANTLE_FILES_ROOT: /data/files
 
 services:
   postgres:
@@ -84,6 +89,8 @@ services:
       minio:    { condition: service_healthy }
     environment:
       <<: *app-env
+    volumes:
+      - mantle_files_data:/data/files
     ports:
       - "3000:3000"
 
@@ -97,6 +104,8 @@ services:
       postgres: { condition: service_healthy }
     environment:
       <<: *app-env
+    volumes:
+      - mantle_files_data:/data/files
 
   worker_email:
     build:

@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@mantle/db": "workspace:*",
+    "@mantle/files": "workspace:*",
     "@mantle/search": "workspace:*",
     "@mantle/storage": "workspace:*",
     "@mantle/telegram": "workspace:*",

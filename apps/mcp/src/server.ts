@@ -32,6 +32,20 @@ import {
   reactToMessage,
   sendMessage,
 } from '@mantle/telegram';
+import {
+  createFolder,
+  deleteFileById,
+  deleteFolder,
+  ensureFilesRootBranch,
+  fileById,
+  folderByPath,
+  listAllFolders,
+  listFiles,
+  listFolders,
+  readFileById,
+  updateFolderDescription,
+  upsertFile,
+} from '@mantle/files';
 import { and, asc, desc, eq } from 'drizzle-orm';
 
 const OWNER_ID = process.env.ALLOWED_USER_ID;
@@ -128,6 +142,187 @@ server.tool(
       .orderBy(desc(emails.internalDate))
       .limit(limit ?? 50);
     return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+  },
+);
+
+// ─── files / folders ──────────────────────────────────────────────────────
+
+server.tool(
+  'folder_list',
+  "List folders in Jason's host-mirrored filesystem. Pass `parent` (ltree path, e.g. 'files.work') to list immediate children of that folder; pass `tree: true` to get every folder in the subtree at once. With no args, returns the immediate children of the root.",
+  {
+    parent: z.string().optional(),
+    tree: z.boolean().optional(),
+  },
+  async ({ parent, tree }) => {
+    await ensureFilesRootBranch(OWNER_ID!);
+    if (tree) {
+      const all = await listAllFolders(OWNER_ID!);
+      return { content: [{ type: 'text', text: JSON.stringify(all, null, 2) }] };
+    }
+    const rows = await listFolders({ ownerId: OWNER_ID!, parentPath: parent ?? 'files' });
+    return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+  },
+);
+
+server.tool(
+  'folder_create',
+  "Create a folder under `parent_path` (ltree, e.g. 'files.work'). Slug must be lowercase + dashes — anything else gets normalised. Description is optional but recommended so future agents know what the folder is for. Creates the directory on disk and the DB row in lockstep.",
+  {
+    parent_path: z.string().min(1).max(500),
+    slug: z.string().min(1).max(64),
+    description: z.string().max(2000).optional(),
+  },
+  async ({ parent_path, slug, description }) => {
+    await ensureFilesRootBranch(OWNER_ID!);
+    try {
+      const folder = await createFolder({
+        ownerId: OWNER_ID!,
+        parentPath: parent_path,
+        slug,
+        description,
+      });
+      return { content: [{ type: 'text', text: JSON.stringify(folder, null, 2) }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { content: [{ type: 'text', text: `folder_create failed: ${msg}` }], isError: true };
+    }
+  },
+);
+
+server.tool(
+  'folder_describe',
+  "Set or clear a folder's description. Useful for agents that just created a folder and want to document what goes in it.",
+  {
+    folder_id: z.string().uuid().optional(),
+    path: z.string().optional(),
+    description: z.string().max(2000),
+  },
+  async ({ folder_id, path, description }) => {
+    let id = folder_id ?? null;
+    if (!id && path) {
+      const found = await folderByPath({ ownerId: OWNER_ID!, path });
+      id = found?.id ?? null;
+    }
+    if (!id) {
+      return { content: [{ type: 'text', text: 'folder_describe: pass folder_id or path' }], isError: true };
+    }
+    const updated = await updateFolderDescription({
+      ownerId: OWNER_ID!,
+      folderId: id,
+      description,
+    });
+    if (!updated) {
+      return { content: [{ type: 'text', text: 'folder not found' }], isError: true };
+    }
+    return { content: [{ type: 'text', text: JSON.stringify(updated, null, 2) }] };
+  },
+);
+
+server.tool(
+  'folder_delete',
+  "Delete a folder. Refuses unless the folder is empty — clear its children first. Cannot delete the `files` root.",
+  { folder_id: z.string().uuid() },
+  async ({ folder_id }) => {
+    const res = await deleteFolder({ ownerId: OWNER_ID!, folderId: folder_id });
+    if (!res.ok) {
+      return { content: [{ type: 'text', text: `folder_delete: ${res.reason}` }], isError: true };
+    }
+    return { content: [{ type: 'text', text: 'deleted' }] };
+  },
+);
+
+server.tool(
+  'file_list',
+  "List files in a folder. `parent_path` is the ltree path of the containing folder (e.g. 'files.work.lister-printer').",
+  {
+    parent_path: z.string().min(1).max(500),
+  },
+  async ({ parent_path }) => {
+    const rows = await listFiles({ ownerId: OWNER_ID!, parentPath: parent_path });
+    return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+  },
+);
+
+server.tool(
+  'file_upload',
+  "Create or overwrite a file in a folder. Pass either `content_text` (utf-8) or `content_base64` (binary). Filename is lowercased + sanitised. The extractor agent will pick up text files (md/txt/json/yaml) automatically via pg_notify('node_ingested').",
+  {
+    parent_path: z.string().min(1).max(500),
+    filename: z.string().min(1).max(200),
+    content_text: z.string().optional(),
+    content_base64: z.string().optional(),
+    overwrite: z.boolean().optional(),
+  },
+  async ({ parent_path, filename, content_text, content_base64, overwrite }) => {
+    if (content_text == null && content_base64 == null) {
+      return {
+        content: [{ type: 'text', text: 'file_upload: pass content_text or content_base64' }],
+        isError: true,
+      };
+    }
+    const bytes = content_text != null
+      ? Buffer.from(content_text, 'utf8')
+      : Buffer.from(content_base64!, 'base64');
+    try {
+      const row = await upsertFile({
+        ownerId: OWNER_ID!,
+        parentPath: parent_path,
+        filename,
+        bytes,
+        overwrite,
+      });
+      return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { content: [{ type: 'text', text: `file_upload failed: ${msg}` }], isError: true };
+    }
+  },
+);
+
+server.tool(
+  'file_read',
+  "Read a file by id. For text files returns the content as a utf-8 string; for binaries returns base64-encoded bytes (only call this on small files).",
+  { file_id: z.string().uuid() },
+  async ({ file_id }) => {
+    const res = await readFileById({ ownerId: OWNER_ID!, fileId: file_id });
+    if (!res) {
+      return { content: [{ type: 'text', text: 'file not found' }], isError: true };
+    }
+    const isText = res.row.isText;
+    const out = {
+      file: res.row,
+      ...(isText
+        ? { content_text: res.bytes.toString('utf8') }
+        : { content_base64: res.bytes.toString('base64') }),
+    };
+    return { content: [{ type: 'text', text: JSON.stringify(out, null, 2) }] };
+  },
+);
+
+server.tool(
+  'file_get',
+  "Fetch a file's metadata by id without loading bytes. Useful for resolving a uuid surfaced by search before deciding what to do with it.",
+  { file_id: z.string().uuid() },
+  async ({ file_id }) => {
+    const row = await fileById({ ownerId: OWNER_ID!, fileId: file_id });
+    if (!row) {
+      return { content: [{ type: 'text', text: 'file not found' }], isError: true };
+    }
+    return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+  },
+);
+
+server.tool(
+  'file_delete',
+  'Delete a file by id. Removes both the DB row and the on-disk file.',
+  { file_id: z.string().uuid() },
+  async ({ file_id }) => {
+    const res = await deleteFileById({ ownerId: OWNER_ID!, fileId: file_id });
+    if (!res.ok) {
+      return { content: [{ type: 'text', text: 'file not found' }], isError: true };
+    }
+    return { content: [{ type: 'text', text: 'deleted' }] };
   },
 );
 

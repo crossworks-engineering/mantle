@@ -36,6 +36,9 @@ pnpm-debug.log*
 # database snapshots — multi-GB local-only artefacts
 backups/
 
+# MANTLE_FILES_ROOT default — the host-mirrored filesystem
+data/
+
 # vercel
 .vercel
 

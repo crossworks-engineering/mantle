@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
     '@mantle/db',
     '@mantle/email',
     '@mantle/embeddings',
+    '@mantle/files',
     '@mantle/rules',
     '@mantle/search',
     '@mantle/storage',

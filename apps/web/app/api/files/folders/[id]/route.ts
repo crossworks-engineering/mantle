@@ -1,0 +1,54 @@
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { requireOwner } from '@/lib/auth';
+import { deleteFolder, folderById, updateFolderDescription } from '@/lib/files';
+
+const IdParams = z.object({ id: z.string().uuid() });
+const PatchBody = z.object({ description: z.string().max(2000) });
+
+export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await requireOwner();
+  const idParsed = IdParams.safeParse(await ctx.params);
+  if (!idParsed.success) {
+    return NextResponse.json({ error: 'invalid id' }, { status: 400 });
+  }
+  const folder = await folderById({ ownerId: user.id, folderId: idParsed.data.id });
+  if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  return NextResponse.json({ folder });
+}
+
+export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await requireOwner();
+  const idParsed = IdParams.safeParse(await ctx.params);
+  if (!idParsed.success) {
+    return NextResponse.json({ error: 'invalid id' }, { status: 400 });
+  }
+  const raw = await req.json().catch(() => ({}));
+  const parsed = PatchBody.safeParse(raw);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
+      { status: 400 },
+    );
+  }
+  const folder = await updateFolderDescription({
+    ownerId: user.id,
+    folderId: idParsed.data.id,
+    description: parsed.data.description,
+  });
+  if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  return NextResponse.json({ folder });
+}
+
+export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await requireOwner();
+  const idParsed = IdParams.safeParse(await ctx.params);
+  if (!idParsed.success) {
+    return NextResponse.json({ error: 'invalid id' }, { status: 400 });
+  }
+  const res = await deleteFolder({ ownerId: user.id, folderId: idParsed.data.id });
+  if (!res.ok) {
+    return NextResponse.json({ error: res.reason }, { status: 400 });
+  }
+  return NextResponse.json({ ok: true });
+}
