@@ -23,6 +23,9 @@ importers:
 
   apps/agent:
     dependencies:
+      '@mantle/agent-runtime':
+        specifier: workspace:*
+        version: link:../../packages/agent-runtime
       '@mantle/api-keys':
         specifier: workspace:*
         version: link:../../packages/api-keys
@@ -94,6 +97,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@mantle/agent-runtime':
+        specifier: workspace:*
+        version: link:../../packages/agent-runtime
       '@mantle/api-keys':
         specifier: workspace:*
         version: link:../../packages/api-keys
@@ -121,6 +127,12 @@ importers:
       '@mantle/telegram':
         specifier: workspace:*
         version: link:../../packages/telegram
+      '@mantle/tracing':
+        specifier: workspace:*
+        version: link:../../packages/tracing
+      '@openrouter/sdk':
+        specifier: ^0.12.35
+        version: 0.12.35
       '@radix-ui/react-dialog':
         specifier: ^1.1.4
         version: 1.1.15(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -218,6 +230,22 @@ importers:
       tsx:
         specifier: ^4.19.2
         version: 4.21.0
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
+  packages/agent-runtime:
+    dependencies:
+      '@mantle/db':
+        specifier: workspace:*
+        version: link:../db
+      '@mantle/tracing':
+        specifier: workspace:*
+        version: link:../tracing
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.19
       typescript:
         specifier: ^5.7.2
         version: 5.9.3

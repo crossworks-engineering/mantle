@@ -16,3 +16,4 @@ export * from './entity-edges';
 export * from './facts';
 export * from './traces';
 export * from './trace-steps';
+export * from './assistant-messages';

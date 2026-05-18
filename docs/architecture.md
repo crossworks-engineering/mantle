@@ -86,11 +86,11 @@ docker-compose. That's it.
 |--------------------|-------------------------------------------------------------------------------|
 | `postgres` (Docker)| Source of truth. Holds every row. Healthchecked, restart on failure.          |
 | `minio` (Docker)   | Object store for attachment bytes. Healthchecked.                             |
-| `web`              | Next.js dev server (Turbopack). Serves UI, API routes, server actions.        |
+| `web`              | Next.js dev server (Turbopack). Serves UI, API routes, server actions. Hosts the `/assistant` chat surface (POST `/api/assistant/turn`). |
 | `mcp`              | MCP server (`apps/mcp/src/server.ts`). Speaks stdio JSON-RPC to Claude Code.  |
 | `worker` (email)   | `apps/web/workers/email-sync.ts`. pg-boss queue consumer, runs IMAP syncs.    |
 | `tg`               | `apps/web/workers/telegram-poll.ts`. Long-polls Telegram for new DMs.         |
-| `agent`            | `apps/agent/src/main.ts`. LISTENs on `telegram_message_inserted`, replies via OpenRouter. |
+| `agent`            | `apps/agent/src/main.ts`. LISTENs on `telegram_message_inserted`, replies via OpenRouter. Shares prompt-build + LLM helpers with the web `/assistant` via `@mantle/agent-runtime`. |
 
 The workers live under `apps/web/workers/` (not in their own app) because they
 share `.env.local` and `@mantle/*` imports with the web. In production they'd

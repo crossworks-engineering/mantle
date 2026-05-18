@@ -49,7 +49,7 @@ import {
 import { getApiKeyById } from '@mantle/api-keys';
 import { embed } from '@mantle/embeddings';
 import { currentTrace, startTrace, step } from '@mantle/tracing';
-import { captureLlmUsage } from './llm-usage.js';
+import { captureLlmUsage } from '@mantle/agent-runtime';
 
 /** Types we will NEVER extract from, no matter what the agent config says. */
 const HARD_SKIP_TYPES = new Set(['secret', 'branch']);

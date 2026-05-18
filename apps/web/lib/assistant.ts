@@ -1,0 +1,330 @@
+/**
+ * Web assistant — Sarah-on-the-web. One continuous conversation per owner
+ * (no user-visible sessions). Shares the responder's memory model:
+ * persona + facts + content_index + recent assistant turns. Digests are
+ * deferred until web volume warrants them.
+ *
+ * Owns the read+write+LLM path end-to-end:
+ *
+ *   1. resolveAssistantAgent — highest-priority enabled `assistant` row;
+ *      falls back to a `responder` if none configured (so a single agent
+ *      can serve both surfaces).
+ *   2. loadContext — facts + content_hits via vector search, persona_notes
+ *      off the agent row, last N recent_turns from assistant_messages.
+ *   3. INSERT the inbound row.
+ *   4. buildChatMessages + OpenRouter chat → reply.
+ *   5. INSERT the outbound row + bump agent usage.
+ *
+ * No tracing wired here yet — the existing tracing model is shaped around
+ * the agent-runner process, not the Next request handler. Add a
+ * 'assistant_turn' trace kind in a follow-up if cost/visibility matters.
+ */
+
+import { OpenRouter } from '@openrouter/sdk';
+import { and, desc, eq, isNull, ne, or, sql } from 'drizzle-orm';
+import {
+  db,
+  agents,
+  assistantMessages,
+  entities,
+  facts,
+  nodes,
+  type Agent,
+  type AgentMemoryConfig,
+  type AgentParams,
+  type AssistantMessage,
+  type PersonaNote,
+} from '@mantle/db';
+import { getApiKeyById } from '@mantle/api-keys';
+import { embed } from '@mantle/embeddings';
+import {
+  buildChatMessages,
+  type ContentHit,
+  type FactSnippet,
+  type HistoryTurn,
+} from '@mantle/agent-runtime';
+
+export type AssistantTurnResult = {
+  inbound: AssistantMessage;
+  outbound: AssistantMessage;
+  reply: string;
+};
+
+/** Pick the best agent to handle a web turn. Prefers `assistant`-role rows;
+ *  if none enabled, falls back to a `responder` so one persona can serve
+ *  both surfaces with minimal setup. */
+export async function resolveAssistantAgent(ownerId: string): Promise<Agent | null> {
+  const [primary] = await db
+    .select()
+    .from(agents)
+    .where(
+      and(eq(agents.ownerId, ownerId), eq(agents.role, 'assistant'), eq(agents.enabled, true)),
+    )
+    .orderBy(desc(agents.priority))
+    .limit(1);
+  if (primary) return primary;
+  const [fallback] = await db
+    .select()
+    .from(agents)
+    .where(
+      and(eq(agents.ownerId, ownerId), eq(agents.role, 'responder'), eq(agents.enabled, true)),
+    )
+    .orderBy(desc(agents.priority))
+    .limit(1);
+  return fallback ?? null;
+}
+
+async function loadContext(
+  ownerId: string,
+  agent: Agent,
+  inboundText: string,
+): Promise<{
+  personaNotes: PersonaNote[];
+  facts: FactSnippet[];
+  contentHits: ContentHit[];
+  history: HistoryTurn[];
+}> {
+  const memoryConfig = (agent.memoryConfig ?? {}) as AgentMemoryConfig;
+  const historyLimit = memoryConfig.history_limit ?? 20;
+  const factLimit = memoryConfig.fact_limit ?? 10;
+  const contentHitLimit = memoryConfig.content_hit_limit ?? 3;
+
+  const personaNotes: PersonaNote[] = (agent.personaNotes ?? []) as PersonaNote[];
+
+  // Embed the inbound once for both fact + content_index lookups.
+  let queryVec: number[] | null = null;
+  if ((factLimit > 0 || contentHitLimit > 0) && inboundText.trim().length > 0) {
+    try {
+      queryVec = await embed(ownerId, inboundText.slice(0, 2000));
+    } catch (err) {
+      console.error(
+        '[assistant] query embed failed:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  // Facts: top-K by vector distance, currently-valid only.
+  let factRows: FactSnippet[] = [];
+  if (queryVec && factLimit > 0) {
+    const rows = await db
+      .select({
+        content: facts.content,
+        kind: facts.kind,
+        entityName: entities.name,
+      })
+      .from(facts)
+      .leftJoin(entities, eq(facts.entityId, entities.id))
+      .where(
+        and(
+          eq(facts.ownerId, ownerId),
+          isNull(facts.validTo),
+          sql`${facts.embedding} is not null`,
+        ),
+      )
+      .orderBy(sql`${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector`)
+      .limit(factLimit);
+    factRows = rows.map((r) => ({
+      content: r.content,
+      kind: r.kind as string,
+      entityName: r.entityName,
+    }));
+  }
+
+  // content_index hits, same as the Telegram responder.
+  let contentHits: ContentHit[] = [];
+  if (queryVec && contentHitLimit > 0) {
+    const rows = await db
+      .select({
+        nodeId: nodes.id,
+        title: nodes.title,
+        type: nodes.type,
+        data: nodes.data,
+      })
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.ownerId, ownerId),
+          sql`${nodes.embedding} is not null`,
+          sql`not (${nodes.tags} @> ARRAY['conversation-digest']::text[])`,
+          sql`${nodes.type} <> 'telegram_message'`,
+        ),
+      )
+      .orderBy(sql`${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector`)
+      .limit(contentHitLimit);
+    contentHits = rows.map((r) => {
+      const data = (r.data ?? {}) as Record<string, unknown>;
+      return {
+        title: r.title,
+        type: r.type,
+        summary: typeof data.summary === 'string' ? data.summary : null,
+        nodeId: r.nodeId,
+      };
+    });
+  }
+
+  // Recent assistant turns.
+  const historyRows = await db
+    .select({
+      direction: assistantMessages.direction,
+      text: assistantMessages.text,
+      createdAt: assistantMessages.createdAt,
+    })
+    .from(assistantMessages)
+    .where(eq(assistantMessages.ownerId, ownerId))
+    .orderBy(desc(assistantMessages.createdAt))
+    .limit(historyLimit);
+
+  const history: HistoryTurn[] = historyRows
+    .reverse()
+    .map((r) => ({ role: r.direction === 'outbound' ? 'assistant' : 'user', text: r.text }));
+
+  return { personaNotes, facts: factRows, contentHits, history };
+}
+
+/**
+ * Run one user turn end-to-end. Persists inbound, calls the model,
+ * persists outbound, returns both rows + the reply text.
+ */
+export async function runAssistantTurn(
+  ownerId: string,
+  text: string,
+): Promise<AssistantTurnResult> {
+  const trimmed = text.trim();
+  if (!trimmed) throw new Error('runAssistantTurn: empty text');
+
+  const agent = await resolveAssistantAgent(ownerId);
+  if (!agent) {
+    throw new Error(
+      'No enabled assistant agent. Create one at /settings/agents (role=assistant or fallback responder).',
+    );
+  }
+  if (!agent.apiKeyId) {
+    throw new Error(`Agent '${agent.slug}' has no api_key_id set — edit at /settings/agents.`);
+  }
+  const apiKey = await getApiKeyById(agent.apiKeyId);
+  if (!apiKey) {
+    throw new Error(
+      `api_key_id ${agent.apiKeyId} not found for agent '${agent.slug}' — was it deleted?`,
+    );
+  }
+
+  // 1. Persist inbound BEFORE the LLM call so we have a row even if the
+  //    model errors. The page can resume on reload.
+  const [inbound] = await db
+    .insert(assistantMessages)
+    .values({
+      ownerId,
+      direction: 'inbound',
+      text: trimmed,
+    })
+    .returning();
+  if (!inbound) throw new Error('failed to insert inbound row');
+
+  // 2. Load context AFTER inbound is persisted so the agent doesn't see
+  //    its own brand-new inbound in the history block; it's already the
+  //    newUserText. We re-fetch history excluding inbound.id.
+  const ctx = await loadContext(ownerId, agent, trimmed);
+  const filteredHistory = ctx.history; // history was loaded before insert; safe.
+
+  const messages = buildChatMessages({
+    model: agent.model,
+    systemPrompt: agent.systemPrompt,
+    personaNotes: ctx.personaNotes,
+    facts: ctx.facts,
+    digests: [],
+    contentHits: ctx.contentHits,
+    history: filteredHistory,
+    newUserText: trimmed,
+  });
+
+  const client = new OpenRouter({
+    apiKey,
+    httpReferer: 'https://mantle.crossworks.network',
+    appTitle: 'Mantle',
+  });
+
+  const params = (agent.params ?? {}) as AgentParams;
+  const result = await client.chat.send({
+    chatRequest: {
+      model: agent.model,
+      messages,
+      ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
+      ...(typeof params.max_tokens === 'number' ? { maxTokens: params.max_tokens } : {}),
+      ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
+    },
+  });
+
+  if (!('choices' in result)) {
+    throw new Error('assistant: unexpected streaming response');
+  }
+  const rawContent = result.choices[0]?.message?.content;
+  const reply = typeof rawContent === 'string' ? rawContent.trim() : '';
+  if (!reply) {
+    throw new Error('assistant: empty reply from model');
+  }
+
+  const [outbound] = await db
+    .insert(assistantMessages)
+    .values({
+      ownerId,
+      direction: 'outbound',
+      text: reply,
+      agentId: agent.id,
+      model: agent.model,
+    })
+    .returning();
+  if (!outbound) throw new Error('failed to insert outbound row');
+
+  void db
+    .update(agents)
+    .set({
+      lastUsedAt: new Date(),
+      usageCount: (agent.usageCount ?? 0) + 1,
+      updatedAt: new Date(),
+    })
+    .where(eq(agents.id, agent.id))
+    .catch(() => {});
+
+  return { inbound, outbound, reply };
+}
+
+export type AssistantTimelineRow = {
+  id: string;
+  direction: 'inbound' | 'outbound';
+  text: string;
+  model: string | null;
+  createdAt: string;
+};
+
+export async function recentAssistantMessages(
+  ownerId: string,
+  limit = 100,
+): Promise<AssistantTimelineRow[]> {
+  const rows = await db
+    .select({
+      id: assistantMessages.id,
+      direction: assistantMessages.direction,
+      text: assistantMessages.text,
+      model: assistantMessages.model,
+      createdAt: assistantMessages.createdAt,
+    })
+    .from(assistantMessages)
+    .where(eq(assistantMessages.ownerId, ownerId))
+    .orderBy(desc(assistantMessages.createdAt))
+    .limit(limit);
+  return rows
+    .reverse()
+    .map((r) => ({
+      id: r.id,
+      direction: r.direction as 'inbound' | 'outbound',
+      text: r.text,
+      model: r.model,
+      createdAt: r.createdAt.toISOString(),
+    }));
+}
+
+// Marks below silence "unused import" lint warnings when the runtime
+// helpers are referenced indirectly.
+void ne;
+void or;

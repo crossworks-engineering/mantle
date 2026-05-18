@@ -26,8 +26,7 @@ import {
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { startTrace, step } from '@mantle/tracing';
-import { buildChatMessages } from './messages.js';
-import { captureLlmUsage } from './llm-usage.js';
+import { buildChatMessages, captureLlmUsage } from '@mantle/agent-runtime';
 
 /** Default seeded into the UI when role flips to `summarizer`. The user can
  *  edit it on the agent row at any time. */

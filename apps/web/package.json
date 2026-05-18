@@ -15,6 +15,7 @@
     "extract:backfill": "tsx --env-file-if-exists=./.env.local scripts/extract-backfill.ts"
   },
   "dependencies": {
+    "@mantle/agent-runtime": "workspace:*",
     "@mantle/api-keys": "workspace:*",
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
@@ -24,6 +25,8 @@
     "@mantle/search": "workspace:*",
     "@mantle/storage": "workspace:*",
     "@mantle/telegram": "workspace:*",
+    "@mantle/tracing": "workspace:*",
+    "@openrouter/sdk": "^0.12.35",
     "@radix-ui/react-dialog": "^1.1.4",
     "@xyflow/react": "^12.3.5",
     "dagre": "^0.8.5",

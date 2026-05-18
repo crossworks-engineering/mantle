@@ -38,14 +38,14 @@ import { accountForChat, sendMessage } from '@mantle/telegram';
 import { getApiKeyById } from '@mantle/api-keys';
 import { embed } from '@mantle/embeddings';
 import { startTrace, step } from '@mantle/tracing';
-import { captureLlmUsage } from './llm-usage.js';
 import {
   buildChatMessages,
+  captureLlmUsage,
   type ContentHit,
   type Digest,
   type FactSnippet,
   type HistoryTurn,
-} from './messages.js';
+} from '@mantle/agent-runtime';
 import { summarizeChat } from './summarizer.js';
 import { extractNode } from './extractor.js';
 import { reflect } from './reflector.js';

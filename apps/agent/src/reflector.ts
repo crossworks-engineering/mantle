@@ -26,7 +26,7 @@ import {
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { startTrace, step } from '@mantle/tracing';
-import { captureLlmUsage } from './llm-usage.js';
+import { captureLlmUsage } from '@mantle/agent-runtime';
 
 /** How many recent turns the reflector reviews per run. */
 const REFLECTION_WINDOW = 50;

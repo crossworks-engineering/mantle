@@ -669,8 +669,13 @@ Each step delivers value standalone.
    `entity_facts`, `entity_mentions`) ship the graph axis to Claude.
    Single-hop only for now — recursive CTE multi-hop walker waits until
    a query actually demands it.
-8. **Web assistant surface** — same agent, browser chat. Memory is
-   shared; surface is new.
+8. **Web assistant surface** — DONE (MVP). `/assistant` page + `POST
+   /api/assistant/turn` route; new `assistant_messages` table (migration
+   0021); shared `packages/agent-runtime` exports `buildChatMessages` +
+   `captureLlmUsage` for both surfaces. Memory layers wired: persona +
+   facts + content_index + recent assistant turns. Deferred: streaming
+   (request/response for now) and conversation digests for the web (kicks
+   in later once volume warrants).
 
 Roughly a weekend per remaining step.
 

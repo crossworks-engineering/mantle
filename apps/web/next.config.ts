@@ -3,12 +3,17 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   // Workspace packages ship raw TypeScript — Next compiles them in-tree.
   transpilePackages: [
+    '@mantle/agent-runtime',
+    '@mantle/api-keys',
     '@mantle/crypto',
     '@mantle/db',
     '@mantle/email',
+    '@mantle/embeddings',
     '@mantle/rules',
     '@mantle/search',
     '@mantle/storage',
+    '@mantle/telegram',
+    '@mantle/tracing',
   ],
   experimental: {
     serverActions: { bodySizeLimit: '4mb' },
