@@ -14,6 +14,7 @@ import { createHash } from 'node:crypto';
 import { inArray } from 'drizzle-orm';
 import { db, embeddingCache } from '@mantle/db';
 import { getApiKey } from '@mantle/api-keys';
+import { currentTrace, step } from '@mantle/tracing';
 import { callEmbeddings } from './client.js';
 
 export const DEFAULT_EMBEDDING_MODEL = 'openai/text-embedding-3-small';
@@ -50,6 +51,31 @@ export async function embedBatch(
   texts: string[],
   opts?: { model?: string },
 ): Promise<number[][]> {
+  // No trace → fast path with no instrumentation overhead.
+  if (!currentTrace()) {
+    return doEmbedBatch(ownerId, texts, opts);
+  }
+  return step(
+    {
+      name: 'embed_batch',
+      kind: 'embed',
+      input: { count: texts.length, model: opts?.model ?? DEFAULT_EMBEDDING_MODEL },
+    },
+    async (handle) => {
+      const result = await doEmbedBatch(ownerId, texts, opts, handle);
+      return result;
+    },
+  );
+}
+
+type EmbedStepHandle = { setMeta(m: Record<string, unknown>): void };
+
+async function doEmbedBatch(
+  ownerId: string,
+  texts: string[],
+  opts?: { model?: string },
+  stepHandle?: EmbedStepHandle,
+): Promise<number[][]> {
   const model = opts?.model ?? DEFAULT_EMBEDDING_MODEL;
   if (texts.length === 0) return [];
 
@@ -78,6 +104,7 @@ export async function embedBatch(
     }
   }
 
+  let apiCalls = 0;
   if (missTexts.length > 0) {
     const apiKey = await getApiKey(ownerId, 'openrouter');
     if (!apiKey) {
@@ -90,6 +117,7 @@ export async function embedBatch(
     for (let start = 0; start < missTexts.length; start += MAX_BATCH) {
       const slice = missTexts.slice(start, start + MAX_BATCH);
       const vectors = await callEmbeddings(apiKey, { model, input: slice });
+      apiCalls++;
       if (vectors.length !== slice.length) {
         throw new Error(
           `embed: provider returned ${vectors.length} vectors for ${slice.length} inputs`,
@@ -113,5 +141,13 @@ export async function embedBatch(
       throw new Error(`embed: missing or wrong-shaped vector at index ${i}`);
     }
   }
+
+  stepHandle?.setMeta({
+    cache_hits: texts.length - missTexts.length,
+    cache_misses: missTexts.length,
+    api_calls: apiCalls,
+    model,
+  });
+
   return out as number[][];
 }

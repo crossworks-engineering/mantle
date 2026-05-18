@@ -35,6 +35,9 @@ importers:
       '@mantle/telegram':
         specifier: workspace:*
         version: link:../../packages/telegram
+      '@mantle/tracing':
+        specifier: workspace:*
+        version: link:../../packages/tracing
       '@openrouter/sdk':
         specifier: ^0.12.35
         version: 0.12.35
@@ -308,6 +311,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@mantle/tracing':
+        specifier: workspace:*
+        version: link:../tracing
       drizzle-orm:
         specifier: ^0.38.3
         version: 0.38.4(@types/react@19.2.14)(pg@8.20.0)(postgres@3.4.9)(react@19.2.6)

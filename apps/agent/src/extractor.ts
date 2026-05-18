@@ -48,6 +48,8 @@ import {
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { embed } from '@mantle/embeddings';
+import { startTrace, step } from '@mantle/tracing';
+import { captureLlmUsage } from './llm-usage.js';
 
 /** Types we will NEVER extract from, no matter what the agent config says. */
 const HARD_SKIP_TYPES = new Set(['secret', 'branch']);
@@ -226,14 +228,16 @@ function parseClassifierDecision(raw: string): ClassifierDecision {
   }
 }
 
-/** Call OpenRouter for a chat completion with the agent's model/params. */
+/** Call OpenRouter for a chat completion with the agent's model/params.
+ *  Returns both the assistant content and the raw result (the latter so
+ *  callers can capture usage into a trace step). */
 async function chatComplete(
   client: OpenRouter,
   model: string,
   systemPrompt: string,
   userText: string,
   params: AgentParams,
-): Promise<string> {
+): Promise<{ content: string; raw: unknown }> {
   const result = await client.chat.send({
     chatRequest: {
       model,
@@ -250,7 +254,7 @@ async function chatComplete(
     throw new Error('extractor: unexpected streaming response');
   }
   const content = result.choices[0]?.message?.content;
-  return typeof content === 'string' ? content : '';
+  return { content: typeof content === 'string' ? content : '', raw: result };
 }
 
 // ─── Entity reconciliation ──────────────────────────────────────────────────
@@ -391,14 +395,14 @@ async function classifyAndApplyFact(
 
   // Slow path: call the classifier to decide.
   const params = (agent.params ?? {}) as AgentParams;
-  const decisionRaw = await chatComplete(
+  const decisionResult = await chatComplete(
     client,
     agent.model,
     'You are a precise JSON output assistant. Output strictly the JSON requested, with no additional commentary.',
     CLASSIFIER_PROMPT_TEMPLATE(candidate.content, closeNeighbours.map((n) => n.content)),
     params,
   );
-  const decision = parseClassifierDecision(decisionRaw);
+  const decision = parseClassifierDecision(decisionResult.content);
 
   const targetIdx = decision.target_index ? decision.target_index - 1 : null;
   const target = targetIdx != null ? closeNeighbours[targetIdx] : null;
@@ -496,136 +500,195 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
     `[extractor] node ${node.id.slice(0, 8)} (${node.type}, ${node.title.slice(0, 40)}) via ${agent.model}`,
   );
 
-  const systemPrompt = agent.systemPrompt || DEFAULT_EXTRACTOR_PROMPT;
-  const userPayload = `Title: ${node.title}\nType: ${node.type}\n\nBody:\n${body.slice(0, 8000)}`;
-  const rawOutput = await chatComplete(
-    client,
-    agent.model,
-    systemPrompt,
-    userPayload,
-    (agent.params ?? {}) as AgentParams,
-  );
-  const parsed = parseExtractorOutput(rawOutput);
+  await startTrace(
+    {
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      agentId: agent.id,
+      data: { nodeType: node.type, title: node.title, model: agent.model },
+    },
+    async () => {
+      const systemPrompt = agent.systemPrompt || DEFAULT_EXTRACTOR_PROMPT;
+      const userPayload = `Title: ${node.title}\nType: ${node.type}\n\nBody:\n${body.slice(0, 8000)}`;
 
-  // ─── content_index pass ───────────────────────────────────────────────
-  const summary = parsed.summary;
-  const allEntityMentions = [
-    ...parsed.entities,
-    ...parsed.facts.flatMap((f) => f.entities ?? []),
-  ];
-  // Dedup by lowercase name.
-  const seenNames = new Set<string>();
-  const uniqueMentions = allEntityMentions.filter((m) => {
-    const key = m.name.trim().toLowerCase();
-    if (seenNames.has(key)) return false;
-    seenNames.add(key);
-    return true;
-  });
+      const parsed = await step(
+        { name: 'llm_extract', kind: 'llm_call', input: { model: agent.model } },
+        async (h) => {
+          const r = await chatComplete(
+            client,
+            agent.model,
+            systemPrompt,
+            userPayload,
+            (agent.params ?? {}) as AgentParams,
+          );
+          captureLlmUsage(h, r.raw, agent.model);
+          return parseExtractorOutput(r.content);
+        },
+      );
 
-  // Embedding source: title + summary + leading body (signal-dense). Capped at ~2KB
-  // because text-embedding-3-small has an 8K-token context but our hot path
-  // doesn't benefit from feeding it more than the first part of a long doc.
-  const embedText = [node.title, summary, body.slice(0, 500)].filter(Boolean).join('\n\n');
-  let embedding: number[] | null = null;
-  try {
-    embedding = await embed(ownerId, embedText);
-  } catch (err) {
-    console.error('[extractor] embed failed:', err instanceof Error ? err.message : err);
-  }
-
-  await db
-    .update(nodes)
-    .set({
-      data: {
-        ...existingData,
-        summary,
-        summary_model: agent.model,
-        summary_at: new Date().toISOString(),
-        entities: uniqueMentions.map((m) => m.name),
-      },
-      ...(embedding ? { embedding } : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(nodes.id, node.id));
-
-  console.log(`[extractor]   → content_index: summary (${summary.length}c), ${uniqueMentions.length} entities`);
-
-  // ─── entity reconciliation ────────────────────────────────────────────
-  const entityIdByName = new Map<string, string>();
-  for (const mention of uniqueMentions) {
-    try {
-      const ent = await reconcileEntity(ownerId, mention);
-      entityIdByName.set(mention.name.trim().toLowerCase(), ent.id);
-      // 'mentioned_in' edge from entity → node.
-      await db.insert(entityEdges).values({
-        ownerId,
-        sourceId: ent.id,
-        sourceKind: 'entity',
-        targetId: node.id,
-        targetKind: 'node',
-        relation: 'mentioned_in',
-        validFrom: new Date(),
+      // ─── content_index pass ───────────────────────────────────────────
+      const summary = parsed.summary;
+      const allEntityMentions = [
+        ...parsed.entities,
+        ...parsed.facts.flatMap((f) => f.entities ?? []),
+      ];
+      const seenNames = new Set<string>();
+      const uniqueMentions = allEntityMentions.filter((m) => {
+        const key = m.name.trim().toLowerCase();
+        if (seenNames.has(key)) return false;
+        seenNames.add(key);
+        return true;
       });
-    } catch (err) {
-      console.error(
-        `[extractor]   entity '${mention.name}' failed:`,
-        err instanceof Error ? err.message : err,
-      );
-    }
-  }
 
-  // ─── fact extraction pass ─────────────────────────────────────────────
-  if (memoryConfig.extract_facts === false || parsed.facts.length === 0) {
-    // No facts to process.
-    void bumpAgentUsage(agent.id, agent.usageCount ?? 0);
-    return;
-  }
-
-  const factTexts = parsed.facts.map((f) => f.content);
-  let factVectors: number[][] = [];
-  try {
-    const { embedBatch } = await import('@mantle/embeddings');
-    factVectors = await embedBatch(ownerId, factTexts);
-  } catch (err) {
-    console.error('[extractor] fact embed batch failed:', err instanceof Error ? err.message : err);
-    return;
-  }
-
-  const tally = { ADD: 0, UPDATE: 0, DELETE: 0, NOOP: 0 };
-  for (let i = 0; i < parsed.facts.length; i++) {
-    const candidate = parsed.facts[i]!;
-    const vec = factVectors[i]!;
-    // Pick a primary entity for this fact: the first entity in the fact's
-    // own entities[] that we successfully reconciled.
-    let primaryEntityId: string | null = null;
-    for (const e of candidate.entities ?? []) {
-      const id = entityIdByName.get(e.name.trim().toLowerCase());
-      if (id) {
-        primaryEntityId = id;
-        break;
+      const embedText = [node.title, summary, body.slice(0, 500)]
+        .filter(Boolean)
+        .join('\n\n');
+      let embedding: number[] | null = null;
+      try {
+        embedding = await embed(ownerId, embedText);
+      } catch (err) {
+        console.error('[extractor] embed failed:', err instanceof Error ? err.message : err);
       }
-    }
-    try {
-      const decision = await classifyAndApplyFact(
-        ownerId,
-        candidate,
-        vec,
-        node.id,
-        primaryEntityId,
-        client,
-        agent,
+
+      await step(
+        { name: 'update_index', kind: 'db_write', input: { entities: uniqueMentions.length } },
+        async (h) => {
+          await db
+            .update(nodes)
+            .set({
+              data: {
+                ...existingData,
+                summary,
+                summary_model: agent.model,
+                summary_at: new Date().toISOString(),
+                entities: uniqueMentions.map((m) => m.name),
+              },
+              ...(embedding ? { embedding } : {}),
+              updatedAt: new Date(),
+            })
+            .where(eq(nodes.id, node.id));
+          h.setMeta({ summaryLength: summary.length, embedded: !!embedding });
+        },
       );
-      tally[decision]++;
-    } catch (err) {
-      console.error('[extractor]   fact classify failed:', err instanceof Error ? err.message : err);
-    }
-  }
 
-  console.log(
-    `[extractor]   → facts: ADD=${tally.ADD} UPDATE=${tally.UPDATE} DELETE=${tally.DELETE} NOOP=${tally.NOOP}`,
+      console.log(
+        `[extractor]   → content_index: summary (${summary.length}c), ${uniqueMentions.length} entities`,
+      );
+
+      // ─── entity reconciliation ───────────────────────────────────────
+      const entityIdByName = await step(
+        {
+          name: 'reconcile_entities',
+          kind: 'compute',
+          input: { mentions: uniqueMentions.length },
+        },
+        async (h) => {
+          const map = new Map<string, string>();
+          let created = 0;
+          let matched = 0;
+          for (const mention of uniqueMentions) {
+            try {
+              const before = await db
+                .select({ id: entities.id })
+                .from(entities)
+                .where(
+                  and(
+                    eq(entities.ownerId, ownerId),
+                    sql`lower(${entities.name}) = lower(${mention.name.trim()})`,
+                  ),
+                )
+                .limit(1);
+              const ent = await reconcileEntity(ownerId, mention);
+              map.set(mention.name.trim().toLowerCase(), ent.id);
+              if (before.length > 0) matched++;
+              else created++;
+              await db.insert(entityEdges).values({
+                ownerId,
+                sourceId: ent.id,
+                sourceKind: 'entity',
+                targetId: node.id,
+                targetKind: 'node',
+                relation: 'mentioned_in',
+                validFrom: new Date(),
+              });
+            } catch (err) {
+              console.error(
+                `[extractor]   entity '${mention.name}' failed:`,
+                err instanceof Error ? err.message : err,
+              );
+            }
+          }
+          h.setOutput({ matched, created });
+          return map;
+        },
+      );
+
+      // ─── fact extraction pass ────────────────────────────────────────
+      if (memoryConfig.extract_facts === false || parsed.facts.length === 0) {
+        void bumpAgentUsage(agent.id, agent.usageCount ?? 0);
+        return;
+      }
+
+      const factTexts = parsed.facts.map((f) => f.content);
+      let factVectors: number[][] = [];
+      try {
+        const { embedBatch } = await import('@mantle/embeddings');
+        factVectors = await embedBatch(ownerId, factTexts);
+      } catch (err) {
+        console.error(
+          '[extractor] fact embed batch failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return;
+      }
+
+      const tally = await step(
+        { name: 'process_facts', kind: 'compute', input: { candidates: parsed.facts.length } },
+        async (h) => {
+          const t = { ADD: 0, UPDATE: 0, DELETE: 0, NOOP: 0 };
+          for (let i = 0; i < parsed.facts.length; i++) {
+            const candidate = parsed.facts[i]!;
+            const vec = factVectors[i]!;
+            let primaryEntityId: string | null = null;
+            for (const e of candidate.entities ?? []) {
+              const id = entityIdByName.get(e.name.trim().toLowerCase());
+              if (id) {
+                primaryEntityId = id;
+                break;
+              }
+            }
+            try {
+              const decision = await classifyAndApplyFact(
+                ownerId,
+                candidate,
+                vec,
+                node.id,
+                primaryEntityId,
+                client,
+                agent,
+              );
+              t[decision]++;
+            } catch (err) {
+              console.error(
+                '[extractor]   fact classify failed:',
+                err instanceof Error ? err.message : err,
+              );
+            }
+          }
+          h.setOutput(t);
+          return t;
+        },
+      );
+
+      console.log(
+        `[extractor]   → facts: ADD=${tally.ADD} UPDATE=${tally.UPDATE} DELETE=${tally.DELETE} NOOP=${tally.NOOP}`,
+      );
+
+      void bumpAgentUsage(agent.id, agent.usageCount ?? 0);
+    },
   );
-
-  void bumpAgentUsage(agent.id, agent.usageCount ?? 0);
 }
 
 async function bumpAgentUsage(agentId: string, currentCount: number): Promise<void> {

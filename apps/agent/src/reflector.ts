@@ -25,6 +25,8 @@ import {
   type PersonaNote,
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
+import { startTrace, step } from '@mantle/tracing';
+import { captureLlmUsage } from './llm-usage.js';
 
 /** How many recent turns the reflector reviews per run. */
 const REFLECTION_WINDOW = 50;
@@ -153,106 +155,142 @@ export async function reflect(ownerId: string): Promise<void> {
     return;
   }
 
-  // Load the last N turns across the responder's chats. For v1 we collapse
-  // them into one transcript regardless of which chat they came from — for
-  // single-user systems the chats are mostly the same person anyway.
-  const turns = await db
-    .select({
-      direction: telegramMessages.direction,
-      text: telegramMessages.text,
-      sentAt: telegramMessages.sentAt,
-      fromName: telegramMessages.fromName,
-    })
-    .from(telegramMessages)
-    .orderBy(desc(telegramMessages.sentAt))
-    .limit(REFLECTION_WINDOW);
-  if (turns.length === 0) return;
-
-  const transcript = turns
-    .reverse()
-    .map((t) => {
-      const who = t.direction === 'outbound' ? 'assistant' : (t.fromName ?? 'user');
-      return `[${t.sentAt.toISOString()}] ${who}: ${t.text}`;
-    })
-    .join('\n');
-
-  const existingNotes = (responder.personaNotes ?? []) as PersonaNote[];
-  const existingNotesText =
-    existingNotes.length === 0
-      ? '(no existing notes)'
-      : existingNotes.map((n) => `- (${n.kind}) ${n.content}`).join('\n');
-
-  const userPayload = `Existing persona_notes:\n${existingNotesText}\n\nRecent transcript (${turns.length} turns):\n${transcript}`;
-
-  const params = (reflector.params ?? {}) as AgentParams;
-  const client = new OpenRouter({
-    apiKey,
-    httpReferer: 'https://mantle.crossworks.network',
-    appTitle: 'Mantle',
-  });
-
-  console.log(`[reflector] reviewing ${turns.length} turns (since ${since.toISOString()})`);
-
-  const result = await client.chat.send({
-    chatRequest: {
-      model: reflector.model,
-      messages: [
-        { role: 'system', content: reflector.systemPrompt || DEFAULT_REFLECTOR_PROMPT },
-        { role: 'user', content: userPayload },
-      ],
-      ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
-      ...(typeof params.max_tokens === 'number' ? { maxTokens: params.max_tokens } : {}),
-      ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
+  await startTrace(
+    {
+      kind: 'reflector_run',
+      ownerId,
+      subjectKind: 'agent_tick',
+      agentId: reflector.id,
+      data: { responderAgentId: responder.id, newOutboundSince: since.toISOString() },
     },
-  });
+    async () => {
+      const turns = await step(
+        { name: 'load_recent_turns', kind: 'db_read', input: { limit: REFLECTION_WINDOW } },
+        async (h) => {
+          const rows = await db
+            .select({
+              direction: telegramMessages.direction,
+              text: telegramMessages.text,
+              sentAt: telegramMessages.sentAt,
+              fromName: telegramMessages.fromName,
+            })
+            .from(telegramMessages)
+            .orderBy(desc(telegramMessages.sentAt))
+            .limit(REFLECTION_WINDOW);
+          h.setOutput({ count: rows.length });
+          return rows;
+        },
+      );
+      if (turns.length === 0) return;
 
-  if (!('choices' in result)) {
-    console.error('[reflector] unexpected streaming response — skipping');
-    return;
-  }
-  const rawContent = result.choices[0]?.message?.content;
-  const parsed = parseReflectorOutput(typeof rawContent === 'string' ? rawContent : '');
+      const transcript = turns
+        .reverse()
+        .map((t) => {
+          const who = t.direction === 'outbound' ? 'assistant' : (t.fromName ?? 'user');
+          return `[${t.sentAt.toISOString()}] ${who}: ${t.text}`;
+        })
+        .join('\n');
 
-  if (parsed.new_notes.length === 0) {
-    console.log('[reflector]   → nothing new');
-    // Still bump last_used_at so we don't reprocess the same turns next tick.
-    void db
-      .update(agents)
-      .set({
-        lastUsedAt: new Date(),
-        usageCount: (reflector.usageCount ?? 0) + 1,
-        updatedAt: new Date(),
-      })
-      .where(eq(agents.id, reflector.id))
-      .catch(() => {});
-    return;
-  }
+      const existingNotes = (responder.personaNotes ?? []) as PersonaNote[];
+      const existingNotesText =
+        existingNotes.length === 0
+          ? '(no existing notes)'
+          : existingNotes.map((n) => `- (${n.kind}) ${n.content}`).join('\n');
 
-  const now = new Date().toISOString();
-  const appended: PersonaNote[] = parsed.new_notes.map((n) => ({
-    kind: n.kind,
-    content: n.content.trim(),
-    at: now,
-  }));
+      const userPayload = `Existing persona_notes:\n${existingNotesText}\n\nRecent transcript (${turns.length} turns):\n${transcript}`;
 
-  // Append + cap. Oldest notes drop first if we exceed MAX_PERSONA_NOTES.
-  const merged = [...existingNotes, ...appended].slice(-MAX_PERSONA_NOTES);
+      const params = (reflector.params ?? {}) as AgentParams;
+      const client = new OpenRouter({
+        apiKey,
+        httpReferer: 'https://mantle.crossworks.network',
+        appTitle: 'Mantle',
+      });
 
-  await db
-    .update(agents)
-    .set({ personaNotes: merged, updatedAt: new Date() })
-    .where(eq(agents.id, responder.id));
+      console.log(
+        `[reflector] reviewing ${turns.length} turns (since ${since.toISOString()})`,
+      );
 
-  await db
-    .update(agents)
-    .set({
-      lastUsedAt: new Date(),
-      usageCount: (reflector.usageCount ?? 0) + 1,
-      updatedAt: new Date(),
-    })
-    .where(eq(agents.id, reflector.id));
+      const result = await step(
+        { name: 'llm_reflect', kind: 'llm_call', input: { model: reflector.model } },
+        async (h) => {
+          const r = await client.chat.send({
+            chatRequest: {
+              model: reflector.model,
+              messages: [
+                {
+                  role: 'system',
+                  content: reflector.systemPrompt || DEFAULT_REFLECTOR_PROMPT,
+                },
+                { role: 'user', content: userPayload },
+              ],
+              ...(typeof params.temperature === 'number'
+                ? { temperature: params.temperature }
+                : {}),
+              ...(typeof params.max_tokens === 'number'
+                ? { maxTokens: params.max_tokens }
+                : {}),
+              ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
+            },
+          });
+          captureLlmUsage(h, r, reflector.model);
+          return r;
+        },
+      );
 
-  console.log(
-    `[reflector]   → appended ${appended.length} note(s): ${appended.map((n) => `${n.kind}`).join(', ')}`,
+      if (!('choices' in result)) {
+        throw new Error('reflector: unexpected streaming response');
+      }
+      const rawContent = result.choices[0]?.message?.content;
+      const parsed = parseReflectorOutput(typeof rawContent === 'string' ? rawContent : '');
+
+      if (parsed.new_notes.length === 0) {
+        console.log('[reflector]   → nothing new');
+        // Still bump last_used_at so we don't reprocess the same turns next tick.
+        void db
+          .update(agents)
+          .set({
+            lastUsedAt: new Date(),
+            usageCount: (reflector.usageCount ?? 0) + 1,
+            updatedAt: new Date(),
+          })
+          .where(eq(agents.id, reflector.id))
+          .catch(() => {});
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const appended: PersonaNote[] = parsed.new_notes.map((n) => ({
+        kind: n.kind,
+        content: n.content.trim(),
+        at: now,
+      }));
+
+      // Append + cap. Oldest notes drop first if we exceed MAX_PERSONA_NOTES.
+      const merged = [...existingNotes, ...appended].slice(-MAX_PERSONA_NOTES);
+
+      await step(
+        { name: 'append_notes', kind: 'db_write', input: { count: appended.length } },
+        async (h) => {
+          await db
+            .update(agents)
+            .set({ personaNotes: merged, updatedAt: new Date() })
+            .where(eq(agents.id, responder.id));
+          h.setMeta({ totalNotesAfter: merged.length });
+        },
+      );
+
+      await db
+        .update(agents)
+        .set({
+          lastUsedAt: new Date(),
+          usageCount: (reflector.usageCount ?? 0) + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(agents.id, reflector.id));
+
+      console.log(
+        `[reflector]   → appended ${appended.length} note(s): ${appended.map((n) => `${n.kind}`).join(', ')}`,
+      );
+    },
   );
 }

@@ -37,6 +37,8 @@ import {
 import { accountForChat, sendMessage } from '@mantle/telegram';
 import { getApiKeyById } from '@mantle/api-keys';
 import { embed } from '@mantle/embeddings';
+import { startTrace, step } from '@mantle/tracing';
+import { captureLlmUsage } from './llm-usage.js';
 import {
   buildChatMessages,
   type ContentHit,
@@ -281,6 +283,30 @@ async function handleMessage(messageId: string): Promise<void> {
     .returning({ id: telegramMessages.id });
   if (claim.length === 0) return;
 
+  // Resolve the responder + key BEFORE opening a trace. Failure modes here
+  // (no agent, no key) don't generate traces — there's nothing useful to
+  // record about "the system was misconfigured."
+  const agent = await resolveResponderAgent(USER_ID!);
+  if (!agent) {
+    console.error(
+      `[agent] no enabled responder agent — skipping ${messageId}. Create one at /settings/agents.`,
+    );
+    return;
+  }
+  if (!agent.apiKeyId) {
+    console.error(
+      `[agent] responder agent '${agent.slug}' has no api_key_id set — skipping. Edit it at /settings/agents.`,
+    );
+    return;
+  }
+  const apiKey = await getApiKeyById(agent.apiKeyId);
+  if (!apiKey) {
+    console.error(
+      `[agent] api_key_id ${agent.apiKeyId} for agent '${agent.slug}' has no entry — was it deleted?`,
+    );
+    return;
+  }
+
   const lockKey = row.telegramChatId;
   const prev = inflight.get(lockKey);
   let release: () => void = () => {};
@@ -291,138 +317,170 @@ async function handleMessage(messageId: string): Promise<void> {
   inflight.set(lockKey, lockPromise);
 
   try {
-    const agent = await resolveResponderAgent(USER_ID!);
-    if (!agent) {
-      console.error(
-        `[agent] no enabled responder agent — skipping ${messageId}. Create one at /settings/agents.`,
-      );
-      return;
-    }
-    if (!agent.apiKeyId) {
-      console.error(
-        `[agent] responder agent '${agent.slug}' has no api_key_id set — skipping. Edit it at /settings/agents.`,
-      );
-      return;
-    }
-    const apiKey = await getApiKeyById(agent.apiKeyId);
-    if (!apiKey) {
-      console.error(
-        `[agent] api_key_id ${agent.apiKeyId} for agent '${agent.slug}' has no entry — was it deleted?`,
-      );
-      return;
-    }
-
-    const { personaNotes, facts: relevantFacts, digests, contentHits, turns: history } =
-      await loadContext(row.chatPk, row.id, row.sentAt, row.text, agent, USER_ID!);
-
-    const messages = buildChatMessages({
-      model: agent.model,
-      systemPrompt: agent.systemPrompt,
-      personaNotes,
-      facts: relevantFacts,
-      digests,
-      contentHits,
-      history,
-      newUserText: row.text,
-    });
-
-    const client = new OpenRouter({
-      apiKey,
-      httpReferer: 'https://mantle.crossworks.network',
-      appTitle: 'Mantle',
-    });
-
-    console.log(
-      `[agent] → ${row.fromName ?? 'unknown'} via ${agent.model} (${row.text.length}c, ${history.length} turns, ${digests.length} digests, ${relevantFacts.length} facts, ${contentHits.length} content)`,
-    );
-
-    const result = await client.chat.send({
-      chatRequest: {
-        model: agent.model,
-        messages,
-        ...(typeof agent.params?.temperature === 'number' ? { temperature: agent.params.temperature } : {}),
-        ...(typeof agent.params?.max_tokens === 'number' ? { maxTokens: agent.params.max_tokens } : {}),
-        ...(typeof agent.params?.top_p === 'number' ? { topP: agent.params.top_p } : {}),
-      },
-    });
-
-    if (!('choices' in result)) {
-      console.error('[agent] unexpected streaming response — skipping');
-      return;
-    }
-    const rawContent = result.choices[0]?.message?.content;
-    const reply = typeof rawContent === 'string' ? rawContent.trim() : '';
-    if (!reply) {
-      console.error('[agent] empty reply from model — not sending');
-      return;
-    }
-
-    const usage = (result as { usage?: { cacheReadInputTokens?: number; promptTokens?: number; completionTokens?: number } }).usage;
-    if (usage) {
-      console.log(
-        `[agent]   usage: prompt=${usage.promptTokens ?? '?'} completion=${usage.completionTokens ?? '?'} cache_read=${usage.cacheReadInputTokens ?? 0}`,
-      );
-    }
-
-    const account = await accountForChat(row.telegramChatId);
-    if (!account) {
-      console.error('[agent] no enabled telegram account for chat', row.telegramChatId);
-      return;
-    }
-
-    const telegramMessageIds = await sendMessage(account, row.telegramChatId, reply, {
-      replyTo: row.telegramMessageId,
-    });
-
-    // Persist outbound: one node + one telegram_messages row per Telegram chunk.
-    const now = new Date();
-    const titleStem = reply.slice(0, 120);
-    for (const tgMsgId of telegramMessageIds) {
-      const [node] = await db
-        .insert(nodes)
-        .values({
-          ownerId: USER_ID!,
-          type: 'telegram_message',
-          title: titleStem,
-          path: account.branchPath,
-          data: {
-            direction: 'outbound',
-            model: agent.model,
-            agent: agent.slug,
-            replyToTelegramMessageId: row.telegramMessageId,
-          },
-          tags: ['telegram', 'outbound'],
-        })
-        .returning({ id: nodes.id });
-      if (!node) throw new Error('failed to create outbound node');
-
-      await db.insert(telegramMessages).values({
-        nodeId: node.id,
-        accountId: row.accountId,
-        chatId: row.chatPk,
-        telegramMessageId: String(tgMsgId),
-        text: reply,
-        sentAt: now,
-        direction: 'outbound',
+    await startTrace(
+      {
+        kind: 'responder_turn',
+        ownerId: USER_ID!,
+        subjectId: row.id,
+        subjectKind: 'telegram_message',
         agentId: agent.id,
-        modelUsed: agent.model,
-        replyToId: row.id,
-        processed: true,
-        processedAt: now,
-      });
-    }
+        data: { telegramChatId: row.telegramChatId, model: agent.model },
+      },
+      async () => {
+        const { personaNotes, facts: relevantFacts, digests, contentHits, turns: history } =
+          await step(
+            { name: 'load_context', kind: 'compute', input: { chatId: row.chatPk } },
+            async (h) => {
+              const ctx = await loadContext(
+                row.chatPk,
+                row.id,
+                row.sentAt,
+                row.text,
+                agent,
+                USER_ID!,
+              );
+              h.setOutput({
+                turnCount: ctx.turns.length,
+                digestCount: ctx.digests.length,
+                factCount: ctx.facts.length,
+                contentHitCount: ctx.contentHits.length,
+                personaNoteCount: ctx.personaNotes.length,
+              });
+              return ctx;
+            },
+          );
 
-    // (Inbound was already marked processed at the top of this function via
-    // the atomic claim. Nothing to do here.)
+        const messages = await step(
+          { name: 'build_messages', kind: 'compute' },
+          async (h) => {
+            const m = buildChatMessages({
+              model: agent.model,
+              systemPrompt: agent.systemPrompt,
+              personaNotes,
+              facts: relevantFacts,
+              digests,
+              contentHits,
+              history,
+              newUserText: row.text,
+            });
+            h.setMeta({ blockCount: m.length });
+            return m;
+          },
+        );
 
-    // Bump agent usage. Best-effort — don't fail the reply on a usage write error.
-    void db
-      .update(agents)
-      .set({ lastUsedAt: now, usageCount: (agent.usageCount ?? 0) + 1, updatedAt: now })
-      .where(eq(agents.id, agent.id))
-      .catch(() => {});
+        const client = new OpenRouter({
+          apiKey,
+          httpReferer: 'https://mantle.crossworks.network',
+          appTitle: 'Mantle',
+        });
 
-    console.log(`[agent] ✓ replied (${reply.length}c)`);
+        console.log(
+          `[agent] → ${row.fromName ?? 'unknown'} via ${agent.model} (${row.text.length}c, ${history.length} turns, ${digests.length} digests, ${relevantFacts.length} facts, ${contentHits.length} content)`,
+        );
+
+        const result = await step(
+          { name: 'openrouter_chat', kind: 'llm_call', input: { model: agent.model } },
+          async (h) => {
+            const r = await client.chat.send({
+              chatRequest: {
+                model: agent.model,
+                messages,
+                ...(typeof agent.params?.temperature === 'number'
+                  ? { temperature: agent.params.temperature }
+                  : {}),
+                ...(typeof agent.params?.max_tokens === 'number'
+                  ? { maxTokens: agent.params.max_tokens }
+                  : {}),
+                ...(typeof agent.params?.top_p === 'number' ? { topP: agent.params.top_p } : {}),
+              },
+            });
+            captureLlmUsage(h, r, agent.model);
+            return r;
+          },
+        );
+
+        if (!('choices' in result)) {
+          console.error('[agent] unexpected streaming response — skipping');
+          return;
+        }
+        const rawContent = result.choices[0]?.message?.content;
+        const reply = typeof rawContent === 'string' ? rawContent.trim() : '';
+        if (!reply) {
+          console.error('[agent] empty reply from model — not sending');
+          return;
+        }
+
+        const account = await accountForChat(row.telegramChatId);
+        if (!account) {
+          console.error('[agent] no enabled telegram account for chat', row.telegramChatId);
+          return;
+        }
+
+        const telegramMessageIds = await step(
+          { name: 'send_telegram', kind: 'send' },
+          async (h) => {
+            const ids = await sendMessage(account, row.telegramChatId, reply, {
+              replyTo: row.telegramMessageId,
+            });
+            h.setMeta({ chunks: ids.length, replyLength: reply.length });
+            return ids;
+          },
+        );
+
+        await step({ name: 'persist_outbound', kind: 'db_write' }, async (h) => {
+          const now = new Date();
+          const titleStem = reply.slice(0, 120);
+          for (const tgMsgId of telegramMessageIds) {
+            const [node] = await db
+              .insert(nodes)
+              .values({
+                ownerId: USER_ID!,
+                type: 'telegram_message',
+                title: titleStem,
+                path: account.branchPath,
+                data: {
+                  direction: 'outbound',
+                  model: agent.model,
+                  agent: agent.slug,
+                  replyToTelegramMessageId: row.telegramMessageId,
+                },
+                tags: ['telegram', 'outbound'],
+              })
+              .returning({ id: nodes.id });
+            if (!node) throw new Error('failed to create outbound node');
+
+            await db.insert(telegramMessages).values({
+              nodeId: node.id,
+              accountId: row.accountId,
+              chatId: row.chatPk,
+              telegramMessageId: String(tgMsgId),
+              text: reply,
+              sentAt: now,
+              direction: 'outbound',
+              agentId: agent.id,
+              modelUsed: agent.model,
+              replyToId: row.id,
+              processed: true,
+              processedAt: now,
+            });
+          }
+          h.setMeta({ rows: telegramMessageIds.length });
+        });
+
+        // Bump agent usage outside the trace's hot path — best-effort.
+        void db
+          .update(agents)
+          .set({
+            lastUsedAt: new Date(),
+            usageCount: (agent.usageCount ?? 0) + 1,
+            updatedAt: new Date(),
+          })
+          .where(eq(agents.id, agent.id))
+          .catch(() => {});
+
+        console.log(`[agent] ✓ replied (${reply.length}c)`);
+      },
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[agent] handle failed:', msg);

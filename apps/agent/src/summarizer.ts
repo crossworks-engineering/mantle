@@ -25,7 +25,9 @@ import {
   type AgentParams,
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
+import { startTrace, step } from '@mantle/tracing';
 import { buildChatMessages } from './messages.js';
+import { captureLlmUsage } from './llm-usage.js';
 
 /** Default seeded into the UI when role flips to `summarizer`. The user can
  *  edit it on the agent row at any time. */
@@ -71,6 +73,8 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
 
   // Cheap short-circuit: count undigested turns. Uses the partial index
   // telegram_messages_chat_undigested_idx so this stays O(log n).
+  // Done OUTSIDE the trace so we don't generate a row for every notify on
+  // chats that aren't ready to roll up — that's the common case.
   const countRows = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(telegramMessages)
@@ -78,161 +82,198 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
   const undigested = countRows[0]?.n ?? 0;
   if (undigested < threshold) return;
 
-  // Pick the oldest `batchSize` undigested turns.
-  const batch = await db
-    .select({
-      id: telegramMessages.id,
-      direction: telegramMessages.direction,
-      text: telegramMessages.text,
-      sentAt: telegramMessages.sentAt,
-      fromName: telegramMessages.fromName,
-    })
-    .from(telegramMessages)
-    .where(and(eq(telegramMessages.chatId, chatPk), isNull(telegramMessages.digestNodeId)))
-    .orderBy(asc(telegramMessages.sentAt))
-    .limit(batchSize);
-
-  if (batch.length === 0) return;
-
-  // Find the chat + account so we can use the account's branch_path for the
-  // digest node (keeps digests under the same ltree subtree as their turns).
-  const [chatRow] = await db
-    .select({ accountId: telegramChats.accountId, telegramChatId: telegramChats.telegramChatId })
-    .from(telegramChats)
-    .where(eq(telegramChats.id, chatPk))
-    .limit(1);
-  if (!chatRow) {
-    console.error(`[agent] summarizer: chat ${chatPk} not found`);
-    return;
-  }
-  const [account] = await db
-    .select({ branchPath: telegramAccounts.branchPath })
-    .from(telegramAccounts)
-    .where(eq(telegramAccounts.id, chatRow.accountId))
-    .limit(1);
-  if (!account) {
-    console.error(`[agent] summarizer: account for chat ${chatPk} not found`);
-    return;
-  }
-
-  const apiKey = await getApiKeyById(agent.apiKeyId);
-  if (!apiKey) {
-    console.error(`[agent] summarizer: api_key_id ${agent.apiKeyId} not found — skipping`);
-    return;
-  }
-
-  const transcript = batch
-    .map((t) => {
-      const who = t.direction === 'outbound' ? 'assistant' : (t.fromName ?? 'user');
-      return `[${t.sentAt.toISOString()}] ${who}: ${t.text}`;
-    })
-    .join('\n');
-
-  const params = (agent.params ?? {}) as AgentParams;
-
-  // Reuse the same messages helper. The summarizer doesn't carry persona
-  // notes / facts / digests / content hits — it just sees the transcript as
-  // its user message, with the agent's prompt as the system block.
-  const messages = buildChatMessages({
-    model: agent.model,
-    systemPrompt: agent.systemPrompt,
-    personaNotes: [],
-    facts: [],
-    digests: [],
-    contentHits: [],
-    history: [],
-    newUserText: transcript,
-  });
-
-  const client = new OpenRouter({
-    apiKey,
-    httpReferer: 'https://mantle.crossworks.network',
-    appTitle: 'Mantle',
-  });
-
-  console.log(
-    `[agent] summarizing chat ${chatPk} (${batch.length} turns, ${agent.model})`,
-  );
-
-  const result = await client.chat.send({
-    chatRequest: {
-      model: agent.model,
-      messages,
-      ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
-      ...(typeof params.max_tokens === 'number' ? { maxTokens: params.max_tokens } : {}),
-      ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
-    },
-  });
-
-  if (!('choices' in result)) {
-    console.error('[agent] summarizer: unexpected streaming response — skipping');
-    return;
-  }
-  const rawContent = result.choices[0]?.message?.content;
-  const summary = typeof rawContent === 'string' ? rawContent.trim() : '';
-  if (!summary) {
-    console.error('[agent] summarizer: empty summary — not persisting');
-    return;
-  }
-
-  const usage = (result as {
-    usage?: { cacheReadInputTokens?: number; promptTokens?: number; completionTokens?: number };
-  }).usage;
-  if (usage) {
-    console.log(
-      `[agent]   usage: prompt=${usage.promptTokens ?? '?'} completion=${usage.completionTokens ?? '?'} cache_read=${usage.cacheReadInputTokens ?? 0}`,
-    );
-  }
-
-  const periodStart = batch[0]!.sentAt.toISOString();
-  const periodEnd = batch[batch.length - 1]!.sentAt.toISOString();
-  const periodStartShort = periodStart.slice(0, 10);
-  const periodEndShort = periodEnd.slice(0, 10);
-  const title = `Telegram digest ${periodStartShort} → ${periodEndShort} (${batch.length} turns)`;
-
-  // Persist: one node + flip all batch rows to point at it.
-  const [node] = await db
-    .insert(nodes)
-    .values({
+  await startTrace(
+    {
+      kind: 'summarizer_run',
       ownerId,
-      type: 'note',
-      title,
-      path: account.branchPath,
-      data: {
-        kind: 'conversation_digest',
-        source: 'telegram',
-        chat_id: chatPk,
-        telegram_chat_id: chatRow.telegramChatId,
-        period_start: periodStart,
-        period_end: periodEnd,
-        source_turn_count: batch.length,
+      subjectId: chatPk,
+      subjectKind: 'chat',
+      agentId: agent.id,
+      data: { threshold, batchSize, undigestedAtStart: undigested },
+    },
+    async () => {
+      // Pick the oldest `batchSize` undigested turns.
+      const batch = await step(
+        { name: 'load_batch', kind: 'db_read', input: { batchSize } },
+        async (h) => {
+          const rows = await db
+            .select({
+              id: telegramMessages.id,
+              direction: telegramMessages.direction,
+              text: telegramMessages.text,
+              sentAt: telegramMessages.sentAt,
+              fromName: telegramMessages.fromName,
+            })
+            .from(telegramMessages)
+            .where(
+              and(
+                eq(telegramMessages.chatId, chatPk),
+                isNull(telegramMessages.digestNodeId),
+              ),
+            )
+            .orderBy(asc(telegramMessages.sentAt))
+            .limit(batchSize);
+          h.setOutput({ count: rows.length });
+          return rows;
+        },
+      );
+
+      if (batch.length === 0) return;
+
+      const { account, chatRow } = await step(
+        { name: 'load_chat_account', kind: 'db_read' },
+        async () => {
+          const [chat] = await db
+            .select({
+              accountId: telegramChats.accountId,
+              telegramChatId: telegramChats.telegramChatId,
+            })
+            .from(telegramChats)
+            .where(eq(telegramChats.id, chatPk))
+            .limit(1);
+          if (!chat) {
+            throw new Error(`summarizer: chat ${chatPk} not found`);
+          }
+          const [acc] = await db
+            .select({ branchPath: telegramAccounts.branchPath })
+            .from(telegramAccounts)
+            .where(eq(telegramAccounts.id, chat.accountId))
+            .limit(1);
+          if (!acc) {
+            throw new Error(`summarizer: account for chat ${chatPk} not found`);
+          }
+          return { account: acc, chatRow: chat };
+        },
+      );
+
+      const apiKey = await getApiKeyById(agent.apiKeyId!);
+      if (!apiKey) {
+        throw new Error(
+          `summarizer: api_key_id ${agent.apiKeyId} not found`,
+        );
+      }
+
+      const transcript = batch
+        .map((t) => {
+          const who = t.direction === 'outbound' ? 'assistant' : (t.fromName ?? 'user');
+          return `[${t.sentAt.toISOString()}] ${who}: ${t.text}`;
+        })
+        .join('\n');
+
+      const params = (agent.params ?? {}) as AgentParams;
+
+      // Reuse the same messages helper. The summarizer doesn't carry persona
+      // notes / facts / digests / content hits — it just sees the transcript
+      // as its user message, with the agent's prompt as the system block.
+      const messages = buildChatMessages({
         model: agent.model,
-        agent: agent.slug,
-        summary,
-      },
-      tags: ['conversation-digest', 'telegram'],
-    })
-    .returning({ id: nodes.id });
-  if (!node) {
-    console.error('[agent] summarizer: failed to insert digest node');
-    return;
-  }
+        systemPrompt: agent.systemPrompt,
+        personaNotes: [],
+        facts: [],
+        digests: [],
+        contentHits: [],
+        history: [],
+        newUserText: transcript,
+      });
 
-  const batchIds = batch.map((t) => t.id);
-  await db
-    .update(telegramMessages)
-    .set({ digestNodeId: node.id })
-    .where(inArray(telegramMessages.id, batchIds));
+      const client = new OpenRouter({
+        apiKey,
+        httpReferer: 'https://mantle.crossworks.network',
+        appTitle: 'Mantle',
+      });
 
-  void db
-    .update(agents)
-    .set({
-      lastUsedAt: new Date(),
-      usageCount: (agent.usageCount ?? 0) + 1,
-      updatedAt: new Date(),
-    })
-    .where(eq(agents.id, agent.id))
-    .catch(() => {});
+      console.log(
+        `[agent] summarizing chat ${chatPk} (${batch.length} turns, ${agent.model})`,
+      );
 
-  console.log(`[agent] ✓ digest created (${summary.length}c, covers ${batch.length} turns)`);
+      const result = await step(
+        { name: 'llm_summarize', kind: 'llm_call', input: { model: agent.model } },
+        async (h) => {
+          const r = await client.chat.send({
+            chatRequest: {
+              model: agent.model,
+              messages,
+              ...(typeof params.temperature === 'number'
+                ? { temperature: params.temperature }
+                : {}),
+              ...(typeof params.max_tokens === 'number'
+                ? { maxTokens: params.max_tokens }
+                : {}),
+              ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
+            },
+          });
+          captureLlmUsage(h, r, agent.model);
+          return r;
+        },
+      );
+
+      if (!('choices' in result)) {
+        throw new Error('summarizer: unexpected streaming response');
+      }
+      const rawContent = result.choices[0]?.message?.content;
+      const summary = typeof rawContent === 'string' ? rawContent.trim() : '';
+      if (!summary) {
+        throw new Error('summarizer: empty summary — not persisting');
+      }
+
+      const periodStart = batch[0]!.sentAt.toISOString();
+      const periodEnd = batch[batch.length - 1]!.sentAt.toISOString();
+      const periodStartShort = periodStart.slice(0, 10);
+      const periodEndShort = periodEnd.slice(0, 10);
+      const title = `Telegram digest ${periodStartShort} → ${periodEndShort} (${batch.length} turns)`;
+
+      const node = await step(
+        { name: 'insert_digest_node', kind: 'db_write' },
+        async () => {
+          const [n] = await db
+            .insert(nodes)
+            .values({
+              ownerId,
+              type: 'note',
+              title,
+              path: account.branchPath,
+              data: {
+                kind: 'conversation_digest',
+                source: 'telegram',
+                chat_id: chatPk,
+                telegram_chat_id: chatRow.telegramChatId,
+                period_start: periodStart,
+                period_end: periodEnd,
+                source_turn_count: batch.length,
+                model: agent.model,
+                agent: agent.slug,
+                summary,
+              },
+              tags: ['conversation-digest', 'telegram'],
+            })
+            .returning({ id: nodes.id });
+          if (!n) throw new Error('summarizer: failed to insert digest node');
+          return n;
+        },
+      );
+
+      await step(
+        { name: 'mark_turns_digested', kind: 'db_write', input: { count: batch.length } },
+        async () => {
+          const batchIds = batch.map((t) => t.id);
+          await db
+            .update(telegramMessages)
+            .set({ digestNodeId: node.id })
+            .where(inArray(telegramMessages.id, batchIds));
+        },
+      );
+
+      void db
+        .update(agents)
+        .set({
+          lastUsedAt: new Date(),
+          usageCount: (agent.usageCount ?? 0) + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(agents.id, agent.id))
+        .catch(() => {});
+
+      console.log(`[agent] ✓ digest created (${summary.length}c, covers ${batch.length} turns)`);
+    },
+  );
 }
