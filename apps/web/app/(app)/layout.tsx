@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { and, eq, sql } from 'drizzle-orm';
-import { Activity, Bot, FolderTree, Hammer, Inbox, Key, KeyRound, MessageCircle, Settings, Sparkles, TreePine, UserCheck, Workflow } from 'lucide-react';
+import { Activity, Bot, ClipboardCheck, FolderTree, Hammer, Inbox, Key, KeyRound, MessageCircle, Settings, Sparkles, TreePine, UserCheck, Workflow } from 'lucide-react';
 import { db, emailSenders } from '@mantle/db';
+import { countPending } from '@mantle/tools';
 import { requireOwner } from '@/lib/auth';
 import { TreeRail } from '@/components/tree-rail';
 import { TopBar } from '@/components/top-bar';
@@ -18,6 +19,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     .from(emailSenders)
     .where(and(eq(emailSenders.userId, user.id), eq(emailSenders.status, 'pending')));
   const pendingCount = pending?.n ?? 0;
+  const pendingApprovals = await countPending(user.id);
 
   return (
     <div className="grid h-screen grid-cols-[260px_1fr] grid-rows-[48px_1fr] bg-background">
@@ -83,6 +85,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent"
           >
             <Sparkles className="size-4" aria-hidden /> Skills
+          </Link>
+          <Link
+            href="/pending"
+            className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent"
+          >
+            <ClipboardCheck className="size-4" aria-hidden />
+            <span>Pending</span>
+            {pendingApprovals > 0 && (
+              <span className="ml-auto rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-medium text-rose-900 dark:bg-rose-900/40 dark:text-rose-100">
+                {pendingApprovals}
+              </span>
+            )}
           </Link>
           <Link
             href="/traces"

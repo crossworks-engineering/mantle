@@ -19,3 +19,4 @@ export * from './trace-steps';
 export * from './assistant-messages';
 export * from './tools';
 export * from './skills';
+export * from './pending-tool-calls';

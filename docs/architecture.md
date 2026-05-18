@@ -474,6 +474,10 @@ the new value with no restart.
 | `entity_neighbors`            | First-hop entity↔entity edges, both directions                         |
 | `entity_facts`                | Currently-valid facts on an entity (+ optional retired history)        |
 | `entity_mentions`             | Content nodes that mention an entity (via `mentioned_in` edges)        |
+| `pending_list`                | List operator-approval-required tool calls queued by agents            |
+| `pending_get`                 | Inspect one pending call's args before deciding                        |
+| `pending_approve`             | Approve + execute a pending call; result lands under a `manual` trace  |
+| `pending_reject`              | Reject a pending call without executing                                |
 | `telegram_pending`            | Unprocessed DMs, oldest first                                          |
 | `telegram_send`               | Send a DM (allowlist-gated, reply-threading, MarkdownV2 optional)      |
 | `telegram_react`              | Set an emoji reaction                                                  |

@@ -436,6 +436,7 @@ async function handleMessage(messageId: string): Promise<void> {
           model: agent.model,
           params: (agent.params ?? {}) as Record<string, never>,
           ownerId: USER_ID!,
+          agentId: agent.id,
           initialMessages: messages,
           tools: allowedTools,
         });

@@ -169,6 +169,13 @@
       "when": 1747701000000,
       "tag": "0023_tools_and_skills",
       "breakpoints": false
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1747701100000,
+      "tag": "0024_pending_tool_calls",
+      "breakpoints": false
     }
   ]
 }

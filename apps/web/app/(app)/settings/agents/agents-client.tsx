@@ -997,8 +997,9 @@ export function AgentsClient({
               <p className="text-xs text-muted-foreground">
                 The agent may call these mid-turn. Empty selection = the agent never sees a
                 <code> tools</code> parameter (behaves like before). Tools marked{' '}
-                <em>requires confirm</em> will eventually pause for approval; auto-runs
-                in v1.
+                <em>requires confirm</em> get queued at{' '}
+                <a href="/pending" className="underline">/pending</a> instead of
+                auto-running.
               </p>
             </fieldset>
 

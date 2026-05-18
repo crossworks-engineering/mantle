@@ -84,6 +84,9 @@ importers:
       '@mantle/telegram':
         specifier: workspace:*
         version: link:../../packages/telegram
+      '@mantle/tools':
+        specifier: workspace:*
+        version: link:../../packages/tools
       '@modelcontextprotocol/sdk':
         specifier: ^1.0.4
         version: 1.29.0(zod@3.25.76)
@@ -492,6 +495,9 @@ importers:
       '@mantle/telegram':
         specifier: workspace:*
         version: link:../telegram
+      '@mantle/tracing':
+        specifier: workspace:*
+        version: link:../tracing
       drizzle-orm:
         specifier: ^0.38.3
         version: 0.38.4(@types/react@19.2.14)(pg@8.20.0)(postgres@3.4.9)(react@19.2.6)

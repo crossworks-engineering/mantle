@@ -46,6 +46,12 @@ import {
   updateFolderDescription,
   upsertFile,
 } from '@mantle/files';
+import {
+  approvePendingCall,
+  getPendingCall,
+  listPendingCalls,
+  rejectPendingCall,
+} from '@mantle/tools';
 import { and, asc, desc, eq } from 'drizzle-orm';
 
 const OWNER_ID = process.env.ALLOWED_USER_ID;
@@ -323,6 +329,60 @@ server.tool(
       return { content: [{ type: 'text', text: 'file not found' }], isError: true };
     }
     return { content: [{ type: 'text', text: 'deleted' }] };
+  },
+);
+
+// ─── pending tool calls (operator approvals) ─────────────────────────────
+
+server.tool(
+  'pending_list',
+  "List operator-approval-required tool calls an agent has queued. By default returns the still-pending queue; pass `status` ('pending'|'approved'|'rejected'|'expired') to filter, and `limit` to cap.",
+  {
+    status: z.enum(['pending', 'approved', 'rejected', 'expired']).optional(),
+    limit: z.number().int().min(1).max(500).optional(),
+  },
+  async ({ status, limit }) => {
+    const rows = await listPendingCalls(OWNER_ID!, { status: status ?? 'pending', limit });
+    return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+  },
+);
+
+server.tool(
+  'pending_approve',
+  "Approve a queued tool call by id. The handler runs immediately under a fresh `manual` trace; the result is stored on the pending row and returned.",
+  { id: z.string().uuid() },
+  async ({ id }) => {
+    const row = await approvePendingCall(OWNER_ID!, id);
+    if (!row) {
+      return { content: [{ type: 'text', text: 'not found or already decided' }], isError: true };
+    }
+    return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+  },
+);
+
+server.tool(
+  'pending_reject',
+  "Reject a queued tool call by id. No execution; just flips status to 'rejected'.",
+  { id: z.string().uuid() },
+  async ({ id }) => {
+    const row = await rejectPendingCall(OWNER_ID!, id);
+    if (!row) {
+      return { content: [{ type: 'text', text: 'not found or already decided' }], isError: true };
+    }
+    return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+  },
+);
+
+server.tool(
+  'pending_get',
+  'Fetch a pending tool call by id — useful to inspect the args before deciding.',
+  { id: z.string().uuid() },
+  async ({ id }) => {
+    const row = await getPendingCall(OWNER_ID!, id);
+    if (!row) {
+      return { content: [{ type: 'text', text: 'not found' }], isError: true };
+    }
+    return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
   },
 );
 

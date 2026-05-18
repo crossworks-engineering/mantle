@@ -272,6 +272,7 @@ export async function runAssistantTurn(
     model: agent.model,
     params,
     ownerId,
+    agentId: agent.id,
     initialMessages: messages,
     tools: allowedTools,
   });

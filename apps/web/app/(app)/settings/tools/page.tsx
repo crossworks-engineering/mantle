@@ -17,10 +17,10 @@ export default async function ToolsPage() {
           restart. <strong>HTTP</strong> + <strong>shell</strong> tools are user-defined
           here.
         </p>
-        <p className="rounded-md border border-amber-400/40 bg-amber-100/30 px-3 py-2 text-xs text-amber-900 dark:bg-amber-900/30 dark:text-amber-100">
-          <strong>Confirmation flow not yet wired:</strong> tools marked{' '}
-          <em>requires confirm</em> auto-run in v1. The pending-call queue + operator
-          approval pause lands in phase 5b.
+        <p className="text-xs text-muted-foreground">
+          Tools marked <em>requires confirm</em> don&apos;t auto-execute. The agent
+          queues each requested call at <a href="/pending" className="underline">/pending</a>{' '}
+          for you to approve or reject.
         </p>
       </header>
       <ToolsClient initialTools={rows} />

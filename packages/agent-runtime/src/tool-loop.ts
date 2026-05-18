@@ -18,13 +18,14 @@
  */
 
 import type { OpenRouter } from '@openrouter/sdk';
-import { step } from '@mantle/tracing';
+import { currentTrace, step } from '@mantle/tracing';
 import {
   dispatchTool,
   resolveTools,
   type ToolCallRecord,
 } from '@mantle/tools';
-import type { Tool, AgentParams } from '@mantle/db';
+import { and, eq, sql } from 'drizzle-orm';
+import { db, pendingToolCalls, type Tool, type AgentParams } from '@mantle/db';
 import { captureLlmUsage } from './llm-usage';
 import type { ChatMessage } from './messages';
 
@@ -40,6 +41,10 @@ export type ToolLoopResult = {
   iterations: number;
   /** Per-tool-call telemetry. */
   toolCalls: ToolCallRecord[];
+  /** Pending-call ids the loop queued during this run (one per
+   *  requires_confirm tool the model asked for). Surface these to
+   *  the operator so they can approve/reject at /pending. */
+  pendingIds: string[];
 };
 
 export type ToolLoopArgs = {
@@ -47,6 +52,10 @@ export type ToolLoopArgs = {
   model: string;
   params: AgentParams;
   ownerId: string;
+  /** The agent row's id, written onto any pending_tool_calls rows so the
+   *  /pending UI can show which agent proposed each call. Optional —
+   *  callers without an agent context (manual scripts) can skip it. */
+  agentId?: string;
   /** Initial messages: system + any history + the new user turn. */
   initialMessages: ChatMessage[];
   /** Tool rows the agent is permitted to use. Empty array → no tools sent. */
@@ -95,6 +104,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
 
   const messages: ChatMessage[] = [...args.initialMessages];
   const toolCalls: ToolCallRecord[] = [];
+  const pendingIds: string[] = [];
 
   for (let iter = 0; iter < maxIters; iter++) {
     const result = await step(
@@ -135,7 +145,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       const raw = msg && 'content' in msg ? msg.content : null;
       const text = typeof raw === 'string' ? raw.trim() : '';
       messages.push({ role: 'assistant', content: text });
-      return { reply: text, messages, iterations: iter + 1, toolCalls };
+      return { reply: text, messages, iterations: iter + 1, toolCalls, pendingIds };
     }
 
     // Push the assistant message verbatim so the next LLM call sees its
@@ -176,6 +186,40 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
             return {
               ok: false as const,
               error: `tool '${slug}' is not in this agent's allowlist`,
+            };
+          }
+          // Confirmation gate: a tool flagged requires_confirm doesn't
+          // execute here. Instead we persist a pending_tool_calls row;
+          // the operator approves/rejects via /pending. The synthetic
+          // tool_result tells the model the action is queued so it can
+          // wrap up its turn coherently.
+          if (tool.requiresConfirm) {
+            const traceId = currentTrace()?.id ?? null;
+            const [pending] = await db
+              .insert(pendingToolCalls)
+              .values({
+                ownerId: args.ownerId,
+                agentId: args.agentId ?? null,
+                toolSlug: slug,
+                args: input,
+                traceId,
+              })
+              .returning({ id: pendingToolCalls.id });
+            const pendingId = pending?.id ?? null;
+            if (pendingId) pendingIds.push(pendingId);
+            handle.setSkipped('requires_confirm');
+            handle.setMeta({ pendingId, requiresConfirm: true });
+            return {
+              ok: true as const,
+              output: {
+                status: 'queued_for_approval',
+                pending_id: pendingId,
+                message:
+                  `The tool '${slug}' requires operator approval. ` +
+                  `A pending entry was queued at /pending. Tell the user what's queued ` +
+                  `and that it'll run once approved. Do not call the same tool again ` +
+                  `in this turn.`,
+              },
             };
           }
           return dispatchTool(tool, input, {
@@ -240,7 +284,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   const raw = lastMsg && 'content' in lastMsg ? lastMsg.content : null;
   const text = typeof raw === 'string' ? raw.trim() : '';
   messages.push({ role: 'assistant', content: text });
-  return { reply: text, messages, iterations: maxIters + 1, toolCalls };
+  return { reply: text, messages, iterations: maxIters + 1, toolCalls, pendingIds };
 }
 
 const TOOL_RESULT_BYTE_CAP = 8 * 1024;
