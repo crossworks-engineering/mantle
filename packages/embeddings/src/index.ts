@@ -1,13 +1,22 @@
 /**
  * Embeddings — the shared utility every memory layer leans on.
  *
- *   embed(text)       → vector(1536), cached by content hash.
- *   embedBatch(texts) → vector(1536)[], cached per-input.
+ *   embed(text)              → vector(1536), cached by content hash.
+ *   embedBatch(texts)        → vector(1536)[], cached per-input.
+ *   embedMultimodal(inputs)  → vector(1536)[] for text / image / audio / file.
  *
- * Backed by OpenRouter (`openai/text-embedding-3-small`, 1536 dims) using
- * the existing `openrouter` key from @mantle/api-keys. Cache lives in the
- * `embedding_cache` table keyed by sha256(model || ':' || text), so
- * re-embedding identical strings is a single SELECT.
+ * Default backend: OpenRouter `openai/text-embedding-3-small` (1536 dims) using
+ * the `openrouter` key from @mantle/api-keys. Override globally with the
+ * `MANTLE_EMBEDDING_MODEL` env var, or per call with `opts.model`.
+ *
+ * Multimodal models (`google/gemini-embedding-2-preview`,
+ * `nvidia/llama-nemotron-embed-vl-1b-v2`) accept richer inputs via
+ * `embedMultimodal`. The column stays at 1536 — Gemini's `output_dimensionality`
+ * is passed through so the response fits without a schema change.
+ *
+ * Cache lives in the `embedding_cache` table keyed by
+ * sha256(model || ':' || canonical(input)), so re-embedding identical
+ * strings — or identical image URLs — is a single SELECT.
  */
 
 import { createHash } from 'node:crypto';
@@ -15,16 +24,40 @@ import { inArray } from 'drizzle-orm';
 import { db, embeddingCache } from '@mantle/db';
 import { getApiKey } from '@mantle/api-keys';
 import { currentTrace, step } from '@mantle/tracing';
-import { callEmbeddings } from './client.js';
+import {
+  callEmbeddings,
+  isMultimodalModel,
+  MULTIMODAL_MODELS,
+  type EmbedInput,
+} from './client.js';
 
-export const DEFAULT_EMBEDDING_MODEL = 'openai/text-embedding-3-small';
+export { MULTIMODAL_MODELS, isMultimodalModel, type EmbedInput } from './client.js';
+
+const FALLBACK_MODEL = 'openai/text-embedding-3-small';
+export const DEFAULT_EMBEDDING_MODEL =
+  process.env.MANTLE_EMBEDDING_MODEL?.trim() || FALLBACK_MODEL;
 export const EMBEDDING_DIMS = 1536;
 
 /** OpenRouter caps batch size; 100 is well inside provider limits. */
 const MAX_BATCH = 100;
 
-function hashKey(model: string, text: string): string {
-  return createHash('sha256').update(`${model}:${text}`).digest('hex');
+/** Canonicalise an input into a stable string so the cache key is deterministic. */
+function canonicalize(input: EmbedInput): string {
+  if (typeof input === 'string') return `t:${input}`;
+  switch (input.type) {
+    case 'text':
+      return `t:${input.text}`;
+    case 'image':
+      return `i:${input.url}`;
+    case 'audio':
+      return `a:${input.url}`;
+    case 'file':
+      return `f:${input.url}|${input.mimeType ?? ''}`;
+  }
+}
+
+function hashKey(model: string, input: EmbedInput): string {
+  return createHash('sha256').update(`${model}:${canonicalize(input)}`).digest('hex');
 }
 
 /**
@@ -42,7 +75,7 @@ export async function embed(
 }
 
 /**
- * Embed multiple texts at once. Hits the cache for each input first;
+ * Embed multiple text strings at once. Hits the cache for each input first;
  * remaining misses go to OpenRouter in batches of MAX_BATCH. Order of the
  * returned array matches the input order.
  */
@@ -51,36 +84,58 @@ export async function embedBatch(
   texts: string[],
   opts?: { model?: string },
 ): Promise<number[][]> {
+  return embedMultimodal(ownerId, texts, opts);
+}
+
+/**
+ * Embed mixed multimodal inputs (text / image / audio / file). When the
+ * default text model is in use and all inputs are strings, this behaves
+ * exactly like embedBatch. Picking a multimodal model lets you include
+ * image/audio/file references — make sure the model actually supports
+ * those (see MULTIMODAL_MODELS).
+ */
+export async function embedMultimodal(
+  ownerId: string,
+  inputs: EmbedInput[],
+  opts?: { model?: string },
+): Promise<number[][]> {
   // No trace → fast path with no instrumentation overhead.
   if (!currentTrace()) {
-    return doEmbedBatch(ownerId, texts, opts);
+    return doEmbed(ownerId, inputs, opts);
   }
   return step(
     {
       name: 'embed_batch',
       kind: 'embed',
-      input: { count: texts.length, model: opts?.model ?? DEFAULT_EMBEDDING_MODEL },
+      input: { count: inputs.length, model: opts?.model ?? DEFAULT_EMBEDDING_MODEL },
     },
-    async (handle) => {
-      const result = await doEmbedBatch(ownerId, texts, opts, handle);
-      return result;
-    },
+    async (handle) => doEmbed(ownerId, inputs, opts, handle),
   );
 }
 
 type EmbedStepHandle = { setMeta(m: Record<string, unknown>): void };
 
-async function doEmbedBatch(
+async function doEmbed(
   ownerId: string,
-  texts: string[],
+  inputs: EmbedInput[],
   opts?: { model?: string },
   stepHandle?: EmbedStepHandle,
 ): Promise<number[][]> {
   const model = opts?.model ?? DEFAULT_EMBEDDING_MODEL;
-  if (texts.length === 0) return [];
+  if (inputs.length === 0) return [];
 
-  const hashes = texts.map((t) => hashKey(model, t));
-  const out: (number[] | null)[] = texts.map(() => null);
+  // Validate: non-text inputs require a multimodal model.
+  for (const item of inputs) {
+    if (typeof item !== 'string' && item.type !== 'text' && !isMultimodalModel(model)) {
+      throw new Error(
+        `embed: input type '${item.type}' requires a multimodal model — got '${model}'. ` +
+          `Set MANTLE_EMBEDDING_MODEL or opts.model to one of: ${Array.from(MULTIMODAL_MODELS).join(', ')}.`,
+      );
+    }
+  }
+
+  const hashes = inputs.map((i) => hashKey(model, i));
+  const out: (number[] | null)[] = inputs.map(() => null);
 
   // 1. Lookup cache in bulk.
   const cachedRows = await db
@@ -89,23 +144,23 @@ async function doEmbedBatch(
     .where(inArray(embeddingCache.contentHash, hashes));
   const cacheMap = new Map<string, number[]>();
   for (const row of cachedRows) cacheMap.set(row.contentHash, row.embedding);
-  for (let i = 0; i < texts.length; i++) {
+  for (let i = 0; i < inputs.length; i++) {
     const cached = cacheMap.get(hashes[i]!);
     if (cached) out[i] = cached;
   }
 
   // 2. Compute misses.
   const missIndexes: number[] = [];
-  const missTexts: string[] = [];
-  for (let i = 0; i < texts.length; i++) {
+  const missInputs: EmbedInput[] = [];
+  for (let i = 0; i < inputs.length; i++) {
     if (out[i] === null) {
       missIndexes.push(i);
-      missTexts.push(texts[i]!);
+      missInputs.push(inputs[i]!);
     }
   }
 
   let apiCalls = 0;
-  if (missTexts.length > 0) {
+  if (missInputs.length > 0) {
     const apiKey = await getApiKey(ownerId, 'openrouter');
     if (!apiKey) {
       throw new Error(
@@ -114,9 +169,13 @@ async function doEmbedBatch(
     }
 
     // Call in batches of MAX_BATCH.
-    for (let start = 0; start < missTexts.length; start += MAX_BATCH) {
-      const slice = missTexts.slice(start, start + MAX_BATCH);
-      const vectors = await callEmbeddings(apiKey, { model, input: slice });
+    for (let start = 0; start < missInputs.length; start += MAX_BATCH) {
+      const slice = missInputs.slice(start, start + MAX_BATCH);
+      const vectors = await callEmbeddings(apiKey, {
+        model,
+        input: slice,
+        outputDimensionality: EMBEDDING_DIMS,
+      });
       apiCalls++;
       if (vectors.length !== slice.length) {
         throw new Error(
@@ -143,8 +202,8 @@ async function doEmbedBatch(
   }
 
   stepHandle?.setMeta({
-    cache_hits: texts.length - missTexts.length,
-    cache_misses: missTexts.length,
+    cache_hits: inputs.length - missInputs.length,
+    cache_misses: missInputs.length,
     api_calls: apiCalls,
     model,
   });

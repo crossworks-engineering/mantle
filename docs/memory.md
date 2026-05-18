@@ -511,12 +511,20 @@ agents. Different model type, different endpoint, different scale.
 - **Caching.** Embeddings are deterministic for a given (model, text)
   pair. Cache by content hash to avoid re-embedding identical strings.
   Free win once volume rises.
-- **Where it lives in code (planned).** A small module like
-  `packages/embeddings/src/index.ts` exposing
-  `embed(text: string): Promise<number[]>` and
-  `embedBatch(texts: string[]): Promise<number[][]>`. Reads the
-  OpenRouter key from the vault via
-  `getApiKey(userId, 'openrouter')`. Caches by content hash.
+- **Where it lives in code.** [`packages/embeddings/src/index.ts`](../packages/embeddings/src/index.ts)
+  exposes `embed(text)` and `embedBatch(texts)` for the text path, plus
+  `embedMultimodal(inputs)` accepting a mixed array of
+  `{ type: 'text' | 'image' | 'audio' | 'file', … }` items. Reads the
+  OpenRouter key from the vault via `getApiKey(userId, 'openrouter')`.
+  Cache key is `sha256(model || ':' || canonical(input))`, so identical
+  strings *and* identical image URLs collapse to one row.
+- **Switching models.** Set `MANTLE_EMBEDDING_MODEL` in `.env.local` to
+  globally swap the default (e.g. `google/gemini-embedding-2-preview`),
+  or pass `opts.model` per call. The package whitelists multimodal
+  models via `MULTIMODAL_MODELS` — passing an image/audio/file input
+  to a text-only model throws with a clear message. Gemini's
+  `output_dimensionality` is wired to 1536 so the response always fits
+  the pgvector column without a schema change.
 
 ### 6.4 The agent → layer dataflow
 
