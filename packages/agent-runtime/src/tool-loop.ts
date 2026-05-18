@@ -28,6 +28,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db, pendingToolCalls, type Tool, type AgentParams } from '@mantle/db';
 import { captureLlmUsage } from './llm-usage';
 import type { ChatMessage } from './messages';
+import { parseToolArgs } from './tool-args';
 
 const DEFAULT_MAX_ITERATIONS = 6;
 
@@ -167,22 +168,12 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       const startedAt = Date.now();
       const slug = call.function.name;
       const tool = toolsByName.get(slug);
-      let input: Record<string, unknown> = {};
-      let argParseError: string | null = null;
-      try {
-        const parsed = call.function.arguments ? JSON.parse(call.function.arguments) : {};
-        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-          argParseError = 'tool arguments must be a JSON object';
-        } else {
-          input = parsed as Record<string, unknown>;
-        }
-      } catch (err) {
-        // Capture the parse error so we can hand it back to the model
-        // as a structured tool_result. Previously we silently swallowed
-        // the error and dispatched with input={}, which made the model
-        // think the call succeeded and re-issue the same broken JSON.
-        argParseError = `tool arguments are not valid JSON (${(err as Error).message})`;
-      }
+      // Parse the LLM-supplied arguments string into a JSON object,
+      // or capture a structured error for the tool_result. See
+      // tool-args.ts for the cases (malformed JSON, non-object, etc.).
+      const parsedArgs = parseToolArgs(call.function.arguments);
+      const input: Record<string, unknown> = parsedArgs.ok ? parsedArgs.input : {};
+      const argParseError: string | null = parsedArgs.ok ? null : parsedArgs.error;
 
       const outcome = await step(
         {

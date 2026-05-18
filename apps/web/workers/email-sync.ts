@@ -21,18 +21,7 @@ const SYNC_QUEUE = 'mantle.email.sync';
 const BACKFILL_QUEUE = 'mantle.email.backfill';
 const SCHEDULER_QUEUE = 'mantle.email.scheduler';
 
-/** Mask the local-part of an email address before logging. Operators
- *  see enough to match the row in the DB ("@gmail.com (1f2…)") without
- *  the full PII landing in journalctl / centralised log shipping. */
-function maskEmail(addr: string | null | undefined): string {
-  if (!addr) return '(none)';
-  const at = addr.lastIndexOf('@');
-  if (at <= 0) return '***';
-  const local = addr.slice(0, at);
-  const domain = addr.slice(at);
-  const hint = local.length <= 2 ? '*' : `${local[0]}${'*'.repeat(Math.min(local.length - 2, 6))}${local[local.length - 1]}`;
-  return `${hint}${domain}`;
-}
+import { maskEmail } from './mask-email';
 
 interface SyncJob {
   accountId: string;

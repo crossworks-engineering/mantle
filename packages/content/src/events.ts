@@ -143,23 +143,9 @@ export type CreateEventInput = {
   tags?: string[];
 };
 
-/** Defence-in-depth: ensure the string is a real IANA zone before we
- *  store it. Anything we don't recognise falls back to 'UTC' so we
- *  never end up writing junk that crashes the reminder formatter. */
-function sanitiseTimezone(tz: string | undefined): string {
-  if (!tz || typeof tz !== 'string' || tz.length > 64) return 'UTC';
-  try {
-    // The constructor throws RangeError on an invalid IANA name.
-    new Intl.DateTimeFormat('en-US', { timeZone: tz });
-    return tz;
-  } catch {
-    return 'UTC';
-  }
-}
-
-function computeRemindAt(startsAt: string, minutesBefore: number): string {
-  return new Date(new Date(startsAt).getTime() - minutesBefore * 60_000).toISOString();
-}
+// Pure helpers live in events-time.ts so vitest can import them
+// without pulling in the @mantle/db runtime.
+import { computeRemindAt, sanitiseTimezone } from './events-time';
 
 export async function createEvent(ownerId: string, input: CreateEventInput): Promise<EventRow> {
   await ensureRoot(ownerId);
