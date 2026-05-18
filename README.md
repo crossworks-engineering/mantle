@@ -256,4 +256,5 @@ cost ceilings on extractor runs, web-assistant surface. See
 
 - [`docs/architecture.md`](./docs/architecture.md) — full architecture tour: the five processes, the data plane, the `nodes` abstraction, the ingest pipelines, the MCP tools, the workspace layout. Read this before touching the codebase.
 - [`docs/memory.md`](./docs/memory.md) — the memory layer: tier taxonomy (conversation / session / user), vector vs graph retrieval, the planned `memories` / `entities` / `entity_edges` schema, and the build sequence beyond what's shipped.
+- [`docs/observability.md`](./docs/observability.md) — the tracing layer: how every agent run becomes a queryable `traces` row + `trace_steps` tree, the reactflow visual at `/traces`, and the dashboard widgets on `/debug`.
 - [`docs/telegram.md`](./docs/telegram.md) — frozen handoff covering the Telegram bridge build (May 2026). Historical project diary; the durable reference is `architecture.md`.

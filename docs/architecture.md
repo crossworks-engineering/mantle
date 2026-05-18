@@ -7,6 +7,9 @@ Companion docs:
 - [`memory.md`](./memory.md) — the memory layer in depth: tier taxonomy,
   vector vs graph retrieval, planned `memories` / `entities` / `entity_edges`
   schema, the build sequence.
+- [`observability.md`](./observability.md) — the tracing layer: how every
+  agent run becomes a `traces` row + `trace_steps` tree, the reactflow
+  visual, the dashboard widgets, and how to add a new trace kind.
 - [`telegram.md`](./telegram.md) — a frozen handoff covering the Telegram
   bridge build. Project diary; durable details have moved here.
 
