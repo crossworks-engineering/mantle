@@ -470,7 +470,7 @@ to switch. See `architecture.md` §9b for the resolution logic.
 ### 6.3 The embedding subsystem
 
 Embedding text into vectors is its own concern, separate from the chat
-agents. Different model type, different API path, different scale.
+agents. Different model type, different endpoint, different scale.
 
 - **What it does.** Given a piece of text, returns a `vector(1536)`
   that can be similarity-searched in pgvector. No reasoning, no system
@@ -478,15 +478,29 @@ agents. Different model type, different API path, different scale.
 - **Default model.** `openai/text-embedding-3-small`. 1536 dimensions
   (matches our column). $0.02 per 1M tokens. Fast and cheap enough that
   embedding everything we write is unmeasurable on the bill.
-- **Alternatives.** `voyage-3` (slightly better retrieval, more
-  expensive), `cohere/embed-multilingual-v3` (1024 dims — would require
-  a schema change), or a local model like `all-MiniLM-L6-v2` running on
-  the VPS (zero per-call cost, ~80MB resident). Local becomes attractive
-  once volume scales.
-- **API key.** OpenAI direct, not OpenRouter — OpenRouter's chat-
-  completion routing doesn't currently expose embedding endpoints. Add
-  an `openai` key at `/settings/keys` (separate from the `openrouter`
-  key the agents use).
+- **API path.** OpenRouter now routes embedding requests — same key, same
+  base URL, just a different endpoint:
+  `POST https://openrouter.ai/api/v1/embeddings` with body
+  `{ model: 'openai/text-embedding-3-small', input: 'text…' }`.
+  This means the **existing `openrouter` API key in `/settings/keys`
+  covers both chat and embeddings** — no separate OpenAI key required.
+- **Alternatives routed via OpenRouter** (live as of 2026-05):
+
+  | Model | Dims | $/1M tokens | Notes |
+  |---|---|---|---|
+  | `openai/text-embedding-3-small` | 1536 | $0.020 | Default. Matches column. |
+  | `openai/text-embedding-3-large` | 3072 (truncatable) | $0.130 | Slight retrieval gain. |
+  | `google/gemini-embedding-001` | 256/768/1536/3072 (configurable) | $0.150 | Set output dim to 1536 to match our column. |
+  | `google/gemini-embedding-2-preview` | configurable | $0.200 | **Multimodal** — text/image/file/audio/video. Worth keeping in pocket for when content_store ingests PDFs/photos. |
+  | `qwen/qwen3-embedding-8b` | 4096 | $0.010 | Cheap, but schema change. |
+  | `perplexity/pplx-embed-v1-0.6b` | 1024 | $0.004 | Cheapest paid; schema change. |
+  | `nvidia/llama-nemotron-embed-vl-1b-v2` | (varies) | **free** | Multimodal; useful for one-off backfills. |
+  | Local `all-MiniLM-L6-v2` (sentence-transformers in a Docker sidecar) | 384 | $0 (your VPS CPU) | Schema change; another moving part; becomes attractive only at scale. |
+
+  Switching dimensions later is a migration (new column, backfill,
+  cutover) — not impossible, but a deliberate move. `text-embedding-3-small`
+  at 1536 is the safest commitment.
+
 - **Where it's called.**
   - **At write time** by the `extractor` (per content_store item +
     per fact), by the `summarizer` (per digest, for relevance ranking),
@@ -500,8 +514,9 @@ agents. Different model type, different API path, different scale.
 - **Where it lives in code (planned).** A small module like
   `packages/embeddings/src/index.ts` exposing
   `embed(text: string): Promise<number[]>` and
-  `embedBatch(texts: string[]): Promise<number[][]>`. Reads the OpenAI
-  key from the vault via `getApiKey(userId, 'openai')`. Caches by hash.
+  `embedBatch(texts: string[]): Promise<number[][]>`. Reads the
+  OpenRouter key from the vault via
+  `getApiKey(userId, 'openrouter')`. Caches by content hash.
 
 ### 6.4 The agent → layer dataflow
 
