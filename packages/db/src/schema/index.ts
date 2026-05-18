@@ -10,3 +10,4 @@ export * from './senders';
 export * from './sync-runs';
 export * from './telegram';
 export * from './agents';
+export * from './embedding-cache';

@@ -99,6 +99,13 @@
       "when": 1747700000000,
       "tag": "0013_conversation_digests",
       "breakpoints": false
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1747700100000,
+      "tag": "0014_embedding_cache",
+      "breakpoints": false
     }
   ]
 }
