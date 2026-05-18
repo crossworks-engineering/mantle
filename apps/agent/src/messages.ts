@@ -29,6 +29,10 @@ export type Digest = {
   summary: string;
   periodStart: string;
   periodEnd: string;
+  /** Topic label assigned by the summarizer, e.g. "Lister Gantry Rebuild".
+   *  Null/empty when a digest was produced before topic emergence shipped,
+   *  or when the summarizer saw a single-topic batch and didn't bother. */
+  topic?: string | null;
 };
 
 export type FactSnippet = {
@@ -92,7 +96,12 @@ export function buildChatMessages(args: {
   // ─── Block 2: conversation digests (own breakpoint) ───────────────────
   if (digests.length > 0) {
     const body = digests
-      .map((d) => `[${d.periodStart} → ${d.periodEnd}] ${d.summary}`)
+      .map((d) => {
+        const head = d.topic
+          ? `[${d.periodStart} → ${d.periodEnd}] topic: ${d.topic}`
+          : `[${d.periodStart} → ${d.periodEnd}]`;
+        return `${head}\n${d.summary}`;
+      })
       .join('\n\n');
     const digestText = `Earlier in this conversation (summarised):\n\n${body}`;
     messages.push(

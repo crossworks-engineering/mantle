@@ -94,12 +94,29 @@ The word "summary" appears in two places and they're different shapes:
   `nodes.data.summary`). Generated at ingest by the summarizer or
   extractor; refreshed if the source is edited.
 - **Aggregate summary** — 1-to-many. One summary covers N source items.
-  Conversation digests are the working example: one digest covers ~20
-  telegram_messages. Lives as its own row (today a `note` node tagged
-  `conversation-digest`).
+  Conversation digests are the working example. Lives as its own row
+  (today a `note` node tagged `conversation-digest`).
 
 Both compress information through an LLM. They differ in cardinality and
 home, not in spirit.
+
+### Topic emergence
+
+A single summarizer run can yield **multiple** digests. The summarizer
+groups the batch into contiguous topical stretches and emits one digest
+per topic, each carrying:
+
+- `data.topic` — a 2-5-word label ("Lister Gantry Rebuild")
+- `data.topic_slug` — a slug derived from the label, also added to
+  `nodes.tags` as `topic:lister-gantry-rebuild` for `@>` retrieval
+- `data.source_turn_count` — turns in this topic, not the whole batch
+
+Each turn's `digestNodeId` points at its topic's digest. The same
+topic recurring weeks later produces a new digest with the same slug;
+retrieval finds them all via tag match or vector similarity.
+
+Topics are emergent, not declared. They surface on `/debug` as a rolled-up
+table (digests × turns × first/last seen) and on individual digest cards.
 
 ---
 

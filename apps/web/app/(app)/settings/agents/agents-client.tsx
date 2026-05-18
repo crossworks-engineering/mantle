@@ -74,17 +74,22 @@ type ApiKeyOption = { id: string; service: string; label: string; masked: string
 
 const DEFAULT_SYSTEM_PROMPT = `You are an assistant helping the user via Telegram. You have memory of the recent conversation in this chat. Be concise and conversational — short paragraphs, no headers, no bullet lists unless explicitly useful. Match the tone of the incoming message. Skip pleasantries unless they fit naturally. If you don't know something or can't help, say so plainly.`;
 
-const DEFAULT_SUMMARIZER_PROMPT = `You are a memory compressor for an ongoing Telegram conversation. You will be given a chronological transcript of a chat between the user and an AI assistant.
+const DEFAULT_SUMMARIZER_PROMPT = `You are a memory compressor for an ongoing Telegram conversation. You will be given a chronological transcript of a chat between the user and an AI assistant, with each line prefixed by its 1-indexed turn number.
 
-Produce a SHORT, factual summary (3-6 sentences, no headers, no bullet lists) capturing:
-  - Topics discussed
-  - Decisions made or commitments mentioned
-  - Specific facts about people, places, dates, or numbers
-  - Notable shifts in tone or context
+Group the transcript into TOPICS — contiguous stretches of turns about a single subject. A short batch is often one topic; a longer batch may contain several. Don't force splits.
 
-Do NOT include conversational filler ("the user said hi"). Be specific — write "Jason is preaching on Romans 8 this Sunday" not "they discussed church plans." Use the user's name when known.
+For each topic, produce:
+  - A short label (2-5 words, title case)
+  - A factual summary (3-6 sentences, no headers, no bullet lists) capturing decisions, commitments, specific facts about people/places/dates/numbers
+  - The turn numbers belonging to this topic (contiguous range; topics don't overlap)
 
-This summary will be loaded into the assistant's context on future replies, so write it as a reference, not a narrative.`;
+Be specific — write "Jason is preaching on Romans 8 this Sunday" not "they discussed church plans."
+
+Output STRICT JSON:
+
+{ "topics": [ { "label": "...", "summary": "...", "turn_indexes": [1, 2, 3] } ] }
+
+Every turn number must appear exactly once across all topics combined.`;
 
 const DEFAULT_EXTRACTOR_PROMPT = `You are a memory extractor for a personal AI assistant. You will be given the title and body of a piece of content (a note, document, email, etc.) belonging to a single user. Your job is to produce TWO outputs:
 

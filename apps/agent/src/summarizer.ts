@@ -31,17 +31,30 @@ import { captureLlmUsage } from './llm-usage.js';
 
 /** Default seeded into the UI when role flips to `summarizer`. The user can
  *  edit it on the agent row at any time. */
-export const DEFAULT_SUMMARIZER_PROMPT = `You are a memory compressor for an ongoing Telegram conversation. You will be given a chronological transcript of a chat between the user and an AI assistant.
+export const DEFAULT_SUMMARIZER_PROMPT = `You are a memory compressor for an ongoing Telegram conversation. You will be given a chronological transcript of a chat between the user and an AI assistant, with each line prefixed by its 1-indexed turn number.
 
-Produce a SHORT, factual summary (3-6 sentences, no headers, no bullet lists) capturing:
-  - Topics discussed
-  - Decisions made or commitments mentioned
-  - Specific facts about people, places, dates, or numbers
-  - Notable shifts in tone or context
+Group the transcript into TOPICS — contiguous stretches of turns about a single subject. A short batch is often one topic; a longer batch may contain several. Don't force splits.
 
-Do NOT include conversational filler ("the user said hi"). Be specific — write "Jason is preaching on Romans 8 this Sunday" not "they discussed church plans." Use the user's name when known.
+For each topic, produce:
+  - A short label (2-5 words, title case, e.g. "Lister Gantry Rebuild", "Sunday Sermon Prep")
+  - A factual summary (3-6 sentences, no headers, no bullet lists) capturing decisions, commitments, specific facts about people/places/dates/numbers, and notable shifts in tone
+  - The turn numbers belonging to this topic (contiguous range; topics don't overlap)
 
-This summary will be loaded into the assistant's context on future replies, so write it as a reference, not a narrative.`;
+Be specific — write "Jason is preaching on Romans 8 this Sunday" not "they discussed church plans." Use names when known. Skip conversational filler.
+
+Output STRICT JSON, no markdown fences, no commentary outside the JSON:
+
+{
+  "topics": [
+    {
+      "label": "<2-5 words>",
+      "summary": "<3-6 sentences>",
+      "turn_indexes": [<int>, <int>, ...]
+    }
+  ]
+}
+
+The turn_indexes array must contain every turn number from the transcript exactly once across all topics combined.`;
 
 async function resolveSummarizerAgent(ownerId: string): Promise<Agent | null> {
   const [row] = await db
@@ -154,9 +167,9 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
       }
 
       const transcript = batch
-        .map((t) => {
+        .map((t, i) => {
           const who = t.direction === 'outbound' ? 'assistant' : (t.fromName ?? 'user');
-          return `[${t.sentAt.toISOString()}] ${who}: ${t.text}`;
+          return `#${i + 1} [${t.sentAt.toISOString()}] ${who}: ${t.text}`;
         })
         .join('\n');
 
@@ -211,55 +224,110 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
         throw new Error('summarizer: unexpected streaming response');
       }
       const rawContent = result.choices[0]?.message?.content;
-      const summary = typeof rawContent === 'string' ? rawContent.trim() : '';
-      if (!summary) {
-        throw new Error('summarizer: empty summary — not persisting');
+      const rawText = typeof rawContent === 'string' ? rawContent.trim() : '';
+      if (!rawText) {
+        throw new Error('summarizer: empty response — not persisting');
       }
 
-      const periodStart = batch[0]!.sentAt.toISOString();
-      const periodEnd = batch[batch.length - 1]!.sentAt.toISOString();
-      const periodStartShort = periodStart.slice(0, 10);
-      const periodEndShort = periodEnd.slice(0, 10);
-      const title = `Telegram digest ${periodStartShort} → ${periodEndShort} (${batch.length} turns)`;
+      const topics = parseTopics(rawText, batch.length);
+      if (topics.length === 0) {
+        throw new Error('summarizer: no usable topics in response — not persisting');
+      }
 
-      const node = await step(
-        { name: 'insert_digest_node', kind: 'db_write' },
-        async () => {
-          const [n] = await db
-            .insert(nodes)
-            .values({
-              ownerId,
-              type: 'note',
-              title,
-              path: account.branchPath,
-              data: {
-                kind: 'conversation_digest',
-                source: 'telegram',
-                chat_id: chatPk,
-                telegram_chat_id: chatRow.telegramChatId,
-                period_start: periodStart,
-                period_end: periodEnd,
-                source_turn_count: batch.length,
-                model: agent.model,
-                agent: agent.slug,
-                summary,
-              },
-              tags: ['conversation-digest', 'telegram'],
-            })
-            .returning({ id: nodes.id });
-          if (!n) throw new Error('summarizer: failed to insert digest node');
-          return n;
-        },
-      );
+      // Insert one digest node per topic; map each turn to the digest covering it.
+      const turnToDigest = new Map<string, string>();
+      const inserted: { topic: string; summary: string; turnCount: number }[] = [];
+
+      for (const topic of topics) {
+        const turns = topic.turnIndexes
+          .map((i) => batch[i - 1])
+          .filter((t): t is (typeof batch)[number] => t != null);
+        if (turns.length === 0) continue;
+        const periodStart = turns[0]!.sentAt.toISOString();
+        const periodEnd = turns[turns.length - 1]!.sentAt.toISOString();
+        const periodStartShort = periodStart.slice(0, 10);
+        const periodEndShort = periodEnd.slice(0, 10);
+        const title =
+          `${topic.label} · ${periodStartShort} → ${periodEndShort} ` +
+          `(${turns.length} turns)`;
+
+        const node = await step(
+          {
+            name: 'insert_digest_node',
+            kind: 'db_write',
+            input: { topic: topic.label, turns: turns.length },
+          },
+          async () => {
+            const [n] = await db
+              .insert(nodes)
+              .values({
+                ownerId,
+                type: 'note',
+                title,
+                path: account.branchPath,
+                data: {
+                  kind: 'conversation_digest',
+                  source: 'telegram',
+                  chat_id: chatPk,
+                  telegram_chat_id: chatRow.telegramChatId,
+                  period_start: periodStart,
+                  period_end: periodEnd,
+                  source_turn_count: turns.length,
+                  model: agent.model,
+                  agent: agent.slug,
+                  summary: topic.summary,
+                  topic: topic.label,
+                  topic_slug: slugifyTopic(topic.label),
+                },
+                tags: [
+                  'conversation-digest',
+                  'telegram',
+                  `topic:${slugifyTopic(topic.label)}`,
+                ],
+              })
+              .returning({ id: nodes.id });
+            if (!n) throw new Error('summarizer: failed to insert digest node');
+            return n;
+          },
+        );
+        for (const t of turns) turnToDigest.set(t.id, node.id);
+        inserted.push({
+          topic: topic.label,
+          summary: topic.summary,
+          turnCount: turns.length,
+        });
+      }
+
+      // Defensive: any turn not claimed by a topic falls back to the first
+      // topic's digest. The prompt requires full coverage; this is the
+      // belt-and-braces fallback for poorly behaved model outputs.
+      const fallbackId = turnToDigest.values().next().value;
+      if (fallbackId) {
+        for (const t of batch) {
+          if (!turnToDigest.has(t.id)) turnToDigest.set(t.id, fallbackId);
+        }
+      }
 
       await step(
-        { name: 'mark_turns_digested', kind: 'db_write', input: { count: batch.length } },
+        {
+          name: 'mark_turns_digested',
+          kind: 'db_write',
+          input: { count: batch.length, digests: inserted.length },
+        },
         async () => {
-          const batchIds = batch.map((t) => t.id);
-          await db
-            .update(telegramMessages)
-            .set({ digestNodeId: node.id })
-            .where(inArray(telegramMessages.id, batchIds));
+          // Group turn ids by digest id so we issue one UPDATE per digest.
+          const byDigest = new Map<string, string[]>();
+          for (const [turnId, digestId] of turnToDigest) {
+            const list = byDigest.get(digestId) ?? [];
+            list.push(turnId);
+            byDigest.set(digestId, list);
+          }
+          for (const [digestId, ids] of byDigest) {
+            await db
+              .update(telegramMessages)
+              .set({ digestNodeId: digestId })
+              .where(inArray(telegramMessages.id, ids));
+          }
         },
       );
 
@@ -273,7 +341,83 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
         .where(eq(agents.id, agent.id))
         .catch(() => {});
 
-      console.log(`[agent] ✓ digest created (${summary.length}c, covers ${batch.length} turns)`);
+      console.log(
+        `[agent] ✓ ${inserted.length} digest(s) created: ` +
+          inserted.map((d) => `"${d.topic}" (${d.turnCount}t)`).join(', '),
+      );
     },
   );
+}
+
+type ParsedTopic = {
+  label: string;
+  summary: string;
+  turnIndexes: number[];
+};
+
+/**
+ * Parse the summarizer's JSON output. Accepts both the new
+ * `{ topics: [...] }` shape and the legacy single-summary string for
+ * backward compatibility — a string response is treated as one topic
+ * covering all turns, labelled "General".
+ */
+function parseTopics(raw: string, batchSize: number): ParsedTopic[] {
+  const cleaned = raw
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+
+  // Plain-text fallback (legacy / model didn't comply with JSON).
+  if (!cleaned.startsWith('{')) {
+    return [
+      {
+        label: 'General',
+        summary: cleaned,
+        turnIndexes: Array.from({ length: batchSize }, (_, i) => i + 1),
+      },
+    ];
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    return [
+      {
+        label: 'General',
+        summary: cleaned,
+        turnIndexes: Array.from({ length: batchSize }, (_, i) => i + 1),
+      },
+    ];
+  }
+
+  const obj = parsed as { topics?: unknown };
+  if (!Array.isArray(obj.topics)) return [];
+
+  const out: ParsedTopic[] = [];
+  for (const t of obj.topics) {
+    if (!t || typeof t !== 'object') continue;
+    const o = t as Record<string, unknown>;
+    const label = typeof o.label === 'string' ? o.label.trim() : '';
+    const summary = typeof o.summary === 'string' ? o.summary.trim() : '';
+    if (!label || !summary) continue;
+    const idxs = Array.isArray(o.turn_indexes)
+      ? o.turn_indexes
+          .map((v) => Number(v))
+          .filter((v) => Number.isInteger(v) && v >= 1 && v <= batchSize)
+          .sort((a, b) => a - b)
+      : [];
+    out.push({ label, summary, turnIndexes: idxs });
+  }
+  return out;
+}
+
+/** Lowercase + dash slug, capped at 64 chars. Used in node.tags so a
+ *  `topic:lister-gantry-rebuild` tag can be `@>` matched at query time. */
+function slugifyTopic(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64);
 }

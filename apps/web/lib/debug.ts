@@ -28,6 +28,17 @@ export type DigestRow = {
   model: string;
   agent: string;
   summary: string;
+  topic: string | null;
+  topicSlug: string | null;
+};
+
+export type TopicRow = {
+  topic: string;
+  topicSlug: string;
+  digestCount: number;
+  turnCount: number;
+  firstSeen: string;
+  lastSeen: string;
 };
 
 export async function listDigests(userId: string, limit = 25): Promise<DigestRow[]> {
@@ -63,8 +74,53 @@ export async function listDigests(userId: string, limit = 25): Promise<DigestRow
       model: String(d.model ?? ''),
       agent: String(d.agent ?? ''),
       summary: String(d.summary ?? ''),
+      topic: typeof d.topic === 'string' && d.topic.trim() ? String(d.topic) : null,
+      topicSlug:
+        typeof d.topic_slug === 'string' && d.topic_slug.trim()
+          ? String(d.topic_slug)
+          : null,
     };
   });
+}
+
+/**
+ * Roll up emergent topics across all conversation_digest nodes:
+ * count of digests, summed source turn count, first / last seen.
+ * Useful for spotting the threads that recur in conversation over time.
+ */
+export async function listTopics(userId: string, limit = 25): Promise<TopicRow[]> {
+  const rows = await db
+    .select({
+      topic: sql<string>`${nodes.data}->>'topic'`,
+      topicSlug: sql<string>`${nodes.data}->>'topic_slug'`,
+      digestCount: sql<number>`count(*)::int`,
+      turnCount: sql<number>`coalesce(sum((${nodes.data}->>'source_turn_count')::int), 0)::int`,
+      firstSeen: sql<Date>`min(${nodes.createdAt})`,
+      lastSeen: sql<Date>`max(${nodes.createdAt})`,
+    })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, userId),
+        eq(nodes.type, 'note'),
+        sql`${nodes.tags} @> ARRAY['conversation-digest']::text[]`,
+        sql`${nodes.data} ? 'topic'`,
+      ),
+    )
+    .groupBy(sql`${nodes.data}->>'topic'`, sql`${nodes.data}->>'topic_slug'`)
+    .orderBy(sql`max(${nodes.createdAt}) desc`)
+    .limit(limit);
+
+  return rows
+    .filter((r) => r.topic && r.topic.length > 0)
+    .map((r) => ({
+      topic: r.topic,
+      topicSlug: r.topicSlug ?? '',
+      digestCount: r.digestCount ?? 0,
+      turnCount: r.turnCount ?? 0,
+      firstSeen: (r.firstSeen as Date).toISOString(),
+      lastSeen: (r.lastSeen as Date).toISOString(),
+    }));
 }
 
 export type ChatRow = {

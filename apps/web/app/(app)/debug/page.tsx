@@ -8,6 +8,7 @@ import {
   listFacts,
   listPersonaNotes,
   listTelegramChats,
+  listTopics,
 } from '@/lib/debug';
 import {
   embedderCacheStats,
@@ -29,6 +30,7 @@ export default async function DebugPage() {
   const user = await requireOwner();
   const [
     digests,
+    topics,
     chats,
     agents,
     factRows,
@@ -41,6 +43,7 @@ export default async function DebugPage() {
     recentFails,
   ] = await Promise.all([
     listDigests(user.id, 25),
+    listTopics(user.id, 25),
     listTelegramChats(user.id),
     listAgentActivity(user.id),
     listFacts(user.id, 25),
@@ -219,6 +222,60 @@ export default async function DebugPage() {
         </section>
       )}
 
+      {/* ─── Emergent topics ────────────────────────────────────────────── */}
+      <section className="space-y-3">
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Conversation topics
+          </h2>
+          <span className="text-xs text-muted-foreground">{topics.length} shown</span>
+        </div>
+
+        {topics.length === 0 ? (
+          <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
+            No topics yet. They emerge as the summarizer rolls up undigested turns
+            and groups them into named threads (default trigger: 30 undigested turns
+            per chat).
+          </p>
+        ) : (
+          <div className="overflow-x-auto rounded-md border border-border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold">Topic</th>
+                  <th className="px-3 py-2 text-right font-semibold">Digests</th>
+                  <th className="px-3 py-2 text-right font-semibold">Turns</th>
+                  <th className="px-3 py-2 text-left font-semibold">First seen</th>
+                  <th className="px-3 py-2 text-left font-semibold">Last seen</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {topics.map((t) => (
+                  <tr key={t.topicSlug || t.topic}>
+                    <td className="px-3 py-2">
+                      <span className="font-medium">{t.topic}</span>
+                      {t.topicSlug && (
+                        <span className="ml-2 font-mono text-xs text-muted-foreground">
+                          topic:{t.topicSlug}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{t.digestCount}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{t.turnCount}</td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">
+                      {fmtRelative(t.firstSeen)}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">
+                      {fmtRelative(t.lastSeen)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
       {/* ─── Recent digests ─────────────────────────────────────────────── */}
       <section className="space-y-3">
         <div className="flex items-baseline justify-between">
@@ -238,6 +295,9 @@ export default async function DebugPage() {
           <ul className="space-y-3">
             {digests.map((d) => (
               <li key={d.id} className="rounded-md border border-border p-3 text-sm">
+                {d.topic && (
+                  <div className="mb-1 text-sm font-semibold">{d.topic}</div>
+                )}
                 <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                   <span className="font-mono">{d.telegramChatId ?? d.chatId.slice(0, 8)}</span>
                   <span>·</span>

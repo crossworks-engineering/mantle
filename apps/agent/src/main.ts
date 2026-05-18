@@ -223,10 +223,12 @@ async function loadContext(
     .reverse()
     .map((d) => {
       const data = d.data as Record<string, unknown>;
+      const topic = typeof data.topic === 'string' && data.topic.trim() ? data.topic.trim() : null;
       return {
         summary: String(data.summary ?? ''),
         periodStart: String(data.period_start ?? ''),
         periodEnd: String(data.period_end ?? ''),
+        topic,
       };
     })
     .filter((d) => d.summary.length > 0);
