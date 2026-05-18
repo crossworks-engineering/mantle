@@ -298,16 +298,52 @@ rank first, then expand each result's entity neighbourhood for context.
 
 ## 5. Layer-to-schema mapping
 
-All in one Postgres. Where each layer lives today, and what's planned:
+All in one Postgres. Where each layer lives today, what storage tech
+sits behind it, and what's planned:
 
-| Layer | Storage | Status |
-|---|---|---|
-| `persona` | `agents.system_prompt` carries the seed identity. Style evolution + relationship notes will land in a `persona_notes` jsonb field (or a separate `agent_notes` table if it grows). | Seed exists; evolution unbuilt. |
-| `recent_turns` | Query against `telegram_messages` (direction-tagged) for the chat. Schema in `packages/db/src/schema/telegram.ts`. | ✓ Live. |
-| `conversation_digest` | `nodes` rows of `type='note'` with `tags @> ['conversation-digest']`. Data jsonb carries summary, period, source turn ids. | ✓ Live (migration 0013). |
-| `profile` | New `facts` table — content, kind (factual / episodic / semantic / preference), entity_id, confidence, valid_from / valid_to, source_node_id, embedding, superseded_by. Optional `entities` + `entity_edges` tables for the graph layer. | Planned (migration 0014+). |
-| `content_index` | Fields on existing `nodes`: `title`, `tags`, `data.summary` (eager-written at ingest), `data.entities`, `embedding` (vector(1536), currently NULL on most rows). Indexable via tsvector + GIN(tags) + IVFFlat(embedding). | Columns exist; summary + embedding population is unbuilt. |
-| `content_store` | Existing `nodes` + specialised tables: `emails`, `email_attachments`, `telegram_messages`, `secrets`, future `files`. | ✓ Live. |
+| Layer | Storage location | Storage tech in play | Status |
+|---|---|---|---|
+| `persona` | `agents.system_prompt` (seed) + planned `agents.persona_notes` jsonb (or sibling `agent_notes` table if it grows) | **Relational** + **jsonb** | Seed live; evolution unbuilt |
+| `recent_turns` | `telegram_messages` rows, direction-tagged. Schema in `packages/db/src/schema/telegram.ts` | **Relational** + **btree** index `(chat_id, sent_at desc)` | ✓ Live |
+| `conversation_digest` | `nodes` rows of `type='note'` with `tags @> ['conversation-digest']`. jsonb data carries summary, period, source turn ids | **Relational** + **jsonb** + **FTS** (tsvector) + **pgvector** (planned, for relevance ranking) | ✓ Live (migration 0013) |
+| `profile` | `facts` table (planned 0014). Optional `entities` + `entity_edges` (planned 0015+) for the graph axis | **Relational** + **jsonb** + **pgvector** (every fact embedded) + **Graph** via tables + recursive CTEs (no Neo4j) | Planned |
+| `content_index` | Columns on existing `nodes`: `title`, `tags`, `data.summary`, `data.entities`, `embedding`, `search_tsv` | **Relational** + **jsonb** + **FTS** (tsvector + GIN) + **pgvector** (IVFFlat) + **ltree** + **GIN** on tags array | Columns exist; population unbuilt |
+| `content_store` | Existing `nodes` + specialised tables (`emails`, `email_attachments`, `telegram_messages`, `secrets`, future `files`) + MinIO for attachment bytes | **Relational** + **jsonb** + **ltree** (hierarchical paths) + **S3** (object bytes via MinIO) | ✓ Live |
+
+### 5.1 Storage tech axes — what each one is for
+
+A glossary so the column above reads cleanly:
+
+- **Relational** — plain SQL tables, columns, foreign keys. The default;
+  used by every layer for its scaffolding.
+- **jsonb** — Postgres native JSON storage with binary representation and
+  GIN indexing. Used wherever data is shaped-but-flexible: the type-
+  specific payload on `nodes`, agent config, fact metadata, persona
+  notes.
+- **btree** — standard sorted index. Used for `(chat_id, sent_at)` style
+  lookups in `recent_turns` and most "look up by id" queries.
+- **FTS (Full-Text Search)** — `tsvector` columns with GIN indexes; the
+  `<@`, `@@`, `plainto_tsquery` operators. Cheap keyword retrieval over
+  large text. Used by `content_index` and `conversation_digest` for the
+  first pass of any text search.
+- **pgvector** — `vector(1536)` column type plus cosine / L2 similarity
+  operators (`<=>`, `<->`). Indexed by IVFFlat (or HNSW) for fast
+  approximate nearest-neighbour search. Used wherever semantic similarity
+  matters: `content_index.embedding`, `facts.embedding`,
+  `entities.embedding`, planned digest embeddings.
+- **Graph** — *not* a separate database. Modeled as `entities` +
+  `entity_edges` tables in Postgres, traversed via recursive CTEs.
+  Personal scale doesn't justify Neo4j. The graph axis lives inside the
+  `profile` layer.
+- **ltree** — Postgres extension for hierarchical paths
+  (`inbox.email_jason.2026.may`). GiST-indexed. Used on `nodes.path` so
+  every layer can answer "everything under this branch" cheaply.
+- **S3** (MinIO) — binary bytes only (attachment files). The metadata
+  + content-addressed key live in `nodes`; the bytes live in MinIO.
+
+The pattern: **everything that can fit in Postgres lives in Postgres.**
+MinIO is the only off-tier dependency, and only because raw file bytes
+don't belong in a row.
 
 ### The `facts` table sketch (planned 0014)
 
@@ -380,7 +416,166 @@ as "where does Jason work *currently*?" via `WHERE valid_to IS NULL`.
 
 ---
 
-## 6. The retrieval order in the prompt
+## 6. Agents and models that build memory
+
+Every layer is either *populated* (writes happen) or *consulted* (reads
+happen) by specific agents or by a small embedding subsystem. The
+`agents` table holds the chat-style LLM agents with their model, system
+prompt, and API key (already live, configurable at `/settings/agents`).
+The embedding subsystem is *not* an agent — it's a stateless utility
+called by agents and at retrieval time.
+
+### 6.1 Producers and consumers, layer by layer
+
+| Layer | Who writes it | Who reads it | Cadence |
+|---|---|---|---|
+| `persona` | `reflector` agent (planned) appends notes; the seed `system_prompt` is hand-written or edited via `/settings/agents` | `responder` (every turn) | Reflector: periodic / on signal. Seed: rarely. |
+| `recent_turns` | The ingestion path (telegram-poll worker writes inbound; `responder` writes outbound) | `responder` (every turn); `summarizer` (when rolling up) | Continuous |
+| `conversation_digest` | `summarizer` agent | `responder` (top-K most relevant prepended each turn) | When undigested-turn count crosses threshold (default 30) |
+| `profile` (`facts` table) | `extractor` agent | `responder` (top-K relevant prepended each turn); MCP `search` tool for external clients | On every new `content_store` row; on edits via `dirty=true` flag |
+| `content_index` (fields on `nodes`) | `extractor` agent (or a dedicated `indexer` role — for v1 the extractor produces both summary and facts in one pass) | `responder` (when user mentions content); MCP `search` tool | On every new `content_store` row |
+| `content_store` | Ingestion workers (email-sync, telegram-poll, future file/note ingest) | Fetched by id only when full body is needed | Append-only on ingest |
+
+### 6.2 The agent roles
+
+These are values of the `agent_role` enum in
+[`packages/db/src/schema/agents.ts`](../packages/db/src/schema/agents.ts).
+Each agent is one row in `agents`; you configure them at
+`/settings/agents`.
+
+| Role | Status | Default model | What it does |
+|---|---|---|---|
+| `responder` | ✓ Live | `anthropic/claude-sonnet-4.6` | The user-facing chat agent (Sarah for Telegram). Reads from every layer, composes replies. Heavy reasoning. |
+| `assistant` | Enum only | `anthropic/claude-sonnet-4.6` | The web-chat counterpart to `responder` once that surface lands. Same memory, different transport. |
+| `summarizer` | ✓ Live | `anthropic/claude-haiku-4.5` | Produces `conversation_digest` rows. Cheap, runs on a debounced LISTEN. |
+| `extractor` | Enum only — planned | `anthropic/claude-haiku-4.5` | At content ingest: writes per-item summary + entities into `content_index`, extracts facts + runs the ADD/UPDATE/DELETE classifier into `profile`. The Mem0-pattern build. |
+| `reflector` | Planned (likely a future enum value) | `anthropic/claude-haiku-4.5` | Watches conversations for relationship signals ("Jason said 'too verbose' on X") and appends to `persona_notes`. Never overwrites the seed `system_prompt`. |
+| `custom` | ✓ Live | Whatever you pick | Catch-all for anything that doesn't fit. |
+
+**Why Sonnet for `responder` / `assistant`:** these agents do real
+reasoning across all six memory layers in the same prompt. Cheaping out
+here is the wrong tradeoff — recall quality lives or dies by the
+responder's ability to use what's been retrieved.
+
+**Why Haiku for the background agents:** summarization, extraction, and
+reflection are well-defined compression tasks. Haiku is 5-10x cheaper
+than Sonnet and plenty smart for them. Could go further (DeepSeek,
+local Qwen) for cost; we default to Haiku for stability + caching.
+
+**Priority ranking** (the `priority` column on `agents`) decides who
+wins when two agents share a role — e.g. two `responder` rows enabled
+means the higher-priority one handles Telegram. Drop a row's priority
+to switch. See `architecture.md` §9b for the resolution logic.
+
+### 6.3 The embedding subsystem
+
+Embedding text into vectors is its own concern, separate from the chat
+agents. Different model type, different API path, different scale.
+
+- **What it does.** Given a piece of text, returns a `vector(1536)`
+  that can be similarity-searched in pgvector. No reasoning, no system
+  prompt, no streaming. Pure transform.
+- **Default model.** `openai/text-embedding-3-small`. 1536 dimensions
+  (matches our column). $0.02 per 1M tokens. Fast and cheap enough that
+  embedding everything we write is unmeasurable on the bill.
+- **Alternatives.** `voyage-3` (slightly better retrieval, more
+  expensive), `cohere/embed-multilingual-v3` (1024 dims — would require
+  a schema change), or a local model like `all-MiniLM-L6-v2` running on
+  the VPS (zero per-call cost, ~80MB resident). Local becomes attractive
+  once volume scales.
+- **API key.** OpenAI direct, not OpenRouter — OpenRouter's chat-
+  completion routing doesn't currently expose embedding endpoints. Add
+  an `openai` key at `/settings/keys` (separate from the `openrouter`
+  key the agents use).
+- **Where it's called.**
+  - **At write time** by the `extractor` (per content_store item +
+    per fact), by the `summarizer` (per digest, for relevance ranking),
+    and by the entity ingest path (per entity).
+  - **At read time** by the responder (to embed the user's incoming
+    message + any sub-queries it forms before doing similarity search
+    against `facts`, `content_index`, or entities).
+- **Caching.** Embeddings are deterministic for a given (model, text)
+  pair. Cache by content hash to avoid re-embedding identical strings.
+  Free win once volume rises.
+- **Where it lives in code (planned).** A small module like
+  `packages/embeddings/src/index.ts` exposing
+  `embed(text: string): Promise<number[]>` and
+  `embedBatch(texts: string[]): Promise<number[][]>`. Reads the OpenAI
+  key from the vault via `getApiKey(userId, 'openai')`. Caches by hash.
+
+### 6.4 The agent → layer dataflow
+
+Visual map of who writes what, who reads what:
+
+```
+                              ┌─────────────────┐
+                              │   responder     │ (Sonnet)
+                              │   (user-facing) │
+                              │                 │
+                              │  READS:         │
+                              │   persona       │
+                              │   profile       │◀──── reads top-K facts
+                              │   conv_digest   │◀──── reads top-K digests
+                              │   content_index │◀──── reads top hit (if relevant)
+                              │   recent_turns  │◀──── reads sliding window
+                              │                 │
+                              │  WRITES:        │
+                              │   recent_turns  │ (outbound rows)
+                              └─────────────────┘
+                                       ▲
+                                       │ delegates / shares store
+                                       │
+       ┌───────────────────────────────┼────────────────────────────────┐
+       │                               │                                │
+┌──────┴──────────┐         ┌──────────┴───────┐         ┌──────────────┴─────┐
+│   summarizer    │         │   extractor      │         │   reflector        │
+│   (Haiku)       │         │   (Haiku, plan.) │         │   (Haiku, planned) │
+│                 │         │                  │         │                    │
+│  READS:         │         │  READS:          │         │  READS:            │
+│   recent_turns  │         │   content_store  │         │   recent_turns     │
+│                 │         │   facts (for     │         │   conv_digest      │
+│  WRITES:        │         │     dedup check) │         │                    │
+│   conv_digest   │         │                  │         │  WRITES:           │
+│                 │         │  WRITES:         │         │   persona_notes    │
+└────────┬────────┘         │   content_index  │         └──────────┬─────────┘
+         │                  │   facts (profile)│                    │
+         │ uses             │                  │                    │
+         │                  └────────┬─────────┘                    │
+         │                           │ uses                         │
+         ▼                           ▼                              │
+                  ┌──────────────────────────────────┐              │
+                  │   embedding subsystem            │              │
+                  │   (openai/text-embedding-3-small)│              │
+                  │   utility, not an agent          │              │
+                  │   called from anywhere that      │              │
+                  │   needs a vector(1536)           │              │
+                  └──────────────────────────────────┘              │
+                                                                    │
+                                                                    │
+                              ┌─────────────────┐                   │
+                              │   ingestion     │                   │
+                              │   workers       │                   │
+                              │   (email-sync,  │                   │
+                              │    telegram-poll│                   │
+                              │    etc.)        │                   │
+                              │                 │                   │
+                              │  WRITES:        │                   │
+                              │   content_store │ ───triggers──▶ extractor
+                              │   recent_turns  │ ───triggers──▶ summarizer (eventually)
+                              │                 │                   │
+                              └─────────────────┘                   │
+                                                                    │
+                              ┌─────────────────────────────────────┘
+                              │
+                              ▼
+                              (reflector consumes the same conversation
+                               stream the responder produces, in slow
+                               background passes)
+```
+
+---
+
+## 7. The retrieval order in the prompt
 
 Once the full memory stack is built, the responder's prompt assembly is:
 
@@ -404,7 +599,7 @@ section starts dominating the bill.
 
 ---
 
-## 7. Build sequence
+## 8. Build sequence
 
 Each step delivers value standalone.
 
@@ -434,7 +629,7 @@ Roughly a weekend per step.
 
 ---
 
-## 8. What we deliberately don't do
+## 9. What we deliberately don't do
 
 - **No separate vector DB.** pgvector in one Postgres handles personal-
   scale data with room to spare. Pinecone et al. are right when you
@@ -456,7 +651,7 @@ Roughly a weekend per step.
 
 ---
 
-## 9. Reading the code
+## 10. Reading the code
 
 Live today:
 - [`apps/agent/src/main.ts`](../apps/agent/src/main.ts) — responder +
