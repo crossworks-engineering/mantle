@@ -26,7 +26,7 @@ export {
   deleteFile,
   renameFile,
   removeFolder,
-} from './fs.js';
+} from './host-fs.js';
 
 export {
   ensureFilesRootBranch,
