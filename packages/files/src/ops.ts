@@ -488,6 +488,172 @@ export async function deleteFileById(args: {
   return { ok: true };
 }
 
+/**
+ * Sync a file the watcher just observed on disk into the DB without
+ * re-writing it. Differs from `upsertFile` in two ways:
+ *
+ *   1. Bytes are NOT written back to disk — they're already there.
+ *      Calling `upsertFile` would trigger another change event and
+ *      we'd loop forever.
+ *   2. If the DB row already has the same sha256, we no-op. This
+ *      catches editor-save-twice and our own UI writes (which set
+ *      sha256 before chokidar even reports the change).
+ *
+ * Returns 'noop' | 'inserted' | 'updated' so the watcher can log.
+ */
+export async function syncFileFromDisk(args: {
+  ownerId: string;
+  parentPath: string;
+  filename: string;
+  bytes: Buffer;
+}): Promise<{ status: 'noop' | 'inserted' | 'updated'; nodeId: string | null }> {
+  if (!isFilesPath(args.parentPath)) {
+    throw new Error(`syncFileFromDisk: parent '${args.parentPath}' is outside the files root`);
+  }
+  const filename = sanitizeFilename(args.filename);
+  if (!filename) {
+    throw new Error(`syncFileFromDisk: invalid filename '${args.filename}'`);
+  }
+  // Compute hash locally; no disk write.
+  const { createHash } = await import('node:crypto');
+  const sha256 = createHash('sha256').update(args.bytes).digest('hex');
+  const ext = extOf(filename);
+  const mime = mimeForExt(ext);
+  const isText = TEXT_EXTS.has(ext);
+
+  // Make sure the parent folder exists in the DB. If chokidar saw a
+  // file under a directory we don't know about, lazy-create the
+  // branch chain. The watcher caller is the one in charge of
+  // mirroring whole subtrees consistently.
+  const [parent] = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, args.ownerId),
+        eq(nodes.type, 'branch'),
+        sql`${nodes.path}::text = ${args.parentPath}`,
+      ),
+    )
+    .limit(1);
+  if (!parent) {
+    await ensureBranchChain(args.ownerId, args.parentPath);
+  }
+
+  const [existing] = await db
+    .select()
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, args.ownerId),
+        eq(nodes.type, 'file'),
+        sql`${nodes.path}::text = ${args.parentPath}`,
+        sql`${nodes.data}->>'filename' = ${filename}`,
+      ),
+    )
+    .limit(1);
+
+  const content = isText && args.bytes.byteLength <= TEXT_BYTE_CAP
+    ? args.bytes.toString('utf8')
+    : null;
+
+  const newData: Record<string, unknown> = {
+    filename,
+    extension: ext,
+    mime_type: mime,
+    size_bytes: args.bytes.byteLength,
+    sha256,
+    ...(content != null ? { content } : {}),
+  };
+
+  if (existing) {
+    const oldData = (existing.data ?? {}) as Record<string, unknown>;
+    // Same bytes? Watcher fired but nothing changed — likely an
+    // atime tick or our own UI write that already populated the row.
+    if (oldData.sha256 === sha256) {
+      return { status: 'noop', nodeId: existing.id };
+    }
+    const [updated] = await db
+      .update(nodes)
+      .set({
+        title: filename,
+        data: { ...newData },
+        updatedAt: new Date(),
+        embedding: null,
+      })
+      .where(eq(nodes.id, existing.id))
+      .returning({ id: nodes.id });
+    if (!updated) throw new Error('syncFileFromDisk: update returned no row');
+    await db.execute(sql`SELECT pg_notify('node_ingested', ${updated.id}::text)`);
+    return { status: 'updated', nodeId: updated.id };
+  }
+  const [inserted] = await db
+    .insert(nodes)
+    .values({
+      ownerId: args.ownerId,
+      type: 'file',
+      title: filename,
+      slug: filename,
+      path: args.parentPath,
+      data: newData,
+      tags: ['file'],
+    })
+    .returning({ id: nodes.id });
+  if (!inserted) throw new Error('syncFileFromDisk: insert returned no row');
+  return { status: 'inserted', nodeId: inserted.id };
+}
+
+/** Delete a file row by its on-disk coordinates. Used by the watcher
+ *  when a file disappears from disk. */
+export async function deleteFileByPath(args: {
+  ownerId: string;
+  parentPath: string;
+  filename: string;
+}): Promise<{ ok: boolean }> {
+  const [node] = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, args.ownerId),
+        eq(nodes.type, 'file'),
+        sql`${nodes.path}::text = ${args.parentPath}`,
+        sql`${nodes.data}->>'filename' = ${args.filename}`,
+      ),
+    )
+    .limit(1);
+  if (!node) return { ok: false };
+  await db.delete(nodes).where(eq(nodes.id, node.id));
+  return { ok: true };
+}
+
+/** Lazy-mkdir for an arbitrary ltree path under `files.*`. Inserts a
+ *  branch node for every missing label so the watcher can pick up files
+ *  created in folders the UI hasn't seen yet. */
+async function ensureBranchChain(ownerId: string, ltreePath: string): Promise<void> {
+  if (!isFilesPath(ltreePath)) return;
+  const segments = ltreePath.split('.');
+  for (let i = 1; i <= segments.length; i++) {
+    const prefix = segments.slice(0, i).join('.');
+    const label = segments[i - 1]!;
+    const slug = label.replace(/_/g, '-');
+    await db
+      .insert(nodes)
+      .values({
+        ownerId,
+        type: 'branch',
+        title: slug,
+        slug,
+        path: prefix,
+        data: { description: '', slug },
+      })
+      .onConflictDoNothing({
+        target: [nodes.ownerId, nodes.path],
+        where: sql`${nodes.type} = 'branch'`,
+      });
+  }
+}
+
 export async function renameFileById(args: {
   ownerId: string;
   fileId: string;

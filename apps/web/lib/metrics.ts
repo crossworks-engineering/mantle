@@ -118,6 +118,106 @@ export async function embedderCacheStats(
   };
 }
 
+export type DailySpend = {
+  /** ISO date (YYYY-MM-DD) in the server's local timezone. */
+  day: string;
+  costMicroUsd: number;
+  tokensIn: number;
+  tokensOut: number;
+  cacheReadTokens: number;
+  runs: number;
+};
+
+/**
+ * Per-day spend buckets for the last `daysBack` days. Includes zero
+ * rows for empty days so charts can render a continuous strip.
+ */
+export async function spendByDay(userId: string, daysBack: number): Promise<DailySpend[]> {
+  const since = new Date(Date.now() - daysBack * 86_400_000);
+  const rows = await db
+    .select({
+      day: sql<string>`to_char(date_trunc('day', ${traces.startedAt}), 'YYYY-MM-DD')`,
+      costMicroUsd: sql<number>`coalesce(sum(${traces.costMicroUsd}), 0)::bigint`,
+      tokensIn: sql<number>`coalesce(sum(${traces.tokensIn}), 0)::int`,
+      tokensOut: sql<number>`coalesce(sum(${traces.tokensOut}), 0)::int`,
+      cacheReadTokens: sql<number>`coalesce(sum(${traces.tokensCacheRead}), 0)::int`,
+      runs: sql<number>`count(*)::int`,
+    })
+    .from(traces)
+    .where(and(eq(traces.ownerId, userId), gte(traces.startedAt, since)))
+    .groupBy(sql`date_trunc('day', ${traces.startedAt})`)
+    .orderBy(sql`date_trunc('day', ${traces.startedAt}) asc`);
+
+  const byDay = new Map(rows.map((r) => [r.day, r]));
+  const out: DailySpend[] = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  for (let i = daysBack - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    const row = byDay.get(key);
+    out.push({
+      day: key,
+      costMicroUsd: row ? Number(row.costMicroUsd) : 0,
+      tokensIn: row?.tokensIn ?? 0,
+      tokensOut: row?.tokensOut ?? 0,
+      cacheReadTokens: row?.cacheReadTokens ?? 0,
+      runs: row?.runs ?? 0,
+    });
+  }
+  return out;
+}
+
+export type ModelSpend = {
+  /** The OpenRouter model slug captured in trace_steps.meta.model. */
+  model: string;
+  costMicroUsd: number;
+  tokensIn: number;
+  tokensOut: number;
+  cacheReadTokens: number;
+  calls: number;
+};
+
+/**
+ * Per-model spend rollup over the trace_steps table. Embeddings and chat
+ * completions both land here because both go through `step(...).setMeta(
+ * { model, cost_micro_usd, ... })`. Keyed by `meta.model` so the
+ * dashboard can spot which model is eating the budget.
+ */
+export async function spendByModel(userId: string, daysBack: number): Promise<ModelSpend[]> {
+  const since = new Date(Date.now() - daysBack * 86_400_000);
+  const rows = await db
+    .select({
+      model: sql<string>`coalesce(${traceSteps.meta}->>'model', '(unknown)')`,
+      costMicroUsd: sql<number>`coalesce(sum((${traceSteps.meta}->>'cost_micro_usd')::bigint), 0)::bigint`,
+      tokensIn: sql<number>`coalesce(sum((${traceSteps.meta}->>'tokens_in')::int), 0)::int`,
+      tokensOut: sql<number>`coalesce(sum((${traceSteps.meta}->>'tokens_out')::int), 0)::int`,
+      cacheReadTokens: sql<number>`coalesce(sum((${traceSteps.meta}->>'cache_read')::int), 0)::int`,
+      calls: sql<number>`count(*)::int`,
+    })
+    .from(traceSteps)
+    .innerJoin(traces, eq(traceSteps.traceId, traces.id))
+    .where(
+      and(
+        eq(traces.ownerId, userId),
+        gte(traceSteps.startedAt, since),
+        sql`${traceSteps.meta} ? 'model'`,
+      ),
+    )
+    .groupBy(sql`coalesce(${traceSteps.meta}->>'model', '(unknown)')`)
+    .orderBy(desc(sql`coalesce(sum((${traceSteps.meta}->>'cost_micro_usd')::bigint), 0)`));
+
+  return rows.map((r) => ({
+    model: r.model,
+    costMicroUsd: Number(r.costMicroUsd),
+    tokensIn: r.tokensIn,
+    tokensOut: r.tokensOut,
+    cacheReadTokens: r.cacheReadTokens,
+    calls: r.calls,
+  }));
+}
+
 export type TopError = {
   message: string;
   count: number;

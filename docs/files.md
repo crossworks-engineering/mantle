@@ -104,9 +104,12 @@ the raw download endpoint. The extractor returns the empty body for
 binaries, so they fall through the 20-char minimum-body guard and get
 skipped silently.
 
-PDFs are the first planned exception — the extractor has a hook for
-`extOf(filename) === 'pdf'` ready, but the actual `pdf-parse` (and
-optional OCR) integration is a follow-up.
+**PDFs are ingestable.** `INGESTABLE_EXTS` ∋ `pdf`, and the extractor's
+`readNodeBody` routes `.pdf` files through `@mantle/files/pdf`, a thin
+wrapper around `pdf-parse` that returns the embedded text layer.
+Scanned-image PDFs come back as '' (no OCR) and fall through the
+20-char guard. Encrypted / corrupt PDFs throw and the extractor swallows
+the error, falling back to the node title.
 
 ---
 
@@ -181,16 +184,50 @@ Same auth model as the other MCP tools — every query is scoped to
 
 ---
 
-## 10. Known sharp edges
+## 10. External-edit watcher
 
-- **External edits don't round-trip.** If you `vim` a file on disk
-  outside Mantle, the DB row's `data.content`, sha256, and size go
-  stale until the file is re-saved through the UI / API. A rescan
-  script is on the followup list.
+A separate worker (`apps/web/workers/files-watch.ts`, runs as the
+`files` lane in `pnpm dev`) uses [chokidar](https://github.com/paulmillr/chokidar)
+to observe `MANTLE_FILES_ROOT` and reflect off-Mantle disk changes back
+into the DB. So if you `vim` a markdown file on the host, or Syncthing
+drops a new PDF into the folder, the row updates without any UI action.
+
+**Three events**:
+
+| chokidar event | What the watcher does                                         |
+|----------------|---------------------------------------------------------------|
+| `add`          | `syncFileFromDisk` — insert a `file` node (or no-op if same sha256). |
+| `change`       | `syncFileFromDisk` — update node, clear embedding, re-fire `node_ingested`. |
+| `unlink`       | `deleteFileByPath` — drop the DB row.                         |
+
+**Loop prevention** is built in: `syncFileFromDisk` only ever reads the
+disk, never writes back. So when the UI uploads a file, it updates the
+DB row first (with the new sha256), then chokidar reports the change,
+the watcher recomputes the same sha256, sees it matches, and no-ops.
+No echo, no convergence races.
+
+**What's ignored**: dotfiles, `~`-suffixed backups, `.swp` / `.swx` /
+`.tmp` editor temps, plus anything whose extension isn't in the
+watched set (TEXT_EXTS + ingestable + common image / csv / html
+formats). `awaitWriteFinish` with a 400ms stability threshold means
+multi-chunk editor writes don't get read half-saved.
+
+**What's NOT done**: the watcher doesn't track folder add / unlink
+events; lazy `ensureBranchChain` inside `syncFileFromDisk` creates any
+missing branch nodes when a file lands under a new directory. Empty
+folders left on disk are harmless. Folder renames at the OS level
+will show up as a delete-all + re-add storm; the UI is still the
+recommended path for renames.
+
+---
+
+## 11. Known sharp edges
+
 - **No file move.** Move = delete + reupload. Adds folder-cascade
   complexity disproportionate to the value at this scale.
 - **No file versioning.** Edits overwrite; the old content is gone.
   Git the folder if you care.
-- **PDF text extraction**: parser hook in place, integration deferred.
+- **Scanned PDFs return empty text.** No OCR — they fall through the
+  20-char guard and get skipped.
 - **Concurrent writes**: two simultaneous saves on the same file
   race at the disk layer. Single-user system, fine for now.

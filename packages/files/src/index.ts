@@ -15,6 +15,7 @@ export {
   isFilesPath,
   diskPathForLtree,
   diskPathForFile,
+  ltreeForDiskPath,
   FILES_ROOT_LABEL,
 } from './paths';
 
@@ -44,6 +45,8 @@ export {
   bulkDeleteFiles,
   listFiles,
   fileById,
+  syncFileFromDisk,
+  deleteFileByPath,
   type FolderRow,
   type FileRow,
 } from './ops';

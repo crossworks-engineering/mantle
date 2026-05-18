@@ -14,6 +14,8 @@ import {
   embedderCacheStats,
   recentFailures,
   spendByAgent,
+  spendByDay,
+  spendByModel,
   topErrors,
   trafficWindow,
 } from '@/lib/metrics';
@@ -41,6 +43,8 @@ export default async function DebugPage() {
     cache7d,
     errors7d,
     recentFails,
+    daily14d,
+    modelSpend7d,
   ] = await Promise.all([
     listDigests(user.id, 25),
     listTopics(user.id, 25),
@@ -54,7 +58,10 @@ export default async function DebugPage() {
     embedderCacheStats(user.id, 7),
     topErrors(user.id, 7, 5),
     recentFailures(user.id, 10),
+    spendByDay(user.id, 14),
+    spendByModel(user.id, 7),
   ]);
+  const maxDaily = daily14d.reduce((m, d) => Math.max(m, d.costMicroUsd), 0);
 
   const totalSpend = spend7d.reduce((sum, r) => sum + r.costMicroUsd, 0);
   const cacheTotal = cache7d.hits + cache7d.misses;
@@ -173,6 +180,81 @@ export default async function DebugPage() {
               </li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {/* ─── Daily spend (14d) ─────────────────────────────────────────── */}
+      <section className="space-y-3">
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Daily spend (14d)
+          </h2>
+          <span className="text-xs text-muted-foreground">
+            {formatMicroUsd(daily14d.reduce((s, d) => s + d.costMicroUsd, 0))} total
+          </span>
+        </div>
+        <div className="rounded-md border border-border p-3">
+          <div className="flex h-32 items-end gap-1">
+            {daily14d.map((d) => {
+              const heightPct = maxDaily > 0 ? (d.costMicroUsd / maxDaily) * 100 : 0;
+              const today = d.day === new Date().toISOString().slice(0, 10);
+              return (
+                <div
+                  key={d.day}
+                  className="group relative flex-1 min-w-0"
+                  title={`${d.day} — ${formatMicroUsd(d.costMicroUsd)} · ${d.runs} runs · ${d.tokensIn + d.tokensOut} tok`}
+                >
+                  <div
+                    className={`w-full rounded-t-sm ${today ? 'bg-emerald-500/70' : 'bg-emerald-500/30'} group-hover:bg-emerald-500/80`}
+                    style={{ height: `${Math.max(heightPct, d.costMicroUsd > 0 ? 4 : 0)}%` }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+            <span>{daily14d[0]?.day.slice(5)}</span>
+            <span>{daily14d[daily14d.length - 1]?.day.slice(5)}</span>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Spend by model (7d) ───────────────────────────────────────── */}
+      {modelSpend7d.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Spend by model (7d)
+          </h2>
+          <div className="overflow-x-auto rounded-md border border-border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold">Model</th>
+                  <th className="px-3 py-2 text-right font-semibold">Calls</th>
+                  <th className="px-3 py-2 text-right font-semibold">Tokens in</th>
+                  <th className="px-3 py-2 text-right font-semibold">Tokens out</th>
+                  <th className="px-3 py-2 text-right font-semibold">Cache read</th>
+                  <th className="px-3 py-2 text-right font-semibold">Cost</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {modelSpend7d.map((m) => (
+                  <tr key={m.model}>
+                    <td className="px-3 py-2 font-mono text-xs">{m.model}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{m.calls}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{m.tokensIn.toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{m.tokensOut.toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                      {m.cacheReadTokens.toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {formatMicroUsd(m.costMicroUsd)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
 

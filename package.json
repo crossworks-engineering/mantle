@@ -8,11 +8,12 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "concurrently -n web,mcp,worker,tg,agent -c blue,magenta,green,yellow,cyan \"pnpm -C apps/web dev\" \"pnpm -C apps/mcp dev\" \"pnpm -C apps/web worker:dev\" \"pnpm -C apps/web worker:telegram:dev\" \"pnpm -C apps/agent dev\"",
+    "dev": "concurrently -n web,mcp,worker,tg,files,agent -c blue,magenta,green,yellow,gray,cyan \"pnpm -C apps/web dev\" \"pnpm -C apps/mcp dev\" \"pnpm -C apps/web worker:dev\" \"pnpm -C apps/web worker:telegram:dev\" \"pnpm -C apps/web worker:files:dev\" \"pnpm -C apps/agent dev\"",
     "dev:web": "pnpm -C apps/web dev",
     "dev:mcp": "pnpm -C apps/mcp dev",
     "dev:worker": "pnpm -C apps/web worker:dev",
     "dev:telegram": "pnpm -C apps/web worker:telegram:dev",
+    "dev:files": "pnpm -C apps/web worker:files:dev",
     "dev:agent": "pnpm -C apps/agent dev",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",

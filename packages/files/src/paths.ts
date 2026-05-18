@@ -63,3 +63,26 @@ export function diskPathForFile(parentLtreePath: string, filename: string): stri
   if (filename.includes('/') || filename.includes('\\')) return null;
   return path.join(parentDir, filename);
 }
+
+/**
+ * Reverse-map an absolute file path on disk to (parentLtreePath, filename).
+ * Returns null when the path is outside the host-mirrored root.
+ *
+ * Used by the external-edit watcher to figure out where a file landed
+ * so we can sync the DB row.
+ */
+export function ltreeForDiskPath(absPath: string): { parentPath: string; filename: string } | null {
+  const root = filesRoot();
+  const resolved = path.resolve(absPath);
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) return null;
+  const rel = path.relative(root, resolved);
+  if (!rel || rel.startsWith('..')) return null;
+  const parts = rel.split(path.sep);
+  const filename = parts.pop();
+  if (!filename) return null;
+  const segments = parts.map((s) => s.replace(/-/g, '_'));
+  const parentPath = segments.length === 0
+    ? FILES_ROOT_LABEL
+    : `${FILES_ROOT_LABEL}.${segments.join('.')}`;
+  return { parentPath, filename };
+}

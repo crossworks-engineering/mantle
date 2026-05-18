@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "worker:dev": "tsx --watch --env-file-if-exists=./.env.local workers/email-sync.ts",
     "worker:telegram:dev": "tsx --watch --env-file-if-exists=./.env.local workers/telegram-poll.ts",
+    "worker:files:dev": "tsx --watch --env-file-if-exists=./.env.local workers/files-watch.ts",
     "seed:telegram": "tsx --env-file-if-exists=./.env.local scripts/seed-telegram.ts",
     "extract:backfill": "tsx --env-file-if-exists=./.env.local scripts/extract-backfill.ts",
     "re-embed": "tsx --env-file-if-exists=./.env.local scripts/re-embed.ts"
@@ -39,6 +40,7 @@
     "@radix-ui/react-tooltip": "^1.1.6",
     "@xyflow/react": "^12.3.5",
     "bcryptjs": "^2.4.3",
+    "chokidar": "^4.0.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dagre": "^0.8.5",

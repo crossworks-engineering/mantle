@@ -182,6 +182,13 @@ Five widget sections at the top of `/debug`, computed via
   error message, count + most-recent trace link.
 - **Recent failed traces** — last 10 failures with one-click
   jump to the trace detail.
+- **Daily spend (14d)** — bar strip of `traces.cost_micro_usd`
+  bucketed by `date_trunc('day')`. Today is highlighted; empty
+  days are zero-filled so the strip stays continuous.
+- **Spend by model (7d)** — table joining `trace_steps` on
+  `meta->>'model'`, summing `meta->>'cost_micro_usd'`. Includes
+  both LLM chat calls and embedding calls, so you can spot
+  which model is eating the budget.
 - **Spend by agent (7d)** — table: runs, tokens in/out, cache
   reads, total cost.
 

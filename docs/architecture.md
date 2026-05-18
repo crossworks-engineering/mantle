@@ -81,8 +81,8 @@ plus a single `pnpm dev` process tree (the four Node processes orchestrated by
 
 ## 3. The processes
 
-`pnpm dev` (`package.json:11`) runs five concurrent workers, named `web`,
-`mcp`, `worker`, `tg`, and `agent`. Plus Postgres and MinIO from
+`pnpm dev` (`package.json:11`) runs six concurrent workers, named `web`,
+`mcp`, `worker`, `tg`, `files`, and `agent`. Plus Postgres and MinIO from
 docker-compose. That's it.
 
 | Process            | What it does                                                                  |
@@ -93,6 +93,7 @@ docker-compose. That's it.
 | `mcp`              | MCP server (`apps/mcp/src/server.ts`). Speaks stdio JSON-RPC to Claude Code.  |
 | `worker` (email)   | `apps/web/workers/email-sync.ts`. pg-boss queue consumer, runs IMAP syncs.    |
 | `tg`               | `apps/web/workers/telegram-poll.ts`. Long-polls Telegram for new DMs.         |
+| `files`            | `apps/web/workers/files-watch.ts`. chokidar on `MANTLE_FILES_ROOT`; mirrors external edits (vim, Syncthing, host `cp`) back into the DB. Loop-safe via `syncFileFromDisk`, which never re-writes bytes. |
 | `agent`            | `apps/agent/src/main.ts`. LISTENs on `telegram_message_inserted`, replies via OpenRouter. Shares prompt-build + LLM helpers with the web `/assistant` via `@mantle/agent-runtime`. |
 
 The workers live under `apps/web/workers/` (not in their own app) because they
@@ -293,6 +294,15 @@ consumer. Three queues: `mantle.email.sync` (per-account work),
 `mantle.email.backfill` (deeper history rescans), `mantle.email.scheduler`
 (periodic enqueueing of `sync` jobs). pg-boss owns the `pgboss` schema in
 Postgres; jobs survive process restarts.
+
+**Extractor handoff.** Once an `allowed` message lands as a `nodes` row
+with `type='email'`, the `node_ingested` pg_notify trigger
+(migration 0018) fires and the extractor agent picks it up — same path
+as notes and files. `DEFAULT_EXTRACT_TYPES` in
+`apps/agent/src/extractor.ts:63` includes `email` and `email_thread` so
+no per-agent config is needed; `readNodeBody` joins the `emails` table
+for subject + plaintext body. Bodies longer than `BODY_MAX_CHARS`
+(24K) get head+tail-truncated to bound the prompt cost.
 
 ---
 

@@ -75,7 +75,9 @@ export function extOf(filename: string): string {
  */
 export const TEXT_EXTS = new Set<string>(['md', 'markdown', 'txt', 'json', 'yaml', 'yml']);
 export const PREVIEWABLE_MARKDOWN_EXTS = new Set<string>(['md', 'markdown']);
-export const INGESTABLE_EXTS = new Set<string>([...TEXT_EXTS]);
+/** TEXT_EXTS + binary types the extractor can pull readable text from
+ *  (currently just PDFs via pdf-parse — see packages/files/src/pdf.ts). */
+export const INGESTABLE_EXTS = new Set<string>([...TEXT_EXTS, 'pdf']);
 
 /** Map an extension to a sensible MIME type. Falls back to octet-stream. */
 export function mimeForExt(ext: string): string {
