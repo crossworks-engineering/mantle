@@ -237,4 +237,5 @@ consolidation (Mem0-style).
 ## Docs
 
 - [`docs/architecture.md`](./docs/architecture.md) — full architecture tour: the five processes, the data plane, the `nodes` abstraction, the ingest pipelines, the MCP tools, the workspace layout. Read this before touching the codebase.
+- [`docs/memory.md`](./docs/memory.md) — the memory layer: tier taxonomy (conversation / session / user), vector vs graph retrieval, the planned `memories` / `entities` / `entity_edges` schema, and the build sequence beyond what's shipped.
 - [`docs/telegram.md`](./docs/telegram.md) — frozen handoff covering the Telegram bridge build (May 2026). Historical project diary; the durable reference is `architecture.md`.

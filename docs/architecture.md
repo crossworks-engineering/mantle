@@ -3,9 +3,12 @@
 A concrete, file-cited tour of how the system fits together. If you want one
 document to read before touching the codebase, this is it.
 
-Companion doc: [`telegram.md`](./telegram.md) — a frozen handoff covering the
-Telegram bridge build. This file is the durable architecture reference; that
-file is a project diary.
+Companion docs:
+- [`memory.md`](./memory.md) — the memory layer in depth: tier taxonomy,
+  vector vs graph retrieval, planned `memories` / `entities` / `entity_edges`
+  schema, the build sequence.
+- [`telegram.md`](./telegram.md) — a frozen handoff covering the Telegram
+  bridge build. Project diary; durable details have moved here.
 
 ---
 
