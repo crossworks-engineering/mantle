@@ -497,7 +497,8 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
 
   const memoryConfig = (agent.memoryConfig ?? {}) as AgentMemoryConfig;
   const extractTypes = memoryConfig.extract_types ?? DEFAULT_EXTRACT_TYPES;
-  if (!extractTypes.includes(node.type)) return;
+  // `*` is a wildcard meaning "any non-HARD_SKIP type" — already enforced above.
+  if (!extractTypes.includes('*') && !extractTypes.includes(node.type)) return;
 
   if (!agent.apiKeyId) {
     console.error(`[extractor] agent '${agent.slug}' has no api_key_id — skipping`);

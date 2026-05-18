@@ -844,9 +844,12 @@ export function AgentsClient({
                       onChange={(v) => setForm((f) => ({ ...f, extractTypes: v }))}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Click a chip to toggle. Add a custom type if you&apos;ve introduced
-                      a new node kind. <code>branch</code> and <code>secret</code> are
-                      HARD-SKIPPED regardless of this setting.
+                      Click a chip to toggle. <strong>all types</strong> is a
+                      wildcard — matches every node type the extractor sees, so the
+                      specific chips become redundant when it&apos;s on. Add a custom
+                      type if you&apos;ve introduced a new node kind.{' '}
+                      <code>branch</code> and <code>secret</code> are HARD-SKIPPED
+                      regardless of this setting.
                     </p>
                   </div>
                   <label className="flex items-center gap-2 text-sm">
@@ -1031,7 +1034,7 @@ function NodeTypePicker({
   // values not already in the known set.
   const known = KNOWN_NODE_TYPES;
   const customs = Array.from(selected).filter(
-    (t) => !known.includes(t as (typeof KNOWN_NODE_TYPES)[number]),
+    (t) => t !== '*' && !known.includes(t as (typeof KNOWN_NODE_TYPES)[number]),
   );
 
   const commit = (next: Set<string>) => {
@@ -1054,11 +1057,29 @@ function NodeTypePicker({
     setCustomDraft('');
   };
 
+  const wildcardOn = selected.has('*');
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-1.5">
+        {/* Wildcard chip: matches any non-HARD_SKIP type. When on, the
+            specific chips below stay clickable (additive — clicking one
+            just turns off the wildcard for clarity). */}
+        <button
+          type="button"
+          onClick={() => toggle('*')}
+          className={
+            'rounded-full border px-2.5 py-0.5 text-xs font-medium transition ' +
+            (wildcardOn
+              ? 'border-emerald-500 bg-emerald-500 text-white'
+              : 'border-input bg-background text-muted-foreground hover:border-muted-foreground/50')
+          }
+          title="Wildcard — match every non-secret, non-branch node type"
+        >
+          all types
+        </button>
         {known.map((t) => {
-          const on = selected.has(t);
+          const on = selected.has(t) || wildcardOn;
           return (
             <button
               key={t}
@@ -1066,16 +1087,19 @@ function NodeTypePicker({
               onClick={() => toggle(t)}
               className={
                 'rounded-full border px-2.5 py-0.5 text-xs font-mono transition ' +
-                (on
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-input bg-background text-muted-foreground hover:border-muted-foreground/50')
+                (wildcardOn
+                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                  : on
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-input bg-background text-muted-foreground hover:border-muted-foreground/50')
               }
+              title={wildcardOn ? 'covered by "all types"' : undefined}
             >
               {t}
             </button>
           );
         })}
-        {customs.map((t) => (
+        {customs.filter((t) => t !== '*').map((t) => (
           <button
             key={t}
             type="button"
