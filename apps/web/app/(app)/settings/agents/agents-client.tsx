@@ -29,8 +29,9 @@ const MODEL_SUGGESTIONS = [
 const ROLES = [
   { value: 'assistant', label: 'Assistant — interactive chat surface' },
   { value: 'responder', label: 'Responder — replies to Telegram / async DMs' },
-  { value: 'extractor', label: 'Extractor — structured fields from documents' },
-  { value: 'summarizer', label: 'Summarizer — Tier-2 rollups + digests' },
+  { value: 'extractor', label: 'Extractor — summary + facts + entities at ingest' },
+  { value: 'summarizer', label: 'Summarizer — Tier-2 conversation rollups' },
+  { value: 'reflector', label: 'Reflector — appends persona notes from dialog' },
   { value: 'custom', label: 'Custom' },
 ] as const;
 

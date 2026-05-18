@@ -11,3 +11,6 @@ export * from './sync-runs';
 export * from './telegram';
 export * from './agents';
 export * from './embedding-cache';
+export * from './entities';
+export * from './entity-edges';
+export * from './facts';

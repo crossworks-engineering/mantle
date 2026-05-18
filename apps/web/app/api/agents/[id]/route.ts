@@ -5,7 +5,14 @@ import { deleteAgent, updateAgent } from '@/lib/agents';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
-const RoleEnum = z.enum(['assistant', 'responder', 'extractor', 'summarizer', 'custom']);
+const RoleEnum = z.enum([
+  'assistant',
+  'responder',
+  'extractor',
+  'summarizer',
+  'reflector',
+  'custom',
+]);
 
 const MemoryConfig = z
   .object({
