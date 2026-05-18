@@ -47,6 +47,7 @@ type MemoryConfig = {
   summarize_batch?: number;
   extract_types?: string[];
   extract_facts?: boolean;
+  extract_cost_cap_micro_usd?: number | null;
 };
 
 type AgentSummary = {
@@ -205,6 +206,8 @@ type FormState = {
   summarizeBatch: string;
   extractTypes: string;
   extractFacts: boolean;
+  /** Cap in cents (UI-friendlier than micro-USD; converted on save). Empty = no cap. */
+  extractCostCapCents: string;
   temperature: string;
   maxTokens: string;
 };
@@ -230,6 +233,7 @@ function emptyForm(role: Role = 'responder'): FormState {
     summarizeBatch: d.summarizeBatch,
     extractTypes: d.extractTypes,
     extractFacts: true,
+    extractCostCapCents: '',
     temperature: '0.7',
     maxTokens: '',
   };
@@ -256,6 +260,10 @@ function formFromAgent(a: AgentSummary): FormState {
     summarizeBatch: a.memoryConfig.summarize_batch?.toString() ?? d.summarizeBatch,
     extractTypes: a.memoryConfig.extract_types?.join(',') ?? d.extractTypes,
     extractFacts: a.memoryConfig.extract_facts ?? true,
+    extractCostCapCents:
+      a.memoryConfig.extract_cost_cap_micro_usd != null
+        ? (a.memoryConfig.extract_cost_cap_micro_usd / 10_000).toString()
+        : '',
     temperature: a.params.temperature?.toString() ?? '0.7',
     maxTokens: a.params.max_tokens?.toString() ?? '',
   };
@@ -381,6 +389,15 @@ export function AgentsClient({
         .filter(Boolean);
       memoryConfig.extract_types = types.length > 0 ? types : ['note'];
       memoryConfig.extract_facts = form.extractFacts;
+      const cap = form.extractCostCapCents.trim();
+      if (cap === '') {
+        memoryConfig.extract_cost_cap_micro_usd = null;
+      } else {
+        const cents = parseFloat(cap);
+        if (!Number.isNaN(cents) && cents >= 0) {
+          memoryConfig.extract_cost_cap_micro_usd = Math.round(cents * 10_000);
+        }
+      }
     }
 
     const params: { temperature?: number; max_tokens?: number } = {};
@@ -797,6 +814,24 @@ export function AgentsClient({
                     />
                     Extract facts (uncheck for content_index population only)
                   </label>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="extractCostCapCents">Cost cap per run (¢)</Label>
+                    <Input
+                      id="extractCostCapCents"
+                      type="number"
+                      step={0.1}
+                      min={0}
+                      value={form.extractCostCapCents}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, extractCostCapCents: e.target.value }))
+                      }
+                      placeholder="(none — unlimited)"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Once trace cost crosses this, the fact-processing loop bails
+                      gracefully. Summary + entity reconciliation still run. Empty = no cap.
+                    </p>
+                  </div>
                 </div>
               )}
 

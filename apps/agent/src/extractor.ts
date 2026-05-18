@@ -48,7 +48,7 @@ import {
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { embed } from '@mantle/embeddings';
-import { startTrace, step } from '@mantle/tracing';
+import { currentTrace, startTrace, step } from '@mantle/tracing';
 import { captureLlmUsage } from './llm-usage.js';
 
 /** Types we will NEVER extract from, no matter what the agent config says. */
@@ -644,11 +644,21 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
         return;
       }
 
+      const costCap = memoryConfig.extract_cost_cap_micro_usd ?? null;
+
       const tally = await step(
-        { name: 'process_facts', kind: 'compute', input: { candidates: parsed.facts.length } },
+        { name: 'process_facts', kind: 'compute', input: { candidates: parsed.facts.length, costCapMicroUsd: costCap } },
         async (h) => {
           const t = { ADD: 0, UPDATE: 0, DELETE: 0, NOOP: 0 };
+          let capExceededAt: number | null = null;
           for (let i = 0; i < parsed.facts.length; i++) {
+            if (costCap != null) {
+              const spent = currentTrace()?.costMicroUsd ?? 0;
+              if (spent >= costCap) {
+                capExceededAt = i;
+                break;
+              }
+            }
             const candidate = parsed.facts[i]!;
             const vec = factVectors[i]!;
             let primaryEntityId: string | null = null;
@@ -677,7 +687,20 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
               );
             }
           }
-          h.setOutput(t);
+          const output: Record<string, unknown> = { ...t };
+          if (capExceededAt != null) {
+            output.costCapHitAt = capExceededAt;
+            output.processed = capExceededAt;
+            output.skipped = parsed.facts.length - capExceededAt;
+            h.setMeta({
+              costCapMicroUsd: costCap,
+              spentMicroUsd: currentTrace()?.costMicroUsd ?? 0,
+            });
+            console.warn(
+              `[extractor]   cost cap ${costCap}µ$ hit after ${capExceededAt}/${parsed.facts.length} facts — skipping rest`,
+            );
+          }
+          h.setOutput(output);
           return t;
         },
       );

@@ -25,6 +25,7 @@ const MemoryConfig = z
     summarize_batch: z.number().int().min(1).max(1_000).optional(),
     extract_types: z.array(z.string().min(1).max(64)).max(32).optional(),
     extract_facts: z.boolean().optional(),
+    extract_cost_cap_micro_usd: z.number().int().min(0).max(1_000_000_000).nullable().optional(),
   })
   .strict();
 

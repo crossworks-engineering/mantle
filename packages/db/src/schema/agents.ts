@@ -55,6 +55,12 @@ export type AgentMemoryConfig = {
   /** Extractor-only: whether to extract facts in addition to summary+embedding.
    *  Default true. False = content_index population only. */
   extract_facts?: boolean;
+  /** Extractor-only: hard ceiling on per-run LLM spend in micro-USD (10⁻⁶ USD).
+   *  Once the current trace's accumulated cost crosses this, the fact-processing
+   *  loop bails gracefully (mid-iteration). Null/undefined = no cap. The
+   *  initial llm_extract call is allowed to overshoot — the cap is checked
+   *  per-iteration in the classifier loop. */
+  extract_cost_cap_micro_usd?: number | null;
 };
 
 export type AgentParams = {
