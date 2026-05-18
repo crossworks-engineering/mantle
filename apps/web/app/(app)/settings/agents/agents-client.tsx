@@ -14,6 +14,22 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
+/** Built-in node types the extractor can be allow-listed against. Matches
+ *  the `node_type` enum in packages/db/src/schema/nodes.ts minus the
+ *  HARD_SKIP set (`branch`, `secret`) which the extractor refuses regardless. */
+const KNOWN_NODE_TYPES = [
+  'note',
+  'file',
+  'email',
+  'email_thread',
+  'sermon',
+  'contact',
+  'task',
+  'event',
+  'printer_project',
+  'telegram_message',
+] as const;
+
 /** Curated embedding models — all output (or can be coerced to) 1536 dims to
  *  match the `nodes.embedding vector(1536)` column. Empty value = fall back to
  *  MANTLE_EMBEDDING_MODEL env (or the hard-coded `openai/text-embedding-3-small`). */
@@ -822,17 +838,15 @@ export function AgentsClient({
               {form.role === 'extractor' && (
                 <div className="space-y-3">
                   <div className="space-y-1.5">
-                    <Label htmlFor="extractTypes">Node types to process</Label>
-                    <Input
-                      id="extractTypes"
+                    <Label>Node types to process</Label>
+                    <NodeTypePicker
                       value={form.extractTypes}
-                      onChange={(e) => setForm((f) => ({ ...f, extractTypes: e.target.value }))}
-                      placeholder="note"
+                      onChange={(v) => setForm((f) => ({ ...f, extractTypes: v }))}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Comma-separated. Start with <code>note</code>; expand to
-                      <code> file, sermon, email, email_thread</code> as you wire them up.
-                      Secrets and branches are HARD-SKIPPED regardless of this setting.
+                      Click a chip to toggle. Add a custom type if you&apos;ve introduced
+                      a new node kind. <code>branch</code> and <code>secret</code> are
+                      HARD-SKIPPED regardless of this setting.
                     </p>
                   </div>
                   <label className="flex items-center gap-2 text-sm">
@@ -989,6 +1003,113 @@ export function AgentsClient({
           </form>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/**
+ * Chip multi-select for node types. The form state is still a
+ * comma-separated string so the save path stays unchanged; this is
+ * just a friendlier surface over it.
+ */
+function NodeTypePicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const selected = new Set(
+    value
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+  const [customDraft, setCustomDraft] = useState('');
+
+  // Render known types first (in their fixed order), then any custom
+  // values not already in the known set.
+  const known = KNOWN_NODE_TYPES;
+  const customs = Array.from(selected).filter(
+    (t) => !known.includes(t as (typeof KNOWN_NODE_TYPES)[number]),
+  );
+
+  const commit = (next: Set<string>) => {
+    onChange(Array.from(next).join(','));
+  };
+
+  const toggle = (t: string) => {
+    const next = new Set(selected);
+    if (next.has(t)) next.delete(t);
+    else next.add(t);
+    commit(next);
+  };
+
+  const addCustom = () => {
+    const t = customDraft.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    if (!t) return;
+    const next = new Set(selected);
+    next.add(t);
+    commit(next);
+    setCustomDraft('');
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1.5">
+        {known.map((t) => {
+          const on = selected.has(t);
+          return (
+            <button
+              key={t}
+              type="button"
+              onClick={() => toggle(t)}
+              className={
+                'rounded-full border px-2.5 py-0.5 text-xs font-mono transition ' +
+                (on
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-input bg-background text-muted-foreground hover:border-muted-foreground/50')
+              }
+            >
+              {t}
+            </button>
+          );
+        })}
+        {customs.map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => toggle(t)}
+            className="rounded-full border border-amber-500/60 bg-amber-50 px-2.5 py-0.5 text-xs font-mono text-amber-900 transition dark:bg-amber-900/30 dark:text-amber-100"
+            title="Custom type — click to remove"
+          >
+            {t} ✕
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-1.5">
+        <Input
+          value={customDraft}
+          onChange={(e) => setCustomDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              addCustom();
+            }
+          }}
+          placeholder="add custom type"
+          className="h-7 text-xs"
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={addCustom}
+          disabled={!customDraft.trim()}
+        >
+          Add
+        </Button>
+      </div>
     </div>
   );
 }
