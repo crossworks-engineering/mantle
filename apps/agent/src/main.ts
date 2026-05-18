@@ -46,6 +46,7 @@ import {
 } from './messages.js';
 import { summarizeChat } from './summarizer.js';
 import { extractNode } from './extractor.js';
+import { reflect } from './reflector.js';
 
 const USER_ID = process.env.ALLOWED_USER_ID;
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -539,6 +540,17 @@ async function main() {
     scheduleExtract(payload);
   });
   console.log('[agent] LISTENing on node_ingested');
+
+  // Reflector: slow background pass every REFLECTOR_INTERVAL_MS that
+  // checks for new outbound activity and appends to persona_notes when
+  // something notable surfaces. No-op if no reflector agent is enabled.
+  const REFLECTOR_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+  setInterval(() => {
+    reflect(USER_ID!).catch((err) =>
+      console.error('[agent] reflect error:', err instanceof Error ? err.message : err),
+    );
+  }, REFLECTOR_INTERVAL_MS);
+  console.log(`[agent] reflector tick every ${REFLECTOR_INTERVAL_MS / 1000}s`);
 
   await drainPending();
 
