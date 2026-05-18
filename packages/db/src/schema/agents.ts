@@ -61,6 +61,14 @@ export type AgentMemoryConfig = {
    *  initial llm_extract call is allowed to overshoot — the cap is checked
    *  per-iteration in the classifier loop. */
   extract_cost_cap_micro_usd?: number | null;
+  /** Embedding model override. Falls back to MANTLE_EMBEDDING_MODEL env,
+   *  then to `openai/text-embedding-3-small`. Applies wherever this agent
+   *  calls embed() — extractor writes vectors, responder/assistant read
+   *  query vectors. For retrieval to work, the extractor's model must
+   *  match the responder/assistant's — vectors from different models live
+   *  in different spaces and don't compare. Allowed values must output
+   *  1536-dim vectors (the `nodes.embedding` column shape). */
+  embedding_model?: string;
 };
 
 export type AgentParams = {

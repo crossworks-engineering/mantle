@@ -120,6 +120,7 @@ async function loadContext(
   const digestLimit = memoryConfig.digest_limit ?? 3;
   const factLimit = memoryConfig.fact_limit ?? 10;
   const contentHitLimit = memoryConfig.content_hit_limit ?? 3;
+  const embeddingModel = memoryConfig.embedding_model;
 
   const personaNotes: PersonaNote[] = (agent.personaNotes ?? []) as PersonaNote[];
 
@@ -127,7 +128,11 @@ async function loadContext(
   let queryVec: number[] | null = null;
   if ((factLimit > 0 || contentHitLimit > 0) && inboundText.trim().length > 0) {
     try {
-      queryVec = await embed(ownerId, inboundText.slice(0, 2000));
+      queryVec = await embed(
+        ownerId,
+        inboundText.slice(0, 2000),
+        embeddingModel ? { model: embeddingModel } : undefined,
+      );
     } catch (err) {
       console.error(
         '[agent] loadContext: query embed failed:',

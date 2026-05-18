@@ -14,6 +14,16 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
+/** Curated embedding models — all output (or can be coerced to) 1536 dims to
+ *  match the `nodes.embedding vector(1536)` column. Empty value = fall back to
+ *  MANTLE_EMBEDDING_MODEL env (or the hard-coded `openai/text-embedding-3-small`). */
+const EMBEDDING_MODELS: { value: string; label: string; note?: string }[] = [
+  { value: '', label: 'Default (env / openai/text-embedding-3-small)', note: '1536 dims · $0.02/1M tok' },
+  { value: 'openai/text-embedding-3-small', label: 'openai/text-embedding-3-small', note: '1536 dims · $0.02/1M tok' },
+  { value: 'google/gemini-embedding-001', label: 'google/gemini-embedding-001', note: 'configurable → 1536 · $0.15/1M tok' },
+  { value: 'google/gemini-embedding-2-preview', label: 'google/gemini-embedding-2-preview', note: 'multimodal · 1536 · $0.20/1M tok' },
+];
+
 /** Common OpenRouter model slugs. Free text still works for anything not listed. */
 const MODEL_SUGGESTIONS = [
   'anthropic/claude-sonnet-4.6',
@@ -48,6 +58,7 @@ type MemoryConfig = {
   extract_types?: string[];
   extract_facts?: boolean;
   extract_cost_cap_micro_usd?: number | null;
+  embedding_model?: string;
 };
 
 type AgentSummary = {
@@ -213,6 +224,8 @@ type FormState = {
   extractFacts: boolean;
   /** Cap in cents (UI-friendlier than micro-USD; converted on save). Empty = no cap. */
   extractCostCapCents: string;
+  /** OpenRouter slug. Empty = use the env default. */
+  embeddingModel: string;
   temperature: string;
   maxTokens: string;
 };
@@ -239,6 +252,7 @@ function emptyForm(role: Role = 'responder'): FormState {
     extractTypes: d.extractTypes,
     extractFacts: true,
     extractCostCapCents: '',
+    embeddingModel: '',
     temperature: '0.7',
     maxTokens: '',
   };
@@ -269,6 +283,7 @@ function formFromAgent(a: AgentSummary): FormState {
       a.memoryConfig.extract_cost_cap_micro_usd != null
         ? (a.memoryConfig.extract_cost_cap_micro_usd / 10_000).toString()
         : '',
+    embeddingModel: a.memoryConfig.embedding_model ?? '',
     temperature: a.params.temperature?.toString() ?? '0.7',
     maxTokens: a.params.max_tokens?.toString() ?? '',
   };
@@ -403,6 +418,15 @@ export function AgentsClient({
           memoryConfig.extract_cost_cap_micro_usd = Math.round(cents * 10_000);
         }
       }
+    }
+    // Embedding model: shown for any role that embeds. Empty value = use env default.
+    if (
+      form.role === 'extractor' ||
+      form.role === 'responder' ||
+      form.role === 'assistant'
+    ) {
+      const m = form.embeddingModel.trim();
+      if (m) memoryConfig.embedding_model = m;
     }
 
     const params: { temperature?: number; max_tokens?: number } = {};
@@ -872,6 +896,37 @@ export function AgentsClient({
                       How many of the oldest turns to fold into one digest. Default 20.
                     </p>
                   </div>
+                </div>
+              )}
+
+              {(form.role === 'extractor' ||
+                form.role === 'responder' ||
+                form.role === 'assistant') && (
+                <div className="space-y-1.5 border-t border-border pt-3">
+                  <Label htmlFor="embeddingModel">Embedding model</Label>
+                  <select
+                    id="embeddingModel"
+                    value={form.embeddingModel}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, embeddingModel: e.target.value }))
+                    }
+                    className={SELECT_CLASS}
+                  >
+                    {EMBEDDING_MODELS.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                        {m.note ? ` — ${m.note}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    Used wherever this agent calls <code>embed()</code>. All listed
+                    models output 1536-dim vectors (matching{' '}
+                    <code>nodes.embedding</code>). <strong>Important:</strong> the
+                    extractor&apos;s model must match the responder/assistant&apos;s for
+                    retrieval to work — vectors from different models live in
+                    different spaces and don&apos;t compare.
+                  </p>
                 </div>
               )}
             </fieldset>
