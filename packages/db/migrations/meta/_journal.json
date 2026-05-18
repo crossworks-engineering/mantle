@@ -134,6 +134,13 @@
       "when": 1747700500000,
       "tag": "0018_node_ingested_trigger",
       "breakpoints": false
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1747700600000,
+      "tag": "0019_traces",
+      "breakpoints": false
     }
   ]
 }

@@ -14,3 +14,5 @@ export * from './embedding-cache';
 export * from './entities';
 export * from './entity-edges';
 export * from './facts';
+export * from './traces';
+export * from './trace-steps';
