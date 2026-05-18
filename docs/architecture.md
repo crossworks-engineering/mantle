@@ -352,12 +352,12 @@ Key properties:
   `responder` rows), the highest-priority enabled one wins. Priority is a
   plain int, higher = higher priority. Switching the active responder is a
   toggle in the UI.
-- **Conversational memory (Tier-1).** Both inbound and outbound messages
+- **Recent turns (`recent_turns`).** Both inbound and outbound messages
   live in `telegram_messages` now, distinguished by the `direction` column.
   The runner loads the last `memory_config.history_limit ?? 20` turns for
   context. The pg_notify trigger fires only on inbound rows so the agent
   doesn't react to its own replies.
-- **Conversation digests (Tier-2).** Migration 0013 adds
+- **Conversation digests (`conversation_digest`).** Migration 0013 adds
   `digest_node_id` on `telegram_messages` plus a separate `summarize_due`
   pg_notify channel that fires on every insert. A summarizer agent (role
   `summarizer`, default model `anthropic/claude-haiku-4.5`) listens on
