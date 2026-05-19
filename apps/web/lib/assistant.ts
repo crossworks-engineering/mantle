@@ -51,6 +51,7 @@ import {
 } from '@mantle/agent-runtime';
 import { registerAgentInvoker, type ToolArtifact } from '@mantle/tools';
 import { stripAudioTags } from '@mantle/voice';
+import { buildTimeContextLine, loadProfilePreferences } from '@mantle/content';
 
 // Register the cross-package bridge for the `invoke_agent` builtin.
 // First module load (the first /assistant request after boot) wires
@@ -271,8 +272,13 @@ export async function runAssistantTurn(
   if (!inbound) throw new Error('failed to insert inbound row');
 
   const attachedSkills = await resolveAgentSkills(ownerId, agent.skillSlugs ?? []);
+  // Prepend the current-time / timezone / locale context so the
+  // assistant can resolve relative time references in event_create
+  // calls. Mirrors the apps/agent (Telegram) flow.
+  const prefs = await loadProfilePreferences(ownerId);
+  const promptWithTime = `${buildTimeContextLine(prefs)}\n\n${agent.systemPrompt}`;
   const effectiveSystemPrompt = composeSystemPromptWithSkills(
-    agent.systemPrompt,
+    promptWithTime,
     attachedSkills,
   );
 

@@ -30,6 +30,7 @@ import {
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
 import { WORKER_DELEGATION_TOOLS } from './builtins-workers';
+import { EVENT_TOOLS } from './builtins-events';
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -840,4 +841,9 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Saskia's agency to a configured ai_workers row — TTS, vision,
   // summarizer.
   ...WORKER_DELEGATION_TOOLS,
+  // Event CRUD — mirrors the MCP event tools so Saskia can schedule
+  // and manage calendar items from chat. None require_confirm by
+  // operator choice; flip per-row in the tools table if you want
+  // approval gates.
+  ...EVENT_TOOLS,
 ];

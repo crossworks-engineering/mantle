@@ -35,7 +35,7 @@ import {
   type PersonaNote,
 } from '@mantle/db';
 import { accountForChat, downloadTelegramFile, sendMessage, sendVoice } from '@mantle/telegram';
-import { createNote } from '@mantle/content';
+import { buildTimeContextLine, createNote, loadProfilePreferences } from '@mantle/content';
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
 import {
   composeAudioTagInstructions,
@@ -766,8 +766,15 @@ async function handleMessage(messageId: string): Promise<void> {
         // Resolve attached skills early so we can compose the system
         // prompt + extend the agent's effective tool allowlist.
         const attachedSkills = await resolveAgentSkills(USER_ID!, agent.skillSlugs ?? []);
+        // Prepend a one-line "current time + timezone + locale" so
+        // Saskia can resolve relative references like "tomorrow at
+        // 3pm" into a UTC ISO when calling event_create. Pure prompt
+        // overhead is ~30 tokens per turn; the gain is correct
+        // event scheduling without manual UTC math.
+        const prefs = await loadProfilePreferences(USER_ID!);
+        const promptWithTime = `${buildTimeContextLine(prefs)}\n\n${agent.systemPrompt}`;
         const promptWithSkills = composeSystemPromptWithSkills(
-          agent.systemPrompt,
+          promptWithTime,
           attachedSkills,
         );
 
