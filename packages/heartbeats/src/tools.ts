@@ -138,18 +138,33 @@ const heartbeat_update_state: BuiltinToolDef = {
     required: ['patch'],
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    // Diagnostic for the v1 "trace says success but DB didn't update"
+    // mystery — each branch logs so the agent stdout tells us which
+    // path the handler took. setMeta on every branch so /traces also
+    // surfaces it without needing to re-run.
     const c = requireContext();
     if (!c) {
+      const err = 'heartbeat_update_state called outside heartbeat fire context (currentHeartbeat()=null)';
+      console.error(`[heartbeats:tool] ${err}`);
+      ctx.step?.setMeta({ branch: 'no_context', error: err });
       return {
         ok: false,
         error: 'heartbeat_update_state is only callable from inside a heartbeat fire.',
       };
     }
     if (!input.patch || typeof input.patch !== 'object' || Array.isArray(input.patch)) {
+      const err = `patch shape invalid: typeof=${typeof input.patch} isArray=${Array.isArray(input.patch)}`;
+      console.error(`[heartbeats:tool] ${err}`);
+      ctx.step?.setMeta({ branch: 'bad_patch_shape', error: err });
       return { ok: false, error: 'patch must be a plain object' };
     }
     const hb = await loadOwnedHeartbeat(ctx.ownerId, c.heartbeatId);
-    if (!hb) return { ok: false, error: 'heartbeat row not found (race?)' };
+    if (!hb) {
+      const err = `heartbeat row not found: id=${c.heartbeatId} owner=${ctx.ownerId}`;
+      console.error(`[heartbeats:tool] ${err}`);
+      ctx.step?.setMeta({ branch: 'hb_not_found', error: err });
+      return { ok: false, error: 'heartbeat row not found (race?)' };
+    }
     // Apply patch: drop null-valued keys, overwrite the rest.
     const existing = (hb.state ?? {}) as Record<string, unknown>;
     const patch = input.patch as Record<string, unknown>;
@@ -158,12 +173,23 @@ const heartbeat_update_state: BuiltinToolDef = {
       if (v === null) delete next[k];
       else next[k] = v;
     }
-    await db
+    const updateResult = await db
       .update(heartbeats)
       .set({ state: next, updatedAt: new Date() })
-      .where(and(eq(heartbeats.id, c.heartbeatId), eq(heartbeats.ownerId, ctx.ownerId)));
-    ctx.step?.setMeta({ heartbeat_id: c.heartbeatId, patched_keys: Object.keys(patch) });
-    return { ok: true, output: { state: next } };
+      .where(and(eq(heartbeats.id, c.heartbeatId), eq(heartbeats.ownerId, ctx.ownerId)))
+      .returning({ id: heartbeats.id });
+    const updatedCount = updateResult.length;
+    console.error(
+      `[heartbeats:tool] heartbeat_update_state OK id=${c.heartbeatId} ` +
+        `patched=${Object.keys(patch).join(',')} updated_rows=${updatedCount}`,
+    );
+    ctx.step?.setMeta({
+      branch: 'updated',
+      heartbeat_id: c.heartbeatId,
+      patched_keys: Object.keys(patch),
+      updated_rows: updatedCount,
+    });
+    return { ok: true, output: { state: next, updated_rows: updatedCount } };
   },
 };
 
