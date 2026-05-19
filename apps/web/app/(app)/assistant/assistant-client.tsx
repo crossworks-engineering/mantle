@@ -3,11 +3,24 @@
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import {
+  ImagePlus,
+  Loader2,
+  Mic,
+  MicOff,
+  X,
+} from 'lucide-react';
 import { formatDateTime } from '@/lib/format-datetime';
 
-/** A sidecar artifact attached to an outbound message. Mirrors
- *  @mantle/tools ToolArtifact, with the discriminated `kind` driving
- *  the rendering (audio = play button, image = inline preview). */
+/** A sidecar artifact attached to a message. Mirrors @mantle/tools
+ *  ToolArtifact, with the discriminated `kind` driving the rendering
+ *  (audio = play button, image = inline preview). Outbound artifacts
+ *  come from tool calls; inbound artifacts come from user uploads.
+ *
+ *  `localPreviewUrl` is purely client-side: when the user picks an
+ *  image we render the local file URL immediately for instant
+ *  feedback. Once the server round-trips we replace it with the
+ *  base64 payload the API returned. */
 type Artifact = {
   kind: 'audio' | 'image';
   mimeType: string;
@@ -15,6 +28,7 @@ type Artifact = {
   caption?: string;
   nodeId?: string;
   producedBy: string;
+  localPreviewUrl?: string;
 };
 
 type Message = {
@@ -41,6 +55,20 @@ export function AssistantClient({
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
+  // ── Voice-in state ──
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordChunksRef = useRef<Blob[]>([]);
+  // ── Image-attach state ──
+  // The user picks one image at a time. Multi-image batching is a
+  // useful-but-not-essential follow-up. The preview URL is created
+  // from URL.createObjectURL and revoked when the attachment is
+  // cleared/sent so we don't leak object URLs.
+  const [attachedImage, setAttachedImage] = useState<File | null>(null);
+  const [attachedPreviewUrl, setAttachedPreviewUrl] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
   const scrollerRef = useRef<HTMLDivElement>(null);
 
   // Pin the scroller to the bottom whenever messages change.
@@ -49,18 +77,50 @@ export function AssistantClient({
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
+  const clearAttachment = () => {
+    if (attachedPreviewUrl) URL.revokeObjectURL(attachedPreviewUrl);
+    setAttachedImage(null);
+    setAttachedPreviewUrl(null);
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  };
+
+  const onImagePicked = (file: File | null) => {
+    if (attachedPreviewUrl) URL.revokeObjectURL(attachedPreviewUrl);
+    setAttachedImage(file);
+    setAttachedPreviewUrl(file ? URL.createObjectURL(file) : null);
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = draft.trim();
-    if (!text || sending) return;
+    // Allow image-only submits — the API route fills in a default
+    // "tell me what you see" prompt server-side when text is empty.
+    if ((!text && !attachedImage) || sending) return;
     setError(undefined);
 
+    const hasImage = attachedImage != null;
     const optimisticId = `pending-${Date.now()}`;
     const optimistic: Message = {
       id: optimisticId,
       direction: 'inbound',
-      text,
+      text: text || (hasImage ? '📎 (image)' : ''),
       createdAt: new Date().toISOString(),
+      // Show the local preview immediately so the user can see what
+      // they just sent without waiting for the round-trip.
+      ...(hasImage && attachedPreviewUrl
+        ? {
+            artifacts: [
+              {
+                kind: 'image' as const,
+                mimeType: attachedImage.type,
+                base64: '', // optimistic — use the local object URL
+                caption: attachedImage.name,
+                producedBy: 'assistant-upload',
+                localPreviewUrl: attachedPreviewUrl,
+              },
+            ],
+          }
+        : {}),
       pending: true,
     };
     setMessages((prev) => [...prev, optimistic]);
@@ -68,19 +128,34 @@ export function AssistantClient({
     setSending(true);
 
     try {
-      const res = await fetch('/api/assistant/turn', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text }),
-      });
+      let res: Response;
+      if (hasImage) {
+        // Multipart for image uploads — base64-ing a 2MB image into
+        // JSON wastes 33% of the bytes plus the parse cost. FormData
+        // streams the blob raw.
+        const formData = new FormData();
+        if (text) formData.set('text', text);
+        formData.set('image', attachedImage);
+        res = await fetch('/api/assistant/turn', {
+          method: 'POST',
+          body: formData,
+        });
+      } else {
+        res = await fetch('/api/assistant/turn', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+      }
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(b.error ?? `request failed (${res.status})`);
       }
       const data = (await res.json()) as {
-        inbound: { id: string; text: string; createdAt: string };
+        inbound: { id: string; text: string; createdAt: string; artifacts?: Artifact[] };
         outbound: { id: string; text: string; model: string | null; createdAt: string };
         artifacts?: Artifact[];
+        warnings?: string[];
       };
       setMessages((prev) => [
         ...prev.filter((m) => m.id !== optimisticId),
@@ -89,6 +164,7 @@ export function AssistantClient({
           direction: 'inbound',
           text: data.inbound.text,
           createdAt: data.inbound.createdAt,
+          artifacts: data.inbound.artifacts ?? [],
         },
         {
           id: data.outbound.id,
@@ -99,6 +175,14 @@ export function AssistantClient({
           artifacts: data.artifacts ?? [],
         },
       ]);
+      if (data.warnings?.length) {
+        // Soft-fail warnings (e.g. vision worker missing) get
+        // surfaced as a non-blocking notice rather than a red error.
+        setError(data.warnings.join(' · '));
+      }
+      // Clear the attachment AFTER the round-trip so the optimistic
+      // preview keeps showing during the network wait.
+      clearAttachment();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
@@ -106,6 +190,78 @@ export function AssistantClient({
       setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
     } finally {
       setSending(false);
+    }
+  };
+
+  // ── Mic recording ──
+  const startRecording = async () => {
+    setError(undefined);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Browsers vary in what they accept. webm/opus is the most
+      // portable target; Safari may fall back to mp4/aac which the
+      // STT adapters also accept.
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : '';
+      const mr = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      recordChunksRef.current = [];
+      mr.ondataavailable = (e) => {
+        if (e.data.size > 0) recordChunksRef.current.push(e.data);
+      };
+      mr.onstop = () => {
+        // Close the mic immediately so the browser tab indicator
+        // clears the moment recording stops.
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(recordChunksRef.current, { type: mr.mimeType });
+        void transcribeBlob(blob);
+      };
+      mediaRecorderRef.current = mr;
+      mr.start();
+      setRecording(true);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? `Couldn't access microphone: ${err.message}`
+          : 'Microphone access denied',
+      );
+    }
+  };
+
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop();
+    setRecording(false);
+  };
+
+  const transcribeBlob = async (blob: Blob) => {
+    setTranscribing(true);
+    try {
+      const formData = new FormData();
+      // The filename hint is consumed by some STT adapters
+      // (Whisper sniffs the extension); .webm matches what
+      // MediaRecorder emits in most browsers.
+      formData.set('audio', blob, 'recording.webm');
+      const res = await fetch('/api/assistant/transcribe', {
+        method: 'POST',
+        body: formData,
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? `request failed (${res.status})`);
+      }
+      const data = (await res.json()) as { text: string };
+      // Drop the transcript into the input. The user reviews +
+      // sends — auto-sending would punish mishearings (and
+      // MediaRecorder webm is finicky enough that we want a
+      // human-in-the-loop verification step before paying for an
+      // LLM round-trip).
+      setDraft((prev) => (prev ? `${prev} ${data.text}` : data.text));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTranscribing(false);
     }
   };
 
@@ -178,32 +334,115 @@ export function AssistantClient({
         onSubmit={submit}
         className="border-t border-border bg-background px-6 py-3"
       >
-        <div className="mx-auto flex max-w-3xl gap-2">
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder={
-              agentReady
-                ? 'Message your assistant — Enter to send, Shift+Enter for newline.'
-                : 'Configure an assistant or responder agent first at /settings/agents.'
-            }
-            disabled={!agentReady || sending}
-            rows={2}
-            className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                void submit(e);
+        <div className="mx-auto max-w-3xl space-y-2">
+          {/* Attachment preview — shown above the input row so the
+              user sees what they're about to send. Persists across
+              keystrokes and clears on send/dismiss. */}
+          {attachedImage && attachedPreviewUrl && (
+            <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-2 py-1.5">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={attachedPreviewUrl}
+                alt={attachedImage.name}
+                className="h-12 w-12 rounded object-cover"
+              />
+              <div className="flex-1 text-xs">
+                <div className="font-medium">{attachedImage.name}</div>
+                <div className="text-muted-foreground">
+                  {attachedImage.type} · {(attachedImage.size / 1024).toFixed(0)} KB
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={clearAttachment}
+                className="rounded p-1 text-muted-foreground hover:bg-background/60"
+                title="Remove attachment"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif"
+              className="hidden"
+              onChange={(e) => onImagePicked(e.target.files?.[0] ?? null)}
+            />
+            <div className="flex flex-col gap-1">
+              {/* Image picker — paperclip-style. Triggers the hidden
+                  file input. Hidden when an image is already
+                  attached (clear it first via the preview's X). */}
+              <button
+                type="button"
+                onClick={() => imageInputRef.current?.click()}
+                disabled={!agentReady || sending || !!attachedImage}
+                className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"
+                title="Attach image"
+              >
+                <ImagePlus className="h-4 w-4" />
+              </button>
+              {/* Mic toggle — push-to-talk style. Recording state
+                  shows a red destructive button; transcribing shows
+                  a spinner. */}
+              {recording ? (
+                <button
+                  type="button"
+                  onClick={stopRecording}
+                  className="rounded-md bg-destructive p-2 text-destructive-foreground hover:opacity-90"
+                  title="Stop recording"
+                >
+                  <MicOff className="h-4 w-4" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={startRecording}
+                  disabled={!agentReady || sending || transcribing}
+                  className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"
+                  title={transcribing ? 'Transcribing…' : 'Record voice note'}
+                >
+                  {transcribing ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Mic className="h-4 w-4" />
+                  )}
+                </button>
+              )}
+            </div>
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder={
+                !agentReady
+                  ? 'Configure an assistant or responder agent first at /settings/agents.'
+                  : attachedImage
+                  ? 'Add a question about the image (optional) — Enter to send.'
+                  : recording
+                  ? 'Recording… press the stop button to transcribe.'
+                  : transcribing
+                  ? 'Transcribing your recording…'
+                  : 'Message your assistant — Enter to send, Shift+Enter for newline.'
               }
-            }}
-          />
-          <button
-            type="submit"
-            disabled={!agentReady || sending || !draft.trim()}
-            className="self-end rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-40"
-          >
-            {sending ? '…' : 'Send'}
-          </button>
+              disabled={!agentReady || sending}
+              rows={2}
+              className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  void submit(e);
+                }
+              }}
+            />
+            <button
+              type="submit"
+              disabled={!agentReady || sending || (!draft.trim() && !attachedImage)}
+              className="self-end rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-40"
+            >
+              {sending ? '…' : 'Send'}
+            </button>
+          </div>
         </div>
         {error && (
           <p className="mx-auto mt-2 max-w-3xl text-xs text-destructive">{error}</p>
@@ -219,7 +458,11 @@ export function AssistantClient({
  * enlarge affordance. Both use a `data:` URL — no separate fetch.
  */
 function ArtifactView({ artifact }: { artifact: Artifact }) {
-  const dataUrl = `data:${artifact.mimeType};base64,${artifact.base64}`;
+  // localPreviewUrl wins when set — it's an object URL pointing at
+  // the in-memory blob and renders instantly. Falls through to the
+  // base64 data URL once the server returns the real bytes.
+  const dataUrl =
+    artifact.localPreviewUrl ?? `data:${artifact.mimeType};base64,${artifact.base64}`;
   if (artifact.kind === 'audio') {
     return (
       <div className="rounded-lg border border-border bg-background/60 p-2">

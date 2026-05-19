@@ -207,13 +207,29 @@ async function loadContext(
 /**
  * Run one user turn end-to-end. Persists inbound, calls the model,
  * persists outbound, returns both rows + the reply text.
+ *
+ * `text` is what the LLM sees. `displayText`, when provided, is what
+ * the inbound row stores in the DB + what the client renders in the
+ * user's bubble. They differ when a tool-side preprocessor injected
+ * extra context — e.g. the /api/assistant/turn route appends a
+ * vision-extracted transcript when an image is attached. The LLM
+ * needs the transcript; the chat UI doesn't want the auto-injected
+ * text duplicated in the user's bubble.
+ *
+ * Keeping the persisted row aligned with what the user actually
+ * typed means historical context (loaded by future turns via
+ * recentAssistantMessages) reflects what the user actually said. The
+ * vision transcript already lands in /files via the upload path, so
+ * the LLM can recover it via search_nodes if it's relevant later.
  */
 export async function runAssistantTurn(
   ownerId: string,
   text: string,
+  options?: { displayText?: string },
 ): Promise<AssistantTurnResult> {
   const trimmed = text.trim();
   if (!trimmed) throw new Error('runAssistantTurn: empty text');
+  const displayText = options?.displayText?.trim() ?? trimmed;
 
   const agent = await resolveAssistantAgent(ownerId);
   if (!agent) {
@@ -240,13 +256,16 @@ export async function runAssistantTurn(
   const filteredHistory = ctx.history;
 
   // 2. Persist inbound BEFORE the LLM call so the row survives a
-  //    model error. The page can resume on reload.
+  //    model error. The page can resume on reload. We store the
+  //    USER-VISIBLE text (displayText) — not the LLM-augmented
+  //    version — so the chat history stays clean. See the
+  //    runAssistantTurn header for the rationale.
   const [inbound] = await db
     .insert(assistantMessages)
     .values({
       ownerId,
       direction: 'inbound',
-      text: trimmed,
+      text: displayText,
     })
     .returning();
   if (!inbound) throw new Error('failed to insert inbound row');
