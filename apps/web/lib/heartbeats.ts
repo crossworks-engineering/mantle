@@ -20,6 +20,7 @@ import {
   db,
   heartbeats,
   heartbeatFires,
+  skills,
   type Heartbeat,
   type HeartbeatFire,
   type HeartbeatQuietHours,
@@ -132,6 +133,23 @@ export async function createHeartbeat(
     notBefore: input.earliestAt ?? null,
   });
 
+  // Resolve initial state. If the operator passed `state` explicitly,
+  // use it. Otherwise, fall back to the bound skill's `defaultState`
+  // template (typically empty {} unless the skill author filled it
+  // in). This is the DRY win that motivated migration 0031: skills
+  // declare their expected shape once, every heartbeat using them
+  // inherits it without retyping. Bypassed when the operator types
+  // their own JSON in the form.
+  let initialState: Record<string, unknown> = input.state ?? {};
+  if (input.state === undefined) {
+    const [skillRow] = await db
+      .select({ defaultState: skills.defaultState })
+      .from(skills)
+      .where(and(eq(skills.ownerId, ownerId), eq(skills.slug, input.skillSlug)))
+      .limit(1);
+    if (skillRow) initialState = skillRow.defaultState ?? {};
+  }
+
   const [row] = await db
     .insert(heartbeats)
     .values({
@@ -150,7 +168,7 @@ export async function createHeartbeat(
       earliestAt: input.earliestAt ?? null,
       cooldownMinutes: input.cooldownMinutes ?? null,
       maxFires: input.maxFires ?? null,
-      state: input.state ?? {},
+      state: initialState,
     })
     .returning();
   if (!row) throw new Error('failed to insert heartbeat');

@@ -52,7 +52,12 @@ export async function tickHeartbeats(ownerId: string, now: Date = new Date()): P
     try {
       const r = await tickFire(hb);
       if (r.disposition === 'fired' || r.disposition === 'completed') report.fired++;
-      else if (r.disposition === 'error') report.errored++;
+      else if (
+        r.disposition === 'error' ||
+        r.disposition === 'auto_paused' ||
+        r.disposition === 'fired_undelivered'
+      )
+        report.errored++;
       else report.skipped++;
     } catch (err) {
       report.errored++;

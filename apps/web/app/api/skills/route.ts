@@ -19,6 +19,10 @@ const CreateBody = z.object({
   description: z.string().min(1).max(2000),
   instructions: z.string().max(40_000).optional(),
   toolSlugs: z.array(z.string().min(1).max(120)).max(64).optional(),
+  /** Template state shape for heartbeats bound to this skill. Must
+   *  be a plain object (not array, not primitive). Validated again
+   *  on the client; this is the server-side guard. */
+  defaultState: z.record(z.unknown()).optional(),
   enabled: z.boolean().optional(),
 });
 

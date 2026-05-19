@@ -40,7 +40,7 @@ import {
   type BuiltinToolDef,
   type ToolHandlerResult,
 } from '@mantle/tools';
-import { currentHeartbeat } from './context';
+import { currentHeartbeat, MAX_HEARTBEAT_DEPTH } from './context';
 import { forceFire } from './fire';
 import { computeNextFireAt } from './schedule';
 
@@ -282,7 +282,7 @@ const heartbeat_fire: BuiltinToolDef = {
   slug: 'heartbeat_fire',
   name: 'Force-fire a heartbeat now',
   description:
-    "Fire the heartbeat with the given slug RIGHT NOW, bypassing all gates (idle / quiet hours / cooldown). Used by the operator's 'Fire now' button and by skills that want to chain into another heartbeat. The fire still records to traces + heartbeat_fires with disposition='fired'. Does NOT need to be inside an existing heartbeat fire.",
+    "Fire the heartbeat with the given slug RIGHT NOW, bypassing all gates (idle / quiet hours / cooldown). Used by the operator's 'Fire now' button and by skills that want to chain into another heartbeat. The fire still records to traces + heartbeat_fires with disposition='fired'. Does NOT need to be inside an existing heartbeat fire. Cannot fire the heartbeat that is currently calling this tool (direct self-recursion is refused), and chained fires are capped at MAX_HEARTBEAT_DEPTH to prevent runaway loops.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -292,7 +292,40 @@ const heartbeat_fire: BuiltinToolDef = {
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const slug = typeof input.slug === 'string' ? input.slug : '';
-    if (!slug) return { ok: false, error: 'slug required' };
+    if (!slug) {
+      ctx.step?.setMeta({ branch: 'missing_slug' });
+      return { ok: false, error: 'slug required' };
+    }
+
+    // P1-3: recursion guards.
+    // (1) Direct self-recursion: if we're currently inside a fire
+    //     for the SAME slug, refuse with a clear error. This is the
+    //     pathological "skill calls heartbeat_fire(own_slug) every
+    //     fire" loop — would spin until OpenRouter budget exhausted.
+    // (2) Depth cap: even chained fires (A→B→C) get capped at
+    //     MAX_HEARTBEAT_DEPTH (3). Mirrors MAX_AGENT_DEPTH for the
+    //     invoke_agent delegation chain — same "enough for real
+    //     compositions, not enough for runaway" rationale.
+    const parent = currentHeartbeat();
+    if (parent && parent.slug === slug) {
+      ctx.step?.setMeta({ branch: 'self_recursion', parent_slug: parent.slug });
+      return {
+        ok: false,
+        error: `refusing to recursively heartbeat_fire('${slug}') — that is the heartbeat currently firing. If you need to defer re-asking, use heartbeat_snooze.`,
+      };
+    }
+    if (parent && parent.depth >= MAX_HEARTBEAT_DEPTH) {
+      ctx.step?.setMeta({
+        branch: 'depth_exceeded',
+        depth: parent.depth,
+        max: MAX_HEARTBEAT_DEPTH,
+      });
+      return {
+        ok: false,
+        error: `chained heartbeat_fire depth ${parent.depth} would exceed MAX_HEARTBEAT_DEPTH (${MAX_HEARTBEAT_DEPTH}). Trim the chain.`,
+      };
+    }
+
     const [hb] = await db
       .select()
       .from(heartbeats)
@@ -303,7 +336,12 @@ const heartbeat_fire: BuiltinToolDef = {
       return { ok: false, error: `heartbeat '${slug}' is '${hb.status}', not 'active'` };
     }
     const result = await forceFire(hb);
-    ctx.step?.setMeta({ heartbeat_id: hb.id, disposition: result.disposition });
+    ctx.step?.setMeta({
+      branch: 'fired',
+      heartbeat_id: hb.id,
+      disposition: result.disposition,
+      parent_depth: parent?.depth ?? null,
+    });
     return { ok: true, output: { slug, disposition: result.disposition, reply: result.replyText } };
   },
 };

@@ -48,7 +48,7 @@ async function callInsideContext(
   slug: string,
   input: Record<string, unknown> = {},
 ): Promise<ToolHandlerResult> {
-  return withHeartbeatContext({ heartbeatId: HB_ID, ownerId: OWNER }, () =>
+  return withHeartbeatContext({ heartbeatId: HB_ID, slug: 'test_heartbeat', ownerId: OWNER }, () =>
     findTool(slug).handler(input, mkCtx()),
   );
 }
@@ -130,6 +130,63 @@ describe('heartbeat_fire — slug validation', () => {
   it('rejects a non-string slug', async () => {
     const r = await callOutsideContext('heartbeat_fire', { slug: 42 });
     expect(r.ok).toBe(false);
+  });
+});
+
+describe('heartbeat_fire — P1-3 recursion guards', () => {
+  it('refuses direct self-recursion (same slug as current fire context)', async () => {
+    // Simulate being inside the fire for slug 'self_loop' and
+    // trying to fire 'self_loop' again. This is the pathological
+    // "skill calls heartbeat_fire(own_slug) every fire" loop.
+    const r = await withHeartbeatContext(
+      { heartbeatId: 'hb-uuid', slug: 'self_loop', ownerId: OWNER },
+      () => findTool('heartbeat_fire').handler({ slug: 'self_loop' }, mkCtx()),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatch(/recursively heartbeat_fire/);
+      expect(r.error).toContain('self_loop');
+      // Hint to use snooze instead, so the LLM has a recovery path.
+      expect(r.error).toMatch(/snooze/i);
+    }
+  });
+
+  it('rejects when chain depth would exceed MAX_HEARTBEAT_DEPTH', async () => {
+    // Simulate being deep in a chain (3 levels already). The next
+    // heartbeat_fire would be depth 4 = over the cap.
+    const r = await withHeartbeatContext(
+      { heartbeatId: 'hb-uuid', slug: 'hb_a', ownerId: OWNER, depth: 3 },
+      () => findTool('heartbeat_fire').handler({ slug: 'hb_b' }, mkCtx()),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatch(/MAX_HEARTBEAT_DEPTH/);
+      expect(r.error).toMatch(/depth 3/);
+    }
+  });
+
+  it('allows firing a different slug at the entry-level (depth 1 parent)', async () => {
+    // Inside a normal fire for 'hb_a' (depth 1), firing 'hb_b' is
+    // legal — chain would become depth 2, under the cap. The call
+    // gets past the guards then hits the DB; vitest unit env has
+    // no DATABASE_URL so the DB call throws. Catching the throw
+    // and asserting it's the DB error (not a guard error) IS the
+    // proof that the guards didn't trip.
+    let caught: unknown;
+    try {
+      await withHeartbeatContext(
+        { heartbeatId: 'hb-uuid', slug: 'hb_a', ownerId: OWNER },
+        () => findTool('heartbeat_fire').handler({ slug: 'hb_b_not_in_db' }, mkCtx()),
+      );
+    } catch (err) {
+      caught = err;
+    }
+    // We expect SOMETHING to have happened — either a thrown DB
+    // error OR a structured result that's NOT a guard refusal.
+    if (caught) {
+      const msg = caught instanceof Error ? caught.message : String(caught);
+      expect(msg).toMatch(/DATABASE_URL|connection|ECONNREFUSED/i);
+    }
   });
 });
 

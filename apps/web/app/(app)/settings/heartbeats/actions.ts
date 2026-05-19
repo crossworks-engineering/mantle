@@ -80,6 +80,25 @@ function nullableInt(formData: FormData, key: string): number | null {
   return n;
 }
 
+function parseState(formData: FormData): Record<string, unknown> | undefined {
+  // Form sends 'state' as a JSON string (already validated client-side).
+  // Re-validate server-side so a hand-rolled curl/postman call can't
+  // sneak past. Returns undefined when not provided so the lib falls
+  // back to its default ({}).
+  const raw = String(formData.get('state') ?? '').trim();
+  if (!raw) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`state JSON invalid: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('state must be a JSON object (not array, not primitive).');
+  }
+  return parsed as Record<string, unknown>;
+}
+
 function buildInput(formData: FormData): CreateHeartbeatInput {
   const slug = String(formData.get('slug') ?? '').trim();
   const name = String(formData.get('name') ?? '').trim();
@@ -93,6 +112,7 @@ function buildInput(formData: FormData): CreateHeartbeatInput {
   const surface = parseSurface(formData);
   const earliestRaw = String(formData.get('earliest_at') ?? '').trim();
   const earliestAt = earliestRaw ? new Date(earliestRaw) : null;
+  const state = parseState(formData);
   return {
     slug,
     name,
@@ -106,6 +126,7 @@ function buildInput(formData: FormData): CreateHeartbeatInput {
     earliestAt,
     cooldownMinutes: nullableInt(formData, 'cooldown_minutes'),
     maxFires: nullableInt(formData, 'max_fires'),
+    ...(state !== undefined ? { state } : {}),
   };
 }
 

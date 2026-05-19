@@ -17,7 +17,13 @@ import {
 import type { HeartbeatSummary } from '@/lib/heartbeats';
 
 type AgentOpt = { slug: string; name: string; role: string };
-type SkillOpt = { slug: string; name: string };
+type SkillOpt = {
+  slug: string;
+  name: string;
+  /** Template state shape — pre-fills the heartbeat form's `state`
+   *  textarea when the operator picks this skill on create. */
+  defaultState: Record<string, unknown>;
+};
 
 type GatePreset = 'none' | 'sensible' | 'custom';
 
@@ -42,6 +48,16 @@ type FormState = {
   quiet_to: string;
   quiet_tz: string;
   cooldown_minutes: string;
+  /** JSON text the operator types/edits. Validated on submit. On
+   *  create, pre-filled from the selected skill's defaultState
+   *  UNLESS the operator has already touched it. On edit, pre-filled
+   *  from heartbeat.state directly. */
+  state_text: string;
+  /** Tracks whether the operator manually edited the state textarea.
+   *  Once true, skill-change no longer overwrites — protects manual
+   *  edits from being clobbered when the operator switches skills
+   *  back and forth experimentally. */
+  state_touched: boolean;
 };
 
 const SENSIBLE_DEFAULTS = {
@@ -68,6 +84,8 @@ function emptyForm(): FormState {
     earliest_at: '',
     max_fires: '',
     gate_preset: 'sensible',
+    state_text: '{}',
+    state_touched: false,
     ...SENSIBLE_DEFAULTS,
   };
 }
@@ -110,6 +128,11 @@ function fromHeartbeat(h: HeartbeatSummary): FormState {
     quiet_to: h.quietHours?.to ?? '',
     quiet_tz: h.quietHours?.tz ?? '',
     cooldown_minutes: h.cooldownMinutes != null ? String(h.cooldownMinutes) : '',
+    // On edit, pre-fill from the heartbeat's own state (the source
+    // of truth post-creation). state_touched starts true so a
+    // subsequent skill change doesn't clobber existing data.
+    state_text: JSON.stringify(h.state ?? {}, null, 2),
+    state_touched: true,
   };
 }
 
@@ -213,6 +236,24 @@ export function HeartbeatsClient({
     fd.set('quiet_to', form.quiet_to);
     fd.set('quiet_tz', form.quiet_tz);
     fd.set('cooldown_minutes', form.cooldown_minutes);
+    // Validate state_text as a JSON object before submitting. Empty
+    // textarea (or whitespace) defaults to {}; any input must parse
+    // as object (not array, not primitive). Server-side action also
+    // re-validates — defence in depth.
+    const rawState = form.state_text.trim();
+    if (rawState.length > 0) {
+      try {
+        const parsed: unknown = JSON.parse(rawState);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          setError('State must be a JSON object (e.g. {"answered": []}).');
+          return;
+        }
+        fd.set('state', rawState);
+      } catch (err) {
+        setError(`State JSON is invalid: ${err instanceof Error ? err.message : String(err)}`);
+        return;
+      }
+    }
     try {
       if (editing?.mode === 'edit') {
         await updateHeartbeatAction(fd);
@@ -383,7 +424,26 @@ export function HeartbeatsClient({
                 <select
                   className="w-full rounded-md border bg-background px-3 py-2 text-sm"
                   value={form.skill_slug}
-                  onChange={(e) => setForm((f) => ({ ...f, skill_slug: e.target.value }))}
+                  onChange={(e) => {
+                    const slug = e.target.value;
+                    setForm((f) => {
+                      // Pre-fill initial state from the picked skill's
+                      // defaultState — but only when the operator
+                      // hasn't manually edited the state textarea yet.
+                      // Protects in-progress edits if they switch
+                      // skills experimentally. Edit mode sets
+                      // state_touched=true at fromHeartbeat time so
+                      // existing heartbeats never get clobbered.
+                      const next: FormState = { ...f, skill_slug: slug };
+                      if (!f.state_touched && slug) {
+                        const picked = skills.find((sk) => sk.slug === slug);
+                        if (picked) {
+                          next.state_text = JSON.stringify(picked.defaultState ?? {}, null, 2);
+                        }
+                      }
+                      return next;
+                    });
+                  }}
                 >
                   <option value="">— choose —</option>
                   {skills.map((s) => (
@@ -393,6 +453,33 @@ export function HeartbeatsClient({
                   ))}
                 </select>
               </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="state_text">Initial state (JSON)</Label>
+              <textarea
+                id="state_text"
+                value={form.state_text}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, state_text: e.target.value, state_touched: true }))
+                }
+                rows={6}
+                className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs"
+                placeholder={'{\n  "answered": [],\n  "expecting_reply": false\n}'}
+              />
+              <p className="text-xs text-muted-foreground">
+                Pre-fills from the chosen skill&apos;s default state on first pick.
+                Edits here only affect this heartbeat. See well-known keys in{' '}
+                <a
+                  href="https://github.com/TitanKing/mantle/blob/main/docs/heartbeats.md#10-conventions-well-known-state-keys"
+                  className="underline"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  docs/heartbeats.md §10
+                </a>
+                .
+              </p>
             </div>
 
             <fieldset className="space-y-3 rounded-md border p-4">

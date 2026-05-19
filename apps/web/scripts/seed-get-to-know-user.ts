@@ -130,6 +130,15 @@ State shape you should maintain:
   }
 `;
 
+/** Template state shape the profile_interview skill expects. Stored on
+ *  the skill row so any heartbeat bound to it inherits these defaults
+ *  on create (migration 0031). Operator can override per-heartbeat
+ *  via the form's state textarea. */
+const SKILL_DEFAULT_STATE: Record<string, unknown> = {
+  answered: [],
+  expecting_reply: false,
+};
+
 async function upsertSkill(): Promise<void> {
   const [existing] = await db
     .select({ id: skills.id })
@@ -146,6 +155,7 @@ async function upsertSkill(): Promise<void> {
           "Ask one topical question at a time to build a profile of the user. Self-terminates when all topics are answered.",
         instructions: SKILL_INSTRUCTIONS,
         toolSlugs: ['heartbeat_update_state', 'heartbeat_complete'],
+        defaultState: SKILL_DEFAULT_STATE,
         enabled: true,
         updatedAt: new Date(),
       })
@@ -160,6 +170,7 @@ async function upsertSkill(): Promise<void> {
         "Ask one topical question at a time to build a profile of the user. Self-terminates when all topics are answered.",
       instructions: SKILL_INSTRUCTIONS,
       toolSlugs: ['heartbeat_update_state', 'heartbeat_complete'],
+      defaultState: SKILL_DEFAULT_STATE,
       enabled: true,
     });
     console.log(`[seed] inserted skill ${SKILL_SLUG}`);

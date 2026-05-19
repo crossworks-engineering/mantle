@@ -27,7 +27,7 @@ export default async function HeartbeatsPage() {
       .where(eq(agents.ownerId, user.id))
       .orderBy(asc(agents.slug)),
     db
-      .select({ slug: skills.slug, name: skills.name })
+      .select({ slug: skills.slug, name: skills.name, defaultState: skills.defaultState })
       .from(skills)
       .where(eq(skills.ownerId, user.id))
       .orderBy(asc(skills.slug)),
@@ -66,7 +66,13 @@ export default async function HeartbeatsPage() {
       <HeartbeatsClient
         initial={rows}
         agents={agentRows}
-        skills={skillRows}
+        skills={skillRows.map((s) => ({
+          slug: s.slug,
+          name: s.name,
+          // jsonb may surface as `unknown`; normalize to a record so
+          // the client-side form's pre-fill code doesn't have to.
+          defaultState: (s.defaultState ?? {}) as Record<string, unknown>,
+        }))}
         formatted={formatted}
       />
     </div>

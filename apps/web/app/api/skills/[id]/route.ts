@@ -11,6 +11,7 @@ const PatchBody = z
     description: z.string().min(1).max(2000),
     instructions: z.string().max(40_000),
     toolSlugs: z.array(z.string().min(1).max(120)).max(64),
+    defaultState: z.record(z.unknown()),
     enabled: z.boolean(),
   })
   .partial();

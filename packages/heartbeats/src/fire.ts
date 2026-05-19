@@ -57,13 +57,18 @@ const HEARTBEAT_CONTROL_TOOLS = [
 ];
 
 export type FireResult = {
+  /** See HeartbeatFireDisposition in @mantle/db for the canonical
+   *  vocabulary + operator-triage semantics. Kept in sync as a
+   *  narrower union for the FireResult return shape. */
   disposition:
     | 'fired'
+    | 'fired_undelivered'
     | 'skipped_idle'
     | 'skipped_quiet'
     | 'skipped_cooldown'
     | 'skipped_earliest'
     | 'completed'
+    | 'auto_paused'
     | 'error';
   replyText?: string;
   error?: string;
@@ -216,7 +221,7 @@ async function fireInner(
     // trace row. step() is a no-op outside a trace context — moving
     // delivery out of the trace would lose the deliver_surface step
     // we want for debugging delivery failures. (Audit P-trace-4.)
-    const { reply, replySurfaceRef } = await startTrace(
+    const { reply, replySurfaceRef, delivered } = await startTrace(
       {
         ownerId: hb.ownerId,
         kind: 'heartbeat_fire',
@@ -234,7 +239,7 @@ async function fireInner(
         // currentTrace() is safe to read here — we're inside the
         // AsyncLocalStorage scope startTrace just opened.
         openedTraceId = currentTrace()?.id ?? null;
-        const result = await withHeartbeatContext({ heartbeatId: hb.id, ownerId: hb.ownerId }, () =>
+        const result = await withHeartbeatContext({ heartbeatId: hb.id, slug: hb.slug, ownerId: hb.ownerId }, () =>
           runToolLoop({
             client,
             model: agent.model,
@@ -257,7 +262,18 @@ async function fireInner(
         // Deliver — own step so a telegram outage shows up
         // distinctly in the trace graph (kind='send', so it sits
         // visually next to the LLM 'llm_call' steps).
+        //
+        // delivered captures whether the message actually reached
+        // the surface. Used by the outer disposition decision
+        // (fired vs fired_undelivered): if the LLM ran but the
+        // delivery couldn't happen (no account, sendMessage
+        // threw), we mark the outer disposition fired_undelivered
+        // so the operator can see "we spent the LLM cost but the
+        // user got nothing" at a glance instead of having to drill
+        // into the trace's step skipped reason. P1-1 from the
+        // audit.
         let surfaceRef: Record<string, unknown> | null = null;
+        let delivered = true;
         if (replyText.trim() && hb.surface.kind === 'telegram') {
           surfaceRef = await step(
             {
@@ -269,21 +285,38 @@ async function fireInner(
               if (hb.surface.kind !== 'telegram') return null;
               const account = await accountForChat(hb.surface.chat_id);
               if (!account) {
-                // Mark the step skipped + meta so /traces shows why
-                // nothing reached the user even though the fire ran.
-                // The outer disposition stays 'fired' because the
-                // LLM half succeeded.
                 h.setSkipped('no_enabled_telegram_account');
+                delivered = false;
                 return null;
               }
-              const ids = await sendMessage(account, hb.surface.chat_id, replyText);
-              h.setMeta({ message_ids: ids });
-              return { kind: 'telegram', message_ids: ids } as Record<string, unknown>;
+              try {
+                const ids = await sendMessage(account, hb.surface.chat_id, replyText);
+                h.setMeta({ message_ids: ids });
+                return { kind: 'telegram', message_ids: ids } as Record<string, unknown>;
+              } catch (err) {
+                // Network / Telegram API failure. Don't throw out
+                // of the trace closure — keep the LLM work
+                // recorded, mark the outer disposition
+                // fired_undelivered, let the operator decide.
+                h.setMeta({
+                  error: err instanceof Error ? err.message : String(err),
+                });
+                h.setSkipped('telegram_send_failed');
+                delivered = false;
+                return null;
+              }
             },
           );
+        } else if (replyText.trim() && hb.surface.kind !== 'telegram') {
+          // Web surface (and any future surface without an outbound
+          // channel) has no in-process delivery — the reply text
+          // would surface via the assistant message stream. v1
+          // heartbeats targeting kind:'web' have no realtime push;
+          // delivered=true is a small lie that says "we did what we
+          // could", documented under §9 out-of-scope.
         }
 
-        return { reply: replyText, replySurfaceRef: surfaceRef };
+        return { reply: replyText, replySurfaceRef: surfaceRef, delivered };
       },
     );
 
@@ -339,8 +372,23 @@ async function fireInner(
       })
       .where(eq(heartbeats.id, hb.id));
 
+    // Disposition decision matrix:
+    //   completed   → tool set status=completed during the fire
+    //   fired       → LLM ran AND reply reached the surface
+    //   fired_undelivered → LLM ran, reply text exists, but surface
+    //                       refused (no account / send failed).
+    //                       State updates still landed; user got
+    //                       nothing this fire. Operator-visible at a
+    //                       glance via /heartbeats/[id] log. (P1-1.)
+    const disposition: FireResult['disposition'] =
+      finalStatus === 'completed'
+        ? 'completed'
+        : delivered
+          ? 'fired'
+          : 'fired_undelivered';
+
     await recordFire(hb, {
-      disposition: finalStatus === 'completed' ? 'completed' : 'fired',
+      disposition,
       stateBefore: hb.state,
       stateAfter: after.state,
       replyText: reply,
@@ -348,7 +396,7 @@ async function fireInner(
       traceId: openedTraceId,
     });
 
-    return { disposition: finalStatus === 'completed' ? 'completed' : 'fired', replyText: reply };
+    return { disposition, replyText: reply };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await recordFire(hb, {
@@ -375,6 +423,13 @@ async function fireInner(
 }
 
 async function autoPause(hb: Heartbeat, reason: string): Promise<FireResult> {
+  // Distinct from the catch-block 'error' path: auto-pause is for
+  // config issues caught BEFORE the LLM runs (agent missing,
+  // skill missing, key undecryptable). The heartbeat is moved to
+  // status=paused — operator must intervene. 'error' (catch block)
+  // is for transient mid-fire failures that the next tick will
+  // retry. Splitting the disposition lets /heartbeats/[id] colour
+  // them differently so triage is at-a-glance. P1-2 from audit.
   await db
     .update(heartbeats)
     .set({
@@ -385,12 +440,12 @@ async function autoPause(hb: Heartbeat, reason: string): Promise<FireResult> {
     })
     .where(eq(heartbeats.id, hb.id));
   await recordFire(hb, {
-    disposition: 'error',
+    disposition: 'auto_paused',
     stateBefore: hb.state,
     stateAfter: null,
     errorMessage: reason,
   });
-  return { disposition: 'error', error: reason };
+  return { disposition: 'auto_paused', error: reason };
 }
 
 async function recordFire(

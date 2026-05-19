@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   index,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -27,6 +28,14 @@ export const skills = pgTable(
     instructions: text('instructions').default('').notNull(),
     /** Tools this skill expects the agent to have access to. */
     toolSlugs: text('tool_slugs').array().default(sql`'{}'::text[]`).notNull(),
+    /** Initial state shape a heartbeat inherits when bound to this
+     *  skill — e.g. {answered: [], expecting_reply: false} for the
+     *  profile_interview skill. The heartbeat creation form pre-fills
+     *  from this; once a heartbeat exists, its own `state` is the
+     *  source of truth (this column is a template, not a live ref).
+     *  See docs/heartbeats.md §10 for the well-known state keys
+     *  engine code reads. */
+    defaultState: jsonb('default_state').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
     enabled: boolean('enabled').default(true).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

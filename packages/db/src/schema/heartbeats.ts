@@ -97,14 +97,43 @@ export const heartbeats = pgTable(
 export type Heartbeat = typeof heartbeats.$inferSelect;
 export type NewHeartbeat = typeof heartbeats.$inferInsert;
 
-/** Dispositions recorded on heartbeat_fires.disposition. */
+/** Dispositions recorded on heartbeat_fires.disposition.
+ *
+ *  Operator triage at-a-glance:
+ *
+ *    fired              — agent ran + reply delivered (happy path)
+ *    fired_undelivered  — agent ran + reply text computed, but the
+ *                         surface refused (e.g. no enabled Telegram
+ *                         account). LLM cost was spent; user got
+ *                         nothing. State still updated.
+ *    completed          — same as fired, but a tool flipped
+ *                         status=completed (heartbeat done)
+ *    skipped_*          — gate rejected (idle / quiet / cooldown /
+ *                         earliest). No work, no cost.
+ *    auto_paused        — config error caught BEFORE any work
+ *                         (agent missing, skill missing, key
+ *                         undecryptable). Heartbeat moved to
+ *                         status=paused; operator must intervene.
+ *    error              — transient runtime failure mid-fire. Will
+ *                         retry on the next tick after a short
+ *                         backoff. Distinct from auto_paused so the
+ *                         operator can tell "will fix itself" from
+ *                         "I need to look at this".
+ *
+ *  Disposition is stored as `text` (not an enum) so adding new
+ *  values is a TypeScript-only change. The UI label map in
+ *  /heartbeats/[id] should cover every value or it'll fall through
+ *  to the raw string.
+ */
 export type HeartbeatFireDisposition =
   | 'fired'
+  | 'fired_undelivered'
   | 'skipped_idle'
   | 'skipped_quiet'
   | 'skipped_cooldown'
   | 'skipped_earliest'
   | 'completed'
+  | 'auto_paused'
   | 'error';
 
 export const heartbeatFires = pgTable(

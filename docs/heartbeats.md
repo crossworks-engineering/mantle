@@ -47,7 +47,7 @@ Migration `0030_heartbeats.sql` adds two tables and one enum value.
 | `quiet_hours`       | jsonb NULL                      | `{from:'HH:MM',to:'HH:MM',tz:?}`; tz null = profile|
 | `earliest_at`       | timestamptz NULL                | hard floor before any fire                         |
 | `cooldown_minutes`  | integer NULL                    | gate: min wait between fires of THIS heartbeat     |
-| `state`             | jsonb                           | the skill's running memory; see §11 conventions    |
+| `state`             | jsonb                           | the skill's running memory; see §10 + §11          |
 | `status`            | enum (active/paused/completed/cancelled) |                                            |
 | `completion_reason` | text                            | free-text, e.g. `tool_call:all_topics_covered`     |
 
@@ -67,13 +67,17 @@ precious).
 heartbeats outlive trace pruning, and a dangling reference is
 preferable to either keeping traces forever or losing the audit row.
 
-Disposition vocabulary:
-- `fired` — the agent's tool loop ran and the reply (if any) was delivered
-- `completed` — same as fired, but a tool flipped status to `completed`
-- `skipped_idle` / `skipped_quiet` / `skipped_cooldown` / `skipped_earliest`
-- `error` — the fire opened but the loop threw (will retry next tick)
-- (also `error` for auto-pause; see §7 known-debt — splitting these
-  into separate dispositions is a v1.1 nice-to-have)
+Disposition vocabulary (operator triage at-a-glance, distinct colours
+on `/heartbeats/[id]`):
+
+| Disposition | Colour | Meaning |
+|---|---|---|
+| `fired` | emerald | LLM ran AND reply reached the surface (happy path) |
+| `completed` | sky | Same as fired, but a tool flipped `status=completed` (heartbeat met its goal) |
+| `fired_undelivered` | orange | LLM ran + reply text computed, but the surface refused (no enabled Telegram account; `sendMessage` threw). LLM cost was spent; user got nothing. State still updated. P1-1 fix. |
+| `skipped_idle` / `skipped_quiet` / `skipped_cooldown` / `skipped_earliest` | amber | Gate rejected. No work, no cost. |
+| `auto_paused` | rose | Config error caught BEFORE any LLM work (agent missing, skill missing, key undecryptable). Heartbeat moved to `status=paused` — operator must intervene. P1-2 split. |
+| `error` | purple | Transient runtime failure mid-fire. Will retry on the next tick after a short backoff. Distinct from `auto_paused` so the operator can tell "will fix itself" from "I need to look at this". |
 
 ### trace_kind extension
 
@@ -303,7 +307,8 @@ period after install. Asks one question per fire across 8 topics
 are answered.
 
 The skill expects this state shape (see §11 for the canonical
-vocabulary):
+vocabulary, §10 for how the initial values get bootstrapped from
+`skills.default_state`):
 
 ```ts
 {
@@ -475,11 +480,67 @@ Named so we don't accidentally do them:
 - **User-driven snooze via Telegram keyword** (e.g. `/later`).
 - **Heartbeat template library.** v1 expects hand-crafted entries
   through the UI / seed script.
-- **`heartbeat_fire` recursion guard.** A skill could call
-  `heartbeat_fire(<own slug>)` and infinite-loop until OpenRouter
-  budget runs out. Cap chained `forceFire` depth in v1.1.
 
-## 10. Conventions: well-known state keys
+### Catch-up spike after agent downtime (NEW-6)
+
+When `apps/agent` is down for an extended period (host reboot, deploy,
+crash + auto-restart), every heartbeat whose `next_fire_at` passed
+during the outage becomes "due" simultaneously. On boot, the tick
+selects up to `TICK_BATCH=10` due rows per minute and fires them
+sequentially.
+
+Worst case: agent down for an hour, 50 heartbeats due in that window
+→ on resume, 10 fire in the first minute, 10 in the next, etc. — a
+5-minute flurry. For a single-user install with a handful of
+heartbeats this is invisible; at scale (dozens of frequently-firing
+heartbeats), it could feel like a notification storm.
+
+Mitigations (not implemented in v1, named here for the v1.1
+discussion):
+
+  - Lower `TICK_BATCH` to spread the flurry over more minutes
+  - Detect `now() - next_fire_at > stale_threshold` and **bump
+    forward** instead of firing the stale one (treat as missed-bus)
+  - Coalesce per-surface: don't send N Telegram messages in 2 minutes
+    even if N heartbeats are due — let the user breathe
+
+For the dogfooded single-user scenario today, none worth doing. Worth
+knowing exists for capacity planning.
+
+## 10. Initial state — `skills.default_state` + heartbeat override
+
+Migration 0031 adds `skills.default_state jsonb` so skill authors can
+declare the expected starting shape once. Heartbeat creation flow:
+
+1. Operator picks a skill in the create form
+2. `state` textarea auto-populates from `skills.default_state` (only
+   if the textarea hasn't been manually touched yet — protects
+   in-progress edits when switching skills)
+3. Operator can edit the JSON freely; client + server both validate
+   that it's a plain object (not array, not primitive)
+4. On submit, the heartbeat's own `state` column gets that value
+
+Once a heartbeat exists, its `state` is the source of truth — edits
+to the skill's `default_state` do NOT propagate to existing
+heartbeats (it's a template, not a live reference). The skills CRUD
+form has its own `default_state` textarea so authors can declare
+what their skill needs.
+
+Example: `profile_interview` skill seeded with:
+
+```json
+{
+  "answered": [],
+  "expecting_reply": false
+}
+```
+
+Every heartbeat using `profile_interview` starts there unless the
+operator overrides. The `last_question_topic` + `last_asked_at`
+keys appear as the skill runs and the model populates them via
+`heartbeat_update_state`.
+
+## 11. Conventions: well-known state keys
 
 `heartbeats.state` is free-form jsonb — the engine writes to it
 (only via tools, never directly) but doesn't validate the shape.
@@ -505,7 +566,7 @@ contract. A `WellKnownStateKeys` type re-exported from
 `@mantle/heartbeats` would catch typos at the skill-author layer
 without forcing a schema change — v1.1 candidate.
 
-## 11. Skills: two activation models, one table
+## 12. Skills: two activation models, one table
 
 `skills` predates `heartbeats` (migration 0023 vs 0030). Originally
 it was just "instructions + tools you can attach to an agent."
@@ -528,7 +589,7 @@ The composition helpers `composeSystemPromptWithSkills` and
 and are used by both the responder turn (always-on) and the
 heartbeat fire (situational).
 
-## 12. Files
+## 13. Files
 
 | Path                                            | Purpose                                  |
 |-------------------------------------------------|------------------------------------------|

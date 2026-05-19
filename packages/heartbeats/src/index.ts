@@ -5,7 +5,7 @@ export {
 } from './schedule';
 export { checkGates, type GateResult } from './gates';
 export { buildHeartbeatPrompt, buildOpenHeartbeatContext } from './prompt';
-export { currentHeartbeat, withHeartbeatContext } from './context';
+export { currentHeartbeat, withHeartbeatContext, MAX_HEARTBEAT_DEPTH } from './context';
 export { forceFire, tickFire, type FireResult } from './fire';
 export { isFireInflight, runWithInflightLock } from './inflight';
 export {

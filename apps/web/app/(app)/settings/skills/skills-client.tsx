@@ -21,6 +21,8 @@ type SkillSummary = {
   description: string;
   instructions: string;
   toolSlugs: string[];
+  /** Template state shape heartbeats inherit. Empty {} by default. */
+  defaultState: Record<string, unknown>;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -40,6 +42,9 @@ type FormState = {
   description: string;
   instructions: string;
   toolSlugs: string[];
+  /** Free-form JSON the skill author types. Validated on submit;
+   *  parsed value stored on the row. Empty string = default to `{}`. */
+  defaultStateText: string;
   enabled: boolean;
 };
 
@@ -49,6 +54,7 @@ const emptyForm = (): FormState => ({
   description: '',
   instructions: '',
   toolSlugs: [],
+  defaultStateText: '{}',
   enabled: true,
 });
 
@@ -59,6 +65,7 @@ function fromSkill(s: SkillSummary): FormState {
     description: s.description,
     instructions: s.instructions,
     toolSlugs: s.toolSlugs,
+    defaultStateText: JSON.stringify(s.defaultState ?? {}, null, 2),
     enabled: s.enabled,
   };
 }
@@ -114,11 +121,32 @@ export function SkillsClient({
     e.preventDefault();
     if (!editing) return;
     setError(undefined);
+    // Parse + validate the default_state JSON before sending. Empty
+    // textarea or whitespace defaults to {}; any other input must
+    // parse as a JSON object (not array, not primitive). Surfaces
+    // errors inline so the operator can correct without losing the
+    // rest of the form.
+    let defaultState: Record<string, unknown> = {};
+    const raw = form.defaultStateText.trim();
+    if (raw.length > 0) {
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          setError('Default state must be a JSON object (e.g. {"answered": []}).');
+          return;
+        }
+        defaultState = parsed as Record<string, unknown>;
+      } catch (err) {
+        setError(`Default state JSON is invalid: ${err instanceof Error ? err.message : String(err)}`);
+        return;
+      }
+    }
     const body = {
       name: form.name.trim(),
       description: form.description.trim(),
       instructions: form.instructions,
       toolSlugs: form.toolSlugs,
+      defaultState,
       enabled: form.enabled,
       ...(editing.mode === 'create' ? { slug: form.slug.trim() } : {}),
     };
@@ -340,6 +368,28 @@ export function SkillsClient({
                   })}
                 </div>
               )}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="defaultState">Default state (JSON template for heartbeats using this skill)</Label>
+              <textarea
+                id="defaultState"
+                value={form.defaultStateText}
+                onChange={(e) => setForm((f) => ({ ...f, defaultStateText: e.target.value }))}
+                rows={5}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+                placeholder={'{\n  "answered": [],\n  "expecting_reply": false\n}'}
+              />
+              <p className="text-xs text-muted-foreground">
+                Heartbeats created against this skill copy this as their initial{' '}
+                <code>state</code>. Once a heartbeat exists, its own state is the source
+                of truth — edits here don&apos;t propagate. Leave empty for{' '}
+                <code>{'{}'}</code>. See well-known keys in{' '}
+                <a href="https://github.com/TitanKing/mantle/blob/main/docs/heartbeats.md#10-conventions-well-known-state-keys" className="underline" target="_blank" rel="noreferrer">
+                  docs/heartbeats.md §10
+                </a>
+                .
+              </p>
             </div>
 
             <label className="flex items-center gap-2 text-sm">

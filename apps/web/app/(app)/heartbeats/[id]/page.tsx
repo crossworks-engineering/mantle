@@ -150,9 +150,27 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
   );
 }
 
+/** Disposition → tailwind class. Triage colour-coding:
+ *    emerald = happy path (work done, user reached)
+ *    sky     = milestone (heartbeat completed its goal)
+ *    orange  = "we did the work but user got nothing" — needs surface attention
+ *    rose    = blocking error needing operator attention (paused)
+ *    purple  = transient runtime error (will retry on next tick)
+ *    amber   = gate skip (everything fine, just not now) */
 function dispositionClass(d: string): string {
-  if (d === 'fired') return 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100';
-  if (d === 'completed') return 'bg-sky-100 text-sky-900 dark:bg-sky-900/40 dark:text-sky-100';
-  if (d === 'error') return 'bg-rose-100 text-rose-900 dark:bg-rose-900/40 dark:text-rose-100';
-  return 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100';
+  switch (d) {
+    case 'fired':
+      return 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100';
+    case 'completed':
+      return 'bg-sky-100 text-sky-900 dark:bg-sky-900/40 dark:text-sky-100';
+    case 'fired_undelivered':
+      return 'bg-orange-100 text-orange-900 dark:bg-orange-900/40 dark:text-orange-100';
+    case 'auto_paused':
+      return 'bg-rose-100 text-rose-900 dark:bg-rose-900/40 dark:text-rose-100';
+    case 'error':
+      return 'bg-purple-100 text-purple-900 dark:bg-purple-900/40 dark:text-purple-100';
+    default:
+      // skipped_idle / skipped_quiet / skipped_cooldown / skipped_earliest
+      return 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100';
+  }
 }

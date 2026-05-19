@@ -218,6 +218,13 @@
       "when": 1747701700000,
       "tag": "0030_heartbeats",
       "breakpoints": false
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1747701800000,
+      "tag": "0031_skill_default_state",
+      "breakpoints": false
     }
   ]
 }

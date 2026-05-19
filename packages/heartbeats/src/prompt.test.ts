@@ -48,6 +48,10 @@ function mkSkill(over: Partial<Skill> = {}): Skill {
     description: 'Ask one question at a time',
     instructions: 'Ask one topic per fire. Set expecting_reply=true after asking.',
     toolSlugs: [],
+    // Migration 0031: default_state template. Empty for the test
+    // baseline; tests that exercise initial-state inheritance pass
+    // their own value via `over`.
+    defaultState: {},
     enabled: true,
     createdAt: new Date(),
     updatedAt: new Date(),

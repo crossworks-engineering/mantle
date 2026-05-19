@@ -17,6 +17,10 @@ export type SkillSummary = {
   description: string;
   instructions: string;
   toolSlugs: string[];
+  /** Template state shape a heartbeat inherits on create. Empty {}
+   *  unless the skill author has filled it in (e.g.
+   *  {answered:[], expecting_reply:false} for interview skills). */
+  defaultState: Record<string, unknown>;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -30,6 +34,7 @@ function toSummary(s: Skill): SkillSummary {
     description: s.description,
     instructions: s.instructions,
     toolSlugs: s.toolSlugs ?? [],
+    defaultState: (s.defaultState ?? {}) as Record<string, unknown>,
     enabled: s.enabled,
     createdAt: s.createdAt.toISOString(),
     updatedAt: s.updatedAt.toISOString(),
@@ -63,6 +68,7 @@ export type CreateSkillInput = {
   description: string;
   instructions?: string;
   toolSlugs?: string[];
+  defaultState?: Record<string, unknown>;
   enabled?: boolean;
 };
 
@@ -79,6 +85,7 @@ export async function createSkill(
       description: input.description,
       instructions: input.instructions ?? '',
       toolSlugs: input.toolSlugs ?? [],
+      defaultState: input.defaultState ?? {},
       enabled: input.enabled ?? true,
     })
     .returning();
@@ -98,6 +105,7 @@ export async function updateSkill(
   if (patch.description !== undefined) next.description = patch.description;
   if (patch.instructions !== undefined) next.instructions = patch.instructions;
   if (patch.toolSlugs !== undefined) next.toolSlugs = patch.toolSlugs;
+  if (patch.defaultState !== undefined) next.defaultState = patch.defaultState;
   if (patch.enabled !== undefined) next.enabled = patch.enabled;
   const [row] = await db
     .update(skills)
