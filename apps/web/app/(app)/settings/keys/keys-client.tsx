@@ -2,9 +2,10 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { RefreshCw, Trash2 } from 'lucide-react';
+import { Check, Loader2, RefreshCw, ShieldCheck, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { formatDateTime } from '@/lib/format-datetime';
+import { testApiKeyAction, type TestApiKeyResult } from './actions';
 import {
   Dialog,
   DialogContent,
@@ -63,6 +64,32 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
   // Rotate flow state.
   const [rotating, setRotating] = useState<KeyRow>();
   const [rotateValue, setRotateValue] = useState('');
+
+  // Test-key flow state. Keyed by api_keys.id so the result chip
+  // renders next to the row the user actually clicked, even if
+  // they hit Test on several rows in a row.
+  const [testing, setTesting] = useState<Record<string, boolean>>({});
+  const [testResults, setTestResults] = useState<Record<string, TestApiKeyResult>>({});
+
+  async function onTest(row: KeyRow) {
+    setTesting((s) => ({ ...s, [row.id]: true }));
+    try {
+      const result = await testApiKeyAction(row.id, row.service);
+      setTestResults((s) => ({ ...s, [row.id]: result }));
+    } catch (err) {
+      setTestResults((s) => ({
+        ...s,
+        [row.id]: {
+          ok: false,
+          message: err instanceof Error ? err.message : String(err),
+          provider: row.service,
+          adapter: '',
+        },
+      }));
+    } finally {
+      setTesting((s) => ({ ...s, [row.id]: false }));
+    }
+  }
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -132,8 +159,12 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
           </p>
         ) : (
           <ul className="divide-y divide-border rounded-md border border-border">
-            {keys.map((k) => (
-              <li key={k.id} className="flex items-center gap-3 px-3 py-2">
+            {keys.map((k) => {
+              const testResult = testResults[k.id];
+              const isTesting = !!testing[k.id];
+              return (
+              <li key={k.id} className="flex flex-col gap-1.5 px-3 py-2">
+                <div className="flex items-center gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2">
                     <span className="text-sm font-medium">{k.service}</span>
@@ -147,6 +178,21 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
                     </span>
                   </div>
                 </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={isTesting}
+                  onClick={() => onTest(k)}
+                  title="Make a no-cost API call to verify this key is accepted"
+                >
+                  {isTesting ? (
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                  ) : (
+                    <ShieldCheck className="size-3.5" aria-hidden />
+                  )}{' '}
+                  Test
+                </Button>
                 <Button
                   type="button"
                   variant="ghost"
@@ -167,8 +213,33 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
                 >
                   <Trash2 className="size-3.5" aria-hidden /> Delete
                 </Button>
+                </div>
+                {testResult && (
+                  <div
+                    className={`flex items-start gap-1.5 rounded-md px-2 py-1 text-xs ${
+                      testResult.ok
+                        ? 'bg-emerald-50 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100'
+                        : 'bg-rose-50 text-rose-900 dark:bg-rose-950/40 dark:text-rose-100'
+                    }`}
+                  >
+                    {testResult.ok ? (
+                      <Check className="size-3.5 shrink-0 translate-y-0.5" aria-hidden />
+                    ) : (
+                      <X className="size-3.5 shrink-0 translate-y-0.5" aria-hidden />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium">{testResult.message}</div>
+                      {testResult.adapter && (
+                        <div className="text-[10px] uppercase tracking-wide opacity-70">
+                          probed via {testResult.adapter}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </section>
