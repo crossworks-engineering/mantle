@@ -21,6 +21,7 @@ import type {
 import {
   XAI_BASE_URL,
   XAI_IMAGE_DEFAULT_MODEL,
+  XAI_IMAGE_DEPRECATED_MODELS,
   XAI_IMAGE_MODELS,
 } from '../catalogs/xai';
 
@@ -60,6 +61,21 @@ export const xaiImageAdapter: ImageGenDispatcher = {
     });
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
+      // Rewrite the deprecation 404 into an actionable migration
+      // hint. xAI returns a 404 "model X was deprecated" rather
+      // than a 410-Gone, which makes the actual cause hard to spot
+      // alongside "model not found" errors from typos.
+      if (
+        res.status === 404 &&
+        (XAI_IMAGE_DEPRECATED_MODELS.includes(model) ||
+          /deprecated|no longer accessible/i.test(errBody))
+      ) {
+        throw new Error(
+          `xai-image: model '${model}' is deprecated by xAI. ` +
+            `Edit your image_gen worker at /settings/ai-workers and set ` +
+            `model to '${XAI_IMAGE_DEFAULT_MODEL}' (current default).`,
+        );
+      }
       throw new Error(`xai-image ${res.status}: ${errBody.slice(0, 400)}`);
     }
     const parsed = (await res.json()) as XaiImageResponse;

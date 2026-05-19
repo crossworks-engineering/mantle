@@ -177,24 +177,34 @@ export const XAI_STT_MODELS: readonly SttModelInfo[] = [
 //           xAI returns urls by default; we request response_format=
 //           'b64_json' so the adapter gets bytes uniformly.
 //
-// As of May 2026 xAI ships a single image model: `grok-2-image-1212`.
-// They've talked about higher-quality variants but nothing public yet.
+// Model history:
+//   - `grok-2-image-1212` — original launch model, DEPRECATED
+//     2026-02-24. The API returns 404 "no longer accessible via the
+//     API. Please use grok-imagine-image instead." Removed from this
+//     catalog so the dropdown can't suggest it; the adapter
+//     translates lingering-config 404s into a migration hint.
+//   - `grok-imagine-image` — current model (Feb 2026 →). Same
+//     endpoint shape, slightly improved photo-realism.
 
 import type { ImageGenModelInfo } from '../adapters/types';
 
 export const XAI_IMAGE_MODELS: readonly ImageGenModelInfo[] = [
   {
-    id: 'grok-2-image-1212',
-    label: 'Grok 2 Image',
+    id: 'grok-imagine-image',
+    label: 'Grok Imagine',
     description:
-      'xAI image generator. Strong on photo-realistic and editorial styles. Reuses your chat key.',
+      'xAI image generator (Feb 2026+). Photo-realistic and editorial styles. Reuses your chat key.',
     supportedSizes: ['1024x1024'],
     pricePerImage: 0.07,
     tier: 'balanced',
   },
 ];
 
-export const XAI_IMAGE_DEFAULT_MODEL = 'grok-2-image-1212';
+export const XAI_IMAGE_DEFAULT_MODEL = 'grok-imagine-image';
+/** Old id we still recognise solely to rewrite its API-error
+ *  message into a useful migration hint. The catalog no longer
+ *  surfaces this id; only the adapter looks at it. */
+export const XAI_IMAGE_DEPRECATED_MODELS: readonly string[] = ['grok-2-image-1212'];
 
 // ─── xAI Vision ──────────────────────────────────────────────────────
 //
