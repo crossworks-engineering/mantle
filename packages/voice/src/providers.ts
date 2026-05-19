@@ -112,8 +112,8 @@ export const SUPPORTED_PROVIDERS: readonly Provider[] = [
     id: 'google',
     label: 'Google (Gemini)',
     description:
-      'Gemini direct. Large-context vision and chat. Useful when you need 1M+ token windows.',
-    capabilities: ['chat', 'vision', 'embedding'],
+      'Gemini direct. Large-context chat + 30-voice TTS (Kore, Puck, Zephyr…). 1M+ token windows.',
+    capabilities: ['chat', 'vision', 'embedding', 'tts'],
     signupUrl: 'https://aistudio.google.com/apikey',
     docsUrl: 'https://ai.google.dev/gemini-api/docs',
   },
@@ -121,8 +121,8 @@ export const SUPPORTED_PROVIDERS: readonly Provider[] = [
     id: 'xai',
     label: 'xAI (Grok)',
     description:
-      'Grok models direct from xAI. Useful for current-events-aware chat and tool use.',
-    capabilities: ['chat', 'vision'],
+      'Grok chat + Grok TTS (5 voices: eve, ara, rex, sal, leo) with [laugh]/[giggle]/[sigh] inline tags.',
+    capabilities: ['chat', 'vision', 'tts'],
     signupUrl: 'https://console.x.ai',
     docsUrl: 'https://docs.x.ai',
   },
