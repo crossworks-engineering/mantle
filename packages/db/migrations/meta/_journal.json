@@ -197,6 +197,20 @@
       "when": 1747701400000,
       "tag": "0027_ai_workers",
       "breakpoints": false
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1747701500000,
+      "tag": "0028_trace_kind_photo_ingest",
+      "breakpoints": false
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1747701600000,
+      "tag": "0029_tracing_skipped_and_ingest",
+      "breakpoints": false
     }
   ]
 }
