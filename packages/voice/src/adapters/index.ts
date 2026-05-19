@@ -25,12 +25,16 @@ import { xaiChatAdapter } from './xai-chat';
 import { huggingfaceChatAdapter } from './huggingface-chat';
 import { anthropicChatAdapter } from './anthropic-chat';
 import { googleChatAdapter } from './google-chat';
+import { googleTtsAdapter } from './google-tts';
+import { xaiTtsAdapter } from './xai-tts';
 import { elevenLabsTtsAdapter } from './elevenlabs-tts';
 
 // Built-in adapters. Order doesn't matter — these are just into a
 // Map keyed by providerId.
 registerTtsAdapter(openAiTtsAdapter);
 registerTtsAdapter(elevenLabsTtsAdapter);
+registerTtsAdapter(xaiTtsAdapter);
+registerTtsAdapter(googleTtsAdapter);
 registerSttAdapter(openAiSttAdapter);
 registerChatAdapter(xaiChatAdapter);
 registerChatAdapter(huggingfaceChatAdapter);
@@ -78,11 +82,20 @@ export {
 } from './huggingface-chat';
 export { anthropicChatAdapter } from './anthropic-chat';
 export { googleChatAdapter } from './google-chat';
+export { googleTtsAdapter } from './google-tts';
+export { xaiTtsAdapter } from './xai-tts';
 export { elevenLabsTtsAdapter } from './elevenlabs-tts';
 
 // Catalogues — exposed so the UI can render the static list before
 // live discovery completes.
-export { XAI_CHAT_MODELS, XAI_BASE_URL } from '../catalogs/xai';
+export {
+  XAI_CHAT_MODELS,
+  XAI_BASE_URL,
+  XAI_TTS_MODEL_ID,
+  XAI_TTS_VOICES,
+  XAI_AUDIO_TAGS,
+  audioTagsForXaiTtsModel,
+} from '../catalogs/xai';
 export {
   HUGGINGFACE_CHAT_MODELS,
   HUGGINGFACE_BASE_URL,
@@ -92,7 +105,15 @@ export {
   ANTHROPIC_BASE_URL,
   ANTHROPIC_API_VERSION,
 } from '../catalogs/anthropic';
-export { GOOGLE_CHAT_MODELS, GOOGLE_BASE_URL } from '../catalogs/google';
+export {
+  GOOGLE_CHAT_MODELS,
+  GOOGLE_BASE_URL,
+  GOOGLE_TTS_MODELS,
+  GOOGLE_TTS_VOICES,
+  GOOGLE_AUDIO_TAGS,
+  audioTagsForGoogleTtsModel,
+  type GoogleTtsModelId,
+} from '../catalogs/google';
 export {
   ELEVENLABS_TTS_MODELS,
   ELEVENLABS_BASE_URL,

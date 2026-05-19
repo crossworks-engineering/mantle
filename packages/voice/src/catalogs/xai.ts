@@ -72,3 +72,72 @@ export const XAI_CHAT_MODELS: readonly ChatModelInfo[] = [
 ];
 
 export const XAI_BASE_URL = 'https://api.x.ai/v1';
+
+// ─── xAI TTS (Grok voice) ────────────────────────────────────────────
+//
+// Endpoint: POST {XAI_BASE_URL}/tts
+// Auth:     Authorization: Bearer $XAI_API_KEY
+// Body:     {text, voice_id, language, output_format: {codec, sample_rate, bit_rate}}
+//
+// 5 voices, 20+ languages auto-detected, inline + wrapping speech tags.
+
+import type { AudioTag } from '../adapters/types';
+
+/** Grok TTS model — xAI publishes "grok-voice-latest" as the alias. */
+export const XAI_TTS_MODEL_ID = 'grok-voice-latest';
+
+/** Voice catalog for Grok TTS. 5 voices, gender/character hints from
+ *  the xAI launch blog. Operators see these in the worker form. */
+export const XAI_TTS_VOICES = [
+  { id: 'eve', description: 'female, warm — Grok default' },
+  { id: 'ara', description: 'female, clear and bright' },
+  { id: 'rex', description: 'male, deep and grounded' },
+  { id: 'sal', description: 'male, neutral and friendly' },
+  { id: 'leo', description: 'male, animated and energetic' },
+] as const;
+
+/**
+ * Inline speech tags Grok TTS honours. Square-bracket form, same shape
+ * as ElevenLabs's `[laughs]`. Pulled from
+ *   https://docs.x.ai/developers/rest-api-reference/inference/voice
+ *
+ * NOTE: xAI also supports a separate vocabulary of WRAPPING tags
+ * (`<soft>…</soft>`, `<whisper>…</whisper>`, `<emphasis>…</emphasis>`,
+ * `<slow>…</slow>`, `<sing-song>…</sing-song>` etc.) that wrap whole
+ * phrases. Our AudioTag framework only handles the inline bracket
+ * form today — wrapping tags are a future expansion when (if) other
+ * providers adopt them.
+ */
+export const XAI_AUDIO_TAGS: readonly AudioTag[] = [
+  // Reactions / human sounds.
+  { tag: '[laugh]', description: 'a hearty laugh', category: 'reaction' },
+  { tag: '[chuckle]', description: 'a short, dry amusement', category: 'reaction' },
+  { tag: '[giggle]', description: 'a light, playful laugh', category: 'reaction' },
+  { tag: '[sigh]', description: 'a resigned or reflective exhale', category: 'reaction' },
+  { tag: '[cry]', description: 'a sob or weeping; use rarely', category: 'reaction' },
+  { tag: '[tsk]', description: 'a disapproving cluck', category: 'reaction' },
+  { tag: '[tongue-click]', description: 'a sharp tongue cluck — punctuation', category: 'reaction' },
+  { tag: '[lip-smack]', description: 'a soft mouth sound; thoughtful beat', category: 'reaction' },
+  { tag: '[hum-tune]', description: 'a short hummed melody', category: 'reaction' },
+
+  // Breath.
+  { tag: '[breath]', description: 'a soft audible breath', category: 'reaction' },
+  { tag: '[inhale]', description: 'a sharp inhale; surprise or anticipation', category: 'reaction' },
+  { tag: '[exhale]', description: 'a deliberate exhale; release', category: 'reaction' },
+
+  // Pacing.
+  { tag: '[pause]', description: 'a short pause', category: 'cognitive' },
+  { tag: '[long-pause]', description: 'a longer pause for emphasis', category: 'cognitive' },
+];
+
+/**
+ * Returns the tag set for a given Grok TTS model. xAI publishes one
+ * voice model today (grok-voice-latest); future variants would branch
+ * here.
+ */
+export function audioTagsForXaiTtsModel(modelId: string): readonly AudioTag[] {
+  if (modelId === XAI_TTS_MODEL_ID || modelId === 'grok-voice') {
+    return XAI_AUDIO_TAGS;
+  }
+  return [];
+}

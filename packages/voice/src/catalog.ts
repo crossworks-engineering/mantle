@@ -75,7 +75,14 @@ export type TtsModelInfo = {
   id: string;
   label: string;
   description: string;
-  voices: readonly OpenAiVoice[];
+  /** Voice ids the model accepts. OpenAI ships a narrow named union
+   *  (alloy/nova/shimmer/…); xAI ships their own (eve/ara/rex/sal/leo);
+   *  Gemini ships 30 (Kore/Puck/Zephyr/…); ElevenLabs ships UUIDs and
+   *  per-account clones. We type this as `readonly string[]` so each
+   *  provider's adapter can return its own list without union-widening
+   *  the framework. Consumers treating these as `OpenAiVoice` for
+   *  type-narrowing have always known to runtime-check anyway. */
+  voices: readonly string[];
   /** Whether the model accepts a free-form `instructions` parameter for
    *  style steering ("speak warmly", "be calm"). Only true for
    *  gpt-4o-mini-tts at the moment. */
@@ -191,7 +198,13 @@ export function isOpenAiVoice(v: string): v is OpenAiVoice {
 export function voicesForModel(modelId: string): Array<{ id: OpenAiVoice; description: string }> {
   const model = getTtsModel(modelId);
   if (!model) return [];
-  return model.voices.map((v) => ({ id: v, description: VOICE_DESCRIPTIONS[v] }));
+  // OPENAI_TTS_MODELS only lists OpenAI voice ids by construction —
+  // the runtime cast is safe because we narrow via getTtsModel which
+  // only returns OpenAI catalog entries.
+  return model.voices.map((v) => ({
+    id: v as OpenAiVoice,
+    description: VOICE_DESCRIPTIONS[v as OpenAiVoice] ?? '',
+  }));
 }
 
 // Bridge to the existing TtsVoice union in types.ts — keeps backward

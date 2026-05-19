@@ -25,6 +25,8 @@ import {
   VOICE_DESCRIPTIONS,
   XAI_CHAT_MODELS,
   audioTagsForElevenLabsModel,
+  audioTagsForGoogleTtsModel,
+  audioTagsForXaiTtsModel,
   isProviderWired,
   providersForCapability,
   voicesForModel,
@@ -506,18 +508,27 @@ function TtsFields({
   apiKeyId: string;
 }) {
   // Voice list is provider-dependent.
-  //   OpenAI: static per-model catalog (9 or 13 voices).
+  //   OpenAI:     static per-model catalog (9 or 13 voices).
   //   ElevenLabs: live /v1/voices query — includes the user's clones.
-  // For ElevenLabs we fetch via the server action; for OpenAI we
-  // resolve locally from the catalog.
+  //   xAI:        static 5-voice catalog (eve, ara, rex, sal, leo).
+  //   Google:     static 30-voice catalog (Kore, Puck, Zephyr, ...).
+  // OpenAI is resolved locally from the model catalog; everything
+  // else goes through the adapter's voicesForModel via listVoicesAction
+  // so the right adapter handles the discovery (live or static).
   const isElevenLabs = provider === 'elevenlabs';
+  const providerWithLiveVoices =
+    provider === 'elevenlabs' ||
+    provider === 'xai' ||
+    provider === 'google';
   const [liveVoices, setLiveVoices] = useState<
     Array<{ id: string; description: string }> | null
   >(null);
 
   useEffect(() => {
-    if (isElevenLabs && apiKeyId) {
-      // Lazy-fetch the live voice list (includes user clones).
+    if (providerWithLiveVoices && apiKeyId) {
+      // Lazy-fetch the voice list. ElevenLabs queries /v1/voices
+      // live (includes clones); xAI/Google return their static
+      // catalogs through the adapter's voicesForModel.
       listVoicesAction(apiKeyId, provider, model)
         .then((r) => setLiveVoices(r.voices))
         .catch(() => setLiveVoices(null));
@@ -527,7 +538,7 @@ function TtsFields({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider, apiKeyId, model]);
 
-  const availableVoices = isElevenLabs
+  const availableVoices = providerWithLiveVoices
     ? liveVoices ?? []
     : model
     ? voicesForModel(model)
@@ -550,12 +561,18 @@ function TtsFields({
   // (voice_settings) which we expose via speed only for now.
   const supportsInstructions = model === 'gpt-4o-mini-tts';
 
-  // Audio-tag hint for ElevenLabs v3 — the LLM gets these injected
-  // into its system prompt at runtime, but the operator should see
-  // them here too so they understand what their voice replies can do.
-  const audioTags: readonly AudioTag[] = isElevenLabs
-    ? audioTagsForElevenLabsModel(model)
-    : [];
+  // Audio-tag hint — the LLM gets these injected into its system
+  // prompt at runtime, but the operator should see them here too so
+  // they understand what their voice replies can do. Different
+  // providers honour different tag sets; we dispatch on provider.
+  const audioTags: readonly AudioTag[] =
+    provider === 'elevenlabs'
+      ? audioTagsForElevenLabsModel(model)
+      : provider === 'xai'
+      ? audioTagsForXaiTtsModel(model)
+      : provider === 'google'
+      ? audioTagsForGoogleTtsModel(model)
+      : [];
 
   return (
     <div className="space-y-4">
@@ -579,13 +596,24 @@ function TtsFields({
         {model && availableVoices.length > 0 && (
           <p className="text-xs text-muted-foreground">
             {availableVoices.length} voice{availableVoices.length === 1 ? '' : 's'}{' '}
-            {isElevenLabs ? 'available on your ElevenLabs account' : `available for ${model}`}.
+            {isElevenLabs
+              ? 'available on your ElevenLabs account (includes any clones)'
+              : provider === 'xai'
+              ? 'available for Grok TTS'
+              : provider === 'google'
+              ? 'available for Gemini TTS'
+              : `available for ${model}`}
+            .
           </p>
         )}
-        {isElevenLabs && !apiKeyId && (
+        {providerWithLiveVoices && !apiKeyId && (
           <p className="text-xs text-amber-600 dark:text-amber-400">
-            Pick your ElevenLabs API key first; the voice list (including your cloned voices)
-            loads live.
+            Pick your {provider === 'elevenlabs'
+              ? 'ElevenLabs'
+              : provider === 'xai'
+              ? 'xAI'
+              : 'Google'}{' '}
+            API key first; the voice list loads from the adapter.
           </p>
         )}
         {audioTags.length > 0 && (

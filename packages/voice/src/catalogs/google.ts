@@ -17,9 +17,126 @@
  *     a separate google-tts.ts / google-embed.ts can land later.
  */
 
-import type { ChatModelInfo } from '../adapters/types';
+import type { AudioTag, ChatModelInfo } from '../adapters/types';
 
 export const GOOGLE_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
+
+// ─── Gemini TTS ──────────────────────────────────────────────────────
+//
+// Endpoint: POST {GOOGLE_BASE_URL}/models/{model}:generateContent
+// Auth:     x-goog-api-key header
+// Body:     contents (text), generationConfig {
+//             responseModalities: ['AUDIO'],
+//             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } }
+//           }
+// Output:   The audio comes back inline as inlineData (base64 PCM).
+//
+// Gemini TTS supports BOTH inline audio tags ([whispers], [laughs])
+// AND natural-language style steering inside the text itself ("Say
+// excitedly: ..."). We expose tags via the adapter framework; the
+// natural-language steering option remains available to operators
+// who put it in the worker's system prompt.
+
+/** Gemini TTS model ids. Two variants — Flash for low-latency / cost
+ *  and Pro for studio-quality. Both are preview-tagged but production-
+ *  stable for most uses. */
+export const GOOGLE_TTS_MODELS = [
+  'gemini-2.5-flash-preview-tts',
+  'gemini-2.5-pro-preview-tts',
+] as const;
+export type GoogleTtsModelId = (typeof GOOGLE_TTS_MODELS)[number];
+
+/** Gemini publishes 30 prebuilt voices. Names come from Greek/myth
+ *  references; gender/character notes from the Gemini docs and
+ *  cookbook samples. Operators see these in the worker form's voice
+ *  dropdown. */
+export const GOOGLE_TTS_VOICES = [
+  // Most-used / recommended.
+  { id: 'Kore', description: 'female, balanced — Gemini default' },
+  { id: 'Puck', description: 'male, expressive' },
+  { id: 'Zephyr', description: 'male, light and airy' },
+  { id: 'Charon', description: 'male, grounded and warm' },
+  { id: 'Fenrir', description: 'male, deep' },
+  { id: 'Leda', description: 'female, soft' },
+  { id: 'Aoede', description: 'female, melodic' },
+  { id: 'Orus', description: 'male, neutral' },
+  // The remaining 22 — left as id-only so the dropdown isn't bloated
+  // with guessed descriptions. Live discovery surfaces all 30.
+  { id: 'Callirrhoe', description: 'female' },
+  { id: 'Autonoe', description: 'female' },
+  { id: 'Enceladus', description: 'male' },
+  { id: 'Iapetus', description: 'male' },
+  { id: 'Umbriel', description: 'male' },
+  { id: 'Algieba', description: 'male' },
+  { id: 'Despina', description: 'female' },
+  { id: 'Erinome', description: 'female' },
+  { id: 'Algenib', description: 'male' },
+  { id: 'Rasalgethi', description: 'male' },
+  { id: 'Laomedeia', description: 'female' },
+  { id: 'Achernar', description: 'female' },
+  { id: 'Alnilam', description: 'male' },
+  { id: 'Schedar', description: 'male' },
+  { id: 'Gacrux', description: 'female' },
+  { id: 'Pulcherrima', description: 'female' },
+  { id: 'Achird', description: 'male' },
+  { id: 'Zubenelgenubi', description: 'male' },
+  { id: 'Vindemiatrix', description: 'female' },
+  { id: 'Sadachbia', description: 'male' },
+  { id: 'Sadaltager', description: 'male' },
+  { id: 'Sulafat', description: 'female' },
+] as const;
+
+/**
+ * Inline audio tags Gemini TTS interprets. The Gemini docs note that
+ * tags "like [whispers] or [laughs]" are honoured but don't publish a
+ * canonical exhaustive list — they describe a more open vocabulary
+ * driven by natural-language understanding. We ship the documented
+ * examples plus the well-known ElevenLabs-shaped ones since Gemini
+ * tends to understand them too.
+ *
+ * If a tag in this list doesn't render perfectly on Gemini, fall
+ * back to natural-language steering in the worker's system prompt
+ * ("Speak softly here:", "She laughs as she says:") — Gemini handles
+ * that path well.
+ */
+export const GOOGLE_AUDIO_TAGS: readonly AudioTag[] = [
+  // Reactions — documented examples in Gemini's docs.
+  { tag: '[laughs]', description: 'a warm laugh', category: 'reaction' },
+  { tag: '[chuckles]', description: 'short amusement', category: 'reaction' },
+  { tag: '[sighs]', description: 'a resigned exhale', category: 'reaction' },
+  { tag: '[gasps]', description: 'sharp inhale of surprise', category: 'reaction' },
+  { tag: '[clears throat]', description: 'transitional beat', category: 'reaction' },
+
+  // Delivery — documented.
+  { tag: '[whispers]', description: 'intimate lowered voice', category: 'delivery' },
+  { tag: '[shouts]', description: 'raised voice; use sparingly', category: 'delivery' },
+
+  // Cognitive — documented.
+  { tag: '[pauses]', description: 'a deliberate beat of silence', category: 'cognitive' },
+
+  // Emotion / tone — Gemini's natural-language steering means these
+  // work reliably in bracket form too.
+  { tag: '[excited]', description: 'warm, energetic delivery', category: 'emotion' },
+  { tag: '[curious]', description: 'rising-inflection, inquisitive', category: 'emotion' },
+  { tag: '[happy]', description: 'bright, smiling tone', category: 'emotion' },
+  { tag: '[sad]', description: 'slower, weighted', category: 'emotion' },
+  { tag: '[serious]', description: 'measured, weighty', category: 'emotion' },
+  { tag: '[calm]', description: 'steady, unhurried', category: 'emotion' },
+  { tag: '[playfully]', description: 'light, teasing', category: 'tone' },
+  { tag: '[deadpan]', description: 'expressionless; dry humour', category: 'tone' },
+  { tag: '[cheerfully]', description: 'lift and brightness', category: 'tone' },
+];
+
+/**
+ * Audio-tag lookup per Gemini TTS model. Both Flash and Pro honour
+ * the same vocabulary; the difference is fidelity, not steering.
+ */
+export function audioTagsForGoogleTtsModel(modelId: string): readonly AudioTag[] {
+  if ((GOOGLE_TTS_MODELS as readonly string[]).includes(modelId)) {
+    return GOOGLE_AUDIO_TAGS;
+  }
+  return [];
+}
 
 export const GOOGLE_CHAT_MODELS: readonly ChatModelInfo[] = [
   // ── Gemini 3 series (current) ────────────────────────────────────
