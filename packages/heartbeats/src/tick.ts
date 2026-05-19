@@ -13,6 +13,7 @@
 import { and, asc, eq, isNotNull, lte } from 'drizzle-orm';
 import { db, heartbeats } from '@mantle/db';
 import { tickFire } from './fire';
+import { isFireInflight } from './inflight';
 
 const TICK_BATCH = 10;
 
@@ -24,7 +25,7 @@ export type TickReport = {
 };
 
 export async function tickHeartbeats(ownerId: string, now: Date = new Date()): Promise<TickReport> {
-  const due = await db
+  const dueAll = await db
     .select()
     .from(heartbeats)
     .where(
@@ -37,6 +38,14 @@ export async function tickHeartbeats(ownerId: string, now: Date = new Date()): P
     )
     .orderBy(asc(heartbeats.nextFireAt))
     .limit(TICK_BATCH);
+
+  // P0-2: filter out heartbeats whose previous fire is still
+  // running. The fire updates next_fire_at only after the LLM
+  // round-trip completes (can take 30-90s), so a fire taking
+  // longer than the 60s tick interval would otherwise be
+  // re-selected and double-fire. Counts as a skip — we'll
+  // re-consider it next tick when the in-flight one finishes.
+  const due = dueAll.filter((hb) => !isFireInflight(hb.id));
 
   const report: TickReport = { considered: due.length, fired: 0, skipped: 0, errored: 0 };
   for (const hb of due) {

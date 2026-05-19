@@ -60,8 +60,10 @@ export async function checkGates(hb: Heartbeat, now: Date = new Date()): Promise
 }
 
 /** Time-of-day window check honouring the surface's timezone. Handles
- *  windows that cross midnight (22:00–07:00). */
-function isInsideWindow(now: Date, from: string, to: string, tz: string): boolean {
+ *  windows that cross midnight (22:00–07:00). Exported for testing —
+ *  the DB-dependent checkGates wraps it but the time-of-day arithmetic
+ *  is the part most likely to have a corner-case bug. */
+export function isInsideWindow(now: Date, from: string, to: string, tz: string): boolean {
   // Format the instant as HH:MM in tz, then compare lexicographically —
   // 'HH:MM' format sorts identically to numeric time-of-day.
   const fmt = new Intl.DateTimeFormat('en-GB', {

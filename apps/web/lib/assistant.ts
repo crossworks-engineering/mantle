@@ -52,6 +52,7 @@ import {
 import { registerAgentInvoker, type ToolArtifact } from '@mantle/tools';
 import { stripAudioTags } from '@mantle/voice';
 import { buildTimeContextLine, loadProfilePreferences } from '@mantle/content';
+import { buildOpenHeartbeatContext, openHeartbeatsForSurface } from '@mantle/heartbeats';
 import { startTrace } from '@mantle/tracing';
 
 // Register the cross-package bridge for the `invoke_agent` builtin.
@@ -278,10 +279,27 @@ export async function runAssistantTurn(
   // calls. Mirrors the apps/agent (Telegram) flow.
   const prefs = await loadProfilePreferences(ownerId);
   const promptWithTime = `${buildTimeContextLine(prefs)}\n\n${agent.systemPrompt}`;
-  const effectiveSystemPrompt = composeSystemPromptWithSkills(
-    promptWithTime,
-    attachedSkills,
-  );
+  const promptWithSkills = composeSystemPromptWithSkills(promptWithTime, attachedSkills);
+
+  // Open-heartbeat awareness: if the user has heartbeats whose
+  // surface is the web /assistant and that are currently waiting
+  // on a reply (state.expecting_reply truthy), append a small
+  // awareness block. Same shape + builder as the Telegram path in
+  // apps/agent — keeps the proactive→reactive continuity working
+  // for web heartbeats too. Best-effort; a DB blip here shouldn't
+  // kill the turn. (P0-3 in the v1 heartbeats audit.)
+  let openHeartbeatBlock = '';
+  try {
+    const open = await openHeartbeatsForSurface(ownerId, { kind: 'web' });
+    const block = buildOpenHeartbeatContext(open);
+    if (block) openHeartbeatBlock = `\n\n${block}`;
+  } catch (err) {
+    console.error(
+      '[assistant] open-heartbeat context skipped:',
+      err instanceof Error ? err.message : err,
+    );
+  }
+  const effectiveSystemPrompt = promptWithSkills + openHeartbeatBlock;
 
   const messages = buildChatMessages({
     model: agent.model,

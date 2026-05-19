@@ -68,6 +68,7 @@ import {
 } from '@mantle/agent-runtime';
 import { registerAgentInvoker, seedBuiltinTools } from '@mantle/tools';
 import {
+  buildOpenHeartbeatContext,
   openHeartbeatsForSurface,
   registerHeartbeatTools,
   tickHeartbeats,
@@ -800,27 +801,17 @@ async function handleMessage(messageId: string): Promise<void> {
         // only active during a heartbeat fire); this is just the
         // awareness layer that keeps continuity across the
         // outbound/inbound boundary. Best-effort: a DB failure here
-        // shouldn't kill the turn.
+        // shouldn't kill the turn. The block builder lives in
+        // @mantle/heartbeats so the web /assistant uses the same
+        // exact string (no drift).
         let openHeartbeatBlock = '';
         try {
           const open = await openHeartbeatsForSurface(USER_ID!, {
             kind: 'telegram',
             chatId: row.telegramChatId,
           });
-          if (open.length > 0) {
-            const lines = open.map((h) => {
-              const s = JSON.stringify(h.state ?? {});
-              return `- ${h.slug} (${h.name}): expecting a reply. Current state: ${s}`;
-            });
-            openHeartbeatBlock =
-              `\n\n## Open heartbeats\n\n` +
-              `You have one or more proactive tasks in-flight on this surface. ` +
-              `The user's latest message may be replying to a question you asked. ` +
-              `After responding naturally, call heartbeat_update_state to capture ` +
-              `what they told you and (if appropriate) flip expecting_reply to false ` +
-              `or call heartbeat_complete if the skill's goal is met.\n\n` +
-              lines.join('\n');
-          }
+          const block = buildOpenHeartbeatContext(open);
+          if (block) openHeartbeatBlock = `\n\n${block}`;
         } catch (err) {
           console.error(
             '[agent] open-heartbeat context skipped:',

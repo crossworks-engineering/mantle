@@ -46,6 +46,7 @@ import { checkGates } from './gates';
 import { computeNextFireAt } from './schedule';
 import { withHeartbeatContext } from './context';
 import { buildHeartbeatPrompt } from './prompt';
+import { runWithInflightLock } from './inflight';
 
 const HEARTBEAT_CONTROL_TOOLS = [
   'heartbeat_complete',
@@ -70,14 +71,21 @@ export type FireResult = {
 
 /** Force-fire a heartbeat right now, bypassing gate checks. Used by
  *  the "Fire now" UI button and the `heartbeat_fire` tool. Distinct
- *  from `tickFire` which honours gates. */
+ *  from `tickFire` which honours gates.
+ *
+ *  Goes through the in-flight lock: if tick or another forceFire is
+ *  already firing this heartbeat, we wait for it to finish before
+ *  running ours. Two concurrent UI clicks queue rather than collide. */
 export async function forceFire(hb: Heartbeat): Promise<FireResult> {
-  return fireInner(hb, { skipGates: true });
+  return runWithInflightLock(hb.id, () => fireInner(hb, { skipGates: true }));
 }
 
-/** Tick-driven fire: runs gate checks, fires if all pass. */
+/** Tick-driven fire: runs gate checks, fires if all pass.
+ *  The tick loop already filters in-flight rows out before calling
+ *  this, but we wrap defensively in case a future caller skips the
+ *  filter — exclusion still holds. */
 export async function tickFire(hb: Heartbeat): Promise<FireResult> {
-  return fireInner(hb, { skipGates: false });
+  return runWithInflightLock(hb.id, () => fireInner(hb, { skipGates: false }));
 }
 
 async function fireInner(
@@ -85,6 +93,14 @@ async function fireInner(
   opts: { skipGates: boolean },
 ): Promise<FireResult> {
   const now = new Date();
+
+  // Capture the heartbeat's `next_fire_at` as it was when the fire
+  // started. We need this at the end of the success path to detect
+  // whether a tool (heartbeat_snooze) pushed next_fire_at further
+  // out than the schedule would naturally compute. Without this,
+  // the post-loop UPDATE silently clobbered snooze. See P0-1 in
+  // the audit and docs/heartbeats.md §7.
+  const beforeNextFireAt = hb.nextFireAt ?? null;
 
   // 1. Gates -----------------------------------------------------
   if (!opts.skipGates) {
@@ -237,7 +253,7 @@ async function fireInner(
 
     // 7. If a tool flipped status to 'completed', honour it -----
     const stillActive = after.status === 'active';
-    const nextFireAt = stillActive
+    const computedNextFireAt = stillActive
       ? computeNextFireAt({
           schedule: after.schedule,
           anchor: now,
@@ -245,6 +261,23 @@ async function fireInner(
           notBefore: after.earliestAt,
         })
       : null;
+
+    // P0-1: snooze preservation. If a tool (heartbeat_snooze)
+    // updated next_fire_at to something further in the future than
+    // the schedule would naturally produce, honour it. We only do
+    // this when `after.nextFireAt` differs from what we saw at fire
+    // start AND is later than the computed value — otherwise the
+    // schedule wins. This treats snooze as "at least until X",
+    // never as a way to fire SOONER than the schedule would.
+    let nextFireAt = computedNextFireAt;
+    if (
+      stillActive &&
+      after.nextFireAt &&
+      after.nextFireAt.getTime() !== (beforeNextFireAt?.getTime() ?? -1) &&
+      (computedNextFireAt == null || after.nextFireAt > computedNextFireAt)
+    ) {
+      nextFireAt = after.nextFireAt;
+    }
 
     // 8. Max-fires auto-complete ---------------------------------
     let finalStatus = after.status;
