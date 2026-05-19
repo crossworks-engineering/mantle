@@ -370,3 +370,38 @@ docs/telegram.md                                       (this file)
   reversible.
 - The abandoned plugin's launchd plist `dev.telegram-robust.plist` was
   removed when we tore down that experiment.
+
+---
+
+## Voice in/out (added 2026-05-19)
+
+Telegram voice notes now flow through Mantle end-to-end:
+
+**Inbound voice → text:** when a voice note arrives, the agent
+detects the `voice` attachment, calls the default `kind='stt'`
+ai_worker (OpenAI Whisper by default), updates `telegram_messages.
+text` with the transcript, and continues the normal responder flow.
+The responder never sees the placeholder "(voice message)" string.
+
+**Outbound text → voice:** when the user voice-messaged us OR the
+responder emits a `[VOICE]` marker at the start of its reply, the
+agent calls the default `kind='tts'` ai_worker (OpenAI
+gpt-4o-mini-tts → voice `nova` by default), then sends the resulting
+OGG/Opus bytes via `sendVoice` instead of `sendMessage`. The reply
+appears as a voice-note bubble in Telegram.
+
+Providers wired today: OpenAI (TTS + STT) and ElevenLabs (TTS,
+including cloned voices via live `/v1/voices` discovery). Configure
+at `/settings/ai-workers`. Failure modes degrade to text reply with
+a polite apology — see [ai-workers.md §5](./ai-workers.md#5-voice-inout--end-to-end)
+for the full pipeline.
+
+`packages/telegram/src/outbound.ts` gained two new helpers:
+
+- `sendVoice(account, chatId, audioBuffer, options)` — uploads the
+  audio as an `InputFile` and calls `bot.api.sendVoice`. Audio must
+  be OGG/Opus for Telegram to render it as a voice-note bubble.
+- `downloadTelegramFile(account, fileId)` — two-step
+  `getFile` → CDN fetch. Returns the raw bytes plus a sniffed MIME
+  type. Used by the STT path; available to any code that needs the
+  raw bytes of an attachment.

@@ -114,6 +114,10 @@ flowchart TD
     U["User sends a message<br/>(Telegram / /assistant)"]:::user
     U --> IN[("telegram_messages or<br/>assistant_messages row<br/>direction: inbound")]
 
+    %% Voice messages route through STT before the responder sees them
+    IN -- "if voice attachment" --> STT["STT worker<br/>(ai_workers kind='stt')<br/>Whisper-style transcription"]:::agent
+    STT -- "UPDATE text=transcript" --> IN
+
     IN --> RESP["responder agent<br/>(apps/agent or<br/>apps/web/lib/assistant.ts)"]:::agent
 
     RESP -- "agent.system_prompt<br/>+ persona_notes" --> L1["Layer 1<br/>persona"]:::layer
@@ -137,7 +141,10 @@ flowchart TD
 
     LOOP --> REPLY["final reply text"]:::out
 
-    REPLY --> OUT[("outbound row in<br/>telegram_messages /<br/>assistant_messages")]
+    %% Outbound voice — TTS when user voice-messaged us or LLM emitted [VOICE]
+    REPLY -- "if wasVoice OR [VOICE] marker" --> TTS["TTS worker<br/>(ai_workers kind='tts')<br/>OpenAI / ElevenLabs"]:::agent
+    TTS --> OUTV[("sendVoice<br/>(OGG/Opus)")]
+    REPLY -- "else text" --> OUT[("outbound row in<br/>telegram_messages /<br/>assistant_messages")]
     OUT -. fires when threshold met .-> SD{{"pg_notify('summarize_due',<br/>chat_id)"}}
 
     %% Tier 6 fetch when full body needed
@@ -626,21 +633,34 @@ called by agents and at retrieval time.
 | `content_index` (fields on `nodes`) | `extractor` agent (or a dedicated `indexer` role — for v1 the extractor produces both summary and facts in one pass) | `responder` (when user mentions content); MCP `search` tool | On every new `content_store` row |
 | `content_store` | Ingestion workers (email-sync, telegram-poll, future file/note ingest) | Fetched by id only when full body is needed | Append-only on ingest |
 
-### 6.2 The agent roles
+### 6.2 The agent roles and worker kinds
 
-These are values of the `agent_role` enum in
-[`packages/db/src/schema/agents.ts`](../packages/db/src/schema/agents.ts).
-Each agent is one row in `agents`; you configure them at
-`/settings/agents`.
+Memory is built by two distinct populations of LLM-driven things —
+they live in two tables now, after the `0027_ai_workers.sql` split:
+
+**Conversational agents** (table: `agents`, UI: `/settings/agents`,
+enum: `agent_role`). These reason, take turns, have persona notes,
+memory, and tool loops:
 
 | Role | Status | Default model | What it does |
 |---|---|---|---|
-| `responder` | ✓ Live | `anthropic/claude-sonnet-4.6` | The user-facing chat agent (Sarah for Telegram). Reads from every layer, composes replies. Heavy reasoning. |
-| `assistant` | ✓ Live | `anthropic/claude-sonnet-4.6` | The web-chat counterpart at `/assistant`. Same code path as `responder` via `@mantle/agent-runtime`; same memory, different transport. |
-| `summarizer` | ✓ Live | `anthropic/claude-haiku-4.5` | Produces `conversation_digest` rows. Cheap, runs on a debounced LISTEN. |
-| `extractor` | ✓ Live | `anthropic/claude-haiku-4.5` | At content ingest: writes per-item summary + entities into `content_index`, extracts facts + runs the ADD/UPDATE/DELETE classifier into `profile`. Per-node-type body resolution in `readNodeBodyRaw` (markdown, PDFs via pdf-parse, email subject+body, structured task/event metadata, secret metadata-only). |
-| `reflector` | ✓ Live | `anthropic/claude-haiku-4.5` | Reads new outbound activity every 10 min (exponential backoff to 1h on failure); appends to `persona_notes` when something notable surfaces. Never overwrites the seed `system_prompt`. |
-| `custom` | ✓ Live | Whatever you pick | Catch-all for anything that doesn't fit. Also used as the role for any agent invoked via `invoke_agent` delegation. |
+| `responder` | ✓ Live | `anthropic/claude-sonnet-4.6` | The user-facing chat agent (Saskia for Telegram). Reads from every layer, composes replies. Heavy reasoning. Supports voice in/out via the TTS/STT workers below. |
+| `assistant` | ✓ Live | `anthropic/claude-sonnet-4.6` | The web-chat counterpart at `/assistant`. Same code path as `responder` via `@mantle/agent-runtime`; same memory, different transport. Falls back to `responder` if no `assistant` row exists. |
+| `custom` | ✓ Live | Whatever you pick | Catch-all for anything else, e.g. `invoke_agent` delegation targets (specialists Saskia hands off to). |
+
+**One-shot AI workers** (table: `ai_workers`, UI: `/settings/ai-workers`,
+enum: `ai_worker_kind`). These don't have personalities — they do one
+job per invocation, triggered by system events:
+
+| Kind | Status | Default | What it does |
+|---|---|---|---|
+| `summarizer` | ✓ Live | `anthropic/claude-haiku-4.5` (via OpenRouter) | Produces `conversation_digest` rows. Cheap, runs on a debounced LISTEN. |
+| `extractor` | ✓ Live | `anthropic/claude-haiku-4.5` (via OpenRouter) | At content ingest: writes per-item summary + entities into `content_index`, extracts facts + runs the ADD/UPDATE/DELETE classifier into `profile`. Per-node-type body resolution in `readNodeBodyRaw` (markdown, PDFs via pdf-parse, email subject+body, structured task/event metadata, secret metadata-only). |
+| `reflector` | ✓ Live | `anthropic/claude-haiku-4.5` (via OpenRouter) | Reads new outbound activity (Telegram + web `/assistant`) every 10 min; appends to the responder's `persona_notes` when something notable surfaces. Never overwrites the seed `system_prompt`. |
+| `tts` | ✓ Live | OpenAI `gpt-4o-mini-tts`, voice `nova` | Synthesises voice replies. Triggered when the user voice-messaged us OR the LLM emitted a `[VOICE]` marker. Adapter-driven; OpenAI + ElevenLabs wired. |
+| `stt` | ✓ Live | OpenAI `whisper-1` | Transcribes inbound Telegram voice notes before the responder sees anything. Adapter-driven; OpenAI wired today. |
+| `vision` | (defined, not wired) | — | Image → text. Whiteboards / receipts / document scans, when wired. |
+| `image_gen` | (defined, not wired) | — | Text → image. Reserved for tool-call use by Saskia. |
 
 **Why Sonnet for `responder` / `assistant`:** these agents do real
 reasoning across all six memory layers in the same prompt. Cheaping out

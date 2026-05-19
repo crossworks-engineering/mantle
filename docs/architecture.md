@@ -58,6 +58,7 @@ flowchart LR
     Phone[/"Phone<br/>Telegram"/]:::ext
     IMAP[/"IMAP provider<br/>(Gmail, Fastmail, ...)"/]:::ext
     OR[/"OpenRouter<br/>(LLM + embeddings)"/]:::ext
+    Providers[/"Direct providers<br/>OpenAI · Anthropic · Google<br/>xAI · Hugging Face · ElevenLabs"/]:::ext
     Disk[/"$MANTLE_FILES_ROOT<br/>(host filesystem)"/]:::ext
     CC[/"Claude Desktop<br/>/ Claude Code"/]:::ext
 
@@ -97,8 +98,10 @@ flowchart LR
     MCPp --> PG
 
     %% LLM
-    Agent -- "@openrouter/sdk" --> OR
+    Agent -- "@openrouter/sdk<br/>(responder + workers)" --> OR
     Web -- "@openrouter/sdk<br/>(via /assistant)" --> OR
+    %% Provider adapters (TTS/STT/chat alternates) — see §9d
+    Agent -- "@mantle/voice adapters" --> Providers
 
     %% pg_notify fan-out
     PG -. "node_ingested" .-> Agent
@@ -531,6 +534,150 @@ The agent reads `getApiKey(USER_ID, 'openrouter')` at the start of
 every reply. If the key is rotated in the UI, the next reply picks up
 the new value with no restart.
 
+The **provider catalogue** in `@mantle/voice` (see §9d) drives the
+dropdown of recognised services. Adding a new provider there
+auto-populates the create form; the `service` column stays free-text
+for forward-compat with services we haven't catalogued yet.
+
+## 9d. AI workers + provider adapter framework
+
+The `agents` table was originally a grab-bag: it held both
+conversational agents (responder, assistant) and one-shot jobs
+(reflector, extractor, summarizer). After the responder grew tool
+loops, persona notes, memory configuration, and a multi-turn shape,
+the workers became the awkward minority — they have no persona, no
+memory, no turn structure, and only need a model + key + system prompt.
+At the same time we wanted to add new transformation jobs (voice
+in/out, vision OCR, image generation) that share *worker* DNA but
+emphatically not *agent* DNA.
+
+So we split:
+
+- **`agents` table** — conversational reasoners only. Today: responder
+  (Telegram) and assistant (web `/assistant`). They have `persona_notes`,
+  `memory_config`, `tool_slugs`, `skill_slugs`. UI at `/settings/agents`.
+- **`ai_workers` table** (migration `0027_ai_workers.sql`) — one-shot
+  jobs of any flavour. Each row has `kind`, `provider`, `model`,
+  `api_key_id`, optional `system_prompt`, and `params` (kind-specific
+  jsonb). UI at `/settings/ai-workers`.
+
+The `ai_worker_kind` enum: `reflector | extractor | summarizer | tts |
+stt | vision | image_gen`. The first three migrate cleanly from the
+old `agents.role` enum (preserved by the migration's backfill); the
+last four are brand new and unlock features that don't fit the agent
+abstraction.
+
+Per-kind params (declared in `packages/db/src/schema/ai-workers.ts`):
+
+| Kind | Notable params | Triggered by |
+|---|---|---|
+| `reflector` | `temperature`, `max_tokens`, `window_size`, `max_notes_per_run` | timer (every 10 min) |
+| `extractor` | `temperature`, `target_types`, `extract_facts`, `embedding_model`, `extract_cost_cap_micro_usd` | `pg_notify('node_ingested')` |
+| `summarizer` | `temperature`, `summarize_threshold`, `summarize_batch` | `pg_notify('summarize_due')` |
+| `tts` | `voice`, `speed`, `format`, `instructions` (gpt-4o-mini-tts only) | inbound voice msg OR `[VOICE]` marker |
+| `stt` | `language`, `max_duration_seconds` | inbound voice msg |
+| `vision` | `extraction_prompt`, `max_tokens` | (not wired yet) |
+| `image_gen` | `size`, `style`, `quality` | (not wired yet) |
+
+One worker per `(owner, kind)` is marked `is_default=true`. The runtime
+calls `getDefaultWorker(ownerId, kind)` from `@mantle/db`; the default
+flag wins, otherwise highest-priority enabled row.
+
+**The provider adapter framework** lives in `@mantle/voice` and is the
+layer that lets us swap providers without changing call sites. Three
+concepts:
+
+- **Provider catalogue** (`providers.ts`) — closed-set list of known
+  AI providers with their capabilities, signup URLs, docs URLs. Drives
+  the UI dropdowns; persisted as `api_keys.service` and
+  `ai_workers.provider`.
+- **Per-capability dispatcher interfaces** (`adapters/types.ts`) —
+  `ChatDispatcher`, `TtsDispatcher`, `SttDispatcher`,
+  `VisionDispatcher`, `ImageGenDispatcher`. Each defines a uniform
+  call shape (`chat(opts)`, `synthesize(opts)`, etc.) plus optional
+  hooks for live model discovery and voice listing.
+- **Adapter registry** (`adapters/registry.ts`) — `Map<ProviderId,
+  Dispatcher>` per capability. Built-in adapters self-register on
+  import. The runtime resolves
+  `getChatAdapter(worker.provider).chat({...})` and the per-provider
+  quirks live behind that boundary.
+
+Currently shipped adapters:
+
+| Provider | Chat | TTS | STT | Vision | Image-gen |
+|---|---|---|---|---|---|
+| OpenAI | (via OpenRouter) | ✅ `openai-tts` | ✅ `openai-stt` | — | — |
+| OpenRouter | ✅ (direct SDK) | — | — | — | — |
+| xAI (Grok) | ✅ `xai-chat` | — | — | — | — |
+| Hugging Face | ✅ `huggingface-chat` (router) | — | — | — | — |
+| Anthropic (direct) | ✅ `anthropic-chat` | — | — | — | — |
+| Google (Gemini) | ✅ `google-chat` | — | — | — | — |
+| ElevenLabs | — | ✅ `elevenlabs-tts` | — | — | — |
+
+Adding a new provider is `~150 LOC`:
+
+1. `catalogs/<provider>.ts` — known models with capabilities + pricing
+2. `adapters/<provider>-<capability>.ts` — implements the dispatcher
+   interface, translates the unified call shape to the provider's
+   native HTTP shape
+3. One line in `adapters/index.ts` to `registerXAdapter(...)`
+
+The UI dropdowns light up automatically (the `isProviderWired(id, cap)`
+helper derives wired-ness from the registry, not a static flag).
+
+**Why not LiteLLM as a proxy?** Earlier debate; see commits. Short
+version: type safety end-to-end, no extra container on Contabo, the
+adapter pattern is roughly the same maintenance cost as LiteLLM's own
+adapter code (which we can lift from when shapes are weird). LiteLLM
+adoption later would mean writing a single `LiteLLMTtsAdapter` /
+`LiteLLMChatAdapter` and routing through that — the interface is the
+swap point.
+
+See [ai-workers.md](./ai-workers.md) for the deep dive.
+
+## 9e. Voice in/out (Telegram)
+
+A Telegram voice message arrives → the agent transcribes it before the
+responder sees anything; the responder's text reply gets synthesised
+to a voice note before send. Both directions route through the
+adapter framework, so swapping OpenAI Whisper for Deepgram (or
+OpenAI TTS for ElevenLabs) is a worker-row edit, not a code change.
+
+```
+inbound voice msg
+    │
+    ├─→ apps/agent handleMessage
+    │     │
+    │     ├─ detect voice attachment (kind='voice' file_id)
+    │     ├─ resolve default STT worker (kind='stt')
+    │     ├─ downloadTelegramFile(account, fileId)
+    │     ├─ adapter.transcribe(bytes, opts)         ← OpenAI Whisper today
+    │     ├─ UPDATE telegram_messages SET text=transcript
+    │     └─ continue normal responder flow with the transcribed text
+    │
+    └─→ responder produces reply text
+          │
+          ├─ if wasVoice OR reply starts with [VOICE] marker:
+          │     ├─ resolve default TTS worker (kind='tts')
+          │     ├─ adapter.synthesize({text, voice, speed, instructions})  ← OpenAI / ElevenLabs
+          │     └─ sendVoice(account, chatId, audioBytes)
+          └─ else sendMessage(...) as text
+```
+
+Configuration is per-worker — the user can set Saskia's voice to Nova
+(OpenAI default), nova with style instructions ("speak warmly")
+on gpt-4o-mini-tts, or pick a cloned voice from their ElevenLabs
+library. The `voice in → voice out` mirror is automatic; `[VOICE]`
+prefix lets the LLM opt into TTS reply even when the user typed.
+
+Failure modes degrade gracefully:
+
+- STT down → polite text apology ("Sorry — couldn't pick up that voice
+  clip"), inbound row stays unprocessed for retry.
+- TTS down → falls through to text reply with a `ttsFallback: true`
+  meta on the trace step.
+- Voice clip > 3 min cap → polite text refusal, no transcription bill.
+
 ## 10. The MCP server
 
 `apps/mcp/src/server.ts`, ~340 LOC. Exposes Claude's tools over stdio
@@ -614,15 +761,29 @@ mantle/
 │   └── mcp/             # MCP server (stdio transport)
 ├── packages/
 │   ├── db/              # Drizzle schema + raw SQL migrations + client
+│   │                    # + ai-workers resolution (getDefaultWorker)
 │   ├── email/           # IMAP adapter + sync + sender resolver + ingest rules
-│   ├── telegram/        # grammy wrapper + gate + outbound helpers
+│   ├── telegram/        # grammy wrapper + gate + outbound (sendMessage,
+│   │                    # sendVoice, downloadTelegramFile)
 │   ├── storage/         # S3 client + content-addressing
 │   ├── crypto/          # AES-GCM seal/open
+│   ├── api-keys/        # Encrypted credential vault
 │   ├── rules/           # Ingest rule engine (tag, route, suppress, …)
-│   └── search/          # Hybrid search (FTS + vectors + ltree)
+│   ├── search/          # Hybrid search (FTS + vectors + ltree)
+│   ├── content/         # Notes, todos, events, secrets surfaces
+│   ├── files/           # Filesystem + DB hybrid file store
+│   ├── tools/           # Builtin tool defs + dispatch + invoke_agent
+│   ├── agent-runtime/   # Tool-loop + chat helpers + delegation bridge
+│   ├── tracing/         # AsyncLocalStorage tracing
+│   ├── embeddings/      # OpenRouter embedding wrapper + cache
+│   └── voice/           # AI provider adapters (TTS / STT / chat)
+│                        # + per-provider catalogs + registry. NOTE:
+│                        # name is "voice" for historical reasons;
+│                        # scope is "all non-chat AI capabilities" +
+│                        # chat adapters for non-OpenRouter providers.
 ├── infra/postgres/init/ # SQL run at first container boot
 ├── scripts/             # up.sh — only script that ships now
-├── docs/                # this file + telegram.md
+├── docs/                # this file + memory.md + ai-workers.md + others
 ├── docker-compose.dev.yml   # postgres + minio (dev — used by `pnpm up`)
 └── docker-compose.yml       # full stack (prod-shaped — web/workers WIP)
 ```
@@ -789,11 +950,24 @@ from this list; what's here is genuinely still open.
   background traffic. Worth doing before the VPS deploy.
 - **Group chats** are still dropped in `gate.ts`. v1 is DM-only.
 
-**Voice modality**
-- **STT / TTS not wired.** Sketched as a transformation layer in the
-  conversation that produced this doc — voice clip → Whisper-style
-  STT → existing responder → Gemini/ElevenLabs TTS → audio back. Not
-  an agent (it's plumbing). Roughly 150 LOC + a provider SDK pick.
+**Voice modality** ✅ shipped
+- Inbound voice → OpenAI Whisper (STT worker, default `whisper-1`) →
+  transcript replaces `(voice message)` text → normal responder flow.
+- Outbound voice → OpenAI TTS (TTS worker, default `gpt-4o-mini-tts`,
+  voice `nova`) → `sendVoice` as OGG/Opus voice note.
+- ElevenLabs adapter shipped; switching providers is a worker-row
+  edit. Cloned voices appear live via `/v1/voices` discovery.
+- Still open: Telegram-message embeddings (mentioned above) so
+  `search_nodes` can find voice-transcribed turns semantically.
+
+**Vision / image generation**
+- Adapter interfaces (`VisionDispatcher`, `ImageGenDispatcher`)
+  defined in `@mantle/voice/adapters/types.ts` but no built-in
+  adapters yet. Per-provider catalogs are stubbed.
+- Whiteboard-photo ingestion (image → markdown via vision-LLM) is the
+  next natural feature; would land as a vision adapter (OpenAI /
+  Anthropic / Google all do this) plus an ingest hook that fires on
+  image attachments.
 
 **Auth**
 - **OAuth/MFA** isn't here. Bespoke HMAC session is fine for single-
@@ -802,11 +976,12 @@ from this list; what's here is genuinely still open.
 
 **Testing**
 - **DB-dependent integration tests** are not yet written. The pure-
-  function layer has 188 vitest tests covering crypto, rate-limit,
-  events tz/remind helpers, file paths, tool-args, extractor parse.
-  Integration coverage (full extractor pipeline, secrets reveal end
-  to end, tool-loop with a real DB) needs a test Postgres — probably
-  a `docker-compose.test.yml`.
+  function layer has 285 vitest tests covering crypto, rate-limit,
+  events tz/remind helpers, file paths, tool-args, extractor parse,
+  provider catalog, adapter registry, voice + chat dispatcher
+  contracts. Integration coverage (full extractor pipeline, secrets
+  reveal end to end, tool-loop with a real DB) needs a test
+  Postgres — probably a `docker-compose.test.yml`.
 
 **Agent ergonomics**
 - **No UI for `delegate_to`.** The `invoke_agent` allowlist lives on
@@ -814,6 +989,13 @@ from this list; what's here is genuinely still open.
   editor at `/settings/agents` but there's no dedicated field. Build
   this once delegation has been exercised enough to know the right
   shape.
+- **Production chat still routes through OpenRouter SDK directly**
+  (responder, /assistant, reflector, extractor, summarizer). The
+  chat adapter registry (xAI, HF, Anthropic, Google) is exercised
+  for new workers that opt into those providers and for the "Test
+  chat" UI affordance. Migrating the production chat path to use
+  the adapter registry is non-breaking work — deferred until a real
+  reason emerges (multi-provider failover, cost arbitrage, etc.).
 
 ---
 
