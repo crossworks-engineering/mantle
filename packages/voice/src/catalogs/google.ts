@@ -17,7 +17,12 @@
  *     a separate google-tts.ts / google-embed.ts can land later.
  */
 
-import type { AudioTag, ChatModelInfo, VisionModelInfo } from '../adapters/types';
+import type {
+  AudioTag,
+  ChatModelInfo,
+  ImageGenModelInfo,
+  VisionModelInfo,
+} from '../adapters/types';
 
 export const GOOGLE_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -275,3 +280,51 @@ export const GOOGLE_VISION_MODELS: readonly VisionModelInfo[] = [
     tier: 'balanced',
   },
 ];
+
+// ─── Google Imagen (image generation) ────────────────────────────────
+//
+// Endpoint: POST {GOOGLE_BASE_URL}/models/{model}:predict
+//           NOTE: this is a different shape from chat's `generateContent`.
+//           Body is { instances: [{prompt}], parameters: { ... } }.
+// Auth:     `x-goog-api-key` header (same as the rest of Google).
+// Response: { predictions: [{ bytesBase64Encoded, mimeType }] }
+//
+// Imagen sits behind a separate billing/quota gate from Gemini chat —
+// confirm at console.cloud.google.com that the project has Imagen API
+// enabled before pointing a worker here. Auth failures surface as a
+// confusing 404 ("model not found") rather than 401; the adapter
+// translates these into a clearer hint.
+//
+// Sizes accept Imagen's aspect-ratio strings ('1:1', '16:9', etc.)
+// rather than NxN pixels. The adapter maps the standard 'NNNNxNNNN'
+// format used elsewhere to the closest aspect ratio.
+
+export const GOOGLE_IMAGE_MODELS: readonly ImageGenModelInfo[] = [
+  {
+    id: 'imagen-4.0-generate-001',
+    label: 'Imagen 4',
+    description:
+      'Current Imagen flagship. Strong on detail + composition. Recommended.',
+    supportedSizes: ['1024x1024', '1408x768', '768x1408'],
+    pricePerImage: 0.04,
+    tier: 'quality',
+  },
+  {
+    id: 'imagen-4.0-fast-generate-001',
+    label: 'Imagen 4 Fast',
+    description: 'Faster + cheaper Imagen 4 variant. Lower fidelity, higher throughput.',
+    supportedSizes: ['1024x1024', '1408x768', '768x1408'],
+    pricePerImage: 0.02,
+    tier: 'fast',
+  },
+  {
+    id: 'imagen-3.0-generate-002',
+    label: 'Imagen 3',
+    description: 'Previous-generation Imagen. Still capable + widely available.',
+    supportedSizes: ['1024x1024', '1408x768', '768x1408'],
+    pricePerImage: 0.04,
+    tier: 'balanced',
+  },
+];
+
+export const GOOGLE_IMAGE_DEFAULT_MODEL = 'imagen-4.0-generate-001';

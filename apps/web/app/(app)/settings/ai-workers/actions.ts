@@ -20,10 +20,12 @@ import {
 import { getApiKeyById } from '@mantle/api-keys';
 import {
   getChatAdapter,
+  getImageGenAdapter,
   getSttAdapter,
   getTtsAdapter,
   getVisionAdapter,
   type ChatModelInfo,
+  type ImageGenModelInfo,
   type SttModelInfo,
   type TtsModelInfo,
   type TtsVoice,
@@ -218,10 +220,12 @@ export async function testSttAction(
  */
 export async function discoverModelsAction(
   apiKeyId: string,
-  kind: 'tts' | 'stt' | 'chat' | 'vision',
+  kind: 'tts' | 'stt' | 'chat' | 'vision' | 'image_gen',
   providerId: string,
 ): Promise<{
-  available: Array<TtsModelInfo | SttModelInfo | ChatModelInfo | VisionModelInfo>;
+  available: Array<
+    TtsModelInfo | SttModelInfo | ChatModelInfo | VisionModelInfo | ImageGenModelInfo
+  >;
   filtered: boolean;
   error: string | null;
 }> {
@@ -243,6 +247,8 @@ export async function discoverModelsAction(
       ? getSttAdapter(providerId)
       : kind === 'vision'
       ? getVisionAdapter(providerId)
+      : kind === 'image_gen'
+      ? getImageGenAdapter(providerId)
       : getChatAdapter(providerId);
   if (!adapter) {
     return {
@@ -251,7 +257,17 @@ export async function discoverModelsAction(
       error: `no ${kind.toUpperCase()} adapter registered for provider '${providerId}'`,
     };
   }
-  if (!adapter.discoverModels) {
+  // Image-gen adapters don't ship a discoverModels — providers don't
+  // surface a "list image models" endpoint cleanly. Fall back to the
+  // static catalog when only that's available.
+  if (!('discoverModels' in adapter) || !adapter.discoverModels) {
+    if (kind === 'image_gen' && 'staticCatalog' in adapter && adapter.staticCatalog) {
+      return {
+        available: [...adapter.staticCatalog()],
+        filtered: false,
+        error: null,
+      };
+    }
     return {
       available: [],
       filtered: false,
@@ -291,6 +307,67 @@ export async function listVoicesAction(
       error: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+/**
+ * Test an image-gen worker by generating an image from a user-supplied
+ * prompt. Returns base64-encoded image bytes the client can render
+ * inline. Routes through the same adapter registry as production —
+ * a successful test means the configured worker will succeed when
+ * invoked by Saskia or the test pipeline.
+ *
+ * No persistence here — the test is ephemeral. The `generate_image`
+ * tool (which Saskia calls in production) does the file-node save.
+ */
+export async function testImageGenAction(
+  workerId: string,
+  prompt: string,
+  overrides?: { size?: string; style?: string; quality?: string },
+): Promise<{
+  ok: true;
+  imageBase64: string;
+  mimeType: string;
+  model: string;
+  adapter: string;
+  revisedPrompt: string | null;
+}> {
+  const user = await requireOwner();
+  const worker = await getAiWorker(user.id, workerId);
+  if (!worker) throw new Error('worker not found');
+  if (worker.kind !== 'image_gen') throw new Error('worker is not an image_gen worker');
+  if (!worker.apiKeyId) throw new Error('worker has no api_key configured');
+  const apiKey = await getApiKeyById(worker.apiKeyId);
+  if (!apiKey) throw new Error('api key not found or could not decrypt');
+
+  const adapter = getImageGenAdapter(worker.provider);
+  if (!adapter) {
+    throw new Error(
+      `no image_gen adapter for provider '${worker.provider}'. Currently wired: openai, xai, google, huggingface.`,
+    );
+  }
+
+  const params = (worker.params ?? {}) as {
+    size?: string;
+    style?: string;
+    quality?: string;
+  };
+  const result = await adapter.generate({
+    apiKey,
+    prompt: prompt?.trim() || 'A friendly robot waving hello, watercolor style.',
+    model: worker.model,
+    size: overrides?.size ?? params.size,
+    style: overrides?.style ?? params.style,
+    quality: overrides?.quality ?? params.quality,
+  });
+
+  return {
+    ok: true,
+    imageBase64: result.bytes.toString('base64'),
+    mimeType: result.mimeType,
+    model: result.model,
+    adapter: adapter.adapterName,
+    revisedPrompt: result.revisedPrompt ?? null,
+  };
 }
 
 /**

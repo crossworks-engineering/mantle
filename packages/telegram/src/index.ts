@@ -5,6 +5,7 @@ export { pollOnce } from './sync';
 export {
   sendMessage,
   sendVoice,
+  sendPhoto,
   downloadTelegramFile,
   reactToMessage,
   editMessage,

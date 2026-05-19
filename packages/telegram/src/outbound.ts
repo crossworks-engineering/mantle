@@ -46,6 +46,40 @@ export async function sendMessage(
  * Returns the Telegram message_id so the caller can persist it on the
  * outbound `telegram_messages` row.
  */
+/**
+ * Send a generated image to `chatId` as a photo (full-size, inline
+ * preview in the chat). Telegram's sendPhoto enforces a 10 MB cap on
+ * uploads-by-bytes; if we ever generate larger we'd switch to
+ * sendDocument so the file doesn't get rejected at the boundary —
+ * for now AI-generated 1024x1024 PNGs sit comfortably under that.
+ *
+ * Caption rides along (max 1024 chars per Telegram limit; we slice
+ * defensively). Useful for showing the prompt + model that produced
+ * the image so the user can sanity-check what generated it.
+ *
+ * Returns the Telegram message_id so the caller can persist it on
+ * the outbound `telegram_messages` row alongside the file node.
+ */
+export async function sendPhoto(
+  account: TelegramAccount,
+  chatId: string,
+  image: Buffer,
+  options?: {
+    replyTo?: string;
+    caption?: string;
+    filename?: string;
+  },
+): Promise<number> {
+  const bot = botFor(account);
+  const replyTo = options?.replyTo != null ? Number(options.replyTo) : undefined;
+  const filename = options?.filename ?? 'image.png';
+  const sent = await bot.api.sendPhoto(chatId, new InputFile(image, filename), {
+    ...(replyTo != null ? { reply_parameters: { message_id: replyTo } } : {}),
+    ...(options?.caption ? { caption: options.caption.slice(0, 1024) } : {}),
+  });
+  return sent.message_id;
+}
+
 export async function sendVoice(
   account: TelegramAccount,
   chatId: string,

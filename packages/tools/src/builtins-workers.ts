@@ -28,13 +28,19 @@
  *    then weave into its reply.
  */
 
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes, getDefaultWorker, type AiWorkerKind } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
-import { accountForChat, downloadTelegramFile, sendVoice } from '@mantle/telegram';
-import { fileById, readFileById } from '@mantle/files';
+import {
+  accountForChat,
+  downloadTelegramFile,
+  sendPhoto,
+  sendVoice,
+} from '@mantle/telegram';
+import { createFolder, fileById, readFileById, upsertFile } from '@mantle/files';
 import {
   getChatAdapter,
+  getImageGenAdapter,
   getTtsAdapter,
   getVisionAdapter,
 } from '@mantle/voice';
@@ -442,8 +448,265 @@ const summarize_text: BuiltinToolDef = {
   },
 };
 
+// ─── generate_image ────────────────────────────────────────────────
+
+/** Slugify a prompt into a filename stem. Keeps a–z 0–9 and dashes,
+ *  clamps to 60 chars so a long prompt doesn't blow the filename
+ *  budget. Falls back to 'image' if nothing survives. */
+function slugifyPrompt(prompt: string): string {
+  const s = prompt
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+  return s.length > 0 ? s : 'image';
+}
+
+/** Map a Content-Type to a file extension. Image-gen providers return
+ *  png/jpeg/webp; everything else is unexpected and we error out
+ *  loudly rather than write a file with a wrong-extension name. */
+function extForMime(mime: string): string {
+  if (mime.includes('png')) return 'png';
+  if (mime.includes('jpeg') || mime.includes('jpg')) return 'jpg';
+  if (mime.includes('webp')) return 'webp';
+  throw new Error(`generate_image: unsupported image mime '${mime}'`);
+}
+
+const GENERATED_IMAGES_FOLDER_SLUG = 'generated-images';
+const GENERATED_IMAGES_FOLDER_LTREE = `files.${GENERATED_IMAGES_FOLDER_SLUG}`;
+
+/** Ensure /files/generated-images/<yyyy-mm-dd>/ exists. Returns the
+ *  ltree path the file should land in. Idempotent — re-creating an
+ *  existing folder is a no-op-with-error which we swallow. */
+async function ensureGeneratedImagesDateFolder(ownerId: string): Promise<string> {
+  // Top-level "Generated images" folder.
+  const topPath = GENERATED_IMAGES_FOLDER_LTREE;
+  const [topExists] = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'branch'),
+        sql`${nodes.path}::text = ${topPath}`,
+      ),
+    )
+    .limit(1);
+  if (!topExists) {
+    try {
+      await createFolder({
+        ownerId,
+        parentPath: 'files',
+        slug: GENERATED_IMAGES_FOLDER_SLUG,
+        description: 'AI-generated images. Auto-created by the generate_image tool.',
+      });
+    } catch (err) {
+      // Concurrent creation racing — swallow the unique-constraint
+      // hit and keep going. Anything else re-throw.
+      if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) {
+        throw err;
+      }
+    }
+  }
+
+  // Per-day subfolder so the top folder doesn't grow unboundedly.
+  const today = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
+  const datePath = `${topPath}.${today.replace(/-/g, '_')}`;
+  const [dateExists] = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'branch'),
+        sql`${nodes.path}::text = ${datePath}`,
+      ),
+    )
+    .limit(1);
+  if (!dateExists) {
+    try {
+      await createFolder({
+        ownerId,
+        parentPath: topPath,
+        slug: today,
+        description: `Generated images from ${today}.`,
+      });
+    } catch (err) {
+      if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) {
+        throw err;
+      }
+    }
+  }
+  return datePath;
+}
+
+const generate_image: BuiltinToolDef = {
+  slug: 'generate_image',
+  name: 'Generate an image',
+  description:
+    "Generate an image from a prompt using the owner's default image_gen worker. The image is saved under /files/generated-images/<date>/ AND sent inline when running on Telegram. Use when the user asks for an illustration, mockup, sketch, or visual aid. Be concrete in the prompt — vague prompts produce vague images. After calling, summarise what you sent in one sentence (don't repeat the prompt verbatim).",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      prompt: {
+        type: 'string',
+        minLength: 3,
+        description:
+          'The image prompt. Be specific — composition, subject, style, colour palette, lighting. Long prompts (300+ chars) are fine; the adapter trims if needed.',
+      },
+      size: {
+        type: 'string',
+        description:
+          "Resolution like '1024x1024' or '1792x1024'. Provider-specific (OpenAI gpt-image-1: 1024x1024 / 1024x1536 / 1536x1024; DALL-E 3: 1024x1024 / 1024x1792 / 1792x1024; Imagen: 1024x1024 / 1408x768 / 768x1408). Adapter rejects unsupported sizes with a clear error.",
+      },
+      style: {
+        type: 'string',
+        description: "Style hint, currently only honoured by DALL-E 3 ('vivid' | 'natural').",
+      },
+      quality: {
+        type: 'string',
+        description:
+          "Quality tier — DALL-E 3: 'standard' | 'hd'; gpt-image-1: 'low' | 'medium' | 'high' | 'auto'.",
+      },
+      negative_prompt: {
+        type: 'string',
+        description:
+          'What the image should NOT contain. Honoured by Imagen + HF; OpenAI silently ignores.',
+      },
+    },
+    required: ['prompt'],
+  },
+  handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    const prompt = str(input.prompt).trim();
+    if (!prompt) return { ok: false, error: 'prompt required' };
+
+    const resolved = await resolveDefaultWorker(ctx.ownerId, 'image_gen');
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+    const { worker, apiKey } = resolved;
+    const adapter = getImageGenAdapter(worker.provider);
+    if (!adapter) {
+      return {
+        ok: false,
+        error: `No image-gen adapter wired for '${worker.provider}'. Switch the default image_gen worker to openai / xai / google / huggingface.`,
+      };
+    }
+
+    const params = (worker.params ?? {}) as {
+      size?: string;
+      style?: string;
+      quality?: string;
+    };
+
+    let result;
+    try {
+      result = await adapter.generate({
+        apiKey,
+        prompt,
+        model: worker.model,
+        size: strOpt(input.size) ?? params.size,
+        style: strOpt(input.style) ?? params.style,
+        quality: strOpt(input.quality) ?? params.quality,
+        negativePrompt: strOpt(input.negative_prompt),
+      });
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+
+    // Persist as a file node under /files/generated-images/<date>/.
+    // Naming: <unix-ms>-<slug>.<ext>. The unix prefix keeps natural
+    // sort = chronological; the slug gives a human-readable hint of
+    // the prompt.
+    let nodeId: string | null = null;
+    let storagePath: string | null = null;
+    try {
+      const parentPath = await ensureGeneratedImagesDateFolder(ctx.ownerId);
+      const ext = extForMime(result.mimeType);
+      const filename = `${Date.now()}-${slugifyPrompt(prompt)}.${ext}`;
+      const file = await upsertFile({
+        ownerId: ctx.ownerId,
+        parentPath,
+        filename,
+        bytes: result.bytes,
+        overwrite: false,
+      });
+      nodeId = file.id;
+      storagePath = `${parentPath}/${filename}`;
+    } catch (err) {
+      // File save failure is non-fatal for the tool — the image was
+      // generated successfully, and on Telegram we can still deliver
+      // it inline. Log it in the trace meta so it doesn't vanish.
+      ctx.step?.setMeta({
+        file_save_error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // Telegram delivery.
+    let telegramMessageId: number | null = null;
+    if (ctx.surface?.kind === 'telegram') {
+      try {
+        const account = await accountForChat(ctx.surface.telegramChatId);
+        if (account) {
+          const caption =
+            result.revisedPrompt && result.revisedPrompt !== prompt
+              ? `🎨 ${prompt}\n(rendered as: ${result.revisedPrompt})`
+              : `🎨 ${prompt}`;
+          telegramMessageId = await sendPhoto(
+            account,
+            ctx.surface.telegramChatId,
+            result.bytes,
+            {
+              replyTo: ctx.surface.replyToTelegramMessageId,
+              caption,
+            },
+          );
+        }
+      } catch (err) {
+        // Mirror the file-save handling — failure to deliver doesn't
+        // void the rest of the tool's work, but we should surface it
+        // in the trace so the operator sees what happened.
+        ctx.step?.setMeta({
+          telegram_send_error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    ctx.step?.setMeta({
+      adapter: adapter.adapterName,
+      worker_slug: worker.slug,
+      bytes: result.bytes.length,
+      mime: result.mimeType,
+      model: result.model,
+      saved_as: storagePath,
+      telegram_message_id: telegramMessageId,
+    });
+
+    return {
+      ok: true,
+      output: {
+        nodeId,
+        storagePath,
+        model: result.model,
+        adapter: adapter.adapterName,
+        mimeType: result.mimeType,
+        bytes: result.bytes.length,
+        ...(result.revisedPrompt ? { revisedPrompt: result.revisedPrompt } : {}),
+        ...(telegramMessageId != null ? { telegramMessageId, deliveredVia: 'telegram' } : {}),
+        ...(ctx.surface?.kind === 'web'
+          ? {
+              note:
+                "Image saved to /files/generated-images/. Web /assistant doesn't render images inline yet — open the file from Files to view it.",
+            }
+          : {}),
+      },
+    };
+  },
+};
+
 export const WORKER_DELEGATION_TOOLS: readonly BuiltinToolDef[] = [
   synthesize_speech,
   extract_from_image,
   summarize_text,
+  generate_image,
 ];

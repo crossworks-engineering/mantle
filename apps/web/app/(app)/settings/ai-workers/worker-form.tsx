@@ -22,15 +22,19 @@ import {
   DEEPGRAM_STT_MODELS,
   ELEVENLABS_STT_MODELS,
   GOOGLE_CHAT_MODELS,
+  GOOGLE_IMAGE_MODELS,
   GOOGLE_STT_MODELS,
   GOOGLE_VISION_MODELS,
   HUGGINGFACE_CHAT_MODELS,
+  HUGGINGFACE_IMAGE_MODELS,
   HUGGINGFACE_ROUTING_POLICIES,
+  OPENAI_IMAGE_MODELS,
   OPENAI_STT_MODELS,
   OPENAI_TTS_MODELS,
   OPENAI_VISION_MODELS,
   VOICE_DESCRIPTIONS,
   XAI_CHAT_MODELS,
+  XAI_IMAGE_MODELS,
   XAI_STT_MODELS,
   XAI_VISION_MODELS,
   audioTagsForElevenLabsModel,
@@ -41,6 +45,7 @@ import {
   voicesForModel,
   type AudioTag,
   type ChatModelInfo,
+  type ImageGenModelInfo,
   type OpenAiVoice,
   type ProviderCapability,
   type SttModelInfo,
@@ -56,6 +61,7 @@ import { TtsTestButton } from './tts-test-button';
 import { SttTestButton } from './stt-test-button';
 import { ChatTestButton } from './chat-test-button';
 import { VisionTestButton } from './vision-test-button';
+import { ImageGenTestButton } from './image-gen-test-button';
 
 type KeyOption = { id: string; service: string; label: string; masked: string };
 
@@ -138,10 +144,14 @@ export function WorkerForm({ mode, kind, worker, keys, action }: Props) {
   // Which vision providers have an adapter today. Mirrors the chat
   // wiredChatProviders set — keeps "show a model dropdown" honest.
   const wiredVisionProviders = new Set(['openai', 'anthropic', 'google', 'xai']);
+  // Image-gen wiring as of this commit. HF is a real adapter but
+  // surfaces a "type any repo id" free-text path too.
+  const wiredImageGenProviders = new Set(['openai', 'xai', 'google', 'huggingface']);
   const supportsDiscovery =
     kind === 'tts' ||
     kind === 'stt' ||
     (kind === 'vision' && wiredVisionProviders.has(provider)) ||
+    (kind === 'image_gen' && wiredImageGenProviders.has(provider)) ||
     (chatShaped && wiredChatProviders.has(provider));
 
   // The initial model list rendered before live discovery returns
@@ -155,7 +165,9 @@ export function WorkerForm({ mode, kind, worker, keys, action }: Props) {
   const staticCatalogFor = (
     forKind: AiWorkerKind,
     forProvider: string,
-  ): Array<TtsModelInfo | SttModelInfo | ChatModelInfo | VisionModelInfo> => {
+  ): Array<
+    TtsModelInfo | SttModelInfo | ChatModelInfo | VisionModelInfo | ImageGenModelInfo
+  > => {
     if (forKind === 'tts') return [...OPENAI_TTS_MODELS];
     if (forKind === 'stt') {
       // Each STT provider ships its own model list. Falls back to
@@ -177,6 +189,12 @@ export function WorkerForm({ mode, kind, worker, keys, action }: Props) {
       if (forProvider === 'xai') return [...XAI_VISION_MODELS];
       return [...OPENAI_VISION_MODELS];
     }
+    if (forKind === 'image_gen') {
+      if (forProvider === 'xai') return [...XAI_IMAGE_MODELS];
+      if (forProvider === 'google') return [...GOOGLE_IMAGE_MODELS];
+      if (forProvider === 'huggingface') return [...HUGGINGFACE_IMAGE_MODELS];
+      return [...OPENAI_IMAGE_MODELS];
+    }
     if (forKind === 'reflector' || forKind === 'extractor' || forKind === 'summarizer') {
       if (forProvider === 'xai') return [...XAI_CHAT_MODELS];
       if (forProvider === 'huggingface') return [...HUGGINGFACE_CHAT_MODELS];
@@ -187,7 +205,9 @@ export function WorkerForm({ mode, kind, worker, keys, action }: Props) {
   };
   const initialCatalog = staticCatalogFor(kind, provider);
   const [discovery, setDiscovery] = useState<{
-    available: Array<TtsModelInfo | SttModelInfo | ChatModelInfo | VisionModelInfo>;
+    available: Array<
+      TtsModelInfo | SttModelInfo | ChatModelInfo | VisionModelInfo | ImageGenModelInfo
+    >;
     filtered: boolean;
     error: string | null;
     loading: boolean;
@@ -205,7 +225,7 @@ export function WorkerForm({ mode, kind, worker, keys, action }: Props) {
     // worker kind directly for tts/stt/vision. We bail out cleanly if
     // the worker kind isn't supported by discovery yet.
     const discoveryKind =
-      kind === 'tts' || kind === 'stt' || kind === 'vision'
+      kind === 'tts' || kind === 'stt' || kind === 'vision' || kind === 'image_gen'
         ? kind
         : chatShaped
         ? 'chat'
@@ -544,6 +564,17 @@ export function WorkerForm({ mode, kind, worker, keys, action }: Props) {
             prompt before the ingest pipeline starts feeding it photos.
           </p>
           <VisionTestButton workerId={worker.id} />
+        </section>
+      )}
+      {mode === 'edit' && worker && kind === 'image_gen' && (
+        <section className="space-y-2 border-t border-border pt-6">
+          <h3 className="text-sm font-semibold">Test generation</h3>
+          <p className="text-xs text-muted-foreground">
+            Type a prompt and we'll send it through this worker's image adapter ({provider})
+            using the saved size/style/quality. The result is rendered here only — nothing is
+            persisted until Saskia (or another caller) invokes the `generate_image` tool.
+          </p>
+          <ImageGenTestButton workerId={worker.id} />
         </section>
       )}
 

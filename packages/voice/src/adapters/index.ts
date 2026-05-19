@@ -17,6 +17,7 @@
 import {
   findAdapterCatalogDrift,
   registerChatAdapter,
+  registerImageGenAdapter,
   registerSttAdapter,
   registerTtsAdapter,
   registerVisionAdapter,
@@ -40,6 +41,10 @@ import { openAiVisionAdapter } from './openai-vision';
 import { anthropicVisionAdapter } from './anthropic-vision';
 import { googleVisionAdapter } from './google-vision';
 import { xaiVisionAdapter } from './xai-vision';
+import { openAiImageAdapter } from './openai-image';
+import { xaiImageAdapter } from './xai-image';
+import { googleImageAdapter } from './google-image';
+import { huggingfaceImageAdapter } from './huggingface-image';
 
 // Built-in adapters. Order doesn't matter — these are just into a
 // Map keyed by providerId.
@@ -61,6 +66,10 @@ registerVisionAdapter(openAiVisionAdapter);
 registerVisionAdapter(anthropicVisionAdapter);
 registerVisionAdapter(googleVisionAdapter);
 registerVisionAdapter(xaiVisionAdapter);
+registerImageGenAdapter(openAiImageAdapter);
+registerImageGenAdapter(xaiImageAdapter);
+registerImageGenAdapter(googleImageAdapter);
+registerImageGenAdapter(huggingfaceImageAdapter);
 
 // Surface drift between registered adapters and the providers catalog
 // at module-load time. The catalog drives UI dropdown filters via
@@ -110,6 +119,9 @@ export {
   type VisionExtractResult,
   type VisionModelInfo,
   type ImageGenDispatcher,
+  type ImageGenModelInfo,
+  type GenerateImageOptions,
+  type GenerateImageResult,
   type AdapterMeta,
 } from './types';
 
@@ -126,6 +138,10 @@ export { openAiVisionAdapter } from './openai-vision';
 export { anthropicVisionAdapter } from './anthropic-vision';
 export { googleVisionAdapter } from './google-vision';
 export { xaiVisionAdapter } from './xai-vision';
+export { openAiImageAdapter } from './openai-image';
+export { xaiImageAdapter } from './xai-image';
+export { googleImageAdapter } from './google-image';
+export { huggingfaceImageAdapter } from './huggingface-image';
 export { xaiChatAdapter } from './xai-chat';
 export {
   huggingfaceChatAdapter,
@@ -148,11 +164,16 @@ export {
   XAI_AUDIO_TAGS,
   XAI_STT_MODELS,
   XAI_VISION_MODELS,
+  XAI_IMAGE_MODELS,
+  XAI_IMAGE_DEFAULT_MODEL,
   audioTagsForXaiTtsModel,
 } from '../catalogs/xai';
 export {
   HUGGINGFACE_CHAT_MODELS,
   HUGGINGFACE_BASE_URL,
+  HUGGINGFACE_INFERENCE_BASE_URL,
+  HUGGINGFACE_IMAGE_MODELS,
+  HUGGINGFACE_IMAGE_DEFAULT_MODEL,
 } from '../catalogs/huggingface';
 export {
   ANTHROPIC_CHAT_MODELS,
@@ -168,10 +189,16 @@ export {
   GOOGLE_AUDIO_TAGS,
   GOOGLE_STT_MODELS,
   GOOGLE_VISION_MODELS,
+  GOOGLE_IMAGE_MODELS,
+  GOOGLE_IMAGE_DEFAULT_MODEL,
   audioTagsForGoogleTtsModel,
   type GoogleTtsModelId,
 } from '../catalogs/google';
 export { OPENAI_VISION_MODELS } from '../catalogs/openai-vision';
+export {
+  OPENAI_IMAGE_MODELS,
+  OPENAI_IMAGE_DEFAULT_MODEL,
+} from '../catalogs/openai-image';
 export {
   ELEVENLABS_TTS_MODELS,
   ELEVENLABS_STT_MODELS,

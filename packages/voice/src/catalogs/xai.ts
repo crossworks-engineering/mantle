@@ -169,6 +169,33 @@ export const XAI_STT_MODELS: readonly SttModelInfo[] = [
   },
 ] as const;
 
+// ─── xAI Image Generation ────────────────────────────────────────────
+//
+// Endpoint: POST {XAI_BASE_URL}/images/generations
+// Auth:     Bearer
+// Body:     OpenAI-compatible (prompt + model + n + response_format).
+//           xAI returns urls by default; we request response_format=
+//           'b64_json' so the adapter gets bytes uniformly.
+//
+// As of May 2026 xAI ships a single image model: `grok-2-image-1212`.
+// They've talked about higher-quality variants but nothing public yet.
+
+import type { ImageGenModelInfo } from '../adapters/types';
+
+export const XAI_IMAGE_MODELS: readonly ImageGenModelInfo[] = [
+  {
+    id: 'grok-2-image-1212',
+    label: 'Grok 2 Image',
+    description:
+      'xAI image generator. Strong on photo-realistic and editorial styles. Reuses your chat key.',
+    supportedSizes: ['1024x1024'],
+    pricePerImage: 0.07,
+    tier: 'balanced',
+  },
+];
+
+export const XAI_IMAGE_DEFAULT_MODEL = 'grok-2-image-1212';
+
 // ─── xAI Vision ──────────────────────────────────────────────────────
 //
 // xAI's chat completions endpoint is OpenAI-compatible — vision is

@@ -237,18 +237,79 @@ export interface VisionDispatcher extends AdapterMeta {
 }
 
 // ─── Image generation ───────────────────────────────────────────────
-//
-// Interface stub for the future image_gen pipeline. No adapters
-// registered yet — keeping the shape here means the registry/types
-// stay consistent when we wire DALL-E / Imagen / Grok-image.
+
+/** A generatable image model entry. Same shape conventions as
+ *  ChatModelInfo/VisionModelInfo: id + label + description so the UI
+ *  has rich dropdown options without each form re-parsing provider
+ *  docs. */
+export interface ImageGenModelInfo {
+  id: string;
+  label: string;
+  description: string;
+  /** Native resolutions the model accepts. Adapters reject sizes
+   *  outside this list with a clear error. Free-form when undefined
+   *  (HF models, where the underlying model decides). */
+  supportedSizes?: readonly string[];
+  /** Steerable styles, when the model supports them (DALL-E 3:
+   *  'vivid' | 'natural'). Undefined = no style steering. */
+  supportedStyles?: readonly string[];
+  /** USD per image at default size. UI hint only. */
+  pricePerImage?: number;
+  /** Latency tier — useful when picking between same-provider models. */
+  tier?: 'fast' | 'balanced' | 'quality';
+}
+
+export interface GenerateImageOptions {
+  apiKey: string;
+  /** Free-form prompt. No length cap at the interface layer; per-
+   *  provider limits get enforced inside the adapter. */
+  prompt: string;
+  /** Model id. Defaults to the adapter's documented default. */
+  model?: string;
+  /** Native resolution, e.g. '1024x1024' or '1792x1024'. Adapters
+   *  validate against ImageGenModelInfo.supportedSizes. */
+  size?: string;
+  /** Style hint (provider-specific: DALL-E 3 = 'vivid'/'natural';
+   *  others may ignore). */
+  style?: string;
+  /** Quality tier — DALL-E 3 uses 'standard'/'hd'; HF models may use
+   *  'fast'/'balanced'/'quality'. Adapters ignore unknown values. */
+  quality?: string;
+  /** Negative prompt — what the image should NOT contain. Honoured
+   *  by HF + Imagen; OpenAI doesn't accept it (silently ignored). */
+  negativePrompt?: string;
+  /** Random seed for reproducibility, when the provider exposes one. */
+  seed?: number;
+}
+
+export interface GenerateImageResult {
+  /** Generated image bytes. Adapters always materialize the bytes
+   *  even when the provider returns a URL — callers shouldn't have
+   *  to deal with URL-vs-bytes asymmetry across providers. */
+  bytes: Buffer;
+  /** MIME of the returned image — typically 'image/png' but Imagen
+   *  may return jpeg, HF may return jpeg/png depending on model. */
+  mimeType: string;
+  /** Model id that did the work. Echoed back for traces. */
+  model: string;
+  /** Provider's revised prompt, when it returns one (DALL-E 3 rewrites
+   *  the user prompt for safety+quality and surfaces the revision).
+   *  Caller can pass this back as `revised_prompt` metadata on the
+   *  saved file node so the operator sees what the model actually
+   *  rendered against. */
+  revisedPrompt?: string;
+}
 
 export interface ImageGenDispatcher extends AdapterMeta {
-  /** Generate an image from a prompt. */
-  generate(opts: {
-    apiKey: string;
-    prompt: string;
-    model?: string;
-    size?: string;
-    style?: string;
-  }): Promise<{ bytes: Buffer; mimeType: string; model: string }>;
+  /** Generate an image from a prompt. Throws on auth/network/quota
+   *  errors with the provider's verbatim message slice — same
+   *  convention as the other dispatchers. */
+  generate(opts: GenerateImageOptions): Promise<GenerateImageResult>;
+
+  /** Static catalog the UI renders for the model dropdown. Most
+   *  image-gen providers don't expose a programmatic models list
+   *  (or they do but it returns chat models too) — so we ship a
+   *  curated static list and don't implement discoverModels. */
+  staticCatalog(): readonly ImageGenModelInfo[];
 }
+

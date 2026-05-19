@@ -112,8 +112,8 @@ export const SUPPORTED_PROVIDERS: readonly Provider[] = [
     id: 'google',
     label: 'Google (Gemini)',
     description:
-      'Gemini direct. Large-context chat + 30-voice TTS (Kore, Puck, Zephyr…). 1M+ token windows. STT via the multimodal generateContent endpoint (99 languages, inline audio up to 20 MB).',
-    capabilities: ['chat', 'vision', 'embedding', 'tts', 'stt'],
+      'Gemini direct. Large-context chat + 30-voice TTS (Kore, Puck, Zephyr…). 1M+ token windows. STT via the multimodal generateContent endpoint (99 languages, inline audio up to 20 MB). Imagen 3/4 for image generation.',
+    capabilities: ['chat', 'vision', 'embedding', 'tts', 'stt', 'image_gen'],
     signupUrl: 'https://aistudio.google.com/apikey',
     docsUrl: 'https://ai.google.dev/gemini-api/docs',
   },
@@ -121,8 +121,8 @@ export const SUPPORTED_PROVIDERS: readonly Provider[] = [
     id: 'xai',
     label: 'xAI (Grok)',
     description:
-      'Grok chat + Grok TTS (5 voices: eve, ara, rex, sal, leo) with [laugh]/[giggle]/[sigh] inline tags. STT via the /v1/stt endpoint (single model, ~500 MB cap).',
-    capabilities: ['chat', 'vision', 'tts', 'stt'],
+      'Grok chat + Grok TTS (5 voices: eve, ara, rex, sal, leo) with [laugh]/[giggle]/[sigh] inline tags. STT via the /v1/stt endpoint (single model, ~500 MB cap). Grok-2-image for image generation.',
+    capabilities: ['chat', 'vision', 'tts', 'stt', 'image_gen'],
     signupUrl: 'https://console.x.ai',
     docsUrl: 'https://docs.x.ai',
   },

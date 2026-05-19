@@ -29,9 +29,13 @@
  * other tasks as adapters when we want them.
  */
 
-import type { ChatModelInfo } from '../adapters/types';
+import type { ChatModelInfo, ImageGenModelInfo } from '../adapters/types';
 
 export const HUGGINGFACE_BASE_URL = 'https://router.huggingface.co/v1';
+/** Image-gen inference uses a separate, repo-id-based endpoint. The
+ *  router doesn't proxy image tasks today — calls go straight to
+ *  api-inference for the per-model URL. */
+export const HUGGINGFACE_INFERENCE_BASE_URL = 'https://api-inference.huggingface.co';
 
 /** Suffixes the HF router accepts on the model id. The adapter
  *  appends one of these to whatever model the user picks. */
@@ -131,3 +135,46 @@ export const HUGGINGFACE_CHAT_MODELS: readonly ChatModelInfo[] = [
     capabilities: ['vision'],
   },
 ];
+
+// ─── Hugging Face image generation ───────────────────────────────────
+//
+// Endpoint: POST {HUGGINGFACE_INFERENCE_BASE_URL}/models/<repo>
+// Auth:     Bearer
+// Body:     { inputs: <prompt>, parameters: { negative_prompt, seed,
+//             num_inference_steps, guidance_scale, width, height } }
+// Response: raw image bytes (Content-Type image/png or image/jpeg).
+//
+// HF's catalogue is huge; we surface only the proven defaults so the
+// dropdown isn't 200 items long. Operators can still type any repo id
+// into the worker's `model` field for custom selections (the adapter
+// passes it through verbatim).
+
+export const HUGGINGFACE_IMAGE_MODELS: readonly ImageGenModelInfo[] = [
+  {
+    id: 'black-forest-labs/FLUX.1-dev',
+    label: 'FLUX.1 dev',
+    description:
+      'Black Forest Labs FLUX.1 dev. Best open-source image quality today. Slower than Schnell.',
+    tier: 'quality',
+  },
+  {
+    id: 'black-forest-labs/FLUX.1-schnell',
+    label: 'FLUX.1 schnell',
+    description: 'Distilled FLUX. 4-step inference, 5-10x faster than dev. Slight quality drop.',
+    tier: 'fast',
+  },
+  {
+    id: 'stabilityai/stable-diffusion-xl-base-1.0',
+    label: 'SDXL Base 1.0',
+    description: 'Stability AI SDXL. Older baseline; widely supported by community LoRAs.',
+    tier: 'balanced',
+  },
+  {
+    id: 'stabilityai/stable-diffusion-3.5-large',
+    label: 'Stable Diffusion 3.5 Large',
+    description: 'Stability AI SD 3.5 Large. Higher quality than SDXL, more compute per image.',
+    tier: 'quality',
+  },
+];
+
+export const HUGGINGFACE_IMAGE_DEFAULT_MODEL = 'black-forest-labs/FLUX.1-schnell';
