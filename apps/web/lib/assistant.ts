@@ -307,6 +307,9 @@ export async function runAssistantTurn(
     );
   }
   const effectiveSystemPrompt = promptWithSkills + openHeartbeatBlock;
+  // Heartbeat continuity tools are sourced from agent.tool_slugs
+  // (not auto-injected here). Add them at /settings/agents on the
+  // agent that should respond to heartbeat-asked questions.
 
   const messages = buildChatMessages({
     model: agent.model,

@@ -198,8 +198,44 @@ async function upsertHeartbeat(agentSlug: string): Promise<void> {
   }
 }
 
+/**
+ * Ensure the responder agent has the three heartbeat-continuity
+ * tools in its tool_slugs allowlist. Without them, the awareness
+ * block injected into the system prompt tells the agent to "call
+ * heartbeat_update_state" but the tool isn't in the model's
+ * available-tools list and the call can never happen. Idempotent —
+ * only adds missing slugs, never removes or reorders.
+ *
+ * `heartbeat_fire` + `heartbeat_list` are intentionally NOT added —
+ * those are operator/skill tools, not normal-turn tools. The three
+ * we DO add all self-protect via requireContext() so they're inert
+ * during turns that aren't reacting to a heartbeat.
+ */
+async function ensureHeartbeatToolsOnAgent(agentSlug: string): Promise<void> {
+  const required = ['heartbeat_update_state', 'heartbeat_complete', 'heartbeat_snooze'];
+  const [row] = await db
+    .select({ id: agents.id, toolSlugs: agents.toolSlugs })
+    .from(agents)
+    .where(and(eq(agents.ownerId, USER_ID!), eq(agents.slug, agentSlug)))
+    .limit(1);
+  if (!row) return; // resolveAgentSlug already validated; defensive
+  const current = row.toolSlugs ?? [];
+  const missing = required.filter((s) => !current.includes(s));
+  if (missing.length === 0) {
+    console.log(`[seed] agent ${agentSlug} already has heartbeat continuity tools`);
+    return;
+  }
+  const next = [...current, ...missing].sort();
+  await db
+    .update(agents)
+    .set({ toolSlugs: next, updatedAt: new Date() })
+    .where(eq(agents.id, row.id));
+  console.log(`[seed] added ${missing.join(', ')} to agent ${agentSlug} tool_slugs`);
+}
+
 async function main() {
   const agentSlug = await resolveAgentSlug();
+  await ensureHeartbeatToolsOnAgent(agentSlug);
   await upsertSkill();
   await upsertHeartbeat(agentSlug);
   console.log('[seed] done — heartbeat will fire after the 6h earliest_at gate passes.');

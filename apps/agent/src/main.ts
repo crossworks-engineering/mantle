@@ -897,6 +897,16 @@ async function handleMessage(messageId: string): Promise<void> {
         // Resolve the agent's tool allowlist, unioned with every attached
         // skill's tool_slugs. Empty result → tool-loop sends no `tools`
         // and behaves identically to the old single-call path.
+        //
+        // Heartbeat continuity tools (heartbeat_update_state /
+        // heartbeat_complete / heartbeat_snooze) are NOT auto-injected
+        // here even when an open heartbeat is detected. The permissions
+        // model is explicit: tools live in `agents.tool_slugs`, visible
+        // at /settings/agents. If a responder agent is meant to handle
+        // heartbeat continuity, add these three slugs to its tool_slugs
+        // (the seed script does this for the demo). The tools refuse
+        // cleanly via requireContext() outside a heartbeat fire, so
+        // adding them is safe — they're inert in unrelated turns.
         const allowedToolSlugs = effectiveToolSlugs(
           agent.toolSlugs ?? [],
           attachedSkills,
