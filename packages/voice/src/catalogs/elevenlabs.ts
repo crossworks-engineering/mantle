@@ -22,7 +22,64 @@
  *   Other formats are available for non-Telegram surfaces.
  */
 
+import type { AudioTag } from '../adapters/types';
+
 export const ELEVENLABS_BASE_URL = 'https://api.elevenlabs.io';
+
+/**
+ * Documented v3 audio tags. ElevenLabs publishes these in five
+ * conceptual buckets (their docs use slightly different names; we
+ * normalise to the categories on the AudioTag type). Saskia gets a
+ * paragraph in her prompt listing the supported tags when the active
+ * TTS worker is configured for ElevenLabs v3.
+ *
+ * Tags are case-insensitive in the API but we render them lowercase
+ * for consistency. Pulled from
+ *   https://elevenlabs.io/blog/v3-audiotags
+ *   https://elevenlabs.io/blog/eleven-v3-audio-tags-expressing-emotional-context-in-speech
+ *
+ * Not exhaustive — ElevenLabs's docs say "many more effective tags
+ * beyond the listed examples." This list covers the ones with
+ * documented, stable behaviour.
+ */
+export const ELEVENLABS_V3_AUDIO_TAGS: readonly AudioTag[] = [
+  // Human reactions — the most useful for conversational warmth.
+  { tag: '[laughs]', description: 'a warm chuckle; use for genuine amusement', category: 'reaction' },
+  { tag: '[laughs softly]', description: 'a quiet, intimate chuckle', category: 'reaction' },
+  { tag: '[chuckles]', description: 'short, dry amusement', category: 'reaction' },
+  { tag: '[snorts]', description: 'a short, derisive or surprised exhale', category: 'reaction' },
+  { tag: '[sighs]', description: 'resigned exhale; reflective or weary', category: 'reaction' },
+  { tag: '[gasps]', description: 'sharp inhale of surprise', category: 'reaction' },
+  { tag: '[clears throat]', description: 'transitional beat, often before a serious point', category: 'reaction' },
+
+  // Delivery / performance.
+  { tag: '[whispers]', description: 'intimate, lowered voice for secrets or asides', category: 'delivery' },
+  { tag: '[shouts]', description: 'raised voice; use sparingly', category: 'delivery' },
+
+  // Cognitive / pacing beats.
+  { tag: '[pauses]', description: 'a deliberate beat of silence', category: 'cognitive' },
+  { tag: '[hesitates]', description: 'briefly stalls, as if thinking', category: 'cognitive' },
+  { tag: '[stammers]', description: 'broken cadence; nerves or surprise', category: 'cognitive' },
+
+  // Emotional states (modify the line that follows).
+  { tag: '[excited]', description: 'warm, energetic delivery', category: 'emotion' },
+  { tag: '[curious]', description: 'rising-inflection, inquisitive', category: 'emotion' },
+  { tag: '[happy]', description: 'bright, smiling tone', category: 'emotion' },
+  { tag: '[sad]', description: 'slower, weighted', category: 'emotion' },
+  { tag: '[nervous]', description: 'slightly faster, breathier', category: 'emotion' },
+  { tag: '[frustrated]', description: 'tight, clipped', category: 'emotion' },
+  { tag: '[calm]', description: 'steady, unhurried', category: 'emotion' },
+  { tag: '[sorrowful]', description: 'deeper sadness; for genuine grief', category: 'emotion' },
+  { tag: '[mischievously]', description: 'playful, with a hint of trouble', category: 'emotion' },
+  { tag: '[crying]', description: 'distressed delivery; rare', category: 'emotion' },
+
+  // Tone cues.
+  { tag: '[cheerfully]', description: 'lift and brightness throughout', category: 'tone' },
+  { tag: '[flatly]', description: 'unaffected, monotone', category: 'tone' },
+  { tag: '[deadpan]', description: 'expressionless; great for dry humour', category: 'tone' },
+  { tag: '[playfully]', description: 'light, teasing', category: 'tone' },
+  { tag: '[resigned tone]', description: 'accepting the inevitable; soft sigh implicit', category: 'tone' },
+];
 
 /** TTS model metadata. ElevenLabs swaps the OpenAI {model,voice}
  *  separation so each entry represents the TTS engine, not the voice. */
@@ -34,6 +91,10 @@ export type ElevenLabsTtsModel = {
   multilingual: boolean;
   /** Approximate output speed tier ('fast' / 'balanced' / 'quality'). */
   speed: 'fast' | 'balanced' | 'quality';
+  /** Whether this model honours inline audio tags. Only v3 has the
+   *  full vocabulary; older models render bracketed tags as literal
+   *  text (which is why we strip them defensively before send). */
+  supportsAudioTags?: boolean;
 };
 
 export const ELEVENLABS_TTS_MODELS: readonly ElevenLabsTtsModel[] = [
@@ -41,30 +102,37 @@ export const ELEVENLABS_TTS_MODELS: readonly ElevenLabsTtsModel[] = [
     id: 'eleven_v3',
     label: 'Eleven v3',
     description:
-      'Newest, highest-quality generation. Best emotional range and pronunciation.',
+      'Newest, highest-quality generation. Honours the full inline audio-tag vocabulary (laughs, whispers, sighs, emotion cues).',
     multilingual: true,
     speed: 'quality',
+    supportsAudioTags: true,
   },
   {
     id: 'eleven_multilingual_v2',
     label: 'Multilingual v2',
-    description: 'Stable default. 29 languages, balanced quality + speed.',
+    description:
+      'Stable default. 29 languages, balanced quality + speed. Inline audio tags NOT honoured — they get rendered as literal text, so the adapter strips them.',
     multilingual: true,
     speed: 'balanced',
+    supportsAudioTags: false,
   },
   {
     id: 'eleven_turbo_v2_5',
     label: 'Turbo v2.5',
-    description: 'Lower latency, 32 languages. Use when speed matters more than perfection.',
+    description:
+      'Lower latency, 32 languages. Use when speed matters more than perfection. No inline audio tags.',
     multilingual: true,
     speed: 'fast',
+    supportsAudioTags: false,
   },
   {
     id: 'eleven_flash_v2_5',
     label: 'Flash v2.5',
-    description: 'Lowest latency (~75ms). 32 languages. Best for streaming.',
+    description:
+      'Lowest latency (~75ms). 32 languages. Best for streaming. No inline audio tags.',
     multilingual: true,
     speed: 'fast',
+    supportsAudioTags: false,
   },
   {
     id: 'eleven_monolingual_v1',
@@ -72,8 +140,24 @@ export const ELEVENLABS_TTS_MODELS: readonly ElevenLabsTtsModel[] = [
     description: 'English-only legacy model. Cheap; consider v3 instead.',
     multilingual: false,
     speed: 'balanced',
+    supportsAudioTags: false,
   },
 ];
+
+/**
+ * Audio-tag lookup per model. Returns the documented tag set for
+ * models that support them, empty list otherwise. Used by the
+ * ElevenLabs adapter's `supportedAudioTags` to gate which tags are
+ * advertised to the LLM in Saskia's prompt.
+ */
+export function audioTagsForElevenLabsModel(modelId: string): readonly AudioTag[] {
+  const m = ELEVENLABS_TTS_MODELS.find((x) => x.id === modelId);
+  if (!m || !m.supportsAudioTags) return [];
+  // Today only v3 has documented tags. When ElevenLabs publishes a
+  // tag set for a future model, branch here on modelId rather than
+  // returning the same list for every supporting model.
+  return ELEVENLABS_V3_AUDIO_TAGS;
+}
 
 /** Output format query-param values. We pick `opus_48000_64` for
  *  Telegram (Telegram-native voice notes are OGG/Opus), but other

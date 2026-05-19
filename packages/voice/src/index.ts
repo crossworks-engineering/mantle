@@ -56,3 +56,20 @@ export {
 // `synthesizeSpeech` directly so future providers (ElevenLabs,
 // Deepgram, …) slot in via the registry with no caller changes.
 export * from './adapters';
+
+// Audio-tag composition + stripping helpers. Pure, importable from
+// any layer — used by the runtime prompt builder (to tell Saskia
+// which tags her TTS will honour) and by the text-out path (to
+// strip tags from replies that end up routed as plain text).
+export {
+  composeAudioTagInstructions,
+  stripAudioTags,
+} from './audio-tags';
+export type { AudioTag } from './adapters/types';
+
+// ElevenLabs audio-tag catalog — exported so the UI can render the
+// hint list under the voice dropdown when the worker is on v3.
+export {
+  ELEVENLABS_V3_AUDIO_TAGS,
+  audioTagsForElevenLabsModel,
+} from './catalogs/elevenlabs';

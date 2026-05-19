@@ -50,6 +50,7 @@ import {
   type HistoryTurn,
 } from '@mantle/agent-runtime';
 import { registerAgentInvoker } from '@mantle/tools';
+import { stripAudioTags } from '@mantle/voice';
 
 // Register the cross-package bridge for the `invoke_agent` builtin.
 // First module load (the first /assistant request after boot) wires
@@ -288,10 +289,16 @@ export async function runAssistantTurn(
     initialMessages: messages,
     tools: allowedTools,
   });
-  const reply = loopOutcome.reply;
-  if (!reply) {
+  const rawReply = loopOutcome.reply;
+  if (!rawReply) {
     throw new Error('assistant: empty reply from model');
   }
+  // Defensive strip — the web /assistant is text-only today, so any
+  // audio tags Saskia emits (because she carried the habit over from
+  // her Telegram persona) would render as literal brackets in the
+  // chat bubble. If we ever add web TTS playback, this is the
+  // branch point where voice-mode reply would skip the strip.
+  const reply = stripAudioTags(rawReply).text;
 
   const [outbound] = await db
     .insert(assistantMessages)

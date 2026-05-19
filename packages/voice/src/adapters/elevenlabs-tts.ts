@@ -40,8 +40,10 @@ import {
   ELEVENLABS_BASE_URL,
   ELEVENLABS_PREMADE_VOICES,
   ELEVENLABS_TTS_MODELS,
+  audioTagsForElevenLabsModel,
   mimeForElevenLabsFormat,
 } from '../catalogs/elevenlabs';
+import { stripAudioTags } from '../audio-tags';
 
 type ElevenLabsVoicesResponse = {
   voices?: Array<{
@@ -83,8 +85,18 @@ function elevenLabsFormatFor(format: string | undefined): string {
 
 async function elevenLabsSynthesize(opts: SynthesizeOptions): Promise<SynthesizeResult> {
   if (!opts.apiKey) throw new Error('elevenlabs-tts: apiKey required');
-  const text = (opts.text ?? '').trim();
+  let text = (opts.text ?? '').trim();
   if (!text) throw new Error('elevenlabs-tts: empty text');
+  // Models other than v3 render bracketed tags as literal text
+  // (`[laughs]` becomes the spoken phrase "open bracket laughs close
+  // bracket"). If the worker picked one of those AND Saskia included
+  // tags anyway, strip them before send so the user doesn't hear the
+  // brackets.
+  const modelId = opts.model || 'eleven_v3';
+  const honoursTags = audioTagsForElevenLabsModel(modelId).length > 0;
+  if (!honoursTags) {
+    text = stripAudioTags(text).text;
+  }
   // ElevenLabs requires a voice id (URL path). The OpenAI-shaped
   // `voice` field carries the ElevenLabs voice_id when the worker
   // is configured for this provider. If none is given, fall back to
@@ -93,7 +105,6 @@ async function elevenLabsSynthesize(opts: SynthesizeOptions): Promise<Synthesize
     typeof opts.voice === 'string' && opts.voice.length > 0
       ? opts.voice
       : ELEVENLABS_PREMADE_VOICES[0]!.id;
-  const modelId = opts.model || 'eleven_v3';
   const outputFormat = elevenLabsFormatFor(opts.format);
 
   const body: Record<string, unknown> = {
@@ -255,4 +266,7 @@ export const elevenLabsTtsAdapter: TtsDispatcher = {
   synthesize: elevenLabsSynthesize,
   discoverModels: elevenLabsDiscoverModels,
   voicesForModel: elevenLabsVoicesForModel,
+  supportedAudioTags(modelId) {
+    return audioTagsForElevenLabsModel(modelId);
+  },
 };

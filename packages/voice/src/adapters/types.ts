@@ -44,6 +44,21 @@ export interface AdapterMeta {
   readonly adapterName: string;
 }
 
+/** An inline audio tag the model interprets as a performance cue.
+ *  ElevenLabs v3 calls these "audio tags"; xAI's voice models use a
+ *  similar `[giggle]`/`[laugh]` convention. The shape is uniform: an
+ *  exact bracket-wrapped token + a short description for the LLM's
+ *  benefit so it knows when to use which. */
+export type AudioTag = {
+  /** Exact form including brackets, e.g. `[laughs]`, `[whispers]`. */
+  tag: string;
+  /** One-line hint for the LLM. The composer joins these into the
+   *  system-prompt paragraph so Saskia knows what each tag does. */
+  description: string;
+  /** Coarse grouping so the UI hint can render them in sections. */
+  category?: 'emotion' | 'reaction' | 'delivery' | 'cognitive' | 'tone' | 'accent';
+};
+
 export interface TtsDispatcher extends AdapterMeta {
   /** Synthesise speech and return audio bytes. The runtime then hands
    *  these to Telegram's sendVoice (when format='opus') or to an
@@ -67,6 +82,18 @@ export interface TtsDispatcher extends AdapterMeta {
     modelId: string,
     apiKey?: string,
   ): Promise<Array<{ id: string; description: string }>>;
+
+  /** Optional. Inline audio tags the model interprets — `[laughs]`,
+   *  `[whispers]`, `[sighs]`, etc. ElevenLabs v3 has the richest set;
+   *  xAI's voice models support a smaller subset; OpenAI's
+   *  gpt-4o-mini-tts uses the `instructions` parameter instead and
+   *  returns an empty list here.
+   *
+   *  The runtime queries this when building the chat agent's prompt
+   *  so the LLM only emits tags the active TTS will render. Adapters
+   *  whose providers ignore unknown tags can safely return [] —
+   *  Saskia won't try to use them. */
+  supportedAudioTags?(modelId: string): readonly AudioTag[];
 }
 
 /** A chat model entry. The fields are intentionally generic — provider

@@ -24,9 +24,11 @@ import {
   OPENAI_TTS_MODELS,
   VOICE_DESCRIPTIONS,
   XAI_CHAT_MODELS,
+  audioTagsForElevenLabsModel,
   isProviderWired,
   providersForCapability,
   voicesForModel,
+  type AudioTag,
   type ChatModelInfo,
   type OpenAiVoice,
   type ProviderCapability,
@@ -548,6 +550,13 @@ function TtsFields({
   // (voice_settings) which we expose via speed only for now.
   const supportsInstructions = model === 'gpt-4o-mini-tts';
 
+  // Audio-tag hint for ElevenLabs v3 — the LLM gets these injected
+  // into its system prompt at runtime, but the operator should see
+  // them here too so they understand what their voice replies can do.
+  const audioTags: readonly AudioTag[] = isElevenLabs
+    ? audioTagsForElevenLabsModel(model)
+    : [];
+
   return (
     <div className="space-y-4">
       <div className="space-y-1.5">
@@ -578,6 +587,27 @@ function TtsFields({
             Pick your ElevenLabs API key first; the voice list (including your cloned voices)
             loads live.
           </p>
+        )}
+        {audioTags.length > 0 && (
+          <details className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
+            <summary className="cursor-pointer font-medium text-foreground">
+              Inline audio tags ({audioTags.length}) — your model honours these
+            </summary>
+            <div className="mt-2 space-y-1">
+              <p className="text-muted-foreground">
+                The agent's prompt is auto-augmented with these so it can sprinkle them
+                inline in voice replies. Text replies have them stripped automatically.
+              </p>
+              <ul className="grid grid-cols-2 gap-x-3 gap-y-0.5 pt-1 font-mono text-[11px]">
+                {audioTags.map((t) => (
+                  <li key={t.tag} title={t.description}>
+                    {t.tag}{' '}
+                    <span className="font-sans text-muted-foreground">— {t.description}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </details>
         )}
       </div>
 

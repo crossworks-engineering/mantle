@@ -37,4 +37,12 @@ export const openAiTtsAdapter: TtsDispatcher = {
       description: v.description,
     }));
   },
+  supportedAudioTags() {
+    // OpenAI models don't honour inline audio tags. gpt-4o-mini-tts
+    // uses the `instructions` parameter for style steering instead
+    // (handled separately via TtsParams.instructions). tts-1 and
+    // tts-1-hd render bracketed text literally, so the adapter
+    // strips tags before send (see synthesize.ts integration).
+    return [];
+  },
 };

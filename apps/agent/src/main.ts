@@ -36,7 +36,12 @@ import {
 } from '@mantle/db';
 import { accountForChat, downloadTelegramFile, sendMessage, sendVoice } from '@mantle/telegram';
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
-import { getSttAdapter, getTtsAdapter } from '@mantle/voice';
+import {
+  composeAudioTagInstructions,
+  getSttAdapter,
+  getTtsAdapter,
+  stripAudioTags,
+} from '@mantle/voice';
 import {
   bumpWorkerUsage as bumpAiWorkerUsage,
   getDefaultWorker,
@@ -542,10 +547,35 @@ async function handleMessage(messageId: string): Promise<void> {
         // Resolve attached skills early so we can compose the system
         // prompt + extend the agent's effective tool allowlist.
         const attachedSkills = await resolveAgentSkills(USER_ID!, agent.skillSlugs ?? []);
-        const effectiveSystemPrompt = composeSystemPromptWithSkills(
+        const promptWithSkills = composeSystemPromptWithSkills(
           agent.systemPrompt,
           attachedSkills,
         );
+
+        // Tell Saskia which inline audio tags her configured TTS will
+        // honour (e.g. ElevenLabs v3 supports [laughs] / [whispers] /
+        // [sighs]; OpenAI doesn't). Looked up once per turn so the
+        // prompt stays current if the TTS worker is swapped between
+        // turns. Empty paragraph if no TTS worker, no tags-capable
+        // model, or no adapter — concat is a no-op.
+        let audioTagInstructions = '';
+        try {
+          const ttsWorkerForTags = await getDefaultWorker(USER_ID!, 'tts');
+          if (ttsWorkerForTags) {
+            const ttsAdapterForTags = getTtsAdapter(ttsWorkerForTags.provider);
+            const tags =
+              ttsAdapterForTags?.supportedAudioTags?.(ttsWorkerForTags.model) ?? [];
+            audioTagInstructions = composeAudioTagInstructions(tags);
+          }
+        } catch (err) {
+          // Tag-injection is best-effort decoration. A DB blip here
+          // shouldn't kill the turn.
+          console.error(
+            '[agent] audio-tag prompt injection skipped:',
+            err instanceof Error ? err.message : err,
+          );
+        }
+        const effectiveSystemPrompt = promptWithSkills + audioTagInstructions;
 
         const messages = await step(
           { name: 'build_messages', kind: 'compute' },
@@ -715,10 +745,20 @@ async function handleMessage(messageId: string): Promise<void> {
                 // Fall through to text path below.
               }
             }
-            const ids = await sendMessage(account, row.telegramChatId, reply, {
+            // Strip any audio tags Saskia emitted — they only make
+            // sense in a voice context. If the reply ends up here
+            // (text-out, or TTS fallback after failure), bracketed
+            // tags would otherwise appear as literal text.
+            const { text: textReply, stripped } = stripAudioTags(reply);
+            const ids = await sendMessage(account, row.telegramChatId, textReply, {
               replyTo: row.telegramMessageId,
             });
-            h.setMeta({ mode: 'text', chunks: ids.length, replyLength: reply.length });
+            h.setMeta({
+              mode: 'text',
+              chunks: ids.length,
+              replyLength: textReply.length,
+              ...(stripped > 0 ? { audioTagsStripped: stripped } : {}),
+            });
             return ids;
           },
         );
