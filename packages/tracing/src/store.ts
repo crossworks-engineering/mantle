@@ -20,6 +20,7 @@ export type TraceKind =
   | 'extractor_run'
   | 'summarizer_run'
   | 'reflector_run'
+  | 'photo_ingest'
   | 'manual';
 
 export type TraceStepKind =

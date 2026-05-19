@@ -29,6 +29,9 @@ importers:
       '@mantle/api-keys':
         specifier: workspace:*
         version: link:../../packages/api-keys
+      '@mantle/content':
+        specifier: workspace:*
+        version: link:../../packages/content
       '@mantle/db':
         specifier: workspace:*
         version: link:../../packages/db

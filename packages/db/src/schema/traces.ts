@@ -17,6 +17,7 @@ export const traceKind = pgEnum('trace_kind', [
   'extractor_run',
   'summarizer_run',
   'reflector_run',
+  'photo_ingest',
   'manual',
 ]);
 
