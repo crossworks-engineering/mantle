@@ -138,31 +138,27 @@ const heartbeat_update_state: BuiltinToolDef = {
     required: ['patch'],
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    // Diagnostic for the v1 "trace says success but DB didn't update"
-    // mystery — each branch logs so the agent stdout tells us which
-    // path the handler took. setMeta on every branch so /traces also
-    // surfaces it without needing to re-run.
+    // ctx.step?.setMeta on every branch so /traces shows which path
+    // the handler took without needing to re-run with logging — kept
+    // after we used it to confirm the v1 "trace says success but DB
+    // didn't update" was a tsx-watch stale-module issue, not a real
+    // code bug. Silent diagnostic; meta is part of the trace step we
+    // were already writing.
     const c = requireContext();
     if (!c) {
-      const err = 'heartbeat_update_state called outside heartbeat fire context (currentHeartbeat()=null)';
-      console.error(`[heartbeats:tool] ${err}`);
-      ctx.step?.setMeta({ branch: 'no_context', error: err });
+      ctx.step?.setMeta({ branch: 'no_context' });
       return {
         ok: false,
         error: 'heartbeat_update_state is only callable from inside a heartbeat fire.',
       };
     }
     if (!input.patch || typeof input.patch !== 'object' || Array.isArray(input.patch)) {
-      const err = `patch shape invalid: typeof=${typeof input.patch} isArray=${Array.isArray(input.patch)}`;
-      console.error(`[heartbeats:tool] ${err}`);
-      ctx.step?.setMeta({ branch: 'bad_patch_shape', error: err });
+      ctx.step?.setMeta({ branch: 'bad_patch_shape' });
       return { ok: false, error: 'patch must be a plain object' };
     }
     const hb = await loadOwnedHeartbeat(ctx.ownerId, c.heartbeatId);
     if (!hb) {
-      const err = `heartbeat row not found: id=${c.heartbeatId} owner=${ctx.ownerId}`;
-      console.error(`[heartbeats:tool] ${err}`);
-      ctx.step?.setMeta({ branch: 'hb_not_found', error: err });
+      ctx.step?.setMeta({ branch: 'hb_not_found' });
       return { ok: false, error: 'heartbeat row not found (race?)' };
     }
     // Apply patch: drop null-valued keys, overwrite the rest.
@@ -173,23 +169,16 @@ const heartbeat_update_state: BuiltinToolDef = {
       if (v === null) delete next[k];
       else next[k] = v;
     }
-    const updateResult = await db
+    await db
       .update(heartbeats)
       .set({ state: next, updatedAt: new Date() })
-      .where(and(eq(heartbeats.id, c.heartbeatId), eq(heartbeats.ownerId, ctx.ownerId)))
-      .returning({ id: heartbeats.id });
-    const updatedCount = updateResult.length;
-    console.error(
-      `[heartbeats:tool] heartbeat_update_state OK id=${c.heartbeatId} ` +
-        `patched=${Object.keys(patch).join(',')} updated_rows=${updatedCount}`,
-    );
+      .where(and(eq(heartbeats.id, c.heartbeatId), eq(heartbeats.ownerId, ctx.ownerId)));
     ctx.step?.setMeta({
       branch: 'updated',
       heartbeat_id: c.heartbeatId,
       patched_keys: Object.keys(patch),
-      updated_rows: updatedCount,
     });
-    return { ok: true, output: { state: next, updated_rows: updatedCount } };
+    return { ok: true, output: { state: next } };
   },
 };
 
