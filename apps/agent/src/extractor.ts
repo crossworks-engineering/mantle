@@ -35,14 +35,17 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import {
   db,
   agents,
+  bumpWorkerUsage,
   facts,
   entities,
   entityEdges,
+  getDefaultWorker,
   nodes,
   emails,
   type Agent,
   type AgentMemoryConfig,
-  type AgentParams,
+  type AiWorker,
+  type ExtractorParams,
   type Entity,
   type Fact,
 } from '@mantle/db';
@@ -153,20 +156,8 @@ type ClassifierDecision = {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-async function resolveExtractorAgent(ownerId: string): Promise<Agent | null> {
-  const [row] = await db
-    .select()
-    .from(agents)
-    .where(
-      and(
-        eq(agents.ownerId, ownerId),
-        eq(agents.role, 'extractor'),
-        eq(agents.enabled, true),
-      ),
-    )
-    .orderBy(desc(agents.priority))
-    .limit(1);
-  return row ?? null;
+async function resolveExtractor(ownerId: string): Promise<AiWorker | null> {
+  return await getDefaultWorker(ownerId, 'extractor');
 }
 
 /** Read the source body for a node, dispatched on type. Email/file/note/sermon
@@ -293,7 +284,7 @@ async function chatComplete(
   model: string,
   systemPrompt: string,
   userText: string,
-  params: AgentParams,
+  params: ExtractorParams,
 ): Promise<{ content: string; raw: unknown }> {
   const result = await client.chat.send({
     chatRequest: {
@@ -420,7 +411,7 @@ async function classifyAndApplyFact(
   sourceNodeId: string,
   primaryEntityId: string | null,
   client: OpenRouter,
-  agent: Agent,
+  worker: AiWorker,
 ): Promise<'ADD' | 'UPDATE' | 'DELETE' | 'NOOP'> {
   // Find near-neighbour facts among currently-valid rows.
   const neighbours = await db
@@ -458,10 +449,10 @@ async function classifyAndApplyFact(
   }
 
   // Slow path: call the classifier to decide.
-  const params = (agent.params ?? {}) as AgentParams;
+  const params = (worker.params ?? {}) as ExtractorParams;
   const decisionResult = await chatComplete(
     client,
-    agent.model,
+    worker.model,
     'You are a precise JSON output assistant. Output strictly the JSON requested, with no additional commentary.',
     CLASSIFIER_PROMPT_TEMPLATE(candidate.content, closeNeighbours.map((n) => n.content)),
     params,
@@ -520,26 +511,30 @@ async function classifyAndApplyFact(
 // ─── The main entrypoint ────────────────────────────────────────────────────
 
 export async function extractNode(nodeId: string, ownerId: string): Promise<void> {
-  const agent = await resolveExtractorAgent(ownerId);
-  if (!agent) return; // No extractor configured. Silent.
+  const worker = await resolveExtractor(ownerId);
+  if (!worker) return; // No extractor configured. Silent.
 
   // Load the node.
   const [node] = await db.select().from(nodes).where(eq(nodes.id, nodeId)).limit(1);
   if (!node) return;
   if (HARD_SKIP_TYPES.has(node.type)) return;
 
-  const memoryConfig = (agent.memoryConfig ?? {}) as AgentMemoryConfig;
-  const extractTypes = memoryConfig.extract_types ?? DEFAULT_EXTRACT_TYPES;
+  // target_types is the new home for the type allowlist. We still
+  // accept extract_types for legacy backfilled rows in the same
+  // params blob — extractTypes prefers the new name.
+  const params = (worker.params ?? {}) as ExtractorParams;
+  const extractTypes =
+    params.target_types ?? params.extract_types ?? DEFAULT_EXTRACT_TYPES;
   // `*` is a wildcard meaning "any non-HARD_SKIP type" — already enforced above.
   if (!extractTypes.includes('*') && !extractTypes.includes(node.type)) return;
 
-  if (!agent.apiKeyId) {
-    console.error(`[extractor] agent '${agent.slug}' has no api_key_id — skipping`);
+  if (!worker.apiKeyId) {
+    console.error(`[extractor] worker '${worker.slug}' has no api_key_id — skipping`);
     return;
   }
-  const apiKey = await getApiKeyById(agent.apiKeyId);
+  const apiKey = await getApiKeyById(worker.apiKeyId);
   if (!apiKey) {
-    console.error(`[extractor] api_key_id ${agent.apiKeyId} not found — skipping`);
+    console.error(`[extractor] api_key_id ${worker.apiKeyId} not found — skipping`);
     return;
   }
 
@@ -562,10 +557,10 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
   });
 
   console.log(
-    `[extractor] node ${node.id.slice(0, 8)} (${node.type}, ${node.title.slice(0, 40)}) via ${agent.model}`,
+    `[extractor] node ${node.id.slice(0, 8)} (${node.type}, ${node.title.slice(0, 40)}) via ${worker.model}`,
   );
 
-  const embeddingModel = memoryConfig.embedding_model;
+  const embeddingModel = params.embedding_model;
   const embedOpts = embeddingModel ? { model: embeddingModel } : undefined;
 
   await startTrace(
@@ -574,30 +569,34 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       ownerId,
       subjectId: node.id,
       subjectKind: 'node',
-      agentId: agent.id,
+      // Trace's agentId historically held the extractor's id; we keep
+      // the same column populated with the worker id for /traces
+      // navigation continuity.
+      agentId: worker.id,
       data: {
         nodeType: node.type,
         title: node.title,
-        model: agent.model,
+        model: worker.model,
+        worker_slug: worker.slug,
         embeddingModel: embeddingModel ?? null,
       },
     },
     async () => {
-      const systemPrompt = agent.systemPrompt || DEFAULT_EXTRACTOR_PROMPT;
+      const systemPrompt = worker.systemPrompt || DEFAULT_EXTRACTOR_PROMPT;
       const userPayload = `Title: ${node.title}\nType: ${node.type}\n\nBody:\n${body.slice(0, 8000)}`;
 
       const parsed = await step(
-        { name: 'llm_extract', kind: 'llm_call', input: { model: agent.model } },
+        { name: 'llm_extract', kind: 'llm_call', input: { model: worker.model } },
         async (h) => {
           const r = await chatComplete(
             client,
-            agent.model,
+            worker.model,
             systemPrompt,
             userPayload,
-            (agent.params ?? {}) as AgentParams,
+            params,
           );
-          captureLlmUsage(h, r.raw, agent.model);
-          return parseExtractorOutput(r.content, { nodeId: node.id, model: agent.model });
+          captureLlmUsage(h, r.raw, worker.model);
+          return parseExtractorOutput(r.content, { nodeId: node.id, model: worker.model });
         },
       );
 
@@ -641,7 +640,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
               data: {
                 ...existingData,
                 summary,
-                summary_model: agent.model,
+                summary_model: worker.model,
                 summary_at: new Date().toISOString(),
                 entities: uniqueMentions.map((m) => m.name),
               },
@@ -706,8 +705,8 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       );
 
       // ─── fact extraction pass ────────────────────────────────────────
-      if (memoryConfig.extract_facts === false || parsed.facts.length === 0) {
-        void bumpAgentUsage(agent.id, agent.usageCount ?? 0);
+      if (params.extract_facts === false || parsed.facts.length === 0) {
+        void bumpWorkerUsage(worker.id);
         return;
       }
 
@@ -724,7 +723,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
         return;
       }
 
-      const costCap = memoryConfig.extract_cost_cap_micro_usd ?? null;
+      const costCap = params.extract_cost_cap_micro_usd ?? null;
 
       const tally = await step(
         { name: 'process_facts', kind: 'compute', input: { candidates: parsed.facts.length, costCapMicroUsd: costCap } },
@@ -767,7 +766,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
                 node.id,
                 primaryEntityId,
                 client,
-                agent,
+                worker,
               );
               t[decision]++;
             } catch (err) {
@@ -799,18 +798,10 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
         `[extractor]   → facts: ADD=${tally.ADD} UPDATE=${tally.UPDATE} DELETE=${tally.DELETE} NOOP=${tally.NOOP}`,
       );
 
-      void bumpAgentUsage(agent.id, agent.usageCount ?? 0);
+      void bumpWorkerUsage(worker.id);
     },
   );
 }
 
-async function bumpAgentUsage(agentId: string, currentCount: number): Promise<void> {
-  try {
-    await db
-      .update(agents)
-      .set({ lastUsedAt: new Date(), usageCount: currentCount + 1, updatedAt: new Date() })
-      .where(eq(agents.id, agentId));
-  } catch {
-    // Best-effort.
-  }
-}
+// bumpAgentUsage was removed when the extractor moved to ai_workers.
+// Use bumpWorkerUsage from @mantle/db instead.

@@ -2,6 +2,7 @@ import { desc, eq, inArray } from 'drizzle-orm';
 import { Activity, FolderTree, Mail } from 'lucide-react';
 import { db, emailAccounts, syncRuns, type SyncRun } from '@mantle/db';
 import { requireOwner } from '@/lib/auth';
+import { formatDateTime } from '@/lib/format-datetime';
 import { Button } from '@/components/ui/button';
 
 interface ImapCursorShape {
@@ -73,7 +74,7 @@ export default async function AccountsSettingsPage({
                             {r.imapHost}:{r.imapPort}
                           </>
                         )}
-                        {' · '}last sync {r.lastSyncAt?.toLocaleString() ?? 'never'}
+                        {' · '}last sync {formatDateTime(r.lastSyncAt ?? null)}
                       </div>
                       {r.lastSyncError && (
                         <div className="mt-1 text-xs text-destructive">⚠ {r.lastSyncError}</div>

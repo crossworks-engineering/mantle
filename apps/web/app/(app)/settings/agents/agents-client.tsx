@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { formatDateTime } from '@/lib/format-datetime';
 import {
   Dialog,
   DialogContent,
@@ -620,7 +621,7 @@ export function AgentsClient({
                       )}
                     </span>
                     <span>
-                      last used {a.lastUsedAt ? new Date(a.lastUsedAt).toLocaleString() : 'never'}
+                      last used {formatDateTime(a.lastUsedAt)}
                     </span>
                   </div>
                 </div>

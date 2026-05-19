@@ -19,10 +19,14 @@ import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import {
   db,
   agents,
+  assistantMessages,
+  bumpWorkerUsage,
+  getDefaultWorker,
   telegramMessages,
   type Agent,
-  type AgentParams,
+  type AiWorker,
   type PersonaNote,
+  type ReflectorParams,
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { startTrace, step } from '@mantle/tracing';
@@ -61,20 +65,10 @@ Rules:
 - Return an EMPTY new_notes array if nothing notable surfaces.
 - Don't include trivia about content (those belong in facts, not persona).`;
 
-async function resolveReflectorAgent(ownerId: string): Promise<Agent | null> {
-  const [row] = await db
-    .select()
-    .from(agents)
-    .where(
-      and(
-        eq(agents.ownerId, ownerId),
-        eq(agents.role, 'reflector'),
-        eq(agents.enabled, true),
-      ),
-    )
-    .orderBy(desc(agents.priority))
-    .limit(1);
-  return row ?? null;
+/** Find this owner's reflector worker (kind='reflector'). Returns
+ *  null if none is configured — `reflect()` short-circuits cleanly. */
+async function resolveReflector(ownerId: string): Promise<AiWorker | null> {
+  return await getDefaultWorker(ownerId, 'reflector');
 }
 
 async function resolveResponderAgent(ownerId: string): Promise<Agent | null> {
@@ -125,10 +119,10 @@ function parseReflectorOutput(raw: string): ReflectorOutput {
 }
 
 export async function reflect(ownerId: string): Promise<void> {
-  const reflector = await resolveReflectorAgent(ownerId);
+  const reflector = await resolveReflector(ownerId);
   if (!reflector) return; // No reflector configured.
   if (!reflector.apiKeyId) {
-    console.error(`[reflector] agent '${reflector.slug}' has no api_key_id — skipping`);
+    console.error(`[reflector] worker '${reflector.slug}' has no api_key_id — skipping`);
     return;
   }
 
@@ -138,15 +132,29 @@ export async function reflect(ownerId: string): Promise<void> {
     return;
   }
 
-  // Short-circuit if nothing new since the last reflector run. Cheap COUNT.
+  // Short-circuit if nothing new since the last reflector run. Cheap
+  // COUNT across BOTH surfaces — Telegram and web /assistant. Persona
+  // is one column on the responder; both surfaces should contribute.
   const since = reflector.lastUsedAt ?? new Date(0);
-  const countRows = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(telegramMessages)
-    .where(
-      and(eq(telegramMessages.direction, 'outbound'), gt(telegramMessages.sentAt, since)),
-    );
-  const newCount = countRows[0]?.n ?? 0;
+  const [tgCount, webCount] = await Promise.all([
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(telegramMessages)
+      .where(
+        and(eq(telegramMessages.direction, 'outbound'), gt(telegramMessages.sentAt, since)),
+      ),
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(assistantMessages)
+      .where(
+        and(
+          eq(assistantMessages.ownerId, ownerId),
+          eq(assistantMessages.direction, 'outbound'),
+          gt(assistantMessages.createdAt, since),
+        ),
+      ),
+  ]);
+  const newCount = (tgCount[0]?.n ?? 0) + (webCount[0]?.n ?? 0);
   if (newCount === 0) return;
 
   const apiKey = await getApiKeyById(reflector.apiKeyId);
@@ -160,30 +168,61 @@ export async function reflect(ownerId: string): Promise<void> {
       kind: 'reflector_run',
       ownerId,
       subjectKind: 'agent_tick',
-      agentId: reflector.id,
-      data: { responderAgentId: responder.id, newOutboundSince: since.toISOString() },
+      // The trace's agentId historically pointed at the responder
+      // (whose persona_notes we're editing). Keep that — the reflector
+      // worker's own id is referenced via subject below.
+      agentId: responder.id,
+      data: {
+        worker_slug: reflector.slug,
+        worker_id: reflector.id,
+        responderAgentId: responder.id,
+        newOutboundSince: since.toISOString(),
+      },
     },
     async () => {
+      // Union Telegram + web /assistant turns so persona learning sees
+      // every surface the user converses on. Each query independently
+      // pulls REFLECTION_WINDOW rows; we merge by timestamp and keep
+      // the most recent REFLECTION_WINDOW overall.
       const turns = await step(
         { name: 'load_recent_turns', kind: 'db_read', input: { limit: REFLECTION_WINDOW } },
         async (h) => {
-          const rows = await db
-            .select({
-              direction: telegramMessages.direction,
-              text: telegramMessages.text,
-              sentAt: telegramMessages.sentAt,
-              fromName: telegramMessages.fromName,
-            })
-            .from(telegramMessages)
-            .orderBy(desc(telegramMessages.sentAt))
-            .limit(REFLECTION_WINDOW);
-          h.setOutput({ count: rows.length });
-          return rows;
+          const [tgRows, webRows] = await Promise.all([
+            db
+              .select({
+                direction: telegramMessages.direction,
+                text: telegramMessages.text,
+                sentAt: telegramMessages.sentAt,
+                fromName: telegramMessages.fromName,
+              })
+              .from(telegramMessages)
+              .orderBy(desc(telegramMessages.sentAt))
+              .limit(REFLECTION_WINDOW),
+            db
+              .select({
+                direction: assistantMessages.direction,
+                text: assistantMessages.text,
+                sentAt: assistantMessages.createdAt,
+                fromName: sql<string | null>`null`.as('fromName'),
+              })
+              .from(assistantMessages)
+              .where(eq(assistantMessages.ownerId, ownerId))
+              .orderBy(desc(assistantMessages.createdAt))
+              .limit(REFLECTION_WINDOW),
+          ]);
+          const merged = [...tgRows, ...webRows]
+            .sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime())
+            .slice(0, REFLECTION_WINDOW);
+          h.setOutput({ count: merged.length, telegram: tgRows.length, web: webRows.length });
+          return merged;
         },
       );
       if (turns.length === 0) return;
 
+      // Render chronologically (oldest first). `fromName` is Telegram-only;
+      // web turns use a generic 'user' label.
       const transcript = turns
+        .slice()
         .reverse()
         .map((t) => {
           const who = t.direction === 'outbound' ? 'assistant' : (t.fromName ?? 'user');
@@ -199,7 +238,7 @@ export async function reflect(ownerId: string): Promise<void> {
 
       const userPayload = `Existing persona_notes:\n${existingNotesText}\n\nRecent transcript (${turns.length} turns):\n${transcript}`;
 
-      const params = (reflector.params ?? {}) as AgentParams;
+      const params = (reflector.params ?? {}) as ReflectorParams;
       const client = new OpenRouter({
         apiKey,
         httpReferer: 'https://mantle.crossworks.network',
@@ -246,15 +285,7 @@ export async function reflect(ownerId: string): Promise<void> {
       if (parsed.new_notes.length === 0) {
         console.log('[reflector]   → nothing new');
         // Still bump last_used_at so we don't reprocess the same turns next tick.
-        void db
-          .update(agents)
-          .set({
-            lastUsedAt: new Date(),
-            usageCount: (reflector.usageCount ?? 0) + 1,
-            updatedAt: new Date(),
-          })
-          .where(eq(agents.id, reflector.id))
-          .catch(() => {});
+        void bumpWorkerUsage(reflector.id);
         return;
       }
 
@@ -279,14 +310,7 @@ export async function reflect(ownerId: string): Promise<void> {
         },
       );
 
-      await db
-        .update(agents)
-        .set({
-          lastUsedAt: new Date(),
-          usageCount: (reflector.usageCount ?? 0) + 1,
-          updatedAt: new Date(),
-        })
-        .where(eq(agents.id, reflector.id));
+      await bumpWorkerUsage(reflector.id);
 
       console.log(
         `[reflector]   → appended ${appended.length} note(s): ${appended.map((n) => `${n.kind}`).join(', ')}`,

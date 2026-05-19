@@ -16,6 +16,7 @@
     "@mantle/files": "workspace:*",
     "@mantle/telegram": "workspace:*",
     "@mantle/tools": "workspace:*",
+    "@mantle/voice": "workspace:*",
     "@mantle/tracing": "workspace:*",
     "@openrouter/sdk": "^0.12.35",
     "drizzle-orm": "^0.38.3",

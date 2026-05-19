@@ -226,8 +226,16 @@ export async function runAssistantTurn(
     );
   }
 
-  // 1. Persist inbound BEFORE the LLM call so we have a row even if the
-  //    model errors. The page can resume on reload.
+  // 1. Load context BEFORE the inbound insert so the history block
+  //    doesn't contain the brand-new turn — it's already going to be
+  //    sent to the LLM as `newUserText` in buildChatMessages, and
+  //    duplicating it makes the model think the user said the same
+  //    thing twice ("you sent that twice — testing the double-tap?").
+  const ctx = await loadContext(ownerId, agent, trimmed);
+  const filteredHistory = ctx.history;
+
+  // 2. Persist inbound BEFORE the LLM call so the row survives a
+  //    model error. The page can resume on reload.
   const [inbound] = await db
     .insert(assistantMessages)
     .values({
@@ -237,12 +245,6 @@ export async function runAssistantTurn(
     })
     .returning();
   if (!inbound) throw new Error('failed to insert inbound row');
-
-  // 2. Load context AFTER inbound is persisted so the agent doesn't see
-  //    its own brand-new inbound in the history block; it's already the
-  //    newUserText. We re-fetch history excluding inbound.id.
-  const ctx = await loadContext(ownerId, agent, trimmed);
-  const filteredHistory = ctx.history; // history was loaded before insert; safe.
 
   const attachedSkills = await resolveAgentSkills(ownerId, agent.skillSlugs ?? []);
   const effectiveSystemPrompt = composeSystemPromptWithSkills(

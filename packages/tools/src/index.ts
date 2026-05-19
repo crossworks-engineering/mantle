@@ -12,6 +12,8 @@ export {
   getBuiltin,
   getBuiltinHandler,
   listBuiltins,
+  getBuiltinRedactFields,
+  redactArgsForLogging,
 } from './registry';
 
 export { BUILTIN_TOOLS } from './builtins';

@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/files": "workspace:*",
     "@mantle/search": "workspace:*",

@@ -41,13 +41,17 @@ const REMIND_PRESETS: { value: number; label: string }[] = [
 ];
 
 function fmt(iso: string): string {
+  // Pinned to 'en-GB' so the SSR render matches the client render.
+  // Without a locale arg, Node and browser produce different strings
+  // and React throws a hydration mismatch. See lib/format-datetime.ts.
   const d = new Date(iso);
-  return d.toLocaleString(undefined, {
+  return d.toLocaleString('en-GB', {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
+    hour12: false,
   });
 }
 

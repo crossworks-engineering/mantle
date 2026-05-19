@@ -56,6 +56,13 @@ export type BuiltinToolDef = {
   requiresConfirm?: boolean;
   /** Handler implementation. */
   handler: BuiltinToolHandler;
+  /** Input fields that contain sensitive data and MUST be replaced with
+   *  `'[REDACTED]'` before the call args are written to `trace_steps.input`
+   *  or any other persisted log. Example: `secret_create` lists
+   *  `['value']` so the plaintext secret never lands in the DB anywhere
+   *  except the sealed `secrets` row. Field names are top-level keys of
+   *  the input object; nested redaction is not currently supported. */
+  redactInputFields?: readonly string[];
 };
 
 /** Shape the agent runtime exposes to the OpenRouter `tools` parameter.

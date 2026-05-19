@@ -34,8 +34,16 @@ import {
   type AgentMemoryConfig,
   type PersonaNote,
 } from '@mantle/db';
-import { accountForChat, sendMessage } from '@mantle/telegram';
-import { getApiKeyById } from '@mantle/api-keys';
+import { accountForChat, downloadTelegramFile, sendMessage, sendVoice } from '@mantle/telegram';
+import { getApiKey, getApiKeyById } from '@mantle/api-keys';
+import { getSttAdapter, getTtsAdapter } from '@mantle/voice';
+import {
+  bumpWorkerUsage as bumpAiWorkerUsage,
+  getDefaultWorker,
+  type SttParams,
+  type TelegramAttachment,
+  type TtsParams,
+} from '@mantle/db';
 import { embed } from '@mantle/embeddings';
 import { startTrace, step } from '@mantle/tracing';
 import {
@@ -287,6 +295,7 @@ async function handleMessage(messageId: string): Promise<void> {
       fromName: telegramMessages.fromName,
       accountId: telegramMessages.accountId,
       responderAgentId: telegramChats.responderAgentId,
+      attachments: telegramMessages.attachments,
     })
     .from(telegramMessages)
     .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
@@ -299,8 +308,26 @@ async function handleMessage(messageId: string): Promise<void> {
   // get past it. We never reply to our own outbound row.
   if (row.direction !== 'inbound') return;
 
-  if (!row.text || !row.text.trim()) {
-    // Sticker, photo-only, etc. — nothing to reply to.
+  // Find a voice attachment if any. Telegram syncs voice notes with a
+  // placeholder `text='(voice message)'` and the file_id on attachments.
+  // We transcribe before the early-return below so the rest of the
+  // pipeline sees real text. `wasVoice` flips the reply path to
+  // sendVoice as well — voice-in → voice-out, configurable per agent.
+  const voiceAttachment = (row.attachments ?? []).find(
+    (a): a is TelegramAttachment & { file_id: string } =>
+      a.kind === 'voice' && typeof a.file_id === 'string',
+  );
+  let wasVoice = false;
+  let voiceFileId: string | null = null;
+  if (voiceAttachment) {
+    wasVoice = true;
+    voiceFileId = voiceAttachment.file_id;
+  }
+
+  // If there's no useful text AND no voice → sticker/photo/etc., nothing
+  // to reply to. Skip the trace overhead, mark processed, done.
+  const textIsEmpty = !row.text || !row.text.trim() || row.text === '(voice message)';
+  if (textIsEmpty && !wasVoice) {
     await db
       .update(telegramMessages)
       .set({ processed: true, processedAt: new Date() })
@@ -363,9 +390,132 @@ async function handleMessage(messageId: string): Promise<void> {
         subjectId: row.id,
         subjectKind: 'telegram_message',
         agentId: agent.id,
-        data: { telegramChatId: row.telegramChatId, model: agent.model },
+        data: {
+          telegramChatId: row.telegramChatId,
+          model: agent.model,
+          wasVoice,
+        },
       },
       async () => {
+        // ── 0. Transcribe voice (if any) BEFORE anything downstream
+        // reads `row.text`. Failure here downgrades the turn to a
+        // graceful text apology rather than crashing the trace.
+        if (voiceFileId) {
+          const transcript = await step(
+            {
+              name: 'transcribe_voice',
+              kind: 'compute',
+              input: { fileId: voiceFileId },
+            },
+            async (h) => {
+              // Look up the configured STT worker. If one exists with an
+              // api_key, use its provider + model + params. Otherwise
+              // fall back to the bare 'service=openai' key for backwards-
+              // compat with older setups that haven't migrated to
+              // ai_workers yet (treats it as an OpenAI/Whisper call).
+              const sttWorker = await getDefaultWorker(USER_ID!, 'stt');
+              let apiKey: string | null = null;
+              let providerId = 'openai';
+              let model = 'whisper-1';
+              let language: string | undefined;
+              let maxDuration = 180;
+              if (sttWorker?.apiKeyId) {
+                apiKey = await getApiKeyById(sttWorker.apiKeyId);
+                providerId = sttWorker.provider;
+                model = sttWorker.model;
+                const sttParams = (sttWorker.params ?? {}) as SttParams;
+                language = sttParams.language;
+                maxDuration = sttParams.max_duration_seconds ?? 180;
+              } else {
+                apiKey = await getApiKey(USER_ID!, 'openai');
+              }
+              if (!apiKey) {
+                h.setMeta({ error: 'no openai api_key configured' });
+                throw new Error(
+                  'voice received but no OpenAI api_key configured. Either add an STT worker at /settings/ai-workers or add a bare openai key at /settings/api-keys.',
+                );
+              }
+              const adapter = getSttAdapter(providerId);
+              if (!adapter) {
+                h.setMeta({ error: `no STT adapter for '${providerId}'` });
+                throw new Error(
+                  `STT provider '${providerId}' is not yet wired. Currently supported: openai. ` +
+                    'Switch the STT worker to a wired provider at /settings/ai-workers.',
+                );
+              }
+              const account = await accountForChat(row.telegramChatId);
+              if (!account) {
+                throw new Error('no telegram account available for voice download');
+              }
+              const downloaded = await downloadTelegramFile(account, voiceFileId!);
+              h.setMeta({
+                bytes: downloaded.bytes.length,
+                worker_slug: sttWorker?.slug ?? null,
+                adapter: adapter.adapterName,
+              });
+              const result = await adapter.transcribe(downloaded.bytes, {
+                apiKey,
+                mimeType: downloaded.mimeType,
+                model,
+                language,
+                maxDurationSeconds: maxDuration,
+              });
+              if (sttWorker) void bumpAiWorkerUsage(sttWorker.id);
+              h.setOutput({
+                model: result.model,
+                language: result.language,
+                durationSeconds: result.durationSeconds,
+                chars: result.text.length,
+              });
+              return result;
+            },
+          ).catch((err) => {
+            console.error(
+              '[agent] voice transcription failed:',
+              err instanceof Error ? err.message : err,
+            );
+            return null;
+          });
+
+          if (!transcript || !transcript.text) {
+            // Soft-fail: send Saskia a text apology, stay coherent.
+            const account = await accountForChat(row.telegramChatId);
+            if (account) {
+              await sendMessage(
+                account,
+                row.telegramChatId,
+                "Sorry love — I couldn't pick up that voice clip. Could you try again, or type it out?",
+                { replyTo: row.telegramMessageId },
+              );
+            }
+            return;
+          }
+
+          // Replace the placeholder text with the transcript so the
+          // rest of the pipeline (load_context, history, embeddings,
+          // extractor) sees real words. We update both the in-memory
+          // row and the DB row so the assistant timeline and digest
+          // generator find the actual content later.
+          row.text = transcript.text;
+          await db
+            .update(telegramMessages)
+            .set({
+              text: transcript.text,
+              attachments: (row.attachments ?? []).map((a) =>
+                a.kind === 'voice'
+                  ? {
+                      ...a,
+                      transcript: transcript.text,
+                      transcript_model: transcript.model,
+                      transcript_language: transcript.language,
+                      duration_seconds: transcript.durationSeconds,
+                    }
+                  : a,
+              ),
+            })
+            .where(eq(telegramMessages.id, row.id));
+        }
+
         const { personaNotes, facts: relevantFacts, digests, contentHits, turns: history } =
           await step(
             { name: 'load_context', kind: 'compute', input: { chatId: row.chatPk } },
@@ -450,9 +600,27 @@ async function handleMessage(messageId: string): Promise<void> {
           initialMessages: messages,
           tools: allowedTools,
         });
-        const reply = loopOutcome.reply;
-        if (!reply) {
+        const rawReply = loopOutcome.reply;
+        if (!rawReply) {
           console.error('[agent] empty reply from model — not sending');
+          return;
+        }
+        // Opt-in voice signal: Saskia (or any responder) can prefix her
+        // reply with a `[VOICE]` token to force TTS-out even when the
+        // user typed in. The token is stripped before send + persist so
+        // it never reaches the user or the timeline. Match is permissive
+        // (case-insensitive, optional whitespace) because LLMs love to
+        // capitalise inconsistently. The marker has to be the FIRST
+        // non-whitespace content — we don't want to scan mid-reply and
+        // accidentally trigger on a quoted phrase.
+        const voiceMarkerMatch = rawReply.match(/^\s*\[voice\]\s*/i);
+        const requestedVoice = voiceMarkerMatch !== null;
+        const reply = requestedVoice
+          ? rawReply.slice(voiceMarkerMatch![0].length).trim()
+          : rawReply;
+        if (!reply) {
+          // She emitted ONLY the marker — treat as empty reply.
+          console.error('[agent] reply was only the [VOICE] marker; not sending');
           return;
         }
         if (loopOutcome.toolCalls.length > 0) {
@@ -468,13 +636,89 @@ async function handleMessage(messageId: string): Promise<void> {
           return;
         }
 
+        // Voice in → voice out. Drives off the default `kind='tts'`
+        // ai_workers row. If none exists or its key is missing, we
+        // fall through to text rather than crash the reply.
+        // `wasVoice` (user voice-messaged) OR `requestedVoice` (LLM
+        // emitted `[VOICE]` marker) opt in. There's no longer a
+        // per-agent `params.voice.enabled` toggle — enable/disable
+        // happens by enabling/disabling the TTS worker row.
+        const replyAsVoice = wasVoice || requestedVoice;
+        const ttsWorker = replyAsVoice
+          ? await getDefaultWorker(USER_ID!, 'tts')
+          : null;
+
         const telegramMessageIds = await step(
-          { name: 'send_telegram', kind: 'send' },
+          { name: 'send_telegram', kind: 'send', input: { mode: replyAsVoice ? 'voice' : 'text' } },
           async (h) => {
+            if (replyAsVoice && ttsWorker?.apiKeyId) {
+              // Synthesise inside the same step so cost + meta roll up
+              // here. We catch and fall through to text on failure so
+              // a transient OpenAI hiccup doesn't drop the reply.
+              try {
+                const ttsApiKey = await getApiKeyById(ttsWorker.apiKeyId);
+                if (!ttsApiKey) {
+                  throw new Error(
+                    `tts worker '${ttsWorker.slug}' api key not found`,
+                  );
+                }
+                // Resolve the provider-specific adapter. If the worker
+                // is configured for a provider we haven't wired yet
+                // (e.g. elevenlabs before its adapter ships), refuse
+                // here rather than guessing — better an explicit
+                // error in the trace than a silently mangled call.
+                const ttsAdapter = getTtsAdapter(ttsWorker.provider);
+                if (!ttsAdapter) {
+                  throw new Error(
+                    `no TTS adapter for provider '${ttsWorker.provider}' — switch the worker to a wired provider (openai)`,
+                  );
+                }
+                const ttsParams = (ttsWorker.params ?? {}) as TtsParams;
+                const synth = await ttsAdapter.synthesize({
+                  apiKey: ttsApiKey,
+                  text: reply,
+                  voice: ttsParams.voice ?? 'nova',
+                  // Worker.model wins; ttsParams.model is a redundant
+                  // alias on the OpenAI side but other providers may
+                  // split voice from model — keep both lookups.
+                  model: ttsWorker.model || ttsParams.model || 'gpt-4o-mini-tts',
+                  speed: ttsParams.speed ?? 1.0,
+                  format: 'opus', // Telegram-native — sendVoice bubble
+                  // Style instructions only land on gpt-4o-mini-tts;
+                  // older models ignore the field silently, so it's
+                  // safe to forward unconditionally.
+                  instructions: ttsParams.instructions,
+                });
+                const voiceMessageId = await sendVoice(
+                  account,
+                  row.telegramChatId,
+                  synth.bytes,
+                  { replyTo: row.telegramMessageId },
+                );
+                void bumpAiWorkerUsage(ttsWorker.id);
+                h.setMeta({
+                  mode: 'voice',
+                  voice: synth.voice,
+                  ttsModel: synth.model,
+                  adapter: ttsAdapter.adapterName,
+                  workerSlug: ttsWorker.slug,
+                  audioBytes: synth.bytes.length,
+                  replyLength: reply.length,
+                });
+                return [voiceMessageId];
+              } catch (err) {
+                console.error(
+                  '[agent] tts failed, falling back to text:',
+                  err instanceof Error ? err.message : err,
+                );
+                h.setMeta({ ttsFallback: true });
+                // Fall through to text path below.
+              }
+            }
             const ids = await sendMessage(account, row.telegramChatId, reply, {
               replyTo: row.telegramMessageId,
             });
-            h.setMeta({ chunks: ids.length, replyLength: reply.length });
+            h.setMeta({ mode: 'text', chunks: ids.length, replyLength: reply.length });
             return ids;
           },
         );

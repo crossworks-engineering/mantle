@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { formatDateTime } from '@/lib/format-datetime';
 
 type Message = {
   id: string;
@@ -125,7 +126,7 @@ export function AssistantClient({
                       threads visually quiet. The pending "sending…"
                       indicator is the one exception, always shown. */}
                   <div className="mt-1 flex items-baseline gap-2 text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover/msg:opacity-100 group-focus-within/msg:opacity-100">
-                    <span title={new Date(m.createdAt).toLocaleString()}>
+                    <span title={formatDateTime(m.createdAt)}>
                       {new Date(m.createdAt).toLocaleTimeString()}
                     </span>
                     {m.model && <code className="font-mono">{m.model}</code>}

@@ -9,6 +9,7 @@ import { ArrowLeft, Eye, Pencil, Save, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { formatDateTime } from '@/lib/format-datetime';
 
 type NoteRow = {
   id: string;
@@ -118,8 +119,8 @@ export function NoteDetailClient({ initial }: { initial: NoteRow }) {
           </article>
 
           <div className="border-t border-border pt-3 text-xs text-muted-foreground">
-            Updated {new Date(note.updatedAt).toLocaleString()} · created{' '}
-            {new Date(note.createdAt).toLocaleString()}
+            Updated {formatDateTime(note.updatedAt)} · created{' '}
+            {formatDateTime(note.createdAt)}
           </div>
         </>
       ) : (

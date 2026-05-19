@@ -47,6 +47,9 @@ importers:
       '@mantle/tracing':
         specifier: workspace:*
         version: link:../../packages/tracing
+      '@mantle/voice':
+        specifier: workspace:*
+        version: link:../../packages/voice
       '@openrouter/sdk':
         specifier: ^0.12.35
         version: 0.12.35
@@ -154,6 +157,9 @@ importers:
       '@mantle/tracing':
         specifier: workspace:*
         version: link:../../packages/tracing
+      '@mantle/voice':
+        specifier: workspace:*
+        version: link:../../packages/voice
       '@openrouter/sdk':
         specifier: ^0.12.35
         version: 0.12.35
@@ -517,6 +523,9 @@ importers:
 
   packages/tools:
     dependencies:
+      '@mantle/crypto':
+        specifier: workspace:*
+        version: link:../crypto
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
@@ -558,6 +567,22 @@ importers:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
+
+  packages/voice:
+    dependencies:
+      '@mantle/api-keys':
+        specifier: workspace:*
+        version: link:../api-keys
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.19
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@22.19.19)
 
 packages:
 

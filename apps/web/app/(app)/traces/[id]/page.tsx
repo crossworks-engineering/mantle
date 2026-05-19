@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireOwner } from '@/lib/auth';
+import { formatDateTime } from '@/lib/format-datetime';
 import { formatDuration, formatMicroUsd, getTrace } from '@/lib/traces';
 import { TraceDetail } from './trace-detail';
 
@@ -35,7 +36,7 @@ export default async function TraceDetailPage({
           </span>
         </div>
         <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs sm:grid-cols-4">
-          <Field label="Started" value={new Date(trace.startedAt).toLocaleString()} />
+          <Field label="Started" value={formatDateTime(trace.startedAt)} />
           <Field label="Duration" value={formatDuration(trace.durationMs)} />
           <Field
             label="Agent"

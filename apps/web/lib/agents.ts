@@ -53,13 +53,23 @@ function toSummary(a: Agent): AgentSummary {
   };
 }
 
+/** Roles that belong on the `/settings/agents` page — conversational
+ *  agents that take turns. Worker roles (reflector/extractor/
+ *  summarizer) used to live here too, but moved to `ai_workers` —
+ *  the `/settings/ai-workers` page is their home now. We filter
+ *  them out instead of dropping their rows so a code-path that still
+ *  reads the agents table doesn't disappear. */
+const CONVERSATIONAL_ROLES = ['responder', 'assistant', 'custom'] as const;
+
 export async function listAgents(userId: string): Promise<AgentSummary[]> {
   const rows = await db
     .select()
     .from(agents)
     .where(eq(agents.ownerId, userId))
     .orderBy(desc(agents.priority), desc(agents.updatedAt));
-  return rows.map(toSummary);
+  return rows
+    .filter((r) => (CONVERSATIONAL_ROLES as readonly string[]).includes(r.role))
+    .map(toSummary);
 }
 
 export async function getAgent(userId: string, id: string): Promise<AgentSummary | null> {

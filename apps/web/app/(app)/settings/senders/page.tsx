@@ -3,6 +3,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { X } from 'lucide-react';
 import { db, emailAccounts, emailSenderDomains, emailSenders } from '@mantle/db';
 import { requireOwner } from '@/lib/auth';
+import { formatDate } from '@/lib/format-datetime';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { setDomainStatus, setSenderStatus } from './actions';
@@ -120,7 +121,7 @@ export default async function SendersPage({
                     <span>
                       <span className="text-foreground/70">{r.messageCount}</span> messages
                     </span>
-                    <span>last seen {r.lastSeenAt.toLocaleDateString()}</span>
+                    <span>last seen {formatDate(r.lastSeenAt)}</span>
                     {accountAddr && <span>via {accountAddr}</span>}
                     <span className="text-foreground/60">@{r.domain}</span>
                     {domainOverride && (

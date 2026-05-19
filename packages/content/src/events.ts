@@ -103,15 +103,19 @@ export async function listEvents(
     if (c) conds.push(c);
   }
   if (opts.tag) conds.push(sql`${opts.tag} = ANY(${nodes.tags})`);
+  // Use the IMMUTABLE wrapper `mantle_iso_to_ts` (declared in 0025) so
+  // the expression matches the partial index. Plain `::timestamptz` is
+  // STABLE and won't be picked by the planner even though the cast
+  // returns the same value.
   if (opts.window === 'upcoming') {
-    conds.push(sql`(${nodes.data}->>'starts_at')::timestamptz >= now()`);
+    conds.push(sql`mantle_iso_to_ts(${nodes.data}->>'starts_at') >= now()`);
   } else if (opts.window === 'past') {
-    conds.push(sql`(${nodes.data}->>'starts_at')::timestamptz < now()`);
+    conds.push(sql`mantle_iso_to_ts(${nodes.data}->>'starts_at') < now()`);
   }
   const orderExpr =
     opts.window === 'past'
-      ? desc(sql`(${nodes.data}->>'starts_at')::timestamptz`)
-      : asc(sql`(${nodes.data}->>'starts_at')::timestamptz`);
+      ? desc(sql`mantle_iso_to_ts(${nodes.data}->>'starts_at')`)
+      : asc(sql`mantle_iso_to_ts(${nodes.data}->>'starts_at')`);
   const rows = await db
     .select()
     .from(nodes)
@@ -293,11 +297,11 @@ export async function listDueReminders(ownerId: string, limit = 50): Promise<Eve
       and(
         eq(nodes.ownerId, ownerId),
         eq(nodes.type, 'event'),
-        sql`(${nodes.data}->>'remind_at')::timestamptz <= now()`,
+        sql`mantle_iso_to_ts(${nodes.data}->>'remind_at') <= now()`,
         sql`${nodes.data}->>'reminder_sent_at' is null`,
       ),
     )
-    .orderBy(asc(sql`(${nodes.data}->>'remind_at')::timestamptz`))
+    .orderBy(asc(sql`mantle_iso_to_ts(${nodes.data}->>'remind_at')`))
     .limit(limit);
   return rows.map(rowOf);
 }

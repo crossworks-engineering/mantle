@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
+import { formatDateTime } from '@/lib/format-datetime';
 
 type EventRow = {
   id: string;
@@ -122,8 +123,8 @@ export function EventDetailClient({ initial }: { initial: EventRow }) {
               <div className="flex-1 min-w-0 space-y-1">
                 <h1 className="truncate text-2xl font-semibold">{event.title}</h1>
                 <p className="text-sm text-muted-foreground">
-                  {new Date(event.startsAt).toLocaleString()}
-                  {event.endsAt && ` → ${new Date(event.endsAt).toLocaleString()}`}
+                  {formatDateTime(event.startsAt)}
+                  {event.endsAt && ` → ${formatDateTime(event.endsAt)}`}
                 </p>
                 {event.location && (
                   <p className="inline-flex items-center gap-1 text-sm text-muted-foreground">
@@ -133,12 +134,12 @@ export function EventDetailClient({ initial }: { initial: EventRow }) {
                 <p className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                   <Bell className="size-3" />
                   {event.reminderSentAt
-                    ? `Reminder sent ${new Date(event.reminderSentAt).toLocaleString()}`
+                    ? `Reminder sent ${formatDateTime(event.reminderSentAt)}`
                     : `Reminder ${
                         event.remindMinutesBefore === 0
                           ? 'at start'
                           : `${event.remindMinutesBefore}m before`
-                      } · fires ${new Date(event.remindAt).toLocaleString()}`}
+                      } · fires ${formatDateTime(event.remindAt)}`}
                 </p>
                 {event.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1">

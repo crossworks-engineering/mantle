@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { db, telegramAccounts, type TelegramAccount } from '@mantle/db';
+import { InputFile } from 'grammy';
 import type { ReactionTypeEmoji } from 'grammy/types';
 import { botFor } from './client';
 
@@ -28,6 +29,91 @@ export async function sendMessage(
     ids.push(sent.message_id);
   }
   return ids;
+}
+
+/**
+ * Send a voice note (the bubble-style voice message that renders with a
+ * waveform + play button in Telegram). The audio buffer must be
+ * OGG/Opus — Telegram refuses other formats for `sendVoice`. Our
+ * upstream is OpenAI TTS with `response_format='opus'` which produces
+ * exactly the right container.
+ *
+ * Optional `caption` rides along with the voice note, useful for
+ * including the source transcript so the user can read in parallel
+ * (or copy/quote without re-listening). Most assistants keep this
+ * empty; we expose it for the cases where it matters.
+ *
+ * Returns the Telegram message_id so the caller can persist it on the
+ * outbound `telegram_messages` row.
+ */
+export async function sendVoice(
+  account: TelegramAccount,
+  chatId: string,
+  audio: Buffer,
+  options?: {
+    replyTo?: string;
+    caption?: string;
+    durationSeconds?: number;
+    filename?: string;
+  },
+): Promise<number> {
+  const bot = botFor(account);
+  const replyTo = options?.replyTo != null ? Number(options.replyTo) : undefined;
+  const filename = options?.filename ?? 'voice.ogg';
+  const sent = await bot.api.sendVoice(chatId, new InputFile(audio, filename), {
+    ...(replyTo != null ? { reply_parameters: { message_id: replyTo } } : {}),
+    ...(options?.caption ? { caption: options.caption.slice(0, 1024) } : {}),
+    ...(typeof options?.durationSeconds === 'number'
+      ? { duration: Math.round(options.durationSeconds) }
+      : {}),
+  });
+  return sent.message_id;
+}
+
+/**
+ * Download a file from Telegram by its file_id. Two-step in the Bot
+ * API: getFile returns a `file_path` that's valid for ~1 hour; we then
+ * fetch the raw bytes from the file CDN. Returns the buffer plus the
+ * MIME we can pass to Whisper (sniffed from the file_path extension
+ * since Telegram doesn't echo Content-Type reliably).
+ *
+ * Throws on:
+ *   - file_id expired / unknown
+ *   - download non-2xx
+ *   - downloaded file_path missing (rare; Telegram quirk)
+ */
+export async function downloadTelegramFile(
+  account: TelegramAccount,
+  fileId: string,
+): Promise<{ bytes: Buffer; mimeType: string; filename: string }> {
+  const bot = botFor(account);
+  const file = await bot.api.getFile(fileId);
+  if (!file.file_path) {
+    throw new Error(`telegram getFile: no file_path returned for ${fileId}`);
+  }
+  // The plaintext bot token sits inside `bot.token`. We assemble the
+  // CDN URL ourselves rather than going through grammy's `download()`
+  // because we want bytes in memory, not on disk — the buffer goes
+  // straight to MinIO + Whisper.
+  const url = `https://api.telegram.org/file/bot${bot.token}/${file.file_path}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`telegram file download ${res.status}: ${file.file_path}`);
+  }
+  const bytes = Buffer.from(await res.arrayBuffer());
+  const filename = file.file_path.split('/').pop() ?? 'voice.ogg';
+  return { bytes, mimeType: mimeFromFilename(filename), filename };
+}
+
+function mimeFromFilename(name: string): string {
+  const ext = name.toLowerCase().split('.').pop() ?? '';
+  if (ext === 'ogg' || ext === 'oga' || ext === 'opus') return 'audio/ogg';
+  if (ext === 'mp3') return 'audio/mpeg';
+  if (ext === 'm4a' || ext === 'aac') return 'audio/aac';
+  if (ext === 'wav') return 'audio/wav';
+  if (ext === 'webm') return 'audio/webm';
+  if (ext === 'flac') return 'audio/flac';
+  return 'application/octet-stream';
 }
 
 export async function reactToMessage(

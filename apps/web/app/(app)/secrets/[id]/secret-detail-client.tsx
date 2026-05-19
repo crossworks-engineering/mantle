@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { formatDateTime } from '@/lib/format-datetime';
 import {
   ArrowLeft,
   Check,
@@ -328,8 +329,8 @@ export function SecretDetailClient({ initial }: { initial: SecretRow }) {
           )}
 
           <div className="border-t border-border pt-3 text-xs text-muted-foreground">
-            Updated {new Date(meta.updatedAt).toLocaleString()} · created{' '}
-            {new Date(meta.createdAt).toLocaleString()}
+            Updated {formatDateTime(meta.updatedAt)} · created{' '}
+            {formatDateTime(meta.createdAt)}
           </div>
         </>
       ) : (

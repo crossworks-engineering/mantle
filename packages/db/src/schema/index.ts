@@ -10,6 +10,7 @@ export * from './senders';
 export * from './sync-runs';
 export * from './telegram';
 export * from './agents';
+export * from './ai-workers';
 export * from './embedding-cache';
 export * from './entities';
 export * from './entity-edges';

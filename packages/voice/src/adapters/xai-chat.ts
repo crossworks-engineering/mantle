@@ -1,0 +1,126 @@
+/**
+ * xAI (Grok) chat adapter.
+ *
+ * xAI's API is OpenAI-compatible at `https://api.x.ai/v1`. We talk to
+ * /v1/chat/completions with the standard `{messages, model, ...}`
+ * shape. Auth is Bearer token (`XAI_API_KEY`).
+ *
+ * Discovery: xAI doesn't officially document a /v1/models endpoint
+ * but OpenAI-compat APIs almost always implement it. We TRY the call;
+ * on failure (404 or other) we fall back to the static catalog with
+ * a "couldn't verify" hint so the UI is still usable.
+ *
+ * Reasoning models: grok-4.20-reasoning accepts a `reasoning_effort`
+ * field (low|medium|high). We forward it via `opts.extra` when set,
+ * so the adapter stays generic but power-users can still steer.
+ */
+
+import type {
+  ChatDispatcher,
+  ChatModelInfo,
+  ChatOptions,
+  ChatResult,
+} from './types';
+import type { DiscoveryResult } from '../discover';
+import { XAI_BASE_URL, XAI_CHAT_MODELS } from '../catalogs/xai';
+
+type XaiChatResponse = {
+  id: string;
+  model: string;
+  choices: Array<{
+    message?: { role: string; content?: string };
+    text?: string;
+  }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+  };
+};
+
+type ListModelsResponse = {
+  data?: Array<{ id: string }>;
+};
+
+async function xaiChat(opts: ChatOptions): Promise<ChatResult> {
+  if (!opts.apiKey) throw new Error('xai-chat: apiKey required');
+  if (!opts.model) throw new Error('xai-chat: model required');
+
+  const body: Record<string, unknown> = {
+    model: opts.model,
+    messages: opts.messages,
+    ...(typeof opts.temperature === 'number' ? { temperature: opts.temperature } : {}),
+    ...(typeof opts.maxTokens === 'number' ? { max_tokens: opts.maxTokens } : {}),
+    ...(typeof opts.topP === 'number' ? { top_p: opts.topP } : {}),
+    ...(opts.extra ?? {}),
+  };
+
+  const res = await fetch(`${XAI_BASE_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${opts.apiKey}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    throw new Error(`xai chat ${res.status}: ${errBody.slice(0, 400)}`);
+  }
+  const parsed = (await res.json()) as XaiChatResponse;
+  // OpenAI-compat shape — text lives at choices[0].message.content,
+  // with a fallback to legacy choices[0].text in case of unusual
+  // response routing.
+  const text =
+    parsed.choices?.[0]?.message?.content ?? parsed.choices?.[0]?.text ?? '';
+  return {
+    text: text.trim(),
+    model: parsed.model || opts.model,
+    tokensIn: parsed.usage?.prompt_tokens,
+    tokensOut: parsed.usage?.completion_tokens,
+  };
+}
+
+async function xaiDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
+  try {
+    const res = await fetch(`${XAI_BASE_URL}/models`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) {
+      // 404 here means xAI hasn't implemented /v1/models — that's
+      // fine, we fall back to the static catalog with a hint.
+      const body = await res.text().catch(() => '');
+      return {
+        available: [...XAI_CHAT_MODELS],
+        filtered: false,
+        error: `xai /v1/models ${res.status}: ${body.slice(0, 200)}`,
+      };
+    }
+    const parsed = (await res.json()) as ListModelsResponse;
+    const ids = new Set((parsed.data ?? []).map((m) => m.id));
+    const available = XAI_CHAT_MODELS.filter((m) => ids.has(m.id));
+    return {
+      // If the live list has no overlap (e.g. xAI returns no models
+      // due to an account issue), fall back to the static catalog
+      // rather than show an empty dropdown.
+      available: available.length > 0 ? available : [...XAI_CHAT_MODELS],
+      filtered: available.length > 0,
+      error: null,
+    };
+  } catch (err) {
+    return {
+      available: [...XAI_CHAT_MODELS],
+      filtered: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export const xaiChatAdapter: ChatDispatcher = {
+  providerId: 'xai',
+  adapterName: 'xai-chat',
+  chat: xaiChat,
+  discoverModels: xaiDiscover,
+  staticCatalog: () => XAI_CHAT_MODELS,
+};

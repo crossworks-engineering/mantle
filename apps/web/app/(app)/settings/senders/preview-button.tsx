@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import { Eye, Loader2, Paperclip } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { formatDateTime } from '@/lib/format-datetime';
 import {
   Dialog,
   DialogContent,
@@ -73,7 +74,7 @@ export function PreviewButton({ address }: { address: string }) {
                 <span className="text-foreground">{result.preview.fromName}</span>
               )}
               <time dateTime={result.preview.internalDate}>
-                {new Date(result.preview.internalDate).toLocaleString()}
+                {formatDateTime(result.preview.internalDate)}
               </time>
               {result.preview.folder && <span>in {result.preview.folder}</span>}
               {result.preview.bodyHtmlSafe && result.preview.bodyText && (
@@ -155,7 +156,7 @@ function PreviewBody({
         <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">{shown}</pre>
         {truncated && (
           <p className="mt-2 text-xs text-muted-foreground">
-            …truncated at {BODY_LIMIT.toLocaleString()} characters.
+            …truncated at {BODY_LIMIT.toLocaleString('en-GB')} characters.
           </p>
         )}
       </div>

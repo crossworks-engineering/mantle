@@ -2,6 +2,7 @@ import { Inbox, Mail, MailOpen, Paperclip } from 'lucide-react';
 import { sanitizeEmailHtml } from '@mantle/email';
 import type { Email, EmailAttachment } from '@mantle/db';
 import { setEmailReadStatus } from '@/app/(app)/email-actions';
+import { formatDateTime } from '@/lib/format-datetime';
 
 /**
  * Right-hand pane that renders the selected email. Server-component so
@@ -72,7 +73,7 @@ export function ReadingPane({
           <dt>Date</dt>
           <dd>
             <time dateTime={email.internalDate.toISOString()}>
-              {email.internalDate.toLocaleString()}
+              {formatDateTime(email.internalDate)}
             </time>
           </dd>
           {email.folder && (

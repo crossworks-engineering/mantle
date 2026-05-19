@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { requireOwner } from '@/lib/auth';
+import { formatDateTime } from '@/lib/format-datetime';
 import { formatDuration, formatMicroUsd, listTraces } from '@/lib/traces';
 
 const KIND_LABEL: Record<string, string> = {
@@ -137,7 +138,7 @@ export default async function TracesPage(props: {
                 >
                   <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">
                     <Link href={`/traces/${r.id}`} className="hover:underline">
-                      {new Date(r.startedAt).toLocaleString()}
+                      {formatDateTime(r.startedAt)}
                     </Link>
                   </td>
                   <td className="px-3 py-2 text-xs">

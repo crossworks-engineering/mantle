@@ -134,9 +134,25 @@ export async function startTrace<T>(
     failedError: null,
   };
 
-  // INSERT the row best-effort. If it fails, fn still runs without tracing.
-  db.insert(traces)
-    .values({
+  // INSERT the row and AWAIT it before yielding to `fn`. Previously this
+  // was fire-and-forget; under any concurrent load the first step's
+  // INSERT could reach Postgres before the trace row committed (the two
+  // queries can land on different pool connections), tripping the
+  // `trace_steps_trace_id_fkey` constraint and crashing whatever work
+  // the step wrapped. Symptom was Saskia-goes-silent: handleMessage's
+  // first `step()` call threw, the trace was marked running forever,
+  // the message stayed `processed=true`, no reply went out.
+  //
+  // The cost is one round-trip of added latency per trace. On local
+  // Postgres that's sub-millisecond; on a remote DB it's a few ms.
+  // Worth it for guaranteed step inserts.
+  //
+  // Failure here is still soft: we log and continue. `fn` runs without
+  // a parent row, every subsequent `step()` insert will also fail, but
+  // the user-visible behaviour (reply gets sent, business logic works)
+  // is preserved.
+  try {
+    await db.insert(traces).values({
       id,
       ownerId: init.ownerId,
       kind: init.kind,
@@ -145,8 +161,10 @@ export async function startTrace<T>(
       agentId: init.agentId ?? null,
       status: 'running',
       data: truncateJson(init.data ?? {}) as Record<string, unknown>,
-    })
-    .catch((err) => logErr('open trace', err));
+    });
+  } catch (err) {
+    logErr('open trace', err);
+  }
 
   return traceStore.run(ctx, async () => {
     try {
@@ -215,9 +233,16 @@ export async function step<T>(
     skippedReason: null,
   };
 
-  // INSERT the row best-effort.
-  db.insert(traceSteps)
-    .values({
+  // INSERT the row and AWAIT it before yielding to `fn`. Same reason
+  // as the trace-level await above: if `fn` opens a CHILD step (e.g.
+  // tool-loop wrapping individual LLM calls + tool dispatch inside one
+  // `compute` step), the child's INSERT carries `parent_step_id = id`,
+  // and Postgres will trip `trace_steps_parent_step_id_fkey` if the
+  // parent row hasn't committed yet. Symptom is the same Saskia-goes-
+  // silent: the step throws inside its own open, which bubbles up and
+  // kills the surrounding work.
+  try {
+    await db.insert(traceSteps).values({
       id,
       traceId: trace.id,
       parentStepId: parentStepId,
@@ -226,8 +251,10 @@ export async function step<T>(
       kind: init.kind,
       status: 'running',
       input: truncateJson(init.input ?? {}) as Record<string, unknown>,
-    })
-    .catch((err) => logErr('open step', err));
+    });
+  } catch (err) {
+    logErr('open step', err);
+  }
 
   const handle: StepHandle = {
     id,

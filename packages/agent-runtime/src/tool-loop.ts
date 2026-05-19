@@ -21,6 +21,8 @@ import type { OpenRouter } from '@openrouter/sdk';
 import { currentTrace, step } from '@mantle/tracing';
 import {
   dispatchTool,
+  getBuiltinRedactFields,
+  redactArgsForLogging,
   resolveTools,
   type ToolCallRecord,
 } from '@mantle/tools';
@@ -191,11 +193,19 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       const input: Record<string, unknown> = parsedArgs.ok ? parsedArgs.input : {};
       const argParseError: string | null = parsedArgs.ok ? null : parsedArgs.error;
 
+      // Redact sensitive input fields BEFORE they're written to
+      // `trace_steps.input`. The `redactedInput` is what we log; the
+      // handler still receives the original `input` with the plaintext
+      // value. This is the only mitigation for tools like
+      // `secret_create` whose whole point is sealing a value — if we
+      // logged the raw args, the plaintext PIN would live in Postgres
+      // forever next to the sealed copy. Belt and braces.
+      const redactedInput = redactArgsForLogging(input, getBuiltinRedactFields(slug));
       const outcome = await step(
         {
           name: `tool: ${slug}`,
           kind: 'compute',
-          input: { slug, args: input },
+          input: { slug, args: redactedInput },
         },
         async (handle) => {
           if (argParseError) {
@@ -221,6 +231,13 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           // wrap up its turn coherently.
           if (tool.requiresConfirm) {
             const traceId = currentTrace()?.id ?? null;
+            // Note: pendingToolCalls.args stores the ORIGINAL input
+            // (not the redacted copy) because the approve path needs
+            // it to execute the tool later. Sensitive tools that route
+            // through requires_confirm therefore expose their args to
+            // /pending until they're approved or rejected. That's an
+            // acceptable single-user tradeoff; if multi-tenant ever
+            // happens, pendingToolCalls.args needs to be sealed too.
             const [pending] = await db
               .insert(pendingToolCalls)
               .values({

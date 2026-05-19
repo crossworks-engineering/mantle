@@ -16,13 +16,14 @@ import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   db,
   agents,
+  bumpWorkerUsage,
+  getDefaultWorker,
   nodes,
   telegramMessages,
   telegramAccounts,
   telegramChats,
-  type Agent,
-  type AgentMemoryConfig,
-  type AgentParams,
+  type AiWorker,
+  type SummarizerParams,
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { startTrace, step } from '@mantle/tracing';
@@ -55,33 +56,21 @@ Output STRICT JSON, no markdown fences, no commentary outside the JSON:
 
 The turn_indexes array must contain every turn number from the transcript exactly once across all topics combined.`;
 
-async function resolveSummarizerAgent(ownerId: string): Promise<Agent | null> {
-  const [row] = await db
-    .select()
-    .from(agents)
-    .where(
-      and(
-        eq(agents.ownerId, ownerId),
-        eq(agents.role, 'summarizer'),
-        eq(agents.enabled, true),
-      ),
-    )
-    .orderBy(desc(agents.priority))
-    .limit(1);
-  return row ?? null;
+async function resolveSummarizer(ownerId: string): Promise<AiWorker | null> {
+  return await getDefaultWorker(ownerId, 'summarizer');
 }
 
 export async function summarizeChat(chatPk: string, ownerId: string): Promise<void> {
-  const agent = await resolveSummarizerAgent(ownerId);
-  if (!agent) return; // No summarizer configured — silently skip on every notify.
-  if (!agent.apiKeyId) {
-    console.error(`[agent] summarizer '${agent.slug}' has no api_key_id — skipping`);
+  const worker = await resolveSummarizer(ownerId);
+  if (!worker) return; // No summarizer configured — silently skip on every notify.
+  if (!worker.apiKeyId) {
+    console.error(`[agent] summarizer '${worker.slug}' has no api_key_id — skipping`);
     return;
   }
 
-  const memoryConfig = (agent.memoryConfig ?? {}) as AgentMemoryConfig;
-  const threshold = memoryConfig.summarize_threshold ?? 30;
-  const batchSize = memoryConfig.summarize_batch ?? 20;
+  const params = (worker.params ?? {}) as SummarizerParams;
+  const threshold = params.summarize_threshold ?? 30;
+  const batchSize = params.summarize_batch ?? params.window_size ?? 20;
 
   // Cheap short-circuit: count undigested turns. Uses the partial index
   // telegram_messages_chat_undigested_idx so this stays O(log n).
@@ -100,8 +89,8 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
       ownerId,
       subjectId: chatPk,
       subjectKind: 'chat',
-      agentId: agent.id,
-      data: { threshold, batchSize, undigestedAtStart: undigested },
+      agentId: worker.id,
+      data: { worker_slug: worker.slug, threshold, batchSize, undigestedAtStart: undigested },
     },
     async () => {
       // Pick the oldest `batchSize` undigested turns.
@@ -158,10 +147,10 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
         },
       );
 
-      const apiKey = await getApiKeyById(agent.apiKeyId!);
+      const apiKey = await getApiKeyById(worker.apiKeyId!);
       if (!apiKey) {
         throw new Error(
-          `summarizer: api_key_id ${agent.apiKeyId} not found`,
+          `summarizer: api_key_id ${worker.apiKeyId} not found`,
         );
       }
 
@@ -172,14 +161,12 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
         })
         .join('\n');
 
-      const params = (agent.params ?? {}) as AgentParams;
-
       // Reuse the same messages helper. The summarizer doesn't carry persona
       // notes / facts / digests / content hits — it just sees the transcript
-      // as its user message, with the agent's prompt as the system block.
+      // as its user message, with the worker's prompt as the system block.
       const messages = buildChatMessages({
-        model: agent.model,
-        systemPrompt: agent.systemPrompt,
+        model: worker.model,
+        systemPrompt: worker.systemPrompt ?? DEFAULT_SUMMARIZER_PROMPT,
         personaNotes: [],
         facts: [],
         digests: [],
@@ -195,15 +182,15 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
       });
 
       console.log(
-        `[agent] summarizing chat ${chatPk} (${batch.length} turns, ${agent.model})`,
+        `[agent] summarizing chat ${chatPk} (${batch.length} turns, ${worker.model})`,
       );
 
       const result = await step(
-        { name: 'llm_summarize', kind: 'llm_call', input: { model: agent.model } },
+        { name: 'llm_summarize', kind: 'llm_call', input: { model: worker.model } },
         async (h) => {
           const r = await client.chat.send({
             chatRequest: {
-              model: agent.model,
+              model: worker.model,
               messages,
               ...(typeof params.temperature === 'number'
                 ? { temperature: params.temperature }
@@ -214,7 +201,7 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
               ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
             },
           });
-          captureLlmUsage(h, r, agent.model);
+          captureLlmUsage(h, r, worker.model);
           return r;
         },
       );
@@ -272,8 +259,8 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
                   period_start: periodStart,
                   period_end: periodEnd,
                   source_turn_count: turns.length,
-                  model: agent.model,
-                  agent: agent.slug,
+                  model: worker.model,
+                  agent: worker.slug,
                   summary: topic.summary,
                   topic: topic.label,
                   topic_slug: slugifyTopic(topic.label),
@@ -330,15 +317,7 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
         },
       );
 
-      void db
-        .update(agents)
-        .set({
-          lastUsedAt: new Date(),
-          usageCount: (agent.usageCount ?? 0) + 1,
-          updatedAt: new Date(),
-        })
-        .where(eq(agents.id, agent.id))
-        .catch(() => {});
+      void bumpWorkerUsage(worker.id);
 
       console.log(
         `[agent] ✓ ${inserted.length} digest(s) created: ` +

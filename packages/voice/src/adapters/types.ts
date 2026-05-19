@@ -1,0 +1,162 @@
+/**
+ * Adapter interfaces — the boundary between the rest of Mantle and
+ * provider-specific HTTP calls.
+ *
+ * One interface per capability. Each provider that wants to be "wired"
+ * for a capability implements the matching interface. The runtime
+ * looks up the right adapter by `providerId` (which comes from the
+ * worker's `provider` column) and calls through it. The dispatch
+ * surface is identical regardless of provider — the adapter handles
+ * all the per-provider quirks (auth header shape, response decoding,
+ * voice/model naming).
+ *
+ * Why we own these instead of using LiteLLM:
+ *   - End-to-end type safety. The adapter's input/output shapes are
+ *     fixed at compile time.
+ *   - No proxy service to operate on the VPS.
+ *   - Adapters are ~50-150 LOC each. Total maintenance cost is small
+ *     because we only adapter the providers we actually use.
+ *   - LiteLLM's open-source code remains a reference we can lift from
+ *     when a provider's API shape is surprising.
+ *
+ * Each adapter exposes its `providerId` (must match the catalogue in
+ * `providers.ts`) and an `adapterName` used purely for logs/traces so
+ * we can tell at a glance which adapter ran a given call.
+ */
+
+import type { ProviderId } from '../providers';
+import type {
+  SynthesizeOptions,
+  SynthesizeResult,
+  TranscribeOptions,
+  TranscribeResult,
+} from '../types';
+import type { TtsModelInfo, SttModelInfo } from '../catalog';
+import type { DiscoveryResult } from '../discover';
+
+/** Common shape every adapter exposes — used by the registry to log
+ *  and surface the right one in errors. */
+export interface AdapterMeta {
+  /** Matches one of the ids in SUPPORTED_PROVIDERS. */
+  readonly providerId: ProviderId;
+  /** Human-readable for logs. Convention: '<provider>-<capability>'
+   *  (e.g. 'openai-tts', 'elevenlabs-tts'). */
+  readonly adapterName: string;
+}
+
+export interface TtsDispatcher extends AdapterMeta {
+  /** Synthesise speech and return audio bytes. The runtime then hands
+   *  these to Telegram's sendVoice (when format='opus') or to an
+   *  `<audio>` element on the web. */
+  synthesize(opts: SynthesizeOptions): Promise<SynthesizeResult>;
+
+  /** Optional. Live-discover which TTS models the API key can use.
+   *  For OpenAI we hit /v1/models and intersect with the catalogue;
+   *  for ElevenLabs we'd hit /v1/models too but the catalogue is
+   *  different. If absent, the UI falls back to whatever static
+   *  catalogue the adapter consults. */
+  discoverModels?(apiKey: string): Promise<DiscoveryResult<TtsModelInfo>>;
+
+  /** Optional. Returns the voices a given model supports. For OpenAI
+   *  this is a static per-model list (we hardcode 13 voices for
+   *  gpt-4o-mini-tts, 9 for tts-1). For ElevenLabs this would be a
+   *  live `/v1/voices` query that includes the user's cloned voices.
+   *  When absent, callers fall through to whatever default they
+   *  rendered the form with. */
+  voicesForModel?(
+    modelId: string,
+    apiKey?: string,
+  ): Promise<Array<{ id: string; description: string }>>;
+}
+
+/** A chat model entry. The fields are intentionally generic — provider
+ *  catalogs (xAI, HF, OpenAI…) all describe their chat models in
+ *  roughly this shape. Pricing is included so the UI can show a
+ *  rough cost-per-1M-tokens estimate when picking a model. */
+export interface ChatModelInfo {
+  id: string;
+  label: string;
+  description: string;
+  /** Context window in tokens. */
+  contextTokens?: number;
+  /** Capabilities beyond plain chat. */
+  capabilities?: readonly ('vision' | 'reasoning' | 'function_calling' | 'json_mode')[];
+  /** USD per 1M input tokens. Approximate; for UI hints only. */
+  inputPricePer1M?: number;
+  /** USD per 1M output tokens. */
+  outputPricePer1M?: number;
+}
+
+/** Result of a chat completion. Mirrors the OpenAI shape since every
+ *  adapter we're likely to write speaks that dialect. */
+export interface ChatResult {
+  text: string;
+  model: string;
+  tokensIn?: number;
+  tokensOut?: number;
+}
+
+export interface ChatOptions {
+  apiKey: string;
+  model: string;
+  /** Standard chat-completion messages. The adapter is free to
+   *  transform these into the provider's native shape (e.g. Anthropic's
+   *  separate `system` field), but we present a uniform interface. */
+  messages: Array<{
+    role: 'system' | 'user' | 'assistant';
+    content: string;
+  }>;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  /** Optional provider-specific overrides — adapter chooses what to honour.
+   *  Used for things like xAI's `reasoning_effort` or HF's `:fastest`
+   *  routing suffix. */
+  extra?: Record<string, unknown>;
+}
+
+export interface ChatDispatcher extends AdapterMeta {
+  /** One-shot chat completion. Streaming is intentionally NOT on the
+   *  interface — none of Mantle's current callers stream, and adding
+   *  streaming later is a non-breaking expansion. */
+  chat(opts: ChatOptions): Promise<ChatResult>;
+  /** Live-discover available chat models. Adapter does the cross-
+   *  reference between provider's /v1/models response and its own
+   *  static catalog. */
+  discoverModels?(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>>;
+  /** Adapters expose their static catalog for the UI to render before
+   *  discovery completes (or when discovery isn't supported). */
+  staticCatalog?(): readonly ChatModelInfo[];
+}
+
+export interface SttDispatcher extends AdapterMeta {
+  /** Transcribe an audio buffer. Buffer must be in one of the formats
+   *  the provider accepts; the adapter handles the multipart encoding
+   *  and any provider-specific MIME wrangling. */
+  transcribe(audio: Buffer, opts: TranscribeOptions): Promise<TranscribeResult>;
+
+  /** Optional. Live-discover available transcription models. */
+  discoverModels?(apiKey: string): Promise<DiscoveryResult<SttModelInfo>>;
+}
+
+// Future capabilities — interfaces are stubbed here so when we wire
+// vision/image-gen, the registry shape stays consistent.
+
+export interface VisionDispatcher extends AdapterMeta {
+  /** Extract text/structure from an image. */
+  extract(
+    image: Buffer,
+    opts: { apiKey: string; mimeType: string; prompt: string; model?: string },
+  ): Promise<{ text: string; model: string }>;
+}
+
+export interface ImageGenDispatcher extends AdapterMeta {
+  /** Generate an image from a prompt. */
+  generate(opts: {
+    apiKey: string;
+    prompt: string;
+    model?: string;
+    size?: string;
+    style?: string;
+  }): Promise<{ bytes: Buffer; mimeType: string; model: string }>;
+}

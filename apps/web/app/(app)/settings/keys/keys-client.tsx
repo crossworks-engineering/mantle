@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { RefreshCw, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { formatDateTime } from '@/lib/format-datetime';
 import {
   Dialog,
   DialogContent,
@@ -23,16 +24,22 @@ type KeyRow = {
   updatedAt: string;
 };
 
-/** Suggested services in the create dropdown. Free text still allowed. */
-const COMMON_SERVICES = [
-  'openrouter',
-  'openai',
-  'anthropic',
-  'deepseek',
-  'google',
-  'mistral',
-  'cohere',
-];
+// Providers come from the canonical catalogue in @mantle/voice. The
+// `service` column on api_keys is still free text (so a power user
+// can register a key for a service we haven't catalogued yet), but
+// the dropdown is closed by default — typos here lead to silent
+// runtime failures.
+import { SUPPORTED_PROVIDERS, isProviderWired } from '@mantle/voice';
+
+/** Whether a provider has at least one dispatch path wired (for any
+ *  capability). Determines the "— not yet wired" hint in the dropdown.
+ *  A provider is "wired enough" if any of its capabilities resolves to
+ *  a registered adapter (or is a built-in chat/embedding path). */
+function providerHasAnyAdapter(providerId: string, capabilities: readonly string[]): boolean {
+  return capabilities.some((c) =>
+    isProviderWired(providerId, c as Parameters<typeof isProviderWired>[1]),
+  );
+}
 
 export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
   const router = useRouter();
@@ -136,7 +143,7 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
                     <code className="font-mono">{k.masked}</code>
                     <span>
                       last used{' '}
-                      {k.lastUsed ? new Date(k.lastUsed).toLocaleString() : 'never'}
+                      {formatDateTime(k.lastUsed)}
                     </span>
                   </div>
                 </div>
@@ -174,24 +181,45 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
         <form onSubmit={onCreate} className="space-y-3 rounded-md border border-border p-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="service">Service</Label>
-              <Input
+              <Label htmlFor="service">Provider</Label>
+              <select
                 id="service"
-                list="service-suggestions"
                 value={service}
                 onChange={(e) => setService(e.target.value)}
                 required
-                pattern="[A-Za-z0-9_\-]+"
-                title="lowercase letters, numbers, hyphen, underscore"
-              />
-              <datalist id="service-suggestions">
-                {COMMON_SERVICES.map((s) => (
-                  <option key={s} value={s} />
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+              >
+                {SUPPORTED_PROVIDERS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                    {p.isAggregator ? ' (aggregator)' : ''}
+                    {!providerHasAnyAdapter(p.id, p.capabilities)
+                      ? ' — not yet wired'
+                      : ''}
+                  </option>
                 ))}
-              </datalist>
-              <p className="text-xs text-muted-foreground">
-                e.g. <code>openrouter</code>. Free text — pick a slug your code will read.
-              </p>
+              </select>
+              {/* Show the description + signup link for the currently
+                  selected provider so the user can hop to the right
+                  console without leaving the form. */}
+              {(() => {
+                const p = SUPPORTED_PROVIDERS.find((x) => x.id === service);
+                return p ? (
+                  <p className="text-xs text-muted-foreground">
+                    {p.description}{' '}
+                    <a
+                      href={p.signupUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline"
+                    >
+                      Get a key →
+                    </a>
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Pick a provider.</p>
+                );
+              })()}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="label">Label</Label>

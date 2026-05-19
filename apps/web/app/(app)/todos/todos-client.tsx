@@ -45,10 +45,11 @@ function formatDue(iso: string | null): string {
   const now = Date.now();
   const diff = d.getTime() - now;
   const days = Math.round(diff / 86_400_000);
-  if (Math.abs(days) < 1) return d.toLocaleString();
+  // Pinned 'en-GB' locale so SSR + client render the same string.
+  if (Math.abs(days) < 1) return d.toLocaleString('en-GB', { hour12: false });
   if (days < 0) return `${Math.abs(days)}d overdue`;
   if (days < 7) return `in ${days}d`;
-  return d.toLocaleDateString();
+  return d.toLocaleDateString('en-GB');
 }
 
 export function TodosClient({ initialTodos }: { initialTodos: TodoRow[] }) {

@@ -118,8 +118,13 @@ export async function listTopics(userId: string, limit = 25): Promise<TopicRow[]
       topicSlug: r.topicSlug ?? '',
       digestCount: r.digestCount ?? 0,
       turnCount: r.turnCount ?? 0,
-      firstSeen: (r.firstSeen as Date).toISOString(),
-      lastSeen: (r.lastSeen as Date).toISOString(),
+      // postgres-js returns aggregate timestamps (min/max of a
+      // timestamptz column) as ISO strings, not Date objects, even
+      // though Drizzle's `sql<Date>` type hint claims otherwise. The
+      // `new Date(...)` coercion handles both shapes — string OR
+      // Date — so this stays robust if the driver ever flips.
+      firstSeen: new Date(r.firstSeen as unknown as string | Date).toISOString(),
+      lastSeen: new Date(r.lastSeen as unknown as string | Date).toISOString(),
     }));
 }
 

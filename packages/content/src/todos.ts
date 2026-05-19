@@ -103,7 +103,7 @@ export async function listTodos(
     .where(and(...conds))
     .orderBy(
       asc(sql`coalesce(${nodes.data}->>'status', 'open') = 'done'`),
-      asc(sql`(${nodes.data}->>'due_at')::timestamptz nulls last`),
+      asc(sql`mantle_iso_to_ts(${nodes.data}->>'due_at') nulls last`),
       desc(nodes.updatedAt),
     )
     .limit(500);

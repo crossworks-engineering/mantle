@@ -80,6 +80,24 @@ export type AgentParams = {
   temperature?: number;
   max_tokens?: number;
   top_p?: number;
+  /** Voice-reply config. Used by `apps/agent` when an inbound message
+   *  came in as a Telegram voice note: the agent's reply gets piped
+   *  through OpenAI TTS and sent as `sendVoice` instead of plain text.
+   *  All fields optional — sensible defaults applied at the call site
+   *  (`nova` voice, `tts-1` model, 1.0× speed). Set `enabled: false`
+   *  to keep text replies even when the user voice-messages. */
+  voice?: {
+    /** Defaults to true: voice in → voice out. */
+    enabled?: boolean;
+    /** OpenAI voice name. See @mantle/voice TTS_VOICES. */
+    name?: 'alloy' | 'echo' | 'fable' | 'nova' | 'onyx' | 'shimmer';
+    /** `tts-1` is fast/cheap; `tts-1-hd` is ~2× cost for slightly
+     *  higher fidelity. */
+    model?: 'tts-1' | 'tts-1-hd';
+    /** Playback speed multiplier 0.25–4.0. 1.0 is natural; 0.95 sounds
+     *  a touch more conversational. */
+    speed?: number;
+  };
 };
 
 /**

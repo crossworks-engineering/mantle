@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { requireOwner } from '@/lib/auth';
+import { formatDate, formatDateTime } from '@/lib/format-datetime';
 import { ChatAgentOverride } from './chat-agent-override';
 import {
   contentIndexCoverage,
@@ -148,7 +149,7 @@ export default async function DebugPage() {
                   href={`/traces/${e.lastTraceId}`}
                   className="text-xs text-muted-foreground hover:underline"
                 >
-                  {new Date(e.lastAt).toLocaleString()}
+                  {formatDateTime(e.lastAt)}
                 </Link>
               </li>
             ))}
@@ -175,7 +176,7 @@ export default async function DebugPage() {
                   {f.error.slice(0, 120)}
                 </Link>
                 <span className="text-xs text-muted-foreground">
-                  {new Date(f.startedAt).toLocaleString()}
+                  {formatDateTime(f.startedAt)}
                 </span>
               </li>
             ))}
@@ -242,10 +243,10 @@ export default async function DebugPage() {
                   <tr key={m.model}>
                     <td className="px-3 py-2 font-mono text-xs">{m.model}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{m.calls}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{m.tokensIn.toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{m.tokensOut.toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{m.tokensIn.toLocaleString('en-GB')}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{m.tokensOut.toLocaleString('en-GB')}</td>
                     <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                      {m.cacheReadTokens.toLocaleString()}
+                      {m.cacheReadTokens.toLocaleString('en-GB')}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {formatMicroUsd(m.costMicroUsd)}
@@ -726,5 +727,5 @@ function fmtRelative(iso: string): string {
   const days = Math.round(hours / 24);
   if (days === 1) return 'yesterday';
   if (days < 30) return `${days} days ago`;
-  return new Date(iso).toLocaleDateString();
+  return formatDate(iso);
 }
