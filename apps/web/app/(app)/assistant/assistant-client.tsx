@@ -5,12 +5,27 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { formatDateTime } from '@/lib/format-datetime';
 
+/** A sidecar artifact attached to an outbound message. Mirrors
+ *  @mantle/tools ToolArtifact, with the discriminated `kind` driving
+ *  the rendering (audio = play button, image = inline preview). */
+type Artifact = {
+  kind: 'audio' | 'image';
+  mimeType: string;
+  base64: string;
+  caption?: string;
+  nodeId?: string;
+  producedBy: string;
+};
+
 type Message = {
   id: string;
   direction: 'inbound' | 'outbound';
   text: string;
   model?: string | null;
   createdAt: string;
+  /** Sidecar artifacts produced by worker tools during this turn.
+   *  Only ever populated on outbound messages. */
+  artifacts?: Artifact[];
   /** Optimistic flag while we wait for the server reply. */
   pending?: boolean;
 };
@@ -65,6 +80,7 @@ export function AssistantClient({
       const data = (await res.json()) as {
         inbound: { id: string; text: string; createdAt: string };
         outbound: { id: string; text: string; model: string | null; createdAt: string };
+        artifacts?: Artifact[];
       };
       setMessages((prev) => [
         ...prev.filter((m) => m.id !== optimisticId),
@@ -80,6 +96,7 @@ export function AssistantClient({
           text: data.outbound.text,
           model: data.outbound.model,
           createdAt: data.outbound.createdAt,
+          artifacts: data.artifacts ?? [],
         },
       ]);
     } catch (err) {
@@ -122,6 +139,17 @@ export function AssistantClient({
                       {m.text}
                     </ReactMarkdown>
                   </div>
+                  {/* Tool artifacts — audio + image bubbles inline
+                      with the reply. Rendered after the text so the
+                      assistant's verbal context comes first, then the
+                      generated media. */}
+                  {m.artifacts && m.artifacts.length > 0 && (
+                    <div className="mt-2 flex flex-col gap-2">
+                      {m.artifacts.map((a, i) => (
+                        <ArtifactView key={`${m.id}-art-${i}`} artifact={a} />
+                      ))}
+                    </div>
+                  )}
                   {/* Meta strip is hidden until hover/focus — keeps long
                       threads visually quiet. The pending "sending…"
                       indicator is the one exception, always shown. */}
@@ -182,5 +210,59 @@ export function AssistantClient({
         )}
       </form>
     </>
+  );
+}
+
+/**
+ * Render one tool-emitted artifact inline. Audio gets an <audio
+ * controls> element; images get a bounded preview with a click-to-
+ * enlarge affordance. Both use a `data:` URL — no separate fetch.
+ */
+function ArtifactView({ artifact }: { artifact: Artifact }) {
+  const dataUrl = `data:${artifact.mimeType};base64,${artifact.base64}`;
+  if (artifact.kind === 'audio') {
+    return (
+      <div className="rounded-lg border border-border bg-background/60 p-2">
+        {/* controls renders the play button + scrubber + duration in
+            the browser's native styling. Sufficient for our use case;
+            a custom waveform UI would be nice-to-have but adds weight. */}
+        <audio controls src={dataUrl} className="w-full" preload="metadata">
+          Your browser doesn't support the audio element.
+        </audio>
+        {artifact.caption && (
+          <p className="mt-1 text-[11px] italic text-muted-foreground">
+            🔊 {artifact.caption}
+          </p>
+        )}
+      </div>
+    );
+  }
+  // image
+  return (
+    <div className="overflow-hidden rounded-lg border border-border bg-background/60">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={dataUrl}
+        alt={artifact.caption ?? 'Generated image'}
+        className="max-h-96 w-full cursor-zoom-in object-contain"
+        onClick={() => {
+          // Open full-size in a new tab so the user can zoom + save.
+          // window.open is cheap; a modal lightbox would be nicer
+          // but doesn't justify the dep right now.
+          const w = window.open();
+          if (w) {
+            w.document.write(
+              `<title>${(artifact.caption ?? 'image').replace(/[<>]/g, '')}</title>` +
+                `<img src="${dataUrl}" style="max-width:100%;display:block;margin:0 auto;" />`,
+            );
+          }
+        }}
+      />
+      {artifact.caption && (
+        <p className="px-2 py-1 text-[11px] italic text-muted-foreground">
+          🎨 {artifact.caption}
+        </p>
+      )}
+    </div>
   );
 }

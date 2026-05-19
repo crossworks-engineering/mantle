@@ -28,6 +28,7 @@ import {
 } from '@mantle/tools';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, pendingToolCalls, type Tool, type AgentParams } from '@mantle/db';
+import type { ToolArtifact } from '@mantle/tools';
 import { captureLlmUsage } from './llm-usage';
 import type { ChatMessage } from './messages';
 import { parseToolArgs } from './tool-args';
@@ -48,6 +49,12 @@ export type ToolLoopResult = {
    *  requires_confirm tool the model asked for). Surface these to
    *  the operator so they can approve/reject at /pending. */
   pendingIds: string[];
+  /** Sidecar artifacts the tools produced — audio bytes from a TTS
+   *  call, image bytes from a generation, etc. The web /assistant
+   *  surfaces these inline in the reply bubble; Telegram already
+   *  delivers them through the tool's own send path and ignores this
+   *  field. Empty array when no tools ran or none emitted artifacts. */
+  artifacts: ToolArtifact[];
 };
 
 export type ToolLoopArgs = {
@@ -138,6 +145,12 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   const messages: ChatMessage[] = [...args.initialMessages];
   const toolCalls: ToolCallRecord[] = [];
   const pendingIds: string[] = [];
+  // Sidecar artifacts (audio bytes, image bytes) collected across
+  // every handler invocation in this loop. Surfaced in the
+  // ToolLoopResult for callers that want to render them inline
+  // (web /assistant). Telegram-path tools deliver via their own
+  // send* calls and don't populate this.
+  const artifacts: ToolArtifact[] = [];
 
   for (let iter = 0; iter < maxIters; iter++) {
     const result = await step(
@@ -178,7 +191,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       const raw = msg && 'content' in msg ? msg.content : null;
       const text = typeof raw === 'string' ? raw.trim() : '';
       messages.push({ role: 'assistant', content: text });
-      return { reply: text, messages, iterations: iter + 1, toolCalls, pendingIds };
+      return { reply: text, messages, iterations: iter + 1, toolCalls, pendingIds, artifacts };
     }
 
     // Push the assistant message verbatim so the next LLM call sees its
@@ -316,6 +329,15 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         error: outcome.ok ? undefined : outcome.error,
       });
 
+      // Harvest any sidecar artifacts the tool emitted (audio bytes,
+      // image bytes). These don't go into the LLM-visible result —
+      // see ToolHandlerResult comment — they ride the
+      // ToolLoopResult.artifacts list and the caller decides what
+      // to do with them.
+      if (outcome.ok && outcome.artifacts && outcome.artifacts.length > 0) {
+        for (const a of outcome.artifacts) artifacts.push(a);
+      }
+
       // Feed the result back to the model. Errors are sent as JSON too —
       // the model usually adapts (retries with different args, falls
       // back to a plain answer) rather than blowing up.
@@ -359,7 +381,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   const raw = lastMsg && 'content' in lastMsg ? lastMsg.content : null;
   const text = typeof raw === 'string' ? raw.trim() : '';
   messages.push({ role: 'assistant', content: text });
-  return { reply: text, messages, iterations: maxIters + 1, toolCalls, pendingIds };
+  return { reply: text, messages, iterations: maxIters + 1, toolCalls, pendingIds, artifacts };
 }
 
 const TOOL_RESULT_BYTE_CAP = 8 * 1024;

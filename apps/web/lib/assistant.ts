@@ -49,7 +49,7 @@ import {
   type FactSnippet,
   type HistoryTurn,
 } from '@mantle/agent-runtime';
-import { registerAgentInvoker } from '@mantle/tools';
+import { registerAgentInvoker, type ToolArtifact } from '@mantle/tools';
 import { stripAudioTags } from '@mantle/voice';
 
 // Register the cross-package bridge for the `invoke_agent` builtin.
@@ -61,6 +61,10 @@ export type AssistantTurnResult = {
   inbound: AssistantMessage;
   outbound: AssistantMessage;
   reply: string;
+  /** Sidecar artifacts from worker tools (TTS audio, generated
+   *  images). The /assistant page renders these inline in the reply
+   *  bubble. Empty when no tools emitted any. */
+  artifacts: ToolArtifact[];
 };
 
 /** Pick the best agent to handle a web turn. Prefers `assistant`-role rows;
@@ -326,7 +330,7 @@ export async function runAssistantTurn(
     .where(eq(agents.id, agent.id))
     .catch(() => {});
 
-  return { inbound, outbound, reply };
+  return { inbound, outbound, reply, artifacts: loopOutcome.artifacts };
 }
 
 export type AssistantTimelineRow = {

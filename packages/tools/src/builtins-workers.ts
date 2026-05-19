@@ -44,7 +44,12 @@ import {
   getTtsAdapter,
   getVisionAdapter,
 } from '@mantle/voice';
-import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
+import type {
+  BuiltinToolDef,
+  ToolArtifact,
+  ToolHandlerContext,
+  ToolHandlerResult,
+} from './types';
 
 // ─── shared helpers ────────────────────────────────────────────────
 
@@ -101,7 +106,7 @@ const synthesize_speech: BuiltinToolDef = {
   slug: 'synthesize_speech',
   name: 'Send a voice reply',
   description:
-    "Synthesize text-to-speech using the owner's default TTS worker and send it as a Telegram voice note. Use ONLY when the user explicitly asks for audio ('send me a voice note', 'read that aloud', etc.), or when a long answer would land better as a voice reply on mobile. After calling, write a brief text follow-up ('Sent you a voice note.') — don't repeat the spoken content. Refuses on the /assistant web surface — that channel is text-only.",
+    "Synthesize text-to-speech using the owner's default TTS worker. On Telegram it sends as a voice note; on the web /assistant it returns audio bytes that the page renders inline as a play-button bubble. Use when the user explicitly asks for audio ('send me a voice note', 'read that aloud') or when a long answer would land better as audio. After calling, write a brief text follow-up — don't repeat the spoken content verbatim.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -122,14 +127,11 @@ const synthesize_speech: BuiltinToolDef = {
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const text = str(input.text).trim();
     if (!text) return { ok: false, error: 'text required' };
-
-    if (!ctx.surface || ctx.surface.kind !== 'telegram') {
+    if (!ctx.surface) {
       return {
         ok: false,
         error:
-          ctx.surface?.kind === 'web'
-            ? 'synthesize_speech only works on Telegram. Reply in text instead.'
-            : 'synthesize_speech requires a Telegram chat context.',
+          'synthesize_speech needs a delivery surface (Telegram chat or web /assistant). Background callers (reflector/extractor) shouldn\'t invoke this.',
       };
     }
     const resolved = await resolveDefaultWorker(ctx.ownerId, 'tts');
@@ -150,9 +152,15 @@ const synthesize_speech: BuiltinToolDef = {
       language?: string;
     };
     const voiceId = strOpt(input.voice) ?? params.voice ?? 'nova';
+    // Surface-specific output container. Telegram wants opus (renders
+    // as a voice-note bubble); the web <audio> element handles mp3
+    // most consistently across browsers, including Safari which is
+    // historically fussy about opus-in-ogg playback.
+    const audioFormat: 'opus' | 'mp3' = ctx.surface.kind === 'telegram' ? 'opus' : 'mp3';
 
+    let synth;
     try {
-      const synth = await adapter.synthesize({
+      synth = await adapter.synthesize({
         apiKey,
         text,
         // Cast through unknown: TtsVoice is OpenAI-shaped at the type
@@ -161,40 +169,72 @@ const synthesize_speech: BuiltinToolDef = {
         voice: voiceId as unknown as never,
         model: worker.model,
         speed: params.speed ?? 1.0,
-        // Telegram-native — sendVoice renders as a voice-bubble.
-        format: 'opus',
+        format: audioFormat,
         instructions: params.instructions,
         language: params.language,
       });
-      const account = await accountForChat(ctx.surface.telegramChatId);
-      if (!account) {
-        return {
-          ok: false,
-          error: `No Telegram account configured for chat ${ctx.surface.telegramChatId}.`,
-        };
-      }
-      const tgMsgId = await sendVoice(account, ctx.surface.telegramChatId, synth.bytes, {
-        replyTo: ctx.surface.replyToTelegramMessageId,
-      });
-      ctx.step?.setMeta({
-        adapter: adapter.adapterName,
-        bytes: synth.bytes.length,
-        voice: voiceId,
-        worker_slug: worker.slug,
-      });
-      return {
-        ok: true,
-        output: {
-          sent: true,
-          telegramMessageId: tgMsgId,
-          voice: voiceId,
-          model: synth.model,
-          bytes: synth.bytes.length,
-        },
-      };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
+    ctx.step?.setMeta({
+      adapter: adapter.adapterName,
+      bytes: synth.bytes.length,
+      voice: voiceId,
+      worker_slug: worker.slug,
+      surface: ctx.surface.kind,
+    });
+
+    if (ctx.surface.kind === 'telegram') {
+      try {
+        const account = await accountForChat(ctx.surface.telegramChatId);
+        if (!account) {
+          return {
+            ok: false,
+            error: `No Telegram account configured for chat ${ctx.surface.telegramChatId}.`,
+          };
+        }
+        const tgMsgId = await sendVoice(account, ctx.surface.telegramChatId, synth.bytes, {
+          replyTo: ctx.surface.replyToTelegramMessageId,
+        });
+        return {
+          ok: true,
+          output: {
+            sent: true,
+            deliveredVia: 'telegram',
+            telegramMessageId: tgMsgId,
+            voice: voiceId,
+            model: synth.model,
+            bytes: synth.bytes.length,
+          },
+        };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+
+    // Web /assistant: emit the audio as a sidecar artifact. The
+    // turn endpoint forwards it; the client renders an <audio>
+    // element inside the reply bubble. The LLM-visible output is
+    // text-only metadata so it doesn't burn prompt budget on a base64
+    // blob it can't usefully reason about.
+    const artifact: ToolArtifact = {
+      kind: 'audio',
+      mimeType: synth.mimeType ?? 'audio/mpeg',
+      base64: synth.bytes.toString('base64'),
+      caption: text.length > 120 ? `${text.slice(0, 120)}…` : text,
+      producedBy: 'synthesize_speech',
+    };
+    return {
+      ok: true,
+      output: {
+        sent: true,
+        deliveredVia: 'web',
+        voice: voiceId,
+        model: synth.model,
+        bytes: synth.bytes.length,
+      },
+      artifacts: [artifact],
+    };
   },
 };
 
@@ -682,6 +722,21 @@ const generate_image: BuiltinToolDef = {
       telegram_message_id: telegramMessageId,
     });
 
+    // Emit the image as a sidecar artifact regardless of surface.
+    // Telegram surface uses sendPhoto for in-chat delivery (above);
+    // the web /assistant uses this artifact for inline rendering;
+    // background callers ignore it. The base64 cost is acceptable —
+    // an AI-generated 1024² PNG is ~1MB, which fits inline in our
+    // turn-response JSON without trouble.
+    const artifact: ToolArtifact = {
+      kind: 'image',
+      mimeType: result.mimeType,
+      base64: result.bytes.toString('base64'),
+      caption: prompt.length > 120 ? `${prompt.slice(0, 120)}…` : prompt,
+      ...(nodeId ? { nodeId } : {}),
+      producedBy: 'generate_image',
+    };
+
     return {
       ok: true,
       output: {
@@ -694,12 +749,10 @@ const generate_image: BuiltinToolDef = {
         ...(result.revisedPrompt ? { revisedPrompt: result.revisedPrompt } : {}),
         ...(telegramMessageId != null ? { telegramMessageId, deliveredVia: 'telegram' } : {}),
         ...(ctx.surface?.kind === 'web'
-          ? {
-              note:
-                "Image saved to /files/generated-images/. Web /assistant doesn't render images inline yet — open the file from Files to view it.",
-            }
+          ? { deliveredVia: 'web', note: 'Rendered inline in the assistant reply.' }
           : {}),
       },
+      artifacts: [artifact],
     };
   },
 };

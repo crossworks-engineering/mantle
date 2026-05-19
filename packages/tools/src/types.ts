@@ -57,8 +57,42 @@ export type ToolHandlerContext = {
     | { kind: 'web' };
 };
 
+/** A sidecar artifact a tool produces alongside its JSON output —
+ *  audio bytes from synthesize_speech, an image from generate_image,
+ *  etc. The LLM's tool-result message stays clean (just the JSON);
+ *  the runtime collects artifacts separately and hands them back to
+ *  the calling surface (the web /assistant renders them inline; the
+ *  Telegram path uses them via its own sendVoice/sendPhoto calls
+ *  rather than artifacts).
+ *
+ *  Why split from `output`: the LLM should reason about what
+ *  happened ("I sent a voice note") without burning prompt budget
+ *  on tens of KB of base64. The output JSON keeps the metadata; the
+ *  artifact carries the bytes. */
+export type ToolArtifact = {
+  /** The kind of media. Drives client-side rendering choice. */
+  kind: 'audio' | 'image';
+  /** MIME, e.g. 'audio/ogg', 'image/png'. */
+  mimeType: string;
+  /** Base64-encoded bytes. Sized for inline embedding in JSON
+   *  responses — for very large blobs we'd switch to a URL/nodeId
+   *  reference but the current voice/image-gen sizes are fine
+   *  (audio ≤ 300KB, images ≤ 2MB). */
+  base64: string;
+  /** Optional persisted node id when the artifact is also stored
+   *  (e.g. generate_image saves to /files/generated-images and
+   *  returns the node id so the client can deep-link). */
+  nodeId?: string;
+  /** Optional human-readable caption — the prompt for image gen,
+   *  the text spoken for TTS. Surfaced in the UI as a hover/aria
+   *  label. */
+  caption?: string;
+  /** Which tool produced this — useful for debugging + UI grouping. */
+  producedBy: string;
+};
+
 export type ToolHandlerResult =
-  | { ok: true; output: unknown }
+  | { ok: true; output: unknown; artifacts?: ToolArtifact[] }
   | { ok: false; error: string };
 
 /** A built-in handler: pure TS function. Lives in this package or in apps

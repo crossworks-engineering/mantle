@@ -16,7 +16,10 @@ export async function POST(req: Request) {
     );
   }
   try {
-    const { inbound, outbound, reply } = await runAssistantTurn(user.id, parsed.data.text);
+    const { inbound, outbound, reply, artifacts } = await runAssistantTurn(
+      user.id,
+      parsed.data.text,
+    );
     return NextResponse.json({
       inbound: {
         id: inbound.id,
@@ -30,6 +33,10 @@ export async function POST(req: Request) {
         createdAt: outbound.createdAt.toISOString(),
       },
       reply,
+      // Sidecar artifacts from worker tools (audio bytes from
+      // synthesize_speech, image bytes from generate_image). The
+      // client renders them inline in the outbound bubble.
+      artifacts,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

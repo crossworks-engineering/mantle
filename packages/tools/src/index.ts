@@ -1,6 +1,7 @@
 export type {
   BuiltinToolDef,
   BuiltinToolHandler,
+  ToolArtifact,
   ToolHandlerContext,
   ToolHandlerResult,
   ToolForModel,
