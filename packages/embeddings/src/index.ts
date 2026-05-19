@@ -107,38 +107,31 @@ export async function embedMultimodal(
     {
       name: 'embed_batch',
       kind: 'embed',
-      // Capturing a preview of what's being embedded turns the
-      // 10-identical-cards problem in the trace graph into a useful
-      // forensic surface — operators can answer "what 3 entities
-      // triggered this embed_batch?" without rerunning. The preview
-      // is truncated to keep step rows small (truncateJson in
-      // @mantle/tracing also caps the field, but doing it here means
-      // the cap respects the inputs' natural boundaries).
+      // Full preview of every input. truncateJson at the tracing
+      // layer caps the whole jsonb field at 64KB (and arrays at 50
+      // items) so a giant batch is still bounded — but normal
+      // extractor work (1-3 inputs per batch, each <500 chars) lands
+      // fully visible. Binary multimodal inputs (image / audio /
+      // file) render as placeholders since the actual bytes would
+      // blow past the safety cap and be useless on inspection.
       input: {
         count: inputs.length,
         model: opts?.model ?? DEFAULT_EMBEDDING_MODEL,
-        preview: inputs.slice(0, 5).map(previewOfInput),
-        ...(inputs.length > 5 ? { more_count: inputs.length - 5 } : {}),
+        preview: inputs.map(previewOfInput),
       },
     },
     async (handle) => doEmbed(ownerId, inputs, opts, handle),
   );
 }
 
-/** Render an EmbedInput as a short, human-readable string for trace
- *  step previews. Strings + text parts → first 80 chars; image/audio
- *  references → a placeholder noting the kind + url stem. Keeps
- *  embed_batch trace cards distinguishable when you click through
- *  them in the graph view. */
+/** Render an EmbedInput as a string for trace step previews. Text
+ *  inputs are returned verbatim — truncateJson is the safety net.
+ *  Image/audio/file references show as <kind: tail-of-url> because
+ *  the binary bytes themselves aren't useful in a trace card and
+ *  would explode past the per-field budget. */
 function previewOfInput(item: EmbedInput): string {
-  const MAX = 80;
-  if (typeof item === 'string') {
-    return item.length > MAX ? `${item.slice(0, MAX)}…` : item;
-  }
-  if (item.type === 'text') {
-    const t = item.text ?? '';
-    return t.length > MAX ? `${t.slice(0, MAX)}…` : t;
-  }
+  if (typeof item === 'string') return item;
+  if (item.type === 'text') return item.text ?? '';
   if (item.type === 'image') {
     const url = (item as { url?: string }).url ?? '';
     return `<image: ${url.slice(-40)}>`;

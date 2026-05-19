@@ -697,15 +697,15 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
           kind: 'llm_call',
           input: {
             model: worker.model,
-            // Surface what the LLM actually saw — the title + a
-            // truncated body preview turn the trace into a useful
-            // debug surface for "the extractor read what?" without
-            // having to re-fetch the node.
+            // Surface everything the LLM saw. No per-field char caps —
+            // the global truncateJson budget (64KB) catches truly
+            // runaway bodies and the node itself lives in /files for
+            // larger reads. Operators want the full preview when
+            // debugging "what did the extractor actually read?".
             title: node.title,
             node_type: node.type,
             body_chars: body.length,
-            body_preview:
-              body.length > 1500 ? `${body.slice(0, 1500)}…` : body,
+            body_preview: body,
           },
         },
         async (h) => {
@@ -718,23 +718,19 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
           );
           captureLlmUsage(h, r.raw, worker.model);
           const result = parseExtractorOutput(r.content, { nodeId: node.id, model: worker.model });
-          // Capture what the LLM produced as the step's output so
-          // operators can see the actual JSON it returned, not just
-          // token counts. Cap counts to avoid runaway output rows.
+          // Capture the full model output — summary, all entities,
+          // all facts. truncateJson at the tracing layer will only
+          // bite if the combined JSON exceeds 64KB, which is
+          // generous for normal extractor outputs.
           h.setOutput({
-            summary:
-              result.summary && result.summary.length > 600
-                ? `${result.summary.slice(0, 600)}…`
-                : result.summary,
+            summary: result.summary,
             entity_count: result.entities.length,
-            entities: result.entities.slice(0, 10).map((e) => ({
-              name: e.name.slice(0, 60),
+            entities: result.entities.map((e) => ({
+              name: e.name,
               kind: e.kind ?? 'unknown',
             })),
             fact_count: result.facts.length,
-            facts: result.facts.slice(0, 5).map((f) =>
-              f.content.length > 120 ? `${f.content.slice(0, 120)}…` : f.content,
-            ),
+            facts: result.facts.map((f) => f.content),
           });
           return result;
         },
@@ -803,18 +799,14 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
           kind: 'compute',
           input: {
             mentions: uniqueMentions.length,
-            // Surface the actual mention names + kinds so the step's
-            // /traces panel tells the whole story — previously the
-            // operator could only see "10 mentions" with no clue
-            // which ones. Truncated for big batches; the rest are
-            // discoverable via the per-mention embed_batch children.
-            preview: uniqueMentions.slice(0, 10).map((m) => ({
-              name: m.name.slice(0, 60),
+            // Full list of mentions — names + kinds. truncateJson
+            // applies the safety net at 64KB; a normal extractor
+            // pass fits comfortably. The arrays-over-50 cap in
+            // truncate.ts catches genuinely runaway iterations.
+            preview: uniqueMentions.map((m) => ({
+              name: m.name,
               kind: m.kind ?? 'unknown',
             })),
-            ...(uniqueMentions.length > 10
-              ? { more_count: uniqueMentions.length - 10 }
-              : {}),
           },
         },
         async (h) => {
@@ -886,14 +878,13 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
           input: {
             candidates: parsed.facts.length,
             costCapMicroUsd: costCap,
-            // Preview of the actual fact contents so the trace shows
-            // WHAT was processed. Cap at 5 + an overflow counter to
-            // keep step rows compact.
-            preview: parsed.facts.slice(0, 5).map((f) => ({
-              content: f.content.length > 120 ? `${f.content.slice(0, 120)}…` : f.content,
-              entities: (f.entities ?? []).map((e) => e.name).slice(0, 5),
+            // Full list of fact candidates — content + their entities.
+            // truncateJson safety net at 64KB; arrays-over-50 cap in
+            // truncate.ts catches genuinely runaway iterations.
+            preview: parsed.facts.map((f) => ({
+              content: f.content,
+              entities: (f.entities ?? []).map((e) => e.name),
             })),
-            ...(parsed.facts.length > 5 ? { more_count: parsed.facts.length - 5 } : {}),
           },
         },
         async (h) => {

@@ -1,11 +1,19 @@
 /**
- * Trim jsonb payloads (input/output/meta) so a 200KB email body doesn't
- * end up in trace_steps. Keep the head + a marker; the original is still
- * available via the source_node_id / message_id on the parent trace.
+ * Trim jsonb payloads (input/output/meta) so a 1MB email body or
+ * generated image doesn't end up in trace_steps. Keeps the head + a
+ * marker; the original lives on its source node anyway.
+ *
+ * Budget choice (May 2026, after the rich-preview rollout): operators
+ * want to see the full content of step inputs/outputs — note bodies,
+ * extractor summaries, fact lists — for debugging. The previous
+ * 2KB/1KB cap chopped useful previews mid-sentence. 64KB / 32KB
+ * comfortably fits a typical 30KB markdown file's full body preview
+ * while still catching runaway payloads (Telegram webhook payloads,
+ * accidentally-stringified embedding vectors, etc.).
  */
 
-const MAX_BYTES = 2048;
-const HEAD_BYTES = 1024;
+const MAX_BYTES = 64 * 1024;
+const HEAD_BYTES = 32 * 1024;
 
 export function truncateJson<T>(value: T): T | Record<string, unknown> {
   if (value === null || value === undefined) return value;
@@ -36,8 +44,14 @@ function truncateValue(v: unknown): unknown {
     return `${v.slice(0, HEAD_BYTES)}…[truncated, ${v.length} chars]`;
   }
   if (Array.isArray(v)) {
-    if (v.length <= 50) return v.map(truncateValue);
-    return [...v.slice(0, 50).map(truncateValue), `…[truncated, ${v.length - 50} more items]`];
+    // Generous cap — long-form documents commonly produce 50+
+    // entities/facts and the operator has explicitly chosen
+    // "show me everything" over compact traces. The total jsonb
+    // field is still bounded by MAX_BYTES, which catches the
+    // arrays-of-arrays case.
+    const cap = 200;
+    if (v.length <= cap) return v.map(truncateValue);
+    return [...v.slice(0, cap).map(truncateValue), `…[truncated, ${v.length - cap} more items]`];
   }
   if (v && typeof v === 'object') {
     return truncateJson(v);
