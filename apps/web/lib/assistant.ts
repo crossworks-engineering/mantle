@@ -52,6 +52,7 @@ import {
 import { registerAgentInvoker, type ToolArtifact } from '@mantle/tools';
 import { stripAudioTags } from '@mantle/voice';
 import { buildTimeContextLine, loadProfilePreferences } from '@mantle/content';
+import { startTrace } from '@mantle/tracing';
 
 // Register the cross-package bridge for the `invoke_agent` builtin.
 // First module load (the first /assistant request after boot) wires
@@ -306,22 +307,48 @@ export async function runAssistantTurn(
   const allowedToolSlugs = effectiveToolSlugs(agent.toolSlugs ?? [], attachedSkills);
   const allowedTools = await resolveAgentTools(ownerId, allowedToolSlugs);
 
-  const loopOutcome = await runToolLoop({
-    client,
-    model: agent.model,
-    params,
-    ownerId,
-    agentId: agent.id,
-    agentSlug: agent.slug,
-    agentDepth: 1,
-    delegateTo: (agent.memoryConfig as { delegate_to?: string[] } | null)?.delegate_to ?? [],
-    initialMessages: messages,
-    tools: allowedTools,
-    // /assistant has no outbound channel beyond the reply stream itself
-    // — tools that want to "send a voice note" or similar refuse here
-    // with a clean error so the LLM falls back to text.
-    surface: { kind: 'web' },
-  });
+  // Wrap the tool loop in a trace so every LLM call + tool dispatch
+  // gets persisted as a step. This is the Layer A treatment for the
+  // web /assistant surface — previously turns ran silently and the
+  // operator had no way to see whether Saskia actually called a tool
+  // or just claimed she did. We reuse the existing 'responder_turn'
+  // kind (no new enum value needed); subject_kind='assistant_message'
+  // + subject_id=inbound.id ties the trace to the row the chat UI
+  // shows. The node-biography page at /nodes/<id>/history works for
+  // any subject_id — operators can use it on assistant_messages too,
+  // though those rows don't show in /files (different table).
+  const loopOutcome = await startTrace(
+    {
+      kind: 'responder_turn',
+      ownerId,
+      subjectId: inbound.id,
+      subjectKind: 'assistant_message',
+      agentId: agent.id,
+      data: {
+        surface: 'web',
+        model: agent.model,
+        agent_slug: agent.slug,
+        tool_count: allowedTools.length,
+      },
+    },
+    async () =>
+      runToolLoop({
+        client,
+        model: agent.model,
+        params,
+        ownerId,
+        agentId: agent.id,
+        agentSlug: agent.slug,
+        agentDepth: 1,
+        delegateTo: (agent.memoryConfig as { delegate_to?: string[] } | null)?.delegate_to ?? [],
+        initialMessages: messages,
+        tools: allowedTools,
+        // /assistant has no outbound channel beyond the reply stream
+        // itself — tools that want to "send a voice note" or similar
+        // refuse here with a clean error so the LLM falls back to text.
+        surface: { kind: 'web' },
+      }),
+  );
   const rawReply = loopOutcome.reply;
   if (!rawReply) {
     throw new Error('assistant: empty reply from model');
