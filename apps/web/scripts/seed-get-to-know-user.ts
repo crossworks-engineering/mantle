@@ -18,12 +18,13 @@
  *     doesn't immediately barge in.
  */
 
-import { and, eq } from 'drizzle-orm';
-import { db, heartbeats, skills } from '@mantle/db';
+import { and, asc, eq } from 'drizzle-orm';
+import { db, agents, heartbeats, skills } from '@mantle/db';
 import { computeNextFireAt } from '@mantle/heartbeats';
 
 const USER_ID = process.env.ALLOWED_USER_ID;
 const TG_CHAT_ID = process.env.TG_CHAT_ID;
+const AGENT_SLUG_OVERRIDE = process.env.AGENT_SLUG;
 
 if (!USER_ID) {
   console.error('ALLOWED_USER_ID env var required');
@@ -32,6 +33,43 @@ if (!USER_ID) {
 if (!TG_CHAT_ID) {
   console.error('TG_CHAT_ID env var required (the numeric Telegram chat to talk on)');
   process.exit(1);
+}
+
+/** Resolve the agent slug to use. Set AGENT_SLUG to override. Otherwise
+ *  pick the highest-priority enabled responder — the same agent that
+ *  handles inbound Telegram messages, which is the natural fit for an
+ *  outbound proactive task. Fails fast if none exists so the operator
+ *  sees a clear error before the heartbeat row gets created. */
+async function resolveAgentSlug(): Promise<string> {
+  if (AGENT_SLUG_OVERRIDE) {
+    const [row] = await db
+      .select({ slug: agents.slug, enabled: agents.enabled })
+      .from(agents)
+      .where(and(eq(agents.ownerId, USER_ID!), eq(agents.slug, AGENT_SLUG_OVERRIDE)))
+      .limit(1);
+    if (!row) {
+      throw new Error(`AGENT_SLUG='${AGENT_SLUG_OVERRIDE}' not found for this owner. Pick from /settings/agents.`);
+    }
+    if (!row.enabled) {
+      throw new Error(`AGENT_SLUG='${AGENT_SLUG_OVERRIDE}' exists but is disabled. Enable it at /settings/agents.`);
+    }
+    return AGENT_SLUG_OVERRIDE;
+  }
+  const [responder] = await db
+    .select({ slug: agents.slug, name: agents.name })
+    .from(agents)
+    .where(
+      and(eq(agents.ownerId, USER_ID!), eq(agents.role, 'responder'), eq(agents.enabled, true)),
+    )
+    .orderBy(asc(agents.priority), asc(agents.slug))
+    .limit(1);
+  if (!responder) {
+    throw new Error(
+      "No enabled responder agent found. Create one at /settings/agents (role='responder') or pass AGENT_SLUG=<slug> to override.",
+    );
+  }
+  console.log(`[seed] auto-selected responder agent: ${responder.name} (${responder.slug})`);
+  return responder.slug;
 }
 
 const SKILL_SLUG = 'profile_interview';
@@ -109,7 +147,7 @@ async function upsertSkill(): Promise<void> {
   }
 }
 
-async function upsertHeartbeat(): Promise<void> {
+async function upsertHeartbeat(agentSlug: string): Promise<void> {
   const earliestAt = new Date(Date.now() + 6 * 3600_000); // 6h grace
   const schedule = {
     kind: 'interval' as const,
@@ -133,7 +171,7 @@ async function upsertHeartbeat(): Promise<void> {
     name: 'Get to know the user',
     description:
       'Daily one-question interview that builds a profile across family / work / hobbies / health / goals. Self-terminates when all topics covered.',
-    agentSlug: 'saskia',
+    agentSlug,
     skillSlug: SKILL_SLUG,
     scheduleKind: 'interval' as const,
     schedule,
@@ -161,8 +199,9 @@ async function upsertHeartbeat(): Promise<void> {
 }
 
 async function main() {
+  const agentSlug = await resolveAgentSlug();
   await upsertSkill();
-  await upsertHeartbeat();
+  await upsertHeartbeat(agentSlug);
   console.log('[seed] done — heartbeat will fire after the 6h earliest_at gate passes.');
   console.log('[seed] use the /heartbeats page or the heartbeat_fire tool to test sooner.');
   process.exit(0);
