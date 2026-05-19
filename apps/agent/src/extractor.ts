@@ -540,7 +540,6 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       ownerId,
       subjectId: nodeId,
       subjectKind: 'node',
-      agentId: worker.id,
       disposition: 'node_not_found',
       details: { worker_slug: worker.slug },
     });
@@ -552,7 +551,6 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       ownerId,
       subjectId: nodeId,
       subjectKind: 'node',
-      agentId: worker.id,
       disposition: 'hard_skip_type',
       details: {
         node_type: node.type,
@@ -576,7 +574,6 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       ownerId,
       subjectId: node.id,
       subjectKind: 'node',
-      agentId: worker.id,
       disposition: 'type_not_in_allowlist',
       details: {
         node_type: node.type,
@@ -595,7 +592,6 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       ownerId,
       subjectId: node.id,
       subjectKind: 'node',
-      agentId: worker.id,
       disposition: 'no_api_key_id',
       details: { worker_slug: worker.slug, node_type: node.type },
     });
@@ -609,7 +605,6 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       ownerId,
       subjectId: node.id,
       subjectKind: 'node',
-      agentId: worker.id,
       disposition: 'api_key_not_decryptable',
       details: { worker_slug: worker.slug, api_key_id: worker.apiKeyId },
     });
@@ -624,7 +619,6 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       ownerId,
       subjectId: node.id,
       subjectKind: 'node',
-      agentId: worker.id,
       disposition: 'already_extracted',
       details: {
         worker_slug: worker.slug,
@@ -646,7 +640,6 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       ownerId,
       subjectId: node.id,
       subjectKind: 'node',
-      agentId: worker.id,
       disposition: 'body_too_short',
       details: {
         worker_slug: worker.slug,
@@ -679,15 +672,18 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       ownerId,
       subjectId: node.id,
       subjectKind: 'node',
-      // Trace's agentId historically held the extractor's id; we keep
-      // the same column populated with the worker id for /traces
-      // navigation continuity.
-      agentId: worker.id,
+      // NOTE: deliberately no agentId. The trace_kind extractor_run
+      // belongs to an ai_worker, but traces.agent_id is FK-constrained
+      // to the `agents` table (legacy from the era when extractor was
+      // an agent). Passing worker.id silently FK-violated the insert
+      // and every trace vanished. worker_slug + worker_id below carry
+      // the navigation handle we want.
       data: {
         nodeType: node.type,
         title: node.title,
         model: worker.model,
         worker_slug: worker.slug,
+        worker_id: worker.id,
         embeddingModel: embeddingModel ?? null,
       },
     },

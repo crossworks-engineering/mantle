@@ -140,7 +140,6 @@ export async function reflect(ownerId: string): Promise<void> {
       kind: 'reflector_run',
       ownerId,
       subjectKind: 'agent_tick',
-      agentId: reflector.id,
       disposition: 'no_api_key_id',
       details: { worker_slug: reflector.slug },
     });
@@ -154,7 +153,6 @@ export async function reflect(ownerId: string): Promise<void> {
       kind: 'reflector_run',
       ownerId,
       subjectKind: 'agent_tick',
-      agentId: reflector.id,
       disposition: 'no_responder_agent',
       details: {
         worker_slug: reflector.slug,
@@ -192,7 +190,6 @@ export async function reflect(ownerId: string): Promise<void> {
       kind: 'reflector_run',
       ownerId,
       subjectKind: 'agent_tick',
-      agentId: reflector.id,
       disposition: 'no_new_activity',
       details: {
         worker_slug: reflector.slug,
@@ -211,7 +208,6 @@ export async function reflect(ownerId: string): Promise<void> {
       kind: 'reflector_run',
       ownerId,
       subjectKind: 'agent_tick',
-      agentId: reflector.id,
       disposition: 'api_key_not_decryptable',
       details: { worker_slug: reflector.slug, api_key_id: reflector.apiKeyId },
     });

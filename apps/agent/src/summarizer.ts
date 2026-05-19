@@ -90,7 +90,6 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
       ownerId,
       subjectId: chatPk,
       subjectKind: 'chat',
-      agentId: worker.id,
       disposition: 'no_api_key_id',
       details: { worker_slug: worker.slug },
     });
@@ -118,7 +117,6 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
       ownerId,
       subjectId: chatPk,
       subjectKind: 'chat',
-      agentId: worker.id,
       data: { worker_slug: worker.slug, threshold, batchSize, undigestedAtStart: undigested },
     },
     async () => {
