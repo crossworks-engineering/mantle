@@ -22,10 +22,12 @@ import {
   getChatAdapter,
   getSttAdapter,
   getTtsAdapter,
+  getVisionAdapter,
   type ChatModelInfo,
   type SttModelInfo,
   type TtsModelInfo,
   type TtsVoice,
+  type VisionModelInfo,
 } from '@mantle/voice';
 import { getAiWorker } from '@/lib/ai-workers';
 import type { AiWorkerKind, AiWorkerParams } from '@mantle/db';
@@ -216,10 +218,10 @@ export async function testSttAction(
  */
 export async function discoverModelsAction(
   apiKeyId: string,
-  kind: 'tts' | 'stt' | 'chat',
+  kind: 'tts' | 'stt' | 'chat' | 'vision',
   providerId: string,
 ): Promise<{
-  available: Array<TtsModelInfo | SttModelInfo | ChatModelInfo>;
+  available: Array<TtsModelInfo | SttModelInfo | ChatModelInfo | VisionModelInfo>;
   filtered: boolean;
   error: string | null;
 }> {
@@ -239,6 +241,8 @@ export async function discoverModelsAction(
       ? getTtsAdapter(providerId)
       : kind === 'stt'
       ? getSttAdapter(providerId)
+      : kind === 'vision'
+      ? getVisionAdapter(providerId)
       : getChatAdapter(providerId);
   if (!adapter) {
     return {
@@ -287,6 +291,75 @@ export async function listVoicesAction(
       error: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+/**
+ * Test a vision worker by extracting text from a user-supplied image.
+ * The browser hands us a base64-encoded blob (jpeg/png/etc.) and the
+ * adapter handles the rest. Returns the extracted text + the model
+ * that did the work + token usage, so the operator can sanity-check
+ * the worker's config before relying on it in the ingest pipeline.
+ *
+ * Routes through the same adapter registry the runtime uses, so a
+ * successful test means production will succeed too.
+ */
+export async function testVisionAction(
+  workerId: string,
+  imageBase64: string,
+  mimeType: string,
+): Promise<{
+  ok: true;
+  text: string;
+  model: string;
+  adapter: string;
+  tokensIn: number | null;
+  tokensOut: number | null;
+}> {
+  const user = await requireOwner();
+  const worker = await getAiWorker(user.id, workerId);
+  if (!worker) throw new Error('worker not found');
+  if (worker.kind !== 'vision') throw new Error('worker is not a vision worker');
+  if (!worker.apiKeyId) throw new Error('worker has no api_key configured');
+  const apiKey = await getApiKeyById(worker.apiKeyId);
+  if (!apiKey) throw new Error('api key not found or could not decrypt');
+
+  const adapter = getVisionAdapter(worker.provider);
+  if (!adapter) {
+    throw new Error(
+      `no vision adapter for provider '${worker.provider}'. Currently wired: openai, anthropic, google, xai.`,
+    );
+  }
+  const bytes = Buffer.from(imageBase64, 'base64');
+  if (bytes.length === 0) throw new Error('empty image buffer');
+
+  const params = (worker.params ?? {}) as {
+    extraction_prompt?: string;
+    max_tokens?: number;
+  };
+  // Fall back to a verbatim-transcription default if the worker has
+  // no per-image prompt configured. Matches the form's placeholder
+  // text so the test does what the operator probably expects.
+  const prompt =
+    params.extraction_prompt?.trim() ||
+    'Transcribe everything visible in this image verbatim, preserving line breaks and structure. If something is unclear, mark it [unclear]. Output plain text only.';
+
+  const result = await adapter.extract(bytes, {
+    apiKey,
+    mimeType: mimeType || 'image/jpeg',
+    prompt,
+    systemPrompt: worker.systemPrompt ?? undefined,
+    model: worker.model,
+    maxTokens: params.max_tokens ?? 2000,
+  });
+
+  return {
+    ok: true,
+    text: result.text,
+    model: result.model,
+    adapter: adapter.adapterName,
+    tokensIn: result.tokensIn ?? null,
+    tokensOut: result.tokensOut ?? null,
+  };
 }
 
 /**
@@ -409,7 +482,7 @@ function parseParamsFromForm(kind: AiWorkerKind, fd: FormData): AiWorkerParams {
       return {
         extraction_prompt: str(fd.get('extraction_prompt')),
         max_tokens: num(fd.get('max_tokens')),
-      };
+      } as AiWorkerParams;
     }
     case 'image_gen': {
       return {

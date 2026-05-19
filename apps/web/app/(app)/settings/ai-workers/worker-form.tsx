@@ -16,19 +16,23 @@ import { RefreshCw } from 'lucide-react';
 import type { AiWorker, AiWorkerKind } from '@mantle/db';
 import {
   ANTHROPIC_CHAT_MODELS,
+  ANTHROPIC_VISION_MODELS,
   ASSEMBLYAI_STT_MODELS,
   CAPABILITY_FOR_KIND,
   DEEPGRAM_STT_MODELS,
   ELEVENLABS_STT_MODELS,
   GOOGLE_CHAT_MODELS,
   GOOGLE_STT_MODELS,
+  GOOGLE_VISION_MODELS,
   HUGGINGFACE_CHAT_MODELS,
   HUGGINGFACE_ROUTING_POLICIES,
   OPENAI_STT_MODELS,
   OPENAI_TTS_MODELS,
+  OPENAI_VISION_MODELS,
   VOICE_DESCRIPTIONS,
   XAI_CHAT_MODELS,
   XAI_STT_MODELS,
+  XAI_VISION_MODELS,
   audioTagsForElevenLabsModel,
   audioTagsForGoogleTtsModel,
   audioTagsForXaiTtsModel,
@@ -41,6 +45,7 @@ import {
   type ProviderCapability,
   type SttModelInfo,
   type TtsModelInfo,
+  type VisionModelInfo,
 } from '@mantle/voice';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,6 +55,7 @@ import { discoverModelsAction, listVoicesAction } from './actions';
 import { TtsTestButton } from './tts-test-button';
 import { SttTestButton } from './stt-test-button';
 import { ChatTestButton } from './chat-test-button';
+import { VisionTestButton } from './vision-test-button';
 
 type KeyOption = { id: string; service: string; label: string; masked: string };
 
@@ -129,9 +135,13 @@ export function WorkerForm({ mode, kind, worker, keys, action }: Props) {
   // the single source of truth for "show a model dropdown" — any
   // provider not listed here gets a free-text model input instead.
   const wiredChatProviders = new Set(['xai', 'huggingface', 'anthropic', 'google']);
+  // Which vision providers have an adapter today. Mirrors the chat
+  // wiredChatProviders set — keeps "show a model dropdown" honest.
+  const wiredVisionProviders = new Set(['openai', 'anthropic', 'google', 'xai']);
   const supportsDiscovery =
     kind === 'tts' ||
     kind === 'stt' ||
+    (kind === 'vision' && wiredVisionProviders.has(provider)) ||
     (chatShaped && wiredChatProviders.has(provider));
 
   // The initial model list rendered before live discovery returns
@@ -145,7 +155,7 @@ export function WorkerForm({ mode, kind, worker, keys, action }: Props) {
   const staticCatalogFor = (
     forKind: AiWorkerKind,
     forProvider: string,
-  ): Array<TtsModelInfo | SttModelInfo | ChatModelInfo> => {
+  ): Array<TtsModelInfo | SttModelInfo | ChatModelInfo | VisionModelInfo> => {
     if (forKind === 'tts') return [...OPENAI_TTS_MODELS];
     if (forKind === 'stt') {
       // Each STT provider ships its own model list. Falls back to
@@ -158,6 +168,15 @@ export function WorkerForm({ mode, kind, worker, keys, action }: Props) {
       if (forProvider === 'google') return [...GOOGLE_STT_MODELS];
       return [...OPENAI_STT_MODELS];
     }
+    if (forKind === 'vision') {
+      // 4 wired vision providers; everyone else gets the OpenAI list
+      // as a placeholder (the form's "not yet wired" hint will steer
+      // them anyway).
+      if (forProvider === 'anthropic') return [...ANTHROPIC_VISION_MODELS];
+      if (forProvider === 'google') return [...GOOGLE_VISION_MODELS];
+      if (forProvider === 'xai') return [...XAI_VISION_MODELS];
+      return [...OPENAI_VISION_MODELS];
+    }
     if (forKind === 'reflector' || forKind === 'extractor' || forKind === 'summarizer') {
       if (forProvider === 'xai') return [...XAI_CHAT_MODELS];
       if (forProvider === 'huggingface') return [...HUGGINGFACE_CHAT_MODELS];
@@ -168,7 +187,7 @@ export function WorkerForm({ mode, kind, worker, keys, action }: Props) {
   };
   const initialCatalog = staticCatalogFor(kind, provider);
   const [discovery, setDiscovery] = useState<{
-    available: Array<TtsModelInfo | SttModelInfo | ChatModelInfo>;
+    available: Array<TtsModelInfo | SttModelInfo | ChatModelInfo | VisionModelInfo>;
     filtered: boolean;
     error: string | null;
     loading: boolean;
@@ -183,10 +202,10 @@ export function WorkerForm({ mode, kind, worker, keys, action }: Props) {
     if (!keyId) return;
     // Decide which dispatch kind to hand to the action: 'chat' for
     // reflector/extractor/summarizer (they make chat calls), or the
-    // worker kind directly for tts/stt. We bail out cleanly if the
-    // worker kind isn't supported by discovery yet.
+    // worker kind directly for tts/stt/vision. We bail out cleanly if
+    // the worker kind isn't supported by discovery yet.
     const discoveryKind =
-      kind === 'tts' || kind === 'stt'
+      kind === 'tts' || kind === 'stt' || kind === 'vision'
         ? kind
         : chatShaped
         ? 'chat'
@@ -514,6 +533,17 @@ export function WorkerForm({ mode, kind, worker, keys, action }: Props) {
             Uses the saved system prompt, model, and params — same path as production.
           </p>
           <ChatTestButton workerId={worker.id} />
+        </section>
+      )}
+      {mode === 'edit' && worker && kind === 'vision' && (
+        <section className="space-y-2 border-t border-border pt-6">
+          <h3 className="text-sm font-semibold">Test extraction</h3>
+          <p className="text-xs text-muted-foreground">
+            Pick an image from disk and we'll run it through this worker's vision adapter
+            ({provider}) using the saved extraction prompt and model. Use this to dial in the
+            prompt before the ingest pipeline starts feeding it photos.
+          </p>
+          <VisionTestButton workerId={worker.id} />
         </section>
       )}
 
@@ -880,6 +910,13 @@ function VisionFields({
   params: Record<string, unknown>;
   systemPrompt: string | null | undefined;
 }) {
+  // Default extraction prompt — verbatim transcription. Picked
+  // deliberately for the "photo of handwritten notes" use case: the
+  // pipeline does its own structuring downstream (extractor agents),
+  // so the vision worker should just be a faithful OCR. Operators
+  // who want markdown can override; the placeholder shows the shape.
+  const defaultPrompt =
+    'Transcribe everything visible in this image verbatim, preserving line breaks and structure. If something is unclear, mark it [unclear]. Output plain text only — do not summarise or comment.';
   return (
     <div className="space-y-4">
       <div className="space-y-1.5">
@@ -888,19 +925,29 @@ function VisionFields({
           id="systemPrompt"
           name="systemPrompt"
           defaultValue={systemPrompt ?? ''}
-          rows={4}
-          placeholder="You are a vision assistant. Extract the contents as markdown…"
+          rows={3}
+          placeholder="You are an OCR engine. Output exactly what's on the page — no commentary."
           className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
         />
+        <p className="text-xs text-muted-foreground">
+          Optional. Use to nudge the model's behaviour across all calls (e.g. &quot;preserve
+          mathematical notation as LaTeX&quot;). Leave blank for plain transcription.
+        </p>
       </div>
       <div className="space-y-1.5">
-        <Label htmlFor="extraction_prompt">Extraction prompt (per-image)</Label>
-        <Input
+        <Label htmlFor="extraction_prompt">Per-image prompt</Label>
+        <textarea
           id="extraction_prompt"
           name="extraction_prompt"
-          defaultValue={(params.extraction_prompt as string) ?? ''}
-          placeholder="Transcribe everything on this whiteboard verbatim, preserving structure."
+          defaultValue={(params.extraction_prompt as string) ?? defaultPrompt}
+          rows={3}
+          placeholder={defaultPrompt}
+          className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
         />
+        <p className="text-xs text-muted-foreground">
+          Sent alongside each image. The default is verbatim transcription — change it for
+          structured-markdown output, summarisation, action-item extraction, etc.
+        </p>
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="max_tokens">Max output tokens</Label>
@@ -911,6 +958,9 @@ function VisionFields({
           defaultValue={(params.max_tokens as number) ?? 2000}
           className="w-32"
         />
+        <p className="text-xs text-muted-foreground">
+          Caps cost on long transcripts. 2000 covers ~3 pages of dense handwriting.
+        </p>
       </div>
     </div>
   );

@@ -19,6 +19,7 @@ import {
   registerChatAdapter,
   registerSttAdapter,
   registerTtsAdapter,
+  registerVisionAdapter,
 } from './registry';
 import { SUPPORTED_PROVIDERS } from '../providers';
 import { openAiTtsAdapter } from './openai-tts';
@@ -35,6 +36,10 @@ import { elevenLabsTtsAdapter } from './elevenlabs-tts';
 import { elevenLabsSttAdapter } from './elevenlabs-stt';
 import { deepgramSttAdapter } from './deepgram-stt';
 import { assemblyAiSttAdapter } from './assemblyai-stt';
+import { openAiVisionAdapter } from './openai-vision';
+import { anthropicVisionAdapter } from './anthropic-vision';
+import { googleVisionAdapter } from './google-vision';
+import { xaiVisionAdapter } from './xai-vision';
 
 // Built-in adapters. Order doesn't matter — these are just into a
 // Map keyed by providerId.
@@ -52,6 +57,10 @@ registerChatAdapter(xaiChatAdapter);
 registerChatAdapter(huggingfaceChatAdapter);
 registerChatAdapter(anthropicChatAdapter);
 registerChatAdapter(googleChatAdapter);
+registerVisionAdapter(openAiVisionAdapter);
+registerVisionAdapter(anthropicVisionAdapter);
+registerVisionAdapter(googleVisionAdapter);
+registerVisionAdapter(xaiVisionAdapter);
 
 // Surface drift between registered adapters and the providers catalog
 // at module-load time. The catalog drives UI dropdown filters via
@@ -97,6 +106,9 @@ export {
   type TtsDispatcher,
   type SttDispatcher,
   type VisionDispatcher,
+  type VisionExtractOptions,
+  type VisionExtractResult,
+  type VisionModelInfo,
   type ImageGenDispatcher,
   type AdapterMeta,
 } from './types';
@@ -110,6 +122,10 @@ export { elevenLabsSttAdapter } from './elevenlabs-stt';
 export { deepgramSttAdapter } from './deepgram-stt';
 export { assemblyAiSttAdapter } from './assemblyai-stt';
 export { googleSttAdapter } from './google-stt';
+export { openAiVisionAdapter } from './openai-vision';
+export { anthropicVisionAdapter } from './anthropic-vision';
+export { googleVisionAdapter } from './google-vision';
+export { xaiVisionAdapter } from './xai-vision';
 export { xaiChatAdapter } from './xai-chat';
 export {
   huggingfaceChatAdapter,
@@ -131,6 +147,7 @@ export {
   XAI_TTS_VOICES,
   XAI_AUDIO_TAGS,
   XAI_STT_MODELS,
+  XAI_VISION_MODELS,
   audioTagsForXaiTtsModel,
 } from '../catalogs/xai';
 export {
@@ -139,6 +156,7 @@ export {
 } from '../catalogs/huggingface';
 export {
   ANTHROPIC_CHAT_MODELS,
+  ANTHROPIC_VISION_MODELS,
   ANTHROPIC_BASE_URL,
   ANTHROPIC_API_VERSION,
 } from '../catalogs/anthropic';
@@ -149,9 +167,11 @@ export {
   GOOGLE_TTS_VOICES,
   GOOGLE_AUDIO_TAGS,
   GOOGLE_STT_MODELS,
+  GOOGLE_VISION_MODELS,
   audioTagsForGoogleTtsModel,
   type GoogleTtsModelId,
 } from '../catalogs/google';
+export { OPENAI_VISION_MODELS } from '../catalogs/openai-vision';
 export {
   ELEVENLABS_TTS_MODELS,
   ELEVENLABS_STT_MODELS,

@@ -166,16 +166,81 @@ export interface SttDispatcher extends AdapterMeta {
   discoverModels?(apiKey: string): Promise<DiscoveryResult<SttModelInfo>>;
 }
 
-// Future capabilities — interfaces are stubbed here so when we wire
-// vision/image-gen, the registry shape stays consistent.
+// ─── Vision ─────────────────────────────────────────────────────────
+
+/** A vision-capable model entry. Same generic shape as ChatModelInfo;
+ *  the form's vision-worker dropdown renders these so operators pick
+ *  from a list rather than typing a model id by hand. */
+export interface VisionModelInfo {
+  id: string;
+  label: string;
+  description: string;
+  /** Context window in tokens. */
+  contextTokens?: number;
+  /** USD per 1M input tokens. Approximate; for UI hints only. */
+  inputPricePer1M?: number;
+  /** USD per 1M output tokens. */
+  outputPricePer1M?: number;
+  /** Roughly which tier the model fits. 'fast' = use for high volume;
+   *  'balanced' = default; 'quality' = harder images, lower throughput. */
+  tier?: 'fast' | 'balanced' | 'quality';
+}
+
+export interface VisionExtractOptions {
+  apiKey: string;
+  /** MIME of the image bytes (image/jpeg, image/png, image/webp, image/gif).
+   *  Each provider accepts a slightly different list — adapters error
+   *  on unsupported MIMEs rather than silently sending bytes the API
+   *  will reject downstream. */
+  mimeType: string;
+  /** User-side prompt — "transcribe this page verbatim", "summarize
+   *  the diagram", "extract action items as a list". Adapters pass it
+   *  through alongside the image, framed as the user turn. */
+  prompt: string;
+  /** Optional system-level steering (used the same way as a chat
+   *  worker's system prompt). Operators set this on the worker row;
+   *  callers forward it here. */
+  systemPrompt?: string;
+  /** Model id. Falls back to the adapter's documented default if
+   *  omitted. */
+  model?: string;
+  /** Max output tokens. Vision-LLMs can run long without one. */
+  maxTokens?: number;
+}
+
+export interface VisionExtractResult {
+  /** Extracted text. Trimmed; empty string on no-output, not null. */
+  text: string;
+  /** Model that did the work. May be a more specific id than the
+   *  caller passed in (e.g. dated Claude variants). */
+  model: string;
+  /** Token usage when the provider returns it. */
+  tokensIn?: number;
+  tokensOut?: number;
+}
 
 export interface VisionDispatcher extends AdapterMeta {
-  /** Extract text/structure from an image. */
-  extract(
-    image: Buffer,
-    opts: { apiKey: string; mimeType: string; prompt: string; model?: string },
-  ): Promise<{ text: string; model: string }>;
+  /** Extract text/structure from an image. The adapter handles the
+   *  per-provider message shape, MIME validation, and image encoding
+   *  (base64 vs URL). Caller hands raw bytes + a prompt; result is
+   *  trimmed text. */
+  extract(image: Buffer, opts: VisionExtractOptions): Promise<VisionExtractResult>;
+
+  /** Live-discover which vision-capable models the api key can use.
+   *  Implementation parity with ChatDispatcher.discoverModels — when
+   *  absent, the form falls back to the adapter's static catalog. */
+  discoverModels?(apiKey: string): Promise<import('../discover').DiscoveryResult<VisionModelInfo>>;
+
+  /** Static catalog the UI renders before live discovery returns or
+   *  when the adapter doesn't support discovery. */
+  staticCatalog?(): readonly VisionModelInfo[];
 }
+
+// ─── Image generation ───────────────────────────────────────────────
+//
+// Interface stub for the future image_gen pipeline. No adapters
+// registered yet — keeping the shape here means the registry/types
+// stay consistent when we wire DALL-E / Imagen / Grok-image.
 
 export interface ImageGenDispatcher extends AdapterMeta {
   /** Generate an image from a prompt. */

@@ -17,7 +17,7 @@
  *     a separate google-tts.ts / google-embed.ts can land later.
  */
 
-import type { AudioTag, ChatModelInfo } from '../adapters/types';
+import type { AudioTag, ChatModelInfo, VisionModelInfo } from '../adapters/types';
 
 export const GOOGLE_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -235,3 +235,43 @@ export const GOOGLE_STT_MODELS: readonly SttModelInfo[] = [
     supportsTimestamps: false,
   },
 ] as const;
+
+// ─── Gemini Vision ───────────────────────────────────────────────────
+//
+// Every modern Gemini model (2.5+ and 3.x) is multimodal — same
+// endpoint as chat, just an inlineData `image/jpeg` part instead of
+// (or alongside) text. We surface the practical picks: Flash-Lite for
+// the cheap default, Flash for the balanced choice, Pro when an image
+// has dense text or diagrams worth paying more for.
+
+export const GOOGLE_VISION_MODELS: readonly VisionModelInfo[] = [
+  {
+    id: 'gemini-2.5-flash-lite',
+    label: 'Gemini 2.5 Flash Lite',
+    description: 'Cheapest, fastest vision. Great for clean printed text and bulk receipt OCR.',
+    contextTokens: 1_000_000,
+    tier: 'fast',
+  },
+  {
+    id: 'gemini-2.5-flash',
+    label: 'Gemini 2.5 Flash',
+    description:
+      'Best price/perf. Handles handwritten notes and multi-column layouts. Recommended default.',
+    contextTokens: 1_000_000,
+    tier: 'balanced',
+  },
+  {
+    id: 'gemini-2.5-pro',
+    label: 'Gemini 2.5 Pro',
+    description: 'Strongest accuracy on hard handwriting + diagrams. 2M context.',
+    contextTokens: 2_000_000,
+    tier: 'quality',
+  },
+  {
+    id: 'gemini-3-flash-preview',
+    label: 'Gemini 3 Flash (preview)',
+    description: 'Latest Flash. Higher multilingual fidelity; preview-tagged but production-ok.',
+    contextTokens: 1_000_000,
+    tier: 'balanced',
+  },
+];

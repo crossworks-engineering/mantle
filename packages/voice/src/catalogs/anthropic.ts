@@ -19,7 +19,7 @@
  * stay readable.
  */
 
-import type { ChatModelInfo } from '../adapters/types';
+import type { ChatModelInfo, VisionModelInfo } from '../adapters/types';
 
 export const ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
 /** Required header value on all Anthropic API calls. */
@@ -76,5 +76,43 @@ export const ANTHROPIC_CHAT_MODELS: readonly ChatModelInfo[] = [
     capabilities: ['vision', 'reasoning', 'function_calling'],
     inputPricePer1M: 3,
     outputPricePer1M: 15,
+  },
+];
+
+/** Vision-capable Claude models. Every current Claude model accepts
+ *  image content blocks, but we surface a smaller curated set for the
+ *  vision-worker dropdown — Haiku for cheap high-volume OCR, Sonnet
+ *  for balanced quality, Opus when accuracy on hard handwriting
+ *  matters more than cost. Opus is over-the-top for printed text. */
+export const ANTHROPIC_VISION_MODELS: readonly VisionModelInfo[] = [
+  {
+    id: 'claude-haiku-4-5',
+    label: 'Claude Haiku 4.5',
+    description:
+      'Cheap, fast vision. Solid on printed text and clean handwriting. Default choice for high-volume OCR.',
+    contextTokens: 200_000,
+    inputPricePer1M: 1,
+    outputPricePer1M: 5,
+    tier: 'fast',
+  },
+  {
+    id: 'claude-sonnet-4-6',
+    label: 'Claude Sonnet 4.6',
+    description:
+      'Best balance. Strong on messy handwriting + multi-column layouts. Recommended for note photos.',
+    contextTokens: 1_000_000,
+    inputPricePer1M: 3,
+    outputPricePer1M: 15,
+    tier: 'balanced',
+  },
+  {
+    id: 'claude-opus-4-7',
+    label: 'Claude Opus 4.7',
+    description:
+      'Frontier. Use when Sonnet misreads cursive or you need diagram comprehension alongside text. Pricey.',
+    contextTokens: 1_000_000,
+    inputPricePer1M: 5,
+    outputPricePer1M: 25,
+    tier: 'quality',
   },
 ];

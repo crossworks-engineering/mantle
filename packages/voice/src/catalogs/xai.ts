@@ -168,3 +168,44 @@ export const XAI_STT_MODELS: readonly SttModelInfo[] = [
     supportsTimestamps: false,
   },
 ] as const;
+
+// ─── xAI Vision ──────────────────────────────────────────────────────
+//
+// xAI's chat completions endpoint is OpenAI-compatible — vision is
+// just messages[].content with image_url parts. As of May 2026 the
+// grok-4.x line is multimodal; grok-3 was image-input-only for vision.
+// Discovery cross-references against the chat /v1/models response,
+// same as XAI_CHAT_MODELS.
+
+import type { VisionModelInfo } from '../adapters/types';
+
+export const XAI_VISION_MODELS: readonly VisionModelInfo[] = [
+  {
+    id: 'grok-4.3',
+    label: 'Grok 4.3',
+    description:
+      'Current default. Multimodal across text + image. Reuses your chat key. Recommended.',
+    contextTokens: 1_000_000,
+    inputPricePer1M: 1.25,
+    outputPricePer1M: 2.5,
+    tier: 'balanced',
+  },
+  {
+    id: 'grok-4.20-0309-non-reasoning',
+    label: 'Grok 4.20 (no reasoning)',
+    description:
+      'Faster, cheaper variant. Good when the task is plain OCR and you don’t need reasoning over the image.',
+    contextTokens: 1_000_000,
+    inputPricePer1M: 1.25,
+    outputPricePer1M: 2.5,
+    tier: 'fast',
+  },
+  {
+    id: 'grok-3',
+    label: 'Grok 3 (alias)',
+    description:
+      'Alias — redirects to grok-4.3. Listed so existing workers configured for it still resolve.',
+    contextTokens: 1_000_000,
+    tier: 'balanced',
+  },
+];
