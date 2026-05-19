@@ -27,6 +27,7 @@ import {
   readFileById,
   upsertFile,
 } from '@mantle/files';
+import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
 import { WORKER_DELEGATION_TOOLS } from './builtins-workers';
 
@@ -586,6 +587,25 @@ const file_create: BuiltinToolDef = {
         overwrite: bool(input.overwrite),
       });
       ctx.step?.setOutput({ fileId: row.id });
+      // Saskia-driven file create is itself a data entry event.
+      // The biography view for the new file picks this up so the
+      // operator can see "Saskia created this in response to a
+      // user request" rather than "appeared from nowhere."
+      void recordIngest({
+        source: 'agent_tool',
+        ownerId: ctx.ownerId,
+        nodeId: row.id,
+        summary: `File created by tool: ${row.filename}`,
+        payload: {
+          parentPath,
+          filename: row.filename,
+          mimeType: row.mimeType,
+          sizeBytes: row.sizeBytes,
+          via: 'file_create_tool',
+          ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
+        },
+        snippet: content,
+      });
       return { ok: true, output: row };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };

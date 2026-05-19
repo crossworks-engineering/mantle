@@ -29,7 +29,7 @@ import {
   type ReflectorParams,
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
-import { startTrace, step } from '@mantle/tracing';
+import { recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import { captureLlmUsage } from '@mantle/agent-runtime';
 
 /** How many recent turns the reflector reviews per run. */
@@ -119,16 +119,48 @@ function parseReflectorOutput(raw: string): ReflectorOutput {
 }
 
 export async function reflect(ownerId: string): Promise<void> {
+  // Reflector runs on a 10-min interval; tracing every skip here is
+  // cheap (max 144 rows/day per skip-reason). Every early-return
+  // path records a 'skipped' trace so the operator can see why the
+  // reflector hasn't been touching their persona notes.
   const reflector = await resolveReflector(ownerId);
-  if (!reflector) return; // No reflector configured.
+  if (!reflector) {
+    await recordSkippedTrace({
+      kind: 'reflector_run',
+      ownerId,
+      subjectKind: 'agent_tick',
+      disposition: 'no_reflector_worker',
+      details: { hint: 'Set a default reflector at /settings/ai-workers.' },
+    });
+    return;
+  }
   if (!reflector.apiKeyId) {
     console.error(`[reflector] worker '${reflector.slug}' has no api_key_id — skipping`);
+    await recordSkippedTrace({
+      kind: 'reflector_run',
+      ownerId,
+      subjectKind: 'agent_tick',
+      agentId: reflector.id,
+      disposition: 'no_api_key_id',
+      details: { worker_slug: reflector.slug },
+    });
     return;
   }
 
   const responder = await resolveResponderAgent(ownerId);
   if (!responder) {
     console.error('[reflector] no enabled responder agent — nowhere to append notes');
+    await recordSkippedTrace({
+      kind: 'reflector_run',
+      ownerId,
+      subjectKind: 'agent_tick',
+      agentId: reflector.id,
+      disposition: 'no_responder_agent',
+      details: {
+        worker_slug: reflector.slug,
+        hint: 'Reflector edits persona_notes on the responder; create an enabled responder agent first.',
+      },
+    });
     return;
   }
 
@@ -155,11 +187,34 @@ export async function reflect(ownerId: string): Promise<void> {
       ),
   ]);
   const newCount = (tgCount[0]?.n ?? 0) + (webCount[0]?.n ?? 0);
-  if (newCount === 0) return;
+  if (newCount === 0) {
+    await recordSkippedTrace({
+      kind: 'reflector_run',
+      ownerId,
+      subjectKind: 'agent_tick',
+      agentId: reflector.id,
+      disposition: 'no_new_activity',
+      details: {
+        worker_slug: reflector.slug,
+        since: since.toISOString(),
+        telegram_outbound: tgCount[0]?.n ?? 0,
+        web_outbound: webCount[0]?.n ?? 0,
+      },
+    });
+    return;
+  }
 
   const apiKey = await getApiKeyById(reflector.apiKeyId);
   if (!apiKey) {
     console.error(`[reflector] api_key_id ${reflector.apiKeyId} not found — skipping`);
+    await recordSkippedTrace({
+      kind: 'reflector_run',
+      ownerId,
+      subjectKind: 'agent_tick',
+      agentId: reflector.id,
+      disposition: 'api_key_not_decryptable',
+      details: { worker_slug: reflector.slug, api_key_id: reflector.apiKeyId },
+    });
     return;
   }
 

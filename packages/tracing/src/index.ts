@@ -1,6 +1,8 @@
 export {
   startTrace,
   step,
+  recordSkippedTrace,
+  recordIngest,
   currentTrace,
   currentStep,
   type TraceKind,

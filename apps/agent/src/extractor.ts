@@ -52,7 +52,7 @@ import {
 import { getApiKeyById } from '@mantle/api-keys';
 import { embed } from '@mantle/embeddings';
 import { diskPathForFile, extOf, INGESTABLE_EXTS } from '@mantle/files';
-import { currentTrace, startTrace, step } from '@mantle/tracing';
+import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import { captureLlmUsage } from '@mantle/agent-runtime';
 
 /** Types we will NEVER extract from, no matter what the agent config says.
@@ -511,13 +511,57 @@ async function classifyAndApplyFact(
 // ─── The main entrypoint ────────────────────────────────────────────────────
 
 export async function extractNode(nodeId: string, ownerId: string): Promise<void> {
+  // Every early-return below now records a `skipped` trace so the
+  // operator can see WHY the extractor declined to run this node.
+  // Previously these were silent returns and "I uploaded X but
+  // nothing happened" was un-debuggable. See migration 0029 +
+  // recordSkippedTrace in @mantle/tracing.
+
   const worker = await resolveExtractor(ownerId);
-  if (!worker) return; // No extractor configured. Silent.
+  if (!worker) {
+    await recordSkippedTrace({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: nodeId,
+      subjectKind: 'node',
+      disposition: 'no_extractor_worker',
+      details: {
+        hint: 'Configure an extractor at /settings/ai-workers and mark it default.',
+      },
+    });
+    return;
+  }
 
   // Load the node.
   const [node] = await db.select().from(nodes).where(eq(nodes.id, nodeId)).limit(1);
-  if (!node) return;
-  if (HARD_SKIP_TYPES.has(node.type)) return;
+  if (!node) {
+    await recordSkippedTrace({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: nodeId,
+      subjectKind: 'node',
+      agentId: worker.id,
+      disposition: 'node_not_found',
+      details: { worker_slug: worker.slug },
+    });
+    return;
+  }
+  if (HARD_SKIP_TYPES.has(node.type)) {
+    await recordSkippedTrace({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: nodeId,
+      subjectKind: 'node',
+      agentId: worker.id,
+      disposition: 'hard_skip_type',
+      details: {
+        node_type: node.type,
+        worker_slug: worker.slug,
+        hint: `Type '${node.type}' is hard-coded as skip (transient/internal kinds).`,
+      },
+    });
+    return;
+  }
 
   // target_types is the new home for the type allowlist. We still
   // accept extract_types for legacy backfilled rows in the same
@@ -526,27 +570,93 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
   const extractTypes =
     params.target_types ?? params.extract_types ?? DEFAULT_EXTRACT_TYPES;
   // `*` is a wildcard meaning "any non-HARD_SKIP type" — already enforced above.
-  if (!extractTypes.includes('*') && !extractTypes.includes(node.type)) return;
+  if (!extractTypes.includes('*') && !extractTypes.includes(node.type)) {
+    await recordSkippedTrace({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      agentId: worker.id,
+      disposition: 'type_not_in_allowlist',
+      details: {
+        node_type: node.type,
+        allowed_types: extractTypes,
+        worker_slug: worker.slug,
+        hint: `Add '${node.type}' (or '*') to the worker's target_types param to extract it.`,
+      },
+    });
+    return;
+  }
 
   if (!worker.apiKeyId) {
     console.error(`[extractor] worker '${worker.slug}' has no api_key_id — skipping`);
+    await recordSkippedTrace({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      agentId: worker.id,
+      disposition: 'no_api_key_id',
+      details: { worker_slug: worker.slug, node_type: node.type },
+    });
     return;
   }
   const apiKey = await getApiKeyById(worker.apiKeyId);
   if (!apiKey) {
     console.error(`[extractor] api_key_id ${worker.apiKeyId} not found — skipping`);
+    await recordSkippedTrace({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      agentId: worker.id,
+      disposition: 'api_key_not_decryptable',
+      details: { worker_slug: worker.slug, api_key_id: worker.apiKeyId },
+    });
     return;
   }
 
   // Skip if we've already extracted this node (data.summary present + embedding set).
   const existingData = (node.data ?? {}) as Record<string, unknown>;
   if (existingData.summary && node.embedding) {
+    await recordSkippedTrace({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      agentId: worker.id,
+      disposition: 'already_extracted',
+      details: {
+        worker_slug: worker.slug,
+        node_type: node.type,
+        title: node.title,
+        existing_summary_chars:
+          typeof existingData.summary === 'string' ? existingData.summary.length : null,
+        has_embedding: true,
+      },
+    });
     return;
   }
 
   const body = await readNodeBody(node);
   if (!body || body.trim().length < 20) {
     // Not enough content to extract meaningfully.
+    await recordSkippedTrace({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      agentId: worker.id,
+      disposition: 'body_too_short',
+      details: {
+        worker_slug: worker.slug,
+        node_type: node.type,
+        title: node.title,
+        body_chars: body?.length ?? 0,
+        threshold_chars: 20,
+        hint: 'The extractor wants ≥20 chars of body content. Title-only nodes are skipped.',
+      },
+    });
     return;
   }
 

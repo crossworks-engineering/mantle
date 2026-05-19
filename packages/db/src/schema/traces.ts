@@ -18,10 +18,26 @@ export const traceKind = pgEnum('trace_kind', [
   'summarizer_run',
   'reflector_run',
   'photo_ingest',
+  // Every data-entry moment opens one of these. The trace's
+  // subject_id points at the resulting node so the node-biography
+  // view can answer "where did this come from?" — see
+  // recordIngest() in @mantle/tracing.
+  'content_ingest',
   'manual',
 ]);
 
-export const traceStatus = pgEnum('trace_status', ['running', 'success', 'error']);
+// 'skipped' is for pipelines that consciously decline to run (e.g.
+// extractor finds the node already has a summary + embedding). The
+// distinction from 'success' matters operationally: success means
+// "I did the work"; skipped means "I considered the work and chose
+// not to." Filtering /traces?status=skipped surfaces the silent
+// no-ops we previously had no record of.
+export const traceStatus = pgEnum('trace_status', [
+  'running',
+  'success',
+  'error',
+  'skipped',
+]);
 
 /**
  * One row per meaningful unit of work running in the agent process.

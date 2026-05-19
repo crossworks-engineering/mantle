@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireOwner } from '@/lib/auth';
 import { ensureFilesRootBranch, listFiles, upsertFile } from '@/lib/files';
+import { recordIngest } from '@mantle/tracing';
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25 MB — generous for personal use.
 
@@ -57,6 +58,24 @@ export async function POST(req: Request) {
         filename: file.name,
         bytes: buf,
       });
+      // Record the ingest event so the node-biography view has a
+      // "what came in" anchor. Truncated content snippet (first ~2KB)
+      // gets attached as a step so the biography page can show what
+      // was actually uploaded without re-reading from disk.
+      void recordIngest({
+        source: 'file_upload',
+        ownerId: user.id,
+        nodeId: row.id,
+        summary: `File uploaded: ${row.filename}`,
+        payload: {
+          parentPath,
+          filename: row.filename,
+          mimeType: row.mimeType,
+          sizeBytes: row.sizeBytes,
+          via: 'web_multipart',
+        },
+        snippet: tryUtf8Snippet(buf),
+      });
       return NextResponse.json({ file: row });
     }
 
@@ -80,6 +99,21 @@ export async function POST(req: Request) {
       filename: parsed.data.filename,
       bytes: buf,
     });
+    void recordIngest({
+      source: 'file_create',
+      ownerId: user.id,
+      nodeId: row.id,
+      summary: `Text file created: ${row.filename}`,
+      payload: {
+        parentPath: parsed.data.parentPath,
+        filename: row.filename,
+        mimeType: row.mimeType,
+        sizeBytes: row.sizeBytes,
+        via: 'web_json',
+      },
+      // Text-file creation is always utf-8; no encoding check needed.
+      snippet: parsed.data.content,
+    });
     return NextResponse.json({ file: row });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -94,6 +128,32 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ error: msg }, { status: 400 });
   }
+}
+
+/**
+ * Best-effort UTF-8 snippet of a binary buffer for the ingest trace.
+ * If the buffer decodes to mostly-printable text, return the first
+ * ~2KB so the biography page can show "what came in." If it looks
+ * like binary garbage (>10% non-printable in the sample), return
+ * undefined — a base64 dump would be useless and noisy.
+ *
+ * Capped at 2KB before printability check so we don't decode a 25MB
+ * PDF just to throw it away.
+ */
+function tryUtf8Snippet(buf: Buffer): string | undefined {
+  const sample = buf.subarray(0, 2048);
+  const text = sample.toString('utf8');
+  // Quick printability heuristic: count chars that are control codes
+  // outside the usual whitespace set (\t \n \r). If >10% are
+  // controls, it's binary.
+  let bad = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c < 32 && c !== 9 && c !== 10 && c !== 13) bad++;
+    if (c === 0xfffd) bad++; // replacement char from invalid utf-8
+  }
+  if (text.length === 0 || bad / text.length > 0.1) return undefined;
+  return text;
 }
 
 const BulkDeleteBody = z.object({ ids: z.array(z.string().uuid()).min(1).max(500) });

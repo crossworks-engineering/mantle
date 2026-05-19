@@ -26,7 +26,7 @@ import {
   type SummarizerParams,
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
-import { startTrace, step } from '@mantle/tracing';
+import { recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import { buildChatMessages, captureLlmUsage } from '@mantle/agent-runtime';
 
 /** Default seeded into the UI when role flips to `summarizer`. The user can
@@ -61,10 +61,39 @@ async function resolveSummarizer(ownerId: string): Promise<AiWorker | null> {
 }
 
 export async function summarizeChat(chatPk: string, ownerId: string): Promise<void> {
+  // Skip-tracing policy for summarizer:
+  //   - Configuration-level skips (no worker / no api key) ARE traced
+  //     because they're rare-but-actionable: the operator wants to
+  //     see "summarizer never runs because you forgot to set it up."
+  //   - The threshold check (undigested < N) is NOT traced because
+  //     it fires on every inbound Telegram message and would flood
+  //     the traces table. The signal "summarizer did roll something
+  //     up" is already captured by the success trace below; the
+  //     absence of a recent successful trace on a chat tells the
+  //     same story without per-message noise.
   const worker = await resolveSummarizer(ownerId);
-  if (!worker) return; // No summarizer configured — silently skip on every notify.
+  if (!worker) {
+    await recordSkippedTrace({
+      kind: 'summarizer_run',
+      ownerId,
+      subjectId: chatPk,
+      subjectKind: 'chat',
+      disposition: 'no_summarizer_worker',
+      details: { hint: 'Set a default summarizer at /settings/ai-workers.' },
+    });
+    return;
+  }
   if (!worker.apiKeyId) {
     console.error(`[agent] summarizer '${worker.slug}' has no api_key_id — skipping`);
+    await recordSkippedTrace({
+      kind: 'summarizer_run',
+      ownerId,
+      subjectId: chatPk,
+      subjectKind: 'chat',
+      agentId: worker.id,
+      disposition: 'no_api_key_id',
+      details: { worker_slug: worker.slug },
+    });
     return;
   }
 

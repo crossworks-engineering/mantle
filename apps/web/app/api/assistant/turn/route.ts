@@ -29,6 +29,7 @@ import { createFolder, upsertFile } from '@mantle/files';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import type { ToolArtifact } from '@mantle/tools';
+import { recordIngest } from '@mantle/tracing';
 
 const Body = z.object({ text: z.string().min(1).max(20_000) });
 
@@ -116,6 +117,24 @@ async function processUploadedImage(
     });
     nodeId = file.id;
     storagePath = `${parentPath}/${filename}`;
+    // Trace the upload as an ingest event so the new file's
+    // biography page picks up the entry point. Vision worker runs
+    // separately (extractor_run trace) after this and joins via
+    // pg_notify on the new node.
+    void recordIngest({
+      source: 'assistant_upload',
+      ownerId,
+      nodeId: file.id,
+      summary: `Image uploaded via /assistant: ${originalName}`,
+      payload: {
+        parentPath,
+        filename,
+        mimeType,
+        sizeBytes: file.sizeBytes,
+        originalName,
+        via: 'web_assistant_chat',
+      },
+    });
   } catch (err) {
     // File save failure is loggable but not fatal — vision can still
     // run on the bytes we have in memory.

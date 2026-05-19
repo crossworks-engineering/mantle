@@ -21,6 +21,7 @@ export type TraceKind =
   | 'summarizer_run'
   | 'reflector_run'
   | 'photo_ingest'
+  | 'content_ingest'
   | 'manual';
 
 export type TraceStepKind =
@@ -324,6 +325,150 @@ function noopHandle(): StepHandle {
     addCost() {},
     setSkipped() {},
   };
+}
+
+/**
+ * Record a trace that consciously DID NOT run. Used by pipelines
+ * that decide-then-decline (extractor: "already extracted";
+ * summarizer: "threshold not met"; reflector: "no new activity").
+ *
+ * The result is a single trace row with status='skipped', a
+ * `disposition` string in `data` that names the reason, and an
+ * optional `details` payload for debugging context. No steps are
+ * created — the whole story is "the system considered this but
+ * chose to skip."
+ *
+ * Why a separate helper from `startTrace`: starting a trace and
+ * then immediately marking it skipped is a fine pattern but reads
+ * awkwardly at call sites (you need a try/finally just to set the
+ * status). This is one async call, fire-and-forget; it doesn't
+ * change the AsyncLocalStorage context, so call sites can stay flat.
+ *
+ * Returns the inserted trace id (or null if the insert failed —
+ * we never throw from this; trace bookkeeping is soft).
+ */
+export async function recordSkippedTrace(init: {
+  kind: TraceKind;
+  ownerId: string;
+  subjectId?: string;
+  subjectKind?: string;
+  agentId?: string | null;
+  disposition: string;
+  details?: Record<string, unknown>;
+}): Promise<string | null> {
+  const id = genId();
+  const now = new Date();
+  try {
+    await db.insert(traces).values({
+      id,
+      ownerId: init.ownerId,
+      kind: init.kind,
+      subjectId: init.subjectId ?? null,
+      subjectKind: init.subjectKind ?? null,
+      agentId: init.agentId ?? null,
+      status: 'skipped',
+      startedAt: now,
+      finishedAt: now,
+      durationMs: 0,
+      data: truncateJson({
+        disposition: init.disposition,
+        ...(init.details ?? {}),
+      }) as Record<string, unknown>,
+    });
+    return id;
+  } catch (err) {
+    logErr('record skipped trace', err);
+    return null;
+  }
+}
+
+/**
+ * Record an "X just entered the system" event as a content_ingest
+ * trace. Wired into every data entry point — upsertFile,
+ * createNote, Telegram inbound sync, web upload, etc. — so the
+ * node-biography view can answer "where did this come from?"
+ * without parsing source-specific tables.
+ *
+ * The trace is opened with status='success' immediately on insert;
+ * the ingest event itself is the work, not a multi-step process.
+ * The optional `step` field lets callers attach one trace_step
+ * carrying a content snippet (the file body truncated, the
+ * message text truncated) so the biography page has rich preview
+ * data without having to re-read the source.
+ *
+ * Fire-and-forget. We never block the hot path on ingest tracing
+ * (a file save shouldn't fail because tracing is down).
+ */
+export async function recordIngest(init: {
+  source: string;
+  ownerId: string;
+  /** The resulting node id. Optional because some ingest paths
+   *  (a Telegram message arriving for an unallowlisted chat)
+   *  produce no persistent node. */
+  nodeId?: string;
+  /** The subject_kind that goes on the trace row. Defaults to
+   *  'node' when nodeId is set. */
+  subjectKind?: string;
+  /** One-line "what came in" — shows in biography timelines. */
+  summary: string;
+  /** Structured details (size, mime, source URL, sender, etc.). */
+  payload?: Record<string, unknown>;
+  /** Optional content snippet to attach as a step's input field.
+   *  Useful for the body of a file/note — visible in the biography
+   *  page's expanded step view. */
+  snippet?: string;
+}): Promise<string | null> {
+  const id = genId();
+  const now = new Date();
+  try {
+    await db.insert(traces).values({
+      id,
+      ownerId: init.ownerId,
+      kind: 'content_ingest',
+      subjectId: init.nodeId ?? null,
+      subjectKind: init.subjectKind ?? (init.nodeId ? 'node' : null),
+      status: 'success',
+      startedAt: now,
+      finishedAt: now,
+      durationMs: 0,
+      stepCount: init.snippet ? 1 : 0,
+      data: truncateJson({
+        source: init.source,
+        summary: init.summary,
+        ...(init.payload ?? {}),
+      }) as Record<string, unknown>,
+    });
+    // Attach the content snippet as a single step so it shows up
+    // in the biography's "what came in" detail. Truncated by the
+    // standard truncateJson budget — full content lives on the
+    // node itself.
+    if (init.snippet && init.snippet.trim().length > 0) {
+      await db.insert(traceSteps).values({
+        traceId: id,
+        parentStepId: null,
+        ordinal: 0,
+        name: 'received',
+        kind: 'compute',
+        status: 'success',
+        startedAt: now,
+        finishedAt: now,
+        durationMs: 0,
+        input: truncateJson({
+          source: init.source,
+          summary: init.summary,
+          content: init.snippet,
+        }) as Record<string, unknown>,
+        output: truncateJson({
+          ...(init.payload ?? {}),
+          ...(init.nodeId ? { nodeId: init.nodeId } : {}),
+        }) as Record<string, unknown>,
+      });
+    }
+    return id;
+  } catch (err) {
+    logErr('record ingest', err);
+    return null;
+  }
 }
 
 /** Use sql import for type-only side; some bundlers strip-unused. */

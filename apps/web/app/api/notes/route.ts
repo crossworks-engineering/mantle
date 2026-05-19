@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireOwner } from '@/lib/auth';
 import { createNote, listNotes } from '@/lib/notes';
+import { recordIngest } from '@mantle/tracing';
 
 const CreateBody = z.object({
   title: z.string().min(1).max(200),
@@ -30,5 +31,18 @@ export async function POST(req: Request) {
     );
   }
   const row = await createNote(user.id, parsed.data);
+  void recordIngest({
+    source: 'note_create',
+    ownerId: user.id,
+    nodeId: row.id,
+    summary: `Note created: ${row.title.slice(0, 80)}`,
+    payload: {
+      title: row.title,
+      tags: row.tags,
+      contentChars: parsed.data.content?.length ?? 0,
+      via: 'web_api',
+    },
+    snippet: parsed.data.content,
+  });
   return NextResponse.json({ note: row }, { status: 201 });
 }

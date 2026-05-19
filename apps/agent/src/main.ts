@@ -52,7 +52,7 @@ import {
   type TtsParams,
 } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
-import { startTrace, step } from '@mantle/tracing';
+import { recordIngest, startTrace, step } from '@mantle/tracing';
 import {
   buildChatMessages,
   composeSystemPromptWithSkills,
@@ -509,6 +509,26 @@ async function handleMessage(messageId: string): Promise<void> {
             return created;
           },
         );
+        // Emit a content_ingest trace tied to the NEW NOTE id (the
+        // surrounding photo_ingest trace is tied to the telegram
+        // message). The note-biography view filters by subject_id;
+        // this is what makes the photo-derived note discoverable as
+        // "came in via Telegram photo at HH:MM" without parsing
+        // the photo_ingest trace data jsonb.
+        void recordIngest({
+          source: 'telegram_photo',
+          ownerId: USER_ID!,
+          nodeId: note.id,
+          summary: `Note created from Telegram photo: ${title}`,
+          payload: {
+            chatId: row.telegramChatId,
+            telegramMessageId: row.telegramMessageId,
+            visionAdapter: adapter.adapterName,
+            visionModel: extracted.model,
+            extractedChars: extracted.text.length,
+          },
+          snippet: extracted.text,
+        });
 
         // Acknowledge to the user so they know the ingest worked.
         // Keep it short — they don't need the full transcript echoed

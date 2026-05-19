@@ -8,6 +8,7 @@ import {
   renameFileById,
   upsertFile,
 } from '@/lib/files';
+import { recordIngest } from '@mantle/tracing';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z.union([
@@ -91,6 +92,25 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       filename: existing.filename,
       bytes: buf,
       overwrite: true,
+    });
+    // Record the edit as a fresh ingest event — the file's content
+    // changed, the extractor will re-run, and the biography view
+    // should reflect "this thing was edited at HH:MM" alongside the
+    // original upload.
+    void recordIngest({
+      source: 'file_edit',
+      ownerId: user.id,
+      nodeId: file.id,
+      summary: `File edited: ${file.filename}`,
+      payload: {
+        parentPath: existing.parentPath,
+        filename: file.filename,
+        mimeType: file.mimeType,
+        sizeBytes: file.sizeBytes,
+        previousSizeBytes: existing.sizeBytes,
+        via: 'web_inline_edit',
+      },
+      snippet: parsed.data.content,
     });
     return NextResponse.json({ file });
   } catch (err) {
