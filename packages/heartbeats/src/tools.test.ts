@@ -53,63 +53,68 @@ async function callInsideContext(
   );
 }
 
-describe('heartbeat_complete — context guard', () => {
-  it('refuses cleanly when called outside a heartbeat fire', async () => {
+describe('heartbeat_complete — addressing guard', () => {
+  it('refuses cleanly when called with no slug and no fire context', async () => {
     const r = await callOutsideContext('heartbeat_complete', { reason: 'oops' });
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.error).toMatch(/only callable from inside a heartbeat fire/i);
+      // Error mentions the two valid addressing options so the LLM
+      // can self-correct on retry.
+      expect(r.error).toMatch(/heartbeat fire/i);
+      expect(r.error).toMatch(/slug/i);
     }
   });
 
-  it('the error names the tool so the LLM can correct course', async () => {
-    const r = await callOutsideContext('heartbeat_complete', {});
-    if (!r.ok) expect(r.error).toMatch(/heartbeat_complete/);
-  });
+  // Slug-path resolution (loadOwnedHeartbeatBySlug → not found)
+  // requires a live DB connection, which vitest doesn't have by
+  // default. That path is exercised end-to-end by the live install;
+  // see heartbeat detail page + /traces for the round-trip evidence.
 });
 
-describe('heartbeat_snooze — context + arg guards', () => {
-  it('refuses outside a heartbeat fire', async () => {
+describe('heartbeat_snooze — addressing + arg guards', () => {
+  it('refuses with no slug outside a fire', async () => {
     const r = await callOutsideContext('heartbeat_snooze', { for_hours: 1 });
     expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/slug/i);
   });
 
-  it('inside context: rejects when neither for_hours nor until is provided', async () => {
+  it('inside fire context: rejects when neither for_hours nor until is provided', async () => {
     const r = await callInsideContext('heartbeat_snooze', {});
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toMatch(/for_hours.*until/);
   });
 
-  it('inside context: rejects for_hours <= 0', async () => {
+  it('inside fire context: rejects for_hours <= 0', async () => {
     const r = await callInsideContext('heartbeat_snooze', { for_hours: 0 });
     expect(r.ok).toBe(false);
   });
 
-  it('inside context: rejects unparseable until', async () => {
+  it('inside fire context: rejects unparseable until', async () => {
     const r = await callInsideContext('heartbeat_snooze', { until: 'next tuesday' });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toMatch(/invalid until/i);
   });
 });
 
-describe('heartbeat_update_state — context + patch shape', () => {
-  it('refuses outside a heartbeat fire', async () => {
+describe('heartbeat_update_state — addressing + patch shape', () => {
+  it('refuses with no slug outside a fire', async () => {
     const r = await callOutsideContext('heartbeat_update_state', { patch: { x: 1 } });
     expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/slug/i);
   });
 
-  it('inside context: rejects a non-object patch (array)', async () => {
+  it('rejects a non-object patch (array) — fires before addressing check', async () => {
     const r = await callInsideContext('heartbeat_update_state', { patch: [1, 2, 3] });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toMatch(/plain object/);
   });
 
-  it('inside context: rejects a non-object patch (string)', async () => {
+  it('rejects a non-object patch (string)', async () => {
     const r = await callInsideContext('heartbeat_update_state', { patch: 'hello' });
     expect(r.ok).toBe(false);
   });
 
-  it('inside context: rejects a missing patch', async () => {
+  it('rejects a missing patch', async () => {
     const r = await callInsideContext('heartbeat_update_state', {});
     expect(r.ok).toBe(false);
   });

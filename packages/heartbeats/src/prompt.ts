@@ -75,8 +75,10 @@ export function buildOpenHeartbeatContext(open: Array<{
     ``,
     `You have one or more proactive tasks in-flight on this surface. ` +
       `The user's latest message may be replying to a question you asked. ` +
-      `After responding naturally, call heartbeat_update_state to capture ` +
-      `what they told you and (if appropriate) flip expecting_reply to false.`,
+      `After responding naturally, call heartbeat_update_state with ` +
+      `**\`slug\` set to the slug below** to capture what they told you ` +
+      `and flip \`expecting_reply\` to false. Use heartbeat_complete (with ` +
+      `the same \`slug\`) if the skill's goal is met.`,
     ``,
     ...lines,
   ].join('\n');

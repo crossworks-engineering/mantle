@@ -9,15 +9,28 @@
  * apps/web's runtime if web ever fires heartbeats) at boot, BEFORE
  * `seedBuiltinTools(ownerId)` runs — the seed iterates the registry.
  *
- * Context rules:
- *   - heartbeat_complete / heartbeat_snooze / heartbeat_update_state
- *     all refuse cleanly when there is no current heartbeat context.
- *     This prevents an agent from accidentally completing a heartbeat
- *     from a regular turn (which would be a confusing bug).
- *   - heartbeat_list takes no args and reads all heartbeats.
- *   - heartbeat_fire takes a slug and force-fires that heartbeat
- *     (bypassing gates). Useful for testing and for skills that
- *     chain heartbeats.
+ * Dual-mode addressing (slug arg vs ALS context)
+ * ──────────────────────────────────────────────
+ * heartbeat_update_state / heartbeat_complete / heartbeat_snooze all
+ * need to know which heartbeat to mutate. There are two contexts
+ * they get called from:
+ *
+ *   1. Inside a heartbeat fire (`withHeartbeatContext` ALS scope):
+ *      the firing heartbeat is unambiguous. Slug arg is optional.
+ *
+ *   2. Inside a responder turn that's reacting to a user reply to a
+ *      previously-asked heartbeat question. The responder's tool
+ *      loop is NOT wrapped in withHeartbeatContext (different
+ *      lifecycle), so the ALS lookup returns null. The model MUST
+ *      pass the slug arg explicitly. The awareness block injected
+ *      into the responder's system prompt lists each open
+ *      heartbeat's slug so the model knows what to pass.
+ *
+ * Resolution order: explicit slug arg → ALS context → error.
+ * Ownership scoping is enforced in both paths via ctx.ownerId.
+ *
+ * heartbeat_list takes no addressing (lists all). heartbeat_fire
+ * takes a required slug (the operator/skill picks who to fire).
  */
 
 import { and, eq } from 'drizzle-orm';
@@ -31,11 +44,7 @@ import { currentHeartbeat } from './context';
 import { forceFire } from './fire';
 import { computeNextFireAt } from './schedule';
 
-function requireContext(): { heartbeatId: string; ownerId: string } | null {
-  return currentHeartbeat();
-}
-
-async function loadOwnedHeartbeat(ownerId: string, id: string): Promise<Heartbeat | null> {
+async function loadOwnedHeartbeatById(ownerId: string, id: string): Promise<Heartbeat | null> {
   const [row] = await db
     .select()
     .from(heartbeats)
@@ -44,14 +53,63 @@ async function loadOwnedHeartbeat(ownerId: string, id: string): Promise<Heartbea
   return row ?? null;
 }
 
+async function loadOwnedHeartbeatBySlug(ownerId: string, slug: string): Promise<Heartbeat | null> {
+  const [row] = await db
+    .select()
+    .from(heartbeats)
+    .where(and(eq(heartbeats.ownerId, ownerId), eq(heartbeats.slug, slug)))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Resolve which heartbeat a mutation tool should act on.
+ *  - If `input.slug` is set, that wins (responder-turn path).
+ *  - Otherwise fall back to `currentHeartbeat()` from ALS (fire-path).
+ *  - If neither, return null with a clear error string.
+ * Ownership scoping happens here too: a slug from one owner can never
+ * resolve to a row from another (we filter by ctx.ownerId).
+ */
+async function resolveTargetHeartbeat(
+  input: Record<string, unknown>,
+  ownerId: string,
+): Promise<
+  | { ok: true; hb: Heartbeat; via: 'slug' | 'als' }
+  | { ok: false; error: string }
+> {
+  const slugInput = typeof input.slug === 'string' && input.slug.trim() ? input.slug.trim() : null;
+  if (slugInput) {
+    const hb = await loadOwnedHeartbeatBySlug(ownerId, slugInput);
+    if (!hb) return { ok: false, error: `heartbeat '${slugInput}' not found for this owner` };
+    return { ok: true, hb, via: 'slug' };
+  }
+  const ctx = currentHeartbeat();
+  if (ctx) {
+    const hb = await loadOwnedHeartbeatById(ownerId, ctx.heartbeatId);
+    if (!hb) return { ok: false, error: 'heartbeat row not found (race?)' };
+    return { ok: true, hb, via: 'als' };
+  }
+  return {
+    ok: false,
+    error:
+      'no heartbeat context: call from inside a heartbeat fire, or pass `slug` ' +
+      'explicitly (e.g. when reacting to a user reply mentioned in the open-heartbeat awareness block).',
+  };
+}
+
 const heartbeat_complete: BuiltinToolDef = {
   slug: 'heartbeat_complete',
-  name: 'Mark the current heartbeat complete',
+  name: 'Mark a heartbeat complete',
   description:
-    'Permanently stop the heartbeat that is currently firing. Use this when the skill has accomplished what it set out to do (e.g. all interview questions answered). Takes an optional `reason` string that is stored on the heartbeat row for the operator to see later. After this call, the heartbeat will never fire again unless the operator manually re-activates it. ONLY callable from inside a heartbeat fire.',
+    "Permanently stop a heartbeat. Use this when the skill has accomplished what it set out to do (e.g. all interview questions answered) OR when the user explicitly asks you to stop. Pass `slug` to target a specific heartbeat — required when called from a regular responder turn; optional inside a heartbeat fire (the firing one is the default). After this call, the heartbeat never fires again unless an operator re-activates it. Takes an optional `reason` string stored on the row for the operator to see.",
   inputSchema: {
     type: 'object',
     properties: {
+      slug: {
+        type: 'string',
+        description:
+          "Heartbeat slug to complete. Required when not inside a heartbeat fire. Inside a fire, omit to default to the firing heartbeat.",
+      },
       reason: {
         type: 'string',
         description:
@@ -60,13 +118,10 @@ const heartbeat_complete: BuiltinToolDef = {
     },
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    const c = requireContext();
-    if (!c) {
-      return {
-        ok: false,
-        error:
-          'heartbeat_complete is only callable from inside a heartbeat fire; no current heartbeat context found.',
-      };
+    const target = await resolveTargetHeartbeat(input, ctx.ownerId);
+    if (!target.ok) {
+      ctx.step?.setMeta({ branch: 'no_target', error: target.error });
+      return { ok: false, error: target.error };
     }
     const reason = typeof input.reason === 'string' ? input.reason : 'completed_by_agent';
     await db
@@ -77,92 +132,99 @@ const heartbeat_complete: BuiltinToolDef = {
         nextFireAt: null,
         updatedAt: new Date(),
       })
-      .where(and(eq(heartbeats.id, c.heartbeatId), eq(heartbeats.ownerId, ctx.ownerId)));
-    ctx.step?.setMeta({ heartbeat_id: c.heartbeatId, reason });
-    return { ok: true, output: { heartbeat_id: c.heartbeatId, status: 'completed', reason } };
+      .where(and(eq(heartbeats.id, target.hb.id), eq(heartbeats.ownerId, ctx.ownerId)));
+    ctx.step?.setMeta({ branch: 'completed', via: target.via, heartbeat_id: target.hb.id, reason });
+    return { ok: true, output: { heartbeat_id: target.hb.id, slug: target.hb.slug, status: 'completed', reason } };
   },
 };
 
 const heartbeat_snooze: BuiltinToolDef = {
   slug: 'heartbeat_snooze',
-  name: 'Snooze the current heartbeat',
+  name: 'Snooze a heartbeat',
   description:
-    "Push the current heartbeat's next fire forward without completing it. Either pass `for_hours` (e.g. 24 = try again tomorrow) or `until` (an ISO-8601 timestamp). Useful when the user is busy or the moment isn't right but the heartbeat should keep trying. ONLY callable from inside a heartbeat fire.",
+    "Push a heartbeat's next fire forward without completing it. Pass `slug` to target a specific heartbeat — required from a regular responder turn; optional inside a heartbeat fire (firing one is the default). Specify the delay via `for_hours` (e.g. 24 = try again tomorrow) or `until` (ISO-8601 instant). Useful when the user is busy or the moment isn't right but the heartbeat should keep trying.",
   inputSchema: {
     type: 'object',
     properties: {
+      slug: {
+        type: 'string',
+        description:
+          "Heartbeat slug to snooze. Required when not inside a heartbeat fire.",
+      },
       for_hours: { type: 'number', description: 'How many hours from now to defer.' },
       until: { type: 'string', description: 'ISO-8601 instant to defer until.' },
     },
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    const c = requireContext();
-    if (!c) {
-      return {
-        ok: false,
-        error: 'heartbeat_snooze is only callable from inside a heartbeat fire.',
-      };
-    }
+    // Cheap checks first (no IO), then DB-touching addressing, then
+    // DB write. Lets the LLM iterate on argument shape without
+    // burning DB round-trips on each retry.
     let next: Date;
     if (typeof input.until === 'string') {
       const t = new Date(input.until);
-      if (Number.isNaN(t.getTime())) return { ok: false, error: 'invalid until iso' };
+      if (Number.isNaN(t.getTime())) {
+        ctx.step?.setMeta({ branch: 'bad_until' });
+        return { ok: false, error: 'invalid until iso' };
+      }
       next = t;
     } else if (typeof input.for_hours === 'number' && input.for_hours > 0) {
       next = new Date(Date.now() + input.for_hours * 3600_000);
     } else {
+      ctx.step?.setMeta({ branch: 'bad_delay' });
       return { ok: false, error: 'pass either for_hours (>0) or until (ISO-8601)' };
+    }
+    const target = await resolveTargetHeartbeat(input, ctx.ownerId);
+    if (!target.ok) {
+      ctx.step?.setMeta({ branch: 'no_target', error: target.error });
+      return { ok: false, error: target.error };
     }
     await db
       .update(heartbeats)
       .set({ nextFireAt: next, updatedAt: new Date() })
-      .where(and(eq(heartbeats.id, c.heartbeatId), eq(heartbeats.ownerId, ctx.ownerId)));
-    ctx.step?.setMeta({ heartbeat_id: c.heartbeatId, next_fire_at: next.toISOString() });
-    return { ok: true, output: { heartbeat_id: c.heartbeatId, next_fire_at: next.toISOString() } };
+      .where(and(eq(heartbeats.id, target.hb.id), eq(heartbeats.ownerId, ctx.ownerId)));
+    ctx.step?.setMeta({
+      branch: 'snoozed',
+      via: target.via,
+      heartbeat_id: target.hb.id,
+      next_fire_at: next.toISOString(),
+    });
+    return { ok: true, output: { heartbeat_id: target.hb.id, slug: target.hb.slug, next_fire_at: next.toISOString() } };
   },
 };
 
 const heartbeat_update_state: BuiltinToolDef = {
   slug: 'heartbeat_update_state',
-  name: "Update the current heartbeat's state",
+  name: "Update a heartbeat's state",
   description:
-    "JSON-merge a patch object into the current heartbeat's `state` jsonb. Top-level keys in the patch overwrite same-named keys in the existing state; other keys are preserved. Set a key to null to remove it. Use this to track progress (e.g. {answered: ['family'], expecting_reply: false}) so the next fire knows where the skill left off. ONLY callable from inside a heartbeat fire.",
+    "JSON-merge a `patch` object into a heartbeat's `state` jsonb. Top-level keys overwrite same-named keys in the existing state; other keys are preserved. Set a key to null to remove it. Pass `slug` to target a specific heartbeat — required from a regular responder turn (look at the 'Open heartbeats' block in your system prompt to find which slug to use); optional inside a heartbeat fire (firing one is the default). Use this to track progress (e.g. {answered: ['family'], expecting_reply: false}) so the next fire knows where the skill left off.",
   inputSchema: {
     type: 'object',
     properties: {
+      slug: {
+        type: 'string',
+        description:
+          "Heartbeat slug whose state to update. Required when reacting to a user reply (responder turn). Inside a fire, omit to default to the firing one.",
+      },
       patch: {
         type: 'object',
-        description: 'Object to merge into state. Top-level keys overwrite; nested objects are NOT deep-merged.',
+        description:
+          'Object to merge into state. Top-level keys overwrite; nested objects are NOT deep-merged.',
       },
     },
     required: ['patch'],
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    // ctx.step?.setMeta on every branch so /traces shows which path
-    // the handler took without needing to re-run with logging — kept
-    // after we used it to confirm the v1 "trace says success but DB
-    // didn't update" was a tsx-watch stale-module issue, not a real
-    // code bug. Silent diagnostic; meta is part of the trace step we
-    // were already writing.
-    const c = requireContext();
-    if (!c) {
-      ctx.step?.setMeta({ branch: 'no_context' });
-      return {
-        ok: false,
-        error: 'heartbeat_update_state is only callable from inside a heartbeat fire.',
-      };
-    }
     if (!input.patch || typeof input.patch !== 'object' || Array.isArray(input.patch)) {
       ctx.step?.setMeta({ branch: 'bad_patch_shape' });
       return { ok: false, error: 'patch must be a plain object' };
     }
-    const hb = await loadOwnedHeartbeat(ctx.ownerId, c.heartbeatId);
-    if (!hb) {
-      ctx.step?.setMeta({ branch: 'hb_not_found' });
-      return { ok: false, error: 'heartbeat row not found (race?)' };
+    const target = await resolveTargetHeartbeat(input, ctx.ownerId);
+    if (!target.ok) {
+      ctx.step?.setMeta({ branch: 'no_target', error: target.error });
+      return { ok: false, error: target.error };
     }
     // Apply patch: drop null-valued keys, overwrite the rest.
-    const existing = (hb.state ?? {}) as Record<string, unknown>;
+    const existing = (target.hb.state ?? {}) as Record<string, unknown>;
     const patch = input.patch as Record<string, unknown>;
     const next: Record<string, unknown> = { ...existing };
     for (const [k, v] of Object.entries(patch)) {
@@ -172,13 +234,14 @@ const heartbeat_update_state: BuiltinToolDef = {
     await db
       .update(heartbeats)
       .set({ state: next, updatedAt: new Date() })
-      .where(and(eq(heartbeats.id, c.heartbeatId), eq(heartbeats.ownerId, ctx.ownerId)));
+      .where(and(eq(heartbeats.id, target.hb.id), eq(heartbeats.ownerId, ctx.ownerId)));
     ctx.step?.setMeta({
       branch: 'updated',
-      heartbeat_id: c.heartbeatId,
+      via: target.via,
+      heartbeat_id: target.hb.id,
       patched_keys: Object.keys(patch),
     });
-    return { ok: true, output: { state: next } };
+    return { ok: true, output: { heartbeat_id: target.hb.id, slug: target.hb.slug, state: next } };
   },
 };
 

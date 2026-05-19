@@ -148,4 +148,15 @@ describe('buildOpenHeartbeatContext', () => {
     ]);
     expect(out).toContain('heartbeat_update_state');
   });
+
+  it('explicitly instructs the model to pass `slug` when calling the tool', () => {
+    // Without this hint the model called heartbeat_update_state with no
+    // slug from a responder turn, hit "no_target" branch, and silently
+    // failed. The instruction must mention `slug` so the model knows
+    // it's required outside a fire context.
+    const out = buildOpenHeartbeatContext([
+      { slug: 'get_to_know_user', name: 'One', state: { expecting_reply: true } },
+    ]);
+    expect(out).toMatch(/slug/i);
+  });
 });
