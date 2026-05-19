@@ -10,6 +10,7 @@ const KIND_LABEL: Record<string, string> = {
   reflector_run: 'Reflector',
   content_ingest: 'Ingest',
   photo_ingest: 'Photo',
+  heartbeat_fire: 'Heartbeat',
   manual: 'Manual',
 };
 
@@ -57,6 +58,7 @@ export default async function TracesPage(props: {
           current={kinds}
           options={[
             ['responder_turn', 'Responder'],
+            ['heartbeat_fire', 'Heartbeat'],
             ['extractor_run', 'Extractor'],
             ['summarizer_run', 'Summarizer'],
             ['reflector_run', 'Reflector'],

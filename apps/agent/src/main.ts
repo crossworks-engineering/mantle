@@ -804,12 +804,30 @@ async function handleMessage(messageId: string): Promise<void> {
         // shouldn't kill the turn. The block builder lives in
         // @mantle/heartbeats so the web /assistant uses the same
         // exact string (no drift).
+        //
+        // Wrapped in a step so /traces shows "this responder turn
+        // was influenced by heartbeat X" — meta.related_slugs is
+        // the operator's pivot point. (Audit P-trace-5.)
         let openHeartbeatBlock = '';
         try {
-          const open = await openHeartbeatsForSurface(USER_ID!, {
-            kind: 'telegram',
-            chatId: row.telegramChatId,
-          });
+          const open = await step(
+            {
+              name: 'open_heartbeats_check',
+              kind: 'db_read',
+              input: { surface: 'telegram', chat_id: row.telegramChatId },
+            },
+            async (h) => {
+              const rows = await openHeartbeatsForSurface(USER_ID!, {
+                kind: 'telegram',
+                chatId: row.telegramChatId,
+              });
+              h.setMeta({
+                count: rows.length,
+                related_slugs: rows.map((r) => r.slug),
+              });
+              return rows;
+            },
+          );
           const block = buildOpenHeartbeatContext(open);
           if (block) openHeartbeatBlock = `\n\n${block}`;
         } catch (err) {

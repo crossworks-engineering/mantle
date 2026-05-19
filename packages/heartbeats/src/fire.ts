@@ -31,7 +31,7 @@ import {
   type AgentParams,
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
-import { recordSkippedTrace, startTrace } from '@mantle/tracing';
+import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import { accountForChat, sendMessage } from '@mantle/telegram';
 import {
   composeSystemPromptWithSkills,
@@ -106,12 +106,6 @@ async function fireInner(
   if (!opts.skipGates) {
     const gate = await checkGates(hb, now);
     if (!gate.ok) {
-      await recordFire(hb, {
-        disposition: gate.reason,
-        stateBefore: hb.state,
-        stateAfter: null,
-        traceId: null,
-      });
       // Soft-skip: don't burn fire_count, but bump next_fire_at so
       // the tick loop doesn't churn on this row every minute. The
       // bump is conservative — half the cooldown if there is one,
@@ -125,7 +119,14 @@ async function fireInner(
         })
         .where(eq(heartbeats.id, hb.id));
       // Record a skipped trace so /traces shows the skip too. Cheap.
-      recordSkippedTrace({
+      // Capture the trace id back so the heartbeat_fires row can
+      // link to it — the detail page's "trace →" link depends on
+      // this. (Audit: P-trace-1.)
+      // Note: no agentId on this skip trace. traces.agent_id FKs to
+      // agents.id (NOT ai_workers, NOT heartbeats) — putting any other
+      // uuid here triggers the silent FK violation documented in
+      // observability.md §12. The heartbeat link lives on subject_id.
+      const skippedTraceId = await recordSkippedTrace({
         ownerId: hb.ownerId,
         kind: 'heartbeat_fire',
         subjectKind: 'heartbeat',
@@ -135,6 +136,12 @@ async function fireInner(
           heartbeat_slug: hb.slug,
           detail: gate.detail,
         },
+      });
+      await recordFire(hb, {
+        disposition: gate.reason,
+        stateBefore: hb.state,
+        stateAfter: null,
+        traceId: skippedTraceId,
       });
       return { disposition: gate.reason };
     }
@@ -199,8 +206,17 @@ async function fireInner(
     { role: 'user', content: userPrompt },
   ];
 
+    // Snapshot the trace id from inside startTrace so we can stamp
+    // it onto heartbeat_fires.trace_id. Without this, the detail
+    // page's "trace →" link is permanently dark. (Audit P-trace-1.)
+    let openedTraceId: string | null = null;
   try {
-    const reply = await startTrace(
+    // Both the LLM tool loop AND the surface delivery run inside
+    // the same startTrace block so their steps attach to the same
+    // trace row. step() is a no-op outside a trace context — moving
+    // delivery out of the trace would lose the deliver_surface step
+    // we want for debugging delivery failures. (Audit P-trace-4.)
+    const { reply, replySurfaceRef } = await startTrace(
       {
         ownerId: hb.ownerId,
         kind: 'heartbeat_fire',
@@ -215,6 +231,9 @@ async function fireInner(
         },
       },
       async () => {
+        // currentTrace() is safe to read here — we're inside the
+        // AsyncLocalStorage scope startTrace just opened.
+        openedTraceId = currentTrace()?.id ?? null;
         const result = await withHeartbeatContext({ heartbeatId: hb.id, ownerId: hb.ownerId }, () =>
           runToolLoop({
             client,
@@ -233,19 +252,40 @@ async function fireInner(
                 : { kind: 'web' },
           }),
         );
-        return result.reply;
+        const replyText = result.reply;
+
+        // Deliver — own step so a telegram outage shows up
+        // distinctly in the trace graph (kind='send', so it sits
+        // visually next to the LLM 'llm_call' steps).
+        let surfaceRef: Record<string, unknown> | null = null;
+        if (replyText.trim() && hb.surface.kind === 'telegram') {
+          surfaceRef = await step(
+            {
+              name: 'deliver_surface',
+              kind: 'send',
+              input: { kind: 'telegram', chat_id: hb.surface.chat_id, reply_chars: replyText.length },
+            },
+            async (h) => {
+              if (hb.surface.kind !== 'telegram') return null;
+              const account = await accountForChat(hb.surface.chat_id);
+              if (!account) {
+                // Mark the step skipped + meta so /traces shows why
+                // nothing reached the user even though the fire ran.
+                // The outer disposition stays 'fired' because the
+                // LLM half succeeded.
+                h.setSkipped('no_enabled_telegram_account');
+                return null;
+              }
+              const ids = await sendMessage(account, hb.surface.chat_id, replyText);
+              h.setMeta({ message_ids: ids });
+              return { kind: 'telegram', message_ids: ids } as Record<string, unknown>;
+            },
+          );
+        }
+
+        return { reply: replyText, replySurfaceRef: surfaceRef };
       },
     );
-
-    // 5. Deliver reply ------------------------------------------
-    let replySurfaceRef: Record<string, unknown> | null = null;
-    if (reply.trim() && hb.surface.kind === 'telegram') {
-      const account = await accountForChat(hb.surface.chat_id);
-      if (account) {
-        const ids = await sendMessage(account, hb.surface.chat_id, reply);
-        replySurfaceRef = { kind: 'telegram', message_ids: ids };
-      }
-    }
 
     // 6. Reload to capture state mutations from tools ------------
     const [latest] = await db.select().from(heartbeats).where(eq(heartbeats.id, hb.id)).limit(1);
@@ -305,6 +345,7 @@ async function fireInner(
       stateAfter: after.state,
       replyText: reply,
       replySurfaceRef,
+      traceId: openedTraceId,
     });
 
     return { disposition: finalStatus === 'completed' ? 'completed' : 'fired', replyText: reply };
@@ -315,6 +356,10 @@ async function fireInner(
       stateBefore: hb.state,
       stateAfter: null,
       errorMessage: msg,
+      // openedTraceId may be set if the trace opened before the throw
+      // (most common case) — capture it so operators can click into
+      // the partial trace and see where it died.
+      traceId: openedTraceId,
     });
     // Don't pause on transient errors — push next_fire forward a bit
     // so we don't tight-loop, but leave status active.

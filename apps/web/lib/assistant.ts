@@ -288,9 +288,16 @@ export async function runAssistantTurn(
   // apps/agent — keeps the proactive→reactive continuity working
   // for web heartbeats too. Best-effort; a DB blip here shouldn't
   // kill the turn. (P0-3 in the v1 heartbeats audit.)
+  //
+  // `relatedHeartbeatSlugs` is captured here and threaded into the
+  // startTrace data jsonb below, so /traces and the trace detail
+  // page show "this responder turn was influenced by heartbeat X"
+  // without needing a separate join. (Audit P-trace-5.)
   let openHeartbeatBlock = '';
+  let relatedHeartbeatSlugs: string[] = [];
   try {
     const open = await openHeartbeatsForSurface(ownerId, { kind: 'web' });
+    relatedHeartbeatSlugs = open.map((o) => o.slug);
     const block = buildOpenHeartbeatContext(open);
     if (block) openHeartbeatBlock = `\n\n${block}`;
   } catch (err) {
@@ -347,6 +354,10 @@ export async function runAssistantTurn(
         model: agent.model,
         agent_slug: agent.slug,
         tool_count: allowedTools.length,
+        // Empty array when no heartbeats were open. Stored either
+        // way so a query for "traces influenced by heartbeats"
+        // works against the same shape on every row.
+        related_heartbeat_slugs: relatedHeartbeatSlugs,
       },
     },
     async () =>

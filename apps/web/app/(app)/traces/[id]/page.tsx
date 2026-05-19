@@ -60,6 +60,22 @@ export default async function TraceDetailPage({
                 </Link>
               }
             />
+          ) : trace.subjectKind === 'heartbeat' && trace.subjectId ? (
+            // heartbeat_fire traces: pivot directly to the heartbeat
+            // detail page (state + recent fires). Same idea as the
+            // node-biography link above — operator can go from "this
+            // one trace failed" to "show me the surrounding context".
+            <Field
+              label="Subject"
+              value={
+                <Link
+                  href={`/heartbeats/${trace.subjectId}`}
+                  className="text-primary hover:underline"
+                >
+                  heartbeat#{trace.subjectId.slice(0, 8)} →
+                </Link>
+              }
+            />
           ) : (
             <Field
               label="Subject"
