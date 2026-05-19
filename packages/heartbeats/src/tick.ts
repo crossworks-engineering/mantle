@@ -71,6 +71,13 @@ export async function tickHeartbeats(ownerId: string, now: Date = new Date()): P
  * each turn so it can inject "you have an open heartbeat" context into
  * the system prompt — keeps conversation continuity when the user
  * answers a heartbeat-asked question outside the heartbeat's own fire.
+ *
+ * Distinct from `hasActiveHeartbeatsOnSurface` below: this is the
+ * narrower "expecting a reply RIGHT NOW" set (used for awareness-block
+ * injection); the other is the broader "any active heartbeat on this
+ * surface at all" set (used for tool-list exclusion). A heartbeat
+ * between fires has expecting_reply=false but should still allow the
+ * model to call heartbeat_complete if the user says "stop asking me".
  */
 export async function openHeartbeatsForSurface(
   ownerId: string,
@@ -103,4 +110,43 @@ export async function openHeartbeatsForSurface(
       name: r.name,
       state: (r.state ?? {}) as Record<string, unknown>,
     }));
+}
+
+/**
+ * Cheap boolean check: are there any active heartbeats on this surface
+ * (regardless of expecting_reply)? Powers the per-turn tool-list
+ * exclusion in the responders — when this returns false, the 3
+ * responder-continuity tools (HEARTBEAT_RESPONDER_TOOLS in tools.ts)
+ * are dropped from the model's tool list for the turn. The operator's
+ * grant in agents.tool_slugs stays canonical; this is pure runtime
+ * affordance hygiene.
+ *
+ * Returns true when there's ≥1 active heartbeat on the surface — that
+ * covers both expecting_reply=true (the model might need to update
+ * state) and expecting_reply=false (the model might need to honour
+ * "stop asking me" by calling heartbeat_complete with the slug).
+ */
+export async function hasActiveHeartbeatsOnSurface(
+  ownerId: string,
+  surface: { kind: 'telegram'; chatId: string } | { kind: 'web' },
+): Promise<boolean> {
+  // Same surface-aware filter as openHeartbeatsForSurface, but we
+  // short-circuit as soon as we see one match. Could be a COUNT
+  // query but the row count is tiny (single-user, ≤dozens of active
+  // heartbeats) — fetching surface jsonb + matching client-side is
+  // simpler than encoding the jsonb match in SQL.
+  const rows = await db
+    .select({ surface: heartbeats.surface })
+    .from(heartbeats)
+    .where(and(eq(heartbeats.ownerId, ownerId), eq(heartbeats.status, 'active')));
+
+  for (const r of rows) {
+    if (r.surface.kind !== surface.kind) continue;
+    if (surface.kind === 'telegram' && r.surface.kind === 'telegram') {
+      if (r.surface.chat_id === surface.chatId) return true;
+    } else {
+      return true; // web surface match
+    }
+  }
+  return false;
 }

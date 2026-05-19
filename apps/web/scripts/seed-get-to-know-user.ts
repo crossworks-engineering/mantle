@@ -20,7 +20,7 @@
 
 import { and, asc, eq } from 'drizzle-orm';
 import { db, agents, heartbeats, skills } from '@mantle/db';
-import { computeNextFireAt } from '@mantle/heartbeats';
+import { computeNextFireAt, HEARTBEAT_RESPONDER_TOOLS } from '@mantle/heartbeats';
 
 const USER_ID = process.env.ALLOWED_USER_ID;
 const TG_CHAT_ID = process.env.TG_CHAT_ID;
@@ -231,7 +231,11 @@ async function upsertHeartbeat(agentSlug: string): Promise<void> {
  * during turns that aren't reacting to a heartbeat.
  */
 async function ensureHeartbeatToolsOnAgent(agentSlug: string): Promise<void> {
-  const required = ['heartbeat_update_state', 'heartbeat_complete', 'heartbeat_snooze'];
+  // Canonical list lives in @mantle/heartbeats so this seed script
+  // and the runtime auto-exclusion in apps/agent + apps/web all
+  // reference the same source. No drift between "what gets granted"
+  // and "what gets hidden when no active heartbeats exist".
+  const required = [...HEARTBEAT_RESPONDER_TOOLS];
   const [row] = await db
     .select({ id: agents.id, toolSlugs: agents.toolSlugs })
     .from(agents)

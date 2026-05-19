@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { HEARTBEAT_TOOLS } from './tools';
+import { HEARTBEAT_TOOLS, HEARTBEAT_RESPONDER_TOOLS } from './tools';
 import { withHeartbeatContext } from './context';
 import type {
   BuiltinToolDef,
@@ -156,5 +156,86 @@ describe('HEARTBEAT_TOOLS registry shape', () => {
       expect(t.inputSchema).toBeTypeOf('object');
       expect((t.inputSchema as { type: string }).type).toBe('object');
     }
+  });
+});
+
+describe('HEARTBEAT_RESPONDER_TOOLS (auto-exclusion canonical list)', () => {
+  it('is exactly the 3 responder-continuity tools', () => {
+    // Pinned so a drift in the runtime exclusion never sneaks in.
+    // Add/remove here is a deliberate decision — operators + the
+    // seed script + the responder filter all read this constant.
+    expect([...HEARTBEAT_RESPONDER_TOOLS].sort()).toEqual([
+      'heartbeat_complete',
+      'heartbeat_snooze',
+      'heartbeat_update_state',
+    ]);
+  });
+
+  it('excludes heartbeat_list (always-available operator tool)', () => {
+    expect(HEARTBEAT_RESPONDER_TOOLS).not.toContain('heartbeat_list');
+  });
+
+  it('excludes heartbeat_fire (always-available operator tool)', () => {
+    expect(HEARTBEAT_RESPONDER_TOOLS).not.toContain('heartbeat_fire');
+  });
+
+  it('every member of the constant is also in HEARTBEAT_TOOLS', () => {
+    // No phantom slugs — every name in the auto-exclusion list must
+    // correspond to an actually-registered tool.
+    const registered = new Set(HEARTBEAT_TOOLS.map((t) => t.slug));
+    for (const slug of HEARTBEAT_RESPONDER_TOOLS) {
+      expect(registered.has(slug)).toBe(true);
+    }
+  });
+});
+
+describe('auto-exclusion filter behaviour (pure-logic shape)', () => {
+  // The runtime filter in apps/agent + apps/web does this exact
+  // computation. Pinning it here so a change to the constant
+  // automatically validates the filter still produces the expected
+  // shape. Doesn't touch the DB or the responder loop.
+  function filterAllowlist(allowed: string[], hasActive: boolean): string[] {
+    if (hasActive) return allowed;
+    return allowed.filter((s) => !HEARTBEAT_RESPONDER_TOOLS.includes(s));
+  }
+
+  const baseAllowlist = [
+    'search_nodes',
+    'entity_search',
+    'file_create',
+    'heartbeat_update_state',
+    'heartbeat_complete',
+    'heartbeat_snooze',
+    'heartbeat_list',
+    'heartbeat_fire',
+  ];
+
+  it('keeps every tool when there ARE active heartbeats on the surface', () => {
+    expect(filterAllowlist(baseAllowlist, true)).toEqual(baseAllowlist);
+  });
+
+  it('drops the 3 continuity tools when no active heartbeats', () => {
+    const out = filterAllowlist(baseAllowlist, false);
+    expect(out).not.toContain('heartbeat_update_state');
+    expect(out).not.toContain('heartbeat_complete');
+    expect(out).not.toContain('heartbeat_snooze');
+  });
+
+  it('keeps heartbeat_list + heartbeat_fire even with no active heartbeats', () => {
+    const out = filterAllowlist(baseAllowlist, false);
+    expect(out).toContain('heartbeat_list');
+    expect(out).toContain('heartbeat_fire');
+  });
+
+  it('preserves non-heartbeat tools (no false positives)', () => {
+    const out = filterAllowlist(baseAllowlist, false);
+    expect(out).toContain('search_nodes');
+    expect(out).toContain('entity_search');
+    expect(out).toContain('file_create');
+  });
+
+  it('is a no-op on an allowlist that has no heartbeat tools', () => {
+    const slim = ['search_nodes', 'entity_search'];
+    expect(filterAllowlist(slim, false)).toEqual(slim);
   });
 });

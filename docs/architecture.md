@@ -810,6 +810,17 @@ the operator to grant the three mutation tools manually. The tools
 self-protect via `resolveTargetHeartbeat`, so granting them is
 safe — they're inert in unrelated turns.
 
+**Runtime affordance hygiene**: both responders (apps/agent +
+apps/web) drop the `HEARTBEAT_RESPONDER_TOOLS` set
+(`heartbeat_update_state` / `_complete` / `_snooze`) from the
+per-turn tool list when `hasActiveHeartbeatsOnSurface()` returns
+false. The grant in `tool_slugs` is unchanged; the model never
+sees the tools on turns with no relevant heartbeat. Equivalent to
+greying out a UI button when its action would no-op — pure
+context scoping, not a permission change. A completed/paused
+install becomes byte-indistinguishable from one that never had
+heartbeats.
+
 **State conventions**: `expecting_reply` (boolean — drives the
 awareness-block injection), `last_asked_at` (ISO — drives "asked
 Nh ago" display + stale-pending nudge), `last_question_topic`,

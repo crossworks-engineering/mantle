@@ -316,6 +316,27 @@ export const HEARTBEAT_TOOLS: readonly BuiltinToolDef[] = [
   heartbeat_fire,
 ];
 
+/**
+ * The subset of HEARTBEAT_TOOLS that responder turns need access to
+ * for the continuity flow (user replying to a heartbeat question
+ * outside the fire context). These are the tools auto-excluded from
+ * the per-turn allowlist when `hasActiveHeartbeatsOnSurface` returns
+ * false — pure runtime affordance hygiene, the operator's grant in
+ * `agents.tool_slugs` stays the canonical source of truth.
+ *
+ * Explicitly excludes:
+ *  - `heartbeat_list`  — operator/skill tool, useful any time
+ *  - `heartbeat_fire`  — operator/skill tool, useful any time
+ *
+ * The seed script's ensureHeartbeatToolsOnAgent grants exactly these
+ * three to the auto-detected responder.
+ */
+export const HEARTBEAT_RESPONDER_TOOLS: readonly string[] = [
+  'heartbeat_update_state',
+  'heartbeat_complete',
+  'heartbeat_snooze',
+];
+
 /** Register the heartbeat-control tools with the @mantle/tools registry.
  *  Call once at boot from apps/agent (and any other process that
  *  resolves tools). Idempotent — registerBuiltin overwrites the existing

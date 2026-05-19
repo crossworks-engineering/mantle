@@ -52,7 +52,12 @@ import {
 import { registerAgentInvoker, type ToolArtifact } from '@mantle/tools';
 import { stripAudioTags } from '@mantle/voice';
 import { buildTimeContextLine, loadProfilePreferences } from '@mantle/content';
-import { buildOpenHeartbeatContext, openHeartbeatsForSurface } from '@mantle/heartbeats';
+import {
+  buildOpenHeartbeatContext,
+  HEARTBEAT_RESPONDER_TOOLS,
+  hasActiveHeartbeatsOnSurface,
+  openHeartbeatsForSurface,
+} from '@mantle/heartbeats';
 import { startTrace } from '@mantle/tracing';
 
 // Register the cross-package bridge for the `invoke_agent` builtin.
@@ -332,7 +337,16 @@ export async function runAssistantTurn(
   // Resolve the agent's tool allowlist, unioned with every attached
   // skill's tool_slugs. Empty result → tool-loop sends no `tools`
   // and the loop reduces to one LLM call (same as before).
-  const allowedToolSlugs = effectiveToolSlugs(agent.toolSlugs ?? [], attachedSkills);
+  let allowedToolSlugs = effectiveToolSlugs(agent.toolSlugs ?? [], attachedSkills);
+  // Per-turn affordance hygiene: drop the heartbeat continuity tools
+  // from the model's tool list when there are no active heartbeats
+  // on this surface. The grant in agents.tool_slugs is unchanged —
+  // this is purely runtime scoping, mirroring apps/agent/main.ts.
+  // See docs/heartbeats.md §4 "Permission model & runtime hygiene".
+  const hasHeartbeats = await hasActiveHeartbeatsOnSurface(ownerId, { kind: 'web' }).catch(() => false);
+  if (!hasHeartbeats) {
+    allowedToolSlugs = allowedToolSlugs.filter((s) => !HEARTBEAT_RESPONDER_TOOLS.includes(s));
+  }
   const allowedTools = await resolveAgentTools(ownerId, allowedToolSlugs);
 
   // Wrap the tool loop in a trace so every LLM call + tool dispatch

@@ -201,23 +201,42 @@ the trace step's `meta` (no_target / bad_patch_shape / bad_delay /
 updated / completed / snoozed). Silent diagnostic — no console
 noise, but `/traces` shows exactly which path the call took.
 
-### Permission model
+### Permission model & runtime hygiene
 
 `agents.tool_slugs` is the **single source of truth** for which tools
 an agent can call. There is no auto-injection: if Saskia is meant to
 update heartbeat state from a responder turn, the heartbeat continuity
-tools (`heartbeat_update_state`, `heartbeat_complete`, `heartbeat_snooze`)
+tools (`HEARTBEAT_RESPONDER_TOOLS` =
+`heartbeat_update_state` + `heartbeat_complete` + `heartbeat_snooze`)
 must be in her `tool_slugs` allowlist (visible at `/settings/agents`).
 
 The seed script `seed-get-to-know-user.ts` calls
 `ensureHeartbeatToolsOnAgent()` to add them idempotently to the
-auto-detected responder agent. Custom heartbeats not seeded this
-way need the operator to grant the tools manually via the UI.
+auto-detected responder agent (reads the canonical
+`HEARTBEAT_RESPONDER_TOOLS` constant from `@mantle/heartbeats` so
+the grant list never drifts from the auto-exclusion list below).
+Custom heartbeats not seeded this way need the operator to grant
+the tools manually via the UI.
 
 The three mutation tools all self-protect via `resolveTargetHeartbeat()`
 — calling them with no slug and no ALS context returns a clean
 "no heartbeat context" error. So they're inert in unrelated turns;
 adding them to an agent's allowlist persistently is safe.
+
+**Runtime affordance hygiene** (auto-exclusion): even though the
+operator granted these tools, the responder loops drop them from the
+per-turn tool list when `hasActiveHeartbeatsOnSurface()` returns
+false. The model never *sees* them when there's nothing for them to
+do — eliminates the small but real noise of the model confusedly
+calling a heartbeat tool on a turn with no relevant heartbeat. The
+grant in `tool_slugs` stays canonical; only the per-turn affordance
+is scoped to context. This is the mirror image of auto-injection
+(which would *grant* affordances the operator didn't): hiding what's
+useless is fine, granting what wasn't asked for is not.
+
+`heartbeat_list` + `heartbeat_fire` are NOT auto-excluded — they're
+operator/skill tools that make sense any time (e.g., "what
+heartbeats do you have for me?", "fire that one now").
 
 ## 5. The continuity trick
 
@@ -416,6 +435,17 @@ new symptoms surface.
   seed script handles this; custom heartbeats need manual grant.
   We briefly auto-injected the tools per-turn; that violated the
   "tools live in tool_slugs" contract and was reverted.
+
+- **Runtime affordance hygiene — auto-exclusion.** Even with the
+  three continuity tools granted persistently, the responders drop
+  them from the per-turn tool list when zero active heartbeats
+  exist on the surface (`hasActiveHeartbeatsOnSurface()` returns
+  false). The grant stays canonical; only the affordance is
+  scoped. Mirror image of auto-injection — hiding useless tools is
+  fine, granting un-granted ones is not. Means a completed/paused
+  install is byte-indistinguishable from a system that never had
+  heartbeats: the model never sees the tools, can't call them,
+  can't be confused by them.
 
 ## 8. Operator surfaces
 

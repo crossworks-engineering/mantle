@@ -69,6 +69,8 @@ import {
 import { registerAgentInvoker, seedBuiltinTools } from '@mantle/tools';
 import {
   buildOpenHeartbeatContext,
+  HEARTBEAT_RESPONDER_TOOLS,
+  hasActiveHeartbeatsOnSurface,
   openHeartbeatsForSurface,
   registerHeartbeatTools,
   tickHeartbeats,
@@ -898,19 +900,30 @@ async function handleMessage(messageId: string): Promise<void> {
         // skill's tool_slugs. Empty result → tool-loop sends no `tools`
         // and behaves identically to the old single-call path.
         //
-        // Heartbeat continuity tools (heartbeat_update_state /
-        // heartbeat_complete / heartbeat_snooze) are NOT auto-injected
-        // here even when an open heartbeat is detected. The permissions
-        // model is explicit: tools live in `agents.tool_slugs`, visible
-        // at /settings/agents. If a responder agent is meant to handle
-        // heartbeat continuity, add these three slugs to its tool_slugs
-        // (the seed script does this for the demo). The tools refuse
-        // cleanly via requireContext() outside a heartbeat fire, so
-        // adding them is safe — they're inert in unrelated turns.
-        const allowedToolSlugs = effectiveToolSlugs(
+        // Heartbeat continuity tools (update_state / complete / snooze)
+        // live in `agents.tool_slugs` as the canonical operator grant —
+        // visible at /settings/agents, no runtime magic adds them. But
+        // we DO apply per-turn affordance hygiene: when there are zero
+        // active heartbeats on this surface, drop the 3 continuity tools
+        // from the model's tool list for this turn. This stops the
+        // model from seeing (and occasionally confusedly calling)
+        // heartbeat_* tools on turns where there's nothing for them to
+        // act on. The grant in tool_slugs is unchanged; only the
+        // per-turn affordance is scoped to context. See
+        // docs/heartbeats.md §4 "Permission model & runtime hygiene".
+        let allowedToolSlugs = effectiveToolSlugs(
           agent.toolSlugs ?? [],
           attachedSkills,
         );
+        const hasHeartbeats = await hasActiveHeartbeatsOnSurface(USER_ID!, {
+          kind: 'telegram',
+          chatId: row.telegramChatId,
+        }).catch(() => false);
+        if (!hasHeartbeats) {
+          allowedToolSlugs = allowedToolSlugs.filter(
+            (s) => !HEARTBEAT_RESPONDER_TOOLS.includes(s),
+          );
+        }
         const allowedTools = await resolveAgentTools(USER_ID!, allowedToolSlugs);
 
         const loopOutcome = await runToolLoop({

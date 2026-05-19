@@ -8,5 +8,14 @@ export { buildHeartbeatPrompt, buildOpenHeartbeatContext } from './prompt';
 export { currentHeartbeat, withHeartbeatContext } from './context';
 export { forceFire, tickFire, type FireResult } from './fire';
 export { isFireInflight, runWithInflightLock } from './inflight';
-export { tickHeartbeats, openHeartbeatsForSurface, type TickReport } from './tick';
-export { HEARTBEAT_TOOLS, registerHeartbeatTools } from './tools';
+export {
+  tickHeartbeats,
+  openHeartbeatsForSurface,
+  hasActiveHeartbeatsOnSurface,
+  type TickReport,
+} from './tick';
+export {
+  HEARTBEAT_TOOLS,
+  HEARTBEAT_RESPONDER_TOOLS,
+  registerHeartbeatTools,
+} from './tools';
