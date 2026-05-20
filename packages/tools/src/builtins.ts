@@ -31,6 +31,7 @@ import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
 import { WORKER_DELEGATION_TOOLS } from './builtins-workers';
 import { EVENT_TOOLS } from './builtins-events';
+import { TODO_TOOLS } from './builtins-todos';
 import { PERSONA_TOOLS } from './builtins-persona';
 
 function str(v: unknown): string {
@@ -859,6 +860,9 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // operator choice; flip per-row in the tools table if you want
   // approval gates.
   ...EVENT_TOOLS,
+  // Todo CRUD — mirrors the MCP todo tools so Saskia can capture and
+  // manage tasks from chat. None require_confirm (trivially reversible).
+  ...TODO_TOOLS,
   // Persona self-edit — lets Saskia adjust her own style/relationship
   // notes when the user explicitly asks ("be more professional").
   // Scoped resolution + soft-retire; pure logic in @mantle/db.

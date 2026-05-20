@@ -19,6 +19,7 @@ export {
 
 export { BUILTIN_TOOLS } from './builtins';
 export { PERSONA_TOOLS, PERSONA_TOOL_SLUGS } from './builtins-persona';
+export { TODO_TOOLS, TODO_TOOL_SLUGS } from './builtins-todos';
 export { seedBuiltinTools } from './seed';
 export { resolveTool, resolveTools, dispatchTool } from './dispatch';
 export {

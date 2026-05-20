@@ -66,7 +66,12 @@ import {
   type FactSnippet,
   type HistoryTurn,
 } from '@mantle/agent-runtime';
-import { PERSONA_TOOL_SLUGS, registerAgentInvoker, seedBuiltinTools } from '@mantle/tools';
+import {
+  PERSONA_TOOL_SLUGS,
+  TODO_TOOL_SLUGS,
+  registerAgentInvoker,
+  seedBuiltinTools,
+} from '@mantle/tools';
 import {
   buildOpenHeartbeatContext,
   HEARTBEAT_DUE_CHANNEL,
@@ -1277,15 +1282,19 @@ function scheduleExtract(nodeId: string): void {
   }, EXTRACT_DEBOUNCE_MS);
 }
 
+/** Core builtins every conversational agent should have without manual
+ *  setup: persona self-edit + todo CRUD. Granted idempotently at boot. */
+const CORE_AUTO_GRANT_SLUGS: readonly string[] = [...PERSONA_TOOL_SLUGS, ...TODO_TOOL_SLUGS];
+
 /**
- * Add the persona self-edit tool(s) to every enabled conversational
- * agent (responder + assistant) that doesn't already have them. Returns
- * the slugs of agents that were updated. Idempotent — re-running with the
- * tool already present is a no-op. Mirrors the heartbeat-tool grant
+ * Add the core builtins (persona + todo tools) to every enabled
+ * conversational agent (responder + assistant) that doesn't already have
+ * them. Returns the slugs of agents that were updated. Idempotent —
+ * already-present tools are a no-op. Mirrors the heartbeat-tool grant
  * pattern: tool_slugs stays the single source of truth; this just spares
- * the operator a manual /settings/tools step for a core capability.
+ * the operator a manual /settings/tools step for core capabilities.
  */
-async function ensurePersonaToolOnConversationalAgents(ownerId: string): Promise<string[]> {
+async function ensureCoreToolsOnConversationalAgents(ownerId: string): Promise<string[]> {
   const rows = await db
     .select({ id: agents.id, slug: agents.slug, toolSlugs: agents.toolSlugs })
     .from(agents)
@@ -1299,7 +1308,7 @@ async function ensurePersonaToolOnConversationalAgents(ownerId: string): Promise
   const updated: string[] = [];
   for (const row of rows) {
     const current = row.toolSlugs ?? [];
-    const missing = PERSONA_TOOL_SLUGS.filter((s) => !current.includes(s));
+    const missing = CORE_AUTO_GRANT_SLUGS.filter((s) => !current.includes(s));
     if (missing.length === 0) continue;
     await db
       .update(agents)
@@ -1329,17 +1338,18 @@ async function main() {
     );
   }
 
-  // Grant the persona self-edit tool to the conversational agents so
-  // "be more professional" works without manual /settings/tools setup.
-  // Idempotent; tool_slugs stays the canonical source of truth.
+  // Grant core builtins (persona self-edit + todo CRUD) to the
+  // conversational agents so "be more professional" / "add a todo" work
+  // without manual /settings/tools setup. Idempotent; tool_slugs stays
+  // the canonical source of truth.
   try {
-    const granted = await ensurePersonaToolOnConversationalAgents(USER_ID!);
+    const granted = await ensureCoreToolsOnConversationalAgents(USER_ID!);
     if (granted.length > 0) {
-      console.log(`[agent] persona tool granted to: ${granted.join(', ')}`);
+      console.log(`[agent] core tools granted to: ${granted.join(', ')}`);
     }
   } catch (err) {
     console.error(
-      '[agent] persona tool grant failed:',
+      '[agent] core tool grant failed:',
       err instanceof Error ? err.message : err,
     );
   }
