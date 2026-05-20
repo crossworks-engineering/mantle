@@ -2,102 +2,84 @@
 
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { Menu, X } from 'lucide-react';
+import { Header } from '@/components/layout/header';
+import { SidebarNav } from '@/components/layout/sidebar-nav';
+import { LiveColumn } from '@/components/layout/live-column';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { ToastProvider } from '@/components/ui/toast';
 
 /**
- * Mobile-responsive shell. Server-rendered sidebar + topbar + content
- * are passed in as props; this client wrapper owns only the drawer state.
- *
- * Behaviour:
- *  - >= md (≥768px): two-column grid, sidebar permanently visible.
- *  - <  md: single column. Sidebar is a slide-over drawer triggered by
- *    a hamburger placed in the top-left of the topbar row. Backdrop +
- *    Esc + route-change all close it. Body scroll locked while open.
- *
- * The hamburger is rendered absolutely so we don't double the topbar's
- * height on mobile — it sits on top of the topbar's left padding area.
+ * App shell — three fixed regions (header, left sidebar, right live
+ * column) framing a scrollable content area. The sidebar collapses into
+ * a Sheet drawer below md. Server-rendered nodes (context+cost card,
+ * branches tree) are passed in as props.
  */
 export function AppShell({
-  sidebar,
-  topbar,
+  email,
+  pendingSenders,
+  pendingApprovals,
+  contextCard,
+  tree,
   children,
 }: {
-  sidebar: React.ReactNode;
-  topbar: React.ReactNode;
+  email: string | null;
+  pendingSenders: number;
+  pendingApprovals: number;
+  contextCard: React.ReactNode;
+  tree: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
 
-  // Auto-close on navigation so tapping a link inside the drawer
-  // doesn't leave it open on the next page.
+  // Close the drawer on navigation.
   useEffect(() => {
-    setOpen(false);
+    setMobileOpen(false);
   }, [pathname]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [open]);
+  const body = (onNavigate?: () => void) => (
+    <>
+      {contextCard}
+      <SidebarNav
+        pendingSenders={pendingSenders}
+        pendingApprovals={pendingApprovals}
+        onNavigate={onNavigate}
+      />
+      <div className="mt-1 px-3 pb-4">
+        <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Branches
+        </p>
+        {tree}
+      </div>
+    </>
+  );
 
   return (
     <ToastProvider>
-    <div className="grid h-screen grid-cols-1 grid-rows-[48px_1fr] bg-background md:grid-cols-[260px_1fr]">
-      <aside
-        className={
-          'fixed inset-y-0 left-0 z-40 flex w-[260px] flex-col border-r border-border bg-muted/95 backdrop-blur transition-transform duration-200 ease-out ' +
-          'md:static md:row-span-2 md:translate-x-0 md:bg-muted/30 md:backdrop-blur-none ' +
-          (open ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0')
-        }
-        aria-hidden={open ? undefined : true}
-      >
-        {sidebar}
-      </aside>
+      <div className="h-screen bg-background">
+        <Header email={email} onMenuClick={() => setMobileOpen(true)} />
 
-      {/* The visual topbar — server-rendered. On mobile we overlay a
-          hamburger in its left padding area; on desktop the topbar
-          sits in the grid's right column on its own. */}
-      <div className="relative col-start-1 row-start-1 md:col-start-2">
-        {topbar}
-        <button
-          type="button"
-          aria-label={open ? 'Close menu' : 'Open menu'}
-          aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
-          className="absolute left-1 top-1/2 inline-flex size-9 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground md:hidden"
-        >
-          {open ? <X className="size-5" /> : <Menu className="size-5" />}
-        </button>
+        {/* Desktop sidebar */}
+        <aside className="fixed inset-y-0 left-0 z-30 hidden w-80 flex-col border-r bg-sidebar pt-16 md:flex">
+          <div className="flex-1 overflow-y-auto scrollbar-thin">{body()}</div>
+        </aside>
+
+        {/* Mobile sidebar drawer */}
+        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+          <SheetContent side="left" className="w-80 overflow-y-auto p-0 pt-4 scrollbar-thin">
+            <SheetTitle className="sr-only">Navigation</SheetTitle>
+            {body(() => setMobileOpen(false))}
+          </SheetContent>
+        </Sheet>
+
+        {/* Right live-activity column */}
+        <LiveColumn />
+
+        {/* Content area */}
+        <main className="fixed inset-0 top-16 overflow-y-auto scrollbar-thin md:left-80 lg:right-80">
+          {children}
+        </main>
       </div>
-
-      {/* Backdrop for mobile drawer. */}
-      {open && (
-        <button
-          type="button"
-          aria-label="Close menu"
-          onClick={() => setOpen(false)}
-          className="fixed inset-0 z-30 bg-black/40 md:hidden"
-        />
-      )}
-
-      <main className="col-start-1 row-start-2 overflow-auto md:col-start-2">
-        {children}
-      </main>
-    </div>
     </ToastProvider>
   );
 }

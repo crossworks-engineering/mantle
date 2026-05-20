@@ -8,6 +8,7 @@ import { EmailRow } from '@/components/email-row';
 import { parseSort, type SortKey } from '@/components/inbox-sort';
 import { InboxToolbar } from '@/components/inbox-toolbar';
 import { ReadingPane } from '@/components/reading-pane';
+import { FleetLayout } from '@/components/layout/fleet-layout';
 
 const INBOX_LIMIT = 100;
 
@@ -156,16 +157,21 @@ export default async function DashboardPage({
     : [];
 
   return (
-    <div className="grid h-full grid-cols-[420px_1fr]">
-      <aside className="flex min-h-0 flex-col border-r border-border">
-        <InboxToolbar sort={sort} count={rows.length} />
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {rows.length === 0 ? (
-            <p className="px-4 py-6 text-sm text-muted-foreground">
-              First sync hasn't landed yet. The worker polls every couple of minutes.
-            </p>
-          ) : (
-            rows.map((r) => (
+    <FleetLayout
+      leftClassName="flex-1 lg:flex-none lg:w-2/5"
+      rightClassName="lg:w-3/5"
+      left={
+        <div className="-mr-1">
+          <div className="sticky top-0 z-10 bg-background">
+            <InboxToolbar sort={sort} count={rows.length} />
+          </div>
+          <div className="divide-y divide-border">
+            {rows.length === 0 ? (
+              <p className="px-4 py-6 text-sm text-muted-foreground">
+                First sync hasn't landed yet. The worker polls every couple of minutes.
+              </p>
+            ) : (
+              rows.map((r) => (
               <EmailRow
                 key={r.id}
                 id={r.id}
@@ -178,13 +184,12 @@ export default async function DashboardPage({
                 selected={r.id === selectedId}
                 href={rowHref(sort, r.id)}
               />
-            ))
-          )}
+              ))
+            )}
+          </div>
         </div>
-      </aside>
-      <section className="min-h-0 overflow-hidden">
-        <ReadingPane email={selectedEmail} attachments={attachments} />
-      </section>
-    </div>
+      }
+      right={<ReadingPane email={selectedEmail} attachments={attachments} />}
+    />
   );
 }
