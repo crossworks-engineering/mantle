@@ -33,7 +33,7 @@ import {
   MAX_UPLOAD_BYTES,
 } from '@mantle/files';
 import type { ToolArtifact } from '@mantle/tools';
-import { recordIngest } from '@mantle/tracing';
+import { recordIngest, startTrace, step } from '@mantle/tracing';
 
 const Body = z.object({ text: z.string().min(1).max(20_000) });
 
@@ -62,6 +62,7 @@ async function processUpload(
   originalName: string,
   userText: string,
 ): Promise<Attachment> {
+  const isImage = mimeType.startsWith(IMAGE_MIME_PREFIX) || mimeForExt(extOf(originalName)).startsWith('image/');
   let nodeId: string | null = null;
   try {
     const parentPath = await ensureDatedUploadFolder({
@@ -92,13 +93,33 @@ async function processUpload(
     console.warn('[assistant/turn] upload save failed:', err);
   }
 
-  const extract = await extractAttachmentForTurn({
-    ownerId,
-    bytes,
-    mimeType,
-    filename: originalName,
-    question: userText,
-  });
+  // Trace the inline (live-answer) extraction so its cost + failures are
+  // visible — parity with the Telegram path. The durable index is a separate
+  // extractor_run/photo_ingest off the saved node.
+  const extract = await startTrace(
+    {
+      kind: isImage ? 'photo_ingest' : 'content_ingest',
+      ownerId,
+      subjectId: nodeId ?? undefined,
+      subjectKind: 'node',
+      data: { source: 'assistant', filename: originalName, hasQuestion: userText.trim().length > 0 },
+    },
+    async () =>
+      step(
+        { name: 'extract_attachment', kind: 'llm_call', input: { mime: mimeType, bytes: bytes.length } },
+        async (h) => {
+          const r = await extractAttachmentForTurn({
+            ownerId,
+            bytes,
+            mimeType,
+            filename: originalName,
+            question: userText,
+          });
+          h.setMeta({ attachmentKind: r.kind, note: r.note, textLength: r.text.length });
+          return r;
+        },
+      ),
+  );
   // 'unsupported' is pre-filtered by the caller, so this is image | file.
   const kind: 'image' | 'file' = extract.kind === 'file' ? 'file' : 'image';
 
@@ -204,10 +225,12 @@ export async function POST(req: Request) {
           }
         : undefined,
     );
-    // Forward an inbound image artifact so the user's bubble shows the picture
-    // they sent. Documents don't carry a server-side artifact (the client
-    // renders a local file chip during send).
-    const inboundArtifacts: ToolArtifact[] = attachment?.imageArtifact ? [attachment.imageArtifact] : [];
+    // Forward inbound image METADATA (no base64) — the client already holds
+    // the bytes and renders them from a local object URL, so echoing the full
+    // base64 back would just waste bandwidth. Documents carry no artifact.
+    const inboundArtifacts: ToolArtifact[] = attachment?.imageArtifact
+      ? [{ ...attachment.imageArtifact, base64: '' }]
+      : [];
     return NextResponse.json({
       inbound: {
         id: inbound.id,

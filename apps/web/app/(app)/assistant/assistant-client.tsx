@@ -169,7 +169,11 @@ export function AssistantClient({
           direction: 'inbound',
           text: data.inbound.text,
           createdAt: data.inbound.createdAt,
-          artifacts: data.inbound.artifacts ?? [],
+          // Keep the optimistic artifacts (local object-URL preview) — the
+          // server no longer echoes the image base64 back, so the browser
+          // renders from the bytes it already has. Falls back to the server
+          // metadata if there was no local preview.
+          artifacts: optimistic.artifacts ?? data.inbound.artifacts ?? [],
         },
         {
           id: data.outbound.id,
@@ -185,9 +189,13 @@ export function AssistantClient({
         // surfaced as a non-blocking notice rather than a red error.
         setError(data.warnings.join(' · '));
       }
-      // Clear the attachment AFTER the round-trip so the optimistic
-      // preview keeps showing during the network wait.
-      clearAttachment();
+      // Reset the input WITHOUT revoking the object URL — it now backs the
+      // sent message's preview (revoking would blank it). It's released when
+      // the page reloads; image sends are infrequent enough that the
+      // retained URL is negligible.
+      setAttachedFile(null);
+      setAttachedPreviewUrl(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);

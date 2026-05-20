@@ -437,14 +437,25 @@ async function handleMessage(messageId: string): Promise<void> {
           console.error('[agent] no telegram account for attachment download', row.telegramChatId);
           return null;
         }
-        const downloaded = await step(
-          { name: 'download_file', kind: 'compute', input: { fileId: fileAttachment.file_id } },
-          async (h) => {
-            const file = await downloadTelegramFile(account, fileAttachment.file_id);
-            h.setMeta({ bytes: file.bytes.length, mime: file.mimeType });
-            return file;
-          },
-        );
+        let downloaded: Awaited<ReturnType<typeof downloadTelegramFile>>;
+        try {
+          downloaded = await step(
+            { name: 'download_file', kind: 'compute', input: { fileId: fileAttachment.file_id } },
+            async (h) => {
+              const file = await downloadTelegramFile(account, fileAttachment.file_id);
+              h.setMeta({ bytes: file.bytes.length, mime: file.mimeType });
+              return file;
+            },
+          );
+        } catch (err) {
+          // Transient download failure (network / Telegram 5xx). Return null
+          // so the caller can apologise instead of crashing the turn.
+          console.error(
+            '[agent] telegram attachment download failed:',
+            err instanceof Error ? err.message : err,
+          );
+          return null;
+        }
 
         // Documents declare their own name + mime; photos have neither, so
         // derive from the caption + detected mime.
@@ -534,9 +545,21 @@ async function handleMessage(messageId: string): Promise<void> {
         };
       },
     );
-    // No usable bytes (download impossible — e.g. no account). Nothing to
-    // reply through; the row is already claimed so we don't retry.
-    if (!attachmentContext) return;
+    // Couldn't fetch / ingest the attachment (no account, or a transient
+    // download failure). The row is already claimed so we won't retry — at
+    // least tell the user instead of going silent.
+    if (!attachmentContext) {
+      const account = await accountForChat(row.telegramChatId).catch(() => null);
+      if (account) {
+        await sendMessage(
+          account,
+          row.telegramChatId,
+          "Sorry — I couldn't fetch that file. Could you send it again?",
+          { replyTo: row.telegramMessageId ?? undefined },
+        ).catch(() => {});
+      }
+      return;
+    }
   }
 
   // Resolve the responder + key BEFORE opening a trace. Failure modes here
