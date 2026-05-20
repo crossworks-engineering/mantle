@@ -28,3 +28,12 @@ export {
 } from './skills';
 
 export { invokeAgent } from './invoke-agent';
+
+export {
+  runVisionWorker,
+  extractAttachmentForTurn,
+  questionAwareVisionPrompt,
+  DOC_TEXT_MAX,
+  type VisionResult,
+  type AttachmentExtract,
+} from './attachments';

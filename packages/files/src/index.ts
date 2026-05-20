@@ -12,6 +12,8 @@ export {
 
 export { isHeic, transcodeImageForVision } from './transcode';
 
+export { parseDocumentBytes } from './parse';
+
 export {
   filesRoot,
   isFilesPath,

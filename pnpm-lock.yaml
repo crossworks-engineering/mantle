@@ -368,12 +368,18 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@mantle/files':
+        specifier: workspace:*
+        version: link:../files
       '@mantle/tools':
         specifier: workspace:*
         version: link:../tools
       '@mantle/tracing':
         specifier: workspace:*
         version: link:../tracing
+      '@mantle/voice':
+        specifier: workspace:*
+        version: link:../voice
       '@openrouter/sdk':
         specifier: ^0.12.35
         version: 0.12.35

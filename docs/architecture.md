@@ -680,28 +680,26 @@ Failure modes degrade gracefully:
 
 ## 9f. Vision + image generation
 
-The agent + assistant both speak the multimedia adapter surface for
-images:
+Attachment ingestion has two cleanly-separated layers (deep dive:
+[`ai-workers.md §5b`](./ai-workers.md)): the **extractor** is the single
+durable-metadata producer for every file however it arrived, and the
+conversational surfaces add an ephemeral, question-aware read for the
+live reply via the shared `extractAttachmentForTurn` helper.
 
-- **Vision in (Telegram photo):** photo attachment → saved as a `file`
-  node under `/files/telegram-uploads/<date>/` → default vision worker
-  transcribes it into the node's `data.text` (`photo_ingest` trace) →
-  the responder then answers about it (`responder_turn` trace),
-  transcript-default with the file node id surfaced so Saskia can
-  re-read via `extract_from_image`. Full parity with the /assistant
-  upload path; no longer a short-circuit.
-- **Attachment in (/assistant upload):** an image OR a document
-  (pdf/docx/xlsx/csv/txt/md/json/yaml) attached to a web turn → saved
-  under `/files/assistant-uploads/<date>/` → text extracted (vision
-  worker for images, `@mantle/files` parsers for documents) → folded
-  into the turn (transcript-default) with the file node id surfaced.
-  User's bubble shows the image (documents show a file chip).
-- **Vision in (separate image upload):** an image dropped into `/files`
-  outside the chat (Files UI, disk-sync watcher, MCP `file_upload`) has
-  no inline vision pass — the **extractor** runs the vision worker when
-  it sees an image `file` node with no `data.text`, persists the text,
-  and re-fires `node_ingested` to index it. One indexing path however
-  the image lands.
+- **Attachment in (/assistant or Telegram):** an image OR document
+  (pdf/docx/xlsx/csv/txt/md/json/yaml) → saved as a `file` node under
+  `/files/{assistant,telegram}-uploads/<date>/` → `extractAttachmentForTurn`
+  (question-aware vision for images, `parseDocumentBytes` for docs) folded
+  into the turn (transcript-default) with the file node id surfaced so Saskia
+  can re-read it (`extract_from_image` / `file_read`). The responder then
+  answers (`responder_turn` trace). Telegram has full parity with web,
+  including documents.
+- **Indexing (universal):** the save fires `node_ingested` → the extractor
+  produces durable `data.text` + summary + embedding + facts — images via the
+  shared `runVisionWorker` (neutral describe+OCR, `photo_ingest` trace), docs
+  via `parseDocumentBytes`. So a file dropped into `/files` (Files UI,
+  disk-watcher, MCP) — with no inline pass — still gets fully indexed. One
+  indexing path however the file lands.
 - **Vision on demand (Saskia tool):** `extract_from_image(node_id |
   telegram_file_id, prompt?)` — Saskia can re-read a previously-sent
   photo or any image-typed file node.

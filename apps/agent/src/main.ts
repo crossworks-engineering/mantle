@@ -36,13 +36,12 @@ import {
 } from '@mantle/db';
 import { accountForChat, downloadTelegramFile, sendMessage, sendVoice } from '@mantle/telegram';
 import { buildTimeContextLine, loadProfilePreferences } from '@mantle/content';
-import { ensureDatedUploadFolder, transcodeImageForVision, upsertFile } from '@mantle/files';
+import { ensureDatedUploadFolder, upsertFile } from '@mantle/files';
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
 import {
   composeAudioTagInstructions,
   getSttAdapter,
   getTtsAdapter,
-  getVisionAdapter,
   stripAudioTags,
 } from '@mantle/voice';
 import {
@@ -59,6 +58,7 @@ import {
   buildAttachmentContextText,
   composeSystemPromptWithSkills,
   effectiveToolSlugs,
+  extractAttachmentForTurn,
   invokeAgent,
   resolveAgentSkills,
   resolveAgentTools,
@@ -313,6 +313,15 @@ async function loadContext(
   return { personaNotes, facts: factRows, digests, contentHits, turns };
 }
 
+/** Telegram fills a media message's text with a placeholder like "(photo)" or
+ *  "(document: report.pdf)" when there's no real caption. Treat those as empty
+ *  so they don't become the user's "question". */
+function telegramCaption(text: string | null | undefined): string {
+  const t = (text ?? '').trim();
+  if (!t || /^\((photo|document|voice message|audio|video|video_note|sticker)\b/i.test(t)) return '';
+  return t;
+}
+
 async function handleMessage(messageId: string): Promise<void> {
   const [row] = await db
     .select({
@@ -356,23 +365,21 @@ async function handleMessage(messageId: string): Promise<void> {
     voiceFileId = voiceAttachment.file_id;
   }
 
-  // Photo branch — save the image to /files, run the vision worker, then
-  // FALL THROUGH to the responder so Saskia can actually answer about it
-  // (parity with the web /assistant). The bytes land as a real file node
-  // (not a note); the vision transcript becomes that node's searchable
-  // data.text; and the responder gets the transcript folded into its turn
-  // (transcript-default) with the node id surfaced so it can re-read the
-  // picture via extract_from_image. The dedicated photo_ingest trace stays
-  // the file's biography entry point; the reply gets its own responder_turn.
-  const photoAttachment = (row.attachments ?? []).find(
+  // Attachment branch — a photo OR a document. Save the bytes to /files, then
+  // FALL THROUGH to the responder so Saskia can answer about it (parity with
+  // the web /assistant). The bytes land as a real file node; the extractor
+  // owns durable metadata; the responder gets the inline (question-aware)
+  // extraction folded into its turn with the node id surfaced. The reply gets
+  // its own responder_turn trace.
+  const fileAttachment = (row.attachments ?? []).find(
     (a): a is TelegramAttachment & { file_id: string } =>
-      a.kind === 'photo' && typeof a.file_id === 'string',
+      (a.kind === 'photo' || a.kind === 'document') && typeof a.file_id === 'string',
   );
 
-  // Nothing actionable: no text, no voice, no photo (sticker/etc.). Mark
+  // Nothing actionable: no text, no voice, no attachment (sticker/etc.). Mark
   // processed and bail before any trace/claim overhead.
   const textIsEmpty = !row.text || !row.text.trim() || row.text === '(voice message)';
-  if (textIsEmpty && !wasVoice && !photoAttachment) {
+  if (textIsEmpty && !wasVoice && !fileAttachment) {
     await db
       .update(telegramMessages)
       .set({ processed: true, processedAt: new Date() })
@@ -380,15 +387,15 @@ async function handleMessage(messageId: string): Promise<void> {
     return;
   }
 
-  // Single atomic claim up front — covers text, voice, AND photo paths.
+  // Single atomic claim up front — covers text, voice, AND attachment paths.
   // Flip processed=true BEFORE any work; if the row was already claimed (a
   // prior invocation that crashed mid-reply, or a racing notify in another
   // process), the UPDATE returns 0 rows and we exit silently. Tradeoff: a
   // crash between this UPDATE and the Telegram send means the user gets no
   // reply — but no duplicate either, the friendlier failure on a chat
   // surface. Hot-reload-driven duplicates were the original symptom. Doing
-  // it here (before the photo download) also stops a duplicate notify from
-  // double-ingesting the photo.
+  // it here (before the download) also stops a duplicate notify from
+  // double-ingesting the attachment.
   const claim = await db
     .update(telegramMessages)
     .set({ processed: true, processedAt: new Date() })
@@ -396,11 +403,12 @@ async function handleMessage(messageId: string): Promise<void> {
     .returning({ id: telegramMessages.id });
   if (claim.length === 0) return;
 
-  // Ingest the photo (if any) into a file node + transcript BEFORE the
-  // responder runs. Its own photo_ingest trace is the file's biography
-  // entry point.
-  let photoContext:
+  // Ingest the attachment (if any) into a file node + inline extraction BEFORE
+  // the responder runs. The save fires the extractor (durable metadata); this
+  // inline pass is for the live reply only.
+  let attachmentContext:
     | {
+        kind: 'image' | 'file';
         transcript: string;
         note: string | null;
         nodeId: string | null;
@@ -408,52 +416,60 @@ async function handleMessage(messageId: string): Promise<void> {
         mimeType: string;
       }
     | null = null;
-  if (photoAttachment) {
-    photoContext = await startTrace(
+  if (fileAttachment) {
+    const isPhoto = fileAttachment.kind === 'photo';
+    const caption = telegramCaption(row.text);
+    attachmentContext = await startTrace(
       {
-        kind: 'photo_ingest',
+        kind: isPhoto ? 'photo_ingest' : 'content_ingest',
         ownerId: USER_ID!,
         subjectId: row.id,
         subjectKind: 'telegram_message',
-        data: { telegramChatId: row.telegramChatId, fileId: photoAttachment.file_id },
+        data: {
+          telegramChatId: row.telegramChatId,
+          fileId: fileAttachment.file_id,
+          attachmentKind: fileAttachment.kind,
+        },
       },
       async () => {
         const account = await accountForChat(row.telegramChatId);
         if (!account) {
-          console.error('[agent] no telegram account for photo download', row.telegramChatId);
+          console.error('[agent] no telegram account for attachment download', row.telegramChatId);
           return null;
         }
-        // Download the photo. Telegram's "best" size is what sync.ts already
-        // picked (last entry in the photo array) so no scaling logic here.
         const downloaded = await step(
-          { name: 'download_photo', kind: 'compute', input: { fileId: photoAttachment.file_id } },
+          { name: 'download_file', kind: 'compute', input: { fileId: fileAttachment.file_id } },
           async (h) => {
-            const file = await downloadTelegramFile(account, photoAttachment.file_id);
+            const file = await downloadTelegramFile(account, fileAttachment.file_id);
             h.setMeta({ bytes: file.bytes.length, mime: file.mimeType });
             return file;
           },
         );
 
-        const caption = row.text && row.text !== '(photo)' ? row.text.trim() : '';
+        // Documents declare their own name + mime; photos have neither, so
+        // derive from the caption + detected mime.
+        const mimeType = fileAttachment.mime || downloaded.mimeType;
+        const ext = (mimeType.split('/')[1] || 'bin').replace(/[^a-z0-9]/gi, '') || 'bin';
+        const baseName =
+          fileAttachment.name?.trim() ||
+          `${
+            (caption || (isPhoto ? 'photo' : 'file'))
+              .toLowerCase()
+              .replace(/[^\w-]+/g, '-')
+              .slice(0, 60)
+              .replace(/^-+|-+$/g, '') || (isPhoto ? 'photo' : 'file')
+          }.${ext}`;
 
-        // Save the bytes as a real file node first — even if vision fails we
-        // want the picture persisted + searchable in /files.
+        // Save the bytes as a real file node first — even if extraction fails
+        // we want the file persisted + searchable in /files.
         let nodeId: string | null = null;
         try {
           const parentPath = await ensureDatedUploadFolder({
             ownerId: USER_ID!,
             topSlug: 'telegram-uploads',
-            topDescription: 'Photos sent to Saskia on Telegram. Auto-created.',
+            topDescription: 'Files sent to Saskia on Telegram. Auto-created.',
           });
-          const ext =
-            (downloaded.mimeType.split('/')[1] || 'jpg').replace(/[^a-z0-9]/gi, '') || 'jpg';
-          const safeBase =
-            (caption || 'photo')
-              .toLowerCase()
-              .replace(/[^\w-]+/g, '-')
-              .slice(0, 60)
-              .replace(/^-+|-+$/g, '') || 'photo';
-          const filename = `${Date.now()}-${safeBase}.${ext}`;
+          const filename = `${Date.now()}-${baseName}`;
           const saved = await step({ name: 'persist_file', kind: 'db_write' }, async (h) => {
             const file = await upsertFile({
               ownerId: USER_ID!,
@@ -467,118 +483,60 @@ async function handleMessage(messageId: string): Promise<void> {
           });
           nodeId = saved.id;
           void recordIngest({
-            source: 'telegram_photo',
+            source: 'telegram_upload',
             ownerId: USER_ID!,
             nodeId: saved.id,
-            summary: `Image received via Telegram: ${filename}`,
+            summary: `${isPhoto ? 'Image' : 'File'} received via Telegram: ${filename}`,
             payload: {
               chatId: row.telegramChatId,
               telegramMessageId: row.telegramMessageId,
               filename,
-              mimeType: downloaded.mimeType,
+              mimeType,
               sizeBytes: saved.sizeBytes,
             },
           });
         } catch (err) {
           console.error(
-            '[agent] telegram photo save failed:',
+            '[agent] telegram attachment save failed:',
             err instanceof Error ? err.message : err,
           );
         }
 
-        // Vision (transcript-default). If no worker / unwired / no key, skip
-        // with a note — the responder can still inline the bytes when its
-        // model is vision-capable (mirrors web).
-        const visionWorker = await getDefaultWorker(USER_ID!, 'vision');
-        const adapter = visionWorker?.apiKeyId ? getVisionAdapter(visionWorker.provider) : null;
-        const skip = (note: string) => ({
-          transcript: '',
-          note,
-          nodeId,
-          bytes: downloaded.bytes,
-          mimeType: downloaded.mimeType,
-        });
-        if (!visionWorker?.apiKeyId) return skip('No default vision worker configured.');
-        if (!adapter) return skip(`Vision provider '${visionWorker.provider}' isn't wired.`);
-        const apiKey = await getApiKeyById(visionWorker.apiKeyId);
-        if (!apiKey)
-          return skip(`Vision worker '${visionWorker.slug}' api_key could not be decrypted.`);
-
-        const visionParams = (visionWorker.params ?? {}) as {
-          extraction_prompt?: string;
-          max_tokens?: number;
-        };
-        const ocrPrompt =
-          visionParams.extraction_prompt?.trim() ||
-          "Describe what's in this image in one or two sentences — the main subject, objects, logos, people, or scene. Then, if the image contains any text, transcribe it verbatim below the description (preserve line breaks; mark anything unclear as [unclear]). If there's no text, the description alone is enough. Output plain text only.";
-        // Question-aware (same switch as web): a caption that asks something
-        // gets answered; a bare photo gets OCR/description.
-        const prompt = caption
-          ? `The user sent this image and said: "${caption}"\n\nAnswer directly and specifically, grounded only in what's actually visible in the image — don't invent details you can't see. Then add one short line describing the image overall, so this also serves as a useful record of the photo.`
-          : ocrPrompt;
-
-        // Vision providers can't read HEIC (iPhone default) — transcode to
-        // JPEG. Passthrough for the usual JPEG/PNG Telegram delivers.
-        const forVision = await transcodeImageForVision(
-          downloaded.bytes,
-          downloaded.mimeType,
-        );
-        const extracted = await step(
+        // Inline extraction for THIS turn's reply (question-aware vision for
+        // images, doc parse for files) via the shared helper. Durable metadata
+        // is the extractor's job, fired by the save above.
+        const extract = await step(
           {
-            name: 'extract_vision',
+            name: 'extract_attachment',
             kind: 'llm_call',
-            input: {
-              workerSlug: visionWorker.slug,
-              provider: visionWorker.provider,
-              model: visionWorker.model,
-              mime: forVision.mimeType,
-              bytes: forVision.bytes.length,
-            },
+            input: { mime: mimeType, bytes: downloaded.bytes.length, hasQuestion: caption.length > 0 },
           },
           async (h) => {
-            const result = await adapter.extract(forVision.bytes, {
-              apiKey,
-              mimeType: forVision.mimeType,
-              prompt,
-              systemPrompt: visionWorker.systemPrompt ?? undefined,
-              model: visionWorker.model,
-              maxTokens: visionParams.max_tokens ?? 2000,
+            const r = await extractAttachmentForTurn({
+              ownerId: USER_ID!,
+              bytes: downloaded.bytes,
+              mimeType,
+              filename: baseName,
+              question: caption || undefined,
             });
-            h.setMeta({
-              adapter: adapter.adapterName,
-              tokensIn: result.tokensIn,
-              tokensOut: result.tokensOut,
-              textLength: result.text.length,
-            });
-            return result;
+            h.setMeta({ attachmentKind: r.kind, note: r.note, textLength: r.text.length });
+            return r;
           },
-        ).catch((err) => {
-          console.error(
-            '[agent] telegram vision extract failed:',
-            err instanceof Error ? err.message : err,
-          );
-          return null;
-        });
-        void bumpAiWorkerUsage(visionWorker.id);
+        );
 
-        const transcript = extracted?.text?.trim() ? extracted.text : '';
-        // This inline vision is QUESTION-AWARE and used ONLY for the
-        // responder's reply to this turn. Durable, query-independent metadata
-        // (data.text + summary + embedding + facts) is owned by the extractor,
-        // which fires on the upsertFile insert above and runs a neutral pass —
-        // so we don't persist this answer as metadata or re-fire here.
         return {
-          transcript,
-          note: transcript ? null : 'Vision worker returned no text.',
+          kind: extract.kind === 'image' ? ('image' as const) : ('file' as const),
+          transcript: extract.text,
+          note: extract.note,
           nodeId,
           bytes: downloaded.bytes,
-          mimeType: downloaded.mimeType,
+          mimeType,
         };
       },
     );
     // No usable bytes (download impossible — e.g. no account). Nothing to
     // reply through; the row is already claimed so we don't retry.
-    if (!photoContext) return;
+    if (!attachmentContext) return;
   }
 
   // Resolve the responder + key BEFORE opening a trace. Failure modes here
@@ -626,7 +584,8 @@ async function handleMessage(messageId: string): Promise<void> {
           telegramChatId: row.telegramChatId,
           model: agent.model,
           wasVoice,
-          wasPhoto: !!photoContext,
+          wasAttachment: !!attachmentContext,
+          attachmentKind: attachmentContext?.kind ?? null,
         },
       },
       async () => {
@@ -858,32 +817,40 @@ async function handleMessage(messageId: string): Promise<void> {
         const effectiveSystemPrompt =
           promptWithSkills + openHeartbeatBlock + audioTagInstructions;
 
-        // Photo → responder input (transcript-default, mirroring web).
-        // Prefer the vision transcript folded into the text; only inline the
-        // raw pixels when there's NO transcript and the model can see images
-        // within its size limit. The node id is surfaced either way so Saskia
-        // can re-read the picture via extract_from_image on a follow-up.
+        // Attachment → responder input (transcript-default, mirroring web).
+        // Prefer the inline-extracted text folded into the turn; for an IMAGE
+        // with no transcript, fall back to inlining the raw pixels when the
+        // model is vision-capable and within its size limit. The node id is
+        // surfaced either way so Saskia can re-read it (extract_from_image /
+        // file_read) on a follow-up.
         let responderUserText = row.text;
         let userImage: UserImage | undefined;
-        if (photoContext) {
+        if (attachmentContext) {
+          const caption = telegramCaption(row.text);
           const baseText =
-            row.text && row.text !== '(photo)'
-              ? row.text.trim()
-              : "Here's an image — tell me what you see.";
-          const hasTranscript = photoContext.transcript.trim().length > 0;
-          const withinLimit = photoContext.bytes.length <= maxImageBytesFor(agent.model);
-          if (!hasTranscript && modelSupportsVision(agent.model) && withinLimit) {
+            caption ||
+            (attachmentContext.kind === 'image'
+              ? "Here's an image — tell me what you see."
+              : "I've attached a file — take a look and tell me what's in it.");
+          const hasTranscript = attachmentContext.transcript.trim().length > 0;
+          const withinLimit = attachmentContext.bytes.length <= maxImageBytesFor(agent.model);
+          if (
+            attachmentContext.kind === 'image' &&
+            !hasTranscript &&
+            modelSupportsVision(agent.model) &&
+            withinLimit
+          ) {
             userImage = {
-              base64: photoContext.bytes.toString('base64'),
-              mimeType: photoContext.mimeType,
+              base64: attachmentContext.bytes.toString('base64'),
+              mimeType: attachmentContext.mimeType,
             };
             responderUserText = baseText;
           } else {
             responderUserText = buildAttachmentContextText(baseText, {
-              kind: 'image',
-              transcript: photoContext.transcript,
-              note: photoContext.note,
-              nodeId: photoContext.nodeId,
+              kind: attachmentContext.kind,
+              transcript: attachmentContext.transcript,
+              note: attachmentContext.note,
+              nodeId: attachmentContext.nodeId,
             });
           }
         }

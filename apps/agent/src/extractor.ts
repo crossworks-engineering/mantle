@@ -51,10 +51,9 @@ import {
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { embed } from '@mantle/embeddings';
-import { diskPathForFile, extOf, mimeForExt, transcodeImageForVision, INGESTABLE_EXTS } from '@mantle/files';
-import { DEFAULT_VISION_DESCRIBE_PROMPT, getVisionAdapter } from '@mantle/voice';
+import { diskPathForFile, extOf, mimeForExt, parseDocumentBytes, INGESTABLE_EXTS } from '@mantle/files';
 import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
-import { captureLlmUsage } from '@mantle/agent-runtime';
+import { captureLlmUsage, runVisionWorker } from '@mantle/agent-runtime';
 
 /** Types we will NEVER extract from, no matter what the agent config says.
  *  Note `secret` is NOT here — secret nodes have metadata-only extraction
@@ -243,46 +242,22 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
     if (typeof c === 'string' && c.trim().length > 0) return c;
   }
   // file fallback: if data.content wasn't cached (binary uploads, or
-  // text > 1MB), try the disk. Text files come back UTF-8; PDFs route
-  // through pdf-parse and return their extracted text layer.
+  // text > 1MB), read from disk and parse via the shared dispatcher
+  // (pdf/docx/xlsx → parser, text → UTF-8). On any parse failure
+  // (encrypted/scanned/corrupt) fall through to the title.
   if (node.type === 'file' && typeof data.filename === 'string') {
     const filename = data.filename as string;
     const ext = extOf(filename);
     const diskPath = diskPathForFile(node.path, filename);
     if (!diskPath) return node.title;
-    if (ext === 'pdf') {
+    if (INGESTABLE_EXTS.has(ext)) {
       try {
         const { promises: fs } = await import('node:fs');
         const buf = await fs.readFile(diskPath);
-        const { parsePdf } = await import('@mantle/files/pdf');
-        return await parsePdf(buf);
+        const text = await parseDocumentBytes(buf, ext);
+        if (text.trim().length > 0) return text;
       } catch {
-        // PDF parse failed (encrypted, scanned-image, corrupt). Fall through.
-      }
-    } else if (ext === 'docx') {
-      try {
-        const { promises: fs } = await import('node:fs');
-        const buf = await fs.readFile(diskPath);
-        const { parseDocx } = await import('@mantle/files/docx');
-        return await parseDocx(buf);
-      } catch {
-        // Word parse failed (legacy .doc, corrupt, password). Fall through.
-      }
-    } else if (ext === 'xlsx' || ext === 'xls') {
-      try {
-        const { promises: fs } = await import('node:fs');
-        const buf = await fs.readFile(diskPath);
-        const { parseXlsx } = await import('@mantle/files/xlsx');
-        return await parseXlsx(buf);
-      } catch {
-        // Spreadsheet parse failed (corrupt, password). Fall through.
-      }
-    } else if (INGESTABLE_EXTS.has(ext)) {
-      try {
-        const { promises: fs } = await import('node:fs');
-        return await fs.readFile(diskPath, 'utf8');
-      } catch {
-        // Disk read failed (file missing, permissions). Fall through.
+        // Parse / disk read failed. Fall through to the title.
       }
     }
   }
@@ -290,18 +265,19 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
 }
 
 /**
- * Vision-ingest an image file node: run the default vision worker over the
- * bytes, persist the description/OCR as `data.text` (+ `vision_model`), and
- * re-fire `node_ingested` so the next extractor pass indexes it normally.
+ * Vision-ingest an image file node: run the default vision worker (neutral
+ * describe+OCR) over the bytes, persist the result as `data.text` (+
+ * `vision_model`), and re-fire `node_ingested` so the next extractor pass
+ * indexes it normally (summary + embedding + facts).
  *
- * This is the catch-all for images that arrive WITHOUT an inline vision pass
- * (web /files upload, disk-sync watcher, MCP file_upload) — the chat and
- * Telegram surfaces already do their own vision and land here with data.text
- * already set, so they never reach this function. Mirrors the surfaces'
- * "persist text → re-notify" handoff so there's one indexing path.
+ * This is the SINGLE durable-metadata path for images, however they entered —
+ * Files upload, disk-sync watcher, MCP file_upload, AND the chat/Telegram
+ * surfaces (whose own inline vision is question-aware and used only for the
+ * live reply; they no longer persist `data.text`, so every image lands here).
  *
- * Best-effort: a missing/unwired vision worker records a skipped trace and
- * leaves the image un-indexed (findable by filename only) rather than failing.
+ * Best-effort: a missing/unwired/erroring vision worker leaves `result.text`
+ * empty, so we persist nothing and the image stays findable by filename —
+ * the `photo_ingest` trace's extract_vision step records the reason.
  */
 async function visionIngestImageNode(
   node: typeof nodes.$inferSelect,
@@ -312,41 +288,13 @@ async function visionIngestImageNode(
   const diskPath = diskPathForFile(node.path, filename);
   if (!diskPath) return;
 
-  const skip = (disposition: string, details: Record<string, unknown>) =>
-    recordSkippedTrace({
-      kind: 'photo_ingest',
-      ownerId,
-      subjectId: node.id,
-      subjectKind: 'node',
-      disposition,
-      details: { filename, ...details },
-    });
-
-  const worker = await getDefaultWorker(ownerId, 'vision');
-  if (!worker?.apiKeyId) {
-    await skip('no_vision_worker', {
-      hint: "Set a default 'vision' worker at /settings/ai-workers to index dropped-in images.",
-    });
-    return;
-  }
-  const adapter = getVisionAdapter(worker.provider);
-  if (!adapter) {
-    await skip('vision_provider_unwired', { provider: worker.provider });
-    return;
-  }
-  const apiKey = await getApiKeyById(worker.apiKeyId);
-  if (!apiKey) {
-    await skip('api_key_not_decryptable', { worker_slug: worker.slug });
-    return;
-  }
-
   await startTrace(
     {
       kind: 'photo_ingest',
       ownerId,
       subjectId: node.id,
       subjectKind: 'node',
-      data: { source: 'extractor', filename, model: worker.model, worker_slug: worker.slug },
+      data: { source: 'extractor', filename },
     },
     async () => {
       const bytes = await step(
@@ -358,35 +306,21 @@ async function visionIngestImageNode(
           return buf;
         },
       );
-      const rawMime = mimeForExt(extOf(filename));
-      // Vision providers can't read HEIC (iPhone default) — transcode to JPEG.
-      const forVision = await transcodeImageForVision(bytes, rawMime, filename);
-      const params = (worker.params ?? {}) as { extraction_prompt?: string; max_tokens?: number };
-      const prompt = params.extraction_prompt?.trim() || DEFAULT_VISION_DESCRIBE_PROMPT;
-
+      const mimeType = mimeForExt(extOf(filename));
       const result = await step(
-        {
-          name: 'extract_vision',
-          kind: 'llm_call',
-          input: {
-            workerSlug: worker.slug,
-            provider: worker.provider,
-            model: worker.model,
-            mime: forVision.mimeType,
-            bytes: forVision.bytes.length,
-          },
-        },
+        { name: 'extract_vision', kind: 'llm_call', input: { mime: mimeType, bytes: bytes.length } },
         async (h) => {
-          const r = await adapter.extract(forVision.bytes, {
-            apiKey,
-            mimeType: forVision.mimeType,
-            prompt,
-            systemPrompt: worker.systemPrompt ?? undefined,
-            model: worker.model,
-            maxTokens: params.max_tokens ?? 2000,
-          });
+          // Neutral describe+OCR (no question) — the durable, query-independent
+          // metadata pass. Shares the single vision implementation with the
+          // conversational surfaces (HEIC transcode + worker resolution live
+          // inside runVisionWorker). A missing/unwired/erroring worker returns
+          // ran:false + a note rather than throwing; the trace records it.
+          const r = await runVisionWorker({ ownerId, bytes, mimeType, filename });
           h.setMeta({
-            adapter: adapter.adapterName,
+            ran: r.ran,
+            note: r.note,
+            model: r.model,
+            adapter: r.adapterName,
             tokensIn: r.tokensIn,
             tokensOut: r.tokensOut,
             textLength: r.text.length,
@@ -394,22 +328,20 @@ async function visionIngestImageNode(
           return r;
         },
       );
-      void bumpWorkerUsage(worker.id);
 
-      const text = result.text?.trim() ? result.text : '';
-      if (!text) return; // nothing to index; the trace records the attempt
+      if (!result.text) return; // nothing to index; the trace records why.
 
       await step({ name: 'persist_vision_text', kind: 'db_write' }, async (h) => {
         await db
           .update(nodes)
           .set({
-            data: sql`${nodes.data} || jsonb_build_object('text', ${text}::text, 'vision_model', ${worker.model}::text)`,
+            data: sql`${nodes.data} || jsonb_build_object('text', ${result.text}::text, 'vision_model', ${result.model ?? ''}::text)`,
             updatedAt: new Date(),
           })
           .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
         // Re-fire so the next extractor pass indexes the now-textful node.
         await db.execute(sql`SELECT pg_notify('node_ingested', ${node.id}::text)`);
-        h.setMeta({ chars: text.length });
+        h.setMeta({ chars: result.text.length });
       });
     },
   );

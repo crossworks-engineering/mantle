@@ -304,91 +304,71 @@ where that lives.
 
 ---
 
-## 5b. Vision in — photo ingest
+## 5b. Attachment ingestion (images + documents)
 
-When a Telegram message arrives with a photo attachment OR a user
-attaches an image to a `/assistant` web turn, the agent runs the
-**default vision worker** synchronously and folds the result into the
-conversation:
+Every file that enters Mantle — uploaded via the Files UI, attached to a
+`/assistant` turn, sent to the Telegram bot, dropped on disk, or pushed
+through MCP — is handled by **two cleanly-separated responsibilities**:
 
-### Telegram path
+1. **Durable indexing (universal, async).** Save bytes → `node_ingested` →
+   the **extractor** is the *single* producer of durable metadata
+   (`data.text` + summary + embedding + facts), type-dispatched: images →
+   neutral vision (describe+OCR), pdf/docx/xlsx → `parseDocumentBytes`, text →
+   `data.content`. This runs for every file regardless of how it arrived.
+2. **Live answer (conversational surfaces only, sync, ephemeral).** The web
+   `/assistant` and Telegram run a **question-aware** read of the attachment
+   for the immediate reply — never persisted. Both call the one shared helper.
 
-```
-1. Telegram message arrives with attachment kind='photo'
-2. handleMessage claims the row, opens a photo_ingest trace
-3. downloadTelegramFile → bytes
-4. Save bytes as a file node under /files/telegram-uploads/<yyyy-mm-dd>/
-   (upsertFile) + recordIngest({source: 'telegram_photo', nodeId: file.id})
-5. Resolve default vision worker; adapter.extract(bytes, {...}) → transcript
-6. Persist transcript to the file node's data.text + pg_notify('node_ingested')
-   so the extractor summarises/embeds it
-7. FALL THROUGH to the responder (separate responder_turn trace): the
-   transcript is folded into the turn (transcript-default) with the file
-   node id surfaced; if there's no transcript and the model is vision-capable
-   within its size limit, the raw bytes are inlined instead
-8. Saskia replies conversationally (text or voice)
-```
+### The shared primitives (no duplication)
 
-This is **full parity** with the web /assistant — the responder LLM runs,
-so Saskia answers "what is this?" about a photo. The picture persists as a
-real file node (searchable), not a note.
+- `parseDocumentBytes(bytes, ext)` — `@mantle/files`. The one place that maps
+  format → parser. Used by the extractor and the live-answer helper.
+- `runVisionWorker({ ownerId, bytes, mimeType, filename, prompt? })` —
+  `@mantle/agent-runtime`. Resolves the owner's default vision worker,
+  transcodes HEIC, runs the adapter. Best-effort: returns `ran:false` + a note
+  rather than throwing. Used by the extractor (neutral) and the live-answer
+  helper (question-aware).
+- `extractAttachmentForTurn({ ownerId, bytes, mimeType, filename, question? })`
+  — `@mantle/agent-runtime`. The conversational helper: image → vision, doc →
+  `parseDocumentBytes` (capped at `DOC_TEXT_MAX` 24K), returns
+  `{ kind, text, note }`. Used by both `/assistant` and Telegram.
+- `buildAttachmentContextText(text, { kind, transcript, note, nodeId })` —
+  folds the extracted text into the turn with the file node id surfaced so
+  Saskia can re-read the original (`extract_from_image` for images,
+  `file_read` for documents).
 
-### Web /assistant path
+### Per-surface flow
 
-The chat accepts **images and documents** (pdf, docx, xlsx, csv, txt, md,
-json, yaml) — images go under the `image` form field, documents under `file`.
+- **Web `/assistant`** (`processUpload`): save to
+  `/files/assistant-uploads/<date>/` → `extractAttachmentForTurn` → fold into
+  the turn. Images also echo an inbound artifact so the bubble renders them;
+  documents render a client-side file chip. Accepts images + documents
+  (pdf/docx/xlsx/csv/txt/md/json/yaml); anything else → 415.
+- **Telegram** (`handleMessage`): a `photo` OR `document` attachment →
+  `downloadTelegramFile` → save to `/files/telegram-uploads/<date>/` →
+  `extractAttachmentForTurn` → fall through to the responder. **Full parity
+  with the web** — documents are no longer dropped. (`voice` still routes
+  through STT; `audio`/`video` are not yet handled.)
+- **Files UI / disk-watcher / MCP**: save only — no inline pass. The extractor
+  picks them up and produces the durable index (images via `runVisionWorker`,
+  docs via `parseDocumentBytes`).
 
-```
-1. POST /api/assistant/turn (multipart, text + image|file)
-2. Save attachment to /files/assistant-uploads/<yyyy-mm-dd>/
-3. recordIngest({source: 'assistant_upload', nodeId: file.id, ...})
-4. Extract text:
-   - image    → default vision worker over the bytes (question-aware)
-   - document → @mantle/files parser (parsePdf / parseDocx / parseXlsx,
-                or raw UTF-8 for csv/txt/md/json/yaml), capped at 24K chars
-5. Compose the LLM-visible message (transcript-default, via the shared
-   buildAttachmentContextText helper). For an image:
-   `${user_text}\n\n[Attached image (saved as file node <id> — call
-    extract_from_image with that node_id to look closer). Vision analysis:]
-    \n${extracted_text}`
-   For a document the noun + tool swap to "file" / file_read.
-6. runToolLoop with the augmented prompt — Saskia answers from the extracted
-   text and can re-read the original on demand (extract_from_image / file_read)
-7. Return reply (+ inbound artifact for images, so the bubble renders them)
-```
+**Transcript-default + reliability.** The responder prefers the extracted
+text; for an *image* with no transcript it falls back to inlining the raw
+pixels only when the model is vision-capable and the image is within the
+provider's per-image limit (`maxImageBytesFor` — guards Bedrock's opaque
+"Could not process image" on oversized photos). On any responder error with an
+image attached, the web turn retries once text-only. Extraction failures fall
+back to a `[… couldn't be read: <reason>]` marker. A misconfigured/missing
+vision worker leaves an image findable by filename and records the reason on
+the `photo_ingest` trace — the system stays up; enrichment is best-effort.
 
-The user's bubble shows the original image (documents show a file chip);
-Saskia sees the extracted text (with the file node id) folded in.
-**Transcript-default:** an image's raw pixels are inlined only when there's
-no usable transcript (worker failed/unconfigured) AND the model is
-vision-capable AND the image is within the provider's per-image limit
-(`maxImageBytesFor`) — guarding against Bedrock's opaque "Could not process
-image" on oversized photos. On any responder error with an image attached,
-the turn retries once text-only (transcript-grounded), so a turn never
-hard-fails on a picture. Extraction failures fall back to a `[… couldn't be
-read: <reason>]` marker.
-
-### Separately-uploaded images (Files UI / disk sync / MCP)
-
-An image that lands in `/files` WITHOUT going through a chat — the Files
-upload route, the disk-sync watcher, or the MCP `file_upload` tool — has no
-inline vision pass. The **extractor** is the catch-all: when it sees an image
-`file` node with no stored `data.text`, it runs the default vision worker
-(under a `photo_ingest` trace, `subjectKind='node'`), persists the
-description/OCR as `data.text`, and re-fires `node_ingested` so the next pass
-indexes it (summary + embedding + facts) like any other document. So a photo
-dropped into Files becomes searchable by content, not just by filename —
-exactly like one sent to the chat. Images that already carry `data.text`
-(from the chat/Telegram paths) skip this and are never re-visioned.
-
-**HEIC/HEIF (iPhone default).** Vision providers can't read HEIC, so every
-vision call site (web upload, Telegram, extractor) first runs
-`transcodeImageForVision` from `@mantle/files`, which converts HEIC/HEIF →
-JPEG via `heic-convert` (libheif WASM — no native dep) and passes everything
-else through untouched. Lazy-imported, so the decoder only loads when a HEIC
-actually arrives; on a decode failure it returns the original bytes and the
-vision call degrades exactly as before. `heic-convert` is in
-`serverExternalPackages` so Next leaves its `.wasm` alone.
+**HEIC/HEIF (iPhone default).** Vision providers can't read HEIC, so
+`runVisionWorker` runs `transcodeImageForVision` (`@mantle/files`) first —
+HEIC/HEIF → JPEG via `heic-convert` (libheif WASM, no native dep), passthrough
+otherwise. Lazy-imported; on a decode failure it returns the original bytes and
+degrades as before. `heic-convert` is in `serverExternalPackages` so Next
+leaves its `.wasm` alone.
 
 ---
 
