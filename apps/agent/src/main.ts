@@ -562,26 +562,11 @@ async function handleMessage(messageId: string): Promise<void> {
         void bumpAiWorkerUsage(visionWorker.id);
 
         const transcript = extracted?.text?.trim() ? extracted.text : '';
-        // Persist the transcript as the file node's searchable text + re-fire
-        // node_ingested so the extractor summarises/embeds it (same as web).
-        if (nodeId && transcript) {
-          try {
-            await db
-              .update(nodes)
-              .set({
-                data: sql`${nodes.data} || jsonb_build_object('text', ${transcript}::text, 'vision_model', ${visionWorker.model}::text)`,
-                updatedAt: new Date(),
-              })
-              .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, USER_ID!)));
-            await db.execute(sql`SELECT pg_notify('node_ingested', ${nodeId}::text)`);
-          } catch (err) {
-            console.error(
-              '[agent] persist telegram vision text failed:',
-              err instanceof Error ? err.message : err,
-            );
-          }
-        }
-
+        // This inline vision is QUESTION-AWARE and used ONLY for the
+        // responder's reply to this turn. Durable, query-independent metadata
+        // (data.text + summary + embedding + facts) is owned by the extractor,
+        // which fires on the upsertFile insert above and runs a neutral pass —
+        // so we don't persist this answer as metadata or re-fire here.
         return {
           transcript,
           note: transcript ? null : 'Vision worker returned no text.',

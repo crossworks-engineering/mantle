@@ -34,8 +34,6 @@ import {
   upsertFile,
   INGESTABLE_EXTS,
 } from '@mantle/files';
-import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes } from '@mantle/db';
 import type { ToolArtifact } from '@mantle/tools';
 import { recordIngest } from '@mantle/tracing';
 
@@ -188,25 +186,13 @@ async function processUploadedImage(
       model: worker.model,
       maxTokens: params.max_tokens ?? 2000,
     });
-    // Persist the vision output as the image node's searchable text so
-    // the photo becomes findable in the brain — the extractor skips raw
-    // images (no OCR there), so without this the picture's content is
-    // lost. Re-fire node_ingested so the extractor summarises + embeds +
-    // extracts facts from what the vision worker saw. Best-effort.
-    if (nodeId && result.text.trim().length > 0) {
-      try {
-        await db
-          .update(nodes)
-          .set({
-            data: sql`${nodes.data} || jsonb_build_object('text', ${result.text}::text, 'vision_model', ${worker.model}::text)`,
-            updatedAt: new Date(),
-          })
-          .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)));
-        await db.execute(sql`SELECT pg_notify('node_ingested', ${nodeId}::text)`);
-      } catch (err) {
-        console.warn('[assistant/turn] persist vision text failed:', err);
-      }
-    }
+    // NOTE: this inline vision is QUESTION-AWARE and used ONLY for the
+    // responder's answer to this turn. We deliberately do NOT persist it as
+    // the node's data.text — durable, query-independent metadata is owned by
+    // the extractor, which fires on the upsertFile insert above and runs a
+    // neutral describe+OCR pass. Persisting a question-biased answer here
+    // would pollute the index (e.g. "expires 2030" instead of "SA passport,
+    // Jane Doe, expires 2030") and race the extractor for data.text.
     return {
       nodeId,
       storagePath,
