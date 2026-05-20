@@ -12,7 +12,7 @@ export default async function AssistantPage() {
   return (
     <div className="flex h-full flex-col">
       <header className="border-b border-border px-6 py-3">
-        <h1 className="text-lg font-semibold">Assistant</h1>
+        <h1 className="font-logo text-3xl font-normal leading-none lowercase text-foreground">Assistant</h1>
         <p className="text-xs text-muted-foreground">
           One ongoing conversation. Same persona, facts, and content_index as your
           Telegram responder — different transport.

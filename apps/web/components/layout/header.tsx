@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { LogOut, Menu, User as UserIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,38 +16,6 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ThemeToggle } from '@/components/theme-toggle';
 
-/** Route → page title for the header. Longest-prefix wins. */
-const TITLES: Array<[string, string]> = [
-  ['/assistant', 'Assistant'],
-  ['/files', 'Files'],
-  ['/notes', 'Notes'],
-  ['/todos', 'Todos'],
-  ['/events', 'Events'],
-  ['/secrets', 'Secrets'],
-  ['/pending', 'Pending'],
-  ['/traces', 'Traces'],
-  ['/debug', 'Debug'],
-  ['/settings/senders', 'Senders'],
-  ['/settings/accounts', 'Accounts'],
-  ['/settings/profile', 'Profile'],
-  ['/settings/keys', 'API keys'],
-  ['/settings/agents', 'Agents'],
-  ['/settings/ai-workers', 'AI workers'],
-  ['/settings/tools', 'Tools'],
-  ['/settings/skills', 'Skills'],
-  ['/settings/heartbeats', 'Heartbeats'],
-  ['/settings/security', 'Security'],
-  ['/settings', 'Settings'],
-];
-
-function titleFor(pathname: string): string {
-  if (pathname === '/') return 'Inbox';
-  for (const [prefix, label] of TITLES) {
-    if (pathname === prefix || pathname.startsWith(prefix + '/') || pathname === prefix) return label;
-  }
-  return 'Mantle';
-}
-
 export function Header({
   email,
   onMenuClick,
@@ -55,10 +23,8 @@ export function Header({
   email: string | null;
   onMenuClick: () => void;
 }) {
-  const pathname = usePathname();
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const title = titleFor(pathname);
   const initials = (email ?? 'M').slice(0, 2).toUpperCase();
 
   async function signOut() {
@@ -81,11 +47,8 @@ export function Header({
       </Button>
 
       <Link href="/" className="flex items-center" aria-label="Mantle home">
-        <span className="font-logo text-3xl leading-none text-primary">Mantle</span>
+        <span className="font-logo text-3xl leading-none text-primary">mantle</span>
       </Link>
-
-      <div className="ml-2 hidden h-5 w-px bg-border md:block" />
-      <h1 className="hidden text-sm font-medium text-muted-foreground md:block">{title}</h1>
 
       <div className="ml-auto flex items-center gap-1">
         <ThemeToggle />
