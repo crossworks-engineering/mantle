@@ -14,14 +14,18 @@
  * enabled responder for the owner and appends to that row.
  */
 
+import { randomUUID } from 'node:crypto';
 import { OpenRouter } from '@openrouter/sdk';
 import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import {
   db,
   agents,
+  activeNotes,
   assistantMessages,
   bumpWorkerUsage,
+  capNotes,
   getDefaultWorker,
+  MAX_PERSONA_NOTES,
   telegramMessages,
   type Agent,
   type AiWorker,
@@ -34,9 +38,6 @@ import { captureLlmUsage } from '@mantle/agent-runtime';
 
 /** How many recent turns the reflector reviews per run. */
 const REFLECTION_WINDOW = 50;
-
-/** Cap on persona_notes size — older notes age out if we exceed this. */
-const MAX_PERSONA_NOTES = 100;
 
 export const DEFAULT_REFLECTOR_PROMPT = `You are a reflector for a personal AI assistant. You will be given a transcript of recent exchanges between the user and the assistant, plus the assistant's current persona_notes (preferences, relationship notes, corrections already learned).
 
@@ -282,10 +283,15 @@ export async function reflect(ownerId: string): Promise<void> {
         .join('\n');
 
       const existingNotes = (responder.personaNotes ?? []) as PersonaNote[];
+      // Dedup against ACTIVE notes only — a note the user explicitly
+      // retired via update_persona shouldn't read as "already covered"
+      // (which would stop the reflector re-learning) nor be shown back
+      // to the model as current guidance.
+      const liveNotes = activeNotes(existingNotes);
       const existingNotesText =
-        existingNotes.length === 0
+        liveNotes.length === 0
           ? '(no existing notes)'
-          : existingNotes.map((n) => `- (${n.kind}) ${n.content}`).join('\n');
+          : liveNotes.map((n) => `- (${n.kind}) ${n.content}`).join('\n');
 
       const userPayload = `Existing persona_notes:\n${existingNotesText}\n\nRecent transcript (${turns.length} turns):\n${transcript}`;
 
@@ -342,13 +348,17 @@ export async function reflect(ownerId: string): Promise<void> {
 
       const now = new Date().toISOString();
       const appended: PersonaNote[] = parsed.new_notes.map((n) => ({
+        // Stamp an id so the note is addressable by update_persona later
+        // (e.g. the user asks to drop a preference the reflector learned).
+        id: randomUUID(),
         kind: n.kind,
         content: n.content.trim(),
         at: now,
       }));
 
-      // Append + cap. Oldest notes drop first if we exceed MAX_PERSONA_NOTES.
-      const merged = [...existingNotes, ...appended].slice(-MAX_PERSONA_NOTES);
+      // Append + cap. capNotes never evicts an active note — it drops the
+      // oldest retired (audit-tail) notes first when over budget.
+      const merged = capNotes([...existingNotes, ...appended], MAX_PERSONA_NOTES);
 
       await step(
         { name: 'append_notes', kind: 'db_write', input: { count: appended.length } },

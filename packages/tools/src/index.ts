@@ -18,6 +18,7 @@ export {
 } from './registry';
 
 export { BUILTIN_TOOLS } from './builtins';
+export { PERSONA_TOOLS, PERSONA_TOOL_SLUGS } from './builtins-persona';
 export { seedBuiltinTools } from './seed';
 export { resolveTool, resolveTools, dispatchTool } from './dispatch';
 export {

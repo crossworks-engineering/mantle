@@ -101,15 +101,29 @@ export type AgentParams = {
 };
 
 /**
- * One note appended by the reflector. `style` shapes voice/format,
- * `relationship` records corrections + personal calibrations,
+ * One persona note. Written by the reflector (passive observation) or
+ * the `update_persona` tool (explicit user instruction). `style` shapes
+ * voice/format, `relationship` records personal calibrations,
  * `correction` is when the user explicitly flagged a mistake.
+ *
+ * Notes are soft-retired, never deleted: persona has no immutable source
+ * underneath it (unlike conversation digests, which sit over raw turns),
+ * so a bad edit must stay recoverable. The read path filters out anything
+ * with `retiredAt`; retired notes linger as an audit tail.
  */
 export type PersonaNote = {
+  /** Stable id, assigned at creation. Legacy notes may lack it —
+   *  addressing falls back to a content hash (see noteRef). */
+  id?: string;
   kind: 'style' | 'relationship' | 'correction';
   content: string;
   at: string; // ISO timestamp
   source?: { type: 'turn' | 'digest'; id: string };
+  /** Set when the note is superseded or removed. Read path filters these. */
+  retiredAt?: string; // ISO
+  retiredReason?: 'superseded' | 'removed';
+  /** For retiredReason='superseded': the id of the replacing note. */
+  supersededBy?: string;
 };
 
 /**

@@ -31,6 +31,7 @@ import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
 import { WORKER_DELEGATION_TOOLS } from './builtins-workers';
 import { EVENT_TOOLS } from './builtins-events';
+import { PERSONA_TOOLS } from './builtins-persona';
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -846,4 +847,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // operator choice; flip per-row in the tools table if you want
   // approval gates.
   ...EVENT_TOOLS,
+  // Persona self-edit — lets Saskia adjust her own style/relationship
+  // notes when the user explicitly asks ("be more professional").
+  // Scoped resolution + soft-retire; pure logic in @mantle/db.
+  ...PERSONA_TOOLS,
 ];

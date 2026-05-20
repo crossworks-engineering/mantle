@@ -21,7 +21,7 @@
  *   [new user message]
  */
 
-import type { PersonaNote } from '@mantle/db';
+import { activeNotes, noteRef, type PersonaNote } from '@mantle/db';
 
 export type HistoryTurn = { role: 'user' | 'assistant'; text: string };
 
@@ -156,11 +156,17 @@ function renderPersonaBlock(
 ): string {
   const parts: string[] = [systemPrompt.trim()];
 
-  if (notes.length > 0) {
-    const noteLines = notes
-      .map((n) => `- (${n.kind}) ${n.content}`)
+  // Only inject active (non-retired) notes. The [ref] tag lets the model
+  // name a note in update_persona's supersede_refs/remove_refs when the
+  // user asks for a change that contradicts one.
+  const live = activeNotes(notes);
+  if (live.length > 0) {
+    const noteLines = live
+      .map((n) => `- [${noteRef(n)}] (${n.kind}) ${n.content}`)
       .join('\n');
-    parts.push(`\nWhat you've learned about how this user wants to be helped:\n${noteLines}`);
+    parts.push(
+      `\nWhat you've learned about how this user wants to be helped (each tagged with a [ref] you can pass to update_persona):\n${noteLines}`,
+    );
   }
 
   if (facts.length > 0) {

@@ -21,7 +21,7 @@
 
 import postgres from 'postgres';
 import { OpenRouter } from '@openrouter/sdk';
-import { and, asc, desc, eq, gte, isNull, lt, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
 import {
   db,
   agents,
@@ -66,7 +66,7 @@ import {
   type FactSnippet,
   type HistoryTurn,
 } from '@mantle/agent-runtime';
-import { registerAgentInvoker, seedBuiltinTools } from '@mantle/tools';
+import { PERSONA_TOOL_SLUGS, registerAgentInvoker, seedBuiltinTools } from '@mantle/tools';
 import {
   buildOpenHeartbeatContext,
   HEARTBEAT_DUE_CHANNEL,
@@ -1277,6 +1277,39 @@ function scheduleExtract(nodeId: string): void {
   }, EXTRACT_DEBOUNCE_MS);
 }
 
+/**
+ * Add the persona self-edit tool(s) to every enabled conversational
+ * agent (responder + assistant) that doesn't already have them. Returns
+ * the slugs of agents that were updated. Idempotent — re-running with the
+ * tool already present is a no-op. Mirrors the heartbeat-tool grant
+ * pattern: tool_slugs stays the single source of truth; this just spares
+ * the operator a manual /settings/tools step for a core capability.
+ */
+async function ensurePersonaToolOnConversationalAgents(ownerId: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: agents.id, slug: agents.slug, toolSlugs: agents.toolSlugs })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.ownerId, ownerId),
+        eq(agents.enabled, true),
+        inArray(agents.role, ['responder', 'assistant']),
+      ),
+    );
+  const updated: string[] = [];
+  for (const row of rows) {
+    const current = row.toolSlugs ?? [];
+    const missing = PERSONA_TOOL_SLUGS.filter((s) => !current.includes(s));
+    if (missing.length === 0) continue;
+    await db
+      .update(agents)
+      .set({ toolSlugs: [...current, ...missing], updatedAt: new Date() })
+      .where(eq(agents.id, row.id));
+    updated.push(row.slug);
+  }
+  return updated;
+}
+
 async function main() {
   const pg = postgres(DATABASE_URL!, { max: 2 });
   console.log('[agent] starting — config from agents table');
@@ -1292,6 +1325,21 @@ async function main() {
   } catch (err) {
     console.error(
       '[agent] tool seed failed:',
+      err instanceof Error ? err.message : err,
+    );
+  }
+
+  // Grant the persona self-edit tool to the conversational agents so
+  // "be more professional" works without manual /settings/tools setup.
+  // Idempotent; tool_slugs stays the canonical source of truth.
+  try {
+    const granted = await ensurePersonaToolOnConversationalAgents(USER_ID!);
+    if (granted.length > 0) {
+      console.log(`[agent] persona tool granted to: ${granted.join(', ')}`);
+    }
+  } catch (err) {
+    console.error(
+      '[agent] persona tool grant failed:',
       err instanceof Error ? err.message : err,
     );
   }
