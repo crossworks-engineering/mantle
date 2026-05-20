@@ -88,6 +88,7 @@ async function processUploadedImage(
   bytes: Buffer,
   mimeType: string,
   originalName: string,
+  userText: string,
 ): Promise<{
   nodeId: string | null;
   storagePath: string | null;
@@ -188,9 +189,17 @@ async function processUploadedImage(
     extraction_prompt?: string;
     max_tokens?: number;
   };
-  const prompt =
+  const ocrPrompt =
     params.extraction_prompt?.trim() ||
     'Transcribe everything visible in this image verbatim, preserving line breaks and structure. If something is unclear, mark it [unclear]. Output plain text only.';
+  // Prompt-switch: when the user asked something alongside the image,
+  // answer THAT (visual Q&A — "what car logo is this"). With no question
+  // it's passive ingest, so fall back to the OCR/transcription prompt and
+  // still build searchable metadata from the photo.
+  const question = userText.trim();
+  const prompt = question
+    ? `The user sent this image and asked: "${question}"\n\nAnswer their question directly and specifically, grounded only in what's actually visible in the image — don't invent details you can't see. Then add one short line describing the image overall, so this also serves as a useful record of the photo.`
+    : ocrPrompt;
   try {
     const result = await adapter.extract(bytes, {
       apiKey,
@@ -200,6 +209,25 @@ async function processUploadedImage(
       model: worker.model,
       maxTokens: params.max_tokens ?? 2000,
     });
+    // Persist the vision output as the image node's searchable text so
+    // the photo becomes findable in the brain — the extractor skips raw
+    // images (no OCR there), so without this the picture's content is
+    // lost. Re-fire node_ingested so the extractor summarises + embeds +
+    // extracts facts from what the vision worker saw. Best-effort.
+    if (nodeId && result.text.trim().length > 0) {
+      try {
+        await db
+          .update(nodes)
+          .set({
+            data: sql`${nodes.data} || jsonb_build_object('text', ${result.text}::text, 'vision_model', ${worker.model}::text)`,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)));
+        await db.execute(sql`SELECT pg_notify('node_ingested', ${nodeId}::text)`);
+      } catch (err) {
+        console.warn('[assistant/turn] persist vision text failed:', err);
+      }
+    }
     return {
       nodeId,
       storagePath,
@@ -252,7 +280,10 @@ export async function POST(req: Request) {
         'name' in file && typeof (file as File).name === 'string'
           ? (file as File).name
           : 'upload';
-      imageContext = await processUploadedImage(user.id, bytes, file.type, originalName);
+      // userText here is the raw typed text (before the image-only
+      // default below) — so the vision worker answers the real question
+      // when there is one, and OCRs when there isn't.
+      imageContext = await processUploadedImage(user.id, bytes, file.type, originalName, userText);
     }
     if (!userText && !imageContext) {
       return NextResponse.json(
@@ -283,7 +314,7 @@ export async function POST(req: Request) {
   // these are vision-extracted lines (not the user's own typed text).
   const messageForLlm =
     imageContext && imageContext.extractedText
-      ? `${userText}\n\n[Attached image — vision worker transcript:]\n${imageContext.extractedText}`
+      ? `${userText}\n\n[Attached image — vision analysis:]\n${imageContext.extractedText}`
       : imageContext && imageContext.note
       ? `${userText}\n\n[Image attached but couldn't be read: ${imageContext.note}]`
       : userText;
