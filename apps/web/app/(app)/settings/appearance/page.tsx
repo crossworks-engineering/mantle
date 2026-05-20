@@ -6,7 +6,6 @@ import { Check, Moon, Sun, Monitor, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useColorTheme } from '@/components/color-theme-provider';
 import { COLOR_THEMES } from '@/lib/themes';
-import { FleetLayout } from '@/components/layout/fleet-layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PreviewTabs } from '@/components/theme-preview/preview-tabs';
 
@@ -23,7 +22,7 @@ function Controls() {
   useEffect(() => setMounted(true), []);
 
   return (
-    <div className="space-y-6 py-4 pr-2">
+    <div className="space-y-6">
       <section className="space-y-2">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Mode
@@ -90,9 +89,6 @@ function Controls() {
             );
           })}
         </div>
-        <p className="text-xs text-muted-foreground">
-          More themes coming soon — generate them at tweakcn.com and drop them in.
-        </p>
       </section>
     </div>
   );
@@ -100,17 +96,19 @@ function Controls() {
 
 export default function AppearancePage() {
   return (
-    <FleetLayout
-      header={
-        <PageHeader
-          title="Appearance"
-          description="Pick a mode and color theme on the left; preview it on real surfaces."
-        />
-      }
-      leftClassName="flex-1 lg:flex-none lg:w-1/5 lg:min-w-[220px]"
-      rightClassName="lg:w-4/5"
-      left={<Controls />}
-      right={<PreviewTabs />}
-    />
+    <div>
+      <PageHeader
+        title="Appearance"
+        description="Pick a mode and color theme on the left; preview it on real surfaces."
+      />
+      <div className="flex flex-col gap-6 px-6 py-6 lg:flex-row">
+        <aside className="shrink-0 lg:w-1/5 lg:min-w-[220px]">
+          <Controls />
+        </aside>
+        <div className="min-w-0 flex-1">
+          <PreviewTabs />
+        </div>
+      </div>
+    </div>
   );
 }

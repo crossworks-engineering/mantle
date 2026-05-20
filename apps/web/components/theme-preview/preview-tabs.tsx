@@ -33,19 +33,17 @@ const TABS = [
 export function PreviewTabs() {
   return (
     <Tabs defaultValue="cards" className="@container w-full">
-      <div className="sticky top-0 z-10 -mx-1 mb-2 bg-background/95 px-1 py-2 backdrop-blur">
-        <TabsList className="flex w-full flex-wrap justify-end gap-1 bg-transparent p-0">
-          {TABS.map((t) => (
-            <TabsTrigger
-              key={t.value}
-              value={t.value}
-              className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-            >
-              {t.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </div>
+      <TabsList className="mb-3 flex w-full flex-wrap justify-end gap-1 bg-transparent p-0">
+        {TABS.map((t) => (
+          <TabsTrigger
+            key={t.value}
+            value={t.value}
+            className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+          >
+            {t.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
 
       <TabsContent value="cards" className="m-0"><CardsDemo /></TabsContent>
       <TabsContent value="dashboard" className="m-0"><Dashboard /></TabsContent>
