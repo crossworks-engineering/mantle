@@ -11,7 +11,7 @@
  * extractor's special case in apps/agent/src/extractor.ts:readNodeBodyRaw
  * surfaces status + priority + due_at into the body it summarises.
  */
-import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { db, nodes, type Node } from '@mantle/db';
 
 export const TODOS_ROOT_LABEL = 'todos';
@@ -102,8 +102,11 @@ export async function listTodos(
     .from(nodes)
     .where(and(...conds))
     .orderBy(
-      asc(sql`coalesce(${nodes.data}->>'status', 'open') = 'done'`),
-      asc(sql`mantle_iso_to_ts(${nodes.data}->>'due_at') nulls last`),
+      // Direction must precede the null-ordering: `<expr> asc nulls last`.
+      // Don't wrap in asc()/desc() — they append the direction AFTER the
+      // expression, producing the invalid `<expr> nulls last asc`.
+      sql`coalesce(${nodes.data}->>'status', 'open') = 'done' asc`,
+      sql`mantle_iso_to_ts(${nodes.data}->>'due_at') asc nulls last`,
       desc(nodes.updatedAt),
     )
     .limit(500);
