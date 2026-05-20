@@ -55,7 +55,13 @@ export const nodes = pgTable(
     index('nodes_owner_idx').on(t.ownerId),
     index('nodes_parent_idx').on(t.parentId),
     index('nodes_type_idx').on(t.type),
-    uniqueIndex('nodes_owner_slug_uq').on(t.ownerId, t.slug).where(sql`${t.slug} is not null`),
+    // Slug uniqueness applies to NON-branch nodes only. Folders (branches)
+    // rely on path-uniqueness below — two folders under different parents may
+    // share a name (e.g. each upload surface's dated `…/YYYY-MM-DD`). See
+    // migration 0032.
+    uniqueIndex('nodes_owner_slug_uq')
+      .on(t.ownerId, t.slug)
+      .where(sql`${t.slug} is not null and ${t.type} <> 'branch'`),
     // One branch per (owner, path). Emails and files legitimately share
     // paths so this is a partial index gated on type='branch'.
     uniqueIndex('nodes_branch_owner_path_uq')
