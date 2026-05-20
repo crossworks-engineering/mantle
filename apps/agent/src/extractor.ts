@@ -585,6 +585,33 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
     return;
   }
 
+  // Conversation digests are ALREADY summaries (authored by the
+  // summarizer into data.summary, with no data.content). Re-running the
+  // extractor on them re-summarises from the *title* and overwrites
+  // data.summary with a useless paraphrase — destroying the real digest
+  // and corrupting Layer-3 memory (the responder reads data.summary).
+  // Never extract them.
+  const digestData = (node.data ?? {}) as Record<string, unknown>;
+  const isConversationDigest =
+    node.type === 'note' &&
+    ((node.tags ?? []).includes('conversation-digest') ||
+      digestData.kind === 'conversation_digest');
+  if (isConversationDigest) {
+    await recordSkippedTrace({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      disposition: 'conversation_digest',
+      details: {
+        node_type: node.type,
+        worker_slug: worker.slug,
+        hint: 'Conversation digests are authored summaries — the extractor must not re-summarise them.',
+      },
+    });
+    return;
+  }
+
   // target_types is the new home for the type allowlist. We still
   // accept extract_types for legacy backfilled rows in the same
   // params blob — extractTypes prefers the new name.

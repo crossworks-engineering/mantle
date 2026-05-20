@@ -288,6 +288,12 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
                   source_turn_count: turns.length,
                   model: worker.model,
                   agent: worker.slug,
+                  // `content` is the note body the /notes UI renders;
+                  // `summary` is what the responder loads as Layer-3
+                  // memory. Both hold the digest text — for a digest the
+                  // body and its summary are the same thing. The extractor
+                  // skips conversation-digest notes, so neither is clobbered.
+                  content: topic.summary,
                   summary: topic.summary,
                   topic: topic.label,
                   topic_slug: slugifyTopic(topic.label),
