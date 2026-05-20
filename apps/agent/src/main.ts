@@ -454,7 +454,7 @@ async function handleMessage(messageId: string): Promise<void> {
         };
         const basePrompt =
           visionParams.extraction_prompt?.trim() ||
-          'Transcribe everything visible in this image verbatim, preserving line breaks and structure. If something is unclear, mark it [unclear]. Output plain text only — do not summarise or comment.';
+          "Describe what's in this image in one or two sentences — the main subject, objects, logos, people, or scene. Then, if the image contains any text, transcribe it verbatim below the description (preserve line breaks; mark anything unclear as [unclear]). If there's no text, the description alone is enough. Output plain text only.";
         const caption = row.text && row.text !== '(photo)' ? row.text.trim() : '';
         const prompt = caption
           ? `${basePrompt}\n\nUser's caption: ${caption}`

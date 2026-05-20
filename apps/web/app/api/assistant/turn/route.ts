@@ -191,7 +191,7 @@ async function processUploadedImage(
   };
   const ocrPrompt =
     params.extraction_prompt?.trim() ||
-    'Transcribe everything visible in this image verbatim, preserving line breaks and structure. If something is unclear, mark it [unclear]. Output plain text only.';
+    "Describe what's in this image in one or two sentences — the main subject, objects, logos, people, or scene. Then, if the image contains any text, transcribe it verbatim below the description (preserve line breaks; mark anything unclear as [unclear]). If there's no text, the description alone is enough. Output plain text only.";
   // Prompt-switch: when the user asked something alongside the image,
   // answer THAT (visual Q&A — "what car logo is this"). With no question
   // it's passive ingest, so fall back to the OCR/transcription prompt and

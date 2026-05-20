@@ -413,12 +413,12 @@ export async function testVisionAction(
     extraction_prompt?: string;
     max_tokens?: number;
   };
-  // Fall back to a verbatim-transcription default if the worker has
-  // no per-image prompt configured. Matches the form's placeholder
-  // text so the test does what the operator probably expects.
+  // Fall back to a describe-and-transcribe default if the worker has
+  // no per-image prompt configured — produces useful metadata for
+  // photos/logos (no text) as well as documents (verbatim text).
   const prompt =
     params.extraction_prompt?.trim() ||
-    'Transcribe everything visible in this image verbatim, preserving line breaks and structure. If something is unclear, mark it [unclear]. Output plain text only.';
+    "Describe what's in this image in one or two sentences — the main subject, objects, logos, people, or scene. Then, if the image contains any text, transcribe it verbatim below the description (preserve line breaks; mark anything unclear as [unclear]). If there's no text, the description alone is enough. Output plain text only.";
 
   const result = await adapter.extract(bytes, {
     apiKey,
