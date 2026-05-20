@@ -51,7 +51,7 @@ import {
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { embed } from '@mantle/embeddings';
-import { diskPathForFile, extOf, mimeForExt, INGESTABLE_EXTS } from '@mantle/files';
+import { diskPathForFile, extOf, mimeForExt, transcodeImageForVision, INGESTABLE_EXTS } from '@mantle/files';
 import { DEFAULT_VISION_DESCRIBE_PROMPT, getVisionAdapter } from '@mantle/voice';
 import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import { captureLlmUsage } from '@mantle/agent-runtime';
@@ -358,7 +358,9 @@ async function visionIngestImageNode(
           return buf;
         },
       );
-      const mimeType = mimeForExt(extOf(filename));
+      const rawMime = mimeForExt(extOf(filename));
+      // Vision providers can't read HEIC (iPhone default) — transcode to JPEG.
+      const forVision = await transcodeImageForVision(bytes, rawMime, filename);
       const params = (worker.params ?? {}) as { extraction_prompt?: string; max_tokens?: number };
       const prompt = params.extraction_prompt?.trim() || DEFAULT_VISION_DESCRIBE_PROMPT;
 
@@ -370,14 +372,14 @@ async function visionIngestImageNode(
             workerSlug: worker.slug,
             provider: worker.provider,
             model: worker.model,
-            mime: mimeType,
-            bytes: bytes.length,
+            mime: forVision.mimeType,
+            bytes: forVision.bytes.length,
           },
         },
         async (h) => {
-          const r = await adapter.extract(bytes, {
+          const r = await adapter.extract(forVision.bytes, {
             apiKey,
-            mimeType,
+            mimeType: forVision.mimeType,
             prompt,
             systemPrompt: worker.systemPrompt ?? undefined,
             model: worker.model,

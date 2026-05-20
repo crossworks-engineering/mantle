@@ -21,7 +21,10 @@ const nextConfig: NextConfig = {
     serverActions: { bodySizeLimit: '4mb' },
   },
   // pg-boss + postgres-js use node-only modules; keep them server-only.
-  serverExternalPackages: ['pg-boss', 'postgres'],
+  // heic-convert bundles a libheif WASM binary — leave it external so the
+  // bundler doesn't choke on the .wasm (the /assistant route lazy-imports it
+  // to transcode iPhone HEIC photos before vision).
+  serverExternalPackages: ['pg-boss', 'postgres', 'heic-convert'],
   reactStrictMode: true,
 };
 

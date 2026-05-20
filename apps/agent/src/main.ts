@@ -36,7 +36,7 @@ import {
 } from '@mantle/db';
 import { accountForChat, downloadTelegramFile, sendMessage, sendVoice } from '@mantle/telegram';
 import { buildTimeContextLine, loadProfilePreferences } from '@mantle/content';
-import { ensureDatedUploadFolder, upsertFile } from '@mantle/files';
+import { ensureDatedUploadFolder, transcodeImageForVision, upsertFile } from '@mantle/files';
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
 import {
   composeAudioTagInstructions,
@@ -517,6 +517,12 @@ async function handleMessage(messageId: string): Promise<void> {
           ? `The user sent this image and said: "${caption}"\n\nAnswer directly and specifically, grounded only in what's actually visible in the image — don't invent details you can't see. Then add one short line describing the image overall, so this also serves as a useful record of the photo.`
           : ocrPrompt;
 
+        // Vision providers can't read HEIC (iPhone default) — transcode to
+        // JPEG. Passthrough for the usual JPEG/PNG Telegram delivers.
+        const forVision = await transcodeImageForVision(
+          downloaded.bytes,
+          downloaded.mimeType,
+        );
         const extracted = await step(
           {
             name: 'extract_vision',
@@ -525,14 +531,14 @@ async function handleMessage(messageId: string): Promise<void> {
               workerSlug: visionWorker.slug,
               provider: visionWorker.provider,
               model: visionWorker.model,
-              mime: downloaded.mimeType,
-              bytes: downloaded.bytes.length,
+              mime: forVision.mimeType,
+              bytes: forVision.bytes.length,
             },
           },
           async (h) => {
-            const result = await adapter.extract(downloaded.bytes, {
+            const result = await adapter.extract(forVision.bytes, {
               apiKey,
-              mimeType: downloaded.mimeType,
+              mimeType: forVision.mimeType,
               prompt,
               systemPrompt: visionWorker.systemPrompt ?? undefined,
               model: visionWorker.model,

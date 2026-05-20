@@ -26,7 +26,14 @@ import { runAssistantTurn } from '@/lib/assistant';
 import { getDefaultWorker } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { getVisionAdapter } from '@mantle/voice';
-import { ensureDatedUploadFolder, extOf, mimeForExt, upsertFile, INGESTABLE_EXTS } from '@mantle/files';
+import {
+  ensureDatedUploadFolder,
+  extOf,
+  mimeForExt,
+  transcodeImageForVision,
+  upsertFile,
+  INGESTABLE_EXTS,
+} from '@mantle/files';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import type { ToolArtifact } from '@mantle/tools';
@@ -170,9 +177,12 @@ async function processUploadedImage(
     ? `The user sent this image and asked: "${question}"\n\nAnswer their question directly and specifically, grounded only in what's actually visible in the image — don't invent details you can't see. Then add one short line describing the image overall, so this also serves as a useful record of the photo.`
     : ocrPrompt;
   try {
-    const result = await adapter.extract(bytes, {
+    // Vision providers can't read HEIC (iPhone default) — transcode to JPEG
+    // first. Passthrough for everything else.
+    const forVision = await transcodeImageForVision(bytes, mimeType, originalName);
+    const result = await adapter.extract(forVision.bytes, {
       apiKey,
-      mimeType,
+      mimeType: forVision.mimeType,
       prompt,
       systemPrompt: worker.systemPrompt ?? undefined,
       model: worker.model,

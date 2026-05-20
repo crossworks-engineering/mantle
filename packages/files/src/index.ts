@@ -10,6 +10,8 @@ export {
   PREVIEWABLE_MARKDOWN_EXTS,
 } from './slug';
 
+export { isHeic, transcodeImageForVision } from './transcode';
+
 export {
   filesRoot,
   isFilesPath,

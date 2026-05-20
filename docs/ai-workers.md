@@ -381,6 +381,15 @@ dropped into Files becomes searchable by content, not just by filename —
 exactly like one sent to the chat. Images that already carry `data.text`
 (from the chat/Telegram paths) skip this and are never re-visioned.
 
+**HEIC/HEIF (iPhone default).** Vision providers can't read HEIC, so every
+vision call site (web upload, Telegram, extractor) first runs
+`transcodeImageForVision` from `@mantle/files`, which converts HEIC/HEIF →
+JPEG via `heic-convert` (libheif WASM — no native dep) and passes everything
+else through untouched. Lazy-imported, so the decoder only loads when a HEIC
+actually arrives; on a decode failure it returns the original bytes and the
+vision call degrades exactly as before. `heic-convert` is in
+`serverExternalPackages` so Next leaves its `.wasm` alone.
+
 ---
 
 ## 5c. Image generation — out

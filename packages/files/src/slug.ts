@@ -105,6 +105,10 @@ export function mimeForExt(ext: string): string {
       return 'image/gif';
     case 'webp':
       return 'image/webp';
+    case 'heic':
+      return 'image/heic';
+    case 'heif':
+      return 'image/heif';
     case 'svg':
       return 'image/svg+xml';
     case 'html':
