@@ -118,13 +118,17 @@ Output STRICT JSON, no markdown, no commentary outside the JSON:
   "entities": [{ "name": "<entity>", "kind": "person" | "project" | "place" | "org" | "event" }]
 }
 
-Guidelines:
+Fact kinds:
 - "factual" = a verifiable claim with a value ("Jason's birthday is March 4").
-- "episodic" = a record of something that happened on a specific date ("On 2026-03-04 Jason mentioned his birthday").
-- "semantic" = a stable abstract identity ("Jason is a pastor").
-- "preference" = a stable interaction preference ("Jason prefers concise replies").
-- If the content doesn't reveal anything beyond what's already in its title, return an empty facts array.
-- Be conservative on confidence — 1.0 only for explicitly stated facts; 0.5-0.8 for reasonable inferences.
+- "episodic" = a record of something that happened, anchored to a date ("On 2026-03-04 Jason completed a workout").
+- "semantic" = a STABLE identity, and ONLY when the content clearly establishes it or there's strong repeated evidence ("Jason is a pastor"). Do NOT infer an identity from a single mundane action.
+- "preference" = how the user wants to be helped, and ONLY when they EXPLICITLY state it ("Jason prefers concise replies"). Never infer a preference from one action.
+
+Be conservative — quality over quantity:
+- Extract only facts genuinely worth remembering. A single task, event, reminder, or routine action is usually just ONE episodic (or factual) fact — do not also generalise it into a semantic identity or a preference.
+- If the content reveals nothing beyond what its title already says, return an empty facts array.
+- Don't restate the same fact more than one way.
+- Confidence: 1.0 only for explicitly stated facts; 0.6-0.8 for well-grounded inferences. If you would assign below 0.6, OMIT the fact rather than guessing.
 - DO NOT extract secrets, passwords, API keys, or other credentials. Skip those entirely.`;
 
 const CLASSIFIER_PROMPT_TEMPLATE = (candidate: string, neighbours: string[]) => `You are managing a personal memory store. A new candidate fact has been extracted from a document. You must decide how it relates to existing nearby facts.
