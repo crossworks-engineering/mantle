@@ -17,10 +17,27 @@ export const FILES_ROOT_LABEL = 'files';
 /** Default location when MANTLE_FILES_ROOT isn't set. */
 const DEFAULT_ROOT = './data/files';
 
-/** Read MANTLE_FILES_ROOT, normalised to an absolute path. */
+let warnedUnset = false;
+
+/** Read MANTLE_FILES_ROOT, normalised to an absolute path.
+ *
+ *  The default (`./data/files`) is CWD-relative, so if it's left unset the
+ *  web app, agent, and workers each resolve a DIFFERENT root (their own
+ *  cwd) — a "split brain" where a file written by one process is invisible
+ *  to the others (e.g. a web upload the agent's extractor can never read).
+ *  Warn loudly once so this never happens silently again; production should
+ *  always set an absolute MANTLE_FILES_ROOT shared by every process. */
 export function filesRoot(): string {
-  const raw = process.env.MANTLE_FILES_ROOT?.trim() || DEFAULT_ROOT;
-  return path.resolve(raw);
+  const env = process.env.MANTLE_FILES_ROOT?.trim();
+  if (!env && !warnedUnset) {
+    warnedUnset = true;
+    console.warn(
+      '[files] MANTLE_FILES_ROOT is not set — falling back to the cwd-relative ' +
+        `'${DEFAULT_ROOT}'. Each process then uses its own root and files written ` +
+        'by one are invisible to the others. Set an absolute path in .env.local.',
+    );
+  }
+  return path.resolve(env || DEFAULT_ROOT);
 }
 
 /**
