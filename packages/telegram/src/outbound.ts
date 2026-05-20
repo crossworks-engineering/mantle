@@ -136,18 +136,54 @@ export async function downloadTelegramFile(
   }
   const bytes = Buffer.from(await res.arrayBuffer());
   const filename = file.file_path.split('/').pop() ?? 'voice.ogg';
-  return { bytes, mimeType: mimeFromFilename(filename), filename };
+  // Prefer the extension; fall back to sniffing the magic bytes when it's
+  // unknown. Telegram photos come back as `.jpg` here, but documents and
+  // odd file_paths can be extensionless — the byte sniff catches those so
+  // the vision adapter (which rejects octet-stream) always gets a real
+  // image mime.
+  let mimeType = mimeFromFilename(filename);
+  if (mimeType === 'application/octet-stream') {
+    mimeType = sniffImageMime(bytes) ?? mimeType;
+  }
+  return { bytes, mimeType, filename };
 }
 
-function mimeFromFilename(name: string): string {
+export function mimeFromFilename(name: string): string {
   const ext = name.toLowerCase().split('.').pop() ?? '';
+  // Audio (voice notes → Whisper).
   if (ext === 'ogg' || ext === 'oga' || ext === 'opus') return 'audio/ogg';
   if (ext === 'mp3') return 'audio/mpeg';
   if (ext === 'm4a' || ext === 'aac') return 'audio/aac';
   if (ext === 'wav') return 'audio/wav';
   if (ext === 'webm') return 'audio/webm';
   if (ext === 'flac') return 'audio/flac';
+  // Images (photos → vision). Telegram photos are JPEG.
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'gif') return 'image/gif';
   return 'application/octet-stream';
+}
+
+/** Detect a common image type from its leading magic bytes. Returns null
+ *  if the buffer isn't a recognised image. Used as a fallback when the
+ *  Telegram file_path has no usable extension. */
+export function sniffImageMime(buf: Buffer): string | null {
+  if (buf.length < 12) return null;
+  // JPEG: FF D8 FF
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'image/png';
+  // GIF: 'GIF8'
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return 'image/gif';
+  // WEBP: 'RIFF' .... 'WEBP'
+  if (
+    buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+    buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50
+  ) {
+    return 'image/webp';
+  }
+  return null;
 }
 
 export async function reactToMessage(
