@@ -14,6 +14,8 @@ export { isHeic, transcodeImageForVision } from './transcode';
 
 export { parseDocumentBytes } from './parse';
 
+export { MAX_UPLOAD_BYTES } from './limits';
+
 export {
   filesRoot,
   isFilesPath,

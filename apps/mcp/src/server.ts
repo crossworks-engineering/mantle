@@ -55,6 +55,7 @@ import {
   readFileById,
   updateFolderDescription,
   upsertFile,
+  MAX_UPLOAD_BYTES,
 } from '@mantle/files';
 import {
   approvePendingCall,
@@ -330,6 +331,17 @@ server.tool(
     const bytes = content_text != null
       ? Buffer.from(content_text, 'utf8')
       : Buffer.from(content_base64!, 'base64');
+    if (bytes.byteLength > MAX_UPLOAD_BYTES) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `file_upload: too large (${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB > ${MAX_UPLOAD_BYTES / 1024 / 1024} MB)`,
+          },
+        ],
+        isError: true,
+      };
+    }
     try {
       const row = await upsertFile({
         ownerId: OWNER_ID!,

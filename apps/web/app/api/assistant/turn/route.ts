@@ -24,7 +24,14 @@ import { z } from 'zod';
 import { requireOwner } from '@/lib/auth';
 import { runAssistantTurn } from '@/lib/assistant';
 import { extractAttachmentForTurn } from '@mantle/agent-runtime';
-import { ensureDatedUploadFolder, extOf, mimeForExt, upsertFile, INGESTABLE_EXTS } from '@mantle/files';
+import {
+  ensureDatedUploadFolder,
+  extOf,
+  mimeForExt,
+  upsertFile,
+  INGESTABLE_EXTS,
+  MAX_UPLOAD_BYTES,
+} from '@mantle/files';
 import type { ToolArtifact } from '@mantle/tools';
 import { recordIngest } from '@mantle/tracing';
 
@@ -32,7 +39,6 @@ const Body = z.object({ text: z.string().min(1).max(20_000) });
 
 const ASSISTANT_UPLOADS_SLUG = 'assistant-uploads';
 const IMAGE_MIME_PREFIX = 'image/';
-const MAX_UPLOAD_BYTES = 15 * 1024 * 1024; // 15 MB — generous; Anthropic vision caps at 5 MB
 
 type Attachment = {
   kind: 'image' | 'file';

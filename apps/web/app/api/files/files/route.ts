@@ -2,9 +2,8 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireOwner } from '@/lib/auth';
 import { ensureFilesRootBranch, listFiles, upsertFile } from '@/lib/files';
+import { MAX_UPLOAD_BYTES } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
-
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25 MB — generous for personal use.
 
 const ListQuery = z.object({ parent: z.string().min(1).max(500) });
 
@@ -47,7 +46,7 @@ export async function POST(req: Request) {
       }
       if (file.size > MAX_UPLOAD_BYTES) {
         return NextResponse.json(
-          { error: `file exceeds ${MAX_UPLOAD_BYTES} bytes` },
+          { error: `file too large (>${MAX_UPLOAD_BYTES / 1024 / 1024} MB)` },
           { status: 413 },
         );
       }
