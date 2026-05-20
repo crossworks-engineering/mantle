@@ -56,7 +56,7 @@ A trace is one of seven kinds (the `trace_kind` enum):
 | `summarizer_run` | Chat crosses the undigested-turn threshold | `chat` id |
 | `reflector_run` | 10-minute timer fires — **runs even when no new activity** (marked `skipped`) | `agent_tick` (subject_id null) |
 | `content_ingest` | Every data entry moment — file upload, note create, image upload via /assistant, Telegram photo → file, agent-tool file write | the resulting `node` id |
-| `photo_ingest` | Telegram photo message → save file + vision-transcribe pipeline (the responder reply is a separate `responder_turn`) | `telegram_message` id |
+| `photo_ingest` | Image → save file + vision-transcribe pipeline. Fires from the Telegram photo branch (subject = `telegram_message`, reply is a separate `responder_turn`) AND from the extractor for images dropped into `/files` outside the chat (subject = `node`, `data.source='extractor'`) | `telegram_message` or `node` id |
 | `manual` | Reserved for scripts + the `invoke_agent` builtin's child agent runs | (whatever) |
 
 Each trace rolls up totals from its steps:

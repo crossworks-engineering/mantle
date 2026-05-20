@@ -111,7 +111,7 @@ folder path) are already live.
    this?". Transcript-default with the file node id surfaced for
    `extract_from_image`, mirroring the web /assistant. Shares the folder
    helper (`ensureDatedUploadFolder` in `@mantle/files`) and the text builder
-   (`buildImageContextText` in `@mantle/agent-runtime`) with web.
+   (`buildAttachmentContextText` in `@mantle/agent-runtime`) with web.
    **Needs the agent restarted to go live.**
 2. **Could not retrieve a real failing image** to test the size hypothesis:
    Telegram photos become notes (no bytes); the web upload of the car photo

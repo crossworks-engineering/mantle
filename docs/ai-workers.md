@@ -335,31 +335,51 @@ real file node (searchable), not a note.
 
 ### Web /assistant path
 
+The chat accepts **images and documents** (pdf, docx, xlsx, csv, txt, md,
+json, yaml) — images go under the `image` form field, documents under `file`.
+
 ```
-1. POST /api/assistant/turn (multipart, text + image)
-2. Save image to /files/assistant-uploads/<yyyy-mm-dd>/
+1. POST /api/assistant/turn (multipart, text + image|file)
+2. Save attachment to /files/assistant-uploads/<yyyy-mm-dd>/
 3. recordIngest({source: 'assistant_upload', nodeId: file.id, ...})
-4. Run default vision worker over the image bytes (question-aware)
+4. Extract text:
+   - image    → default vision worker over the bytes (question-aware)
+   - document → @mantle/files parser (parsePdf / parseDocx / parseXlsx,
+                or raw UTF-8 for csv/txt/md/json/yaml), capped at 24K chars
 5. Compose the LLM-visible message (transcript-default, via the shared
-   buildImageContextText helper):
+   buildAttachmentContextText helper). For an image:
    `${user_text}\n\n[Attached image (saved as file node <id> — call
     extract_from_image with that node_id to look closer). Vision analysis:]
     \n${extracted_text}`
-6. runToolLoop with the augmented prompt — Saskia answers from the transcript
-   and can re-read the picture on demand via extract_from_image
-7. Return reply + inbound artifact (so the user's bubble renders the image)
+   For a document the noun + tool swap to "file" / file_read.
+6. runToolLoop with the augmented prompt — Saskia answers from the extracted
+   text and can re-read the original on demand (extract_from_image / file_read)
+7. Return reply (+ inbound artifact for images, so the bubble renders them)
 ```
 
-The user's bubble shows the original image; Saskia sees the vision
-transcript (with the file node id) folded into the text. **Transcript-
-default:** the raw pixels are inlined only when there's no usable
-transcript (worker failed/unconfigured) AND the model is vision-capable
-AND the image is within the provider's per-image limit
-(`maxImageBytesFor`) — guarding against Bedrock's opaque "Could not
-process image" on oversized photos. On any responder error with an image
-attached, the turn retries once text-only (transcript-grounded), so a
-turn never hard-fails on a picture. Vision worker failures fall back to a
-`[Image attached … couldn't be read: <reason>]` marker.
+The user's bubble shows the original image (documents show a file chip);
+Saskia sees the extracted text (with the file node id) folded in.
+**Transcript-default:** an image's raw pixels are inlined only when there's
+no usable transcript (worker failed/unconfigured) AND the model is
+vision-capable AND the image is within the provider's per-image limit
+(`maxImageBytesFor`) — guarding against Bedrock's opaque "Could not process
+image" on oversized photos. On any responder error with an image attached,
+the turn retries once text-only (transcript-grounded), so a turn never
+hard-fails on a picture. Extraction failures fall back to a `[… couldn't be
+read: <reason>]` marker.
+
+### Separately-uploaded images (Files UI / disk sync / MCP)
+
+An image that lands in `/files` WITHOUT going through a chat — the Files
+upload route, the disk-sync watcher, or the MCP `file_upload` tool — has no
+inline vision pass. The **extractor** is the catch-all: when it sees an image
+`file` node with no stored `data.text`, it runs the default vision worker
+(under a `photo_ingest` trace, `subjectKind='node'`), persists the
+description/OCR as `data.text`, and re-fires `node_ingested` so the next pass
+indexes it (summary + embedding + facts) like any other document. So a photo
+dropped into Files becomes searchable by content, not just by filename —
+exactly like one sent to the chat. Images that already carry `data.text`
+(from the chat/Telegram paths) skip this and are never re-visioned.
 
 ---
 

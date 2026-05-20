@@ -81,31 +81,43 @@ export type ChatMessage =
 export type UserImage = { base64: string; mimeType: string };
 
 /**
- * Fold a vision-worker transcript (or a failure note) into the user's text
- * for a responder turn, and surface the saved file node id so the model can
- * call `extract_from_image(node_id)` for a closer look on a follow-up turn —
- * the picture itself isn't kept in conversation history.
+ * Fold an attachment's extracted text (a vision transcript for images, parsed
+ * text for documents) — or a failure note — into the user's text for a
+ * responder turn, and surface the saved file node id so the model can re-read
+ * the original on a follow-up: `extract_from_image(node_id)` for images,
+ * `file_read(node_id)` for documents. The bytes aren't kept in history.
  *
  * Shared by the web /assistant and the Telegram responder so the injected
  * marker stays byte-identical across surfaces (no drift, stable for caching).
  */
-export function buildImageContextText(
+export function buildAttachmentContextText(
   userText: string,
-  opts: { transcript?: string | null; note?: string | null; nodeId?: string | null },
+  opts: {
+    kind?: 'image' | 'file';
+    transcript?: string | null;
+    note?: string | null;
+    nodeId?: string | null;
+  },
 ): string {
   const base = userText.trim();
+  const kind = opts.kind ?? 'image';
+  const noun = kind === 'file' ? 'file' : 'image';
+  const Noun = kind === 'file' ? 'File' : 'Image';
+  const tool = kind === 'file' ? 'file_read' : 'extract_from_image';
+  const action = kind === 'file' ? 'for the full content' : 'to look closer';
+  const label = kind === 'file' ? 'Extracted text' : 'Vision analysis';
   const ref = opts.nodeId
-    ? ` (saved as file node ${opts.nodeId} — call extract_from_image with that node_id to look closer)`
+    ? ` (saved as file node ${opts.nodeId} — call ${tool} with that node_id ${action})`
     : '';
   const transcript = opts.transcript?.trim();
   if (transcript) {
-    return `${base}\n\n[Attached image${ref}. Vision analysis:]\n${transcript}`;
+    return `${base}\n\n[Attached ${noun}${ref}. ${label}:]\n${transcript}`;
   }
   const note = opts.note?.trim();
   if (note) {
-    return `${base}\n\n[Image attached${ref} but couldn't be read: ${note}]`;
+    return `${base}\n\n[${Noun} attached${ref} but couldn't be read: ${note}]`;
   }
-  return ref ? `${base}\n\n[Attached image${ref}.]` : base;
+  return ref ? `${base}\n\n[Attached ${noun}${ref}.]` : base;
 }
 
 export function buildChatMessages(args: {

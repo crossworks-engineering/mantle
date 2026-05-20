@@ -51,7 +51,8 @@ import {
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { embed } from '@mantle/embeddings';
-import { diskPathForFile, extOf, INGESTABLE_EXTS } from '@mantle/files';
+import { diskPathForFile, extOf, mimeForExt, INGESTABLE_EXTS } from '@mantle/files';
+import { DEFAULT_VISION_DESCRIBE_PROMPT, getVisionAdapter } from '@mantle/voice';
 import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import { captureLlmUsage } from '@mantle/agent-runtime';
 
@@ -286,6 +287,130 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
     }
   }
   return node.title;
+}
+
+/**
+ * Vision-ingest an image file node: run the default vision worker over the
+ * bytes, persist the description/OCR as `data.text` (+ `vision_model`), and
+ * re-fire `node_ingested` so the next extractor pass indexes it normally.
+ *
+ * This is the catch-all for images that arrive WITHOUT an inline vision pass
+ * (web /files upload, disk-sync watcher, MCP file_upload) — the chat and
+ * Telegram surfaces already do their own vision and land here with data.text
+ * already set, so they never reach this function. Mirrors the surfaces'
+ * "persist text → re-notify" handoff so there's one indexing path.
+ *
+ * Best-effort: a missing/unwired vision worker records a skipped trace and
+ * leaves the image un-indexed (findable by filename only) rather than failing.
+ */
+async function visionIngestImageNode(
+  node: typeof nodes.$inferSelect,
+  ownerId: string,
+): Promise<void> {
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  const filename = data.filename as string;
+  const diskPath = diskPathForFile(node.path, filename);
+  if (!diskPath) return;
+
+  const skip = (disposition: string, details: Record<string, unknown>) =>
+    recordSkippedTrace({
+      kind: 'photo_ingest',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      disposition,
+      details: { filename, ...details },
+    });
+
+  const worker = await getDefaultWorker(ownerId, 'vision');
+  if (!worker?.apiKeyId) {
+    await skip('no_vision_worker', {
+      hint: "Set a default 'vision' worker at /settings/ai-workers to index dropped-in images.",
+    });
+    return;
+  }
+  const adapter = getVisionAdapter(worker.provider);
+  if (!adapter) {
+    await skip('vision_provider_unwired', { provider: worker.provider });
+    return;
+  }
+  const apiKey = await getApiKeyById(worker.apiKeyId);
+  if (!apiKey) {
+    await skip('api_key_not_decryptable', { worker_slug: worker.slug });
+    return;
+  }
+
+  await startTrace(
+    {
+      kind: 'photo_ingest',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      data: { source: 'extractor', filename, model: worker.model, worker_slug: worker.slug },
+    },
+    async () => {
+      const bytes = await step(
+        { name: 'read_file', kind: 'compute', input: { filename } },
+        async (h) => {
+          const { promises: fs } = await import('node:fs');
+          const buf = await fs.readFile(diskPath);
+          h.setMeta({ bytes: buf.length });
+          return buf;
+        },
+      );
+      const mimeType = mimeForExt(extOf(filename));
+      const params = (worker.params ?? {}) as { extraction_prompt?: string; max_tokens?: number };
+      const prompt = params.extraction_prompt?.trim() || DEFAULT_VISION_DESCRIBE_PROMPT;
+
+      const result = await step(
+        {
+          name: 'extract_vision',
+          kind: 'llm_call',
+          input: {
+            workerSlug: worker.slug,
+            provider: worker.provider,
+            model: worker.model,
+            mime: mimeType,
+            bytes: bytes.length,
+          },
+        },
+        async (h) => {
+          const r = await adapter.extract(bytes, {
+            apiKey,
+            mimeType,
+            prompt,
+            systemPrompt: worker.systemPrompt ?? undefined,
+            model: worker.model,
+            maxTokens: params.max_tokens ?? 2000,
+          });
+          h.setMeta({
+            adapter: adapter.adapterName,
+            tokensIn: r.tokensIn,
+            tokensOut: r.tokensOut,
+            textLength: r.text.length,
+          });
+          return r;
+        },
+      );
+      void bumpWorkerUsage(worker.id);
+
+      const text = result.text?.trim() ? result.text : '';
+      if (!text) return; // nothing to index; the trace records the attempt
+
+      await step({ name: 'persist_vision_text', kind: 'db_write' }, async (h) => {
+        await db
+          .update(nodes)
+          .set({
+            data: sql`${nodes.data} || jsonb_build_object('text', ${text}::text, 'vision_model', ${worker.model}::text)`,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
+        // Re-fire so the next extractor pass indexes the now-textful node.
+        await db.execute(sql`SELECT pg_notify('node_ingested', ${node.id}::text)`);
+        h.setMeta({ chars: text.length });
+      });
+    },
+  );
 }
 
 function parseClassifierDecision(raw: string): ClassifierDecision {
@@ -684,6 +809,27 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
         has_embedding: true,
       },
     });
+    return;
+  }
+
+  // Image file nodes carry no text body until a vision worker reads them.
+  // The chat / Telegram upload paths do that inline, but an image dropped
+  // into /files (web upload, disk-sync watcher, or MCP file_upload) arrives
+  // here untouched — the extractor would otherwise skip it (body = filename,
+  // < 20 chars). Run the default vision worker once, persist the
+  // description/OCR as data.text, and re-fire node_ingested so the SECOND
+  // pass indexes it through the normal flow below (summary + embedding +
+  // facts). One code path turns image bytes into searchable text, however
+  // the image landed. Images that already carry data.text (chat/Telegram)
+  // fall through unchanged.
+  if (
+    node.type === 'file' &&
+    !existingData.text &&
+    !existingData.content &&
+    typeof existingData.filename === 'string' &&
+    mimeForExt(extOf(existingData.filename)).startsWith('image/')
+  ) {
+    await visionIngestImageNode(node, ownerId);
     return;
   }
 

@@ -4,10 +4,11 @@ import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-  ImagePlus,
+  FileText,
   Loader2,
   Mic,
   MicOff,
+  Paperclip,
   X,
 } from 'lucide-react';
 import { formatDateTime } from '@/lib/format-datetime';
@@ -60,14 +61,13 @@ export function AssistantClient({
   const [transcribing, setTranscribing] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordChunksRef = useRef<Blob[]>([]);
-  // ── Image-attach state ──
-  // The user picks one image at a time. Multi-image batching is a
-  // useful-but-not-essential follow-up. The preview URL is created
-  // from URL.createObjectURL and revoked when the attachment is
-  // cleared/sent so we don't leak object URLs.
-  const [attachedImage, setAttachedImage] = useState<File | null>(null);
+  // ── Attachment state ──
+  // The user picks one file at a time (image or document). Images get an
+  // object-URL preview (revoked on clear/send so we don't leak); documents
+  // render as a name/size chip with no preview URL.
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [attachedPreviewUrl, setAttachedPreviewUrl] = useState<string | null>(null);
-  const imageInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
 
@@ -79,42 +79,47 @@ export function AssistantClient({
 
   const clearAttachment = () => {
     if (attachedPreviewUrl) URL.revokeObjectURL(attachedPreviewUrl);
-    setAttachedImage(null);
+    setAttachedFile(null);
     setAttachedPreviewUrl(null);
-    if (imageInputRef.current) imageInputRef.current.value = '';
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const onImagePicked = (file: File | null) => {
+  const onFilePicked = (file: File | null) => {
     if (attachedPreviewUrl) URL.revokeObjectURL(attachedPreviewUrl);
-    setAttachedImage(file);
-    setAttachedPreviewUrl(file ? URL.createObjectURL(file) : null);
+    setAttachedFile(file);
+    // Only images get an inline object-URL preview; documents show a chip.
+    setAttachedPreviewUrl(
+      file && file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+    );
   };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = draft.trim();
-    // Allow image-only submits — the API route fills in a default
-    // "tell me what you see" prompt server-side when text is empty.
-    if ((!text && !attachedImage) || sending) return;
+    // Allow attachment-only submits — the API route fills in a default
+    // prompt server-side when text is empty.
+    if ((!text && !attachedFile) || sending) return;
     setError(undefined);
 
-    const hasImage = attachedImage != null;
+    const hasFile = attachedFile != null;
+    const isImage = hasFile && attachedFile.type.startsWith('image/');
     const optimisticId = `pending-${Date.now()}`;
     const optimistic: Message = {
       id: optimisticId,
       direction: 'inbound',
-      text: text || (hasImage ? '📎 (image)' : ''),
+      text: text || (hasFile ? `📎 ${attachedFile.name}` : ''),
       createdAt: new Date().toISOString(),
-      // Show the local preview immediately so the user can see what
-      // they just sent without waiting for the round-trip.
-      ...(hasImage && attachedPreviewUrl
+      // Show the local image preview immediately so the user sees what
+      // they sent without waiting for the round-trip. Documents have no
+      // inline preview — their name rides in the text above.
+      ...(isImage && attachedPreviewUrl
         ? {
             artifacts: [
               {
                 kind: 'image' as const,
-                mimeType: attachedImage.type,
+                mimeType: attachedFile.type,
                 base64: '', // optimistic — use the local object URL
-                caption: attachedImage.name,
+                caption: attachedFile.name,
                 producedBy: 'assistant-upload',
                 localPreviewUrl: attachedPreviewUrl,
               },
@@ -129,13 +134,13 @@ export function AssistantClient({
 
     try {
       let res: Response;
-      if (hasImage) {
-        // Multipart for image uploads — base64-ing a 2MB image into
-        // JSON wastes 33% of the bytes plus the parse cost. FormData
-        // streams the blob raw.
+      if (hasFile) {
+        // Multipart for uploads — base64-ing a 2MB file into JSON wastes
+        // 33% of the bytes plus the parse cost. FormData streams it raw.
+        // Images go under 'image' (vision); documents under 'file'.
         const formData = new FormData();
         if (text) formData.set('text', text);
-        formData.set('image', attachedImage);
+        formData.set(isImage ? 'image' : 'file', attachedFile);
         res = await fetch('/api/assistant/turn', {
           method: 'POST',
           body: formData,
@@ -338,18 +343,24 @@ export function AssistantClient({
           {/* Attachment preview — shown above the input row so the
               user sees what they're about to send. Persists across
               keystrokes and clears on send/dismiss. */}
-          {attachedImage && attachedPreviewUrl && (
+          {attachedFile && (
             <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-2 py-1.5">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={attachedPreviewUrl}
-                alt={attachedImage.name}
-                className="h-12 w-12 rounded object-cover"
-              />
+              {attachedPreviewUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={attachedPreviewUrl}
+                  alt={attachedFile.name}
+                  className="h-12 w-12 rounded object-cover"
+                />
+              ) : (
+                <div className="flex h-12 w-12 items-center justify-center rounded bg-background/60 text-muted-foreground">
+                  <FileText className="h-6 w-6" />
+                </div>
+              )}
               <div className="flex-1 text-xs">
-                <div className="font-medium">{attachedImage.name}</div>
+                <div className="font-medium">{attachedFile.name}</div>
                 <div className="text-muted-foreground">
-                  {attachedImage.type} · {(attachedImage.size / 1024).toFixed(0)} KB
+                  {attachedFile.type || 'file'} · {(attachedFile.size / 1024).toFixed(0)} KB
                 </div>
               </div>
               <button
@@ -364,24 +375,24 @@ export function AssistantClient({
           )}
           <div className="flex gap-2">
             <input
-              ref={imageInputRef}
+              ref={fileInputRef}
               type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif"
+              accept="image/*,.pdf,.docx,.xlsx,.xls,.csv,.txt,.md,.json,.yaml,.yml"
               className="hidden"
-              onChange={(e) => onImagePicked(e.target.files?.[0] ?? null)}
+              onChange={(e) => onFilePicked(e.target.files?.[0] ?? null)}
             />
             <div className="flex flex-col gap-1">
-              {/* Image picker — paperclip-style. Triggers the hidden
-                  file input. Hidden when an image is already
-                  attached (clear it first via the preview's X). */}
+              {/* Attach picker — images + documents. Triggers the hidden
+                  file input. Disabled when something's already attached
+                  (clear it first via the preview's X). */}
               <button
                 type="button"
-                onClick={() => imageInputRef.current?.click()}
-                disabled={!agentReady || sending || !!attachedImage}
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!agentReady || sending || !!attachedFile}
                 className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"
-                title="Attach image"
+                title="Attach image or document"
               >
-                <ImagePlus className="h-4 w-4" />
+                <Paperclip className="h-4 w-4" />
               </button>
               {/* Mic toggle — push-to-talk style. Recording state
                   shows a red destructive button; transcribing shows
@@ -417,8 +428,8 @@ export function AssistantClient({
               placeholder={
                 !agentReady
                   ? 'Configure an assistant or responder agent first at /settings/agents.'
-                  : attachedImage
-                  ? 'Add a question about the image (optional) — Enter to send.'
+                  : attachedFile
+                  ? 'Add a question about the attachment (optional) — Enter to send.'
                   : recording
                   ? 'Recording… press the stop button to transcribe.'
                   : transcribing
@@ -437,7 +448,7 @@ export function AssistantClient({
             />
             <button
               type="submit"
-              disabled={!agentReady || sending || (!draft.trim() && !attachedImage)}
+              disabled={!agentReady || sending || (!draft.trim() && !attachedFile)}
               className="self-end rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-40"
             >
               {sending ? '…' : 'Send'}

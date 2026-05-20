@@ -39,7 +39,7 @@ import { getApiKeyById } from '@mantle/api-keys';
 import { embed } from '@mantle/embeddings';
 import {
   buildChatMessages,
-  buildImageContextText,
+  buildAttachmentContextText,
   composeSystemPromptWithSkills,
   effectiveToolSlugs,
   invokeAgent,
@@ -248,16 +248,23 @@ export async function runAssistantTurn(
   text: string,
   options?: {
     displayText?: string;
-    /** Raw image bytes to show a vision-capable responder directly. */
+    /** Whether the attachment is an image (vision) or a document (parsed
+     *  text). Drives the injected marker's wording + which re-read tool the
+     *  model is pointed at. Defaults to 'image'. */
+    attachmentKind?: 'image' | 'file';
+    /** Raw image bytes to show a vision-capable responder directly. Images
+     *  only — documents have no inline form. */
     image?: UserImage;
-    /** Transcript from the vision worker. Preferred over the raw image:
-     *  cheap, cacheable, and the worker already answered the user's
-     *  question at ingest. Injected as text. */
+    /** Extracted text for the attachment — a vision transcript for images,
+     *  parsed text for documents. Preferred over the raw image: cheap,
+     *  cacheable, and the worker already answered the user's question at
+     *  ingest. Injected as text. */
     imageTranscript?: string;
-    /** Note injected when the image couldn't be read at all. */
+    /** Note injected when the attachment couldn't be read at all. */
     imageNote?: string;
-    /** File node id of the saved image, surfaced in the injected text so
-     *  the model can re-read it via extract_from_image on a follow-up. */
+    /** File node id of the saved attachment, surfaced in the injected text so
+     *  the model can re-read it (extract_from_image / file_read) on a
+     *  follow-up. */
     imageNodeId?: string;
   },
 ): Promise<AssistantTurnResult> {
@@ -368,10 +375,12 @@ export async function runAssistantTurn(
   }
   const userImage = canSeeImage ? options!.image : undefined;
 
-  // The user's text with the vision transcript / note + node-id folded in.
-  // Used whenever we're NOT showing the raw image, and as the retry fallback
-  // below if the responder chokes on the picture.
-  const textWithTranscript = buildImageContextText(trimmed, {
+  // The user's text with the attachment's extracted text / note + node-id
+  // folded in. Used whenever we're NOT showing the raw image (always, for
+  // documents), and as the retry fallback below if the responder chokes on
+  // the picture.
+  const textWithTranscript = buildAttachmentContextText(trimmed, {
+    kind: options?.attachmentKind ?? 'image',
     transcript: options?.imageTranscript,
     note: options?.imageNote,
     nodeId: options?.imageNodeId,

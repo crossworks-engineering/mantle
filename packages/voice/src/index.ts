@@ -73,3 +73,11 @@ export {
   ELEVENLABS_V3_AUDIO_TAGS,
   audioTagsForElevenLabsModel,
 } from './catalogs/elevenlabs';
+
+/** Default describe-and-transcribe prompt for passive image ingest. Shared
+ *  by the web /assistant upload, the Telegram photo branch, and the
+ *  extractor's image-vision pass so OCR/description behaviour stays identical
+ *  across surfaces. Question-aware variants (when the user asked something
+ *  alongside the image) live at each call site. */
+export const DEFAULT_VISION_DESCRIBE_PROMPT =
+  "Describe what's in this image in one or two sentences — the main subject, objects, logos, people, or scene. Then, if the image contains any text, transcribe it verbatim below the description (preserve line breaks; mark anything unclear as [unclear]). If there's no text, the description alone is enough. Output plain text only.";

@@ -2,20 +2,21 @@
  * /api/assistant/turn — the web assistant's main inbound channel.
  *
  * Accepts EITHER:
- *   - application/json: { text }                   (text-only turn)
- *   - multipart/form-data: text, image (optional)  (image attached)
+ *   - application/json: { text }                          (text-only turn)
+ *   - multipart/form-data: text + image|file (optional)   (attachment)
  *
- * When an image rides along, we run the default vision worker
- * synchronously and prepend the extracted transcript to the user's
- * text. The LLM sees "Image attached, transcript: <...>" as part of
- * the user message — provider-agnostic (works regardless of the
- * assistant's chat model). The image itself is saved as a file node
- * under /files/uploads/<yyyy-mm-dd>/ so it's persistent + searchable.
+ * Attachments are saved as a file node under
+ * /files/assistant-uploads/<yyyy-mm-dd>/ (persistent + searchable), then
+ * their text is folded into the user message so the LLM can answer:
+ *   - images → default vision worker transcribes/answers (question-aware);
+ *   - documents (pdf/docx/xlsx/csv/txt/md/json/yaml) → parsed to text via
+ *     the @mantle/files parsers.
+ * Either way the saved file node id is surfaced in the prompt so Saskia can
+ * re-read the original (extract_from_image / file_read) on a follow-up.
  *
- * Vision worker failures don't kill the turn — we fall back to text-
- * only with a marker like "[Image attached but couldn't be read:
- * <error>]" so Saskia at least knows the user TRIED to share
- * something.
+ * Extraction failures don't kill the turn — we fall back with a marker like
+ * "[File attached but couldn't be read: <reason>]" so Saskia at least knows
+ * the user TRIED to share something.
  */
 
 import { NextResponse } from 'next/server';
@@ -25,7 +26,7 @@ import { runAssistantTurn } from '@/lib/assistant';
 import { getDefaultWorker } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { getVisionAdapter } from '@mantle/voice';
-import { ensureDatedUploadFolder, upsertFile } from '@mantle/files';
+import { ensureDatedUploadFolder, extOf, mimeForExt, upsertFile, INGESTABLE_EXTS } from '@mantle/files';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import type { ToolArtifact } from '@mantle/tools';
@@ -36,6 +37,10 @@ const Body = z.object({ text: z.string().min(1).max(20_000) });
 const ASSISTANT_UPLOADS_SLUG = 'assistant-uploads';
 const IMAGE_MIME_PREFIX = 'image/';
 const MAX_UPLOAD_BYTES = 15 * 1024 * 1024; // 15 MB — generous; Anthropic vision caps at 5 MB
+// Max chars of parsed document text folded into the responder prompt. The
+// FULL text is persisted on the node + indexed by the extractor; the turn
+// only needs a workable slice (file_read fetches the rest on demand).
+const DOC_TEXT_MAX = 24_000;
 
 /** Save the uploaded image to /files/assistant-uploads/<date>/ and
  *  run the default vision worker over it. Returns the extracted text
@@ -211,12 +216,95 @@ async function processUploadedImage(
   }
 }
 
+/** Save an uploaded document to /files/assistant-uploads/<date>/ and parse
+ *  its text via the @mantle/files parsers. Returns the extracted text +
+ *  saved nodeId so the turn folds the text into the prompt. On a parse
+ *  failure returns a `note` so the caller proceeds with a degraded message.
+ *  The file node fires node_ingested → the extractor indexes the full text
+ *  for later search; this just gets the responder enough to answer now. */
+async function processUploadedDocument(
+  ownerId: string,
+  bytes: Buffer,
+  originalName: string,
+): Promise<{ nodeId: string | null; extractedText: string; note: string | null }> {
+  const ext = extOf(originalName);
+  let nodeId: string | null = null;
+  try {
+    const parentPath = await ensureDatedUploadFolder({
+      ownerId,
+      topSlug: ASSISTANT_UPLOADS_SLUG,
+      topDescription: 'Files uploaded through the /assistant chat. Auto-created.',
+    });
+    const safeBase = originalName
+      .toLowerCase()
+      .replace(/\.[^.]+$/, '')
+      .replace(/[^\w-]+/g, '-')
+      .slice(0, 60)
+      .replace(/^-+|-+$/g, '');
+    const filename = `${Date.now()}-${safeBase || 'upload'}.${ext || 'bin'}`;
+    const file = await upsertFile({ ownerId, parentPath, filename, bytes, overwrite: false });
+    nodeId = file.id;
+    void recordIngest({
+      source: 'assistant_upload',
+      ownerId,
+      nodeId: file.id,
+      summary: `File uploaded via /assistant: ${originalName}`,
+      payload: { parentPath, filename, ext, sizeBytes: file.sizeBytes, originalName, via: 'web_assistant_chat' },
+    });
+  } catch (err) {
+    console.warn('[assistant/turn] document save failed:', err);
+  }
+
+  let text = '';
+  let note: string | null = null;
+  try {
+    if (ext === 'pdf') {
+      const { parsePdf } = await import('@mantle/files/pdf');
+      text = await parsePdf(bytes);
+    } else if (ext === 'docx') {
+      const { parseDocx } = await import('@mantle/files/docx');
+      text = await parseDocx(bytes);
+    } else if (ext === 'xlsx' || ext === 'xls') {
+      const { parseXlsx } = await import('@mantle/files/xlsx');
+      text = await parseXlsx(bytes);
+    } else {
+      // csv / txt / md / json / yaml — plain UTF-8.
+      text = bytes.toString('utf8');
+    }
+  } catch (err) {
+    console.warn('[assistant/turn] document parse failed:', err);
+    note = `Couldn't parse the ${ext.toUpperCase()} (scanned, encrypted, or corrupt?).`;
+    text = '';
+  }
+
+  text = text.trim();
+  if (!text) {
+    return { nodeId, extractedText: '', note: note ?? `No text could be extracted from ${originalName}.` };
+  }
+  // Bound the prompt cost — full text is on the node + indexed; file_read
+  // fetches the rest.
+  const extractedText =
+    text.length > DOC_TEXT_MAX
+      ? `${text.slice(0, DOC_TEXT_MAX)}\n\n[...truncated ${text.length - DOC_TEXT_MAX} more characters — call file_read on the node for the full document.]`
+      : text;
+  return { nodeId, extractedText, note };
+}
+
 export async function POST(req: Request) {
   const user = await requireOwner();
   const contentType = req.headers.get('content-type') ?? '';
 
   let userText = '';
-  let imageContext: Awaited<ReturnType<typeof processUploadedImage>> | null = null;
+  // Unified attachment context across image + document paths.
+  let attachment:
+    | {
+        kind: 'image' | 'file';
+        nodeId: string | null;
+        extractedText: string;
+        note: string | null;
+        imageArtifact: ToolArtifact | null;
+      }
+    | null = null;
 
   if (contentType.includes('multipart/form-data')) {
     const form = await req.formData().catch(() => null);
@@ -224,42 +312,61 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'invalid multipart body' }, { status: 400 });
     }
     userText = ((form.get('text') as string | null) ?? '').trim();
-    const file = form.get('image');
+    // Images arrive under 'image', documents under 'file'; accept either.
+    const file = form.get('image') ?? form.get('file');
     if (file instanceof Blob && file.size > 0) {
       if (file.size > MAX_UPLOAD_BYTES) {
         return NextResponse.json(
-          { error: `image too large (>${MAX_UPLOAD_BYTES / 1024 / 1024} MB)` },
+          { error: `attachment too large (>${MAX_UPLOAD_BYTES / 1024 / 1024} MB)` },
           { status: 413 },
         );
       }
-      if (!file.type.startsWith(IMAGE_MIME_PREFIX)) {
-        return NextResponse.json(
-          { error: `unsupported file type '${file.type}' — only images supported here` },
-          { status: 415 },
-        );
-      }
-      const bytes = Buffer.from(await file.arrayBuffer());
       // Form's File interface has a name; plain Blob doesn't.
       const originalName =
         'name' in file && typeof (file as File).name === 'string'
           ? (file as File).name
           : 'upload';
-      // userText here is the raw typed text (before the image-only
-      // default below) — so the vision worker answers the real question
-      // when there is one, and OCRs when there isn't.
-      imageContext = await processUploadedImage(user.id, bytes, file.type, originalName, userText);
+      const ext = extOf(originalName);
+      const isImage = file.type.startsWith(IMAGE_MIME_PREFIX) || mimeForExt(ext).startsWith('image/');
+      const bytes = Buffer.from(await file.arrayBuffer());
+      if (isImage) {
+        // userText is the raw typed text (before the no-text default below)
+        // so the vision worker answers the real question when there is one.
+        const r = await processUploadedImage(
+          user.id,
+          bytes,
+          file.type || mimeForExt(ext),
+          originalName,
+          userText,
+        );
+        attachment = { kind: 'image', ...r };
+      } else if (INGESTABLE_EXTS.has(ext)) {
+        const r = await processUploadedDocument(user.id, bytes, originalName);
+        attachment = { kind: 'file', ...r, imageArtifact: null };
+      } else {
+        return NextResponse.json(
+          {
+            error:
+              `unsupported file type '${file.type || ext || 'unknown'}'. ` +
+              'Supported: images, and documents (pdf, docx, xlsx, csv, txt, md, json, yaml).',
+          },
+          { status: 415 },
+        );
+      }
     }
-    if (!userText && !imageContext) {
+    if (!userText && !attachment) {
       return NextResponse.json(
-        { error: 'either text or image must be provided' },
+        { error: 'either text or an attachment must be provided' },
         { status: 400 },
       );
     }
-    // If only an image was sent with no text, give the LLM a default
-    // prompt so it has something to react to. Without this the user
-    // experience is silent — Saskia would have nothing to respond to.
-    if (!userText && imageContext) {
-      userText = "Here's an image — tell me what you see.";
+    // If only an attachment was sent with no text, give the LLM a default
+    // prompt so it has something to react to.
+    if (!userText && attachment) {
+      userText =
+        attachment.kind === 'image'
+          ? "Here's an image — tell me what you see."
+          : "I've attached a file — take a look and tell me what's in it.";
     }
   } else {
     const raw = await req.json().catch(() => ({}));
@@ -274,36 +381,34 @@ export async function POST(req: Request) {
   }
 
   try {
-    // Hand the turn the raw image + the vision-worker transcript. The
-    // runtime decides per model: a vision-capable responder (Saskia on
-    // Sonnet) sees the picture directly and identifies it herself; a
-    // non-vision model falls back to the transcript text. Either way the
-    // mini worker already filed the photo's metadata (data.text) above,
-    // and the persisted inbound row shows the user's own typed text.
+    // Hand the turn the attachment's extracted text (+ the raw image for a
+    // vision-capable responder). The runtime is transcript-default: it folds
+    // the text in and only inlines raw pixels when there's no transcript.
+    // The persisted inbound row shows the user's own typed text (displayText).
     const { inbound, outbound, reply, artifacts } = await runAssistantTurn(
       user.id,
       userText,
-      imageContext
+      attachment
         ? {
             displayText: userText,
-            image: imageContext.imageArtifact
+            attachmentKind: attachment.kind,
+            image: attachment.imageArtifact
               ? {
-                  base64: imageContext.imageArtifact.base64,
-                  mimeType: imageContext.imageArtifact.mimeType,
+                  base64: attachment.imageArtifact.base64,
+                  mimeType: attachment.imageArtifact.mimeType,
                 }
               : undefined,
-            imageTranscript: imageContext.extractedText || undefined,
-            imageNote: imageContext.note || undefined,
-            imageNodeId: imageContext.nodeId || undefined,
+            imageTranscript: attachment.extractedText || undefined,
+            imageNote: attachment.note || undefined,
+            imageNodeId: attachment.nodeId || undefined,
           }
         : undefined,
     );
-    // Forward the inbound image as an inbound-side artifact so the
-    // user's bubble shows the picture they sent (alongside their
-    // text). Combined with tool-emitted artifacts on the outbound
-    // side, the chat renders the full media exchange in-place.
-    const inboundArtifacts: ToolArtifact[] = imageContext?.imageArtifact
-      ? [imageContext.imageArtifact]
+    // Forward an inbound image artifact so the user's bubble shows the
+    // picture they sent. Documents don't carry a server-side artifact (the
+    // client renders a local file chip during send).
+    const inboundArtifacts: ToolArtifact[] = attachment?.imageArtifact
+      ? [attachment.imageArtifact]
       : [];
     return NextResponse.json({
       inbound: {
@@ -320,9 +425,7 @@ export async function POST(req: Request) {
       },
       reply,
       artifacts,
-      ...(imageContext?.note
-        ? { warnings: [imageContext.note] }
-        : {}),
+      ...(attachment?.note ? { warnings: [attachment.note] } : {}),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

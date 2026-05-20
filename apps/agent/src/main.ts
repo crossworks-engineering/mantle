@@ -56,7 +56,7 @@ import { embed } from '@mantle/embeddings';
 import { maxImageBytesFor, modelSupportsVision, recordIngest, startTrace, step } from '@mantle/tracing';
 import {
   buildChatMessages,
-  buildImageContextText,
+  buildAttachmentContextText,
   composeSystemPromptWithSkills,
   effectiveToolSlugs,
   invokeAgent,
@@ -888,7 +888,8 @@ async function handleMessage(messageId: string): Promise<void> {
             };
             responderUserText = baseText;
           } else {
-            responderUserText = buildImageContextText(baseText, {
+            responderUserText = buildAttachmentContextText(baseText, {
+              kind: 'image',
               transcript: photoContext.transcript,
               note: photoContext.note,
               nodeId: photoContext.nodeId,

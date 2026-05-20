@@ -690,11 +690,18 @@ images:
   transcript-default with the file node id surfaced so Saskia can
   re-read via `extract_from_image`. Full parity with the /assistant
   upload path; no longer a short-circuit.
-- **Vision in (/assistant image upload):** image attached to a web
-  turn → save under `/files/assistant-uploads/<date>/` → vision worker
-  runs synchronously → LLM-visible message gets the transcript
-  appended. User's bubble shows the original image; Saskia sees
-  transcript.
+- **Attachment in (/assistant upload):** an image OR a document
+  (pdf/docx/xlsx/csv/txt/md/json/yaml) attached to a web turn → saved
+  under `/files/assistant-uploads/<date>/` → text extracted (vision
+  worker for images, `@mantle/files` parsers for documents) → folded
+  into the turn (transcript-default) with the file node id surfaced.
+  User's bubble shows the image (documents show a file chip).
+- **Vision in (separate image upload):** an image dropped into `/files`
+  outside the chat (Files UI, disk-sync watcher, MCP `file_upload`) has
+  no inline vision pass — the **extractor** runs the vision worker when
+  it sees an image `file` node with no `data.text`, persists the text,
+  and re-fires `node_ingested` to index it. One indexing path however
+  the image lands.
 - **Vision on demand (Saskia tool):** `extract_from_image(node_id |
   telegram_file_id, prompt?)` — Saskia can re-read a previously-sent
   photo or any image-typed file node.
