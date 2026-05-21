@@ -1,24 +1,16 @@
 'use client';
 
 import { Shuffle, X } from 'lucide-react';
-import { AVATAR_STYLES, DEFAULT_AVATAR_STYLE, avatarDataUri } from '@/lib/dicebear';
+import { DEFAULT_AVATAR_STYLE, avatarUrl, randomSeed, randomStyle } from '@/lib/avatar';
 
 export type AvatarValue = { style: string; seed: string };
-
-function randomSeed(): string {
-  return Math.random().toString(36).slice(2, 10);
-}
-
-function randomStyle(): string {
-  const pick = AVATAR_STYLES[Math.floor(Math.random() * AVATAR_STYLES.length)];
-  return pick?.id ?? DEFAULT_AVATAR_STYLE;
-}
 
 /**
  * DiceBear avatar picker — a live preview you reroll with Randomize (random
  * style + seed each click). `value` is null when no custom avatar is set (the
  * host shows an initials fallback); Randomize commits a value, and "Use
- * initials instead" clears back to null.
+ * initials instead" clears back to null. The preview loads from the cacheable
+ * /api/avatar endpoint, so no DiceBear code ships to the client.
  */
 export function AvatarPicker({
   value,
@@ -39,7 +31,7 @@ export function AvatarPicker({
     <div className="flex items-center gap-4">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={avatarDataUri(style, seed)}
+        src={avatarUrl(style, seed)}
         alt="Avatar preview"
         className="size-16 shrink-0 rounded-full border bg-muted"
       />

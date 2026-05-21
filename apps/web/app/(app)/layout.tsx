@@ -6,7 +6,7 @@ import { requireOwner } from '@/lib/auth';
 import { TreeRail } from '@/components/tree-rail';
 import { AppShell } from '@/components/app-shell';
 import { UsageCard } from '@/components/usage-card';
-import { avatarDataUri } from '@/lib/dicebear';
+import { avatarUrl } from '@/lib/avatar';
 
 /**
  * App shell: header on top, sidebar (context+cost card + nav + branches)
@@ -25,7 +25,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const prefs = await loadProfilePreferences(user.id);
   const userAvatar = prefs.avatarStyle
-    ? avatarDataUri(prefs.avatarStyle, prefs.avatarSeed || user.id)
+    ? avatarUrl(prefs.avatarStyle, prefs.avatarSeed || user.id)
     : null;
 
   return (

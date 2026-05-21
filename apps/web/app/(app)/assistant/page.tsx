@@ -1,7 +1,7 @@
 import { requireOwner } from '@/lib/auth';
 import { listAssistantAgents, recentAssistantMessages, resolveAssistantAgent } from '@/lib/assistant';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
-import { avatarDataUri } from '@/lib/dicebear';
+import { avatarUrl } from '@/lib/avatar';
 import { AssistantClient } from './assistant-client';
 import { AgentSelect } from './agent-select';
 
@@ -25,7 +25,7 @@ export default async function AssistantPage({
     : [];
 
   const accent = agent ? agentAccent(agent.slug) : null;
-  const agentAvatarUri = agent?.avatar ? avatarDataUri(agent.avatar.style, agent.avatar.seed) : null;
+  const agentAvatarUri = agent?.avatar ? avatarUrl(agent.avatar.style, agent.avatar.seed) : null;
 
   return (
     <div className="flex h-full flex-col">

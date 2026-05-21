@@ -16,7 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { AgentAvatar, PersonaNote } from '@mantle/db';
 import { AvatarPicker } from '@/components/avatar-picker';
-import { avatarDataUri } from '@/lib/dicebear';
+import { avatarUrl } from '@/lib/avatar';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { PersonaNotesEditor } from './persona-notes-editor';
 
@@ -597,7 +597,7 @@ export function AgentsClient({
                 {a.avatar ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={avatarDataUri(a.avatar.style, a.avatar.seed)}
+                    src={avatarUrl(a.avatar.style, a.avatar.seed)}
                     alt=""
                     className="size-9 shrink-0 rounded-full"
                     aria-hidden
