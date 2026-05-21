@@ -119,8 +119,9 @@ export const telegramMessages = pgTable(
     chatId: uuid('chat_id')
       .notNull()
       .references(() => telegramChats.id, { onDelete: 'cascade' }),
-    /** Telegram's message_id within the chat. */
-    telegramMessageId: text('telegram_message_id').notNull(),
+    /** Telegram's message_id within the chat. Null on outbound replies that
+     *  were generated + saved but failed to send (undelivered, recoverable). */
+    telegramMessageId: text('telegram_message_id'),
     /** Telegram's update_id — globally unique per bot, used for dedup + ack.
      * Inbound rows have this; outbound rows leave it null. */
     telegramUpdateId: bigint('telegram_update_id', { mode: 'number' }),
@@ -142,6 +143,10 @@ export const telegramMessages = pgTable(
     agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
     modelUsed: text('model_used'),
     replyToId: uuid('reply_to_id'),
+    /** Outbound delivery state. False = the reply was generated + persisted but
+     *  the Telegram send failed, so it never reached the user (recoverable /
+     *  retry-able). Inbound + successfully-sent rows are true. */
+    delivered: boolean('delivered').default(true).notNull(),
     /** Once this row is folded into a Tier-2 digest, points at the `note` node
      * that represents the digest. NULL = not yet summarized. */
     digestNodeId: uuid('digest_node_id').references(() => nodes.id, { onDelete: 'set null' }),

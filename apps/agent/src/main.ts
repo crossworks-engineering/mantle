@@ -700,7 +700,7 @@ async function handleMessage(messageId: string): Promise<void> {
                 account,
                 row.telegramChatId,
                 "Sorry love — I couldn't pick up that voice clip. Could you try again, or type it out?",
-                { replyTo: row.telegramMessageId },
+                { replyTo: row.telegramMessageId ?? undefined },
               );
             }
             return;
@@ -1013,7 +1013,15 @@ async function handleMessage(messageId: string): Promise<void> {
           ? await getDefaultWorker(USER_ID!, 'tts')
           : null;
 
-        const telegramMessageIds = await step(
+        // Generate-then-send, but never lose the reply: if the send throws, the
+        // send_telegram step still records the error and we persist the reply
+        // below (flagged undelivered) so it stays recoverable, then fail the
+        // trace so it surfaces in "Needs attention".
+        let telegramMessageIds: number[] = [];
+        let delivered = false;
+        let sendError: string | null = null;
+        try {
+        telegramMessageIds = await step(
           { name: 'send_telegram', kind: 'send', input: { mode: replyAsVoice ? 'voice' : 'text' } },
           async (h) => {
             if (replyAsVoice && ttsWorker?.apiKeyId) {
@@ -1068,7 +1076,7 @@ async function handleMessage(messageId: string): Promise<void> {
                   account,
                   row.telegramChatId,
                   synth.bytes,
-                  { replyTo: row.telegramMessageId },
+                  { replyTo: row.telegramMessageId ?? undefined },
                 );
                 void bumpAiWorkerUsage(ttsWorker.id);
                 h.setMeta({
@@ -1096,7 +1104,7 @@ async function handleMessage(messageId: string): Promise<void> {
             // tags would otherwise appear as literal text.
             const { text: textReply, stripped } = stripAudioTags(reply);
             const ids = await sendMessage(account, row.telegramChatId, textReply, {
-              replyTo: row.telegramMessageId,
+              replyTo: row.telegramMessageId ?? undefined,
             });
             h.setMeta({
               mode: 'text',
@@ -1107,11 +1115,20 @@ async function handleMessage(messageId: string): Promise<void> {
             return ids;
           },
         );
+        delivered = true;
+        } catch (err) {
+          // The send_telegram step already recorded the error; capture it and
+          // fall through to persist so the generated reply isn't lost.
+          sendError = err instanceof Error ? err.message : String(err);
+        }
 
         await step({ name: 'persist_outbound', kind: 'db_write' }, async (h) => {
           const now = new Date();
           const titleStem = reply.slice(0, 120);
-          for (const tgMsgId of telegramMessageIds) {
+          // Delivered → one row per sent chunk (with its Telegram id). Failed →
+          // a single row with a null id, flagged undelivered (recoverable).
+          const targets: (number | null)[] = delivered ? telegramMessageIds : [null];
+          for (const tgMsgId of targets) {
             const [node] = await db
               .insert(nodes)
               .values({
@@ -1124,6 +1141,7 @@ async function handleMessage(messageId: string): Promise<void> {
                   model: agent.model,
                   agent: agent.slug,
                   replyToTelegramMessageId: row.telegramMessageId,
+                  delivered,
                 },
                 tags: ['telegram', 'outbound'],
               })
@@ -1134,18 +1152,19 @@ async function handleMessage(messageId: string): Promise<void> {
               nodeId: node.id,
               accountId: row.accountId,
               chatId: row.chatPk,
-              telegramMessageId: String(tgMsgId),
+              telegramMessageId: tgMsgId == null ? null : String(tgMsgId),
               text: reply,
               sentAt: now,
               direction: 'outbound',
               agentId: agent.id,
               modelUsed: agent.model,
               replyToId: row.id,
+              delivered,
               processed: true,
               processedAt: now,
             });
           }
-          h.setMeta({ rows: telegramMessageIds.length });
+          h.setMeta({ rows: targets.length, delivered, ...(sendError ? { sendError } : {}) });
         });
 
         // Bump agent usage outside the trace's hot path — best-effort.
@@ -1159,7 +1178,14 @@ async function handleMessage(messageId: string): Promise<void> {
           .where(eq(agents.id, agent.id))
           .catch(() => {});
 
-        console.log(`[agent] ✓ replied (${reply.length}c)`);
+        if (delivered) {
+          console.log(`[agent] ✓ replied (${reply.length}c)`);
+        } else {
+          console.warn(`[agent] reply saved but Telegram send failed: ${sendError}`);
+          // The reply is already persisted above (undelivered); fail the trace
+          // here so the delivery failure surfaces without losing the reply.
+          throw new Error(`reply generated + saved but Telegram send failed: ${sendError}`);
+        }
       },
     );
   } catch (err) {
