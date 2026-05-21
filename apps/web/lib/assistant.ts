@@ -21,7 +21,7 @@
  */
 
 import { OpenRouter } from '@openrouter/sdk';
-import { and, desc, eq, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import {
   db,
   agents,
@@ -612,7 +612,17 @@ export type AssistantAgentOption = {
   model: string;
 };
 
-/** Enabled agents the /assistant selector can target. */
+/** Roles that can hold a back-and-forth chat. The pipeline roles
+ *  (extractor/summarizer/reflector) are one-shot trigger-fired workers with no
+ *  conversational prompt or tool loop, so they're excluded from the selector —
+ *  picking one would be a dead end. */
+const CHATTABLE_ROLES: ('assistant' | 'responder' | 'custom')[] = [
+  'assistant',
+  'responder',
+  'custom',
+];
+
+/** Enabled, chat-capable agents the /assistant selector can target. */
 export async function listAssistantAgents(ownerId: string): Promise<AssistantAgentOption[]> {
   const rows = await db
     .select({
@@ -623,7 +633,13 @@ export async function listAssistantAgents(ownerId: string): Promise<AssistantAge
       model: agents.model,
     })
     .from(agents)
-    .where(and(eq(agents.ownerId, ownerId), eq(agents.enabled, true)))
+    .where(
+      and(
+        eq(agents.ownerId, ownerId),
+        eq(agents.enabled, true),
+        inArray(agents.role, CHATTABLE_ROLES),
+      ),
+    )
     .orderBy(desc(agents.priority));
   return rows.map((r) => ({ id: r.id, slug: r.slug, name: r.name, role: r.role as string, model: r.model }));
 }
