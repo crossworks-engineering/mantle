@@ -7,9 +7,10 @@ Claude session) sitting in front of the running dev stack who needs to
 answer *"I sent X in — did the system actually digest it, and if not,
 where did it stall?"*
 
-Companion to [`memory.md`](./memory.md) (what the six layers *are*) and
-[`observability.md`](./observability.md) (the trace model). This file is
-the **operational** counterpart: the exact queries.
+Companion to [`memory.md`](./memory.md) (what the six layers *are*),
+[`observability.md`](./observability.md) (the trace model), and
+[`journey.md`](./journey.md) (the action→layer map + the `/debug/journey`
+screen). This file is the **operational** counterpart: the exact queries.
 
 One-shot tracer: [`scripts/trace-node.sh <node-id>`](../scripts/trace-node.sh)
 runs everything below for a single node. Read this doc to understand what

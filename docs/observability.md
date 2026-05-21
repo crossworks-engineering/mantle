@@ -2,7 +2,10 @@
 
 How Mantle records what its agents do. Companion to
 [`architecture.md`](./architecture.md) and [`memory.md`](./memory.md);
-this file is the durable reference for the tracing layer.
+this file is the durable reference for the tracing layer. For the
+human-readable view of the same traces — *what action you took and which
+brain layers reacted* — see [`journey.md`](./journey.md) and the
+**Journey** tab at `/debug/journey`.
 
 Status: **live.** Every responder turn, extractor run, summarizer
 pass, reflector tick, **content ingest moment, and Telegram photo
