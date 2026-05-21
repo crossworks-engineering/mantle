@@ -18,8 +18,9 @@ import type {
  * Cursor shape (stored on `email_accounts.sync_state.raw.imap`):
  *   { folders: { '<folder>': { uidvalidity: number, lastUid: number } } }
  *
- * On first sync (or when uidvalidity changes) we scan the last 12 months
- * via an INTERNALDATE SINCE search. Subsequent runs use UID > lastUid.
+ * On first sync (or when uidvalidity changes) we scan back
+ * `account.firstScanDays` (default 365) via an INTERNALDATE SINCE search.
+ * Subsequent runs use UID > lastUid.
  *
  * `listSince` yields headers + MIME structure only (cheap). The orchestrator
  * calls `fetchFull` separately for messages whose sender is approved.
@@ -28,7 +29,8 @@ import type {
  * unless the server changes uidvalidity (which forces a full re-scan).
  */
 
-const FIRST_SCAN_MONTHS = 12;
+/** Fallback first-scan window when an account predates the column / has null. */
+const DEFAULT_FIRST_SCAN_DAYS = 365;
 
 interface ImapCursor {
   folders: Record<string, { uidvalidity: number; lastUid: number }>;
@@ -228,9 +230,10 @@ export const imap: EmailProvider = {
             range = `${prev.lastUid + 1}:*`;
           } else {
             // First sync (or uidvalidity rolled): get UIDs from messages
-            // delivered in the last 12 months.
+            // delivered within the account's configured history window.
+            const days = account.firstScanDays ?? DEFAULT_FIRST_SCAN_DAYS;
             const since = new Date();
-            since.setMonth(since.getMonth() - FIRST_SCAN_MONTHS);
+            since.setDate(since.getDate() - days);
             const searchRes = await client.search({ since }, { uid: true });
             const uids: number[] = Array.isArray(searchRes) ? searchRes : [];
             if (uids.length === 0) {

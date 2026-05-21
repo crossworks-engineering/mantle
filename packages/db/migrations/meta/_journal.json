@@ -239,6 +239,13 @@
       "when": 1747702000000,
       "tag": "0033_imap_included_folders",
       "breakpoints": false
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1747702100000,
+      "tag": "0034_first_scan_days",
+      "breakpoints": false
     }
   ]
 }

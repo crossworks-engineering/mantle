@@ -63,6 +63,12 @@ export const emailAccounts = pgTable(
      *  folder list and minus excluded, as a safety net). Set via the
      *  per-account folder-config UI; an empty selection clears back to NULL. */
     imapIncludedFolders: text('imap_included_folders').array(),
+    /** How far back the FIRST scan of each folder reaches, in days (migration
+     *  0034). Default 365 ≈ the previous hard-coded 12 months. Applied on the
+     *  initial scan of a folder (and when uidvalidity rolls); lowering it later
+     *  does not delete already-synced mail, and raising it only pulls older
+     *  mail for folders not yet scanned. Set on the add/edit account form. */
+    firstScanDays: integer('first_scan_days').default(365).notNull(),
     ingestPolicy: ingestPolicy('ingest_policy').default('approve_list').notNull(),
     /** Stable ltree path this account's mail lands under, e.g. `inbox.jason_sm`.
      *  Stored (not derived from address) so different `jason@…` accounts can
