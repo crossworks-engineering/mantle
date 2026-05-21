@@ -28,6 +28,12 @@ export type ProfilePreferences = {
    *  format-datetime behaviour, so existing UI doesn't shift for
    *  users who haven't visited /settings/profile yet. */
   locale: string;
+  /** DiceBear avatar style id (see apps/web/lib/dicebear). Undefined →
+   *  the UI falls back to an initials avatar. */
+  avatarStyle?: string;
+  /** Seed for the DiceBear avatar; the UI defaults it to the user id when
+   *  unset so an avatar still renders. */
+  avatarSeed?: string;
 };
 
 export const DEFAULT_PREFERENCES: ProfilePreferences = {
@@ -70,6 +76,14 @@ export async function loadProfilePreferences(
       typeof prefs.locale === 'string' && prefs.locale.length > 0
         ? prefs.locale
         : DEFAULT_PREFERENCES.locale,
+    avatarStyle:
+      typeof prefs.avatarStyle === 'string' && prefs.avatarStyle.length > 0
+        ? prefs.avatarStyle
+        : undefined,
+    avatarSeed:
+      typeof prefs.avatarSeed === 'string' && prefs.avatarSeed.length > 0
+        ? prefs.avatarSeed
+        : undefined,
   };
 }
 
@@ -137,6 +151,8 @@ export async function updateProfilePreferences(
   return {
     timezone: merged.timezone ?? DEFAULT_PREFERENCES.timezone,
     locale: merged.locale ?? DEFAULT_PREFERENCES.locale,
+    avatarStyle: merged.avatarStyle || undefined,
+    avatarSeed: merged.avatarSeed || undefined,
   };
 }
 

@@ -21,22 +21,28 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
+import { AvatarPicker, type AvatarValue } from '@/components/avatar-picker';
 import type { ProfilePreferences } from '@mantle/content';
 
 export function ProfileClient({
   defaults,
   defaultsFallback,
   samplePreview,
+  userId,
   action,
 }: {
   defaults: ProfilePreferences;
   defaultsFallback: ProfilePreferences;
   samplePreview: string;
+  userId: string;
   action: (formData: FormData) => Promise<void>;
 }) {
   const toast = useToast();
   const [tz, setTz] = useState(defaults.timezone);
   const [loc, setLoc] = useState(defaults.locale);
+  const [avatar, setAvatar] = useState<AvatarValue | null>(
+    defaults.avatarStyle ? { style: defaults.avatarStyle, seed: defaults.avatarSeed || userId } : null,
+  );
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -73,6 +79,17 @@ export function ProfileClient({
         <span className="text-muted-foreground">Now in your settings:</span>{' '}
         <span className="font-medium">{samplePreview}</span>
       </div>
+
+      <section className="space-y-2">
+        <Label>Avatar</Label>
+        <AvatarPicker value={avatar} onChange={setAvatar} fallbackSeed={userId} />
+        <input type="hidden" name="avatarStyle" value={avatar?.style ?? ''} />
+        <input type="hidden" name="avatarSeed" value={avatar?.seed ?? ''} />
+        <p className="text-xs text-muted-foreground">
+          Generated with DiceBear from a style + seed. Shows in the header and
+          across the app; clear it to fall back to your initials.
+        </p>
+      </section>
 
       <section className="space-y-4">
         <div className="space-y-1.5">

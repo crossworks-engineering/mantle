@@ -15,12 +15,19 @@ export async function updatePreferencesAction(formData: FormData): Promise<void>
   const user = await requireOwner();
   const timezone = String(formData.get('timezone') ?? '').trim();
   const locale = String(formData.get('locale') ?? '').trim();
+  // Avatar fields are always present in the form (possibly empty when the
+  // user chose the initials fallback). Empty string clears it — the loader
+  // treats empty as "unset".
+  const avatarStyle = String(formData.get('avatarStyle') ?? '').trim();
+  const avatarSeed = String(formData.get('avatarSeed') ?? '').trim();
   if (!timezone && !locale) {
     throw new Error('Set timezone or locale (or both) before saving.');
   }
   await updateProfilePreferences(user.id, {
     ...(timezone ? { timezone } : {}),
     ...(locale ? { locale } : {}),
+    avatarStyle,
+    avatarSeed,
   });
   // Lots of pages render dates — refresh the cache so the new
   // timezone takes effect immediately on next nav rather than after

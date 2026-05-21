@@ -45,6 +45,14 @@ const Params = z
   })
   .strict();
 
+const Avatar = z
+  .object({
+    style: z.string().min(1).max(64),
+    seed: z.string().min(1).max(200),
+  })
+  .strict()
+  .nullable();
+
 const CreateBody = z.object({
   slug: z.string().min(1).max(64).regex(/^[a-z0-9_-]+$/, 'slug must be lowercase letters/digits/dash'),
   name: z.string().min(1).max(120),
@@ -58,6 +66,7 @@ const CreateBody = z.object({
   skillSlugs: z.array(z.string().min(1).max(120)).max(32).optional(),
   memoryConfig: MemoryConfig.optional(),
   params: Params.optional(),
+  avatar: Avatar.optional(),
   priority: z.number().int().min(0).max(1_000_000).optional(),
   enabled: z.boolean().optional(),
 });

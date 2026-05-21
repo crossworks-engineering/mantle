@@ -38,6 +38,14 @@ const Params = z
   })
   .strict();
 
+const Avatar = z
+  .object({
+    style: z.string().min(1).max(64),
+    seed: z.string().min(1).max(200),
+  })
+  .strict()
+  .nullable();
+
 const PatchBody = z
   .object({
     name: z.string().min(1).max(120),
@@ -51,6 +59,7 @@ const PatchBody = z
     skillSlugs: z.array(z.string().min(1).max(120)).max(32),
     memoryConfig: MemoryConfig,
     params: Params,
+    avatar: Avatar,
     priority: z.number().int().min(0).max(1_000_000),
     enabled: z.boolean(),
   })

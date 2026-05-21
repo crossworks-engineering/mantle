@@ -31,6 +31,14 @@ export const agentRole = pgEnum('agent_role', [
   'custom',
 ]);
 
+/** DiceBear avatar selection for an agent: a style id + seed. Rendered
+ *  on the fly in the UI (see apps/web/lib/dicebear.ts). Null = fall back
+ *  to the derived initials/accent avatar. */
+export type AgentAvatar = {
+  style: string;
+  seed: string;
+};
+
 export type AgentMemoryConfig = {
   /** Max prior turns to replay into prompt. Default 20. */
   history_limit?: number;
@@ -158,6 +166,8 @@ export const agents = pgTable(
     params: jsonb('params').$type<AgentParams>().default(sql`'{}'::jsonb`).notNull(),
     /** Reflector appends notes here. */
     personaNotes: jsonb('persona_notes').$type<PersonaNote[]>().default(sql`'[]'::jsonb`).notNull(),
+    /** DiceBear avatar {style, seed}. Null → derived initials/accent avatar. */
+    avatar: jsonb('avatar').$type<AgentAvatar | null>(),
     /** Higher = wins. Convention: 100 default. */
     priority: integer('priority').default(100).notNull(),
     enabled: boolean('enabled').default(true).notNull(),

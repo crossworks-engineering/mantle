@@ -13,14 +13,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 export function Header({
   email,
+  userAvatar,
   onMenuClick,
 }: {
   email: string | null;
+  userAvatar?: string | null;
   onMenuClick: () => void;
 }) {
   const router = useRouter();
@@ -56,6 +58,7 @@ export function Header({
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="h-10 gap-2 px-2">
               <Avatar className="size-8">
+                {userAvatar && <AvatarImage src={userAvatar} alt="" />}
                 <AvatarFallback className="text-xs">{initials}</AvatarFallback>
               </Avatar>
               {email && (

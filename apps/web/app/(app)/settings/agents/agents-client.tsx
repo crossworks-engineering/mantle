@@ -14,7 +14,10 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import type { PersonaNote } from '@mantle/db';
+import type { AgentAvatar, PersonaNote } from '@mantle/db';
+import { AvatarPicker } from '@/components/avatar-picker';
+import { avatarDataUri } from '@/lib/dicebear';
+import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { PersonaNotesEditor } from './persona-notes-editor';
 
 /** Built-in node types the extractor can be allow-listed against. Matches
@@ -98,6 +101,7 @@ type AgentSummary = {
   skillSlugs: string[];
   memoryConfig: MemoryConfig;
   params: { temperature?: number; max_tokens?: number; top_p?: number };
+  avatar: AgentAvatar | null;
   personaNotes: PersonaNote[];
   priority: number;
   enabled: boolean;
@@ -272,6 +276,8 @@ type FormState = {
   skillSlugs: string[];
   temperature: string;
   maxTokens: string;
+  /** DiceBear avatar {style, seed}; null = initials fallback. */
+  avatar: AgentAvatar | null;
 };
 
 function emptyForm(role: Role = 'responder'): FormState {
@@ -301,6 +307,7 @@ function emptyForm(role: Role = 'responder'): FormState {
     skillSlugs: [],
     temperature: '0.7',
     maxTokens: '',
+    avatar: null,
   };
 }
 
@@ -334,6 +341,7 @@ function formFromAgent(a: AgentSummary): FormState {
     skillSlugs: a.skillSlugs ?? [],
     temperature: a.params.temperature?.toString() ?? '0.7',
     maxTokens: a.params.max_tokens?.toString() ?? '',
+    avatar: a.avatar ?? null,
   };
 }
 
@@ -505,6 +513,7 @@ export function AgentsClient({
       enabled: form.enabled,
       toolSlugs: form.toolSlugs,
       skillSlugs: form.skillSlugs,
+      avatar: form.avatar,
       ...(editing.mode === 'create' ? { slug: form.slug.trim() } : {}),
     };
 
@@ -585,6 +594,23 @@ export function AgentsClient({
             const key = a.apiKeyId ? apiKeyById.get(a.apiKeyId) : null;
             return (
               <li key={a.id} className="flex items-center gap-3 px-3 py-3">
+                {a.avatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={avatarDataUri(a.avatar.style, a.avatar.seed)}
+                    alt=""
+                    className="size-9 shrink-0 rounded-full"
+                    aria-hidden
+                  />
+                ) : (
+                  <span
+                    className="flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+                    style={{ backgroundColor: agentAccent(a.slug).solid }}
+                    aria-hidden
+                  >
+                    {agentInitials(a.name)}
+                  </span>
+                )}
                 <div className="min-w-0 flex-1 space-y-0.5">
                   <div className="flex items-baseline gap-2">
                     <span className="text-sm font-medium">{a.name}</span>
@@ -704,6 +730,15 @@ export function AgentsClient({
                 value={form.description}
                 onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                 placeholder="Default Telegram responder, with memory"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Avatar</Label>
+              <AvatarPicker
+                value={form.avatar}
+                onChange={(v) => setForm((f) => ({ ...f, avatar: v }))}
+                fallbackSeed={form.slug || form.name || 'agent'}
               />
             </div>
 

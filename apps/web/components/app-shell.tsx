@@ -16,6 +16,7 @@ import { ToastProvider } from '@/components/ui/toast';
  */
 export function AppShell({
   email,
+  userAvatar,
   pendingSenders,
   pendingApprovals,
   contextCard,
@@ -23,6 +24,7 @@ export function AppShell({
   children,
 }: {
   email: string | null;
+  userAvatar?: string | null;
   pendingSenders: number;
   pendingApprovals: number;
   contextCard: React.ReactNode;
@@ -57,7 +59,7 @@ export function AppShell({
   return (
     <ToastProvider>
       <div className="h-screen bg-background">
-        <Header email={email} onMenuClick={() => setMobileOpen(true)} />
+        <Header email={email} userAvatar={userAvatar} onMenuClick={() => setMobileOpen(true)} />
 
         {/* Desktop sidebar */}
         <aside className="fixed inset-y-0 left-0 z-30 hidden w-80 flex-col border-r bg-sidebar pt-16 md:flex">

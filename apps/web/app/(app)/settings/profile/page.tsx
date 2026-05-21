@@ -46,6 +46,7 @@ export default async function ProfilePage() {
         defaults={prefs}
         defaultsFallback={DEFAULT_PREFERENCES}
         samplePreview={samplePreview}
+        userId={user.id}
         action={updatePreferencesAction}
       />
     </div>

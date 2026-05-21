@@ -6,6 +6,7 @@ import {
   applyPersonaUpdate,
   noteRef,
   type Agent,
+  type AgentAvatar,
   type AgentMemoryConfig,
   type AgentParams,
   type PersonaNote,
@@ -31,6 +32,7 @@ export type AgentSummary = {
   skillSlugs: string[];
   memoryConfig: AgentMemoryConfig;
   params: AgentParams;
+  avatar: AgentAvatar | null;
   /** Layer-1 persona: what the agent has *learned* about the user (written by
    *  the reflector + the update_persona tool). Includes the soft-retired audit
    *  tail — the UI filters with activeNotes(). */
@@ -58,6 +60,7 @@ function toSummary(a: Agent): AgentSummary {
     skillSlugs: a.skillSlugs ?? [],
     memoryConfig: a.memoryConfig ?? {},
     params: a.params ?? {},
+    avatar: a.avatar ?? null,
     personaNotes: (a.personaNotes ?? []) as PersonaNote[],
     priority: a.priority,
     enabled: a.enabled,
@@ -109,6 +112,7 @@ export type CreateAgentInput = {
   skillSlugs?: string[];
   memoryConfig?: AgentMemoryConfig;
   params?: AgentParams;
+  avatar?: AgentAvatar | null;
   priority?: number;
   enabled?: boolean;
 };
@@ -133,6 +137,7 @@ export async function createAgent(
       skillSlugs: input.skillSlugs ?? [],
       memoryConfig: input.memoryConfig ?? {},
       params: input.params ?? {},
+      avatar: input.avatar ?? null,
       priority: input.priority ?? 100,
       enabled: input.enabled ?? true,
     })
@@ -160,6 +165,7 @@ export async function updateAgent(
   if (patch.skillSlugs !== undefined) next.skillSlugs = patch.skillSlugs;
   if (patch.memoryConfig !== undefined) next.memoryConfig = patch.memoryConfig;
   if (patch.params !== undefined) next.params = patch.params;
+  if (patch.avatar !== undefined) next.avatar = patch.avatar;
   if (patch.priority !== undefined) next.priority = patch.priority;
   if (patch.enabled !== undefined) next.enabled = patch.enabled;
 

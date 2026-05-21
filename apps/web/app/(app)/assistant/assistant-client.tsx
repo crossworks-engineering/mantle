@@ -54,6 +54,7 @@ export function AssistantClient({
   agentReady,
   agentSlug,
   agentName,
+  agentAvatar,
 }: {
   initialMessages: Message[];
   agentReady: boolean;
@@ -61,6 +62,8 @@ export function AssistantClient({
   agentSlug?: string;
   /** Display name of the active agent — drives the bubble avatar + greeting. */
   agentName?: string;
+  /** DiceBear avatar data URI for the active agent; falls back to initials. */
+  agentAvatar?: string | null;
 }) {
   // Per-agent visual identity: a stable colour + monogram so it's obvious
   // which agent you're talking to when you switch.
@@ -351,13 +354,24 @@ export function AssistantClient({
       <div ref={scrollerRef} onScroll={onScroll} className="flex-1 overflow-y-auto scrollbar-thin px-6 py-4">
         {messages.length === 0 ? (
           <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/30 px-4 py-10 text-center">
-            <span
-              className="flex h-12 w-12 items-center justify-center rounded-full text-base font-semibold text-white ring-2"
-              style={{ backgroundColor: accent.solid, '--tw-ring-color': accent.border } as React.CSSProperties}
-              aria-hidden
-            >
-              {initials}
-            </span>
+            {agentAvatar ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={agentAvatar}
+                alt=""
+                className="size-12 rounded-full ring-2"
+                style={{ '--tw-ring-color': accent.border } as React.CSSProperties}
+                aria-hidden
+              />
+            ) : (
+              <span
+                className="flex h-12 w-12 items-center justify-center rounded-full text-base font-semibold text-white ring-2"
+                style={{ backgroundColor: accent.solid, '--tw-ring-color': accent.border } as React.CSSProperties}
+                aria-hidden
+              >
+                {initials}
+              </span>
+            )}
             <p className="text-sm text-muted-foreground">
               No messages yet. Say hi to{' '}
               <span className="font-medium text-foreground">{agentName ?? 'your assistant'}</span>.
@@ -384,16 +398,26 @@ export function AssistantClient({
                   (m.direction === 'inbound' ? 'justify-end' : 'justify-start')
                 }
               >
-                {m.direction === 'outbound' && (
-                  <span
-                    className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-                    style={{ backgroundColor: accent.solid }}
-                    title={agentName ?? 'Assistant'}
-                    aria-hidden
-                  >
-                    {initials}
-                  </span>
-                )}
+                {m.direction === 'outbound' &&
+                  (agentAvatar ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={agentAvatar}
+                      alt=""
+                      className="mb-1 size-7 shrink-0 rounded-full"
+                      title={agentName ?? 'Assistant'}
+                      aria-hidden
+                    />
+                  ) : (
+                    <span
+                      className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                      style={{ backgroundColor: accent.solid }}
+                      title={agentName ?? 'Assistant'}
+                      aria-hidden
+                    >
+                      {initials}
+                    </span>
+                  ))}
                 <div
                   className={
                     'max-w-[80%] rounded-2xl px-3.5 py-2 text-sm ' +
@@ -446,13 +470,18 @@ export function AssistantClient({
             </ul>
             {sending && (
               <div className="mx-auto mt-3 flex max-w-3xl items-end gap-2 text-foreground">
-                <span
-                  className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-                  style={{ backgroundColor: accent.solid }}
-                  aria-hidden
-                >
-                  {initials}
-                </span>
+                {agentAvatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={agentAvatar} alt="" className="mb-1 size-7 shrink-0 rounded-full" aria-hidden />
+                ) : (
+                  <span
+                    className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                    style={{ backgroundColor: accent.solid }}
+                    aria-hidden
+                  >
+                    {initials}
+                  </span>
+                )}
                 <div
                   className="rounded-2xl rounded-tl-sm border-l-2 px-3.5 py-3"
                   style={{ backgroundColor: accent.soft, borderColor: accent.border }}
