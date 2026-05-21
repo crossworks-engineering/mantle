@@ -50,6 +50,13 @@ function unsealCredentials(account: EmailAccount): ImapCredentials {
   return JSON.parse(open(account.imapConfigEnc, `imap:${account.userId}:${account.address}`)) as ImapCredentials;
 }
 
+/** Decrypt and return just the IMAP app password for a saved account. The
+ *  web folder-config action needs this to re-probe the server's folder list
+ *  (via `probeImapConnection`) without duplicating the AAD derivation. */
+export function unsealImapPassword(account: EmailAccount): string {
+  return unsealCredentials(account).password;
+}
+
 async function connect(account: EmailAccount): Promise<ImapFlow> {
   if (!account.imapHost || !account.imapPort) {
     throw new Error(`account ${account.address} has no imapHost/imapPort configured`);
@@ -164,12 +171,24 @@ function normalizeHeader(
  *  current folder tree, drops anything in `imap_excluded_folders`, and
  *  also drops common system folders the server marks `\Noselect` (the
  *  IMAP convention for namespace separators that can't actually hold
- *  messages, like a top-level Gmail `[Gmail]`). */
-async function discoverFolders(client: ImapFlow, excluded: string[]): Promise<string[]> {
+ *  messages, like a top-level Gmail `[Gmail]`).
+ *
+ *  When `included` is non-empty (migration 0033 — explicit per-account
+ *  allow-list), scan ONLY those folders. It's still intersected with the
+ *  live server list and minus `excluded`, so a renamed/stale entry simply
+ *  drops out rather than erroring. NULL/empty `included` = legacy
+ *  "everything that isn't excluded". */
+async function discoverFolders(
+  client: ImapFlow,
+  excluded: string[],
+  included?: string[] | null,
+): Promise<string[]> {
   const list = await client.list();
   const excludeSet = new Set(excluded);
+  const includeSet = included && included.length > 0 ? new Set(included) : null;
   return list
     .filter((m) => !!m.path && !excludeSet.has(m.path))
+    .filter((m) => !includeSet || includeSet.has(m.path))
     .filter((m) => {
       const flags = (m as { flags?: Set<string> }).flags;
       return !flags?.has('\\Noselect');
@@ -182,7 +201,11 @@ export const imap: EmailProvider = {
     const client = await connect(account);
     const state = getCursor(account, cursor);
     try {
-      const folders = await discoverFolders(client, account.imapExcludedFolders);
+      const folders = await discoverFolders(
+        client,
+        account.imapExcludedFolders,
+        account.imapIncludedFolders,
+      );
       for (const folder of folders) {
         let lock;
         try {
@@ -249,7 +272,11 @@ export const imap: EmailProvider = {
   async *listFromSender(account, senderAddress, since): AsyncIterable<RawMessage> {
     const client = await connect(account);
     try {
-      const folders = await discoverFolders(client, account.imapExcludedFolders);
+      const folders = await discoverFolders(
+        client,
+        account.imapExcludedFolders,
+        account.imapIncludedFolders,
+      );
       for (const folder of folders) {
         let lock;
         try {

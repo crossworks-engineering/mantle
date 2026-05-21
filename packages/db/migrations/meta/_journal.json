@@ -232,6 +232,13 @@
       "when": 1747701900000,
       "tag": "0032_branch_slug_unique",
       "breakpoints": false
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1747702000000,
+      "tag": "0033_imap_included_folders",
+      "breakpoints": false
     }
   ]
 }

@@ -57,6 +57,12 @@ export const emailAccounts = pgTable(
       .array()
       .default(sql`'{INBOX.Trash, INBOX.Junk, INBOX.spam, INBOX.Drafts, INBOX.Blocked, Trash, Junk, Spam, Drafts}'::text[]`)
       .notNull(),
+    /** Explicit allow-list of folders to scan (migration 0033). NULL/empty =
+     *  legacy behaviour: auto-discover every folder minus `imapExcludedFolders`.
+     *  Non-empty = scan ONLY these (still intersected with the server's real
+     *  folder list and minus excluded, as a safety net). Set via the
+     *  per-account folder-config UI; an empty selection clears back to NULL. */
+    imapIncludedFolders: text('imap_included_folders').array(),
     ingestPolicy: ingestPolicy('ingest_policy').default('approve_list').notNull(),
     /** Stable ltree path this account's mail lands under, e.g. `inbox.jason_sm`.
      *  Stored (not derived from address) so different `jason@…` accounts can
