@@ -103,14 +103,26 @@ traced.
 | L3 | 🟡 | No idempotency on web double-submit | ✅ Fixed — `Idempotency-Key` replay (in-memory, 2-min TTL) |
 | L4 | 🟡 | `node_ingested` notify scattered as raw SQL (implicit contract) | ✅ Fixed — `notifyNodeIngested` helper, 9 sites migrated |
 | L5 | 🟡 | Two-pass image extraction (re-fire round-trip) | ✅ Fixed — single pass; `visionIngestImageNode` returns text |
+| B1 | 🔴 | **Dated upload folders silently failed to save** for any second surface on the same day — `nodes_owner_slug_uq` made folder slugs globally unique, so e.g. `telegram-uploads/2026-05-20` collided with `assistant-uploads/2026-05-20` on slug `2026-05-20`; the INSERT was swallowed as a "duplicate" and the file never persisted (caught by **DB tracing during testing**) | ✅ **Fixed — migration `0032`** scopes the slug-unique index to `type <> 'branch'` (folders are path-unique). Verified live: Telegram photo → file saved + indexed. |
+| V1 | 🟡 | **Vision LLM cost shows `$0`** — `runVisionWorker` sets token metadata but never calls `captureLlmUsage`, so vision spend is invisible in `/debug` (a `photo_ingest` trace shows a 3s `extract_vision` LLM call at cost 0) | ⚠️ **Open** — fix: attribute via `currentStep()` + `fallbackCostMicroUsd(model, tokens)` in `runVisionWorker`. Caveat: the vision worker's model must be in the pricing table or it still reads 0. |
+| V2 | 🟡 | **`data.vision_model` ends up empty** on indexed images — the `extractor_run`'s `update_index` overwrites the marker that `persist_vision_text` set | ⚠️ **Open** — cosmetic; merge instead of replace, or re-read `data` before the final write. |
 | L1 | 🟡 | **Orphan file on disk if the DB insert fails after the disk write** | ⚠️ **Deferred** — currently reconciled coincidentally by the disk-watcher (`syncFileFromDisk` re-creates the node). Acceptable; make the watcher the *designed* reconciler, or add cleanup-on-failure, if it ever bites. |
 | L6 | 🟡 | **HEIC image doesn't render in the chat bubble** (echoed/optimistic bytes are HEIC, which browsers can't display) | ⚠️ **Deferred** — cosmetic only; metadata + answer work. Would need a browser-renderable (JPEG) preview, i.e. surface the transcoded copy to the client. |
 | — | 🟡 | Telegram `audio`/`video` *file* attachments unhandled (voice notes work via STT) | ⚠️ Deferred — niche; out of scope by decision. |
 | — | 🟡 | Whole-file in-memory buffering (≤25 MB) | Accepted — inherent without streaming; fine at single-user scale. |
 
+### Verified live (DB tracing, 2026-05-20)
+A Telegram photo now produces the full chain — `content_ingest` (save) →
+`photo_ingest` source=extractor (`read_file · extract_vision · persist_vision_text`)
+→ `extractor_run` (`llm_extract · embed_batch · update_index · reconcile_entities`)
+— with `data.text` (neutral description), `summary`, `embedding`, **and a fact**
+persisted. Decoupling (neutral index vs specific chat answer) and L5 single-pass
+(one `photo_ingest`→`extractor_run`, no re-fire) confirmed against the live DB.
+
 ### What would reach a flat A
-Make the orphan-file reconciliation **deliberate** (L1) and add a renderable
-HEIC preview (L6); optionally stream large uploads instead of buffering.
+Close V1 (vision cost) + V2 (`vision_model`); make the orphan-file reconciliation
+**deliberate** (L1) and add a renderable HEIC preview (L6); optionally stream
+large uploads instead of buffering.
 
 ---
 
@@ -120,6 +132,8 @@ Newest first — all on `main`.
 
 | Commit | What |
 |---|---|
+| `7e06892` | Scope slug-unique index to non-branch nodes — migration `0032` (B1) |
+| `a7f08e3` | This doc — file-ingestion reference (flow table + audit) |
 | `fba1b8a` | Idempotent /assistant turns (L3) |
 | `766b7da` | `notifyNodeIngested` helper + single-pass image extraction (L4, L5) |
 | `3daf2f6` | Harden surfaces — graceful Telegram failure, traced web extract, no base64 echo (M1, M2, L2) |
