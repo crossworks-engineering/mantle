@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { requireOwner } from '@/lib/auth';
 import { formatDate, formatDateTime } from '@/lib/format-datetime';
 import { ChatAgentOverride } from './chat-agent-override';
+import { DebugTabs } from './debug-tabs';
 import {
   contentIndexCoverage,
   listAgentActivity,
@@ -74,6 +75,8 @@ export default async function DebugPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-10 px-6 py-8">
+      <DebugTabs />
+
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold">Debug</h1>
         <p className="text-sm text-muted-foreground">
