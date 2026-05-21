@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNull, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull, lt, ne, sql } from 'drizzle-orm';
 import { db, entities, entityEdges, facts, nodes, traces } from '@mantle/db';
 import { getTrace } from './traces';
 import type { TraceDetail } from './traces-format';
@@ -165,9 +165,38 @@ export async function listActivity(
   return filtered.slice(0, limit);
 }
 
+/** Real traces finish in seconds; anything still `running` past this is almost
+ *  certainly orphaned (the process restarted or crashed before its `finally`
+ *  could write a terminal status). */
+const ABANDON_AFTER_MIN = 10;
+
+/**
+ * Reconcile orphaned traces: mark long-`running` rows as `error: abandoned`
+ * with a finish time. Without this they'd sit in `running` forever — showing
+ * as "active" in the live view and skewing every "running" count. Owner-scoped
+ * and idempotent (a no-op once nothing is stale), so it's safe to call on every
+ * poll as a self-heal. Returns how many it reaped.
+ */
+export async function reapAbandonedTraces(userId: string): Promise<number> {
+  const cutoff = new Date(Date.now() - ABANDON_AFTER_MIN * 60_000);
+  const rows = await db
+    .update(traces)
+    .set({
+      status: 'error',
+      error: `abandoned — no completion after ${ABANDON_AFTER_MIN} min (the process likely restarted or crashed mid-run)`,
+      finishedAt: new Date(),
+      durationMs: sql`(extract(epoch from (now() - ${traces.startedAt})) * 1000)::int`,
+    })
+    .where(and(eq(traces.ownerId, userId), eq(traces.status, 'running'), lt(traces.startedAt, cutoff)))
+    .returning({ id: traces.id });
+  return rows.length;
+}
+
 /** The always-on live snapshot: in-flight runs, recent successes (what entered
- *  the brain), and recent failures. */
+ *  the brain), and recent failures. Reconciles orphaned runs first so the
+ *  "active" list reflects reality. */
 export async function getLiveActivity(userId: string): Promise<LiveActivity> {
+  await reapAbandonedTraces(userId);
   const [active, recent, failures] = await Promise.all([
     queryActivity(userId, [eq(traces.status, 'running') as never], 12),
     queryActivity(userId, [eq(traces.status, 'success') as never], 30),
