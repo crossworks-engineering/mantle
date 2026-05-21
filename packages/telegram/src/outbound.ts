@@ -192,6 +192,21 @@ export function sniffImageMime(buf: Buffer): string | null {
   return null;
 }
 
+/**
+ * Send a chat action (the native "Bot is typing…" / "recording voice…"
+ * indicator). Telegram auto-clears it after ~5s or when the next message
+ * arrives, so callers repeat it (~every 4s) to keep it alive across a
+ * long generation. Fire-and-forget — failures are non-fatal.
+ */
+export async function sendChatAction(
+  account: TelegramAccount,
+  chatId: string,
+  action: 'typing' | 'upload_photo' | 'record_voice' | 'upload_voice' | 'upload_document' = 'typing',
+): Promise<void> {
+  const bot = botFor(account);
+  await bot.api.sendChatAction(chatId, action);
+}
+
 export async function reactToMessage(
   account: TelegramAccount,
   chatId: string,

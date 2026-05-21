@@ -6,6 +6,7 @@ export {
   sendMessage,
   sendVoice,
   sendPhoto,
+  sendChatAction,
   downloadTelegramFile,
   reactToMessage,
   editMessage,

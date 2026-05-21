@@ -103,7 +103,7 @@ export function AssistantClient({
     } else {
       el.scrollTop = el.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, sending]);
 
   const loadOlder = useCallback(async () => {
     if (loadingRef.current || !hasMore) return;
@@ -444,6 +444,28 @@ export function AssistantClient({
               </li>
             ))}
             </ul>
+            {sending && (
+              <div className="mx-auto mt-3 flex max-w-3xl items-end gap-2 text-foreground">
+                <span
+                  className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                  style={{ backgroundColor: accent.solid }}
+                  aria-hidden
+                >
+                  {initials}
+                </span>
+                <div
+                  className="rounded-2xl rounded-tl-sm border-l-2 px-3.5 py-3"
+                  style={{ backgroundColor: accent.soft, borderColor: accent.border }}
+                >
+                  <span className="sr-only">{agentName ?? 'Assistant'} is typing…</span>
+                  <span className="flex items-center gap-1" aria-hidden>
+                    <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.3s]" />
+                    <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.15s]" />
+                    <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60" />
+                  </span>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

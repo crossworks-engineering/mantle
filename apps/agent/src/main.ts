@@ -33,8 +33,9 @@ import {
   type Agent,
   type AgentMemoryConfig,
   type PersonaNote,
+  type TelegramAccount,
 } from '@mantle/db';
-import { accountForChat, downloadTelegramFile, sendMessage, sendVoice } from '@mantle/telegram';
+import { accountForChat, downloadTelegramFile, sendChatAction, sendMessage, sendVoice } from '@mantle/telegram';
 import { buildTimeContextLine, loadProfilePreferences } from '@mantle/content';
 import { ensureDatedUploadFolder, upsertFile } from '@mantle/files';
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
@@ -115,6 +116,23 @@ if (!DATABASE_URL) {
 
 /** Per-chat in-flight tracker. Prevents two replies racing for the same chat. */
 const inflight = new Map<string, Promise<void>>();
+
+/** Native Telegram "typing…" keep-alive. Telegram clears a chat action
+ *  after ~5s, so we re-send every 4s until the returned stop() is called.
+ *  Best-effort: send failures are swallowed so they never break a turn. */
+function startTyping(account: TelegramAccount, chatId: string): () => void {
+  let stopped = false;
+  const poke = () => {
+    if (stopped) return;
+    void sendChatAction(account, chatId, 'typing').catch(() => {});
+  };
+  poke();
+  const timer = setInterval(poke, 4000);
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
 
 /** Fetch the active responder agent for a chat.
  *
@@ -595,7 +613,14 @@ async function handleMessage(messageId: string): Promise<void> {
   if (prev) await prev;
   inflight.set(lockKey, lockPromise);
 
+  // Show the native "typing…" indicator for the whole think+generate
+  // window. Telegram auto-clears it when the reply lands; the keep-alive
+  // re-pokes every 4s until we stop it in the finally below.
+  let stopTyping: () => void = () => {};
+
   try {
+    const typingAccount = await accountForChat(row.telegramChatId).catch(() => null);
+    if (typingAccount) stopTyping = startTyping(typingAccount, row.telegramChatId);
     await startTrace(
       {
         kind: 'responder_turn',
@@ -1192,6 +1217,7 @@ async function handleMessage(messageId: string): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[agent] handle failed:', msg);
   } finally {
+    stopTyping();
     release();
     if (inflight.get(lockKey) === lockPromise) {
       inflight.delete(lockKey);
