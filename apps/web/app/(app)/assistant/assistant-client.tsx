@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -32,6 +32,9 @@ type Artifact = {
   producedBy: string;
   localPreviewUrl?: string;
 };
+
+/** Page size for the initial load and each scroll-up fetch. */
+const PAGE_SIZE = 100;
 
 type Message = {
   id: string;
@@ -82,11 +85,59 @@ export function AssistantClient({
 
   const scrollerRef = useRef<HTMLDivElement>(null);
 
-  // Pin the scroller to the bottom whenever messages change.
-  useEffect(() => {
+  // ── Scroll-up lazy loading of older messages ──
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasMore, setHasMore] = useState(initialMessages.length >= PAGE_SIZE);
+  const loadingRef = useRef(false);
+  // Captured before a prepend so the layout effect can hold scroll position.
+  const pendingPrepend = useRef<{ prevHeight: number; prevTop: number } | null>(null);
+
+  // Scroll management: after a prepend, restore position (no jump);
+  // otherwise pin to the bottom (initial load + new send/reply).
+  useLayoutEffect(() => {
     const el = scrollerRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    if (pendingPrepend.current) {
+      el.scrollTop = el.scrollHeight - pendingPrepend.current.prevHeight + pendingPrepend.current.prevTop;
+      pendingPrepend.current = null;
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [messages]);
+
+  const loadOlder = useCallback(async () => {
+    if (loadingRef.current || !hasMore) return;
+    const el = scrollerRef.current;
+    const oldest = messages[0];
+    if (!el || !oldest) return;
+    loadingRef.current = true;
+    setLoadingOlder(true);
+    try {
+      const qs = new URLSearchParams({ before: oldest.createdAt, limit: String(PAGE_SIZE) });
+      if (agentSlug) qs.set('agent', agentSlug);
+      const res = await fetch(`/api/assistant/messages?${qs.toString()}`, { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = (await res.json()) as { messages: Message[] };
+      const older = data.messages ?? [];
+      if (older.length < PAGE_SIZE) setHasMore(false);
+      const have = new Set(messages.map((m) => m.id));
+      const fresh = older.filter((m) => !have.has(m.id));
+      if (fresh.length > 0) {
+        pendingPrepend.current = { prevHeight: el.scrollHeight, prevTop: el.scrollTop };
+        setMessages((prev) => [...fresh, ...prev]);
+      }
+    } catch {
+      // network blip — user can scroll up again to retry
+    } finally {
+      loadingRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [hasMore, messages, agentSlug]);
+
+  const onScroll = useCallback(() => {
+    const el = scrollerRef.current;
+    if (el && el.scrollTop < 120) void loadOlder();
+  }, [loadOlder]);
 
   const clearAttachment = () => {
     if (attachedPreviewUrl) URL.revokeObjectURL(attachedPreviewUrl);
@@ -297,7 +348,7 @@ export function AssistantClient({
 
   return (
     <>
-      <div ref={scrollerRef} className="flex-1 overflow-y-auto px-6 py-4">
+      <div ref={scrollerRef} onScroll={onScroll} className="flex-1 overflow-y-auto scrollbar-thin px-6 py-4">
         {messages.length === 0 ? (
           <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/30 px-4 py-10 text-center">
             <span
@@ -313,7 +364,18 @@ export function AssistantClient({
             </p>
           </div>
         ) : (
-          <ul className="mx-auto flex max-w-3xl flex-col gap-3">
+          <>
+            {loadingOlder && (
+              <div className="flex justify-center py-2">
+                <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden />
+              </div>
+            )}
+            {!hasMore && (
+              <p className="py-2 text-center text-xs text-muted-foreground">
+                Beginning of the conversation
+              </p>
+            )}
+            <ul className="mx-auto flex max-w-3xl flex-col gap-3">
             {messages.map((m) => (
               <li
                 key={m.id}
@@ -381,7 +443,8 @@ export function AssistantClient({
                 </div>
               </li>
             ))}
-          </ul>
+            </ul>
+          </>
         )}
       </div>
 

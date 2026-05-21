@@ -20,7 +20,7 @@ export default async function AssistantPage({
   // assistant/responder; a custom agent (e.g. coder) gets a clean thread.
   const includeLegacy = agent ? agent.role === 'assistant' || agent.role === 'responder' : true;
   const messages = agent
-    ? await recentAssistantMessages(user.id, 200, { agentId: agent.id, includeLegacy })
+    ? await recentAssistantMessages(user.id, 100, { agentId: agent.id, includeLegacy })
     : [];
 
   const accent = agent ? agentAccent(agent.slug) : null;

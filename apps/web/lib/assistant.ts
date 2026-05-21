@@ -21,7 +21,7 @@
  */
 
 import { OpenRouter } from '@openrouter/sdk';
-import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import {
   db,
   agents,
@@ -591,6 +591,52 @@ export async function recentAssistantMessages(
     })
     .from(assistantMessages)
     .where(and(eq(assistantMessages.ownerId, ownerId), agentFilter))
+    .orderBy(desc(assistantMessages.createdAt))
+    .limit(limit);
+  return rows
+    .reverse()
+    .map((r) => ({
+      id: r.id,
+      direction: r.direction as 'inbound' | 'outbound',
+      text: r.text,
+      model: r.model,
+      createdAt: r.createdAt.toISOString(),
+    }));
+}
+
+/**
+ * Page of assistant messages OLDER than `before` (an ISO timestamp),
+ * for scroll-up lazy loading in the chat. Same shape/order as
+ * recentAssistantMessages (chronological, oldest→newest). Returns up to
+ * `limit` rows; fewer than `limit` means the top of the thread is reached.
+ */
+export async function assistantMessagesBefore(
+  ownerId: string,
+  before: string,
+  limit = 100,
+  opts?: { agentId?: string; includeLegacy?: boolean },
+): Promise<AssistantTimelineRow[]> {
+  const agentFilter = opts?.agentId
+    ? opts.includeLegacy
+      ? or(eq(assistantMessages.agentId, opts.agentId), isNull(assistantMessages.agentId))
+      : eq(assistantMessages.agentId, opts.agentId)
+    : undefined;
+  const rows = await db
+    .select({
+      id: assistantMessages.id,
+      direction: assistantMessages.direction,
+      text: assistantMessages.text,
+      model: assistantMessages.model,
+      createdAt: assistantMessages.createdAt,
+    })
+    .from(assistantMessages)
+    .where(
+      and(
+        eq(assistantMessages.ownerId, ownerId),
+        lt(assistantMessages.createdAt, new Date(before)),
+        agentFilter,
+      ),
+    )
     .orderBy(desc(assistantMessages.createdAt))
     .limit(limit);
   return rows
