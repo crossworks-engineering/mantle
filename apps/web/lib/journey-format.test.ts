@@ -45,6 +45,18 @@ describe('deriveAction', () => {
     expect(a).toEqual({ label: 'Conversation turn', category: 'dialog', iconKey: 'chat' });
   });
 
+  it('treats telegram_message nodes as dialog, not content, even on extractor_run', () => {
+    // A voice note: extractor fires on the node but it's conversation, not
+    // filed content — must not be mislabelled "Content added".
+    const a = deriveAction({
+      kind: 'extractor_run',
+      nodeType: 'telegram_message',
+      mime: null,
+      source: null,
+    });
+    expect(a).toEqual({ label: 'Telegram message', category: 'dialog', iconKey: 'telegram' });
+  });
+
   it('classifies background work as automation', () => {
     expect(deriveAction({ kind: 'reflector_run', nodeType: null, mime: null, source: null }).category).toBe(
       'automation',

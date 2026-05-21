@@ -143,6 +143,14 @@ export function deriveAction(t: {
   mime: string | null;
   source: string | null;
 }): ActionPresentation {
+  // Conversation messages are dialog, even though the extractor (a content-
+  // pipeline worker) fires on their node. The transcript/text lives in the
+  // conversation store (L2 recent_turns) and flows through the dialog pipeline;
+  // the node is a shadow that the content index deliberately ignores. Labelling
+  // it "content" would mis-file chatter — and most such nodes skip anyway.
+  if (t.nodeType === 'telegram_message') {
+    return { label: 'Telegram message', category: 'dialog', iconKey: 'telegram' };
+  }
   switch (t.kind) {
     case 'responder_turn':
       return { label: 'Conversation turn', category: 'dialog', iconKey: 'chat' };

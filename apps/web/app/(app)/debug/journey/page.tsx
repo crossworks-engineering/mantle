@@ -38,12 +38,21 @@ function statusPill(status: string): string {
 export default async function JourneyPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cat?: string }>;
+  searchParams: Promise<{ cat?: string; done?: string }>;
 }) {
   const user = await requireOwner();
-  const { cat } = await searchParams;
+  const { cat, done } = await searchParams;
   const category = (['content', 'dialog', 'automation'] as const).find((c) => c === cat);
-  const items = await listActivity(user.id, { category, limit: 100 });
+  const processedOnly = done === '1';
+  const items = await listActivity(user.id, { category, processedOnly, limit: 100 });
+
+  const buildHref = (nextCat: ActionCategory | 'all', nextDone: boolean) => {
+    const sp = new URLSearchParams();
+    if (nextCat !== 'all') sp.set('cat', nextCat);
+    if (nextDone) sp.set('done', '1');
+    const qs = sp.toString();
+    return qs ? `/debug/journey?${qs}` : '/debug/journey';
+  };
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-6 py-8">
@@ -71,33 +80,48 @@ export default async function JourneyPage({
         ))}
       </div>
 
-      {/* Category filter */}
-      <div className="flex flex-wrap gap-1">
-        {CATS.map((c) => {
-          const active = (c.key === 'all' && !category) || c.key === category;
-          const href = c.key === 'all' ? '/debug/journey' : `/debug/journey?cat=${c.key}`;
-          return (
-            <Link
-              key={c.key}
-              href={href}
-              className={
-                'rounded-full border px-3 py-1 text-xs transition-colors ' +
-                (active
-                  ? 'border-primary bg-primary/10 text-foreground'
-                  : 'border-border text-muted-foreground hover:text-foreground')
-              }
-            >
-              {c.label}
-            </Link>
-          );
-        })}
+      {/* Filters: pipeline category + a "did real work" toggle */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap gap-1">
+          {CATS.map((c) => {
+            const active = (c.key === 'all' && !category) || c.key === category;
+            return (
+              <Link
+                key={c.key}
+                href={buildHref(c.key, processedOnly)}
+                className={
+                  'rounded-full border px-3 py-1 text-xs transition-colors ' +
+                  (active
+                    ? 'border-primary bg-primary/10 text-foreground'
+                    : 'border-border text-muted-foreground hover:text-foreground')
+                }
+              >
+                {c.label}
+              </Link>
+            );
+          })}
+        </div>
+        <span className="mx-1 h-4 w-px bg-border" aria-hidden />
+        <Link
+          href={buildHref(category ?? 'all', !processedOnly)}
+          title="Hide no-op skips (body_too_short, already_extracted, no_new_activity, …)"
+          className={
+            'rounded-full border px-3 py-1 text-xs transition-colors ' +
+            (processedOnly
+              ? 'border-primary bg-primary/10 text-foreground'
+              : 'border-border text-muted-foreground hover:text-foreground')
+          }
+        >
+          {processedOnly ? '✓ ' : ''}Processed only
+        </Link>
       </div>
 
       {/* Feed */}
       {items.length === 0 ? (
         <p className="rounded-md border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-          No activity yet{category ? ` in “${category}”` : ''}. As you chat, upload, or receive
-          email, actions will appear here.
+          No {processedOnly ? 'processed ' : ''}activity{category ? ` in “${category}”` : ''} yet
+          {processedOnly ? ' — everything in range was a no-op skip.' : '.'} As you chat, upload, or
+          receive email, actions will appear here.
         </p>
       ) : (
         <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">

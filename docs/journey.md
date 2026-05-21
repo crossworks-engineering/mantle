@@ -76,7 +76,7 @@ The full set of **trace kinds** (`TraceKind` in `packages/tracing/src/store.ts`)
 
 `/debug/journey` renders this map live:
 
-- **Feed** — one row per action with a source icon, the plain-English label, status, and cost. Filterable by pipeline category (Content / Dialog / Automation).
+- **Feed** — one row per action with a source icon, the plain-English label, status, and cost. Filterable by pipeline category (Content / Dialog / Automation) and a **Processed only** toggle that hides no-op skips (`body_too_short`, `already_extracted`, `no_new_activity`, …) so you see only traces that did real work. Note: `telegram_message` nodes are classified as **Dialog** even though the extractor fires on them — the conversation/transcript lives in L2 (recent turns), and these nodes mostly skip `body_too_short` by design.
 - **Detail** (`/debug/journey/<traceId>`) — the reaction story for one action:
   - **What happened** — the trace step timeline (e.g. `llm_extract → embed_batch → update_index → reconcile_entities → process_facts`).
   - **Where it landed in your brain** — the actual L6 node, L5 summary + `embedding ✓/—` + `body text ✓/—` + tags, L4 facts, and the graph entities.

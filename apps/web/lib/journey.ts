@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull, ne, sql } from 'drizzle-orm';
 import { db, entities, entityEdges, facts, nodes, traces } from '@mantle/db';
 import { getTrace } from './traces';
 import type { TraceDetail } from './traces-format';
@@ -52,12 +52,22 @@ function strOf(v: unknown): string | null {
 
 export async function listActivity(
   userId: string,
-  opts: { sinceHours?: number; limit?: number; category?: ActionCategory } = {},
+  opts: {
+    sinceHours?: number;
+    limit?: number;
+    category?: ActionCategory;
+    /** Hide no-op skips (body_too_short, already_extracted, no_new_activity, …)
+     *  — show only traces that actually did work. */
+    processedOnly?: boolean;
+  } = {},
 ): Promise<ActivityItem[]> {
   const limit = Math.min(opts.limit ?? 80, 300);
   const conds = [eq(traces.ownerId, userId)];
   if (opts.sinceHours && opts.sinceHours > 0) {
     conds.push(gte(traces.startedAt, new Date(Date.now() - opts.sinceHours * 3600_000)));
+  }
+  if (opts.processedOnly) {
+    conds.push(ne(traces.status, 'skipped'));
   }
 
   // Over-fetch a little so category filtering (done in JS, since it depends on
