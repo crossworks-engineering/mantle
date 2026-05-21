@@ -111,9 +111,12 @@ The live view reflects reality, not stale rows:
   view.
 - **Telegram replies degrade gracefully.** Outbound sends set
   `allow_sending_without_reply: true`, so a reply whose target was deleted is
-  still delivered (un-threaded) instead of failing the whole send — otherwise it
-  surfaces here as a `responder_turn` failure
-  (`packages/telegram/src/outbound.ts`).
+  still delivered (un-threaded) instead of failing the whole send
+  (`packages/telegram/src/outbound.ts`). And if a send fails anyway (network,
+  rate-limit, …), the generated reply is **still persisted**
+  (`telegram_messages.delivered = false`, null `telegram_message_id`) rather
+  than discarded — so a paid-for reply is never silently lost, and the turn
+  still surfaces here as a failure (`apps/agent/src/main.ts`).
 
 ---
 
