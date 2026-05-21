@@ -91,7 +91,33 @@ human story view. Both read the same `traces` / `trace_steps` tables.
 
 ---
 
-## 4. Source of truth — keep these aligned
+## 4. Reliability & self-healing
+
+The live view reflects reality, not stale rows:
+
+- **Abandoned runs are reaped.** A trace gets its terminal status in a `finally`
+  block; if the process is hard-killed mid-run (a `tsx --watch` restart, a
+  crash) that never fires and the row is stranded in `running` **forever** —
+  showing as a permanent "active" entry and skewing every running count.
+  `reapAbandonedTraces(userId)` (`lib/journey.ts`, called at the top of
+  `getLiveActivity`) marks any trace `running` longer than **10 min** as
+  `error: abandoned` with a finish time + computed duration. Owner-scoped and
+  idempotent, so it runs on every poll as a self-heal.
+- **Stall hint before the reap.** A still-running trace older than ~2 min
+  (`STALL_THRESHOLD_S`) gets an amber "may be stalled" badge in *Active now*.
+- **Failures are a rolling 24h window.** *Needs attention* shows `status='error'`
+  from the last 24 hours (max 12), so failures **age out on their own** — the
+  row stays as searchable history; they never accumulate unbounded in the live
+  view.
+- **Telegram replies degrade gracefully.** Outbound sends set
+  `allow_sending_without_reply: true`, so a reply whose target was deleted is
+  still delivered (un-threaded) instead of failing the whole send — otherwise it
+  surfaces here as a `responder_turn` failure
+  (`packages/telegram/src/outbound.ts`).
+
+---
+
+## 5. Source of truth — keep these aligned
 
 When the brain dance changes, update this doc alongside:
 
@@ -103,5 +129,6 @@ When the brain dance changes, update this doc alongside:
 | Node types | `packages/db/src/schema/nodes.ts` (`node_type` enum) |
 | The 6 layers | [`memory.md`](./memory.md) |
 | Action → label/category/icon mapping | `apps/web/lib/journey-format.ts` (`deriveAction`) — covered by `journey-format.test.ts` |
-| Journey data layer | `apps/web/lib/journey.ts` (`listActivity`, `getJourney`, `loadLanded`) |
+| Journey data layer | `apps/web/lib/journey.ts` (`listActivity`, `getJourney`, `loadLanded`, `getLiveActivity`, `reapAbandonedTraces`) |
+| Live activity feed | `/api/activity` → `components/journey/{use-live-activity,active-now,action-icon}` + `components/layout/live-column.tsx` |
 | Journey screens | `apps/web/app/(app)/debug/journey/*` |
