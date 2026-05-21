@@ -105,6 +105,41 @@ export function currentStep(): ActiveStep | null {
   return stepStore.getStore() ?? null;
 }
 
+/**
+ * Attribute LLM usage (tokens + cost) to the *currently running* step and
+ * its trace from OUTSIDE the step body — for helpers that run several layers
+ * below the `step()` call and don't hold the `StepHandle`. `runVisionWorker`
+ * is the motivating case: it's the single chokepoint for every vision adapter
+ * call, but the call sites wrap it in a step they own. Tokens + cost bubble to
+ * the trace total; per-step `meta` (model + cost) is set only when a step is
+ * active, so `/debug`'s spend-by-model picks the vision call up. No-op outside
+ * a trace.
+ */
+export function recordStepUsage(usage: {
+  model: string;
+  input: number;
+  output: number;
+  cacheRead?: number;
+  costMicroUsd: number;
+}): void {
+  const trace = currentTrace();
+  if (!trace) return;
+  trace.tokens.in += usage.input;
+  trace.tokens.out += usage.output;
+  trace.tokens.cacheRead += usage.cacheRead ?? 0;
+  trace.costMicroUsd += usage.costMicroUsd;
+  const active = currentStep();
+  if (active) {
+    active.meta = {
+      ...active.meta,
+      model: usage.model,
+      tokens_in: usage.input,
+      tokens_out: usage.output,
+      cost_micro_usd: usage.costMicroUsd,
+    };
+  }
+}
+
 function genId(): string {
   // Random UUID v4 — same shape Postgres uses for gen_random_uuid().
   return crypto.randomUUID();

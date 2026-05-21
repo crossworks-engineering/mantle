@@ -3,6 +3,7 @@ export {
   step,
   recordSkippedTrace,
   recordIngest,
+  recordStepUsage,
   currentTrace,
   currentStep,
   type TraceKind,

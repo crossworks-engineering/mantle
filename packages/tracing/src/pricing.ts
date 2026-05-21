@@ -26,6 +26,14 @@ const PRICING: Record<string, PricePerToken> = {
   'openai/text-embedding-3-small': { input: 0.00000002, output: 0 },
   'openai/text-embedding-3-large': { input: 0.00000013, output: 0 },
 
+  // Direct-OpenAI adapters (vision / image-gen / TTS·STT) call the OpenAI
+  // API natively and pass the BARE model id, not the `openai/` OpenRouter
+  // slug. Same price, keyed both ways so fallback pricing resolves for a
+  // direct vision worker (e.g. the default gpt-4o-mini librarian) instead of
+  // silently reading $0. See docs/file-ingestion.md V1.
+  'gpt-4o': { input: 0.0000025, output: 0.00001 },
+  'gpt-4o-mini': { input: 0.00000015, output: 0.0000006 },
+
   // DeepSeek
   'deepseek/deepseek-chat': { input: 0.00000027, output: 0.0000011 },
 
