@@ -60,6 +60,7 @@ export {
   getPage,
   createPage,
   updatePage,
+  reindexPage,
   deletePage,
   type PageRow,
   type PageDetail,

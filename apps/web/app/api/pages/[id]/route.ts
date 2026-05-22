@@ -11,6 +11,9 @@ const PatchBody = z.object({
   icon: z.string().max(16).optional(),
   tags: z.array(z.string().max(40)).max(20).optional(),
   visibility: z.enum(['private', 'public']).optional(),
+  // When false, persist the document without re-running the extractor — the
+  // editor's cheap autosave path. Indexing happens via POST .../reindex.
+  reindex: z.boolean().optional(),
 });
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -32,7 +35,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       { status: 400 },
     );
   }
-  const row = await updatePage(user.id, id, parsed.data);
+  const { reindex, ...fields } = parsed.data;
+  const row = await updatePage(user.id, id, fields, { reindex });
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ page: row });
 }

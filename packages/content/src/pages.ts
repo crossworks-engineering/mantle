@@ -191,6 +191,7 @@ export async function updatePage(
   ownerId: string,
   id: string,
   input: UpdatePageInput,
+  opts: { reindex?: boolean } = {},
 ): Promise<PageDetail | null> {
   const [node] = await db
     .select()
@@ -200,12 +201,17 @@ export async function updatePage(
   if (!node) return null;
 
   const docChanged = input.doc !== undefined;
+  // Re-indexing (LLM summary + embedding + fact extraction) is the expensive
+  // part, so it's opt-out: the editor's autosave passes { reindex: false } to
+  // persist the document cheaply and defers indexing to a coarser "settle"
+  // trigger (see reindexPage). Other callers index by default.
+  const willReindex = docChanged && opts.reindex !== false;
   const oldData = (node.data ?? {}) as Record<string, unknown>;
   const newData: Record<string, unknown> = { ...oldData };
   if (input.icon !== undefined) newData.icon = input.icon;
   if (input.visibility !== undefined) newData.visibility = input.visibility;
-  // A doc change invalidates the extractor's prior summary/embedding.
-  if (docChanged) {
+  // A re-index invalidates the extractor's prior summary/embedding.
+  if (willReindex) {
     delete newData.summary;
     delete newData.summary_model;
     delete newData.summary_at;
@@ -221,7 +227,7 @@ export async function updatePage(
           : {}),
         ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
         data: newData,
-        ...(docChanged ? { embedding: null } : {}),
+        ...(willReindex ? { embedding: null } : {}),
         updatedAt: new Date(),
       })
       .where(eq(nodes.id, id))
@@ -249,10 +255,34 @@ export async function updatePage(
     return detailOf(row, (p?.doc as Record<string, unknown> | null) ?? EMPTY_DOC);
   });
 
-  if (docChanged) {
+  if (willReindex) {
     await notifyNodeIngested(id);
   }
   return result;
+}
+
+/**
+ * Re-index a page on demand: invalidate the cached summary/embedding/entities
+ * and fire the extractor against the latest persisted `doc_text`. The editor
+ * calls this when editing settles (long idle / blur / navigation away /
+ * explicit save) so the stream of cheap autosaves doesn't re-run the
+ * extractor on every pause. Returns false if the page doesn't exist.
+ */
+export async function reindexPage(ownerId: string, id: string): Promise<boolean> {
+  const [node] = await db
+    .select({ data: nodes.data })
+    .from(nodes)
+    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
+    .limit(1);
+  if (!node) return false;
+  const newData = { ...((node.data ?? {}) as Record<string, unknown>) };
+  delete newData.summary;
+  delete newData.summary_model;
+  delete newData.summary_at;
+  delete newData.entities;
+  await db.update(nodes).set({ data: newData, embedding: null }).where(eq(nodes.id, id));
+  await notifyNodeIngested(id);
+  return true;
 }
 
 export async function deletePage(ownerId: string, id: string): Promise<boolean> {

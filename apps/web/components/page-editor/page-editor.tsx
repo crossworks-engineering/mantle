@@ -16,16 +16,24 @@ import { EditorToolbar } from './toolbar';
 export function PageEditor({
   content,
   onChange,
+  onBlur,
   className,
 }: {
   content: JSONContent;
   onChange: (doc: JSONContent) => void;
+  /** Fires when the editor loses focus — a natural "settle" signal the
+   *  caller can use to flush / re-index. */
+  onBlur?: () => void;
   className?: string;
 }) {
+  // Keep callbacks in refs so the editor's once-bound handlers always call the
+  // latest closures (a debounced autosave re-creates them every render).
   const onChangeRef = useRef(onChange);
+  const onBlurRef = useRef(onBlur);
   useEffect(() => {
     onChangeRef.current = onChange;
-  }, [onChange]);
+    onBlurRef.current = onBlur;
+  }, [onChange, onBlur]);
 
   const editor = useEditor({
     extensions: pageExtensions,
@@ -38,6 +46,7 @@ export function PageEditor({
       },
     },
     onUpdate: ({ editor }) => onChangeRef.current(editor.getJSON()),
+    onBlur: () => onBlurRef.current?.(),
   });
 
   if (!editor) return null;

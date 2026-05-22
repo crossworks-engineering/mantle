@@ -38,7 +38,13 @@ type PageDetail = {
 
 type SaveState = 'saved' | 'saving' | 'dirty';
 
-const AUTOSAVE_MS = 900;
+// Persistence is cheap (one UPDATE) so it runs often, for durability.
+// Indexing is expensive (extractor: LLM summary + embedding + facts) so it
+// runs only when editing has clearly settled. These two cadences are the
+// whole point — frequent saves, rare re-indexing.
+const PERSIST_DEBOUNCE_MS = 1500; // quiet period before a cheap save
+const PERSIST_MAX_WAIT_MS = 8000; // …but never let unsaved text get older than this
+const INDEX_IDLE_MS = 12000; // stop typing this long → re-index once
 
 export function PageDetailClient({ initial }: { initial: PageDetail }) {
   const router = useRouter();
@@ -52,16 +58,24 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
   const [updatedAt, setUpdatedAt] = useState(initial.updatedAt);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  // Snapshot of what's persisted, so we never PATCH an unchanged page.
-  const lastSavedRef = useRef(
+  // `persistedRef` = what's in the DB; `indexedRef` = what the extractor last
+  // saw (doc only — title/tags don't affect a page's index). The initial doc
+  // arrives already indexed.
+  const persistedRef = useRef(
     JSON.stringify({ title: initial.title, tags: initial.tags, doc: initial.doc }),
   );
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const indexedRef = useRef(JSON.stringify(initial.doc));
+  const lastPersistAtRef = useRef(Date.now());
+  const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const indexTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const deletedRef = useRef(false);
 
+  // ── Cheap save: persist the document, do NOT re-index. ──────────────
   const persist = useCallback(async () => {
+    if (deletedRef.current) return;
     const payload = { title: title.trim() || 'Untitled page', tags, doc: docRef.current };
     const serialized = JSON.stringify(payload);
-    if (serialized === lastSavedRef.current) {
+    if (serialized === persistedRef.current) {
       setSaveState('saved');
       return;
     }
@@ -69,7 +83,7 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
     const res = await fetch(`/api/pages/${initial.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: serialized,
+      body: JSON.stringify({ ...payload, reindex: false }),
     });
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
@@ -78,25 +92,43 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
       return;
     }
     const { page } = (await res.json()) as { page: PageDetail };
-    lastSavedRef.current = serialized;
+    persistedRef.current = serialized;
+    lastPersistAtRef.current = Date.now();
     setUpdatedAt(page.updatedAt);
     setSaveState('saved');
   }, [title, tags, initial.id, toast]);
 
-  // Always flush with the latest closure on unmount / navigation away.
+  // ── Expensive commit: ensure persisted, then re-index once. ─────────
+  const commit = useCallback(async () => {
+    if (deletedRef.current) return;
+    await persist();
+    const docStr = JSON.stringify(docRef.current);
+    if (docStr === indexedRef.current) return; // nothing new to index
+    const res = await fetch(`/api/pages/${initial.id}/reindex`, { method: 'POST' });
+    if (res.ok) indexedRef.current = docStr;
+  }, [persist, initial.id]);
+
+  // Timers fire stale closures otherwise — always reach the latest fns.
   const persistRef = useRef(persist);
+  const commitRef = useRef(commit);
   useEffect(() => {
     persistRef.current = persist;
-  }, [persist]);
+    commitRef.current = commit;
+  }, [persist, commit]);
 
   const scheduleSave = useCallback(() => {
     setSaveState('dirty');
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => void persistRef.current(), AUTOSAVE_MS);
+    // Persist: debounce, but force it through if text has been unsaved too long.
+    if (persistTimer.current) clearTimeout(persistTimer.current);
+    const sincePersist = Date.now() - lastPersistAtRef.current;
+    const wait = sincePersist >= PERSIST_MAX_WAIT_MS ? 0 : PERSIST_DEBOUNCE_MS;
+    persistTimer.current = setTimeout(() => void persistRef.current(), wait);
+    // Re-index: only after a long idle (every edit pushes it further out).
+    if (indexTimer.current) clearTimeout(indexTimer.current);
+    indexTimer.current = setTimeout(() => void commitRef.current(), INDEX_IDLE_MS);
   }, []);
 
-  // Title / tags edits schedule an autosave. (Skips the initial render via the
-  // lastSavedRef equality check inside persist.)
+  // Title / tags edits schedule a save (skips the initial render).
   const mounted = useRef(false);
   useEffect(() => {
     if (!mounted.current) {
@@ -106,11 +138,12 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
     scheduleSave();
   }, [title, tags, scheduleSave]);
 
-  // Flush any pending edit when leaving the editor.
+  // Leaving the editor: flush + index whatever's pending.
   useEffect(() => {
     return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-      void persistRef.current();
+      if (persistTimer.current) clearTimeout(persistTimer.current);
+      if (indexTimer.current) clearTimeout(indexTimer.current);
+      void commitRef.current();
     };
   }, []);
 
@@ -122,19 +155,23 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
     [scheduleSave],
   );
 
+  // Blur of the editor body is a natural "I paused" signal → index now.
+  const onEditorBlur = useCallback(() => void commitRef.current(), []);
+
   const saveNow = async () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    await persist();
+    if (persistTimer.current) clearTimeout(persistTimer.current);
+    if (indexTimer.current) clearTimeout(indexTimer.current);
+    await commitRef.current();
   };
 
   const confirmDelete = async () => {
+    deletedRef.current = true; // suppress the unmount flush
     const res = await fetch(`/api/pages/${initial.id}`, { method: 'DELETE' });
     if (!res.ok) {
+      deletedRef.current = false;
       toast.error('Could not delete page');
       return;
     }
-    // Avoid the unmount flush re-creating the row we just deleted.
-    lastSavedRef.current = JSON.stringify({ title: title.trim(), tags, doc: docRef.current });
     toast.success('Page deleted');
     router.push('/pages');
   };
@@ -158,7 +195,11 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
         />
       </div>
 
-      <PageEditor content={initial.doc as JSONContent} onChange={onDocChange} />
+      <PageEditor
+        content={initial.doc as JSONContent}
+        onChange={onDocChange}
+        onBlur={onEditorBlur}
+      />
 
       <div className="space-y-1.5">
         <Label htmlFor="tags">Tags</Label>
