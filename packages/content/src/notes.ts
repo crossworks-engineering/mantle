@@ -54,10 +54,10 @@ async function ensureRoot(ownerId: string): Promise<void> {
     });
 }
 
-export async function listNotes(
-  ownerId: string,
-  opts: { query?: string; tag?: string } = {},
-): Promise<NoteRow[]> {
+type ListNotesOpts = { query?: string; tag?: string };
+
+/** Shared WHERE conditions for note list/count queries. */
+function noteConds(ownerId: string, opts: ListNotesOpts) {
   const conds = [eq(nodes.ownerId, ownerId), eq(nodes.type, 'note')];
   if (opts.query?.trim()) {
     const q = `%${opts.query.trim()}%`;
@@ -69,13 +69,48 @@ export async function listNotes(
     if (c) conds.push(c);
   }
   if (opts.tag) conds.push(sql`${opts.tag} = ANY(${nodes.tags})`);
+  return conds;
+}
+
+export async function listNotes(
+  ownerId: string,
+  opts: ListNotesOpts & { limit?: number; offset?: number } = {},
+): Promise<NoteRow[]> {
   const rows = await db
     .select()
     .from(nodes)
-    .where(and(...conds))
+    .where(and(...noteConds(ownerId, opts)))
     .orderBy(desc(nodes.updatedAt))
-    .limit(500);
+    .limit(opts.limit ?? 500)
+    .offset(opts.offset ?? 0);
   return rows.map(rowOf);
+}
+
+/** Total notes matching the same filters as `listNotes` (drives pagination). */
+export async function countNotes(ownerId: string, opts: ListNotesOpts = {}): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(nodes)
+    .where(and(...noteConds(ownerId, opts)));
+  return row?.n ?? 0;
+}
+
+/** All distinct tags across the user's notes with usage counts, ordered by
+ *  frequency then name. Drives the notes tag filter. */
+export async function listNoteTags(
+  ownerId: string,
+): Promise<{ tag: string; count: number }[]> {
+  const rows = await db
+    .select({ tags: nodes.tags })
+    .from(nodes)
+    .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'note')));
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    for (const t of r.tags ?? []) counts.set(t, (counts.get(t) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
 }
 
 export async function getNote(ownerId: string, id: string): Promise<NoteRow | null> {

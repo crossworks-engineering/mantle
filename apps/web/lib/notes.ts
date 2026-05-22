@@ -2,6 +2,8 @@
 export {
   NOTES_ROOT_LABEL,
   listNotes,
+  countNotes,
+  listNoteTags,
   getNote,
   createNote,
   updateNote,
