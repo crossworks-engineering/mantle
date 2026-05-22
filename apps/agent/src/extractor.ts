@@ -42,6 +42,7 @@ import {
   getDefaultWorker,
   nodes,
   emails,
+  pages,
   type Agent,
   type AgentMemoryConfig,
   type AiWorker,
@@ -72,7 +73,7 @@ const HARD_SKIP_TYPES = new Set(['branch']);
  *  `task` and `event` are first-class content: title + body + metadata
  *  (status, due_at, starts_at, location, …) all become part of the body
  *  the extractor summarises and embeds. */
-const DEFAULT_EXTRACT_TYPES = ['note', 'file', 'email', 'email_thread', 'secret', 'task', 'event'];
+const DEFAULT_EXTRACT_TYPES = ['note', 'page', 'file', 'email', 'email_thread', 'secret', 'task', 'event'];
 
 /** Max characters of body text we feed the summarizer in one shot.
  *  Long emails / PDFs get truncated to keep the prompt bounded and the
@@ -234,6 +235,17 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
       ...(body ? ['', body] : []),
     ];
     return lines.join('\n');
+  }
+  // ─── Pages — derived plaintext from the TipTap sidecar ───────────────
+  // The ProseMirror doc lives in `pages.doc`; `pages.doc_text` is its
+  // flattened plaintext, computed on every save in @mantle/content.
+  if (node.type === 'page') {
+    const [row] = await db
+      .select({ docText: pages.docText })
+      .from(pages)
+      .where(eq(pages.nodeId, node.id))
+      .limit(1);
+    return row?.docText?.trim() ? row.docText : node.title;
   }
   // For note/file/sermon, body lives in data.content (or data.text/body).
   const data = (node.data ?? {}) as Record<string, unknown>;

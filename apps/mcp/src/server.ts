@@ -152,6 +152,7 @@ server.tool(
         'email_thread',
         'file',
         'note',
+        'page',
         'sermon',
         'contact',
         'secret',

@@ -1,8 +1,9 @@
 /**
- * @mantle/content — CRUD for the small content types: notes, todos,
- * events. All three store their payload in `nodes.data` (jsonb) under
- * dedicated ltree roots (`notes`, `todos`, `events`). The extractor
- * picks them up automatically via the `node_ingested` pg_notify trigger.
+ * @mantle/content — CRUD for the content surfaces: notes, todos, events,
+ * and pages. Notes/todos/events store their payload in `nodes.data` (jsonb);
+ * pages keep the TipTap document in a `pages` sidecar with a derived
+ * plaintext rendering. All live under dedicated ltree roots and the
+ * extractor picks them up via the `node_ingested` pg_notify trigger.
  *
  * Web + MCP both import from here so the assistant and the UI agree on
  * shape and validation.
@@ -49,6 +50,25 @@ export {
   type CreateEventInput,
   type UpdateEventInput,
 } from './events';
+
+export {
+  PAGES_ROOT_LABEL,
+  EMPTY_DOC,
+  listPages,
+  countPages,
+  listPageTags,
+  getPage,
+  createPage,
+  updatePage,
+  deletePage,
+  type PageRow,
+  type PageDetail,
+  type PageVisibility,
+  type CreatePageInput,
+  type UpdatePageInput,
+} from './pages';
+
+export { docToText } from './doc-to-text';
 
 export {
   DEFAULT_PREFERENCES,

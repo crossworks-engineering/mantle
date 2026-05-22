@@ -73,6 +73,7 @@ const search_nodes: BuiltinToolDef = {
           'email_thread',
           'file',
           'note',
+          'page',
           'sermon',
           'contact',
           'task',
