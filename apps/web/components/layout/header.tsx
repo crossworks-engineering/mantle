@@ -59,7 +59,7 @@ export function Header({
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="h-10 gap-2 px-2">
               {userAvatar ? (
-                <BoringAvatar variant={userAvatar.style} seed={userAvatar.seed} size={32} />
+                <BoringAvatar variant={userAvatar.style} seed={userAvatar.seed} size={16} />
               ) : (
                 <Avatar className="size-8">
                   <AvatarFallback className="text-xs">{initials}</AvatarFallback>
