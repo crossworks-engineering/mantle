@@ -42,7 +42,14 @@ export type PageRow = {
   updatedAt: string;
 };
 
-export type PageDetail = PageRow & { doc: Record<string, unknown> };
+export type PageDetail = PageRow & {
+  /** Published document — what's rendered everywhere and what the extractor
+   *  indexes. Only changes on commit. */
+  doc: Record<string, unknown>;
+  /** Autosaved working copy if uncommitted edits exist, else null. Never
+   *  rendered to other surfaces; loaded by the editor to resume work. */
+  draft: Record<string, unknown> | null;
+};
 
 function rowOf(n: Node): PageRow {
   const d = (n.data ?? {}) as Record<string, unknown>;
@@ -59,8 +66,12 @@ function rowOf(n: Node): PageRow {
   };
 }
 
-function detailOf(n: Node, doc: Record<string, unknown>): PageDetail {
-  return { ...rowOf(n), doc };
+function detailOf(
+  n: Node,
+  doc: Record<string, unknown>,
+  draft: Record<string, unknown> | null = null,
+): PageDetail {
+  return { ...rowOf(n), doc, draft };
 }
 
 async function ensureRoot(ownerId: string): Promise<void> {
@@ -142,13 +153,17 @@ export async function listPageTags(ownerId: string): Promise<{ tag: string; coun
 
 export async function getPage(ownerId: string, id: string): Promise<PageDetail | null> {
   const [row] = await db
-    .select({ node: nodes, doc: pages.doc })
+    .select({ node: nodes, doc: pages.doc, draft: pages.draftDoc })
     .from(nodes)
     .leftJoin(pages, eq(pages.nodeId, nodes.id))
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!row) return null;
-  return detailOf(row.node, (row.doc as Record<string, unknown> | null) ?? EMPTY_DOC);
+  return detailOf(
+    row.node,
+    (row.doc as Record<string, unknown> | null) ?? EMPTY_DOC,
+    (row.draft as Record<string, unknown> | null) ?? null,
+  );
 }
 
 export type CreatePageInput = {
@@ -268,27 +283,78 @@ export async function updatePage(
 }
 
 /**
- * Re-index a page on demand: invalidate the cached summary/embedding/entities
- * and fire the extractor against the latest persisted `doc_text`. The editor
- * calls this when editing settles (long idle / blur / navigation away /
- * explicit save) so the stream of cheap autosaves doesn't re-run the
- * extractor on every pause. Returns false if the page doesn't exist.
+ * Autosave the working draft. Persists to `pages.draft_doc` ONLY — the
+ * published `doc`/`doc_text`, the summary, the embedding, and the extractor are
+ * all left untouched. Cheap and frequent; nothing is rendered to other
+ * surfaces or indexed from a draft. Returns false if the page doesn't exist.
  */
-export async function reindexPage(ownerId: string, id: string): Promise<boolean> {
+export async function saveDraft(
+  ownerId: string,
+  id: string,
+  doc: Record<string, unknown>,
+): Promise<boolean> {
   const [node] = await db
-    .select({ data: nodes.data })
+    .select({ id: nodes.id })
     .from(nodes)
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!node) return false;
+  await db
+    .update(pages)
+    .set({ draftDoc: doc, draftUpdatedAt: new Date() })
+    .where(eq(pages.nodeId, id));
+  return true;
+}
+
+/**
+ * Commit: publish `doc` as canonical, recompute `doc_text`, clear the draft,
+ * bump the version, and fire the extractor. This is the ONLY path that indexes
+ * a page body — autosaves never do, so a long editing session produces exactly
+ * one index per commit instead of one per pause. Returns the published detail,
+ * or null if the page doesn't exist.
+ */
+export async function commitPage(
+  ownerId: string,
+  id: string,
+  doc: Record<string, unknown>,
+): Promise<PageDetail | null> {
+  const [node] = await db
+    .select()
+    .from(nodes)
+    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
+    .limit(1);
+  if (!node) return null;
+
   const newData = { ...((node.data ?? {}) as Record<string, unknown>) };
   delete newData.summary;
   delete newData.summary_model;
   delete newData.summary_at;
   delete newData.entities;
-  await db.update(nodes).set({ data: newData, embedding: null }).where(eq(nodes.id, id));
+  const docText = docToText(doc);
+
+  const result = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(nodes)
+      .set({ data: newData, embedding: null, updatedAt: new Date() })
+      .where(eq(nodes.id, id))
+      .returning();
+    if (!row) throw new Error('commitPage: update returned no row');
+    await tx
+      .update(pages)
+      .set({
+        doc,
+        docText,
+        draftDoc: null,
+        draftUpdatedAt: null,
+        version: sql`${pages.version} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(pages.nodeId, id));
+    return detailOf(row, doc, null);
+  });
+
   await notifyNodeIngested(id);
-  return true;
+  return result;
 }
 
 export async function deletePage(ownerId: string, id: string): Promise<boolean> {

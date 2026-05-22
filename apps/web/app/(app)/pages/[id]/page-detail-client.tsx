@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Editor, JSONContent } from '@tiptap/react';
-import { Check, Loader2, MoreHorizontal, Trash2 } from 'lucide-react';
+import { Check, GitCommitHorizontal, Loader2, MoreHorizontal, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TagInput } from '@/components/tag-input';
@@ -44,129 +44,177 @@ type PageDetail = {
   createdAt: string;
   updatedAt: string;
   doc: Record<string, unknown>;
+  draft: Record<string, unknown> | null;
 };
 
-type SaveState = 'saved' | 'saving' | 'dirty';
-
-// Persistence is cheap (one UPDATE) so it runs often, for durability.
-// Indexing is expensive (extractor: LLM summary + embedding + facts) so it
-// runs only when editing has clearly settled. Two cadences on purpose.
-const PERSIST_DEBOUNCE_MS = 1500; // quiet period before a cheap save
-const PERSIST_MAX_WAIT_MS = 8000; // …but never let unsaved text get older than this
-const INDEX_IDLE_MS = 12000; // stop typing this long → re-index once
+// The body autosaves into a private *draft* (cheap, never rendered or indexed).
+// Only Commit publishes the draft and runs the extractor — so a long editing
+// session produces one index per commit, not one per pause.
+const DRAFT_DEBOUNCE_MS = 1500;
+const DRAFT_MAX_WAIT_MS = 8000;
+const META_DEBOUNCE_MS = 1000;
 
 export function PageDetailClient({ initial }: { initial: PageDetail }) {
   const router = useRouter();
   const toast = useToast();
 
+  const initialDoc = (initial.draft ?? initial.doc) as JSONContent;
+
   const [title, setTitle] = useState(initial.title);
   const [tags, setTags] = useState<string[]>(initial.tags);
   const [width, setWidth] = useState<PageWidth>(initial.width);
-  const docRef = useRef<JSONContent>(initial.doc as JSONContent);
-  const editorRef = useRef<Editor | null>(null);
-
-  const [saveState, setSaveState] = useState<SaveState>('saved');
+  const [docDirty, setDocDirty] = useState(
+    JSON.stringify(initial.draft ?? initial.doc) !== JSON.stringify(initial.doc),
+  );
+  const [draftSaving, setDraftSaving] = useState(false);
+  const [committing, setCommitting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  // `persistedRef` = what's in the DB; `indexedRef` = what the extractor last
-  // saw (doc only). The initial doc arrives already indexed.
-  const persistedRef = useRef(
-    JSON.stringify({ title: initial.title, tags: initial.tags, doc: initial.doc }),
-  );
-  const indexedRef = useRef(JSON.stringify(initial.doc));
-  const lastPersistAtRef = useRef(Date.now());
-  const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const indexTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const docRef = useRef<JSONContent>(initialDoc);
+  const editorRef = useRef<Editor | null>(null);
+  const committedRef = useRef(JSON.stringify(initial.doc)); // last published doc
+  const draftSavedRef = useRef(JSON.stringify(initial.draft ?? initial.doc)); // last autosaved
+  const metaSavedRef = useRef(JSON.stringify({ title: initial.title, tags: initial.tags }));
+  const lastDraftAtRef = useRef(Date.now());
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const metaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deletedRef = useRef(false);
+  const committingRef = useRef(false);
 
-  // ── Cheap save: persist the document, do NOT re-index. ──────────────
-  const persist = useCallback(async () => {
+  // ── Autosave the draft body (no publish, no index). ─────────────────
+  const saveDraft = useCallback(async () => {
     if (deletedRef.current) return;
-    const payload = { title: title.trim() || 'Untitled page', tags, doc: docRef.current };
-    const serialized = JSON.stringify(payload);
-    if (serialized === persistedRef.current) {
-      setSaveState('saved');
-      return;
+    const s = JSON.stringify(docRef.current);
+    if (s === draftSavedRef.current) return;
+    setDraftSaving(true);
+    try {
+      const res = await fetch(`/api/pages/${initial.id}/draft`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ doc: docRef.current }),
+      });
+      if (!res.ok) {
+        toast.error('Could not save draft');
+        return;
+      }
+      draftSavedRef.current = s;
+      lastDraftAtRef.current = Date.now();
+    } finally {
+      setDraftSaving(false);
     }
-    setSaveState('saving');
+  }, [initial.id, toast]);
+
+  // ── Title / tags save live (cheap metadata, never indexes). ─────────
+  const saveMeta = useCallback(async () => {
+    if (deletedRef.current) return;
+    const payload = { title: title.trim() || 'Untitled page', tags };
+    const s = JSON.stringify(payload);
+    if (s === metaSavedRef.current) return;
     const res = await fetch(`/api/pages/${initial.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...payload, reindex: false }),
+      body: JSON.stringify(payload),
     });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast.error(j.error ?? 'Save failed');
-      setSaveState('dirty');
-      return;
-    }
-    persistedRef.current = serialized;
-    lastPersistAtRef.current = Date.now();
-    setSaveState('saved');
-  }, [title, tags, initial.id, toast]);
+    if (res.ok) metaSavedRef.current = s;
+  }, [initial.id, title, tags]);
 
-  // ── Expensive commit: ensure persisted, then re-index once. ─────────
+  // ── Commit: publish + index. The only path that touches the brain. ──
   const commit = useCallback(async () => {
-    if (deletedRef.current) return;
-    await persist();
+    if (deletedRef.current || committingRef.current) return;
     const docStr = JSON.stringify(docRef.current);
-    if (docStr === indexedRef.current) return; // nothing new to index
-    const res = await fetch(`/api/pages/${initial.id}/reindex`, { method: 'POST' });
-    if (res.ok) indexedRef.current = docStr;
-  }, [persist, initial.id]);
+    if (docStr === committedRef.current) return; // nothing to commit
+    committingRef.current = true;
+    setCommitting(true);
+    try {
+      await saveMeta(); // make sure title/tags reflect the screen too
+      const res = await fetch(`/api/pages/${initial.id}/commit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ doc: docRef.current }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        toast.error(j.error ?? 'Commit failed');
+        return;
+      }
+      committedRef.current = docStr;
+      draftSavedRef.current = docStr;
+      setDocDirty(false);
+      toast.success('Committed');
+    } finally {
+      committingRef.current = false;
+      setCommitting(false);
+    }
+  }, [initial.id, saveMeta, toast]);
 
   // Timers fire stale closures otherwise — always reach the latest fns.
-  const persistRef = useRef(persist);
+  const saveDraftRef = useRef(saveDraft);
+  const saveMetaRef = useRef(saveMeta);
   const commitRef = useRef(commit);
   useEffect(() => {
-    persistRef.current = persist;
+    saveDraftRef.current = saveDraft;
+    saveMetaRef.current = saveMeta;
     commitRef.current = commit;
-  }, [persist, commit]);
+  }, [saveDraft, saveMeta, commit]);
 
-  const scheduleSave = useCallback(() => {
-    setSaveState('dirty');
-    if (persistTimer.current) clearTimeout(persistTimer.current);
-    const sincePersist = Date.now() - lastPersistAtRef.current;
-    const wait = sincePersist >= PERSIST_MAX_WAIT_MS ? 0 : PERSIST_DEBOUNCE_MS;
-    persistTimer.current = setTimeout(() => void persistRef.current(), wait);
-    if (indexTimer.current) clearTimeout(indexTimer.current);
-    indexTimer.current = setTimeout(() => void commitRef.current(), INDEX_IDLE_MS);
+  const scheduleDraft = useCallback(() => {
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    const since = Date.now() - lastDraftAtRef.current;
+    const wait = since >= DRAFT_MAX_WAIT_MS ? 0 : DRAFT_DEBOUNCE_MS;
+    draftTimer.current = setTimeout(() => void saveDraftRef.current(), wait);
   }, []);
 
-  // Title / tags edits schedule a save (skips the initial render).
+  const scheduleMeta = useCallback(() => {
+    if (metaTimer.current) clearTimeout(metaTimer.current);
+    metaTimer.current = setTimeout(() => void saveMetaRef.current(), META_DEBOUNCE_MS);
+  }, []);
+
+  const onDocChange = useCallback(
+    (doc: JSONContent) => {
+      docRef.current = doc;
+      setDocDirty(JSON.stringify(doc) !== committedRef.current);
+      scheduleDraft();
+    },
+    [scheduleDraft],
+  );
+
+  // Title / tags edits save live (skips the initial render).
   const mounted = useRef(false);
   useEffect(() => {
     if (!mounted.current) {
       mounted.current = true;
       return;
     }
-    scheduleSave();
-  }, [title, tags, scheduleSave]);
+    scheduleMeta();
+  }, [title, tags, scheduleMeta]);
 
-  // Leaving the editor: flush + index whatever's pending.
+  // Leaving the editor flushes the draft + metadata — never commits.
   useEffect(() => {
     return () => {
-      if (persistTimer.current) clearTimeout(persistTimer.current);
-      if (indexTimer.current) clearTimeout(indexTimer.current);
-      void commitRef.current();
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+      if (metaTimer.current) clearTimeout(metaTimer.current);
+      void saveDraftRef.current();
+      void saveMetaRef.current();
     };
   }, []);
 
-  const onDocChange = useCallback(
-    (doc: JSONContent) => {
-      docRef.current = doc;
-      scheduleSave();
-    },
-    [scheduleSave],
-  );
+  // ⌘/Ctrl+S commits.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        void commitRef.current();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
-  // Blur of the editor body is a natural "I paused" signal → index now.
-  const onEditorBlur = useCallback(() => void commitRef.current(), []);
   const onEditorReady = useCallback((editor: Editor) => {
     editorRef.current = editor;
   }, []);
+  const onEditorBlur = useCallback(() => void saveDraftRef.current(), []);
 
-  // Enter in the title drops focus into the body, like Notion.
   const onTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -181,7 +229,7 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
       await fetch(`/api/pages/${initial.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ width: next, reindex: false }),
+        body: JSON.stringify({ width: next }),
       });
     } catch {
       // Width is a cosmetic preference; a failed write just reverts next load.
@@ -189,7 +237,7 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
   };
 
   const confirmDelete = async () => {
-    deletedRef.current = true; // suppress the unmount flush
+    deletedRef.current = true; // suppress flush
     const res = await fetch(`/api/pages/${initial.id}`, { method: 'DELETE' });
     if (!res.ok) {
       deletedRef.current = false;
@@ -204,11 +252,13 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
     <div className="flex min-h-full flex-col">
       <SetPageTitle title={title || 'Untitled page'} />
 
-      {/* Whisper-quiet top strip — the only chrome on the canvas. */}
       <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-background/80 px-4 py-2 backdrop-blur">
         <BackLink href="/pages">All pages</BackLink>
         <div className="flex items-center gap-2">
-          <SaveIndicator state={saveState} />
+          <StatusIndicator committing={committing} draftSaving={draftSaving} dirty={docDirty} />
+          <Button size="sm" onClick={() => void commit()} disabled={!docDirty || committing}>
+            <GitCommitHorizontal /> Commit
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="size-8" aria-label="Page options">
@@ -234,7 +284,6 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
         </div>
       </div>
 
-      {/* The canvas — width follows the per-page toggle. */}
       <div
         className={cn(
           'mx-auto w-full px-6 py-10',
@@ -254,7 +303,7 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
         </div>
         <div className="mt-6">
           <PageEditor
-            content={initial.doc as JSONContent}
+            content={initialDoc}
             onChange={onDocChange}
             onBlur={onEditorBlur}
             onEditorReady={onEditorReady}
@@ -283,20 +332,35 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
   );
 }
 
-function SaveIndicator({ state }: { state: SaveState }) {
-  if (state === 'saving') {
+function StatusIndicator({
+  committing,
+  draftSaving,
+  dirty,
+}: {
+  committing: boolean;
+  draftSaving: boolean;
+  dirty: boolean;
+}) {
+  if (committing) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin" aria-hidden /> Committing…
+      </span>
+    );
+  }
+  if (draftSaving) {
     return (
       <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
         <Loader2 className="size-3.5 animate-spin" aria-hidden /> Saving…
       </span>
     );
   }
-  if (state === 'dirty') {
-    return <span className="text-xs text-muted-foreground">Unsaved changes</span>;
+  if (dirty) {
+    return <span className="text-xs text-muted-foreground">Draft · uncommitted</span>;
   }
   return (
     <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-      <Check className="size-3.5" aria-hidden /> Saved
+      <Check className="size-3.5" aria-hidden /> Committed
     </span>
   );
 }

@@ -15,6 +15,10 @@ export const pages = pgTable('pages', {
     .references(() => nodes.id, { onDelete: 'cascade' }),
   doc: jsonb('doc').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
   docText: text('doc_text').default('').notNull(),
+  // Autosaved working copy (null when there are no uncommitted edits). Never
+  // rendered or indexed; promoted into `doc` on commit.
+  draftDoc: jsonb('draft_doc').$type<Record<string, unknown>>(),
+  draftUpdatedAt: timestamp('draft_updated_at', { withTimezone: true }),
   version: integer('version').default(1).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
