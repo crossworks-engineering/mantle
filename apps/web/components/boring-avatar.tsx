@@ -69,7 +69,14 @@ export function BoringAvatar({
 
   return (
     <span
-      className={cn('inline-flex shrink-0 overflow-hidden rounded-full', className)}
+      className={cn(
+        'inline-flex shrink-0 overflow-hidden rounded-full',
+        // Force the inner <svg> to fill the wrapper, overriding any ancestor
+        // svg-sizing rule (e.g. Button's [&_svg]:size-4) that would otherwise
+        // shrink the avatar.
+        '[&>svg]:!size-full',
+        className,
+      )}
       style={{ width: size, height: size, ...style }}
       aria-hidden
     >
