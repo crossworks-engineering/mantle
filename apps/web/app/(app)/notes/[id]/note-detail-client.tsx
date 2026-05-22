@@ -5,10 +5,23 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowLeft, Eye, Pencil, Save, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Pencil, Save, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { useToast } from '@/components/ui/toast';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { formatDateTime } from '@/lib/format-datetime';
 
@@ -24,6 +37,7 @@ type NoteRow = {
 
 export function NoteDetailClient({ initial }: { initial: NoteRow }) {
   const router = useRouter();
+  const toast = useToast();
   const [note, setNote] = useState(initial);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
@@ -31,12 +45,14 @@ export function NoteDetailClient({ initial }: { initial: NoteRow }) {
     content: note.content,
     tags: note.tags.join(', '),
   });
-  const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  const resetForm = () =>
+    setForm({ title: note.title, content: note.content, tags: note.tags.join(', ') });
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
     const res = await fetch(`/api/notes/${note.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -51,19 +67,23 @@ export function NoteDetailClient({ initial }: { initial: NoteRow }) {
     });
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
-      setError(j.error ?? 'save failed');
+      toast.error(j.error ?? 'Save failed');
       return;
     }
     const { note: updated } = await res.json();
     setNote(updated);
     setEditing(false);
+    toast.success('Saved');
     startTransition(() => router.refresh());
   };
 
-  const handleDelete = async () => {
-    if (!confirm('Delete this note?')) return;
+  const confirmDelete = async () => {
     const res = await fetch(`/api/notes/${note.id}`, { method: 'DELETE' });
-    if (!res.ok) return;
+    if (!res.ok) {
+      toast.error('Could not delete note');
+      return;
+    }
+    toast.success('Note deleted');
     router.push('/notes');
   };
 
@@ -81,30 +101,31 @@ export function NoteDetailClient({ initial }: { initial: NoteRow }) {
         <>
           <header className="space-y-2">
             <div className="flex items-start justify-between gap-3">
-              <div className="flex-1 min-w-0 space-y-1">
+              <div className="min-w-0 flex-1 space-y-1.5">
                 {note.summary && (
-                  <p className="text-xs italic text-muted-foreground">
-                    Indexed: {note.summary}
-                  </p>
+                  <p className="text-xs italic text-muted-foreground">Indexed: {note.summary}</p>
                 )}
                 {note.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1">
                     {note.tags.map((t) => (
-                      <span
-                        key={t}
-                        className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-                      >
+                      <Badge key={t} variant="secondary">
                         {t}
-                      </span>
+                      </Badge>
                     ))}
                   </div>
                 )}
               </div>
               <div className="flex shrink-0 gap-2">
                 <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-                  <Pencil className="size-3" /> Edit
+                  <Pencil /> Edit
                 </Button>
-                <Button variant="ghost" size="sm" onClick={handleDelete} aria-label="Delete note">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={() => setDeleteOpen(true)}
+                  aria-label="Delete note"
+                >
                   <Trash2 />
                 </Button>
               </div>
@@ -120,36 +141,31 @@ export function NoteDetailClient({ initial }: { initial: NoteRow }) {
           </article>
 
           <div className="border-t border-border pt-3 text-xs text-muted-foreground">
-            Updated {formatDateTime(note.updatedAt)} · created{' '}
-            {formatDateTime(note.createdAt)}
+            Updated {formatDateTime(note.updatedAt)} · created {formatDateTime(note.createdAt)}
           </div>
         </>
       ) : (
-        <form onSubmit={save} className="space-y-3">
+        <form onSubmit={save} className="space-y-4">
           <header className="flex items-center justify-between">
-            <h1 className="text-xl font-semibold">Edit note</h1>
+            <h2 className="text-base font-semibold">Edit note</h2>
             <div className="flex gap-2">
               <Button
                 type="button"
                 variant="outline"
+                size="sm"
                 onClick={() => {
                   setEditing(false);
-                  setForm({
-                    title: note.title,
-                    content: note.content,
-                    tags: note.tags.join(', '),
-                  });
+                  resetForm();
                 }}
               >
-                <X className="size-3" /> Cancel
+                <X /> Cancel
               </Button>
-              <Button type="submit" disabled={isPending}>
-                <Save className="size-3" />
-                {isPending ? 'Saving…' : 'Save'}
+              <Button type="submit" size="sm" disabled={isPending}>
+                <Save /> {isPending ? 'Saving…' : 'Save'}
               </Button>
             </div>
           </header>
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <Label htmlFor="title">Title</Label>
             <Input
               id="title"
@@ -158,27 +174,48 @@ export function NoteDetailClient({ initial }: { initial: NoteRow }) {
               required
             />
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="content">Content (markdown)</Label>
-            <textarea
+          <div className="space-y-1.5">
+            <Label htmlFor="content">
+              Content <span className="font-normal text-muted-foreground">(markdown)</span>
+            </Label>
+            <Textarea
               id="content"
               value={form.content}
               onChange={(e) => setForm({ ...form, content: e.target.value })}
               rows={20}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm"
+              className="font-mono"
             />
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="tags">Tags (comma-separated)</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="tags">
+              Tags <span className="font-normal text-muted-foreground">(comma-separated)</span>
+            </Label>
             <Input
               id="tags"
               value={form.tags}
               onChange={(e) => setForm({ ...form, tags: e.target.value })}
             />
           </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
         </form>
       )}
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete “{note.title}”?</AlertDialogTitle>
+            <AlertDialogDescription>This can’t be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmDelete}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

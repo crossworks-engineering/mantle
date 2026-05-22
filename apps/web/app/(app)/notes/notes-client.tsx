@@ -12,8 +12,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/toast';
 
 type NoteRow = {
   id: string;
@@ -27,12 +40,13 @@ type NoteRow = {
 
 export function NotesClient({ initialNotes }: { initialNotes: NoteRow[] }) {
   const router = useRouter();
+  const toast = useToast();
   const [notes, setNotes] = useState(initialNotes);
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ title: '', content: '', tags: '' });
-  const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [deleteTarget, setDeleteTarget] = useState<NoteRow | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -47,9 +61,8 @@ export function NotesClient({ initialNotes }: { initialNotes: NoteRow[] }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
     if (!form.title.trim()) {
-      setError('Title is required');
+      toast.error('Title is required');
       return;
     }
     const res = await fetch('/api/notes', {
@@ -66,28 +79,33 @@ export function NotesClient({ initialNotes }: { initialNotes: NoteRow[] }) {
     });
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
-      setError(j.error ?? `request failed (${res.status})`);
+      toast.error(j.error ?? `request failed (${res.status})`);
       return;
     }
     const { note } = await res.json();
     setNotes((prev) => [note, ...prev]);
     setForm({ title: '', content: '', tags: '' });
     setOpen(false);
+    toast.success('Note created');
     startTransition(() => router.refresh());
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this note?')) return;
-    const res = await fetch(`/api/notes/${id}`, { method: 'DELETE' });
-    if (!res.ok) return;
-    setNotes((prev) => prev.filter((n) => n.id !== id));
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    const res = await fetch(`/api/notes/${deleteTarget.id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      toast.error('Could not delete note');
+      return;
+    }
+    setNotes((prev) => prev.filter((n) => n.id !== deleteTarget.id));
+    toast.success('Note deleted');
     startTransition(() => router.refresh());
   };
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[200px]">
+        <div className="relative min-w-[200px] flex-1">
           <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
@@ -112,7 +130,7 @@ export function NotesClient({ initialNotes }: { initialNotes: NoteRow[] }) {
           {filtered.map((n) => (
             <li key={n.id} className="group flex items-start gap-3 px-3 py-2.5">
               <FileText className="mt-1 size-4 text-muted-foreground" />
-              <Link href={`/notes/${n.id}`} className="flex-1 min-w-0">
+              <Link href={`/notes/${n.id}`} className="min-w-0 flex-1">
                 <div className="truncate font-medium">{n.title}</div>
                 {(n.summary || n.content) && (
                   <p className="line-clamp-1 text-xs text-muted-foreground">
@@ -120,14 +138,15 @@ export function NotesClient({ initialNotes }: { initialNotes: NoteRow[] }) {
                   </p>
                 )}
                 {n.tags.length > 0 && (
-                  <div className="mt-0.5 flex flex-wrap gap-1">
+                  <div className="mt-1 flex flex-wrap gap-1">
                     {n.tags.map((t) => (
-                      <span
+                      <Badge
                         key={t}
-                        className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                        variant="secondary"
+                        className="px-1.5 py-0 text-[10px] font-medium"
                       >
                         {t}
-                      </span>
+                      </Badge>
                     ))}
                   </div>
                 )}
@@ -135,8 +154,8 @@ export function NotesClient({ initialNotes }: { initialNotes: NoteRow[] }) {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => handleDelete(n.id)}
-                className="opacity-0 transition-opacity group-hover:opacity-100"
+                onClick={() => setDeleteTarget(n)}
+                className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
                 aria-label={`Delete ${n.title}`}
               >
                 <Trash2 />
@@ -146,16 +165,15 @@ export function NotesClient({ initialNotes }: { initialNotes: NoteRow[] }) {
         </ul>
       )}
 
+      {/* New note dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>New note</DialogTitle>
-            <DialogDescription>
-              Markdown. Extracted + embedded on save.
-            </DialogDescription>
+            <DialogDescription>Markdown. Extracted + embedded on save.</DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-3">
-            <div className="space-y-1">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-1.5">
               <Label htmlFor="title">Title</Label>
               <Input
                 id="title"
@@ -165,25 +183,27 @@ export function NotesClient({ initialNotes }: { initialNotes: NoteRow[] }) {
                 required
               />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <Label htmlFor="content">Content</Label>
-              <textarea
+              <Textarea
                 id="content"
                 value={form.content}
                 onChange={(e) => setForm({ ...form, content: e.target.value })}
                 rows={10}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm"
+                className="font-mono"
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="tags">Tags (comma-separated)</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="tags">
+                Tags <span className="font-normal text-muted-foreground">(comma-separated)</span>
+              </Label>
               <Input
                 id="tags"
                 value={form.tags}
                 onChange={(e) => setForm({ ...form, tags: e.target.value })}
+                placeholder="idea, draft, follow-up"
               />
             </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 Cancel
@@ -195,6 +215,25 @@ export function NotesClient({ initialNotes }: { initialNotes: NoteRow[] }) {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Delete confirm */}
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete “{deleteTarget?.title}”?</AlertDialogTitle>
+            <AlertDialogDescription>This can’t be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmDelete}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
