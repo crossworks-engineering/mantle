@@ -84,7 +84,7 @@ export default async function AiWorkersPage() {
               </div>
               <Button asChild size="sm" variant="outline">
                 <Link href={`/settings/ai-workers/new?kind=${kind}`}>
-                  <Plus className="mr-1 h-3.5 w-3.5" />
+                  <Plus />
                   Add
                 </Link>
               </Button>
@@ -127,7 +127,7 @@ export default async function AiWorkersPage() {
                     </div>
                     <Button asChild size="sm" variant="ghost">
                       <Link href={`/settings/ai-workers/${w.id}`}>
-                        <Cog className="mr-1 h-3.5 w-3.5" />
+                        <Cog />
                         Configure
                       </Link>
                     </Button>

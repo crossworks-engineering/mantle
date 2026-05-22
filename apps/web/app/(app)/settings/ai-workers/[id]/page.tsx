@@ -36,16 +36,16 @@ export default async function EditAiWorkerPage({
     <div className="mx-auto max-w-2xl space-y-6 px-6 py-8">
       <SetPageTitle title={worker.name} />
       <header className="space-y-1">
-        <Button asChild variant="ghost" size="sm" className="-ml-2">
-          <Link href="/settings/ai-workers">
-            <ArrowLeft className="mr-1 h-3.5 w-3.5" />
-            Back
-          </Link>
-        </Button>
         <div className="flex items-center justify-between gap-2">
+          <Button asChild variant="ghost" size="sm" className="-ml-2">
+            <Link href="/settings/ai-workers">
+              <ArrowLeft />
+              Back
+            </Link>
+          </Button>
           <form action={deleteAction}>
             <Button type="submit" variant="destructive" size="sm">
-              <Trash2 className="mr-1 h-3.5 w-3.5" />
+              <Trash2 />
               Delete
             </Button>
           </form>

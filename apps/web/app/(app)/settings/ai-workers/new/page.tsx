@@ -49,7 +49,7 @@ export default async function NewAiWorkerPage({
       <header className="space-y-1">
         <Button asChild variant="ghost" size="sm" className="-ml-2">
           <Link href="/settings/ai-workers">
-            <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+            <ArrowLeft />
             Back
           </Link>
         </Button>
