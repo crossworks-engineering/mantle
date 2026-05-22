@@ -30,7 +30,7 @@ export function AvatarPicker({
 
   return (
     <div className="flex items-center gap-4">
-      <BoringAvatar variant={style} seed={seed} size={64} className="size-16 border bg-muted" />
+      <BoringAvatar variant={style} seed={seed} size={64} className="border bg-muted" />
       <div className="flex flex-col items-start gap-2">
         <button
           type="button"

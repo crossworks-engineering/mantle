@@ -595,7 +595,7 @@ export function AgentsClient({
             return (
               <li key={a.id} className="flex items-center gap-3 px-3 py-3">
                 {a.avatar ? (
-                  <BoringAvatar variant={a.avatar.style} seed={a.avatar.seed} size={36} className="size-9" />
+                  <BoringAvatar variant={a.avatar.style} seed={a.avatar.seed} size={36} />
                 ) : (
                   <span
                     className="flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"

@@ -360,7 +360,7 @@ export function AssistantClient({
                 variant={agentAvatar.style}
                 seed={agentAvatar.seed}
                 size={48}
-                className="size-12 ring-2"
+                className="ring-2"
                 style={{ '--tw-ring-color': accent.border } as React.CSSProperties}
               />
             ) : (
@@ -469,7 +469,7 @@ export function AssistantClient({
             {sending && (
               <div className="mx-auto mt-3 flex max-w-3xl items-end gap-2 text-foreground">
                 {agentAvatar ? (
-                  <BoringAvatar variant={agentAvatar.style} seed={agentAvatar.seed} size={28} className="mb-1 size-7" />
+                  <BoringAvatar variant={agentAvatar.style} seed={agentAvatar.seed} size={28} className="mb-1" />
                 ) : (
                   <span
                     className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"

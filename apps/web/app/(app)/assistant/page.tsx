@@ -35,7 +35,7 @@ export default async function AssistantPage({
               variant={agent.avatar.style}
               seed={agent.avatar.seed}
               size={40}
-              className="size-10 ring-2"
+              className="ring-2"
               style={{ '--tw-ring-color': accent?.border } as React.CSSProperties}
             />
           ) : (
