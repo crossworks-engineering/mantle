@@ -57,7 +57,7 @@ export function Header({
 
       {pageTitle && (
         <span
-          className="pointer-events-none absolute left-1/2 top-1/2 hidden max-w-[40vw] -translate-x-1/2 -translate-y-1/2 truncate text-center font-logo text-3xl lowercase leading-none text-chart-2 md:block"
+          className="pointer-events-none absolute left-1/2 top-1/2 hidden max-w-[40vw] -translate-x-1/2 -translate-y-1/2 truncate text-center font-logo text-3xl lowercase leading-relaxed text-chart-2 md:block"
           aria-hidden
         >
           {pageTitle}
