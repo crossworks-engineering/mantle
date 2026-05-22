@@ -1,9 +1,9 @@
 import { type NextRequest } from 'next/server';
-import { avatarSvg } from '@/lib/dicebear';
+import { avatarSvg } from '@/lib/avatar-svg';
 
 /**
- * Avatar SVG endpoint. Generates a DiceBear avatar from ?style=&seed= and
- * returns it as image/svg+xml. Keeps @dicebear server-side (out of client
+ * Avatar SVG endpoint. Generates a boring-avatars SVG from ?style=&seed= and
+ * returns it as image/svg+xml. Keeps the generator server-side (out of client
  * bundles) and lets the browser cache avatars (deterministic for a given
  * style+seed, so `immutable`). Gated by the session middleware like the rest
  * of the app; the output isn't user-specific (depends only on the query).

@@ -6,11 +6,11 @@ import { DEFAULT_AVATAR_STYLE, avatarUrl, randomSeed, randomStyle } from '@/lib/
 export type AvatarValue = { style: string; seed: string };
 
 /**
- * DiceBear avatar picker — a live preview you reroll with Randomize (random
- * style + seed each click). `value` is null when no custom avatar is set (the
- * host shows an initials fallback); Randomize commits a value, and "Use
- * initials instead" clears back to null. The preview loads from the cacheable
- * /api/avatar endpoint, so no DiceBear code ships to the client.
+ * Avatar picker — a live preview you reroll with Randomize (random style +
+ * seed each click). `value` is null when no custom avatar is set (the host
+ * shows an initials fallback); Randomize commits a value, and "Use initials
+ * instead" clears back to null. The preview loads from the cacheable
+ * /api/avatar endpoint, so no avatar-generator code ships to the client.
  */
 export function AvatarPicker({
   value,

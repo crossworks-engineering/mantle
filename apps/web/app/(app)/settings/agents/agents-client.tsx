@@ -276,7 +276,7 @@ type FormState = {
   skillSlugs: string[];
   temperature: string;
   maxTokens: string;
-  /** DiceBear avatar {style, seed}; null = initials fallback. */
+  /** Avatar {style, seed}; null = initials fallback. */
   avatar: AgentAvatar | null;
 };
 

@@ -62,7 +62,7 @@ export function AssistantClient({
   agentSlug?: string;
   /** Display name of the active agent — drives the bubble avatar + greeting. */
   agentName?: string;
-  /** DiceBear avatar data URI for the active agent; falls back to initials. */
+  /** Avatar URL for the active agent; falls back to initials. */
   agentAvatar?: string | null;
 }) {
   // Per-agent visual identity: a stable colour + monogram so it's obvious

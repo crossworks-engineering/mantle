@@ -86,8 +86,8 @@ export function ProfileClient({
         <input type="hidden" name="avatarStyle" value={avatar?.style ?? ''} />
         <input type="hidden" name="avatarSeed" value={avatar?.seed ?? ''} />
         <p className="text-xs text-muted-foreground">
-          Generated with DiceBear from a style + seed. Shows in the header and
-          across the app; clear it to fall back to your initials.
+          A geometric avatar generated from a style + seed. Shows in the header
+          and across the app; clear it to fall back to your initials.
         </p>
       </section>
 
