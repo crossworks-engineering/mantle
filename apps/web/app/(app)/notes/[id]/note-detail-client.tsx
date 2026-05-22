@@ -8,8 +8,8 @@ import { Pencil, Save, Sparkles, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { MarkdownEditor } from '@/components/markdown-editor';
 import { BackLink } from '@/components/layout/back-link';
 import {
   AlertDialog,
@@ -170,15 +170,13 @@ export function NoteDetailClient({ initial }: { initial: NoteRow }) {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="content">
+            <Label>
               Content <span className="font-normal text-muted-foreground">(markdown)</span>
             </Label>
-            <Textarea
-              id="content"
+            <MarkdownEditor
               value={form.content}
-              onChange={(e) => setForm({ ...form, content: e.target.value })}
-              rows={20}
-              className="font-mono"
+              onChange={(content) => setForm({ ...form, content })}
+              placeholder="Write in markdown…"
             />
           </div>
           <div className="space-y-1.5">
