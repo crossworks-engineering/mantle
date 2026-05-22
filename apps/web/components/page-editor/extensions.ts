@@ -21,6 +21,6 @@ export const pageExtensions: Extensions = [
   Placeholder.configure({
     // Only the first empty line shows it (showOnlyWhenEditable defaults true,
     // so the read-only PageView never renders a placeholder).
-    placeholder: 'Write something…',
+    placeholder: 'Write something, or press “/” for commands…',
   }),
 ];

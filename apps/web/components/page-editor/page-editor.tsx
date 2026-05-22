@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { EditorContent, useEditor, type Editor, type JSONContent } from '@tiptap/react';
 import { pageExtensions } from './extensions';
 import { EditorBubbleMenu } from './bubble-menu';
+import { SlashCommand } from './slash-command';
 
 /**
  * The "invisible" editing surface: no border, no card, no fixed toolbar — just
@@ -38,7 +39,8 @@ export function PageEditor({
   }, [onChange, onBlur, onEditorReady]);
 
   const editor = useEditor({
-    extensions: pageExtensions,
+    // SlashCommand is editor-only (no schema), so PageView stays identical.
+    extensions: [...pageExtensions, SlashCommand],
     content,
     immediatelyRender: false, // required for Next.js SSR (avoids hydration mismatch)
     editorProps: {
