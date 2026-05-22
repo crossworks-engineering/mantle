@@ -1,9 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Download, Eye, FileText, PencilLine, Save, X } from 'lucide-react';
+import { Download, Eye, FileText, Loader2, PencilLine, Save, SplitSquareHorizontal, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { useToast } from '@/components/ui/toast';
 
 type FileRow = {
   id: string;
@@ -18,9 +22,9 @@ type FileRow = {
   updatedAt: string;
 };
 
-type FetchResponse =
-  | { file: FileRow; content?: string }
-  | { error: string };
+type FetchResponse = { file: FileRow; content?: string } | { error: string };
+
+type Mode = 'edit' | 'preview' | 'split';
 
 export function FileEditor({
   fileId,
@@ -31,6 +35,7 @@ export function FileEditor({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const toast = useToast();
   const [state, setState] = useState<
     | { kind: 'loading' }
     | { kind: 'error'; message: string }
@@ -39,7 +44,7 @@ export function FileEditor({
   const [draft, setDraft] = useState('');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [mode, setMode] = useState<'edit' | 'preview' | 'split'>('split');
+  const [mode, setMode] = useState<Mode>('split');
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState('');
 
@@ -83,33 +88,36 @@ export function FileEditor({
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
-        setState({ kind: 'error', message: b.error ?? 'save failed' });
+        toast.error(b.error ?? 'Save failed');
         return;
       }
       setDirty(false);
+      toast.success('Saved');
       onSaved();
     } finally {
       setSaving(false);
     }
   };
 
-  const submitRename = async () => {
-    if (state.kind !== 'loaded') return;
+  const submitRename = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (state.kind !== 'loaded' || !renameDraft.trim()) return;
     setSaving(true);
     try {
       const res = await fetch(`/api/files/files/${fileId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ rename: renameDraft }),
+        body: JSON.stringify({ rename: renameDraft.trim() }),
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
-        setState({ kind: 'error', message: b.error ?? 'rename failed' });
+        toast.error(b.error ?? 'Rename failed');
         return;
       }
       const { file } = (await res.json()) as { file: FileRow };
       setState({ kind: 'loaded', file, content: draft });
       setRenaming(false);
+      toast.success('Renamed');
       onSaved();
     } finally {
       setSaving(false);
@@ -118,18 +126,18 @@ export function FileEditor({
 
   if (state.kind === 'loading') {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Loading…
+      <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" /> Loading…
       </div>
     );
   }
   if (state.kind === 'error') {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2">
+      <div className="flex h-full flex-col items-center justify-center gap-3">
         <p className="text-sm text-destructive">{state.message}</p>
-        <button onClick={onClose} className="rounded-md border border-input px-3 py-1 text-xs">
+        <Button variant="outline" size="sm" onClick={onClose}>
           Close
-        </button>
+        </Button>
       </div>
     );
   }
@@ -142,29 +150,22 @@ export function FileEditor({
       <header className="flex items-center gap-3 border-b border-border px-6 py-2">
         <FileText className="size-4 shrink-0 text-muted-foreground" />
         {renaming ? (
-          <div className="flex items-center gap-1.5">
-            <input
+          <form onSubmit={submitRename} className="flex items-center gap-1.5">
+            <Input
               autoFocus
               value={renameDraft}
               onChange={(e) => setRenameDraft(e.target.value)}
-              className="rounded-md border border-input bg-background px-2 py-0.5 text-sm"
-              placeholder="new-name (extension preserved)"
+              className="h-8 w-56"
+              placeholder="new-name"
             />
             <span className="text-xs text-muted-foreground">.{file.extension}</span>
-            <button
-              onClick={submitRename}
-              disabled={saving}
-              className="rounded-md bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground"
-            >
+            <Button type="submit" size="sm" disabled={saving || !renameDraft.trim()}>
               Rename
-            </button>
-            <button
-              onClick={() => setRenaming(false)}
-              className="rounded-md border border-input px-2 py-0.5 text-xs"
-            >
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={() => setRenaming(false)}>
               Cancel
-            </button>
-          </div>
+            </Button>
+          </form>
         ) : (
           <button
             onClick={() => {
@@ -181,68 +182,51 @@ export function FileEditor({
             {file.filename}
           </button>
         )}
-        <span className="text-xs text-muted-foreground">
+        <span className="hidden text-xs text-muted-foreground sm:inline">
           {file.parentPath} · {file.mimeType}
         </span>
 
         <div className="ml-auto flex items-center gap-2">
           {isMarkdown && (
-            <div className="flex rounded-md border border-input p-0.5 text-xs">
-              <ViewToggle
-                label="Edit"
-                icon={<PencilLine className="size-3" />}
-                active={mode === 'edit'}
-                onClick={() => setMode('edit')}
-              />
-              <ViewToggle
-                label="Split"
-                active={mode === 'split'}
-                onClick={() => setMode('split')}
-              />
-              <ViewToggle
-                label="Preview"
-                icon={<Eye className="size-3" />}
-                active={mode === 'preview'}
-                onClick={() => setMode('preview')}
-              />
-            </div>
-          )}
-          {/* History link → /nodes/[id]/history. Shows every trace
-              that touched this file (ingest, extractor, summarizer,
-              etc.) with full step payloads. Operator's debug surface
-              for "what did the system do with my upload?" */}
-          <a
-            href={`/nodes/${file.id}/history`}
-            className="rounded-md border border-input px-2 py-1 text-xs font-medium hover:bg-accent"
-            title="See what the system did with this file"
-          >
-            History
-          </a>
-          <a
-            href={`/api/files/files/${file.id}?raw=1`}
-            download={file.filename}
-            className="rounded-md border border-input px-2 py-1 text-xs font-medium hover:bg-accent"
-            title="Download"
-          >
-            <Download className="size-3.5" aria-hidden />
-          </a>
-          {file.isText && (
-            <button
-              onClick={save}
-              disabled={!dirty || saving}
-              className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground disabled:opacity-40"
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              value={mode}
+              onValueChange={(v) => v && setMode(v as Mode)}
             >
-              <Save className="size-3.5" /> {saving ? '…' : 'Save'}
-              {dirty && <span className="ml-0.5 text-[10px]">•</span>}
-            </button>
+              <ToggleGroupItem value="edit" aria-label="Edit">
+                <PencilLine /> Edit
+              </ToggleGroupItem>
+              <ToggleGroupItem value="split" aria-label="Split">
+                <SplitSquareHorizontal /> Split
+              </ToggleGroupItem>
+              <ToggleGroupItem value="preview" aria-label="Preview">
+                <Eye /> Preview
+              </ToggleGroupItem>
+            </ToggleGroup>
           )}
-          <button
-            onClick={onClose}
-            className="rounded-md border border-input px-2 py-1 text-xs"
-            title="Close"
-          >
-            <X className="size-3.5" aria-hidden />
-          </button>
+          {/* History link → /nodes/[id]/history: every trace that touched
+              this file (ingest, extractor, summarizer, …). */}
+          <Button asChild variant="outline" size="sm">
+            <a href={`/nodes/${file.id}/history`} title="See what the system did with this file">
+              History
+            </a>
+          </Button>
+          <Button asChild variant="outline" size="icon" className="size-9">
+            <a href={`/api/files/files/${file.id}?raw=1`} download={file.filename} title="Download">
+              <Download aria-hidden />
+            </a>
+          </Button>
+          {file.isText && (
+            <Button size="sm" onClick={save} disabled={!dirty || saving}>
+              {saving ? <Loader2 className="animate-spin" /> : <Save />}
+              {saving ? 'Saving…' : dirty ? 'Save •' : 'Save'}
+            </Button>
+          )}
+          <Button variant="ghost" size="icon" className="size-9" onClick={onClose} title="Close">
+            <X aria-hidden />
+          </Button>
         </div>
       </header>
 
@@ -283,43 +267,14 @@ export function FileEditor({
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
           <p>Binary file — preview not available.</p>
-          <a
-            href={`/api/files/files/${file.id}?raw=1`}
-            download={file.filename}
-            className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground"
-          >
-            Download {file.filename}
-          </a>
-          {file.summary && (
-            <p className="max-w-md text-center text-xs italic">{file.summary}</p>
-          )}
+          <Button asChild size="sm">
+            <a href={`/api/files/files/${file.id}?raw=1`} download={file.filename}>
+              <Download /> Download {file.filename}
+            </a>
+          </Button>
+          {file.summary && <p className="max-w-md text-center text-xs italic">{file.summary}</p>}
         </div>
       )}
     </div>
-  );
-}
-
-function ViewToggle({
-  label,
-  icon,
-  active,
-  onClick,
-}: {
-  label: string;
-  icon?: React.ReactNode;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={
-        'flex items-center gap-1 rounded px-2 py-0.5 ' +
-        (active ? 'bg-primary text-primary-foreground' : 'hover:bg-accent')
-      }
-    >
-      {icon}
-      {label}
-    </button>
   );
 }

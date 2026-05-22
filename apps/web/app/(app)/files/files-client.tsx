@@ -1,10 +1,12 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
+  ChevronDown,
   ChevronRight,
+  FileJson,
   FileText,
   Folder,
   FolderPlus,
@@ -16,6 +18,37 @@ import {
 import { FileEditor } from './file-editor';
 import { formatDate } from '@/lib/format-datetime';
 import { SetPageTitle } from '@/components/layout/page-title';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import { useToast } from '@/components/ui/toast';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 
 type FolderRow = {
   id: string;
@@ -42,7 +75,20 @@ type FileRow = {
   updatedAt: string;
 };
 
+type TextExt = 'md' | 'txt' | 'json';
+
 const FILES_ROOT = 'files';
+
+/** Normalize a free-typed folder name into a slug (lowercase, dashes). */
+function slugify(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
 
 export function FilesClient({
   tree,
@@ -57,13 +103,19 @@ export function FilesClient({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const toast = useToast();
   const [files, setFiles] = useState<FileRow[]>(initialFiles);
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
-  const [error, setError] = useState<string>();
   const [busy, startTransition] = useTransition();
 
+  // Dialog open-state.
+  const [createFolderOpen, setCreateFolderOpen] = useState(false);
+  const [createFileExt, setCreateFileExt] = useState<TextExt | null>(null);
+  const [deleteFolderOpen, setDeleteFolderOpen] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+
   // Sync local file state when server re-fetches.
-  useMemo(() => {
+  useEffect(() => {
     setFiles(initialFiles);
     setSelectedFileIds(new Set());
   }, [initialFiles]);
@@ -87,55 +139,11 @@ export function FilesClient({
     router.push(`/files?${sp.toString()}`);
   };
 
-  // ─── Create folder ───────────────────────────────────────────────
-  const newFolder = async () => {
-    const name = window.prompt('Folder name (lowercase, dashes allowed)');
-    if (!name) return;
-    const description = window.prompt('Description (optional)') ?? '';
-    setError(undefined);
-    const res = await fetch('/api/files/folders', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ parentPath: currentPath, slug: name, description }),
-    });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(b.error ?? 'create folder failed');
-      return;
-    }
-    refresh();
-  };
-
-  // ─── Create text file ────────────────────────────────────────────
-  const newTextFile = async (ext: 'md' | 'txt' | 'json') => {
-    const stem = window.prompt(`New .${ext} filename (without extension)`);
-    if (!stem) return;
-    setError(undefined);
-    const res = await fetch('/api/files/files', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        parentPath: currentPath,
-        filename: `${stem}.${ext}`,
-        content: defaultBodyFor(ext),
-      }),
-    });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(b.error ?? 'create file failed');
-      return;
-    }
-    const { file } = (await res.json()) as { file: FileRow };
-    refresh();
-    // Open it for editing.
-    openFile(file.id);
-  };
-
   // ─── Upload ──────────────────────────────────────────────────────
   const fileInputRef = useRef<HTMLInputElement>(null);
   const triggerUpload = () => fileInputRef.current?.click();
   const uploadFiles = async (input: FileList | File[]) => {
-    setError(undefined);
+    let failed = false;
     for (const file of Array.from(input)) {
       const form = new FormData();
       form.set('parentPath', currentPath);
@@ -143,10 +151,12 @@ export function FilesClient({
       const res = await fetch('/api/files/files', { method: 'POST', body: form });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(`${file.name}: ${b.error ?? 'upload failed'}`);
+        toast.error(`${file.name}: ${b.error ?? 'upload failed'}`);
+        failed = true;
         break;
       }
     }
+    if (!failed) toast.success('Upload complete');
     refresh();
   };
   const onFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -164,24 +174,15 @@ export function FilesClient({
   };
 
   // ─── Delete folder ───────────────────────────────────────────────
-  const onDeleteFolder = async () => {
+  const confirmDeleteFolder = async () => {
     if (!currentFolder || currentFolder.path === FILES_ROOT) return;
-    if (
-      !window.confirm(
-        `Delete folder "${currentFolder.slug}"? It must be empty (move files first).`,
-      )
-    )
-      return;
-    setError(undefined);
-    const res = await fetch(`/api/files/folders/${currentFolder.id}`, {
-      method: 'DELETE',
-    });
+    const res = await fetch(`/api/files/folders/${currentFolder.id}`, { method: 'DELETE' });
     if (!res.ok) {
       const b = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(b.error ?? 'delete failed');
+      toast.error(b.error ?? 'Delete failed');
       return;
     }
-    // Navigate up to parent.
+    toast.success(`Deleted "${currentFolder.slug}"`);
     const parent =
       currentFolder.path.lastIndexOf('.') > 0
         ? currentFolder.path.slice(0, currentFolder.path.lastIndexOf('.'))
@@ -190,10 +191,8 @@ export function FilesClient({
   };
 
   // ─── Bulk delete files ───────────────────────────────────────────
-  const onBulkDelete = async () => {
+  const confirmBulkDelete = async () => {
     if (selectedFileIds.size === 0) return;
-    if (!window.confirm(`Delete ${selectedFileIds.size} file(s)?`)) return;
-    setError(undefined);
     const ids = Array.from(selectedFileIds);
     const res = await fetch('/api/files/files', {
       method: 'DELETE',
@@ -202,19 +201,19 @@ export function FilesClient({
     });
     if (!res.ok) {
       const b = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(b.error ?? 'bulk delete failed');
+      toast.error(b.error ?? 'Delete failed');
       return;
     }
+    toast.success(`Deleted ${ids.length} file${ids.length === 1 ? '' : 's'}`);
     setSelectedFileIds(new Set());
     refresh();
   };
 
-  // ─── Description inline edit ─────────────────────────────────────
+  // ─── Folder description inline edit ──────────────────────────────
   const [editingDesc, setEditingDesc] = useState(false);
   const [draftDesc, setDraftDesc] = useState(currentFolder?.description ?? '');
   const saveDescription = async () => {
     if (!currentFolder) return;
-    setError(undefined);
     const res = await fetch(`/api/files/folders/${currentFolder.id}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
@@ -222,7 +221,7 @@ export function FilesClient({
     });
     if (!res.ok) {
       const b = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(b.error ?? 'description save failed');
+      toast.error(b.error ?? 'Could not save description');
       return;
     }
     setEditingDesc(false);
@@ -241,15 +240,14 @@ export function FilesClient({
     return crumbs;
   }, [currentPath]);
 
+  const allSelected = files.length > 0 && selectedFileIds.size === files.length;
+  const someSelected = selectedFileIds.size > 0 && !allSelected;
+
   return (
     <div className="grid h-full grid-cols-[260px_1fr]">
       {/* ── Tree rail ───────────────────────────────────────────── */}
       <aside className="overflow-y-auto border-r border-border bg-muted/20 p-2">
-        <FolderTreeRail
-          tree={tree}
-          currentPath={currentPath}
-          onNavigate={navigateFolder}
-        />
+        <FolderTreeRail tree={tree} currentPath={currentPath} onNavigate={navigateFolder} />
       </aside>
 
       {/* ── Main pane ───────────────────────────────────────────── */}
@@ -263,12 +261,7 @@ export function FilesClient({
         onDrop={onDrop}
       >
         {openFileId ? (
-          <FileEditor
-            key={openFileId}
-            fileId={openFileId}
-            onClose={() => openFile(null)}
-            onSaved={refresh}
-          />
+          <FileEditor key={openFileId} fileId={openFileId} onClose={() => openFile(null)} onSaved={refresh} />
         ) : (
           <>
             <SetPageTitle title={currentFolder?.slug ?? 'files'} />
@@ -293,43 +286,44 @@ export function FilesClient({
               </nav>
 
               {currentFolder && currentFolder.path !== FILES_ROOT && (
-                <div className="mt-1 flex items-baseline justify-end">
-                  <button
-                    onClick={onDeleteFolder}
-                    className="text-xs text-destructive hover:underline"
+                <div className="mt-1 flex items-center justify-end">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-destructive hover:text-destructive"
+                    onClick={() => setDeleteFolderOpen(true)}
                     disabled={busy}
                   >
-                    Delete folder
-                  </button>
+                    <Trash2 /> Delete folder
+                  </Button>
                 </div>
               )}
 
               {/* Description */}
               <div className="mt-2 text-sm">
                 {editingDesc ? (
-                  <div className="flex flex-col gap-1.5">
-                    <textarea
+                  <div className="flex flex-col gap-2">
+                    <Textarea
                       value={draftDesc}
                       onChange={(e) => setDraftDesc(e.target.value)}
                       rows={2}
-                      className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm"
+                      placeholder="Describe what lives in this folder…"
+                      autoFocus
                     />
                     <div className="flex gap-2">
-                      <button
-                        onClick={saveDescription}
-                        className="rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground"
-                      >
+                      <Button size="sm" onClick={saveDescription}>
                         Save
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
                         onClick={() => {
                           setEditingDesc(false);
                           setDraftDesc(currentFolder?.description ?? '');
                         }}
-                        className="rounded-md border border-input px-2 py-1 text-xs"
                       >
                         Cancel
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 ) : (
@@ -355,54 +349,45 @@ export function FilesClient({
 
             {/* Toolbar */}
             <div className="flex flex-wrap items-center gap-2 border-b border-border px-6 py-2">
-              <ToolbarButton onClick={newFolder} icon={<FolderPlus className="size-4" />}>
-                New folder
-              </ToolbarButton>
-              <ToolbarButton
-                onClick={() => newTextFile('md')}
-                icon={<Plus className="size-4" />}
-              >
-                New markdown
-              </ToolbarButton>
-              <ToolbarButton
-                onClick={() => newTextFile('txt')}
-                icon={<Plus className="size-4" />}
-              >
-                New text
-              </ToolbarButton>
-              <ToolbarButton
-                onClick={() => newTextFile('json')}
-                icon={<Plus className="size-4" />}
-              >
-                New JSON
-              </ToolbarButton>
-              <ToolbarButton onClick={triggerUpload} icon={<Upload className="size-4" />}>
-                Upload
-              </ToolbarButton>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                hidden
-                onChange={onFileInput}
-              />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm">
+                    <Plus /> New <ChevronDown className="opacity-70" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-44">
+                  <DropdownMenuItem onSelect={() => setCreateFolderOpen(true)}>
+                    <FolderPlus /> Folder
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => setCreateFileExt('md')}>
+                    <FileText /> Markdown file
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setCreateFileExt('txt')}>
+                    <FileText /> Text file
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setCreateFileExt('json')}>
+                    <FileJson /> JSON file
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <Button size="sm" variant="outline" onClick={triggerUpload}>
+                <Upload /> Upload
+              </Button>
+              <input ref={fileInputRef} type="file" multiple hidden onChange={onFileInput} />
 
               {selectedFileIds.size > 0 && (
-                <button
-                  onClick={onBulkDelete}
-                  className="ml-auto flex items-center gap-1.5 rounded-md bg-destructive/10 px-2.5 py-1 text-xs text-destructive hover:bg-destructive/20"
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ml-auto text-destructive hover:text-destructive"
+                  onClick={() => setBulkDeleteOpen(true)}
                 >
-                  <Trash2 className="size-3.5" />
-                  Delete {selectedFileIds.size}
-                </button>
+                  <Trash2 /> Delete {selectedFileIds.size}
+                </Button>
               )}
             </div>
-
-            {error && (
-              <p className="mx-6 mt-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                {error}
-              </p>
-            )}
 
             {/* Grid */}
             <div className="relative flex-1 overflow-y-auto">
@@ -413,35 +398,24 @@ export function FilesClient({
               )}
 
               {/* Child folders */}
-              <ChildFolders
-                tree={tree}
-                currentPath={currentPath}
-                onNavigate={navigateFolder}
-              />
+              <ChildFolders tree={tree} currentPath={currentPath} onNavigate={navigateFolder} />
 
               {/* Files */}
               {files.length === 0 ? (
-                <p className="px-6 py-6 text-sm text-muted-foreground">
-                  No files in this folder. Drop a file anywhere here, or use the toolbar
-                  to create one.
-                </p>
+                <div className="px-6 py-10 text-center text-sm text-muted-foreground">
+                  No files in this folder. Drop a file anywhere here, or use{' '}
+                  <span className="font-medium text-foreground">New</span> to create one.
+                </div>
               ) : (
                 <table className="w-full text-sm">
                   <thead className="bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
                     <tr>
                       <th className="w-8 px-3 py-2">
-                        <input
-                          type="checkbox"
-                          checked={
-                            selectedFileIds.size > 0 &&
-                            selectedFileIds.size === files.length
-                          }
-                          onChange={(e) =>
-                            setSelectedFileIds(
-                              e.target.checked
-                                ? new Set(files.map((f) => f.id))
-                                : new Set(),
-                            )
+                        <Checkbox
+                          aria-label="Select all files"
+                          checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                          onCheckedChange={(v) =>
+                            setSelectedFileIds(v ? new Set(files.map((f) => f.id)) : new Set())
                           }
                         />
                       </th>
@@ -455,17 +429,17 @@ export function FilesClient({
                     {files.map((f) => (
                       <tr key={f.id} className="hover:bg-muted/30">
                         <td className="px-3 py-2">
-                          <input
-                            type="checkbox"
+                          <Checkbox
+                            aria-label={`Select ${f.filename}`}
                             checked={selectedFileIds.has(f.id)}
-                            onChange={(e) => {
+                            onCheckedChange={(v) =>
                               setSelectedFileIds((prev) => {
                                 const next = new Set(prev);
-                                if (e.target.checked) next.add(f.id);
+                                if (v) next.add(f.id);
                                 else next.delete(f.id);
                                 return next;
-                              });
-                            }}
+                              })
+                            }
                           />
                         </td>
                         <td className="px-3 py-2">
@@ -498,7 +472,270 @@ export function FilesClient({
           </>
         )}
       </div>
+
+      {/* ── Create folder dialog ──────────────────────────────────── */}
+      <CreateFolderDialog
+        open={createFolderOpen}
+        onOpenChange={setCreateFolderOpen}
+        parentPath={currentPath}
+        onCreated={refresh}
+      />
+
+      {/* ── Create file dialog ────────────────────────────────────── */}
+      <CreateFileDialog
+        ext={createFileExt}
+        onOpenChange={(open) => !open && setCreateFileExt(null)}
+        parentPath={currentPath}
+        onCreated={(id) => {
+          refresh();
+          openFile(id);
+        }}
+      />
+
+      {/* ── Delete folder confirm ─────────────────────────────────── */}
+      <AlertDialog open={deleteFolderOpen} onOpenChange={setDeleteFolderOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete folder “{currentFolder?.slug}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The folder must be empty — move or delete its files first. This can’t be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmDeleteFolder}
+            >
+              Delete folder
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Bulk delete confirm ───────────────────────────────────── */}
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {selectedFileIds.size} file{selectedFileIds.size === 1 ? '' : 's'}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>This can’t be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmBulkDelete}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
+  );
+}
+
+// ─── Create folder dialog ──────────────────────────────────────────
+function CreateFolderDialog({
+  open,
+  onOpenChange,
+  parentPath,
+  onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  parentPath: string;
+  onCreated: () => void;
+}) {
+  const toast = useToast();
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setName('');
+      setDescription('');
+      setBusy(false);
+    }
+  }, [open]);
+
+  const slug = slugify(name);
+  const valid = slug.length > 0;
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!valid || busy) return;
+    setBusy(true);
+    const res = await fetch('/api/files/folders', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ parentPath, slug, description }),
+    });
+    if (!res.ok) {
+      const b = (await res.json().catch(() => ({}))) as { error?: string };
+      toast.error(b.error ?? 'Could not create folder');
+      setBusy(false);
+      return;
+    }
+    toast.success(`Created folder “${slug}”`);
+    onOpenChange(false);
+    onCreated();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>New folder</DialogTitle>
+          <DialogDescription>
+            Created inside <code className="font-mono">{parentPath}</code>.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="folder-name">Name</Label>
+            <Input
+              id="folder-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="my-folder"
+              autoFocus
+            />
+            <p className="text-xs text-muted-foreground">
+              Saved as <code className="font-mono">{slug || '…'}</code> — lowercase, dashes only.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="folder-desc">
+              Description <span className="font-normal text-muted-foreground">(optional)</span>
+            </Label>
+            <Textarea
+              id="folder-desc"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              placeholder="What lives in this folder?"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!valid || busy}>
+              {busy ? 'Creating…' : 'Create folder'}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Create file dialog ────────────────────────────────────────────
+function CreateFileDialog({
+  ext,
+  onOpenChange,
+  parentPath,
+  onCreated,
+}: {
+  ext: TextExt | null;
+  onOpenChange: (open: boolean) => void;
+  parentPath: string;
+  onCreated: (fileId: string) => void;
+}) {
+  const toast = useToast();
+  const open = ext !== null;
+  const [stem, setStem] = useState('');
+  const [type, setType] = useState<TextExt>('md');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (ext) {
+      setStem('');
+      setType(ext);
+      setBusy(false);
+    }
+  }, [ext]);
+
+  const cleanStem = stem.trim().replace(/\.[^.]*$/, '');
+  const valid = cleanStem.length > 0;
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!valid || busy) return;
+    setBusy(true);
+    const res = await fetch('/api/files/files', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        parentPath,
+        filename: `${cleanStem}.${type}`,
+        content: defaultBodyFor(type),
+      }),
+    });
+    if (!res.ok) {
+      const b = (await res.json().catch(() => ({}))) as { error?: string };
+      toast.error(b.error ?? 'Could not create file');
+      setBusy(false);
+      return;
+    }
+    const { file } = (await res.json()) as { file: FileRow };
+    toast.success(`Created ${file.filename}`);
+    onOpenChange(false);
+    onCreated(file.id);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>New file</DialogTitle>
+          <DialogDescription>
+            Created inside <code className="font-mono">{parentPath}</code> and opened for editing.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Type</Label>
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              value={type}
+              onValueChange={(v) => v && setType(v as TextExt)}
+            >
+              <ToggleGroupItem value="md">Markdown</ToggleGroupItem>
+              <ToggleGroupItem value="txt">Text</ToggleGroupItem>
+              <ToggleGroupItem value="json">JSON</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="file-stem">Filename</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="file-stem"
+                value={stem}
+                onChange={(e) => setStem(e.target.value)}
+                placeholder="untitled"
+                autoFocus
+              />
+              <span className="shrink-0 text-sm text-muted-foreground">.{type}</span>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!valid || busy}>
+              {busy ? 'Creating…' : 'Create file'}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -542,9 +779,7 @@ function ChildFolders({
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium">{f.slug}</div>
                 {f.description && (
-                  <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {f.description}
-                  </div>
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground">{f.description}</div>
                 )}
                 <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
                   {f.childFolderCount} folders · {f.fileCount} files
@@ -599,27 +834,7 @@ function FolderTreeRail({
   );
 }
 
-function ToolbarButton({
-  children,
-  icon,
-  onClick,
-}: {
-  children: React.ReactNode;
-  icon: React.ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex items-center gap-1.5 rounded-md border border-input bg-background px-2.5 py-1 text-xs font-medium hover:bg-accent"
-    >
-      {icon}
-      {children}
-    </button>
-  );
-}
-
-function defaultBodyFor(ext: 'md' | 'txt' | 'json'): string {
+function defaultBodyFor(ext: TextExt): string {
   if (ext === 'md') return '# Untitled\n\nWrite something.\n';
   if (ext === 'json') return '{\n  \n}\n';
   return '';
