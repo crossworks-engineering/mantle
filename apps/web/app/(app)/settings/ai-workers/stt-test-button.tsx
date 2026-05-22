@@ -84,19 +84,19 @@ export function SttTestButton({ workerId }: { workerId: string }) {
           >
             {pending ? (
               <>
-                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="animate-spin" />
                 Transcribing…
               </>
             ) : (
               <>
-                <Mic className="mr-1 h-3.5 w-3.5" />
+                <Mic />
                 Start recording
               </>
             )}
           </Button>
         ) : (
           <Button type="button" variant="destructive" onClick={stopRecording}>
-            <MicOff className="mr-1 h-3.5 w-3.5" />
+            <MicOff />
             Stop and transcribe
           </Button>
         )}

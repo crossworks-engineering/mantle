@@ -148,7 +148,7 @@ export function PersonaNotesEditor({
           onClick={() => setAddOpen((v) => !v)}
           disabled={busy}
         >
-          <Plus className="mr-1 h-3.5 w-3.5" /> Add
+          <Plus /> Add
         </Button>
       </div>
 
@@ -173,7 +173,7 @@ export function PersonaNotesEditor({
               Cancel
             </Button>
             <Button type="button" size="sm" onClick={submitAdd} disabled={busy || !addText.trim()}>
-              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Add note'}
+              {busy ? <Loader2 className="animate-spin" /> : 'Add note'}
             </Button>
           </div>
         </div>
@@ -210,7 +210,7 @@ export function PersonaNotesEditor({
                         variant="ghost"
                         onClick={() => setEditingRef(null)}
                       >
-                        <X className="h-3.5 w-3.5" />
+                        <X />
                       </Button>
                       <Button
                         type="button"
@@ -219,9 +219,9 @@ export function PersonaNotesEditor({
                         disabled={busy || !editText.trim()}
                       >
                         {busy ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <Loader2 className="animate-spin" />
                         ) : (
-                          <Check className="h-3.5 w-3.5" />
+                          <Check />
                         )}
                       </Button>
                     </div>

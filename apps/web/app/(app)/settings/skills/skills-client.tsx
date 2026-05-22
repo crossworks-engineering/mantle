@@ -294,7 +294,7 @@ export function SkillsClient({
                 enabled
               </label>
               <Button type="button" variant="ghost" size="sm" onClick={() => openEdit(s)}>
-                <Pencil className="size-3.5" /> Edit
+                <Pencil /> Edit
               </Button>
               <Button
                 type="button"
@@ -303,7 +303,7 @@ export function SkillsClient({
                 onClick={() => onDelete(s)}
                 className="text-destructive hover:text-destructive"
               >
-                <Trash2 className="size-3.5" /> Delete
+                <Trash2 /> Delete
               </Button>
             </li>
           ))}

@@ -38,11 +38,11 @@ export function MailDisplay({ mail }: MailDisplayProps) {
       <div className="flex items-center p-2">
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" disabled={!mail} title="Archive">
-            <Archive className="h-4 w-4" />
+            <Archive />
             <span className="sr-only">Archive</span>
           </Button>
           <Button variant="ghost" size="icon" disabled={!mail} title="Move to junk">
-            <ArchiveX className="h-4 w-4" />
+            <ArchiveX />
             <span className="sr-only">Move to junk</span>
           </Button>
           <Button 
@@ -52,14 +52,14 @@ export function MailDisplay({ mail }: MailDisplayProps) {
             title="Move to trash"
             className="text-destructive hover:text-destructive focus-visible:text-destructive"
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 />
             <span className="sr-only">Move to trash</span>
           </Button>
           <Separator orientation="vertical" className="mx-1 h-6" />
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="ghost" size="icon" disabled={!mail} title="Snooze">
-                <Clock className="h-4 w-4" />
+                <Clock />
                 <span className="sr-only">Snooze</span>
               </Button>
             </PopoverTrigger>
@@ -107,15 +107,15 @@ export function MailDisplay({ mail }: MailDisplayProps) {
         </div>
         <div className="ml-auto flex items-center gap-2">
           <Button variant="ghost" size="icon" disabled={!mail} title="Reply">
-            <Reply className="h-4 w-4" />
+            <Reply />
             <span className="sr-only">Reply</span>
           </Button>
           <Button variant="ghost" size="icon" disabled={!mail} title="Reply all">
-            <ReplyAll className="h-4 w-4" />
+            <ReplyAll />
             <span className="sr-only">Reply all</span>
           </Button>
           <Button variant="ghost" size="icon" disabled={!mail} title="Forward">
-            <Forward className="h-4 w-4" />
+            <Forward />
             <span className="sr-only">Forward</span>
           </Button>
         </div>
@@ -123,7 +123,7 @@ export function MailDisplay({ mail }: MailDisplayProps) {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" disabled={!mail}>
-              <MoreVertical className="h-4 w-4" />
+              <MoreVertical />
               <span className="sr-only">More</span>
             </Button>
           </DropdownMenuTrigger>

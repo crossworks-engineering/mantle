@@ -52,7 +52,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
         </p>
         <Button asChild>
           <Link href="/settings/accounts">
-            <Plug className="size-4" aria-hidden /> Connect an account
+            <Plug aria-hidden /> Connect an account
           </Link>
         </Button>
       </div>

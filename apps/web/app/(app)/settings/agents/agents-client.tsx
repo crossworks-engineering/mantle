@@ -659,7 +659,7 @@ export function AgentsClient({
                   enabled
                 </label>
                 <Button type="button" variant="ghost" size="sm" onClick={() => openEdit(a)}>
-                  <Pencil className="size-3.5" aria-hidden /> Edit
+                  <Pencil aria-hidden /> Edit
                 </Button>
                 <Button
                   type="button"
@@ -668,7 +668,7 @@ export function AgentsClient({
                   onClick={() => onDelete(a)}
                   className="text-destructive hover:text-destructive"
                 >
-                  <Trash2 className="size-3.5" aria-hidden /> Delete
+                  <Trash2 aria-hidden /> Delete
                 </Button>
               </li>
             );

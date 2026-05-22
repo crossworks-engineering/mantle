@@ -159,7 +159,7 @@ export function SecretsClient({
           ))}
         </select>
         <Button onClick={() => setOpen(true)}>
-          <Plus className="mr-1 size-4" /> New secret
+          <Plus /> New secret
         </Button>
       </div>
 
@@ -244,7 +244,7 @@ export function SecretsClient({
                 className="opacity-0 transition-opacity group-hover:opacity-100"
                 aria-label={`Delete ${s.title}`}
               >
-                <Trash2 className="size-4" />
+                <Trash2 />
               </Button>
             </li>
           ))}
@@ -325,7 +325,7 @@ export function SecretsClient({
                     })
                   }
                 >
-                  <Plus className="mr-1 size-3" /> Add field
+                  <Plus className="size-3" /> Add field
                 </Button>
               </div>
               {form.fields.map((f, i) => (

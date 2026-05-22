@@ -71,12 +71,12 @@ export function ImageGenTestButton({ workerId }: { workerId: string }) {
         <Button type="button" onClick={run} disabled={pending}>
           {pending ? (
             <>
-              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="animate-spin" />
               Generating…
             </>
           ) : (
             <>
-              <Sparkles className="mr-1 h-3.5 w-3.5" />
+              <Sparkles />
               Generate
             </>
           )}

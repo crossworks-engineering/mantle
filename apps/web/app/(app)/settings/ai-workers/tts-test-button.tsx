@@ -61,12 +61,12 @@ export function TtsTestButton({ workerId }: { workerId: string }) {
         >
           {pending ? (
             <>
-              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="animate-spin" />
               Synthesising…
             </>
           ) : (
             <>
-              <Play className="mr-1 h-3.5 w-3.5" />
+              <Play />
               Test voice
             </>
           )}

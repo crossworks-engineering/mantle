@@ -478,7 +478,7 @@ function ToolList({
           {editable && (
             <>
               <Button type="button" variant="ghost" size="sm" onClick={() => onEdit(t)}>
-                <Pencil className="size-3.5" /> Edit
+                <Pencil /> Edit
               </Button>
               <Button
                 type="button"
@@ -487,7 +487,7 @@ function ToolList({
                 onClick={() => onDelete(t)}
                 className="text-destructive hover:text-destructive"
               >
-                <Trash2 className="size-3.5" /> Delete
+                <Trash2 /> Delete
               </Button>
             </>
           )}

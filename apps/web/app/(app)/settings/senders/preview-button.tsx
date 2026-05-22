@@ -44,7 +44,7 @@ export function PreviewButton({ address }: { address: string }) {
         onClick={() => handleOpenChange(true)}
         className="h-8 px-2"
       >
-        <Eye className="size-4" aria-hidden />
+        <Eye aria-hidden />
       </Button>
       <DialogContent>
         <DialogHeader>

@@ -111,7 +111,7 @@ export function PendingClient({ initialRows }: { initialRows: PendingRow[] }) {
                     size="sm"
                     className="bg-emerald-600 text-white hover:bg-emerald-700"
                   >
-                    <Check className="size-3.5" /> Approve & run
+                    <Check /> Approve & run
                   </Button>
                   <Button
                     onClick={() => decide(r.id, 'reject')}
@@ -119,7 +119,7 @@ export function PendingClient({ initialRows }: { initialRows: PendingRow[] }) {
                     size="sm"
                     variant="outline"
                   >
-                    <X className="size-3.5" /> Reject
+                    <X /> Reject
                   </Button>
                 </div>
               </li>

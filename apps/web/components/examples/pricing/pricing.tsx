@@ -125,7 +125,7 @@ const Pricing2 = ({
                   <Button asChild className="w-full">
                     <a href={plan.button.url} target="_blank">
                       {plan.button.text}
-                      <ArrowRight className="ml-2 size-4" />
+                      <ArrowRight />
                     </a>
                   </Button>
                 </CardFooter>

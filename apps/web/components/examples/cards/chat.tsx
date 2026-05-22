@@ -159,7 +159,7 @@ export function CardsChat() {
               className="absolute top-1/2 right-2 size-6 -translate-y-1/2 rounded-full"
               disabled={inputLength === 0}
             >
-              <ArrowUpIcon className="size-3.5" />
+              <ArrowUpIcon />
               <span className="sr-only">Send</span>
             </Button>
           </form>

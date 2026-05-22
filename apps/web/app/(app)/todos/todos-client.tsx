@@ -197,7 +197,7 @@ export function TodosClient({ initialTodos }: { initialTodos: TodoRow[] }) {
           ))}
         </select>
         <Button onClick={() => setOpen(true)}>
-          <Plus className="mr-1 size-4" /> New todo
+          <Plus /> New todo
         </Button>
       </div>
 
@@ -291,7 +291,7 @@ export function TodosClient({ initialTodos }: { initialTodos: TodoRow[] }) {
                       className="opacity-0 transition-opacity group-hover:opacity-100"
                       aria-label={`Delete ${t.title}`}
                     >
-                      <Trash2 className="size-4" />
+                      <Trash2 />
                     </Button>
                   </div>
                 </div>

@@ -34,7 +34,7 @@ export function SubmitButton({
       <span className={pending ? 'invisible' : 'inline-flex items-center'}>{children}</span>
       {pending && (
         <Loader2
-          className="absolute left-1/2 top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 animate-spin"
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 animate-spin"
           aria-hidden
         />
       )}

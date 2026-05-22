@@ -327,7 +327,7 @@ export function HeartbeatsClient({
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{initial.length} configured</p>
         <Button onClick={openCreate} size="sm">
-          <HeartPulse className="size-4" /> New heartbeat
+          <HeartPulse /> New heartbeat
         </Button>
       </div>
 
@@ -365,7 +365,7 @@ export function HeartbeatsClient({
                 disabled={pending || h.status !== 'active'}
                 title="Fire now (bypass gates)"
               >
-                <Zap className="size-4" />
+                <Zap />
               </Button>
               <Button
                 size="sm"
@@ -374,10 +374,10 @@ export function HeartbeatsClient({
                 disabled={pending || h.status === 'completed' || h.status === 'cancelled'}
                 title={h.status === 'active' ? 'Pause' : 'Resume'}
               >
-                {h.status === 'active' ? <Pause className="size-4" /> : <Play className="size-4" />}
+                {h.status === 'active' ? <Pause /> : <Play />}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => openEdit(h)} title="Edit">
-                <Pencil className="size-4" />
+                <Pencil />
               </Button>
               <Button
                 size="sm"
@@ -386,7 +386,7 @@ export function HeartbeatsClient({
                 disabled={pending}
                 title="Delete"
               >
-                <Trash2 className="size-4" />
+                <Trash2 />
               </Button>
             </div>
           </li>

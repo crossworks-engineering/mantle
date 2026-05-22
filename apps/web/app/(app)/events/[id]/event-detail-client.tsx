@@ -157,10 +157,10 @@ export function EventDetailClient({ initial }: { initial: EventRow }) {
               </div>
               <div className="flex shrink-0 gap-2">
                 <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-                  <Pencil className="mr-1 size-3" /> Edit
+                  <Pencil className="size-3" /> Edit
                 </Button>
                 <Button variant="ghost" size="sm" onClick={handleDelete} aria-label="Delete event">
-                  <Trash2 className="size-4" />
+                  <Trash2 />
                 </Button>
               </div>
             </div>
@@ -190,10 +190,10 @@ export function EventDetailClient({ initial }: { initial: EventRow }) {
                   setError(null);
                 }}
               >
-                <X className="mr-1 size-3" /> Cancel
+                <X className="size-3" /> Cancel
               </Button>
               <Button type="submit" disabled={isPending}>
-                <Save className="mr-1 size-3" /> {isPending ? 'Saving…' : 'Save'}
+                <Save className="size-3" /> {isPending ? 'Saving…' : 'Save'}
               </Button>
             </div>
           </header>

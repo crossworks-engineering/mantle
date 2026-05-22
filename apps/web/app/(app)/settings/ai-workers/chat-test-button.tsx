@@ -62,12 +62,12 @@ export function ChatTestButton({ workerId }: { workerId: string }) {
         >
           {pending ? (
             <>
-              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="animate-spin" />
               Sending…
             </>
           ) : (
             <>
-              <MessageCircle className="mr-1 h-3.5 w-3.5" />
+              <MessageCircle />
               Test chat
             </>
           )}

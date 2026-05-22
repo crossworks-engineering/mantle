@@ -234,10 +234,10 @@ export function SecretDetailClient({ initial }: { initial: SecretRow }) {
               </div>
               <div className="flex shrink-0 gap-2">
                 <Button variant="outline" size="sm" onClick={startEdit}>
-                  <Pencil className="mr-1 size-3" /> Edit
+                  <Pencil className="size-3" /> Edit
                 </Button>
                 <Button variant="ghost" size="sm" onClick={handleDelete} aria-label="Delete secret">
-                  <Trash2 className="size-4" />
+                  <Trash2 />
                 </Button>
               </div>
             </div>
@@ -257,7 +257,7 @@ export function SecretDetailClient({ initial }: { initial: SecretRow }) {
                 {meta.hasNote ? ' + note' : ''} · sealed
               </p>
               <Button onClick={reveal} disabled={loading}>
-                <Eye className="mr-1 size-4" />
+                <Eye />
                 {loading ? 'Decrypting…' : 'Reveal'}
               </Button>
             </div>
@@ -265,7 +265,7 @@ export function SecretDetailClient({ initial }: { initial: SecretRow }) {
             <div className="space-y-4">
               <div className="flex justify-end">
                 <Button variant="outline" size="sm" onClick={hide}>
-                  <EyeOff className="mr-1 size-3" /> Hide
+                  <EyeOff className="size-3" /> Hide
                 </Button>
               </div>
 
@@ -341,10 +341,10 @@ export function SecretDetailClient({ initial }: { initial: SecretRow }) {
               <h1 className="text-xl font-semibold">Edit secret</h1>
               <div className="flex gap-2">
                 <Button type="button" variant="outline" onClick={cancelEdit}>
-                  <X className="mr-1 size-3" /> Cancel
+                  <X className="size-3" /> Cancel
                 </Button>
                 <Button type="submit" disabled={isPending}>
-                  <Save className="mr-1 size-3" /> {isPending ? 'Saving…' : 'Save'}
+                  <Save className="size-3" /> {isPending ? 'Saving…' : 'Save'}
                 </Button>
               </div>
             </header>
@@ -412,7 +412,7 @@ export function SecretDetailClient({ initial }: { initial: SecretRow }) {
                     })
                   }
                 >
-                  <Plus className="mr-1 size-3" /> Add field
+                  <Plus className="size-3" /> Add field
                 </Button>
               </div>
               {editForm.fields.map((f, i) => (

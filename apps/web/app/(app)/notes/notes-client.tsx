@@ -97,7 +97,7 @@ export function NotesClient({ initialNotes }: { initialNotes: NoteRow[] }) {
           />
         </div>
         <Button onClick={() => setOpen(true)}>
-          <Plus className="mr-1 size-4" /> New note
+          <Plus /> New note
         </Button>
       </div>
 
@@ -139,7 +139,7 @@ export function NotesClient({ initialNotes }: { initialNotes: NoteRow[] }) {
                 className="opacity-0 transition-opacity group-hover:opacity-100"
                 aria-label={`Delete ${n.title}`}
               >
-                <Trash2 className="size-4" />
+                <Trash2 />
               </Button>
             </li>
           ))}

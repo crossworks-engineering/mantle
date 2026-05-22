@@ -423,7 +423,7 @@ export function WorkerForm({ mode, kind, worker, keys, action }: Props) {
                     title="Re-query OpenAI for the latest model list"
                   >
                     <RefreshCw
-                      className={`h-3.5 w-3.5 ${discovery.loading ? 'animate-spin' : ''}`}
+                      className={discovery.loading ? 'animate-spin' : ''}
                     />
                   </Button>
                 </div>

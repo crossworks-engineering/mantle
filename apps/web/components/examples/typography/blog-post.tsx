@@ -147,21 +147,21 @@ export function BlogPost() {
           <div className="flex flex-col items-start justify-between gap-4 @sm:flex-row @sm:items-center">
             <div className="flex items-center gap-2">
               <Button variant="ghost" size="sm" className="gap-2">
-                <Heart className="h-4 w-4" />
+                <Heart />
                 <span>42</span>
               </Button>
               <Button variant="ghost" size="sm" className="gap-2">
-                <MessageCircle className="h-4 w-4" />
+                <MessageCircle />
                 <span>12</span>
               </Button>
               <Button variant="ghost" size="sm" className="gap-2">
-                <Share2 className="h-4 w-4" />
+                <Share2 />
                 <span>Share</span>
               </Button>
             </div>
 
             <Button variant="outline" size="sm" className="gap-2">
-              <Bookmark className="h-4 w-4" />
+              <Bookmark />
               <span>Save for later</span>
             </Button>
           </div>

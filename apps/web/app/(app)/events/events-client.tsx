@@ -173,7 +173,7 @@ export function EventsClient({
     <div className="space-y-4">
       <div className="flex justify-end">
         <Button onClick={() => setOpen(true)}>
-          <Plus className="mr-1 size-4" /> New event
+          <Plus /> New event
         </Button>
       </div>
 
@@ -367,7 +367,7 @@ function EventList({
             className="opacity-0 transition-opacity group-hover:opacity-100"
             aria-label={`Delete ${e.title}`}
           >
-            <Trash2 className="size-4" />
+            <Trash2 />
           </Button>
         </li>
       ))}

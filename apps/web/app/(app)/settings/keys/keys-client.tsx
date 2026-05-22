@@ -187,9 +187,9 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
                   title="Make a no-cost API call to verify this key is accepted"
                 >
                   {isTesting ? (
-                    <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                    <Loader2 className="animate-spin" aria-hidden />
                   ) : (
-                    <ShieldCheck className="size-3.5" aria-hidden />
+                    <ShieldCheck aria-hidden />
                   )}{' '}
                   Test
                 </Button>
@@ -202,7 +202,7 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
                     setRotateValue('');
                   }}
                 >
-                  <RefreshCw className="size-3.5" aria-hidden /> Rotate
+                  <RefreshCw aria-hidden /> Rotate
                 </Button>
                 <Button
                   type="button"
@@ -211,7 +211,7 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
                   onClick={() => onDelete(k)}
                   className="text-destructive hover:text-destructive"
                 >
-                  <Trash2 className="size-3.5" aria-hidden /> Delete
+                  <Trash2 aria-hidden /> Delete
                 </Button>
                 </div>
                 {testResult && (

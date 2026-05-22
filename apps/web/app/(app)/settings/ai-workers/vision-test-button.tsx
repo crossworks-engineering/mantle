@@ -94,7 +94,7 @@ export function VisionTestButton({ workerId }: { workerId: string }) {
             onClick={() => fileInputRef.current?.click()}
             disabled={pending}
           >
-            <ImagePlus className="mr-1 h-3.5 w-3.5" />
+            <ImagePlus />
             Pick image
           </Button>
         ) : (
@@ -102,7 +102,7 @@ export function VisionTestButton({ workerId }: { workerId: string }) {
             <Button type="button" onClick={run} disabled={pending}>
               {pending ? (
                 <>
-                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                  <Loader2 className="animate-spin" />
                   Extracting…
                 </>
               ) : (
@@ -117,7 +117,7 @@ export function VisionTestButton({ workerId }: { workerId: string }) {
               disabled={pending}
               title="Clear"
             >
-              <X className="h-3.5 w-3.5" />
+              <X />
             </Button>
           </>
         )}
