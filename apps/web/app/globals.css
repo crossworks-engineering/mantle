@@ -3116,3 +3116,11 @@
   height: 0;
   pointer-events: none;
 }
+
+/* Pages blockquotes keep their accent border ("highlight") but drop the
+   curly quotation marks that `prose` adds before/after the text. Scoped to
+   the TipTap editor so Notes' markdown blockquotes are unaffected. */
+.ProseMirror blockquote p:first-of-type::before,
+.ProseMirror blockquote p:last-of-type::after {
+  content: none;
+}
