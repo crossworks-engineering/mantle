@@ -4,6 +4,7 @@ import { requireOwner } from '@/lib/auth';
 import { getHeartbeat, listHeartbeatFires } from '@/lib/heartbeats';
 import { formatInProfile } from '@mantle/content';
 import { loadProfilePreferences } from '@mantle/content';
+import { SetPageTitle } from '@/components/layout/page-title';
 
 /**
  * /heartbeats/[id] — single-heartbeat biography.
@@ -31,9 +32,9 @@ export default async function HeartbeatDetailPage({
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-6 py-8">
+      <SetPageTitle title={hb.name} />
       <header className="space-y-1">
         <div className="flex flex-wrap items-baseline gap-2">
-          <h1 className="text-2xl font-semibold">{hb.name}</h1>
           <code className="text-sm text-muted-foreground">{hb.slug}</code>
           <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase">
             {hb.status}

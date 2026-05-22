@@ -16,6 +16,7 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { usePageTitle } from '@/components/layout/page-title';
 
 export function Header({
   email,
@@ -29,6 +30,7 @@ export function Header({
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const initials = (email ?? 'M').slice(0, 2).toUpperCase();
+  const pageTitle = usePageTitle();
 
   async function signOut() {
     setBusy(true);
@@ -52,6 +54,15 @@ export function Header({
       <Link href="/" className="flex items-center" aria-label="Mantle home">
         <span className="font-logo text-3xl leading-none text-primary">mantle</span>
       </Link>
+
+      {pageTitle && (
+        <span
+          className="pointer-events-none absolute left-1/2 top-1/2 hidden max-w-[40vw] -translate-x-1/2 -translate-y-1/2 truncate text-center font-logo text-3xl lowercase leading-none text-primary/50 md:block"
+          aria-hidden
+        >
+          {pageTitle}
+        </span>
+      )}
 
       <div className="ml-auto flex items-center gap-1">
         <ThemeToggle />

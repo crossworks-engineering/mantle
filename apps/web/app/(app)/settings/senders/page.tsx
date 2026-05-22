@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import { db, emailAccounts, emailSenderDomains, emailSenders } from '@mantle/db';
 import { requireOwner } from '@/lib/auth';
 import { formatDate } from '@/lib/format-datetime';
+import { SetPageTitle } from '@/components/layout/page-title';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { setDomainStatus, setSenderStatus } from './actions';
@@ -65,14 +66,7 @@ export default async function SendersPage({
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Senders</h1>
-        <p className="text-sm text-muted-foreground">
-          Approve the senders worth keeping. Mantle only ingests bodies and attachments for{' '}
-          <span className="font-medium">approved</span> senders; everything else is just metadata in this
-          list.
-        </p>
-      </header>
+      <SetPageTitle title="Senders" />
 
       <ManualEntry />
 

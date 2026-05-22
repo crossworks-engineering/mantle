@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
+import { SetPageTitle } from '@/components/layout/page-title';
 import { formatDateTime } from '@/lib/format-datetime';
 
 type EventRow = {
@@ -109,6 +110,7 @@ export function EventDetailClient({ initial }: { initial: EventRow }) {
 
   return (
     <div className="space-y-4">
+      <SetPageTitle title={event.title} />
       <Link
         href="/events"
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -121,7 +123,6 @@ export function EventDetailClient({ initial }: { initial: EventRow }) {
           <header className="space-y-2">
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0 space-y-1">
-                <h1 className="truncate text-2xl font-semibold">{event.title}</h1>
                 <p className="text-sm text-muted-foreground">
                   {formatDateTime(event.startsAt)}
                   {event.endsAt && ` → ${formatDateTime(event.endsAt)}`}

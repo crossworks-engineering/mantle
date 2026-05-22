@@ -4,6 +4,7 @@ import type { AiWorkerKind } from '@mantle/db';
 import { requireOwner } from '@/lib/auth';
 import { listAiWorkers } from '@/lib/ai-workers';
 import { formatDateTime } from '@/lib/format-datetime';
+import { SetPageTitle } from '@/components/layout/page-title';
 import { Button } from '@/components/ui/button';
 
 /** Display metadata per kind — the title in the section header, the
@@ -69,18 +70,7 @@ export default async function AiWorkersPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-8 px-6 py-8">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">AI workers</h1>
-        <p className="text-sm text-muted-foreground">
-          One-shot AI jobs: voice in/out, vision OCR, the background extractor / summarizer /
-          reflector. Each worker has its own model, API key, and kind-specific params.
-          Conversational agents (responder, assistant) live at{' '}
-          <Link href="/settings/agents" className="underline">
-            /settings/agents
-          </Link>{' '}
-          — different abstraction.
-        </p>
-      </header>
+      <SetPageTitle title="AI workers" />
 
       {KIND_ORDER.map((kind) => {
         const meta = KIND_META[kind];

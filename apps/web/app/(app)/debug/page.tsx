@@ -22,6 +22,7 @@ import {
   trafficWindow,
 } from '@/lib/metrics';
 import { formatDuration, formatMicroUsd } from '@/lib/traces';
+import { SetPageTitle } from '@/components/layout/page-title';
 
 /**
  * Operator's eye on the system: what has the summarizer produced, which
@@ -77,13 +78,7 @@ export default async function DebugPage() {
     <div className="mx-auto max-w-5xl space-y-10 px-6 py-8">
       <DebugTabs />
 
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Debug</h1>
-        <p className="text-sm text-muted-foreground">
-          Internal view of agent activity, conversation digests, and chat state. Refresh
-          the page to see the latest. Owner-scoped.
-        </p>
-      </header>
+      <SetPageTitle title="Debug" />
 
       {/* ─── Dashboard widgets ──────────────────────────────────────────── */}
       <section className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">

@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { db, tools } from '@mantle/db';
 import { requireOwner } from '@/lib/auth';
 import { listSkills, listSkillBackrefs } from '@/lib/skills';
+import { SetPageTitle } from '@/components/layout/page-title';
 import { SkillsClient } from './skills-client';
 
 export default async function SkillsPage() {
@@ -29,15 +30,7 @@ export default async function SkillsPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-6 py-8">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Skills</h1>
-        <p className="text-sm text-muted-foreground">
-          A skill is a behaviour pack: instructions + suggested toolset. Attach skills
-          to agents on <a href="/settings/agents" className="underline">/settings/agents</a>.
-          When attached, the skill&apos;s instructions append to the agent&apos;s system
-          prompt and its tools join the agent&apos;s allowlist (always-loaded mode in v1).
-        </p>
-      </header>
+      <SetPageTitle title="Skills" />
       <SkillsClient
         initialSkills={skillRows}
         availableTools={toolRows.map((t) => ({

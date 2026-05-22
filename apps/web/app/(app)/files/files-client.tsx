@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { FileEditor } from './file-editor';
 import { formatDate } from '@/lib/format-datetime';
+import { SetPageTitle } from '@/components/layout/page-title';
 
 type FolderRow = {
   id: string;
@@ -270,6 +271,7 @@ export function FilesClient({
           />
         ) : (
           <>
+            <SetPageTitle title={currentFolder?.slug ?? 'files'} />
             {/* Header */}
             <header className="border-b border-border px-6 py-3">
               <nav className="flex items-center gap-1 text-sm text-muted-foreground">
@@ -290,11 +292,8 @@ export function FilesClient({
                 ))}
               </nav>
 
-              <div className="mt-1 flex items-baseline justify-between gap-3">
-                <h1 className="text-lg font-semibold">
-                  {currentFolder?.slug ?? 'files'}
-                </h1>
-                {currentFolder && currentFolder.path !== FILES_ROOT && (
+              {currentFolder && currentFolder.path !== FILES_ROOT && (
+                <div className="mt-1 flex items-baseline justify-end">
                   <button
                     onClick={onDeleteFolder}
                     className="text-xs text-destructive hover:underline"
@@ -302,8 +301,8 @@ export function FilesClient({
                   >
                     Delete folder
                   </button>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* Description */}
               <div className="mt-2 text-sm">

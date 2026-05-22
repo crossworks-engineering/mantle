@@ -20,6 +20,7 @@ import { IngestChart } from '@/components/dashboard/ingest-chart';
 import { BrainBreakdown } from '@/components/dashboard/brain-breakdown';
 import { BrainStats } from '@/components/dashboard/brain-stats';
 import { OpsPanels } from '@/components/dashboard/ops-panels';
+import { SetPageTitle } from '@/components/layout/page-title';
 
 /**
  * Dashboard — the "brain health" overview. Server-rendered (fast DB metrics
@@ -93,13 +94,8 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6 p-4 md:p-6">
-      <header className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h1 className="text-2xl font-semibold">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            How your brain — and the box it runs on — is doing.
-          </p>
-        </div>
+      <SetPageTitle title="Dashboard" />
+      <header className="flex flex-wrap items-center justify-end gap-2">
         <nav className="flex items-center gap-3 text-sm">
           <Link href="/debug" className="text-primary underline-offset-2 hover:underline">
             Operator view

@@ -4,6 +4,7 @@ import { requireOwner } from '@/lib/auth';
 import { listAgents } from '@/lib/agents';
 import { listApiKeys } from '@/lib/api-keys';
 import { listSkills } from '@/lib/skills';
+import { SetPageTitle } from '@/components/layout/page-title';
 import { AgentsClient } from './agents-client';
 
 export default async function AgentsSettingsPage() {
@@ -34,13 +35,8 @@ export default async function AgentsSettingsPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-6 py-8">
+      <SetPageTitle title="Agents" />
       <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Agents</h1>
-        <p className="text-sm text-muted-foreground">
-          Each agent is a configured AI assistant: model, API key, persona, memory depth,
-          and a priority for tie-breaking. Higher priority wins when multiple enabled agents
-          share the same role.
-        </p>
         {activeResponder ? (
           <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
             Active Telegram responder: <strong>{activeResponder.name}</strong>{' '}

@@ -6,7 +6,7 @@ import { Check, Moon, Sun, Monitor, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useColorTheme } from '@/components/color-theme-provider';
 import { COLOR_THEMES } from '@/lib/themes';
-import { PageHeader } from '@/components/layout/page-header';
+import { SetPageTitle } from '@/components/layout/page-title';
 import { PreviewTabs } from '@/components/theme-preview/preview-tabs';
 
 const MODES: Array<{ id: string; label: string; icon: LucideIcon }> = [
@@ -97,10 +97,7 @@ function Controls() {
 export default function AppearancePage() {
   return (
     <div>
-      <PageHeader
-        title="Appearance"
-        description="Pick a mode and color theme on the left; preview it on real surfaces."
-      />
+      <SetPageTitle title="Appearance" />
       <div className="flex flex-col gap-6 px-6 py-6 lg:flex-row">
         <aside className="scrollbar-thin shrink-0 lg:sticky lg:top-0 lg:max-h-[calc(100vh-4rem)] lg:w-1/5 lg:min-w-[220px] lg:self-start lg:overflow-y-auto lg:pr-1">
           <Controls />

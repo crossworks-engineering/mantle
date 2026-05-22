@@ -1,9 +1,9 @@
-import Link from 'next/link';
 import { asc, eq } from 'drizzle-orm';
 import { db, agents, skills } from '@mantle/db';
 import { formatInProfile, loadProfilePreferences } from '@mantle/content';
 import { requireOwner } from '@/lib/auth';
 import { listHeartbeats } from '@/lib/heartbeats';
+import { SetPageTitle } from '@/components/layout/page-title';
 import { HeartbeatsClient, type HeartbeatFormattedTimes } from './heartbeats-client';
 
 /**
@@ -48,21 +48,7 @@ export default async function HeartbeatsPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-6 py-8">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Heartbeats</h1>
-        <p className="text-sm text-muted-foreground">
-          Heartbeats let an agent act proactively: on schedule, with persistent state,
-          until a goal is met. Each heartbeat couples a <Link href="/settings/skills" className="underline">skill</Link>
-          {' '}(what to do) with an <Link href="/settings/agents" className="underline">agent</Link> (who does it) and
-          a surface (where the reply goes). See{' '}
-          <a href="/docs/heartbeats" className="underline">the heartbeats doc</a> for the full lifecycle.
-        </p>
-        <p className="text-sm text-muted-foreground">
-          Gates (idle / quiet hours / cooldown / earliest_at) are per-heartbeat — there
-          are no system-wide defaults. Pick the &quot;sensible defaults&quot; preset in the form
-          to pre-fill conservative values, or leave the fields blank for &quot;no gate of this kind&quot;.
-        </p>
-      </header>
+      <SetPageTitle title="Heartbeats" />
       <HeartbeatsClient
         initial={rows}
         agents={agentRows}

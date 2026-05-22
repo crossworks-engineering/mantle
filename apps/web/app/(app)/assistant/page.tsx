@@ -2,6 +2,7 @@ import { requireOwner } from '@/lib/auth';
 import { listAssistantAgents, recentAssistantMessages, resolveAssistantAgent } from '@/lib/assistant';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { BoringAvatar } from '@/components/boring-avatar';
+import { SetPageTitle } from '@/components/layout/page-title';
 import { AssistantClient } from './assistant-client';
 import { AgentSelect } from './agent-select';
 
@@ -28,6 +29,7 @@ export default async function AssistantPage({
 
   return (
     <div className="flex h-full flex-col">
+      <SetPageTitle title={agent ? agent.name : 'Assistant'} />
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-6 py-3">
         <div className="flex items-center gap-3">
           {agent && agent.avatar ? (
@@ -51,9 +53,6 @@ export default async function AssistantPage({
             )
           )}
           <div>
-            <h1 className="font-logo text-3xl font-normal leading-none lowercase text-foreground">
-              {agent ? agent.name : 'Assistant'}
-            </h1>
             <p className="text-xs text-muted-foreground">
               {agent ? (
                 <>

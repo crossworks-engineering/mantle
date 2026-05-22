@@ -4,6 +4,7 @@ import {
   loadProfilePreferences,
   formatInProfile,
 } from '@mantle/content';
+import { SetPageTitle } from '@/components/layout/page-title';
 import { ProfileClient } from './profile-client';
 import { updatePreferencesAction } from './actions';
 
@@ -32,15 +33,7 @@ export default async function ProfilePage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-6 py-8">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Profile</h1>
-        <p className="text-sm text-muted-foreground">
-          Timezone and locale used across the UI, Saskia&apos;s replies, and event
-          scheduling. Setting these correctly lets Saskia resolve relative time
-          references like &quot;tomorrow at 3pm&quot; into the right UTC instant when
-          she calls <code className="font-mono text-xs">event_create</code>.
-        </p>
-      </header>
+      <SetPageTitle title="Profile" />
 
       <ProfileClient
         defaults={prefs}

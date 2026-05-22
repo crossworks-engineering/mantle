@@ -8,6 +8,7 @@ import { getJourney } from '@/lib/journey';
 import { deriveAction, sourceLabel } from '@/lib/journey-format';
 import { DebugTabs } from '../../debug-tabs';
 import { ActionIcon } from '@/components/journey/action-icon';
+import { SetPageTitle } from '@/components/layout/page-title';
 
 /**
  * Journey detail — the reaction story for one action: the trace step timeline,
@@ -60,12 +61,12 @@ export default async function JourneyDetailPage({
       </Link>
 
       {/* Action header */}
+      <SetPageTitle title={pres.label} />
       <header className="flex items-start gap-3">
         <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted">
           <ActionIcon iconKey={pres.iconKey} className="h-5 w-5 text-foreground" />
         </span>
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold">{pres.label}</h1>
           {subtitle && <p className="truncate text-sm text-muted-foreground">{subtitle}</p>}
           <p className="mt-1 text-xs text-muted-foreground">
             <code className="font-mono">{j.kind}</code> · via {sourceLabel(source)} ·{' '}

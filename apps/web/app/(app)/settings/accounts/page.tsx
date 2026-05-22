@@ -4,6 +4,7 @@ import { Activity, FolderTree, Mail, Pencil, SlidersHorizontal } from 'lucide-re
 import { db, emailAccounts, syncRuns, type SyncRun } from '@mantle/db';
 import { requireOwner } from '@/lib/auth';
 import { formatDateTime } from '@/lib/format-datetime';
+import { SetPageTitle } from '@/components/layout/page-title';
 import { Button } from '@/components/ui/button';
 
 interface ImapCursorShape {
@@ -41,13 +42,7 @@ export default async function AccountsSettingsPage({
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-6 py-8">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Email accounts</h1>
-        <p className="text-sm text-muted-foreground">
-          Plug Mantle into your inboxes. We pull every message into Postgres and route them onto your tree
-          using your ingest rules.
-        </p>
-      </header>
+      <SetPageTitle title="Email accounts" />
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Connected</h2>

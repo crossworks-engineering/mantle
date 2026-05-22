@@ -1,5 +1,6 @@
 import { requireOwner } from '@/lib/auth';
 import { listApiKeys } from '@/lib/api-keys';
+import { SetPageTitle } from '@/components/layout/page-title';
 import { KeysClient } from './keys-client';
 
 export default async function KeysSettingsPage() {
@@ -8,14 +9,7 @@ export default async function KeysSettingsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-6 py-8">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">API keys</h1>
-        <p className="text-sm text-muted-foreground">
-          Encrypted at rest with your <code>MANTLE_MASTER_KEY</code>. The plaintext leaves
-          the server only twice — when you create a key, and when you rotate it. Backups
-          contain the ciphertext only.
-        </p>
-      </header>
+      <SetPageTitle title="API keys" />
 
       <KeysClient
         initialKeys={keys.map((k) => ({

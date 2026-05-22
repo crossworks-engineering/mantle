@@ -16,6 +16,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import { SetPageTitle } from '@/components/layout/page-title';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -190,6 +191,7 @@ export function SecretDetailClient({ initial }: { initial: SecretRow }) {
 
   return (
     <div className="space-y-6">
+      <SetPageTitle title={meta.title} />
       <div>
         <Link
           href="/secrets"
@@ -205,7 +207,6 @@ export function SecretDetailClient({ initial }: { initial: SecretRow }) {
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0 space-y-1">
                 <div className="flex items-center gap-2">
-                  <h1 className="truncate text-2xl font-semibold">{meta.title}</h1>
                   <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
                     {meta.kind}
                   </span>

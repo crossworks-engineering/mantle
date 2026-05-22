@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { EmailRow } from '@/components/email-row';
 import { ReadingPane } from '@/components/reading-pane';
 import { MailClient } from '@/components/mail/mail-client';
+import { SetPageTitle } from '@/components/layout/page-title';
 import { folderLabel } from '@/components/mail/folder-icon';
 import type { FolderLink } from '@/components/mail/mail-nav';
 
@@ -205,6 +206,8 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
     );
 
   return (
+    <>
+    <SetPageTitle title="Inbox" />
     <MailClient
       accounts={accounts}
       currentAccountId={accountId}
@@ -223,5 +226,6 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
       listSlot={listSlot}
       readerSlot={<ReadingPane email={selectedEmail} attachments={attachments} />}
     />
+    </>
   );
 }

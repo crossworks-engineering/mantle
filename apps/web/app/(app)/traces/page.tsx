@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { requireOwner } from '@/lib/auth';
 import { formatDateTime } from '@/lib/format-datetime';
 import { formatDuration, formatMicroUsd, listTraces } from '@/lib/traces';
+import { SetPageTitle } from '@/components/layout/page-title';
 
 const KIND_LABEL: Record<string, string> = {
   responder_turn: 'Responder',
@@ -39,14 +40,7 @@ export default async function TracesPage(props: {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Traces</h1>
-        <p className="text-sm text-muted-foreground">
-          Every meaningful unit of work the agent process runs becomes a trace —
-          one row here per responder turn, extractor run, summarizer pass, or
-          reflector tick. Click a row for the step-by-step flow.
-        </p>
-      </header>
+      <SetPageTitle title="Traces" />
 
       {/* Filters */}
       <form className="flex flex-wrap items-center gap-3 rounded-md border border-border p-3 text-sm">

@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { requireOwner } from '@/lib/auth';
 import { formatDateTime } from '@/lib/format-datetime';
 import { formatDuration, formatMicroUsd, getTrace } from '@/lib/traces';
+import { SetPageTitle } from '@/components/layout/page-title';
 import { TraceDetail } from './trace-detail';
 
 export default async function TraceDetailPage({
@@ -17,12 +18,12 @@ export default async function TraceDetailPage({
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
+      <SetPageTitle title={trace.kind} />
       <header className="space-y-2">
         <div className="flex items-baseline gap-3">
           <Link href="/traces" className="text-sm text-muted-foreground hover:underline">
             ← Traces
           </Link>
-          <h1 className="text-2xl font-semibold">{trace.kind}</h1>
           <span
             className={
               trace.status === 'success'

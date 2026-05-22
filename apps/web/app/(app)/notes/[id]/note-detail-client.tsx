@@ -9,6 +9,7 @@ import { ArrowLeft, Eye, Pencil, Save, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SetPageTitle } from '@/components/layout/page-title';
 import { formatDateTime } from '@/lib/format-datetime';
 
 type NoteRow = {
@@ -68,6 +69,7 @@ export function NoteDetailClient({ initial }: { initial: NoteRow }) {
 
   return (
     <div className="space-y-4">
+      <SetPageTitle title={note.title} />
       <Link
         href="/notes"
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -80,7 +82,6 @@ export function NoteDetailClient({ initial }: { initial: NoteRow }) {
           <header className="space-y-2">
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0 space-y-1">
-                <h1 className="truncate text-2xl font-semibold">{note.title}</h1>
                 {note.summary && (
                   <p className="text-xs italic text-muted-foreground">
                     Indexed: {note.summary}

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { requireOwner } from '@/lib/auth';
+import { SetPageTitle } from '@/components/layout/page-title';
 import { listAccountFolders } from '../../folders-actions';
 import { FolderPicker } from './folder-picker';
 
@@ -20,6 +21,7 @@ export default async function AccountFoldersPage({
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-6 py-8">
+      <SetPageTitle title="Folders to scan" />
       <header className="space-y-1">
         <Link
           href="/settings/accounts"
@@ -27,10 +29,6 @@ export default async function AccountFoldersPage({
         >
           <ArrowLeft className="size-4" aria-hidden /> Accounts
         </Link>
-        <h1 className="text-2xl font-semibold">Folders to scan</h1>
-        {result.ok ? (
-          <p className="text-sm text-muted-foreground">{result.address}</p>
-        ) : null}
       </header>
 
       <p className="text-sm text-muted-foreground">

@@ -17,6 +17,7 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { requireOwner } from '@/lib/auth';
 import { loadNodeBiography } from '@/lib/node-biography';
+import { SetPageTitle } from '@/components/layout/page-title';
 import { NodeBiography } from '@/components/node-biography';
 
 export default async function NodeHistoryPage(props: {
@@ -29,6 +30,7 @@ export default async function NodeHistoryPage(props: {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-6 py-8">
+      <SetPageTitle title="Node history" />
       <header className="space-y-1">
         <div className="flex items-baseline gap-2 text-xs text-muted-foreground">
           <Link
@@ -39,12 +41,6 @@ export default async function NodeHistoryPage(props: {
             Files
           </Link>
         </div>
-        <h1 className="text-2xl font-semibold">Node history</h1>
-        <p className="text-sm text-muted-foreground">
-          Every pipeline that touched <code className="font-mono">{id.slice(0, 8)}</code>{' '}
-          — from the ingest moment forward. Skipped traces show why the system
-          declined to run; successful traces show what each step saw and produced.
-        </p>
       </header>
 
       <NodeBiography view={view} />

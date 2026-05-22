@@ -7,6 +7,7 @@ import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { LiveColumn } from '@/components/layout/live-column';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { ToastProvider } from '@/components/ui/toast';
+import { PageTitleProvider } from '@/components/layout/page-title';
 
 /**
  * App shell — three fixed regions (header, left sidebar, right live
@@ -58,6 +59,7 @@ export function AppShell({
 
   return (
     <ToastProvider>
+      <PageTitleProvider>
       <div className="h-screen bg-background">
         <Header email={email} userAvatar={userAvatar} onMenuClick={() => setMobileOpen(true)} />
 
@@ -82,6 +84,7 @@ export function AppShell({
           {children}
         </main>
       </div>
+      </PageTitleProvider>
     </ToastProvider>
   );
 }

@@ -6,6 +6,7 @@ import { formatDuration, formatMicroUsd } from '@/lib/traces-format';
 import { listActivity } from '@/lib/journey';
 import { PIPELINE_LEGEND, type ActionCategory } from '@/lib/journey-format';
 import { DebugTabs } from '../debug-tabs';
+import { SetPageTitle } from '@/components/layout/page-title';
 import { ActionIcon } from '@/components/journey/action-icon';
 import { ActiveNow } from '@/components/journey/active-now';
 
@@ -59,13 +60,7 @@ export default async function JourneyPage({
     <div className="mx-auto max-w-4xl space-y-6 px-6 py-8">
       <DebugTabs />
 
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Journey</h1>
-        <p className="text-sm text-muted-foreground">
-          Every action you take, and how the brain reacted. Click a row to see the step-by-step
-          digestion and which memory layers it wrote.
-        </p>
-      </header>
+      <SetPageTitle title="Journey" />
 
       {/* Always-on live header: what's running now + recent failures */}
       <ActiveNow />
