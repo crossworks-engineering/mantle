@@ -1,6 +1,5 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, BookOpen, Boxes, Network, ScrollText } from 'lucide-react';
+import { BookOpen, Boxes, Network, ScrollText } from 'lucide-react';
 import { requireOwner } from '@/lib/auth';
 import { formatDateTime } from '@/lib/format-datetime';
 import { formatDuration, formatMicroUsd } from '@/lib/traces-format';
@@ -9,6 +8,7 @@ import { deriveAction, sourceLabel } from '@/lib/journey-format';
 import { DebugTabs } from '../../debug-tabs';
 import { ActionIcon } from '@/components/journey/action-icon';
 import { SetPageTitle } from '@/components/layout/page-title';
+import { BackLink } from '@/components/layout/back-link';
 
 /**
  * Journey detail — the reaction story for one action: the trace step timeline,
@@ -53,12 +53,7 @@ export default async function JourneyDetailPage({
     <div className="mx-auto max-w-3xl space-y-6 px-6 py-8">
       <DebugTabs />
 
-      <Link
-        href="/debug/journey"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" /> Back to activity
-      </Link>
+      <BackLink href="/debug/journey">Back to activity</BackLink>
 
       {/* Action header */}
       <SetPageTitle title={pres.label} />

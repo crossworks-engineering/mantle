@@ -13,11 +13,10 @@
  */
 
 import { notFound } from 'next/navigation';
-import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
 import { requireOwner } from '@/lib/auth';
 import { loadNodeBiography } from '@/lib/node-biography';
 import { SetPageTitle } from '@/components/layout/page-title';
+import { BackLink } from '@/components/layout/back-link';
 import { NodeBiography } from '@/components/node-biography';
 
 export default async function NodeHistoryPage(props: {
@@ -32,15 +31,7 @@ export default async function NodeHistoryPage(props: {
     <div className="mx-auto max-w-5xl space-y-6 px-6 py-8">
       <SetPageTitle title="Node history" />
       <header className="space-y-1">
-        <div className="flex items-baseline gap-2 text-xs text-muted-foreground">
-          <Link
-            href="/files"
-            className="inline-flex items-center gap-1 hover:text-foreground"
-          >
-            <ArrowLeft className="h-3 w-3" />
-            Files
-          </Link>
-        </div>
+        <BackLink href="/files">Files</BackLink>
       </header>
 
       <NodeBiography view={view} />

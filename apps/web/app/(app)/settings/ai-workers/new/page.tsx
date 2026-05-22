@@ -1,11 +1,9 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
 import type { AiWorkerKind } from '@mantle/db';
 import { requireOwner } from '@/lib/auth';
 import { listApiKeys } from '@/lib/api-keys';
-import { Button } from '@/components/ui/button';
 import { SetPageTitle } from '@/components/layout/page-title';
+import { BackLink } from '@/components/layout/back-link';
 import { WorkerForm } from '../worker-form';
 import { createAiWorkerAction } from '../actions';
 
@@ -47,12 +45,7 @@ export default async function NewAiWorkerPage({
     <div className="mx-auto max-w-2xl space-y-6 px-6 py-8">
       <SetPageTitle title={`New ${KIND_LABELS[kind]} worker`} />
       <header className="space-y-1">
-        <Button asChild variant="ghost" size="sm" className="-ml-2">
-          <Link href="/settings/ai-workers">
-            <ArrowLeft />
-            Back
-          </Link>
-        </Button>
+        <BackLink href="/settings/ai-workers">Back</BackLink>
       </header>
 
       <WorkerForm

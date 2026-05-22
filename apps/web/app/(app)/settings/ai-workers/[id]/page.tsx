@@ -1,11 +1,11 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { requireOwner } from '@/lib/auth';
 import { getAiWorker } from '@/lib/ai-workers';
 import { listApiKeys } from '@/lib/api-keys';
 import { Button } from '@/components/ui/button';
 import { SetPageTitle } from '@/components/layout/page-title';
+import { BackLink } from '@/components/layout/back-link';
 import { WorkerForm } from '../worker-form';
 import { deleteAiWorkerAction, updateAiWorkerAction } from '../actions';
 
@@ -37,12 +37,7 @@ export default async function EditAiWorkerPage({
       <SetPageTitle title={worker.name} />
       <header className="space-y-1">
         <div className="flex items-center justify-between gap-2">
-          <Button asChild variant="ghost" size="sm" className="-ml-2">
-            <Link href="/settings/ai-workers">
-              <ArrowLeft />
-              Back
-            </Link>
-          </Button>
+          <BackLink href="/settings/ai-workers">Back</BackLink>
           <form action={deleteAction}>
             <Button type="submit" variant="destructive" size="sm">
               <Trash2 />

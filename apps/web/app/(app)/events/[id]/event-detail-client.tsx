@@ -1,14 +1,14 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Bell, MapPin, Pencil, Save, Trash2, X } from 'lucide-react';
+import { Bell, MapPin, Pencil, Save, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
 import { SetPageTitle } from '@/components/layout/page-title';
+import { BackLink } from '@/components/layout/back-link';
 import { formatDateTime } from '@/lib/format-datetime';
 
 type EventRow = {
@@ -111,12 +111,7 @@ export function EventDetailClient({ initial }: { initial: EventRow }) {
   return (
     <div className="space-y-4">
       <SetPageTitle title={event.title} />
-      <Link
-        href="/events"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-3" /> All events
-      </Link>
+      <BackLink href="/events">All events</BackLink>
 
       {!editing ? (
         <>

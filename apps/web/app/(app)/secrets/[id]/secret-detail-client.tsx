@@ -1,11 +1,9 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { formatDateTime } from '@/lib/format-datetime';
 import {
-  ArrowLeft,
   Check,
   Copy,
   Eye,
@@ -21,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
+import { BackLink } from '@/components/layout/back-link';
 
 const KINDS = ['password', 'token', 'server', 'card', 'note', 'other'] as const;
 type Kind = (typeof KINDS)[number];
@@ -192,14 +191,7 @@ export function SecretDetailClient({ initial }: { initial: SecretRow }) {
   return (
     <div className="space-y-6">
       <SetPageTitle title={meta.title} />
-      <div>
-        <Link
-          href="/secrets"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-3" /> All secrets
-        </Link>
-      </div>
+      <BackLink href="/secrets">All secrets</BackLink>
 
       {!editing ? (
         <>

@@ -1,7 +1,7 @@
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
 import { requireOwner } from '@/lib/auth';
 import { SetPageTitle } from '@/components/layout/page-title';
+import { BackLink } from '@/components/layout/back-link';
 import { listAccountFolders } from '../../folders-actions';
 import { FolderPicker } from './folder-picker';
 
@@ -23,12 +23,7 @@ export default async function AccountFoldersPage({
     <div className="mx-auto max-w-2xl space-y-6 px-6 py-8">
       <SetPageTitle title="Folders to scan" />
       <header className="space-y-1">
-        <Link
-          href="/settings/accounts"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" aria-hidden /> Accounts
-        </Link>
+        <BackLink href="/settings/accounts">Accounts</BackLink>
       </header>
 
       <p className="text-sm text-muted-foreground">
