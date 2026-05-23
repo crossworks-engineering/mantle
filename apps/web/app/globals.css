@@ -3248,3 +3248,13 @@
   color: var(--muted-foreground);
   text-decoration: line-through;
 }
+
+/* Pages @-mention chips (resolved entities). */
+.ProseMirror .mention {
+  border-radius: 0.3rem;
+  background-color: color-mix(in oklab, var(--primary) 14%, transparent);
+  color: var(--primary);
+  padding: 0.05em 0.3em;
+  font-weight: 500;
+  white-space: nowrap;
+}

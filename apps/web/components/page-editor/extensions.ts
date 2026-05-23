@@ -8,6 +8,7 @@ import { TableKit } from '@tiptap/extension-table';
 import type { Extensions } from '@tiptap/react';
 import { Callout } from './callout';
 import { Column, ColumnList } from './column';
+import { PageMention } from './mention';
 
 /**
  * Shared editor schema for the pages surface. The live editor (`PageEditor`)
@@ -33,6 +34,7 @@ export const pageExtensions: Extensions = [
   Typography,
   TaskList,
   TaskItem.configure({ nested: true }),
+  PageMention,
   Callout,
   ColumnList,
   Column,
