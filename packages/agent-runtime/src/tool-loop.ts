@@ -297,6 +297,10 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
             step: {
               setMeta: (m) => handle.setMeta(m),
               setOutput: (o) => handle.setOutput(o),
+              // Let a tool that calls an LLM (e.g. web_search → Sonar)
+              // attribute its spend to this step → the active trace.
+              addTokens: (d) => handle.addTokens(d),
+              addCost: (mu) => handle.addCost(mu),
             },
             // Populated only when the caller passed agent context.
             // The `invoke_agent` builtin requires it; regular tools

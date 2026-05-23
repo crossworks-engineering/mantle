@@ -197,6 +197,8 @@ export async function approvePendingCall(
               step: {
                 setMeta: (m) => handle.setMeta(m),
                 setOutput: (o) => handle.setOutput(o),
+                addTokens: (d) => handle.addTokens(d),
+                addCost: (mu) => handle.addCost(mu),
               },
             },
           );

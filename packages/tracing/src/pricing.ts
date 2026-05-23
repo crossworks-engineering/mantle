@@ -40,6 +40,15 @@ const PRICING: Record<string, PricePerToken> = {
   // Google
   'google/gemini-2.5-flash': { input: 0.0000003, output: 0.0000025 },
   'google/gemini-2.5-pro': { input: 0.00000125, output: 0.00001 },
+
+  // Perplexity Sonar (via OpenRouter) — used by the web_search tool. Token
+  // rates only; Sonar also bills a per-search surcharge that this table can't
+  // model, so the reported `usage.cost` (requested via usage:{include:true})
+  // is the accurate path and this is just the fallback floor.
+  'perplexity/sonar': { input: 0.000001, output: 0.000001 },
+  'perplexity/sonar-pro': { input: 0.000003, output: 0.000015 },
+  'perplexity/sonar-reasoning': { input: 0.000001, output: 0.000005 },
+  'perplexity/sonar-reasoning-pro': { input: 0.000002, output: 0.000008 },
 };
 
 /**

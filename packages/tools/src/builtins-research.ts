@@ -15,6 +15,7 @@ import { and, eq } from 'drizzle-orm';
 import { OpenRouter } from '@openrouter/sdk';
 import { apiKeys, db } from '@mantle/db';
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
+import { captureLlmUsage } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
 
 function str(v: unknown): string {
@@ -116,6 +117,9 @@ const web_search: BuiltinToolDef = {
       const chatRequest = {
         model: WEB_SEARCH_MODEL,
         messages: [{ role: 'user', content: query }],
+        // Ask OpenRouter to return real cost accounting on the response so the
+        // Sonar spend (incl. per-search surcharge) is attributed accurately.
+        usage: { include: true },
         ...(recency ? { search_recency_filter: recency } : {}),
       };
       // Casts: (1) search_recency_filter is a Perplexity-specific param
@@ -134,14 +138,14 @@ const web_search: BuiltinToolDef = {
       const answer = typeof msg?.content === 'string' ? msg.content : '';
       const citations = extractCitations(resp);
 
-      // Cost of the Sonar sub-call isn't rolled into the trace (tool handlers
-      // can't add cost yet) — surface usage in step meta for visibility.
-      ctx.step?.setMeta({
-        model: WEB_SEARCH_MODEL,
-        ...(recency ? { recency } : {}),
-        citation_count: citations.length,
-        usage: resp.usage ?? null,
-      });
+      // Attribute the Sonar sub-call's tokens + cost to this step → the active
+      // trace, so /debug "spend by agent" reflects research spend. Prefers the
+      // route's reported usage.cost (accurate, incl. Perplexity's search fee),
+      // falls back to the static price table.
+      if (ctx.step) {
+        captureLlmUsage(ctx.step, resp, WEB_SEARCH_MODEL);
+        ctx.step.setMeta({ ...(recency ? { recency } : {}), citation_count: citations.length });
+      }
       ctx.step?.setOutput({ answer_chars: answer.length, citations: citations.length });
 
       if (!answer) {
