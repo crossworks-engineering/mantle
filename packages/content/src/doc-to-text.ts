@@ -32,6 +32,8 @@ const BLOCK_TYPES = new Set([
   'horizontalRule',
   'table',
   'tableRow',
+  'tableCell',
+  'tableHeader',
   'figure',
 ]);
 

@@ -1,5 +1,6 @@
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
+import { TableKit } from '@tiptap/extension-table';
 import type { Extensions } from '@tiptap/react';
 import { Callout } from './callout';
 import { Column, ColumnList } from './column';
@@ -23,6 +24,7 @@ export const pageExtensions: Extensions = [
   Callout,
   ColumnList,
   Column,
+  TableKit.configure({ table: { resizable: true } }),
   Placeholder.configure({
     // Only the first empty line shows it (showOnlyWhenEditable defaults true,
     // so the read-only PageView never renders a placeholder).

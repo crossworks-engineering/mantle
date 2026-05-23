@@ -21,6 +21,7 @@ import {
   List,
   ListOrdered,
   Minus,
+  Table as TableIcon,
   TextQuote,
   Type,
   type LucideIcon,
@@ -135,6 +136,20 @@ const ITEMS: SlashItem[] = [
     keywords: ['hr', 'rule', 'separator', '---'],
     command: ({ editor, range }) =>
       editor.chain().focus().deleteRange(range).setHorizontalRule().run(),
+  },
+  {
+    group: 'Blocks',
+    title: 'Table',
+    description: 'A simple table (add rows/columns with +).',
+    icon: TableIcon,
+    keywords: ['grid', 'cells', 'spreadsheet', 'rows'],
+    command: ({ editor, range }) =>
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertTable({ rows: 2, cols: 2, withHeaderRow: true })
+        .run(),
   },
   {
     group: 'Columns',

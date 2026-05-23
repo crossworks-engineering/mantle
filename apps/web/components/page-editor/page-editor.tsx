@@ -5,6 +5,7 @@ import { EditorContent, useEditor, type Editor, type JSONContent } from '@tiptap
 import { pageExtensions } from './extensions';
 import { EditorBubbleMenu } from './bubble-menu';
 import { EditorDragHandle } from './drag-handle';
+import { TableControls } from './table-controls';
 import { SlashCommand } from './slash-command';
 
 /**
@@ -63,6 +64,7 @@ export function PageEditor({
     <>
       <EditorBubbleMenu editor={editor} />
       <EditorDragHandle editor={editor} />
+      <TableControls editor={editor} />
       <EditorContent editor={editor} />
     </>
   );

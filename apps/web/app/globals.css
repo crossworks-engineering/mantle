@@ -3152,3 +3152,52 @@
     grid-auto-flow: row;
   }
 }
+
+/* Pages tables (TipTap / prosemirror-tables) — themed borders + header row,
+   column-resize handle, and cell-selection highlight. */
+.ProseMirror .tableWrapper {
+  overflow-x: auto;
+  margin-block: 1rem;
+}
+.ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 0;
+}
+.ProseMirror table td,
+.ProseMirror table th {
+  position: relative;
+  min-width: 4rem;
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.6rem;
+  vertical-align: top;
+}
+.ProseMirror table th {
+  background-color: var(--muted);
+  font-weight: 600;
+  text-align: left;
+}
+.ProseMirror table td > p,
+.ProseMirror table th > p {
+  margin: 0;
+}
+.ProseMirror table .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, var(--primary) 14%, transparent);
+  pointer-events: none;
+}
+.ProseMirror table .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--primary);
+  cursor: col-resize;
+}
+.ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
