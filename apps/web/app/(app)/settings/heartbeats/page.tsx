@@ -47,7 +47,7 @@ export default async function HeartbeatsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 px-6 py-8">
+    <>
       <SetPageTitle title="Heartbeats" />
       <HeartbeatsClient
         initial={rows}
@@ -61,6 +61,6 @@ export default async function HeartbeatsPage() {
         }))}
         formatted={formatted}
       />
-    </div>
+    </>
   );
 }

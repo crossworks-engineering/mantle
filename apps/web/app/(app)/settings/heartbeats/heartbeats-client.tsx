@@ -3,10 +3,22 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { HeartPulse, Pencil, Play, Pause, Trash2, Zap } from 'lucide-react';
+import { Pause, Play, Plus, Trash2, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { useToast } from '@/components/ui/toast';
+import { cn } from '@/lib/utils';
 import {
   createHeartbeatAction,
   deleteHeartbeatAction,
@@ -188,20 +200,20 @@ export function HeartbeatsClient({
   formatted: HeartbeatFormattedTimes;
 }) {
   const router = useRouter();
+  const toast = useToast();
   const [editing, setEditing] = useState<{ mode: 'create' } | { mode: 'edit'; hb: HeartbeatSummary } | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm());
   const [slugTouched, setSlugTouched] = useState(false);
-  const [error, setError] = useState<string>();
+  const [deleteTarget, setDeleteTarget] = useState<HeartbeatSummary | null>(null);
+  const [fireTarget, setFireTarget] = useState<HeartbeatSummary | null>(null);
   const [pending, startTransition] = useTransition();
 
   const openCreate = () => {
-    setError(undefined);
     setForm(emptyForm());
     setSlugTouched(false);
     setEditing({ mode: 'create' });
   };
   const openEdit = (hb: HeartbeatSummary) => {
-    setError(undefined);
     setForm(fromHeartbeat(hb));
     setSlugTouched(true);
     setEditing({ mode: 'edit', hb });
@@ -228,14 +240,13 @@ export function HeartbeatsClient({
     });
 
   const submit = async () => {
-    setError(undefined);
     if (form.is_cron_locked) {
       // Refuse to save while the form holds a cron-locked row.
       // The server action would re-serialise the schedule from
       // form fields, which would lose the cron expression. Force
       // the operator down the documented path (SQL edit or
       // delete + recreate). P2-4 from the v1 audit.
-      setError(
+      toast.error(
         'Cannot save: this heartbeat uses a cron schedule (unsupported in v1). Edit via SQL or recreate the row with a v1-supported schedule.',
       );
       return;
@@ -269,12 +280,12 @@ export function HeartbeatsClient({
       try {
         const parsed: unknown = JSON.parse(rawState);
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-          setError('State must be a JSON object (e.g. {"answered": []}).');
+          toast.error('State must be a JSON object (e.g. {"answered": []}).');
           return;
         }
         fd.set('state', rawState);
       } catch (err) {
-        setError(`State JSON is invalid: ${err instanceof Error ? err.message : String(err)}`);
+        toast.error(`State JSON is invalid: ${err instanceof Error ? err.message : String(err)}`);
         return;
       }
     }
@@ -287,15 +298,18 @@ export function HeartbeatsClient({
       close();
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      toast.error(err instanceof Error ? err.message : String(err));
     }
   };
 
-  const onDelete = (id: string) => {
-    if (!confirm('Delete this heartbeat? Its fire history (heartbeat_fires) goes with it.')) return;
+  const confirmDelete = () => {
+    const hb = deleteTarget;
+    if (!hb) return;
+    setDeleteTarget(null);
+    if (editing?.mode === 'edit' && editing.hb.id === hb.id) close();
     startTransition(async () => {
       const fd = new FormData();
-      fd.set('id', id);
+      fd.set('id', hb.id);
       await deleteHeartbeatAction(fd);
       router.refresh();
     });
@@ -312,95 +326,139 @@ export function HeartbeatsClient({
     });
   };
 
-  const onFireNow = (id: string) => {
-    if (!confirm('Force-fire now? Gates (idle/quiet/cooldown) are bypassed.')) return;
+  const confirmFire = () => {
+    const hb = fireTarget;
+    if (!hb) return;
+    setFireTarget(null);
     startTransition(async () => {
       const fd = new FormData();
-      fd.set('id', id);
+      fd.set('id', hb.id);
       await fireNowAction(fd);
       router.refresh();
     });
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{initial.length} configured</p>
-        <Button onClick={openCreate} size="sm">
-          <HeartPulse /> New heartbeat
-        </Button>
+    <div className="md:grid md:h-full md:grid-cols-[360px_1fr] md:overflow-hidden">
+      {/* ── Left: heartbeat list ─────────────────────────────────── */}
+      <div className="flex flex-col border-b border-border md:h-full md:min-h-0 md:border-b-0 md:border-r">
+        <div className="flex items-center justify-between gap-2 border-b border-border p-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Heartbeats
+          </h2>
+          <Button onClick={openCreate} size="sm">
+            <Plus /> New
+          </Button>
+        </div>
+        <div className="space-y-2 p-3 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
+          {initial.length === 0 ? (
+            <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
+              No heartbeats yet. Click <strong>New</strong> to create one.
+            </p>
+          ) : (
+            initial.map((h) => {
+              const selected = editing?.mode === 'edit' && editing.hb.id === h.id;
+              return (
+                <button
+                  key={h.id}
+                  type="button"
+                  onClick={() => openEdit(h)}
+                  className={cn(
+                    'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-accent/40',
+                    selected && 'border-l-primary bg-accent/50',
+                    h.status !== 'active' && 'opacity-70',
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-sm font-medium">{h.name}</span>
+                    <span
+                      className={cn(
+                        'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium',
+                        statusBadgeClass(h.status),
+                      )}
+                    >
+                      {h.status}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {h.agentSlug} · {h.skillSlug} · {h.scheduleKind} ·{' '}
+                    {h.surface.kind === 'telegram' ? `tg:${h.surface.chat_id}` : 'web'} · fires=
+                    {h.fireCount}
+                  </div>
+                  {h.nextFireAt && h.status === 'active' && formatted[h.id]?.nextFireAt && (
+                    <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                      next {formatted[h.id]?.nextFireAt}
+                    </div>
+                  )}
+                </button>
+              );
+            })
+          )}
+        </div>
       </div>
 
-      <ul className="divide-y rounded-md border">
-        {initial.length === 0 && (
-          <li className="px-4 py-6 text-sm text-muted-foreground">
-            No heartbeats yet. Click &quot;New heartbeat&quot; to create one.
-          </li>
-        )}
-        {initial.map((h) => (
-          <li key={h.id} className="flex items-center gap-3 px-4 py-3">
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-baseline gap-2">
-                <Link href={`/heartbeats/${h.id}`} className="font-medium hover:underline">
-                  {h.name}
-                </Link>
-                <code className="text-xs text-muted-foreground">{h.slug}</code>
-                <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${statusBadgeClass(h.status)}`}>
-                  {h.status}
-                </span>
-              </div>
-              <p className="truncate text-xs text-muted-foreground">
-                {h.agentSlug} · {h.skillSlug} · {h.scheduleKind} ·{' '}
-                {h.surface.kind === 'telegram' ? `tg:${h.surface.chat_id}` : 'web'} · fires={h.fireCount}
-                {h.nextFireAt && h.status === 'active' && formatted[h.id]?.nextFireAt && (
-                  <> · next {formatted[h.id]?.nextFireAt}</>
+      {/* ── Right: editor ────────────────────────────────────────── */}
+      <div className="md:h-full md:min-h-0 md:overflow-y-auto md:scrollbar-thin">
+        {editing ? (
+          <div className="space-y-4 p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold">
+                  {editing.mode === 'edit' ? editing.hb.name : 'New heartbeat'}
+                </h2>
+                {editing.mode === 'edit' && (
+                  <p className="text-xs text-muted-foreground">
+                    <code className="rounded bg-muted px-1.5 py-0.5">{editing.hb.slug}</code> ·{' '}
+                    <Link href={`/heartbeats/${editing.hb.id}`} className="hover:underline">
+                      fire history →
+                    </Link>
+                  </p>
                 )}
-              </p>
+              </div>
+              {editing.mode === 'edit' && (
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setFireTarget(editing.hb)}
+                    disabled={pending || editing.hb.status !== 'active'}
+                  >
+                    <Zap /> Fire
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onToggle(editing.hb)}
+                    disabled={
+                      pending ||
+                      editing.hb.status === 'completed' ||
+                      editing.hb.status === 'cancelled'
+                    }
+                  >
+                    {editing.hb.status === 'active' ? (
+                      <>
+                        <Pause /> Pause
+                      </>
+                    ) : (
+                      <>
+                        <Play /> Resume
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => setDeleteTarget(editing.hb)}
+                    disabled={pending}
+                  >
+                    <Trash2 /> Delete
+                  </Button>
+                </div>
+              )}
             </div>
-            <div className="flex items-center gap-1">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => onFireNow(h.id)}
-                disabled={pending || h.status !== 'active'}
-                title="Fire now (bypass gates)"
-              >
-                <Zap />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => onToggle(h)}
-                disabled={pending || h.status === 'completed' || h.status === 'cancelled'}
-                title={h.status === 'active' ? 'Pause' : 'Resume'}
-              >
-                {h.status === 'active' ? <Pause /> : <Play />}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => openEdit(h)} title="Edit">
-                <Pencil />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => onDelete(h.id)}
-                disabled={pending}
-                title="Delete"
-              >
-                <Trash2 />
-              </Button>
-            </div>
-          </li>
-        ))}
-      </ul>
 
-      {editing && (
-        <div className="rounded-md border bg-card p-6">
-          <h2 className="mb-4 text-lg font-semibold">
-            {editing.mode === 'edit' ? `Edit ${editing.hb.name}` : 'New heartbeat'}
-          </h2>
-          {error && <p className="mb-3 text-sm text-rose-600">{error}</p>}
-
-          <div className="grid gap-4">
+            <div className="grid gap-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label>Name</Label>
@@ -692,16 +750,56 @@ export function HeartbeatsClient({
             </div>
           </div>
 
-          <div className="mt-4 flex justify-end gap-2">
-            <Button variant="outline" onClick={close} disabled={pending}>
-              Cancel
-            </Button>
-            <Button onClick={submit} disabled={pending}>
-              {editing.mode === 'edit' ? 'Save' : 'Create'}
-            </Button>
+            <div className="flex justify-end gap-2 border-t border-border pt-3">
+              <Button variant="outline" onClick={close} disabled={pending}>
+                Cancel
+              </Button>
+              <Button onClick={submit} disabled={pending}>
+                {editing.mode === 'edit' ? 'Save' : 'Create'}
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="flex h-full items-center justify-center p-10 text-center text-sm text-muted-foreground">
+            Select a heartbeat to edit, or create a new one.
+          </div>
+        )}
+      </div>
+
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete “{deleteTarget?.name}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Its fire history goes with it. This can’t be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmDelete}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={fireTarget !== null} onOpenChange={(o) => !o && setFireTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Fire “{fireTarget?.name}” now?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Gates (idle / quiet / cooldown) are bypassed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmFire}>Fire now</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
