@@ -11,8 +11,22 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Loader2, Pencil, Plus, RotateCcw, X } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Search,
+  X,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { useToast } from '@/components/ui/toast';
 import { formatDateTime } from '@/lib/format-datetime';
 import type { PersonaNote } from '@mantle/db';
 
@@ -60,10 +74,12 @@ export function PersonaNotesEditor({
   agentId: string;
   initialNotes: PersonaNote[];
 }) {
+  const toast = useToast();
   const [notes, setNotes] = useState<PersonaNote[]>(initialNotes);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [showRetired, setShowRetired] = useState(false);
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
 
   const [addOpen, setAddOpen] = useState(false);
   const [addKind, setAddKind] = useState<Kind>('style');
@@ -76,9 +92,21 @@ export function PersonaNotesEditor({
   const active = useMemo(() => notes.filter((n) => !n.retiredAt), [notes]);
   const retired = useMemo(() => notes.filter((n) => n.retiredAt), [notes]);
 
+  // Newest first ("what it learned last"), then free-text filter, then page.
+  const filtered = useMemo(() => {
+    const sorted = [...active].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+    const q = query.trim().toLowerCase();
+    if (!q) return sorted;
+    return sorted.filter((n) => `${n.content} ${n.kind}`.toLowerCase().includes(q));
+  }, [active, query]);
+
+  const PAGE_SIZE = 8;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageItems = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
   async function call(body: Action): Promise<boolean> {
     setBusy(true);
-    setError(null);
     try {
       const res = await fetch(`/api/agents/${agentId}/persona`, {
         method: 'POST',
@@ -93,7 +121,7 @@ export function PersonaNotesEditor({
       setNotes(data.agent?.personaNotes ?? []);
       return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
       return false;
     } finally {
       setBusy(false);
@@ -152,21 +180,14 @@ export function PersonaNotesEditor({
         </Button>
       </div>
 
-      {error && (
-        <p className="rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1 text-xs text-destructive">
-          {error}
-        </p>
-      )}
-
       {addOpen && (
         <div className="space-y-2 rounded-md border border-border bg-background p-2">
           <KindSelect value={addKind} onChange={setAddKind} />
-          <textarea
+          <Textarea
             value={addText}
             onChange={(e) => setAddText(e.target.value)}
             rows={2}
             placeholder='e.g. "Prefers concise answers with no emoji."'
-            className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm"
           />
           <div className="flex justify-end gap-2">
             <Button type="button" size="sm" variant="ghost" onClick={() => setAddOpen(false)}>
@@ -179,14 +200,33 @@ export function PersonaNotesEditor({
         </div>
       )}
 
+      {active.length > 5 && (
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setPage(1);
+            }}
+            placeholder="Search learned notes…"
+            className="h-9 pl-8"
+          />
+        </div>
+      )}
+
       {active.length === 0 ? (
         <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
           Nothing learned yet. As you chat, the reflector will note durable preferences here — or add
           one yourself.
         </p>
+      ) : filtered.length === 0 ? (
+        <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
+          No learned notes match your search.
+        </p>
       ) : (
         <ul className="space-y-1.5">
-          {active.map((n, i) => {
+          {pageItems.map((n, i) => {
             const k = n.id ?? `idx-${i}`;
             const isEditing = editingRef !== null && (n.id === editingRef);
             return (
@@ -197,11 +237,10 @@ export function PersonaNotesEditor({
                 {isEditing ? (
                   <div className="space-y-2">
                     <KindSelect value={editKind} onChange={setEditKind} />
-                    <textarea
+                    <Textarea
                       value={editText}
                       onChange={(e) => setEditText(e.target.value)}
                       rows={2}
-                      className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm"
                     />
                     <div className="flex justify-end gap-2">
                       <Button
@@ -268,6 +307,39 @@ export function PersonaNotesEditor({
             );
           })}
         </ul>
+      )}
+
+      {filtered.length > PAGE_SIZE && (
+        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span className="tabular-nums">{filtered.length} learned</span>
+          <div className="flex items-center gap-1.5">
+            <span className="tabular-nums">
+              {safePage} / {totalPages}
+            </span>
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              className="size-7"
+              disabled={safePage <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              aria-label="Previous page"
+            >
+              <ChevronLeft />
+            </Button>
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              className="size-7"
+              disabled={safePage >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              aria-label="Next page"
+            >
+              <ChevronRight />
+            </Button>
+          </div>
+        </div>
       )}
 
       {retired.length > 0 && (

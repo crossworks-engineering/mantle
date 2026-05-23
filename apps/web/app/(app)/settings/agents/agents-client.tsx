@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Slider } from '@/components/ui/slider';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import type { AgentAvatar, PersonaNote } from '@mantle/db';
@@ -350,6 +351,31 @@ function formFromAgent(a: AgentSummary): FormState {
   };
 }
 
+/** Map a sampling temperature (0–2) to a human descriptor + hint. */
+function tempDescriptor(t: number): { word: string; hint: string } {
+  if (t <= 0.3)
+    return {
+      word: 'Precise',
+      hint: 'Deterministic and focused — best for extraction, classification, and exact formats.',
+    };
+  if (t <= 0.7)
+    return {
+      word: 'Grounded',
+      hint: 'Mostly consistent with a little flexibility — a safe default for assistants.',
+    };
+  if (t <= 1.0)
+    return {
+      word: 'Balanced',
+      hint: 'A natural mix of reliability and variation for everyday conversation.',
+    };
+  if (t <= 1.4)
+    return {
+      word: 'Creative',
+      hint: 'More varied and expressive — good for brainstorming and richer writing.',
+    };
+  return { word: 'Wild', hint: 'Highly random and surprising — it may wander or go off-topic.' };
+}
+
 function slugify(s: string): string {
   return s
     .toLowerCase()
@@ -559,6 +585,7 @@ export function AgentsClient({
     [agents],
   );
   const selectedId = editing?.mode === 'edit' ? editing.agent.id : null;
+  const temp = Number.parseFloat(form.temperature) || 0;
 
   return (
     <div className="flex h-full flex-col">
@@ -1065,16 +1092,25 @@ export function AgentsClient({
               </legend>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="temperature">Temperature</Label>
-                  <Input
-                    id="temperature"
-                    type="number"
-                    step={0.1}
+                  <div className="flex items-baseline justify-between gap-2">
+                    <Label>Temperature</Label>
+                    <span className="text-xs">
+                      <span className="font-medium text-foreground">{tempDescriptor(temp).word}</span>
+                      <span className="ml-1.5 tabular-nums text-muted-foreground">
+                        {temp.toFixed(1)}
+                      </span>
+                    </span>
+                  </div>
+                  <Slider
                     min={0}
                     max={2}
-                    value={form.temperature}
-                    onChange={(e) => setForm((f) => ({ ...f, temperature: e.target.value }))}
+                    step={0.1}
+                    value={[temp]}
+                    onValueChange={([v]) => setForm((f) => ({ ...f, temperature: String(v ?? 0) }))}
+                    className="py-1.5"
+                    aria-label="Temperature"
                   />
+                  <p className="text-xs text-muted-foreground">{tempDescriptor(temp).hint}</p>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="maxTokens">Max tokens</Label>
