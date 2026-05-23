@@ -222,9 +222,10 @@ export async function updatePage(
 
   const docChanged = input.doc !== undefined;
   // Re-indexing (LLM summary + embedding + fact extraction) is the expensive
-  // part, so it's opt-out: the editor's autosave passes { reindex: false } to
-  // persist the document cheaply and defers indexing to a coarser "settle"
-  // trigger (see reindexPage). Other callers index by default.
+  // part, so it's opt-out via `reindex`. The editor never sends a doc through
+  // here — it uses the draft/commit path (saveDraft / commitPage); this
+  // option exists for programmatic callers that write a doc and want (or want
+  // to skip) indexing. Defaults to true.
   const willReindex = docChanged && opts.reindex !== false;
   const oldData = (node.data ?? {}) as Record<string, unknown>;
   const newData: Record<string, unknown> = { ...oldData };
