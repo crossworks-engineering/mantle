@@ -3201,3 +3201,17 @@
 .ProseMirror.resize-cursor {
   cursor: col-resize;
 }
+
+/* Pages inline marks: themed links + highlight. */
+.ProseMirror a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.ProseMirror mark {
+  background-color: color-mix(in oklab, var(--primary) 22%, transparent);
+  border-radius: 0.2rem;
+  padding: 0 0.1em;
+  color: inherit;
+}

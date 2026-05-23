@@ -1,5 +1,7 @@
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
+import Highlight from '@tiptap/extension-highlight';
+import Typography from '@tiptap/extension-typography';
 import { TableKit } from '@tiptap/extension-table';
 import type { Extensions } from '@tiptap/react';
 import { Callout } from './callout';
@@ -20,7 +22,13 @@ import { Column, ColumnList } from './column';
 export const pageExtensions: Extensions = [
   StarterKit.configure({
     heading: { levels: [1, 2, 3] },
+    // Link ships in StarterKit; just tune it. Auto-link typed/pasted URLs,
+    // link the selection when a URL is pasted over it, and don't navigate
+    // away on click while editing.
+    link: { openOnClick: false, autolink: true, linkOnPaste: true },
   }),
+  Highlight,
+  Typography,
   Callout,
   ColumnList,
   Column,
