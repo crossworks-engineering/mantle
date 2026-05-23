@@ -2,6 +2,7 @@
 
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
+  CornerDownLeft,
   FileText,
   Loader2,
   Mic,
@@ -509,7 +510,7 @@ export function AssistantClient({
             user's side of the conversation, mirroring where their prompts
             land in the margin. Full-width on mobile. */}
         <div className="mx-auto max-w-5xl">
-          <div className="space-y-2 lg:ml-auto lg:max-w-2xl">
+          <div className="space-y-2 lg:mx-auto lg:max-w-2xl">
             {/* Attachment preview — shown above the input row so the
                 user sees what they're about to send. Persists across
                 keystrokes and clears on send/dismiss. */}
@@ -618,10 +619,16 @@ export function AssistantClient({
               />
               <button
                 type="submit"
+                aria-label="Send"
+                title="Send (Enter)"
                 disabled={!agentReady || sending || (!draft.trim() && !attachedFile)}
-                className="self-end rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-40"
+                className="flex w-12 shrink-0 items-center justify-center self-stretch rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
               >
-                {sending ? '…' : 'Send'}
+                {sending ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                ) : (
+                  <CornerDownLeft className="size-4" aria-hidden />
+                )}
               </button>
             </div>
             {error && <p className="text-xs text-destructive">{error}</p>}
