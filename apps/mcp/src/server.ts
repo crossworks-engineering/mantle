@@ -35,7 +35,9 @@ import {
   entityNeighbors,
   searchEntities,
   searchNodes,
+  searchChunks,
 } from '@mantle/search';
+import { embed } from '@mantle/embeddings';
 import {
   accountForChat,
   editMessage,
@@ -179,6 +181,21 @@ server.tool(
       limit,
     });
     return { content: [{ type: 'text', text: JSON.stringify(results, null, 2) }] };
+  },
+);
+
+server.tool(
+  'search_chunks',
+  "Semantic (vector) search over document passages — finds the most relevant *sections* inside pages, files, emails, notes (not just whole-node keyword hits). Use when `search` misses or you want the specific passage. `branch` scopes by ltree path (e.g. 'pages').",
+  {
+    q: z.string(),
+    branch: z.string().optional(),
+    limit: z.number().int().min(1).max(50).optional(),
+  },
+  async ({ q, branch, limit }) => {
+    const embedding = await embed(OWNER_ID!, q);
+    const hits = await searchChunks({ ownerId: OWNER_ID!, embedding, branch, limit: limit ?? 10 });
+    return { content: [{ type: 'text', text: JSON.stringify(hits, null, 2) }] };
   },
 );
 

@@ -15,6 +15,8 @@ export {
   type EntityMention,
 } from './entities';
 
+export { searchChunks, type ChunkHit, type ChunkSearchOptions } from './chunks';
+
 export interface SearchOptions {
   ownerId: string;
   q?: string;
