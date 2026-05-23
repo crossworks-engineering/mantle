@@ -153,10 +153,17 @@ wiring.**
 ### @-mentions → entities (non-invasive)
 `@` resolves the owner's **existing** entities via a read-only endpoint
 (`GET /api/entities/search` → `searchEntities`). The chip carries the entity
-name + id; the name lands in `doc_text`, so the **existing extractor** makes
-the `entity --mentioned_in--> page` edge on commit. No edge-writing code, no
-extractor changes. ("Person" is an `entities` row — never `auth.users`.)
-Deferred: feeding the explicit id in for a *precise* edge (see §8).
+name + id. ("Person" is an `entities` row — never `auth.users`.)
+
+The edge is created **by id**: the extractor's `reconcile_entities` step, after
+its NER pass, reads the page doc's explicit mention ids (`mentionEntityIds` in
+`@mantle/content`) and guarantees an `entity --mentioned_in--> page` edge for
+each — independent of whether NER surfaced that name, deduped against the NER
+pass, tagged `data.explicit:true`, skipping ids whose entity was deleted. It's
+a single edge writer (the extractor) and fully idempotent (Phase-4b
+clear-then-rebuild), so re-commits never duplicate. The mention name also lands
+in `doc_text`, so NER still contributes edges for *un-chipped* names typed as
+plain text.
 
 ### Chunked retrieval (`content_chunks`, Phase 4)
 A long document squeezed into one embedding searches poorly. The extractor now
@@ -214,10 +221,6 @@ cache + `extract_cost_cap_micro_usd`.
 
 ## 8. Known sharp edges / deferred
 
-- **Precise mention edges.** The chip stores the entity id, but the edge is
-  still created by the extractor's name match (same as all content). Making it
-  id-precise means feeding the id *into* the extractor's (now-idempotent) edge
-  build — one writer, no duplicate-writer problem. Deferred pending a decision.
 - **Responder/assistant don't use `searchChunks` yet.** Chunk retrieval is
   available via MCP; wiring it into the live context assembly touches the
   responder and was deliberately left for an explicit go-ahead.
