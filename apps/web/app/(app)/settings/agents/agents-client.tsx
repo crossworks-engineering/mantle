@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -588,7 +588,7 @@ export function AgentsClient({
   const temp = Number.parseFloat(form.temperature) || 0;
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col overflow-hidden">
       {/* Active responder banner */}
       <div className="shrink-0 border-b border-border px-4 py-2 text-xs">
         {activeResponder ? (
@@ -673,7 +673,7 @@ export function AgentsClient({
         </div>
 
         {/* ── Right: editor ────────────────────────────────────────── */}
-        <div className="md:h-full md:overflow-y-auto md:scrollbar-thin">
+        <div className="md:h-full md:min-h-0 md:overflow-y-auto md:scrollbar-thin">
           {!editing ? (
             <div className="flex h-full items-center justify-center p-10 text-center text-sm text-muted-foreground">
               Select an agent to edit, or create a new one.
@@ -691,17 +691,26 @@ export function AgentsClient({
                       : 'Update the agent. Slug is immutable.'}
                   </p>
                 </div>
-                {editing.mode === 'edit' && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="shrink-0 text-destructive hover:text-destructive"
-                    onClick={() => setDeleteTarget(editing.agent)}
-                  >
-                    <Trash2 /> Delete
-                  </Button>
-                )}
+                <div className="flex shrink-0 items-center gap-3">
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <Switch
+                      checked={form.enabled}
+                      onCheckedChange={(v) => setForm((f) => ({ ...f, enabled: v }))}
+                    />
+                    Enabled
+                  </label>
+                  {editing.mode === 'edit' && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setDeleteTarget(editing.agent)}
+                    >
+                      <Trash2 /> Delete
+                    </Button>
+                  )}
+                </div>
               </div>
               <form onSubmit={submitForm} className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
@@ -1118,14 +1127,6 @@ export function AgentsClient({
                 </div>
               </div>
             </fieldset>
-
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox
-                checked={form.enabled}
-                onCheckedChange={(v) => setForm((f) => ({ ...f, enabled: v === true }))}
-              />
-              Enabled
-            </label>
 
             {editing.mode === 'edit' && (
               <PersonaNotesEditor
