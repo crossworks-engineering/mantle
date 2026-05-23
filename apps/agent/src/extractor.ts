@@ -43,6 +43,7 @@ import {
   nodes,
   emails,
   pages,
+  contentChunks,
   type Agent,
   type AgentMemoryConfig,
   type AiWorker,
@@ -55,6 +56,7 @@ import { embed } from '@mantle/embeddings';
 import { diskPathForFile, extOf, mimeForExt, parseDocumentBytes, INGESTABLE_EXTS } from '@mantle/files';
 import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import { captureLlmUsage, runVisionWorker } from '@mantle/agent-runtime';
+import { chunkDocText } from '@mantle/content';
 
 /** Types we will NEVER extract from, no matter what the agent config says.
  *  Note `secret` is NOT here — secret nodes have metadata-only extraction
@@ -970,6 +972,50 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
         `[extractor]   → content_index: summary (${summary.length}c), ${uniqueMentions.length} entities`,
       );
 
+      // ─── chunked retrieval index ─────────────────────────────────────
+      // Rebuild this node's retrieval chunks (delete-for-node, then insert)
+      // so re-extracts REPLACE rather than accumulate. Long docs become
+      // section-sized, individually-embedded chunks; short ones a single
+      // whole-body chunk — uniform chunk-level search across all content.
+      await step(
+        { name: 'write_chunks', kind: 'compute', input: { bodyChars: rawBody.length } },
+        async (h) => {
+          await db.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
+          const pieces = chunkDocText(rawBody);
+          if (pieces.length === 0) {
+            h.setOutput({ chunks: 0 });
+            return;
+          }
+          let vectors: number[][] = [];
+          try {
+            const { embedBatch } = await import('@mantle/embeddings');
+            vectors = await embedBatch(
+              ownerId,
+              pieces.map((p) => p.text),
+              embedOpts,
+            );
+          } catch (err) {
+            console.error(
+              '[extractor]   chunk embed failed:',
+              err instanceof Error ? err.message : err,
+            );
+            h.setOutput({ chunks: 0, embedFailed: true });
+            return;
+          }
+          await db.insert(contentChunks).values(
+            pieces.map((p, i) => ({
+              ownerId,
+              nodeId: node.id,
+              ordinal: i,
+              headingPath: p.headingPath ?? null,
+              text: p.text,
+              embedding: vectors[i] ?? null,
+            })),
+          );
+          h.setOutput({ chunks: pieces.length });
+        },
+      );
+
       // ─── entity reconciliation ───────────────────────────────────────
       const entityIdByName = await step(
         {
@@ -988,6 +1034,17 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
           },
         },
         async (h) => {
+          // Idempotent rebuild: clear this node's prior mention edges so
+          // re-extracts REPLACE rather than append duplicates.
+          await db
+            .delete(entityEdges)
+            .where(
+              and(
+                eq(entityEdges.targetId, node.id),
+                eq(entityEdges.targetKind, 'node'),
+                eq(entityEdges.relation, 'mentioned_in'),
+              ),
+            );
           const map = new Map<string, string>();
           let created = 0;
           let matched = 0;
