@@ -845,6 +845,38 @@ Nh ago" display + stale-pending nudge), `last_question_topic`,
 only by skill instructions via `heartbeat_update_state`. See
 `heartbeats.md` §10 for the canonical list.
 
+## 9k. Re-extract is idempotent (no duplicate brain rows)
+
+Editing content re-fires `node_ingested`, so a node is extracted many times
+over its life. Every derived brain artifact is therefore written as a
+**rebuild keyed by the node, not an append** — a re-extract *replaces* prior
+output instead of piling up:
+
+- **Summary + embedding** — overwritten in place on the `nodes` row.
+- **Entities** — reconciled by name (existing rows reused, never re-created).
+- **Facts** — run through the ADD/UPDATE/DELETE/NOOP dedup classifier.
+- **`content_chunks`** — deleted for the node, then re-inserted.
+- **`mentioned_in` edges** — cleared for the node, then re-inserted.
+
+The last two follow the same **delete-then-rebuild per node** rule. The edge
+clear was a fix (Phase 4): the extractor previously *appended* a `mentioned_in`
+edge on every run, so re-edited content accumulated duplicate
+`entity --mentioned_in--> node` rows. Because the rule lives in the **shared
+extractor**, it covers every content type automatically — notes, pages,
+emails, files — with no per-type code. Edit a note → it re-extracts → its
+edges are cleared and rebuilt → no new duplicates. Same for everything.
+
+Two corollaries:
+
+- **Re-extract is not free** — it re-runs the summary LLM and the fact
+  classifier (bounded by `extract_cost_cap_micro_usd`). That's why pages
+  re-extract only on a deliberate **commit**, not on every keystroke (see
+  [`pages.md`](./pages.md) §3, §6).
+- **Pre-fix duplicates** that accumulated before the edge fix are cleaned in
+  one pass by `pnpm dedupe:edges` (dry-run by default; collapses duplicate
+  `mentioned_in` rows, keeping the earliest). `extract:backfill` does *not*
+  clean them — it only re-fires nodes still missing their index.
+
 ## 10. The MCP server
 
 `apps/mcp/src/server.ts`, ~340 LOC. Exposes Claude's tools over stdio
