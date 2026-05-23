@@ -37,7 +37,7 @@ export function CalloutView({ node, updateAttributes, editor }: NodeViewProps) {
   };
 
   return (
-    <NodeViewWrapper className={cn('my-3 flex gap-3 rounded-lg border p-3', style.wrap)}>
+    <NodeViewWrapper className={cn('my-3 flex gap-3 rounded-lg border px-3 py-2', style.wrap)}>
       {editor.isEditable ? (
         <button
           type="button"
