@@ -3215,3 +3215,36 @@
   padding: 0 0.1em;
   color: inherit;
 }
+
+/* Pages to-do lists: no bullets, themed checkbox aligned to the first line;
+   completed items dim + strike. */
+.ProseMirror ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0;
+  margin-block: 0.5rem;
+}
+.ProseMirror ul[data-type='taskList'] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+.ProseMirror ul[data-type='taskList'] li > label {
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+  user-select: none;
+}
+.ProseMirror ul[data-type='taskList'] li > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ProseMirror ul[data-type='taskList'] li > div > p {
+  margin: 0;
+}
+.ProseMirror ul[data-type='taskList'] input[type='checkbox'] {
+  cursor: pointer;
+  accent-color: var(--primary);
+}
+.ProseMirror ul[data-type='taskList'] li[data-checked='true'] > div {
+  color: var(--muted-foreground);
+  text-decoration: line-through;
+}

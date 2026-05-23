@@ -91,6 +91,30 @@ describe('docToText', () => {
     expect(docToText(doc)).toBe('a\n\nb');
   });
 
+  it('marks task items with their checked state', () => {
+    const doc = {
+      type: 'doc',
+      content: [
+        {
+          type: 'taskList',
+          content: [
+            {
+              type: 'taskItem',
+              attrs: { checked: true },
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'booked flights' }] }],
+            },
+            {
+              type: 'taskItem',
+              attrs: { checked: false },
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'pack bags' }] }],
+            },
+          ],
+        },
+      ],
+    };
+    expect(docToText(doc)).toBe('[x] booked flights\n[ ] pack bags');
+  });
+
   it('handles hard breaks', () => {
     const doc = {
       type: 'doc',

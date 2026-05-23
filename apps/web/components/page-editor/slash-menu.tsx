@@ -20,6 +20,7 @@ import {
   Info,
   List,
   ListOrdered,
+  ListTodo,
   Minus,
   Table as TableIcon,
   TextQuote,
@@ -91,6 +92,15 @@ const ITEMS: SlashItem[] = [
     keywords: ['ol', 'ordered', 'number'],
     command: ({ editor, range }) =>
       editor.chain().focus().deleteRange(range).toggleOrderedList().run(),
+  },
+  {
+    group: 'Lists',
+    title: 'To-do list',
+    description: 'A checklist with checkboxes.',
+    icon: ListTodo,
+    keywords: ['task', 'todo', 'checkbox', 'check'],
+    command: ({ editor, range }) =>
+      editor.chain().focus().deleteRange(range).toggleTaskList().run(),
   },
   {
     group: 'Blocks',

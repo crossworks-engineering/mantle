@@ -2,6 +2,8 @@ import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Highlight from '@tiptap/extension-highlight';
 import Typography from '@tiptap/extension-typography';
+import TaskList from '@tiptap/extension-task-list';
+import TaskItem from '@tiptap/extension-task-item';
 import { TableKit } from '@tiptap/extension-table';
 import type { Extensions } from '@tiptap/react';
 import { Callout } from './callout';
@@ -29,6 +31,8 @@ export const pageExtensions: Extensions = [
   }),
   Highlight,
   Typography,
+  TaskList,
+  TaskItem.configure({ nested: true }),
   Callout,
   ColumnList,
   Column,

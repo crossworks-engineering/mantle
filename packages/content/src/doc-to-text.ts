@@ -23,6 +23,7 @@ const BLOCK_TYPES = new Set([
   'listItem',
   'list_item',
   'taskItem',
+  'task_item',
   'bulletList',
   'orderedList',
   'taskList',
@@ -66,6 +67,11 @@ function render(node: PMNode | null | undefined): string {
   if (node.type === 'heading') {
     const level = Math.min(Math.max(Number(node.attrs?.level) || 1, 1), 6);
     return `${'#'.repeat(level)} ${inner.trim()}`;
+  }
+  // To-do items carry their state into the indexed text, so the brain can
+  // tell "[x] booked flights" from "[ ] book flights".
+  if (node.type === 'taskItem' || node.type === 'task_item') {
+    return `${node.attrs?.checked ? '[x]' : '[ ]'} ${inner.trim()}`;
   }
   return inner;
 }
