@@ -60,7 +60,7 @@ export async function createAiWorkerAction(formData: FormData): Promise<void> {
     isDefault: formData.get('isDefault') === 'on',
   });
   revalidatePath('/settings/ai-workers');
-  redirect(`/settings/ai-workers/${created.id}`);
+  redirect(`/settings/ai-workers?selected=${created.id}`);
 }
 
 export async function updateAiWorkerAction(
