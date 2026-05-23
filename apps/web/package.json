@@ -17,6 +17,7 @@
     "seed:heartbeat-demo": "tsx --env-file-if-exists=./.env.local scripts/seed-get-to-know-user.ts",
     "seed:coder": "tsx --env-file-if-exists=./.env.local scripts/seed-coder-agent.ts",
     "seed:remy": "tsx --env-file-if-exists=./.env.local scripts/seed-remy.ts",
+    "seed:researcher": "tsx --env-file-if-exists=./.env.local scripts/seed-researcher.ts",
     "test:fire-heartbeat": "tsx --env-file-if-exists=./.env.local scripts/test-fire-heartbeat.ts",
     "extract:backfill": "tsx --env-file-if-exists=./.env.local scripts/extract-backfill.ts",
     "dedupe:edges": "tsx --env-file-if-exists=./.env.local scripts/dedupe-edges.ts",

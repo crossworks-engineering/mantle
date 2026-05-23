@@ -35,6 +35,8 @@ import { TODO_TOOLS } from './builtins-todos';
 import { PERSONA_TOOLS } from './builtins-persona';
 import { TERMINAL_TOOLS } from './builtins-terminal';
 import { RECALL_TOOLS } from './builtins-recall';
+import { RESEARCH_TOOLS } from './builtins-research';
+import { NOTE_TOOLS } from './builtins-notes';
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -878,4 +880,11 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // permanent message archive. The toolset for the `remy` recall agent
   // (find_window locates via digests, recall_window pulls raw turns).
   ...RECALL_TOOLS,
+  // Research — outward to the live internet via Perplexity Sonar. The
+  // raw-search primitive for the `researcher` agent; the smart layer is
+  // the agent that wraps it (plan → search → cross-check → synthesise).
+  ...RESEARCH_TOOLS,
+  // Notes — persist a markdown note (auto-indexed into the brain). Lets
+  // Saskia keep research findings she's decided are worth saving.
+  ...NOTE_TOOLS,
 ];
