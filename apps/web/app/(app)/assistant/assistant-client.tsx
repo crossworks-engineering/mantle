@@ -1,8 +1,6 @@
 'use client';
 
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   FileText,
   Loader2,
@@ -14,6 +12,7 @@ import {
 import { formatDateTime } from '@/lib/format-datetime';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { BoringAvatar } from '@/components/boring-avatar';
+import { RichText } from '@/components/assistant/rich-text';
 
 /** A sidecar artifact attached to a message. Mirrors @mantle/tools
  *  ToolArtifact, with the discriminated `kind` driving the rendering
@@ -49,6 +48,28 @@ type Message = {
   /** Optimistic flag while we wait for the server reply. */
   pending?: boolean;
 };
+
+/** A conversational turn: the user's prompt and Saskia's response. The
+ *  document layout pairs them — the response is the reading canvas, the
+ *  prompt floats in the right margin, anchored to the response it produced. */
+type Turn = { id: string; prompt?: Message; response?: Message };
+
+/** Fold the flat message stream into prompt→response turns. A new turn
+ *  starts on each inbound; the next outbound attaches to it. Leading or
+ *  orphan outbounds get their own promptless turn (rare). */
+function groupTurns(messages: Message[]): Turn[] {
+  const turns: Turn[] = [];
+  for (const m of messages) {
+    if (m.direction === 'inbound') {
+      turns.push({ id: m.id, prompt: m });
+    } else {
+      const last = turns[turns.length - 1];
+      if (last && last.prompt && !last.response) last.response = m;
+      else turns.push({ id: m.id, response: m });
+    }
+  }
+  return turns;
+}
 
 export function AssistantClient({
   initialMessages,
@@ -95,6 +116,8 @@ export function AssistantClient({
   const loadingRef = useRef(false);
   // Captured before a prepend so the layout effect can hold scroll position.
   const pendingPrepend = useRef<{ prevHeight: number; prevTop: number } | null>(null);
+
+  const turns = useMemo(() => groupTurns(messages), [messages]);
 
   // Scroll management: after a prepend, restore position (no jump);
   // otherwise pin to the bottom (initial load + new send/reply).
@@ -350,10 +373,12 @@ export function AssistantClient({
     }
   };
 
+  const lastTurnId = turns[turns.length - 1]?.id;
+
   return (
     <>
-      <div ref={scrollerRef} onScroll={onScroll} className="flex-1 overflow-y-auto scrollbar-thin px-6 py-4">
-        {messages.length === 0 ? (
+      <div ref={scrollerRef} onScroll={onScroll} className="flex-1 overflow-y-auto scrollbar-thin px-6 py-6">
+        {turns.length === 0 ? (
           <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/30 px-4 py-10 text-center">
             {agentAvatar ? (
               <BoringAvatar
@@ -389,109 +414,89 @@ export function AssistantClient({
                 Beginning of the conversation
               </p>
             )}
-            <ul className="mx-auto flex max-w-3xl flex-col gap-3">
-            {messages.map((m) => (
-              <li
-                key={m.id}
-                className={
-                  'group/msg flex items-end gap-2 ' +
-                  (m.direction === 'inbound' ? 'justify-end' : 'justify-start')
-                }
-              >
-                {m.direction === 'outbound' &&
-                  (agentAvatar ? (
-                    <BoringAvatar
-                      variant={agentAvatar.style}
-                      seed={agentAvatar.seed}
-                      size={28}
-                      className="mb-1 size-7"
-                    />
-                  ) : (
-                    <span
-                      className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-                      style={{ backgroundColor: accent.solid }}
-                      title={agentName ?? 'Assistant'}
-                      aria-hidden
-                    >
-                      {initials}
-                    </span>
-                  ))}
-                <div
-                  className={
-                    'max-w-[80%] rounded-2xl px-3.5 py-2 text-sm ' +
-                    (m.direction === 'inbound'
-                      ? 'rounded-tr-sm bg-primary/10 text-foreground'
-                      : 'rounded-tl-sm border-l-2 text-foreground')
-                  }
-                  style={
-                    m.direction === 'outbound'
-                      ? { backgroundColor: accent.soft, borderColor: accent.border }
-                      : undefined
-                  }
-                >
-                  <div className="prose prose-sm dark:prose-invert max-w-none [&>:first-child]:mt-0 [&>:last-child]:mb-0 [&_pre]:bg-background/60 [&_pre]:text-xs [&_code]:text-xs">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {m.text}
-                    </ReactMarkdown>
-                  </div>
-                  {/* Tool artifacts — audio + image bubbles inline
-                      with the reply. Rendered after the text so the
-                      assistant's verbal context comes first, then the
-                      generated media. */}
-                  {m.artifacts && m.artifacts.length > 0 && (
-                    <div className="mt-2 flex flex-col gap-2">
-                      {m.artifacts.map((a, i) => (
-                        <ArtifactView key={`${m.id}-art-${i}`} artifact={a} />
-                      ))}
-                    </div>
-                  )}
-                  {/* Meta strip is hidden until hover/focus — keeps long
-                      threads visually quiet. The pending "sending…"
-                      indicator is the one exception, always shown. */}
-                  <div className="mt-1 flex items-baseline gap-2 text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover/msg:opacity-100 group-focus-within/msg:opacity-100">
-                    <span title={formatDateTime(m.createdAt)}>
-                      {new Date(m.createdAt).toLocaleTimeString()}
-                    </span>
-                    {m.model && <code className="font-mono">{m.model}</code>}
-                  </div>
-                  {/* Always-visible affordance for the optimistic send
-                      state. Sits outside the hover-meta strip so the
-                      user sees feedback without needing to hover. */}
-                  {m.pending && (
-                    <div className="mt-1 text-[10px] italic text-muted-foreground">
-                      sending…
-                    </div>
-                  )}
-                </div>
-              </li>
-            ))}
-            </ul>
-            {sending && (
-              <div className="mx-auto mt-3 flex max-w-3xl items-end gap-2 text-foreground">
-                {agentAvatar ? (
-                  <BoringAvatar variant={agentAvatar.style} seed={agentAvatar.seed} size={28} className="mb-1" />
-                ) : (
-                  <span
-                    className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-                    style={{ backgroundColor: accent.solid }}
-                    aria-hidden
+            <ul className="mx-auto flex max-w-5xl flex-col gap-12">
+              {turns.map((turn) => {
+                const isLast = turn.id === lastTurnId;
+                const showTyping = isLast && sending && !turn.response;
+                return (
+                  <li
+                    key={turn.id}
+                    className="group/turn grid gap-x-10 gap-y-3 lg:grid-cols-[minmax(0,1fr)_300px]"
                   >
-                    {initials}
-                  </span>
-                )}
-                <div
-                  className="rounded-2xl rounded-tl-sm border-l-2 px-3.5 py-3"
-                  style={{ backgroundColor: accent.soft, borderColor: accent.border }}
-                >
-                  <span className="sr-only">{agentName ?? 'Assistant'} is typing…</span>
-                  <span className="flex items-center gap-1" aria-hidden>
-                    <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.3s]" />
-                    <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.15s]" />
-                    <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60" />
-                  </span>
-                </div>
-              </div>
-            )}
+                    {/* RIGHT MARGIN (DOM-first so it stacks above the
+                        response on mobile): the user's prompt, anchored
+                        beside the response it produced. */}
+                    <div className="lg:col-start-2 lg:row-start-1">
+                      {turn.prompt && (
+                        <PromptCard message={turn.prompt} />
+                      )}
+                    </div>
+
+                    {/* MAIN CANVAS: Saskia's reply as a rich document. */}
+                    <div className="min-w-0 lg:col-start-1 lg:row-start-1">
+                      {turn.response ? (
+                        <article>
+                          <div className="mb-2 flex items-center gap-2">
+                            {agentAvatar ? (
+                              <BoringAvatar
+                                variant={agentAvatar.style}
+                                seed={agentAvatar.seed}
+                                size={22}
+                                className="size-[22px]"
+                              />
+                            ) : (
+                              <span
+                                className="flex size-[22px] shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                                style={{ backgroundColor: accent.solid }}
+                                aria-hidden
+                              >
+                                {initials}
+                              </span>
+                            )}
+                            <span className="text-xs font-medium text-muted-foreground">
+                              {agentName ?? 'Assistant'}
+                            </span>
+                          </div>
+                          <div
+                            className="border-l-2 pl-5"
+                            style={{ borderColor: accent.border }}
+                          >
+                            <RichText markdown={turn.response.text} />
+                            {turn.response.artifacts && turn.response.artifacts.length > 0 && (
+                              <div className="mt-3 flex flex-col gap-2">
+                                {turn.response.artifacts.map((a, i) => (
+                                  <ArtifactView key={`${turn.id}-art-${i}`} artifact={a} />
+                                ))}
+                              </div>
+                            )}
+                            <div className="mt-1.5 flex items-baseline gap-2 text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover/turn:opacity-100">
+                              <span title={formatDateTime(turn.response.createdAt)}>
+                                {new Date(turn.response.createdAt).toLocaleTimeString()}
+                              </span>
+                              {turn.response.model && (
+                                <code className="font-mono">{turn.response.model}</code>
+                              )}
+                            </div>
+                          </div>
+                        </article>
+                      ) : showTyping ? (
+                        <div
+                          className="ml-7 inline-flex rounded-2xl rounded-tl-sm border-l-2 px-3.5 py-3"
+                          style={{ backgroundColor: accent.soft, borderColor: accent.border }}
+                        >
+                          <span className="sr-only">{agentName ?? 'Assistant'} is typing…</span>
+                          <span className="flex items-center gap-1" aria-hidden>
+                            <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.3s]" />
+                            <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.15s]" />
+                            <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60" />
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           </>
         )}
       </div>
@@ -500,127 +505,166 @@ export function AssistantClient({
         onSubmit={submit}
         className="border-t border-border bg-background px-6 py-3"
       >
-        <div className="mx-auto max-w-3xl space-y-2">
-          {/* Attachment preview — shown above the input row so the
-              user sees what they're about to send. Persists across
-              keystrokes and clears on send/dismiss. */}
-          {attachedFile && (
-            <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-2 py-1.5">
-              {attachedPreviewUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={attachedPreviewUrl}
-                  alt={attachedFile.name}
-                  className="h-12 w-12 rounded object-cover"
-                />
-              ) : (
-                <div className="flex h-12 w-12 items-center justify-center rounded bg-background/60 text-muted-foreground">
-                  <FileText className="h-6 w-6" />
+        {/* The composer docks to the right on wide screens — it's the
+            user's side of the conversation, mirroring where their prompts
+            land in the margin. Full-width on mobile. */}
+        <div className="mx-auto max-w-5xl">
+          <div className="space-y-2 lg:ml-auto lg:max-w-md">
+            {/* Attachment preview — shown above the input row so the
+                user sees what they're about to send. Persists across
+                keystrokes and clears on send/dismiss. */}
+            {attachedFile && (
+              <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-2 py-1.5">
+                {attachedPreviewUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={attachedPreviewUrl}
+                    alt={attachedFile.name}
+                    className="h-12 w-12 rounded object-cover"
+                  />
+                ) : (
+                  <div className="flex h-12 w-12 items-center justify-center rounded bg-background/60 text-muted-foreground">
+                    <FileText className="h-6 w-6" />
+                  </div>
+                )}
+                <div className="flex-1 text-xs">
+                  <div className="font-medium">{attachedFile.name}</div>
+                  <div className="text-muted-foreground">
+                    {attachedFile.type || 'file'} · {(attachedFile.size / 1024).toFixed(0)} KB
+                  </div>
                 </div>
-              )}
-              <div className="flex-1 text-xs">
-                <div className="font-medium">{attachedFile.name}</div>
-                <div className="text-muted-foreground">
-                  {attachedFile.type || 'file'} · {(attachedFile.size / 1024).toFixed(0)} KB
-                </div>
+                <button
+                  type="button"
+                  onClick={clearAttachment}
+                  className="rounded p-1 text-muted-foreground hover:bg-background/60"
+                  title="Remove attachment"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={clearAttachment}
-                className="rounded p-1 text-muted-foreground hover:bg-background/60"
-                title="Remove attachment"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
-          <div className="flex gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,.pdf,.docx,.xlsx,.xls,.csv,.txt,.md,.json,.yaml,.yml"
-              className="hidden"
-              onChange={(e) => onFilePicked(e.target.files?.[0] ?? null)}
-            />
-            <div className="flex flex-col gap-1">
-              {/* Attach picker — images + documents. Triggers the hidden
-                  file input. Disabled when something's already attached
-                  (clear it first via the preview's X). */}
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={!agentReady || sending || !!attachedFile}
-                className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"
-                title="Attach image or document"
-              >
-                <Paperclip className="h-4 w-4" />
-              </button>
-              {/* Mic toggle — push-to-talk style. Recording state
-                  shows a red destructive button; transcribing shows
-                  a spinner. */}
-              {recording ? (
+            )}
+            <div className="flex gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,.pdf,.docx,.xlsx,.xls,.csv,.txt,.md,.json,.yaml,.yml"
+                className="hidden"
+                onChange={(e) => onFilePicked(e.target.files?.[0] ?? null)}
+              />
+              <div className="flex flex-col gap-1">
+                {/* Attach picker — images + documents. Triggers the hidden
+                    file input. Disabled when something's already attached
+                    (clear it first via the preview's X). */}
                 <button
                   type="button"
-                  onClick={stopRecording}
-                  className="rounded-md bg-destructive p-2 text-destructive-foreground hover:opacity-90"
-                  title="Stop recording"
-                >
-                  <MicOff className="h-4 w-4" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={startRecording}
-                  disabled={!agentReady || sending || transcribing}
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={!agentReady || sending || !!attachedFile}
                   className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"
-                  title={transcribing ? 'Transcribing…' : 'Record voice note'}
+                  title="Attach image or document"
                 >
-                  {transcribing ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Mic className="h-4 w-4" />
-                  )}
+                  <Paperclip className="h-4 w-4" />
                 </button>
-              )}
-            </div>
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder={
-                !agentReady
-                  ? 'Configure an assistant or responder agent first at /settings/agents.'
-                  : attachedFile
-                  ? 'Add a question about the attachment (optional) — Enter to send.'
-                  : recording
-                  ? 'Recording… press the stop button to transcribe.'
-                  : transcribing
-                  ? 'Transcribing your recording…'
-                  : 'Message your assistant — Enter to send, Shift+Enter for newline.'
-              }
-              disabled={!agentReady || sending}
-              rows={2}
-              className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  void submit(e);
+                {/* Mic toggle — push-to-talk style. Recording state
+                    shows a red destructive button; transcribing shows
+                    a spinner. */}
+                {recording ? (
+                  <button
+                    type="button"
+                    onClick={stopRecording}
+                    className="rounded-md bg-destructive p-2 text-destructive-foreground hover:opacity-90"
+                    title="Stop recording"
+                  >
+                    <MicOff className="h-4 w-4" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={startRecording}
+                    disabled={!agentReady || sending || transcribing}
+                    className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"
+                    title={transcribing ? 'Transcribing…' : 'Record voice note'}
+                  >
+                    {transcribing ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Mic className="h-4 w-4" />
+                    )}
+                  </button>
+                )}
+              </div>
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder={
+                  !agentReady
+                    ? 'Configure an assistant or responder agent first at /settings/agents.'
+                    : attachedFile
+                    ? 'Add a question about the attachment (optional) — Enter to send.'
+                    : recording
+                    ? 'Recording… press the stop button to transcribe.'
+                    : transcribing
+                    ? 'Transcribing your recording…'
+                    : 'Message your assistant — Enter to send, Shift+Enter for newline.'
                 }
-              }}
-            />
-            <button
-              type="submit"
-              disabled={!agentReady || sending || (!draft.trim() && !attachedFile)}
-              className="self-end rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-40"
-            >
-              {sending ? '…' : 'Send'}
-            </button>
+                disabled={!agentReady || sending}
+                rows={2}
+                className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void submit(e);
+                  }
+                }}
+              />
+              <button
+                type="submit"
+                disabled={!agentReady || sending || (!draft.trim() && !attachedFile)}
+                className="self-end rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-40"
+              >
+                {sending ? '…' : 'Send'}
+              </button>
+            </div>
+            {error && <p className="text-xs text-destructive">{error}</p>}
           </div>
         </div>
-        {error && (
-          <p className="mx-auto mt-2 max-w-3xl text-xs text-destructive">{error}</p>
-        )}
       </form>
     </>
+  );
+}
+
+/**
+ * The user's prompt, rendered as a margin note beside the response it
+ * produced. Quiet by design — muted card, small type — so Saskia's
+ * document is the visual centre of gravity.
+ */
+function PromptCard({ message }: { message: Message }) {
+  return (
+    <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm lg:sticky lg:top-2">
+      <div className="mb-1 flex items-baseline justify-between gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          You
+        </span>
+        <span
+          className="text-[10px] text-muted-foreground"
+          title={formatDateTime(message.createdAt)}
+        >
+          {new Date(message.createdAt).toLocaleTimeString()}
+        </span>
+      </div>
+      {message.text && (
+        <p className="whitespace-pre-wrap break-words text-foreground">{message.text}</p>
+      )}
+      {message.artifacts && message.artifacts.length > 0 && (
+        <div className="mt-2 flex flex-col gap-2">
+          {message.artifacts.map((a, i) => (
+            <ArtifactView key={`${message.id}-art-${i}`} artifact={a} />
+          ))}
+        </div>
+      )}
+      {message.pending && (
+        <div className="mt-1 text-[10px] italic text-muted-foreground">sending…</div>
+      )}
+    </div>
   );
 }
 
@@ -642,7 +686,7 @@ function ArtifactView({ artifact }: { artifact: Artifact }) {
             the browser's native styling. Sufficient for our use case;
             a custom waveform UI would be nice-to-have but adds weight. */}
         <audio controls src={dataUrl} className="w-full" preload="metadata">
-          Your browser doesn't support the audio element.
+          Your browser doesn&apos;t support the audio element.
         </audio>
         {artifact.caption && (
           <p className="mt-1 text-[11px] italic text-muted-foreground">
