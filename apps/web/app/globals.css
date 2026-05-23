@@ -3106,6 +3106,24 @@
   background-color: color-mix(in oklab, var(--muted-foreground) 50%, transparent);
 }
 
+/* React Flow controls (trace step graph). The library's default control
+   buttons render white-on-white in some of our themes; pin them to theme
+   tokens so the zoom/fit icons stay legible in every theme + light/dark.
+   The double-class selector outranks the library's single-class rule
+   regardless of stylesheet load order. */
+.react-flow .react-flow__controls-button {
+  background-color: var(--card);
+  color: var(--card-foreground);
+  border-bottom-color: var(--border);
+}
+.react-flow .react-flow__controls-button:hover {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+.react-flow .react-flow__controls-button svg {
+  fill: currentColor;
+}
+
 /* TipTap empty-canvas placeholder (pages editor). Shows the hint text on the
    first empty line only; theme-aware via the muted-foreground token. */
 .ProseMirror p.is-editor-empty:first-child::before {
