@@ -2,18 +2,23 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { formatDateTime } from '@/lib/format-datetime';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useToast } from '@/components/ui/toast';
+import { cn } from '@/lib/utils';
 import type { AgentAvatar, PersonaNote } from '@mantle/db';
 import { AvatarPicker } from '@/components/avatar-picker';
 import { BoringAvatar } from '@/components/boring-avatar';
@@ -372,7 +377,8 @@ export function AgentsClient({
   const router = useRouter();
   const [agents, setAgents] = useState<AgentSummary[]>(initialAgents);
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string>();
+  const toast = useToast();
+  const [deleteTarget, setDeleteTarget] = useState<AgentSummary | null>(null);
 
   // After a create/edit, we call router.refresh() to re-run the server
   // component; this hook propagates the new list into our local state.
@@ -386,14 +392,12 @@ export function AgentsClient({
   const [slugTouched, setSlugTouched] = useState(false);
 
   const openCreate = () => {
-    setError(undefined);
     setForm(emptyForm());
     setSlugTouched(false);
     setEditing({ mode: 'create' });
   };
 
   const openEdit = (agent: AgentSummary) => {
-    setError(undefined);
     setForm(formFromAgent(agent));
     setSlugTouched(true);
     setEditing({ mode: 'edit', agent });
@@ -401,7 +405,6 @@ export function AgentsClient({
 
   const closeDialog = () => {
     setEditing(undefined);
-    setError(undefined);
   };
 
   const onNameChange = (v: string) => {
@@ -438,7 +441,6 @@ export function AgentsClient({
   const submitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editing) return;
-    setError(undefined);
 
     const memoryConfig: MemoryConfig = {};
     const limit = parseInt(form.historyLimit, 10);
@@ -526,169 +528,155 @@ export function AgentsClient({
     });
     if (!res.ok) {
       const b = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(b.error ?? 'Save failed.');
+      toast.error(b.error ?? 'Save failed.');
       return;
     }
+    toast.success(editing.mode === 'create' ? 'Agent created' : 'Agent saved');
     closeDialog();
     startTransition(() => router.refresh());
   };
 
-  const toggleEnabled = async (a: AgentSummary) => {
-    const res = await fetch(`/api/agents/${a.id}`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ enabled: !a.enabled }),
-    });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(b.error ?? 'Toggle failed.');
-      return;
-    }
-    setAgents((prev) => prev.map((x) => (x.id === a.id ? { ...x, enabled: !x.enabled } : x)));
-    startTransition(() => router.refresh());
-  };
-
-  const onDelete = async (a: AgentSummary) => {
-    if (!confirm(`Delete agent "${a.name}"? This cannot be undone.`)) return;
+  const confirmDelete = async () => {
+    const a = deleteTarget;
+    if (!a) return;
     const res = await fetch(`/api/agents/${a.id}`, { method: 'DELETE' });
     if (!res.ok) {
       const b = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(b.error ?? 'Delete failed.');
+      toast.error(b.error ?? 'Delete failed.');
       return;
     }
+    toast.success(`Deleted ${a.name}`);
+    if (editing?.mode === 'edit' && editing.agent.id === a.id) closeDialog();
     setAgents((prev) => prev.filter((x) => x.id !== a.id));
     startTransition(() => router.refresh());
   };
 
-  const apiKeyById = useMemo(() => {
-    const m = new Map<string, ApiKeyOption>();
-    for (const k of apiKeys) m.set(k.id, k);
-    return m;
-  }, [apiKeys]);
+  const activeResponder = useMemo(
+    () =>
+      agents
+        .filter((a) => a.enabled && a.role === 'responder')
+        .sort((a, b) => b.priority - a.priority)[0],
+    [agents],
+  );
+  const selectedId = editing?.mode === 'edit' ? editing.agent.id : null;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          Configured agents
-        </h2>
-        <Button type="button" onClick={openCreate}>
-          New agent
-        </Button>
+    <div className="flex h-full flex-col">
+      {/* Active responder banner */}
+      <div className="shrink-0 border-b border-border px-4 py-2 text-xs">
+        {activeResponder ? (
+          <p className="text-muted-foreground">
+            Active Telegram responder:{' '}
+            <strong className="text-foreground">{activeResponder.name}</strong> ({activeResponder.model},
+            priority {activeResponder.priority})
+          </p>
+        ) : (
+          <p className="text-amber-700 dark:text-amber-300">
+            No enabled <code>responder</code> agent — Telegram messages go unanswered until you
+            create one.
+          </p>
+        )}
       </div>
 
-      {error && (
-        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
-      )}
-
-      {agents.length === 0 ? (
-        <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
-          No agents yet. Click <strong>New agent</strong> to create one — you&apos;ll need an
-          API key saved at <code>/settings/keys</code> first.
-        </p>
-      ) : (
-        <ul className="divide-y divide-border rounded-md border border-border">
-          {agents.map((a) => {
-            const key = a.apiKeyId ? apiKeyById.get(a.apiKeyId) : null;
-            return (
-              <li key={a.id} className="flex items-center gap-3 px-3 py-3">
-                {a.avatar ? (
-                  <BoringAvatar variant={a.avatar.style} seed={a.avatar.seed} size={36} />
-                ) : (
-                  <span
-                    className="flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
-                    style={{ backgroundColor: agentAccent(a.slug).solid }}
-                    aria-hidden
+      <div className="grid flex-1 grid-cols-1 overflow-hidden md:grid-cols-[340px_1fr]">
+        {/* ── Left: agent list ─────────────────────────────────────── */}
+        <div className="flex flex-col border-b border-border md:h-full md:min-h-0 md:border-b-0 md:border-r">
+          <div className="flex items-center justify-between gap-2 border-b border-border p-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              Agents
+            </h2>
+            <Button type="button" size="sm" onClick={openCreate}>
+              <Plus /> New
+            </Button>
+          </div>
+          <div className="space-y-1.5 p-2 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
+            {agents.length === 0 ? (
+              <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
+                No agents yet. Click <strong>New</strong> to create one — you&apos;ll need an API
+                key saved at <code>/settings/keys</code> first.
+              </p>
+            ) : (
+              agents.map((a) => {
+                const selected = selectedId === a.id;
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => openEdit(a)}
+                    className={cn(
+                      'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-accent/40',
+                      selected && 'border-l-primary bg-accent/50',
+                      !a.enabled && 'opacity-60',
+                    )}
                   >
-                    {agentInitials(a.name)}
-                  </span>
-                )}
-                <div className="min-w-0 flex-1 space-y-0.5">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-sm font-medium">{a.name}</span>
-                    <span className="text-xs text-muted-foreground">/ {a.slug}</span>
-                    <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-                      {a.role}
-                    </span>
-                    {!a.enabled && (
-                      <span className="rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-amber-900 dark:bg-amber-900/40 dark:text-amber-100">
-                        disabled
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                    <code className="font-mono">{a.model}</code>
-                    <span>priority {a.priority}</span>
-                    {a.role === 'responder' && (
-                      <>
-                        <span>history {a.memoryConfig.history_limit ?? 20} turns</span>
-                        <span>{a.memoryConfig.digest_limit ?? 3} digests</span>
-                      </>
-                    )}
-                    {a.role === 'summarizer' && (
-                      <span>
-                        rolls up every {a.memoryConfig.summarize_threshold ?? 30} turns ·
-                        batch {a.memoryConfig.summarize_batch ?? 20}
-                      </span>
-                    )}
-                    <span>
-                      key:{' '}
-                      {key ? (
-                        <span>
-                          {key.service}/{key.label}
-                        </span>
+                    <div className="flex items-center gap-2.5">
+                      {a.avatar ? (
+                        <BoringAvatar variant={a.avatar.style} seed={a.avatar.seed} size={32} />
                       ) : (
-                        <span className="text-destructive">— none —</span>
+                        <span
+                          className="flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
+                          style={{ backgroundColor: agentAccent(a.slug).solid }}
+                          aria-hidden
+                        >
+                          {agentInitials(a.name)}
+                        </span>
                       )}
-                    </span>
-                    <span>
-                      last used {formatDateTime(a.lastUsedAt)}
-                    </span>
-                  </div>
-                </div>
-                <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={a.enabled}
-                    onChange={() => toggleEnabled(a)}
-                    disabled={pending}
-                    className="size-3.5"
-                  />
-                  enabled
-                </label>
-                <Button type="button" variant="ghost" size="sm" onClick={() => openEdit(a)}>
-                  <Pencil aria-hidden /> Edit
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onDelete(a)}
-                  className="text-destructive hover:text-destructive"
-                >
-                  <Trash2 aria-hidden /> Delete
-                </Button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate text-sm font-medium">{a.name}</span>
+                          {!a.enabled && (
+                            <span className="shrink-0 rounded-sm bg-muted px-1 text-[9px] uppercase tracking-wider text-muted-foreground">
+                              off
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider">
+                            {a.role}
+                          </span>
+                          <code className="truncate font-mono text-[11px]">{a.model}</code>
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
 
-      <Dialog open={!!editing} onOpenChange={(open) => !open && closeDialog()}>
-        <DialogContent className="!h-auto !max-h-[90vh] !max-w-2xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              {editing?.mode === 'create' ? 'New agent' : `Edit ${editing?.mode === 'edit' ? editing.agent.name : ''}`}
-            </DialogTitle>
-            <DialogDescription>
-              {editing?.mode === 'create'
-                ? 'A new AI agent. Pick a stored API key, model, and persona.'
-                : 'Update the agent. Slug is immutable.'}
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={submitForm} className="space-y-4">
+        {/* ── Right: editor ────────────────────────────────────────── */}
+        <div className="md:h-full md:overflow-y-auto md:scrollbar-thin">
+          {!editing ? (
+            <div className="flex h-full items-center justify-center p-10 text-center text-sm text-muted-foreground">
+              Select an agent to edit, or create a new one.
+            </div>
+          ) : (
+            <div className="space-y-4 p-6">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-lg font-semibold">
+                    {editing.mode === 'create' ? 'New agent' : `Edit ${editing.agent.name}`}
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    {editing.mode === 'create'
+                      ? 'A new AI agent. Pick a stored API key, model, and persona.'
+                      : 'Update the agent. Slug is immutable.'}
+                  </p>
+                </div>
+                {editing.mode === 'edit' && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0 text-destructive hover:text-destructive"
+                    onClick={() => setDeleteTarget(editing.agent)}
+                  >
+                    <Trash2 /> Delete
+                  </Button>
+                )}
+              </div>
+              <form onSubmit={submitForm} className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="name">Name</Label>
@@ -1104,31 +1092,44 @@ export function AgentsClient({
             </fieldset>
 
             <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={form.enabled}
-                onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
+                onCheckedChange={(v) => setForm((f) => ({ ...f, enabled: v === true }))}
               />
               Enabled
             </label>
-
-            {error && (
-              <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                {error}
-              </p>
-            )}
 
             <div className="flex justify-end gap-2 border-t border-border pt-3">
               <Button type="button" variant="outline" onClick={closeDialog}>
                 Cancel
               </Button>
               <Button type="submit" disabled={pending}>
-                {editing?.mode === 'create' ? 'Create' : 'Save'}
+                {editing.mode === 'create' ? 'Create' : 'Save'}
               </Button>
             </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+              </form>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete “{deleteTarget?.name}”?</AlertDialogTitle>
+            <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmDelete}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
