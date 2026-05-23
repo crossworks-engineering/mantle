@@ -430,7 +430,7 @@ export function AssistantClient({
                     }
                     style={
                       idx > 0
-                        ? { borderTopColor: `color-mix(in oklab, ${accent.border} 50%, transparent)` }
+                        ? { borderTopColor: `color-mix(in oklab, ${accent.border} 20%, transparent)` }
                         : undefined
                     }
                   >
