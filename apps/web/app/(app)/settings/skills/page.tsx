@@ -29,7 +29,7 @@ export default async function SkillsPage() {
   for (const [k, v] of backrefs.entries()) backrefsRecord[k] = v;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 px-6 py-8">
+    <>
       <SetPageTitle title="Skills" />
       <SkillsClient
         initialSkills={skillRows}
@@ -42,6 +42,6 @@ export default async function SkillsPage() {
         }))}
         heartbeatBackrefs={backrefsRecord}
       />
-    </div>
+    </>
   );
 }
