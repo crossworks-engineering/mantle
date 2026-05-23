@@ -447,24 +447,8 @@ export function AssistantClient({
                     <div className="min-w-0 lg:col-start-1 lg:row-start-1">
                       {turn.response ? (
                         <article>
-                          <div className="mb-2 flex items-center gap-2">
-                            {agentAvatar ? (
-                              <BoringAvatar
-                                variant={agentAvatar.style}
-                                seed={agentAvatar.seed}
-                                size={22}
-                                className="size-[22px]"
-                              />
-                            ) : (
-                              <span
-                                className="flex size-[22px] shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-                                style={{ backgroundColor: accent.solid }}
-                                aria-hidden
-                              >
-                                {initials}
-                              </span>
-                            )}
-                            <span className="text-xs font-medium text-muted-foreground">
+                          <div className="mb-2">
+                            <span className="text-sm font-medium text-muted-foreground">
                               {agentName ?? 'Assistant'}
                             </span>
                           </div>
