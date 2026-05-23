@@ -57,6 +57,7 @@ export async function createAiWorkerAction(formData: FormData): Promise<void> {
     apiKeyId: apiKeyId || null,
     systemPrompt,
     params,
+    enabled: formData.get('enabled') !== 'off',
     isDefault: formData.get('isDefault') === 'on',
   });
   revalidatePath('/settings/ai-workers');

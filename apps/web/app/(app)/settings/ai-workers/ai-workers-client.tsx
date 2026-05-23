@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from 'react';
 import { CheckCircle2, Plus, Trash2 } from 'lucide-react';
 import type { AiWorker, AiWorkerKind } from '@mantle/db';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -98,6 +99,24 @@ export function AiWorkersClient({
   const editWorker = sel?.mode === 'edit' ? (workers.find((w) => w.id === sel.id) ?? null) : null;
   const selectedId = sel?.mode === 'edit' ? sel.id : null;
 
+  // Enabled / default-for-kind are header switches; reset on selection change
+  // and inject into the form's submit (see WorkerForm).
+  const [enabled, setEnabled] = useState(true);
+  const [isDefault, setIsDefault] = useState(false);
+  const selKey =
+    sel?.mode === 'edit' ? `edit:${sel.id}` : sel?.mode === 'create' ? `create:${sel.kind}` : 'none';
+  useEffect(() => {
+    if (sel?.mode === 'edit') {
+      const w = workers.find((x) => x.id === sel.id);
+      setEnabled(w?.enabled ?? true);
+      setIsDefault(w?.isDefault ?? false);
+    } else if (sel?.mode === 'create') {
+      setEnabled(true);
+      setIsDefault(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selKey]);
+
   const confirmDelete = () => {
     if (!deleteTarget) return;
     const id = deleteTarget.id;
@@ -188,9 +207,19 @@ export function AiWorkersClient({
       <div className="md:h-full md:min-h-0 md:overflow-y-auto md:scrollbar-thin">
         {sel?.mode === 'create' ? (
           <div className="space-y-4 p-6">
-            <div>
-              <h2 className="text-lg font-semibold">New {KIND_META[sel.kind].label}</h2>
-              <p className="text-xs text-muted-foreground">{KIND_META[sel.kind].description}</p>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold">New {KIND_META[sel.kind].label}</h2>
+                <p className="text-xs text-muted-foreground">{KIND_META[sel.kind].description}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                <WorkerToggles
+                  enabled={enabled}
+                  setEnabled={setEnabled}
+                  isDefault={isDefault}
+                  setIsDefault={setIsDefault}
+                />
+              </div>
             </div>
             <WorkerForm
               key={`new-${sel.kind}`}
@@ -198,6 +227,8 @@ export function AiWorkersClient({
               kind={sel.kind}
               keys={keys}
               action={createAction}
+              enabled={enabled}
+              isDefault={isDefault}
             />
           </div>
         ) : editWorker ? (
@@ -210,15 +241,23 @@ export function AiWorkersClient({
                   {editWorker.kind} · {editWorker.usageCount} runs
                 </p>
               </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="shrink-0 text-destructive hover:text-destructive"
-                onClick={() => setDeleteTarget(editWorker)}
-              >
-                <Trash2 /> Delete
-              </Button>
+              <div className="flex shrink-0 items-center gap-3">
+                <WorkerToggles
+                  enabled={enabled}
+                  setEnabled={setEnabled}
+                  isDefault={isDefault}
+                  setIsDefault={setIsDefault}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => setDeleteTarget(editWorker)}
+                >
+                  <Trash2 /> Delete
+                </Button>
+              </div>
             </div>
             <WorkerForm
               key={editWorker.id}
@@ -227,6 +266,8 @@ export function AiWorkersClient({
               worker={editWorker}
               keys={keys}
               action={(fd) => updateAction(editWorker.id, fd)}
+              enabled={enabled}
+              isDefault={isDefault}
             />
           </div>
         ) : (
@@ -255,5 +296,33 @@ export function AiWorkersClient({
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+function WorkerToggles({
+  enabled,
+  setEnabled,
+  isDefault,
+  setIsDefault,
+}: {
+  enabled: boolean;
+  setEnabled: (v: boolean) => void;
+  isDefault: boolean;
+  setIsDefault: (v: boolean) => void;
+}) {
+  return (
+    <>
+      <label className="flex cursor-pointer items-center gap-2 text-sm">
+        <Switch checked={enabled} onCheckedChange={setEnabled} />
+        Enabled
+      </label>
+      <label
+        className="flex cursor-pointer items-center gap-2 text-sm"
+        title="The runtime picks the default when no specific worker is named"
+      >
+        <Switch checked={isDefault} onCheckedChange={setIsDefault} />
+        Default
+      </label>
+    </>
   );
 }

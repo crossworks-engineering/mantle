@@ -71,6 +71,10 @@ type Props = {
   worker?: AiWorker;
   keys: KeyOption[];
   action: (formData: FormData) => Promise<void>;
+  /** Controlled by the parent (rendered as header switches). Injected into
+   *  the submitted FormData so the server actions stay unchanged. */
+  enabled: boolean;
+  isDefault: boolean;
 };
 
 /** Default provider per kind. The dropdown is populated from the
@@ -100,7 +104,7 @@ const MODEL_HINT_FOR_KIND: Record<AiWorkerKind, string> = {
   image_gen: 'dall-e-3',
 };
 
-export function WorkerForm({ mode, kind, worker, keys, action }: Props) {
+export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefault }: Props) {
   const router = useRouter();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
@@ -288,6 +292,8 @@ export function WorkerForm({ mode, kind, worker, keys, action }: Props) {
         setError(null);
         const fd = new FormData(e.currentTarget);
         fd.set('kind', kind);
+        fd.set('enabled', enabled ? 'on' : 'off');
+        fd.set('isDefault', isDefault ? 'on' : 'off');
         startTransition(async () => {
           try {
             await action(fd);
@@ -488,27 +494,8 @@ export function WorkerForm({ mode, kind, worker, keys, action }: Props) {
         {kind === 'summarizer' && <LlmWorkerFields params={params} systemPrompt={worker?.systemPrompt} kind="summarizer" provider={provider} />}
       </section>
 
-      {/* ── Flags ────────────────────────────────────────────────── */}
+      {/* ── Priority ─────────────────────────────────────────────── */}
       <section className="space-y-3 border-t border-border pt-6">
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            name="enabled"
-            defaultChecked={worker?.enabled ?? true}
-          />
-          Enabled
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            name="isDefault"
-            defaultChecked={worker?.isDefault ?? mode === 'create'}
-          />
-          Default for this kind
-          <span className="text-xs text-muted-foreground">
-            (the runtime picks this when no specific worker is named)
-          </span>
-        </label>
         <div className="space-y-1.5">
           <Label htmlFor="priority">Priority</Label>
           <Input
