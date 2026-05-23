@@ -1,23 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { mentionEntityIds } from './mention-refs';
+import { mentionRefs } from './mention-refs';
 
-describe('mentionEntityIds', () => {
-  it('returns [] for nullish / mention-free docs', () => {
-    expect(mentionEntityIds(null)).toEqual([]);
-    expect(mentionEntityIds({ type: 'doc', content: [{ type: 'paragraph' }] })).toEqual([]);
+describe('mentionRefs', () => {
+  it('returns empty sets for nullish / mention-free docs', () => {
+    expect(mentionRefs(null)).toEqual({ entityIds: [], nodeIds: [] });
+    expect(mentionRefs({ type: 'doc', content: [{ type: 'paragraph' }] })).toEqual({
+      entityIds: [],
+      nodeIds: [],
+    });
   });
 
-  it('collects ids from mention nodes, deduped + order-preserving', () => {
+  it('splits entity and node refs, deduped + order-preserving', () => {
     const doc = {
       type: 'doc',
       content: [
         {
           type: 'paragraph',
           content: [
-            { type: 'text', text: 'met ' },
-            { type: 'mention', attrs: { id: 'e1', label: 'Sarah' } },
-            { type: 'text', text: ' and ' },
-            { type: 'mention', attrs: { id: 'e2', label: 'Alex' } },
+            { type: 'mention', attrs: { id: 'ent1', label: 'Sarah', ref: 'entity' } },
+            { type: 'mention', attrs: { id: 'page1', label: 'Plan', ref: 'node' } },
+            { type: 'mention', attrs: { id: 'ent1', label: 'Sarah', ref: 'entity' } },
           ],
         },
         {
@@ -25,20 +27,20 @@ describe('mentionEntityIds', () => {
           content: [
             {
               type: 'paragraph',
-              content: [{ type: 'mention', attrs: { id: 'e1', label: 'Sarah' } }],
+              content: [{ type: 'mention', attrs: { id: 'note1', label: 'Idea', ref: 'node' } }],
             },
           ],
         },
       ],
     };
-    expect(mentionEntityIds(doc)).toEqual(['e1', 'e2']);
+    expect(mentionRefs(doc)).toEqual({ entityIds: ['ent1'], nodeIds: ['page1', 'note1'] });
   });
 
-  it('ignores mentions without a string id', () => {
+  it('treats a missing ref as an entity (back-compat)', () => {
     const doc = {
       type: 'doc',
-      content: [{ type: 'paragraph', content: [{ type: 'mention', attrs: { label: 'orphan' } }] }],
+      content: [{ type: 'paragraph', content: [{ type: 'mention', attrs: { id: 'e9' } }] }],
     };
-    expect(mentionEntityIds(doc)).toEqual([]);
+    expect(mentionRefs(doc)).toEqual({ entityIds: ['e9'], nodeIds: [] });
   });
 });

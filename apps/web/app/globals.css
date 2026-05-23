@@ -3249,7 +3249,8 @@
   text-decoration: line-through;
 }
 
-/* Pages @-mention chips (resolved entities). */
+/* Pages @-mention chips. Entities tint with primary; page/note links use a
+   distinct categorical colour so the two reference kinds read differently. */
 .ProseMirror .mention {
   border-radius: 0.3rem;
   background-color: color-mix(in oklab, var(--primary) 14%, transparent);
@@ -3257,4 +3258,8 @@
   padding: 0.05em 0.3em;
   font-weight: 500;
   white-space: nowrap;
+}
+.ProseMirror .mention[data-ref='node'] {
+  background-color: color-mix(in oklab, var(--chart-2) 16%, transparent);
+  color: var(--chart-2);
 }

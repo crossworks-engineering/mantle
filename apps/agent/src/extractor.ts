@@ -56,7 +56,7 @@ import { embed } from '@mantle/embeddings';
 import { diskPathForFile, extOf, mimeForExt, parseDocumentBytes, INGESTABLE_EXTS } from '@mantle/files';
 import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import { captureLlmUsage, runVisionWorker } from '@mantle/agent-runtime';
-import { chunkDocText, mentionEntityIds } from '@mantle/content';
+import { chunkDocText, mentionRefs } from '@mantle/content';
 
 /** Types we will NEVER extract from, no matter what the agent config says.
  *  Note `secret` is NOT here — secret nodes have metadata-only extraction
@@ -1034,8 +1034,10 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
           },
         },
         async (h) => {
-          // Idempotent rebuild: clear this node's prior mention edges so
-          // re-extracts REPLACE rather than append duplicates.
+          // Idempotent rebuild: clear this node's prior edges so re-extracts
+          // REPLACE rather than append duplicates — both the inbound mention
+          // edges (entity → this node) and this node's outbound page/note
+          // links (this node → other node).
           await db
             .delete(entityEdges)
             .where(
@@ -1043,6 +1045,15 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
                 eq(entityEdges.targetId, node.id),
                 eq(entityEdges.targetKind, 'node'),
                 eq(entityEdges.relation, 'mentioned_in'),
+              ),
+            );
+          await db
+            .delete(entityEdges)
+            .where(
+              and(
+                eq(entityEdges.sourceId, node.id),
+                eq(entityEdges.sourceKind, 'node'),
+                eq(entityEdges.relation, 'references'),
               ),
             );
           const map = new Map<string, string>();
@@ -1085,12 +1096,14 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
             }
           }
 
-          // ─── explicit @-mentions (pages) ─────────────────────────────
-          // A page's @-mention chips carry a resolved entity id. Guarantee a
-          // precise edge for each — independent of NER recall — deduped
-          // against the loop above. Skips ids whose entity no longer exists
-          // (edges have no FK; integrity is application-level).
+          // ─── explicit @-mentions / links (pages) ─────────────────────
+          // A page's chips carry resolved ids. Entity refs → precise
+          // `mentioned_in` edges (independent of NER recall, deduped against
+          // the loop above). Node refs → `node --references--> node` edges
+          // (backlinks). Both skip ids whose target no longer exists (edges
+          // have no FK; integrity is application-level).
           let explicit = 0;
+          let refs = 0;
           if (node.type === 'page') {
             try {
               const [pageRow] = await db
@@ -1098,7 +1111,9 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
                 .from(pages)
                 .where(eq(pages.nodeId, node.id))
                 .limit(1);
-              for (const entId of mentionEntityIds(pageRow?.doc)) {
+              const { entityIds, nodeIds } = mentionRefs(pageRow?.doc);
+
+              for (const entId of entityIds) {
                 if (edgedEntityIds.has(entId)) continue;
                 const [ent] = await db
                   .select({ id: entities.id })
@@ -1119,15 +1134,38 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
                 edgedEntityIds.add(ent.id);
                 explicit++;
               }
+
+              const refSeen = new Set<string>();
+              for (const refId of nodeIds) {
+                if (refId === node.id || refSeen.has(refId)) continue;
+                const [target] = await db
+                  .select({ id: nodes.id })
+                  .from(nodes)
+                  .where(and(eq(nodes.id, refId), eq(nodes.ownerId, ownerId)))
+                  .limit(1);
+                if (!target) continue;
+                await db.insert(entityEdges).values({
+                  ownerId,
+                  sourceId: node.id,
+                  sourceKind: 'node',
+                  targetId: refId,
+                  targetKind: 'node',
+                  relation: 'references',
+                  validFrom: new Date(),
+                  data: { explicit: true },
+                });
+                refSeen.add(refId);
+                refs++;
+              }
             } catch (err) {
               console.error(
-                '[extractor]   explicit mention edges failed:',
+                '[extractor]   page mention/link edges failed:',
                 err instanceof Error ? err.message : err,
               );
             }
           }
 
-          h.setOutput({ matched, created, explicit });
+          h.setOutput({ matched, created, explicit, refs });
           return map;
         },
       );

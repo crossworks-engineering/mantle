@@ -8,39 +8,60 @@ import {
 } from './mention-list';
 
 /**
- * @-mention that resolves the owner's EXISTING entities (read-only lookup via
- * /api/entities/search). The chip carries the entity's name + id; the name
- * lands in `doc_text`, so the existing extractor reconciles it into the graph
- * (`mentioned_in` edges) on commit — no backend pipeline changes here.
+ * @-mention / link. One picker resolves the owner's existing references
+ * (read-only via /api/mentions/search):
+ *   - a page/note → chip with `ref:'node'` → the extractor makes a
+ *     `node --references--> node` edge (backlinks)
+ *   - a person/project/place → chip with `ref:'entity'` → `mentioned_in` edge
  *
- * Names with no matching entity simply aren't mentionable; type them as plain
- * text and the extractor creates the entity as it does for any content.
+ * Chips carry { id, label, ref, kind }; the name lands in `doc_text` for the
+ * brain. Targets that don't match an existing page/note/entity aren't
+ * mentionable — type them as plain text.
  */
-export const PageMention = Mention.configure({
+export const PageMention = Mention.extend({
+  addAttributes() {
+    return {
+      ...(this.parent?.() ?? {}),
+      ref: {
+        default: 'entity',
+        parseHTML: (el) => el.getAttribute('data-ref') ?? 'entity',
+        renderHTML: (attrs) => (attrs.ref ? { 'data-ref': attrs.ref } : {}),
+      },
+      kind: {
+        default: null,
+        parseHTML: (el) => el.getAttribute('data-kind'),
+        renderHTML: (attrs) => (attrs.kind ? { 'data-kind': attrs.kind } : {}),
+      },
+    };
+  },
+}).configure({
   HTMLAttributes: { class: 'mention' },
   suggestion: {
     char: '@',
 
     items: async ({ query }): Promise<MentionItem[]> => {
       try {
-        const res = await fetch(`/api/entities/search?q=${encodeURIComponent(query)}`);
+        const res = await fetch(`/api/mentions/search?q=${encodeURIComponent(query)}`);
         if (!res.ok) return [];
-        const data = (await res.json()) as { entities?: MentionItem[] };
-        return data.entities ?? [];
+        const data = (await res.json()) as { items?: MentionItem[] };
+        return data.items ?? [];
       } catch {
         return [];
       }
     },
 
-    // Insert the mention node + a trailing space (the documented pattern).
     command: ({ editor, range, props }) => {
+      const item = props as unknown as MentionItem;
       const after = editor.view.state.selection.$to.nodeAfter;
       if (after?.text?.startsWith(' ')) range.to += 1;
       editor
         .chain()
         .focus()
         .insertContentAt(range, [
-          { type: 'mention', attrs: { id: props.id, label: props.label } },
+          {
+            type: 'mention',
+            attrs: { id: item.id, label: item.label, ref: item.ref, kind: item.kind },
+          },
           { type: 'text', text: ' ' },
         ])
         .run();

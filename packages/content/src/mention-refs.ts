@@ -1,10 +1,14 @@
 /**
- * mentionEntityIds — collect the resolved entity ids from a page's TipTap
- * document. Each `@`-mention chip stores the entity id the user picked (from
- * the existing-entities lookup), so these are high-signal, pre-resolved
- * references — used by the extractor to guarantee an `entity --mentioned_in-->
- * node` edge for every mention, independent of whether the LLM's NER happens
- * to surface that name. Pure + deterministic; deduped, order-preserving.
+ * mentionRefs — collect the resolved references out of a page's TipTap doc,
+ * split by what they point at:
+ *   - entityIds → an `entity` (person/project/place) the user @-mentioned
+ *   - nodeIds   → another `node` (page/note) the user linked to
+ *
+ * Each mention chip stores `attrs.id` plus `attrs.ref` ('entity' | 'node';
+ * defaults to 'entity' for back-compat with chips authored before node links).
+ * The extractor turns these into graph edges: entity refs → `mentioned_in`,
+ * node refs → `references` (backlinks). Pure + deterministic; deduped,
+ * order-preserving.
  */
 
 type PMNode = {
@@ -13,22 +17,33 @@ type PMNode = {
   content?: PMNode[];
 };
 
-export function mentionEntityIds(doc: unknown): string[] {
-  const ids: string[] = [];
-  const seen = new Set<string>();
+export type MentionRefs = { entityIds: string[]; nodeIds: string[] };
+
+export function mentionRefs(doc: unknown): MentionRefs {
+  const entityIds: string[] = [];
+  const nodeIds: string[] = [];
+  const eSeen = new Set<string>();
+  const nSeen = new Set<string>();
 
   const walk = (node: PMNode | null | undefined) => {
     if (!node || typeof node !== 'object') return;
     if (node.type === 'mention') {
       const id = node.attrs?.id;
-      if (typeof id === 'string' && id && !seen.has(id)) {
-        seen.add(id);
-        ids.push(id);
+      if (typeof id === 'string' && id) {
+        if (node.attrs?.ref === 'node') {
+          if (!nSeen.has(id)) {
+            nSeen.add(id);
+            nodeIds.push(id);
+          }
+        } else if (!eSeen.has(id)) {
+          eSeen.add(id);
+          entityIds.push(id);
+        }
       }
     }
     if (Array.isArray(node.content)) for (const child of node.content) walk(child);
   };
 
   walk(doc as PMNode);
-  return ids;
+  return { entityIds, nodeIds };
 }
