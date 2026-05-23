@@ -26,8 +26,10 @@ export function RichText({ markdown }: { markdown: string }) {
     immediatelyRender: false,
     editorProps: {
       attributes: {
+        // prose-sm shrinks code to ~0.8em; bump pre/code back up to text-sm
+        // (14px) so code blocks are comfortably readable.
         class:
-          'prose prose-sm dark:prose-invert max-w-none focus:outline-none [&>:first-child]:mt-0 [&>:last-child]:mb-0',
+          'prose prose-sm dark:prose-invert max-w-none focus:outline-none [&>:first-child]:mt-0 [&>:last-child]:mb-0 [&_pre]:text-sm [&_pre]:leading-relaxed [&_code]:text-sm',
       },
     },
   });

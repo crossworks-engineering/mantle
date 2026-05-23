@@ -3281,3 +3281,58 @@
   background-color: color-mix(in oklab, var(--chart-2) 16%, transparent);
   color: var(--chart-2);
 }
+
+/* Code-block syntax highlighting (CodeBlockLowlight / highlight.js). Token
+   classes map onto theme tokens so highlighting tracks the active theme +
+   light/dark instead of shipping a fixed hljs colour scheme. Scoped to
+   .ProseMirror, so it covers both the Pages editor and the assistant's
+   rich renderer. Unhighlighted code falls back to the prose foreground. */
+.ProseMirror .hljs-comment,
+.ProseMirror .hljs-quote {
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+.ProseMirror .hljs-keyword,
+.ProseMirror .hljs-selector-tag,
+.ProseMirror .hljs-built_in,
+.ProseMirror .hljs-name,
+.ProseMirror .hljs-tag {
+  color: var(--chart-1);
+}
+.ProseMirror .hljs-string,
+.ProseMirror .hljs-attr,
+.ProseMirror .hljs-regexp,
+.ProseMirror .hljs-addition,
+.ProseMirror .hljs-meta-string {
+  color: var(--chart-4);
+}
+.ProseMirror .hljs-number,
+.ProseMirror .hljs-literal,
+.ProseMirror .hljs-type,
+.ProseMirror .hljs-symbol,
+.ProseMirror .hljs-bullet,
+.ProseMirror .hljs-link {
+  color: var(--chart-2);
+}
+.ProseMirror .hljs-title,
+.ProseMirror .hljs-section,
+.ProseMirror .hljs-function .hljs-title,
+.ProseMirror .hljs-class .hljs-title {
+  color: var(--chart-3);
+}
+.ProseMirror .hljs-attribute,
+.ProseMirror .hljs-variable,
+.ProseMirror .hljs-template-variable,
+.ProseMirror .hljs-params,
+.ProseMirror .hljs-meta {
+  color: var(--chart-5);
+}
+.ProseMirror .hljs-deletion {
+  color: var(--destructive);
+}
+.ProseMirror .hljs-emphasis {
+  font-style: italic;
+}
+.ProseMirror .hljs-strong {
+  font-weight: 600;
+}
