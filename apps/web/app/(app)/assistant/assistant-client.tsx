@@ -415,14 +415,20 @@ export function AssistantClient({
                 Beginning of the conversation
               </p>
             )}
-            <ul className="mx-auto flex max-w-5xl flex-col gap-12">
-              {turns.map((turn) => {
+            <ul className="mx-auto flex max-w-5xl flex-col">
+              {turns.map((turn, idx) => {
                 const isLast = turn.id === lastTurnId;
                 const showTyping = isLast && sending && !turn.response;
                 return (
                   <li
                     key={turn.id}
-                    className="group/turn grid gap-x-10 gap-y-3 lg:grid-cols-[minmax(0,1fr)_300px]"
+                    className={
+                      'group/turn grid gap-x-10 gap-y-3 pb-10 lg:grid-cols-[minmax(0,1fr)_300px]' +
+                      // A thin divider between turns, in the agent's accent
+                      // colour (the accent moved here from the old left border).
+                      (idx > 0 ? ' border-t pt-10' : '')
+                    }
+                    style={idx > 0 ? { borderTopColor: accent.border } : undefined}
                   >
                     {/* RIGHT MARGIN (DOM-first so it stacks above the
                         response on mobile): the user's prompt, anchored
@@ -458,10 +464,7 @@ export function AssistantClient({
                               {agentName ?? 'Assistant'}
                             </span>
                           </div>
-                          <div
-                            className="border-l-2 pl-5"
-                            style={{ borderColor: accent.border }}
-                          >
+                          <div>
                             <RichText markdown={turn.response.text} />
                             {turn.response.artifacts && turn.response.artifacts.length > 0 && (
                               <div className="mt-3 flex flex-col gap-2">
@@ -482,8 +485,8 @@ export function AssistantClient({
                         </article>
                       ) : showTyping ? (
                         <div
-                          className="ml-7 inline-flex rounded-2xl rounded-tl-sm border-l-2 px-3.5 py-3"
-                          style={{ backgroundColor: accent.soft, borderColor: accent.border }}
+                          className="inline-flex rounded-2xl px-3.5 py-3"
+                          style={{ backgroundColor: accent.soft }}
                         >
                           <span className="sr-only">{agentName ?? 'Assistant'} is typing…</span>
                           <span className="flex items-center gap-1" aria-hidden>
