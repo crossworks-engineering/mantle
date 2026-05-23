@@ -281,6 +281,13 @@
       "when": 1779401100000,
       "tag": "0039_pages_draft",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1779401200000,
+      "tag": "0040_content_chunks",
+      "breakpoints": true
     }
   ]
 }

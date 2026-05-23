@@ -5,6 +5,7 @@ export * from './nodes';
 export * from './emails';
 export * from './secrets';
 export * from './pages';
+export * from './content-chunks';
 export * from './rules';
 export * from './filters';
 export * from './senders';

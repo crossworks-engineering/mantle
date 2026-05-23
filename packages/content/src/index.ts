@@ -73,6 +73,8 @@ export {
 
 export { docToText } from './doc-to-text';
 
+export { chunkDocText, type DocChunk } from './chunk';
+
 export {
   DEFAULT_PREFERENCES,
   loadProfilePreferences,
