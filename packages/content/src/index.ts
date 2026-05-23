@@ -75,6 +75,8 @@ export { docToText } from './doc-to-text';
 
 export { chunkDocText, type DocChunk } from './chunk';
 
+export { mentionEntityIds } from './mention-refs';
+
 export {
   DEFAULT_PREFERENCES,
   loadProfilePreferences,

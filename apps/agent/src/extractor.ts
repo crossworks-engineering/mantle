@@ -56,7 +56,7 @@ import { embed } from '@mantle/embeddings';
 import { diskPathForFile, extOf, mimeForExt, parseDocumentBytes, INGESTABLE_EXTS } from '@mantle/files';
 import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import { captureLlmUsage, runVisionWorker } from '@mantle/agent-runtime';
-import { chunkDocText } from '@mantle/content';
+import { chunkDocText, mentionEntityIds } from '@mantle/content';
 
 /** Types we will NEVER extract from, no matter what the agent config says.
  *  Note `secret` is NOT here — secret nodes have metadata-only extraction
@@ -1046,6 +1046,9 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
               ),
             );
           const map = new Map<string, string>();
+          // Entity ids that already have an edge this rebuild — dedupes the
+          // NER pass against the explicit @-mention pass below.
+          const edgedEntityIds = new Set<string>();
           let created = 0;
           let matched = 0;
           for (const mention of uniqueMentions) {
@@ -1073,6 +1076,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
                 relation: 'mentioned_in',
                 validFrom: new Date(),
               });
+              edgedEntityIds.add(ent.id);
             } catch (err) {
               console.error(
                 `[extractor]   entity '${mention.name}' failed:`,
@@ -1080,7 +1084,50 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
               );
             }
           }
-          h.setOutput({ matched, created });
+
+          // ─── explicit @-mentions (pages) ─────────────────────────────
+          // A page's @-mention chips carry a resolved entity id. Guarantee a
+          // precise edge for each — independent of NER recall — deduped
+          // against the loop above. Skips ids whose entity no longer exists
+          // (edges have no FK; integrity is application-level).
+          let explicit = 0;
+          if (node.type === 'page') {
+            try {
+              const [pageRow] = await db
+                .select({ doc: pages.doc })
+                .from(pages)
+                .where(eq(pages.nodeId, node.id))
+                .limit(1);
+              for (const entId of mentionEntityIds(pageRow?.doc)) {
+                if (edgedEntityIds.has(entId)) continue;
+                const [ent] = await db
+                  .select({ id: entities.id })
+                  .from(entities)
+                  .where(and(eq(entities.id, entId), eq(entities.ownerId, ownerId)))
+                  .limit(1);
+                if (!ent) continue;
+                await db.insert(entityEdges).values({
+                  ownerId,
+                  sourceId: ent.id,
+                  sourceKind: 'entity',
+                  targetId: node.id,
+                  targetKind: 'node',
+                  relation: 'mentioned_in',
+                  validFrom: new Date(),
+                  data: { explicit: true },
+                });
+                edgedEntityIds.add(ent.id);
+                explicit++;
+              }
+            } catch (err) {
+              console.error(
+                '[extractor]   explicit mention edges failed:',
+                err instanceof Error ? err.message : err,
+              );
+            }
+          }
+
+          h.setOutput({ matched, created, explicit });
           return map;
         },
       );
