@@ -8,7 +8,7 @@ export default async function KeysSettingsPage() {
   const keys = await listApiKeys(user.id);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-6 py-8">
+    <>
       <SetPageTitle title="API keys" />
 
       <KeysClient
@@ -21,6 +21,6 @@ export default async function KeysSettingsPage() {
           updatedAt: k.updatedAt.toISOString(),
         }))}
       />
-    </div>
+    </>
   );
 }
