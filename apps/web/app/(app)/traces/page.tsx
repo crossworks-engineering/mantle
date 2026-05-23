@@ -3,6 +3,15 @@ import { requireOwner } from '@/lib/auth';
 import { formatDateTime } from '@/lib/format-datetime';
 import { formatDuration, formatMicroUsd, listTraces } from '@/lib/traces';
 import { SetPageTitle } from '@/components/layout/page-title';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { cn } from '@/lib/utils';
 
 const KIND_LABEL: Record<string, string> = {
   responder_turn: 'Responder',
@@ -15,190 +24,182 @@ const KIND_LABEL: Record<string, string> = {
   manual: 'Manual',
 };
 
+const KIND_OPTIONS: Array<[string, string]> = [
+  ['responder_turn', 'Responder'],
+  ['heartbeat_fire', 'Heartbeat'],
+  ['extractor_run', 'Extractor'],
+  ['summarizer_run', 'Summarizer'],
+  ['reflector_run', 'Reflector'],
+  ['content_ingest', 'Ingest'],
+  ['photo_ingest', 'Photo'],
+];
+
+const STATUS_OPTIONS: Array<[string, string]> = [
+  ['success', 'Success'],
+  ['error', 'Error'],
+  ['running', 'Running'],
+  ['skipped', 'Skipped'],
+];
+
+const HOURS_OPTIONS: Array<[number, string]> = [
+  [1, '1h'],
+  [6, '6h'],
+  [24, '24h'],
+  [168, '7d'],
+  [720, '30d'],
+];
+
+/** Default view: the traces an operator cares about — completed runs and
+ *  failures. Running/skipped are opt-in via the Status chips. */
+const DEFAULT_STATUSES = ['success', 'error'];
+
 type SearchParams = {
   kind?: string | string[];
   status?: string | string[];
   hours?: string;
 };
 
-export default async function TracesPage(props: {
-  searchParams?: Promise<SearchParams>;
-}) {
+export default async function TracesPage(props: { searchParams?: Promise<SearchParams> }) {
   const user = await requireOwner();
   const sp = (await props.searchParams) ?? {};
 
   const kinds = toArray(sp.kind);
   const statuses = toArray(sp.status);
   const hours = sp.hours ? parseInt(sp.hours, 10) : 24;
+  const effectiveStatuses = statuses.length > 0 ? statuses : DEFAULT_STATUSES;
 
   const rows = await listTraces(user.id, {
     kinds: kinds.length > 0 ? kinds : undefined,
-    statuses: statuses.length > 0 ? statuses : undefined,
+    statuses: effectiveStatuses,
     sinceHours: hours,
     limit: 200,
   });
 
+  const hasFilters = kinds.length > 0 || statuses.length > 0 || hours !== 24;
+
   return (
-    <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
+    <div className="space-y-5 px-6 py-8">
       <SetPageTitle title="Traces" />
 
       {/* Filters */}
-      <form className="flex flex-wrap items-center gap-3 rounded-md border border-border p-3 text-sm">
-        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Filter
-        </span>
-        <FilterGroup
-          name="kind"
-          current={kinds}
-          options={[
-            ['responder_turn', 'Responder'],
-            ['heartbeat_fire', 'Heartbeat'],
-            ['extractor_run', 'Extractor'],
-            ['summarizer_run', 'Summarizer'],
-            ['reflector_run', 'Reflector'],
-            ['content_ingest', 'Ingest'],
-            ['photo_ingest', 'Photo'],
-          ]}
-        />
-        <FilterGroup
-          name="status"
-          current={statuses}
-          options={[
-            ['success', 'Success'],
-            ['running', 'Running'],
-            ['error', 'Error'],
-            // skipped traces are the new visibility win — operator
-            // filters here to see what the system considered and
-            // declined to run, with a disposition string explaining
-            // why. Migration 0029 + Layer A.
-            ['skipped', 'Skipped'],
-          ]}
-        />
-        <label className="flex items-center gap-1 text-xs">
-          last
-          <select
-            name="hours"
-            defaultValue={String(hours)}
-            className="rounded-md border border-input bg-background px-2 py-1 text-sm"
-          >
-            <option value="1">1h</option>
-            <option value="6">6h</option>
-            <option value="24">24h</option>
-            <option value="168">7d</option>
-            <option value="720">30d</option>
-          </select>
-        </label>
-        <button
-          type="submit"
-          className="rounded-md border border-input bg-background px-3 py-1 text-sm hover:bg-accent"
-        >
-          Apply
-        </button>
-        {(kinds.length > 0 || statuses.length > 0 || hours !== 24) && (
-          <Link
-            href="/traces"
-            className="text-xs text-muted-foreground underline hover:text-foreground"
-          >
-            clear
-          </Link>
-        )}
-      </form>
+      <div className="space-y-3 rounded-md border border-border p-3">
+        <FilterRow label="Status">
+          {STATUS_OPTIONS.map(([value, labelText]) => (
+            <FilterChip
+              key={value}
+              href={tracesHref(kinds, toggle(effectiveStatuses, value), hours)}
+              active={effectiveStatuses.includes(value)}
+            >
+              {labelText}
+            </FilterChip>
+          ))}
+        </FilterRow>
+
+        <FilterRow label="Kind">
+          {KIND_OPTIONS.map(([value, labelText]) => (
+            <FilterChip
+              key={value}
+              href={tracesHref(toggle(kinds, value), statuses, hours)}
+              active={kinds.includes(value)}
+            >
+              {labelText}
+            </FilterChip>
+          ))}
+        </FilterRow>
+
+        <div className="flex items-center justify-between gap-3">
+          <FilterRow label="Window">
+            {HOURS_OPTIONS.map(([value, labelText]) => (
+              <FilterChip
+                key={value}
+                href={tracesHref(kinds, statuses, value)}
+                active={hours === value}
+              >
+                {labelText}
+              </FilterChip>
+            ))}
+          </FilterRow>
+          {hasFilters && (
+            <Link
+              href="/traces"
+              className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              Reset filters
+            </Link>
+          )}
+        </div>
+      </div>
 
       {/* Results */}
       {rows.length === 0 ? (
-        <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
-          No traces in this window. Try widening the time range, or trigger
-          some activity (DM the bot, insert a note).
+        <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-10 text-center text-sm text-muted-foreground">
+          No traces match these filters. Widen the time window, adjust the status/kind chips, or
+          trigger some activity (DM the bot, insert a note).
         </p>
       ) : (
-        <div className="max-h-[70vh] overflow-auto rounded-md border border-border">
-          <table className="w-full text-sm">
-            {/* `sticky top-0` pins the header inside the scroll
-                container so it stays visible while scanning long
-                runs. bg has to be solid (not /40) or rows show
-                through during the scroll. */}
-            <thead className="sticky top-0 z-10 bg-muted text-xs uppercase tracking-wider text-muted-foreground shadow-[inset_0_-1px_0_var(--border)]">
-              <tr>
-                <th className="px-3 py-2 text-left font-semibold">Started</th>
-                <th className="px-3 py-2 text-left font-semibold">Kind</th>
-                <th className="px-3 py-2 text-left font-semibold">Status</th>
-                <th className="px-3 py-2 text-right font-semibold">Duration</th>
-                <th className="px-3 py-2 text-right font-semibold">Cost</th>
-                <th className="px-3 py-2 text-right font-semibold">Tokens</th>
-                <th className="px-3 py-2 text-right font-semibold">Steps</th>
-                <th className="px-3 py-2 text-left font-semibold">Agent</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
+        <>
+          <p className="text-xs text-muted-foreground">
+            Showing {rows.length} trace{rows.length === 1 ? '' : 's'}
+            {rows.length === 200 ? ' (capped at 200)' : ''}.
+          </p>
+          <Table containerClassName="max-h-[calc(100vh-15rem)] rounded-md border border-border">
+            <TableHeader className="sticky top-0 z-10 bg-muted [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-muted-foreground">
+              <TableRow>
+                <TableHead>Started</TableHead>
+                <TableHead>Kind</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Duration</TableHead>
+                <TableHead className="text-right">Cost</TableHead>
+                <TableHead className="text-right">Tokens</TableHead>
+                <TableHead className="text-right">Steps</TableHead>
+                <TableHead>Agent</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {rows.map((r) => (
-                <tr
-                  key={r.id}
-                  className={
-                    r.status === 'error'
-                      ? 'bg-destructive/5 hover:bg-destructive/10'
-                      : r.status === 'running'
-                        ? 'bg-amber-100/40 hover:bg-amber-100/60 dark:bg-amber-950/30 dark:hover:bg-amber-950/40'
-                        : 'hover:bg-muted/30'
-                  }
-                >
-                  <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">
+                <TableRow key={r.id} className={statusRowClass(r.status)}>
+                  <TableCell className="whitespace-nowrap tabular-nums text-muted-foreground">
                     <Link href={`/traces/${r.id}`} className="hover:underline">
                       {formatDateTime(r.startedAt)}
                     </Link>
-                  </td>
-                  <td className="px-3 py-2 text-xs">
-                    <Link href={`/traces/${r.id}`} className="hover:underline">
+                  </TableCell>
+                  <TableCell>
+                    <Link href={`/traces/${r.id}`} className="font-medium hover:underline">
                       {KIND_LABEL[r.kind] ?? r.kind}
                     </Link>
-                  </td>
-                  <td className="px-3 py-2 text-xs">
-                    <span
-                      className={
-                        r.status === 'success'
-                          ? 'text-emerald-700 dark:text-emerald-300'
-                          : r.status === 'error'
-                            ? 'text-destructive'
-                            : 'text-amber-700 dark:text-amber-300'
-                      }
-                    >
-                      {r.status}
-                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <span className={statusTextClass(r.status)}>{r.status}</span>
                     {r.error && (
                       <span className="ml-2 text-xs text-muted-foreground">
                         {r.error.slice(0, 60)}
                       </span>
                     )}
-                  </td>
-                  <td className="px-3 py-2 text-right text-xs tabular-nums">
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
                     {formatDuration(r.durationMs)}
-                  </td>
-                  <td className="px-3 py-2 text-right text-xs tabular-nums">
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
                     {formatMicroUsd(r.costMicroUsd)}
-                  </td>
-                  <td className="px-3 py-2 text-right text-xs tabular-nums">
-                    {r.tokensIn + r.tokensOut > 0
-                      ? `${r.tokensIn + r.tokensOut}`
-                      : '—'}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {r.tokensIn + r.tokensOut > 0 ? `${r.tokensIn + r.tokensOut}` : '—'}
                     {r.tokensCacheRead > 0 && (
-                      <span className="ml-1 text-muted-foreground">
-                        ({r.tokensCacheRead}c)
-                      </span>
+                      <span className="ml-1 text-muted-foreground">({r.tokensCacheRead}c)</span>
                     )}
-                  </td>
-                  <td className="px-3 py-2 text-right text-xs tabular-nums">
-                    {r.stepCount}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{r.stepCount}</TableCell>
+                  <TableCell className="text-muted-foreground">
                     {r.agentName ?? '—'}
                     {r.agentSlug && (
                       <span className="ml-1 text-muted-foreground/70">/ {r.agentSlug}</span>
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
+        </>
       )}
     </div>
   );
@@ -206,37 +207,69 @@ export default async function TracesPage(props: {
 
 function toArray(v: string | string[] | undefined): string[] {
   if (!v) return [];
-  if (Array.isArray(v)) return v;
-  return [v];
+  return Array.isArray(v) ? v : [v];
 }
 
-function FilterGroup({
-  name,
-  current,
-  options,
+/** Toggle a value in/out of a list (returns a new list). */
+function toggle(list: string[], value: string): string[] {
+  return list.includes(value) ? list.filter((x) => x !== value) : [...list, value];
+}
+
+/** Build a /traces URL from the given filter state (omits defaults). */
+function tracesHref(kinds: string[], statuses: string[], hours: number): string {
+  const p = new URLSearchParams();
+  for (const k of kinds) p.append('kind', k);
+  for (const s of statuses) p.append('status', s);
+  if (hours !== 24) p.set('hours', String(hours));
+  const q = p.toString();
+  return q ? `/traces?${q}` : '/traces';
+}
+
+function statusRowClass(status: string): string {
+  if (status === 'error') return 'bg-destructive/5 hover:bg-destructive/10';
+  if (status === 'running')
+    return 'bg-amber-100/40 hover:bg-amber-100/60 dark:bg-amber-950/30 dark:hover:bg-amber-950/40';
+  return '';
+}
+
+function statusTextClass(status: string): string {
+  if (status === 'success') return 'text-emerald-700 dark:text-emerald-300';
+  if (status === 'error') return 'text-destructive';
+  if (status === 'skipped') return 'text-muted-foreground';
+  return 'text-amber-700 dark:text-amber-300';
+}
+
+function FilterRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="w-14 shrink-0 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+function FilterChip({
+  href,
+  active,
+  children,
 }: {
-  name: string;
-  current: string[];
-  options: Array<[string, string]>;
+  href: string;
+  active: boolean;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-1">
-      <span className="text-xs text-muted-foreground">{name}:</span>
-      {options.map(([value, label]) => (
-        <label
-          key={value}
-          className="flex items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-xs hover:bg-accent"
-        >
-          <input
-            type="checkbox"
-            name={name}
-            value={value}
-            defaultChecked={current.includes(value)}
-            className="size-3"
-          />
-          {label}
-        </label>
-      ))}
-    </div>
+    <Link
+      href={href}
+      className={cn(
+        'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+        active
+          ? 'border-primary bg-primary text-primary-foreground'
+          : 'border-input bg-background text-muted-foreground hover:bg-accent hover:text-foreground',
+      )}
+    >
+      {children}
+    </Link>
   );
 }
