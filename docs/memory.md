@@ -783,6 +783,41 @@ agents. Different model type, different endpoint, different scale.
   `output_dimensionality` is wired to 1536 so the response always fits
   the pgvector column without a schema change.
 
+- **One model, configured in N+1 places — keep them equal.** A common
+  question: *why is the embedding model set on the agent (Saskia) and not
+  on an ai_worker?* The answer is that it's on **both**, because there are
+  two distinct `embed()` call sites:
+  - **Write side** — the `extractor` ai_worker embeds stored content
+    (`nodes`/`facts`/`entities`/`content_chunks`). Configured via
+    `ai_workers.params.embedding_model` (`apps/agent/src/extractor.ts`).
+  - **Read side** — the responder (Saskia) and web assistant embed the
+    *incoming user message* to do similarity search at query time.
+    Configured via `agents.memory_config.embedding_model`
+    (`apps/agent/src/main.ts`, `apps/web/lib/assistant.ts`). It lives on
+    the agent because the agent is what does the retrieving.
+
+  So it's **not** "on the agent instead of the worker" — it's one model
+  per call site. And it is a **brain-wide invariant, not a per-component
+  preference**: the writer and *every* reader (responder, assistant, and
+  any future agent that does vector retrieval) must use the **same** model,
+  or query vectors and stored vectors fall in incompatible spaces and
+  similarity search silently returns garbage. The 1536-dim `vector` column
+  additionally locks the dimension.
+
+  `MANTLE_EMBEDDING_MODEL` (env) is the single source of truth that keeps
+  every side aligned by default; the per-row `embedding_model` fields are
+  *overrides* that all fall back to it. **Today every override is null and
+  the env is unset, so the whole system uses `openai/text-embedding-3-small`
+  uniformly — write and read are aligned.**
+
+  This is correct but fragile: nothing enforces that the N+1 overrides
+  agree. We **deliberately keep** the per-row overrides (reviewed
+  2026-05-23) rather than collapsing to a single global knob — leaving room
+  for a future second corpus — but the operating discipline is: **switch the
+  embedding model via `MANTLE_EMBEDDING_MODEL` (or change every row at once)
+  and then run `pnpm re-embed`. Never set it on one agent alone**, or you
+  split the brain's vector space.
+
 ### 6.4 The agent → layer dataflow
 
 Visual map of who writes what, who reads what:
