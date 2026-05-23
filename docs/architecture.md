@@ -22,6 +22,9 @@ Companion docs:
 - [`pages.md`](./pages.md) — the Notion-style rich-document content type:
   TipTap editor, draft/commit model, custom blocks, and how pages plug into
   the brain (incl. `content_chunks` chunked retrieval + re-extract semantics).
+- [`recall.md`](./recall.md) — "Remy", the memory-recall agent: time-windowed
+  replay of past conversations (`find_window` → `recall_window`) via the
+  `invoke_agent` delegation path. Lossless paging vs. lossy digests.
 
 ---
 
@@ -507,6 +510,18 @@ Four guardrails ([`packages/tools/src/invoke-agent-guards.ts`](../packages/tools
    the parent's `invoke_agent` step records `meta.child_trace_id` +
    `meta.child_cost_micro_usd` for visibility but doesn't roll up,
    so `/debug` "spend by agent" totals stay correct.
+
+**Shipped delegation target — "Remy" (recall).** The first concrete
+use of this path is the memory-recall agent: Saskia delegates an
+explicit "recall what we discussed last week" request to `remy`
+(slug), which uses two recall builtins (`find_window` over digests →
+`recall_window` over the raw message archive) to replay the actual
+turns and hand back a synthesis. Remy is an `agents` row precisely
+because recall needs a tool loop (`invoke_agent` only targets
+`agents`); it runs at depth 2 so it iterates sub-ranges itself rather
+than sub-delegating. The `researcher` slug remains reserved for a
+future *outward* (online-research) agent. Full detail in
+[`recall.md`](./recall.md).
 
 ## 9c. Encrypted API key vault
 

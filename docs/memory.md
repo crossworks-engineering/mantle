@@ -22,6 +22,14 @@ builtin — sits beside memory rather than in it: it lets a responder
 hand a one-shot prompt to a specialised peer (see [architecture.md
 §9b'](./architecture.md#9b-agent-delegation-invoke_agent)).
 
+**Time-windowed recall** is the memory-facing use of that delegation:
+where the layers above answer "what do I know about X" by *summary*,
+recall replays "what was *actually said*" from the raw message archive
+on demand — lossless paging vs. the lossy `conversation_digest`. The
+"Remy" agent does it via two builtins (`find_window` locates the window
+through digests, `recall_window` pulls the raw turns). See
+[`recall.md`](./recall.md).
+
 ---
 
 ## 0. The flow at a glance
