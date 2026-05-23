@@ -725,6 +725,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@mantle/embeddings':
+        specifier: workspace:*
+        version: link:../embeddings
       '@mantle/files':
         specifier: workspace:*
         version: link:../files

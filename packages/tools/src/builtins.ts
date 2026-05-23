@@ -34,6 +34,7 @@ import { EVENT_TOOLS } from './builtins-events';
 import { TODO_TOOLS } from './builtins-todos';
 import { PERSONA_TOOLS } from './builtins-persona';
 import { TERMINAL_TOOLS } from './builtins-terminal';
+import { RECALL_TOOLS } from './builtins-recall';
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -873,4 +874,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // dedicated coder/ops agent (not for the untrusted-inbound responder).
   // See builtins-terminal.ts for the safety rationale.
   ...TERMINAL_TOOLS,
+  // Recall — time-windowed replay of past conversations from the
+  // permanent message archive. The toolset for the `remy` recall agent
+  // (find_window locates via digests, recall_window pulls raw turns).
+  ...RECALL_TOOLS,
 ];
