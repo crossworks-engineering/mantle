@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   db,
   agents,
@@ -42,7 +42,29 @@ export type TopicRow = {
   lastSeen: string;
 };
 
-export async function listDigests(userId: string, limit = 25): Promise<DigestRow[]> {
+/** Pagination + free-text search options for the debug list helpers. */
+export type ListOpts = { limit?: number; offset?: number; query?: string };
+
+/** Shared WHERE for conversation-digest note queries. */
+function digestConds(userId: string, query?: string) {
+  const conds = [
+    eq(nodes.ownerId, userId),
+    eq(nodes.type, 'note'),
+    sql`${nodes.tags} @> ARRAY['conversation-digest']::text[]`,
+  ];
+  if (query?.trim()) {
+    const q = `%${query.trim()}%`;
+    const c = or(
+      ilike(nodes.title, q),
+      sql`${nodes.data}->>'summary' ilike ${q}`,
+      sql`${nodes.data}->>'topic' ilike ${q}`,
+    );
+    if (c) conds.push(c);
+  }
+  return conds;
+}
+
+export async function listDigests(userId: string, opts: ListOpts = {}): Promise<DigestRow[]> {
   const rows = await db
     .select({
       id: nodes.id,
@@ -51,15 +73,10 @@ export async function listDigests(userId: string, limit = 25): Promise<DigestRow
       createdAt: nodes.createdAt,
     })
     .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, userId),
-        eq(nodes.type, 'note'),
-        sql`${nodes.tags} @> ARRAY['conversation-digest']::text[]`,
-      ),
-    )
+    .where(and(...digestConds(userId, opts.query)))
     .orderBy(desc(nodes.createdAt))
-    .limit(limit);
+    .limit(opts.limit ?? 25)
+    .offset(opts.offset ?? 0);
 
   return rows.map((r) => {
     const d = (r.data ?? {}) as Record<string, unknown>;
@@ -84,12 +101,34 @@ export async function listDigests(userId: string, limit = 25): Promise<DigestRow
   });
 }
 
+export async function countDigests(userId: string, opts: { query?: string } = {}): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(nodes)
+    .where(and(...digestConds(userId, opts.query)));
+  return row?.n ?? 0;
+}
+
 /**
  * Roll up emergent topics across all conversation_digest nodes:
  * count of digests, summed source turn count, first / last seen.
  * Useful for spotting the threads that recur in conversation over time.
  */
-export async function listTopics(userId: string, limit = 25): Promise<TopicRow[]> {
+/** Shared WHERE for topic aggregation queries. */
+function topicConds(userId: string, query?: string) {
+  const conds = [
+    eq(nodes.ownerId, userId),
+    eq(nodes.type, 'note'),
+    sql`${nodes.tags} @> ARRAY['conversation-digest']::text[]`,
+    sql`${nodes.data} ? 'topic'`,
+  ];
+  if (query?.trim()) {
+    conds.push(sql`${nodes.data}->>'topic' ilike ${`%${query.trim()}%`}`);
+  }
+  return conds;
+}
+
+export async function listTopics(userId: string, opts: ListOpts = {}): Promise<TopicRow[]> {
   const rows = await db
     .select({
       topic: sql<string>`${nodes.data}->>'topic'`,
@@ -100,17 +139,11 @@ export async function listTopics(userId: string, limit = 25): Promise<TopicRow[]
       lastSeen: sql<Date>`max(${nodes.createdAt})`,
     })
     .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, userId),
-        eq(nodes.type, 'note'),
-        sql`${nodes.tags} @> ARRAY['conversation-digest']::text[]`,
-        sql`${nodes.data} ? 'topic'`,
-      ),
-    )
+    .where(and(...topicConds(userId, opts.query)))
     .groupBy(sql`${nodes.data}->>'topic'`, sql`${nodes.data}->>'topic_slug'`)
     .orderBy(sql`max(${nodes.createdAt}) desc`)
-    .limit(limit);
+    .limit(opts.limit ?? 25)
+    .offset(opts.offset ?? 0);
 
   return rows
     .filter((r) => r.topic && r.topic.length > 0)
@@ -129,6 +162,14 @@ export async function listTopics(userId: string, limit = 25): Promise<TopicRow[]
     }));
 }
 
+export async function countTopics(userId: string, opts: { query?: string } = {}): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(distinct ${nodes.data}->>'topic')::int` })
+    .from(nodes)
+    .where(and(...topicConds(userId, opts.query)));
+  return row?.n ?? 0;
+}
+
 export type ChatRow = {
   id: string;
   title: string | null;
@@ -142,7 +183,22 @@ export type ChatRow = {
   responderAgentId: string | null;
 };
 
-export async function listTelegramChats(userId: string): Promise<ChatRow[]> {
+/** Shared WHERE for telegram chat queries. */
+function chatConds(userId: string, query?: string) {
+  const conds = [eq(telegramChats.userId, userId)];
+  if (query?.trim()) {
+    const q = `%${query.trim()}%`;
+    const c = or(
+      ilike(telegramChats.title, q),
+      ilike(telegramChats.username, q),
+      ilike(telegramChats.telegramChatId, q),
+    );
+    if (c) conds.push(c);
+  }
+  return conds;
+}
+
+export async function listTelegramChats(userId: string, opts: ListOpts = {}): Promise<ChatRow[]> {
   const rows = await db
     .select({
       id: telegramChats.id,
@@ -158,9 +214,11 @@ export async function listTelegramChats(userId: string): Promise<ChatRow[]> {
     })
     .from(telegramChats)
     .leftJoin(telegramMessages, eq(telegramMessages.chatId, telegramChats.id))
-    .where(eq(telegramChats.userId, userId))
+    .where(and(...chatConds(userId, opts.query)))
     .groupBy(telegramChats.id)
-    .orderBy(desc(telegramChats.lastMessageAt));
+    .orderBy(desc(telegramChats.lastMessageAt))
+    .limit(opts.limit ?? 50)
+    .offset(opts.offset ?? 0);
 
   return rows.map((r) => ({
     id: r.id,
@@ -174,6 +232,17 @@ export async function listTelegramChats(userId: string): Promise<ChatRow[]> {
     lastActivity: r.lastMessageAt?.toISOString() ?? null,
     responderAgentId: r.responderAgentId,
   }));
+}
+
+export async function countTelegramChats(
+  userId: string,
+  opts: { query?: string } = {},
+): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(telegramChats)
+    .where(and(...chatConds(userId, opts.query)));
+  return row?.n ?? 0;
 }
 
 export type AgentActivityRow = {
@@ -230,7 +299,18 @@ export type FactRow = {
   createdAt: string;
 };
 
-export async function listFacts(userId: string, limit = 25): Promise<FactRow[]> {
+/** Shared WHERE for fact queries. */
+function factConds(userId: string, query?: string) {
+  const conds = [eq(facts.ownerId, userId), isNull(facts.validTo)];
+  if (query?.trim()) {
+    const q = `%${query.trim()}%`;
+    const c = or(ilike(facts.content, q), ilike(entities.name, q));
+    if (c) conds.push(c);
+  }
+  return conds;
+}
+
+export async function listFacts(userId: string, opts: ListOpts = {}): Promise<FactRow[]> {
   const rows = await db
     .select({
       id: facts.id,
@@ -247,9 +327,10 @@ export async function listFacts(userId: string, limit = 25): Promise<FactRow[]> 
     .from(facts)
     .leftJoin(entities, eq(facts.entityId, entities.id))
     .leftJoin(nodes, eq(facts.sourceNodeId, nodes.id))
-    .where(and(eq(facts.ownerId, userId), isNull(facts.validTo)))
+    .where(and(...factConds(userId, opts.query)))
     .orderBy(desc(facts.createdAt))
-    .limit(limit);
+    .limit(opts.limit ?? 25)
+    .offset(opts.offset ?? 0);
 
   return rows.map((r) => ({
     id: r.id,
@@ -262,6 +343,15 @@ export async function listFacts(userId: string, limit = 25): Promise<FactRow[]> 
     sourceTitle: r.sourceTitle,
     createdAt: r.createdAt.toISOString(),
   }));
+}
+
+export async function countFacts(userId: string, opts: { query?: string } = {}): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(facts)
+    .leftJoin(entities, eq(facts.entityId, entities.id))
+    .where(and(...factConds(userId, opts.query)));
+  return row?.n ?? 0;
 }
 
 export type ContentIndexCoverage = {

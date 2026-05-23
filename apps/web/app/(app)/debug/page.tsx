@@ -1,24 +1,13 @@
 import Link from 'next/link';
 import { requireOwner } from '@/lib/auth';
-import { formatDate, formatDateTime } from '@/lib/format-datetime';
-import { ChatAgentOverride } from './chat-agent-override';
+import { formatDateTime } from '@/lib/format-datetime';
 import { DebugTabs } from './debug-tabs';
-import {
-  contentIndexCoverage,
-  duplicateEdgeStats,
-  listAgentActivity,
-  listDigests,
-  listFacts,
-  listPersonaNotes,
-  listTelegramChats,
-  listTopics,
-} from '@/lib/debug';
+import { contentIndexCoverage, duplicateEdgeStats } from '@/lib/debug';
 import {
   embedderCacheStats,
   recentFailures,
   spendByAgent,
   spendByDay,
-  spendByModel,
   topErrors,
   trafficWindow,
 } from '@/lib/metrics';
@@ -26,49 +15,24 @@ import { formatDuration, formatMicroUsd } from '@/lib/traces';
 import { SetPageTitle } from '@/components/layout/page-title';
 
 /**
- * Operator's eye on the system: what has the summarizer produced, which
- * Telegram chats are about to roll up, which agents are warm, what facts
- * the extractor has captured, content_index coverage, persona notes.
- *
- * Pure server-rendered, no client JS — refresh the page for fresh data.
+ * Debug → Overview: system health at a glance. Spend / memory / agents /
+ * telegram each live on their own tab (see DebugTabs). Pure server-rendered.
  */
-export default async function DebugPage() {
+export default async function DebugOverviewPage() {
   const user = await requireOwner();
-  const [
-    digests,
-    topics,
-    chats,
-    agents,
-    factRows,
-    coverage,
-    personaNotes,
-    traffic24h,
-    spend7d,
-    cache7d,
-    errors7d,
-    recentFails,
-    daily14d,
-    modelSpend7d,
-    dupes,
-  ] = await Promise.all([
-    listDigests(user.id, 25),
-    listTopics(user.id, 25),
-    listTelegramChats(user.id),
-    listAgentActivity(user.id),
-    listFacts(user.id, 25),
-    contentIndexCoverage(user.id),
-    listPersonaNotes(user.id),
-    trafficWindow(user.id, 24),
-    spendByAgent(user.id, 7),
-    embedderCacheStats(user.id, 7),
-    topErrors(user.id, 7, 5),
-    recentFailures(user.id, 10),
-    spendByDay(user.id, 14),
-    spendByModel(user.id, 7),
-    duplicateEdgeStats(user.id),
-  ]);
-  const maxDaily = daily14d.reduce((m, d) => Math.max(m, d.costMicroUsd), 0);
+  const [traffic24h, spend7d, cache7d, errors7d, recentFails, daily14d, dupes, coverage] =
+    await Promise.all([
+      trafficWindow(user.id, 24),
+      spendByAgent(user.id, 7),
+      embedderCacheStats(user.id, 7),
+      topErrors(user.id, 7, 5),
+      recentFailures(user.id, 10),
+      spendByDay(user.id, 14),
+      duplicateEdgeStats(user.id),
+      contentIndexCoverage(user.id),
+    ]);
 
+  const maxDaily = daily14d.reduce((m, d) => Math.max(m, d.costMicroUsd), 0);
   const totalSpend = spend7d.reduce((sum, r) => sum + r.costMicroUsd, 0);
   const cacheTotal = cache7d.hits + cache7d.misses;
   const cachePct = cacheTotal > 0 ? (cache7d.hits / cacheTotal) * 100 : 0;
@@ -78,9 +42,8 @@ export default async function DebugPage() {
       : 100;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-10 px-6 py-8">
+    <div className="mx-auto max-w-5xl space-y-8 px-6 py-8">
       <DebugTabs />
-
       <SetPageTitle title="Debug" />
 
       {/* ─── Dashboard widgets ──────────────────────────────────────────── */}
@@ -103,18 +66,13 @@ export default async function DebugPage() {
               ? '—'
               : spend7d
                   .slice(0, 2)
-                  .map(
-                    (a) =>
-                      `${a.agentName ?? 'unknown'}: ${formatMicroUsd(a.costMicroUsd)}`,
-                  )
+                  .map((a) => `${a.agentName ?? 'unknown'}: ${formatMicroUsd(a.costMicroUsd)}`)
                   .join(' · ')
           }
         />
         <StatCard
           title="Embed cache (7d)"
-          primary={
-            cacheTotal === 0 ? '—' : `${cachePct.toFixed(0)}% hit`
-          }
+          primary={cacheTotal === 0 ? '—' : `${cachePct.toFixed(0)}% hit`}
           secondary={
             cacheTotal === 0
               ? 'no embed activity'
@@ -150,9 +108,9 @@ export default async function DebugPage() {
             Duplicate edges
           </h2>
           <p className="text-sm text-muted-foreground">
-            {dupes.groups} duplicated link{dupes.groups === 1 ? '' : 's'} ·{' '}
-            {dupes.redundant} redundant row{dupes.redundant === 1 ? '' : 's'}. These predate the
-            idempotent-extractor fix; clean them with{' '}
+            {dupes.groups} duplicated link{dupes.groups === 1 ? '' : 's'} · {dupes.redundant}{' '}
+            redundant row{dupes.redundant === 1 ? '' : 's'}. These predate the idempotent-extractor
+            fix; clean them with{' '}
             <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
               pnpm dedupe:edges --apply
             </code>
@@ -217,9 +175,7 @@ export default async function DebugPage() {
                 >
                   {f.error.slice(0, 120)}
                 </Link>
-                <span className="text-xs text-muted-foreground">
-                  {formatDateTime(f.startedAt)}
-                </span>
+                <span className="text-xs text-muted-foreground">{formatDateTime(f.startedAt)}</span>
               </li>
             ))}
           </ul>
@@ -244,7 +200,7 @@ export default async function DebugPage() {
               return (
                 <div
                   key={d.day}
-                  className="group relative flex-1 min-w-0"
+                  className="group relative min-w-0 flex-1"
                   title={`${d.day} — ${formatMicroUsd(d.costMicroUsd)} · ${d.runs} runs · ${d.tokensIn + d.tokensOut} tok`}
                 >
                   <div
@@ -260,237 +216,6 @@ export default async function DebugPage() {
             <span>{daily14d[daily14d.length - 1]?.day.slice(5)}</span>
           </div>
         </div>
-      </section>
-
-      {/* ─── Spend by model (7d) ───────────────────────────────────────── */}
-      {modelSpend7d.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Spend by model (7d)
-          </h2>
-          <div className="overflow-x-auto rounded-md border border-border">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 text-left font-semibold">Model</th>
-                  <th className="px-3 py-2 text-right font-semibold">Calls</th>
-                  <th className="px-3 py-2 text-right font-semibold">Tokens in</th>
-                  <th className="px-3 py-2 text-right font-semibold">Tokens out</th>
-                  <th className="px-3 py-2 text-right font-semibold">Cache read</th>
-                  <th className="px-3 py-2 text-right font-semibold">Cost</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {modelSpend7d.map((m) => (
-                  <tr key={m.model}>
-                    <td className="px-3 py-2 font-mono text-xs">{m.model}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{m.calls}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{m.tokensIn.toLocaleString('en-GB')}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{m.tokensOut.toLocaleString('en-GB')}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                      {m.cacheReadTokens.toLocaleString('en-GB')}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {formatMicroUsd(m.costMicroUsd)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-
-      {/* ─── Spend by agent ────────────────────────────────────────────── */}
-      {spend7d.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Spend by agent (7d)
-          </h2>
-          <div className="overflow-x-auto rounded-md border border-border">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 text-left font-semibold">Agent</th>
-                  <th className="px-3 py-2 text-right font-semibold">Runs</th>
-                  <th className="px-3 py-2 text-right font-semibold">Tokens in</th>
-                  <th className="px-3 py-2 text-right font-semibold">Tokens out</th>
-                  <th className="px-3 py-2 text-right font-semibold">Cache read</th>
-                  <th className="px-3 py-2 text-right font-semibold">Cost</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {spend7d.map((a) => (
-                  <tr key={a.agentId ?? 'unknown'}>
-                    <td className="px-3 py-2">
-                      {a.agentName ?? '(unattributed)'}
-                      {a.agentSlug && (
-                        <span className="ml-1 text-xs text-muted-foreground">
-                          / {a.agentSlug}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{a.runs}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{a.tokensIn}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{a.tokensOut}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                      {a.cacheReadTokens}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {formatMicroUsd(a.costMicroUsd)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-
-      {/* ─── Emergent topics ────────────────────────────────────────────── */}
-      <section className="space-y-3">
-        <div className="flex items-baseline justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Conversation topics
-          </h2>
-          <span className="text-xs text-muted-foreground">{topics.length} shown</span>
-        </div>
-
-        {topics.length === 0 ? (
-          <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
-            No topics yet. They emerge as the summarizer rolls up undigested turns
-            and groups them into named threads (default trigger: 30 undigested turns
-            per chat).
-          </p>
-        ) : (
-          <div className="overflow-x-auto rounded-md border border-border">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 text-left font-semibold">Topic</th>
-                  <th className="px-3 py-2 text-right font-semibold">Digests</th>
-                  <th className="px-3 py-2 text-right font-semibold">Turns</th>
-                  <th className="px-3 py-2 text-left font-semibold">First seen</th>
-                  <th className="px-3 py-2 text-left font-semibold">Last seen</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {topics.map((t) => (
-                  <tr key={t.topicSlug || t.topic}>
-                    <td className="px-3 py-2">
-                      <span className="font-medium">{t.topic}</span>
-                      {t.topicSlug && (
-                        <span className="ml-2 font-mono text-xs text-muted-foreground">
-                          topic:{t.topicSlug}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{t.digestCount}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{t.turnCount}</td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
-                      {fmtRelative(t.firstSeen)}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
-                      {fmtRelative(t.lastSeen)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      {/* ─── Recent digests ─────────────────────────────────────────────── */}
-      <section className="space-y-3">
-        <div className="flex items-baseline justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Recent conversation digests
-          </h2>
-          <span className="text-xs text-muted-foreground">{digests.length} shown</span>
-        </div>
-
-        {digests.length === 0 ? (
-          <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
-            No digests yet. Once a chat crosses the summarizer threshold (default 30
-            undigested turns), the summarizer agent will produce one and it&apos;ll show
-            up here.
-          </p>
-        ) : (
-          <ul className="space-y-3">
-            {digests.map((d) => (
-              <li key={d.id} className="rounded-md border border-border p-3 text-sm">
-                {d.topic && (
-                  <div className="mb-1 text-sm font-semibold">{d.topic}</div>
-                )}
-                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                  <span className="font-mono">{d.telegramChatId ?? d.chatId.slice(0, 8)}</span>
-                  <span>·</span>
-                  <span>
-                    {fmtShort(d.periodStart)} → {fmtShort(d.periodEnd)}
-                  </span>
-                  <span>·</span>
-                  <span>{d.sourceTurnCount} turns</span>
-                  <span>·</span>
-                  <span>
-                    via <code className="font-mono">{d.model}</code>{' '}
-                    {d.agent && <span>({d.agent})</span>}
-                  </span>
-                  <span className="ml-auto">{fmtRelative(d.createdAt)}</span>
-                </div>
-                <p className="mt-2 whitespace-pre-wrap text-sm">{d.summary}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/* ─── Recent facts ───────────────────────────────────────────────── */}
-      <section className="space-y-3">
-        <div className="flex items-baseline justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Recent facts (profile)
-          </h2>
-          <span className="text-xs text-muted-foreground">{factRows.length} shown</span>
-        </div>
-
-        {factRows.length === 0 ? (
-          <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
-            No facts yet. Set up an <code>extractor</code> agent at{' '}
-            <a href="/settings/agents" className="underline">/settings/agents</a> and
-            ingest some content (or run <code>pnpm extract:backfill</code>).
-          </p>
-        ) : (
-          <ul className="divide-y divide-border rounded-md border border-border">
-            {factRows.map((f) => (
-              <li key={f.id} className="px-3 py-2 text-sm">
-                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-                  <span className="rounded-sm bg-muted px-1.5 py-0.5 uppercase tracking-wider">
-                    {f.kind}
-                  </span>
-                  {f.entityName && (
-                    <span>
-                      <strong>{f.entityName}</strong>{' '}
-                      <span className="text-muted-foreground/70">({f.entityKind})</span>
-                    </span>
-                  )}
-                  {f.confidence < 1 && (
-                    <span className="text-amber-700 dark:text-amber-300">
-                      confidence {f.confidence.toFixed(2)}
-                    </span>
-                  )}
-                  {f.sourceTitle && (
-                    <span className="text-muted-foreground/70">
-                      ← {f.sourceTitle.slice(0, 40)}
-                    </span>
-                  )}
-                  <span className="ml-auto">{fmtRelative(f.createdAt)}</span>
-                </div>
-                <p className="mt-1 text-sm">{f.content}</p>
-              </li>
-            ))}
-          </ul>
-        )}
       </section>
 
       {/* ─── Content index coverage ────────────────────────────────────── */}
@@ -522,8 +247,8 @@ export default async function DebugPage() {
                   return (
                     <li key={row.type} className="flex items-baseline justify-between gap-3">
                       <span>
-                        <code className="font-mono">{row.type}</code> ·{' '}
-                        <strong>{row.indexed}</strong>/{row.total}
+                        <code className="font-mono">{row.type}</code> · <strong>{row.indexed}</strong>
+                        /{row.total}
                       </span>
                       <span className={pct === 100 ? 'text-emerald-700 dark:text-emerald-300' : ''}>
                         {pct.toFixed(0)}%
@@ -536,195 +261,10 @@ export default async function DebugPage() {
           )}
         </div>
       </section>
-
-      {/* ─── Persona notes ──────────────────────────────────────────────── */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          Persona notes
-        </h2>
-        {personaNotes.length === 0 ? (
-          <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
-            No persona notes yet. Set up a <code>reflector</code> agent at{' '}
-            <a href="/settings/agents" className="underline">/settings/agents</a> and
-            it will start observing dialog signals every 10 minutes.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {personaNotes.map((p) => (
-              <div key={p.agentId} className="rounded-md border border-border p-3 text-sm">
-                <div className="text-xs text-muted-foreground">
-                  <strong>{p.agentName}</strong> / {p.agentSlug} — {p.notes.length} note{p.notes.length === 1 ? '' : 's'}
-                </div>
-                <ul className="mt-2 space-y-1">
-                  {p.notes.map((n, i) => (
-                    <li key={i} className="flex items-baseline gap-2">
-                      <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-                        {n.kind}
-                      </span>
-                      <span className="text-sm">{n.content}</span>
-                      <span className="ml-auto text-xs text-muted-foreground">
-                        {fmtRelative(n.at)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* ─── Telegram chats ─────────────────────────────────────────────── */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          Telegram chats
-        </h2>
-
-        {chats.length === 0 ? (
-          <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
-            No Telegram chats yet.
-          </p>
-        ) : (
-          <div className="overflow-x-auto rounded-md border border-border">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 text-left font-semibold">Chat</th>
-                  <th className="px-3 py-2 text-left font-semibold">Status</th>
-                  <th className="px-3 py-2 text-left font-semibold">Agent</th>
-                  <th className="px-3 py-2 text-right font-semibold">Total</th>
-                  <th className="px-3 py-2 text-right font-semibold">Digested</th>
-                  <th className="px-3 py-2 text-right font-semibold">Pending</th>
-                  <th className="px-3 py-2 text-left font-semibold">Last activity</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {chats.map((c) => (
-                  <tr key={c.id}>
-                    <td className="px-3 py-2">
-                      <div className="flex flex-col">
-                        <span className="font-medium">{c.title ?? c.username ?? '(unnamed)'}</span>
-                        <span className="font-mono text-xs text-muted-foreground">
-                          {c.telegramChatId}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-xs">
-                      <span
-                        className={
-                          c.allowlistStatus === 'allowed'
-                            ? 'text-emerald-700 dark:text-emerald-300'
-                            : c.allowlistStatus === 'denied'
-                              ? 'text-destructive'
-                              : 'text-amber-700 dark:text-amber-300'
-                        }
-                      >
-                        {c.allowlistStatus}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2">
-                      <ChatAgentOverride
-                        chatId={c.id}
-                        current={c.responderAgentId}
-                        agents={agents}
-                      />
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{c.totalTurns}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                      {c.digested}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      <span className={c.undigested >= 30 ? 'font-semibold text-amber-700 dark:text-amber-300' : ''}>
-                        {c.undigested}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
-                      {c.lastActivity ? fmtRelative(c.lastActivity) : '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        <p className="text-xs text-muted-foreground">
-          <strong>Pending</strong> is the count of turns not yet folded into a digest. A
-          chat with pending ≥ 30 (the default summarizer threshold) is about to roll up
-          on the next inbound or outbound message. <strong>Agent</strong> pins a specific
-          responder to this chat; <em>default</em> falls back to the global
-          highest-priority enabled responder.
-        </p>
-      </section>
-
-      {/* ─── Agent activity ─────────────────────────────────────────────── */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          Agent activity
-        </h2>
-
-        {agents.length === 0 ? (
-          <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
-            No agents configured. Set one up at{' '}
-            <a href="/settings/agents" className="underline">
-              /settings/agents
-            </a>
-            .
-          </p>
-        ) : (
-          <div className="overflow-x-auto rounded-md border border-border">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 text-left font-semibold">Agent</th>
-                  <th className="px-3 py-2 text-left font-semibold">Role</th>
-                  <th className="px-3 py-2 text-left font-semibold">Model</th>
-                  <th className="px-3 py-2 text-right font-semibold">Priority</th>
-                  <th className="px-3 py-2 text-right font-semibold">Runs</th>
-                  <th className="px-3 py-2 text-left font-semibold">Last used</th>
-                  <th className="px-3 py-2 text-left font-semibold">State</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {agents.map((a) => (
-                  <tr key={a.id}>
-                    <td className="px-3 py-2">
-                      <div className="flex flex-col">
-                        <span className="font-medium">{a.name}</span>
-                        <span className="font-mono text-xs text-muted-foreground">{a.slug}</span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-xs">
-                      <span className="rounded-sm bg-muted px-1.5 py-0.5 uppercase tracking-wider">
-                        {a.role}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2">
-                      <code className="font-mono text-xs">{a.model}</code>
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{a.priority}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{a.usageCount}</td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
-                      {a.lastUsedAt ? fmtRelative(a.lastUsedAt) : 'never'}
-                    </td>
-                    <td className="px-3 py-2 text-xs">
-                      {a.enabled ? (
-                        <span className="text-emerald-700 dark:text-emerald-300">enabled</span>
-                      ) : (
-                        <span className="text-muted-foreground">disabled</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
     </div>
   );
 }
 
-/** YYYY-MM-DD HH:MM from an ISO timestamp. */
 function StatCard({
   title,
   primary,
@@ -749,25 +289,4 @@ function StatCard({
       <div className="text-xs text-muted-foreground">{secondary}</div>
     </div>
   );
-}
-
-function fmtShort(iso: string): string {
-  if (!iso) return '';
-  return iso.slice(0, 16).replace('T', ' ');
-}
-
-/** "3m ago" / "2h ago" / "yesterday" / "5 days ago". */
-function fmtRelative(iso: string): string {
-  const t = new Date(iso).getTime();
-  const now = Date.now();
-  const secs = Math.max(1, Math.round((now - t) / 1000));
-  if (secs < 60) return `${secs}s ago`;
-  const mins = Math.round(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  if (days === 1) return 'yesterday';
-  if (days < 30) return `${days} days ago`;
-  return formatDate(iso);
 }

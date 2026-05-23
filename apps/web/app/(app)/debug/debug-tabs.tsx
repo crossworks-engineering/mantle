@@ -3,17 +3,23 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-/** Tab strip shared by the operator view (/debug) and the Journey view
- *  (/debug/journey). Client-only for the active-state highlight. */
+/** Tab strip for the debug section. Each tab is its own route; client-only
+ *  for the active-state highlight. */
 const TABS = [
-  { href: '/debug', label: 'Operator', exact: true },
+  { href: '/debug', label: 'Overview', exact: true },
+  { href: '/debug/spend', label: 'Spend', exact: false },
+  { href: '/debug/topics', label: 'Topics', exact: false },
+  { href: '/debug/digests', label: 'Digests', exact: false },
+  { href: '/debug/facts', label: 'Facts', exact: false },
+  { href: '/debug/agents', label: 'Agents', exact: false },
+  { href: '/debug/telegram', label: 'Telegram', exact: false },
   { href: '/debug/journey', label: 'Journey', exact: false },
 ];
 
 export function DebugTabs() {
   const pathname = usePathname();
   return (
-    <nav className="flex gap-1 border-b border-border">
+    <nav className="flex flex-wrap gap-1 border-b border-border">
       {TABS.map((t) => {
         const active = t.exact ? pathname === t.href : pathname.startsWith(t.href);
         return (
@@ -21,7 +27,7 @@ export function DebugTabs() {
             key={t.href}
             href={t.href}
             className={
-              'rounded-t-md px-4 py-2 text-sm font-medium transition-colors ' +
+              'rounded-t-md px-3 py-2 text-sm font-medium transition-colors ' +
               (active
                 ? 'border-b-2 border-primary text-foreground'
                 : 'text-muted-foreground hover:text-foreground')
