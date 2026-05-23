@@ -4,7 +4,9 @@
 > columns, tables, to-do lists, highlights — through the **same TipTap engine
 > the Pages feature uses**. Her ability to *author* that formatting is a
 > **skill** (`rich_writing`); the chat's ability to *render* it is a small
-> markdown→HTML bridge into the Pages schema.
+> markdown→HTML bridge into the Pages schema. With the same dialect she can also
+> **create/update/delete real Pages** via the `page_*` tools — a saved page
+> renders identically to the reply she showed.
 >
 > Companion docs: [`pages.md`](./pages.md) (the editor schema + custom nodes),
 > [`heartbeats.md`](./heartbeats.md) (how skills attach to agents).
@@ -102,7 +104,30 @@ The `/assistant` page is a **document canvas**, not a chat transcript
 
 ---
 
-## 5. Applying the skill
+## 5. Page authoring tools
+
+Saskia can create/update/delete real Pages from the same dialect. The bridge is
+`markdownToDoc` ([`packages/content/src/markdown-to-doc.ts`](../packages/content/src/markdown-to-doc.ts)) —
+the inverse of `docToText` — which converts the dialect to the ProseMirror JSON
+pages store (`pages.doc`). The builtins live in
+[`packages/tools/src/builtins-pages.ts`](../packages/tools/src/builtins-pages.ts):
+
+| Tool | Args | Notes |
+|---|---|---|
+| `page_create` | `title, markdown, tags?, icon?` | indexed into the brain on create |
+| `page_update` | `id, markdown? \| title? \| tags? \| icon?` | `markdown` replaces the whole body + re-indexes |
+| `page_get` | `id` | returns title/tags/summary + body as plaintext |
+| `page_list` | `query?, tag?, limit?` | newest first, bodies omitted |
+| `page_delete` | `id` | `requires_confirm` (irreversible) — pauses for approval |
+
+Because both the chat renderer and `markdownToDoc` parse the *same dialect*, a
+saved page looks identical to the reply Saskia showed. (Two parsers today —
+chat→HTML, page→JSON — kept in sync by this doc; unifying on `markdownToDoc` for
+both is a future cleanup.)
+
+---
+
+## 6. Applying the skill + tools
 
 ```
 ALLOWED_USER_ID=<uuid> pnpm --filter @mantle/web run seed:rich-writing
@@ -110,13 +135,16 @@ ALLOWED_USER_ID=<uuid> pnpm --filter @mantle/web run seed:rich-writing
 ALLOWED_USER_ID=<uuid> AGENT_SLUG=saskia pnpm --filter @mantle/web run seed:rich-writing
 ```
 
-Idempotent: upserts the skill by slug, adds it to the agent's `skill_slugs` only
-if missing. Auto-targets the highest-priority enabled `assistant` (falls back to
-a `responder`).
+Idempotent. The script now also `seedBuiltinTools` (so the `page_*` rows exist)
+and the `rich_writing` skill carries the page tool slugs in its `tool_slugs` —
+so attaching the skill **also grants the page tools** (via `effectiveToolSlugs`).
+Auto-targets the highest-priority enabled `assistant` (falls back to a
+`responder`). No agent restart needed for the web surface — tools are read from
+the table per turn.
 
 ---
 
-## 6. Known edges / deferred
+## 7. Known edges / deferred
 
 - **Mentions** (`@entity` / `@page` chips) aren't emitted by Saskia yet — they
   need real node/entity ids. The schema renders them if present; authoring them
@@ -124,6 +152,7 @@ a `responder`).
 - **One TipTap editor per Saskia turn.** Fine for normal threads; if very long
   histories feel heavy, switch `<RichText>` to a static `generateHTML` pass +
   callout CSS (loses the live NodeView, gains speed).
-- **"Saskia drafts a real Page."** Because she already writes the Pages dialect,
-  a `page_create` tool that runs the same markdown→doc bridge is now a small
-  step — she could promote a good reply into a saved, indexed page.
+- **Two dialect parsers** (chat HTML vs page JSON). Unify both on `markdownToDoc`
+  + `<PageView>` JSON rendering when convenient.
+- **`page_update` replaces the whole body.** No partial/section edit — the agent
+  reads with `page_get` then sends a full revised body.

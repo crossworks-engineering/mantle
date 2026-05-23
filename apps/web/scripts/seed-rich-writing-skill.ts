@@ -19,6 +19,7 @@
 
 import { and, desc, eq } from 'drizzle-orm';
 import { db, agents, skills } from '@mantle/db';
+import { seedBuiltinTools, PAGE_TOOL_SLUGS } from '@mantle/tools';
 
 const USER_ID = process.env.ALLOWED_USER_ID;
 const AGENT_SLUG_OVERRIDE = process.env.AGENT_SLUG;
@@ -92,10 +93,30 @@ column with a line containing only \`+++\`, close with \`:::\`. Use 2+ columns:
   back to plain text.
 - Always close every \`:::\` block, each on its own line.
 - This rich rendering is the web assistant only. On Telegram/voice, keep to
-  plain text — no \`:::\` blocks there.`;
+  plain text — no \`:::\` blocks there.
+
+## Saving to pages
+
+You can turn this writing into real, saved documents in the user's Mantle with
+the page tools — they accept the SAME dialect, so a saved page looks exactly
+like the reply you showed:
+
+- **page_create** { title, markdown, tags?, icon? } — save a new page. Reach for
+  this when the user says "save this", "make a page", "write up …", or when a
+  reply is a keeper (a plan, a doc, a comparison). The page is indexed into the
+  brain, so you can find it again later.
+- **page_update** { id, markdown? | title? | tags? } — \`markdown\` REPLACES the
+  whole body. page_get first if you're doing a targeted edit, then send the full
+  revised body.
+- **page_get** { id } / **page_list** { query?, tag? } — read/find pages.
+- **page_delete** { id } — irreversible; confirm with the user first (it pauses
+  for approval).
+
+Don't auto-save every reply — create a page when the user asks or when the
+content clearly deserves to persist. Tell the user the page title when you save.`;
 
 const SKILL_DESCRIPTION =
-  'Write replies as rich Notion-style documents — callouts, columns, tables, to-do lists, highlights — rendered live in the web assistant.';
+  'Write replies as rich Notion-style documents — callouts, columns, tables, to-do lists, highlights — rendered live in the web assistant, and save/update them as pages.';
 
 async function resolveAgentSlug(): Promise<string> {
   if (AGENT_SLUG_OVERRIDE) {
@@ -152,7 +173,7 @@ async function upsertSkill(): Promise<void> {
         name: 'Rich writing',
         description: SKILL_DESCRIPTION,
         instructions: SKILL_INSTRUCTIONS,
-        toolSlugs: [],
+        toolSlugs: PAGE_TOOL_SLUGS,
         enabled: true,
         updatedAt: new Date(),
       })
@@ -165,7 +186,7 @@ async function upsertSkill(): Promise<void> {
       name: 'Rich writing',
       description: SKILL_DESCRIPTION,
       instructions: SKILL_INSTRUCTIONS,
-      toolSlugs: [],
+      toolSlugs: PAGE_TOOL_SLUGS,
       defaultState: {},
       enabled: true,
     });
@@ -194,10 +215,15 @@ async function attachToAgent(agentSlug: string): Promise<void> {
 
 async function main() {
   const agentSlug = await resolveAgentSlug();
+  // Ensure the builtin tool rows exist (incl. the page_* tools) so the skill's
+  // tool_slugs resolve to real, enabled tools in the agent's allowlist.
+  const seeded = await seedBuiltinTools(USER_ID!);
+  console.log(`[seed] builtin tools: ${seeded.inserted} inserted, ${seeded.updated} updated`);
   await upsertSkill();
   await attachToAgent(agentSlug);
-  console.log('[seed] done — Saskia can now write in the rich Notion-style dialect.');
-  console.log('[seed] toggle/edit it at /settings/skills; restart not required (read per turn).');
+  console.log('[seed] done — Saskia can now write rich documents AND save them as pages.');
+  console.log(`[seed] page tools granted via the skill: ${PAGE_TOOL_SLUGS.join(', ')}`);
+  console.log('[seed] toggle/edit at /settings/skills; restart not required (read per turn).');
   process.exit(0);
 }
 

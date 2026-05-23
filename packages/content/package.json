@@ -10,14 +10,16 @@
     "./notes": "./src/notes.ts",
     "./todos": "./src/todos.ts",
     "./events": "./src/events.ts",
-    "./pages": "./src/pages.ts"
+    "./pages": "./src/pages.ts",
+    "./markdown": "./src/markdown-to-doc.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@mantle/db": "workspace:*",
-    "drizzle-orm": "^0.38.3"
+    "drizzle-orm": "^0.38.3",
+    "marked": "^18.0.4"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

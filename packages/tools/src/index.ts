@@ -18,6 +18,7 @@ export {
 } from './registry';
 
 export { BUILTIN_TOOLS } from './builtins';
+export { PAGE_TOOLS, PAGE_TOOL_SLUGS } from './builtins-pages';
 export { PERSONA_TOOLS, PERSONA_TOOL_SLUGS } from './builtins-persona';
 export { TODO_TOOLS, TODO_TOOL_SLUGS } from './builtins-todos';
 export { TERMINAL_TOOLS, TERMINAL_TOOL_SLUGS } from './builtins-terminal';

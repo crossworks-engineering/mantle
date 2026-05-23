@@ -38,6 +38,7 @@ import { RECALL_TOOLS } from './builtins-recall';
 import { RESEARCH_TOOLS } from './builtins-research';
 import { NOTE_TOOLS } from './builtins-notes';
 import { EMAIL_TOOLS } from './builtins-email';
+import { PAGE_TOOLS } from './builtins-pages';
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -891,4 +892,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Email — send mail from the user's own mailbox via provider SMTP. Pairs
   // with web_search/researcher ("research X and email it to me").
   ...EMAIL_TOOLS,
+  // Pages — author rich documents (CRUD). Saskia writes the rich-markdown
+  // dialect; markdownToDoc converts it to the ProseMirror JSON pages store.
+  // page_delete is requires_confirm (irreversible).
+  ...PAGE_TOOLS,
 ];

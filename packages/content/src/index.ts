@@ -73,6 +73,8 @@ export {
 
 export { docToText } from './doc-to-text';
 
+export { markdownToDoc } from './markdown-to-doc';
+
 export { chunkDocText, type DocChunk } from './chunk';
 
 export { mentionRefs, type MentionRefs } from './mention-refs';

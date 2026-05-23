@@ -1,0 +1,59 @@
+import { describe, expect, it } from 'vitest';
+import { markdownToDoc } from './markdown-to-doc';
+
+type N = { type: string; attrs?: Record<string, unknown>; content?: N[]; text?: string; marks?: { type: string }[] };
+const top = (md: string) => (markdownToDoc(md) as { content: N[] }).content;
+const find = (md: string, type: string) => top(md).find((n) => n.type === type);
+
+describe('markdownToDoc', () => {
+  it('always returns a doc with at least an empty paragraph', () => {
+    const doc = markdownToDoc('') as N;
+    expect(doc.type).toBe('doc');
+    expect(doc.content?.[0]?.type).toBe('paragraph');
+  });
+
+  it('maps headings (clamped to 1–3) and inline marks', () => {
+    const h = find('## Title', 'heading');
+    expect(h?.attrs?.level).toBe(2);
+    const big = find('###### deep', 'heading');
+    expect(big?.attrs?.level).toBe(3);
+    const p = find('a **b** *c* `d` ==e==', 'paragraph')!;
+    const markTypes = (p.content ?? []).flatMap((t) => (t.marks ?? []).map((m) => m.type));
+    expect(markTypes).toEqual(expect.arrayContaining(['bold', 'italic', 'code', 'highlight']));
+  });
+
+  it('maps callouts with a variant, defaulting unknown kinds to info', () => {
+    const c = find(':::warning\nbe careful\n:::', 'callout');
+    expect(c?.attrs?.variant).toBe('warning');
+    const d = find(':::bogus\nx\n:::', 'callout');
+    expect(d?.attrs?.variant).toBe('info');
+  });
+
+  it('maps a columns block into columnList with 2+ columns', () => {
+    const cols = find(':::columns\nleft\n+++\nright\n:::', 'columnList');
+    expect(cols?.content?.length).toBe(2);
+    expect(cols?.content?.[0]?.type).toBe('column');
+  });
+
+  it('degrades a single-column columns block to plain blocks', () => {
+    expect(find(':::columns\nonly one\n:::', 'columnList')).toBeUndefined();
+    expect(find(':::columns\nonly one\n:::', 'paragraph')).toBeTruthy();
+  });
+
+  it('maps GFM task lists to taskList/taskItem with checked state', () => {
+    const tl = find('- [x] done\n- [ ] todo', 'taskList');
+    expect(tl?.content?.map((i) => i.attrs?.checked)).toEqual([true, false]);
+  });
+
+  it('maps fenced code with its language', () => {
+    const code = find('```ts\nconst x = 1;\n```', 'codeBlock');
+    expect(code?.attrs?.language).toBe('ts');
+    expect(code?.content?.[0]?.text).toContain('const x = 1;');
+  });
+
+  it('maps a GFM table to table/tableRow/tableHeader/tableCell', () => {
+    const t = find('| A | B |\n|---|---|\n| 1 | 2 |', 'table')!;
+    expect(t.content?.[0]?.content?.[0]?.type).toBe('tableHeader');
+    expect(t.content?.[1]?.content?.[0]?.type).toBe('tableCell');
+  });
+});
