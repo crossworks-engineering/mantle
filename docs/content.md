@@ -5,6 +5,10 @@
 > All three ride on the `nodes` table, all three flow through the
 > extractor, and all three are addressable from MCP so the assistant can
 > create / update / delete them on your behalf.
+>
+> For richer, structured documents (callouts, columns, tables, embeds) see
+> the heavier [`pages.md`](./pages.md) surface — a TipTap editor with a
+> draft/commit model. Notes remain the lightweight markdown quick-capture.
 
 ---
 

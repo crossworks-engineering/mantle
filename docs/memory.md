@@ -232,6 +232,7 @@ This grouping isn't a 7th layer — it's the mental model behind the six.
 | Type | Surface | Specialised table | Extractor body source |
 |---|---|---|---|
 | `note` | `/notes` | — | `data.content` (markdown) |
+| `page` | `/pages` | `pages` (TipTap doc) | `pages.doc_text` (derived plaintext) — see [pages.md](./pages.md) |
 | `file` | `/files` | — (bytes on disk under `MANTLE_FILES_ROOT`) | text files inline; `.pdf` via pdf-parse |
 | `task` | `/todos` | — | title + status + priority + due_at + body |
 | `event` | `/events` | — | title + starts_at + ends_at + location + body (IANA tz preserved for reminder display) |
@@ -243,6 +244,21 @@ This grouping isn't a 7th layer — it's the mental model behind the six.
 The enum also declares `sermon`, `contact`, `printer_project` for
 future surfaces; none have writers today and they're hidden from the
 agent-settings chip picker. The Postgres enum holds them inert.
+
+### Chunked retrieval (`content_chunks`)
+
+Layer 5's per-node embedding is the coarse "spine". For long documents a
+single 1536-dim vector is a weak primitive, so the extractor also writes
+**section-level chunks** to `content_chunks` (migration 0040): each chunk is a
+~1500-char passage with its heading context and its own embedding.
+`chunkDocText` (`packages/content/src/chunk.ts`) does the splitting;
+`searchChunks` (`packages/search/src/chunks.ts`, surfaced as the MCP
+`search_chunks` tool) does cosine search over them. Generalised across all
+content (pages, files, emails, …), not pages-specific. **Idempotent**: the
+extractor deletes a node's chunks and re-inserts on every (re)extract, so they
+never accumulate — the same delete-then-rebuild rule now also applies to
+`mentioned_in` edges (previously appended on every run). Full detail +
+re-extract semantics in [pages.md](./pages.md) §5–6.
 
 ### Fact subtypes (inside `profile`)
 

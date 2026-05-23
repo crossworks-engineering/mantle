@@ -19,6 +19,9 @@ Companion docs:
   and the production audit.
 - [`telegram.md`](./telegram.md) — a frozen handoff covering the Telegram
   bridge build. Project diary; durable details have moved here.
+- [`pages.md`](./pages.md) — the Notion-style rich-document content type:
+  TipTap editor, draft/commit model, custom blocks, and how pages plug into
+  the brain (incl. `content_chunks` chunked retrieval + re-extract semantics).
 
 ---
 
@@ -241,7 +244,8 @@ nodes (
 )
 ```
 
-A row is one of 12 types: `branch`, `email`, `email_thread`, `file`, `note`,
+A row is one of 13 types: `branch`, `email`, `email_thread`, `file`, `note`,
+`page` (see [`pages.md`](./pages.md)),
 `sermon`, `contact`, `secret`, `task`, `event`, `printer_project`,
 `telegram_message`. The polymorphic specialisations live in dedicated
 tables (`emails`, `email_attachments`, `telegram_messages`, …) with a
