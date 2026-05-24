@@ -61,3 +61,8 @@ next-env.d.ts
 # logs
 logs/
 *.log
+
+# Agent skills — installed/vendored locally (re-fetchable via the skill
+# manager from skills-lock.json); not needed to build or run the app.
+.agents/
+skills-lock.json
