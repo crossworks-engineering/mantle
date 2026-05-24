@@ -3199,9 +3199,14 @@
 
 /* Pages tables (TipTap / prosemirror-tables) — themed borders + header row,
    column-resize handle, and cell-selection highlight. */
+/* The wrapper carries the outer border + theme radius and clips (overflow-x:auto
+   makes it a clipping box), so the table reads as a rounded, bordered card that
+   tracks --radius (sharp on radius-0 themes). */
 .ProseMirror .tableWrapper {
   overflow-x: auto;
   margin-block: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 .ProseMirror table {
   border-collapse: collapse;
@@ -3216,6 +3221,20 @@
   border: 1px solid var(--border);
   padding: 0.4rem 0.6rem;
   vertical-align: top;
+}
+/* Drop the cells' outer borders — the rounded wrapper provides the outer edge,
+   so it follows the corner radius cleanly; internal grid lines stay. */
+.ProseMirror table tr:first-child > * {
+  border-top: 0;
+}
+.ProseMirror table tr:last-child > * {
+  border-bottom: 0;
+}
+.ProseMirror table tr > :first-child {
+  border-left: 0;
+}
+.ProseMirror table tr > :last-child {
+  border-right: 0;
 }
 .ProseMirror table th {
   background-color: var(--muted);
