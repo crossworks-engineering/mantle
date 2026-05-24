@@ -16,6 +16,7 @@ import { common, createLowlight } from 'lowlight';
 import { toHtml } from 'hast-util-to-html';
 // Relative (not `@/`) so the vitest unit test, which has no path-alias, resolves it.
 import { highlightColor } from '../components/page-editor/highlight-colors';
+import { textColor } from '../components/page-editor/text-colors';
 
 const lowlight = createLowlight(common);
 
@@ -72,6 +73,11 @@ function renderText(node: PMNode): string {
       case 'highlight': {
         const c = highlightColor(mark.attrs?.color);
         html = c ? `<mark style="background-color:${c}">${html}</mark>` : `<mark>${html}</mark>`;
+        break;
+      }
+      case 'textColor': {
+        const c = textColor(mark.attrs?.color);
+        if (c) html = `<span style="color:${c}">${html}</span>`;
         break;
       }
       case 'link':

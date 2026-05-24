@@ -6,7 +6,9 @@ import type { Editor } from '@tiptap/react';
 import { useEditorState } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { HIGHLIGHT_TOKENS, highlightColor } from './highlight-colors';
+import { TEXT_COLOR_TOKENS, textColor } from './text-colors';
 import {
+  Baseline,
   Bold,
   Code2,
   Heading1,
@@ -59,6 +61,57 @@ function ToolButton({
   );
 }
 
+type Swatch = { key: string; label: string; color: string | null; onSelect: () => void };
+
+/**
+ * Colour swatch popover (highlight + text colour). Rendered as a sibling portal
+ * positioned at the captured trigger rect, so it survives the bubble menu hiding
+ * when the editor blurs. `color: null` is the "remove" swatch (a crossed circle);
+ * onMouseDown+preventDefault keeps the editor's selection so the command applies.
+ */
+function SwatchPanel({
+  pos,
+  onClose,
+  swatches,
+}: {
+  pos: { x: number; y: number };
+  onClose: () => void;
+  swatches: Swatch[];
+}) {
+  return createPortal(
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div
+        role="menu"
+        className="fixed z-50 flex items-center gap-1.5 rounded-md border border-border bg-popover p-1.5 shadow-md"
+        style={{ left: pos.x, top: pos.y }}
+      >
+        {swatches.map((sw) => (
+          <button
+            key={sw.key}
+            type="button"
+            aria-label={sw.label}
+            title={sw.label}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              sw.onSelect();
+            }}
+            className={cn(
+              'size-5 rounded-full border border-border',
+              sw.color === null &&
+                'flex items-center justify-center bg-background text-muted-foreground',
+            )}
+            style={sw.color ? { backgroundColor: sw.color } : undefined}
+          >
+            {sw.color === null && <span className="block h-px w-3 rotate-45 bg-current" />}
+          </button>
+        ))}
+      </div>
+    </>,
+    document.body,
+  );
+}
+
 /**
  * Selection bubble menu — the chromeless replacement for a fixed toolbar.
  * The link dialog is rendered as a SIBLING of <BubbleMenu> (not a child): when
@@ -77,6 +130,7 @@ export function EditorBubbleMenu({ editor }: { editor: Editor }) {
       strike: editor.isActive('strike'),
       code: editor.isActive('codeBlock'),
       highlight: editor.isActive('highlight'),
+      textColor: editor.isActive('textColor'),
       link: editor.isActive('link'),
       h1: editor.isActive('heading', { level: 1 }),
       h2: editor.isActive('heading', { level: 2 }),
@@ -110,6 +164,25 @@ export function EditorBubbleMenu({ editor }: { editor: Editor }) {
   const clearHighlight = () => {
     editor.chain().focus().unsetHighlight().run();
     setHlPanel(null);
+  };
+
+  // Text (font) colour swatches — same sibling-portal pattern as highlight.
+  const [fcPanel, setFcPanel] = useState<{ x: number; y: number } | null>(null);
+
+  const openTextColor = (e: React.MouseEvent<HTMLElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setFcPanel({
+      x: Math.min(r.left, window.innerWidth - 240),
+      y: Math.min(r.bottom + 6, window.innerHeight - 60),
+    });
+  };
+  const applyTextColor = (color: string) => {
+    editor.chain().focus().setTextColor(color).run();
+    setFcPanel(null);
+  };
+  const clearTextColor = () => {
+    editor.chain().focus().unsetTextColor().run();
+    setFcPanel(null);
   };
 
   const openLink = () => {
@@ -153,6 +226,12 @@ export function EditorBubbleMenu({ editor }: { editor: Editor }) {
           icon={Strikethrough}
           active={s.strike}
           onClick={() => editor.chain().focus().toggleStrike().run()}
+        />
+        <ToolButton
+          label="Text colour"
+          icon={Baseline}
+          active={s.textColor}
+          onClick={openTextColor}
         />
         <ToolButton
           label="Highlight colour"
@@ -202,57 +281,43 @@ export function EditorBubbleMenu({ editor }: { editor: Editor }) {
         />
       </BubbleMenu>
 
-      {hlPanel &&
-        createPortal(
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => setHlPanel(null)} />
-            <div
-              role="menu"
-              aria-label="Highlight colour"
-              className="fixed z-50 flex items-center gap-1.5 rounded-md border border-border bg-popover p-1.5 shadow-md"
-              style={{ left: hlPanel.x, top: hlPanel.y }}
-            >
-              <button
-                type="button"
-                aria-label="No highlight"
-                title="None"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  clearHighlight();
-                }}
-                className="flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground"
-              >
-                <span className="block h-px w-3 rotate-45 bg-current" />
-              </button>
-              <button
-                type="button"
-                aria-label="Default highlight"
-                title="Default"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  applyDefaultHighlight();
-                }}
-                className="size-5 rounded-full border border-border"
-                style={{ backgroundColor: 'color-mix(in oklab, var(--primary) 30%, transparent)' }}
-              />
-              {HIGHLIGHT_TOKENS.map((token) => (
-                <button
-                  key={token}
-                  type="button"
-                  aria-label={`Highlight ${token}`}
-                  title={token}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    applyHighlight(token);
-                  }}
-                  className="size-5 rounded-full border border-border"
-                  style={{ backgroundColor: highlightColor(token) ?? undefined }}
-                />
-              ))}
-            </div>
-          </>,
-          document.body,
-        )}
+      {hlPanel && (
+        <SwatchPanel
+          pos={hlPanel}
+          onClose={() => setHlPanel(null)}
+          swatches={[
+            { key: 'none', label: 'No highlight', color: null, onSelect: clearHighlight },
+            {
+              key: 'default',
+              label: 'Default',
+              color: 'color-mix(in oklab, var(--primary) 30%, transparent)',
+              onSelect: applyDefaultHighlight,
+            },
+            ...HIGHLIGHT_TOKENS.map((token) => ({
+              key: token,
+              label: `Highlight ${token}`,
+              color: highlightColor(token),
+              onSelect: () => applyHighlight(token),
+            })),
+          ]}
+        />
+      )}
+
+      {fcPanel && (
+        <SwatchPanel
+          pos={fcPanel}
+          onClose={() => setFcPanel(null)}
+          swatches={[
+            { key: 'none', label: 'No colour', color: null, onSelect: clearTextColor },
+            ...TEXT_COLOR_TOKENS.map((token) => ({
+              key: token,
+              label: `Text ${token}`,
+              color: textColor(token),
+              onSelect: () => applyTextColor(token),
+            })),
+          ]}
+        />
+      )}
 
       <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
         <DialogContent className="sm:max-w-md">

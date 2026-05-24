@@ -35,6 +35,21 @@ describe('renderPageDoc', () => {
     expect(bad).toContain('<mark>hi</mark>');
   });
 
+  it('renders themed text colour from a token; ignores unknown', () => {
+    const ok = renderPageDoc(
+      doc([{ type: 'paragraph', content: [{ type: 'text', text: 'hi', marks: [{ type: 'textColor', attrs: { color: 'chart-3' } }] }] }]),
+      opts,
+    );
+    expect(ok).toContain('<span style="color:var(--chart-3)">hi</span>');
+
+    const bad = renderPageDoc(
+      doc([{ type: 'paragraph', content: [{ type: 'text', text: 'hi', marks: [{ type: 'textColor', attrs: { color: 'red; x:1' } }] }] }]),
+      opts,
+    );
+    expect(bad).not.toContain('color:');
+    expect(bad).toContain('hi');
+  });
+
   it('renders callouts, images (asset-rewritten), and task lists', () => {
     const html = renderPageDoc(
       doc([

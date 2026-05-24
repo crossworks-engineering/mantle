@@ -14,6 +14,7 @@ import { Column, ColumnList } from './column';
 import { PageMention } from './mention';
 import { PageImage } from './image';
 import { FileEmbed } from './file-embed';
+import { TextColor } from './text-color';
 import { highlightColor } from './highlight-colors';
 
 // Highlight mark with an optional themed `color` (a token key like `chart-2`,
@@ -68,6 +69,7 @@ export const pageExtensions: Extensions = [
   }),
   CodeBlockLowlight.configure({ lowlight }),
   PageHighlight,
+  TextColor,
   Typography,
   TaskList,
   TaskItem.configure({ nested: true }),
