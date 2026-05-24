@@ -1,0 +1,58 @@
+import { describe, expect, it } from 'vitest';
+import { richMarkdownToHtml } from './rich-markdown';
+
+/**
+ * The chat renderer's dialect parser. Kept in lockstep with
+ * `@mantle/content`'s `markdownToDoc` (same dialect, different output: HTML for
+ * the live TipTap editor vs ProseMirror JSON for page authoring). When you
+ * change one, change both — these tests + markdown-to-doc.test.ts guard the
+ * shared contract.
+ */
+describe('richMarkdownToHtml', () => {
+  it('returns empty string for blank input', () => {
+    expect(richMarkdownToHtml('')).toBe('');
+    expect(richMarkdownToHtml('   \n  ')).toBe('');
+  });
+
+  it('renders standard markdown + highlight', () => {
+    const html = richMarkdownToHtml('# Title\n\na **b** ==c==');
+    expect(html).toContain('<h1>Title</h1>');
+    expect(html).toContain('<strong>b</strong>');
+    expect(html).toContain('<mark>c</mark>');
+  });
+
+  it('renders callouts as data-callout with the variant', () => {
+    expect(richMarkdownToHtml(':::warning\nbe careful\n:::')).toContain('data-variant="warning"');
+    // unknown variant degrades to info
+    expect(richMarkdownToHtml(':::bogus\nx\n:::')).toContain('data-variant="info"');
+  });
+
+  it('renders a columns block as data-column-list with 2+ columns', () => {
+    const html = richMarkdownToHtml(':::columns\nleft\n+++\nright\n:::');
+    expect(html).toContain('data-column-list');
+    expect((html.match(/data-column(?!-list)/g) ?? []).length).toBe(2);
+  });
+
+  it('degrades a single-column columns block to plain content', () => {
+    const html = richMarkdownToHtml(':::columns\nonly one\n:::');
+    expect(html).not.toContain('data-column-list');
+    expect(html).toContain('only one');
+  });
+
+  it('renders GFM task lists as taskList markup with checked state', () => {
+    const html = richMarkdownToHtml('- [x] done\n- [ ] todo');
+    expect(html).toContain('data-type="taskList"');
+    expect(html).toContain('data-checked="true"');
+    expect(html).toContain('data-checked="false"');
+  });
+
+  it('renders fenced code with a language class lowlight can read', () => {
+    expect(richMarkdownToHtml('```ts\nconst x = 1;\n```')).toContain('language-ts');
+  });
+
+  it('renders GFM tables', () => {
+    const html = richMarkdownToHtml('| A | B |\n|---|---|\n| 1 | 2 |');
+    expect(html).toContain('<table>');
+    expect(html).toContain('<th>A</th>');
+  });
+});
