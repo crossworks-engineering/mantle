@@ -36,20 +36,32 @@ export const SlashCommand = Extension.create({
         render: () => {
           let component: ReactRenderer<SlashMenuHandle, SlashMenuProps> | null = null;
           let popup: HTMLDivElement | null = null;
+          let rectFn: (() => DOMRect | null) | null | undefined = null;
+          let ro: ResizeObserver | null = null;
 
-          const reposition = (rectFn?: (() => DOMRect | null) | null) => {
+          const reposition = () => {
             if (!popup || !rectFn) return;
             const rect = rectFn();
             if (!rect) return;
             const margin = 8;
-            const height = popup.offsetHeight;
+            const w = popup.offsetWidth;
+            const h = popup.offsetHeight;
             const flipUp =
-              rect.bottom + margin + height > window.innerHeight && rect.top - margin - height > 0;
-            popup.style.left = `${Math.round(rect.left)}px`;
-            popup.style.top = `${Math.round(flipUp ? rect.top - margin - height : rect.bottom + margin)}px`;
+              rect.bottom + margin + h > window.innerHeight && rect.top - margin - h > 0;
+            let top = flipUp ? rect.top - margin - h : rect.bottom + margin;
+            let left = rect.left;
+            // Clamp fully on-screen. A menu overflowing the viewport is what let
+            // the arrow-key scrollIntoView (in SlashMenu) yank the whole page on
+            // first open — keeping it on-screen makes that scroll a no-op.
+            left = Math.max(margin, Math.min(left, window.innerWidth - w - margin));
+            top = Math.max(margin, Math.min(top, window.innerHeight - h - margin));
+            popup.style.left = `${Math.round(left)}px`;
+            popup.style.top = `${Math.round(top)}px`;
           };
 
           const close = () => {
+            ro?.disconnect();
+            ro = null;
             popup?.remove();
             popup = null;
             component?.destroy();
@@ -58,19 +70,25 @@ export const SlashCommand = Extension.create({
 
           return {
             onStart: (props) => {
+              rectFn = props.clientRect;
               component = new ReactRenderer(SlashMenu, { props, editor: props.editor });
               popup = document.createElement('div');
               popup.style.position = 'fixed';
               popup.style.zIndex = '50';
               popup.appendChild(component.element);
               document.body.appendChild(popup);
-              reposition(props.clientRect);
-              // Re-measure after paint so the flip-up calc has a real height.
-              requestAnimationFrame(() => reposition(props.clientRect));
+              reposition();
+              // ReactRenderer commits the menu content asynchronously, so its
+              // height isn't known yet. Reposition the moment it gets a real size
+              // (and whenever the filtered list changes height) — this is what
+              // fixes the "first open jumps off-screen on arrow-key" bug.
+              ro = new ResizeObserver(() => reposition());
+              ro.observe(popup);
             },
             onUpdate: (props) => {
+              rectFn = props.clientRect;
               component?.updateProps(props);
-              reposition(props.clientRect);
+              reposition();
             },
             onKeyDown: (props) => {
               if (props.event.key === 'Escape') {

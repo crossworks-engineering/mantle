@@ -70,20 +70,31 @@ export const PageMention = Mention.extend({
     render: () => {
       let component: ReactRenderer<MentionListHandle, MentionListProps> | null = null;
       let popup: HTMLDivElement | null = null;
+      let rectFn: (() => DOMRect | null) | null | undefined = null;
+      let ro: ResizeObserver | null = null;
 
-      const reposition = (rectFn?: (() => DOMRect | null) | null) => {
+      const reposition = () => {
         if (!popup || !rectFn) return;
         const rect = rectFn();
         if (!rect) return;
         const margin = 6;
-        const height = popup.offsetHeight;
+        const w = popup.offsetWidth;
+        const h = popup.offsetHeight;
         const flipUp =
-          rect.bottom + margin + height > window.innerHeight && rect.top - margin - height > 0;
-        popup.style.left = `${Math.round(rect.left)}px`;
-        popup.style.top = `${Math.round(flipUp ? rect.top - margin - height : rect.bottom + margin)}px`;
+          rect.bottom + margin + h > window.innerHeight && rect.top - margin - h > 0;
+        let top = flipUp ? rect.top - margin - h : rect.bottom + margin;
+        let left = rect.left;
+        // Clamp fully on-screen so the list never overflows the viewport (which
+        // is what let arrow-key scrollIntoView yank the page on first open).
+        left = Math.max(margin, Math.min(left, window.innerWidth - w - margin));
+        top = Math.max(margin, Math.min(top, window.innerHeight - h - margin));
+        popup.style.left = `${Math.round(left)}px`;
+        popup.style.top = `${Math.round(top)}px`;
       };
 
       const close = () => {
+        ro?.disconnect();
+        ro = null;
         popup?.remove();
         popup = null;
         component?.destroy();
@@ -92,18 +103,23 @@ export const PageMention = Mention.extend({
 
       return {
         onStart: (props) => {
+          rectFn = props.clientRect;
           component = new ReactRenderer(MentionList, { props, editor: props.editor });
           popup = document.createElement('div');
           popup.style.position = 'fixed';
           popup.style.zIndex = '50';
           popup.appendChild(component.element);
           document.body.appendChild(popup);
-          reposition(props.clientRect);
-          requestAnimationFrame(() => reposition(props.clientRect));
+          reposition();
+          // ReactRenderer commits asynchronously; reposition once the popup has a
+          // real size (and when the filtered list height changes).
+          ro = new ResizeObserver(() => reposition());
+          ro.observe(popup);
         },
         onUpdate: (props) => {
+          rectFn = props.clientRect;
           component?.updateProps(props);
-          reposition(props.clientRect);
+          reposition();
         },
         onKeyDown: (props) => {
           if (props.event.key === 'Escape') {
