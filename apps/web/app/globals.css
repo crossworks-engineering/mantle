@@ -3153,6 +3153,13 @@
   content: none;
 }
 
+/* Divider spacing: halve prose's default hr margin (3em → 1.5em). Applies to
+   the editor, read-only PageView, and the public render so it's consistent. */
+.ProseMirror hr {
+  margin-top: 1.5em;
+  margin-bottom: 1.5em;
+}
+
 /* Pages multi-column layout (2–4 columns). CSS grid with equal auto-columns
    guarantees identical widths regardless of content (flex sized unevenly).
    Each column is a lightly shaded, rounded panel so its bounds are visible.
