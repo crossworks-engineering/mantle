@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { createPortal } from 'react-dom';
 import type { Editor } from '@tiptap/core';
 import { DragHandle } from '@tiptap/extension-drag-handle-react';
@@ -56,17 +56,28 @@ export function EditorDragHandle({ editor }: { editor: Editor }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [menu]);
 
+  // Stable props for <DragHandle>. Its internal effect re-registers the
+  // ProseMirror plugin whenever these change; a fresh object/function each render
+  // makes it churn on every re-render (e.g. the idle autosave), which
+  // reconfigures editor state and tears down this menu and the slash/mention
+  // popups. posRef is a ref, so [] deps are safe.
+  // `left` (vs the default `left-start`) centres the handle on the block's box
+  // instead of top-anchoring it — so the grip lines up with its row, including
+  // thin blocks like a divider.
+  const computePositionConfig = useMemo(() => ({ placement: 'left' as const }), []);
+  const onNodeChange = useCallback<NonNullable<ComponentProps<typeof DragHandle>['onNodeChange']>>(
+    ({ node, pos }) => {
+      posRef.current = node ? pos : null;
+    },
+    [],
+  );
+
   return (
     <>
       <DragHandle
         editor={editor}
-        // `left` (vs the default `left-start`) centres the handle on the block's
-        // box instead of top-anchoring it — so the grip lines up with its row,
-        // including thin blocks like a divider (the misalignment we saw).
-        computePositionConfig={{ placement: 'left' }}
-        onNodeChange={({ node, pos }) => {
-          posRef.current = node ? pos : null;
-        }}
+        computePositionConfig={computePositionConfig}
+        onNodeChange={onNodeChange}
       >
         <div
           role="button"
