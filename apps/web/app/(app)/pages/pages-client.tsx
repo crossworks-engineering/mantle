@@ -145,7 +145,7 @@ export function PagesClient({
   };
 
   return (
-    <div className="md:grid md:h-full md:grid-cols-2 md:overflow-hidden">
+    <div className="md:grid md:h-full md:grid-cols-[30%_minmax(0,1fr)] md:overflow-hidden">
       {/* ── Left: list ─────────────────────────────────────────────── */}
       <div className="flex flex-col border-b border-border md:h-full md:min-h-0 md:border-b-0 md:border-r">
         <div className="space-y-3 border-b border-border p-4">
