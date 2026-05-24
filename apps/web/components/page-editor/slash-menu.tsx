@@ -10,6 +10,7 @@ import {
 } from 'react';
 import type { Editor, Range } from '@tiptap/core';
 import {
+  ChevronRight,
   Code2,
   Columns2,
   Columns3,
@@ -153,6 +154,15 @@ const ITEMS: SlashItem[] = [
           content: [{ type: 'paragraph' }],
         })
         .run(),
+  },
+  {
+    group: 'Blocks',
+    title: 'Toggle',
+    description: 'A collapsible details section.',
+    icon: ChevronRight,
+    keywords: ['toggle', 'details', 'collapse', 'accordion', 'expand', 'summary'],
+    command: ({ editor, range }) =>
+      editor.chain().focus().deleteRange(range).setDetails().run(),
   },
   {
     group: 'Blocks',

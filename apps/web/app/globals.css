@@ -3457,6 +3457,64 @@
   border-radius: 0.2rem;
 }
 
+/* Details / toggle. The editor uses a NodeView (div.details > toggle button +
+   content; open state = .is-open); the public render uses native
+   <details>/<summary>. Themed panel with a rotating disclosure arrow. */
+.ProseMirror .details,
+.ProseMirror details {
+  margin-block: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: color-mix(in oklab, var(--muted) 30%, transparent);
+  padding: 0.4rem 0.75rem;
+}
+.ProseMirror .details > :first-child,
+.ProseMirror details > summary {
+  font-weight: 600;
+}
+/* Editor NodeView toggle button = the disclosure arrow. */
+.ProseMirror .details > button {
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  padding: 0;
+  margin-right: 0.4rem;
+  line-height: 1;
+}
+.ProseMirror .details > button::before {
+  content: '▸';
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+.ProseMirror .details.is-open > button::before {
+  transform: rotate(90deg);
+}
+.ProseMirror .details summary {
+  list-style: none;
+}
+/* Public native <details>: disclosure arrow on the summary itself. */
+.ProseMirror details > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.ProseMirror details > summary::-webkit-details-marker {
+  display: none;
+}
+.ProseMirror details > summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 0.4rem;
+  color: var(--muted-foreground);
+  transition: transform 0.15s ease;
+}
+.ProseMirror details[open] > summary::before {
+  transform: rotate(90deg);
+}
+.ProseMirror .details-content > :last-child {
+  margin-bottom: 0;
+}
+
 /* Embedded file chip on the raw/public render. */
 .ProseMirror a.file-embed {
   display: inline-flex;

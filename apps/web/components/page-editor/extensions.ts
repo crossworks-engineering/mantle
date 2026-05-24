@@ -11,6 +11,7 @@ import { TableKit } from '@tiptap/extension-table';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import { Mathematics } from '@tiptap/extension-mathematics';
 import Youtube from '@tiptap/extension-youtube';
+import { Details, DetailsContent, DetailsSummary } from '@tiptap/extension-details';
 import { common, createLowlight } from 'lowlight';
 import type { Extensions } from '@tiptap/react';
 import { Callout } from './callout';
@@ -63,6 +64,11 @@ export const pageExtensions: Extensions = [
   TaskItem.configure({ nested: true }),
   PageMention,
   PageEmoji,
+  // Collapsible toggle (details/summary). persist:true stores the open state in
+  // the doc so the public render honours a collapsed toggle.
+  Details.configure({ persist: true, HTMLAttributes: { class: 'details' } }),
+  DetailsSummary,
+  DetailsContent,
   Callout,
   ColumnList,
   Column,

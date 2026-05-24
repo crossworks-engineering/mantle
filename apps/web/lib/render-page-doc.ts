@@ -196,6 +196,12 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
         : 'info';
       return `<div data-callout data-variant="${escAttr(variant)}">${renderBlocks(node.content, opts)}</div>`;
     }
+    case 'details':
+      return `<details${node.attrs?.open ? ' open' : ''}>${renderBlocks(node.content, opts)}</details>`;
+    case 'detailsSummary':
+      return `<summary>${renderInline(node.content)}</summary>`;
+    case 'detailsContent':
+      return `<div class="details-content">${renderBlocks(node.content, opts)}</div>`;
     case 'columnList':
       return `<div data-column-list class="column-list">${renderBlocks(node.content, opts)}</div>`;
     case 'column':
