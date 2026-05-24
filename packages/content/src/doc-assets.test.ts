@@ -2,12 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { referencedFileIds } from './doc-assets';
 
 describe('referencedFileIds', () => {
-  it('collects image + audio + fileEmbed nodeIds, deduped, walking nested nodes', () => {
+  it('collects image + fileEmbed nodeIds, deduped, walking nested nodes', () => {
     const doc = {
       type: 'doc',
       content: [
         { type: 'image', attrs: { nodeId: 'a' } },
-        { type: 'audio', attrs: { nodeId: 'c' } },
         { type: 'paragraph', content: [{ type: 'text', text: 'x' }] },
         {
           type: 'callout',
@@ -18,7 +17,7 @@ describe('referencedFileIds', () => {
         },
       ],
     };
-    expect(referencedFileIds(doc).sort()).toEqual(['a', 'b', 'c']);
+    expect(referencedFileIds(doc).sort()).toEqual(['a', 'b']);
   });
 
   it('returns [] for nullish / asset-free docs', () => {

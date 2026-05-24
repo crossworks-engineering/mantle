@@ -115,14 +115,6 @@ describe('docToText', () => {
     expect(docToText(doc)).toBe('[x] booked flights\n[ ] pack bags');
   });
 
-  it('surfaces the audio filename label', () => {
-    const doc = {
-      type: 'doc',
-      content: [{ type: 'audio', attrs: { filename: 'sermon.mp3', src: '/x?raw=1' } }],
-    };
-    expect(docToText(doc)).toContain('sermon.mp3');
-  });
-
   it('handles hard breaks', () => {
     const doc = {
       type: 'doc',

@@ -14,8 +14,6 @@
 import katex from 'katex';
 import { common, createLowlight } from 'lowlight';
 import { toHtml } from 'hast-util-to-html';
-// Relative (not `@/`) so the vitest unit test, which has no path-alias, resolves it.
-import { cellBgColor } from '../components/page-editor/table-cell-bg';
 
 const lowlight = createLowlight(common);
 
@@ -46,13 +44,6 @@ function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
 }
 
-/** Inline `style="text-align:…"` for an aligned block, or '' for default/left.
- *  Restricted to a known set so there's no arbitrary style injection. */
-function alignStyle(node: PMNode): string {
-  const a = str(node.attrs?.textAlign);
-  return a === 'center' || a === 'right' || a === 'justify' ? ` style="text-align:${a}"` : '';
-}
-
 /** Only allow safe link protocols; everything else becomes inert. */
 function safeHref(href: string): string {
   const h = href.trim();
@@ -72,12 +63,6 @@ function renderText(node: PMNode): string {
         break;
       case 'strike':
         html = `<s>${html}</s>`;
-        break;
-      case 'subscript':
-        html = `<sub>${html}</sub>`;
-        break;
-      case 'superscript':
-        html = `<sup>${html}</sup>`;
         break;
       case 'code':
         html = `<code>${html}</code>`;
@@ -131,14 +116,11 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
   switch (node.type) {
     case 'paragraph': {
       const inner = renderInline(node.content);
-      const align = alignStyle(node);
-      if (!inner) return '<p></p>';
-      return `<p${align}>${inner}</p>`;
+      return inner ? `<p>${inner}</p>` : '<p></p>';
     }
     case 'heading': {
       const level = Math.min(Math.max(Number(node.attrs?.level) || 1, 1), 3);
-      const align = alignStyle(node);
-      return `<h${level}${align}>${renderInline(node.content)}</h${level}>`;
+      return `<h${level}>${renderInline(node.content)}</h${level}>`;
     }
     case 'blockquote':
       return `<blockquote>${renderBlocks(node.content, opts)}</blockquote>`;
@@ -176,29 +158,14 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
     case 'tableRow':
       return `<tr>${renderBlocks(node.content, opts)}</tr>`;
     case 'tableHeader':
-    case 'tableCell': {
-      const tag = node.type === 'tableHeader' ? 'th' : 'td';
-      const attrs: string[] = [];
-      const colspan = Number(node.attrs?.colspan);
-      const rowspan = Number(node.attrs?.rowspan);
-      if (colspan > 1) attrs.push(`colspan="${colspan}"`);
-      if (rowspan > 1) attrs.push(`rowspan="${rowspan}"`);
-      const bg = cellBgColor(node.attrs?.backgroundColor);
-      if (bg) attrs.push(`style="background-color:${bg}"`);
-      const a = attrs.length ? ` ${attrs.join(' ')}` : '';
-      return `<${tag}${a}>${renderBlocks(node.content, opts)}</${tag}>`;
-    }
+      return `<th>${renderBlocks(node.content, opts)}</th>`;
+    case 'tableCell':
+      return `<td>${renderBlocks(node.content, opts)}</td>`;
     case 'image': {
       const fileId = str(node.attrs?.nodeId);
       const src = fileId ? opts.assetUrl(fileId) : str(node.attrs?.src);
       const alt = escAttr(str(node.attrs?.alt));
       return src ? `<img src="${escAttr(src)}" alt="${alt}" loading="lazy">` : '';
-    }
-    case 'audio': {
-      const fileId = str(node.attrs?.nodeId);
-      const src = fileId ? opts.assetUrl(fileId) : str(node.attrs?.src);
-      if (!src) return '';
-      return `<audio controls src="${escAttr(src)}"></audio>`;
     }
     case 'fileEmbed': {
       const fileId = str(node.attrs?.nodeId);

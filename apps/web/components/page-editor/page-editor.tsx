@@ -2,7 +2,6 @@
 
 import { useEffect, useRef } from 'react';
 import { EditorContent, useEditor, type Editor, type JSONContent } from '@tiptap/react';
-import { CharacterCount, TrailingNode } from '@tiptap/extensions';
 import { pageExtensions } from './extensions';
 import { EditorBubbleMenu } from './bubble-menu';
 import { EditorDragHandle } from './drag-handle';
@@ -46,11 +45,8 @@ export function PageEditor({
   }, [onChange, onBlur, onEditorReady]);
 
   const editor = useEditor({
-    // SlashCommand, TrailingNode, and CharacterCount are editor-only (no stored
-    // schema), so the read-only PageView stays identical. TrailingNode keeps a
-    // clickable empty line after a trailing block (table/embed/callout);
-    // CharacterCount powers the word-count readout.
-    extensions: [...pageExtensions, SlashCommand, TrailingNode, CharacterCount],
+    // SlashCommand is editor-only (no schema), so PageView stays identical.
+    extensions: [...pageExtensions, SlashCommand],
     content,
     immediatelyRender: false, // required for Next.js SSR (avoids hydration mismatch)
     editorProps: {

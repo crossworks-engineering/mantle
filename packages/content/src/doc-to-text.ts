@@ -39,7 +39,7 @@ const BLOCK_TYPES = new Set([
 ]);
 
 /** Attribute keys, in priority order, that carry a human-readable label on
- *  childless atom nodes (mentions, images, file chips, audio, math). `latex`
+ *  childless atom nodes (mentions, images, file chips, math, emoji). `latex`
  *  surfaces formula source so the brain can index/recall equations. */
 const LABEL_KEYS = ['label', 'title', 'alt', 'text', 'name', 'filename', 'latex'];
 

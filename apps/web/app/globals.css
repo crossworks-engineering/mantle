@@ -3351,19 +3351,6 @@
   outline-offset: 2px;
 }
 
-/* Embedded audio player (page-editor `audio` node). Full-width control bar,
-   themed selection ring. The public render emits a bare <audio controls>. */
-.ProseMirror audio {
-  display: block;
-  width: 100%;
-  margin-block: 0.5rem;
-}
-.ProseMirror audio.ProseMirror-selectednode {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-  border-radius: var(--radius);
-}
-
 /* Math nodes (KaTeX). Block formulas get breathing room + horizontal scroll on
    overflow; inline ones sit in the text run. KaTeX colours inherit currentColor
    so they track the theme foreground. */

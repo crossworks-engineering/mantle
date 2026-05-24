@@ -99,17 +99,14 @@ strategy throughout: **reuse libraries, write only what they don't provide.**
 |---|---|---|
 | Core, marks, lists, headings, history, **link, underline** | `@tiptap/starter-kit` | Link tuned (autolink/paste); link dialog |
 | Highlight, typography | `@tiptap/extension-highlight`, `-typography` | bubble-menu wiring + themed CSS |
-| **Sub/superscript** | `@tiptap/extension-subscript`, `-superscript` | bubble-menu toggles; `<sub>`/`<sup>` in the renderer |
-| **Text align** | `@tiptap/extension-text-align` | bubble-menu buttons; inline `text-align` (renderer restricted to center/right/justify) |
 | To-do lists | `@tiptap/extension-task-list/-item` | slash item, themed CSS, `[x]`/`[ ]` in `docToText` |
-| Tables | `@tiptap/extension-table` (individual nodes) | gear menu (insert/delete row+col, toggle header, merge/split, delete) + `+` quick-add; **per-cell colour** via a themed `backgroundColor` attr (token key, never raw colour) |
+| Tables | `@tiptap/extension-table` (`TableKit`) | the `+` add row/column controls, themed CSS |
 | Drag handle | `@tiptap/extension-drag-handle-react` | grip + click-menu (Duplicate/Delete) |
 | Slash menu, @-mentions | `@tiptap/suggestion` | the popups + commands |
 | Callout, columns | — | custom schema nodes + CSS |
 | Code highlighting | `@tiptap/extension-code-block-lowlight` + `lowlight` | `.hljs-*` mapped to theme tokens (CSS) |
 | Math | `@tiptap/extension-mathematics` + `katex` | `$…$` / `$$…$$`; `latex` surfaced in `docToText` |
-| Image / file / **audio** embeds | — | custom `image` + `fileEmbed` + `audio` nodes; upload via the files pipeline; slash + drag/paste |
-| Trailing node, word count | `@tiptap/extensions` | editor-only: clickable line after a trailing block; live word-count readout |
+| Image / file embeds | — | custom `image` + `fileEmbed` nodes; upload via the files pipeline; slash + drag/paste |
 
 **Agent authoring:** an agent can now create/update pages too — `markdownToDoc`
 ([`packages/content/src/markdown-to-doc.ts`](../packages/content/src/markdown-to-doc.ts))
@@ -263,28 +260,16 @@ cache + `extract_cost_cap_micro_usd`.
   share tokens, a public `/s/[token]` route, a server-side sanitized
   JSON→HTML renderer, and scoped serving of embedded private assets. See
   [`sharing.md`](./sharing.md).
-- **Tables:** ✅ full operations — the gear menu does insert/delete row +
-  column, toggle header row, merge/split cells, delete table; the `+` buttons
-  remain for quick growth. Per-cell background colour uses a theme-token attr
-  (`backgroundColor`, e.g. `chart-2`); cell text alignment reuses the paragraph
-  `TextAlign`. Column resize is on. Not wired: per-column header toggle in the
-  menu (the command exists), and drag-to-reorder rows/columns.
+- **Tables:** whole-table delete via the block handle; per-row/column delete
+  not yet wired. `+` adds relative to the current cell.
 - **Columns:** fixed 2/3/4 via the slash menu — no drag-to-create or resize
   (the genuinely hard 80% of Notion columns), by design.
-- **Image/file/audio embeds** — ✅ built. `image` + `fileEmbed` + `audio` nodes
-  (`components/page-editor/image.ts`, `file-embed.ts`, `audio.ts`) reference a
-  backing `file` node by id (upload via `POST /api/files/files`, serve via the
-  range-enabled `?raw=1`). Insert via the slash menu or drag-and-drop / paste
-  (`upload.ts` routes by mime → image/audio/file), and audio nodeIds are scoped
-  in `referencedFileIds` so a shared page can serve its audio. Images also parse
-  from markdown `![](…)`, so Saskia can embed by URL.
-- **Sub/superscript, text-align** — ✅ built in the finishing pass; see the §4
-  table. Marks/attributes wired through the bubble menu + public renderer.
-- **Considered then dropped (2026-05-24): emoji, YouTube, details/toggle.** Built
-  and reverted the same session — emoji's `:` trigger fired on every colon and
-  pulled the whole emoji dataset into the public bundle; YouTube needed a hacky
-  DOM-event bridge for its insert dialog; the details NodeView styling was too
-  speculative. Not worth their integration cost for this brain-first notes tool.
+- **Image/file embeds** — ✅ built. `image` + `fileEmbed` nodes
+  (`components/page-editor/image.ts`, `file-embed.ts`) reference a backing
+  `file` node by id (upload via `POST /api/files/files`, serve via `?raw=1`).
+  Insert via the slash menu or drag-and-drop / paste (`upload.ts` +
+  `page-editor.tsx` handleDrop/handlePaste). Images also parse from markdown
+  `![](…)`, so Saskia can embed by URL.
 - **Formulas** — ✅ built. KaTeX via `@tiptap/extension-mathematics`
   (`inlineMath` `$…$`, `blockMath` `$$…$$`); stylesheet imported in
   `app/layout.tsx`; `latex` source flows into `docToText` for indexing.

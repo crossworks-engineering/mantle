@@ -1,12 +1,12 @@
 /**
  * Walk a ProseMirror page document and collect the `file` node ids it embeds
- * (image + audio + fileEmbed nodes carry `attrs.nodeId`). Used to scope the
- * public asset route: a page share may only serve the files its doc actually
+ * (image + fileEmbed nodes carry `attrs.nodeId`). Used to scope the public
+ * asset route: a page share may only serve the files its doc actually
  * references. See docs/sharing.md §4.
  */
 type PMNode = { type?: string; attrs?: Record<string, unknown>; content?: PMNode[] };
 
-const ASSET_NODE_TYPES = new Set(['image', 'audio', 'fileEmbed']);
+const ASSET_NODE_TYPES = new Set(['image', 'fileEmbed']);
 
 export function referencedFileIds(doc: unknown): string[] {
   const out = new Set<string>();

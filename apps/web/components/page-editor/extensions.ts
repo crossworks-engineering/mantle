@@ -4,10 +4,7 @@ import Highlight from '@tiptap/extension-highlight';
 import Typography from '@tiptap/extension-typography';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
-import Subscript from '@tiptap/extension-subscript';
-import Superscript from '@tiptap/extension-superscript';
-import TextAlign from '@tiptap/extension-text-align';
-import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table';
+import { TableKit } from '@tiptap/extension-table';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import { Mathematics } from '@tiptap/extension-mathematics';
 import { common, createLowlight } from 'lowlight';
@@ -16,38 +13,7 @@ import { Callout } from './callout';
 import { Column, ColumnList } from './column';
 import { PageMention } from './mention';
 import { PageImage } from './image';
-import { PageAudio } from './audio';
 import { FileEmbed } from './file-embed';
-import { cellBgColor } from './table-cell-bg';
-
-// Add a theme-token `backgroundColor` attribute to table cells. Stores the
-// token key + an inline `background-color` (so the editor, PageView, and the
-// public renderer all shade identically); `data-bg` round-trips the key.
-function cellBackgroundAttr() {
-  return {
-    backgroundColor: {
-      default: null as string | null,
-      parseHTML: (el: HTMLElement) => el.getAttribute('data-bg'),
-      renderHTML: (attrs: Record<string, unknown>) => {
-        const color = cellBgColor(attrs.backgroundColor);
-        if (!color) return {};
-        return { 'data-bg': String(attrs.backgroundColor), style: `background-color: ${color}` };
-      },
-    },
-  };
-}
-
-const PageTableCell = TableCell.extend({
-  addAttributes() {
-    return { ...this.parent?.(), ...cellBackgroundAttr() };
-  },
-});
-
-const PageTableHeader = TableHeader.extend({
-  addAttributes() {
-    return { ...this.parent?.(), ...cellBackgroundAttr() };
-  },
-});
 
 // Shared highlight.js registry for code blocks (covers ~35 common languages).
 // Token spans get themed via `.ProseMirror .hljs-*` rules in globals.css, so
@@ -61,12 +27,11 @@ const lowlight = createLowlight(common);
  * a doc authored in one renders wrong in the other.
  *
  * The editor itself is "invisible" — no chrome. Formatting comes from markdown
- * shortcuts (StarterKit input rules), the selection bubble menu, and the slash
- * menu. The Placeholder gives the empty-canvas hint.
+ * shortcuts (StarterKit input rules), the selection bubble menu, and (next
+ * slice) the slash menu. The Placeholder gives the empty-canvas hint.
  *
- * Custom nodes (callout, columns, image/audio/file embeds, mentions) are
- * appended below; editor-only behaviours (slash menu, trailing node, character
- * count) are added in page-editor.tsx, not here, so PageView stays identical.
+ * Custom nodes — callout, image/file embed, toggle, mentions — land in later
+ * slices and get appended here.
  */
 export const pageExtensions: Extensions = [
   StarterKit.configure({
@@ -83,11 +48,6 @@ export const pageExtensions: Extensions = [
   CodeBlockLowlight.configure({ lowlight }),
   Highlight,
   Typography,
-  Subscript,
-  Superscript,
-  // Horizontal alignment for paragraphs + headings. Renders as an inline
-  // `style="text-align:…"` so both the editor and the public renderer honour it.
-  TextAlign.configure({ types: ['heading', 'paragraph'] }),
   TaskList,
   TaskItem.configure({ nested: true }),
   PageMention,
@@ -95,16 +55,12 @@ export const pageExtensions: Extensions = [
   ColumnList,
   Column,
   PageImage,
-  PageAudio,
   FileEmbed,
   // Inline ($…$) + block ($$…$$) math via KaTeX. Input rules convert as you
   // type; nodes are `inlineMath` / `blockMath` with a `latex` attr. KaTeX CSS is
   // imported in app/layout.tsx.
   Mathematics,
-  Table.configure({ resizable: true }),
-  TableRow,
-  PageTableHeader,
-  PageTableCell,
+  TableKit.configure({ table: { resizable: true } }),
   Placeholder.configure({
     // Only the first empty line shows it (showOnlyWhenEditable defaults true,
     // so the read-only PageView never renders a placeholder).

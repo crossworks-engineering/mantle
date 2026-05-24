@@ -13,7 +13,6 @@ export type UploadedFile = {
   mime: string;
   size: number;
   isImage: boolean;
-  isAudio: boolean;
 };
 
 export async function uploadToFiles(file: File): Promise<UploadedFile> {
@@ -37,16 +36,11 @@ export async function uploadToFiles(file: File): Promise<UploadedFile> {
     mime,
     size: row.sizeBytes ?? file.size,
     isImage: mime.startsWith('image/'),
-    isAudio: mime.startsWith('audio/'),
   };
 }
 
 export function imageAttrs(up: UploadedFile) {
   return { src: up.src, alt: up.filename, nodeId: up.id };
-}
-
-export function audioAttrs(up: UploadedFile) {
-  return { src: up.src, nodeId: up.id, filename: up.filename };
 }
 
 export function fileEmbedAttrs(up: UploadedFile) {
@@ -59,9 +53,7 @@ export async function uploadAndInsert(editor: Editor, file: File, pos?: number):
   const up = await uploadToFiles(file);
   const node = up.isImage
     ? { type: 'image', attrs: imageAttrs(up) }
-    : up.isAudio
-      ? { type: 'audio', attrs: audioAttrs(up) }
-      : { type: 'fileEmbed', attrs: fileEmbedAttrs(up) };
+    : { type: 'fileEmbed', attrs: fileEmbedAttrs(up) };
   if (typeof pos === 'number') editor.chain().focus().insertContentAt(pos, node).run();
   else editor.chain().focus().insertContent(node).run();
 }

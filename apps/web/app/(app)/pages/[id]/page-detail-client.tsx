@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useEditorState, type Editor, type JSONContent } from '@tiptap/react';
+import type { Editor, JSONContent } from '@tiptap/react';
 import { Check, GitCommitHorizontal, Loader2, MoreHorizontal, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -70,9 +70,6 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
   const [draftSaving, setDraftSaving] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  // Reactive editor handle (the ref isn't reactive) so the word-count readout
-  // can subscribe to the editor's CharacterCount storage.
-  const [editor, setEditor] = useState<Editor | null>(null);
 
   const docRef = useRef<JSONContent>(initialDoc);
   const editorRef = useRef<Editor | null>(null);
@@ -214,9 +211,8 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const onEditorReady = useCallback((ed: Editor) => {
-    editorRef.current = ed;
-    setEditor(ed);
+  const onEditorReady = useCallback((editor: Editor) => {
+    editorRef.current = editor;
   }, []);
   const onEditorBlur = useCallback(() => void saveDraftRef.current(), []);
 
@@ -260,7 +256,6 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
       <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-background/80 px-4 py-2 backdrop-blur">
         <BackLink href="/pages">All pages</BackLink>
         <div className="flex items-center gap-2">
-          {editor && <DocStats editor={editor} />}
           <StatusIndicator committing={committing} draftSaving={draftSaving} dirty={docDirty} />
           <Button size="sm" onClick={() => void commit()} disabled={!docDirty || committing}>
             <GitCommitHorizontal /> Commit
@@ -336,21 +331,6 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
         </AlertDialogContent>
       </AlertDialog>
     </div>
-  );
-}
-
-// Live word count, subscribed to the editor's CharacterCount storage. Hidden on
-// an empty doc so a fresh page isn't cluttered with "0 words".
-function DocStats({ editor }: { editor: Editor }) {
-  const words = useEditorState({
-    editor,
-    selector: ({ editor }) => (editor.storage.characterCount?.words() as number | undefined) ?? 0,
-  });
-  if (!words) return null;
-  return (
-    <span className="hidden text-xs text-muted-foreground tabular-nums sm:inline">
-      {words.toLocaleString()} {words === 1 ? 'word' : 'words'}
-    </span>
   );
 }
 
