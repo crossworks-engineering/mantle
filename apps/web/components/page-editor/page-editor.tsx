@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { EditorContent, useEditor, type Editor, type JSONContent } from '@tiptap/react';
 import { CharacterCount, TrailingNode } from '@tiptap/extensions';
 import { pageExtensions } from './extensions';
@@ -8,18 +8,7 @@ import { EditorBubbleMenu } from './bubble-menu';
 import { EditorDragHandle } from './drag-handle';
 import { TableControls } from './table-controls';
 import { SlashCommand } from './slash-command';
-import { INSERT_YOUTUBE_EVENT } from './slash-menu';
 import { handleDroppedFiles } from './upload';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
 
 /**
  * The "invisible" editing surface: no border, no card, no fixed toolbar — just
@@ -97,25 +86,6 @@ export function PageEditor({
     if (editor) onReadyRef.current?.(editor);
   }, [editor]);
 
-  // YouTube insert: the slash item fires a DOM event (it has no React handle);
-  // we open the URL dialog and insert at the current cursor on submit.
-  const [ytOpen, setYtOpen] = useState(false);
-  const [ytUrl, setYtUrl] = useState('');
-  useEffect(() => {
-    const open = () => {
-      setYtUrl('');
-      setYtOpen(true);
-    };
-    window.addEventListener(INSERT_YOUTUBE_EVENT, open);
-    return () => window.removeEventListener(INSERT_YOUTUBE_EVENT, open);
-  }, []);
-
-  const insertYoutube = () => {
-    const src = ytUrl.trim();
-    if (src && editorRef.current) editorRef.current.commands.setYoutubeVideo({ src });
-    setYtOpen(false);
-  };
-
   if (!editor) return null;
 
   return (
@@ -124,38 +94,6 @@ export function PageEditor({
       <EditorDragHandle editor={editor} />
       <TableControls editor={editor} />
       <EditorContent editor={editor} />
-
-      <Dialog open={ytOpen} onOpenChange={setYtOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Embed YouTube video</DialogTitle>
-            <DialogDescription>Paste a YouTube video link.</DialogDescription>
-          </DialogHeader>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              insertYoutube();
-            }}
-            className="space-y-4"
-          >
-            <div className="space-y-1.5">
-              <Label htmlFor="yt-url">Video URL</Label>
-              <Input
-                id="yt-url"
-                value={ytUrl}
-                onChange={(e) => setYtUrl(e.target.value)}
-                placeholder="https://www.youtube.com/watch?v=…"
-                autoFocus
-              />
-            </div>
-            <div className="flex justify-end">
-              <Button type="submit" disabled={!ytUrl.trim()}>
-                Embed
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

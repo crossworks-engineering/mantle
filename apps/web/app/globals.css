@@ -3364,32 +3364,6 @@
   border-radius: var(--radius);
 }
 
-/* YouTube embeds. The editor wraps the iframe in [data-youtube-video]; the
-   public render uses .youtube-embed. Both become a responsive 16:9 box with the
-   iframe filling it, themed radius + selection ring. */
-.ProseMirror [data-youtube-video],
-.ProseMirror .youtube-embed {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  margin-block: 0.75rem;
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: var(--muted);
-}
-.ProseMirror [data-youtube-video] iframe,
-.ProseMirror .youtube-embed iframe {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border: 0;
-}
-.ProseMirror [data-youtube-video].ProseMirror-selectednode {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-}
-
 /* Math nodes (KaTeX). Block formulas get breathing room + horizontal scroll on
    overflow; inline ones sit in the text run. KaTeX colours inherit currentColor
    so they track the theme foreground. */
@@ -3436,83 +3410,6 @@
 .ProseMirror [data-callout][data-variant='danger'] {
   border-left-color: var(--destructive);
   background-color: color-mix(in oklab, var(--destructive) 8%, transparent);
-}
-
-/* Inline emoji nodes (`:` picker). The glyph sits in the text run; the rare
-   fallback image (custom/unsupported emoji) is sized to the line. */
-.ProseMirror [data-type='emoji'] {
-  display: inline-block;
-  line-height: 1;
-}
-.ProseMirror [data-type='emoji'] img {
-  display: inline-block;
-  height: 1.2em;
-  width: 1.2em;
-  vertical-align: text-bottom;
-  margin: 0;
-}
-.ProseMirror [data-type='emoji'].ProseMirror-selectednode {
-  outline: 2px solid var(--primary);
-  outline-offset: 1px;
-  border-radius: 0.2rem;
-}
-
-/* Details / toggle. The editor uses a NodeView (div.details > toggle button +
-   content; open state = .is-open); the public render uses native
-   <details>/<summary>. Themed panel with a rotating disclosure arrow. */
-.ProseMirror .details,
-.ProseMirror details {
-  margin-block: 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background-color: color-mix(in oklab, var(--muted) 30%, transparent);
-  padding: 0.4rem 0.75rem;
-}
-.ProseMirror .details > :first-child,
-.ProseMirror details > summary {
-  font-weight: 600;
-}
-/* Editor NodeView toggle button = the disclosure arrow. */
-.ProseMirror .details > button {
-  cursor: pointer;
-  border: 0;
-  background: transparent;
-  color: var(--muted-foreground);
-  padding: 0;
-  margin-right: 0.4rem;
-  line-height: 1;
-}
-.ProseMirror .details > button::before {
-  content: '▸';
-  display: inline-block;
-  transition: transform 0.15s ease;
-}
-.ProseMirror .details.is-open > button::before {
-  transform: rotate(90deg);
-}
-.ProseMirror .details summary {
-  list-style: none;
-}
-/* Public native <details>: disclosure arrow on the summary itself. */
-.ProseMirror details > summary {
-  cursor: pointer;
-  list-style: none;
-}
-.ProseMirror details > summary::-webkit-details-marker {
-  display: none;
-}
-.ProseMirror details > summary::before {
-  content: '▸';
-  display: inline-block;
-  margin-right: 0.4rem;
-  color: var(--muted-foreground);
-  transition: transform 0.15s ease;
-}
-.ProseMirror details[open] > summary::before {
-  transform: rotate(90deg);
-}
-.ProseMirror .details-content > :last-child {
-  margin-bottom: 0;
 }
 
 /* Embedded file chip on the raw/public render. */

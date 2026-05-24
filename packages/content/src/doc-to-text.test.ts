@@ -115,46 +115,12 @@ describe('docToText', () => {
     expect(docToText(doc)).toBe('[x] booked flights\n[ ] pack bags');
   });
 
-  it('walks details/toggle summary + body', () => {
+  it('surfaces the audio filename label', () => {
     const doc = {
       type: 'doc',
-      content: [
-        {
-          type: 'details',
-          attrs: { open: false },
-          content: [
-            { type: 'detailsSummary', content: [{ type: 'text', text: 'More info' }] },
-            {
-              type: 'detailsContent',
-              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'hidden body' }] }],
-            },
-          ],
-        },
-      ],
+      content: [{ type: 'audio', attrs: { filename: 'sermon.mp3', src: '/x?raw=1' } }],
     };
-    // Collapsed content is still indexed, so the brain can find it.
-    expect(docToText(doc)).toBe('More info\nhidden body');
-  });
-
-  it('surfaces emoji shortcodes, audio filenames, and youtube URLs', () => {
-    const doc = {
-      type: 'doc',
-      content: [
-        {
-          type: 'paragraph',
-          content: [
-            { type: 'text', text: 'party ' },
-            { type: 'emoji', attrs: { name: 'tada' } },
-          ],
-        },
-        { type: 'audio', attrs: { filename: 'sermon.mp3', src: '/x?raw=1' } },
-        { type: 'youtube', attrs: { src: 'https://youtu.be/dQw4w9WgXcQ' } },
-      ],
-    };
-    const out = docToText(doc);
-    expect(out).toContain('party tada');
-    expect(out).toContain('sermon.mp3');
-    expect(out).toContain('https://youtu.be/dQw4w9WgXcQ');
+    expect(docToText(doc)).toContain('sermon.mp3');
   });
 
   it('handles hard breaks', () => {

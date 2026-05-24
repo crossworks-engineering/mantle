@@ -105,13 +105,10 @@ strategy throughout: **reuse libraries, write only what they don't provide.**
 | Tables | `@tiptap/extension-table` (individual nodes) | gear menu (insert/delete row+col, toggle header, merge/split, delete) + `+` quick-add; **per-cell colour** via a themed `backgroundColor` attr (token key, never raw colour) |
 | Drag handle | `@tiptap/extension-drag-handle-react` | grip + click-menu (Duplicate/Delete) |
 | Slash menu, @-mentions | `@tiptap/suggestion` | the popups + commands |
-| **Emoji** | `@tiptap/extension-emoji` | `:` picker (glyph grid); glyph resolved in renderer; shortcode in `docToText` |
 | Callout, columns | — | custom schema nodes + CSS |
 | Code highlighting | `@tiptap/extension-code-block-lowlight` + `lowlight` | `.hljs-*` mapped to theme tokens (CSS) |
 | Math | `@tiptap/extension-mathematics` + `katex` | `$…$` / `$$…$$`; `latex` surfaced in `docToText` |
 | Image / file / **audio** embeds | — | custom `image` + `fileEmbed` + `audio` nodes; upload via the files pipeline; slash + drag/paste |
-| **YouTube** | `@tiptap/extension-youtube` | slash → URL dialog; responsive 16:9; renderer re-derives a sanitized nocookie embed; URL in `docToText` |
-| **Details / toggle** | `@tiptap/extension-details` | slash item; `persist:true`; native `<details>` in the renderer; walked by `docToText` |
 | Trailing node, word count | `@tiptap/extensions` | editor-only: clickable line after a trailing block; live word-count readout |
 
 **Agent authoring:** an agent can now create/update pages too — `markdownToDoc`
@@ -281,12 +278,13 @@ cache + `extract_cost_cap_micro_usd`.
   (`upload.ts` routes by mime → image/audio/file), and audio nodeIds are scoped
   in `referencedFileIds` so a shared page can serve its audio. Images also parse
   from markdown `![](…)`, so Saskia can embed by URL.
-- **YouTube / emoji / details / sub-superscript / text-align** — ✅ built in the
-  finishing pass; see the §4 table. YouTube + audio + details/toggle are the
-  new block nodes wired through `docToText` + the public renderer; the public
-  YouTube embed is re-derived (sanitized) from the stored URL, never
-  pass-through markup. `markdownToDoc` doesn't author these yet (Saskia-side
-  authoring of toggles/YouTube is a deferred follow-up).
+- **Sub/superscript, text-align** — ✅ built in the finishing pass; see the §4
+  table. Marks/attributes wired through the bubble menu + public renderer.
+- **Considered then dropped (2026-05-24): emoji, YouTube, details/toggle.** Built
+  and reverted the same session — emoji's `:` trigger fired on every colon and
+  pulled the whole emoji dataset into the public bundle; YouTube needed a hacky
+  DOM-event bridge for its insert dialog; the details NodeView styling was too
+  speculative. Not worth their integration cost for this brain-first notes tool.
 - **Formulas** — ✅ built. KaTeX via `@tiptap/extension-mathematics`
   (`inlineMath` `$…$`, `blockMath` `$$…$$`); stylesheet imported in
   `app/layout.tsx`; `latex` source flows into `docToText` for indexing.

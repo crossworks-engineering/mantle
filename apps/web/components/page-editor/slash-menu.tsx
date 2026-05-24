@@ -10,7 +10,6 @@ import {
 } from 'react';
 import type { Editor, Range } from '@tiptap/core';
 import {
-  ChevronRight,
   Code2,
   Columns2,
   Columns3,
@@ -30,14 +29,8 @@ import {
   Table as TableIcon,
   TextQuote,
   Type,
-  Youtube as YoutubeIcon,
   type LucideIcon,
 } from 'lucide-react';
-
-/** Slash command → open the editor's YouTube URL dialog. Decoupled via a DOM
- *  event so the static ITEMS list doesn't need a handle on React dialog state;
- *  page-editor.tsx listens and inserts at the (post-deleteRange) cursor. */
-export const INSERT_YOUTUBE_EVENT = 'mantle:insert-youtube';
 import { cn } from '@/lib/utils';
 import { columnsContent } from './column';
 import { uploadAndInsert } from './upload';
@@ -157,15 +150,6 @@ const ITEMS: SlashItem[] = [
   },
   {
     group: 'Blocks',
-    title: 'Toggle',
-    description: 'A collapsible details section.',
-    icon: ChevronRight,
-    keywords: ['toggle', 'details', 'collapse', 'accordion', 'expand', 'summary'],
-    command: ({ editor, range }) =>
-      editor.chain().focus().deleteRange(range).setDetails().run(),
-  },
-  {
-    group: 'Blocks',
     title: 'Code',
     description: 'A formatted code block.',
     icon: Code2,
@@ -202,19 +186,6 @@ const ITEMS: SlashItem[] = [
     icon: Music,
     keywords: ['audio', 'sound', 'music', 'mp3', 'voice', 'recording', 'podcast'],
     command: ({ editor, range }) => pickAndUpload(editor, range, 'audio/*'),
-  },
-  {
-    group: 'Media',
-    title: 'YouTube',
-    description: 'Embed a YouTube video by URL.',
-    icon: YoutubeIcon,
-    keywords: ['youtube', 'video', 'embed', 'yt'],
-    command: ({ editor, range }) => {
-      // Drop the slash text, then let the editor open its URL dialog and insert
-      // at the now-current cursor.
-      editor.chain().focus().deleteRange(range).run();
-      window.dispatchEvent(new CustomEvent(INSERT_YOUTUBE_EVENT));
-    },
   },
   {
     group: 'Media',
