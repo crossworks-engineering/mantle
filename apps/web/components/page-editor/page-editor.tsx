@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { EditorContent, useEditor, type Editor, type JSONContent } from '@tiptap/react';
+import type { EditorProps } from '@tiptap/pm/view';
 import { pageExtensions } from './extensions';
 import { EditorBubbleMenu } from './bubble-menu';
 import { EditorDragHandle } from './drag-handle';
@@ -44,12 +45,13 @@ export function PageEditor({
     onReadyRef.current = onEditorReady;
   }, [onChange, onBlur, onEditorReady]);
 
-  const editor = useEditor({
-    // SlashCommand is editor-only (no schema), so PageView stays identical.
-    extensions: [...pageExtensions, SlashCommand],
-    content,
-    immediatelyRender: false, // required for Next.js SSR (avoids hydration mismatch)
-    editorProps: {
+  // Stable editorProps. useEditor re-applies editor.setOptions() on every render
+  // when its options compare unequal, and a fresh editorProps object each render
+  // makes them unequal — that setOptions churns the view and drops an open slash/
+  // mention popup (e.g. when the idle autosave re-renders). The drop/paste
+  // handlers read editorRef at call time, so [] deps are safe.
+  const editorProps = useMemo<EditorProps>(
+    () => ({
       attributes: {
         class: 'prose dark:prose-invert max-w-none min-h-[50vh] focus:outline-none',
       },
@@ -72,7 +74,16 @@ export function PageEditor({
         if (!editorRef.current) return false;
         return handleDroppedFiles(editorRef.current, files);
       },
-    },
+    }),
+    [],
+  );
+
+  const editor = useEditor({
+    // SlashCommand is editor-only (no schema), so PageView stays identical.
+    extensions: [...pageExtensions, SlashCommand],
+    content,
+    immediatelyRender: false, // required for Next.js SSR (avoids hydration mismatch)
+    editorProps,
     onUpdate: ({ editor }) => onChangeRef.current(editor.getJSON()),
     onBlur: () => onBlurRef.current?.(),
   });
