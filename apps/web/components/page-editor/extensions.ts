@@ -14,6 +14,27 @@ import { Column, ColumnList } from './column';
 import { PageMention } from './mention';
 import { PageImage } from './image';
 import { FileEmbed } from './file-embed';
+import { highlightColor } from './highlight-colors';
+
+// Highlight mark with an optional themed `color` (a token key like `chart-2`,
+// never a raw colour). A null colour renders a plain <mark> (default primary
+// tint, styled in globals.css); a token renders an inline themed background, so
+// the editor, PageView, and public renderer all shade identically.
+const PageHighlight = Highlight.extend({
+  addAttributes() {
+    return {
+      color: {
+        default: null as string | null,
+        parseHTML: (el: HTMLElement) => el.getAttribute('data-color'),
+        renderHTML: (attrs: Record<string, unknown>) => {
+          const c = highlightColor(attrs.color);
+          if (!c) return {};
+          return { 'data-color': String(attrs.color), style: `background-color: ${c}` };
+        },
+      },
+    };
+  },
+});
 
 // Shared highlight.js registry for code blocks (covers ~35 common languages).
 // Token spans get themed via `.ProseMirror .hljs-*` rules in globals.css, so
@@ -46,7 +67,7 @@ export const pageExtensions: Extensions = [
     codeBlock: false,
   }),
   CodeBlockLowlight.configure({ lowlight }),
-  Highlight,
+  PageHighlight,
   Typography,
   TaskList,
   TaskItem.configure({ nested: true }),

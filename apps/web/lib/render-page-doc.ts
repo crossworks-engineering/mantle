@@ -14,6 +14,8 @@
 import katex from 'katex';
 import { common, createLowlight } from 'lowlight';
 import { toHtml } from 'hast-util-to-html';
+// Relative (not `@/`) so the vitest unit test, which has no path-alias, resolves it.
+import { highlightColor } from '../components/page-editor/highlight-colors';
 
 const lowlight = createLowlight(common);
 
@@ -67,9 +69,11 @@ function renderText(node: PMNode): string {
       case 'code':
         html = `<code>${html}</code>`;
         break;
-      case 'highlight':
-        html = `<mark>${html}</mark>`;
+      case 'highlight': {
+        const c = highlightColor(mark.attrs?.color);
+        html = c ? `<mark style="background-color:${c}">${html}</mark>` : `<mark>${html}</mark>`;
         break;
+      }
       case 'link':
         html = `<a href="${escAttr(safeHref(str(mark.attrs?.href)))}" target="_blank" rel="noopener nofollow ugc">${html}</a>`;
         break;

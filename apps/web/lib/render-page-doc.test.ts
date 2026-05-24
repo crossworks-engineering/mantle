@@ -13,6 +13,28 @@ describe('renderPageDoc', () => {
     expect(html).toBe('<p><strong>&lt;x&gt; &amp; y</strong></p>');
   });
 
+  it('renders highlight marks: themed colour from a token, plain otherwise', () => {
+    const colored = renderPageDoc(
+      doc([{ type: 'paragraph', content: [{ type: 'text', text: 'hi', marks: [{ type: 'highlight', attrs: { color: 'chart-2' } }] }] }]),
+      opts,
+    );
+    expect(colored).toContain('<mark style="background-color:color-mix');
+    expect(colored).toContain('var(--chart-2)');
+
+    const plain = renderPageDoc(
+      doc([{ type: 'paragraph', content: [{ type: 'text', text: 'hi', marks: [{ type: 'highlight' }] }] }]),
+      opts,
+    );
+    expect(plain).toContain('<mark>hi</mark>');
+
+    // An unknown colour token falls back to a plain mark (no style injection).
+    const bad = renderPageDoc(
+      doc([{ type: 'paragraph', content: [{ type: 'text', text: 'hi', marks: [{ type: 'highlight', attrs: { color: 'red; x:1' } }] }] }]),
+      opts,
+    );
+    expect(bad).toContain('<mark>hi</mark>');
+  });
+
   it('renders callouts, images (asset-rewritten), and task lists', () => {
     const html = renderPageDoc(
       doc([
