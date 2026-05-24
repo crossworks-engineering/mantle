@@ -50,6 +50,8 @@ key off `data-*` attributes.
 | To-do list | `- [ ]` / `- [x]` | TipTap `taskList` |
 | Callout | `:::info` … `:::` (variants: `info`, `success`, `warning`, `danger`) | `callout` node + NodeView |
 | Columns | `:::columns` … `+++` … `:::` (2+ parts) | `columnList` ⊃ `column` |
+| Image | `![alt](url)` | `image` node (block, by URL) |
+| Math | `$inline$` / `$$block$$` | `inlineMath` / `blockMath` (KaTeX) |
 
 ```
 :::warning

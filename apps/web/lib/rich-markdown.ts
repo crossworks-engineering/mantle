@@ -65,10 +65,32 @@ const highlightExtension: TokenizerAndRendererExtension = {
   },
 };
 
+// Inline `$…$` → a KaTeX inline-math span the Mathematics extension parses
+// (`[data-type="inline-math"]`, latex from `data-latex`). Block `$$…$$` is
+// handled at line level in richMarkdownToHtml.
+const inlineMathExtension: TokenizerAndRendererExtension = {
+  name: 'inlineMath',
+  level: 'inline',
+  start(src) {
+    return src.indexOf('$');
+  },
+  tokenizer(src) {
+    const m = /^\$(?!\s)([^$\n]+?)(?<!\s)\$/.exec(src);
+    if (!m) return undefined;
+    return { type: 'inlineMath', raw: m[0], latex: m[1]! };
+  },
+  renderer(token) {
+    const latex = typeof token.latex === 'string' ? token.latex : '';
+    return `<span data-type="inline-math" data-latex="${escapeAttr(latex)}"></span>`;
+  },
+};
+
 // One configured instance (module singleton) so we don't re-register the
-// highlight extension on every call. GFM gives us tables + strikethrough.
+// extensions on every call. GFM gives us tables + strikethrough.
 const md = new Marked({ gfm: true });
-md.use({ extensions: [highlightExtension] });
+md.use({ extensions: [highlightExtension, inlineMathExtension] });
+
+const BLOCK_MATH_INLINE = /^\$\$(.+?)\$\$\s*$/;
 
 const TASK_RE = /^\s*[-*]\s+\[([ xX])\]\s+(.*)$/;
 const FENCE_OPEN_RE = /^:::([A-Za-z]+)\s*$/;
@@ -133,9 +155,34 @@ export function richMarkdownToHtml(source: string): string {
     }
   };
 
+  const blockMathHtml = (latex: string) =>
+    `<div data-type="block-math" data-latex="${escapeAttr(latex)}"></div>`;
+
   let i = 0;
   while (i < lines.length) {
     const line = lines[i]!;
+
+    // Block math: `$$ … $$` on one line, or a `$$` fence over several lines.
+    const oneLineMath = BLOCK_MATH_INLINE.exec(line.trim());
+    if (oneLineMath) {
+      flush();
+      out.push(blockMathHtml(oneLineMath[1]!.trim()));
+      i++;
+      continue;
+    }
+    if (line.trim() === '$$') {
+      flush();
+      const body: string[] = [];
+      i++;
+      while (i < lines.length && lines[i]!.trim() !== '$$') {
+        body.push(lines[i]!);
+        i++;
+      }
+      i++; // consume closing $$
+      out.push(blockMathHtml(body.join('\n').trim()));
+      continue;
+    }
+
     const fence = FENCE_OPEN_RE.exec(line.trim());
     if (fence) {
       flush();

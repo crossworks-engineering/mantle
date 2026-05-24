@@ -62,6 +62,18 @@ numbered lists, [links](https://example.com), \`---\` dividers, and GFM tables:
 
 **Highlight** a phrase with double-equals: \`==like this==\`.
 
+**Math** — inline with single dollars \`$E=mc^2$\`, or a block on its own:
+\`\`\`
+$$
+\\int_0^1 x\\,dx
+$$
+\`\`\`
+Rendered with KaTeX — use real LaTeX.
+
+**Images** — embed by URL with standard markdown: \`![alt text](https://…)\`.
+(You can only reference images by URL; uploading files is something the user
+does in the page editor.)
+
 **To-do lists** — use checkboxes; they render as a real checklist:
 - [ ] an open item
 - [x] a done item

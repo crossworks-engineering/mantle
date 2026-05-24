@@ -3336,3 +3336,35 @@
 .ProseMirror .hljs-strong {
   font-weight: 600;
 }
+
+/* Embedded images (page-editor `image` node) — fit the column, themed radius,
+   and a clear selection ring when picked. */
+.ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+  display: block;
+  margin-block: 0.75rem;
+}
+.ProseMirror img.ProseMirror-selectednode {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Math nodes (KaTeX). Block formulas get breathing room + horizontal scroll on
+   overflow; inline ones sit in the text run. KaTeX colours inherit currentColor
+   so they track the theme foreground. */
+.ProseMirror [data-type='block-math'] {
+  margin-block: 1rem;
+  text-align: center;
+  overflow-x: auto;
+}
+.ProseMirror [data-type='inline-math'] {
+  padding: 0 0.1em;
+}
+.ProseMirror [data-type='block-math'].ProseMirror-selectednode,
+.ProseMirror [data-type='inline-math'].ProseMirror-selectednode {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 0.2rem;
+}

@@ -1,5 +1,8 @@
 import type { Metadata } from 'next';
 import './globals.css';
+// KaTeX styles for math nodes (inlineMath/blockMath) — bundled locally from the
+// npm package (no CDN), matching the self-hosted ethos.
+import 'katex/dist/katex.min.css';
 import { fontSans, fontLogo } from '@/lib/fonts';
 import { ThemeProvider } from '@/components/theme-provider';
 import { ColorThemeProvider } from '@/components/color-theme-provider';

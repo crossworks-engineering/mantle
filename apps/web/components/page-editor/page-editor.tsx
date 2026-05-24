@@ -7,6 +7,7 @@ import { EditorBubbleMenu } from './bubble-menu';
 import { EditorDragHandle } from './drag-handle';
 import { TableControls } from './table-controls';
 import { SlashCommand } from './slash-command';
+import { handleDroppedFiles } from './upload';
 
 /**
  * The "invisible" editing surface: no border, no card, no fixed toolbar — just
@@ -34,6 +35,9 @@ export function PageEditor({
   const onChangeRef = useRef(onChange);
   const onBlurRef = useRef(onBlur);
   const onReadyRef = useRef(onEditorReady);
+  // Holds the editor for the once-bound drop/paste handlers (they're defined in
+  // the useEditor config, before `editor` is assigned).
+  const editorRef = useRef<Editor | null>(null);
   useEffect(() => {
     onChangeRef.current = onChange;
     onBlurRef.current = onBlur;
@@ -49,12 +53,32 @@ export function PageEditor({
       attributes: {
         class: 'prose dark:prose-invert max-w-none min-h-[50vh] focus:outline-none',
       },
+      // Drop images/files onto the canvas → upload + insert at the drop point.
+      handleDrop: (view, event) => {
+        const dt = (event as DragEvent).dataTransfer;
+        const files = Array.from(dt?.files ?? []);
+        if (files.length === 0) return false;
+        const pos = view.posAtCoords({
+          left: (event as DragEvent).clientX,
+          top: (event as DragEvent).clientY,
+        })?.pos;
+        if (!editorRef.current) return false;
+        return handleDroppedFiles(editorRef.current, files, pos);
+      },
+      // Paste an image/file from the clipboard → upload + insert.
+      handlePaste: (_view, event) => {
+        const files = Array.from((event as ClipboardEvent).clipboardData?.files ?? []);
+        if (files.length === 0) return false;
+        if (!editorRef.current) return false;
+        return handleDroppedFiles(editorRef.current, files);
+      },
     },
     onUpdate: ({ editor }) => onChangeRef.current(editor.getJSON()),
     onBlur: () => onBlurRef.current?.(),
   });
 
   useEffect(() => {
+    editorRef.current = editor;
     if (editor) onReadyRef.current?.(editor);
   }, [editor]);
 

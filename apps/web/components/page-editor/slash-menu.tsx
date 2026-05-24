@@ -17,11 +17,14 @@ import {
   Heading1,
   Heading2,
   Heading3,
+  Image as ImageIcon,
   Info,
   List,
   ListOrdered,
   ListTodo,
   Minus,
+  Paperclip,
+  Sigma,
   Table as TableIcon,
   TextQuote,
   Type,
@@ -29,6 +32,21 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { columnsContent } from './column';
+import { uploadAndInsert } from './upload';
+
+/** Open a native file picker, upload the chosen file, and insert the matching
+ *  node (image or file chip) at the current selection. */
+function pickAndUpload(editor: Editor, range: Range, accept: string) {
+  editor.chain().focus().deleteRange(range).run();
+  const input = document.createElement('input');
+  input.type = 'file';
+  if (accept) input.accept = accept;
+  input.onchange = () => {
+    const file = input.files?.[0];
+    if (file) void uploadAndInsert(editor, file);
+  };
+  input.click();
+}
 
 export type SlashItem = {
   title: string;
@@ -137,6 +155,36 @@ const ITEMS: SlashItem[] = [
     keywords: ['codeblock', 'pre', 'monospace'],
     command: ({ editor, range }) =>
       editor.chain().focus().deleteRange(range).toggleCodeBlock().run(),
+  },
+  {
+    group: 'Blocks',
+    title: 'Equation',
+    description: 'A block math formula (KaTeX).',
+    icon: Sigma,
+    keywords: ['math', 'latex', 'formula', 'katex', 'equation'],
+    command: ({ editor, range }) =>
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent({ type: 'blockMath', attrs: { latex: 'E = mc^2' } })
+        .run(),
+  },
+  {
+    group: 'Media',
+    title: 'Image',
+    description: 'Upload and embed an image.',
+    icon: ImageIcon,
+    keywords: ['image', 'picture', 'photo', 'upload', 'img'],
+    command: ({ editor, range }) => pickAndUpload(editor, range, 'image/*'),
+  },
+  {
+    group: 'Media',
+    title: 'File',
+    description: 'Attach a file as a download.',
+    icon: Paperclip,
+    keywords: ['file', 'attachment', 'document', 'upload', 'pdf'],
+    command: ({ editor, range }) => pickAndUpload(editor, range, ''),
   },
   {
     group: 'Blocks',

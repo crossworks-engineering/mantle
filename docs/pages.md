@@ -248,8 +248,15 @@ cache + `extract_cost_cap_micro_usd`.
   not yet wired. `+` adds relative to the current cell.
 - **Columns:** fixed 2/3/4 via the slash menu — no drag-to-create or resize
   (the genuinely hard 80% of Notion columns), by design.
-- **Image/file embeds** — not built; the next big editor slice (reuse the
-  MinIO/file-ingestion pipeline, reference a `file` node).
+- **Image/file embeds** — ✅ built. `image` + `fileEmbed` nodes
+  (`components/page-editor/image.ts`, `file-embed.ts`) reference a backing
+  `file` node by id (upload via `POST /api/files/files`, serve via `?raw=1`).
+  Insert via the slash menu or drag-and-drop / paste (`upload.ts` +
+  `page-editor.tsx` handleDrop/handlePaste). Images also parse from markdown
+  `![](…)`, so Saskia can embed by URL.
+- **Formulas** — ✅ built. KaTeX via `@tiptap/extension-mathematics`
+  (`inlineMath` `$…$`, `blockMath` `$$…$$`); stylesheet imported in
+  `app/layout.tsx`; `latex` source flows into `docToText` for indexing.
 
 ---
 

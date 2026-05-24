@@ -6,11 +6,14 @@ import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { TableKit } from '@tiptap/extension-table';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import { Mathematics } from '@tiptap/extension-mathematics';
 import { common, createLowlight } from 'lowlight';
 import type { Extensions } from '@tiptap/react';
 import { Callout } from './callout';
 import { Column, ColumnList } from './column';
 import { PageMention } from './mention';
+import { PageImage } from './image';
+import { FileEmbed } from './file-embed';
 
 // Shared highlight.js registry for code blocks (covers ~35 common languages).
 // Token spans get themed via `.ProseMirror .hljs-*` rules in globals.css, so
@@ -51,6 +54,12 @@ export const pageExtensions: Extensions = [
   Callout,
   ColumnList,
   Column,
+  PageImage,
+  FileEmbed,
+  // Inline ($…$) + block ($$…$$) math via KaTeX. Input rules convert as you
+  // type; nodes are `inlineMath` / `blockMath` with a `latex` attr. KaTeX CSS is
+  // imported in app/layout.tsx.
+  Mathematics,
   TableKit.configure({ table: { resizable: true } }),
   Placeholder.configure({
     // Only the first empty line shows it (showOnlyWhenEditable defaults true,

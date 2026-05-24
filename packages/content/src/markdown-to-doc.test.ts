@@ -56,4 +56,17 @@ describe('markdownToDoc', () => {
     expect(t.content?.[0]?.content?.[0]?.type).toBe('tableHeader');
     expect(t.content?.[1]?.content?.[0]?.type).toBe('tableCell');
   });
+
+  it('lifts a markdown image into a block image node', () => {
+    const img = find('![arch](https://x/y.png)', 'image');
+    expect(img?.attrs?.src).toBe('https://x/y.png');
+    expect(img?.attrs?.alt).toBe('arch');
+  });
+
+  it('maps $…$ to inline math and $$…$$ to block math', () => {
+    const p = top('Inline $E=mc^2$ here').find((n) => n.type === 'paragraph')!;
+    expect((p.content ?? []).some((c) => c.type === 'inlineMath')).toBe(true);
+    expect(find('$$\nx^2\n$$', 'blockMath')?.attrs?.latex).toBe('x^2');
+    expect(find('$$a+b$$', 'blockMath')?.attrs?.latex).toBe('a+b');
+  });
 });

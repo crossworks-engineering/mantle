@@ -55,4 +55,15 @@ describe('richMarkdownToHtml', () => {
     expect(html).toContain('<table>');
     expect(html).toContain('<th>A</th>');
   });
+
+  it('renders markdown images as <img> the image node can parse', () => {
+    expect(richMarkdownToHtml('![alt](https://x/y.png)')).toContain('<img src="https://x/y.png"');
+  });
+
+  it('renders $…$ / $$…$$ as KaTeX math spans/divs', () => {
+    const inline = richMarkdownToHtml('Inline $E=mc^2$ here');
+    expect(inline).toContain('data-type="inline-math"');
+    expect(inline).toContain('data-latex="E=mc^2"');
+    expect(richMarkdownToHtml('$$\nx^2\n$$')).toContain('data-type="block-math"');
+  });
 });

@@ -41,6 +41,7 @@ type Tok = {
   task?: boolean;
   checked?: boolean;
   href?: string;
+  latex?: string;
   tokens?: Tok[];
   items?: Tok[];
   header?: Array<{ tokens?: Tok[] }>;
@@ -63,11 +64,29 @@ const highlightExtension: TokenizerAndRendererExtension = {
   },
 };
 
+// Inline `$…$` → an inlineMath token (block `$$…$$` is handled at line level).
+const inlineMathExtension: TokenizerAndRendererExtension = {
+  name: 'inlineMath',
+  level: 'inline',
+  start(src) {
+    return src.indexOf('$');
+  },
+  tokenizer(src) {
+    const m = /^\$(?!\s)([^$\n]+?)(?<!\s)\$/.exec(src);
+    if (!m) return undefined;
+    return { type: 'inlineMath', raw: m[0], latex: m[1]! };
+  },
+  renderer() {
+    return ''; // unused — this converter reads the token, not the rendered HTML
+  },
+};
+
 const md = new Marked({ gfm: true });
-md.use({ extensions: [highlightExtension] });
+md.use({ extensions: [highlightExtension, inlineMathExtension] });
 
 const CALLOUT_VARIANTS = new Set(['info', 'success', 'warning', 'danger']);
 const FENCE_OPEN = /^:::([A-Za-z]+)\s*$/;
+const BLOCK_MATH_INLINE = /^\$\$(.+?)\$\$\s*$/;
 
 function lex(src: string): Tok[] {
   return md.lexer(src) as unknown as Tok[];
@@ -109,6 +128,13 @@ function inline(tokens: Tok[] | undefined, marks: PMMark[] = []): PMNode[] {
       case 'link':
         out.push(...inline(t.tokens, withMark(marks, { type: 'link', attrs: { href: t.href ?? '' } })));
         break;
+      case 'inlineMath':
+        out.push({ type: 'inlineMath', attrs: { latex: t.latex ?? t.text ?? '' } });
+        break;
+      case 'image':
+        // Block image — handled at paragraph level (paragraphAndImages); skip
+        // here so it never lands inside inline content.
+        break;
       case 'br':
         out.push({ type: 'hardBreak' });
         break;
@@ -124,6 +150,28 @@ function paragraph(tokens: Tok[] | undefined, fallback?: string): PMNode {
   const content = inline(tokens);
   if (content.length === 0 && fallback) content.push({ type: 'text', text: fallback });
   return content.length ? { type: 'paragraph', content } : { type: 'paragraph' };
+}
+
+/** A paragraph's inline tokens, with any markdown images (`![alt](url)`) lifted
+ *  out as standalone block image nodes (the image node is block-level). */
+function paragraphAndImages(tokens: Tok[] | undefined): PMNode[] {
+  const out: PMNode[] = [];
+  let buf: Tok[] = [];
+  const flush = () => {
+    const content = inline(buf);
+    if (content.length) out.push({ type: 'paragraph', content });
+    buf = [];
+  };
+  for (const t of tokens ?? []) {
+    if (t.type === 'image') {
+      flush();
+      out.push({ type: 'image', attrs: { src: t.href ?? '', alt: t.text ?? null } });
+    } else {
+      buf.push(t);
+    }
+  }
+  flush();
+  return out;
 }
 
 /** Block content must be non-empty for listItem/blockquote/cell/etc. */
@@ -176,12 +224,17 @@ function blocks(tokens: Tok[] | undefined): PMNode[] {
           content: inline(t.tokens),
         });
         break;
-      case 'paragraph':
-        out.push(paragraph(t.tokens));
+      case 'paragraph': {
+        const parts = paragraphAndImages(t.tokens);
+        if (parts.length) out.push(...parts);
         break;
-      case 'text':
-        out.push(paragraph(t.tokens, t.text));
+      }
+      case 'text': {
+        const parts = paragraphAndImages(t.tokens);
+        if (parts.length) out.push(...parts);
+        else if (t.text) out.push(paragraph(undefined, t.text));
         break;
+      }
       case 'blockquote':
         out.push({ type: 'blockquote', content: nonEmpty(blocks(t.tokens)) });
         break;
@@ -240,6 +293,28 @@ export function markdownToDoc(source: string): Record<string, unknown> {
   let i = 0;
   while (i < lines.length) {
     const line = lines[i]!;
+
+    // Block math: `$$ … $$` on one line, or a `$$` fence over several lines.
+    const oneLineMath = BLOCK_MATH_INLINE.exec(line.trim());
+    if (oneLineMath) {
+      flush();
+      content.push({ type: 'blockMath', attrs: { latex: oneLineMath[1]!.trim() } });
+      i++;
+      continue;
+    }
+    if (line.trim() === '$$') {
+      flush();
+      const body: string[] = [];
+      i++;
+      while (i < lines.length && lines[i]!.trim() !== '$$') {
+        body.push(lines[i]!);
+        i++;
+      }
+      i++; // consume closing $$
+      content.push({ type: 'blockMath', attrs: { latex: body.join('\n').trim() } });
+      continue;
+    }
+
     const fence = FENCE_OPEN.exec(line.trim());
     if (fence) {
       flush();
