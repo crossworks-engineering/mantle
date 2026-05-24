@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useToast } from '@/components/ui/toast';
+import { ShareControl } from '@/components/share/share-control';
 
 type FileRow = {
   id: string;
@@ -206,6 +207,7 @@ export function FileEditor({
               </ToggleGroupItem>
             </ToggleGroup>
           )}
+          <ShareControl nodeId={file.id} />
           {/* History link → /nodes/[id]/history: every trace that touched
               this file (ingest, extractor, summarizer, …). */}
           <Button asChild variant="outline" size="sm">

@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ShareControl } from '@/components/share/share-control';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { TagPill } from '@/components/tag-pill';
@@ -373,6 +374,7 @@ function NotePreview({ note, onDelete }: { note: NoteRow; onDelete: () => void }
       <div className="flex items-start justify-between gap-3">
         <h2 className="min-w-0 flex-1 text-xl font-semibold">{note.title}</h2>
         <div className="flex shrink-0 gap-2">
+          <ShareControl nodeId={note.id} />
           <Button asChild variant="outline" size="sm">
             <Link href={`/notes/${note.id}`}>
               <Pencil /> Edit

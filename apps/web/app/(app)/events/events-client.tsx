@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useRealtime } from '@/components/realtime/use-realtime';
 import { Bell, Calendar, MapPin, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ShareControl } from '@/components/share/share-control';
 import {
   Dialog,
   DialogContent,
@@ -360,6 +361,9 @@ function EventList({
               </p>
             )}
           </Link>
+          <div className="opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+            <ShareControl nodeId={e.id} iconOnly />
+          </div>
           <Button
             variant="ghost"
             size="sm"

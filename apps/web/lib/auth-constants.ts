@@ -7,4 +7,7 @@
 
 export const SESSION_COOKIE_NAME = 'mantle_session';
 
-export const PUBLIC_PATHS = ['/login', '/api/auth'];
+// `/s` is the public read-only share surface (token-gated, no session). The
+// /s pages + /s/[token]/a/[fileId] asset route authorize by share token, not by
+// the owner cookie — see docs/sharing.md.
+export const PUBLIC_PATHS = ['/login', '/api/auth', '/s'];

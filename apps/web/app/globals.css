@@ -3368,3 +3368,51 @@
   outline-offset: 2px;
   border-radius: 0.2rem;
 }
+
+/* Callouts on the raw/public render. In-app callouts use a React NodeView; the
+   public page surface (server-rendered HTML) emits raw [data-callout] divs, so
+   these rules style only that path — a tinted panel + left accent, themed per
+   variant (matching the in-app icon colours). */
+.ProseMirror [data-callout] {
+  margin-block: 0.75rem;
+  border-left: 3px solid var(--chart-2);
+  border-radius: var(--radius);
+  background-color: color-mix(in oklab, var(--chart-2) 8%, transparent);
+  padding: 0.5rem 0.9rem;
+}
+.ProseMirror [data-callout] > :first-child {
+  margin-top: 0;
+}
+.ProseMirror [data-callout] > :last-child {
+  margin-bottom: 0;
+}
+.ProseMirror [data-callout][data-variant='success'] {
+  border-left-color: var(--chart-4);
+  background-color: color-mix(in oklab, var(--chart-4) 8%, transparent);
+}
+.ProseMirror [data-callout][data-variant='warning'] {
+  border-left-color: var(--chart-5);
+  background-color: color-mix(in oklab, var(--chart-5) 8%, transparent);
+}
+.ProseMirror [data-callout][data-variant='danger'] {
+  border-left-color: var(--destructive);
+  background-color: color-mix(in oklab, var(--destructive) 8%, transparent);
+}
+
+/* Embedded file chip on the raw/public render. */
+.ProseMirror a.file-embed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-block: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: color-mix(in oklab, var(--muted) 40%, transparent);
+  padding: 0.5rem 0.85rem;
+  font-size: 0.875rem;
+  text-decoration: none;
+  color: var(--foreground);
+}
+.ProseMirror a.file-embed::before {
+  content: '📎';
+}

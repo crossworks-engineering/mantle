@@ -90,6 +90,7 @@
     "dagre": "^0.8.5",
     "date-fns": "^4.1.0",
     "drizzle-orm": "^0.38.3",
+    "hast-util-to-html": "^9.0.5",
     "heic-convert": "^2.1.0",
     "katex": "^0.16.47",
     "lowlight": "^3.3.0",

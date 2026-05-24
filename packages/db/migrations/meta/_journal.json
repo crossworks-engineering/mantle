@@ -295,6 +295,13 @@
       "when": 1779401300000,
       "tag": "0041_email_smtp",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1779401400000,
+      "tag": "0042_shares",
+      "breakpoints": true
     }
   ]
 }

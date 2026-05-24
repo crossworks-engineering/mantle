@@ -1,8 +1,11 @@
 # Public sharing — read-only links to any content
 
-> **Status: SPEC (not yet built).** This is the design for read-only public
-> sharing across every shareable content type. Code paths referenced below are
-> the *intended* layout; nothing here is implemented until the phases land.
+> **Status: BUILT.** Read-only public sharing ships for all five types
+> (page, note, todo, event, file): the `shares` table + tokens, the public
+> `/s/[token]` route + scoped asset route, the server page renderer, per-type
+> presenters, and the owner `<ShareControl>` wired into every detail surface.
+> **Deferred (schema-ready):** per-link expiry UI and per-link indexability
+> opt-in (`expires_at` / `settings` columns exist; no UI yet).
 >
 > Share any **page, note, todo, event, or file** with anyone who has the URL.
 > The link opens a clean, auth-free page tailored to the content — files in a

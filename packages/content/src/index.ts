@@ -75,6 +75,20 @@ export { docToText } from './doc-to-text';
 
 export { markdownToDoc } from './markdown-to-doc';
 
+export { referencedFileIds } from './doc-assets';
+
+export {
+  SHAREABLE_TYPES,
+  isShareable,
+  getActiveShareForNode,
+  createShare,
+  revokeShare,
+  resolveActiveShareByToken,
+  recordShareView,
+  type ShareableType,
+  type ShareSummary,
+} from './shares';
+
 export { chunkDocText, type DocChunk } from './chunk';
 
 export { mentionRefs, type MentionRefs } from './mention-refs';

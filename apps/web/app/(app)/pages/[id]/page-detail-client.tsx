@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TagInput } from '@/components/tag-input';
 import { BackLink } from '@/components/layout/back-link';
+import { ShareControl } from '@/components/share/share-control';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { PageEditor } from '@/components/page-editor/page-editor';
 import {
@@ -259,6 +260,7 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
           <Button size="sm" onClick={() => void commit()} disabled={!docDirty || committing}>
             <GitCommitHorizontal /> Commit
           </Button>
+          <ShareControl nodeId={initial.id} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="size-8" aria-label="Page options">

@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, ChevronDown, ChevronRight, Plus, Search, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ShareControl } from '@/components/share/share-control';
 import {
   Dialog,
   DialogContent,
@@ -284,6 +285,9 @@ export function TodosClient({ initialTodos }: { initialTodos: TodoRow[] }) {
                         <ChevronRight className="size-4" />
                       )}
                     </button>
+                    <div className="opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+                      <ShareControl nodeId={t.id} iconOnly />
+                    </div>
                     <Button
                       variant="ghost"
                       size="sm"
