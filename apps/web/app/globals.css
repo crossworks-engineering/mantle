@@ -3153,11 +3153,20 @@
   content: none;
 }
 
-/* Divider spacing: halve prose's default hr margin (3em → 1.5em). Applies to
-   the editor, read-only PageView, and the public render so it's consistent. */
+/* Divider: a soft full-width rule that fades to transparent at both ends
+   (nicer than prose's flat hairline). Themed via --border so it tracks the
+   active theme + light/dark. Halved spacing vs prose's default (3em → 1.5em).
+   Applies to the editor, read-only PageView, and the public render. */
 .ProseMirror hr {
   margin-top: 1.5em;
   margin-bottom: 1.5em;
+  height: 1px;
+  border: 0;
+  background: linear-gradient(to right, transparent, var(--border), transparent);
+}
+.ProseMirror hr.ProseMirror-selectednode {
+  outline: none;
+  background: linear-gradient(to right, transparent, var(--primary), transparent);
 }
 
 /* Pages multi-column layout (2–4 columns). CSS grid with equal auto-columns
