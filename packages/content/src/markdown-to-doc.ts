@@ -6,7 +6,7 @@
  * (`apps/web/components/page-editor/extensions.ts`): paragraph, heading,
  * bulletList/orderedList/listItem, taskList/taskItem, codeBlock, blockquote,
  * horizontalRule, table/tableRow/tableHeader/tableCell, callout, columnList/
- * column, plus the bold/italic/strike/code/link/highlight marks.
+ * column, plus the bold/italic/strike/code/link/highlight/textColor marks.
  *
  * The dialect is GFM markdown (via `marked`) plus three container constructs
  * markdown lacks — identical to what the assistant renderer accepts and what
@@ -15,6 +15,7 @@
  *   Callout:  :::info … :::      (variants info|success|warning|danger)
  *   Columns:  :::columns … +++ … :::   (2+ parts split by a lone +++)
  *   Highlight: ==text==
+ *   Colour:    [text]{color=chart-2}  /  [text]{highlight=chart-3}  (chart-1..5)
  *
  * Pure (only `marked`) and DB-free, so it's safe to call from the tool
  * runtime. Defensive: anything it can't map degrades to a paragraph rather
@@ -42,6 +43,8 @@ type Tok = {
   checked?: boolean;
   href?: string;
   latex?: string;
+  color?: string;
+  highlight?: string;
   tokens?: Tok[];
   items?: Tok[];
   header?: Array<{ tokens?: Tok[] }>;
@@ -64,6 +67,39 @@ const highlightExtension: TokenizerAndRendererExtension = {
   },
 };
 
+// `[text]{color=chart-2}` / `[text]{highlight=chart-3}` → themed text-colour and
+// highlight marks (tokens chart-1..5; both keys may appear in one span). Kept in
+// lockstep with apps/web/lib/rich-markdown.ts + the rich_writing skill.
+const COLOR_TOKEN_RE = /^chart-[1-5]$/;
+function parseColorAttrs(attrStr: string): { color?: string; highlight?: string } {
+  const res: { color?: string; highlight?: string } = {};
+  for (const part of attrStr.trim().split(/\s+/)) {
+    const eq = part.indexOf('=');
+    if (eq < 0) continue;
+    const key = part.slice(0, eq).trim();
+    const val = part.slice(eq + 1).trim();
+    if ((key === 'color' || key === 'highlight') && COLOR_TOKEN_RE.test(val)) res[key] = val;
+  }
+  return res;
+}
+const colorSpanExtension: TokenizerAndRendererExtension = {
+  name: 'colorSpan',
+  level: 'inline',
+  start(src) {
+    return src.indexOf('[');
+  },
+  tokenizer(src) {
+    const m = /^\[([\s\S]*?\S)\]\{([^}]+)\}/.exec(src);
+    if (!m) return undefined;
+    const { color, highlight } = parseColorAttrs(m[2]!);
+    if (!color && !highlight) return undefined; // not a colour span — let link/text handle it
+    return { type: 'colorSpan', raw: m[0], text: m[1]!, tokens: this.lexer.inlineTokens(m[1]!), color, highlight };
+  },
+  renderer() {
+    return ''; // unused — this converter reads the token, not rendered HTML
+  },
+};
+
 // Inline `$…$` → an inlineMath token (block `$$…$$` is handled at line level).
 const inlineMathExtension: TokenizerAndRendererExtension = {
   name: 'inlineMath',
@@ -82,7 +118,7 @@ const inlineMathExtension: TokenizerAndRendererExtension = {
 };
 
 const md = new Marked({ gfm: true });
-md.use({ extensions: [highlightExtension, inlineMathExtension] });
+md.use({ extensions: [highlightExtension, colorSpanExtension, inlineMathExtension] });
 
 const CALLOUT_VARIANTS = new Set(['info', 'success', 'warning', 'danger']);
 const FENCE_OPEN = /^:::([A-Za-z]+)\s*$/;
@@ -120,6 +156,13 @@ function inline(tokens: Tok[] | undefined, marks: PMMark[] = []): PMNode[] {
       case 'highlight':
         out.push(...inline(t.tokens, withMark(marks, { type: 'highlight' })));
         break;
+      case 'colorSpan': {
+        let m = marks;
+        if (t.color) m = withMark(m, { type: 'textColor', attrs: { color: t.color } });
+        if (t.highlight) m = withMark(m, { type: 'highlight', attrs: { color: t.highlight } });
+        out.push(...inline(t.tokens, m));
+        break;
+      }
       case 'codespan': {
         const text = t.text ?? '';
         if (text) out.push({ type: 'text', text, marks: withMark(marks, { type: 'code' }) });

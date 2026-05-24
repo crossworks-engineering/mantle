@@ -30,6 +30,9 @@
  *
  *   Highlight:  ==marked text==  → <mark>.
  *
+ *   Colour:  [text]{color=chart-2} / [text]{highlight=chart-3}  (chart-1..5) →
+ *     a themed text colour and/or highlight (both keys may appear in one span).
+ *
  * Containers are parsed by a top-level line walk (they aren't markdown); every
  * other run is handed to `marked`. Nesting containers inside containers isn't
  * supported in v1 — callouts hold simple block content, which covers the cases
@@ -65,6 +68,44 @@ const highlightExtension: TokenizerAndRendererExtension = {
   },
 };
 
+// `[text]{color=chart-2}` / `[text]{highlight=chart-3}` → themed text-colour +
+// highlight marks. Emits the `data-*` attrs the Pages schema parses
+// (TextColor → span[data-text-color], Highlight → mark[data-color]); chart-1..5.
+const COLOR_TOKEN_RE = /^chart-[1-5]$/;
+function parseColorAttrs(attrStr: string): { color?: string; highlight?: string } {
+  const res: { color?: string; highlight?: string } = {};
+  for (const part of attrStr.trim().split(/\s+/)) {
+    const eq = part.indexOf('=');
+    if (eq < 0) continue;
+    const key = part.slice(0, eq).trim();
+    const val = part.slice(eq + 1).trim();
+    if ((key === 'color' || key === 'highlight') && COLOR_TOKEN_RE.test(val)) res[key] = val;
+  }
+  return res;
+}
+const colorSpanExtension: TokenizerAndRendererExtension = {
+  name: 'colorSpan',
+  level: 'inline',
+  start(src) {
+    return src.indexOf('[');
+  },
+  tokenizer(src) {
+    const m = /^\[([\s\S]*?\S)\]\{([^}]+)\}/.exec(src);
+    if (!m) return undefined;
+    const { color, highlight } = parseColorAttrs(m[2]!);
+    if (!color && !highlight) return undefined; // not a colour span — let link/text handle it
+    return { type: 'colorSpan', raw: m[0], text: m[1]!, tokens: this.lexer.inlineTokens(m[1]!), color, highlight };
+  },
+  renderer(token) {
+    let html = this.parser.parseInline(token.tokens ?? []);
+    const highlight = typeof token.highlight === 'string' ? token.highlight : '';
+    const color = typeof token.color === 'string' ? token.color : '';
+    if (highlight) html = `<mark data-color="${escapeAttr(highlight)}">${html}</mark>`;
+    if (color) html = `<span data-text-color="${escapeAttr(color)}">${html}</span>`;
+    return html;
+  },
+};
+
 // Inline `$…$` → a KaTeX inline-math span the Mathematics extension parses
 // (`[data-type="inline-math"]`, latex from `data-latex`). Block `$$…$$` is
 // handled at line level in richMarkdownToHtml.
@@ -88,7 +129,7 @@ const inlineMathExtension: TokenizerAndRendererExtension = {
 // One configured instance (module singleton) so we don't re-register the
 // extensions on every call. GFM gives us tables + strikethrough.
 const md = new Marked({ gfm: true });
-md.use({ extensions: [highlightExtension, inlineMathExtension] });
+md.use({ extensions: [highlightExtension, colorSpanExtension, inlineMathExtension] });
 
 const BLOCK_MATH_INLINE = /^\$\$(.+?)\$\$\s*$/;
 

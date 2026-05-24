@@ -62,6 +62,17 @@ numbered lists, [links](https://example.com), \`---\` dividers, and GFM tables:
 
 **Highlight** a phrase with double-equals: \`==like this==\`.
 
+**Colour** — tint text or a highlight with a theme accent. Wrap the phrase in
+\`[ ]\` and add an attribute in \`{ }\`:
+- coloured text: \`[your text]{color=chart-2}\`
+- coloured highlight: \`[your text]{highlight=chart-4}\`
+- both at once: \`[your text]{color=chart-1 highlight=chart-3}\`
+
+There are five accents, \`chart-1\` … \`chart-5\`. They adapt to the user's theme,
+so choose one for **distinction** (e.g. to separate categories), not for a
+specific hue — you can't rely on "chart-1" being red. Use colour sparingly, for
+genuine emphasis; most text should stay the default colour.
+
 **Math** — inline with single dollars \`$E=mc^2$\`, or a block on its own:
 \`\`\`
 $$

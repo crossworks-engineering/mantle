@@ -21,6 +21,18 @@ describe('richMarkdownToHtml', () => {
     expect(html).toContain('<mark>c</mark>');
   });
 
+  it('renders [text]{color}/{highlight} as themed data-attr marks', () => {
+    const html = richMarkdownToHtml(
+      'a [b]{color=chart-2} c [d]{highlight=chart-4} e [f]{color=chart-1 highlight=chart-3}',
+    );
+    expect(html).toContain('<span data-text-color="chart-2">b</span>');
+    expect(html).toContain('<mark data-color="chart-4">d</mark>');
+    expect(html).toContain('data-text-color="chart-1"');
+    expect(html).toContain('data-color="chart-3"');
+    // Unknown token is left as plain text — no attr injection.
+    expect(richMarkdownToHtml('x [y]{color=red}')).not.toContain('data-text-color');
+  });
+
   it('renders callouts as data-callout with the variant', () => {
     expect(richMarkdownToHtml(':::warning\nbe careful\n:::')).toContain('data-variant="warning"');
     // unknown variant degrades to info

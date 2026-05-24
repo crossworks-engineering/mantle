@@ -47,6 +47,7 @@ key off `data-*` attributes.
 | Headings / bold / italic / code / quote / lists / links / `---` | standard markdown | StarterKit nodes |
 | Table | GFM pipe table | `TableKit` |
 | Highlight | `==text==` | `<mark>` (Highlight) |
+| Colour | `[text]{color=chart-2}` / `[text]{highlight=chart-3}` (chart-1..5; both keys may combine) | `textColor` mark / themed `highlight` |
 | To-do list | `- [ ]` / `- [x]` | TipTap `taskList` |
 | Callout | `:::info` … `:::` (variants: `info`, `success`, `warning`, `danger`) | `callout` node + NodeView |
 | Columns | `:::columns` … `+++` … `:::` (2+ parts) | `columnList` ⊃ `column` |

@@ -22,6 +22,26 @@ describe('markdownToDoc', () => {
     expect(markTypes).toEqual(expect.arrayContaining(['bold', 'italic', 'code', 'highlight']));
   });
 
+  it('maps [text]{color=…}/{highlight=…} to themed textColor/highlight marks', () => {
+    const p = find(
+      'a [b]{color=chart-2} [c]{highlight=chart-4} [d]{color=chart-1 highlight=chart-3}',
+      'paragraph',
+    )!;
+    const marks = (p.content ?? []).flatMap(
+      (t) => (t.marks ?? []) as Array<{ type: string; attrs?: { color?: string } }>,
+    );
+    const has = (type: string, color: string) =>
+      marks.some((m) => m.type === type && m.attrs?.color === color);
+    expect(has('textColor', 'chart-2')).toBe(true);
+    expect(has('highlight', 'chart-4')).toBe(true);
+    expect(has('textColor', 'chart-1')).toBe(true); // both keys on one span
+    expect(has('highlight', 'chart-3')).toBe(true);
+    // Unknown token / non-colour attr leaves plain text (no colour mark).
+    const plain = find('x [y]{color=red} [z]{foo=bar}', 'paragraph')!;
+    const types = (plain.content ?? []).flatMap((t) => (t.marks ?? []).map((m) => m.type));
+    expect(types).not.toContain('textColor');
+  });
+
   it('maps callouts with a variant, defaulting unknown kinds to info', () => {
     const c = find(':::warning\nbe careful\n:::', 'callout');
     expect(c?.attrs?.variant).toBe('warning');
