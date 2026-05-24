@@ -6,7 +6,9 @@
  */
 export default function ShareLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground">
+    // Own scroll container: globals.css pins html/body to overflow:hidden for
+    // the app shell, so the public surface must scroll itself (h-dvh + auto).
+    <div className="flex h-dvh flex-col overflow-y-auto scrollbar-thin bg-background text-foreground">
       <main className="flex-1">{children}</main>
       <footer className="border-t border-border/60 py-6">
         <p className="text-center text-xs text-muted-foreground">
