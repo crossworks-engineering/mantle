@@ -123,6 +123,10 @@ Shared app-level patterns (`components/`):
 
 - `Label` + field wrapped in `space-y-1.5`; stack fields with `space-y-4`.
 - Use `Input`, `Textarea` (not raw elements). Tag fields use `<TagInput>`.
+- **Date / time entry uses `<DateTimePicker value onChange clearable?>`**
+  (`components/ui/date-time-picker.tsx`) — the shadcn Calendar in a popover +
+  a time field. Don't use the native `datetime-local` input (used by events +
+  heartbeats; value is a `Date | null`).
 - Submit buttons show progress (`disabled`, `Saving…`). For server-action
   forms, `components/ui/submit-button.tsx` handles pending state.
 
@@ -161,10 +165,10 @@ gap / cut-off). Use `scrollbar-thin` on scroll areas (`scrollbar-hidden` also
 exists; both are utilities in `globals.css`).
 
 ### Master-detail — THE pattern for list+editor screens
-Used by **Notes, Traces**, and every settings list screen: **Accounts, Agents,
-AI workers, Heartbeats, Skills, Tools, API keys.** Left = scrollable list of
-**accent cards**; right = detail/form for the selected item. Proven scaffold
-(double-scrollbar-free):
+Used by **Notes, Traces, Secrets, Events, Todos**, and every settings list
+screen: **Accounts, Agents, AI workers, Heartbeats, Skills, Tools, API keys.**
+Left = scrollable list of **accent cards**; right = detail/form for the selected
+item. Proven scaffold (double-scrollbar-free):
 
 ```tsx
 <div className="md:grid md:h-full md:grid-cols-[340px_1fr] md:overflow-hidden">

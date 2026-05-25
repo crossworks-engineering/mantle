@@ -99,6 +99,7 @@ strategy throughout: **reuse libraries, write only what they don't provide.**
 |---|---|---|
 | Core, marks, lists, headings, history, **link, underline** | `@tiptap/starter-kit` | Link tuned (autolink/paste); link dialog |
 | Highlight, typography | `@tiptap/extension-highlight`, `-typography` | bubble-menu wiring + themed CSS |
+| **Highlight + text colour** | extended `Highlight` mark + a custom `textColor` mark | bubble-menu swatch popovers; themed-token palette (`chart-1..5`, stored as a token key, never a raw colour); rendered in editor + public; authored by Saskia via `[text]{color=…}` / `{highlight=…}` (see [`rich-writing.md`](./rich-writing.md)) |
 | To-do lists | `@tiptap/extension-task-list/-item` | slash item, themed CSS, `[x]`/`[ ]` in `docToText` |
 | Tables | `@tiptap/extension-table` (`TableKit`) | the `+` add row/column controls, themed CSS |
 | Drag handle | `@tiptap/extension-drag-handle-react` | grip + click-menu (Duplicate/Delete) |
@@ -249,6 +250,18 @@ cache + `extract_cost_cap_micro_usd`.
 
 ## 8. Known sharp edges / deferred
 
+- **Editor reliability + polish (2026-05-24/25).** A pass over the worst jank:
+  the block **drag handle** is centred on its row and lives in the editor's left
+  padding so it no longer vanishes before you can grab it; the **slash / @-mention
+  popups** reposition via a `ResizeObserver` + viewport clamp (no more first-open
+  jump) and no longer close when the autosave fires (the autosave re-render was
+  re-applying `editor.setOptions` + re-registering the drag-handle plugin —
+  memoizing `editorProps` + the `<DragHandle>` props fixed it). The **divider**
+  is a soft fade and **tables** get themed rounded corners. NOTE: an earlier
+  finishing-batch (sub/superscript, text-align, audio, emoji, YouTube,
+  details/toggle, full table ops) was built then **fully reverted** — only the
+  colours + the reliability/polish above survived. Don't re-pitch the reverted
+  set without solving their specific issues (see the project memory).
 - **Backlinks are written but not surfaced.** `references` edges exist in the
   graph (queryable by Saskia/MCP), but there's no "Linked from / Referenced by"
   panel on a page yet, and node-link chips don't yet click-through to navigate.

@@ -62,9 +62,10 @@ data = {
 ```
 
 List sort order is `open` first, then `due_at` ascending (nulls last),
-then `updated_at` descending. The list page has inline status toggle
-(click the checkbox) and a row-expand that lets you change priority +
-due-date without leaving the page.
+then `updated_at` descending. The `/todos` screen is **master-detail**
+(see [`ui-style-guide.md`](./ui-style-guide.md) §8): a filterable list
+on the left (search + status + priority; a checkbox toggles done
+optimistically) and a create / edit / detail pane on the right.
 
 ### Events (`type='event'`)
 
@@ -85,6 +86,15 @@ indexed range scan. Editing `starts_at` or `remind_minutes_before`
 recomputes it and clears `reminder_sent_at` if the new fire time is
 still in the future, so moving a meeting an hour later automatically
 re-arms the reminder.
+
+The `/events` screen is **master-detail** with a **live countdown hero**
+(a theme-token progress ring that fills as the event nears, ticking
+d/h/m/s; a pulsing "Happening now" + through-the-event bar while it runs;
+a muted "ended" after) and a day-grouped list (Today / Tomorrow / This
+week / Later / Past) with live relative-time badges. Each event has an
+**Add to calendar (.ics)** button, and date entry uses the shadcn
+`DateTimePicker` (calendar popover + time), not the native control. The
+live-time helpers are pure + tested in [`apps/web/lib/event-time.ts`].
 
 ---
 
@@ -180,9 +190,11 @@ Same owner-scoping as the rest of the MCP surface
 - **One reminder per event.** Single configurable lead time. No
   "remind me 1 day before AND 1 hour before".
 - **No timezone display.** All times render in the browser's local
-  TZ; UI input is `datetime-local` (naive). The DB stores UTC ISO.
-- **No calendar import / sync.** No iCal export, no Google Calendar
-  bridge. Events live only in Mantle for now.
+  TZ; date entry is the shadcn `DateTimePicker` (calendar + time, naive
+  local). The DB stores UTC ISO.
+- **No two-way calendar sync.** Events offer a one-shot **.ics**
+  "Add to calendar" (per-event in the detail, and on shared events), but
+  there's no Google/CalDAV bridge — events live in Mantle.
 - **Reminder target is whichever DM you last spoke in.** Multi-bot
   setups would want per-event override; we picked the recommended
   default for simplicity.
