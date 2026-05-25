@@ -497,6 +497,7 @@ export async function runAssistantTurn(
           agentSlug: agent.slug,
           agentDepth: 1,
           delegateTo: (agent.memoryConfig as { delegate_to?: string[] } | null)?.delegate_to ?? [],
+          resultHandling: agent.memoryConfig?.result_handling ?? null,
           initialMessages: messages,
           tools: allowedTools,
           // /assistant has no outbound channel beyond the reply stream

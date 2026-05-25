@@ -146,6 +146,7 @@ export const invokeAgent: AgentInvoker = async ({
         agentSlug: target.slug,
         agentDepth: depth,
         delegateTo: ((target.memoryConfig as AgentMemoryConfig | null)?.delegate_to ?? []) as readonly string[],
+        resultHandling: (target.memoryConfig as AgentMemoryConfig | null)?.result_handling ?? null,
         parentTraceId,
         initialMessages,
         tools: allowedTools,

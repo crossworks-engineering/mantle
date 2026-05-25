@@ -19,6 +19,21 @@ export {
 
 export { BUILTIN_TOOLS } from './builtins';
 export { PAGE_TOOLS, PAGE_TOOL_SLUGS } from './builtins-pages';
+export { TOOL_RESULT_TOOLS, TOOL_RESULT_TOOL_SLUGS } from './builtins-tool-results';
+export {
+  processToolResultForModel,
+  resolveResultHandling,
+  DEFAULT_RESULT_HANDLING,
+  cleanupToolResults,
+  chunkText,
+  buildResultEnvelope,
+  spillToolResult,
+  readResultPage,
+  grepResult,
+  queryResult,
+  type ResultHandling,
+  type ResultHandlingConfig,
+} from './tool-results';
 export { PERSONA_TOOLS, PERSONA_TOOL_SLUGS } from './builtins-persona';
 export { TODO_TOOLS, TODO_TOOL_SLUGS } from './builtins-todos';
 export { TERMINAL_TOOLS, TERMINAL_TOOL_SLUGS } from './builtins-terminal';

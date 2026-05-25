@@ -82,6 +82,16 @@ export type AgentMemoryConfig = {
    *  Self-references are refused at dispatch time. The depth chain is
    *  also capped — see MAX_AGENT_DEPTH in @mantle/tools. */
   delegate_to?: string[];
+  /** Tool-result handling override (KB units). When a tool returns more than
+   *  `inline_max_kb`, the full output is spilled to the tool-result store and
+   *  the model gets a handle it pages/greps/queries via `read_result` instead
+   *  of a truncated dump. `embed_min_kb` is where the spill envelope starts
+   *  recommending semantic `query`. Both fall back to env/global defaults
+   *  (TOOL_RESULT_*). Page size is global-only. See architecture §9l. */
+  result_handling?: {
+    inline_max_kb?: number;
+    embed_min_kb?: number;
+  };
 };
 
 export type AgentParams = {

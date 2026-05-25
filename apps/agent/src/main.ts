@@ -983,6 +983,7 @@ async function handleMessage(messageId: string): Promise<void> {
           agentDepth: 1,
           delegateTo:
             (agent.memoryConfig as { delegate_to?: string[] } | null)?.delegate_to ?? [],
+          resultHandling: agent.memoryConfig?.result_handling ?? null,
           initialMessages: messages,
           tools: allowedTools,
           // Surface lets worker-delegation tools (synthesize_speech,

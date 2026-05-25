@@ -93,6 +93,8 @@ type MemoryConfig = {
   embedding_model?: string;
   /** Agent slugs this agent may delegate to via invoke_agent. */
   delegate_to?: string[];
+  /** Tool-result spill thresholds (KB). Empty = env/global defaults. */
+  result_handling?: { inline_max_kb?: number; embed_min_kb?: number };
 };
 
 type AgentSummary = {
@@ -284,6 +286,9 @@ type FormState = {
   skillSlugs: string[];
   /** Agent slugs this agent may delegate to via invoke_agent. */
   delegateTo: string[];
+  /** Tool-result spill thresholds (KB, as strings). Empty = global default. */
+  resultInlineMaxKb: string;
+  resultEmbedMinKb: string;
   temperature: string;
   maxTokens: string;
   /** Avatar {style, seed}; null = initials fallback. */
@@ -316,6 +321,8 @@ function emptyForm(role: Role = 'responder'): FormState {
     toolSlugs: [],
     skillSlugs: [],
     delegateTo: [],
+    resultInlineMaxKb: '',
+    resultEmbedMinKb: '',
     temperature: '0.7',
     maxTokens: '',
     avatar: null,
@@ -351,6 +358,8 @@ function formFromAgent(a: AgentSummary): FormState {
     toolSlugs: a.toolSlugs ?? [],
     skillSlugs: a.skillSlugs ?? [],
     delegateTo: a.memoryConfig.delegate_to ?? [],
+    resultInlineMaxKb: a.memoryConfig.result_handling?.inline_max_kb?.toString() ?? '',
+    resultEmbedMinKb: a.memoryConfig.result_handling?.embed_min_kb?.toString() ?? '',
     temperature: a.params.temperature?.toString() ?? '0.7',
     maxTokens: a.params.max_tokens?.toString() ?? '',
     avatar: a.avatar ?? null,
@@ -546,6 +555,16 @@ export function AgentsClient({
     // delegate actually clears it — the server merges memory_config, so an
     // omitted key would otherwise be preserved.
     memoryConfig.delegate_to = form.delegateTo;
+
+    // Tool-result spill thresholds (KB). Only set keys the operator filled;
+    // blank = fall back to the env/global default. Always send the object
+    // (possibly empty) so clearing a field actually clears it under the merge.
+    const rh: { inline_max_kb?: number; embed_min_kb?: number } = {};
+    const inlineKb = parseInt(form.resultInlineMaxKb, 10);
+    if (!Number.isNaN(inlineKb) && inlineKb > 0) rh.inline_max_kb = inlineKb;
+    const embedKb = parseInt(form.resultEmbedMinKb, 10);
+    if (!Number.isNaN(embedKb) && embedKb > 0) rh.embed_min_kb = embedKb;
+    memoryConfig.result_handling = rh;
 
     const params: { temperature?: number; max_tokens?: number } = {};
     const t = parseFloat(form.temperature);
@@ -1146,6 +1165,48 @@ export function AgentsClient({
                   </span>
                 )}
               </p>
+            </fieldset>
+
+            <fieldset className="space-y-3 rounded-md border border-border p-3">
+              <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Tool results
+              </legend>
+              <p className="text-xs text-muted-foreground">
+                Large tool outputs (a delegated agent&apos;s full answer, a big file read,
+                a wide search) are stored and handed to the agent as a handle it reads via{' '}
+                <code>read_result</code> (page / grep / semantic query) — instead of being
+                truncated. Tune when that spill kicks in. Blank = system default.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="result-inline">Inline max (KB)</Label>
+                  <Input
+                    id="result-inline"
+                    type="number"
+                    min={1}
+                    value={form.resultInlineMaxKb}
+                    onChange={(e) => setForm((f) => ({ ...f, resultInlineMaxKb: e.target.value }))}
+                    placeholder="32 (default)"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Results larger than this spill to the store.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="result-embed">Semantic-tier (KB)</Label>
+                  <Input
+                    id="result-embed"
+                    type="number"
+                    min={1}
+                    value={form.resultEmbedMinKb}
+                    onChange={(e) => setForm((f) => ({ ...f, resultEmbedMinKb: e.target.value }))}
+                    placeholder="100 (default)"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    At/over this, the agent is steered to semantic <code>query</code>.
+                  </p>
+                </div>
+              </div>
             </fieldset>
 
             <fieldset className="space-y-3 rounded-md border border-border p-3">

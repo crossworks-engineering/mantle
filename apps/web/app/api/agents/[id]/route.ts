@@ -30,6 +30,16 @@ const MemoryConfig = z
     // Agent-delegation allowlist: slugs this agent may invoke_agent into.
     // Empty array = delegation disabled (the runtime fails closed).
     delegate_to: z.array(z.string().min(1).max(120)).max(32).optional(),
+    // Tool-result handling (KB): when a tool output exceeds inline_max_kb it
+    // spills to the tool-result store; embed_min_kb is where the envelope
+    // recommends semantic query. Fall back to env/global defaults.
+    result_handling: z
+      .object({
+        inline_max_kb: z.number().int().min(1).max(1024).optional(),
+        embed_min_kb: z.number().int().min(1).max(8192).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

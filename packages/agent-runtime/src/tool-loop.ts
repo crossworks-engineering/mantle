@@ -23,7 +23,11 @@ import {
   dispatchTool,
   getBuiltinRedactFields,
   redactArgsForLogging,
+  resolveTool,
   resolveTools,
+  processToolResultForModel,
+  resolveResultHandling,
+  type ResultHandlingConfig,
   type ToolCallRecord,
 } from '@mantle/tools';
 import { and, eq, sql } from 'drizzle-orm';
@@ -82,6 +86,11 @@ export type ToolLoopArgs = {
    *  (i.e. it was invoked by another agent). Forwarded to handlers
    *  so the child trace can reference it. */
   parentTraceId?: string | null;
+  /** Per-agent tool-result handling override (from
+   *  `memory_config.result_handling`, KB units). Controls when an oversized
+   *  tool result spills to the store vs. inlines. Falls back to env/global
+   *  defaults when absent. */
+  resultHandling?: ResultHandlingConfig | null;
   /** Initial messages: system + any history + the new user turn. */
   initialMessages: ChatMessage[];
   /** Tool rows the agent is permitted to use. Empty array → no tools sent. */
@@ -138,8 +147,17 @@ export function buildToolsForModel(tools: Tool[]): Array<{
 
 export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   const maxIters = args.maxIterations ?? DEFAULT_MAX_ITERATIONS;
-  const toolsByName = new Map(args.tools.map((t) => [t.slug, t]));
-  const toolsForModel = buildToolsForModel(args.tools);
+  const handling = resolveResultHandling(args.resultHandling);
+  // Always offer `read_result` when the agent has any tools, so a spilled
+  // (oversized) result is never a dead end — even if the operator didn't add
+  // it to the agent's allowlist. It's a read-only system capability.
+  let loopTools = args.tools;
+  if (loopTools.length > 0 && !loopTools.some((t) => t.slug === 'read_result')) {
+    const rr = await resolveTool(args.ownerId, 'read_result');
+    if (rr) loopTools = [...loopTools, rr];
+  }
+  const toolsByName = new Map(loopTools.map((t) => [t.slug, t]));
+  const toolsForModel = buildToolsForModel(loopTools);
   const sendTools = toolsForModel.length > 0;
 
   const messages: ChatMessage[] = [...args.initialMessages];
@@ -345,9 +363,43 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       // Feed the result back to the model. Errors are sent as JSON too —
       // the model usually adapts (retries with different args, falls
       // back to a plain answer) rather than blowing up.
-      const payload = outcome.ok
-        ? truncateForModel(JSON.stringify(outcome.output))
-        : JSON.stringify({ error: outcome.error });
+      //
+      // Oversized OK results no longer get truncated (which silently dropped
+      // content): they spill to the tool-result store and the model receives
+      // a handle envelope it can page/grep/query via `read_result`. The small
+      // path stays a plain inline assignment with zero overhead.
+      let payload: string;
+      if (!outcome.ok) {
+        payload = JSON.stringify({ error: outcome.error });
+      } else {
+        const serialized = JSON.stringify(outcome.output);
+        if (Buffer.byteLength(serialized, 'utf8') <= handling.inlineMaxBytes) {
+          payload = serialized;
+        } else {
+          payload = await step(
+            {
+              name: `spill_result: ${slug}`,
+              kind: 'compute',
+              input: { bytes: Buffer.byteLength(serialized, 'utf8') },
+            },
+            async (h) => {
+              const processed = await processToolResultForModel({
+                serialized,
+                ownerId: args.ownerId,
+                traceId: currentTrace()?.id ?? null,
+                toolSlug: slug,
+                handling,
+              });
+              h.setMeta({
+                spilled: processed.spilled,
+                handle: processed.handle,
+                bytes: processed.bytes,
+              });
+              return processed.payload;
+            },
+          );
+        }
+      }
       messages.push({
         role: 'tool',
         toolCallId: call.id,
@@ -386,16 +438,4 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   const text = typeof raw === 'string' ? raw.trim() : '';
   messages.push({ role: 'assistant', content: text });
   return { reply: text, messages, iterations: maxIters + 1, toolCalls, pendingIds, artifacts };
-}
-
-const TOOL_RESULT_BYTE_CAP = 8 * 1024;
-
-/** Cap massive tool outputs (e.g. a full file_read of a giant note)
- *  so we don't blow the context window. The model gets a head + tail
- *  and a truncated marker so it knows to ask for a narrower scope. */
-function truncateForModel(s: string): string {
-  if (s.length <= TOOL_RESULT_BYTE_CAP) return s;
-  const head = s.slice(0, TOOL_RESULT_BYTE_CAP / 2);
-  const tail = s.slice(s.length - TOOL_RESULT_BYTE_CAP / 4);
-  return `${head}\n…[truncated, original ${s.length} chars]…\n${tail}`;
 }

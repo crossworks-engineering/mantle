@@ -39,6 +39,7 @@ import { RESEARCH_TOOLS } from './builtins-research';
 import { NOTE_TOOLS } from './builtins-notes';
 import { EMAIL_TOOLS } from './builtins-email';
 import { PAGE_TOOLS } from './builtins-pages';
+import { TOOL_RESULT_TOOLS } from './builtins-tool-results';
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -896,4 +897,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // dialect; markdownToDoc converts it to the ProseMirror JSON pages store.
   // page_delete is requires_confirm (irreversible).
   ...PAGE_TOOLS,
+  // read_result — dereference a spilled (oversized) tool result by handle:
+  // page / grep / semantic query. The tool-loop always offers this so a
+  // stored handle is never a dead end. Read-only.
+  ...TOOL_RESULT_TOOLS,
 ];

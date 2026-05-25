@@ -969,6 +969,63 @@ code reads.
 > as `context_length`. So "1M vs 200K" is decided by the slug, and the
 > ceiling is read off the catalog — there's nothing to toggle.
 
+## 9m. Tool-result spill store (`read_result`)
+
+The fourth member of Mantle's store-full / index-compact / dereference family
+(brain · recall · heartbeats… and now tool output). Implemented in
+[`packages/tools/src/tool-results.ts`](../packages/tools/src/tool-results.ts)
++ the `read_result` builtin.
+
+**The problem.** A tool result has to travel back to the model inside the
+conversation, where it (a) bloats context, (b) is **re-sent on every tool-loop
+iteration**, and (c) used to be hard-truncated to ~8 KB — which silently
+*dropped the very answer* the model went to fetch (a delegated agent's full
+synthesis, a big `file_read`, a wide search). That truncation is the single
+most common reason integrated assistants "can't finish the job."
+
+**The fix — results become addressable artifacts.** Oversized output is stored
+once and the model gets a compact handle + preview; it dereferences on demand.
+Only the small envelope re-circulates in history, so the re-send amplification
+is gone and nothing is lost. Same principle as the brain (`content_store` ↔
+`content_index`) and recall (archive ↔ digest) — see the table in §9b' / §9l.
+
+**Tiers** (thresholds per-agent in `memory_config.result_handling`, KB; env
+defaults `TOOL_RESULT_INLINE_MAX` / `_EMBED_MIN` / `_PAGE_BYTES`):
+
+| Result size | Behaviour |
+|---|---|
+| ≤ `inline_max` (default 32 KB) | inline, untouched — the common path, zero overhead |
+| > `inline_max` | spill to `tool_results`; model gets `{_spilled, handle:"tr_…", preview, pages, note}` |
+| ≥ `embed_min` (default 100 KB) | same, but the envelope steers the model to semantic `query` |
+
+**`read_result(handle, …)`** — three modes on any spilled handle:
+- `page` — linear slice (global `pageBytes`, so the envelope's page count and
+  reads always agree).
+- `grep` — exact substring with surrounding context.
+- `query` — semantic search **within** the result. **Lazy**: the first `query`
+  chunks + embeds the content into `tool_result_chunks` (reusing
+  `@mantle/embeddings`); `page`/`grep` never pay that cost. Cosine is scoped to
+  one `result_id` (a handful of chunks), so no ivfflat index is needed — unlike
+  the brain's global `content_chunks`.
+
+**Why 32 KB inline, not 8 KB.** The old cap was set for a 200 K-context,
+no-cache world. Main agents now run on 1 M context with prompt caching, so
+re-sending tens of KB costs fractions of a cent — the generous inline cap means
+~95% of results (incl. essentially every delegated synthesis) never spill, and
+the store is the backstop for the genuine outliers.
+
+**Wiring.** The tool-loop ([`tool-loop.ts`](../packages/agent-runtime/src/tool-loop.ts))
+runs the middleware on every OK result and **always offers `read_result`** (auto-
+injected when the agent has tools) so a handle is never a dead end. Spills open
+a `spill_result` trace step (`{handle, bytes}`); each `read_result` records
+`{mode, hits|count|page}` — so you watch it work in `/traces` exactly like
+tracing a node through the brain.
+
+**Lifecycle.** `tool_results` / `tool_result_chunks` are **ephemeral working
+state** — never `nodes` rows, never seen by the extractor or brain search. TTL
+cleanup via `cleanupToolResults()` (default 7 days; chunks cascade). Configured
+in the agents form under **"Tool results"**.
+
 ## 10. The MCP server
 
 `apps/mcp/src/server.ts`, ~340 LOC. Exposes Claude's tools over stdio
@@ -1283,12 +1340,10 @@ from this list; what's here is genuinely still open.
   Postgres — probably a `docker-compose.test.yml`.
 
 **Agent delegation (`invoke_agent`) — audit follow-ups, none blocking**
-- **Child reply truncated at ~8 KB.** `truncateForModel` (tool-loop)
-  caps *every* tool result, including an `invoke_agent` result carrying
-  a child agent's full synthesis — so a long cited research answer can
-  be cut before the parent relays it. Delegation output should bypass
-  the cap or use a much larger one (the child already compressed the
-  work; the parent needs the whole thing).
+- ~~**Child reply truncated at ~8 KB.**~~ **RESOLVED** — tool results no
+  longer truncate. Oversized output (incl. a delegated agent's full
+  synthesis) spills to the tool-result store and the model pages/greps/
+  queries it via `read_result`. See §9m.
 - **No timeout on the child invocation.** `client.chat.send` has no
   deadline anywhere in the loop, so a hung upstream hangs the child →
   the parent's synchronous `invoke_agent` step → the whole turn. Add a
