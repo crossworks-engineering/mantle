@@ -17,4 +17,5 @@ export {
   accountCanSend,
   type SendEmailInput,
   type SendEmailResult,
+  type EmailAttachment,
 } from './send';

@@ -10,7 +10,16 @@
 
 import { and, eq } from 'drizzle-orm';
 import { db, emailAccounts, type EmailAccount } from '@mantle/db';
-import { accountCanSend, sendEmail } from '@mantle/email';
+import { accountCanSend, sendEmail, type EmailAttachment } from '@mantle/email';
+import {
+  getPage,
+  docToText,
+  renderPageEmail,
+  cidForPageImage,
+  createShare,
+  shareUrlForToken,
+} from '@mantle/content';
+import { readFileById } from '@mantle/files';
 import type { BuiltinToolDef } from './types';
 
 function str(v: unknown): string {
@@ -112,4 +121,120 @@ const email_send: BuiltinToolDef = {
   },
 };
 
-export const EMAIL_TOOLS: BuiltinToolDef[] = [email_send];
+const email_page: BuiltinToolDef = {
+  slug: 'email_page',
+  name: 'Email a page',
+  description:
+    "Send one of the user's pages as a richly-formatted HTML email — the page's headings, callouts, columns, tables, lists, highlights, and embedded images all render inline in the recipient's mail client (images are attached inline; a plain-text version is included as a fallback). Provide the page's `pageId` (from page_list) and the recipient `to`. `subject` defaults to the page title. Optional `cc`/`bcc`, `from` (which account sends), and `includeLink` to also mint a public read-only link and add a 'View online' footer. The mail goes out under the user's real address, so only use it when they ask to email or send a page. If no account has SMTP configured the call fails with a clear message.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      pageId: { type: 'string', description: 'page node id (from page_list / page_create)' },
+      to: { type: 'string', description: 'recipient email (comma-separate for multiple)' },
+      subject: { type: 'string', description: 'optional — defaults to the page title' },
+      cc: { type: 'string', description: 'optional cc (comma-separate for multiple)' },
+      bcc: { type: 'string', description: 'optional bcc (comma-separate for multiple)' },
+      from: {
+        type: 'string',
+        description: "optional: which of the user's account addresses to send from",
+      },
+      includeLink: {
+        type: 'boolean',
+        description:
+          "optional: also create a public read-only share link and add a 'View online' footer",
+      },
+    },
+    required: ['pageId', 'to'],
+  },
+  handler: async (input, ctx) => {
+    const pageId = str(input.pageId).trim();
+    const to = str(input.to).trim();
+    if (!pageId) return { ok: false, error: 'pageId is required' };
+    if (!to) return { ok: false, error: 'to is required' };
+
+    const page = await getPage(ctx.ownerId, pageId);
+    if (!page) return { ok: false, error: `page ${pageId} not found` };
+
+    const account = await resolveSendAccount(ctx.ownerId, strOpt(input.from));
+    if (!account) {
+      return {
+        ok: false,
+        error:
+          'no send-enabled email account found — configure SMTP host/port on an account at /settings/accounts',
+      };
+    }
+
+    const subject = strOpt(input.subject) ?? page.title;
+
+    // Optionally mint a public link and surface it in the email footer + text.
+    let shareUrl: string | undefined;
+    if (input.includeLink === true) {
+      try {
+        const share = await createShare(ctx.ownerId, pageId);
+        shareUrl = shareUrlForToken(share.token);
+      } catch {
+        // Non-fatal: send the page without the online link if sharing fails.
+      }
+    }
+    const footerHtml = shareUrl
+      ? `<a href="${shareUrl}" style="color:#2563eb;text-decoration:underline">View this page online &rarr;</a>`
+      : undefined;
+
+    const { html, imageFileIds } = renderPageEmail(page.doc, { title: page.title, footerHtml });
+
+    // Inline the embedded images as cid attachments so they render even when
+    // the client blocks remote images (and without exposing private files).
+    const attachments: EmailAttachment[] = [];
+    for (const fileId of imageFileIds) {
+      const file = await readFileById({ ownerId: ctx.ownerId, fileId });
+      if (!file) continue;
+      attachments.push({
+        cid: cidForPageImage(fileId),
+        content: file.bytes,
+        filename: file.row.filename,
+        contentType: file.row.mimeType,
+      });
+    }
+
+    const text = docToText(page.doc) + (shareUrl ? `\n\n— View online: ${shareUrl}` : '');
+    const cc = strOpt(input.cc);
+    const bcc = strOpt(input.bcc);
+    try {
+      const res = await sendEmail(account, {
+        to: recipients(to),
+        subject,
+        html,
+        text,
+        ...(cc ? { cc: recipients(cc) } : {}),
+        ...(bcc ? { bcc: recipients(bcc) } : {}),
+        ...(attachments.length ? { attachments } : {}),
+      });
+      ctx.step?.setMeta({ from: account.address, to, subject, page_id: pageId, message_id: res.messageId });
+      ctx.step?.setOutput({
+        messageId: res.messageId,
+        accepted: res.accepted,
+        rejected: res.rejected,
+        images: attachments.length,
+        shareUrl,
+      });
+      return {
+        ok: true,
+        output: {
+          from: account.address,
+          to,
+          subject,
+          pageId,
+          messageId: res.messageId,
+          accepted: res.accepted,
+          rejected: res.rejected,
+          inlineImages: attachments.length,
+          ...(shareUrl ? { shareUrl } : {}),
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+export const EMAIL_TOOLS: BuiltinToolDef[] = [email_send, email_page];

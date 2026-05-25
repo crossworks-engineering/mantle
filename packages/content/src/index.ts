@@ -87,9 +87,18 @@ export {
   revokeShare,
   resolveActiveShareByToken,
   recordShareView,
+  publicBaseUrl,
+  shareUrlForToken,
   type ShareableType,
   type ShareSummary,
 } from './shares';
+
+export {
+  renderPageEmail,
+  cidForPageImage,
+  type RenderPageEmailOptions,
+  type RenderPageEmailResult,
+} from './render-page-email';
 
 export { chunkDocText, type DocChunk } from './chunk';
 

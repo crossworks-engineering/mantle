@@ -43,6 +43,20 @@ function genToken(): string {
   return randomBytes(16).toString('base64url');
 }
 
+/** The app's public origin, for building share URLs outside the web request
+ *  cycle (e.g. the agent process, where there's no incoming request to read an
+ *  origin from). `MANTLE_PUBLIC_URL` overrides; falls back to the same
+ *  `NEXT_PUBLIC_APP_URL` the web app uses, then localhost. */
+export function publicBaseUrl(): string {
+  const raw = process.env.MANTLE_PUBLIC_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+  return raw.replace(/\/$/, '');
+}
+
+/** Public `/s/<token>` URL for a share token, using {@link publicBaseUrl}. */
+export function shareUrlForToken(token: string): string {
+  return `${publicBaseUrl()}/s/${token}`;
+}
+
 /** SQL predicate: a share row that is currently active (not revoked, not past
  *  its expiry). */
 function activePredicate() {

@@ -60,14 +60,49 @@ can be clamped to confirm-first anytime by flipping `requiresConfirm` on the too
 row at `/settings/tools` — no code change. (Confirm-first routes the send through
 the `pending_tool_calls` approval queue, same as `telegram_send`.)
 
+## Emailing a rich page — `email_page`
+
+`email_send` carries **plain text**. To mail a *formatted* page — headings,
+callouts, columns, tables, task lists, highlights, embedded images — Saskia uses
+`email_page` ([`packages/tools/src/builtins-email.ts`](../packages/tools/src/builtins-email.ts)):
+
+| Arg | Required | Notes |
+|---|---|---|
+| `pageId` | ✅ | the page node id (from `page_list`) |
+| `to` | ✅ | comma-separate for multiple |
+| `subject` | — | defaults to the page title |
+| `cc` / `bcc` | — | comma-separate |
+| `from` | — | which account sends; defaults to first send-enabled |
+| `includeLink` | — | also mint a public link (see [sharing.md](./sharing.md)) and add a "View online" footer |
+
+It loads the page, renders the ProseMirror doc to **inline-styled HTML** via
+`renderPageEmail` ([`packages/content/src/render-page-email.ts`](../packages/content/src/render-page-email.ts)),
+derives a plain-text fallback with `docToText` (so it's a proper
+`multipart/alternative`), and sends both parts.
+
+**Why a separate renderer.** The public-page renderer
+([`apps/web/lib/render-page-doc.ts`](../apps/web/lib/render-page-doc.ts)) emits
+*class-based* HTML that leans on the app's stylesheet and `var(--chart-N)` theme
+tokens — none of which exist in a mail client. `renderPageEmail` is the
+email-flavoured fourth representation of the page schema: every style is inline,
+theme tokens resolve to a fixed concrete palette, columns become a `<table>`
+row, and KaTeX/lowlight degrade (math → its LaTeX source, code → plain `<pre>`).
+
+**Inline images.** Embedded images reference *private* files, so the renderer
+emits `<img src="cid:…">` and the tool attaches the bytes inline
+(`cidForPageImage(fileId)` + `readFileById`). This renders even when the client
+blocks remote images and never exposes a public asset URL. Inline attachments
+ride on `SendEmailInput.attachments`, new on `sendEmail`.
+
 ## Layers
 
 | Concern | Where |
 |---|---|
-| Send + SMTP probe | [`packages/email/src/send.ts`](../packages/email/src/send.ts) (`sendEmail`, `probeSmtpConnection`, `accountCanSend`) — nodemailer |
+| Send + SMTP probe | [`packages/email/src/send.ts`](../packages/email/src/send.ts) (`sendEmail`, `probeSmtpConnection`, `accountCanSend`) — nodemailer; `attachments` for inline images |
 | Credentials | reuses `unsealImapPassword(account)` — same sealed app password as IMAP |
-| Tool | [`packages/tools/src/builtins-email.ts`](../packages/tools/src/builtins-email.ts) |
-| Grant | `CORE_AUTO_GRANT_SLUGS` in `apps/agent/src/main.ts` (auto-granted to responder/assistant at boot) |
+| Tools | [`packages/tools/src/builtins-email.ts`](../packages/tools/src/builtins-email.ts) (`email_send`, `email_page`) |
+| Page → email HTML | [`packages/content/src/render-page-email.ts`](../packages/content/src/render-page-email.ts) (`renderPageEmail`, `cidForPageImage`) |
+| Grant | `CORE_AUTO_GRANT_SLUGS` in `apps/agent/src/main.ts` (`email_send`, `email_page`, `page_share`, `page_unshare` auto-granted to responder/assistant at boot) |
 | Schema | `smtp_*` on `email_accounts` (migration 0041) |
 | Config UI | the account add/edit form (`/settings/accounts`) — optional "Sending (SMTP)" section; the save action probes SMTP before persisting |
 

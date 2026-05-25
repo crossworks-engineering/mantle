@@ -19,6 +19,10 @@ import {
   listPages,
   markdownToDoc,
   docToText,
+  createShare,
+  revokeShare,
+  getActiveShareForNode,
+  shareUrlForToken,
 } from '@mantle/content';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
@@ -220,12 +224,69 @@ const page_get: BuiltinToolDef = {
   },
 };
 
+const page_share: BuiltinToolDef = {
+  slug: 'page_share',
+  name: 'Share a page publicly',
+  description:
+    "Create (or fetch) a public, read-only link to a page and return its URL. Anyone with the link can view the page — fully formatted, with no login — but nothing else in the user's Mantle. Idempotent: a page has at most one active link, so calling this again returns the same URL. Use when the user asks to share, publish, or get a shareable link for a page. To turn a link off, use page_unshare.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: 'page node id (from page_list / page_create)' },
+    },
+    required: ['id'],
+  },
+  handler: async (input, ctx) => {
+    const id = str(input.id).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    try {
+      const page = await getPage(ctx.ownerId, id);
+      if (!page) return { ok: false, error: `page ${id} not found` };
+      const share = await createShare(ctx.ownerId, id);
+      const url = shareUrlForToken(share.token);
+      ctx.step?.setOutput({ id, url });
+      return { ok: true, output: { id, title: page.title, url, token: share.token } };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+const page_unshare: BuiltinToolDef = {
+  slug: 'page_unshare',
+  name: 'Stop sharing a page',
+  description:
+    "Revoke a page's public link. The existing URL stops working immediately. No-op (still succeeds) if the page wasn't shared. Use when the user asks to unshare, unpublish, or make a page private again.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: 'page node id whose public link to revoke' },
+    },
+    required: ['id'],
+  },
+  handler: async (input, ctx) => {
+    const id = str(input.id).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    try {
+      const share = await getActiveShareForNode(ctx.ownerId, id);
+      if (!share) return { ok: true, output: { id, unshared: false } };
+      const ok = await revokeShare(ctx.ownerId, share.id);
+      ctx.step?.setOutput({ id, unshared: ok });
+      return { ok: true, output: { id, unshared: ok } };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
 export const PAGE_TOOLS: BuiltinToolDef[] = [
   page_create,
   page_update,
   page_delete,
   page_list,
   page_get,
+  page_share,
+  page_unshare,
 ];
 
 export const PAGE_TOOL_SLUGS: string[] = PAGE_TOOLS.map((t) => t.slug);

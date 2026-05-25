@@ -13,6 +13,20 @@ import nodemailer from 'nodemailer';
 import type { EmailAccount } from '@mantle/db';
 import { unsealImapPassword } from './providers/imap';
 
+/** A message attachment. With a `cid` set it becomes an inline (related) part
+ *  an HTML body can reference via `<img src="cid:…">`; without one it's a normal
+ *  download attachment. Maps directly onto nodemailer's attachment shape. */
+export type EmailAttachment = {
+  /** Raw bytes (Buffer) or a string payload. */
+  content: Buffer | string;
+  /** Display filename; optional for inline (cid) parts. */
+  filename?: string;
+  /** MIME type, e.g. 'image/png'. */
+  contentType?: string;
+  /** Content-ID for inline embedding; the HTML references it as `cid:<value>`. */
+  cid?: string;
+};
+
 export type SendEmailInput = {
   to: string | string[];
   subject: string;
@@ -28,6 +42,8 @@ export type SendEmailInput = {
    *  threads in the recipient's client). */
   inReplyTo?: string;
   references?: string | string[];
+  /** Inline (cid) or download attachments. */
+  attachments?: EmailAttachment[];
 };
 
 export type SendEmailResult = {
@@ -80,6 +96,7 @@ export async function sendEmail(
     html: input.html,
     inReplyTo: input.inReplyTo,
     references: input.references,
+    attachments: input.attachments,
   });
 
   return {

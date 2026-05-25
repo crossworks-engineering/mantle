@@ -164,6 +164,27 @@ view"* toggle → mint token → show URL + **Copy** → **Revoke** (and, P4, ex
 
 ---
 
+## 7a. Agent-side UX — Saskia can share pages
+
+The same token CRUD is exposed to the chat agent for **pages** via two tools
+([`packages/tools/src/builtins-pages.ts`](../packages/tools/src/builtins-pages.ts)),
+so *"share that page and send me the link"* works end to end:
+
+- **`page_share { id }`** → `createShare` (idempotent — one active link per node)
+  → returns `{ url, token }`. The URL is built with `shareUrlForToken`.
+- **`page_unshare { id }`** → `getActiveShareForNode` → `revokeShare`. No-op if
+  unshared.
+
+Both are auto-granted at boot (`CORE_AUTO_GRANT_SLUGS`). Because the agent runs
+outside the web request cycle, it can't read an origin from the request — share
+URLs come from `publicBaseUrl()` ([`packages/content/src/shares.ts`](../packages/content/src/shares.ts)),
+which reads `MANTLE_PUBLIC_URL` ?? `NEXT_PUBLIC_APP_URL` (falls back to
+localhost). Set one of those in the agent's environment so links point at the
+real host. `email_page`'s `includeLink` option reuses `page_share` to add a
+"View online" footer (see [email-send.md](./email-send.md)).
+
+---
+
 ## 8. Phasing
 
 1. **Foundation** — `shares` table + token helpers + public route + public
