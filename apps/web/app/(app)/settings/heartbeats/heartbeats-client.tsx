@@ -7,6 +7,7 @@ import { Pause, Play, Plus, Trash2, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { DateTimePicker } from '@/components/ui/date-time-picker';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -622,10 +623,12 @@ export function HeartbeatsClient({
               {form.schedule_kind === 'once' && (
                 <div className="space-y-1">
                   <Label>Fire at</Label>
-                  <Input
-                    type="datetime-local"
-                    value={form.schedule_at}
-                    onChange={(e) => setForm((f) => ({ ...f, schedule_at: e.target.value }))}
+                  <DateTimePicker
+                    value={form.schedule_at ? new Date(form.schedule_at) : null}
+                    onChange={(d) =>
+                      setForm((f) => ({ ...f, schedule_at: d ? isoToLocalInput(d.toISOString()) : '' }))
+                    }
+                    placeholder="Pick a date & time"
                   />
                 </div>
               )}
@@ -732,10 +735,13 @@ export function HeartbeatsClient({
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label>Earliest at (optional)</Label>
-                <Input
-                  type="datetime-local"
-                  value={form.earliest_at}
-                  onChange={(e) => setForm((f) => ({ ...f, earliest_at: e.target.value }))}
+                <DateTimePicker
+                  value={form.earliest_at ? new Date(form.earliest_at) : null}
+                  onChange={(d) =>
+                    setForm((f) => ({ ...f, earliest_at: d ? isoToLocalInput(d.toISOString()) : '' }))
+                  }
+                  placeholder="No earliest bound"
+                  clearable
                 />
               </div>
               <div className="space-y-1">
