@@ -130,6 +130,21 @@ describe('buildResultEnvelope', () => {
     expect(String(mid.note)).toMatch(/page|grep/);
   });
 
+  it('marks the preview as a partial view with an in-band cut marker', () => {
+    const env = buildResultEnvelope({
+      handle: 'tr_pv',
+      toolSlug: 'invoke_agent',
+      content: 'y'.repeat(8000),
+      bytes: 8000,
+      originalBytes: 8000,
+      handling,
+    });
+    expect(env.preview_truncated).toBe(true);
+    // The cut marker is IN the preview text itself, not just a sibling note.
+    expect(String(env.preview)).toMatch(/PREVIEW ENDS HERE/);
+    expect(String(env.note)).toMatch(/do not answer from the preview/i);
+  });
+
   it('flags truncation when the original exceeded the stored size', () => {
     const env = buildResultEnvelope({
       handle: 'tr_trunc',

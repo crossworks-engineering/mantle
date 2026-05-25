@@ -145,6 +145,27 @@ function clampToBytes(s: string, maxBytes: number): string {
   return buf.subarray(0, maxBytes).toString('utf8');
 }
 
+/** Page count for a content string at `pageBytes` per page — byte-based so it
+ *  agrees with {@link readResultPage}'s byte-window slicing. */
+function pageCount(content: string, pageBytes: number): number {
+  return Math.max(1, Math.ceil(byteLen(content) / Math.max(1, pageBytes)));
+}
+
+/** How far past a page boundary we'll look for a newline to break on. */
+const PAGE_SNAP_LOOKAHEAD = 400;
+
+/** Snap a byte offset forward to just after the next newline (within a bounded
+ *  window) so pages break on line boundaries instead of mid-word/mid-JSON.
+ *  `\n` (0x0A) is ASCII and never appears inside a multibyte UTF-8 sequence, so
+ *  searching for it in the byte buffer is codepoint-safe. */
+function snapForwardToNewline(buf: Buffer, off: number, total: number): number {
+  if (off <= 0) return 0;
+  if (off >= total) return total;
+  const nl = buf.indexOf(0x0a, off);
+  if (nl >= 0 && nl - off <= PAGE_SNAP_LOOKAHEAD) return nl + 1;
+  return off; // no nearby newline (one very long line) → raw cut
+}
+
 // ─── Spill + envelope ────────────────────────────────────────────────────────
 
 /** Persist a full result and return its handle. */
@@ -180,10 +201,21 @@ export function buildResultEnvelope(args: {
   handling: ResultHandling;
 }): Record<string, unknown> {
   const { handle, bytes, originalBytes, content, handling } = args;
-  const truncated = originalBytes > bytes;
-  const pages = Math.max(1, Math.ceil(content.length / Math.max(1, handling.pageBytes)));
-  const previewChars = Math.min(content.length, Math.floor(handling.inlineMaxBytes / 2));
-  const preview = content.slice(0, previewChars);
+  const truncated = originalBytes > bytes; // hit the storage ceiling
+  const pages = pageCount(content, handling.pageBytes);
+  const previewBytes = Math.max(256, Math.floor(handling.inlineMaxBytes / 2));
+  let preview = clampToBytes(content, previewBytes);
+  // For a spilled result the preview is ALWAYS a strict prefix. Put an
+  // unmissable cut marker IN-BAND (not just in a sibling note) so the model
+  // can't mistake the preview for the whole thing — this is the main guard
+  // against answering from a truncated head. It's a strong nudge, not hard
+  // enforcement (which isn't possible without false positives).
+  const previewTruncated = byteLen(preview) < bytes;
+  if (previewTruncated) {
+    preview +=
+      `\n\n[⚠ PREVIEW ENDS HERE — only the first ${byteLen(preview)} of ${bytes} stored bytes are shown. ` +
+      `The information you need may be past this point. Call read_result before answering.]`;
+  }
   const recommend =
     bytes >= handling.embedMinBytes
       ? `This is large. Prefer read_result({handle:"${handle}", query:"<what you need>"}) for a semantic lookup; or grep/page.`
@@ -199,9 +231,10 @@ export function buildResultEnvelope(args: {
     ...(truncated ? { original_bytes: originalBytes, truncated: true } : {}),
     pages,
     preview,
+    preview_truncated: previewTruncated,
     note:
       `The full result (${bytes} bytes) was stored so it wouldn't be truncated in-context. ${recommend} ` +
-      `Do not answer from the preview alone if it's cut off mid-content.${truncNote}`,
+      `Do NOT answer from the preview alone — it is cut off; read the relevant part first.${truncNote}`,
   };
 }
 
@@ -282,10 +315,17 @@ export async function readResultPage(
   const row = await loadResult(ownerId, handle);
   if (!row) return { ok: false, error: `result '${handle}' not found or expired` };
   const size = Math.max(1, pageBytes);
-  const pages = Math.max(1, Math.ceil(row.content.length / size));
+  // Byte-accurate windows (consistent with the byte-based page count) snapped
+  // to newline boundaries so pages don't cut mid-word / mid-JSON. Contiguous:
+  // page p ends exactly where p+1 begins (both snap the same boundary).
+  const buf = Buffer.from(row.content, 'utf8');
+  const total = buf.length;
+  const pages = Math.max(1, Math.ceil(total / size));
   const p = Math.min(Math.max(1, Math.floor(page) || 1), pages);
-  const start = (p - 1) * size;
-  return { ok: true, page: p, pages, bytes: row.bytes, text: row.content.slice(start, start + size) };
+  const start = snapForwardToNewline(buf, (p - 1) * size, total);
+  const end = p === pages ? total : snapForwardToNewline(buf, p * size, total);
+  const text = buf.subarray(start, Math.max(start, end)).toString('utf8');
+  return { ok: true, page: p, pages, bytes: row.bytes, text };
 }
 
 /** Substring matches with surrounding context. Case-insensitive. */

@@ -39,6 +39,20 @@ import { parseToolArgs } from './tool-args';
 
 const DEFAULT_MAX_ITERATIONS = 6;
 
+/** Process-lifetime cache of the resolved `read_result` tool row, keyed by
+ *  owner. It's a stable seeded builtin, so resolving it once per owner avoids
+ *  a per-turn DB query on the always-offer path. Misses aren't cached (so it
+ *  picks up once seeding has run). */
+const readResultToolByOwner = new Map<string, Tool>();
+
+async function resolveReadResultTool(ownerId: string): Promise<Tool | null> {
+  const cached = readResultToolByOwner.get(ownerId);
+  if (cached) return cached;
+  const row = await resolveTool(ownerId, 'read_result');
+  if (row) readResultToolByOwner.set(ownerId, row);
+  return row;
+}
+
 export type ToolLoopResult = {
   /** Final assistant text response (last turn's `content`). */
   reply: string;
@@ -153,7 +167,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // it to the agent's allowlist. It's a read-only system capability.
   let loopTools = args.tools;
   if (loopTools.length > 0 && !loopTools.some((t) => t.slug === 'read_result')) {
-    const rr = await resolveTool(args.ownerId, 'read_result');
+    const rr = await resolveReadResultTool(args.ownerId);
     if (rr) loopTools = [...loopTools, rr];
   }
   const toolsByName = new Map(loopTools.map((t) => [t.slug, t]));

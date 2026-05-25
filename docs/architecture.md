@@ -1001,8 +1001,9 @@ the agents form; env defaults `TOOL_RESULT_INLINE_MAX` / `_EMBED_MIN` /
 | > `spill_max` (default 1 MB) | **head-truncated with a marker before storing** — a runaway tool can't write a giant row or fan out into unbounded chunks |
 
 **`read_result(handle, …)`** — three modes on any spilled handle:
-- `page` — linear slice (global `pageBytes`, so the envelope's page count and
-  reads always agree).
+- `page` — linear slice, **byte-accurate and snapped to newline boundaries**
+  (no mid-word / mid-JSON cuts; contiguous, so page _p_ ends where _p+1_
+  begins). Global `pageBytes`, so the envelope's page count and reads agree.
 - `grep` — exact substring with surrounding context.
 - `query` — semantic search **within** the result. **Lazy**: the first `query`
   chunks + embeds the content into `tool_result_chunks` (reusing
@@ -1011,6 +1012,13 @@ the agents form; env defaults `TOOL_RESULT_INLINE_MAX` / `_EMBED_MIN` /
   the brain's global `content_chunks`. Chunk size **adapts** so the count never
   exceeds `TOOL_RESULT_MAX_CHUNKS` (env, default 200) while still covering the
   whole stored content — bounding embedding cost + latency regardless of size.
+
+**Preview integrity.** A spilled result's preview is always a strict prefix, so
+the envelope appends an **in-band cut marker** (`⚠ PREVIEW ENDS HERE — … call
+read_result before answering`) right at the truncation point and sets
+`preview_truncated: true`. That's the main guard against the model answering
+from a cut-off head — a strong nudge, not hard enforcement (which isn't
+possible without false positives).
 
 **Why 32 KB inline, not 8 KB.** The old cap was set for a 200 K-context,
 no-cache world. Main agents now run on 1 M context with prompt caching, so
