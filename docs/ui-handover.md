@@ -68,24 +68,6 @@ import (line 7). One small edit + import cleanup.
 
 ---
 
-### 4. Tech debt — oversized files (split, don't rewrite)
-Some client components grew large during the refactors and are worth breaking up
-for readability/maintainability (behaviour unchanged — pure extraction, commit
-per split, typecheck between):
-- **`app/(app)/settings/agents/agents-client.tsx` — ~1664 lines (worst offender).**
-  Extract: the 4 `DEFAULT_*_PROMPT` strings → a `prompts.ts` constants module;
-  the `NodeTypePicker` / `ToolPicker` / `SkillPicker` sub-components → their own
-  files; ideally the `<form>` body → an `AgentForm` component, leaving
-  `agents-client` as just the master-detail shell. Types (`AgentSummary`,
-  `FormState`, `MemoryConfig`) can move to a `types.ts`.
-- **`app/(app)/settings/ai-workers/worker-form.tsx` — ~1234 lines.** Per-kind
-  field sets (`LlmWorkerFields`, `VisionFields`, `ImageGenFields`, TTS/STT) →
-  separate files; keep the model-discovery/voice logic intact.
-- `files-client.tsx` (857), `heartbeats-client.tsx` (811), `assistant-client.tsx`
-  (725) are large but lower priority — split only if you're already in there.
-- **`app/globals.css` (~3463 lines) is large *by design*** — it's the ~40 tweakcn
-  theme presets. Don't "clean" it; leave the presets alone.
-
 ## Other notes
 - `trace-detail-view.tsx` gained parent/child delegation links (committed in
   `a4f5c52`) — leave as is.
