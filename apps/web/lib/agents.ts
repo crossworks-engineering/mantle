@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import {
   db,
   agents,
@@ -163,7 +163,18 @@ export async function updateAgent(
   if (patch.tools !== undefined) next.tools = patch.tools;
   if (patch.toolSlugs !== undefined) next.toolSlugs = patch.toolSlugs;
   if (patch.skillSlugs !== undefined) next.skillSlugs = patch.skillSlugs;
-  if (patch.memoryConfig !== undefined) next.memoryConfig = patch.memoryConfig;
+  // Shallow-merge memory_config instead of overwriting it. The agents form
+  // only round-trips the keys it renders, so a wholesale replace silently
+  // drops any key the form doesn't send — most importantly `delegate_to`
+  // (the agent-delegation allowlist, set by the seed scripts and the
+  // Delegates-to picker). jsonb `||` is a top-level merge with the patch
+  // winning, so managed keys update while unmanaged keys survive. Clearing a
+  // key still works because the form sends it explicitly (e.g. delegate_to: []).
+  if (patch.memoryConfig !== undefined) {
+    next.memoryConfig = sql`coalesce(${agents.memoryConfig}, '{}'::jsonb) || ${JSON.stringify(
+      patch.memoryConfig,
+    )}::jsonb`;
+  }
   if (patch.params !== undefined) next.params = patch.params;
   if (patch.avatar !== undefined) next.avatar = patch.avatar;
   if (patch.priority !== undefined) next.priority = patch.priority;

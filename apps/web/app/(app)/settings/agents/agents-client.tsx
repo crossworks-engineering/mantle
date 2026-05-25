@@ -91,6 +91,8 @@ type MemoryConfig = {
   extract_facts?: boolean;
   extract_cost_cap_micro_usd?: number | null;
   embedding_model?: string;
+  /** Agent slugs this agent may delegate to via invoke_agent. */
+  delegate_to?: string[];
 };
 
 type AgentSummary = {
@@ -280,6 +282,8 @@ type FormState = {
   /** Slugs this agent may call during a turn. */
   toolSlugs: string[];
   skillSlugs: string[];
+  /** Agent slugs this agent may delegate to via invoke_agent. */
+  delegateTo: string[];
   temperature: string;
   maxTokens: string;
   /** Avatar {style, seed}; null = initials fallback. */
@@ -311,6 +315,7 @@ function emptyForm(role: Role = 'responder'): FormState {
     embeddingModel: '',
     toolSlugs: [],
     skillSlugs: [],
+    delegateTo: [],
     temperature: '0.7',
     maxTokens: '',
     avatar: null,
@@ -345,6 +350,7 @@ function formFromAgent(a: AgentSummary): FormState {
     embeddingModel: a.memoryConfig.embedding_model ?? '',
     toolSlugs: a.toolSlugs ?? [],
     skillSlugs: a.skillSlugs ?? [],
+    delegateTo: a.memoryConfig.delegate_to ?? [],
     temperature: a.params.temperature?.toString() ?? '0.7',
     maxTokens: a.params.max_tokens?.toString() ?? '',
     avatar: a.avatar ?? null,
@@ -516,6 +522,11 @@ export function AgentsClient({
       const m = form.embeddingModel.trim();
       if (m) memoryConfig.embedding_model = m;
     }
+
+    // Delegation allowlist. Always send it (even empty) so de-selecting every
+    // delegate actually clears it — the server merges memory_config, so an
+    // omitted key would otherwise be preserved.
+    memoryConfig.delegate_to = form.delegateTo;
 
     const params: { temperature?: number; max_tokens?: number } = {};
     const t = parseFloat(form.temperature);
@@ -1089,6 +1100,36 @@ export function AgentsClient({
 
             <fieldset className="space-y-3 rounded-md border border-border p-3">
               <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Delegates to
+              </legend>
+              {agents.filter((a) => a.slug !== form.slug).length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No other agents to delegate to. Create another agent (e.g. a research or
+                  recall agent) first.
+                </p>
+              ) : (
+                <DelegatePicker
+                  available={agents
+                    .filter((a) => a.slug !== form.slug)
+                    .map((a) => ({ slug: a.slug, name: a.name, enabled: a.enabled }))}
+                  selected={form.delegateTo}
+                  onChange={(next) => setForm((f) => ({ ...f, delegateTo: next }))}
+                />
+              )}
+              <p className="text-xs text-muted-foreground">
+                Agents this one may hand a sub-task to via the <code>invoke_agent</code>{' '}
+                tool. Empty = delegation disabled (the runtime fails closed).
+                {form.delegateTo.length > 0 && !form.toolSlugs.includes('invoke_agent') && (
+                  <span className="mt-1 block text-amber-600 dark:text-amber-400">
+                    Add the <code>invoke_agent</code> tool above, or these delegates
+                    can&apos;t actually be reached.
+                  </span>
+                )}
+              </p>
+            </fieldset>
+
+            <fieldset className="space-y-3 rounded-md border border-border p-3">
+              <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Model params
               </legend>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -1416,6 +1457,64 @@ function SkillPicker({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * Delegation multi-select. Chips are the OTHER agents' slugs; selecting one
+ * adds it to this agent's memory_config.delegate_to allowlist, so it can be
+ * reached via the invoke_agent tool. Disabled agents stay selectable but are
+ * marked — invoke_agent only resolves enabled targets, so they won't work
+ * until re-enabled.
+ */
+function DelegatePicker({
+  available,
+  selected,
+  onChange,
+}: {
+  available: { slug: string; name: string; enabled: boolean }[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const set = new Set(selected);
+  const toggle = (slug: string) => {
+    const next = new Set(set);
+    if (next.has(slug)) next.delete(slug);
+    else next.add(slug);
+    onChange(Array.from(next));
+  };
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1.5">
+        {available.map((a) => {
+          const on = set.has(a.slug);
+          return (
+            <button
+              key={a.slug}
+              type="button"
+              onClick={() => toggle(a.slug)}
+              title={a.enabled ? a.name : `${a.name} (disabled)`}
+              className={
+                'rounded-full border px-2.5 py-0.5 text-xs font-mono transition ' +
+                (on
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-input bg-background text-muted-foreground hover:border-muted-foreground/50')
+              }
+            >
+              {a.slug}
+              {!a.enabled && (
+                <span className="ml-1 text-[9px] uppercase opacity-70">off</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {selected.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {selected.length} delegate{selected.length === 1 ? '' : 's'} selected
+        </p>
+      )}
     </div>
   );
 }

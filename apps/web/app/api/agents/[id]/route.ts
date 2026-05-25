@@ -27,6 +27,9 @@ const MemoryConfig = z
     extract_facts: z.boolean().optional(),
     extract_cost_cap_micro_usd: z.number().int().min(0).max(1_000_000_000).nullable().optional(),
     embedding_model: z.string().min(1).max(200).optional(),
+    // Agent-delegation allowlist: slugs this agent may invoke_agent into.
+    // Empty array = delegation disabled (the runtime fails closed).
+    delegate_to: z.array(z.string().min(1).max(120)).max(32).optional(),
   })
   .strict();
 
