@@ -51,7 +51,7 @@ The six layers (see [`memory.md`](./memory.md) for the full treatment):
 |---|---|---|---|---|
 | Type in chat (web `/assistant`) | `assistant` | — (turn row) | `responder_turn` | **L2** → (timer) **L3** → (timer) **L1** |
 | Type in chat (Telegram) | `telegram` | — (turn row) | `responder_turn` | **L2** → (timer) **L3** → (timer) **L1** |
-| Drop a **PDF / DOCX** in chat | `assistant_upload` | `file` | `content_ingest` + `extractor_run` | **L6 · L5 · L4 · graph** — *PDF with no text layer = L5 filename only (no OCR)* |
+| Drop a **PDF / DOCX** in chat | `assistant_upload` | `file` | `content_ingest` + `extractor_run` (+`photo_ingest` for a textless PDF) | **L6 · L5 · L4 · graph** — *a PDF with no text layer is rasterized → vision-OCR'd (page-capped); if OCR also yields nothing it records `skipped: no_text_layer`* |
 | Drop an **image** in chat | `assistant_upload` | `file` | `photo_ingest` + `extractor_run` | **L6 · L5 · L4 · graph** (vision summary) |
 | Upload a file (Files screen) | `file_upload` | `file` | `extractor_run` | **L6 · L5 · L4 · graph** |
 | Create / edit a file via tool | `file_create` / `file_edit` | `file` | `extractor_run` | **L6 · L5 · L4 · graph** |

@@ -244,6 +244,11 @@ reason. The current catalog (extend as new pipelines land):
 - `api_key_not_decryptable` — key was deleted / KEK rotated.
 - `already_extracted` — node has both `summary` and `embedding` already.
 - `body_too_short` — body < 20 chars; usually a title-only node.
+- `no_text_layer` — a PDF with no extractable text layer (scanned/image-only)
+  where the OCR fallback also produced nothing (no/unwired vision worker, an
+  unrenderable PDF, or a blank scan). Replaces the old silent failure where the
+  filename fallback (≥20 chars) slipped past `body_too_short` and indexed a
+  filename-only summary as `success`.
 
 ### Summarizer
 - `no_summarizer_worker` — no default summarizer configured.

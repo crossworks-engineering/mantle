@@ -35,6 +35,7 @@ Every file triggers up to two distinct jobs:
                     ┌──────────── extractor (apps/agent) ───────────┐
                     │  image → runVisionWorker (neutral)            │  DURABLE
                     │  pdf/docx/xlsx → parseDocumentBytes           │  INDEX
+                    │    └ textless PDF → rasterize → vision OCR     │
                     │  text → data.content                          │
                     │  → data.text + summary + embedding + facts    │
                     └───────────────────────────────────────────────┘
@@ -71,6 +72,7 @@ fallback — the durable index always goes through the vision worker regardless.
 | `ensureDatedUploadFolder` | `@mantle/files` | web /assistant, Telegram | ensure `files.<slug>.<YYYY-MM-DD>` exists, return its ltree path |
 | `upsertFile` / `syncFileFromDisk` | `@mantle/files` | all save paths | write bytes (disk first) + DB node; sanitise filename; sha dedup |
 | `parseDocumentBytes(bytes, ext)` | `@mantle/files` | extractor, `extractAttachmentForTurn` | format→parser dispatch (pdf/docx/xlsx/text) |
+| `rasterizePdfToPngs(bytes, {maxPages})` | `@mantle/files/rasterize` | extractor (`ocrIngestPdfNode`) | render a textless PDF's pages → PNG for the OCR fallback (lazy `pdf-to-png-converter`; pdfjs + `@napi-rs/canvas`) |
 | `transcodeImageForVision` | `@mantle/files` | `runVisionWorker` | HEIC/HEIF → JPEG (libheif WASM), passthrough otherwise |
 | `runVisionWorker` | `@mantle/agent-runtime` | extractor (neutral), surfaces (question-aware) | resolve default vision worker + key + transcode + adapter; best-effort |
 | `extractAttachmentForTurn` | `@mantle/agent-runtime` | web /assistant, Telegram | image→vision / doc→parse → text for the current turn (ephemeral) |
@@ -132,6 +134,7 @@ Newest first — all on `main`.
 
 | Commit | What |
 |---|---|
+| _(this change)_ | **OCR fallback for scanned/image-only PDFs.** A textless PDF (`parseDocumentBytes` → nothing, body falls back to the filename) is rasterized → run through the neutral vision worker page-by-page (`ocrIngestPdfNode`, `photo_ingest` `mode=pdf_ocr`, capped at `MAX_OCR_PAGES`). If OCR also yields nothing it records `skipped: no_text_layer` instead of a filename-only false `success`. New dep `pdf-to-png-converter` behind `@mantle/files/rasterize`. |
 | `91cf43f` | Add `heic-convert` as a direct web dep so Next externalizes it |
 | `a390b3a` | Preserve `data.vision_model` — merge the index write (V2) |
 | `5ab55ed` | Attribute vision-worker cost to the trace (V1) |

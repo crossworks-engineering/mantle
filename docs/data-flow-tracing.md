@@ -159,7 +159,8 @@ Three outcomes you'll see, and how to tell them apart at a glance:
 | Signature | What it means |
 |---|---|
 | `extractor_run` **success** + summary set + facts > 0 + edges > 0 | **Healthy.** Content reached the brain. |
-| `extractor_run` **skipped**, disposition `body_too_short` | Declined, by design. No extractable text — scanned/image PDF, an unsupported file type, or a title-only node (extractor wants ≥20 chars of body). 0 facts/edges expected. |
+| `extractor_run` **skipped**, disposition `body_too_short` | Declined, by design. < 20 chars of body — an unsupported file type or a title-only node. 0 facts/edges expected. |
+| `extractor_run` **skipped**, disposition `no_text_layer` | A scanned/image-only PDF whose OCR fallback also produced nothing (no/unwired vision worker, unrenderable PDF, or blank scan). Look for a preceding `photo_ingest` (`mode=pdf_ocr`) trace showing the rasterize + vision attempt. 0 facts/edges. |
 | `extractor_run` **skipped**, disposition `already_extracted` | Declined — node already had `data.summary` + `embedding`. Re-fires no-op. |
 | `extractor_run` **success** but summary **empty** + 0 facts | **Silent miss.** The LLM ran (cost was spent) but its output couldn't be used — historically a JSON-parse failure where the model appended prose after the object (fixed in `extractor-parse.ts`, but the *signature* is the diagnostic). Check the agent console for `[extractor] LLM returned non-JSON`. |
 
@@ -237,5 +238,9 @@ force it.
 - **Attachments are real `file` nodes** under `inbox.<user>.attachments`,
   linked back via `email_attachments.file_node_id`. They extract through
   the same path as any file (PDF via pdf-parse, Word via mammoth, Excel
-  via SheetJS). Image-only content (scanned PDFs, photos) has no OCR yet
-  and skips `body_too_short`.
+  via SheetJS). A **scanned / image-only PDF** (no text layer) is
+  rasterized to PNG and run through the vision worker (OCR) — a
+  `photo_ingest` trace with `data.mode='pdf_ocr'`, page-capped at
+  `MAX_OCR_PAGES`; only if OCR yields nothing does the extractor record
+  `skipped: no_text_layer`. Standalone **photos** still go through the
+  image vision path (`isImageNeedingVision`).

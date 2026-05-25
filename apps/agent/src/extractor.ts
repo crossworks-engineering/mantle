@@ -365,6 +365,115 @@ async function visionIngestImageNode(
   );
 }
 
+/** Page cap for PDF OCR — bounds rasterization memory + per-page vision spend. */
+const MAX_OCR_PAGES = 10;
+
+/**
+ * OCR-ingest a scanned / image-only PDF file node. When a PDF has no text layer
+ * (`parseDocumentBytes` yields nothing and `readNodeBodyRaw` falls back to the
+ * filename), rasterize its pages to PNG and run each through the default vision
+ * worker — exactly the neutral describe+OCR path images already take. The
+ * concatenated text is persisted as `data.text` (+ `vision_model`, `ocr`) and
+ * RETURNED so extractNode indexes it in the same pass (summary + embedding +
+ * facts). Best-effort: a missing/erroring vision worker, an unrenderable PDF,
+ * or a blank scan returns null and the trace records why. Page-capped at
+ * MAX_OCR_PAGES. Mirrors {@link visionIngestImageNode}.
+ */
+async function ocrIngestPdfNode(
+  node: typeof nodes.$inferSelect,
+  ownerId: string,
+): Promise<string | null> {
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  const filename = data.filename as string;
+  const diskPath = diskPathForFile(node.path, filename);
+  if (!diskPath) return null;
+
+  return await startTrace(
+    {
+      kind: 'photo_ingest',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      data: { source: 'extractor', mode: 'pdf_ocr', filename },
+    },
+    async () => {
+      const buf = await step(
+        { name: 'read_file', kind: 'compute', input: { filename } },
+        async (h) => {
+          const { promises: fs } = await import('node:fs');
+          const b = await fs.readFile(diskPath);
+          h.setMeta({ bytes: b.length });
+          return b;
+        },
+      );
+
+      const pages = await step(
+        { name: 'rasterize_pdf', kind: 'compute', input: { max_pages: MAX_OCR_PAGES } },
+        async (h) => {
+          try {
+            const { rasterizePdfToPngs } = await import('@mantle/files/rasterize');
+            const r = await rasterizePdfToPngs(buf, { maxPages: MAX_OCR_PAGES });
+            h.setMeta({ pages: r.length });
+            return r;
+          } catch (err) {
+            // Unrenderable / corrupt / encrypted PDF — record and give up.
+            h.setMeta({ pages: 0, error: err instanceof Error ? err.message : String(err) });
+            return [];
+          }
+        },
+      );
+      if (pages.length === 0) return null;
+
+      const parts: string[] = [];
+      let model: string | null = null;
+      for (const pg of pages) {
+        const res = await step(
+          {
+            name: 'extract_vision',
+            kind: 'llm_call',
+            input: { page: pg.pageNumber, mime: 'image/png', bytes: pg.png.length },
+          },
+          async (h) => {
+            const r = await runVisionWorker({
+              ownerId,
+              bytes: pg.png,
+              mimeType: 'image/png',
+              filename: `${filename}#page-${pg.pageNumber}.png`,
+            });
+            h.setMeta({
+              ran: r.ran,
+              note: r.note,
+              model: r.model,
+              page: pg.pageNumber,
+              textLength: r.text.length,
+            });
+            return r;
+          },
+        );
+        if (res.model) model = res.model;
+        if (res.text.trim()) {
+          parts.push(pages.length > 1 ? `[Page ${pg.pageNumber}]\n${res.text.trim()}` : res.text.trim());
+        }
+      }
+
+      const text = parts.join('\n\n').trim();
+      if (!text) return null; // worker unavailable / blank scan — trace records why.
+
+      await step({ name: 'persist_vision_text', kind: 'db_write' }, async (h) => {
+        await db
+          .update(nodes)
+          .set({
+            data: sql`${nodes.data} || jsonb_build_object('text', ${text}::text, 'vision_model', ${model ?? ''}::text, 'ocr', true)`,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
+        h.setMeta({ chars: text.length, pages: pages.length });
+      });
+      return text;
+    },
+  );
+}
+
 function parseClassifierDecision(raw: string): ClassifierDecision {
   const cleaned = raw
     .replace(/^```(?:json)?\s*/i, '')
@@ -790,6 +899,46 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
   } else {
     rawBody = await readNodeBodyRaw(node);
   }
+
+  // Scanned / image-only PDF: readNodeBodyRaw found no text layer and fell back
+  // to the title (filename). Indexing that would silently mask the failure — a
+  // filename-only summary recorded as `success` (the passport-PDF case). Before
+  // giving up, try OCR via the vision worker (rasterize → describe+OCR), the
+  // same route images take. Only triggered when the body IS the filename, so a
+  // PDF with a real text layer never pays the OCR cost.
+  const isPdfWithoutTextLayer =
+    node.type === 'file' &&
+    !existingData.text &&
+    !existingData.content &&
+    typeof existingData.filename === 'string' &&
+    extOf(existingData.filename as string) === 'pdf' &&
+    rawBody.trim() === node.title.trim();
+  if (isPdfWithoutTextLayer) {
+    const ocrText = await ocrIngestPdfNode(node, ownerId);
+    if (ocrText && ocrText.trim().length >= 20) {
+      rawBody = ocrText;
+    } else {
+      // No text layer AND OCR produced nothing (no/unwired vision worker, an
+      // unrenderable PDF, or a blank scan). Record an honest skip instead of a
+      // filename-only false success.
+      await recordSkippedTrace({
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'no_text_layer',
+        details: {
+          worker_slug: worker.slug,
+          node_type: node.type,
+          title: node.title,
+          filename: existingData.filename,
+          hint: 'PDF has no extractable text layer and OCR produced nothing — configure a default vision worker at /settings/ai-workers, or re-upload as an image. A blank/illegible scan can also land here.',
+        },
+      });
+      return;
+    }
+  }
+
   if (!rawBody || rawBody.trim().length < 20) {
     // Not enough content to extract meaningfully.
     await recordSkippedTrace({
