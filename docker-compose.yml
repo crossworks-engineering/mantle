@@ -11,6 +11,8 @@ name: mantle
 #   MANTLE_MASTER_KEY       (mandatory — AES-256 key, base64 32 random bytes)
 #   ALLOWED_USER_ID         (mandatory — uuid of the single auth.users row)
 #   S3_ACCESS_KEY / S3_SECRET_KEY (default: minio/minio12345)
+#   MANTLE_PUBLIC_URL       (recommended — public origin for share/email links,
+#                            e.g. https://mantle.crossworks.network)
 #
 # Build & run:
 #   docker compose build
@@ -43,6 +45,10 @@ x-app-env: &app-env
   NODE_ENV: production
   MANTLE_EMBEDDING_MODEL: ${MANTLE_EMBEDDING_MODEL:-}
   MANTLE_FILES_ROOT: /data/files
+  # Public origin for absolute links built outside an HTTP request — e.g. the
+  # agent's page_share / email_page tools. Falls back to localhost in code if
+  # unset, so set it to the real host (https://mantle.crossworks.network).
+  MANTLE_PUBLIC_URL: ${MANTLE_PUBLIC_URL:-}
 
 services:
   postgres:
