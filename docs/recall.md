@@ -181,9 +181,10 @@ into the parent, so `/debug` "spend by agent" stays correct.
   once it crosses the summarizer threshold, so a *very recent* discussion may
   not have a digest yet. `recall_window` doesn't care — call it directly with a
   rough date range when the timing is known.
-- **Digests are telegram-sourced today.** The summarizer fires on
-  `summarize_due` (Telegram). `recall_window` reads both surfaces regardless,
-  but `find_window`'s index skews Telegram until web digests exist.
+- **Both surfaces are digested.** The summarizer runs over Telegram
+  (`summarize_due`) *and* the web /assistant (`summarize_web_due`, migration
+  0044 → `summarizeWebConversation`), so `find_window` indexes web conversation
+  too (digests tagged `web`). `recall_window` already read both surfaces.
 - **Truncation is a signal, not silent.** A window past `limit` returns the
   earliest N turns with `truncated: true`; Remy is prompted to narrow and walk
   sub-ranges rather than answer from a partial slice.
@@ -223,8 +224,8 @@ exact discussion and the conclusion"* and watch `/traces`.
 
 - ~~Recover working-state~~ — **shipped**: `recall_window(include_traces: true)`
   folds the window's `traces` (tools run + result gists) into the recall.
-- **Web digests.** Run the summarizer over `assistant_messages` so
-  `find_window` indexes web conversation as well as Telegram.
+- ~~Web digests~~ — **shipped**: `summarizeWebConversation` + the
+  `summarize_web_due` trigger (migration 0044) digest the web /assistant stream.
 - **Dedicated `assistant` agent.** Today web falls back to the responder; give
   `/assistant` its own row if the surfaces need to diverge.
 - **Semantic windows.** `find_window` ranks whole digests; chunk-level recall

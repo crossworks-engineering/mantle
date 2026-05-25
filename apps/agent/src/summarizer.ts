@@ -16,6 +16,7 @@ import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   db,
   agents,
+  assistantMessages,
   bumpWorkerUsage,
   getDefaultWorker,
   nodes,
@@ -354,6 +355,215 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
 
       console.log(
         `[agent] ✓ ${inserted.length} digest(s) created: ` +
+          inserted.map((d) => `"${d.topic}" (${d.turnCount}t)`).join(', '),
+      );
+    },
+  );
+}
+
+/** ltree path web-conversation digests hang under. There's no per-account
+ *  branch for the web /assistant (one stream per owner), so they live under a
+ *  fixed label. Path is cosmetic for digests — find_window/responder match by
+ *  the `conversation-digest` tag + embedding, not by path. */
+const WEB_DIGEST_PATH = 'assistant';
+
+/**
+ * Web twin of `summarizeChat` — rolls the oldest undigested `assistant_messages`
+ * (the web /assistant surface) into `conversation-digest` notes, so find_window
+ * and the responder's Tier-2 memory index web conversation too, not just
+ * Telegram. Keyed per-owner (the web surface is one continuous stream, no chat
+ * id). Driven from a debounced LISTEN on `summarize_web_due` in main.ts.
+ */
+export async function summarizeWebConversation(ownerId: string): Promise<void> {
+  const worker = await resolveSummarizer(ownerId);
+  if (!worker) {
+    await recordSkippedTrace({
+      kind: 'summarizer_run',
+      ownerId,
+      subjectId: ownerId,
+      subjectKind: 'web_chat',
+      disposition: 'no_summarizer_worker',
+      details: { surface: 'web', hint: 'Set a default summarizer at /settings/ai-workers.' },
+    });
+    return;
+  }
+  if (!worker.apiKeyId) {
+    await recordSkippedTrace({
+      kind: 'summarizer_run',
+      ownerId,
+      subjectId: ownerId,
+      subjectKind: 'web_chat',
+      disposition: 'no_api_key_id',
+      details: { worker_slug: worker.slug, surface: 'web' },
+    });
+    return;
+  }
+
+  const params = (worker.params ?? {}) as SummarizerParams;
+  const threshold = params.summarize_threshold ?? 30;
+  const batchSize = params.summarize_batch ?? params.window_size ?? 20;
+
+  const countRows = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(assistantMessages)
+    .where(and(eq(assistantMessages.ownerId, ownerId), isNull(assistantMessages.digestNodeId)));
+  const undigested = countRows[0]?.n ?? 0;
+  if (undigested < threshold) return;
+
+  await startTrace(
+    {
+      kind: 'summarizer_run',
+      ownerId,
+      subjectId: ownerId,
+      subjectKind: 'web_chat',
+      data: { worker_slug: worker.slug, surface: 'web', threshold, batchSize, undigestedAtStart: undigested },
+    },
+    async () => {
+      const batch = await step(
+        { name: 'load_batch', kind: 'db_read', input: { batchSize, surface: 'web' } },
+        async (h) => {
+          const rows = await db
+            .select({
+              id: assistantMessages.id,
+              direction: assistantMessages.direction,
+              text: assistantMessages.text,
+              createdAt: assistantMessages.createdAt,
+            })
+            .from(assistantMessages)
+            .where(and(eq(assistantMessages.ownerId, ownerId), isNull(assistantMessages.digestNodeId)))
+            .orderBy(asc(assistantMessages.createdAt))
+            .limit(batchSize);
+          h.setOutput({ count: rows.length });
+          return rows;
+        },
+      );
+      if (batch.length === 0) return;
+
+      const apiKey = await getApiKeyById(worker.apiKeyId!);
+      if (!apiKey) throw new Error(`summarizer: api_key_id ${worker.apiKeyId} not found`);
+
+      const transcript = batch
+        .map((t, i) => {
+          const who = t.direction === 'outbound' ? 'assistant' : 'user';
+          return `#${i + 1} [${t.createdAt.toISOString()}] ${who}: ${t.text}`;
+        })
+        .join('\n');
+
+      const messages = buildChatMessages({
+        model: worker.model,
+        systemPrompt: worker.systemPrompt ?? DEFAULT_SUMMARIZER_PROMPT,
+        personaNotes: [],
+        facts: [],
+        digests: [],
+        contentHits: [],
+        history: [],
+        newUserText: transcript,
+      });
+
+      const client = new OpenRouter({
+        apiKey,
+        httpReferer: 'https://mantle.crossworks.network',
+        appTitle: 'Mantle',
+      });
+      console.log(`[agent] summarizing web conversation (${batch.length} turns, ${worker.model})`);
+
+      const result = await step(
+        { name: 'llm_summarize', kind: 'llm_call', input: { model: worker.model } },
+        async (h) => {
+          const r = await client.chat.send({
+            chatRequest: {
+              model: worker.model,
+              messages,
+              ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
+              ...(typeof params.max_tokens === 'number' ? { maxTokens: params.max_tokens } : {}),
+              ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
+            },
+          });
+          captureLlmUsage(h, r, worker.model);
+          return r;
+        },
+      );
+
+      if (!('choices' in result)) throw new Error('summarizer: unexpected streaming response');
+      const rawContent = result.choices[0]?.message?.content;
+      const rawText = typeof rawContent === 'string' ? rawContent.trim() : '';
+      if (!rawText) throw new Error('summarizer: empty response — not persisting');
+
+      const topics = parseTopics(rawText, batch.length);
+      if (topics.length === 0) throw new Error('summarizer: no usable topics — not persisting');
+
+      const turnToDigest = new Map<string, string>();
+      const inserted: { topic: string; turnCount: number }[] = [];
+      for (const topic of topics) {
+        const turns = topic.turnIndexes
+          .map((i) => batch[i - 1])
+          .filter((t): t is (typeof batch)[number] => t != null);
+        if (turns.length === 0) continue;
+        const periodStart = turns[0]!.createdAt.toISOString();
+        const periodEnd = turns[turns.length - 1]!.createdAt.toISOString();
+        const title =
+          `${topic.label} · ${periodStart.slice(0, 10)} → ${periodEnd.slice(0, 10)} (${turns.length} turns)`;
+
+        const node = await step(
+          { name: 'insert_digest_node', kind: 'db_write', input: { topic: topic.label, turns: turns.length } },
+          async () => {
+            const [n] = await db
+              .insert(nodes)
+              .values({
+                ownerId,
+                type: 'note',
+                title,
+                path: WEB_DIGEST_PATH,
+                data: {
+                  kind: 'conversation_digest',
+                  source: 'web',
+                  period_start: periodStart,
+                  period_end: periodEnd,
+                  source_turn_count: turns.length,
+                  model: worker.model,
+                  agent: worker.slug,
+                  content: topic.summary,
+                  summary: topic.summary,
+                  topic: topic.label,
+                  topic_slug: slugifyTopic(topic.label),
+                },
+                tags: ['conversation-digest', 'web', `topic:${slugifyTopic(topic.label)}`],
+              })
+              .returning({ id: nodes.id });
+            if (!n) throw new Error('summarizer: failed to insert digest node');
+            return n;
+          },
+        );
+        for (const t of turns) turnToDigest.set(t.id, node.id);
+        inserted.push({ topic: topic.label, turnCount: turns.length });
+      }
+
+      const fallbackId = turnToDigest.values().next().value;
+      if (fallbackId) {
+        for (const t of batch) if (!turnToDigest.has(t.id)) turnToDigest.set(t.id, fallbackId);
+      }
+
+      await step(
+        { name: 'mark_turns_digested', kind: 'db_write', input: { count: batch.length, digests: inserted.length } },
+        async () => {
+          const byDigest = new Map<string, string[]>();
+          for (const [turnId, digestId] of turnToDigest) {
+            const list = byDigest.get(digestId) ?? [];
+            list.push(turnId);
+            byDigest.set(digestId, list);
+          }
+          for (const [digestId, ids] of byDigest) {
+            await db
+              .update(assistantMessages)
+              .set({ digestNodeId: digestId })
+              .where(inArray(assistantMessages.id, ids));
+          }
+        },
+      );
+
+      void bumpWorkerUsage(worker.id);
+      console.log(
+        `[agent] ✓ ${inserted.length} web digest(s): ` +
           inserted.map((d) => `"${d.topic}" (${d.turnCount}t)`).join(', '),
       );
     },

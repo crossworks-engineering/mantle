@@ -98,7 +98,7 @@ registerAgentInvoker(invokeAgent);
 // on tools). Must run BEFORE seedBuiltinTools() — the seed reads
 // from the in-memory registry. Idempotent.
 registerHeartbeatTools();
-import { summarizeChat } from './summarizer.js';
+import { summarizeChat, summarizeWebConversation } from './summarizer.js';
 import { extractNode } from './extractor.js';
 import { reflect } from './reflector.js';
 
@@ -1329,6 +1329,26 @@ function scheduleSummarize(chatPk: string): void {
   }, SUMMARIZE_DEBOUNCE_MS);
 }
 
+/** Web-surface twin of scheduleSummarize — debounced per-owner rollup of the
+ *  /assistant conversation (summarize_web_due payload is the owner id). */
+const summarizeWebPending = new Set<string>();
+let summarizeWebTimer: NodeJS.Timeout | null = null;
+
+function scheduleSummarizeWeb(ownerId: string): void {
+  summarizeWebPending.add(ownerId);
+  if (summarizeWebTimer) return;
+  summarizeWebTimer = setTimeout(() => {
+    summarizeWebTimer = null;
+    const batch = [...summarizeWebPending];
+    summarizeWebPending.clear();
+    for (const id of batch) {
+      summarizeWebConversation(id).catch((err) =>
+        console.error('[agent] web summarize error:', err instanceof Error ? err.message : err),
+      );
+    }
+  }, SUMMARIZE_DEBOUNCE_MS);
+}
+
 /** Debounce window for node_ingested. Same per-node coalescing logic as
  *  summarize_due — multiple inserts of the same node id within 2s collapse
  *  to one extractor call. Cross-node parallelism preserved (Set iteration). */
@@ -1447,6 +1467,12 @@ async function main() {
     scheduleSummarize(payload);
   });
   console.log('[agent] LISTENing on summarize_due');
+
+  await pg.listen('summarize_web_due', (payload: string) => {
+    if (!payload || payload !== USER_ID) return;
+    scheduleSummarizeWeb(payload);
+  });
+  console.log('[agent] LISTENing on summarize_web_due');
 
   await pg.listen('node_ingested', (payload: string) => {
     if (!payload) return;
