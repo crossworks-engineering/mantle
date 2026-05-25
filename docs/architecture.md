@@ -25,6 +25,9 @@ Companion docs:
 - [`recall.md`](./recall.md) — "Remy", the memory-recall agent: time-windowed
   replay of past conversations (`find_window` → `recall_window`) via the
   `invoke_agent` delegation path. Lossless paging vs. lossy digests.
+- [`research.md`](./research.md) — "Researcher", the web-search agent: the
+  outward twin of Remy. `web_search` (Perplexity Sonar via OpenRouter) wrapped
+  by a synthesising agent, reached through `invoke_agent` delegation.
 - [`email-send.md`](./email-send.md) — outbound email: the `email_send` tool
   sends from the user's mailbox via provider SMTP submission (reusing the IMAP
   app password); never an own MTA. The send half of the §8 read-only pipeline.
