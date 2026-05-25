@@ -95,6 +95,46 @@ export async function brainCounts(userId: string): Promise<BrainCounts> {
   };
 }
 
+// ─── Graph integrity (duplicate-edge guard) ──────────────────────────────────
+
+/** A health check, not a fixer. Counts active edges that share the same
+ *  (source, target, relation) — i.e. duplicates. The extractor's
+ *  delete-then-rebuild discipline (see architecture §9k) means this should
+ *  stay 0; a non-zero value flags a regression in edge writing. The remedy is
+ *  the one-shot `pnpm dedupe:edges --apply`, NOT a recurring auto-clean (which
+ *  would mask the regression). */
+export type GraphIntegrity = {
+  /** Distinct (source, target, relation) groups with more than one row. */
+  duplicateEdgeGroups: number;
+  /** Total redundant rows across those groups (Σ count-1) — how many
+   *  `dedupe:edges --apply` would remove. */
+  redundantEdgeRows: number;
+};
+
+export async function graphIntegrity(userId: string): Promise<GraphIntegrity> {
+  const result = await db.execute<{ dup_groups: number; redundant_rows: number }>(sql`
+    SELECT count(*)::int AS dup_groups,
+           coalesce(sum(c - 1), 0)::int AS redundant_rows
+    FROM (
+      SELECT count(*) AS c
+      FROM ${entityEdges}
+      WHERE ${entityEdges.ownerId} = ${userId} AND ${entityEdges.validTo} IS NULL
+      GROUP BY ${entityEdges.sourceId}, ${entityEdges.targetId}, ${entityEdges.relation}
+      HAVING count(*) > 1
+    ) d
+  `);
+  const rows = (
+    Array.isArray(result)
+      ? result
+      : (result as { rows?: Array<{ dup_groups: number; redundant_rows: number }> }).rows ?? []
+  ) as Array<{ dup_groups: number; redundant_rows: number }>;
+  const row = rows[0] ?? { dup_groups: 0, redundant_rows: 0 };
+  return {
+    duplicateEdgeGroups: Number(row.dup_groups ?? 0),
+    redundantEdgeRows: Number(row.redundant_rows ?? 0),
+  };
+}
+
 // ─── Vector / index coverage ─────────────────────────────────────────────────
 
 export type VectorCounts = {

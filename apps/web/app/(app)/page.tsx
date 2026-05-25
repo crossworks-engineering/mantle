@@ -7,6 +7,7 @@ import { recentFailures, spendByDay, topErrors } from '@/lib/metrics';
 import {
   brainCounts,
   emailStats,
+  graphIntegrity,
   heartbeatStats,
   nodesCreatedByDay,
   pendingToolCount,
@@ -30,7 +31,7 @@ import { SetPageTitle } from '@/components/layout/page-title';
 export default async function DashboardPage() {
   const user = await requireOwner();
 
-  const [brain, vectors, ingest, spend30, email, telegram, heartbeats, pendingTools, errs, fails] =
+  const [brain, vectors, ingest, spend30, email, telegram, heartbeats, pendingTools, errs, fails, integrity] =
     await Promise.all([
       brainCounts(user.id),
       vectorCounts(user.id),
@@ -42,6 +43,7 @@ export default async function DashboardPage() {
       pendingToolCount(user.id),
       topErrors(user.id, 7),
       recentFailures(user.id, 10),
+      graphIntegrity(user.id),
     ]);
 
   // 7d vs prior-7d spend for the KPI trend.
@@ -117,7 +119,7 @@ export default async function DashboardPage() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <BrainBreakdown nodesByType={brain.nodesByType} entitiesByKind={brain.entitiesByKind} />
-        <BrainStats vectors={vectors} brain={brain} />
+        <BrainStats vectors={vectors} brain={brain} integrity={integrity} />
       </div>
 
       <OpsPanels

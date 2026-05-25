@@ -1,12 +1,20 @@
-import { Boxes, Network, Sparkles } from 'lucide-react';
-import type { BrainCounts, VectorCounts } from '@/lib/dashboard';
+import { AlertTriangle, Boxes, CheckCircle2, Network, Sparkles } from 'lucide-react';
+import type { BrainCounts, GraphIntegrity, VectorCounts } from '@/lib/dashboard';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCount } from '@/lib/format-bytes';
 import { VitalsBar } from './vitals-bar';
 
 /** Memory-index coverage (how much of the brain is embedded/searchable) plus
  *  graph headline counts. Server component — no charts, just bars + numbers. */
-export function BrainStats({ vectors, brain }: { vectors: VectorCounts; brain: BrainCounts }) {
+export function BrainStats({
+  vectors,
+  brain,
+  integrity,
+}: {
+  vectors: VectorCounts;
+  brain: BrainCounts;
+  integrity: GraphIntegrity;
+}) {
   const pct = (a: number, b: number) => (b > 0 ? (a / b) * 100 : null);
   return (
     <Card className="h-full">
@@ -39,8 +47,38 @@ export function BrainStats({ vectors, brain }: { vectors: VectorCounts; brain: B
           <Stat icon={<Network className="size-4" />} label="Edges" value={formatCount(brain.edgesTotal)} />
           <Stat icon={<Sparkles className="size-4" />} label="Facts" value={formatCount(brain.factsTotal)} />
         </div>
+        <GraphIntegrityRow integrity={integrity} />
       </CardContent>
     </Card>
+  );
+}
+
+/** Duplicate-edge guard. Healthy = clean; a non-zero count flags a regression
+ *  in edge writing — the remedy is the one-shot `pnpm dedupe:edges --apply`,
+ *  not a recurring auto-clean (which would mask it). */
+function GraphIntegrityRow({ integrity }: { integrity: GraphIntegrity }) {
+  const clean = integrity.duplicateEdgeGroups === 0;
+  if (clean) {
+    return (
+      <div className="flex items-center gap-1.5 border-t pt-3 text-xs text-muted-foreground">
+        <CheckCircle2 className="size-3.5 text-emerald-500" aria-hidden />
+        Graph integrity: no duplicate edges
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1 border-t pt-3 text-xs">
+      <div className="flex items-center gap-1.5 font-medium text-amber-600 dark:text-amber-400">
+        <AlertTriangle className="size-3.5" aria-hidden />
+        {formatCount(integrity.duplicateEdgeGroups)} duplicate edge group
+        {integrity.duplicateEdgeGroups === 1 ? '' : 's'} ·{' '}
+        {formatCount(integrity.redundantEdgeRows)} redundant row
+        {integrity.redundantEdgeRows === 1 ? '' : 's'}
+      </div>
+      <p className="text-muted-foreground">
+        Edge writing may have regressed. Remedy: <code>pnpm dedupe:edges --apply</code> (one-shot).
+      </p>
+    </div>
   );
 }
 
