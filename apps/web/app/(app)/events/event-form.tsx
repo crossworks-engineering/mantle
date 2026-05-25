@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { TagInput } from '@/components/tag-input';
+import { DateTimePicker } from '@/components/ui/date-time-picker';
 
 export const REMIND_PRESETS: { value: number; label: string }[] = [
   { value: 0, label: 'At start' },
@@ -14,12 +15,12 @@ export const REMIND_PRESETS: { value: number; label: string }[] = [
   { value: 60 * 24, label: '1 day before' },
 ];
 
-/** Form state — datetimes as `datetime-local` strings, tags as string[]. */
+/** Form state — datetimes as Date|null (driven by DateTimePicker), tags as string[]. */
 export type EventFormValues = {
   title: string;
   body: string;
-  startsAt: string;
-  endsAt: string;
+  startsAt: Date | null;
+  endsAt: Date | null;
   location: string;
   remindMinutesBefore: number;
   tags: string[];
@@ -37,18 +38,11 @@ export type EventPayload = {
   timezone?: string;
 };
 
-/** ISO → the value a `<input type="datetime-local">` accepts (local wall time). */
-export function isoToLocalInput(iso: string | null | undefined): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
-}
-
 export const emptyEventForm = (): EventFormValues => ({
   title: '',
   body: '',
-  startsAt: '',
-  endsAt: '',
+  startsAt: null,
+  endsAt: null,
   location: '',
   remindMinutesBefore: 0,
   tags: [],
@@ -66,8 +60,8 @@ export function eventToForm(e: {
   return {
     title: e.title,
     body: e.body,
-    startsAt: isoToLocalInput(e.startsAt),
-    endsAt: isoToLocalInput(e.endsAt),
+    startsAt: new Date(e.startsAt),
+    endsAt: e.endsAt ? new Date(e.endsAt) : null,
     location: e.location ?? '',
     remindMinutesBefore: e.remindMinutesBefore,
     tags: e.tags,
@@ -100,11 +94,12 @@ export function EventForm({
     setError(null);
     if (!form.title.trim()) return setError('Title is required');
     if (!form.startsAt) return setError('Start time is required');
+    if (form.endsAt && form.endsAt < form.startsAt) return setError('End time is before the start');
     await onSubmit({
       title: form.title.trim(),
       body: form.body,
-      startsAt: new Date(form.startsAt).toISOString(),
-      endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : null,
+      startsAt: form.startsAt.toISOString(),
+      endsAt: form.endsAt ? form.endsAt.toISOString() : null,
       location: form.location.trim() || null,
       remindMinutesBefore: form.remindMinutesBefore,
       tags: form.tags.map((t) => t.trim().toLowerCase()).filter(Boolean),
@@ -129,21 +124,21 @@ export function EventForm({
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="event-starts">Starts</Label>
-          <Input
+          <DateTimePicker
             id="event-starts"
-            type="datetime-local"
             value={form.startsAt}
-            onChange={(e) => setForm({ ...form, startsAt: e.target.value })}
-            required
+            onChange={(startsAt) => setForm({ ...form, startsAt })}
+            placeholder="Pick a start"
           />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="event-ends">Ends (optional)</Label>
-          <Input
+          <DateTimePicker
             id="event-ends"
-            type="datetime-local"
             value={form.endsAt}
-            onChange={(e) => setForm({ ...form, endsAt: e.target.value })}
+            onChange={(endsAt) => setForm({ ...form, endsAt })}
+            placeholder="Pick an end"
+            clearable
           />
         </div>
       </div>
