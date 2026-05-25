@@ -171,10 +171,12 @@ into the parent, so `/debug` "spend by agent" stays correct.
 
 ## 6. Honest limits
 
-- **Dialogue, not working-state.** Recall replays the *exchanged* turns, not
-  the model's hidden reasoning or tool results from back then. Some of that
-  lives in `traces`; folding relevant trace rows into recall is a possible
-  follow-up.
+- **Dialogue first, working-state on demand.** Recall replays the *exchanged*
+  turns by default. Pass `recall_window(..., include_traces: true)` to also fold
+  in the `traces` for that window — what tools/agents ran and a gist of what they
+  returned — recovering the hidden working-state the words alone don't show. (It
+  surfaces a compact step-gist per trace, not full payloads; drill into a
+  specific trace at `/traces/<id>` for everything.)
 - **`find_window` sees only digested conversation.** A chat is only digested
   once it crosses the summarizer threshold, so a *very recent* discussion may
   not have a digest yet. `recall_window` doesn't care — call it directly with a
@@ -219,9 +221,8 @@ exact discussion and the conclusion"* and watch `/traces`.
 
 ## 9. Future work
 
-- **Recover working-state.** Optionally fold the relevant `traces` rows for a
-  window into recall, so Remy can see not just what was said but what tools ran
-  and what they returned.
+- ~~Recover working-state~~ — **shipped**: `recall_window(include_traces: true)`
+  folds the window's `traces` (tools run + result gists) into the recall.
 - **Web digests.** Run the summarizer over `assistant_messages` so
   `find_window` indexes web conversation as well as Telegram.
 - **Dedicated `assistant` agent.** Today web falls back to the responder; give

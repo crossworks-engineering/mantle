@@ -16,17 +16,21 @@
  *   `telegram_messages` (`sent_at`) and `assistant_messages` (`created_at`);
  *   digests summarise but never delete. So this is a read layer, nothing new
  *   to store.
- * - recall_window replays the DIALOGUE only — not the model's hidden working
- *   state (reasoning / tool results). Traces capture some of that separately.
+ * - recall_window replays the DIALOGUE by default. Pass `include_traces` to
+ *   ALSO fold in the trace rows for that window — what tools ran and what they
+ *   returned — recovering some of the model's hidden working state that the
+ *   dialogue alone doesn't show.
  */
 
-import { and, asc, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import {
   assistantMessages,
   db,
   nodes,
   telegramChats,
   telegramMessages,
+  traces,
+  traceSteps,
 } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
 import type { BuiltinToolDef } from './types';
@@ -88,6 +92,82 @@ function num(v: unknown, dflt: number): number {
 
 const MAX_TURNS = 500;
 const MAX_WINDOWS = 25;
+const TRACE_LIMIT = 25;
+const TRACE_STEP_LIMIT = 15;
+
+type RecalledTrace = {
+  id: string;
+  kind: string;
+  started_at: string;
+  status: string;
+  cost_micro_usd: number;
+  steps: { name: string; kind: string; status: string; summary?: string }[];
+};
+
+/** A one-line gist of a step from its meta/output — enough for Remy to see
+ *  what a tool did/returned without dumping the full payload. */
+function stepSummary(
+  meta: Record<string, unknown>,
+  output: Record<string, unknown>,
+): string | undefined {
+  const bits: string[] = [];
+  if (meta && typeof meta.model === 'string') bits.push(meta.model);
+  if (output && typeof output === 'object' && Object.keys(output).length > 0) {
+    const j = JSON.stringify(output);
+    bits.push(j.length > 140 ? `${j.slice(0, 140)}…` : j);
+  }
+  const s = bits.join(' ').trim();
+  return s.length > 0 ? s : undefined;
+}
+
+/** The trace rows (+ compact step gists) whose work happened inside a window —
+ *  the "what the system actually did then" companion to the dialogue. */
+async function fetchWindowTraces(ownerId: string, from: Date, to: Date): Promise<RecalledTrace[]> {
+  const traceRows = await db
+    .select({
+      id: traces.id,
+      kind: traces.kind,
+      startedAt: traces.startedAt,
+      status: traces.status,
+      costMicroUsd: traces.costMicroUsd,
+    })
+    .from(traces)
+    .where(and(eq(traces.ownerId, ownerId), gte(traces.startedAt, from), lte(traces.startedAt, to)))
+    .orderBy(asc(traces.startedAt))
+    .limit(TRACE_LIMIT);
+  if (traceRows.length === 0) return [];
+
+  const stepRows = await db
+    .select({
+      traceId: traceSteps.traceId,
+      name: traceSteps.name,
+      kind: traceSteps.kind,
+      status: traceSteps.status,
+      meta: traceSteps.meta,
+      output: traceSteps.output,
+    })
+    .from(traceSteps)
+    .where(inArray(traceSteps.traceId, traceRows.map((t) => t.id)))
+    .orderBy(asc(traceSteps.ordinal));
+
+  const byTrace = new Map<string, RecalledTrace['steps']>();
+  for (const s of stepRows) {
+    const list = byTrace.get(s.traceId) ?? [];
+    if (list.length >= TRACE_STEP_LIMIT) continue;
+    const summary = stepSummary(s.meta, s.output);
+    list.push({ name: s.name, kind: s.kind, status: s.status, ...(summary ? { summary } : {}) });
+    byTrace.set(s.traceId, list);
+  }
+
+  return traceRows.map((t) => ({
+    id: t.id,
+    kind: t.kind,
+    started_at: t.startedAt.toISOString(),
+    status: t.status,
+    cost_micro_usd: t.costMicroUsd,
+    steps: byTrace.get(t.id) ?? [],
+  }));
+}
 
 // ─── find_window ────────────────────────────────────────────────────────────
 
@@ -190,7 +270,7 @@ const recall_window: BuiltinToolDef = {
   slug: 'recall_window',
   name: 'Recall a conversation window',
   description:
-    "Replay the actual raw turns of past conversations within a date range, chronological and lossless (the real words, not a summary). Use after `find_window` has pinned a window, or directly when the user gives a date ('what did we say on Tuesday?'). `from`/`to` accept a bare date (YYYY-MM-DD, widened to the whole day) or a full ISO datetime. `surface` filters to 'telegram', 'web', or 'all' (default). If the window is larger than `limit` the result is truncated — narrow the range or pull it in sub-ranges and reason over each.",
+    "Replay the actual raw turns of past conversations within a date range, chronological and lossless (the real words, not a summary). Use after `find_window` has pinned a window, or directly when the user gives a date ('what did we say on Tuesday?'). `from`/`to` accept a bare date (YYYY-MM-DD, widened to the whole day) or a full ISO datetime. `surface` filters to 'telegram', 'web', or 'all' (default). If the window is larger than `limit` the result is truncated — narrow the range or pull it in sub-ranges and reason over each. Set `include_traces` to also see what the system actually did in that window (tools run + their results) — useful when the dialogue references work whose details aren't in the words themselves.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -203,6 +283,12 @@ const recall_window: BuiltinToolDef = {
         description: 'which conversation surface to pull from',
       },
       limit: { type: 'integer', minimum: 1, maximum: 500, default: 200 },
+      include_traces: {
+        type: 'boolean',
+        default: false,
+        description:
+          'also return the trace rows whose work ran in this window — what tools/agents ran and what they returned (the hidden working state the dialogue alone does not show)',
+      },
     },
     required: ['from', 'to'],
   },
@@ -285,7 +371,15 @@ const recall_window: BuiltinToolDef = {
     const truncated = sorted.length > limit;
     const out = truncated ? sorted.slice(0, limit) : sorted;
 
-    ctx.step?.setOutput({ count: out.length, truncated, surface });
+    const traceList =
+      input.include_traces === true ? await fetchWindowTraces(ctx.ownerId, from, to) : undefined;
+
+    ctx.step?.setOutput({
+      count: out.length,
+      truncated,
+      surface,
+      ...(traceList ? { traces: traceList.length } : {}),
+    });
     return {
       ok: true,
       output: {
@@ -299,6 +393,7 @@ const recall_window: BuiltinToolDef = {
             }
           : {}),
         turns: out,
+        ...(traceList ? { traces: traceList } : {}),
       },
     };
   },
