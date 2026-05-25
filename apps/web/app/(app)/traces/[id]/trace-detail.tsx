@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import {
   ReactFlow,
@@ -168,6 +169,7 @@ function summaryLine(s: TraceStepSummary): string | null {
   if (typeof m.cache_hits === 'number') {
     return `cache ${m.cache_hits}/${num(m.cache_hits) + num(m.cache_misses)} · api ${num(m.api_calls)}`;
   }
+  if (typeof m.child_trace_id === 'string') return '↳ delegated agent';
   const o = s.output;
   if (typeof o.count === 'number') return `count ${o.count}`;
   return null;
@@ -208,6 +210,8 @@ function bgForStatus(status: string): string {
 }
 
 function StepPanel({ step }: { step: TraceStepSummary }) {
+  const childTraceId =
+    typeof step.meta.child_trace_id === 'string' ? step.meta.child_trace_id : null;
   return (
     <div className="space-y-3">
       <div className="space-y-0.5">
@@ -220,6 +224,15 @@ function StepPanel({ step }: { step: TraceStepSummary }) {
           <span>{formatDuration(step.durationMs)}</span>
         </div>
       </div>
+
+      {childTraceId && (
+        <Link
+          href={`/traces/${childTraceId}`}
+          className="flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/5 px-2 py-1.5 text-xs font-medium text-primary hover:bg-primary/10"
+        >
+          ↳ Open delegated agent trace (trace#{childTraceId.slice(0, 8)}) →
+        </Link>
+      )}
 
       {step.error && (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs">

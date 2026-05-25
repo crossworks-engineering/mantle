@@ -30,6 +30,7 @@ import { and, eq } from 'drizzle-orm';
 import {
   db,
   agents,
+  bumpAgentUsage,
   type Agent,
   type AgentMemoryConfig,
   type AgentParams,
@@ -165,6 +166,15 @@ export const invokeAgent: AgentInvoker = async ({
       return result.reply;
     },
   );
+
+  // Telemetry: a delegated agent has now run. The responder bumps its
+  // own agent at the entry points (assistant.ts / main.ts) and the
+  // workers bump via bumpWorkerUsage, but delegation targets are reached
+  // only here — without this, researcher/remy/coder show "0 runs /
+  // never" on /debug/agents despite running. Reached only on success
+  // (startTrace rethrows if the child failed). Fire-and-forget +
+  // never-throws, like bumpWorkerUsage.
+  void bumpAgentUsage(target.id);
 
   return {
     ok: true,

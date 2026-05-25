@@ -7,6 +7,14 @@ import { TraceDetail } from './[id]/trace-detail';
  *  Used by the standalone /traces/[id] page and the /traces master-detail
  *  right pane. */
 export function TraceDetailView({ trace }: { trace: TraceDetailRow }) {
+  // Delegation links: a child agent trace carries parent_trace_id +
+  // delegated_agent_slug in `data` (set by invoke-agent.ts). Surface
+  // them so /traces is navigable across a delegation boundary.
+  const parentTraceId =
+    typeof trace.data.parent_trace_id === 'string' ? trace.data.parent_trace_id : null;
+  const delegatedSlug =
+    typeof trace.data.delegated_agent_slug === 'string' ? trace.data.delegated_agent_slug : null;
+
   return (
     <div className="space-y-4">
       <header className="space-y-2">
@@ -72,6 +80,20 @@ export function TraceDetailView({ trace }: { trace: TraceDetailRow }) {
           <Field label="Cost" value={formatMicroUsd(trace.costMicroUsd)} />
           <Field label="Steps" value={String(trace.stepCount)} />
           <Field label="ID" value={trace.id.slice(0, 8) + '…'} mono />
+          {delegatedSlug && <Field label="Delegated agent" value={delegatedSlug} />}
+          {parentTraceId && (
+            <Field
+              label="Parent trace"
+              value={
+                <Link
+                  href={`/traces/${parentTraceId}`}
+                  className="text-primary hover:underline"
+                >
+                  trace#{parentTraceId.slice(0, 8)} →
+                </Link>
+              }
+            />
+          )}
         </dl>
         {trace.error && (
           <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
