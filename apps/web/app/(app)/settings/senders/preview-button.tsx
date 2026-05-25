@@ -46,7 +46,10 @@ export function PreviewButton({ address }: { address: string }) {
       >
         <Eye aria-hidden />
       </Button>
-      <DialogContent>
+      {/* Give the dialog a definite tall height so the email body's flex-1
+          (article → iframe / text pane) has room to stretch instead of
+          collapsing. Grows to the base max-h-[92vh] for big content. */}
+      <DialogContent className="min-h-[70vh]">
         <DialogHeader>
           <DialogTitle>{result?.ok ? result.preview.subject || '(no subject)' : 'Latest message'}</DialogTitle>
           <DialogDescription>
