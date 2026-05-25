@@ -65,7 +65,10 @@ List sort order is `open` first, then `due_at` ascending (nulls last),
 then `updated_at` descending. The `/todos` screen is **master-detail**
 (see [`ui-style-guide.md`](./ui-style-guide.md) §8): a filterable list
 on the left (search + status + priority; a checkbox toggles done
-optimistically) and a create / edit / detail pane on the right.
+optimistically) and a create / edit / detail pane on the right. Search,
+filters, and pagination are URL-driven (SSR) — same for `/events` and
+`/secrets` — via `listTodos`/`countTodos` (and the `events`/`secrets`
+equivalents) with `limit`/`offset`.
 
 ### Events (`type='event'`)
 

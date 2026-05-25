@@ -223,6 +223,16 @@ Rules:
 - **Read-only oversight:** when a record's fields are code/seed-managed (built-in
   tools), still let it be selected and show the fields **read-only** (disabled
   inputs / muted blocks); only send the editable subset on save.
+- **Search / filter / pagination are URL-driven (SSR), not client-side.** The
+  reference is `/pages`; `/todos`, `/events`, `/secrets` follow it. The server
+  page reads `q` / `page` / filters from `searchParams`, calls
+  `list({ …filters, limit, offset })` + a `count*()`, and passes
+  `rows / total / page / pageSize / query / filters` to the client. The client
+  uses the **`useListNav()`** hook (`go(patch)` merges into the query string;
+  `null` clears a key, and filter/search changes pass `page: null` to reset),
+  a debounced search input, and **`<ListPager>`** (footer count + prev/next,
+  shown whenever there are rows). Don't filter a loaded list in `useMemo` —
+  paginating a client-filtered slice is wrong.
 
 ### Detail (deep-link) pages
 Start with `<BackLink href>`; title via `<SetPageTitle>`. **Keep these working
