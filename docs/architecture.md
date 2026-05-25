@@ -906,6 +906,13 @@ Two corollaries:
   one pass by `pnpm dedupe:edges` (dry-run by default; collapses duplicate
   `mentioned_in` rows, keeping the earliest). `extract:backfill` does *not*
   clean them — it only re-fires nodes still missing their index.
+- **Duplicate-edge guard (dashboard).** Because the single writer
+  delete-then-rebuilds, duplicates can't accrue — so instead of a recurring
+  `dedupe:edges` job (which would *mask* a regression), the dashboard's
+  **Memory-index** card shows a live duplicate count (`graphIntegrity()` in
+  `apps/web/lib/dashboard.ts`): green when clean, amber with the one-shot
+  `pnpm dedupe:edges --apply` remedy if a regression ever surfaces. A monitor,
+  not a fixer — see [`agent-overhaul-2026-05.md` §2e](./agent-overhaul-2026-05.md).
 
 ## 9l. Model catalog — live context window + capabilities
 
