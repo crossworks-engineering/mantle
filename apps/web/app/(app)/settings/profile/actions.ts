@@ -20,6 +20,11 @@ export async function updatePreferencesAction(formData: FormData): Promise<void>
   // treats empty as "unset".
   const avatarStyle = String(formData.get('avatarStyle') ?? '').trim();
   const avatarSeed = String(formData.get('avatarSeed') ?? '').trim();
+  // Email send allowlist: one entry per line (or comma). Empty ⇒ gate off.
+  const emailAllowlist = String(formData.get('emailAllowlist') ?? '')
+    .split(/[\n,]/)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
   if (!timezone && !locale) {
     throw new Error('Set timezone or locale (or both) before saving.');
   }
@@ -28,6 +33,7 @@ export async function updatePreferencesAction(formData: FormData): Promise<void>
     ...(locale ? { locale } : {}),
     avatarStyle,
     avatarSeed,
+    emailAllowlist,
   });
   // Lots of pages render dates — refresh the cache so the new
   // timezone takes effect immediately on next nav rather than after

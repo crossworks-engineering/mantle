@@ -18,6 +18,8 @@ import {
   cidForPageImage,
   createShare,
   shareUrlForToken,
+  loadProfilePreferences,
+  isRecipientAllowed,
 } from '@mantle/content';
 import { readFileById } from '@mantle/files';
 import type { BuiltinToolDef } from './types';
@@ -32,6 +34,46 @@ function strOpt(v: unknown): string | undefined {
 function recipients(raw: string): string | string[] {
   const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
   return parts.length <= 1 ? (parts[0] ?? raw) : parts;
+}
+
+/** Flatten one or more comma-separated recipient strings into a clean list. */
+function flatRecipients(...raws: (string | undefined)[]): string[] {
+  const out: string[] = [];
+  for (const raw of raws) {
+    if (!raw) continue;
+    for (const p of raw.split(',').map((s) => s.trim()).filter(Boolean)) out.push(p);
+  }
+  return out;
+}
+
+/** Recipients NOT permitted by the user's email allowlist. Empty = all allowed
+ *  (gate is opt-in: off until profiles.preferences.emailAllowlist is non-empty).
+ *  The user's own account addresses are always allowed. */
+async function blockedRecipients(ownerId: string, addrs: string[]): Promise<string[]> {
+  const prefs = await loadProfilePreferences(ownerId);
+  if (!prefs.emailAllowlist || prefs.emailAllowlist.length === 0) return [];
+  const accounts = await db
+    .select({ address: emailAccounts.address })
+    .from(emailAccounts)
+    .where(eq(emailAccounts.userId, ownerId));
+  const own = accounts.map((a) => a.address);
+  return addrs.filter((a) => !isRecipientAllowed(a, prefs.emailAllowlist, own));
+}
+
+/** Shared allowlist guard for the send tools. Returns an error result to bail
+ *  with, or null when every recipient is permitted. */
+async function allowlistError(
+  ownerId: string,
+  ...raws: (string | undefined)[]
+): Promise<{ ok: false; error: string } | null> {
+  const blocked = await blockedRecipients(ownerId, flatRecipients(...raws));
+  if (blocked.length === 0) return null;
+  return {
+    ok: false,
+    error:
+      `these recipients aren't in the user's email allowlist: ${blocked.join(', ')}. ` +
+      `Ask the user to confirm, or add the address (or an "@domain" entry) at /settings/profile.`,
+  };
 }
 
 /** Pick the account to send from: an explicit `from` address if it matches one
@@ -90,6 +132,8 @@ const email_send: BuiltinToolDef = {
 
     const cc = strOpt(input.cc);
     const bcc = strOpt(input.bcc);
+    const gate = await allowlistError(ctx.ownerId, to, cc, bcc);
+    if (gate) return gate;
     try {
       const res = await sendEmail(account, {
         to: recipients(to),
@@ -163,6 +207,9 @@ const email_page: BuiltinToolDef = {
           'no send-enabled email account found — configure SMTP host/port on an account at /settings/accounts',
       };
     }
+
+    const gate = await allowlistError(ctx.ownerId, to, strOpt(input.cc), strOpt(input.bcc));
+    if (gate) return gate;
 
     const subject = strOpt(input.subject) ?? page.title;
 

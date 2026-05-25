@@ -110,6 +110,7 @@ export {
   updateProfilePreferences,
   isValidTimezone,
   isValidLocale,
+  isRecipientAllowed,
   formatInProfile,
   buildTimeContextLine,
   type ProfilePreferences,

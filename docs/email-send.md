@@ -53,12 +53,19 @@ You → Saskia: "research drinking olive oil daily, email me at besties@crosswor
 Resolves the account, calls `sendEmail`, returns `{ messageId, accepted, rejected }`.
 Traced as a `send` step inside the calling agent's turn.
 
-**Safety gate:** `requiresConfirm: false` — sends immediately (operator choice,
-2026-05-23). Because `email_send` can mail arbitrary addresses and Saskia ingests
-untrusted email/Telegram content (a prompt-injection exfiltration vector), this
-can be clamped to confirm-first anytime by flipping `requiresConfirm` on the tool
-row at `/settings/tools` — no code change. (Confirm-first routes the send through
-the `pending_tool_calls` approval queue, same as `telegram_send`.)
+**Safety gate (two independent layers):**
+- **Approval gate** — `requiresConfirm: false` by default (sends immediately).
+  Because the send tools can mail arbitrary addresses and Saskia ingests
+  untrusted email/Telegram content (a prompt-injection exfiltration vector),
+  flip `requiresConfirm` on the tool row at `/settings/tools` to route every
+  send through the `pending_tool_calls` approval queue (same as `telegram_send`).
+- **Recipient allowlist** — `profiles.preferences.emailAllowlist` (managed at
+  `/settings/profile`). **Opt-in**: empty ⇒ send to anyone (default); once it
+  has entries it's enforced — only the user's own account addresses plus listed
+  recipients pass, others are refused. Entries are exact addresses
+  (`you@example.com`) or whole-domain wildcards (`@example.com`). Applies to
+  **both** `email_send` and `email_page` (across `to`/`cc`/`bcc`). The matcher
+  `isRecipientAllowed` lives in `@mantle/content` (unit-tested).
 
 ## Emailing a rich page — `email_page`
 
@@ -125,5 +132,5 @@ Corporate M365 may disable SMTP AUTH by tenant policy — same caveat as IMAP.
   future `email_reply` tool could thread a reply onto an ingested `email` node.
 - **Store sent mail** — outbound isn't persisted as a node today; could write a
   `email`/sent node so sent messages are searchable + show in a thread.
-- **Per-recipient allowlist** — a middle ground between ungated and confirm-first:
-  send freely to your own addresses, confirm for others.
+- ~~Per-recipient allowlist~~ — **shipped** (see the Safety gate above):
+  `profiles.preferences.emailAllowlist`, enforced across `email_send` + `email_page`.
