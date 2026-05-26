@@ -346,6 +346,20 @@ are fetched via the GIMAP `X-GM-EXT-1` extension and merged with the
 IMAP system flags into `emails.labels`; safe on non-Gmail servers
 (ImapFlow ignores the request).
 
+**Delivery-kind classification.** Every message is tagged
+`direct | list | automated | marketing | unknown` at sync time from
+headers + envelope + Gmail labels — no body required, so it works on
+mail from pending senders too. Per-sender rollup counters on
+`email_senders` drive a soft-hint pill on `/settings/senders`
+("📣 marketing" / "📋 list" / "🤖 automated") when ≥3 messages and ≥70%
+agree on one kind, plus a `?kind=` filter chip and a conditional
+"Deny N marketing senders" bulk action on the pending tab. Rules are
+RFC-based (`List-Unsubscribe-Post: One-Click`, `Precedence: bulk`,
+`Feedback-ID`, ESP fingerprints) with `Auto-Submitted` as the
+marketing→automated downgrader, so transactional sends via ESPs (Stripe
+via SendGrid, GitHub via SES) classify correctly. Full detail in
+[`email-ingest.md` §9](./email-ingest.md#9-delivery-kind-classification-direct--list--automated--marketing).
+
 ---
 
 ## 9. Telegram pipeline

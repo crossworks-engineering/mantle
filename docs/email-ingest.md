@@ -229,7 +229,165 @@ shows the `extractor_run` only. See
 
 ---
 
-## 9. Known sharp edges
+## 9. Delivery-kind classification (`direct` / `list` / `automated` / `marketing`)
+
+Every ingested message gets a `delivery_kind` ∈ {`direct`,`list`,`automated`,
+`marketing`,`unknown`} at sync time, computed from headers + envelope + Gmail
+labels. Per-sender rollup counters on `email_senders` drive a soft hint pill on
+the `/settings/senders` page so the operator can spot newsletters at a glance
+and bulk-deny the lot in one click. **Header-only, no body required** — the
+classification runs on the same cheap `listSince` FETCH that powers sender
+curation for pending senders, so a sender still in pending gets pills as soon
+as they've sent ≥3 messages. The §1 invariant ("never ingest mail you didn't
+ask for") is preserved exactly: bodies still gate on `allowed`.
+
+### 9a. The cascade — first-match-wins
+
+Source: [`packages/email/src/classify.ts`](../packages/email/src/classify.ts).
+Pure function, ~80 LOC, 32 vitest cases.
+
+```
+classifyDelivery(headers, fromAddr, labels) → DeliveryKind
+
+  Gmail label hard-positive
+    labels includes 'CATEGORY_PROMOTIONS'                              → marketing
+
+  1. marketing  (highest-confidence "you didn't write this" signals)
+    'List-Unsubscribe-Post' matches /one-click/i  AND  !Auto-Submitted → marketing
+    'Precedence' === 'bulk'                                            → marketing
+    'Feedback-ID' present                                              → marketing
+    matches ESP fingerprint  AND  'List-Unsubscribe' present  AND
+       !Auto-Submitted                                                 → marketing
+
+  2. list  (mailing-list mail — distinct from marketing, often wanted)
+    'List-ID' present                                                  → list
+    'Precedence' === 'list'                                            → list
+
+  3. automated  (machine-origin, often transactional)
+    'Auto-Submitted' present and !== 'no'                              → automated
+    'Precedence' === 'auto_reply'                                      → automated
+    localPart matches /^(noreply|no-reply|donotreply|do-not-reply|
+                          bounces?|mailer-daemon|postmaster|
+                          notifications?)([-_.+]|$)/i                  → automated
+    'List-Unsubscribe' present  (residual — receipts, password resets) → automated
+
+  4. direct  (a human writing to you, probably)
+    none of the above                                                  → direct
+```
+
+Key design notes:
+
+- **`Auto-Submitted` is the marketing→automated downgrader.** Symmetric
+  across both the one-click and ESP-fingerprint rules: "machine origin, no
+  human" overrides "subscribed bulk." Catches the rare-but-real case of an
+  ESP attaching one-click to all sends from a sender domain, including
+  transactional templates.
+- **Mailing lists ≠ marketing.** Church group, dev list, family Google
+  Group all carry `List-ID`. Tagging `list` (not `marketing`) is what stops
+  the bulk-deny affordance from sweeping them up.
+- **ESP fingerprints are name-only.** Presence of any of `X-MC-User`,
+  `X-Mailchimp-Campaign-ID`, `X-SG-EID`, `X-Mailgun-Sid`, `X-SES-Outgoing`,
+  `X-PM-Message-Id`, `X-HS-Marketing-Email`, `X-HubSpot-Campaign-Id`,
+  `X-CK-Domain`, `X-Cmail-RecipientId`, `X-ActiveCampaign-Id`,
+  `X-Klaviyo-Message-Id`, `X-Mb-Mailer`, `X-Iterable-Campaign-Id`,
+  `X-CIO-Delivery-ID`. One constant in `classify.ts` — adding a provider is
+  a one-line edit.
+- **Gmail `\Important` is not used.** Considered as a low-priority tiebreak
+  but it would only fire when no other rule did — which is the path that
+  already returns `direct`. Omitted to keep the cascade honest.
+
+### 9b. Wire — headers ride the same FETCH as the envelope
+
+`packages/email/src/providers/imap.ts` extends the cheap-path FETCH
+(`listSince` *and* `listFromSender`) with `headers: CLASSIFY_HEADERS`. ImapFlow
+compiles this to `BODY.PEEK[HEADER.FIELDS (...)]` inside the same FETCH command
+as the envelope: one round trip, a few hundred bytes per message extra, no
+body fetched. `parseHeaderBlock(buf)` folds RFC 5322 continuation lines,
+handles CRLF/LF/empty, lower-cases names, keeps the first occurrence on
+repeat — 7 vitest cases in `imap.test.ts`. `normalizeHeader` then calls
+`classifyDelivery({headers, fromAddr, labels})` and stamps the kind onto
+`RawMessage.deliveryKind`.
+
+`listFromSender` is the approve-sender backfill path, so a sender flipping
+from pending to allowed picks up classifications on its historical mail as
+the backfill runs — no separate replay step needed.
+
+### 9c. Persistence + per-sender rollup
+
+Migration `0046_email_delivery_kind.sql`:
+
+```sql
+create type delivery_kind as enum
+  ('direct', 'list', 'automated', 'marketing', 'unknown');
+
+alter table emails
+  add column delivery_kind delivery_kind not null default 'unknown';
+create index emails_delivery_kind_idx on emails(delivery_kind);
+
+alter table email_senders
+  add column direct_count    integer not null default 0,
+  add column list_count      integer not null default 0,
+  add column automated_count integer not null default 0,
+  add column marketing_count integer not null default 0;
+```
+
+`unknown` is a back-compat sentinel — the classifier itself never emits it;
+historical rows ingested pre-0046 sit at `unknown` until they're re-classified
+(forward-fill from the live cursor, or a one-shot script — see §9e).
+
+`ingestOne` persists `message.deliveryKind ?? 'unknown'` onto `emails`.
+`upsertSenders` (`packages/email/src/decisions.ts`) accumulates per-kind
+counts per address inside one batch and bumps the four counters via the same
+`onConflictDoUpdate` row that already bumps `messageCount` — still one round
+trip per flush, no extra writes. Sum of the four counters equals
+`messageCount` minus any `unknown`-kind backfill leftovers; `direct + list +
+automated + marketing ≤ messageCount` is the invariant.
+
+### 9d. UI surface — `/settings/senders`
+
+Source: [`apps/web/app/(app)/settings/senders/dominant-kind.ts`](../apps/web/app/(app)/settings/senders/dominant-kind.ts)
+plus the four components in that folder.
+
+Per-row pill stamps when **≥ 3 messages** AND **≥ 70%** agree on one kind:
+
+- `📣 marketing` (accent pill — the actionable one) · `📋 list` · `🤖 automated`
+- `direct` deliberately renders nothing — it's the default, and a pill on
+  every human sender would be visual noise.
+- The pill is a `<Link>` to `?kind=…` — tapping narrows the current view.
+
+Filter chip row (above the list, below the tabs): `All · Direct · Marketing ·
+Lists · Automated`, URL-driven via `?kind=`. Composes with `?tab=`, `?q=`,
+`?page=`. The server WHERE uses `dominantKindWhere(kind)` — an integer-only
+SQL fragment (`kind * 1000 >= total * 700` for 0.7) that avoids
+postgres-js's parameter-type inference trap on fractional literals against
+integer columns. Symmetric at the boundary with the JS `dominantKind()`.
+
+Bulk-deny affordance: on the pending tab only, and only when `?kind=` is
+unset *or* equal to `marketing`, a button "**Deny N marketing senders**"
+appears in the header when N ≥ 1. Behind an `<AlertDialog>` per the
+apps/web/CLAUDE.md destructive-action rule. The action runs a single UPDATE
+with the same dominance WHERE as the count — labelled number matches what
+gets denied.
+
+Knobs in one place at the top of `dominant-kind.ts`:
+`MIN_MESSAGES_FOR_PILL = 3`, `DOMINANCE_THRESHOLD = 0.7`.
+
+### 9e. Backfill — passive, or one-shot
+
+**Passive (default).** Forward-fill from the live cursor. Every new sync
+classifies fresh messages and bumps the counters. Existing pending senders
+get pills as new mail arrives.
+
+**One-shot** (`scripts/classify-backfill.ts`, **not yet shipped** — see
+known sharp edges §10). For an account-by-account replay that classifies
+historical mail without re-ingesting bodies: walks each account's folders
+via `client.fetch(uids, { headers: [...] })`, recomputes per-sender counters
+in a `GROUP BY delivery_kind` pass over `emails`. ~30s on a 6-month
+~3K-message mailbox. Idempotent.
+
+---
+
+## 10. Known sharp edges
 
 | # | Severity | Finding | Status |
 |---|---|---|---|
@@ -240,11 +398,12 @@ shows the `extractor_run` only. See
 | E5 | 🟡 | `pg-boss` retry path doesn't re-honour scheduler's `singletonKey` — a stuck job can overlap a fresh enqueue. Now harmless (race-safe), but the retry timing is governed by pg-boss internals, not by us | Accepted — design tolerates it via §4's race handling. |
 | E6 | 🟡 | Gmail's All Mail UID churn → high "ingested" trace counts on a sync after an idle gap, even though row count stays correct | Accepted — visible in `/debug` but no real waste (extractor `already_extracted`-skips on each race-rejected dup). Excluding `[Gmail]/All Mail` from `imap_included_folders` *now that X-GM-LABELS populates* is the operational move when the operator's ready. |
 | E7 | 🟡 | `bodyHtml` is stored but the extractor ignores it (uses `body_text` only). HTML-only mail with no text alternative gets a thin body | Accepted — most real mail has a text/plain part; rare edge. |
-| E8 | 🟡 | No web UI for sender curation beyond the basic `/settings/senders` list | Open — adding bulk approve/deny + a "saw this sender N times in last 7d" view would be cheap polish. |
+| E8 | 🟡 | No web UI for sender curation beyond the basic `/settings/senders` list | Partial — pagination + broader search (`address \| domain \| display_name`) shipped; bulk-deny-marketing button on the pending tab shipped (§9d). Bulk-approve and per-sender history view still open. |
+| E9 | 🟡 | Historical `emails` rows (ingested before migration 0046) sit at `delivery_kind = 'unknown'` until re-classified. Their senders' four `*_count` columns can be flat 0s with a non-zero `messageCount` — pill won't appear despite the sender being a clear newsletter | Open — passive forward-fill works for senders still receiving mail; long-tail needs a one-shot `scripts/classify-backfill.ts` (sketched in §9e, ~30s per account, header-only walk). Not yet shipped. |
 
 ---
 
-## 10. Operational verification
+## 11. Operational verification
 
 Read-only patterns that help debug a sync:
 
@@ -275,6 +434,20 @@ group by 1 having count(*) > 1;
 
 -- Re-fire the extractor on one email (e.g. after a code fix)
 select pg_notify('node_ingested', '<node-id>');
+
+-- Delivery-kind distribution across recent ingests (§9)
+select delivery_kind, count(*)
+from emails where internal_date > now() - interval '30 days'
+group by 1 order by 2 desc;
+
+-- Senders the pill is about to light up (≥3 msgs, ≥70% marketing)
+select address, message_count, marketing_count,
+       round(100.0 * marketing_count / message_count) as pct
+from email_senders
+where status = 'pending'
+  and message_count >= 3
+  and marketing_count * 1000 >= message_count * 700  -- 0.7 as integer math
+order by message_count desc limit 20;
 ```
 
 Tail the worker's stdout for `[sync] <maskedEmail> done in Xms — scanned=N
@@ -284,25 +457,35 @@ stack — and post-`f1486b0` should be rare.
 
 ---
 
-## 11. Source-of-truth files
+## 12. Source-of-truth files
 
 If you only read three files in the email-ingest layer, read in this order:
 
 1. [`packages/email/src/sync.ts`](../packages/email/src/sync.ts) — `syncAccount` + `ingestOne` (the dedup + race-handling pattern).
-2. [`packages/email/src/providers/imap.ts`](../packages/email/src/providers/imap.ts) — IMAP fetch options, `normalizeHeader`, the providerMsgId encoding.
+2. [`packages/email/src/providers/imap.ts`](../packages/email/src/providers/imap.ts) — IMAP fetch options, `normalizeHeader`, the providerMsgId encoding, `parseHeaderBlock`.
 3. [`apps/web/workers/email-sync.ts`](../apps/web/workers/email-sync.ts) — the pg-boss queue wiring (scheduler + sync + backfill).
 
+And for §9 specifically: [`packages/email/src/classify.ts`](../packages/email/src/classify.ts) (the rule cascade) and
+[`apps/web/app/(app)/settings/senders/dominant-kind.ts`](../apps/web/app/(app)/settings/senders/dominant-kind.ts) (the pill threshold + the integer-only SQL helper).
+
 Migration trail: `0001` (initial), `0033` (per-account included folders),
-`0041` (SMTP submission), `0045` (rfc_message_id + partial unique index).
+`0041` (SMTP submission), `0045` (rfc_message_id + partial unique index),
+`0046` (delivery_kind + per-sender rollup counters).
 
 ---
 
-## 12. Changelog (this arc)
+## 13. Changelog (this arc)
 
 Newest first — all on `main`.
 
 | Commit | What |
 |---|---|
+| `059bc86` | Integer-only SQL in `dominantKindWhere` — sidesteps postgres-js fractional-parameter type inference against integer columns |
+| `8c6b3f6` | Audit follow-ups: one-click + Auto-Submitted → automated (symmetric guard); bulk-deny visibility gated on `kind=null \| marketing` |
+| `e692dc3` | Senders UI: per-row pill, `?kind=` filter chip, conditional "Deny N marketing" with AlertDialog (§9d) |
+| `3be9c53` | Schema + wire: migration 0046, `headers: [...]` on the cheap-path FETCH, `parseHeaderBlock`, classify in `normalizeHeader`, persist on `emails`, bump per-kind counters in `upsertSenders` |
+| `7cb4974` | Pure classifier `direct \| list \| automated \| marketing` + 31 vitest cases (zero runtime effect on its own) |
+| `20ba103` | Senders pagination (50/page, URL-driven) + broader search (address \| domain \| display_name) |
 | `6a142bb` | Cross-folder dedup via RFC Message-ID (migration 0045) + Gmail X-GM-LABELS into `emails.labels` |
 | `f1486b0` | Race-fix: `onConflictDoNothing` + `DuplicateRaceError` sentinel — no more 23505 stacks failing pg-boss jobs |
 | `b9432d7` | Per-recipient allowlist gate on `email_send` / `email_page` |
