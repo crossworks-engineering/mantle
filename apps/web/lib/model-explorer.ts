@@ -293,8 +293,47 @@ const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
   openrouter: {
     needsKey: false,
     fetch: async () => {
-      const body = rec(await getJson('https://openrouter.ai/api/v1/models'));
-      return parseOpenRouter(asArray(body.data));
+      // OR splits its catalog across two endpoints — /v1/models is the
+      // chat-and-image catalog, /v1/embeddings/models is published
+      // separately (their explicit choice; the main catalog deliberately
+      // excludes embedding routes). Both are keyless, same response shape,
+      // disjoint by design. Fan out + concat so the /models page surfaces
+      // everything OR routes — and the existing kindFromId classifier
+      // auto-buckets `text-embedding-*` / `gemini-embedding-*` etc. into
+      // the `embedding` filter chip with no extra wiring.
+      //
+      // Promise.allSettled so a flake on one endpoint doesn't blank the
+      // whole page — the chat catalog is the bigger one and the more
+      // commonly-needed view; embeddings is the augmentation.
+      const [chat, embeddings] = await Promise.allSettled([
+        getJson('https://openrouter.ai/api/v1/models'),
+        getJson('https://openrouter.ai/api/v1/embeddings/models'),
+      ]);
+      const out: ExplorerModel[] = [];
+      if (chat.status === 'fulfilled') {
+        out.push(...parseOpenRouter(asArray(rec(chat.value).data)));
+      }
+      if (embeddings.status === 'fulfilled') {
+        // Force kind='embedding' on this branch — source of truth is the
+        // URL we fetched from, not the slug heuristic. 13 of OR's 25
+        // embedding models (sentence-transformers, GTE, E5, BGE, MiniLM
+        // families) lack 'embed' in their slug; `kindFromId` would
+        // misclassify them as 'chat' and they'd vanish from the
+        // embedding filter chip. Override here, not in kindFromId,
+        // because the heuristic is still the right fallback when the
+        // *URL* is ambiguous (the main /v1/models catalog).
+        const embRows = parseOpenRouter(asArray(rec(embeddings.value).data)).map(
+          (m): ExplorerModel => ({ ...m, kind: 'embedding' }),
+        );
+        out.push(...embRows);
+      }
+      if (chat.status === 'rejected' && embeddings.status === 'rejected') {
+        // Surface the chat-catalog error since it's the dominant case;
+        // operators recognising "openrouter is down" matters more than
+        // the embedding-specific error wording.
+        throw chat.reason instanceof Error ? chat.reason : new Error(String(chat.reason));
+      }
+      return out;
     },
   },
   openai: {
