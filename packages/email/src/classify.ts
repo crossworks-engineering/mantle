@@ -165,9 +165,18 @@ export function classifyDelivery(input: ClassifyInput): DeliveryKind {
 
   // ── 1. marketing ──────────────────────────────────────────────────────
   // RFC 8058 one-click unsubscribe — Gmail/Yahoo now require this for
-  // senders pushing >5K msgs/day, so it's a near-perfect bulk tell.
+  // senders pushing >5K msgs/day, so it's a near-perfect bulk tell. Gated
+  // on !isAutoSubmitted for symmetry with the ESP-fingerprint rule below:
+  // both signals mean "subscribed bulk", and Auto-Submitted ("machine
+  // origin, no human") is the override that distinguishes transactional
+  // sends from the same infra. Without this guard a rare-but-real case —
+  // an ESP transactional with one-click attached to all sends on the
+  // sender domain + Auto-Submitted: auto-generated — would misclassify
+  // as marketing instead of automated.
   const listUnsubPost = headerLower(headers, 'list-unsubscribe-post');
-  if (listUnsubPost && /one-click/i.test(listUnsubPost)) return 'marketing';
+  if (listUnsubPost && /one-click/i.test(listUnsubPost) && !isAutoSubmitted) {
+    return 'marketing';
+  }
 
   if (precedence === 'bulk') return 'marketing';
   if (hasHeader(headers, 'feedback-id')) return 'marketing';

@@ -110,6 +110,27 @@ describe('classifyDelivery — marketing', () => {
 });
 
 describe('classifyDelivery — automated', () => {
+  it('one-click marker + Auto-Submitted downgrades to automated', () => {
+    // The rare-but-real edge case: an ESP attaches one-click to ALL sends
+    // from a sender domain (including transactional templates) and the
+    // transactional send also carries `Auto-Submitted: auto-generated`.
+    // Auto-Submitted means "machine origin, no human" — overrides the
+    // subscribed-bulk implication of one-click. Symmetric with the
+    // ESP-fingerprint rule's !isAutoSubmitted guard. (Audit fix.)
+    expect(
+      classifyDelivery(
+        input({
+          headers: {
+            'list-unsubscribe': '<mailto:unsub@x>',
+            'list-unsubscribe-post': 'List-Unsubscribe=One-Click',
+            'auto-submitted': 'auto-generated',
+          },
+          fromAddr: 'receipts@vendor.example',
+        }),
+      ),
+    ).toBe('automated');
+  });
+
   it('Stripe receipt via SendGrid (ESP + List-Unsubscribe + Auto-Submitted)', () => {
     // Even though it matches the ESP-fingerprint + List-Unsubscribe rule,
     // Auto-Submitted: auto-generated downgrades it from marketing to

@@ -141,7 +141,18 @@ export default async function SendersPage({
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <KindFilter active={kind} tab={tab} search={search} />
-        {tab === 'pending' && (
+        {/*
+          Bulk-deny visibility — show only when the action lines up with
+          what the operator is currently looking at:
+            - the pending tab (it's the only tab where deny makes sense)
+            - AND no kind filter, OR specifically the marketing filter
+          When the operator is filtered to list / automated / direct, the
+          button would be confusing — it'd deny senders they can't see.
+          The action's WHERE clause still scopes to marketing globally, so
+          it stays correct even if shown in those contexts; we just hide
+          it for clarity.
+        */}
+        {tab === 'pending' && (kind === null || kind === 'marketing') && (
           <DenyMarketingButton count={bulkMarketingCount} search={search} />
         )}
       </div>
