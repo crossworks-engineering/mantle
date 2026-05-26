@@ -53,10 +53,26 @@ type XaiChatResponse = {
   };
 };
 
+/** xAI image content part — OpenAI-compat shape with snake_case
+ *  image_url on the wire (Grok's vision endpoint accepts this exact
+ *  shape since their API mirrors OpenAI's). */
+type XaiImageBlock = {
+  type: 'image_url';
+  image_url: { url: string; detail?: 'auto' | 'low' | 'high' };
+};
+
+type XaiTextBlock = { type: 'text'; text: string };
+
 /** xAI accepts OpenAI-shape messages. Tool messages use `tool_call_id`
- *  on the wire (snake_case); the adapter converts our `toolCallId`. */
+ *  on the wire (snake_case); the adapter converts our `toolCallId`.
+ *  User content can be a plain string OR an array of content parts
+ *  (text + image_url) for vision-capable Grok models. */
 type XaiMessage =
-  | { role: 'system' | 'user'; content: string }
+  | { role: 'system'; content: string }
+  | {
+      role: 'user';
+      content: string | Array<XaiTextBlock | XaiImageBlock>;
+    }
   | {
       role: 'assistant';
       content: string | null;
@@ -66,8 +82,38 @@ type XaiMessage =
 
 function toXaiMessages(messages: ChatOptions['messages']): XaiMessage[] {
   return messages.map((m): XaiMessage => {
-    if (m.role === 'system' || m.role === 'user') {
-      return { role: m.role, content: typeof m.content === 'string' ? m.content : '' };
+    if (m.role === 'system') {
+      // Flatten array-form system to a concatenated string. xAI's
+      // automatic prompt caching is opaque + prefix-based, so the
+      // joined text caches the same way the segmented form would
+      // (just without per-block cache_control breakpoints, which
+      // xAI doesn't expose anyway).
+      const content =
+        typeof m.content === 'string'
+          ? m.content
+          : m.content.map((p) => p.text).join('\n\n');
+      return { role: 'system', content };
+    }
+    if (m.role === 'user') {
+      if (typeof m.content === 'string') {
+        return { role: 'user', content: m.content };
+      }
+      // Multimodal array: translate text + image_url parts. xAI's
+      // wire format is camelCase imageUrl → snake_case image_url, so
+      // we rename here.
+      const parts: Array<XaiTextBlock | XaiImageBlock> = m.content.map(
+        (p): XaiTextBlock | XaiImageBlock => {
+          if (p.type === 'text') return { type: 'text', text: p.text };
+          return {
+            type: 'image_url',
+            image_url: {
+              url: p.imageUrl.url,
+              ...(p.imageUrl.detail ? { detail: p.imageUrl.detail } : {}),
+            },
+          };
+        },
+      );
+      return { role: 'user', content: parts };
     }
     if (m.role === 'assistant') {
       const tc = 'toolCalls' in m && m.toolCalls

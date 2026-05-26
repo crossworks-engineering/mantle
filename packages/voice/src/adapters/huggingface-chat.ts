@@ -66,8 +66,19 @@ type HfChatResponse = {
   };
 };
 
+type HfImageBlock = {
+  type: 'image_url';
+  image_url: { url: string; detail?: 'auto' | 'low' | 'high' };
+};
+
+type HfTextBlock = { type: 'text'; text: string };
+
 type HfMessage =
-  | { role: 'system' | 'user'; content: string }
+  | { role: 'system'; content: string }
+  | {
+      role: 'user';
+      content: string | Array<HfTextBlock | HfImageBlock>;
+    }
   | {
       role: 'assistant';
       content: string | null;
@@ -77,8 +88,33 @@ type HfMessage =
 
 function toHfMessages(messages: ChatOptions['messages']): HfMessage[] {
   return messages.map((m): HfMessage => {
-    if (m.role === 'system' || m.role === 'user') {
-      return { role: m.role, content: typeof m.content === 'string' ? m.content : '' };
+    if (m.role === 'system') {
+      // Flatten array-form system content. HF doesn't expose
+      // cache_control breakpoints — the underlying sub-providers
+      // handle caching automatically based on prefix match.
+      const content =
+        typeof m.content === 'string'
+          ? m.content
+          : m.content.map((p) => p.text).join('\n\n');
+      return { role: 'system', content };
+    }
+    if (m.role === 'user') {
+      if (typeof m.content === 'string') {
+        return { role: 'user', content: m.content };
+      }
+      const parts: Array<HfTextBlock | HfImageBlock> = m.content.map(
+        (p): HfTextBlock | HfImageBlock => {
+          if (p.type === 'text') return { type: 'text', text: p.text };
+          return {
+            type: 'image_url',
+            image_url: {
+              url: p.imageUrl.url,
+              ...(p.imageUrl.detail ? { detail: p.imageUrl.detail } : {}),
+            },
+          };
+        },
+      );
+      return { role: 'user', content: parts };
     }
     if (m.role === 'assistant') {
       const tc = 'toolCalls' in m && m.toolCalls

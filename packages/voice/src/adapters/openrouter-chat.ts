@@ -52,12 +52,24 @@ type OrChatTextBlock = {
   cacheControl?: { type: 'ephemeral' };
 };
 
+/** Image content block. OR's SDK accepts the OpenAI-shape image_url
+ *  block (camelCase imageUrl on the typed input; snake_case image_url
+ *  on the wire). The detail flag tunes how much vision compute the
+ *  model spends per image. */
+type OrChatImageBlock = {
+  type: 'image_url';
+  imageUrl: { url: string; detail?: 'auto' | 'low' | 'high' };
+};
+
 /** Mirror of the OR SDK's chat message union, narrowed to what we
- *  emit. The SDK accepts a wider shape (images, tool calls, etc.);
- *  we only build the slice the runtime uses. */
+ *  emit. The SDK accepts a wider shape (audio, etc.); we only build
+ *  the slice the runtime uses. */
 type OrChatMessage =
   | { role: 'system'; content: string | OrChatTextBlock[] }
-  | { role: 'user'; content: string | OrChatTextBlock[] }
+  | {
+      role: 'user';
+      content: string | Array<OrChatTextBlock | OrChatImageBlock>;
+    }
   | {
       role: 'assistant';
       content: string | null;
@@ -90,36 +102,82 @@ function buildMessages(
   const lastUser = cacheControl?.lastUserMessage ? lastUserIndex(messages) : -1;
   return messages.map((m, idx): OrChatMessage => {
     if (m.role === 'system') {
-      const content = typeof m.content === 'string' ? m.content : '';
-      if (cacheControl?.systemPrompt) {
-        return {
-          role: 'system',
-          content: [
-            {
-              type: 'text',
-              text: content,
-              cacheControl: { type: 'ephemeral' },
-            },
-          ],
-        };
+      // Three shapes:
+      //  1. Plain string content + no cache control → passthrough.
+      //  2. Plain string content + cacheControl.systemPrompt → wrap in
+      //     a single text block carrying the ephemeral marker.
+      //  3. Array content (caller already pre-segmented + marked) →
+      //     translate each block, preserving any per-block
+      //     cache_control markers the caller emitted.
+      if (typeof m.content === 'string') {
+        if (cacheControl?.systemPrompt) {
+          return {
+            role: 'system',
+            content: [
+              {
+                type: 'text',
+                text: m.content,
+                cacheControl: { type: 'ephemeral' },
+              },
+            ],
+          };
+        }
+        return { role: 'system', content: m.content };
       }
-      return { role: 'system', content };
+      const blocks: OrChatTextBlock[] = m.content.map((p) => ({
+        type: 'text',
+        text: p.text,
+        ...(p.cacheControl ? { cacheControl: p.cacheControl } : {}),
+      }));
+      return { role: 'system', content: blocks };
     }
     if (m.role === 'user') {
-      const content = typeof m.content === 'string' ? m.content : '';
-      if (idx === lastUser) {
-        return {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: content,
-              cacheControl: { type: 'ephemeral' },
-            },
-          ],
-        };
+      // Two shapes: plain string content (most messages) and the
+      // multi-modal array (vision-capable responder turns carrying
+      // an image_url alongside the text). We translate both — and
+      // when cacheControl.lastUserMessage is set on a string-content
+      // message we wrap it in a text block to attach the marker.
+      if (typeof m.content === 'string') {
+        if (idx === lastUser) {
+          return {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: m.content,
+                cacheControl: { type: 'ephemeral' },
+              },
+            ],
+          };
+        }
+        return { role: 'user', content: m.content };
       }
-      return { role: 'user', content };
+      // Array-shape content: pass each part through. text parts map
+      // 1:1; image_url parts use the OR SDK's `imageUrl` camelCase.
+      // Cache marker on the last user message attaches to the LAST
+      // text block in the array (vision blocks don't carry markers).
+      const parts: Array<OrChatTextBlock | OrChatImageBlock> = m.content.map(
+        (p): OrChatTextBlock | OrChatImageBlock => {
+          if (p.type === 'text') return { type: 'text', text: p.text };
+          return {
+            type: 'image_url',
+            imageUrl: {
+              url: p.imageUrl.url,
+              ...(p.imageUrl.detail ? { detail: p.imageUrl.detail } : {}),
+            },
+          };
+        },
+      );
+      if (idx === lastUser) {
+        for (let i = parts.length - 1; i >= 0; i -= 1) {
+          const p = parts[i]!;
+          if (p.type === 'text') {
+            parts[i] = { ...p, cacheControl: { type: 'ephemeral' } };
+            break;
+          }
+        }
+      }
+      return { role: 'user', content: parts };
     }
     if (m.role === 'assistant') {
       // Tool-loop shape: content may be null when the model only

@@ -364,6 +364,230 @@ describe('google-chat tool translation', () => {
 
 // ─── xai-chat (OpenAI-compat) ───────────────────────────────────────────────
 
+// ─── multi-modal user content (responder vision turns) ─────────────────────
+
+describe('multimodal user content (vision)', () => {
+  it('anthropic-chat translates image_url to image content block (base64 source)', async () => {
+    const calls = captureFetch({
+      content: [{ type: 'text', text: 'I see a cat' }],
+      model: 'claude-sonnet-4-6',
+      usage: {},
+    });
+    await anthropicChatAdapter.chat({
+      apiKey: 'sk-test',
+      model: 'claude-sonnet-4-6',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'what is this?' },
+            {
+              type: 'image_url',
+              imageUrl: {
+                url: 'data:image/png;base64,iVBORw0KGgo=',
+                detail: 'auto',
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const body = JSON.parse(calls[0]!.body);
+    expect(body.messages[0]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'text', text: 'what is this?' },
+        {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: 'image/png',
+            data: 'iVBORw0KGgo=',
+          },
+        },
+      ],
+    });
+  });
+
+  it('anthropic-chat translates http(s) image_url to url-source image block', async () => {
+    const calls = captureFetch({
+      content: [{ type: 'text', text: 'ok' }],
+      model: 'claude-sonnet-4-6',
+      usage: {},
+    });
+    await anthropicChatAdapter.chat({
+      apiKey: 'sk-test',
+      model: 'claude-sonnet-4-6',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'describe' },
+            {
+              type: 'image_url',
+              imageUrl: { url: 'https://example.com/cat.png' },
+            },
+          ],
+        },
+      ],
+    });
+    const body = JSON.parse(calls[0]!.body);
+    expect(body.messages[0].content[1]).toEqual({
+      type: 'image',
+      source: { type: 'url', url: 'https://example.com/cat.png' },
+    });
+  });
+
+  it('xai-chat passes through multimodal user content with image_url (snake_case)', async () => {
+    const calls = captureFetch({
+      model: 'grok-4',
+      choices: [{ message: { role: 'assistant', content: 'ok' } }],
+      usage: {},
+    });
+    await xaiChatAdapter.chat({
+      apiKey: 'xai-test',
+      model: 'grok-4',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'what is this?' },
+            {
+              type: 'image_url',
+              imageUrl: {
+                url: 'data:image/png;base64,iVBORw0KGgo=',
+                detail: 'high',
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const body = JSON.parse(calls[0]!.body);
+    expect(body.messages[0]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'text', text: 'what is this?' },
+        {
+          type: 'image_url',
+          image_url: {
+            url: 'data:image/png;base64,iVBORw0KGgo=',
+            detail: 'high',
+          },
+        },
+      ],
+    });
+  });
+
+  it('google-chat falls back to text-only when given multimodal content (image_url dropped)', async () => {
+    const calls = captureFetch({
+      candidates: [{ content: { parts: [{ text: 'ok' }] } }],
+      usageMetadata: {},
+      modelVersion: 'gemini-2.5-flash',
+    });
+    await googleChatAdapter.chat({
+      apiKey: 'gk-test',
+      model: 'gemini-2.5-flash',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'hi' },
+            { type: 'image_url', imageUrl: { url: 'data:image/png;base64,abc' } },
+          ],
+        },
+      ],
+    });
+    const body = JSON.parse(calls[0]!.body);
+    // Text part survives; image_url is dropped (the dedicated
+    // google-vision adapter handles image understanding).
+    expect(body.contents[0]).toEqual({
+      role: 'user',
+      parts: [{ text: 'hi' }],
+    });
+  });
+});
+
+// ─── multi-block system content (per-segment cache markers) ────────────────
+
+describe('multi-block system content', () => {
+  it('anthropic-chat preserves per-block cache_control markers when system is array-shaped', async () => {
+    const calls = captureFetch({
+      content: [{ type: 'text', text: 'ok' }],
+      model: 'claude-sonnet-4-6',
+      usage: {},
+    });
+    await anthropicChatAdapter.chat({
+      apiKey: 'sk-test',
+      model: 'claude-sonnet-4-6',
+      messages: [
+        {
+          role: 'system',
+          content: [
+            {
+              type: 'text',
+              text: 'persona block',
+              cacheControl: { type: 'ephemeral' },
+            },
+            {
+              type: 'text',
+              text: 'digest block',
+              cacheControl: { type: 'ephemeral' },
+            },
+          ],
+        },
+        { role: 'user', content: 'hi' },
+      ],
+    });
+    const body = JSON.parse(calls[0]!.body);
+    // Two-block system field with cache_control on each block.
+    expect(body.system).toEqual([
+      {
+        type: 'text',
+        text: 'persona block',
+        cache_control: { type: 'ephemeral' },
+      },
+      {
+        type: 'text',
+        text: 'digest block',
+        cache_control: { type: 'ephemeral' },
+      },
+    ]);
+  });
+
+  it('google-chat concatenates multi-block system into systemInstruction text', async () => {
+    const calls = captureFetch({
+      candidates: [{ content: { parts: [{ text: 'ok' }] } }],
+      usageMetadata: {},
+      modelVersion: 'gemini-2.5-flash',
+    });
+    await googleChatAdapter.chat({
+      apiKey: 'gk-test',
+      model: 'gemini-2.5-flash',
+      messages: [
+        {
+          role: 'system',
+          content: [
+            { type: 'text', text: 'persona block' },
+            { type: 'text', text: 'digest block' },
+          ],
+        },
+        { role: 'user', content: 'hi' },
+      ],
+    });
+    const body = JSON.parse(calls[0]!.body);
+    expect(body.systemInstruction).toEqual({
+      parts: [{ text: 'persona block\n\ndigest block' }],
+    });
+  });
+
+  it('openrouter-chat passes array-shape system through with cacheControl camelCase', async () => {
+    // openrouter-chat uses the mocked SDK, not fetch — this test is
+    // in the openrouter-chat.test.ts file. Skipping here; the
+    // dedicated suite covers it.
+  });
+});
+
 describe('xai-chat tool translation', () => {
   it('forwards tools verbatim and extracts OpenAI-shape tool_calls', async () => {
     captureFetch({

@@ -156,6 +156,86 @@ describe('openrouter-chat message translation', () => {
   });
 });
 
+describe('openrouter-chat multi-block + multimodal content', () => {
+  it('passes array-shape system through with per-block cacheControl preserved', async () => {
+    setMockResult({
+      model: 'anthropic/claude-sonnet-4.6',
+      choices: [{ message: { role: 'assistant', content: 'ok' } }],
+      usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+    });
+    await openrouterChatAdapter.chat({
+      apiKey: 'sk-test',
+      model: 'anthropic/claude-sonnet-4.6',
+      messages: [
+        {
+          role: 'system',
+          content: [
+            {
+              type: 'text',
+              text: 'persona',
+              cacheControl: { type: 'ephemeral' },
+            },
+            {
+              type: 'text',
+              text: 'digest',
+              cacheControl: { type: 'ephemeral' },
+            },
+          ],
+        },
+        { role: 'user', content: 'hi' },
+      ],
+    });
+    const sent = sendCalls[0]!.chatRequest;
+    const messages = sent.messages as Array<Record<string, unknown>>;
+    expect(messages[0]).toEqual({
+      role: 'system',
+      content: [
+        { type: 'text', text: 'persona', cacheControl: { type: 'ephemeral' } },
+        { type: 'text', text: 'digest', cacheControl: { type: 'ephemeral' } },
+      ],
+    });
+  });
+
+  it('translates multimodal user content to OR SDK shape (imageUrl camelCase)', async () => {
+    setMockResult({
+      model: 'anthropic/claude-sonnet-4.6',
+      choices: [{ message: { role: 'assistant', content: 'I see a cat' } }],
+      usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+    });
+    await openrouterChatAdapter.chat({
+      apiKey: 'sk-test',
+      model: 'anthropic/claude-sonnet-4.6',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'what is this?' },
+            {
+              type: 'image_url',
+              imageUrl: {
+                url: 'data:image/png;base64,abc',
+                detail: 'high',
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const sent = sendCalls[0]!.chatRequest;
+    const messages = sent.messages as Array<Record<string, unknown>>;
+    expect(messages[0]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'text', text: 'what is this?' },
+        {
+          type: 'image_url',
+          imageUrl: { url: 'data:image/png;base64,abc', detail: 'high' },
+        },
+      ],
+    });
+  });
+});
+
 describe('openrouter-chat usage round-trip', () => {
   it('surfaces tokensIn/tokensOut from usage.promptTokens / completionTokens', async () => {
     setMockResult({

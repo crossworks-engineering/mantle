@@ -122,15 +122,36 @@ function splitSystemAndContents(
 
   for (const m of messages) {
     if (m.role === 'system') {
-      const content = typeof m.content === 'string' ? m.content : '';
+      // Flatten array-form system content (the responder splits its
+      // system into persona + digest blocks for Anthropic-style
+      // caching). Gemini does implicit caching server-side based on
+      // prefix match, so we lose nothing by joining.
+      const content =
+        typeof m.content === 'string'
+          ? m.content
+          : m.content.map((p) => p.text).join('\n\n');
       sys.push(content);
       continue;
     }
     if (m.role === 'user') {
-      contents.push({
-        role: 'user',
-        parts: [{ text: typeof m.content === 'string' ? m.content : '' }],
-      });
+      // String content: single text part.
+      if (typeof m.content === 'string') {
+        contents.push({ role: 'user', parts: [{ text: m.content }] });
+        continue;
+      }
+      // Array content (multimodal): walk parts. text → text part;
+      // image_url is best-effort dropped here (Gemini vision uses a
+      // different inline_data shape we don't translate yet — the
+      // dedicated google-vision adapter is the production path for
+      // image understanding). Falling back to text-only keeps the
+      // turn structurally valid rather than 400ing on an unknown
+      // part shape.
+      const parts: GeminiPart[] = [];
+      for (const part of m.content) {
+        if (part.type === 'text') parts.push({ text: part.text });
+      }
+      if (parts.length === 0) parts.push({ text: '' });
+      contents.push({ role: 'user', parts });
       continue;
     }
     if (m.role === 'tool') {

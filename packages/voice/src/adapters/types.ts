@@ -254,14 +254,40 @@ export type ChatAssistantMessage = {
   toolCalls?: ChatToolCall[];
 };
 
-/** The tool-loop-shaped message union. Distinct from the simpler
- *  string-content shape `ChatOptions.messages` carries because
- *  tool-loop calls need a wider grammar (multi-turn tool exchanges).
- *  Adapters consume both via the unified `ChatOptions.messagesTool` /
- *  `ChatOptions.messages` discriminator. */
+/** A multi-modal user content part. Used when the responder receives
+ *  an image attachment — the runtime builds `[{type:'text', text}, {type:
+ *  'image_url', imageUrl: {url, detail}}]` so vision-capable models
+ *  see both the text and the image. Adapters that target a
+ *  vision-capable provider translate; adapters that don't either
+ *  extract just the text or warn at the call boundary. */
+export type ChatUserContentPart =
+  | { type: 'text'; text: string }
+  | {
+      type: 'image_url';
+      imageUrl: { url: string; detail?: 'auto' | 'low' | 'high' };
+    };
+
+/** A system-message content block. Used when the system prompt is
+ *  composed of multiple cacheable segments (the responder splits its
+ *  system prompt into the persona block + the conversation digest
+ *  block, each with its own cache_control marker so prefix matches
+ *  hit on shorter shared subsequences). */
+export type ChatSystemContentPart = {
+  type: 'text';
+  text: string;
+  cacheControl?: { type: 'ephemeral' };
+};
+
+/** The tool-loop-shaped message union. Wider than the simpler
+ *  string-content shape because tool-loop calls grow assistant turns
+ *  with toolCalls, tool result messages, multi-modal user turns
+ *  (image + text), and multi-segment cacheable system blocks (persona
+ *  + digest each marked separately on Anthropic-shape providers).
+ *  The 3a chat-shaped workers structurally satisfy this union with a
+ *  plain `{role, content: string}` array. */
 export type ChatToolLoopMessage =
-  | { role: 'system'; content: string }
-  | { role: 'user'; content: string }
+  | { role: 'system'; content: string | ChatSystemContentPart[] }
+  | { role: 'user'; content: string | ChatUserContentPart[] }
   | ChatAssistantMessage
   | ChatToolMessage;
 

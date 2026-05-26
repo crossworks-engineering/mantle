@@ -61,10 +61,24 @@ type AnthropicToolResultBlock = {
   is_error?: boolean;
 };
 
+/** Anthropic image block. The `source` shape varies by encoding:
+ *  - base64: `{type:'base64', media_type, data}` for inline bytes.
+ *  - url: `{type:'url', url}` for fetchable URLs (newer API).
+ *  We support both via a discriminated union — the data-URL form
+ *  (`data:image/png;base64,...`) the runtime usually sends gets
+ *  split into the base64 source shape Anthropic expects. */
+type AnthropicImageBlock = {
+  type: 'image';
+  source:
+    | { type: 'base64'; media_type: string; data: string }
+    | { type: 'url'; url: string };
+};
+
 type AnthropicContentBlock =
   | AnthropicTextBlock
   | AnthropicToolUseBlock
-  | AnthropicToolResultBlock;
+  | AnthropicToolResultBlock
+  | AnthropicImageBlock;
 
 type AnthropicMessage = {
   role: 'user' | 'assistant';
@@ -153,8 +167,13 @@ type AnthropicListModelsResponse = {
  */
 function splitSystemAndMessages(
   messages: ChatOptions['messages'],
-): { system: string; rest: AnthropicMessage[] } {
+): { system: string; systemBlocks: AnthropicTextBlock[]; rest: AnthropicMessage[] } {
   const sys: string[] = [];
+  // When ANY system message arrives in block form (carrying its own
+  // cache_control markers), we accumulate blocks here and return them
+  // as the systemField — preserving per-block cache breakpoints.
+  const systemBlocks: AnthropicTextBlock[] = [];
+  let sawBlockSystem = false;
   const rest: AnthropicMessage[] = [];
 
   // Collect consecutive `tool` messages so they coalesce into a single
@@ -169,8 +188,23 @@ function splitSystemAndMessages(
   for (const m of messages) {
     if (m.role === 'system') {
       flushToolResults();
-      const content = typeof m.content === 'string' ? m.content : '';
-      sys.push(content);
+      if (typeof m.content === 'string') {
+        // Plain-string system: accumulate both ways. If a later
+        // system message arrives in block form, the joined string
+        // becomes the first block + the others follow.
+        sys.push(m.content);
+        systemBlocks.push({ type: 'text', text: m.content });
+      } else {
+        // Block-form system: preserve per-block cache_control markers.
+        sawBlockSystem = true;
+        for (const part of m.content) {
+          systemBlocks.push({
+            type: 'text',
+            text: part.text,
+            ...(part.cacheControl ? { cache_control: part.cacheControl } : {}),
+          });
+        }
+      }
       continue;
     }
     if (m.role === 'tool') {
@@ -183,10 +217,25 @@ function splitSystemAndMessages(
     }
     flushToolResults();
     if (m.role === 'user') {
-      rest.push({
-        role: 'user',
-        content: typeof m.content === 'string' ? m.content : '',
-      });
+      // String content: pass through.
+      if (typeof m.content === 'string') {
+        rest.push({ role: 'user', content: m.content });
+        continue;
+      }
+      // Array content (multimodal vision turn): translate each part
+      // to Anthropic's block shape. text → text block; image_url →
+      // image block (split data-URL into base64 source). Unknown
+      // shapes are dropped rather than letting the API 400.
+      const blocks: AnthropicContentBlock[] = [];
+      for (const part of m.content) {
+        if (part.type === 'text') {
+          blocks.push({ type: 'text', text: part.text });
+        } else if (part.type === 'image_url') {
+          const block = toAnthropicImageBlock(part.imageUrl.url);
+          if (block) blocks.push(block);
+        }
+      }
+      rest.push({ role: 'user', content: blocks });
       continue;
     }
     // assistant — may have content, toolCalls, or both
@@ -229,7 +278,15 @@ function splitSystemAndMessages(
     rest.push({ role: 'assistant', content: blocks });
   }
   flushToolResults();
-  return { system: sys.join('\n\n'), rest };
+  return {
+    system: sys.join('\n\n'),
+    // Only surface the block array when the caller actually sent
+    // pre-segmented system blocks. Otherwise the chat fn picks the
+    // plain string path (cheaper to serialise, identical semantically
+    // without per-block cache markers).
+    systemBlocks: sawBlockSystem ? systemBlocks : [],
+    rest,
+  };
 }
 
 /** Translate ChatOptions.tools → Anthropic's `tools` field shape. */
@@ -267,17 +324,36 @@ async function anthropicChat(opts: ChatOptions): Promise<ChatResult> {
   if (!opts.apiKey) throw new Error('anthropic-chat: apiKey required');
   if (!opts.model) throw new Error('anthropic-chat: model required');
 
-  const { system, rest } = splitSystemAndMessages(opts.messages);
+  const { system, systemBlocks, rest } = splitSystemAndMessages(opts.messages);
 
   // Apply cache_control markers. Anthropic enforces a hard cap of 4
-  // breakpoints per request — we only ever set 2 (system + last user
-  // message) so we're well under, but worth knowing if this grows.
+  // breakpoints per request — we set at most 2 from opts.cacheControl
+  // (system + last user) PLUS whatever per-block markers the caller
+  // pre-emitted via array system content. The buildChatMessages helper
+  // typically emits 2 system blocks (persona + digest), each with its
+  // own cache_control — leaving headroom under the cap.
   const cacheControl = opts.cacheControl;
-  const systemField: AnthropicSystemField | undefined = system
-    ? cacheControl?.systemPrompt
+  let systemField: AnthropicSystemField | undefined;
+  if (systemBlocks.length > 0) {
+    // Caller pre-segmented + marked: use the blocks verbatim. Honour
+    // cacheControl.systemPrompt by ensuring the LAST block carries an
+    // ephemeral marker if none of the blocks do already.
+    const hasAnyMarker = systemBlocks.some((b) => b.cache_control);
+    if (cacheControl?.systemPrompt && !hasAnyMarker) {
+      const lastBlock = systemBlocks[systemBlocks.length - 1]!;
+      systemBlocks[systemBlocks.length - 1] = {
+        ...lastBlock,
+        cache_control: { type: 'ephemeral' },
+      };
+    }
+    systemField = systemBlocks;
+  } else if (system) {
+    systemField = cacheControl?.systemPrompt
       ? [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }]
-      : system
-    : undefined;
+      : system;
+  } else {
+    systemField = undefined;
+  }
   const lastUserIdx = cacheControl?.lastUserMessage ? lastUserIndex(rest) : -1;
   const messagesField: AnthropicMessage[] = rest.map((m, idx) => {
     if (idx !== lastUserIdx) return m;
@@ -363,6 +439,31 @@ function lastUserIndex(messages: AnthropicMessage[]): number {
     if (messages[i]!.role === 'user') return i;
   }
   return -1;
+}
+
+/** Translate an OpenAI-shape image_url (which may be a data URL or a
+ *  fetchable URL) into Anthropic's content block shape. Returns null
+ *  for shapes we can't translate (kept defensive: the responder
+ *  shouldn't emit those, but a malformed url shouldn't take down the
+ *  request). */
+function toAnthropicImageBlock(url: string): AnthropicImageBlock | null {
+  if (typeof url !== 'string' || url.length === 0) return null;
+  // Data URL: split into media_type + base64 data.
+  const dataMatch = /^data:([^;,]+);base64,(.+)$/.exec(url);
+  if (dataMatch) {
+    return {
+      type: 'image',
+      source: {
+        type: 'base64',
+        media_type: dataMatch[1]!,
+        data: dataMatch[2]!,
+      },
+    };
+  }
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return { type: 'image', source: { type: 'url', url } };
+  }
+  return null;
 }
 
 async function anthropicDiscover(
