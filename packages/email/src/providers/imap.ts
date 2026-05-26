@@ -3,6 +3,7 @@ import { simpleParser } from 'mailparser';
 import { open } from '@mantle/crypto';
 import type { EmailAccount } from '@mantle/db';
 import { parseAddress, parseAddressList } from '../addresses';
+import { classifyDelivery } from '../classify';
 import type {
   EmailProvider,
   FullMessage,
@@ -11,6 +12,91 @@ import type {
   RawMessage,
   SyncCursor,
 } from '../types';
+
+/**
+ * Headers fetched on the cheap listSince path so `classifyDelivery` can
+ * decide direct/list/automated/marketing without ever pulling a body. These
+ * ride along inside the same FETCH command as the envelope — ImapFlow
+ * compiles them to `BODY.PEEK[HEADER.FIELDS (...)]`, one round trip — so the
+ * extra cost is a few hundred bytes per message and nothing else.
+ *
+ * Adding a new ESP fingerprint? Append to this list AND
+ * `ESP_FINGERPRINT_HEADERS` in `../classify.ts`. Keep them in sync.
+ */
+const CLASSIFY_HEADERS = [
+  'List-Unsubscribe',
+  'List-Unsubscribe-Post',
+  'List-ID',
+  'Precedence',
+  'Auto-Submitted',
+  'Feedback-ID',
+  // ESP fingerprints — name-only (presence is the signal)
+  'X-MC-User',
+  'X-Mailchimp-Campaign-ID',
+  'X-SG-EID',
+  'X-SG-ID',
+  'X-Mailgun-Sid',
+  'X-Mailgun-Variables',
+  'X-SES-Outgoing',
+  'X-PM-Message-Id',
+  'X-HS-Marketing-Email',
+  'X-HubSpot-Campaign-Id',
+  'X-CK-Domain',
+  'X-Cmail-RecipientId',
+  'X-ActiveCampaign-Id',
+  'X-Klaviyo-Message-Id',
+  'X-Mb-Mailer',
+  'X-Iterable-Campaign-Id',
+  'X-CIO-Delivery-ID',
+] as const;
+
+/**
+ * Parse the raw header block ImapFlow returns from `headers: [...]` into a
+ * lower-cased-key map. The block looks like:
+ *
+ *     List-Unsubscribe: <mailto:u@example.com>,\r\n
+ *      <https://example.com/u>\r\n
+ *     Precedence: bulk\r\n
+ *     \r\n
+ *
+ * Folded continuations (lines starting with whitespace) are joined onto the
+ * previous header. We keep only the first value when a name repeats — that
+ * matches how `classifyDelivery` interprets its input. Empty values are
+ * preserved as empty strings; the classifier requires non-empty to treat a
+ * header as "present", which is what we want.
+ */
+export function parseHeaderBlock(buf: Buffer | string | undefined): Record<string, string> {
+  if (!buf) return {};
+  const text = typeof buf === 'string' ? buf : buf.toString('utf-8');
+  // Normalise line endings; some servers use bare LF.
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const out: Record<string, string> = {};
+  let currentName: string | undefined;
+  let currentValue = '';
+  const flush = () => {
+    if (currentName === undefined) return;
+    // Keep first occurrence on repeat — RFC 5322 forbids most duplicates,
+    // but real-world mail has them and the classifier wants one answer.
+    if (!(currentName in out)) out[currentName] = currentValue.trim();
+    currentName = undefined;
+    currentValue = '';
+  };
+  for (const line of lines) {
+    if (line.length === 0) continue;
+    if (line[0] === ' ' || line[0] === '\t') {
+      // Folded continuation of the previous header.
+      currentValue += ' ' + line.trim();
+      continue;
+    }
+    const colon = line.indexOf(':');
+    if (colon < 0) continue; // malformed; skip
+    flush();
+    currentName = line.slice(0, colon).toLowerCase();
+    currentValue = line.slice(colon + 1);
+  }
+  flush();
+  return out;
+}
 
 /**
  * Generic IMAP adapter.
@@ -197,6 +283,20 @@ function normalizeHeader(
             ? new Date(env.date)
             : new Date(0);
 
+  // Classify direct/list/automated/marketing from the marketing-tell
+  // headers we asked for. `msg.headers` is the raw block ImapFlow returns
+  // for `headers: [...]` (a Buffer of the requested HEADER.FIELDS); empty
+  // when the server returned nothing matching. The classifier handles an
+  // empty header map fine — it just falls through to `direct`.
+  const headerMap = parseHeaderBlock(
+    (msg as FetchMessageObject & { headers?: Buffer | string }).headers,
+  );
+  const deliveryKind = classifyDelivery({
+    headers: headerMap,
+    fromAddr,
+    labels,
+  });
+
   return {
     providerMsgId,
     rfcMessageId,
@@ -215,6 +315,7 @@ function normalizeHeader(
     sizeBytes: msg.size,
     hasAttachments: attachments.length > 0,
     attachments,
+    deliveryKind,
   };
 }
 
@@ -297,7 +398,18 @@ export const imap: EmailProvider = {
             range,
             // labels: true asks for X-GM-LABELS; ignored on servers without
             // X-GM-EXT-1, so it's safe to request unconditionally.
-            { envelope: true, internalDate: true, flags: true, labels: true, bodyStructure: true, size: true },
+            // headers: [...] rides inside the same FETCH command as the
+            // envelope — one round trip — and powers classifyDelivery
+            // without ever needing the body. See CLASSIFY_HEADERS above.
+            {
+              envelope: true,
+              internalDate: true,
+              flags: true,
+              labels: true,
+              bodyStructure: true,
+              size: true,
+              headers: CLASSIFY_HEADERS as unknown as string[],
+            },
             { uid: true },
           )) {
             const normalized = normalizeHeader(msg, folder, uidvalidity);
@@ -349,7 +461,18 @@ export const imap: EmailProvider = {
             uids,
             // labels: true asks for X-GM-LABELS; ignored on servers without
             // X-GM-EXT-1, so it's safe to request unconditionally.
-            { envelope: true, internalDate: true, flags: true, labels: true, bodyStructure: true, size: true },
+            // headers: [...] rides inside the same FETCH command as the
+            // envelope — one round trip — and powers classifyDelivery
+            // without ever needing the body. See CLASSIFY_HEADERS above.
+            {
+              envelope: true,
+              internalDate: true,
+              flags: true,
+              labels: true,
+              bodyStructure: true,
+              size: true,
+              headers: CLASSIFY_HEADERS as unknown as string[],
+            },
             { uid: true },
           )) {
             const normalized = normalizeHeader(msg, folder, uidvalidity);

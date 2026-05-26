@@ -41,6 +41,14 @@ export const emailSenders = pgTable(
     firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).defaultNow().notNull(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).defaultNow().notNull(),
     messageCount: integer('message_count').default(0).notNull(),
+    /** Per-kind rollups, bumped in `upsertSenders` alongside messageCount.
+     *  The senders UI computes a dominance ratio from these to decide
+     *  whether to stamp a pill on the row. Sum across the four equals
+     *  messageCount minus any `unknown`-kind backfill leftovers. */
+    directCount: integer('direct_count').default(0).notNull(),
+    listCount: integer('list_count').default(0).notNull(),
+    automatedCount: integer('automated_count').default(0).notNull(),
+    marketingCount: integer('marketing_count').default(0).notNull(),
     status: senderStatus('status').default('pending').notNull(),
     decidedAt: timestamp('decided_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

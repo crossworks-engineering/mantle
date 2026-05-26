@@ -86,6 +86,9 @@ export async function syncAccount(account: EmailAccount, provider: EmailProvider
       address: m.fromAddr,
       displayName: m.fromName,
       internalDate: m.internalDate,
+      // 'unknown' on the rare provider that doesn't classify — the
+      // counters stay flat for that message, messageCount still bumps.
+      deliveryKind: m.deliveryKind ?? ('unknown' as const),
     }));
     for (const m of batch) if (!resolver.has(m.fromAddr)) newSenders += 1;
     await upsertSenders(account.userId, account.id, seen, resolver);
@@ -242,6 +245,10 @@ async function ingestOne(
         isStarred: message.isStarred ?? false,
         hasAttachments: full.attachments.length > 0,
         sizeBytes: message.sizeBytes ?? null,
+        // Provider sets this from headers; default 'unknown' covers providers
+        // that don't classify (e.g. minimal Graph envelopes) without breaking
+        // the schema's NOT NULL.
+        deliveryKind: message.deliveryKind ?? 'unknown',
       };
       const [insertedEmail] = await tx
         .insert(emails)

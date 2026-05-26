@@ -1,4 +1,5 @@
 import type { EmailAccount } from '@mantle/db';
+import type { DeliveryKind } from './classify';
 
 /**
  * Provider-agnostic shape every adapter yields from the cheap "listSince"
@@ -34,6 +35,10 @@ export interface RawMessage {
   hasAttachments: boolean;
   /** Attachment refs from MIME structure (no content yet). */
   attachments: RawAttachmentRef[];
+  /** Computed at normalisation time from headers + envelope + labels — see
+   *  `classifyDelivery`. Providers without enough signal (e.g. minimal Graph
+   *  envelopes) MAY omit this; the orchestrator persists `unknown`. */
+  deliveryKind?: DeliveryKind;
 }
 
 export interface RawAttachmentRef {

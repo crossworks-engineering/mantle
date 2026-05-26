@@ -1,6 +1,7 @@
 import { db, emailSenderDomains, emailSenders } from '@mantle/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { domainOf } from './addresses';
+import type { DeliveryKind } from './classify';
 
 export type Decision = 'approved' | 'denied' | 'pending';
 
@@ -84,18 +85,40 @@ export class SenderResolver {
 export async function upsertSenders(
   userId: string,
   sourceAccountId: string,
-  seen: Array<{ address: string; displayName?: string; internalDate: Date }>,
+  seen: Array<{
+    address: string;
+    displayName?: string;
+    internalDate: Date;
+    /** Classification of this specific message. `unknown` is treated as
+     *  "don't bump any of the per-kind counters" — neutral for senders that
+     *  haven't been classified yet (historical providers). */
+    deliveryKind?: DeliveryKind | 'unknown';
+  }>,
   resolver?: SenderResolver,
 ): Promise<void> {
   if (seen.length === 0) return;
-  const byAddr = new Map<string, { displayName?: string; internalDate: Date; count: number }>();
+  type Acc = {
+    displayName?: string;
+    internalDate: Date;
+    count: number;
+    direct: number;
+    list: number;
+    automated: number;
+    marketing: number;
+  };
+  const byAddr = new Map<string, Acc>();
   for (const s of seen) {
     const key = s.address.toLowerCase();
     const prev = byAddr.get(key);
+    const kind = s.deliveryKind ?? 'unknown';
     byAddr.set(key, {
       displayName: s.displayName ?? prev?.displayName,
       internalDate: prev && prev.internalDate > s.internalDate ? prev.internalDate : s.internalDate,
       count: (prev?.count ?? 0) + 1,
+      direct: (prev?.direct ?? 0) + (kind === 'direct' ? 1 : 0),
+      list: (prev?.list ?? 0) + (kind === 'list' ? 1 : 0),
+      automated: (prev?.automated ?? 0) + (kind === 'automated' ? 1 : 0),
+      marketing: (prev?.marketing ?? 0) + (kind === 'marketing' ? 1 : 0),
     });
   }
   const rows = [...byAddr.entries()].map(([address, v]) => ({
@@ -107,6 +130,10 @@ export async function upsertSenders(
     firstSeenAt: v.internalDate,
     lastSeenAt: v.internalDate,
     messageCount: v.count,
+    directCount: v.direct,
+    listCount: v.list,
+    automatedCount: v.automated,
+    marketingCount: v.marketing,
     // Resolver decision is the *insert-time* status. UPDATE path ignores it.
     status: resolver?.decide(address) ?? ('pending' as const),
   }));
@@ -120,6 +147,10 @@ export async function upsertSenders(
         // bump count and refresh display name + last-seen using SQL fragments
         // so we don't need to read-then-write.
         messageCount: __sqlAddCount(),
+        directCount: __sqlAddDirect(),
+        listCount: __sqlAddList(),
+        automatedCount: __sqlAddAutomated(),
+        marketingCount: __sqlAddMarketing(),
         lastSeenAt: __sqlGreatestLastSeen(),
         displayName: __sqlCoalesceDisplay(),
       },
@@ -130,6 +161,18 @@ export async function upsertSenders(
 import { sql } from 'drizzle-orm';
 function __sqlAddCount() {
   return sql`${emailSenders.messageCount} + excluded.message_count`;
+}
+function __sqlAddDirect() {
+  return sql`${emailSenders.directCount} + excluded.direct_count`;
+}
+function __sqlAddList() {
+  return sql`${emailSenders.listCount} + excluded.list_count`;
+}
+function __sqlAddAutomated() {
+  return sql`${emailSenders.automatedCount} + excluded.automated_count`;
+}
+function __sqlAddMarketing() {
+  return sql`${emailSenders.marketingCount} + excluded.marketing_count`;
 }
 function __sqlGreatestLastSeen() {
   return sql`greatest(${emailSenders.lastSeenAt}, excluded.last_seen_at)`;

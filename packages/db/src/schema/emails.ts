@@ -24,6 +24,23 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
 export const emailProvider = pgEnum('email_provider', ['gmail', 'microsoft', 'imap']);
 
 /**
+ * Per-message delivery classification. Computed at sync time from headers +
+ * envelope + Gmail labels (no body required) — see
+ * `packages/email/src/classify.ts` for the rule cascade.
+ *
+ * `unknown` is a back-compat sentinel for historical rows that haven't been
+ * classified yet; the classifier itself never emits it. A future
+ * `scripts/classify-backfill.ts` re-reads headers and flips them.
+ */
+export const deliveryKind = pgEnum('delivery_kind', [
+  'direct',
+  'list',
+  'automated',
+  'marketing',
+  'unknown',
+]);
+
+/**
  * `approve_list` — only ingest from senders the user has approved. New
  *   senders surface in `email_senders` as `pending` for curation. Used by
  *   IMAP by default (cheaper, opt-in).
@@ -131,6 +148,9 @@ export const emails = pgTable(
     isStarred: boolean('is_starred').default(false).notNull(),
     hasAttachments: boolean('has_attachments').default(false).notNull(),
     sizeBytes: integer('size_bytes'),
+    /** direct | list | automated | marketing | unknown. Set at sync time
+     *  from headers (no body needed). See `@mantle/email#classifyDelivery`. */
+    deliveryKind: deliveryKind('delivery_kind').default('unknown').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -147,6 +167,7 @@ export const emails = pgTable(
     index('emails_internal_date_idx').on(t.internalDate),
     index('emails_node_idx').on(t.nodeId),
     index('emails_from_idx').on(t.fromAddr),
+    index('emails_delivery_kind_idx').on(t.deliveryKind),
   ],
 );
 
