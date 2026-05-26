@@ -635,6 +635,43 @@ design and let memory reason about facts that change over time.
 "Jason worked at X from 2023 to 2025, now works at Y" stays queryable
 as "where does Jason work *currently*?" via `WHERE valid_to IS NULL`.
 
+### Entity reconciliation refinements
+
+`reconcileEntity` in [`apps/agent/src/extractor.ts`](../apps/agent/src/extractor.ts)
+matches in four steps: (1) exact name/alias, (2) trigram similarity ≥ 0.7,
+(3) embedding cosine < threshold, (4) new entity. Steps 2-3 are the merge
+paths — they collapse "Mr J Schoeman", "Schoeman", "Don Schoeman", "Jonathan
+Schoeman" into one entity, which is great for spelling variations of the
+*same person* and disastrous for *different people* who share a surname.
+
+**Same-surname-different-given guard** (added 2026-05-26). When the candidate
+is `kind='person'`, the helper `isLikelyDifferentPerson`
+([`apps/agent/src/person-names.ts`](../apps/agent/src/person-names.ts)) sits
+in front of both merge paths and refuses the merge when **both** names look
+like a full given-name + surname pair, share a surname, and have clearly
+distinct given names. Conservative — anything ambiguous returns false so the
+normal merge still wins:
+
+| Candidate vs existing | Decision |
+|---|---|
+| `Don Schoeman` vs `Jason Schoeman` | distinct → **new entity** |
+| `Don Schoeman` vs `Donald Schoeman` | prefix overlap → merge (nickname/long-form) |
+| `Don Schoeman` vs `D. Schoeman` | initial → merge (could be the same) |
+| `Don Schoeman` vs `Mr J Schoeman` | title + initial → merge (could be the same) |
+| `Don Schoeman` vs `Don Smith` | different surname → not this rule's concern |
+| `Don Co` (org) vs `Jason Co` (org) | non-person → not this rule's concern |
+
+Org / place / event reconciliation is untouched. The guard cares about every
+known name on the existing entity (primary + aliases): the merge is refused
+only if the candidate clashes with **all** of them, so a re-extraction of a
+contact already aliased into an entity still finds its way home.
+
+Doesn't unwind earlier collapses — if pre-fix data shows a single
+`J. Schoeman` row with five people's aliases, delete the row (facts'
+`entity_id` FK is `ON DELETE SET NULL`; `entity_edges` need a manual sweep)
+and re-fire `pg_notify('node_ingested')` on the affected source nodes; the
+guard does the right thing on the re-extract.
+
 ---
 
 ## 6. Agents and models that build memory

@@ -31,6 +31,11 @@ Companion docs:
 - [`email-send.md`](./email-send.md) — outbound email: the `email_send` tool
   sends from the user's mailbox via provider SMTP submission (reusing the IMAP
   app password); never an own MTA. The send half of the §8 read-only pipeline.
+- [`contacts.md`](./contacts.md) — `contact` node type (name + company + email
+  + cell + description) and the `/contacts` master-detail UI. The contacts
+  list IS the email allowlist: non-empty contacts engages the send gate.
+  Per-method send counters bumped on success. Same-surname-different-given
+  reconciler refinement lives here too.
 
 ---
 

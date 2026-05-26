@@ -59,13 +59,21 @@ Traced as a `send` step inside the calling agent's turn.
   untrusted email/Telegram content (a prompt-injection exfiltration vector),
   flip `requiresConfirm` on the tool row at `/settings/tools` to route every
   send through the `pending_tool_calls` approval queue (same as `telegram_send`).
-- **Recipient allowlist** — `profiles.preferences.emailAllowlist` (managed at
-  `/settings/profile`). **Opt-in**: empty ⇒ send to anyone (default); once it
-  has entries it's enforced — only the user's own account addresses plus listed
-  recipients pass, others are refused. Entries are exact addresses
-  (`you@example.com`) or whole-domain wildcards (`@example.com`). Applies to
-  **both** `email_send` and `email_page` (across `to`/`cc`/`bcc`). The matcher
-  `isRecipientAllowed` lives in `@mantle/content` (unit-tested).
+- **Recipient gate — the contacts list IS the allowlist.** Managed at
+  `/contacts` (see [`contacts.md`](./contacts.md)). With zero contacts, the
+  gate is OFF and Saskia can send anywhere (bootstrap state). With one or
+  more contacts, the gate enforces: recipient must be the user's own account
+  address, or have a matching `contact` node by email. Others are refused
+  with a clear *"these recipients aren't in the user's contact list"*
+  message. Applies to **both** `email_send` and `email_page` (across
+  `to`/`cc`/`bcc`). Implemented by `blockedRecipients` in
+  [`builtins-email.ts`](../packages/tools/src/builtins-email.ts), reading
+  from `contactEmails(ownerId)`. Adding a contact unlocks emailing them;
+  deleting one revokes that reach.
+
+  (Earlier in 2026-05 a `profiles.preferences.emailAllowlist` field served
+  this role; it was removed when contacts shipped to give the system a single
+  source of truth for "who Saskia may reach.")
 
 ## Emailing a rich page — `email_page`
 
@@ -132,5 +140,6 @@ Corporate M365 may disable SMTP AUTH by tenant policy — same caveat as IMAP.
   future `email_reply` tool could thread a reply onto an ingested `email` node.
 - **Store sent mail** — outbound isn't persisted as a node today; could write a
   `email`/sent node so sent messages are searchable + show in a thread.
-- ~~Per-recipient allowlist~~ — **shipped** (see the Safety gate above):
-  `profiles.preferences.emailAllowlist`, enforced across `email_send` + `email_page`.
+- ~~Per-recipient allowlist~~ — **shipped** as a *contacts-driven* gate (see
+  the Safety gate above + [`contacts.md`](./contacts.md)); enforced across
+  `email_send` + `email_page`.
