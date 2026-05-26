@@ -32,6 +32,7 @@ import {
   type VisionModelInfo,
 } from '@mantle/voice';
 import { getAiWorker } from '@/lib/ai-workers';
+import { clearEmbeddingModelCache } from '@mantle/embeddings';
 import type { AiWorkerKind, AiWorkerParams } from '@mantle/db';
 
 export async function createAiWorkerAction(formData: FormData): Promise<void> {
@@ -60,6 +61,10 @@ export async function createAiWorkerAction(formData: FormData): Promise<void> {
     enabled: formData.get('enabled') !== 'off',
     isDefault: formData.get('isDefault') === 'on',
   });
+  // Embedding model changes need the resolver cache to drop NOW, not in
+  // 60s — otherwise the first ingest / recall after a save would still
+  // hit the old model. Cheap, idempotent.
+  if (kind === 'embedding') clearEmbeddingModelCache(user.id);
   revalidatePath('/settings/ai-workers');
   redirect(`/settings/ai-workers?selected=${created.id}`);
 }
@@ -85,20 +90,28 @@ export async function updateAiWorkerAction(
   if (formData.get('isDefault') === 'on') {
     await setDefaultWorker(user.id, id);
   }
+  // Invalidate the embedding resolver cache if this update touched an
+  // embedding worker — model swaps need to take effect immediately for
+  // the next ingest / recall to pick up the change.
+  if (existing.kind === 'embedding') clearEmbeddingModelCache(user.id);
   revalidatePath('/settings/ai-workers');
   revalidatePath(`/settings/ai-workers/${id}`);
 }
 
 export async function deleteAiWorkerAction(id: string): Promise<void> {
   const user = await requireOwner();
+  const existing = await getAiWorker(user.id, id);
   await deleteAiWorker(user.id, id);
+  if (existing?.kind === 'embedding') clearEmbeddingModelCache(user.id);
   revalidatePath('/settings/ai-workers');
   redirect('/settings/ai-workers');
 }
 
 export async function setDefaultWorkerAction(id: string): Promise<void> {
   const user = await requireOwner();
+  const existing = await getAiWorker(user.id, id);
   await setDefaultWorker(user.id, id);
+  if (existing?.kind === 'embedding') clearEmbeddingModelCache(user.id);
   revalidatePath('/settings/ai-workers');
 }
 
@@ -221,7 +234,7 @@ export async function testSttAction(
  */
 export async function discoverModelsAction(
   apiKeyId: string,
-  kind: 'tts' | 'stt' | 'chat' | 'vision' | 'image_gen',
+  kind: 'tts' | 'stt' | 'chat' | 'vision' | 'image_gen' | 'embedding',
   providerId: string,
 ): Promise<{
   available: Array<
@@ -233,6 +246,15 @@ export async function discoverModelsAction(
   // Owner-scope the api key lookup — same model the agent runtime uses,
   // so a leaked api_key_id from the URL can't be exfiltrated here.
   await requireOwner();
+
+  // Embedding has its own keyless discovery path: OpenRouter publishes
+  // a separate `/api/v1/embeddings/models` catalog (the main /v1/models
+  // intentionally excludes them) that needs no auth. Short-circuits the
+  // api-key requirement before we hit the adapter registry.
+  if (kind === 'embedding') {
+    return discoverEmbeddingModelsOpenRouter();
+  }
+
   const apiKey = await getApiKeyById(apiKeyId);
   if (!apiKey) {
     return {
@@ -276,6 +298,68 @@ export async function discoverModelsAction(
     };
   }
   return adapter.discoverModels(apiKey);
+}
+
+/**
+ * Fetch OpenRouter's embedding-model catalog
+ * (`GET /api/v1/embeddings/models`). Keyless, hourly-cached upstream,
+ * 25-ish models with prompt pricing, context length, and an architecture
+ * descriptor. Mapped into ChatModelInfo[] (the closest existing shape —
+ * id + label + description + contextTokens + inputPricePer1M) so it slots
+ * straight into the worker form's existing discovery wiring with no new
+ * union member to thread.
+ */
+async function discoverEmbeddingModelsOpenRouter(): Promise<{
+  available: ChatModelInfo[];
+  filtered: false;
+  error: string | null;
+}> {
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/embeddings/models', {
+      signal: AbortSignal.timeout(8_000),
+      headers: { accept: 'application/json' },
+    });
+    if (!res.ok) {
+      return {
+        available: [],
+        filtered: false,
+        error: `openrouter /api/v1/embeddings/models: HTTP ${res.status}`,
+      };
+    }
+    const body = (await res.json()) as {
+      data?: Array<{
+        id?: string;
+        name?: string;
+        description?: string;
+        context_length?: number | null;
+        pricing?: { prompt?: string | null } | null;
+      }>;
+    };
+    const available: ChatModelInfo[] = (body.data ?? [])
+      .filter((m): m is { id: string } & typeof m => typeof m.id === 'string' && m.id.length > 0)
+      .map((m) => {
+        // OpenRouter encodes pricing as USD per single token, string-typed.
+        // Same convention as the main /v1/models response — multiply by
+        // 1e6 for the per-1M view the UI shows.
+        const raw = m.pricing?.prompt;
+        const perToken = typeof raw === 'string' && raw.length > 0 ? Number(raw) : undefined;
+        const inputPricePer1M = Number.isFinite(perToken) ? (perToken as number) * 1_000_000 : undefined;
+        return {
+          id: m.id,
+          label: m.name ?? m.id,
+          description: m.description ?? '',
+          contextTokens: typeof m.context_length === 'number' ? m.context_length : undefined,
+          inputPricePer1M,
+        };
+      });
+    return { available, filtered: false, error: null };
+  } catch (err) {
+    return {
+      available: [],
+      filtered: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 /**

@@ -235,7 +235,11 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
     kind === 'stt' ||
     (kind === 'vision' && wiredVisionProviders.has(provider)) ||
     (kind === 'image_gen' && wiredImageGenProviders.has(provider)) ||
-    (chatShaped && wiredChatProviders.has(provider));
+    (chatShaped && wiredChatProviders.has(provider)) ||
+    // Embedding routes through OpenRouter's keyless
+    // `/api/v1/embeddings/models` catalog. No adapter dispatcher needed
+    // (yet — single backing service); the action handles the fetch.
+    kind === 'embedding';
 
   // The initial model list rendered before live discovery returns
   // depends on which provider+kind we're configuring. Picking the
@@ -330,18 +334,23 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
   }, []);
 
   const refreshDiscovery = async (keyId: string, providerOverride?: string) => {
-    if (!keyId) return;
     // Decide which dispatch kind to hand to the action: 'chat' for
-    // reflector/extractor/summarizer (they make chat calls), or the
-    // worker kind directly for tts/stt/vision. We bail out cleanly if
-    // the worker kind isn't supported by discovery yet.
+    // reflector/extractor/summarizer (they make chat calls), 'embedding'
+    // routes to OR's keyless catalog (no api key needed), or the
+    // worker kind directly for tts/stt/vision/image_gen. We bail out
+    // cleanly if the worker kind isn't supported by discovery yet.
     const discoveryKind =
       kind === 'tts' || kind === 'stt' || kind === 'vision' || kind === 'image_gen'
         ? kind
+        : kind === 'embedding'
+        ? 'embedding'
         : chatShaped
         ? 'chat'
         : null;
     if (!discoveryKind) return;
+    // Embedding discovery is keyless (OR's public catalog) — every other
+    // kind needs the key to know which models the user can actually use.
+    if (!keyId && discoveryKind !== 'embedding') return;
     setDiscovery((d) => ({ ...d, loading: true }));
     try {
       const r = await discoverModelsAction(
@@ -365,11 +374,12 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
     }
   };
 
-  // On first mount, if we already have a key (edit mode), fetch the
-  // live model list so the dropdown narrows immediately. Skip in
-  // create mode until the user picks a key.
+  // On first mount, fire discovery if we have a key (edit mode) OR if
+  // the kind is `embedding` — that path is keyless against OR's public
+  // embeddings catalog, so we can populate the picker before any key
+  // selection happens.
   useEffect(() => {
-    if (apiKeyId) void refreshDiscovery(apiKeyId);
+    if (apiKeyId || kind === 'embedding') void refreshDiscovery(apiKeyId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -377,9 +387,10 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
   // different model-listing surfaces. If no api key is selected yet
   // we still want the dropdown to reflect the new provider, so swap
   // to that provider's static catalog as a stopgap until the user
-  // picks a key and live discovery runs.
+  // picks a key and live discovery runs. Embedding's keyless path
+  // means we DON'T need to wait for the key here.
   useEffect(() => {
-    if (apiKeyId) {
+    if (apiKeyId || kind === 'embedding') {
       void refreshDiscovery(apiKeyId, provider);
     } else {
       setDiscovery({
@@ -461,7 +472,9 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
             ))}
           </select>
           <p className="text-xs text-muted-foreground">
-            {supportsDiscovery
+            {kind === 'embedding'
+              ? 'Pick your OpenRouter key — embedding requests at runtime route through it. Discovery itself is keyless.'
+              : supportsDiscovery
               ? 'Selecting a key queries OpenAI to show only models this key can use.'
               : 'Pick a key whose service matches the provider.'}
           </p>
@@ -581,6 +594,7 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
           {kind === 'reflector' && 'Reflector settings'}
           {kind === 'extractor' && 'Extractor settings'}
           {kind === 'summarizer' && 'Summarizer settings'}
+          {kind === 'embedding' && 'Embedding settings'}
         </h2>
 
         {kind === 'tts' && (
@@ -597,6 +611,7 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
         {kind === 'reflector' && <LlmWorkerFields params={params} systemPrompt={worker?.systemPrompt} kind="reflector" provider={provider} />}
         {kind === 'extractor' && <LlmWorkerFields params={params} systemPrompt={worker?.systemPrompt} kind="extractor" provider={provider} />}
         {kind === 'summarizer' && <LlmWorkerFields params={params} systemPrompt={worker?.systemPrompt} kind="summarizer" provider={provider} />}
+        {kind === 'embedding' && <EmbeddingFields model={model} />}
       </section>
 
       {/* ── Priority ─────────────────────────────────────────────── */}
@@ -1155,6 +1170,87 @@ function ImageGenFields({ params }: { params: Record<string, unknown> }) {
           <option value="vivid">vivid</option>
         </select>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Embedding-kind worker fields. Deliberately tiny — embedding is a pure
+ * text→vector transformation with no temperature / max_tokens / system
+ * prompt to tune. The model picker above this section is the entire
+ * interaction.
+ *
+ * What this surface adds: an explicit reminder of the column constraint
+ * (`vector(1536)`) and a soft warning if the picked model is known to
+ * produce a different dim — switching to a non-1536 model needs a
+ * one-shot `pnpm re-embed` pass or new vectors will fail to insert.
+ *
+ * The dim → model mapping is intentionally a tight allow-list of slugs
+ * we've verified rather than a string-match heuristic — false positives
+ * here would block legitimate switches. If a model isn't in the list,
+ * we say so plainly instead of guessing.
+ */
+function EmbeddingFields({ model }: { model: string }) {
+  // Lower-cased slug → dimensions for the OR routes we've confirmed.
+  // Keep growing this map as new embedding models land in OR's catalog;
+  // anything not listed prints the neutral "unknown dimensions" hint and
+  // assumes the user knows what they're doing.
+  const KNOWN_DIMS: Record<string, number> = {
+    'openai/text-embedding-3-small': 1536,
+    'openai/text-embedding-3-large': 3072,
+    'openai/text-embedding-ada-002': 1536,
+    'google/gemini-embedding-2-preview': 1536, // honours output_dimensionality
+    'nvidia/llama-nemotron-embed-vl-1b-v2': 1024,
+    'nvidia/llama-nemotron-embed-vl-1b-v2:free': 1024,
+    'thenlper/gte-base': 768,
+    'thenlper/gte-large': 1024,
+    'intfloat/e5-base-v2': 768,
+    'intfloat/e5-large-v2': 1024,
+    'perplexity/pplx-embed-v1-4b': 1024,
+    'perplexity/pplx-embed-v1-0.6b': 1024,
+  };
+  const COLUMN_DIMS = 1536;
+  const slug = (model ?? '').toLowerCase().trim();
+  const knownDims = slug ? KNOWN_DIMS[slug] : undefined;
+  const mismatched = knownDims !== undefined && knownDims !== COLUMN_DIMS;
+  return (
+    <div className="space-y-3 rounded-md border border-border bg-card/40 p-3 text-sm">
+      <p className="text-muted-foreground">
+        Embedding is a single text→vector transformation. No temperature, no
+        max-tokens. Picking a model here applies it to every embedding call
+        in the stack — extractor writes, agent semantic-memory reads, recall,
+        MCP search, and the tool-result spill query.
+      </p>
+      <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-xs">
+        <dt className="text-muted-foreground">Column shape</dt>
+        <dd className="font-mono tabular-nums">vector({COLUMN_DIMS})</dd>
+        <dt className="text-muted-foreground">Selected model dim</dt>
+        <dd className="font-mono tabular-nums">
+          {knownDims ? (
+            <span className={mismatched ? 'text-destructive' : ''}>{knownDims}</span>
+          ) : slug ? (
+            <span className="text-muted-foreground">unknown</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </dd>
+      </dl>
+      {mismatched && (
+        <p className="rounded border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
+          <strong>Dimension mismatch.</strong> This model emits {knownDims}-dim
+          vectors but the brain's column is {COLUMN_DIMS}. Saving this worker
+          will work, but new embeddings will fail to insert. You'd need to
+          either run <code>pnpm re-embed</code> with a column-width migration,
+          or pick a 1536-dim model.
+        </p>
+      )}
+      {!knownDims && slug && (
+        <p className="text-xs text-muted-foreground">
+          Dimensions for this slug aren't in our verified map — confirm at the
+          provider's docs. If it's not 1536-dim, insertion will fail; treat
+          this as "use at your own risk" until we add it to the allow-list.
+        </p>
+      )}
     </div>
   );
 }
