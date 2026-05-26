@@ -843,7 +843,14 @@ export function AgentsClient({
               />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-3">
+            {/*
+              Two rows of paired fields. Row 1: Role + Priority (short
+              controls, fit naturally side-by-side). Row 2: Model + API key
+              50/50 — the model combobox needs the extra width so its
+              selected-summary (name + context + pricing badges) doesn't
+              get truncated on long Anthropic/Google slugs.
+            */}
+            <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="role">Role</Label>
                 <select
@@ -860,6 +867,20 @@ export function AgentsClient({
                 </select>
               </div>
               <div className="space-y-1.5">
+                <Label htmlFor="priority">Priority</Label>
+                <Input
+                  id="priority"
+                  type="number"
+                  value={form.priority}
+                  onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))}
+                  min={0}
+                  step={1}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
                 <Label htmlFor="model">Model</Label>
                 <ModelSelect
                   id="model"
@@ -875,43 +896,31 @@ export function AgentsClient({
                 <ContextWindowHint model={form.model} limits={contextLimits} />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="priority">Priority</Label>
-                <Input
-                  id="priority"
-                  type="number"
-                  value={form.priority}
-                  onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))}
-                  min={0}
-                  step={1}
-                />
+                <Label htmlFor="apiKey">API key</Label>
+                <select
+                  id="apiKey"
+                  value={form.apiKeyId}
+                  onChange={(e) => setForm((f) => ({ ...f, apiKeyId: e.target.value }))}
+                  className={SELECT_CLASS}
+                  required
+                >
+                  <option value="">— select a key —</option>
+                  {apiKeys.map((k) => (
+                    <option key={k.id} value={k.id}>
+                      {k.service} / {k.label} ({k.masked})
+                    </option>
+                  ))}
+                </select>
+                {apiKeys.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    No keys saved.{' '}
+                    <a href="/settings/keys" className="underline">
+                      Add one
+                    </a>{' '}
+                    first.
+                  </p>
+                )}
               </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="apiKey">API key</Label>
-              <select
-                id="apiKey"
-                value={form.apiKeyId}
-                onChange={(e) => setForm((f) => ({ ...f, apiKeyId: e.target.value }))}
-                className={SELECT_CLASS}
-                required
-              >
-                <option value="">— select a key —</option>
-                {apiKeys.map((k) => (
-                  <option key={k.id} value={k.id}>
-                    {k.service} / {k.label} ({k.masked})
-                  </option>
-                ))}
-              </select>
-              {apiKeys.length === 0 && (
-                <p className="text-xs text-muted-foreground">
-                  No keys saved.{' '}
-                  <a href="/settings/keys" className="underline">
-                    Add one
-                  </a>{' '}
-                  first.
-                </p>
-              )}
             </div>
 
             <div className="space-y-1.5">
