@@ -27,7 +27,15 @@ import { useToast } from '@/components/ui/toast';
 import { TagInput } from '@/components/tag-input';
 import { ListPager } from '@/components/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
-import { formatCell, normalizeCountryCode, type ContactRow } from '@/lib/contacts';
+// IMPORTANT: import from the *leaf* `contacts-format` subpath, NOT the
+// `@/lib/contacts` re-export — that one barrels through `@mantle/content` →
+// `@mantle/db` → `postgres` (Node-only `fs`), which Next can't ship to the
+// browser. The DB-using server code keeps using @/lib/contacts as before.
+import {
+  formatCell,
+  normalizeCountryCode,
+  type ContactRow,
+} from '@mantle/content/contacts-format';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
 

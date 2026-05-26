@@ -11,7 +11,8 @@
     "./todos": "./src/todos.ts",
     "./events": "./src/events.ts",
     "./pages": "./src/pages.ts",
-    "./markdown": "./src/markdown-to-doc.ts"
+    "./markdown": "./src/markdown-to-doc.ts",
+    "./contacts-format": "./src/contacts-format.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
