@@ -57,6 +57,7 @@ import { diskPathForFile, extOf, mimeForExt, parseDocumentBytes, INGESTABLE_EXTS
 import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import { captureLlmUsage, runVisionWorker } from '@mantle/agent-runtime';
 import { chunkDocText, mentionRefs } from '@mantle/content';
+import { isLikelyDifferentPerson } from './person-names';
 
 /** Types we will NEVER extract from, no matter what the agent config says.
  *  Note `secret` is NOT here — secret nodes have metadata-only extraction
@@ -591,15 +592,22 @@ async function reconcileEntity(
     .orderBy(sql`similarity(${entities.name}, ${trimmed}) desc`)
     .limit(1);
   if (trgmHits[0] && trgmHits[0].sim >= 0.7) {
-    // Looks like a match — register the new spelling as an alias.
     const existing = trgmHits[0].row;
-    if (!existing.aliases.includes(trimmed) && existing.name.toLowerCase() !== trimmed.toLowerCase()) {
-      await db
-        .update(entities)
-        .set({ aliases: [...existing.aliases, trimmed], updatedAt: new Date() })
-        .where(eq(entities.id, existing.id));
+    // Same-surname-different-given guard: surname alone hits the trigram
+    // threshold, which would alias "Don Schoeman" into "Jason Schoeman". For
+    // kind='person' we refuse the merge when both names look like full
+    // given-name+surname pairs with the same surname but distinct given names.
+    // Falls through to the embedding match below, which carries the same guard.
+    if (!isLikelyDifferentPerson(mention, existing)) {
+      // Looks like a match — register the new spelling as an alias.
+      if (!existing.aliases.includes(trimmed) && existing.name.toLowerCase() !== trimmed.toLowerCase()) {
+        await db
+          .update(entities)
+          .set({ aliases: [...existing.aliases, trimmed], updatedAt: new Date() })
+          .where(eq(entities.id, existing.id));
+      }
+      return existing;
     }
-    return existing;
   }
 
   // 3. Embedding match (when populated). We embed the mention only when we
@@ -619,13 +627,18 @@ async function reconcileEntity(
       .limit(1);
     if (vecHits[0] && (vecHits[0].dist ?? 1) < ENTITY_DEDUP_THRESHOLD) {
       const existing = vecHits[0].row;
-      if (!existing.aliases.includes(trimmed) && existing.name.toLowerCase() !== trimmed.toLowerCase()) {
-        await db
-          .update(entities)
-          .set({ aliases: [...existing.aliases, trimmed], updatedAt: new Date() })
-          .where(eq(entities.id, existing.id));
+      // Same guard as the trigram path: embeddings of "Don Schoeman" and
+      // "Jason Schoeman" are close enough to merge by default, which is wrong
+      // for distinct people sharing a surname.
+      if (!isLikelyDifferentPerson(mention, existing)) {
+        if (!existing.aliases.includes(trimmed) && existing.name.toLowerCase() !== trimmed.toLowerCase()) {
+          await db
+            .update(entities)
+            .set({ aliases: [...existing.aliases, trimmed], updatedAt: new Date() })
+            .where(eq(entities.id, existing.id));
+        }
+        return existing;
       }
-      return existing;
     }
   } catch {
     // embedding failure shouldn't block entity creation.
