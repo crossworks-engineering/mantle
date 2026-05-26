@@ -314,49 +314,32 @@ considered) is a half-day swap when the time comes.
 
 ## 8. Email pipeline
 
-`packages/email/` is ~1.5K LOC. The big idea: **never ingest mail you didn't
-ask for.**
+Full reference: [`email-ingest.md`](./email-ingest.md) (inbound) and
+[`email-send.md`](./email-send.md) (outbound).
 
-Flow:
+The big idea: **never ingest mail you didn't ask for.** Sender curation
+(`email_senders` with `pending`/`allowed`/`denied`) is the security gate;
+once a sender is `allowed`, the message lands as a `nodes` row of type
+`email` and the `node_ingested` pg_notify trigger fires the extractor —
+same path as notes and files. `packages/email/` is ~1.5K LOC; the worker
+(`apps/web/workers/email-sync.ts`) runs three pg-boss queues (scheduler
+every 2 min, per-account sync, per-sender backfill).
 
-1. **Account.** You add an IMAP account via `/settings/accounts` (Gmail,
-   Outlook, Fastmail, anything that speaks IMAP + app-passwords). The
-   credentials are encrypted at rest via `@mantle/crypto`.
-2. **Initial scan.** `syncAccount()` in `packages/email/src/sync.ts:36`
-   pulls only headers for the first 12 months — no bodies, no attachments.
-3. **Sender curation.** Every `From` address is upserted into
-   `email_senders` with a status: `pending`, `allowed`, or `denied`. The UI
-   at `/settings/senders` is where you approve who counts as a real
-   correspondent.
-4. **Two-phase sync.** For each subsequent batch, the worker:
-   - Upserts senders (so the UI always sees recent activity even from
-     denied addresses).
-   - Resolves each message to a sender decision (address > domain > policy
-     default — `packages/email/src/decisions.ts`).
-   - For `allowed` only: fetches the full body, runs ingest rules
-     (`@mantle/rules`), persists a `nodes` row + an `emails` row + any
-     `email_attachments`, uploads attachment bytes via `@mantle/storage`.
-   - Bumps the account's sync cursor.
+**Cross-folder dedup** is two-tier: `emails_account_msg_uq` on
+`(account_id, provider_msg_id)` catches same-UID-same-folder races
+(restart replay, retry-overlap); the partial `emails_account_rfc_msg_id_uq`
+on `(account_id, rfc_message_id)` catches the same logical message
+landing in INBOX *and* INBOX.Archive *and* `[Gmail]/All Mail` — Gmail's
+All Mail re-UIDs an old message on every label change, so a
+folder-scoped key alone leaked duplicates. The INSERT uses an untargeted
+`onConflictDoNothing()` + `DuplicateRaceError` sentinel so either
+constraint races into a clean transaction rollback, no logged stack, no
+failed pg-boss job.
 
-Pending/denied senders never touch your tree — they're a single row in
-`email_senders` with `message_count`, and that's it. This is the security
-property: a stranger emailing you can't get into your `nodes` table by
-default.
-
-The worker process (`apps/web/workers/email-sync.ts`) is a pg-boss queue
-consumer. Three queues: `mantle.email.sync` (per-account work),
-`mantle.email.backfill` (deeper history rescans), `mantle.email.scheduler`
-(periodic enqueueing of `sync` jobs). pg-boss owns the `pgboss` schema in
-Postgres; jobs survive process restarts.
-
-**Extractor handoff.** Once an `allowed` message lands as a `nodes` row
-with `type='email'`, the `node_ingested` pg_notify trigger
-(migration 0018) fires and the extractor agent picks it up — same path
-as notes and files. `DEFAULT_EXTRACT_TYPES` in
-`apps/agent/src/extractor.ts:63` includes `email` and `email_thread` so
-no per-agent config is needed; `readNodeBody` joins the `emails` table
-for subject + plaintext body. Bodies longer than `BODY_MAX_CHARS`
-(24K) get head+tail-truncated to bound the prompt cost.
+**Gmail labels** (`\Inbox`, `\Sent`, `\Important`, custom user labels)
+are fetched via the GIMAP `X-GM-EXT-1` extension and merged with the
+IMAP system flags into `emails.labels`; safe on non-Gmail servers
+(ImapFlow ignores the request).
 
 ---
 
