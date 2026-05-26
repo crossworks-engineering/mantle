@@ -15,6 +15,7 @@
     "@mantle/api-keys": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/tracing": "workspace:*",
+    "@mantle/voice": "workspace:*",
     "drizzle-orm": "^0.38.3"
   },
   "devDependencies": {

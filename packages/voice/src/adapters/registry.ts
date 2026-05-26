@@ -15,6 +15,7 @@
 import type { ProviderId } from '../providers';
 import type {
   ChatDispatcher,
+  EmbeddingDispatcher,
   ImageGenDispatcher,
   SttDispatcher,
   TtsDispatcher,
@@ -26,6 +27,7 @@ const TTS = new Map<ProviderId, TtsDispatcher>();
 const STT = new Map<ProviderId, SttDispatcher>();
 const VISION = new Map<ProviderId, VisionDispatcher>();
 const IMAGE_GEN = new Map<ProviderId, ImageGenDispatcher>();
+const EMBEDDING = new Map<ProviderId, EmbeddingDispatcher>();
 
 // ─── Chat ────────────────────────────────────────────────────────────
 
@@ -89,6 +91,20 @@ export function getImageGenAdapter(providerId: string): ImageGenDispatcher | nul
   return IMAGE_GEN.get(providerId as ProviderId) ?? null;
 }
 
+// ─── Embedding ───────────────────────────────────────────────────────
+
+export function registerEmbeddingAdapter(adapter: EmbeddingDispatcher): void {
+  EMBEDDING.set(adapter.providerId, adapter);
+}
+
+export function getEmbeddingAdapter(providerId: string): EmbeddingDispatcher | null {
+  return EMBEDDING.get(providerId as ProviderId) ?? null;
+}
+
+export function listEmbeddingAdapters(): EmbeddingDispatcher[] {
+  return Array.from(EMBEDDING.values());
+}
+
 // ─── Capability check (used by UI to derive `wired` flag) ────────────
 
 /**
@@ -121,7 +137,7 @@ export function findAdapterCatalogDrift(
   const catalogById = new Map(providers.map((p) => [p.id as string, p.capabilities]));
 
   function check(
-    label: 'chat' | 'tts' | 'stt' | 'vision' | 'image_gen',
+    label: 'chat' | 'tts' | 'stt' | 'vision' | 'image_gen' | 'embedding',
     registry: Map<ProviderId, { adapterName: string }>,
   ): void {
     for (const [providerId, adapter] of registry) {
@@ -146,6 +162,7 @@ export function findAdapterCatalogDrift(
   check('stt', STT);
   check('vision', VISION);
   check('image_gen', IMAGE_GEN);
+  check('embedding', EMBEDDING);
 
   return problems;
 }
@@ -180,10 +197,10 @@ export function isProviderWired(
         providerId === 'openai'
       );
     case 'embedding':
-      // Embedding doesn't have an adapter registry yet (workers use
-      // @mantle/embeddings inline). Treat the two providers we use as
-      // wired by convention.
-      return providerId === 'openrouter' || providerId === 'openai';
+      // As of Stage 1 of the embedding adapter framework, every
+      // embedding provider goes through the registry. Treat
+      // "registered adapter exists" as the truth.
+      return EMBEDDING.has(providerId as ProviderId);
     default:
       return false;
   }

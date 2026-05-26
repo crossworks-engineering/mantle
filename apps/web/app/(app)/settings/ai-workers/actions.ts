@@ -20,6 +20,7 @@ import {
 import { getApiKeyById } from '@mantle/api-keys';
 import {
   getChatAdapter,
+  getEmbeddingAdapter,
   getImageGenAdapter,
   getSttAdapter,
   getTtsAdapter,
@@ -319,12 +320,41 @@ export async function discoverModelsAction(
   // so a leaked api_key_id from the URL can't be exfiltrated here.
   await requireOwner();
 
-  // Embedding has its own keyless discovery path: OpenRouter publishes
-  // a separate `/api/v1/embeddings/models` catalog (the main /v1/models
-  // intentionally excludes them) that needs no auth. Short-circuits the
-  // api-key requirement before we hit the adapter registry.
+  // Embedding has a keyless-discovery quirk: OpenRouter's embedding
+  // catalog is public, but direct providers (OpenAI, Google, Mistral,
+  // Cohere) need a key to discover. Hand the api-key resolution through
+  // for direct providers; pass empty for OR — its discoverModels ignores
+  // the arg.
   if (kind === 'embedding') {
-    return discoverEmbeddingModelsOpenRouter();
+    const adapter = getEmbeddingAdapter(providerId);
+    if (!adapter) {
+      return {
+        available: [],
+        filtered: false,
+        error: `no embedding adapter registered for provider '${providerId}'`,
+      };
+    }
+    // OR ignores its apiKey arg (public catalog); direct providers need
+    // one. Try to resolve from the form's api-key selection first; if
+    // that's missing AND the provider needs one, the adapter's
+    // discoverModels will return an error message we surface as-is.
+    const apiKey = apiKeyId ? await getApiKeyById(apiKeyId) : '';
+    const result = adapter.discoverModels
+      ? await adapter.discoverModels(apiKey ?? '')
+      : {
+          available: adapter.staticCatalog ? [...adapter.staticCatalog()] : [],
+          filtered: false as const,
+          error: null,
+        };
+    // Embedding's EmbeddingModelInfo isn't in the action's return union
+    // yet (the form widens to ChatModelInfo[] via toExplorerModels). The
+    // structural overlap is exact for the fields the form reads, so the
+    // cast is safe — pricing per1M, contextTokens, id, label, description.
+    return {
+      available: result.available as unknown as ChatModelInfo[],
+      filtered: result.filtered,
+      error: result.error,
+    };
   }
 
   const apiKey = await getApiKeyById(apiKeyId);
@@ -370,68 +400,6 @@ export async function discoverModelsAction(
     };
   }
   return adapter.discoverModels(apiKey);
-}
-
-/**
- * Fetch OpenRouter's embedding-model catalog
- * (`GET /api/v1/embeddings/models`). Keyless, hourly-cached upstream,
- * 25-ish models with prompt pricing, context length, and an architecture
- * descriptor. Mapped into ChatModelInfo[] (the closest existing shape —
- * id + label + description + contextTokens + inputPricePer1M) so it slots
- * straight into the worker form's existing discovery wiring with no new
- * union member to thread.
- */
-async function discoverEmbeddingModelsOpenRouter(): Promise<{
-  available: ChatModelInfo[];
-  filtered: false;
-  error: string | null;
-}> {
-  try {
-    const res = await fetch('https://openrouter.ai/api/v1/embeddings/models', {
-      signal: AbortSignal.timeout(8_000),
-      headers: { accept: 'application/json' },
-    });
-    if (!res.ok) {
-      return {
-        available: [],
-        filtered: false,
-        error: `openrouter /api/v1/embeddings/models: HTTP ${res.status}`,
-      };
-    }
-    const body = (await res.json()) as {
-      data?: Array<{
-        id?: string;
-        name?: string;
-        description?: string;
-        context_length?: number | null;
-        pricing?: { prompt?: string | null } | null;
-      }>;
-    };
-    const available: ChatModelInfo[] = (body.data ?? [])
-      .filter((m): m is { id: string } & typeof m => typeof m.id === 'string' && m.id.length > 0)
-      .map((m) => {
-        // OpenRouter encodes pricing as USD per single token, string-typed.
-        // Same convention as the main /v1/models response — multiply by
-        // 1e6 for the per-1M view the UI shows.
-        const raw = m.pricing?.prompt;
-        const perToken = typeof raw === 'string' && raw.length > 0 ? Number(raw) : undefined;
-        const inputPricePer1M = Number.isFinite(perToken) ? (perToken as number) * 1_000_000 : undefined;
-        return {
-          id: m.id,
-          label: m.name ?? m.id,
-          description: m.description ?? '',
-          contextTokens: typeof m.context_length === 'number' ? m.context_length : undefined,
-          inputPricePer1M,
-        };
-      });
-    return { available, filtered: false, error: null };
-  } catch (err) {
-    return {
-      available: [],
-      filtered: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
 }
 
 /**

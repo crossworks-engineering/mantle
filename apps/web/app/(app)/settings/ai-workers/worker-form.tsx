@@ -99,8 +99,10 @@ const PROVIDER_FOR_KIND: Record<AiWorkerKind, string> = {
   stt: 'openai',
   vision: 'openrouter',
   image_gen: 'openai',
-  // Embeddings always route through OpenRouter today — see
-  // `@mantle/embeddings`. Provider stays locked to it on the form.
+  // Embeddings have a full adapter framework now (openrouter, openai,
+  // google, mistral, cohere) — the provider dropdown for embedding
+  // workers is freely selectable, same as for tts / stt / vision.
+  // Default to OpenRouter since that's where most operators start.
   embedding: 'openrouter',
 };
 
@@ -254,16 +256,23 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
   // Image-gen wiring as of this commit. HF is a real adapter but
   // surfaces a "type any repo id" free-text path too.
   const wiredImageGenProviders = new Set(['openai', 'xai', 'google', 'huggingface']);
+  const wiredEmbeddingProviders = new Set([
+    'openrouter',
+    'openai',
+    'google',
+    'mistral',
+    'cohere',
+  ]);
   const supportsDiscovery =
     kind === 'tts' ||
     kind === 'stt' ||
     (kind === 'vision' && wiredVisionProviders.has(provider)) ||
     (kind === 'image_gen' && wiredImageGenProviders.has(provider)) ||
     (chatShaped && wiredChatProviders.has(provider)) ||
-    // Embedding routes through OpenRouter's keyless
-    // `/api/v1/embeddings/models` catalog. No adapter dispatcher needed
-    // (yet — single backing service); the action handles the fetch.
-    kind === 'embedding';
+    // Embedding dispatches through the adapter registry — every provider
+    // listed here is fully wired (OR keyless + 4 direct providers with
+    // discoverModels + staticCatalog fallback).
+    (kind === 'embedding' && wiredEmbeddingProviders.has(provider));
 
   // The initial model list rendered before live discovery returns
   // depends on which provider+kind we're configuring. Picking the

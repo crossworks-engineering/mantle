@@ -17,6 +17,7 @@
 import {
   findAdapterCatalogDrift,
   registerChatAdapter,
+  registerEmbeddingAdapter,
   registerImageGenAdapter,
   registerSttAdapter,
   registerTtsAdapter,
@@ -45,6 +46,11 @@ import { openAiImageAdapter } from './openai-image';
 import { xaiImageAdapter } from './xai-image';
 import { googleImageAdapter } from './google-image';
 import { huggingfaceImageAdapter } from './huggingface-image';
+import { openrouterEmbedding } from './openrouter-embedding';
+import { openaiEmbedding } from './openai-embedding';
+import { googleEmbedding } from './google-embedding';
+import { mistralEmbedding } from './mistral-embedding';
+import { cohereEmbedding } from './cohere-embedding';
 
 // Built-in adapters. Order doesn't matter — these are just into a
 // Map keyed by providerId.
@@ -70,6 +76,11 @@ registerImageGenAdapter(openAiImageAdapter);
 registerImageGenAdapter(xaiImageAdapter);
 registerImageGenAdapter(googleImageAdapter);
 registerImageGenAdapter(huggingfaceImageAdapter);
+registerEmbeddingAdapter(openrouterEmbedding);
+registerEmbeddingAdapter(openaiEmbedding);
+registerEmbeddingAdapter(googleEmbedding);
+registerEmbeddingAdapter(mistralEmbedding);
+registerEmbeddingAdapter(cohereEmbedding);
 
 // Surface drift between registered adapters and the providers catalog
 // at module-load time. The catalog drives UI dropdown filters via
@@ -104,6 +115,9 @@ export {
   getVisionAdapter,
   registerImageGenAdapter,
   getImageGenAdapter,
+  registerEmbeddingAdapter,
+  getEmbeddingAdapter,
+  listEmbeddingAdapters,
   isProviderWired,
 } from './registry';
 
@@ -122,6 +136,11 @@ export {
   type ImageGenModelInfo,
   type GenerateImageOptions,
   type GenerateImageResult,
+  type EmbeddingDispatcher,
+  type EmbeddingModelInfo,
+  type EmbedInput,
+  type EmbedRequest,
+  type EmbedResult,
   type AdapterMeta,
 } from './types';
 
@@ -153,6 +172,11 @@ export { googleChatAdapter } from './google-chat';
 export { googleTtsAdapter } from './google-tts';
 export { xaiTtsAdapter } from './xai-tts';
 export { elevenLabsTtsAdapter } from './elevenlabs-tts';
+export { openrouterEmbedding } from './openrouter-embedding';
+export { openaiEmbedding } from './openai-embedding';
+export { googleEmbedding } from './google-embedding';
+export { mistralEmbedding } from './mistral-embedding';
+export { cohereEmbedding } from './cohere-embedding';
 
 // Catalogues — exposed so the UI can render the static list before
 // live discovery completes.

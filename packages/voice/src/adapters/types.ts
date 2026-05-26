@@ -347,3 +347,86 @@ export interface ImageGenDispatcher extends AdapterMeta {
   staticCatalog(): readonly ImageGenModelInfo[];
 }
 
+// ─── Embedding ──────────────────────────────────────────────────────
+
+/** A text→vector model entry. Embedding pricing is input-only
+ *  (the response is the vector, not a token stream — no output cost
+ *  to bill). Native `dimensions` is exposed so the form can verify
+ *  compatibility with the brain's `vector(1536)` column before save. */
+export interface EmbeddingModelInfo {
+  id: string;
+  label: string;
+  description: string;
+  /** Maximum input tokens accepted in a single call. */
+  contextTokens?: number;
+  /** USD per 1M input tokens. */
+  inputPricePer1M?: number;
+  /** Output vector dimension as the provider documents it. The form
+   *  uses this to drive the dim-mismatch save block before the
+   *  operator gets a 'won't insert' surprise at runtime. */
+  dimensions?: number;
+  /** Accepts non-text inputs (image / audio / file). Only OpenRouter's
+   *  multimodal route and Google's gemini-embedding-2-preview today. */
+  multimodal?: boolean;
+}
+
+/** Inputs the embedding dispatchers accept. Same shape as the
+ *  pre-adapter @mantle/embeddings package — keeps the public API
+ *  stable while the dispatch path swaps underneath. */
+export type EmbedInput =
+  | string
+  | { type: 'text'; text: string }
+  | { type: 'image'; url: string }
+  | { type: 'audio'; url: string }
+  | { type: 'file'; url: string; mimeType?: string };
+
+export interface EmbedRequest {
+  apiKey: string;
+  model: string;
+  /** Single-element array for single-text calls; batch is the common path
+   *  (extractor + recall batch many at once for cache + API efficiency). */
+  input: EmbedInput[];
+  /** Truncate to this dim where supported. OpenAI's text-embedding-3-*
+   *  family honours it (truncation by MRL); Google's gemini-embedding-2
+   *  honours it as `output_dimensionality`. Everything else ignores. */
+  dimensions?: number;
+}
+
+export interface EmbedResult {
+  vectors: number[][];
+  /** Server-reported model id (so callers can verify their slug landed
+   *  where they expected — direct providers sometimes alias). */
+  model: string;
+  /** Total input tokens billed. Undefined when the provider doesn't
+   *  report (Cohere v2 omits, some HF routes too). */
+  tokensIn?: number;
+}
+
+export interface EmbeddingDispatcher extends AdapterMeta {
+  /** Embed a batch. Adapters that don't support multimodal input throw
+   *  a clear error on non-text items rather than silently truncating —
+   *  surfaces "you picked a text-only model but sent an image" at the
+   *  point of failure rather than as a confused empty result. */
+  embed(req: EmbedRequest): Promise<EmbedResult>;
+
+  /** Optional: whether this adapter will accept the given input. Text-only
+   *  adapters return false for non-text items so the caller can route
+   *  multimodal inputs to OpenRouter (the only multimodal-capable path)
+   *  instead of failing at request time. Default = true. */
+  acceptsInput?(input: EmbedInput): boolean;
+
+  /** Live-discover available embedding models. Each adapter does the
+   *  cross-reference between its provider's list endpoint and its own
+   *  static catalog. OpenRouter publishes `/v1/embeddings/models`
+   *  separately from `/v1/models`; OpenAI returns embeddings inline
+   *  in `/v1/models` (filtered by id pattern); Google requires a
+   *  capability filter (`supportedGenerationMethods` includes
+   *  `embedContent`). */
+  discoverModels?(apiKey: string): Promise<DiscoveryResult<EmbeddingModelInfo>>;
+
+  /** Curated fallback list. Used by the workers form when no API key
+   *  is configured yet (so the dropdown isn't empty in create mode)
+   *  AND as a last-resort if discovery errors. */
+  staticCatalog?(): readonly EmbeddingModelInfo[];
+}
+

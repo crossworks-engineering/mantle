@@ -22,17 +22,30 @@
 import { createHash } from 'node:crypto';
 import { inArray } from 'drizzle-orm';
 import { db, embeddingCache, getDefaultWorker } from '@mantle/db';
-import { getApiKey } from '@mantle/api-keys';
+import { getApiKey, getApiKeyById } from '@mantle/api-keys';
 import { currentTrace, step } from '@mantle/tracing';
-import {
-  callEmbeddings,
-  isMultimodalModel,
-  MULTIMODAL_MODELS,
-  type EmbedInput,
-} from './client';
+// `@mantle/voice` self-registers all built-in adapters on import. The
+// embedding ones (openrouter / openai / google / mistral / cohere) come
+// online as a side effect of touching this module. Don't tree-shake.
+import { getEmbeddingAdapter, type EmbedInput } from '@mantle/voice';
 
-export { MULTIMODAL_MODELS, isMultimodalModel, type EmbedInput } from './client';
+export type { EmbedInput };
 export { runReembed, type ReembedOpts, type ReembedResult, type ReembedProgressEvent } from './reembed';
+
+/** Models that accept non-text inputs. Kept here for callers (the
+ *  extractor's attachment path) that need to know in advance which
+ *  models to route through for image/audio/file embedding. The
+ *  authoritative `acceptsInput` lives on each adapter — this set is
+ *  the cross-provider summary. */
+export const MULTIMODAL_MODELS = new Set<string>([
+  'google/gemini-embedding-2-preview',
+  'nvidia/llama-nemotron-embed-vl-1b-v2',
+  'nvidia/llama-nemotron-embed-vl-1b-v2:free',
+]);
+
+export function isMultimodalModel(model: string): boolean {
+  return MULTIMODAL_MODELS.has(model.toLowerCase());
+}
 
 const FALLBACK_MODEL = 'openai/text-embedding-3-small';
 /**
@@ -63,38 +76,73 @@ export const EMBEDDING_DIMS = 1536;
 // extractor batch sees a stable lookup.
 
 const RESOLVER_TTL_MS = 60_000;
-const _resolverCache = new Map<string, { model: string; expiresAt: number }>();
+
+/** Worker-derived config the runtime uses for one embedding call. */
+export interface EmbeddingConfig {
+  /** Model slug. For OpenRouter this is `provider/model-name`; for direct
+   *  providers it's the bare id (e.g. `text-embedding-3-small`). */
+  model: string;
+  /** Provider id matching `ai_workers.provider`. Drives adapter dispatch. */
+  provider: string;
+  /** When set, the worker pinned a specific API key — `getApiKeyById`
+   *  resolves it. Null = fall through to `getApiKey(ownerId, provider)`. */
+  apiKeyId: string | null;
+}
+
+const _resolverCache = new Map<string, { config: EmbeddingConfig; expiresAt: number }>();
 
 /**
- * Return the embedding model slug the runtime should use for this owner.
- * Resolution order:
+ * Return the full embedding worker config (model + provider + apiKeyId)
+ * for this owner. Resolution order:
  *   1. `ai_workers` row with `kind='embedding'`, `enabled=true`, the
- *      default-flagged or highest-priority match for this owner.
- *   2. `MANTLE_EMBEDDING_MODEL` env var.
- *   3. The hardcoded fallback (`openai/text-embedding-3-small`).
+ *      default-flagged or highest-priority match — use its model,
+ *      provider, and apiKeyId.
+ *   2. No worker → default provider `openrouter`, model from
+ *      `MANTLE_EMBEDDING_MODEL` env var (or hardcoded fallback),
+ *      apiKeyId null (caller falls back to `getApiKey(ownerId, 'openrouter')`).
  *
- * Cached per ownerId for 60s. Tests + the workers form should call
- * {@link clearEmbeddingModelCache} after a worker write to avoid the
- * stale-window.
+ * Cached per ownerId for 60s. Mutations on `/settings/ai-workers` call
+ * {@link clearEmbeddingModelCache} so a model swap kicks in immediately.
  */
-export async function resolveEmbeddingModel(ownerId: string): Promise<string> {
+export async function resolveEmbeddingConfig(ownerId: string): Promise<EmbeddingConfig> {
   const cached = _resolverCache.get(ownerId);
-  if (cached && cached.expiresAt > Date.now()) return cached.model;
-  let model = DEFAULT_EMBEDDING_MODEL;
+  if (cached && cached.expiresAt > Date.now()) return cached.config;
+  let config: EmbeddingConfig = {
+    model: DEFAULT_EMBEDDING_MODEL,
+    provider: 'openrouter',
+    apiKeyId: null,
+  };
   try {
     const worker = await getDefaultWorker(ownerId, 'embedding');
-    if (worker?.model) model = worker.model;
+    if (worker?.model && worker.provider) {
+      config = {
+        model: worker.model,
+        provider: worker.provider,
+        apiKeyId: worker.apiKeyId ?? null,
+      };
+    }
   } catch (err) {
     // DB unreachable? Fall back gracefully — embedding still works against
     // whatever the env / hardcoded default points at. Log so operators can
     // notice if it's a persistent state.
     console.warn(
-      '[embeddings] resolveEmbeddingModel: DB lookup failed, using fallback —',
+      '[embeddings] resolveEmbeddingConfig: DB lookup failed, using fallback —',
       err instanceof Error ? err.message : err,
     );
   }
-  _resolverCache.set(ownerId, { model, expiresAt: Date.now() + RESOLVER_TTL_MS });
-  return model;
+  _resolverCache.set(ownerId, { config, expiresAt: Date.now() + RESOLVER_TTL_MS });
+  return config;
+}
+
+/**
+ * Backward-compat thin wrapper. Returns just the model slug — keeps the
+ * pre-adapter resolver shape so callers that only need the model id
+ * (the reembed CLI script's logging, the trace's `input.model` field)
+ * don't have to destructure.
+ */
+export async function resolveEmbeddingModel(ownerId: string): Promise<string> {
+  const config = await resolveEmbeddingConfig(ownerId);
+  return config.model;
 }
 
 /** Drop cached resolution(s). Pass an ownerId to invalidate one owner, or
@@ -163,17 +211,21 @@ export async function embedBatch(
 export async function embedMultimodal(
   ownerId: string,
   inputs: EmbedInput[],
-  opts?: { model?: string },
+  opts?: { model?: string; provider?: string; apiKeyId?: string | null },
 ): Promise<number[][]> {
   // Resolve once up front so the trace step opens with the actual model
-  // and doEmbed doesn't have to re-resolve. An explicit `opts.model` from
-  // a caller (extractor's per-worker override, the re-embed script) wins
-  // over the resolver, preserving the existing per-call escape hatch.
-  const model = opts?.model ?? (await resolveEmbeddingModel(ownerId));
-  const resolvedOpts = { model };
+  // and doEmbed doesn't have to re-resolve. Explicit `opts.model` (and
+  // optional provider/apiKeyId) win over the resolver, preserving the
+  // per-call escape hatch the extractor's override path uses.
+  const baseConfig = await resolveEmbeddingConfig(ownerId);
+  const config: EmbeddingConfig = {
+    model: opts?.model ?? baseConfig.model,
+    provider: opts?.provider ?? baseConfig.provider,
+    apiKeyId: opts?.apiKeyId !== undefined ? opts.apiKeyId : baseConfig.apiKeyId,
+  };
   // No trace → fast path with no instrumentation overhead.
   if (!currentTrace()) {
-    return doEmbed(ownerId, inputs, resolvedOpts);
+    return doEmbed(ownerId, inputs, config);
   }
   return step(
     {
@@ -188,11 +240,12 @@ export async function embedMultimodal(
       // blow past the safety cap and be useless on inspection.
       input: {
         count: inputs.length,
-        model,
+        model: config.model,
+        provider: config.provider,
         preview: inputs.map(previewOfInput),
       },
     },
-    async (handle) => doEmbed(ownerId, inputs, resolvedOpts, handle),
+    async (handle) => doEmbed(ownerId, inputs, config, handle),
   );
 }
 
@@ -224,26 +277,47 @@ type EmbedStepHandle = { setMeta(m: Record<string, unknown>): void };
 async function doEmbed(
   ownerId: string,
   inputs: EmbedInput[],
-  opts?: { model?: string },
+  config: EmbeddingConfig,
   stepHandle?: EmbedStepHandle,
 ): Promise<number[][]> {
-  const model = opts?.model ?? DEFAULT_EMBEDDING_MODEL;
   if (inputs.length === 0) return [];
+  const { model, provider } = config;
 
-  // Validate: non-text inputs require a multimodal model.
-  for (const item of inputs) {
-    if (typeof item !== 'string' && item.type !== 'text' && !isMultimodalModel(model)) {
-      throw new Error(
-        `embed: input type '${item.type}' requires a multimodal model — got '${model}'. ` +
-          `Set MANTLE_EMBEDDING_MODEL or opts.model to one of: ${Array.from(MULTIMODAL_MODELS).join(', ')}.`,
-      );
+  // 0. Resolve adapter. Surface a clear error rather than silently
+  //    routing through OR if the provider isn't wired.
+  const adapter = getEmbeddingAdapter(provider);
+  if (!adapter) {
+    throw new Error(
+      `embed: no adapter registered for provider '${provider}'. The embedding ` +
+        `worker config points at an unknown provider — pick one of ` +
+        `openrouter / openai / google / mistral / cohere at /settings/ai-workers.`,
+    );
+  }
+
+  // 1. Validate: every input must be accepted by the adapter. Text-only
+  //    providers (every direct provider) reject image/audio/file inputs
+  //    up front so the caller gets a clear error before the API call.
+  if (adapter.acceptsInput) {
+    for (const item of inputs) {
+      if (!adapter.acceptsInput(item)) {
+        const itemType = typeof item === 'string' ? 'text' : item.type;
+        throw new Error(
+          `embed: input type '${itemType}' not accepted by adapter '${adapter.adapterName}' ` +
+            `(model='${model}'). Multimodal inputs require the OpenRouter provider with ` +
+            `a multimodal model (e.g. google/gemini-embedding-2-preview).`,
+        );
+      }
     }
   }
 
+  // 2. Cache lookup, keyed by (model, content). Two providers serving the
+  //    same model would share cache entries — fine, same underlying model
+  //    means same vectors. Different slugs (OR's 'openai/text-embedding-3-small'
+  //    vs OpenAI direct's 'text-embedding-3-small') cache separately, which
+  //    is also fine — they produce identical vectors but go through different
+  //    keys.
   const hashes = inputs.map((i) => hashKey(model, i));
   const out: (number[] | null)[] = inputs.map(() => null);
-
-  // 1. Lookup cache in bulk.
   const cachedRows = await db
     .select({ contentHash: embeddingCache.contentHash, embedding: embeddingCache.embedding })
     .from(embeddingCache)
@@ -255,7 +329,7 @@ async function doEmbed(
     if (cached) out[i] = cached;
   }
 
-  // 2. Compute misses.
+  // 3. Compute misses.
   const missIndexes: number[] = [];
   const missInputs: EmbedInput[] = [];
   for (let i = 0; i < inputs.length; i++) {
@@ -267,43 +341,60 @@ async function doEmbed(
 
   let apiCalls = 0;
   if (missInputs.length > 0) {
-    const apiKey = await getApiKey(ownerId, 'openrouter');
+    // Resolve the api key. Worker-pinned id wins; fall back to the
+    // provider's canonical service slug. The fallback covers two cases:
+    // (a) no embedding worker configured at all (config.apiKeyId is null,
+    // provider stays 'openrouter'), (b) worker exists but its apiKeyId
+    // was nulled (key deleted out from under it).
+    let apiKey: string | null = null;
+    if (config.apiKeyId) {
+      apiKey = await getApiKeyById(config.apiKeyId);
+    }
+    if (!apiKey) {
+      apiKey = await getApiKey(ownerId, provider);
+    }
     if (!apiKey) {
       throw new Error(
-        "embed: no 'openrouter' api key for owner — add one at /settings/keys",
+        `embed: no api key for provider '${provider}'. Add one at /settings/keys ` +
+          `and assign it to your embedding worker at /settings/ai-workers/embedding.`,
       );
     }
 
-    // Call in batches of MAX_BATCH.
     for (let start = 0; start < missInputs.length; start += MAX_BATCH) {
       const slice = missInputs.slice(start, start + MAX_BATCH);
-      const vectors = await callEmbeddings(apiKey, {
+      const result = await adapter.embed({
+        apiKey,
         model,
         input: slice,
-        outputDimensionality: EMBEDDING_DIMS,
+        // Used by adapters that honour MRL truncation (OpenAI's text-embedding-3-*,
+        // Google's gemini-embedding-*). Adapters that ignore it pass through
+        // unaffected. The brain's pgvector column is fixed at 1536 so requesting
+        // 1536 across the board keeps inserts compatible.
+        dimensions: EMBEDDING_DIMS,
       });
       apiCalls++;
-      if (vectors.length !== slice.length) {
+      if (result.vectors.length !== slice.length) {
         throw new Error(
-          `embed: provider returned ${vectors.length} vectors for ${slice.length} inputs`,
+          `embed: provider returned ${result.vectors.length} vectors for ${slice.length} inputs`,
         );
       }
-      // Persist + slot into output.
-      const cacheRows = vectors.map((vec, j) => {
+      const cacheRows = result.vectors.map((vec, j) => {
         const inputIdx = missIndexes[start + j]!;
         const hash = hashes[inputIdx]!;
         out[inputIdx] = vec;
         return { contentHash: hash, embedding: vec };
       });
-      // Best-effort cache write. Conflict on existing hash → ignore.
       await db.insert(embeddingCache).values(cacheRows).onConflictDoNothing();
     }
   }
 
-  // 3. Sanity check.
+  // 4. Sanity check.
   for (let i = 0; i < out.length; i++) {
     if (!out[i] || out[i]!.length !== EMBEDDING_DIMS) {
-      throw new Error(`embed: missing or wrong-shaped vector at index ${i}`);
+      throw new Error(
+        `embed: missing or wrong-shaped vector at index ${i} (got length=${out[i]?.length ?? 'null'}, expected ${EMBEDDING_DIMS}). ` +
+          `If you just switched models, check the form's dim guard — the picked model may not emit ${EMBEDDING_DIMS}-dim vectors.`,
+      );
     }
   }
 
@@ -312,6 +403,7 @@ async function doEmbed(
     cache_misses: missInputs.length,
     api_calls: apiCalls,
     model,
+    provider,
   });
 
   return out as number[][];
