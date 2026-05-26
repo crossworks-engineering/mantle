@@ -60,7 +60,12 @@ import { Label } from '@/components/ui/label';
 import { ModelSelect } from '@/components/ui/model-select';
 import { useToast } from '@/components/ui/toast';
 import type { ExplorerModel } from '@/lib/model-explorer';
-import { discoverModelsAction, listVoicesAction, testEmbeddingModelAction } from './actions';
+import {
+  discoverModelsAction,
+  listVoicesAction,
+  rebuildEmbeddingIndexAction,
+  testEmbeddingModelAction,
+} from './actions';
 import { TtsTestButton } from './tts-test-button';
 import { SttTestButton } from './stt-test-button';
 import { ChatTestButton } from './chat-test-button';
@@ -1243,13 +1248,16 @@ function EmbeddingFields({
 }: {
   model: string;
   /** Model the worker was loaded with (edit mode) — null in create mode.
-   *  Used by Piece 2 (the rebuild affordance) to detect a model swap. */
+   *  Used by the rebuild affordance to (a) only show when there's a
+   *  saved worker to rebuild against, and (b) detect a model swap that
+   *  needs save-first. */
   savedModel: string | null;
   /** Lifts the resolved-dim state (just-tested OR known) so the parent
    *  form's save button can hard-block when it's non-1536. Called on
    *  every dim change, including null (no signal). */
   onDimChange: (dim: number | null) => void;
 }) {
+  const toast = useToast();
   const slug = (model ?? '').toLowerCase().trim();
   const knownDim = slug ? KNOWN_DIMS[slug] : undefined;
 
@@ -1260,9 +1268,25 @@ function EmbeddingFields({
   const [testing, setTesting] = useState(false);
   const [testError, setTestError] = useState<string | null>(null);
 
+  // Rebuild state — tracks the in-flight server action and the most
+  // recent completion stats so the operator sees the result inline.
+  const [rebuilding, setRebuilding] = useState(false);
+  const [lastRebuild, setLastRebuild] = useState<
+    | null
+    | {
+        ok: true;
+        model: string;
+        totalRows: number;
+        totalWritten: number;
+        durationMs: number;
+      }
+    | { ok: false; error: string }
+  >(null);
+
   // Resolved dim (just-tested wins over allow-list; both win over unknown).
   const dim = detected[slug] ?? knownDim ?? null;
   const mismatched = dim !== null && dim !== COLUMN_DIMS;
+  const modelDirty = savedModel !== null && slug !== savedModel.toLowerCase();
 
   // Lift to parent on every change so the save button reacts immediately.
   useEffect(() => {
@@ -1284,6 +1308,35 @@ function EmbeddingFields({
       setTestError(err instanceof Error ? err.message : String(err));
     } finally {
       setTesting(false);
+    }
+  };
+
+  const onRebuild = async () => {
+    setRebuilding(true);
+    setLastRebuild(null);
+    try {
+      const r = await rebuildEmbeddingIndexAction();
+      if (r.ok) {
+        setLastRebuild({
+          ok: true,
+          model: r.model,
+          totalRows: r.result.totalRows,
+          totalWritten: r.result.totalWritten,
+          durationMs: r.result.durationMs,
+        });
+        toast.success(
+          `Rebuilt ${r.result.totalWritten} vectors in ${(r.result.durationMs / 1000).toFixed(1)}s`,
+        );
+      } else {
+        setLastRebuild({ ok: false, error: r.error });
+        toast.error(`Rebuild failed: ${r.error}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setLastRebuild({ ok: false, error: msg });
+      toast.error(`Rebuild failed: ${msg}`);
+    } finally {
+      setRebuilding(false);
     }
   };
 
@@ -1371,14 +1424,49 @@ function EmbeddingFields({
           succeed but ingest will fail on first call.
         </p>
       )}
-      {savedModel && slug && savedModel.toLowerCase() !== slug && !mismatched && (
+      {savedModel && modelDirty && !mismatched && (
         <p className="text-xs text-amber-700 dark:text-amber-400">
-          Model changed from <code className="font-mono">{savedModel}</code>. After
-          saving you'll want to rebuild the index — existing vectors were
-          embedded with the previous model and cosine similarity across
-          different models is meaningless. A "Rebuild Index" button lands in
-          the next pass.
+          Model changed from <code className="font-mono">{savedModel}</code>. Save
+          first, then click <strong>Rebuild Index</strong> below — existing vectors
+          were embedded with the previous model and cosine similarity across
+          different models is meaningless.
         </p>
+      )}
+      {savedModel && !mismatched && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+          <div className="space-y-0.5 text-xs">
+            <p className="font-medium text-foreground">Rebuild Index</p>
+            <p className="text-muted-foreground">
+              Re-embed every stored vector (nodes · entities · facts) against the
+              currently saved model. Cache-aware — re-running against the same
+              model is free.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onRebuild}
+            disabled={rebuilding || modelDirty}
+            title={
+              modelDirty
+                ? 'Save the new model first — rebuild reads the saved value, not the picker.'
+                : 'Re-embed all stored vectors against the saved model'
+            }
+          >
+            {rebuilding ? 'Rebuilding…' : 'Rebuild Index'}
+          </Button>
+        </div>
+      )}
+      {lastRebuild?.ok && (
+        <p className="text-xs text-muted-foreground">
+          Rebuilt <span className="font-mono tabular-nums">{lastRebuild.totalWritten}</span>{' '}
+          vectors against <code className="font-mono">{lastRebuild.model}</code> in{' '}
+          <span className="font-mono tabular-nums">{(lastRebuild.durationMs / 1000).toFixed(1)}s</span>.
+        </p>
+      )}
+      {lastRebuild && !lastRebuild.ok && (
+        <p className="text-xs text-destructive">Rebuild failed: {lastRebuild.error}</p>
       )}
     </div>
   );

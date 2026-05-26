@@ -32,6 +32,7 @@ import {
 } from './client';
 
 export { MULTIMODAL_MODELS, isMultimodalModel, type EmbedInput } from './client';
+export { runReembed, type ReembedOpts, type ReembedResult, type ReembedProgressEvent } from './reembed';
 
 const FALLBACK_MODEL = 'openai/text-embedding-3-small';
 /**

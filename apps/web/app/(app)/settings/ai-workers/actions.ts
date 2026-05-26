@@ -32,7 +32,13 @@ import {
   type VisionModelInfo,
 } from '@mantle/voice';
 import { getAiWorker } from '@/lib/ai-workers';
-import { clearEmbeddingModelCache, embed } from '@mantle/embeddings';
+import {
+  clearEmbeddingModelCache,
+  embed,
+  resolveEmbeddingModel,
+  runReembed,
+  type ReembedResult,
+} from '@mantle/embeddings';
 import type { AiWorkerKind, AiWorkerParams } from '@mantle/db';
 
 export async function createAiWorkerAction(formData: FormData): Promise<void> {
@@ -113,6 +119,39 @@ export async function setDefaultWorkerAction(id: string): Promise<void> {
   await setDefaultWorker(user.id, id);
   if (existing?.kind === 'embedding') clearEmbeddingModelCache(user.id);
   revalidatePath('/settings/ai-workers');
+}
+
+/**
+ * Rebuild every stored vector for this owner against the *currently
+ * configured* embedding model (per `resolveEmbeddingModel(user.id)` —
+ * the same call path the runtime uses, so what the rebuild writes is
+ * exactly what ingest + retrieval will read going forward).
+ *
+ * The model resolution is *server-side*, not from the form's draft —
+ * you save first, then rebuild. That avoids "I clicked rebuild and now
+ * my brain doesn't match the picker I haven't committed yet" confusion.
+ *
+ * Cache-aware: hitting an unchanged (model, content) pair is free.
+ * Idempotent under double-click via the in-flight Map inside
+ * `runReembed`. Returns the worker-level stats the UI surfaces in a
+ * completion toast.
+ */
+export async function rebuildEmbeddingIndexAction(): Promise<{
+  ok: true;
+  model: string;
+  result: ReembedResult;
+} | { ok: false; error: string }> {
+  const user = await requireOwner();
+  try {
+    const model = await resolveEmbeddingModel(user.id);
+    const result = await runReembed(user.id, { model });
+    return { ok: true, model, result };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 /**
