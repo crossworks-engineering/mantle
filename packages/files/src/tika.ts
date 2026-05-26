@@ -96,3 +96,26 @@ export async function tikaIsUp(timeoutMs = 2_000): Promise<boolean> {
     clearTimeout(timer);
   }
 }
+
+/**
+ * Health probe variant that also returns Tika's reported version string
+ * ("Apache Tika 3.3.0"). Useful for the operator dashboard — at-a-glance
+ * "up and on the expected version" without a second round-trip. Returns
+ * null on any failure (down, timeout, non-2xx, empty body) — same
+ * never-throws contract as the rest of this module.
+ */
+export async function tikaVersion(timeoutMs = 2_000): Promise<string | null> {
+  const url = `${tikaUrl()}/version`;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { method: 'GET', signal: ac.signal });
+    if (!res.ok) return null;
+    const text = (await res.text()).trim();
+    return text.length > 0 ? text : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}

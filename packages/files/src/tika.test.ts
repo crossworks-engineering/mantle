@@ -20,7 +20,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { parseTikaBytes, tikaIsUp } from './tika';
+import { parseTikaBytes, tikaIsUp, tikaVersion } from './tika';
 
 const ORIGINAL_TIKA_URL = process.env.TIKA_URL;
 
@@ -170,5 +170,32 @@ describe('tikaIsUp', () => {
       }),
     );
     await expect(tikaIsUp()).resolves.toBe(false);
+  });
+});
+
+describe('tikaVersion', () => {
+  it('returns the trimmed version string on 2xx', async () => {
+    mockFetch({ ok: true, text: '  Apache Tika 3.3.0\n' });
+    await expect(tikaVersion()).resolves.toBe('Apache Tika 3.3.0');
+  });
+
+  it('returns null on a non-2xx', async () => {
+    mockFetch({ ok: false, status: 500, text: 'fail' });
+    await expect(tikaVersion()).resolves.toBeNull();
+  });
+
+  it('returns null on an empty response body', async () => {
+    mockFetch({ ok: true, text: '   ' });
+    await expect(tikaVersion()).resolves.toBeNull();
+  });
+
+  it('returns null on a fetch rejection (Tika down)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('ECONNREFUSED');
+      }),
+    );
+    await expect(tikaVersion()).resolves.toBeNull();
   });
 });

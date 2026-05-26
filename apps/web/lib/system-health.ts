@@ -2,7 +2,7 @@ import os from 'node:os';
 import { statfs } from 'node:fs/promises';
 import si from 'systeminformation';
 import { db, sql } from '@mantle/db';
-import { filesRoot } from '@mantle/files';
+import { filesRoot, tikaVersion } from '@mantle/files';
 import { bucketReachable } from '@mantle/storage';
 import { attachmentBytes } from './dashboard';
 
@@ -43,6 +43,14 @@ export type SystemHealth = {
     minioUp: boolean | null;
     attachmentBytes: number | null;
     filesDisk: DiskInfo | null;
+  };
+  /** Tier-2 document parser fallback (.odt / .pptx / .doc / .rtf / .epub /
+   *  …) — sibling docker service. `up: false` means the fallback path
+   *  degrades cleanly to `no_text_layer` on every new ingest of those
+   *  formats; in-process parsers (pdf/docx/xlsx/text) keep working. */
+  tika: {
+    up: boolean;
+    version: string | null;
   };
   degraded: string[];
 };
@@ -128,13 +136,17 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     }
   }
 
-  const [load, mem, disk, pg, attBytes, minioUp] = await Promise.all([
+  const [load, mem, disk, pg, attBytes, minioUp, tikaVer] = await Promise.all([
     probe('host.cpu', () => si.currentLoad()),
     probe('host.mem', () => si.mem()),
     probe('host.disk', () => filesDisk()),
     probe('postgres', () => pgHealth()),
     probe('storage.attachments', () => attachmentBytes(userId)),
     probe('storage.minio', () => bucketReachable()),
+    // tikaVersion is itself never-throws (returns null on any failure),
+    // so the probe wrapper is mostly belt-and-braces here — the timeout
+    // still applies if the wrapper hangs longer than expected.
+    probe('tika', () => tikaVersion(1_500)),
   ]);
 
   const memInfo = mem
@@ -169,6 +181,13 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
       minioUp: minioUp,
       attachmentBytes: attBytes,
       filesDisk: disk,
+    },
+    tika: {
+      // tikaVersion returns null on down/timeout/non-2xx/empty; the probe
+      // wrapper also returns null on its own timeout. Either way, no version
+      // string ⇒ Tika is unreachable from the web process's point of view.
+      up: typeof tikaVer === 'string' && tikaVer.length > 0,
+      version: typeof tikaVer === 'string' ? tikaVer : null,
     },
     degraded,
   };

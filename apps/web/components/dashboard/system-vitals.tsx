@@ -60,7 +60,7 @@ export function SystemVitals() {
 
   if (!data) return <SystemVitalsSkeleton />;
 
-  const { host, postgres, storage } = data;
+  const { host, postgres, storage, tika } = data;
   const memValue = host.mem ? `${formatBytes(host.mem.usedBytes)} / ${formatBytes(host.mem.totalBytes)}` : '—';
   const diskValue = host.disk ? `${formatBytes(host.disk.usedBytes)} / ${formatBytes(host.disk.totalBytes)}` : '—';
 
@@ -71,6 +71,7 @@ export function SystemVitals() {
         <div className="flex items-center gap-1.5">
           <Pill ok={postgres.up} label="Postgres" />
           <Pill ok={storage.minioUp} label="MinIO" />
+          <Pill ok={tika.up} label="Tika" title={tika.version ?? undefined} />
           <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
             {data.scope}
           </Badge>
@@ -120,7 +121,7 @@ export function SystemVitals() {
   );
 }
 
-function Pill({ ok, label }: { ok: boolean | null; label: string }) {
+function Pill({ ok, label, title }: { ok: boolean | null; label: string; title?: string }) {
   const tone =
     ok == null
       ? 'bg-muted text-muted-foreground'
@@ -128,7 +129,10 @@ function Pill({ ok, label }: { ok: boolean | null; label: string }) {
         ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
         : 'bg-destructive/15 text-destructive';
   return (
-    <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium', tone)}>
+    <span
+      className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium', tone)}
+      title={title}
+    >
       <span className={cn('size-1.5 rounded-full', ok == null ? 'bg-muted-foreground' : ok ? 'bg-emerald-500' : 'bg-destructive')} />
       {label}
     </span>
