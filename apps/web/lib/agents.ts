@@ -24,6 +24,8 @@ export type AgentSummary = {
   name: string;
   description: string | null;
   role: Agent['role'];
+  /** Provider id — see packages/voice/src/providers.ts. */
+  provider: string;
   model: string;
   apiKeyId: string | null;
   systemPrompt: string;
@@ -52,6 +54,7 @@ function toSummary(a: Agent): AgentSummary {
     name: a.name,
     description: a.description,
     role: a.role,
+    provider: a.provider,
     model: a.model,
     apiKeyId: a.apiKeyId,
     systemPrompt: a.systemPrompt,
@@ -104,6 +107,9 @@ export type CreateAgentInput = {
   name: string;
   description?: string | null;
   role: Agent['role'];
+  /** Provider id. Optional on the input — the schema default
+   *  ('openrouter') applies when omitted. */
+  provider?: string;
   model: string;
   apiKeyId: string | null;
   systemPrompt: string;
@@ -129,6 +135,7 @@ export async function createAgent(
       name: input.name,
       description: input.description ?? null,
       role: input.role,
+      provider: input.provider ?? 'openrouter',
       model: input.model,
       apiKeyId: input.apiKeyId,
       systemPrompt: input.systemPrompt,
@@ -157,6 +164,7 @@ export async function updateAgent(
   if (patch.name !== undefined) next.name = patch.name;
   if (patch.description !== undefined) next.description = patch.description;
   if (patch.role !== undefined) next.role = patch.role;
+  if (patch.provider !== undefined) next.provider = patch.provider;
   if (patch.model !== undefined) next.model = patch.model;
   if (patch.apiKeyId !== undefined) next.apiKeyId = patch.apiKeyId;
   if (patch.systemPrompt !== undefined) next.systemPrompt = patch.systemPrompt;

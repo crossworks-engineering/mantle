@@ -94,15 +94,14 @@ export const invokeAgent: AgentInvoker = async ({
     };
   }
 
-  // Resolve the chat adapter for the child agent's provider. Same
-  // default-to-openrouter pattern as the responder until 3c adds the
-  // column to the agents table.
-  const childProvider = (target as { provider?: string }).provider ?? 'openrouter';
-  const childAdapter = getChatAdapter(childProvider);
+  // Resolve the chat adapter for the child agent's provider. The
+  // agents.provider column drives this; rows without an explicit
+  // value get 'openrouter' via the column default (migration 0048).
+  const childAdapter = getChatAdapter(target.provider);
   if (!childAdapter) {
     return {
       ok: false,
-      error: `agent '${agentSlug}' provider '${childProvider}' has no registered chat adapter`,
+      error: `agent '${agentSlug}' provider '${target.provider}' has no registered chat adapter`,
     };
   }
 

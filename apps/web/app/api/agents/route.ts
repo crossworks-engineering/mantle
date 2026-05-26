@@ -72,6 +72,11 @@ const CreateBody = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(2000).nullish(),
   role: RoleEnum,
+  // Provider id. Free-form string here; the runtime narrows it via
+  // packages/voice/src/providers.ts and surfaces a clear error if a
+  // chat adapter isn't registered. Defaults to 'openrouter' to match
+  // the column default added in migration 0048.
+  provider: z.string().min(1).max(64).default('openrouter'),
   model: z.string().min(1).max(200),
   apiKeyId: z.string().uuid().nullable(),
   systemPrompt: z.string().min(1).max(40_000),

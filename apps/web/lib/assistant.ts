@@ -431,14 +431,13 @@ export async function runAssistantTurn(
       userImage: image,
     });
 
-  // Resolve the chat adapter for this agent's provider. Default to
-  // 'openrouter' until 3c flips the agents schema. Stage 2 form clamps
-  // currently constrain operators to OR-shaped keys for agents.
-  const assistantProvider = (agent as { provider?: string }).provider ?? 'openrouter';
-  const assistantAdapter = getChatAdapter(assistantProvider);
+  // Resolve the chat adapter for this agent's provider. Stored in
+  // agents.provider (migration 0048); defaults to 'openrouter' for
+  // rows that predate the column.
+  const assistantAdapter = getChatAdapter(agent.provider);
   if (!assistantAdapter) {
     throw new Error(
-      `web/assistant: no chat adapter registered for provider '${assistantProvider}' (agent ${agent.slug})`,
+      `web/assistant: no chat adapter registered for provider '${agent.provider}' (agent ${agent.slug})`,
     );
   }
 

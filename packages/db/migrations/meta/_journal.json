@@ -337,6 +337,13 @@
       "when": 1779401900000,
       "tag": "0047_ai_worker_kind_embedding",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1779402000000,
+      "tag": "0048_agents_provider",
+      "breakpoints": true
     }
   ]
 }

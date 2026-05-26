@@ -99,6 +99,9 @@ type AgentSummary = {
   name: string;
   description: string | null;
   role: Role;
+  /** Provider id (see packages/voice/src/providers.ts). 'openrouter'
+   *  for legacy rows pre-migration 0048. */
+  provider: string;
   model: string;
   apiKeyId: string | null;
   systemPrompt: string;
@@ -259,6 +262,9 @@ type FormState = {
   name: string;
   description: string;
   role: Role;
+  /** Provider id. Defaults to 'openrouter' on new agents; legacy rows
+   *  read it from the column (backfilled to 'openrouter' by 0048). */
+  provider: string;
   model: string;
   apiKeyId: string;
   systemPrompt: string;
@@ -299,6 +305,7 @@ function emptyForm(role: Role = 'responder'): FormState {
     name: '',
     description: '',
     role,
+    provider: 'openrouter',
     model: d.model,
     apiKeyId: '',
     systemPrompt: d.systemPrompt,
@@ -334,6 +341,7 @@ function formFromAgent(a: AgentSummary): FormState {
     name: a.name,
     description: a.description ?? '',
     role: a.role,
+    provider: a.provider,
     model: a.model,
     apiKeyId: a.apiKeyId ?? '',
     systemPrompt: a.systemPrompt,
@@ -615,6 +623,7 @@ export function AgentsClient({
       name: form.name.trim(),
       description: form.description.trim() || null,
       role: form.role,
+      provider: form.provider.trim() || 'openrouter',
       model: form.model.trim(),
       apiKeyId: form.apiKeyId || null,
       systemPrompt: form.systemPrompt,

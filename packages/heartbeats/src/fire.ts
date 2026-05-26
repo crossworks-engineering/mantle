@@ -192,11 +192,10 @@ async function fireInner(
   const tools = await resolveAgentTools(hb.ownerId, [...allSlugs]);
 
   // 4. Run loop inside a trace + heartbeat context --------------
-  const hbProvider = (agent as { provider?: string }).provider ?? 'openrouter';
-  const hbAdapter = getChatAdapter(hbProvider);
+  const hbAdapter = getChatAdapter(agent.provider);
   if (!hbAdapter) {
     throw new Error(
-      `heartbeats/fire: no chat adapter registered for provider '${hbProvider}' (agent ${agent.slug})`,
+      `heartbeats/fire: no chat adapter registered for provider '${agent.provider}' (agent ${agent.slug})`,
     );
   }
 

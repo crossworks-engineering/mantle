@@ -161,7 +161,18 @@ export const agents = pgTable(
     name: text('name').notNull(),
     description: text('description'),
     role: agentRole('role').default('custom').notNull(),
-    /** OpenRouter slug e.g. `anthropic/claude-sonnet-4.6`. */
+    /** Provider id matching `packages/voice/src/providers.ts`. Drives
+     *  which chat adapter the responder / assistant / heartbeat loop
+     *  resolves via getChatAdapter(provider). Defaults to 'openrouter'
+     *  — the legacy hard-wired routing before Phase 3 added the column.
+     *  Migration 0048 added the column with a backfilled 'openrouter'
+     *  default; existing rows pre-migration are equivalent to a row
+     *  explicitly carrying that value. */
+    provider: text('provider').notNull().default('openrouter'),
+    /** Model id, interpreted relative to `provider`. For OpenRouter
+     *  this is a route slug (`anthropic/claude-sonnet-4.6`); for direct
+     *  providers it's the bare id (`claude-sonnet-4-6`, `gpt-5`,
+     *  `gemini-2.5-pro`). */
     model: text('model').notNull(),
     /** Which entry in api_keys to use. SET NULL on key delete, not cascade. */
     apiKeyId: uuid('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),

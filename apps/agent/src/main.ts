@@ -934,17 +934,14 @@ async function handleMessage(messageId: string): Promise<void> {
           },
         );
 
-        // Resolve the chat adapter for this agent's provider. Today's
-        // schema has no `provider` column on agents (that's 3c) — default
-        // to 'openrouter' until 3c flips the schema + reads from the
-        // column. The Stage 2 form clamps already constrain operators
-        // to OR-shaped keys for agents, so this default is honest.
-        const agentProvider =
-          (agent as { provider?: string }).provider ?? 'openrouter';
-        const chatAdapter = getChatAdapter(agentProvider);
+        // Resolve the chat adapter for this agent's provider. The
+        // agents table grew a `provider` column in migration 0048
+        // (defaulted to 'openrouter' for existing rows, equivalent to
+        // the pre-3c hard-wired routing).
+        const chatAdapter = getChatAdapter(agent.provider);
         if (!chatAdapter) {
           throw new Error(
-            `responder: no chat adapter registered for provider '${agentProvider}' (agent ${agent.slug})`,
+            `responder: no chat adapter registered for provider '${agent.provider}' (agent ${agent.slug})`,
           );
         }
 

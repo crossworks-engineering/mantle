@@ -65,6 +65,7 @@ const PatchBody = z
     name: z.string().min(1).max(120),
     description: z.string().max(2000).nullable(),
     role: RoleEnum,
+    provider: z.string().min(1).max(64),
     model: z.string().min(1).max(200),
     apiKeyId: z.string().uuid().nullable(),
     systemPrompt: z.string().min(1).max(40_000),
