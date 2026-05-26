@@ -223,29 +223,21 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
   const capability = CAPABILITY_FOR_KIND[kind]!;
   const catalogProviders = providersForCapability(capability);
 
-  // Some kinds are catalog-capable across many providers but the runtime
-  // pipes them all through OpenRouter — chat-shaped workers (reflector,
-  // extractor, summarizer) all construct `new OpenRouter(...)` at call
-  // time regardless of the worker.provider field. Showing other
-  // providers in the dropdown would mislead the operator into
-  // configurations that fail at first call. The form clamps the
-  // dropdown to the providers the runtime actually accepts.
-  //
-  // Embedding / TTS / STT / Vision / Image-gen all dispatch through
-  // the adapter registry — those kinds use the full catalog list.
-  const RUNTIME_OR_ONLY_KINDS = new Set(['reflector', 'extractor', 'summarizer']);
-  const eligibleProviders = RUNTIME_OR_ONLY_KINDS.has(kind)
-    ? catalogProviders.filter((p) => p.id === 'openrouter')
-    : catalogProviders;
+  // Post-Phase-3: every kind dispatches through the adapter registry
+  // and the worker's provider field actually controls runtime routing.
+  // The form lists every provider in the catalog that declares the
+  // kind's capability; the runtime resolves the adapter via
+  // getXxxAdapter(worker.provider) at call time. Adapters that
+  // haven't been wired yet show as "not yet wired" via isProviderWired
+  // (see the dropdown render below). The legacy RUNTIME_OR_ONLY_KINDS
+  // clamp went away with 3a (chat-shaped workers) + 3b (tool loop).
+  const eligibleProviders = catalogProviders;
   const selectedProvider = eligibleProviders.find((p) => p.id === provider);
 
-  // Filter the api-key dropdown to keys whose service matches one of the
-  // RUNTIME-eligible providers. The runtime-only filter above means
-  // chat-shaped kinds only accept OpenRouter keys here, even though
-  // other providers declare chat capability in the catalog. Falls back
-  // to the full key list when the eligible-provider list is empty
-  // (defensive — shouldn't happen given §10 of the test suite locks
-  // every kind in).
+  // Filter the api-key dropdown to keys whose service matches the
+  // capability's wired providers. KeyValidityHint surfaces the
+  // "key is for service X but worker wants Y" mismatch when the
+  // operator picks a provider the key doesn't cover.
   const eligibleProviderIds = new Set(eligibleProviders.map((p) => p.id as string));
   const eligibleKeys =
     eligibleProviderIds.size > 0
@@ -265,7 +257,17 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
   // Which chat providers have an adapter today. Keep this list as
   // the single source of truth for "show a model dropdown" — any
   // provider not listed here gets a free-text model input instead.
-  const wiredChatProviders = new Set(['xai', 'huggingface', 'anthropic', 'google']);
+  // OpenRouter joined this set when openrouter-chat shipped (Pre-work
+  // B of Phase 3); its discoverModels hits the keyless
+  // /api/v1/models endpoint so the dropdown populates even before
+  // the user picks a key.
+  const wiredChatProviders = new Set([
+    'openrouter',
+    'xai',
+    'huggingface',
+    'anthropic',
+    'google',
+  ]);
   // Which vision providers have an adapter today. Mirrors the chat
   // wiredChatProviders set — keeps "show a model dropdown" honest.
   const wiredVisionProviders = new Set(['openai', 'anthropic', 'google', 'xai']);
@@ -586,15 +588,6 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
                 No adapter registered for <code>{selectedProvider.id}</code> ·{' '}
                 <code>{capability}</code>. The UI saves the config, but calls will fail
                 until we ship the dispatch code for this provider.
-              </p>
-            )}
-            {RUNTIME_OR_ONLY_KINDS.has(kind) && (
-              <p className="text-xs text-muted-foreground">
-                Chat-shaped workers (reflector / extractor / summarizer) route through
-                OpenRouter — the model slug's <code>provider/model</code> prefix selects
-                the upstream (e.g. <code>anthropic/claude-haiku-4.5</code>). The provider
-                dropdown is locked here because the runtime doesn't yet dispatch chat
-                through direct providers.
               </p>
             )}
           </div>

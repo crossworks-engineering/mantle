@@ -22,6 +22,11 @@ import { Slider } from '@/components/ui/slider';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import type { ExplorerModel } from '@/lib/model-explorer';
+import {
+  SUPPORTED_PROVIDERS,
+  isProviderWired,
+  providersForCapability,
+} from '@mantle/voice';
 import type { AgentAvatar, PersonaNote } from '@mantle/db';
 import { AvatarPicker } from '@/components/avatar-picker';
 import { BoringAvatar } from '@/components/boring-avatar';
@@ -901,7 +906,49 @@ export function AgentsClient({
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            {/* Provider + model + key grid. Post-Phase-3 the provider
+                field on the agent row actually controls runtime
+                dispatch — `getChatAdapter(agent.provider)` resolves the
+                adapter the responder / assistant / heartbeat loop runs
+                through, and the API key filter narrows accordingly. */}
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="provider">Provider</Label>
+                {(() => {
+                  const chatProviders = providersForCapability('chat');
+                  return (
+                    <>
+                      <select
+                        id="provider"
+                        value={form.provider}
+                        onChange={(e) =>
+                          setForm((f) => ({ ...f, provider: e.target.value }))
+                        }
+                        className={SELECT_CLASS}
+                        required
+                      >
+                        {chatProviders.map((p) => {
+                          const wired = isProviderWired(p.id, 'chat');
+                          return (
+                            <option key={p.id} value={p.id}>
+                              {p.label}
+                              {wired ? '' : ' · not yet wired'}
+                            </option>
+                          );
+                        })}
+                      </select>
+                      {!isProviderWired(form.provider, 'chat') && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400">
+                          No chat adapter registered for{' '}
+                          <code>{form.provider}</code>. Saves will succeed but
+                          the responder/assistant will fail at first turn until
+                          a chat adapter ships for this provider.
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
               <div className="space-y-1.5">
                 <Label htmlFor="model">Model</Label>
                 <ModelSelect
@@ -912,7 +959,7 @@ export function AgentsClient({
                   loading={catalogState.loading}
                   error={catalogState.error}
                   placeholder="— pick a model —"
-                  emptyMessage="No matching models in the OpenRouter catalog."
+                  emptyMessage="No matching models in the catalog."
                   required
                 />
                 <ContextWindowHint model={form.model} limits={contextLimits} />
@@ -920,16 +967,13 @@ export function AgentsClient({
               <div className="space-y-1.5">
                 <Label htmlFor="apiKey">API key</Label>
                 {(() => {
-                  // Agents route through OpenRouter at runtime — the
-                  // agent loop constructs `new OpenRouter({apiKey})`
-                  // regardless of what's stored. Filtering the dropdown
-                  // to OR-only keys means an operator can't quietly
-                  // configure a non-OR key and get a 401 on first turn.
-                  // The model slug's `provider/model` prefix selects
-                  // the upstream (e.g. `anthropic/claude-…`) — that's
-                  // where the multi-provider routing actually lives.
+                  // Filter keys to those whose service matches the selected
+                  // provider. Direct-provider workers need a same-provider
+                  // key; OR workers need an `openrouter` key. The runtime
+                  // refuses cross-provider keys via getApiKeyById +
+                  // adapter.chat()'s auth check.
                   const eligibleAgentKeys = apiKeys.filter(
-                    (k) => k.service === 'openrouter',
+                    (k) => k.service === form.provider,
                   );
                   return (
                     <>
@@ -951,14 +995,12 @@ export function AgentsClient({
                       </select>
                       {apiKeys.length > 0 && eligibleAgentKeys.length === 0 && (
                         <p className="text-xs text-amber-600 dark:text-amber-400">
-                          Agents route through OpenRouter. None of your saved keys
-                          are for <code>openrouter</code>. Add one at{' '}
+                          None of your saved keys are for{' '}
+                          <code>{form.provider}</code>. Add one at{' '}
                           <a href="/settings/keys" className="underline">
                             /settings/keys
                           </a>{' '}
-                          — the model slug's <code>provider/model</code> prefix
-                          (e.g. <code>anthropic/claude-haiku-4.5</code>) selects
-                          the upstream provider.
+                          or pick a different provider.
                         </p>
                       )}
                       {apiKeys.length === 0 && (
@@ -968,12 +1010,6 @@ export function AgentsClient({
                             Add one
                           </a>{' '}
                           first.
-                        </p>
-                      )}
-                      {eligibleAgentKeys.length > 0 && (
-                        <p className="text-xs text-muted-foreground">
-                          Agents route through OpenRouter — the model slug's
-                          prefix selects the upstream provider.
                         </p>
                       )}
                     </>
