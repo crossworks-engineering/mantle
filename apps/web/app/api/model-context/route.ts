@@ -4,21 +4,31 @@ import {
   refreshModelCatalog,
   contextLimitMap,
   contextLimitsFetchedAt,
+  pricingMap,
 } from '@mantle/tracing';
 
 /**
- * Live model → context-window-tokens map, sourced from OpenRouter's public
- * `/api/v1/models` catalog (cached + TTL-gated server-side, keyless) with a
- * static fallback. The agents form fetches this once to show the context
- * window for whatever model slug the operator types — the same source the
- * dashboard's context-% bars read from, so the number is consistent
- * everywhere.
+ * Live model → catalog map, sourced from OpenRouter's public
+ * `/api/v1/models` (cached + TTL-gated server-side, keyless) with a static
+ * fallback for context windows. The agents form fetches this once to show
+ * the context window AND pricing badges for whatever model slug the
+ * operator picks — the same source the dashboard's context-% bars read,
+ * so the number is consistent everywhere.
+ *
+ * Response shape (backward-compatible — `pricing` was added in Phase 2 of
+ * the model-selection work; older clients reading only `limits` keep
+ * working unchanged):
+ *
+ *     { limits: Record<slug, contextLength>,
+ *       pricing: Record<slug, { inputPricePerM?, outputPricePerM? }>,
+ *       fetchedAt: epoch | null }
  */
 export async function GET() {
   await requireOwner();
   await refreshModelCatalog();
   return NextResponse.json({
     limits: contextLimitMap(),
+    pricing: pricingMap(),
     fetchedAt: contextLimitsFetchedAt(),
   });
 }

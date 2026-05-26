@@ -56,6 +56,13 @@ export type LiveModelInfo = {
   contextLength: number;
   /** Whether the model accepts image input (architecture.input_modalities). */
   vision: boolean;
+  /** USD per 1M input/prompt tokens, when OpenRouter returns pricing. 0 is a
+   *  legitimate value (free routes); undefined means "the provider didn't
+   *  return a pricing field" and the UI should render "pricing unavailable"
+   *  rather than guessing. */
+  inputPricePerM?: number;
+  /** USD per 1M output/completion tokens. Same semantics as inputPricePerM. */
+  outputPricePerM?: number;
 };
 
 let liveModels: Record<string, LiveModelInfo> | null = null;
@@ -67,14 +74,37 @@ type OpenRouterModel = {
   context_length?: number | null;
   top_provider?: { context_length?: number | null } | null;
   architecture?: { input_modalities?: string[] | null } | null;
+  /** OpenRouter encodes pricing as **strings in USD per single token** —
+   *  e.g. `"0.0000025"` for $2.50 per 1M. Multiply by 1e6 for the per-million
+   *  view the UI shows. Other fields (`request`, `image`, `web_search`, …)
+   *  exist for niche cases; we surface only prompt/completion at the model
+   *  cache layer. */
+  pricing?: {
+    prompt?: string | null;
+    completion?: string | null;
+  } | null;
 };
 
-/** Parse the OpenRouter catalog into a slug→{contextLength, vision} map.
- *  Context prefers the default route's actual window
+/** Parse a single OpenRouter `pricing.{prompt,completion}` value (USD per
+ *  token, string-encoded) into USD per 1M. Returns undefined for missing /
+ *  non-numeric / empty input so callers can distinguish "free" (0) from
+ *  "unknown". Tight on the empty-string case specifically — `Number('')`
+ *  is 0 in JS, which would silently promote malformed data into "free". */
+function parsePerMillion(raw: string | null | undefined): number | undefined {
+  if (typeof raw !== 'string' || raw.length === 0) return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n * 1_000_000 : undefined;
+}
+
+/** Parse the OpenRouter catalog into a slug→{contextLength, vision, pricing}
+ *  map. Context prefers the default route's actual window
  *  (`top_provider.context_length`), falling back to the model-level
  *  `context_length`. Vision is read from `architecture.input_modalities`
- *  (image input ⇒ multimodal). Exported for unit testing — production
- *  calls it via {@link refreshModelCatalog}. */
+ *  (image input ⇒ multimodal). Pricing is read from `pricing.{prompt,
+ *  completion}` and converted to per-1M USD; absent fields stay undefined
+ *  so the UI can show "pricing unavailable" rather than guessing $0.
+ *  Exported for unit testing — production calls it via
+ *  {@link refreshModelCatalog}. */
 export function parseCatalog(models: OpenRouterModel[]): Record<string, LiveModelInfo> {
   const out: Record<string, LiveModelInfo> = {};
   for (const m of models) {
@@ -91,7 +121,9 @@ export function parseCatalog(models: OpenRouterModel[]): Record<string, LiveMode
     if (ctx <= 0) continue;
     const mods = m.architecture?.input_modalities;
     const vision = Array.isArray(mods) && mods.includes('image');
-    out[id] = { contextLength: ctx, vision };
+    const inputPricePerM = parsePerMillion(m.pricing?.prompt);
+    const outputPricePerM = parsePerMillion(m.pricing?.completion);
+    out[id] = { contextLength: ctx, vision, inputPricePerM, outputPricePerM };
   }
   return out;
 }
@@ -169,6 +201,43 @@ export function contextLimitMap(): Record<string, number> {
 /** Epoch ms of the last successful live fetch, or null if it hasn't run. */
 export function contextLimitsFetchedAt(): number | null {
   return liveFetchedAt || null;
+}
+
+/** Per-1M USD pricing for a model slug, or null if the slug isn't in the
+ *  live catalog or the catalog hasn't loaded yet. Either side may still be
+ *  undefined (provider returned a partial pricing object) — callers should
+ *  check before formatting.
+ *
+ *  This also serves the direct-provider workers case: if a worker is stored
+ *  as `provider='anthropic', model='claude-sonnet-4-5'`, build the lookup
+ *  key as `anthropic/claude-sonnet-4-5` and the OpenRouter catalog will
+ *  almost always have pricing for it — OpenRouter aggregates upstream, so
+ *  its catalog covers what each direct provider sells. */
+export function pricingFor(
+  modelSlug: string | null | undefined,
+): { inputPricePerM?: number; outputPricePerM?: number } | null {
+  if (!modelSlug) return null;
+  const key = modelSlug.toLowerCase();
+  const entry = liveModels?.[key];
+  if (!entry) return null;
+  if (entry.inputPricePerM == null && entry.outputPricePerM == null) return null;
+  return {
+    inputPricePerM: entry.inputPricePerM,
+    outputPricePerM: entry.outputPricePerM,
+  };
+}
+
+/** Bulk slug→pricing map for the UI to attach pricing badges to a list of
+ *  models. Only slugs that have at least one priced side are included —
+ *  consumers can treat absence as "pricing unavailable". */
+export function pricingMap(): Record<string, { inputPricePerM?: number; outputPricePerM?: number }> {
+  if (!liveModels) return {};
+  const out: Record<string, { inputPricePerM?: number; outputPricePerM?: number }> = {};
+  for (const [k, v] of Object.entries(liveModels)) {
+    if (v.inputPricePerM == null && v.outputPricePerM == null) continue;
+    out[k] = { inputPricePerM: v.inputPricePerM, outputPricePerM: v.outputPricePerM };
+  }
+  return out;
 }
 
 /**

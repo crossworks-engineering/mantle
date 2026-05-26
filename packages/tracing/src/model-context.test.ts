@@ -116,7 +116,61 @@ describe('parseCatalog', () => {
       { id: 'a/ok', context_length: 50_000 },
     ]);
     expect(Object.keys(out)).toEqual(['a/ok']);
-    expect(out['a/ok']).toEqual({ contextLength: 50_000, vision: false });
+    expect(out['a/ok']?.contextLength).toBe(50_000);
+    expect(out['a/ok']?.vision).toBe(false);
+  });
+
+  it('extracts pricing as USD per 1M tokens (OpenRouter encodes per-token)', () => {
+    const out = parseCatalog([
+      {
+        id: 'openai/gpt-4o',
+        context_length: 128_000,
+        // $2.50 / $10 per 1M — encoded as USD per token, string-typed.
+        pricing: { prompt: '0.0000025', completion: '0.00001' },
+      },
+    ]);
+    expect(out['openai/gpt-4o']?.inputPricePerM).toBe(2.5);
+    expect(out['openai/gpt-4o']?.outputPricePerM).toBe(10);
+  });
+
+  it('keeps explicit zero pricing as 0 (free routes)', () => {
+    const out = parseCatalog([
+      {
+        id: 'meta/llama-free',
+        context_length: 8_000,
+        pricing: { prompt: '0', completion: '0' },
+      },
+    ]);
+    expect(out['meta/llama-free']?.inputPricePerM).toBe(0);
+    expect(out['meta/llama-free']?.outputPricePerM).toBe(0);
+  });
+
+  it('leaves pricing undefined when the provider omits it', () => {
+    const out = parseCatalog([
+      // No pricing object at all
+      { id: 'a/no-pricing', context_length: 1000 },
+      // Empty pricing object
+      { id: 'a/empty-pricing', context_length: 1000, pricing: {} },
+      // Partial: only prompt
+      { id: 'a/half', context_length: 1000, pricing: { prompt: '0.0000025' } },
+    ]);
+    expect(out['a/no-pricing']?.inputPricePerM).toBeUndefined();
+    expect(out['a/no-pricing']?.outputPricePerM).toBeUndefined();
+    expect(out['a/empty-pricing']?.inputPricePerM).toBeUndefined();
+    expect(out['a/half']?.inputPricePerM).toBe(2.5);
+    expect(out['a/half']?.outputPricePerM).toBeUndefined();
+  });
+
+  it('treats malformed pricing strings as unknown rather than NaN', () => {
+    const out = parseCatalog([
+      {
+        id: 'a/bad',
+        context_length: 1000,
+        pricing: { prompt: 'free', completion: '' },
+      },
+    ]);
+    expect(out['a/bad']?.inputPricePerM).toBeUndefined();
+    expect(out['a/bad']?.outputPricePerM).toBeUndefined();
   });
 });
 

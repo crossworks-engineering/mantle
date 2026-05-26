@@ -25,6 +25,8 @@ export {
   refreshModelCatalog,
   modelSupportsVision,
   maxImageBytesFor,
+  pricingFor,
+  pricingMap,
   type ContextSource,
   type LiveModelInfo,
 } from './model-context';
