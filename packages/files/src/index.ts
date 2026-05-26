@@ -6,6 +6,7 @@ export {
   extOf,
   mimeForExt,
   TEXT_EXTS,
+  TIKA_EXTS,
   INGESTABLE_EXTS,
   PREVIEWABLE_MARKDOWN_EXTS,
 } from './slug';
