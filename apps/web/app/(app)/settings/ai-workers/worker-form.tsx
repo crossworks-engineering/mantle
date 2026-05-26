@@ -10,7 +10,7 @@
  * components would mean two parallel field renderers to maintain.
  */
 
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { RefreshCw } from 'lucide-react';
 import type { AiWorker, AiWorkerKind } from '@mantle/db';
@@ -57,7 +57,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ModelSelect } from '@/components/ui/model-select';
 import { useToast } from '@/components/ui/toast';
+import type { ExplorerModel } from '@/lib/model-explorer';
 import { discoverModelsAction, listVoicesAction } from './actions';
 import { TtsTestButton } from './tts-test-button';
 import { SttTestButton } from './stt-test-button';
@@ -93,6 +95,59 @@ const PROVIDER_FOR_KIND: Record<AiWorkerKind, string> = {
 };
 
 /** Suggested model per kind, used as the placeholder. */
+/** Map workers' provider id to the OpenRouter slug prefix for pricing
+ *  lookup. `xai` is the operator-facing label; OpenRouter publishes it as
+ *  `x-ai`. Everything else matches directly. `openrouter` is its own
+ *  prefix (the model id already includes the upstream like
+ *  `anthropic/claude-…`). */
+function openrouterPrefixFor(provider: string): string {
+  if (provider === 'xai') return 'x-ai';
+  return provider;
+}
+
+/** Build the OpenRouter-style lookup key for a worker's (provider, model).
+ *  For OpenRouter the id already carries the prefix; for direct providers
+ *  we prepend the slug-mapped prefix. Lower-cased so it matches the cache
+ *  key shape. */
+function openrouterSlugFor(provider: string, modelId: string): string {
+  if (provider === 'openrouter') return modelId.toLowerCase();
+  return `${openrouterPrefixFor(provider)}/${modelId}`.toLowerCase();
+}
+
+/** Convert the discovery result (a union of TtsModelInfo / SttModelInfo /
+ *  ChatModelInfo / VisionModelInfo / ImageGenModelInfo) into the
+ *  ExplorerModel shape ModelSelect renders. Pricing comes from the
+ *  adapter's own fields when present (ChatModelInfo / VisionModelInfo);
+ *  otherwise we fall back to OpenRouter's cached pricing via the
+ *  slug-mapped lookup — that's how direct providers (Anthropic, OpenAI,
+ *  xAI) whose `/v1/models` returns bare ids get pricing badges anyway. */
+function toExplorerModels(
+  available: ReadonlyArray<
+    TtsModelInfo | SttModelInfo | ChatModelInfo | VisionModelInfo | ImageGenModelInfo
+  >,
+  provider: string,
+  orPricing: Record<string, { inputPricePerM?: number; outputPricePerM?: number }>,
+): ExplorerModel[] {
+  return available.map((m) => {
+    const withPricing = m as {
+      inputPricePer1M?: number;
+      outputPricePer1M?: number;
+      contextTokens?: number;
+    };
+    const orKey = openrouterSlugFor(provider, m.id);
+    const orHit = orPricing[orKey];
+    return {
+      id: m.id,
+      name: m.label,
+      description: m.description,
+      contextTokens: withPricing.contextTokens,
+      inputPricePerM: withPricing.inputPricePer1M ?? orHit?.inputPricePerM,
+      outputPricePerM: withPricing.outputPricePer1M ?? orHit?.outputPricePerM,
+      raw: m,
+    };
+  });
+}
+
 const MODEL_HINT_FOR_KIND: Record<AiWorkerKind, string> = {
   reflector: 'anthropic/claude-haiku-4.5',
   extractor: 'anthropic/claude-haiku-4.5',
@@ -223,6 +278,34 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
     error: null,
     loading: false,
   }));
+
+  // OpenRouter pricing map — fetched once, used as a fallback for direct
+  // providers (Anthropic / OpenAI / xAI / Google) whose own list endpoints
+  // don't return pricing. We look up `${prefix}/${model.id}` in the cache
+  // and fold the pricing into the ExplorerModel passed to ModelSelect.
+  // Misses are silent: pricing badge just doesn't render for that row.
+  const [orPricing, setOrPricing] = useState<
+    Record<string, { inputPricePerM?: number; outputPricePerM?: number }>
+  >({});
+  const explorerModels: ExplorerModel[] = useMemo(
+    () => toExplorerModels(discovery.available, provider, orPricing),
+    [discovery.available, provider, orPricing],
+  );
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/model-context')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled) return;
+        if (d?.pricing) setOrPricing(d.pricing as typeof orPricing);
+      })
+      .catch(() => {
+        /* pricing badge is decorative — ignore fetch failures */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const refreshDiscovery = async (keyId: string, providerOverride?: string) => {
     if (!keyId) return;
@@ -407,28 +490,26 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
             {supportsDiscovery ? (
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <select
-                    id="model"
-                    name="model"
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    required
-                    className="flex h-9 flex-1 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                  >
-                    <option value="">— pick a model —</option>
-                    {discovery.available.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.label}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex-1">
+                    <ModelSelect
+                      id="model"
+                      name="model"
+                      value={model}
+                      onValueChange={setModel}
+                      models={explorerModels}
+                      loading={discovery.loading}
+                      placeholder="— pick a model —"
+                      emptyMessage="No models in this catalogue match."
+                      required
+                    />
+                  </div>
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     disabled={!apiKeyId || discovery.loading}
                     onClick={() => void refreshDiscovery(apiKeyId)}
-                    title="Re-query OpenAI for the latest model list"
+                    title="Re-query the provider for the latest model list"
                   >
                     <RefreshCw
                       className={discovery.loading ? 'animate-spin' : ''}

@@ -17,9 +17,11 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ModelSelect } from '@/components/ui/model-select';
 import { Slider } from '@/components/ui/slider';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
+import type { ExplorerModel } from '@/lib/model-explorer';
 import type { AgentAvatar, PersonaNote } from '@mantle/db';
 import { AvatarPicker } from '@/components/avatar-picker';
 import { BoringAvatar } from '@/components/boring-avatar';
@@ -56,17 +58,11 @@ const EMBEDDING_MODELS: { value: string; label: string; note?: string }[] = [
   { value: 'google/gemini-embedding-2-preview', label: 'google/gemini-embedding-2-preview', note: 'multimodal · 1536 · $0.20/1M tok' },
 ];
 
-/** Common OpenRouter model slugs. Free text still works for anything not listed. */
-const MODEL_SUGGESTIONS = [
-  'anthropic/claude-sonnet-4.6',
-  'anthropic/claude-opus-4.7',
-  'anthropic/claude-haiku-4.5',
-  'openai/gpt-4o',
-  'openai/gpt-4o-mini',
-  'deepseek/deepseek-chat',
-  'google/gemini-2.5-pro',
-  'google/gemini-2.5-flash',
-];
+// The static MODEL_SUGGESTIONS list was retired with the ModelSelect rollout —
+// the form now reads the full live OpenRouter catalog (~330+ models) from
+// /api/models?provider=openrouter and the combobox handles search + sort.
+// Custom slugs the catalog hasn't indexed yet still commit via the
+// "Use ‹typed›" affordance inside the combobox.
 
 const ROLES = [
   { value: 'assistant', label: 'Assistant — interactive chat surface' },
@@ -454,6 +450,39 @@ export function AgentsClient({
     };
   }, []);
 
+  // Full OpenRouter catalog (~330+ models, with name + context + pricing +
+  // modality + created). Feeds the ModelSelect combobox; cached server-side
+  // (5-min TTL on /api/models, separate from the 6h model-context cache).
+  const [catalog, setCatalog] = useState<ExplorerModel[]>([]);
+  const [catalogState, setCatalogState] = useState<{ loading: boolean; error: string | null }>({
+    loading: true,
+    error: null,
+  });
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/models?provider=openrouter')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled) return;
+        if (d?.models && Array.isArray(d.models)) {
+          setCatalog(d.models as ExplorerModel[]);
+          setCatalogState({ loading: false, error: d.error ?? null });
+        } else {
+          setCatalogState({ loading: false, error: d?.error ?? 'No catalog returned' });
+        }
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setCatalogState({
+          loading: false,
+          error: err instanceof Error ? err.message : 'Catalog fetch failed',
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const openCreate = () => {
     setForm(emptyForm());
     setSlugTouched(false);
@@ -832,18 +861,17 @@ export function AgentsClient({
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="model">Model</Label>
-                <Input
+                <ModelSelect
                   id="model"
-                  list="model-suggestions"
                   value={form.model}
-                  onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
+                  onValueChange={(next) => setForm((f) => ({ ...f, model: next }))}
+                  models={catalog}
+                  loading={catalogState.loading}
+                  error={catalogState.error}
+                  placeholder="— pick a model —"
+                  emptyMessage="No matching models in the OpenRouter catalog."
                   required
                 />
-                <datalist id="model-suggestions">
-                  {MODEL_SUGGESTIONS.map((m) => (
-                    <option key={m} value={m} />
-                  ))}
-                </datalist>
                 <ContextWindowHint model={form.model} limits={contextLimits} />
               </div>
               <div className="space-y-1.5">
