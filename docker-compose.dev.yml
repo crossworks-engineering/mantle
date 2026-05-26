@@ -63,7 +63,16 @@ services:
       # and reach Tika here. TIKA_URL in .env.local must match.
       - "127.0.0.1:9998:9998"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9998/version >/dev/null 2>&1 || exit 1"]
+      # apache/tika image has only bash (no curl/wget/nc), so probe via
+      # bash's built-in /dev/tcp + a minimal HTTP/1.0 GET against /version.
+      # CMD (not CMD-SHELL) so we invoke bash explicitly — /dev/tcp is
+      # bash-specific and not available in /bin/sh.
+      test:
+        - CMD
+        - bash
+        - -c
+        - 'exec 3<>/dev/tcp/localhost/9998 || exit 1; printf "GET /version HTTP/1.0\r\nHost: localhost\r\n\r\n" >&3; read -t 2 line <&3; [[ "$$line" == *"200 OK"* ]]'
       interval: 10s
       timeout: 5s
       retries: 12
+      start_period: 30s
