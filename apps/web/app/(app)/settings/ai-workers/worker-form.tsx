@@ -96,12 +96,18 @@ const PROVIDER_FOR_KIND: Record<AiWorkerKind, string> = {
 
 /** Suggested model per kind, used as the placeholder. */
 /** Map workers' provider id to the OpenRouter slug prefix for pricing
- *  lookup. `xai` is the operator-facing label; OpenRouter publishes it as
- *  `x-ai`. Everything else matches directly. `openrouter` is its own
- *  prefix (the model id already includes the upstream like
- *  `anthropic/claude-…`). */
+ *  lookup. Two provider ids in SUPPORTED_PROVIDERS don't match OpenRouter's
+ *  prefix verbatim:
+ *    - `xai` → `x-ai` (the operator-facing label vs OR's published prefix)
+ *    - `mistral` → `mistralai` (OR uses the full company name as prefix)
+ *  Everything else matches directly. `openrouter` is its own prefix (the
+ *  model id already includes the upstream like `anthropic/claude-…`).
+ *  Providers OpenRouter doesn't carry at all (Deepgram, AssemblyAI,
+ *  ElevenLabs) silently miss the fallback — fine, those are audio anyway
+ *  and OR doesn't have pricing for them either way. */
 function openrouterPrefixFor(provider: string): string {
   if (provider === 'xai') return 'x-ai';
+  if (provider === 'mistral') return 'mistralai';
   return provider;
 }
 
@@ -129,20 +135,29 @@ function toExplorerModels(
   orPricing: Record<string, { inputPricePerM?: number; outputPricePerM?: number }>,
 ): ExplorerModel[] {
   return available.map((m) => {
-    const withPricing = m as {
+    const wider = m as {
       inputPricePer1M?: number;
       outputPricePer1M?: number;
       contextTokens?: number;
+      // ChatModelInfo carries this — 'vision' / 'reasoning' / 'function_calling'
+      // / 'json_mode'. We fold it into the modality string so cmdk's
+      // fuzzy search picks up a query like "vision" against direct-provider
+      // chat models (which otherwise have no modality field).
+      capabilities?: readonly string[];
     };
     const orKey = openrouterSlugFor(provider, m.id);
     const orHit = orPricing[orKey];
+    const modality = wider.capabilities?.length
+      ? wider.capabilities.join(' · ')
+      : undefined;
     return {
       id: m.id,
       name: m.label,
       description: m.description,
-      contextTokens: withPricing.contextTokens,
-      inputPricePerM: withPricing.inputPricePer1M ?? orHit?.inputPricePerM,
-      outputPricePerM: withPricing.outputPricePer1M ?? orHit?.outputPricePerM,
+      contextTokens: wider.contextTokens,
+      inputPricePerM: wider.inputPricePer1M ?? orHit?.inputPricePerM,
+      outputPricePerM: wider.outputPricePer1M ?? orHit?.outputPricePerM,
+      modality,
       raw: m,
     };
   });
