@@ -1,0 +1,61 @@
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { requireOwner } from '@/lib/auth';
+import { deleteContact, getContact, updateContact } from '@/lib/contacts';
+
+const PatchBody = z.object({
+  first_name: z.string().max(200).optional(),
+  last_name: z.string().max(200).optional(),
+  email: z.string().max(200).optional(),
+  country_code: z.string().max(8).optional(),
+  cell: z.string().max(32).optional(),
+  description: z.string().max(4000).optional(),
+  tags: z.array(z.string().max(40)).max(20).optional(),
+});
+
+export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await requireOwner();
+  const { id } = await ctx.params;
+  const row = await getContact(user.id, id);
+  if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  return NextResponse.json({ contact: row });
+}
+
+export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await requireOwner();
+  const { id } = await ctx.params;
+  const raw = await req.json().catch(() => ({}));
+  const parsed = PatchBody.safeParse(raw);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
+      { status: 400 },
+    );
+  }
+  try {
+    const row = await updateContact(user.id, id, {
+      firstName: parsed.data.first_name,
+      lastName: parsed.data.last_name,
+      email: parsed.data.email,
+      countryCode: parsed.data.country_code,
+      cell: parsed.data.cell,
+      description: parsed.data.description,
+      tags: parsed.data.tags,
+    });
+    if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    return NextResponse.json({ contact: row });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'update failed' },
+      { status: 400 },
+    );
+  }
+}
+
+export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await requireOwner();
+  const { id } = await ctx.params;
+  const ok = await deleteContact(user.id, id);
+  if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  return NextResponse.json({ ok: true });
+}
