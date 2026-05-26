@@ -605,10 +605,11 @@ So we split:
   jsonb). UI at `/settings/ai-workers`.
 
 The `ai_worker_kind` enum: `reflector | extractor | summarizer | tts |
-stt | vision | image_gen`. The first three migrate cleanly from the
-old `agents.role` enum (preserved by the migration's backfill); the
-last four are brand new and unlock features that don't fit the agent
-abstraction.
+stt | vision | image_gen | embedding`. The first three migrate cleanly
+from the old `agents.role` enum (preserved by the migration's backfill);
+`tts`/`stt`/`vision`/`image_gen` unlock features that don't fit the
+agent abstraction; `embedding` (added in migration 0047) is the canonical
+pick point for the text→vector model used across the whole stack.
 
 Per-kind params (declared in `packages/db/src/schema/ai-workers.ts`):
 
@@ -621,10 +622,27 @@ Per-kind params (declared in `packages/db/src/schema/ai-workers.ts`):
 | `stt` | `language`, `max_duration_seconds` | inbound voice msg |
 | `vision` | `extraction_prompt`, `max_tokens` | (not wired yet) |
 | `image_gen` | `size`, `style`, `quality` | (not wired yet) |
+| `embedding` | `output_dimensions` (only models that honour it — Gemini) | every embedding call (extractor writes, agent memory reads, recall, MCP search, spill query) |
 
 One worker per `(owner, kind)` is marked `is_default=true`. The runtime
 calls `getDefaultWorker(ownerId, kind)` from `@mantle/db`; the default
 flag wins, otherwise highest-priority enabled row.
+
+**Embedding resolution** is the one kind that's resolved on a *hot path*
+rather than at trigger time, so it has its own per-owner 60s in-process
+cache in `@mantle/embeddings#resolveEmbeddingModel`. The fall-through
+chain: `ai_workers` (kind=embedding) → `MANTLE_EMBEDDING_MODEL` env var
+→ hardcoded `openai/text-embedding-3-small`. Workers form mutations
+(`createAiWorkerAction` / `updateAiWorkerAction` / `setDefaultWorkerAction`
+/ `deleteAiWorkerAction`) call `clearEmbeddingModelCache(ownerId)` so a
+model swap takes effect on the next ingest / recall instead of waiting
+the TTL. Discovery for the embedding kind uses OpenRouter's keyless
+`/api/v1/embeddings/models` catalog — 25 models with pricing — because
+OR's main `/v1/models` deliberately excludes embedding routes (separate
+endpoint). The form's `EmbeddingFields` block surfaces a hard warning
+when the picked model's dimensions don't match the brain's `vector(1536)`
+column — switching to a different-dim model needs a one-shot
+`pnpm re-embed` pass, or new inserts will fail.
 
 **The provider adapter framework** lives in `@mantle/voice` and is the
 layer that lets us swap providers without changing call sites. Three
