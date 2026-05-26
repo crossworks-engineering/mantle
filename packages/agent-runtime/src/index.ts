@@ -1,6 +1,7 @@
 export {
   buildChatMessages,
   buildAttachmentContextText,
+  flattenChatMessagesForAdapter,
   type HistoryTurn,
   type Digest,
   type FactSnippet,

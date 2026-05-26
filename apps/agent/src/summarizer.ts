@@ -11,7 +11,6 @@
  * is intentionally pure-logic — no listeners, no LISTEN handling.
  */
 
-import { OpenRouter } from '@openrouter/sdk';
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   db,
@@ -28,7 +27,12 @@ import {
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { recordSkippedTrace, startTrace, step } from '@mantle/tracing';
-import { buildChatMessages, captureLlmUsage } from '@mantle/agent-runtime';
+import {
+  buildChatMessages,
+  flattenChatMessagesForAdapter,
+  recordChatUsage,
+} from '@mantle/agent-runtime';
+import { getChatAdapter } from '@mantle/voice';
 
 /** Default seeded into the UI when role flips to `summarizer`. The user can
  *  edit it on the agent row at any time. */
@@ -203,42 +207,43 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
         newUserText: transcript,
       });
 
-      const client = new OpenRouter({
-        apiKey,
-        httpReferer: 'https://mantle.crossworks.network',
-        appTitle: 'Mantle',
-      });
+      const adapter = getChatAdapter(worker.provider);
+      if (!adapter) {
+        throw new Error(
+          `summarizer: no chat adapter registered for provider '${worker.provider}'. ` +
+            `Register one in packages/voice/src/adapters/index.ts, or switch the worker.`,
+        );
+      }
 
       console.log(
-        `[agent] summarizing chat ${chatPk} (${batch.length} turns, ${worker.model})`,
+        `[agent] summarizing chat ${chatPk} (${batch.length} turns, ${adapter.adapterName}:${worker.model})`,
       );
 
       const result = await step(
-        { name: 'llm_summarize', kind: 'llm_call', input: { model: worker.model } },
+        {
+          name: 'llm_summarize',
+          kind: 'llm_call',
+          input: { model: worker.model, provider: worker.provider },
+        },
         async (h) => {
-          const r = await client.chat.send({
-            chatRequest: {
-              model: worker.model,
-              messages,
-              ...(typeof params.temperature === 'number'
-                ? { temperature: params.temperature }
-                : {}),
-              ...(typeof params.max_tokens === 'number'
-                ? { maxTokens: params.max_tokens }
-                : {}),
-              ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
-            },
+          const r = await adapter.chat({
+            apiKey,
+            model: worker.model,
+            messages: flattenChatMessagesForAdapter(messages),
+            ...(typeof params.temperature === 'number'
+              ? { temperature: params.temperature }
+              : {}),
+            ...(typeof params.max_tokens === 'number'
+              ? { maxTokens: params.max_tokens }
+              : {}),
+            ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
           });
-          captureLlmUsage(h, r, worker.model);
+          recordChatUsage(h, r, worker.model);
           return r;
         },
       );
 
-      if (!('choices' in result)) {
-        throw new Error('summarizer: unexpected streaming response');
-      }
-      const rawContent = result.choices[0]?.message?.content;
-      const rawText = typeof rawContent === 'string' ? rawContent.trim() : '';
+      const rawText = result.text.trim();
       if (!rawText) {
         throw new Error('summarizer: empty response — not persisting');
       }
@@ -460,33 +465,37 @@ export async function summarizeWebConversation(ownerId: string): Promise<void> {
         newUserText: transcript,
       });
 
-      const client = new OpenRouter({
-        apiKey,
-        httpReferer: 'https://mantle.crossworks.network',
-        appTitle: 'Mantle',
-      });
-      console.log(`[agent] summarizing web conversation (${batch.length} turns, ${worker.model})`);
+      const adapter = getChatAdapter(worker.provider);
+      if (!adapter) {
+        throw new Error(
+          `summarizer (web): no chat adapter registered for provider '${worker.provider}'.`,
+        );
+      }
+      console.log(
+        `[agent] summarizing web conversation (${batch.length} turns, ${adapter.adapterName}:${worker.model})`,
+      );
 
       const result = await step(
-        { name: 'llm_summarize', kind: 'llm_call', input: { model: worker.model } },
+        {
+          name: 'llm_summarize',
+          kind: 'llm_call',
+          input: { model: worker.model, provider: worker.provider },
+        },
         async (h) => {
-          const r = await client.chat.send({
-            chatRequest: {
-              model: worker.model,
-              messages,
-              ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
-              ...(typeof params.max_tokens === 'number' ? { maxTokens: params.max_tokens } : {}),
-              ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
-            },
+          const r = await adapter.chat({
+            apiKey,
+            model: worker.model,
+            messages: flattenChatMessagesForAdapter(messages),
+            ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
+            ...(typeof params.max_tokens === 'number' ? { maxTokens: params.max_tokens } : {}),
+            ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
           });
-          captureLlmUsage(h, r, worker.model);
+          recordChatUsage(h, r, worker.model);
           return r;
         },
       );
 
-      if (!('choices' in result)) throw new Error('summarizer: unexpected streaming response');
-      const rawContent = result.choices[0]?.message?.content;
-      const rawText = typeof rawContent === 'string' ? rawContent.trim() : '';
+      const rawText = result.text.trim();
       if (!rawText) throw new Error('summarizer: empty response — not persisting');
 
       const topics = parseTopics(rawText, batch.length);

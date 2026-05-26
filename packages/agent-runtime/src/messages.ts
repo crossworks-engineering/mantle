@@ -120,6 +120,52 @@ export function buildAttachmentContextText(
   return ref ? `${base}\n\n[Attached ${noun}${ref}.]` : base;
 }
 
+/**
+ * Reduce a `ChatMessage[]` (the rich agent-runtime shape with vision +
+ * tool-call hooks) to the plain `Array<{role, content: string}>` shape
+ * the chat adapter contract accepts. Used by the chat-shaped workers
+ * (extractor, summarizer, reflector) for their single-turn calls
+ * post-Phase 3a — they never carry images or tool messages, so the
+ * flattening is lossless for them.
+ *
+ * Multi-modal images and tool messages are rejected here rather than
+ * silently dropped — those callers belong on the 3b path (tool-loop
+ * refactor), which has its own normalised dispatch. If 3a ever sees
+ * such a message it means a caller wired the wrong helper.
+ */
+export function flattenChatMessagesForAdapter(
+  messages: ChatMessage[],
+): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> {
+  return messages.map((m, idx) => {
+    if (m.role === 'tool') {
+      throw new Error(
+        `flattenChatMessagesForAdapter: tool message at index ${idx} — use the 3b tool-loop path for tool-using workers.`,
+      );
+    }
+    if (m.role === 'assistant') {
+      // Assistant content can be null when the previous step returned only
+      // tool calls. The summarizer/reflector path never builds this shape,
+      // so a null here means a caller bug we shouldn't paper over.
+      if (m.content == null) {
+        throw new Error(
+          `flattenChatMessagesForAdapter: assistant message at index ${idx} has null content — likely a stray tool-loop message.`,
+        );
+      }
+      return { role: 'assistant' as const, content: m.content };
+    }
+    // system + user can be string OR array. Reject multi-modal arrays
+    // here for the same reason — those callers want 3b.
+    if (typeof m.content === 'string') {
+      return { role: m.role, content: m.content };
+    }
+    // The array form is only emitted by the tool-loop path. The 3a
+    // chat workers shouldn't see it.
+    throw new Error(
+      `flattenChatMessagesForAdapter: ${m.role} message at index ${idx} has array content (multi-modal or cache-marked) — use the 3b tool-loop path for these callers.`,
+    );
+  });
+}
+
 export function buildChatMessages(args: {
   model: string;
   systemPrompt: string;

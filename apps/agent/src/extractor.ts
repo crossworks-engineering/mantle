@@ -30,7 +30,6 @@
  * pg_notify channel to extractNode().
  */
 
-import { OpenRouter } from '@openrouter/sdk';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import {
   db,
@@ -55,7 +54,8 @@ import { getApiKeyById } from '@mantle/api-keys';
 import { embed } from '@mantle/embeddings';
 import { diskPathForFile, extOf, mimeForExt, parseDocumentBytes, INGESTABLE_EXTS, parserRouteForExt } from '@mantle/files';
 import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
-import { captureLlmUsage, runVisionWorker } from '@mantle/agent-runtime';
+import { recordChatUsage, runVisionWorker } from '@mantle/agent-runtime';
+import { getChatAdapter, type ChatDispatcher, type ChatResult } from '@mantle/voice';
 import { chunkDocText, mentionRefs } from '@mantle/content';
 import { isLikelyDifferentPerson } from './person-names';
 
@@ -531,33 +531,38 @@ function parseClassifierDecision(raw: string): ClassifierDecision {
   }
 }
 
-/** Call OpenRouter for a chat completion with the agent's model/params.
- *  Returns both the assistant content and the raw result (the latter so
- *  callers can capture usage into a trace step). */
+/**
+ * Single-turn chat completion through the adapter registry.
+ *
+ * Phase-3 shape: the extractor used to construct `new OpenRouter()`
+ * directly and call `client.chat.send` regardless of what the worker
+ * said. Now it resolves the chat adapter for `worker.provider` and
+ * goes through `adapter.chat()` — so a worker configured for direct
+ * Anthropic / direct Google / xAI / HF actually routes there instead
+ * of falling through to OpenRouter.
+ *
+ * Returns the typed ChatResult so the call site can pass it straight
+ * to `recordChatUsage` without scraping a raw response.
+ */
 async function chatComplete(
-  client: OpenRouter,
+  adapter: ChatDispatcher,
+  apiKey: string,
   model: string,
   systemPrompt: string,
   userText: string,
   params: ExtractorParams,
-): Promise<{ content: string; raw: unknown }> {
-  const result = await client.chat.send({
-    chatRequest: {
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userText },
-      ],
-      ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
-      ...(typeof params.max_tokens === 'number' ? { maxTokens: params.max_tokens } : {}),
-      ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
-    },
+): Promise<ChatResult> {
+  return await adapter.chat({
+    apiKey,
+    model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userText },
+    ],
+    ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
+    ...(typeof params.max_tokens === 'number' ? { maxTokens: params.max_tokens } : {}),
+    ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
   });
-  if (!('choices' in result)) {
-    throw new Error('extractor: unexpected streaming response');
-  }
-  const content = result.choices[0]?.message?.content;
-  return { content: typeof content === 'string' ? content : '', raw: result };
 }
 
 // ─── Entity reconciliation ──────────────────────────────────────────────────
@@ -677,7 +682,8 @@ async function classifyAndApplyFact(
   candidateEmbedding: number[],
   sourceNodeId: string,
   primaryEntityId: string | null,
-  client: OpenRouter,
+  adapter: ChatDispatcher,
+  apiKey: string,
   worker: AiWorker,
 ): Promise<'ADD' | 'UPDATE' | 'DELETE' | 'NOOP'> {
   // Find near-neighbour facts among currently-valid rows.
@@ -718,13 +724,14 @@ async function classifyAndApplyFact(
   // Slow path: call the classifier to decide.
   const params = (worker.params ?? {}) as ExtractorParams;
   const decisionResult = await chatComplete(
-    client,
+    adapter,
+    apiKey,
     worker.model,
     'You are a precise JSON output assistant. Output strictly the JSON requested, with no additional commentary.',
     CLASSIFIER_PROMPT_TEMPLATE(candidate.content, closeNeighbours.map((n) => n.content)),
     params,
   );
-  const decision = parseClassifierDecision(decisionResult.content);
+  const decision = parseClassifierDecision(decisionResult.text);
 
   const targetIdx = decision.target_index ? decision.target_index - 1 : null;
   const target = targetIdx != null ? closeNeighbours[targetIdx] : null;
@@ -1023,14 +1030,35 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       ? rawBody.slice(0, TEXT_STORE_MAX_CHARS)
       : undefined;
 
-  const client = new OpenRouter({
-    apiKey,
-    httpReferer: 'https://mantle.crossworks.network',
-    appTitle: 'Mantle',
-  });
+  // Resolve the chat adapter for this worker's provider. Phase-3
+  // change: was `new OpenRouter({apiKey})` regardless of what the
+  // worker said. Now the worker.provider field actually steers the
+  // dispatch. If no adapter is wired for the provider, surface a
+  // clear skipped trace rather than crashing — operators see what's
+  // missing in /traces.
+  const adapter = getChatAdapter(worker.provider);
+  if (!adapter) {
+    console.error(
+      `[extractor] no chat adapter registered for provider '${worker.provider}' — skipping`,
+    );
+    await recordSkippedTrace({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      disposition: 'unwired_provider',
+      details: {
+        worker_slug: worker.slug,
+        provider: worker.provider,
+        model: worker.model,
+        hint: `Register a chat adapter for '${worker.provider}' in packages/voice/src/adapters/index.ts, or switch the worker to a wired provider.`,
+      },
+    });
+    return;
+  }
 
   console.log(
-    `[extractor] node ${node.id.slice(0, 8)} (${node.type}, ${node.title.slice(0, 40)}) via ${worker.model}`,
+    `[extractor] node ${node.id.slice(0, 8)} (${node.type}, ${node.title.slice(0, 40)}) via ${adapter.adapterName}:${worker.model}`,
   );
 
   const embeddingModel = params.embedding_model;
@@ -1052,6 +1080,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
         nodeType: node.type,
         title: node.title,
         model: worker.model,
+        provider: worker.provider,
         worker_slug: worker.slug,
         worker_id: worker.id,
         embeddingModel: embeddingModel ?? null,
@@ -1067,6 +1096,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
           kind: 'llm_call',
           input: {
             model: worker.model,
+            provider: worker.provider,
             // Surface everything the LLM saw. No per-field char caps —
             // the global truncateJson budget (64KB) catches truly
             // runaway bodies and the node itself lives in /files for
@@ -1080,14 +1110,15 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
         },
         async (h) => {
           const r = await chatComplete(
-            client,
+            adapter,
+            apiKey,
             worker.model,
             systemPrompt,
             userPayload,
             params,
           );
-          captureLlmUsage(h, r.raw, worker.model);
-          const result = parseExtractorOutput(r.content, { nodeId: node.id, model: worker.model });
+          recordChatUsage(h, r, worker.model);
+          const result = parseExtractorOutput(r.text, { nodeId: node.id, model: worker.model });
           // Capture the full model output — summary, all entities,
           // all facts. truncateJson at the tracing layer will only
           // bite if the combined JSON exceeds 64KB, which is
@@ -1447,7 +1478,8 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
                 vec,
                 node.id,
                 primaryEntityId,
-                client,
+                adapter,
+                apiKey,
                 worker,
               );
               t[decision]++;

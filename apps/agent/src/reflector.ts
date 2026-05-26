@@ -15,7 +15,6 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { OpenRouter } from '@openrouter/sdk';
 import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import {
   db,
@@ -34,7 +33,8 @@ import {
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { recordSkippedTrace, startTrace, step } from '@mantle/tracing';
-import { captureLlmUsage } from '@mantle/agent-runtime';
+import { recordChatUsage } from '@mantle/agent-runtime';
+import { getChatAdapter } from '@mantle/voice';
 
 /** How many recent turns the reflector reviews per run. */
 const REFLECTION_WINDOW = 50;
@@ -296,48 +296,49 @@ export async function reflect(ownerId: string): Promise<void> {
       const userPayload = `Existing persona_notes:\n${existingNotesText}\n\nRecent transcript (${turns.length} turns):\n${transcript}`;
 
       const params = (reflector.params ?? {}) as ReflectorParams;
-      const client = new OpenRouter({
-        apiKey,
-        httpReferer: 'https://mantle.crossworks.network',
-        appTitle: 'Mantle',
-      });
+      const adapter = getChatAdapter(reflector.provider);
+      if (!adapter) {
+        throw new Error(
+          `reflector: no chat adapter registered for provider '${reflector.provider}'. ` +
+            `Register one in packages/voice/src/adapters/index.ts, or switch the worker.`,
+        );
+      }
 
       console.log(
-        `[reflector] reviewing ${turns.length} turns (since ${since.toISOString()})`,
+        `[reflector] reviewing ${turns.length} turns (since ${since.toISOString()}) via ${adapter.adapterName}:${reflector.model}`,
       );
 
       const result = await step(
-        { name: 'llm_reflect', kind: 'llm_call', input: { model: reflector.model } },
+        {
+          name: 'llm_reflect',
+          kind: 'llm_call',
+          input: { model: reflector.model, provider: reflector.provider },
+        },
         async (h) => {
-          const r = await client.chat.send({
-            chatRequest: {
-              model: reflector.model,
-              messages: [
-                {
-                  role: 'system',
-                  content: reflector.systemPrompt || DEFAULT_REFLECTOR_PROMPT,
-                },
-                { role: 'user', content: userPayload },
-              ],
-              ...(typeof params.temperature === 'number'
-                ? { temperature: params.temperature }
-                : {}),
-              ...(typeof params.max_tokens === 'number'
-                ? { maxTokens: params.max_tokens }
-                : {}),
-              ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
-            },
+          const r = await adapter.chat({
+            apiKey,
+            model: reflector.model,
+            messages: [
+              {
+                role: 'system',
+                content: reflector.systemPrompt || DEFAULT_REFLECTOR_PROMPT,
+              },
+              { role: 'user', content: userPayload },
+            ],
+            ...(typeof params.temperature === 'number'
+              ? { temperature: params.temperature }
+              : {}),
+            ...(typeof params.max_tokens === 'number'
+              ? { maxTokens: params.max_tokens }
+              : {}),
+            ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
           });
-          captureLlmUsage(h, r, reflector.model);
+          recordChatUsage(h, r, reflector.model);
           return r;
         },
       );
 
-      if (!('choices' in result)) {
-        throw new Error('reflector: unexpected streaming response');
-      }
-      const rawContent = result.choices[0]?.message?.content;
-      const parsed = parseReflectorOutput(typeof rawContent === 'string' ? rawContent : '');
+      const parsed = parseReflectorOutput(result.text);
 
       if (parsed.new_notes.length === 0) {
         console.log('[reflector]   → nothing new');
