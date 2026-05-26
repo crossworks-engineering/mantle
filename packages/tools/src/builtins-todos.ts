@@ -41,7 +41,8 @@ const todo_list: BuiltinToolDef = {
   slug: 'todo_list',
   name: 'List todos',
   description:
-    "List the user's todos / tasks. `status` filters by 'open' (default view is everything) or 'done'; `priority` filters by low/normal/high; `query` substring-matches title/body/summary; `tag` narrows to a tag. Returns rows sorted open-first, then by due date. Use todo_get / node_read for more detail on one.",
+    "List the user's todos / tasks, **sorted open-first then by due date**. `status` filters by 'open' (default view is everything) or 'done'; `priority` filters by low/normal/high; `query` substring-matches title/body/summary; `tag` narrows to a tag. " +
+    "**Use this for the active task picture** — 'what's open', 'anything due this week', 'high-priority todos'. For topic search across todos ('todos about the printer') use `search_nodes` with `type='task'` — that's similarity-ranked, not due-date-ordered. For a single todo's full body use `todo_get`.",
   inputSchema: {
     type: 'object',
     properties: {

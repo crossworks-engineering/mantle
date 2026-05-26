@@ -50,7 +50,8 @@ const event_list: BuiltinToolDef = {
   slug: 'event_list',
   name: 'List calendar events',
   description:
-    "List the user's calendar events. `window` defaults to 'upcoming' — pass 'past' to look back or 'all' to include both. `query` substring-matches title/body/location/summary. `tag` narrows to events with that tag. Returns full event rows; pass the result through node_read if you need extra detail on one.",
+    "List the user's calendar events, **date-windowed**. `window` defaults to 'upcoming' — pass 'past' to look back or 'all' to include both. `query` substring-matches title/body/location/summary; `tag` narrows to events with that tag. Returns full event rows. " +
+    "**Use this for any time-based event question** — 'what's on this week', 'next meeting with X', 'past events about Y'. For topic/semantic search across events ('any event mentioning the contract') use `search_nodes` with `type='event'` — that's similarity-ranked, not date-windowed. For a single event's full body use `event_get`.",
   inputSchema: {
     type: 'object',
     properties: {

@@ -228,7 +228,8 @@ const entity_facts: BuiltinToolDef = {
   slug: 'entity_facts',
   name: 'List entity facts',
   description:
-    "All facts the user has accumulated about a specific entity. Returns currently-valid facts by default; set include_retired=true to see superseded history too.",
+    "All facts the user has accumulated about a specific entity (what they KNOW about that person/place/thing). Returns currently-valid facts by default; set include_retired=true to see superseded history. " +
+    "Get the entity id from `entity_search` first. For content nodes (emails, notes, files) that MENTION the entity use `entity_mentions`; to walk to connected entities use `entity_neighbors`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -256,7 +257,8 @@ const entity_mentions: BuiltinToolDef = {
   slug: 'entity_mentions',
   name: 'List entity mentions',
   description:
-    "Content nodes (files, notes, emails, ...) that mention a given entity, newest first. Returns title + per-node summary so the model can decide which to dig into.",
+    "Content nodes (files, notes, emails, …) that mention a given entity, newest first. Returns title + per-node summary so the model can decide which to dig into. " +
+    "Get the entity id from `entity_search` first. For distilled facts ABOUT the entity (what the user knows) use `entity_facts`; to walk to connected entities use `entity_neighbors`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -595,7 +597,8 @@ const file_create: BuiltinToolDef = {
   slug: 'file_create',
   name: 'Create / overwrite a file',
   description:
-    "Create or overwrite a text file in a folder. Use this when the user asks you to save a note, draft, or piece of content. Filename is lowercased and sanitised automatically.",
+    "Create or overwrite a **named text file** in a specific folder (e.g. `notes.md`, `config.json`, `recipe.txt`). Use when the user asks for a file with a particular name/extension in a particular place. Filename is lowercased and sanitised automatically. " +
+    "For a plain note that goes into /notes (no filename/folder needed, auto-indexed) use `note_create`. For credentials/passwords use `secret_create`. For a rich-text doc (TipTap) use `page_create`.",
   requiresConfirm: false, // text-only writes are usually safe; user can flip per agent
   inputSchema: {
     type: 'object',

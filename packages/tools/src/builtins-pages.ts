@@ -158,7 +158,8 @@ const page_list: BuiltinToolDef = {
   slug: 'page_list',
   name: 'List pages',
   description:
-    "List the owner's pages, newest first. Optional `query` substring-matches title/body/summary; `tag` filters to pages carrying that tag. Bodies are omitted — use page_get for a page's content.",
+    "List the owner's pages, **newest first**. Optional `query` substring-matches title/body/summary; `tag` filters to pages carrying that tag. Bodies are omitted to keep the response small. " +
+    "**Use this to browse recent pages or filter by tag/substring.** For topic/semantic search across pages ('pages about the contract') use `search_nodes` with `type='page'` — that's similarity-ranked, not date-sorted. For a single page's full content use `page_get`.",
   inputSchema: {
     type: 'object',
     properties: {
