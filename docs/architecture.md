@@ -919,16 +919,17 @@ Two corollaries:
   `pnpm dedupe:edges --apply` remedy if a regression ever surfaces. A monitor,
   not a fixer — see [`agent-overhaul-2026-05.md` §2e](./agent-overhaul-2026-05.md).
 
-## 9l. Model catalog — live context window + capabilities
+## 9l. Model catalog — live context, capabilities, pricing
 
 How the system knows what a model can do —
 [`packages/tracing/src/model-context.ts`](../packages/tracing/src/model-context.ts).
 
-**The problem it solves.** A model's context window and vision support are
-*provider* facts that change without notice — e.g. Claude Sonnet/Opus 4.x
-defaulting to a **1M** window. A hand-maintained table silently goes stale:
-the dashboard's "context %" once read a model as 200K when it was really 1M,
-over-reporting fill by 5×. So capability is sourced live and cached.
+**The problem it solves.** A model's context window, vision support, and
+pricing are all *provider* facts that change without notice — e.g. Claude
+Sonnet/Opus 4.x defaulting to a **1M** window. A hand-maintained table
+silently goes stale: the dashboard's "context %" once read a model as 200K
+when it was really 1M, over-reporting fill by 5×. So capability is sourced
+live and cached.
 
 **Authoritative source.** OpenRouter's public `GET /api/v1/models` (no API
 key required). Per slug we read:
@@ -937,9 +938,27 @@ key required). Per slug we read:
 |---|---|
 | `top_provider.context_length` (fallback `context_length`) | the context window (`contextLimitFor`) |
 | `architecture.input_modalities` (`image` ⇒ multimodal) | vision routing (`modelSupportsVision`) |
+| `pricing.prompt` / `pricing.completion` (USD per token, string-typed) | per-1M pricing badges (`pricingFor`) |
 
-`supported_parameters` (`tools`, `structured_outputs`, `reasoning`, …) and
-`pricing` are available on the same response for future use.
+`supported_parameters` (`tools`, `structured_outputs`, `reasoning`, …) is
+available on the same response for future use.
+
+**Pricing as a universal oracle for direct providers.** OpenRouter
+aggregates upstream, so its catalog covers what each direct provider
+sells. A worker stored as `provider='anthropic', model='claude-sonnet-4-5'`
+looks up `anthropic/claude-sonnet-4-5` in this cache and gets the same
+pricing Anthropic's own `/v1/models` would have returned if it bothered
+to. One source serves both modes — OpenRouter-as-provider in `/settings/agents`,
+direct providers in `/settings/ai-workers`. The two prefix-remappings
+worth knowing (the only places SUPPORTED_PROVIDERS ids don't match OR
+prefixes verbatim): `xai → x-ai`, `mistral → mistralai`.
+
+**Pricing parser nuance.** OpenRouter encodes pricing as USD per single
+token, string-typed (`"0.0000025"` for $2.50 per 1M). The parser multiplies
+by 1e6 for the per-million view and is tight on the empty-string case —
+`Number('')` is 0 in JS, which would silently promote malformed data into
+"free". Empty / non-numeric input stays `undefined` so callers can
+distinguish *free* (0) from *unknown* (absent).
 
 **The fetch — built to fail safe.** `refreshModelCatalog()` is the single
 entry point. It is **TTL-gated** (6h), **dedupes** concurrent callers
@@ -964,14 +983,19 @@ data takes over once the fetch lands, and the TTL-gated calls keep it fresh.
 **Where the user sees it.**
 - **Usage card** (sidebar): per-agent context-fill bars, now correct, with
   `live`/`fallback` provenance in the tooltip.
-- **`/settings/agents` → Model field**: a context-window readout for the
-  typed slug, served by [`/api/model-context`](../apps/web/app/api/model-context/route.ts)
+- **`/settings/agents` → Model field**: a searchable combobox over the full
+  live OpenRouter catalog (see §9l′) plus a context-window readout for the
+  typed slug. Both served by [`/api/model-context`](../apps/web/app/api/model-context/route.ts)
   (the same cached map) — "unknown for this slug" flags a typo'd id.
+- **`/settings/ai-workers` → Model field**: the same combobox, fed by the
+  adapter's `discoverModels()` for the chosen provider, with this catalog's
+  pricing folded in as a fallback for direct providers that don't return
+  pricing in their own `/v1/models`.
 
 **How to check by hand:** `curl -s https://openrouter.ai/api/v1/models` and
 read `context_length` / `top_provider.context_length` /
-`architecture.input_modalities` for the slug — that's the same source the
-code reads.
+`architecture.input_modalities` / `pricing.{prompt,completion}` for the
+slug — that's the same source the code reads.
 
 > **Note — Mantle never sets a context "flag".** The window is a property of
 > the model slug + its OpenRouter route, not a request parameter. Mantle
@@ -980,6 +1004,69 @@ code reads.
 > OpenRouter handles the opt-in upstream and advertises the resulting ceiling
 > as `context_length`. So "1M vs 200K" is decided by the slug, and the
 > ceiling is read off the catalog — there's nothing to toggle.
+
+## 9l′. Model picker UI — searchable combobox over the live catalog
+
+Source: [`apps/web/components/ui/model-select.tsx`](../apps/web/components/ui/model-select.tsx)
++ [`model-select-utils.ts`](../apps/web/components/ui/model-select-utils.ts).
+
+**The shape.** A cmdk-backed Popover + Command composition (no new
+dependency — shadcn's existing primitives) used identically on
+`/settings/agents` and `/settings/ai-workers`. The trigger button shows
+the selected model's name + context + pricing inline; the popover lists
+every row with the same three badges plus a sort dropdown and a fuzzy
+search input. Search matches across `id + name + modality` so a query like
+"vision" hits multimodal rows without a tag index.
+
+**Sort keys**: `newest` (default — ISO-dated rows from OpenRouter sort
+lexicographically), `name`, `cheapest` (sum of input + output per-1M,
+unpriced rows sink to the bottom), `context` (descending, unknowns last).
+
+**Free-text fallback.** When the search doesn't match any catalog row, a
+"Use ‹typed›" affordance commits the literal string. Useful for brand-new
+models OpenRouter hasn't indexed yet, or for edit-mode opening on a slug
+the catalog has since dropped. An out-of-catalog value still renders in
+the trigger (the "phantom" path) so edit forms with a stale slug don't go
+blank.
+
+**Per-provider pricing reconciliation** (workers form only). The discovery
+result is a union (`TtsModelInfo | SttModelInfo | ChatModelInfo |
+VisionModelInfo | ImageGenModelInfo`); `toExplorerModels()` normalises it
+to the shared `ExplorerModel` shape. Adapter fields are
+`inputPricePer1M` / `outputPricePer1M`; the combobox reads
+`inputPricePerM` / `outputPricePerM`. The reconciler:
+
+1. Prefers the adapter's own pricing when present.
+2. Otherwise looks up `${prefix}/${model.id}` in the OpenRouter pricing
+   cache (§9l) — that's how Anthropic / OpenAI / xAI direct
+   configurations show pricing badges anyway, even though their own
+   `/v1/models` doesn't return pricing.
+3. Surfaces `ChatModelInfo.capabilities` (`vision` / `reasoning` /
+   `function_calling` / `json_mode`) as a `modality` string so cmdk's
+   fuzzy search picks them up.
+
+**Form integration.** Agents form uses controlled React state
+(`setForm((f) => ({ ...f, model: next }))`). Workers form uses
+`new FormData(e.currentTarget)` for submission, so ModelSelect renders a
+hidden `<input name="model" value={value}>` when given a `name` prop —
+the server action keeps reading `formData.get('model')` unchanged. Empty
+slugs are rejected server-side in the worker action; hidden inputs don't
+trigger native validation, so the server is the gate.
+
+**Loading + error states** live inside the popover, never block the form:
+"Loading models…" while the fetch is in flight, an amber banner above the
+list if the catalog refresh fails, and an empty-state message when the
+search produces no matches.
+
+**Test surface** ([`model-select.test.ts`](../apps/web/components/ui/model-select.test.ts)).
+The JSX is exercised live; the pure helpers (sort, formatContext,
+formatPriceCompact) are pulled into a sibling `model-select-utils.ts` so
+vitest can cover the formatting + sort invariants without dragging the
+React import chain through `@/`-aliased modules vitest's root config
+doesn't resolve. 18 cases — newest with undated rows, case-insensitive
+name sort, cheapest sinking unpriced rows, half-priced cheapest, context
+desc with unknowns last, plus all formatContext / formatPriceCompact
+anchors.
 
 ## 9m. Tool-result spill store (`read_result`)
 
