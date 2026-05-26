@@ -40,6 +40,7 @@ import { NOTE_TOOLS } from './builtins-notes';
 import { EMAIL_TOOLS } from './builtins-email';
 import { PAGE_TOOLS } from './builtins-pages';
 import { TOOL_RESULT_TOOLS } from './builtins-tool-results';
+import { CONTACT_TOOLS } from './builtins-contacts';
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -917,4 +918,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // page / grep / semantic query. The tool-loop always offers this so a
   // stored handle is never a dead end. Read-only.
   ...TOOL_RESULT_TOOLS,
+  // Contacts — the index of people/orgs Saskia may email (and later SMS).
+  // Contacts list IS the email allowlist; adding a contact extends reach.
+  // Saskia adds/edits only when explicitly asked (tool descriptions emphasise).
+  ...CONTACT_TOOLS,
 ];

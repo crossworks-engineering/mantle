@@ -19,7 +19,6 @@ import { useState, useTransition } from 'react';
 import { Compass } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
 import { AvatarPicker, type AvatarValue } from '@/components/avatar-picker';
@@ -41,7 +40,6 @@ export function ProfileClient({
   const toast = useToast();
   const [tz, setTz] = useState(defaults.timezone);
   const [loc, setLoc] = useState(defaults.locale);
-  const [allowlist, setAllowlist] = useState((defaults.emailAllowlist ?? []).join('\n'));
   const [avatar, setAvatar] = useState<AvatarValue | null>(
     defaults.avatarStyle ? { style: defaults.avatarStyle, seed: defaults.avatarSeed || userId } : null,
   );
@@ -161,26 +159,6 @@ export function ProfileClient({
             <code className="font-mono">5/19/2026, 5:35 PM</code>.
           </p>
         </div>
-      </section>
-
-      <section className="space-y-1.5">
-        <Label htmlFor="emailAllowlist">Email send allowlist</Label>
-        <Textarea
-          id="emailAllowlist"
-          name="emailAllowlist"
-          value={allowlist}
-          onChange={(e) => setAllowlist(e.target.value)}
-          placeholder={'besties@crossworks.net\n@crossworks.net'}
-          rows={3}
-          className="font-mono text-sm"
-        />
-        <p className="text-xs text-muted-foreground">
-          Recipients the assistant may email <em>without</em> confirmation — one per line.
-          Use a full address (<code className="font-mono">you@example.com</code>) or a whole
-          domain (<code className="font-mono">@example.com</code>). Your own account addresses
-          are always allowed. <strong>Leave empty to allow sending to anyone</strong> (the gate
-          is off until you add at least one entry).
-        </p>
       </section>
 
       {error && (

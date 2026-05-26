@@ -71,6 +71,7 @@ import {
   type UserImage,
 } from '@mantle/agent-runtime';
 import {
+  CONTACT_AUTO_GRANT_SLUGS,
   PERSONA_TOOL_SLUGS,
   TODO_TOOL_SLUGS,
   registerAgentInvoker,
@@ -1379,6 +1380,11 @@ function scheduleExtract(nodeId: string): void {
 const CORE_AUTO_GRANT_SLUGS: readonly string[] = [
   ...PERSONA_TOOL_SLUGS,
   ...TODO_TOOL_SLUGS,
+  // Contacts read + add/update (delete left off the auto-grant — destructive
+  // ops require an explicit per-agent grant in /settings/tools). Contacts gate
+  // the email send path, so Saskia needs read+add to extend her own reach
+  // when the user asks ("add this business card as a contact").
+  ...CONTACT_AUTO_GRANT_SLUGS,
   'note_create',
   'email_send',
   'email_page',

@@ -34,15 +34,6 @@ export type ProfilePreferences = {
   /** Seed for the avatar; the UI defaults it to the user id when unset so an
    *  avatar still renders. */
   avatarSeed?: string;
-  /** Recipients the agent may email WITHOUT confirmation. Each entry is an
-   *  exact address (`me@x.com`) or a whole-domain wildcard (`@x.com`). The
-   *  user's own email_account addresses are always allowed.
-   *
-   *  Gate semantics (see isRecipientAllowed): **undefined or empty ⇒ open**
-   *  (send to anyone — the default, non-breaking). **Non-empty ⇒ enforced**
-   *  (only own-addresses + these entries; others refused). So the gate is
-   *  opt-in: populate the list to turn it on. */
-  emailAllowlist?: string[];
 };
 
 export const DEFAULT_PREFERENCES: ProfilePreferences = {
@@ -93,36 +84,7 @@ export async function loadProfilePreferences(
       typeof prefs.avatarSeed === 'string' && prefs.avatarSeed.length > 0
         ? prefs.avatarSeed
         : undefined,
-    emailAllowlist: Array.isArray(prefs.emailAllowlist)
-      ? prefs.emailAllowlist.filter((e): e is string => typeof e === 'string')
-      : undefined,
   };
-}
-
-/**
- * Is `recipient` allowed to be emailed without confirmation?
- *
- * Gate is OPT-IN: an undefined/empty `allowlist` means no restriction (returns
- * true for everyone). Once the allowlist has entries it's enforced — only the
- * user's own addresses plus matching entries pass. An entry beginning with `@`
- * matches a whole domain; otherwise it's an exact-address match. Case-insensitive.
- * Pure + exported for unit testing.
- */
-export function isRecipientAllowed(
-  recipient: string,
-  allowlist: string[] | undefined,
-  ownAddresses: string[],
-): boolean {
-  if (!allowlist || allowlist.length === 0) return true; // gate off
-  const r = recipient.trim().toLowerCase();
-  if (!r) return false;
-  if (ownAddresses.some((a) => a.trim().toLowerCase() === r)) return true;
-  const domain = r.slice(r.lastIndexOf('@')); // includes the '@'
-  return allowlist.some((entry) => {
-    const e = entry.trim().toLowerCase();
-    if (!e) return false;
-    return e.startsWith('@') ? e === domain : e === r;
-  });
 }
 
 /** IANA tz validation via Intl.DateTimeFormat — the runtime throws
@@ -191,9 +153,6 @@ export async function updateProfilePreferences(
     locale: merged.locale ?? DEFAULT_PREFERENCES.locale,
     avatarStyle: merged.avatarStyle || undefined,
     avatarSeed: merged.avatarSeed || undefined,
-    emailAllowlist: Array.isArray(merged.emailAllowlist)
-      ? merged.emailAllowlist.filter((e): e is string => typeof e === 'string')
-      : undefined,
   };
 }
 

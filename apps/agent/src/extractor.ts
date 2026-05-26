@@ -75,7 +75,7 @@ const HARD_SKIP_TYPES = new Set(['branch']);
  *  `task` and `event` are first-class content: title + body + metadata
  *  (status, due_at, starts_at, location, …) all become part of the body
  *  the extractor summarises and embeds. */
-const DEFAULT_EXTRACT_TYPES = ['note', 'page', 'file', 'email', 'email_thread', 'secret', 'task', 'event'];
+const DEFAULT_EXTRACT_TYPES = ['note', 'page', 'file', 'email', 'email_thread', 'secret', 'task', 'event', 'contact'];
 
 /** Max characters of body text we feed the summarizer in one shot.
  *  Long emails / PDFs get truncated to keep the prompt bounded and the
@@ -222,6 +222,25 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
       `Priority: ${d.priority ?? 'normal'}`,
       ...(typeof d.due_at === 'string' ? [`Due: ${d.due_at}`] : []),
       ...(body ? ['', body] : []),
+    ];
+    return lines.join('\n');
+  }
+  // ─── Contacts — name + email/cell + the "who is this for AI" description.
+  // The description carries the real semantic payload ("Modular sells aluminium
+  // profiles, used for printer projects") so the extractor produces useful
+  // facts + entities on the contact's identity. Keeping the structured fields
+  // in the body too means search_nodes(q='@modular.co.za') still hits.
+  if (node.type === 'contact') {
+    const d = (node.data ?? {}) as Record<string, unknown>;
+    const email = typeof d.email === 'string' ? d.email : '';
+    const cc = typeof d.country_code === 'string' ? d.country_code : '';
+    const cell = typeof d.cell === 'string' ? d.cell : '';
+    const desc = typeof d.description === 'string' ? d.description : '';
+    const lines = [
+      node.title,
+      ...(email ? [`Email: ${email}`] : []),
+      ...(cc || cell ? [`Cell: ${cc ?? ''} ${cell ?? ''}`.trim()] : []),
+      ...(desc ? ['', desc] : []),
     ];
     return lines.join('\n');
   }

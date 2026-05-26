@@ -18,8 +18,10 @@ import {
   cidForPageImage,
   createShare,
   shareUrlForToken,
-  loadProfilePreferences,
-  isRecipientAllowed,
+  contactEmails,
+  findContactsByEmails,
+  recordContactSent,
+  normalizeEmail,
 } from '@mantle/content';
 import { readFileById } from '@mantle/files';
 import type { BuiltinToolDef } from './types';
@@ -46,18 +48,22 @@ function flatRecipients(...raws: (string | undefined)[]): string[] {
   return out;
 }
 
-/** Recipients NOT permitted by the user's email allowlist. Empty = all allowed
- *  (gate is opt-in: off until profiles.preferences.emailAllowlist is non-empty).
- *  The user's own account addresses are always allowed. */
+/** Recipients NOT permitted by the contact list. Empty contacts ⇒ gate OFF
+ *  (send to anyone — today's bootstrap state). Non-empty contacts ⇒ enforced:
+ *  recipient must be the user's own account address, or have a matching
+ *  `contact` node by email. The contact list IS the allowlist. */
 async function blockedRecipients(ownerId: string, addrs: string[]): Promise<string[]> {
-  const prefs = await loadProfilePreferences(ownerId);
-  if (!prefs.emailAllowlist || prefs.emailAllowlist.length === 0) return [];
+  const contacts = await contactEmails(ownerId); // already lower-cased + deduped
+  if (contacts.length === 0) return []; // gate off until the user adds a first contact
   const accounts = await db
     .select({ address: emailAccounts.address })
     .from(emailAccounts)
     .where(eq(emailAccounts.userId, ownerId));
-  const own = accounts.map((a) => a.address);
-  return addrs.filter((a) => !isRecipientAllowed(a, prefs.emailAllowlist, own));
+  const allowed = new Set<string>([
+    ...contacts,
+    ...accounts.map((a) => a.address.toLowerCase()),
+  ]);
+  return addrs.filter((a) => !allowed.has(normalizeEmail(a)));
 }
 
 /** Shared allowlist guard for the send tools. Returns an error result to bail
@@ -71,9 +77,35 @@ async function allowlistError(
   return {
     ok: false,
     error:
-      `these recipients aren't in the user's email allowlist: ${blocked.join(', ')}. ` +
-      `Ask the user to confirm, or add the address (or an "@domain" entry) at /settings/profile.`,
+      `these recipients aren't in the user's contact list: ${blocked.join(', ')}. ` +
+      `Ask the user to confirm and add them as contacts at /contacts (they will then be reachable).`,
   };
+}
+
+/** Look up each recipient against the contact list and bump that contact's
+ *  outbound counter + last-contacted timestamp for the given method. Best
+ *  effort: per-contact errors are logged, not surfaced — a stats-tracking
+ *  miss must never make a successful send look failed to the caller. */
+async function noteContactActivity(
+  ownerId: string,
+  method: 'email',
+  raws: (string | undefined)[],
+): Promise<void> {
+  const addrs = flatRecipients(...raws).map(normalizeEmail).filter(Boolean);
+  if (addrs.length === 0) return;
+  try {
+    const idsByEmail = await findContactsByEmails(ownerId, addrs);
+    if (idsByEmail.size === 0) return;
+    await Promise.all(
+      [...idsByEmail.values()].map((id) =>
+        recordContactSent(ownerId, id, method).catch((err) =>
+          console.error('[email_send] recordContactSent failed', { id, err }),
+        ),
+      ),
+    );
+  } catch (err) {
+    console.error('[email_send] noteContactActivity lookup failed', err);
+  }
 }
 
 /** Pick the account to send from: an explicit `from` address if it matches one
@@ -148,6 +180,9 @@ const email_send: BuiltinToolDef = {
         accepted: res.accepted,
         rejected: res.rejected,
       });
+      // Bump per-contact stats (count + last_contacted_at) for any recipients
+      // that resolved to a contact. Best-effort; can't fail the send.
+      await noteContactActivity(ctx.ownerId, 'email', [to, cc, bcc]);
       return {
         ok: true,
         output: {
@@ -264,6 +299,9 @@ const email_page: BuiltinToolDef = {
         images: attachments.length,
         shareUrl,
       });
+      // Same per-contact stats bump as email_send — keeps the counts honest
+      // regardless of which send-shaped tool delivered the message.
+      await noteContactActivity(ctx.ownerId, 'email', [to, strOpt(input.cc), strOpt(input.bcc)]);
       return {
         ok: true,
         output: {

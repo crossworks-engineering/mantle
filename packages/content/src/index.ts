@@ -110,8 +110,36 @@ export {
   updateProfilePreferences,
   isValidTimezone,
   isValidLocale,
-  isRecipientAllowed,
   formatInProfile,
   buildTimeContextLine,
   type ProfilePreferences,
 } from './profile-preferences';
+
+export {
+  CONTACTS_ROOT_LABEL,
+  // CRUD
+  createContact,
+  deleteContact,
+  getContact,
+  listContacts,
+  countContacts,
+  updateContact,
+  // Gate + activity helpers used by the send path
+  contactEmails,
+  findContactsByEmails,
+  recordContactSent,
+  // Pure helpers (unit-tested) — exposed for callers + form validation
+  digitsOnly,
+  deriveContactTitle,
+  formatCell,
+  isPlausibleEmail,
+  normalizeCountryCode,
+  normalizeEmail,
+  toE164,
+  type ContactCounts,
+  type ContactLastAt,
+  type ContactMethod,
+  type ContactRow,
+  type CreateContactInput,
+  type UpdateContactInput,
+} from './contacts';
