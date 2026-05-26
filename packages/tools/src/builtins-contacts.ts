@@ -49,6 +49,7 @@ function compact(c: ContactRow) {
     title: c.title,
     first_name: c.firstName,
     last_name: c.lastName,
+    company: c.company,
     email: c.email,
     cell_e164: c.cellE164,
     cell_formatted: c.cellFormatted,
@@ -147,6 +148,11 @@ const contact_create: BuiltinToolDef = {
     properties: {
       first_name: { type: 'string' },
       last_name: { type: 'string' },
+      company: {
+        type: 'string',
+        description:
+          'Organisation name. Set this for a supplier/org contact (e.g. "Modular"); can also be paired with a person name.',
+      },
       email: { type: 'string' },
       country_code: { type: 'string', description: 'E.g. "+27"; required if cell is set' },
       cell: { type: 'string', description: 'Digits only or any format; non-digits are stripped' },
@@ -161,6 +167,7 @@ const contact_create: BuiltinToolDef = {
     const fields: CreateContactInput = {
       firstName: strOpt(input.first_name),
       lastName: strOpt(input.last_name),
+      company: strOpt(input.company),
       email: strOpt(input.email),
       countryCode: strOpt(input.country_code),
       cell: strOpt(input.cell),
@@ -191,6 +198,7 @@ const contact_update: BuiltinToolDef = {
       id: { type: 'string', format: 'uuid' },
       first_name: { type: 'string' },
       last_name: { type: 'string' },
+      company: { type: 'string' },
       email: { type: 'string' },
       country_code: { type: 'string' },
       cell: { type: 'string' },
@@ -205,6 +213,7 @@ const contact_update: BuiltinToolDef = {
     const patch: CreateContactInput = {
       firstName: typeof input.first_name === 'string' ? input.first_name : undefined,
       lastName: typeof input.last_name === 'string' ? input.last_name : undefined,
+      company: typeof input.company === 'string' ? input.company : undefined,
       email: typeof input.email === 'string' ? input.email : undefined,
       countryCode: typeof input.country_code === 'string' ? input.country_code : undefined,
       cell: typeof input.cell === 'string' ? input.cell : undefined,

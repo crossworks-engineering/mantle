@@ -3,7 +3,7 @@
  * (and organisations) the user's agents are allowed to email and message.
  *
  *   nodes.title        derived display name (first + last, or just first for orgs)
- *   nodes.data         { first_name, last_name, email, country_code, cell, description }
+ *   nodes.data         { first_name, last_name, company, email, country_code, cell, description }
  *   nodes.tags         freeform
  *
  * Lives under the `contacts` ltree root, lazy-created on first write. Because
@@ -78,6 +78,7 @@ function rowOf(n: Node): ContactRow {
   const d = (n.data ?? {}) as Record<string, unknown>;
   const firstName = typeof d.first_name === 'string' ? d.first_name : '';
   const lastName = typeof d.last_name === 'string' ? d.last_name : '';
+  const company = typeof d.company === 'string' ? d.company : '';
   const email = typeof d.email === 'string' ? d.email : '';
   const countryCode = typeof d.country_code === 'string' ? d.country_code : '';
   const cell = typeof d.cell === 'string' ? d.cell : '';
@@ -87,6 +88,7 @@ function rowOf(n: Node): ContactRow {
     title: n.title,
     firstName,
     lastName,
+    company,
     email,
     countryCode,
     cell,
@@ -132,6 +134,7 @@ function contactConds(ownerId: string, opts: ListContactsOpts) {
       ilike(nodes.title, q),
       sql`${nodes.data}->>'first_name' ilike ${q}`,
       sql`${nodes.data}->>'last_name' ilike ${q}`,
+      sql`${nodes.data}->>'company' ilike ${q}`,
       sql`${nodes.data}->>'email' ilike ${q}`,
       sql`${nodes.data}->>'description' ilike ${q}`,
     );
@@ -288,18 +291,23 @@ export async function recordContactSent(
 
 /** Validate + normalise. Returns the canonical shape we'll store, or throws on
  *  bad input (caller surfaces). Empty fields are kept as empty strings so the
- *  jsonb shape is stable. */
+ *  jsonb shape is stable.
+ *
+ *  Note: we DO NOT require any identifying field. A fully-empty contact is a
+ *  valid "draft" — the `+` button creates one and the user fills it in via
+ *  the form. Empty contacts contribute nothing to the email allowlist (no
+ *  email ⇒ not in `contactEmails`) and nothing to send counters (no recipient
+ *  match), so they're inert until populated. Validation only rejects
+ *  *malformed* values (bad email, country code without cell, etc.). */
 function normalizeContactInput(input: CreateContactInput) {
   const firstName = (input.firstName ?? '').trim();
   const lastName = (input.lastName ?? '').trim();
+  const company = (input.company ?? '').trim();
   const email = normalizeEmail(input.email ?? '');
   const description = (input.description ?? '').slice(0, 4000);
   const countryCode = input.countryCode ? normalizeCountryCode(input.countryCode) : '';
   const cell = input.cell ? digitsOnly(input.cell) : '';
 
-  if (!firstName && !lastName && !email && !cell) {
-    throw new Error('Need at least one of: first name, last name, email, or cell.');
-  }
   if (email && !isPlausibleEmail(email)) {
     throw new Error(`'${email}' doesn't look like a valid email address.`);
   }
@@ -309,7 +317,7 @@ function normalizeContactInput(input: CreateContactInput) {
   if (cell && !countryCode) {
     throw new Error('Country code is required when a cell number is set.');
   }
-  return { firstName, lastName, email, countryCode, cell, description };
+  return { firstName, lastName, company, email, countryCode, cell, description };
 }
 
 export async function createContact(
@@ -326,6 +334,7 @@ export async function createContact(
       title: deriveContactTitle({
         firstName: fields.firstName,
         lastName: fields.lastName,
+        company: fields.company,
         email: fields.email,
         countryCode: fields.countryCode,
         cell: fields.cell,
@@ -334,6 +343,7 @@ export async function createContact(
       data: {
         first_name: fields.firstName,
         last_name: fields.lastName,
+        company: fields.company,
         email: fields.email,
         country_code: fields.countryCode,
         cell: fields.cell,
@@ -364,6 +374,7 @@ export async function updateContact(
   const merged: CreateContactInput = {
     firstName: input.firstName ?? (typeof oldData.first_name === 'string' ? oldData.first_name : ''),
     lastName: input.lastName ?? (typeof oldData.last_name === 'string' ? oldData.last_name : ''),
+    company: input.company ?? (typeof oldData.company === 'string' ? oldData.company : ''),
     email: input.email ?? (typeof oldData.email === 'string' ? oldData.email : ''),
     countryCode:
       input.countryCode ?? (typeof oldData.country_code === 'string' ? oldData.country_code : ''),
@@ -379,6 +390,7 @@ export async function updateContact(
   const visibleChanged =
     fields.firstName !== (typeof oldData.first_name === 'string' ? oldData.first_name : '') ||
     fields.lastName !== (typeof oldData.last_name === 'string' ? oldData.last_name : '') ||
+    fields.company !== (typeof oldData.company === 'string' ? oldData.company : '') ||
     fields.email !== (typeof oldData.email === 'string' ? oldData.email : '') ||
     fields.description !== (typeof oldData.description === 'string' ? oldData.description : '');
 
@@ -386,6 +398,7 @@ export async function updateContact(
     ...oldData,
     first_name: fields.firstName,
     last_name: fields.lastName,
+    company: fields.company,
     email: fields.email,
     country_code: fields.countryCode,
     cell: fields.cell,
@@ -404,6 +417,7 @@ export async function updateContact(
       title: deriveContactTitle({
         firstName: fields.firstName,
         lastName: fields.lastName,
+        company: fields.company,
         email: fields.email,
         countryCode: fields.countryCode,
         cell: fields.cell,

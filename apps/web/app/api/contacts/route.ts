@@ -12,6 +12,7 @@ import { recordIngest } from '@mantle/tracing';
 const CreateBody = z.object({
   first_name: z.string().max(200).optional(),
   last_name: z.string().max(200).optional(),
+  company: z.string().max(200).optional(),
   email: z.string().max(200).optional(),
   country_code: z.string().max(8).optional(),
   cell: z.string().max(32).optional(),
@@ -43,6 +44,7 @@ export async function POST(req: Request) {
     const row = await createContact(user.id, {
       firstName: parsed.data.first_name,
       lastName: parsed.data.last_name,
+      company: parsed.data.company,
       email: parsed.data.email,
       countryCode: parsed.data.country_code,
       cell: parsed.data.cell,

@@ -22,6 +22,10 @@ export type ContactRow = {
   title: string;
   firstName: string;
   lastName: string;
+  /** Organisation name. Independent of person name — supports both
+   *  "John Smith" (no company), "Modular" (company-only, e.g. a supplier),
+   *  and "John Smith @ Modular" (both). */
+  company: string;
   email: string;
   countryCode: string;
   cell: string;
@@ -44,6 +48,7 @@ export type ContactRow = {
 export type CreateContactInput = {
   firstName?: string;
   lastName?: string;
+  company?: string;
   email?: string;
   countryCode?: string;
   cell?: string;
@@ -116,17 +121,27 @@ export function isPlausibleEmail(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 }
 
-/** Derive the title shown for a contact: full name if any, else email, else
- *  formatted cell, else "Untitled contact". Mirrors notes.ts "Untitled note". */
+/** Derive the title shown for a contact, in precedence order:
+ *   1. Person name ("First Last") — the most specific identifier when set.
+ *   2. Company / organisation name — for supplier/org contacts with no person.
+ *   3. Email address.
+ *   4. Formatted cell number.
+ *   5. "Untitled contact" — a brand-new empty draft (mirrors notes' "Untitled note").
+ *  Name beats company so "Jane @ Modular" titles as "Jane Smith" with the
+ *  company surfaced separately in the UI. Company-only contacts ("Modular"
+ *  with no person) get the company as the title. */
 export function deriveContactTitle(input: {
   firstName?: string;
   lastName?: string;
+  company?: string;
   email?: string;
   countryCode?: string;
   cell?: string;
 }): string {
   const name = `${(input.firstName ?? '').trim()} ${(input.lastName ?? '').trim()}`.trim();
   if (name) return name.slice(0, 200);
+  const company = (input.company ?? '').trim();
+  if (company) return company.slice(0, 200);
   const email = normalizeEmail(input.email ?? '');
   if (email) return email.slice(0, 200);
   const fmt = formatCell(input.countryCode ?? '', input.cell ?? '');

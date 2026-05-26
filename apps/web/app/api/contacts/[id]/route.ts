@@ -6,6 +6,7 @@ import { deleteContact, getContact, updateContact } from '@/lib/contacts';
 const PatchBody = z.object({
   first_name: z.string().max(200).optional(),
   last_name: z.string().max(200).optional(),
+  company: z.string().max(200).optional(),
   email: z.string().max(200).optional(),
   country_code: z.string().max(8).optional(),
   cell: z.string().max(32).optional(),
@@ -36,6 +37,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     const row = await updateContact(user.id, id, {
       firstName: parsed.data.first_name,
       lastName: parsed.data.last_name,
+      company: parsed.data.company,
       email: parsed.data.email,
       countryCode: parsed.data.country_code,
       cell: parsed.data.cell,

@@ -81,16 +81,25 @@ describe('deriveContactTitle', () => {
   it('prefers "First Last" when set', () => {
     expect(deriveContactTitle({ firstName: 'John', lastName: 'Smith' })).toBe('John Smith');
   });
-  it('keeps the first name alone for orgs/single names', () => {
-    expect(deriveContactTitle({ firstName: 'Modular' })).toBe('Modular');
+  it('keeps the first name alone for single names', () => {
+    expect(deriveContactTitle({ firstName: 'Jane' })).toBe('Jane');
   });
-  it('falls back to email when name is empty', () => {
+  it('uses company when set and no person name', () => {
+    expect(deriveContactTitle({ company: 'Modular' })).toBe('Modular');
+  });
+  it('person name beats company when both are set', () => {
+    // Company is surfaced separately in the UI; the row title is the person.
+    expect(
+      deriveContactTitle({ firstName: 'Jane', lastName: 'Smith', company: 'Modular' }),
+    ).toBe('Jane Smith');
+  });
+  it('falls back to email when name + company are empty', () => {
     expect(deriveContactTitle({ email: 'orders@modular.co.za' })).toBe('orders@modular.co.za');
   });
-  it('falls back to formatted cell when name + email empty', () => {
+  it('falls back to formatted cell when name + company + email empty', () => {
     expect(deriveContactTitle({ countryCode: '+27', cell: '760810774' })).toBe('+27 76 081 0774');
   });
-  it('returns "Untitled contact" when nothing fits', () => {
+  it('returns "Untitled contact" when nothing fits (e.g. a freshly created draft)', () => {
     expect(deriveContactTitle({})).toBe('Untitled contact');
   });
 });

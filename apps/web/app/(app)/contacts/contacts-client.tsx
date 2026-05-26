@@ -103,7 +103,15 @@ export function ContactsClient({
                 >
                   <div className="truncate font-medium">{c.title}</div>
                   <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    {c.email ? <span className="truncate">{c.email}</span> : null}
+                    {/* Surface company on the secondary line — but only when
+                        it's not already the title (i.e. a company-only contact
+                        whose title IS the company). For person@company contacts
+                        the title is the person and we show the company here. */}
+                    {c.company && c.company !== c.title ? (
+                      <span className="truncate">{c.company}</span>
+                    ) : c.email ? (
+                      <span className="truncate">{c.email}</span>
+                    ) : null}
                     {c.contactCounts.email && c.contactCounts.email > 0 ? (
                       <span className="ml-auto whitespace-nowrap">
                         ✉ {c.contactCounts.email}
@@ -151,9 +159,10 @@ function NewContactButton() {
       const res = await fetch('/api/contacts', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        // The model requires at least one identifying field — start with a
-        // placeholder name the user immediately overwrites.
-        body: JSON.stringify({ first_name: 'New contact' }),
+        // Create a fully-empty draft — the form opens to blank fields. Empty
+        // contacts are inert (no email ⇒ not in the allowlist, no recipient
+        // match ⇒ no counter bumps) until the user fills them in.
+        body: '{}',
       });
       const body = (await res.json().catch(() => ({}))) as { contact?: ContactRow; error?: string };
       if (!res.ok || !body.contact) {
@@ -175,6 +184,7 @@ function ContactForm({ contact }: { contact: ContactRow }) {
   const { go } = useListNav();
   const [firstName, setFirstName] = useState(contact.firstName);
   const [lastName, setLastName] = useState(contact.lastName);
+  const [company, setCompany] = useState(contact.company);
   const [email, setEmail] = useState(contact.email);
   const [countryCode, setCountryCode] = useState(contact.countryCode || '+27');
   const [cell, setCell] = useState(contact.cell);
@@ -190,6 +200,7 @@ function ContactForm({ contact }: { contact: ContactRow }) {
   useEffect(() => {
     setFirstName(contact.firstName);
     setLastName(contact.lastName);
+    setCompany(contact.company);
     setEmail(contact.email);
     setCountryCode(contact.countryCode || '+27');
     setCell(contact.cell);
@@ -207,6 +218,7 @@ function ContactForm({ contact }: { contact: ContactRow }) {
         body: JSON.stringify({
           first_name: firstName,
           last_name: lastName,
+          company,
           email,
           country_code: normalizeCountryCode(countryCode) || countryCode,
           cell,
@@ -288,6 +300,19 @@ function ContactForm({ contact }: { contact: ContactRow }) {
           <Label htmlFor="lastName">Last name</Label>
           <Input id="lastName" value={lastName} onChange={(e) => setLastName(e.target.value)} />
         </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="company">Company</Label>
+        <Input
+          id="company"
+          value={company}
+          onChange={(e) => setCompany(e.target.value)}
+          placeholder="Modular"
+        />
+        <p className="text-xs text-muted-foreground">
+          Optional. Use the company alone for a supplier/org contact, or pair it with a person.
+        </p>
       </div>
 
       <div className="space-y-1.5">

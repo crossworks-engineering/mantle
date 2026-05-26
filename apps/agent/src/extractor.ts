@@ -232,12 +232,14 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
   // in the body too means search_nodes(q='@modular.co.za') still hits.
   if (node.type === 'contact') {
     const d = (node.data ?? {}) as Record<string, unknown>;
+    const company = typeof d.company === 'string' ? d.company : '';
     const email = typeof d.email === 'string' ? d.email : '';
     const cc = typeof d.country_code === 'string' ? d.country_code : '';
     const cell = typeof d.cell === 'string' ? d.cell : '';
     const desc = typeof d.description === 'string' ? d.description : '';
     const lines = [
       node.title,
+      ...(company && company !== node.title ? [`Company: ${company}`] : []),
       ...(email ? [`Email: ${email}`] : []),
       ...(cc || cell ? [`Cell: ${cc ?? ''} ${cell ?? ''}`.trim()] : []),
       ...(desc ? ['', desc] : []),
