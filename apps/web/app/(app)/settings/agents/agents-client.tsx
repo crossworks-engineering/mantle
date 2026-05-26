@@ -641,7 +641,20 @@ export function AgentsClient({
       return;
     }
     toast.success(editing.mode === 'create' ? 'Agent created' : 'Agent saved');
-    closeDialog();
+    // Keep focus on the just-saved row instead of dropping back to the
+    // empty-detail state. Both POST and PATCH return `{ agent: row }`;
+    // we promote the saved record into `editing` (turning a create into an
+    // edit naturally — slug/id are now known) and resync the form fields
+    // to whatever the server canonicalised. router.refresh() then repaints
+    // the list around the still-selected row.
+    const body2 = (await res.json().catch(() => ({}))) as { agent?: AgentSummary };
+    if (body2.agent) {
+      setEditing({ mode: 'edit', agent: body2.agent });
+      setForm(formFromAgent(body2.agent));
+      setSlugTouched(true);
+    } else {
+      closeDialog();
+    }
     startTransition(() => router.refresh());
   };
 
