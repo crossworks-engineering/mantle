@@ -20,6 +20,21 @@ import type { EmailProvider, RawMessage } from './types';
 const PAGE_SIZE = 50;
 
 /**
+ * Thrown from inside `ingestOne`'s transaction when the emails INSERT hits
+ * the (account_id, provider_msg_id) unique index — i.e. another sync attempt
+ * for the same message committed between our pre-check SELECT and this
+ * transaction's commit. Caught at the boundary so the transaction rolls back
+ * (no orphan node) AND the surrounding pg-boss job succeeds (same observable
+ * outcome as the pre-check finding the row, just later in the pipeline).
+ */
+class DuplicateRaceError extends Error {
+  constructor(public providerMsgId: string) {
+    super(`race: ${providerMsgId} was inserted by a concurrent sync`);
+    this.name = 'DuplicateRaceError';
+  }
+}
+
+/**
  * The two-phase pipeline. For each batch from the provider:
  *
  *   1. Upsert every From address into `email_senders` so the UI knows
@@ -149,12 +164,14 @@ async function ingestOne(
   rules: Awaited<ReturnType<typeof db.select> extends never ? never : Awaited<ReturnType<typeof loadRules>>>,
 ): Promise<boolean> {
   // Dedup pre-check. The hard guarantee is the UNIQUE index
-  // emails_account_msg_uq on (account_id, provider_msg_id) — even if
-  // pg-boss retries this job after a crash, a duplicate insert will be
-  // rejected and the surrounding `db.transaction` rolls back cleanly,
-  // so neither orphan nodes nor orphan attachment objects can survive.
-  // The SELECT here is a fast path that avoids spending OpenRouter on
-  // rule evaluation + an attachment fetch we'd just throw away.
+  // emails_account_msg_uq on (account_id, provider_msg_id) PLUS the
+  // `onConflictDoNothing` + DuplicateRaceError sentinel on the INSERT
+  // below — even if pg-boss retries this job after a crash, or two
+  // attempts race past this SELECT, the conflict triggers a clean
+  // transaction rollback and the caller treats it as "already exists"
+  // (no orphan node, no failed pg-boss job, no logged stack). The
+  // SELECT here is a fast path that avoids spending OpenRouter on rule
+  // evaluation + an attachment fetch we'd just throw away.
   const [existing] = await db
     .select({ id: emails.id })
     .from(emails)
@@ -180,67 +197,92 @@ async function ingestOne(
   // Phase 2: deep fetch.
   const full = await provider.fetchFull(account, message.providerMsgId);
 
-  // Insert node + email + attachments inside a transaction.
-  await db.transaction(async (tx) => {
-    const nodeId = await insertEmailNode(tx, {
-      ownerId: account.userId,
-      path,
-      title: message.subject ?? '(no subject)',
-      tags: [...effects.addTags],
-      message,
-    });
-
-    const emailRow: NewEmail = {
-      nodeId,
-      accountId: account.id,
-      providerMsgId: message.providerMsgId,
-      threadId: message.threadId,
-      fromAddr: message.fromAddr,
-      fromName: message.fromName ?? null,
-      toAddrs: message.toAddrs,
-      ccAddrs: message.ccAddrs ?? [],
-      bccAddrs: message.bccAddrs ?? [],
-      subject: message.subject ?? null,
-      snippet: message.snippet ?? null,
-      bodyText: full.bodyText ?? null,
-      bodyHtml: full.bodyHtml ?? null,
-      internalDate: message.internalDate,
-      labels: message.labels ?? [],
-      folder: message.folder ?? null,
-      isRead: effects.markRead ?? message.isRead ?? false,
-      isStarred: message.isStarred ?? false,
-      hasAttachments: full.attachments.length > 0,
-      sizeBytes: message.sizeBytes ?? null,
-    };
-    const [insertedEmail] = await tx.insert(emails).values(emailRow).returning({ id: emails.id });
-    if (!insertedEmail) throw new Error('insert into emails returned no row');
-
-    // Attachments: upload bytes (content-addressed dedupe in storage),
-    // create one file node per unique sha256, link via email_attachments.
-    for (const att of full.attachments) {
-      const sha256 = hashBuffer(att.content);
-      const fileNodeId = await getOrCreateFileNode(tx, {
+  // Insert node + email + attachments inside a transaction. Race handling:
+  // the emails INSERT uses `onConflictDoNothing` on (account_id,
+  // provider_msg_id); if another sync attempt committed the same message
+  // between our pre-check SELECT and now, the INSERT returns 0 rows and we
+  // throw DuplicateRaceError. The catch around the transaction below treats
+  // it as "already exists" — same outcome as the SELECT fast-path.
+  try {
+    await db.transaction(async (tx) => {
+      const nodeId = await insertEmailNode(tx, {
         ownerId: account.userId,
-        path: `${path}.attachments`,
-        sha256,
-        filename: att.filename,
-        mimeType: att.mimeType,
-        sizeBytes: att.sizeBytes ?? att.content.byteLength,
+        path,
+        title: message.subject ?? '(no subject)',
+        tags: [...effects.addTags],
+        message,
       });
-      const { key } = await putContent(att.content, att.mimeType ?? 'application/octet-stream');
-      const row: NewEmailAttachment = {
-        emailId: insertedEmail.id,
-        fileNodeId,
-        filename: att.filename,
-        mimeType: att.mimeType ?? null,
-        sizeBytes: att.sizeBytes ?? att.content.byteLength,
-        sha256,
-        storageKey: key,
-        extractedText: null, // populated by the text-extraction worker later.
+
+      const emailRow: NewEmail = {
+        nodeId,
+        accountId: account.id,
+        providerMsgId: message.providerMsgId,
+        threadId: message.threadId,
+        fromAddr: message.fromAddr,
+        fromName: message.fromName ?? null,
+        toAddrs: message.toAddrs,
+        ccAddrs: message.ccAddrs ?? [],
+        bccAddrs: message.bccAddrs ?? [],
+        subject: message.subject ?? null,
+        snippet: message.snippet ?? null,
+        bodyText: full.bodyText ?? null,
+        bodyHtml: full.bodyHtml ?? null,
+        internalDate: message.internalDate,
+        labels: message.labels ?? [],
+        folder: message.folder ?? null,
+        isRead: effects.markRead ?? message.isRead ?? false,
+        isStarred: message.isStarred ?? false,
+        hasAttachments: full.attachments.length > 0,
+        sizeBytes: message.sizeBytes ?? null,
       };
-      await tx.insert(emailAttachments).values(row);
+      const [insertedEmail] = await tx
+        .insert(emails)
+        .values(emailRow)
+        .onConflictDoNothing({ target: [emails.accountId, emails.providerMsgId] })
+        .returning({ id: emails.id });
+      if (!insertedEmail) {
+        // Race: another sync attempt committed this providerMsgId between
+        // our pre-check SELECT and this INSERT. Throw so the transaction
+        // rolls back the node + any attachments cleanly; caught below.
+        throw new DuplicateRaceError(message.providerMsgId);
+      }
+
+      // Attachments: upload bytes (content-addressed dedupe in storage),
+      // create one file node per unique sha256, link via email_attachments.
+      for (const att of full.attachments) {
+        const sha256 = hashBuffer(att.content);
+        const fileNodeId = await getOrCreateFileNode(tx, {
+          ownerId: account.userId,
+          path: `${path}.attachments`,
+          sha256,
+          filename: att.filename,
+          mimeType: att.mimeType,
+          sizeBytes: att.sizeBytes ?? att.content.byteLength,
+        });
+        const { key } = await putContent(att.content, att.mimeType ?? 'application/octet-stream');
+        const row: NewEmailAttachment = {
+          emailId: insertedEmail.id,
+          fileNodeId,
+          filename: att.filename,
+          mimeType: att.mimeType ?? null,
+          sizeBytes: att.sizeBytes ?? att.content.byteLength,
+          sha256,
+          storageKey: key,
+          extractedText: null, // populated by the text-extraction worker later.
+        };
+        await tx.insert(emailAttachments).values(row);
+      }
+    });
+  } catch (err) {
+    if (err instanceof DuplicateRaceError) {
+      // Race condition: another sync attempt committed the same message
+      // first. The transaction has rolled back (no orphan node /
+      // attachments); treat as "already exists" — same outcome as the
+      // pre-check SELECT, so the pg-boss job succeeds.
+      return false;
     }
-  });
+    throw err;
+  }
 
   return true;
 }
