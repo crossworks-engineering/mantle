@@ -59,11 +59,26 @@ export function dominantKind(row: DominantKindInput): DeliveryKind | null {
  * there together. The two are tested for agreement via the page's "N total"
  * count matching the rendered list length under filter.
  */
+/**
+ * Multiplier pair that expresses `DOMINANCE_THRESHOLD` as integer math —
+ * `kind * DENOM >= total * NUM` is algebraically identical to
+ * `kind / total >= DOMINANCE_THRESHOLD` for non-negative integer counts,
+ * but avoids binding a fractional JS number as a SQL parameter.
+ *
+ * Why this matters: postgres-js infers each parameter's PG type from the
+ * comparison context. With `marketing_count >= message_count * $1` the
+ * planner sees integer on both sides of the multiplication, so it asks
+ * for `$1::integer` — and `"0.7"` then fails the integer parser at runtime
+ * (`invalid input syntax for type integer: "0.7"`). Forcing both sides
+ * to integer with this trick sidesteps the inference entirely.
+ *
+ * `Math.round(... * 1000)` keeps three decimals of precision — plenty for
+ * a percentage threshold and still well inside int4.
+ */
+const THRESHOLD_NUM = Math.round(DOMINANCE_THRESHOLD * 1000);
+const THRESHOLD_DEN = 1000;
+
 export function dominantKindWhere(kind: DeliveryKind) {
-  // Cast counts to numeric so the `>=` against a fractional threshold
-  // doesn't truncate the comparison side.
-  const total = sql<number>`${emailSenders.messageCount}`;
-  const minimum = sql`${total} * ${DOMINANCE_THRESHOLD}`;
   const kindCount =
     kind === 'marketing'
       ? sql`${emailSenders.marketingCount}`
@@ -72,7 +87,10 @@ export function dominantKindWhere(kind: DeliveryKind) {
         : kind === 'automated'
           ? sql`${emailSenders.automatedCount}`
           : sql`${emailSenders.directCount}`;
-  return sql`(${emailSenders.messageCount} >= ${MIN_MESSAGES_FOR_PILL} AND ${kindCount} >= ${minimum})`;
+  return sql`(
+    ${emailSenders.messageCount} >= ${MIN_MESSAGES_FOR_PILL}
+    AND ${kindCount} * ${THRESHOLD_DEN} >= ${emailSenders.messageCount} * ${THRESHOLD_NUM}
+  )`;
 }
 
 /** Validate `?kind=` query input. Mirror of the enum — keep in sync. */
