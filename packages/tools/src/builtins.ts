@@ -64,7 +64,11 @@ const search_nodes: BuiltinToolDef = {
   slug: 'search_nodes',
   name: 'Search nodes',
   description:
-    "Hybrid full-text + tree search across the user's Mantle. Use this when the user asks about a thing by content rather than by id. Optional `branch` (ltree prefix, e.g. 'files.work') scopes the search; `type` filters to one node kind; `tags` narrows further.",
+    "Hybrid full-text + semantic search across the user's entire Mantle (notes, files, emails, events, todos, pages, telegram messages — everything). **Ranked by relevance, NOT by date.** " +
+    "Use for topic/content questions — 'find emails about the Lister contract', 'notes mentioning the printer', 'anything about Ashley's passport'. " +
+    "For **time-windowed** questions ('what arrived today', 'last 5 days of email', 'this week's events') use the dedicated list tools — `email_list`, `event_list`, `todo_list`, `note_list`, `page_list`, `file_list` — which ARE date-sorted and accept `since` / `window`. " +
+    "For past **conversation** recall (replaying what was actually said) use `find_window` + `recall_window`. For the **public web** use `web_search`. " +
+    "Optional `branch` (ltree prefix, e.g. 'files.work') scopes; `type` filters to one node kind; `tags` narrows further.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -128,7 +132,8 @@ const tree_list: BuiltinToolDef = {
   slug: 'tree_list',
   name: 'List tree children',
   description:
-    "List children of a branch in the user's tree. Pass `path` to scope (ltree, e.g. 'files.work'). Omit for top-level branches.",
+    "List children of a branch in the user's tree (the universal navigator — whatever kinds of nodes live under that branch). Pass `path` to scope (ltree, e.g. 'files.work'). Omit for top-level branches. " +
+    "For files specifically use `file_list`; for folders use `folder_list`; for searching by content/topic use `search_nodes`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -279,7 +284,8 @@ const folder_list: BuiltinToolDef = {
   slug: 'folder_list',
   name: 'List folders',
   description:
-    "List folders in the user's host-mirrored filesystem. Pass `parent` (ltree path, e.g. 'files.work') for that folder's children; pass `tree: true` for every folder under the root.",
+    "List folders (only) in the user's host-mirrored filesystem. Pass `parent` (ltree path, e.g. 'files.work') for that folder's immediate sub-folders; pass `tree: true` for every folder under the root. " +
+    "For files inside a folder use `file_list`; for a file's actual content use `file_read`; for searching files by content/topic use `search_nodes` with `type='file'`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -304,7 +310,8 @@ const file_list: BuiltinToolDef = {
   slug: 'file_list',
   name: 'List files in a folder',
   description:
-    "List files in a specific folder. `parent_path` is the ltree path of the folder (e.g. 'files.work.lister-printer').",
+    "List files (only) inside a specific folder. `parent_path` is the ltree path of the folder (e.g. 'files.work.lister-printer'). " +
+    "For sub-folders within that folder use `folder_list`; for a file's actual content use `file_read`; for searching files by content/topic across the whole tree use `search_nodes` with `type='file'`.",
   inputSchema: {
     type: 'object',
     properties: { parent_path: { type: 'string' } },
@@ -323,7 +330,9 @@ const node_read: BuiltinToolDef = {
   slug: 'node_read',
   name: 'Read a node',
   description:
-    "Read the full content of any node by id — note, event, task, secret, sermon, contact, etc. Returns title, type, tags, path, summary, and the full `data` blob (which includes the markdown body for notes, body+location+starts_at for events, status+due_at for tasks, and so on). Use this when search_nodes gives you an id and you need the actual body, not just the summary. For nodes of type='file' the file body lives in object storage — use `file_read` instead.",
+    "Universal reader — read the full content of any node by id. Returns title, type, tags, path, summary, and the full `data` blob (markdown body for notes, body+location+starts_at for events, status+due_at for tasks, etc.). " +
+    "**Prefer type-specific readers when available** — `note_get` / `event_get` / `todo_get` / `page_get` / `email_get` — they return cleaner shapes for their type. " +
+    "For nodes of `type='file'` the body lives in object storage — use `file_read` instead. This tool is the fallback that works for any node type (incl. secret, sermon, contact, telegram_message).",
   inputSchema: {
     type: 'object',
     properties: { node_id: { type: 'string', format: 'uuid' } },
@@ -545,7 +554,9 @@ const file_read: BuiltinToolDef = {
 const file_get: BuiltinToolDef = {
   slug: 'file_get',
   name: 'Fetch file metadata',
-  description: "Fetch a file's metadata (no bytes). Useful to confirm size/type before deciding to read.",
+  description:
+    "Fetch a file's metadata (filename, mime type, size, sha) — no bytes. Use to confirm size/type before deciding to read a large/binary file. " +
+    "For the actual file content use `file_read`; for listing files in a folder use `file_list`.",
   inputSchema: {
     type: 'object',
     properties: { file_id: { type: 'string', format: 'uuid' } },
@@ -563,7 +574,9 @@ const file_get: BuiltinToolDef = {
 const folder_get_by_path: BuiltinToolDef = {
   slug: 'folder_get_by_path',
   name: 'Look up folder by path',
-  description: "Look up a folder's metadata + description by its ltree path.",
+  description:
+    "Look up a folder's metadata + description by its ltree path. " +
+    "For listing what's IN the folder use `folder_list` (sub-folders) or `file_list` (files).",
   inputSchema: {
     type: 'object',
     properties: { path: { type: 'string' } },

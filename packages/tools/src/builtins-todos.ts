@@ -70,7 +70,10 @@ const todo_list: BuiltinToolDef = {
 const todo_get: BuiltinToolDef = {
   slug: 'todo_get',
   name: 'Get a todo',
-  description: 'Read one todo by id. Returns the full row or an error if not found.',
+  description:
+    "Read one todo by id — full row including body, status, priority, due_at. " +
+    "Use after `todo_list` or `search_nodes` returns the id you want details on. " +
+    "For browsing/filtering todos use `todo_list`.",
   inputSchema: {
     type: 'object',
     properties: { id: { type: 'string' } },

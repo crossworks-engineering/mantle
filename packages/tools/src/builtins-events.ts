@@ -84,7 +84,10 @@ const event_list: BuiltinToolDef = {
 const event_get: BuiltinToolDef = {
   slug: 'event_get',
   name: 'Get a calendar event',
-  description: 'Read one event by id. Returns the full row or an error if not found.',
+  description:
+    "Read one event by id — full row including body, location, starts_at, ends_at. " +
+    "Use after `event_list` or `search_nodes` returns the id you want details on. " +
+    "For browsing/filtering events use `event_list`.",
   inputSchema: {
     type: 'object',
     properties: { id: { type: 'string' } },

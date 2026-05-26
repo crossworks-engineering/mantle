@@ -9,12 +9,15 @@
  * credentials use secret_create; for file-shaped content use file_create.
  */
 
-import { createNote } from '@mantle/content';
+import { createNote, getNote, listNotes } from '@mantle/content';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
+}
+function strOpt(v: unknown): string | undefined {
+  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
 }
 
 const note_create: BuiltinToolDef = {
@@ -66,4 +69,64 @@ const note_create: BuiltinToolDef = {
   },
 };
 
-export const NOTE_TOOLS: BuiltinToolDef[] = [note_create];
+// ─── Read side: list + get ───────────────────────────────────────────────────
+
+const note_list: BuiltinToolDef = {
+  slug: 'note_list',
+  name: 'List notes',
+  description:
+    "List the owner's notes, newest first. `query` substring-matches title/body/summary; `tag` " +
+    "narrows to notes carrying that tag. " +
+    "**Use this for 'recent notes', 'notes mentioning X by literal substring', or to browse by tag.** " +
+    "For semantic/embedding search across the whole brain (notes alongside emails, files, pages, etc.) " +
+    "use `search_nodes` — that's similarity-ranked and cross-type. For a single note's full markdown body " +
+    "use `note_get`.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'substring to match in title/body/summary' },
+      tag: { type: 'string', description: 'filter to notes carrying this tag' },
+    },
+  },
+  handler: async (input, ctx) => {
+    const query = strOpt(input.query);
+    const tag = strOpt(input.tag);
+    try {
+      const rows = await listNotes(ctx.ownerId, { query, tag });
+      ctx.step?.setOutput({ count: rows.length });
+      return { ok: true, output: rows };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+const note_get: BuiltinToolDef = {
+  slug: 'note_get',
+  name: 'Get one note by id',
+  description:
+    "Fetch a single note by id — full row including the markdown content. Use after `note_list` or " +
+    "`search_nodes` returns the id you want to read in full. For listing/browsing notes use `note_list`; " +
+    "for semantic search across all content (not just notes) use `search_nodes`.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: 'uuid of the note node' },
+    },
+    required: ['id'],
+  },
+  handler: async (input, ctx) => {
+    const id = str(input.id).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    try {
+      const row = await getNote(ctx.ownerId, id);
+      if (!row) return { ok: false, error: `note '${id}' not found` };
+      ctx.step?.setOutput({ id: row.id, title: row.title });
+      return { ok: true, output: row };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+export const NOTE_TOOLS: BuiltinToolDef[] = [note_create, note_list, note_get];

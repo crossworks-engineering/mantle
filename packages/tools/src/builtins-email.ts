@@ -8,8 +8,8 @@
  * /settings/tools if injected-send ever becomes a concern.
  */
 
-import { and, eq } from 'drizzle-orm';
-import { db, emailAccounts, type EmailAccount } from '@mantle/db';
+import { and, desc, eq, gte } from 'drizzle-orm';
+import { db, emailAccounts, emails, type EmailAccount } from '@mantle/db';
 import { accountCanSend, sendEmail, type EmailAttachment } from '@mantle/email';
 import {
   getPage,
@@ -284,4 +284,100 @@ const email_page: BuiltinToolDef = {
   },
 };
 
-export const EMAIL_TOOLS: BuiltinToolDef[] = [email_send, email_page];
+// ─── Read side: list + get ───────────────────────────────────────────────────
+
+const email_list: BuiltinToolDef = {
+  slug: 'email_list',
+  name: 'List recent emails',
+  description:
+    "Recent emails newest-first (sorted by `internal_date` desc, NOT by ingest time). " +
+    "**Use this for any time-windowed email question** — 'what came in today / last 5 days', " +
+    "'any new mail from X', 'this week's billing', 'anything urgent recently'. Pass `since` " +
+    "(ISO date or datetime) for a window; `accountId` to filter to one mailbox; `limit` defaults " +
+    "to 50 (max 200). " +
+    "For topic/keyword searches across emails ('emails about the Lister contract') use " +
+    "`search_nodes` with `type='email'` — that's similarity-ranked, not date-sorted, and won't " +
+    "respect a time window. For a single email's full body/headers use `email_get`.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      accountId: { type: 'string', description: 'uuid of an email_accounts row to filter to' },
+      since: {
+        type: 'string',
+        description: "ISO date or datetime (e.g. '2026-05-21' or '2026-05-21T00:00:00Z') — returns emails with internal_date ≥ this",
+      },
+      limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+    },
+  },
+  handler: async (input, ctx) => {
+    const accountId = strOpt(input.accountId);
+    const since = strOpt(input.since);
+    const limit = typeof input.limit === 'number' && Number.isFinite(input.limit)
+      ? Math.min(Math.max(1, Math.floor(input.limit)), 200)
+      : 50;
+
+    const conds = [] as ReturnType<typeof eq>[];
+    if (accountId) conds.push(eq(emails.accountId, accountId));
+    if (since) {
+      const d = new Date(since);
+      if (!Number.isNaN(d.getTime())) conds.push(gte(emails.internalDate, d));
+    }
+    try {
+      const rows = await db
+        .select({
+          id: emails.id,
+          nodeId: emails.nodeId,
+          accountId: emails.accountId,
+          from: emails.fromAddr,
+          fromName: emails.fromName,
+          to: emails.toAddrs,
+          subject: emails.subject,
+          snippet: emails.snippet,
+          internalDate: emails.internalDate,
+          folder: emails.folder,
+          isRead: emails.isRead,
+          isStarred: emails.isStarred,
+          hasAttachments: emails.hasAttachments,
+        })
+        .from(emails)
+        .where(conds.length ? and(...conds) : undefined)
+        .orderBy(desc(emails.internalDate))
+        .limit(limit);
+      ctx.step?.setOutput({ count: rows.length });
+      return { ok: true, output: rows };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+const email_get: BuiltinToolDef = {
+  slug: 'email_get',
+  name: 'Get one email by id',
+  description:
+    "Fetch a single email by id — full row including body_text, body_html, headers, and attachment refs. " +
+    "Use after `email_list` or `search_nodes` returns the id you want to read in full. " +
+    "For a date-windowed list of recent emails use `email_list`; for searching emails by topic/content " +
+    "use `search_nodes` with `type='email'`.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: 'uuid of the email row' },
+    },
+    required: ['id'],
+  },
+  handler: async (input, ctx) => {
+    const id = str(input.id).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    try {
+      const [row] = await db.select().from(emails).where(eq(emails.id, id)).limit(1);
+      if (!row) return { ok: false, error: `email '${id}' not found` };
+      ctx.step?.setOutput({ id: row.id, subject: row.subject });
+      return { ok: true, output: row };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+export const EMAIL_TOOLS: BuiltinToolDef[] = [email_send, email_page, email_list, email_get];
