@@ -32,7 +32,7 @@ import {
   type VisionModelInfo,
 } from '@mantle/voice';
 import { getAiWorker } from '@/lib/ai-workers';
-import { clearEmbeddingModelCache } from '@mantle/embeddings';
+import { clearEmbeddingModelCache, embed } from '@mantle/embeddings';
 import type { AiWorkerKind, AiWorkerParams } from '@mantle/db';
 
 export async function createAiWorkerAction(formData: FormData): Promise<void> {
@@ -113,6 +113,39 @@ export async function setDefaultWorkerAction(id: string): Promise<void> {
   await setDefaultWorker(user.id, id);
   if (existing?.kind === 'embedding') clearEmbeddingModelCache(user.id);
   revalidatePath('/settings/ai-workers');
+}
+
+/**
+ * Embed a sentinel string with the given model and report back the
+ * actual output dimension. The honest way to verify any embedding model
+ * — OpenRouter's catalog doesn't expose dims, so without this we'd be
+ * relying on a hand-maintained allow-list that goes stale every time a
+ * provider ships something new.
+ *
+ * Costs roughly $0.000002 + a few hundred ms. Caches via the regular
+ * embedding_cache key (model || ':' || canonical(input)) so re-testing
+ * the same model in the same session is a single SELECT, not a paid
+ * round trip.
+ *
+ * Returns the dim on success, or a structured error the form renders
+ * inline — most commonly "no OpenRouter API key configured" or "this
+ * key doesn't have access to that model".
+ */
+export async function testEmbeddingModelAction(
+  model: string,
+): Promise<{ ok: true; dimensions: number } | { ok: false; error: string }> {
+  const user = await requireOwner();
+  const slug = model.trim();
+  if (!slug) return { ok: false, error: 'No model selected' };
+  try {
+    const vec = await embed(user.id, 'dimension probe', { model: slug });
+    return { ok: true, dimensions: vec.length };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 /**

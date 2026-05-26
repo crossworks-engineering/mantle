@@ -60,7 +60,7 @@ import { Label } from '@/components/ui/label';
 import { ModelSelect } from '@/components/ui/model-select';
 import { useToast } from '@/components/ui/toast';
 import type { ExplorerModel } from '@/lib/model-explorer';
-import { discoverModelsAction, listVoicesAction } from './actions';
+import { discoverModelsAction, listVoicesAction, testEmbeddingModelAction } from './actions';
 import { TtsTestButton } from './tts-test-button';
 import { SttTestButton } from './stt-test-button';
 import { ChatTestButton } from './chat-test-button';
@@ -188,6 +188,11 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
   const toast = useToast();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Embedding-kind only: lifted from EmbeddingFields so the save button
+  // can disable itself when the picked model emits a dim that doesn't
+  // fit the brain's vector(1536) column. Null = unknown (untested,
+  // unlisted), 1536 = compatible, anything else = save blocked.
+  const [embeddingDim, setEmbeddingDim] = useState<number | null>(null);
 
   const params = (worker?.params ?? {}) as Record<string, unknown>;
 
@@ -611,7 +616,13 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
         {kind === 'reflector' && <LlmWorkerFields params={params} systemPrompt={worker?.systemPrompt} kind="reflector" provider={provider} />}
         {kind === 'extractor' && <LlmWorkerFields params={params} systemPrompt={worker?.systemPrompt} kind="extractor" provider={provider} />}
         {kind === 'summarizer' && <LlmWorkerFields params={params} systemPrompt={worker?.systemPrompt} kind="summarizer" provider={provider} />}
-        {kind === 'embedding' && <EmbeddingFields model={model} />}
+        {kind === 'embedding' && (
+          <EmbeddingFields
+            model={model}
+            savedModel={worker?.model ?? null}
+            onDimChange={setEmbeddingDim}
+          />
+        )}
       </section>
 
       {/* ── Priority ─────────────────────────────────────────────── */}
@@ -692,7 +703,17 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
         </p>
       )}
       <div className="flex items-center gap-2 border-t border-border pt-6">
-        <Button type="submit" disabled={pending}>
+        <Button
+          type="submit"
+          // Hard block: when the operator picked an embedding model whose
+          // dim we KNOW is non-1536, save would persist a worker that
+          // crashes ingest on its first call. Untested / unknown stays
+          // saveable — the EmbeddingFields footer warns explicitly there.
+          disabled={
+            pending ||
+            (kind === 'embedding' && embeddingDim !== null && embeddingDim !== 1536)
+          }
+        >
           {pending ? 'Saving…' : mode === 'create' ? 'Create' : 'Save changes'}
         </Button>
         <Button
@@ -1178,41 +1199,94 @@ function ImageGenFields({ params }: { params: Record<string, unknown> }) {
  * Embedding-kind worker fields. Deliberately tiny — embedding is a pure
  * text→vector transformation with no temperature / max_tokens / system
  * prompt to tune. The model picker above this section is the entire
- * interaction.
+ * interaction; this surface just adds the "is the dim compatible?"
+ * verification dance.
  *
- * What this surface adds: an explicit reminder of the column constraint
- * (`vector(1536)`) and a soft warning if the picked model is known to
- * produce a different dim — switching to a non-1536 model needs a
- * one-shot `pnpm re-embed` pass or new vectors will fail to insert.
+ * Three signals for the dim:
+ *   1. Just-tested live (the operator clicked the Test button — most
+ *      trustworthy, surfaces real provider behaviour).
+ *   2. Verified allow-list (KNOWN_DIMS — a hand-curated set of OR slugs
+ *      with confirmed dims). Stops being authoritative the moment OR
+ *      ships a model we haven't catalogued, which is why the Test
+ *      button exists.
+ *   3. Unknown — the operator can still save, but the footer warns and
+ *      the runtime will throw on first insert if the dim doesn't fit.
  *
- * The dim → model mapping is intentionally a tight allow-list of slugs
- * we've verified rather than a string-match heuristic — false positives
- * here would block legitimate switches. If a model isn't in the list,
- * we say so plainly instead of guessing.
+ * `onDimChange` lifts the resolved dim up to the form so the Save button
+ * can hard-block when it's non-1536 — same model gets blocked here AND
+ * at runtime, but blocking at save time avoids the operator getting a
+ * confusing "ingest crashed" message ten minutes later.
  */
-function EmbeddingFields({ model }: { model: string }) {
-  // Lower-cased slug → dimensions for the OR routes we've confirmed.
-  // Keep growing this map as new embedding models land in OR's catalog;
-  // anything not listed prints the neutral "unknown dimensions" hint and
-  // assumes the user knows what they're doing.
-  const KNOWN_DIMS: Record<string, number> = {
-    'openai/text-embedding-3-small': 1536,
-    'openai/text-embedding-3-large': 3072,
-    'openai/text-embedding-ada-002': 1536,
-    'google/gemini-embedding-2-preview': 1536, // honours output_dimensionality
-    'nvidia/llama-nemotron-embed-vl-1b-v2': 1024,
-    'nvidia/llama-nemotron-embed-vl-1b-v2:free': 1024,
-    'thenlper/gte-base': 768,
-    'thenlper/gte-large': 1024,
-    'intfloat/e5-base-v2': 768,
-    'intfloat/e5-large-v2': 1024,
-    'perplexity/pplx-embed-v1-4b': 1024,
-    'perplexity/pplx-embed-v1-0.6b': 1024,
-  };
-  const COLUMN_DIMS = 1536;
+const COLUMN_DIMS = 1536;
+const KNOWN_DIMS: Record<string, number> = {
+  // Lower-cased slug → dimensions for OR routes we've confirmed.
+  // Keep growing this map; anything not here triggers the Test button
+  // affordance below to verify live.
+  'openai/text-embedding-3-small': 1536,
+  'openai/text-embedding-3-large': 3072,
+  'openai/text-embedding-ada-002': 1536,
+  'google/gemini-embedding-2-preview': 1536,
+  'nvidia/llama-nemotron-embed-vl-1b-v2': 1024,
+  'nvidia/llama-nemotron-embed-vl-1b-v2:free': 1024,
+  'thenlper/gte-base': 768,
+  'thenlper/gte-large': 1024,
+  'intfloat/e5-base-v2': 768,
+  'intfloat/e5-large-v2': 1024,
+  'perplexity/pplx-embed-v1-4b': 1024,
+  'perplexity/pplx-embed-v1-0.6b': 1024,
+};
+
+function EmbeddingFields({
+  model,
+  savedModel,
+  onDimChange,
+}: {
+  model: string;
+  /** Model the worker was loaded with (edit mode) — null in create mode.
+   *  Used by Piece 2 (the rebuild affordance) to detect a model swap. */
+  savedModel: string | null;
+  /** Lifts the resolved-dim state (just-tested OR known) so the parent
+   *  form's save button can hard-block when it's non-1536. Called on
+   *  every dim change, including null (no signal). */
+  onDimChange: (dim: number | null) => void;
+}) {
   const slug = (model ?? '').toLowerCase().trim();
-  const knownDims = slug ? KNOWN_DIMS[slug] : undefined;
-  const mismatched = knownDims !== undefined && knownDims !== COLUMN_DIMS;
+  const knownDim = slug ? KNOWN_DIMS[slug] : undefined;
+
+  // Detected-dim cache per slug, populated by the Test button. Survives
+  // model-picker changes within the form session so flipping back to a
+  // previously-tested model doesn't require re-testing.
+  const [detected, setDetected] = useState<Record<string, number>>({});
+  const [testing, setTesting] = useState(false);
+  const [testError, setTestError] = useState<string | null>(null);
+
+  // Resolved dim (just-tested wins over allow-list; both win over unknown).
+  const dim = detected[slug] ?? knownDim ?? null;
+  const mismatched = dim !== null && dim !== COLUMN_DIMS;
+
+  // Lift to parent on every change so the save button reacts immediately.
+  useEffect(() => {
+    onDimChange(dim);
+  }, [dim, onDimChange]);
+
+  const onTest = async () => {
+    if (!slug) return;
+    setTesting(true);
+    setTestError(null);
+    try {
+      const r = await testEmbeddingModelAction(slug);
+      if (r.ok) {
+        setDetected((d) => ({ ...d, [slug]: r.dimensions }));
+      } else {
+        setTestError(r.error);
+      }
+    } catch (err) {
+      setTestError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTesting(false);
+    }
+  };
+
   return (
     <div className="space-y-3 rounded-md border border-border bg-card/40 p-3 text-sm">
       <p className="text-muted-foreground">
@@ -1221,34 +1295,89 @@ function EmbeddingFields({ model }: { model: string }) {
         in the stack — extractor writes, agent semantic-memory reads, recall,
         MCP search, and the tool-result spill query.
       </p>
-      <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-xs">
+      <dl className="grid grid-cols-[max-content_1fr] items-center gap-x-4 gap-y-1 text-xs">
         <dt className="text-muted-foreground">Column shape</dt>
         <dd className="font-mono tabular-nums">vector({COLUMN_DIMS})</dd>
         <dt className="text-muted-foreground">Selected model dim</dt>
-        <dd className="font-mono tabular-nums">
-          {knownDims ? (
-            <span className={mismatched ? 'text-destructive' : ''}>{knownDims}</span>
-          ) : slug ? (
-            <span className="text-muted-foreground">unknown</span>
-          ) : (
-            <span className="text-muted-foreground">—</span>
+        <dd className="flex items-center gap-2">
+          <span className="font-mono tabular-nums">
+            {dim !== null ? (
+              <span className={mismatched ? 'text-destructive' : 'text-foreground'}>{dim}</span>
+            ) : slug ? (
+              <span className="text-muted-foreground">untested</span>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+            {detected[slug] !== undefined && (
+              <span className="ml-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                (live)
+              </span>
+            )}
+            {detected[slug] === undefined && knownDim !== undefined && (
+              <span className="ml-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                (allow-list)
+              </span>
+            )}
+          </span>
+          {slug && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onTest}
+              disabled={testing}
+              title="Embed a sample string and read back the actual dimension"
+            >
+              {testing ? 'Testing…' : 'Test dimensions'}
+            </Button>
           )}
         </dd>
       </dl>
-      {mismatched && (
-        <p className="rounded border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
-          <strong>Dimension mismatch.</strong> This model emits {knownDims}-dim
-          vectors but the brain's column is {COLUMN_DIMS}. Saving this worker
-          will work, but new embeddings will fail to insert. You'd need to
-          either run <code>pnpm re-embed</code> with a column-width migration,
-          or pick a 1536-dim model.
+      {testError && (
+        <p className="rounded border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">
+          Test failed: {testError}
+          {testError.toLowerCase().includes('api key') && (
+            <>
+              {' '}
+              Add an OpenRouter key at{' '}
+              <a href="/settings/keys" className="underline">
+                /settings/keys
+              </a>
+              .
+            </>
+          )}
         </p>
       )}
-      {!knownDims && slug && (
+      {mismatched && (
+        <div className="space-y-1 rounded border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
+          <p>
+            <strong>Dimension mismatch.</strong> This model emits {dim}-dim
+            vectors; the brain's column is {COLUMN_DIMS}. Save is blocked —
+            switching would crash ingest on the first call.
+          </p>
+          <p className="text-destructive/80">
+            To use a non-{COLUMN_DIMS}-dim model you'd need a schema migration
+            on every <code className="font-mono">vector(1536)</code> column
+            (nodes, entities, facts, content_chunks) plus a full re-embed.
+            Not a button — drop into <code className="font-mono">psql</code>{' '}
+            and use <code className="font-mono">pnpm re-embed</code>.
+          </p>
+        </div>
+      )}
+      {!mismatched && dim === null && slug && (
         <p className="text-xs text-muted-foreground">
-          Dimensions for this slug aren't in our verified map — confirm at the
-          provider's docs. If it's not 1536-dim, insertion will fail; treat
-          this as "use at your own risk" until we add it to the allow-list.
+          Unverified. Click <strong>Test dimensions</strong> to confirm — if the
+          model emits anything other than {COLUMN_DIMS}-dim vectors, saving will
+          succeed but ingest will fail on first call.
+        </p>
+      )}
+      {savedModel && slug && savedModel.toLowerCase() !== slug && !mismatched && (
+        <p className="text-xs text-amber-700 dark:text-amber-400">
+          Model changed from <code className="font-mono">{savedModel}</code>. After
+          saving you'll want to rebuild the index — existing vectors were
+          embedded with the previous model and cosine similarity across
+          different models is meaningless. A "Rebuild Index" button lands in
+          the next pass.
         </p>
       )}
     </div>
