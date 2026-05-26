@@ -71,6 +71,22 @@ async function connect(account: EmailAccount): Promise<ImapFlow> {
     auth: { user: account.address, pass: password },
     logger: false,
   });
+  // Attach an error listener BEFORE connect(). Without this, imapflow's
+  // internal emitError() on a TLS socket timeout / connection drop emits an
+  // 'error' event with no handler → Node's default behaviour is to throw
+  // and **crash the worker process** (verified live: ETIMEOUT from a
+  // long-lived sync connection took down the entire email-sync worker).
+  // With the listener attached, the event is consumed; the in-flight
+  // `await` on the operation still rejects normally, so pg-boss records
+  // the job as failed and the next scheduler tick (2 min) retries cleanly.
+  client.on('error', (err) => {
+    console.warn(
+      '[imap] socket/protocol error on',
+      account.address.replace(/^(.).+@(.+)$/, '$1***@$2'),
+      '-',
+      err instanceof Error ? err.message : String(err),
+    );
+  });
   await client.connect();
   return client;
 }
@@ -412,6 +428,12 @@ export async function probeImapConnection(opts: {
     secure: opts.secure,
     auth: { user: opts.user, pass: opts.pass },
     logger: false,
+  });
+  // Same reason as in `connect()` above — without an error listener, a
+  // socket-level error during probe would crash the calling process
+  // (Next.js worker thread or the test-connection request handler).
+  client.on('error', (err) => {
+    console.warn('[imap] probe socket/protocol error -', err instanceof Error ? err.message : String(err));
   });
   await client.connect();
   try {
