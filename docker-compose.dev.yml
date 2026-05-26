@@ -47,3 +47,23 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+
+  # Apache Tika — the third-tier document parser (the first two being our
+  # in-process pdf-parse / mammoth / SheetJS, and the vision worker for
+  # scanned PDFs). Used as a fallback for formats those can't handle:
+  # .odt / .ods / .odp (LibreOffice), .pptx / .ppt, .doc (legacy Word),
+  # .rtf, .epub, plus the long-tail Tika supports. Self-hosted, stateless
+  # — bytes never leave the VPS. See docs/file-ingestion.md.
+  tika:
+    image: apache/tika:3.3.0.0
+    container_name: mantle_tika
+    restart: unless-stopped
+    ports:
+      # 9998 on the host. apps/web + workers run as native Node in dev
+      # and reach Tika here. TIKA_URL in .env.local must match.
+      - "127.0.0.1:9998:9998"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9998/version >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12

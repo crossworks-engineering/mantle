@@ -10,7 +10,8 @@
     "./pdf": "./src/pdf.ts",
     "./docx": "./src/docx.ts",
     "./xlsx": "./src/xlsx.ts",
-    "./rasterize": "./src/rasterize.ts"
+    "./rasterize": "./src/rasterize.ts",
+    "./tika": "./src/tika.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

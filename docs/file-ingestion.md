@@ -36,6 +36,7 @@ Every file triggers up to two distinct jobs:
                     │  image → runVisionWorker (neutral)            │  DURABLE
                     │  pdf/docx/xlsx → parseDocumentBytes           │  INDEX
                     │    └ textless PDF → rasterize → vision OCR     │
+                    │  odt/ods/odp/pptx/ppt/doc/rtf/epub → Tika     │
                     │  text → data.content                          │
                     │  → data.text + summary + embedding + facts    │
                     └───────────────────────────────────────────────┘
@@ -71,8 +72,9 @@ fallback — the durable index always goes through the vision worker regardless.
 |---|---|---|---|
 | `ensureDatedUploadFolder` | `@mantle/files` | web /assistant, Telegram | ensure `files.<slug>.<YYYY-MM-DD>` exists, return its ltree path |
 | `upsertFile` / `syncFileFromDisk` | `@mantle/files` | all save paths | write bytes (disk first) + DB node; sanitise filename; sha dedup |
-| `parseDocumentBytes(bytes, ext)` | `@mantle/files` | extractor, `extractAttachmentForTurn` | format→parser dispatch (pdf/docx/xlsx/text) |
+| `parseDocumentBytes(bytes, ext)` | `@mantle/files` | extractor, `extractAttachmentForTurn` | three-tier dispatch: in-process parsers (pdf-parse/mammoth/SheetJS) → Tika fallback → empty string |
 | `rasterizePdfToPngs(bytes, {maxPages})` | `@mantle/files/rasterize` | extractor (`ocrIngestPdfNode`) | render a textless PDF's pages → PNG for the OCR fallback (lazy `pdf-to-png-converter`; pdfjs + `@napi-rs/canvas`) |
+| `parseTikaBytes(bytes, {mimeType})` | `@mantle/files/tika` | `parseDocumentBytes` (tier 2) | PUT to `apache/tika:3.3.0.0` docker service → plain text. Never-throws: any failure (service down, timeout, unparseable) returns `''`. Handles .odt/.ods/.odp/.pptx/.ppt/.doc/.rtf/.epub. |
 | `transcodeImageForVision` | `@mantle/files` | `runVisionWorker` | HEIC/HEIF → JPEG (libheif WASM), passthrough otherwise |
 | `runVisionWorker` | `@mantle/agent-runtime` | extractor (neutral), surfaces (question-aware) | resolve default vision worker + key + transcode + adapter; best-effort |
 | `extractAttachmentForTurn` | `@mantle/agent-runtime` | web /assistant, Telegram | image→vision / doc→parse → text for the current turn (ephemeral) |
@@ -134,7 +136,8 @@ Newest first — all on `main`.
 
 | Commit | What |
 |---|---|
-| _(this change)_ | **OCR fallback for scanned/image-only PDFs.** A textless PDF (`parseDocumentBytes` → nothing, body falls back to the filename) is rasterized → run through the neutral vision worker page-by-page (`ocrIngestPdfNode`, `photo_ingest` `mode=pdf_ocr`, capped at `MAX_OCR_PAGES`). If OCR also yields nothing it records `skipped: no_text_layer` instead of a filename-only false `success`. New dep `pdf-to-png-converter` behind `@mantle/files/rasterize`. |
+| _(this change)_ | **Apache Tika fallback** (3rd tier in `parseDocumentBytes`) for formats the in-process parsers don't handle: `.odt`/`.ods`/`.odp` (LibreOffice), `.pptx`/`.ppt` (PowerPoint), `.doc` (legacy Word), `.rtf`, `.epub`. New `apache/tika:3.3.0.0` sibling docker service (`mantle_tika`, port 9998); `@mantle/files/tika` is a never-throws wrapper that PUTs bytes and returns plain text (or `''` on any failure → honest `no_text_layer` skip). `INGESTABLE_EXTS` grew to include the new types. Self-hosted; bytes never leave the VPS. |
+| _(previous)_ | **OCR fallback for scanned/image-only PDFs.** A textless PDF (`parseDocumentBytes` → nothing, body falls back to the filename) is rasterized → run through the neutral vision worker page-by-page (`ocrIngestPdfNode`, `photo_ingest` `mode=pdf_ocr`, capped at `MAX_OCR_PAGES`). If OCR also yields nothing it records `skipped: no_text_layer` instead of a filename-only false `success`. New dep `pdf-to-png-converter` behind `@mantle/files/rasterize`. |
 | `91cf43f` | Add `heic-convert` as a direct web dep so Next externalizes it |
 | `a390b3a` | Preserve `data.vision_model` — merge the index write (V2) |
 | `5ab55ed` | Attribute vision-worker cost to the trace (V1) |

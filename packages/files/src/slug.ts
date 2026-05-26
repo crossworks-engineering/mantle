@@ -68,18 +68,36 @@ export function extOf(filename: string): string {
 }
 
 /**
- * Three sets that drive ingestion + editor behaviour.
+ * Four sets that drive ingestion + editor behaviour.
  *  - TEXT_EXTS: editable in the UI, `data.content` populated, extractor reads.
- *  - INGESTABLE_EXTS: extractor will try to read body (PDFs join here later).
+ *  - TIKA_EXTS: routed to the Apache Tika fallback parser (see ./tika.ts).
+ *  - INGESTABLE_EXTS: union of all formats the extractor will try to read.
  *  - PREVIEWABLE_EXTS: rendered as Markdown / code preview in the UI.
  */
 export const TEXT_EXTS = new Set<string>(['md', 'markdown', 'txt', 'json', 'yaml', 'yml', 'csv']);
 export const PREVIEWABLE_MARKDOWN_EXTS = new Set<string>(['md', 'markdown']);
-/** TEXT_EXTS + binary types the extractor can pull readable text from:
- *  PDFs via pdf-parse, Word via mammoth, Excel via SheetJS. Each binary
- *  type has a parser module under packages/files/src/ and a branch in
- *  the extractor's readNodeBodyRaw. */
-export const INGESTABLE_EXTS = new Set<string>([...TEXT_EXTS, 'pdf', 'docx', 'xlsx', 'xls']);
+/** Formats handled by the Tika fallback (./tika.ts) — anything our in-process
+ *  parsers (pdf/docx/xlsx/text) can't handle but Tika reliably can.
+ *  LibreOffice native (.odt/.ods/.odp), PowerPoint (.pptx/.ppt), legacy Word
+ *  (.doc), Rich Text (.rtf), e-books (.epub). Tika supports more (RFC822
+ *  mail, MS Publisher, …); add slugs here as you need them. */
+export const TIKA_EXTS = new Set<string>([
+  'odt', 'ods', 'odp',
+  'pptx', 'ppt',
+  'doc',
+  'rtf',
+  'epub',
+]);
+/** TEXT_EXTS + every binary type the extractor can pull readable text from.
+ *  In-process: pdf-parse, mammoth, SheetJS. Tika-routed: TIKA_EXTS. Each
+ *  in-process binary type has a parser module under packages/files/src/
+ *  and a branch in the extractor's readNodeBodyRaw; Tika-routed ones go
+ *  through parseDocumentBytes → tika.ts. */
+export const INGESTABLE_EXTS = new Set<string>([
+  ...TEXT_EXTS,
+  'pdf', 'docx', 'xlsx', 'xls',
+  ...TIKA_EXTS,
+]);
 
 /** Map an extension to a sensible MIME type. Falls back to octet-stream. */
 export function mimeForExt(ext: string): string {
@@ -121,6 +139,22 @@ export function mimeForExt(ext: string): string {
       return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
     case 'xls':
       return 'application/vnd.ms-excel';
+    case 'doc':
+      return 'application/msword';
+    case 'pptx':
+      return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+    case 'ppt':
+      return 'application/vnd.ms-powerpoint';
+    case 'odt':
+      return 'application/vnd.oasis.opendocument.text';
+    case 'ods':
+      return 'application/vnd.oasis.opendocument.spreadsheet';
+    case 'odp':
+      return 'application/vnd.oasis.opendocument.presentation';
+    case 'rtf':
+      return 'application/rtf';
+    case 'epub':
+      return 'application/epub+zip';
     default:
       return 'application/octet-stream';
   }
