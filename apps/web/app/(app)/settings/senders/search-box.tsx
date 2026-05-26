@@ -31,6 +31,10 @@ export function SearchBox({ initial }: { initial: string }) {
       const trimmed = value.trim();
       if (trimmed) params.set('q', trimmed);
       else params.delete('q');
+      // Reset pagination — a new query's result set is unrelated to the old
+      // one, so leaving `page` pointed at the previous offset would land on
+      // a confusing empty page.
+      params.delete('page');
       const qs = params.toString();
       startTransition(() => {
         router.replace(qs ? `${pathname}?${qs}` : pathname);

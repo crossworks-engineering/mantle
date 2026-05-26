@@ -11,22 +11,27 @@ import { setDomainStatus, setSenderStatus } from './actions';
 import { ManualEntry } from './manual-entry';
 import { PreviewButton } from './preview-button';
 import { SearchBox } from './search-box';
+import { SendersPager } from './senders-pager';
 
 type Tab = 'pending' | 'approved' | 'denied';
 
 const TABS: Tab[] = ['pending', 'approved', 'denied'];
+const PAGE_SIZE = 50;
 
 export default async function SendersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; q?: string }>;
+  searchParams: Promise<{ tab?: string; q?: string; page?: string }>;
 }) {
   const user = await requireOwner();
   const params = await searchParams;
   const tab: Tab = (TABS as string[]).includes(params.tab ?? '') ? (params.tab as Tab) : 'pending';
   const search = (params.q ?? '').trim().toLowerCase();
+  const page = Math.max(1, Number.parseInt(params.page ?? '1', 10) || 1);
 
-  // Top-line counts for the tab badges.
+  // Top-line counts for the tab badges — always the per-status totals
+  // (not the search-filtered totals), so flipping tabs always shows the
+  // full per-tab volume even with a search active.
   const counts = await db
     .select({ status: emailSenders.status, count: sql<number>`count(*)::int` })
     .from(emailSenders)
@@ -36,21 +41,37 @@ export default async function SendersPage({
   for (const c of counts) countByStatus[c.status as Tab] = c.count;
 
   const conds = [eq(emailSenders.userId, user.id), eq(emailSenders.status, tab)];
-  if (search) conds.push(sql`${emailSenders.address} ilike ${'%' + search + '%'}`);
-  const rows = await db
-    .select({
-      address: emailSenders.address,
-      domain: emailSenders.domain,
-      displayName: emailSenders.displayName,
-      messageCount: emailSenders.messageCount,
-      firstSeenAt: emailSenders.firstSeenAt,
-      lastSeenAt: emailSenders.lastSeenAt,
-      sourceAccountId: emailSenders.sourceAccountId,
-    })
-    .from(emailSenders)
-    .where(and(...conds))
-    .orderBy(desc(emailSenders.messageCount), desc(emailSenders.lastSeenAt))
-    .limit(500);
+  if (search) {
+    // Search address, domain, and display name — typing a person's name or
+    // a partial domain should all find the row, not just full addresses.
+    const like = '%' + search + '%';
+    conds.push(
+      sql`(${emailSenders.address} ilike ${like} OR ${emailSenders.domain} ilike ${like} OR coalesce(${emailSenders.displayName}, '') ilike ${like})`,
+    );
+  }
+
+  const [rows, totalRow] = await Promise.all([
+    db
+      .select({
+        address: emailSenders.address,
+        domain: emailSenders.domain,
+        displayName: emailSenders.displayName,
+        messageCount: emailSenders.messageCount,
+        firstSeenAt: emailSenders.firstSeenAt,
+        lastSeenAt: emailSenders.lastSeenAt,
+        sourceAccountId: emailSenders.sourceAccountId,
+      })
+      .from(emailSenders)
+      .where(and(...conds))
+      .orderBy(desc(emailSenders.messageCount), desc(emailSenders.lastSeenAt))
+      .limit(PAGE_SIZE)
+      .offset((page - 1) * PAGE_SIZE),
+    db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(emailSenders)
+      .where(and(...conds)),
+  ]);
+  const total = totalRow[0]?.c ?? 0;
 
   const accounts = await db
     .select({ id: emailAccounts.id, address: emailAccounts.address })
@@ -90,12 +111,15 @@ export default async function SendersPage({
 
       {rows.length === 0 ? (
         <p className="rounded-md border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-          {tab === 'pending'
-            ? 'No pending senders. Connect an IMAP account or wait for the next sync.'
-            : `No ${tab} senders yet.`}
+          {search
+            ? `No ${tab} senders match “${search}”.`
+            : tab === 'pending'
+              ? 'No pending senders. Connect an IMAP account or wait for the next sync.'
+              : `No ${tab} senders yet.`}
         </p>
       ) : (
-        <ul className="divide-y divide-border rounded-md border border-border">
+        <div className="rounded-md border border-border">
+        <ul className="divide-y divide-border">
           {rows.map((r) => {
             const accountAddr = r.sourceAccountId ? accountById.get(r.sourceAccountId) : undefined;
             const domainOverride = domainStatus.get(r.domain);
@@ -201,6 +225,8 @@ export default async function SendersPage({
             );
           })}
         </ul>
+        <SendersPager page={page} total={total} pageSize={PAGE_SIZE} />
+        </div>
       )}
     </div>
   );
