@@ -1513,17 +1513,15 @@ from this list; what's here is genuinely still open.
 - **`delegate_to` is now UI-editable** via the "Delegates to" picker at
   `/settings/agents`, and `updateAgent` merges `memory_config` so saves
   no longer wipe it. (Resolved — was previously DB/seed-only.)
-- **Production chat still routes through OpenRouter SDK directly**
-  (responder, /assistant, reflector, extractor, summarizer). The
-  chat adapter registry (xAI, HF, Anthropic, Google) is exercised
-  for new workers that opt into those providers and for the "Test
-  chat" UI affordance. The workers form clamps chat-shaped kinds
-  + the agents form clamps API keys to `service='openrouter'` so the
-  form matches reality — see [`ai-workers.md` §8.1](./ai-workers.md#81-provider-routing-today--what-goes-through-what)
-  for the per-kind routing table. The full migration spec ("**Phase 3**")
-  is documented in [`ai-workers.md` §10.1](./ai-workers.md#101-phase-3--direct-provider-routing-for-chat-shaped-workers--agents)
-  — pick it up when there's a real reason (operator asks for direct-
-  provider routing, multi-provider failover, cost arbitrage).
+- **All chat dispatch is now adapter-routed** (Phase 3, shipped May 2026).
+  The responder, web `/assistant`, heartbeat fire, invoke_agent, and
+  all three chat-shaped workers (reflector / extractor / summarizer)
+  resolve their adapter via `getChatAdapter(provider).chat({...})`.
+  The `agents.provider` column landed in migration 0048. Workers and
+  agents forms expose the full provider dropdown; KeyValidityHint
+  warns on cross-provider key mismatches. See [`ai-workers.md` §8.1](./ai-workers.md#81-provider-routing-today--what-goes-through-what)
+  for the per-kind routing table and §7 for the shipped-stage list
+  with commit shas.
 - **Embedding is fully adapter-routed** as of the Stage 1 push
   (5dc3984). `@mantle/embeddings` dispatches through
   `getEmbeddingAdapter(provider)` — five adapters (openrouter, openai,

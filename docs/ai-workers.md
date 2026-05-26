@@ -195,13 +195,15 @@ in the UI dropdown.
 | Deepgram | — | — | — | ✅ deepgram-stt | — | — |
 | AssemblyAI | — | — | — | ✅ assemblyai-stt | — | — |
 
-¹ **Chat adapters exist for xAI / HF / Anthropic / Google but the
-chat-shaped *worker runtime* still routes through `new OpenRouter()`
-regardless of the worker's `provider` field.** The adapters are
-exercised by the worker form's "Test chat" affordance and stand ready
-for a future migration of the production chat path (§5e + §10 — the
-"Phase 3" handover spec). The form clamps chat-shaped workers and
-agents to `service='openrouter'` keys until that migration ships.
+¹ **Every chat provider has a registered adapter — including OpenRouter
+itself (`openrouter-chat`, since Pre-work B of Phase 3).** The runtime
+dispatches via `getChatAdapter(worker.provider).chat({...})` for every
+chat-shaped worker (extractor / summarizer / reflector) AND for every
+agent's tool loop (responder / assistant / heartbeat fire / invoke_agent).
+A worker configured for direct Anthropic actually routes through
+`anthropic-chat`'s native /v1/messages endpoint, tool_use blocks and
+cache_control markers and all. The previous "OR is the special case
+that doesn't go through the registry" asymmetry retired with Phase 3.
 
 Vision providers also power the **Telegram photo ingest** pipeline
 (photo → default vision worker → note in `/files`) and Saskia's
@@ -723,29 +725,53 @@ whether the key is alive without needing to also configure a worker.
 
 ## 7. What's NOT in the adapter registry (and why)
 
-The production chat path used by the responder, the web `/assistant`,
-and the existing reflector/extractor/summarizer **still goes through
-the OpenRouter SDK directly**, not via the chat adapter registry. The
-adapter framework is exercised by:
+Post-Phase 3 (May 2026), the answer is: **almost nothing.** Every
+capability dispatches through the adapter registry, including the
+production responder / web `/assistant` / heartbeat / extractor /
+summarizer / reflector chat paths.
 
-- New workers explicitly configured for xAI / HF / Anthropic / Google
-- The "Test chat" button on chat-shaped workers
-- Future migrations to non-OpenRouter providers
+A short list of intentional escapes worth knowing:
 
-This is deliberate. The OpenRouter path is well-tested, supports the
-tool-loop, has cost accounting wired, and aggregates ~50 chat models
-already. Migrating it to the adapter registry is a non-breaking
-refactor we'd do if/when there's a real reason (cost arbitrage,
-provider failover, capabilities OpenRouter doesn't expose). The
-adapter framework is the boundary; flipping the responder to use it
-is a one-day change.
+- **`builtins-research.ts` (Perplexity search via OpenRouter).** The
+  research tool handler still constructs `new OpenRouter()` directly
+  because it's calling Perplexity's `online` route as a tool, not as a
+  chat-shaped worker. The OR SDK's response shape carries the per-search
+  surcharge on `usage.cost`, which `captureLlmUsage` (the raw-response
+  helper) reads natively. Migrating this to the chat adapter would gain
+  nothing — there's no "switch Perplexity to a different provider" story.
 
-**Update (May 2026):** Vision and image-gen adapters are now live —
-see §3.3 for the matrix. Vision plugs into both Telegram photo ingest
-(automatic) and Saskia's `extract_from_image` tool (on-demand).
-Image-gen plugs into Saskia's `generate_image` tool. Both are wired
-for OpenAI, xAI, Google, and (image-gen only) Hugging Face.
-Anthropic ships vision but no image generation.
+- **The OpenAI carve-out in `isProviderWired('openai', 'chat')`.** Returns
+  true even though no `openai-chat` adapter exists. OpenAI chat is
+  reached via OpenRouter today and probably forever (OR's OpenAI route
+  is identical pricing + adds failover). If a user genuinely wants
+  direct OpenAI chat we'd add the adapter file; nothing else needs to
+  change.
+
+Phase 3 stage history (kept for archaeology):
+- **Stage 1** (`5dc3984`): embedding migration. `@mantle/embeddings`
+  routes via `getEmbeddingAdapter(provider)`.
+- **Stage 2** (`b7d57e9`): form clamps. Make the UI HONEST about
+  Phase-3-pending chat routing.
+- **Phase 3 Pre-work A** (`97298a5`): widen ChatResult with
+  cacheReadTokens / cacheWriteTokens / reportedCostUsd.
+- **Phase 3 Pre-work B** (`6297e66`): openrouter-chat adapter.
+  Closes the framework asymmetry.
+- **Phase 3 Pre-work C** (`4f95681`): recordChatUsage helper for
+  the typed ChatResult shape.
+- **Phase 3a** (`652ba19`): chat-shaped workers migrated.
+- **Phase 3b** (`148d423`): tool loop refactored — adapter dispatch
+  + normalised tool calls across Anthropic / Google / OpenAI shapes.
+- **Phase 3c** (`3581f61`): `agents.provider` column (migration 0048).
+- **Phase 3d** (`38e2cbc`): forms unclamped. Operators can now
+  configure responder + workers for direct Anthropic / Google /
+  xAI / HF.
+
+Vision and image-gen adapters have been live since May 2026 — see §3.3
+for the matrix. Vision plugs into both Telegram photo ingest (automatic)
+and Saskia's `extract_from_image` tool (on-demand). Image-gen plugs into
+Saskia's `generate_image` tool. Both are wired for OpenAI, xAI, Google,
+and (image-gen only) Hugging Face. Anthropic ships vision but no image
+generation.
 
 ---
 
@@ -789,22 +815,27 @@ kind are allowed (priority + is_default flag picks the winner).
 
 ### 8.1 Provider routing today — what goes through what
 
-Different kinds dispatch differently. This matters because the form is
-clamped to match: showing operators a configuration the runtime won't
-honour creates the worst kind of bug (silent failure at first call).
+Every kind dispatches the same way: through the adapter registry, with
+the worker's (or agent's) `provider` field driving which adapter
+resolves. Phase 3 (commits 97298a5 through 38e2cbc) unified the model.
 
 | Kind | Runtime path | `provider` field | `apiKeyId` field | API key dropdown filter |
 |---|---|---|---|---|
 | **TTS / STT / Vision / Image-gen** | Adapter registry — `getXxxAdapter(worker.provider)` | ✅ honoured — picks the adapter | ✅ honoured | filtered to keys whose service ∈ providers declaring this capability |
 | **Embedding** | Adapter registry — `getEmbeddingAdapter(worker.provider)` (Stage 1, §5e.2) | ✅ honoured — picks the adapter | ✅ honoured | filtered to keys whose service ∈ {openrouter, openai, google, mistral, cohere} |
-| **Reflector / Extractor / Summarizer** | `new OpenRouter({apiKey})` directly | ❌ ignored — provider clamped to `openrouter` in the form | ✅ honoured (must be an OR key) | filtered to `service === 'openrouter'` only |
-| **Agents** (responder / assistant / custom) | `new OpenRouter({apiKey})` directly | ❌ no `provider` column on the schema | ✅ honoured (must be an OR key) | filtered to `service === 'openrouter'` only |
+| **Reflector / Extractor / Summarizer** | Adapter registry — `getChatAdapter(worker.provider).chat({...})` (Phase 3a) | ✅ honoured — picks the adapter | ✅ honoured | filtered to keys whose service matches the selected provider |
+| **Agents** (responder / assistant / custom / heartbeat / invoke_agent) | Adapter registry — `getChatAdapter(agent.provider).chat({...})` via `runToolLoop` (Phase 3b) | ✅ honoured — `agents.provider` column added in migration 0048 | ✅ honoured | filtered to keys whose service matches the selected provider |
 
-**Why the clamps for chat-shaped + agents:** the production chat path
-hasn't been migrated to the adapter registry yet. Migrating it is the
-**Phase 3** work documented in §10 — once it ships, those rows in the
-table flip to "adapter registry, provider honoured." The forms will
-unlock automatically because the clamp is one set check.
+**What this enables, concretely:**
+- An extractor pointed at `provider='anthropic'` + `model='claude-haiku-4-5'`
+  routes through Anthropic's /v1/messages endpoint; cache_read tokens
+  surface in `/traces`.
+- The responder configured for `provider='google'` + `model='gemini-2.5-pro'`
+  emits `functionCall` parts for tool use, gets `cachedContentTokenCount`
+  from Gemini's implicit caching on /traces.
+- OpenRouter is no longer the special case — `openrouter-chat` is just
+  another adapter (with the OR SDK as its HTTP layer + cache markers
+  flowing through via the SDK's typed `cacheControl` field).
 
 ---
 
@@ -840,7 +871,8 @@ If you're reading the code, the canonical files to start with are:
 
 ### 10.1 Phase 3 — Direct-provider routing for chat-shaped workers + agents
 
-**Status: deferred. The work is fully scoped here so a fresh session can pick it up.**
+**Status: SHIPPED (May 2026). The work is preserved here for archaeology;
+§7 has the final stage list with commit shas.**
 
 **What's outstanding.** The chat-shaped workers (reflector / extractor /
 summarizer) and all agents (responder / assistant / custom) still
