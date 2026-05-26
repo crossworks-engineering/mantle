@@ -21,7 +21,7 @@
 
 import { createHash } from 'node:crypto';
 import { inArray } from 'drizzle-orm';
-import { db, embeddingCache } from '@mantle/db';
+import { db, embeddingCache, getDefaultWorker } from '@mantle/db';
 import { getApiKey } from '@mantle/api-keys';
 import { currentTrace, step } from '@mantle/tracing';
 import {
@@ -34,9 +34,74 @@ import {
 export { MULTIMODAL_MODELS, isMultimodalModel, type EmbedInput } from './client';
 
 const FALLBACK_MODEL = 'openai/text-embedding-3-small';
+/**
+ * Process-level fallback when no `embedding` AI worker is configured and no
+ * `MANTLE_EMBEDDING_MODEL` env override is set. Exported for the few call
+ * sites (re-embed script, eager preview generation) that don't have an
+ * `ownerId` in hand and so can't go through {@link resolveEmbeddingModel}.
+ * Normal runtime paths should NOT read this directly — they should call
+ * `resolveEmbeddingModel(ownerId)` so the operator's worker pick wins.
+ */
 export const DEFAULT_EMBEDDING_MODEL =
   process.env.MANTLE_EMBEDDING_MODEL?.trim() || FALLBACK_MODEL;
 export const EMBEDDING_DIMS = 1536;
+
+// ── Per-owner resolver ─────────────────────────────────────────────────────
+//
+// Reads from `ai_workers WHERE kind='embedding'` so the operator picks once
+// at `/settings/ai-workers/embedding` and every consumer (extractor, agent
+// memory, recall, MCP search, tool-result spill) sees the same model. Falls
+// back to env, then the hardcoded constant — preserving status-quo behaviour
+// when no worker row exists.
+//
+// In-process Map cache with a short TTL: the extractor embeds many texts
+// per ingest, the recall builtin embeds per query, and the spill store
+// embeds per `read_result query` — all hot paths that would otherwise pound
+// the DB. 60s is short enough that flipping the worker in the UI takes
+// effect by the time you've finished saving; long enough that a busy
+// extractor batch sees a stable lookup.
+
+const RESOLVER_TTL_MS = 60_000;
+const _resolverCache = new Map<string, { model: string; expiresAt: number }>();
+
+/**
+ * Return the embedding model slug the runtime should use for this owner.
+ * Resolution order:
+ *   1. `ai_workers` row with `kind='embedding'`, `enabled=true`, the
+ *      default-flagged or highest-priority match for this owner.
+ *   2. `MANTLE_EMBEDDING_MODEL` env var.
+ *   3. The hardcoded fallback (`openai/text-embedding-3-small`).
+ *
+ * Cached per ownerId for 60s. Tests + the workers form should call
+ * {@link clearEmbeddingModelCache} after a worker write to avoid the
+ * stale-window.
+ */
+export async function resolveEmbeddingModel(ownerId: string): Promise<string> {
+  const cached = _resolverCache.get(ownerId);
+  if (cached && cached.expiresAt > Date.now()) return cached.model;
+  let model = DEFAULT_EMBEDDING_MODEL;
+  try {
+    const worker = await getDefaultWorker(ownerId, 'embedding');
+    if (worker?.model) model = worker.model;
+  } catch (err) {
+    // DB unreachable? Fall back gracefully — embedding still works against
+    // whatever the env / hardcoded default points at. Log so operators can
+    // notice if it's a persistent state.
+    console.warn(
+      '[embeddings] resolveEmbeddingModel: DB lookup failed, using fallback —',
+      err instanceof Error ? err.message : err,
+    );
+  }
+  _resolverCache.set(ownerId, { model, expiresAt: Date.now() + RESOLVER_TTL_MS });
+  return model;
+}
+
+/** Drop cached resolution(s). Pass an ownerId to invalidate one owner, or
+ *  nothing to clear the whole cache (useful in tests). */
+export function clearEmbeddingModelCache(ownerId?: string): void {
+  if (ownerId) _resolverCache.delete(ownerId);
+  else _resolverCache.clear();
+}
 
 /** OpenRouter caps batch size; 100 is well inside provider limits. */
 const MAX_BATCH = 100;
@@ -99,9 +164,15 @@ export async function embedMultimodal(
   inputs: EmbedInput[],
   opts?: { model?: string },
 ): Promise<number[][]> {
+  // Resolve once up front so the trace step opens with the actual model
+  // and doEmbed doesn't have to re-resolve. An explicit `opts.model` from
+  // a caller (extractor's per-worker override, the re-embed script) wins
+  // over the resolver, preserving the existing per-call escape hatch.
+  const model = opts?.model ?? (await resolveEmbeddingModel(ownerId));
+  const resolvedOpts = { model };
   // No trace → fast path with no instrumentation overhead.
   if (!currentTrace()) {
-    return doEmbed(ownerId, inputs, opts);
+    return doEmbed(ownerId, inputs, resolvedOpts);
   }
   return step(
     {
@@ -116,11 +187,11 @@ export async function embedMultimodal(
       // blow past the safety cap and be useless on inspection.
       input: {
         count: inputs.length,
-        model: opts?.model ?? DEFAULT_EMBEDDING_MODEL,
+        model,
         preview: inputs.map(previewOfInput),
       },
     },
-    async (handle) => doEmbed(ownerId, inputs, opts, handle),
+    async (handle) => doEmbed(ownerId, inputs, resolvedOpts, handle),
   );
 }
 

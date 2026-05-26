@@ -330,6 +330,13 @@
       "when": 1779401800000,
       "tag": "0046_email_delivery_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1779401900000,
+      "tag": "0047_ai_worker_kind_embedding",
+      "breakpoints": true
     }
   ]
 }

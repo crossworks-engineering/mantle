@@ -92,6 +92,9 @@ const PROVIDER_FOR_KIND: Record<AiWorkerKind, string> = {
   stt: 'openai',
   vision: 'openrouter',
   image_gen: 'openai',
+  // Embeddings always route through OpenRouter today — see
+  // `@mantle/embeddings`. Provider stays locked to it on the form.
+  embedding: 'openrouter',
 };
 
 /** Suggested model per kind, used as the placeholder. */
@@ -174,6 +177,10 @@ const MODEL_HINT_FOR_KIND: Record<AiWorkerKind, string> = {
   stt: 'whisper-1',
   vision: 'openai/gpt-4o',
   image_gen: 'dall-e-3',
+  // 1536-dim, cheap, the brain's existing column shape. Anything else
+  // either matches dims (Gemini-embedding-2-preview, Nemotron) or
+  // requires a re-embed pass — the form's dim guard will warn.
+  embedding: 'openai/text-embedding-3-small',
 };
 
 export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefault }: Props) {

@@ -36,6 +36,13 @@ export const aiWorkerKind = pgEnum('ai_worker_kind', [
   'stt',
   'vision',
   'image_gen',
+  // Embedding is genuinely cross-cutting — used by the extractor (writes),
+  // the responder/assistant for semantic-memory retrieval, the recall
+  // builtin, MCP search, and the tool-result spill store. Making it a
+  // first-class worker gives one canonical pick point instead of a
+  // misleading "override" field on the extractor only. See migration
+  // 0047 and `resolveEmbeddingModel` in `@mantle/embeddings`.
+  'embedding',
 ]);
 
 export type AiWorkerKind = (typeof aiWorkerKind.enumValues)[number];
@@ -168,6 +175,20 @@ export type SummarizerParams = ChatLlmParams & {
   target_length_tokens?: number;
 };
 
+/** Params for `kind='embedding'`. Deliberately tiny — embedding is a pure
+ *  text→vector transformation; there's no system_prompt, no temperature,
+ *  no max_tokens, no streaming choice to make. Just the model (which lives
+ *  on the row's `model` column) and an optional dimension override for
+ *  models that support it (currently only `google/gemini-embedding-2-preview`
+ *  via OpenRouter, which honours `output_dimensionality`). */
+export type EmbeddingParams = {
+  /** Dimension override sent to providers that accept it. The DB column is
+   *  `vector(1536)`, so callers MUST keep this at 1536 or re-embed. Setting
+   *  it to anything else would mismatch the index and crash inserts. The
+   *  worker form surfaces a warning to prevent that footgun. */
+  output_dimensions?: number;
+};
+
 /** Discriminated union for type-narrowing at call sites. */
 export type AiWorkerParams =
   | TtsParams
@@ -176,7 +197,8 @@ export type AiWorkerParams =
   | ImageGenParams
   | ReflectorParams
   | ExtractorParams
-  | SummarizerParams;
+  | SummarizerParams
+  | EmbeddingParams;
 
 export const aiWorkers = pgTable(
   'ai_workers',

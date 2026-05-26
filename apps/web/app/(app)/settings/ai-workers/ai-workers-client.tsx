@@ -52,6 +52,11 @@ const KIND_META: Record<AiWorkerKind, { label: string; description: string }> = 
       'Image → text. Whiteboards, receipts, document scans. Not wired in yet — config saved for when it lands.',
   },
   image_gen: { label: 'Image generation', description: 'Text → image. Reserved for future tooling.' },
+  embedding: {
+    label: 'Embedding',
+    description:
+      'Text → 1536-dim vector. Drives the brain index, semantic memory retrieval, and the recall/MCP/spill-store search paths. One pick applies everywhere.',
+  },
 };
 
 const KIND_ORDER: AiWorkerKind[] = [
