@@ -138,6 +138,25 @@ function normalizeHeader(
   const providerMsgId = encodeMsgId(folder, uidvalidity, msg.uid);
   const attachments = extractAttachmentRefs(msg.bodyStructure, providerMsgId);
 
+  // Cross-folder dedup key. Envelope.messageId is the RFC 5322 Message-ID
+  // header (per RFC 3501 envelope); typically wrapped in angle brackets like
+  // `<abc123@gmail.com>`. Strip them so the stored value is canonical and
+  // matches what other tooling stores. Same value across every folder.
+  const rfcMessageId = env.messageId
+    ? env.messageId.replace(/^\s*<|>\s*$/g, '').trim() || undefined
+    : undefined;
+
+  // Merge IMAP system flags (\Seen, \Answered, \Flagged) AND Gmail labels
+  // (\Inbox, \Sent, \Important, custom labels like "Family") when the server
+  // supports X-GM-EXT-1. `msg.labels` is populated only when we asked for
+  // `labels: true` in fetch AND the server supports the extension; on plain
+  // IMAP it's always undefined. Both are sets of strings; union them.
+  const flagLabels = msg.flags ? Array.from(msg.flags) : [];
+  const gmailLabels = msg.labels ? Array.from(msg.labels) : [];
+  const labels = gmailLabels.length > 0
+    ? Array.from(new Set([...flagLabels, ...gmailLabels]))
+    : flagLabels;
+
   const date =
     msg.internalDate instanceof Date
       ? msg.internalDate
@@ -151,6 +170,7 @@ function normalizeHeader(
 
   return {
     providerMsgId,
+    rfcMessageId,
     threadId: env.inReplyTo ?? undefined,
     fromAddr,
     fromName: fromRaw?.name || undefined,
@@ -159,7 +179,7 @@ function normalizeHeader(
     bccAddrs: (env.bcc ?? []).map((a) => a.address?.toLowerCase() ?? '').filter(Boolean),
     subject: env.subject ?? undefined,
     internalDate: date,
-    labels: msg.flags ? Array.from(msg.flags) : [],
+    labels,
     folder,
     isRead: msg.flags?.has('\\Seen') ?? false,
     isStarred: msg.flags?.has('\\Flagged') ?? false,
@@ -246,7 +266,9 @@ export const imap: EmailProvider = {
           let maxUid = prev && sameVal ? prev.lastUid : 0;
           for await (const msg of client.fetch(
             range,
-            { envelope: true, internalDate: true, flags: true, bodyStructure: true, size: true },
+            // labels: true asks for X-GM-LABELS; ignored on servers without
+            // X-GM-EXT-1, so it's safe to request unconditionally.
+            { envelope: true, internalDate: true, flags: true, labels: true, bodyStructure: true, size: true },
             { uid: true },
           )) {
             const normalized = normalizeHeader(msg, folder, uidvalidity);
@@ -296,7 +318,9 @@ export const imap: EmailProvider = {
           if (uids.length === 0) continue;
           for await (const msg of client.fetch(
             uids,
-            { envelope: true, internalDate: true, flags: true, bodyStructure: true, size: true },
+            // labels: true asks for X-GM-LABELS; ignored on servers without
+            // X-GM-EXT-1, so it's safe to request unconditionally.
+            { envelope: true, internalDate: true, flags: true, labels: true, bodyStructure: true, size: true },
             { uid: true },
           )) {
             const normalized = normalizeHeader(msg, folder, uidvalidity);

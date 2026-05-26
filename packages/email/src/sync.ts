@@ -13,7 +13,7 @@ import {
 } from '@mantle/db';
 import { runRules } from '@mantle/rules';
 import { hashBuffer, putContent } from '@mantle/storage';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, or, sql } from 'drizzle-orm';
 import { SenderResolver, upsertSenders } from './decisions';
 import type { EmailProvider, RawMessage } from './types';
 
@@ -163,19 +163,26 @@ async function ingestOne(
   message: RawMessage,
   rules: Awaited<ReturnType<typeof db.select> extends never ? never : Awaited<ReturnType<typeof loadRules>>>,
 ): Promise<boolean> {
-  // Dedup pre-check. The hard guarantee is the UNIQUE index
-  // emails_account_msg_uq on (account_id, provider_msg_id) PLUS the
-  // `onConflictDoNothing` + DuplicateRaceError sentinel on the INSERT
-  // below — even if pg-boss retries this job after a crash, or two
-  // attempts race past this SELECT, the conflict triggers a clean
-  // transaction rollback and the caller treats it as "already exists"
-  // (no orphan node, no failed pg-boss job, no logged stack). The
-  // SELECT here is a fast path that avoids spending OpenRouter on rule
-  // evaluation + an attachment fetch we'd just throw away.
+  // Dedup pre-check. Two unique constraints, two checks (OR'd in one query):
+  //   1. (account_id, provider_msg_id) — same UID in same folder. Catches
+  //      crash-retry / restart-replay races.
+  //   2. (account_id, rfc_message_id)  — same RFC 5322 Message-ID across any
+  //      folder. Catches the cross-folder duplication case (INBOX ↔ Archive,
+  //      any-folder ↔ [Gmail]/All Mail). rfcMessageId may be undefined on
+  //      older mail / weird automated mail; check only when populated.
+  // The HARD guarantees are the unique indexes + onConflictDoNothing +
+  // DuplicateRaceError sentinel on the INSERT below — the SELECT here is a
+  // fast path that avoids spending OpenRouter on rule evaluation + an
+  // attachment fetch we'd just throw away.
+  const providerCond = eq(emails.providerMsgId, message.providerMsgId);
+  const rfcCond = message.rfcMessageId
+    ? eq(emails.rfcMessageId, message.rfcMessageId)
+    : undefined;
+  const dupCond = rfcCond ? or(providerCond, rfcCond) : providerCond;
   const [existing] = await db
     .select({ id: emails.id })
     .from(emails)
-    .where(and(eq(emails.accountId, account.id), eq(emails.providerMsgId, message.providerMsgId)))
+    .where(and(eq(emails.accountId, account.id), dupCond))
     .limit(1);
   if (existing) return false;
 
@@ -217,6 +224,7 @@ async function ingestOne(
         nodeId,
         accountId: account.id,
         providerMsgId: message.providerMsgId,
+        rfcMessageId: message.rfcMessageId ?? null,
         threadId: message.threadId,
         fromAddr: message.fromAddr,
         fromName: message.fromName ?? null,
@@ -238,11 +246,16 @@ async function ingestOne(
       const [insertedEmail] = await tx
         .insert(emails)
         .values(emailRow)
-        .onConflictDoNothing({ target: [emails.accountId, emails.providerMsgId] })
+        // No target → Postgres DO NOTHING on ANY unique constraint violation,
+        // covering BOTH dedup keys (folder-scoped provider_msg_id AND
+        // cross-folder rfc_message_id) in one go. A targeted variant would
+        // need separate handling per key.
+        .onConflictDoNothing()
         .returning({ id: emails.id });
       if (!insertedEmail) {
-        // Race: another sync attempt committed this providerMsgId between
-        // our pre-check SELECT and this INSERT. Throw so the transaction
+        // Race: another sync attempt committed this message between our
+        // pre-check SELECT and this INSERT (either same providerMsgId, or
+        // same rfcMessageId on a different folder). Throw so the transaction
         // rolls back the node + any attachments cleanly; caught below.
         throw new DuplicateRaceError(message.providerMsgId);
       }

@@ -102,8 +102,17 @@ export const emails = pgTable(
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     nodeId: uuid('node_id').notNull().references(() => nodes.id, { onDelete: 'cascade' }),
     accountId: uuid('account_id').notNull().references(() => emailAccounts.id, { onDelete: 'cascade' }),
-    /** Provider's stable message id (Gmail msg id, Graph message id, IMAP UID+UIDVALIDITY). */
+    /** Provider's stable message id (Gmail msg id, Graph message id, IMAP UID+UIDVALIDITY).
+     *  Folder-scoped for IMAP — see `rfcMessageId` for the cross-folder key. */
     providerMsgId: text('provider_msg_id').notNull(),
+    /** RFC 5322 Message-ID header, the same value across every folder/account
+     *  that received the message. Used to dedup cross-folder (INBOX↔Archive,
+     *  any-folder↔[Gmail]/All Mail). Nullable — historical rows pre-migration
+     *  0045 don't have it, and some automated/malformed mail omits the
+     *  header. A partial unique index on (account_id, rfc_message_id) WHERE
+     *  rfc_message_id IS NOT NULL enforces uniqueness only when populated;
+     *  see migration 0045. */
+    rfcMessageId: text('rfc_message_id'),
     threadId: text('thread_id'),
     fromAddr: text('from_addr').notNull(),
     fromName: text('from_name'),
@@ -126,8 +135,14 @@ export const emails = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
-    // The dedupe key. Resuming a sync after a crash relies on this being unique.
+    // Folder-scoped dedup key. Resuming a sync after a crash relies on this being unique.
     uniqueIndex('emails_account_msg_uq').on(t.accountId, t.providerMsgId),
+    // Cross-folder dedup key (RFC 5322 Message-ID). Partial — only enforced
+    // when populated, so historical rows (pre-0045) coexist freely and mail
+    // missing the header doesn't collide. See migration 0045.
+    uniqueIndex('emails_account_rfc_msg_id_uq')
+      .on(t.accountId, t.rfcMessageId)
+      .where(sql`${t.rfcMessageId} is not null`),
     index('emails_thread_idx').on(t.threadId),
     index('emails_internal_date_idx').on(t.internalDate),
     index('emails_node_idx').on(t.nodeId),

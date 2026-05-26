@@ -9,6 +9,12 @@ import type { EmailAccount } from '@mantle/db';
  */
 export interface RawMessage {
   providerMsgId: string;
+  /** RFC 5322 Message-ID header (with angle brackets stripped). Stable across
+   *  every folder and account that received the message — used by the sync
+   *  to dedup cross-folder (the folder-scoped providerMsgId can't). May be
+   *  undefined if the server didn't return an envelope, or the message lacks
+   *  the header. */
+  rfcMessageId?: string;
   threadId?: string;
   fromAddr: string;
   fromName?: string;
