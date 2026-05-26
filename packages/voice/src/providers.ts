@@ -220,4 +220,5 @@ export const CAPABILITY_FOR_KIND: Record<string, ProviderCapability> = {
   stt: 'stt',
   vision: 'vision',
   image_gen: 'image_gen',
+  embedding: 'embedding',
 };

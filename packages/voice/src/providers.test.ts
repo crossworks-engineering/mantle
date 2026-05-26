@@ -126,9 +126,15 @@ describe('getProvider / isProviderId', () => {
 
 describe('CAPABILITY_FOR_KIND map', () => {
   it('covers every ai_workers.kind value', () => {
-    // The ai_workers.kind enum and this map must stay in sync —
-    // otherwise the worker form for a new kind has no provider
-    // dropdown filter and shows ALL providers.
+    // The ai_workers.kind enum (in @mantle/db) and this map must stay
+    // in sync — otherwise the worker form for a new kind has no
+    // provider dropdown filter and shows an EMPTY dropdown
+    // (`providersForCapability(undefined)` returns []). This list is
+    // hand-maintained because @mantle/voice doesn't depend on
+    // @mantle/db (and shouldn't, just for a test). When you add a new
+    // ai_worker_kind enum value, add it here AND to CAPABILITY_FOR_KIND
+    // in providers.ts. The original 'embedding' miss is why this test
+    // is louder about the contract.
     const kinds = [
       'reflector',
       'extractor',
@@ -137,6 +143,7 @@ describe('CAPABILITY_FOR_KIND map', () => {
       'stt',
       'vision',
       'image_gen',
+      'embedding',
     ];
     for (const k of kinds) {
       expect(CAPABILITY_FOR_KIND[k], `kind '${k}' has no capability mapping`).toBeTruthy();
