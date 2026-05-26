@@ -16,7 +16,12 @@ export {
 } from './store';
 
 export { fallbackCostMicroUsd } from './pricing';
-export { captureLlmUsage, type LlmUsageSink } from './llm-usage';
+export {
+  captureLlmUsage,
+  recordChatUsage,
+  type ChatUsageResult,
+  type LlmUsageSink,
+} from './llm-usage';
 export {
   contextLimitFor,
   contextSourceFor,
