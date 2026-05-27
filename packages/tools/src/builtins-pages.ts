@@ -95,6 +95,98 @@ const page_create: BuiltinToolDef = {
   },
 };
 
+const page_replace_from_file: BuiltinToolDef = {
+  slug: 'page_replace_from_file',
+  name: 'Replace an existing page from a file',
+  description:
+    "Rebuild an EXISTING page's body from a markdown/text file's bytes. Writes the new body to `draft_doc` ONLY — the published `doc` is untouched until the operator commits. Like `page_from_file` but updates a target page instead of creating a new one. **The right tool for: 'this page is corrupted, reimport from the source file' / 'I re-exported this page from Notion, refresh it here'.** Bytes go server-side without round-tripping through your output, so this scales to any file size — the deterministic recovery path. Title / tags / icon stay as-is unless you pass replacements. Only text-like files are accepted (markdown / plain text); binaries are rejected.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      page_id: { type: 'string', description: 'id of the existing page to rebuild' },
+      file_id: { type: 'string', format: 'uuid', description: 'id of the file node holding the new body' },
+      title: { type: 'string', description: 'optional new page title; omit to keep current' },
+      tags: { type: 'array', items: { type: 'string' }, description: 'optional new tags; omit to keep current' },
+      icon: { type: 'string', description: 'optional new emoji icon' },
+    },
+    required: ['page_id', 'file_id'],
+  },
+  handler: async (input, ctx) => {
+    const pageId = str(input.page_id).trim();
+    const fileId = str(input.file_id).trim();
+    if (!pageId) return { ok: false, error: 'page_id is required' };
+    if (!fileId) return { ok: false, error: 'file_id is required' };
+
+    // Verify the page exists + belongs to this owner BEFORE pulling file
+    // bytes — clean 404 instead of an opaque draft-save failure.
+    const page = await getPage(ctx.ownerId, pageId);
+    if (!page) return { ok: false, error: `page ${pageId} not found` };
+
+    const meta = await fileById({ ownerId: ctx.ownerId, fileId });
+    if (!meta) return { ok: false, error: `file ${fileId} not found` };
+    if (!meta.isText) {
+      return {
+        ok: false,
+        error:
+          `page_replace_from_file: '${meta.filename}' is a binary file ` +
+          `(mime='${meta.mimeType}') and cannot be imported as page content. ` +
+          `Convert to markdown first.`,
+      };
+    }
+    const res = await readFileById({ ownerId: ctx.ownerId, fileId });
+    if (!res) return { ok: false, error: 'file bytes unavailable' };
+
+    try {
+      // Metadata patch — only if the caller asked. Goes directly to the
+      // nodes row via updatePage (no doc field → published doc untouched).
+      const metaPatch: Record<string, unknown> = {};
+      if (typeof input.title === 'string' && input.title.trim()) {
+        metaPatch.title = input.title.trim().slice(0, 200);
+      }
+      if (Array.isArray(input.tags)) metaPatch.tags = strArr(input.tags);
+      if (typeof input.icon === 'string' && input.icon.trim()) {
+        metaPatch.icon = input.icon.trim();
+      }
+      if (Object.keys(metaPatch).length > 0) {
+        const r = await updatePage(ctx.ownerId, pageId, metaPatch);
+        if (!r) return { ok: false, error: `page ${pageId} disappeared mid-call` };
+      }
+
+      // Body: bytes → doc → draft. saveDraft runs ensureBlockIds so the
+      // imported content lands with stable per-block ids, ready for the
+      // Phase 2b block tools + the editor diff view.
+      const markdown = res.bytes.toString('utf8');
+      const doc = markdownToDoc(markdown);
+      const ok = await saveDraft(ctx.ownerId, pageId, doc);
+      if (!ok) return { ok: false, error: `page ${pageId} disappeared mid-call` };
+
+      ctx.step?.setOutput({
+        page_id: pageId,
+        source_file_id: fileId,
+        source_byte_size: res.bytes.length,
+        meta_updated: Object.keys(metaPatch).length > 0,
+      });
+      return {
+        ok: true,
+        output: {
+          page_id: pageId,
+          source_file_id: fileId,
+          source_byte_size: res.bytes.length,
+          meta_updated: Object.keys(metaPatch).length > 0,
+          draft_saved: true,
+          hint:
+            `New body landed in DRAFT (${res.bytes.length} source bytes from ` +
+            `'${meta.filename}'). Tell the user to open /pages/${pageId} to ` +
+            `review; the editor shows the draft. Commit publishes the rebuild, ` +
+            `Discard reverts to the current published doc.`,
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
 const page_update: BuiltinToolDef = {
   slug: 'page_update',
   name: 'Update a page',
@@ -791,6 +883,7 @@ const page_unshare: BuiltinToolDef = {
 export const PAGE_TOOLS: BuiltinToolDef[] = [
   page_create,
   page_from_file,
+  page_replace_from_file,
   page_update,
   page_update_draft,
   page_blocks_list,

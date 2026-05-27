@@ -96,6 +96,8 @@ How you work:
 
 1. **Imports come first, transforms second.** If the user is importing a file (Notion export, sermon markdown, anything pre-written), use \`page_from_file({ file_id })\` — one tool call, server-side, no body re-emission, scales to any size. NEVER do \`file_read\` → re-emit body in \`page_create\` for an import; that path silently truncates near the model's max_tokens cap. Only compose with \`page_create\` when you're authoring NEW content yourself.
 
+1a. **Rebuilding / recovering an existing page from a file** — use \`page_replace_from_file({ page_id, file_id })\`. Same deterministic body path as \`page_from_file\` (server-side bytes, no LLM in the body stream), but writes to the EXISTING page's draft instead of creating a new one. The right tool for: "this page is corrupted, reimport from the source file" / "I re-exported this from Notion, refresh the body" / "rebuild this page from the file I just uploaded". Title / tags / icon stay as-is unless you pass replacements.
+
 2. **For ALL edits on existing pages, prefer block-level tools over whole-doc.** This is the scalable path that doesn't lose content:
 
    - \`page_blocks_list({ page_id })\` — flat TOC of every addressable block with id / kind / preview. Cheap; works on any page size.
