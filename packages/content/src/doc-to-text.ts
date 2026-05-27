@@ -13,7 +13,22 @@ type PMNode = {
   content?: PMNode[];
 };
 
-/** Block-level node types that should be separated by a newline. */
+/**
+ * Block-level node types that should be separated by a newline.
+ *
+ * Deliberately diverges from `BLOCK_NODE_TYPES` in block-ids.ts — these
+ * two sets answer different questions:
+ *   - block-ids: "which nodes get an addressable id?" (every editable
+ *     container, including image / fileEmbed / blockMath atoms — they
+ *     need addressing for block-edit tools and the diff view).
+ *   - doc-to-text (this file): "which nodes need a newline between them
+ *     when flattening to plaintext?" — everything visible AS TEXT;
+ *     atoms with no text content don't need separators.
+ *
+ * It also accepts legacy snake_case aliases (`code_block`, `list_item`,
+ * `task_item`) from pre-camelCase docs and includes `figure` used by
+ * the email renderer. Keep the divergence intentional; do NOT unify.
+ */
 const BLOCK_TYPES = new Set([
   'paragraph',
   'heading',

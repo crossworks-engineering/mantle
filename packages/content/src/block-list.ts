@@ -9,32 +9,12 @@
  * inline tool-result cap. Agent reads the TOC to decide WHICH blocks
  * to touch, then fetches only those (Phase 2b mutation tools).
  *
- * Pure, no DB. Companion to block-ids.ts.
+ * Pure, no DB. Companion to block-ids.ts — and imports the addressable
+ * block-type set from there so the two stay in lockstep automatically.
+ * A new block type added to block-ids.ts is picked up here for free.
  */
 
-const BLOCK_TYPES = new Set([
-  'paragraph',
-  'heading',
-  'blockquote',
-  'codeBlock',
-  'horizontalRule',
-  'bulletList',
-  'orderedList',
-  'taskList',
-  'listItem',
-  'taskItem',
-  'table',
-  'tableRow',
-  'tableCell',
-  'tableHeader',
-  'callout',
-  'columnList',
-  'column',
-  'image',
-  'pageImage',
-  'fileEmbed',
-  'blockMath',
-]);
+import { BLOCK_NODE_TYPES as BLOCK_TYPES } from './block-ids';
 
 export type BlockListEntry = {
   /** Stable per-block id (assigned by ensureBlockIds). May be the
