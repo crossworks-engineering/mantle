@@ -329,6 +329,20 @@ cache + `extract_cost_cap_micro_usd`.
   See [architecture.md §9g](./architecture.md#9g-web-assistant--full-multimedia-parity-with-telegram)
   for the surrounding /assistant context.
 
+- **Block-editor safety skill (architectural note, not slated)** — Pages's
+  HARD RULE block grew organically over the testing days (preserve words,
+  preserve block kind, use `kinds` filter, mandatory pre-flight checks).
+  If/when a second agent needs to do block-level edits (e.g. a future
+  "Code Reviewer" agent editing pages, or Phase 4's split tool needing a
+  doc surgeon), extract the rule set into a shared skill so the wisdom
+  isn't trapped in one agent's `system_prompt`. Skills already support
+  this shape (text + tool_slugs); the pattern matches `rich_writing`,
+  which Pages + Saskia both attach. Don't extract prematurely — premature
+  abstraction is its own cost; do it when the duplication actually arises.
+  Origin: 2026-05-27 testing conversation, Jason's prompt: *"we must
+  remember Skills... maybe design a more structured ruleset for the
+  models that does tasks like pages."*
+
 - **Hierarchy / sub-pages (Phase 4)** — designed, not built. The
   architectural lever for documents past ~50 KB. Insight (2026-05-27 audit
   conversation): no model AND no human reads a 170 KB document as one
