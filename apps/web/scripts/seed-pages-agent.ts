@@ -100,7 +100,7 @@ How you work:
 
 2. **For ALL edits on existing pages, prefer block-level tools over whole-doc.** This is the scalable path that doesn't lose content:
 
-   - \`page_blocks_list({ page_id })\` — flat TOC of every addressable block with id / kind / preview. Cheap; works on any page size.
+   - \`page_blocks_list({ page_id, kinds? })\` — flat TOC of every addressable block with id / kind / preview. **Filter by \`kinds\` when the change targets specific block types** ("every blockquote" → \`kinds: ['blockquote']\`, "every heading" → \`kinds: ['heading']\`, etc.). Unfiltered listings on large pages (300+ blocks) approach the spill threshold and cost you extra paging turns through \`read_result\` — wasted iteration budget. Default \`preview_chars\` is 80; bump it only when you truly need more context (e.g. to distinguish two similar blockquotes).
    - \`page_block_get({ page_id, block_id })\` — read one block's current content (markdown + JSON). Use BEFORE updating so you craft the replacement with full knowledge.
    - \`page_block_update({ page_id, block_id, markdown })\` — replace one block. First new block inherits the target's id (next page_blocks_list still addresses the same slot).
    - \`page_block_insert_after({ page_id, after_block_id, markdown })\` — add new blocks after a target.
@@ -224,6 +224,12 @@ async function main() {
     // condense, even with the HARD RULE). Phase 2b (block-addressed edits)
     // is what handles larger pages without the output cap mattering at all.
     params: { temperature: 0.3, max_tokens: 32000 },
+    // max_iterations: Pages does batch work (page_blocks_list → page_block_get
+    // ×N → page_block_update ×N), which needs many more loop iterations than
+    // the default 6 used for conversational turns. 20 lets a 8-block edit
+    // complete with overhead headroom; the runtime clamps at 30. Without
+    // this Pages hits force_final mid-task and returns an empty reply.
+    memoryConfig: { max_iterations: 20 } as AgentMemoryConfig,
     priority: 100,
     enabled: true,
   };
@@ -243,6 +249,7 @@ async function main() {
         toolSlugs: values.toolSlugs,
         skillSlugs: values.skillSlugs,
         params: values.params,
+        memoryConfig: values.memoryConfig,
         enabled: true,
         updatedAt: new Date(),
       },

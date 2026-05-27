@@ -41,6 +41,12 @@ export type ListBlocksOptions = {
   maxDepth?: number;
   /** Preview character cap. Default 80. */
   previewChars?: number;
+  /** If set, only blocks whose `kind` is in this set are listed (but
+   *  the walker still DESCENDS through other types — a paragraph inside
+   *  a callout is still findable when filtering by 'paragraph'). Powers
+   *  targeted edits: 'find every blockquote', 'list every heading',
+   *  etc., without the spill risk of unfiltered output on a large doc. */
+  kinds?: ReadonlyArray<string>;
 };
 
 type AnyNode = {
@@ -61,8 +67,9 @@ export function listBlocks(
 ): BlockListEntry[] {
   const maxDepth = opts.maxDepth ?? Infinity;
   const previewChars = opts.previewChars ?? 80;
+  const kindFilter = opts.kinds && opts.kinds.length > 0 ? new Set(opts.kinds) : null;
   const out: BlockListEntry[] = [];
-  walk(doc as AnyNode, 0, out, maxDepth, previewChars);
+  walk(doc as AnyNode, 0, out, maxDepth, previewChars, kindFilter);
   return out;
 }
 
@@ -72,6 +79,7 @@ function walk(
   out: BlockListEntry[],
   maxDepth: number,
   previewChars: number,
+  kindFilter: Set<string> | null,
 ): void {
   if (!node || typeof node !== 'object') return;
   const kind = node.type;
@@ -80,7 +88,10 @@ function walk(
     // are depth 1 (the natural reading: "block 1, block 2, …" at the
     // top of the page).
     const blockDepth = depth + 1;
-    if (blockDepth <= maxDepth) {
+    // Two gates to PUSH: within maxDepth AND (no kind filter OR kind matches).
+    // The recursion always descends regardless of kind — a paragraph inside
+    // a filtered-out callout still gets listed if its own kind passes.
+    if (blockDepth <= maxDepth && (!kindFilter || kindFilter.has(kind))) {
       out.push({
         id: typeof node.attrs?.id === 'string' ? node.attrs.id : '',
         kind,
@@ -95,7 +106,7 @@ function walk(
     // loop without adding more entries. That's fine.
     if (Array.isArray(node.content) && blockDepth < maxDepth) {
       for (const child of node.content) {
-        walk(child, blockDepth, out, maxDepth, previewChars);
+        walk(child, blockDepth, out, maxDepth, previewChars, kindFilter);
       }
     }
     return;
@@ -103,7 +114,7 @@ function walk(
   // Non-block (doc root, text, marks): recurse children with same depth.
   if (Array.isArray(node.content)) {
     for (const child of node.content) {
-      walk(child, depth, out, maxDepth, previewChars);
+      walk(child, depth, out, maxDepth, previewChars, kindFilter);
     }
   }
 }

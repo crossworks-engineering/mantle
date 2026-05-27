@@ -143,6 +143,17 @@ export const invokeAgent: AgentInvoker = async ({
       },
     },
     async () => {
+      // memory_config.max_iterations lets batch-edit agents (Pages) raise
+      // the tool-loop ceiling above the default 6 — read N blocks + write
+      // N blocks costs N+overhead iterations, which exceeds the default
+      // for any non-trivial multi-block edit. Clamped at 30 to keep the
+      // worst-case bounded.
+      const mc = (target.memoryConfig as AgentMemoryConfig | null) ?? null;
+      const requestedMaxIters = typeof mc?.max_iterations === 'number' ? mc.max_iterations : null;
+      const maxIterations = requestedMaxIters && requestedMaxIters > 0
+        ? Math.min(30, Math.floor(requestedMaxIters))
+        : undefined;
+
       const result = await runToolLoop({
         adapter: childAdapter,
         apiKey,
@@ -152,11 +163,12 @@ export const invokeAgent: AgentInvoker = async ({
         agentId: target.id,
         agentSlug: target.slug,
         agentDepth: depth,
-        delegateTo: ((target.memoryConfig as AgentMemoryConfig | null)?.delegate_to ?? []) as readonly string[],
-        resultHandling: (target.memoryConfig as AgentMemoryConfig | null)?.result_handling ?? null,
+        delegateTo: (mc?.delegate_to ?? []) as readonly string[],
+        resultHandling: mc?.result_handling ?? null,
         parentTraceId,
         initialMessages,
         tools: allowedTools,
+        ...(maxIterations !== undefined ? { maxIterations } : {}),
       });
       // Snapshot the running totals before startTrace's finally
       // block flushes them to the DB. Reading from currentTrace

@@ -82,6 +82,14 @@ export type AgentMemoryConfig = {
    *  Self-references are refused at dispatch time. The depth chain is
    *  also capped — see MAX_AGENT_DEPTH in @mantle/tools. */
   delegate_to?: string[];
+  /** Override the tool-loop's MAX_ITERATIONS cap. Default in
+   *  `runToolLoop` is 6 — enough for conversational turns where the
+   *  model reads-then-replies, but too tight for batch-edit agents that
+   *  read N blocks then write N blocks (which is N+overhead iterations).
+   *  Pages sets this to ~20 so a 10-block edit completes cleanly without
+   *  force_final eating its update phase. Bounded by the runtime at a
+   *  hard ceiling so a misconfigured value can't hang the loop. */
+  max_iterations?: number;
   /** Tool-result handling override (KB units). When a tool returns more than
    *  `inline_max_kb`, the full output is spilled to the tool-result store and
    *  the model gets a handle it pages/greps/queries via `read_result` instead

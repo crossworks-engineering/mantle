@@ -149,6 +149,43 @@ describe('listBlocks', () => {
     ]);
   });
 
+  it('kinds filter returns only matching blocks — but walker still descends', () => {
+    const doc = blocked({
+      type: 'doc',
+      content: [
+        { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'H' }] },
+        { type: 'paragraph', content: [{ type: 'text', text: 'top P' }] },
+        {
+          type: 'callout',
+          attrs: { variant: 'info' },
+          content: [
+            { type: 'paragraph', content: [{ type: 'text', text: 'inner P' }] },
+            { type: 'blockquote', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'quote' }] }] },
+          ],
+        },
+        { type: 'blockquote', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'top quote' }] }] },
+      ],
+    });
+
+    // Only blockquotes — should return both (one nested in a callout, one top).
+    const blockquotes = listBlocks(doc, { kinds: ['blockquote'] });
+    expect(blockquotes.map((b) => b.kind)).toEqual(['blockquote', 'blockquote']);
+    expect(blockquotes[0]!.preview).toBe('quote'); // the nested one (first in doc order)
+    expect(blockquotes[1]!.preview).toBe('top quote');
+
+    // Multi-kind filter.
+    const both = listBlocks(doc, { kinds: ['heading', 'blockquote'] });
+    expect(both.map((b) => b.kind)).toEqual(['heading', 'blockquote', 'blockquote']);
+
+    // No filter — everything.
+    const all = listBlocks(doc);
+    expect(all.length).toBeGreaterThan(4); // heading + p + callout + inner p + blockquote + inner p + top blockquote + inner p
+
+    // Empty filter array = no filter (treated as "all kinds").
+    const emptyFilter = listBlocks(doc, { kinds: [] });
+    expect(emptyFilter.length).toBe(all.length);
+  });
+
   it('stays compact — 50–80 bytes per typical block in JSON', () => {
     const doc = blocked({
       type: 'doc',

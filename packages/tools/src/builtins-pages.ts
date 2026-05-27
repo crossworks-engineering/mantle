@@ -516,11 +516,17 @@ const page_blocks_list: BuiltinToolDef = {
   slug: 'page_blocks_list',
   name: 'List the blocks in a page',
   description:
-    "Return a TOC-style flat listing of every addressable block in a page — `id`, `kind` (paragraph / heading / callout / table / …), `depth`, and a short text `preview`. Lightweight: the body itself is not returned, so this works regardless of page size. **Use this BEFORE proposing any block-level edit** so you know which blocks exist and can target them by stable id (Phase 2b block-edit tools land next). The ids returned here survive across edits — they are stable per block, not per read. Headings also include `meta.level`, code blocks `meta.language`, callouts `meta.variant`, task items `meta.checked`, images `meta.alt`. Use `max_depth: 1` for a high-level outline (only top-level blocks), omit for everything.",
+    "Return a TOC-style flat listing of every addressable block in a page — `id`, `kind` (paragraph / heading / callout / table / …), `depth`, and a short text `preview`. Lightweight: the body itself is not returned, so this works regardless of page size. **Use this BEFORE proposing any block-level edit** so you know which blocks exist and can target them by stable id. The ids returned here survive across edits — they are stable per block, not per read. Headings also include `meta.level`, code blocks `meta.language`, callouts `meta.variant`, task items `meta.checked`, images `meta.alt`. **`kinds` is the SCALING knob — pass only the block types you care about** (e.g. `['blockquote']` for 'find every quote', `['heading']` for an outline). A large page can have hundreds of blocks; an unfiltered listing on a 300-block page approaches 80 KB and spills through the tool-result store, costing extra paging turns. `max_depth: 1` is the other compactor — top-level only. Default `preview_chars` is 80; bump only when you genuinely need more context per block.",
   inputSchema: {
     type: 'object',
     properties: {
       page_id: { type: 'string', description: 'page node id' },
+      kinds: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          "optional kind filter — only blocks whose `kind` is in this array are returned. The walker still descends through other types, so nested matches are found. Common picks: ['blockquote'], ['heading'], ['callout'], ['paragraph']. Combine multiple kinds in one call when relevant.",
+      },
       max_depth: {
         type: 'number',
         description:
@@ -547,10 +553,14 @@ const page_blocks_list: BuiltinToolDef = {
       typeof input.preview_chars === 'number' && input.preview_chars >= 10
         ? Math.min(400, Math.floor(input.preview_chars))
         : undefined;
+    const kinds = Array.isArray(input.kinds)
+      ? input.kinds.filter((k): k is string => typeof k === 'string' && k.length > 0)
+      : [];
 
     const blocks = listBlocks(page.doc as Record<string, unknown>, {
       ...(maxDepth !== undefined ? { maxDepth } : {}),
       ...(previewChars !== undefined ? { previewChars } : {}),
+      ...(kinds.length > 0 ? { kinds } : {}),
     });
 
     ctx.step?.setOutput({ id: page.id, block_count: blocks.length });
