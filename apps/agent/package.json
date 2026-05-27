@@ -18,9 +18,8 @@
     "@mantle/heartbeats": "workspace:*",
     "@mantle/telegram": "workspace:*",
     "@mantle/tools": "workspace:*",
-    "@mantle/voice": "workspace:*",
     "@mantle/tracing": "workspace:*",
-    "@openrouter/sdk": "^0.12.35",
+    "@mantle/voice": "workspace:*",
     "drizzle-orm": "^0.38.3",
     "postgres": "^3.4.5"
   },
