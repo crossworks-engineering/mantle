@@ -44,7 +44,6 @@ import {
   getChatAdapter,
   type ChatDispatcher,
   type ChatToolDefinition,
-  type ChatToolLoopMessage,
 } from '@mantle/voice';
 import { recordChatUsage } from './llm-usage';
 import type { ChatMessage } from './messages';
@@ -225,7 +224,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         const r = await args.adapter.chat({
           apiKey: args.apiKey,
           model: args.model,
-          messages: messages as unknown as ChatToolLoopMessage[],
+          messages: messages,
           ...(sendTools ? { tools: toolsForModel } : {}),
           // Prompt-cache breakpoints: mark the system block (persona +
           // skills stay turn-to-turn) and the most recent user message
@@ -464,7 +463,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       const r = await args.adapter.chat({
         apiKey: args.apiKey,
         model: args.model,
-        messages: messages as unknown as ChatToolLoopMessage[],
+        messages: messages,
         // toolChoice: 'none' explicitly disables tool calling for the
         // final pass — force a text answer. Adapters whose providers
         // don't honour 'none' fall back to dropping the tools field
