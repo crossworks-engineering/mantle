@@ -81,6 +81,15 @@ export { ensureBlockIds, allBlocksHaveIds, BLOCK_NODE_TYPES } from './block-ids'
 
 export { listBlocks, type BlockListEntry, type ListBlocksOptions } from './block-list';
 
+export {
+  findBlock,
+  replaceBlock,
+  insertAfterBlock,
+  deleteBlock,
+  type FindResult,
+  type PMBlockNode,
+} from './block-edit';
+
 export { referencedFileIds } from './doc-assets';
 
 export {

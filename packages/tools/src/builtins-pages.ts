@@ -21,6 +21,11 @@ import {
   docToText,
   saveDraft,
   listBlocks,
+  findBlock,
+  replaceBlock,
+  insertAfterBlock,
+  deleteBlock,
+  type PMBlockNode,
   createShare,
   revokeShare,
   getActiveShareForNode,
@@ -469,6 +474,265 @@ const page_blocks_list: BuiltinToolDef = {
   },
 };
 
+/**
+ * Pick the baseline doc for a block-edit op: the draft if one exists
+ * (an in-flight editing session — the agent's previous edit + the user's
+ * autosave land there), else the published doc. Block edits always
+ * write back to draft_doc; the user reviews + commits.
+ */
+function pickEditingBaseline(page: { doc: Record<string, unknown>; draft: Record<string, unknown> | null }): Record<string, unknown> {
+  return (page.draft ?? page.doc) as Record<string, unknown>;
+}
+
+const DRAFT_REVIEW_HINT = (pageId: string) =>
+  `Edit applied to DRAFT — the published page is unchanged. Tell the ` +
+  `user to open /pages/${pageId} to review; the editor shows the draft. ` +
+  `Commit publishes, Discard reverts.`;
+
+const page_block_get: BuiltinToolDef = {
+  slug: 'page_block_get',
+  name: 'Get one block from a page',
+  description:
+    "Read a single addressable block from a page by its id (from `page_blocks_list`). Returns the block's `kind`, depth, text content (plaintext, no formatting), structural `meta` (heading level / callout variant / etc.), and full PM `json` for fidelity-sensitive cases. Cheap: only the one block travels, not the whole page. **Use this BEFORE `page_block_update` so you craft the replacement with full knowledge of the current content.**",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      page_id: { type: 'string', description: 'page node id' },
+      block_id: { type: 'string', description: 'block id (from page_blocks_list)' },
+    },
+    required: ['page_id', 'block_id'],
+  },
+  handler: async (input, ctx) => {
+    const pageId = str(input.page_id).trim();
+    const blockId = str(input.block_id).trim();
+    if (!pageId || !blockId) return { ok: false, error: 'page_id and block_id are required' };
+    const page = await getPage(ctx.ownerId, pageId);
+    if (!page) return { ok: false, error: `page ${pageId} not found` };
+
+    const baseline = pickEditingBaseline(page);
+    const found = findBlock(baseline, blockId);
+    if (!found) {
+      return {
+        ok: false,
+        error:
+          `block ${blockId} not found in page ${pageId}. The id may be stale ` +
+          `(re-run page_blocks_list) or the user may have edited the page since.`,
+      };
+    }
+    const text = docToText({ type: 'doc', content: [found.block] });
+    ctx.step?.setOutput({ id: blockId, kind: found.block.type });
+    return {
+      ok: true,
+      output: {
+        page_id: pageId,
+        block_id: blockId,
+        kind: found.block.type,
+        text,
+        ...(found.block.attrs ? { meta: found.block.attrs } : {}),
+        json: found.block,
+      },
+    };
+  },
+};
+
+const page_block_update: BuiltinToolDef = {
+  slug: 'page_block_update',
+  name: 'Replace one block in a page',
+  description:
+    "Replace one block (by id) with new content (markdown). The first new block INHERITS the target's id so the next page_blocks_list still addresses the same logical slot. If your markdown produces multiple blocks (e.g. you wrap a paragraph in a heading + paragraph), they're all spliced in; subsequent blocks get fresh ids. Writes to DRAFT only — the published page is untouched until the user commits. **Output bytes are proportional to the new block, not the whole page** — this is the scalable edit path for large pages.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      page_id: { type: 'string', description: 'page node id' },
+      block_id: { type: 'string', description: 'block id to replace' },
+      markdown: {
+        type: 'string',
+        description: `Replacement content. ${MARKDOWN_HINT} One or more blocks; the first inherits the target id.`,
+      },
+    },
+    required: ['page_id', 'block_id', 'markdown'],
+  },
+  handler: async (input, ctx) => {
+    const pageId = str(input.page_id).trim();
+    const blockId = str(input.block_id).trim();
+    const markdown = str(input.markdown);
+    if (!pageId || !blockId) return { ok: false, error: 'page_id and block_id are required' };
+    if (!markdown) return { ok: false, error: 'markdown is required (cannot replace with nothing — use page_block_delete)' };
+
+    const page = await getPage(ctx.ownerId, pageId);
+    if (!page) return { ok: false, error: `page ${pageId} not found` };
+
+    let parsedBlocks: unknown[];
+    try {
+      const parsed = markdownToDoc(markdown) as { content?: unknown[] };
+      parsedBlocks = Array.isArray(parsed.content) ? parsed.content : [];
+    } catch (err) {
+      return { ok: false, error: `markdown parse failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
+    if (parsedBlocks.length === 0) {
+      return { ok: false, error: 'markdown produced no blocks — nothing to splice' };
+    }
+
+    const baseline = pickEditingBaseline(page);
+    const result = replaceBlock(
+      baseline,
+      blockId,
+      parsedBlocks as PMBlockNode[],
+    );
+    if (!result.found) {
+      return {
+        ok: false,
+        error: `block ${blockId} not found in page ${pageId}. Re-run page_blocks_list for current ids.`,
+      };
+    }
+    try {
+      const ok = await saveDraft(ctx.ownerId, pageId, result.doc);
+      if (!ok) return { ok: false, error: `page ${pageId} not found (race?)` };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+
+    ctx.step?.setOutput({
+      id: blockId,
+      replaced_with_count: parsedBlocks.length,
+    });
+    return {
+      ok: true,
+      output: {
+        page_id: pageId,
+        block_id: blockId,
+        replaced_with_count: parsedBlocks.length,
+        draft_saved: true,
+        hint: DRAFT_REVIEW_HINT(pageId),
+      },
+    };
+  },
+};
+
+const page_block_insert_after: BuiltinToolDef = {
+  slug: 'page_block_insert_after',
+  name: 'Insert blocks after a target block',
+  description:
+    "Insert one or more new blocks (parsed from markdown) directly after the block with the given id. Useful for adding a callout after a quote, or a new section heading after the previous section ends. Writes to DRAFT only. New blocks get fresh ids on save.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      page_id: { type: 'string', description: 'page node id' },
+      after_block_id: { type: 'string', description: 'insert AFTER this block id' },
+      markdown: {
+        type: 'string',
+        description: `Markdown for the new block(s). ${MARKDOWN_HINT}`,
+      },
+    },
+    required: ['page_id', 'after_block_id', 'markdown'],
+  },
+  handler: async (input, ctx) => {
+    const pageId = str(input.page_id).trim();
+    const afterId = str(input.after_block_id).trim();
+    const markdown = str(input.markdown);
+    if (!pageId || !afterId) return { ok: false, error: 'page_id and after_block_id are required' };
+    if (!markdown) return { ok: false, error: 'markdown is required' };
+
+    const page = await getPage(ctx.ownerId, pageId);
+    if (!page) return { ok: false, error: `page ${pageId} not found` };
+
+    let parsedBlocks: unknown[];
+    try {
+      const parsed = markdownToDoc(markdown) as { content?: unknown[] };
+      parsedBlocks = Array.isArray(parsed.content) ? parsed.content : [];
+    } catch (err) {
+      return { ok: false, error: `markdown parse failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
+    if (parsedBlocks.length === 0) {
+      return { ok: false, error: 'markdown produced no blocks' };
+    }
+
+    const baseline = pickEditingBaseline(page);
+    const result = insertAfterBlock(
+      baseline,
+      afterId,
+      parsedBlocks as PMBlockNode[],
+    );
+    if (!result.found) {
+      return {
+        ok: false,
+        error: `block ${afterId} not found in page ${pageId}. Re-run page_blocks_list for current ids.`,
+      };
+    }
+    try {
+      const ok = await saveDraft(ctx.ownerId, pageId, result.doc);
+      if (!ok) return { ok: false, error: `page ${pageId} not found (race?)` };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+
+    ctx.step?.setOutput({ after: afterId, inserted_count: parsedBlocks.length });
+    return {
+      ok: true,
+      output: {
+        page_id: pageId,
+        after_block_id: afterId,
+        inserted_count: parsedBlocks.length,
+        draft_saved: true,
+        hint: DRAFT_REVIEW_HINT(pageId),
+      },
+    };
+  },
+};
+
+const page_block_delete: BuiltinToolDef = {
+  slug: 'page_block_delete',
+  name: 'Delete one block from a page',
+  description:
+    "Remove a single block (by id) from a page. Writes to DRAFT only. **Refuses** when removing the block would leave a container (callout / column / listItem / tableCell) empty — most ProseMirror schemas reject that. In that case, target the container itself instead.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      page_id: { type: 'string', description: 'page node id' },
+      block_id: { type: 'string', description: 'block id to delete' },
+    },
+    required: ['page_id', 'block_id'],
+  },
+  handler: async (input, ctx) => {
+    const pageId = str(input.page_id).trim();
+    const blockId = str(input.block_id).trim();
+    if (!pageId || !blockId) return { ok: false, error: 'page_id and block_id are required' };
+
+    const page = await getPage(ctx.ownerId, pageId);
+    if (!page) return { ok: false, error: `page ${pageId} not found` };
+
+    const baseline = pickEditingBaseline(page);
+    const result = deleteBlock(baseline, blockId);
+    if (!result.found) {
+      return {
+        ok: false,
+        error: `block ${blockId} not found in page ${pageId}. Re-run page_blocks_list for current ids.`,
+      };
+    }
+    if (result.refused) {
+      return { ok: false, error: result.reason ?? 'delete refused' };
+    }
+    try {
+      const ok = await saveDraft(ctx.ownerId, pageId, result.doc);
+      if (!ok) return { ok: false, error: `page ${pageId} not found (race?)` };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+
+    ctx.step?.setOutput({ id: blockId, deleted: true });
+    return {
+      ok: true,
+      output: {
+        page_id: pageId,
+        block_id: blockId,
+        deleted: true,
+        draft_saved: true,
+        hint: DRAFT_REVIEW_HINT(pageId),
+      },
+    };
+  },
+};
+
 const page_share: BuiltinToolDef = {
   slug: 'page_share',
   name: 'Share a page publicly',
@@ -530,6 +794,10 @@ export const PAGE_TOOLS: BuiltinToolDef[] = [
   page_update,
   page_update_draft,
   page_blocks_list,
+  page_block_get,
+  page_block_update,
+  page_block_insert_after,
+  page_block_delete,
   page_delete,
   page_list,
   page_get,
