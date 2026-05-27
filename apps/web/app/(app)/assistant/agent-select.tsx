@@ -10,8 +10,13 @@ import {
 } from '@/components/ui/select';
 import type { AssistantAgentOption } from '@/lib/assistant';
 
-/** Agent picker for /assistant. Switching navigates to ?agent=<slug>, so the
- *  server re-renders that agent's own thread (per-agent history). */
+const COOKIE = 'mantle_assistant_agent';
+const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
+
+/** Agent picker for /assistant. Switching navigates to ?agent=<slug> AND
+ *  writes a cookie so the choice survives navigation away and back without
+ *  a URL param. Server reads the cookie in page.tsx as the SSR default.
+ *  Pattern mirrors mantle_spend_range in usage-card-pills. */
 export function AgentSelect({
   agents,
   selected,
@@ -20,11 +25,12 @@ export function AgentSelect({
   selected: string;
 }) {
   const router = useRouter();
+  function pick(slug: string) {
+    document.cookie = `${COOKIE}=${encodeURIComponent(slug)}; path=/; max-age=${ONE_YEAR_SECONDS}; samesite=lax`;
+    router.push(`/assistant?agent=${encodeURIComponent(slug)}`);
+  }
   return (
-    <Select
-      value={selected}
-      onValueChange={(slug) => router.push(`/assistant?agent=${encodeURIComponent(slug)}`)}
-    >
+    <Select value={selected} onValueChange={pick}>
       <SelectTrigger className="w-60" aria-label="Choose agent">
         <SelectValue placeholder="Select agent" />
       </SelectTrigger>

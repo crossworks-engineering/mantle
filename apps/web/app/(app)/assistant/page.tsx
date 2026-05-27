@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers';
 import { requireOwner } from '@/lib/auth';
 import { listAssistantAgents, recentAssistantMessages, resolveAssistantAgent } from '@/lib/assistant';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
@@ -6,6 +7,8 @@ import { SetPageTitle } from '@/components/layout/page-title';
 import { AssistantClient } from './assistant-client';
 import { AgentSelect } from './agent-select';
 
+const AGENT_COOKIE = 'mantle_assistant_agent';
+
 export default async function AssistantPage({
   searchParams,
 }: {
@@ -13,9 +16,15 @@ export default async function AssistantPage({
 }) {
   const user = await requireOwner();
   const params = await searchParams;
+  // Persistence chain: explicit ?agent= URL param wins, else cookie from
+  // the last selection, else resolveAssistantAgent's priority default.
+  // AgentSelect writes the cookie at pick-time; this read is the SSR
+  // counterpart so first paint shows the right thread without a flash.
+  const cookieStore = await cookies();
+  const slugHint = params.agent ?? cookieStore.get(AGENT_COOKIE)?.value;
   const [agentList, agent] = await Promise.all([
     listAssistantAgents(user.id),
-    resolveAssistantAgent(user.id, params.agent),
+    resolveAssistantAgent(user.id, slugHint),
   ]);
 
   // Per-agent thread: each agent owns its own forever-conversation. The
