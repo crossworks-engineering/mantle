@@ -160,16 +160,54 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!row) return null;
+
   // Lazy block-id backfill — legacy docs that predate Phase 2b come back
-  // through this read path enriched with stable per-block ids. Pure pass
-  // (no DB write); the next saveDraft / commitPage persists the enrichment.
-  // ensureBlockIds is a no-op (same reference returned) when ids are
-  // already present, so the hot path stays cheap.
-  const doc = ensureBlockIds((row.doc as Record<string, unknown> | null) ?? EMPTY_DOC);
-  const draft = row.draft
-    ? ensureBlockIds(row.draft as Record<string, unknown>)
-    : null;
+  // through this read path enriched with stable per-block ids. ensureBlockIds
+  // returns the SAME reference when ids are already present, so we use
+  // reference inequality to detect "we just injected something" and persist
+  // that enrichment fire-and-forget. Without the persist step, ids would
+  // regenerate on every read (block-edit tools couldn't trust them between
+  // calls); with it, every page becomes id-stable on first access and stays
+  // that way until the user edits.
+  const rawDoc = (row.doc as Record<string, unknown> | null) ?? EMPTY_DOC;
+  const rawDraft = (row.draft as Record<string, unknown> | null) ?? null;
+  const doc = ensureBlockIds(rawDoc);
+  const draft = rawDraft ? ensureBlockIds(rawDraft) : null;
+
+  const docChanged = doc !== rawDoc && row.doc !== null; // only persist if there's a row to update
+  const draftChanged = draft !== rawDraft && rawDraft !== null;
+  if (docChanged || draftChanged) {
+    void persistBlockIdBackfill(id, docChanged ? doc : null, draftChanged ? draft : null);
+  }
+
   return detailOf(row.node, doc, draft);
+}
+
+/**
+ * Write enriched `doc` and/or `draft_doc` back to the pages row when the
+ * lazy backfill in getPage added ids. Fire-and-forget — never blocks the
+ * read path, never re-extracts (deliberately no notifyNodeIngested + no
+ * version bump + no updatedAt touch — this is maintenance, not an edit).
+ *
+ * Race window with the editor's autosave: tiny. If the user is actively
+ * editing and their autosave lands between our read and our write, their
+ * write wins (the draft contains the latest content; ids will be re-
+ * injected on the NEXT read). No harm done.
+ */
+async function persistBlockIdBackfill(
+  id: string,
+  doc: Record<string, unknown> | null,
+  draft: Record<string, unknown> | null,
+): Promise<void> {
+  try {
+    const patch: Record<string, unknown> = {};
+    if (doc) patch.doc = doc;
+    if (draft) patch.draftDoc = draft;
+    if (Object.keys(patch).length === 0) return;
+    await db.update(pages).set(patch).where(eq(pages.nodeId, id));
+  } catch (err) {
+    console.error('[pages] block-id backfill persist failed (non-fatal):', err);
+  }
 }
 
 export type CreatePageInput = {
