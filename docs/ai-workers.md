@@ -517,6 +517,12 @@ can run for the same worker without conflicting.
 
 ## 5e. Embedding — the cross-cutting kind
 
+This section covers the runtime mechanics — how dispatch resolves, how
+the cache works, what the rebuild button is wired to. For **which
+embedding model to pick and why** (operator-facing decision guide,
+small vs large vs gemini vs cohere with the benchmark numbers + the
+1536-dim constraint), see [`docs/embeddings.md`](./embeddings.md).
+
 Added in migration `0047_ai_worker_kind_embedding.sql`. Unlike the
 other worker kinds (which are each triggered by one signal — `tts` by
 voice replies, `extractor` by `pg_notify('node_ingested')`, etc.),

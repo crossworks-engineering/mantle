@@ -458,6 +458,17 @@ ORDER BY embedding <=> $query_embedding   -- cosine distance, lower = closer
 LIMIT 10;
 ```
 
+**Which embedding model produces those vectors matters.** The default is
+`openai/text-embedding-3-small` (1536 dims, ~$0.02/1M tokens, solid on
+English). Other choices unlock multilingual recall or better quality
+at higher cost. See [`docs/embeddings.md`](./embeddings.md) for the
+operator-facing decision guide (small vs large vs Gemini vs Cohere
+with benchmark numbers + the 1536-dim constraint that shapes the
+choice). The runtime mechanics — how the dispatcher resolves the
+worker config, how the cache works, how Rebuild Index re-embeds the
+whole corpus on a model swap — live in
+[`ai-workers.md` §5e](./ai-workers.md#5e-embedding--the-cross-cutting-kind).
+
 ### 4.2 Graph retrieval — "what's connected to what?"
 
 A **graph database** stores **entities** (nodes) and the named
