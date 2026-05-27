@@ -26,7 +26,7 @@
  * to each entry-point agent's delegate_to — only when missing.
  */
 
-import { and, desc, eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db, agents, apiKeys, skills, type AgentMemoryConfig } from '@mantle/db';
 import { seedBuiltinTools, PAGE_TOOL_SLUGS } from '@mantle/tools';
 
@@ -105,41 +105,45 @@ async function rich_writing_slug_if_present(): Promise<string | null> {
 }
 
 /**
- * Append 'pages' to one entry-point agent's delegate_to (only when missing),
- * so Saskia can call invoke_agent({ agent_slug: 'pages', prompt: ... }).
- * Mirrors the researcher/remy pattern.
+ * Append 'pages' to EVERY enabled responder + assistant agent's delegate_to
+ * (only when missing). Diverges from the researcher/remy pattern, which
+ * wired only the highest-priority one — that broke for Jason's setup where
+ * two responders share priority=100 and the tiebreaker is undefined. For
+ * a delegation grant, "all eligible entry points" is the right scope.
  */
-async function grantToEntryAgent(role: 'responder' | 'assistant'): Promise<void> {
-  const [agent] = await db
+async function grantToEntryAgents(): Promise<void> {
+  const rows = await db
     .select({
       id: agents.id,
       slug: agents.slug,
+      role: agents.role,
       memoryConfig: agents.memoryConfig,
     })
     .from(agents)
-    .where(and(eq(agents.ownerId, USER_ID!), eq(agents.role, role), eq(agents.enabled, true)))
-    .orderBy(desc(agents.priority))
-    .limit(1);
-  if (!agent) {
-    console.log(`[pages] no enabled ${role} found — skip wiring for ${role}`);
+    .where(and(eq(agents.ownerId, USER_ID!), eq(agents.enabled, true)));
+
+  const eligible = rows.filter((r) => r.role === 'responder' || r.role === 'assistant');
+  if (eligible.length === 0) {
+    console.log('[pages] no enabled responder or assistant found — skip wiring');
     return;
   }
 
-  const mc = (agent.memoryConfig ?? {}) as AgentMemoryConfig & { delegate_to?: string[] };
-  const delegateTo = Array.isArray(mc.delegate_to) ? mc.delegate_to : [];
-  if (delegateTo.includes('pages')) {
-    console.log(`[pages] ${agent.slug} (${role}) already wired`);
-    return;
+  for (const agent of eligible) {
+    const mc = (agent.memoryConfig ?? {}) as AgentMemoryConfig & { delegate_to?: string[] };
+    const delegateTo = Array.isArray(mc.delegate_to) ? mc.delegate_to : [];
+    if (delegateTo.includes('pages')) {
+      console.log(`[pages] ${agent.slug} (${agent.role}) already wired`);
+      continue;
+    }
+    await db
+      .update(agents)
+      .set({
+        memoryConfig: { ...mc, delegate_to: [...delegateTo, 'pages'] },
+        updatedAt: new Date(),
+      })
+      .where(eq(agents.id, agent.id));
+    console.log(`[pages] ${agent.slug} (${agent.role}): +delegate_to 'pages'`);
   }
-
-  await db
-    .update(agents)
-    .set({
-      memoryConfig: { ...mc, delegate_to: [...delegateTo, 'pages'] },
-      updatedAt: new Date(),
-    })
-    .where(eq(agents.id, agent.id));
-  console.log(`[pages] ${agent.slug} (${role}): +delegate_to 'pages'`);
 }
 
 async function main() {
@@ -199,8 +203,7 @@ async function main() {
       `${values.skillSlugs.length} skill${values.skillSlugs.length === 1 ? '' : 's'})`,
   );
 
-  await grantToEntryAgent('responder');
-  await grantToEntryAgent('assistant');
+  await grantToEntryAgents();
 
   console.log(
     "[pages] done. Restart apps/agent so the new agent + skill grants register. " +
