@@ -20,6 +20,7 @@ import {
   markdownToDoc,
   docToText,
   saveDraft,
+  listBlocks,
   createShare,
   revokeShare,
   getActiveShareForNode,
@@ -414,6 +415,60 @@ const page_from_file: BuiltinToolDef = {
   },
 };
 
+const page_blocks_list: BuiltinToolDef = {
+  slug: 'page_blocks_list',
+  name: 'List the blocks in a page',
+  description:
+    "Return a TOC-style flat listing of every addressable block in a page — `id`, `kind` (paragraph / heading / callout / table / …), `depth`, and a short text `preview`. Lightweight: the body itself is not returned, so this works regardless of page size. **Use this BEFORE proposing any block-level edit** so you know which blocks exist and can target them by stable id (Phase 2b block-edit tools land next). The ids returned here survive across edits — they are stable per block, not per read. Headings also include `meta.level`, code blocks `meta.language`, callouts `meta.variant`, task items `meta.checked`, images `meta.alt`. Use `max_depth: 1` for a high-level outline (only top-level blocks), omit for everything.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      page_id: { type: 'string', description: 'page node id' },
+      max_depth: {
+        type: 'number',
+        description:
+          'optional depth cap — 1 = only top-level blocks (great for a page outline), 2 = top + first-nested (e.g. paragraphs inside callouts), default unlimited',
+      },
+      preview_chars: {
+        type: 'number',
+        description: 'optional cap on the per-block text preview, default 80',
+      },
+    },
+    required: ['page_id'],
+  },
+  handler: async (input, ctx) => {
+    const pageId = str(input.page_id).trim();
+    if (!pageId) return { ok: false, error: 'page_id is required' };
+    const page = await getPage(ctx.ownerId, pageId);
+    if (!page) return { ok: false, error: `page ${pageId} not found` };
+
+    const maxDepth =
+      typeof input.max_depth === 'number' && input.max_depth >= 1
+        ? Math.min(10, Math.floor(input.max_depth))
+        : undefined;
+    const previewChars =
+      typeof input.preview_chars === 'number' && input.preview_chars >= 10
+        ? Math.min(400, Math.floor(input.preview_chars))
+        : undefined;
+
+    const blocks = listBlocks(page.doc as Record<string, unknown>, {
+      ...(maxDepth !== undefined ? { maxDepth } : {}),
+      ...(previewChars !== undefined ? { previewChars } : {}),
+    });
+
+    ctx.step?.setOutput({ id: page.id, block_count: blocks.length });
+    return {
+      ok: true,
+      output: {
+        id: page.id,
+        title: page.title,
+        block_count: blocks.length,
+        blocks,
+      },
+    };
+  },
+};
+
 const page_share: BuiltinToolDef = {
   slug: 'page_share',
   name: 'Share a page publicly',
@@ -474,6 +529,7 @@ export const PAGE_TOOLS: BuiltinToolDef[] = [
   page_from_file,
   page_update,
   page_update_draft,
+  page_blocks_list,
   page_delete,
   page_list,
   page_get,

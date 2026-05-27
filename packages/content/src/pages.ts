@@ -17,6 +17,7 @@
 import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { db, nodes, pages, notifyNodeIngested, type Node } from '@mantle/db';
 import { docToText } from './doc-to-text';
+import { ensureBlockIds } from './block-ids';
 
 export const PAGES_ROOT_LABEL = 'pages';
 
@@ -159,11 +160,16 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!row) return null;
-  return detailOf(
-    row.node,
-    (row.doc as Record<string, unknown> | null) ?? EMPTY_DOC,
-    (row.draft as Record<string, unknown> | null) ?? null,
-  );
+  // Lazy block-id backfill — legacy docs that predate Phase 2b come back
+  // through this read path enriched with stable per-block ids. Pure pass
+  // (no DB write); the next saveDraft / commitPage persists the enrichment.
+  // ensureBlockIds is a no-op (same reference returned) when ids are
+  // already present, so the hot path stays cheap.
+  const doc = ensureBlockIds((row.doc as Record<string, unknown> | null) ?? EMPTY_DOC);
+  const draft = row.draft
+    ? ensureBlockIds(row.draft as Record<string, unknown>)
+    : null;
+  return detailOf(row.node, doc, draft);
 }
 
 export type CreatePageInput = {
@@ -300,9 +306,14 @@ export async function saveDraft(
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!node) return false;
+  // Guarantee every persisted draft carries stable block ids — the autosave
+  // endpoint accepts whatever the editor sends, and an editor that doesn't
+  // yet preserve the id global attr (or a programmatic write) would
+  // otherwise strip them. Idempotent + cheap.
+  const enriched = ensureBlockIds(doc);
   await db
     .update(pages)
-    .set({ draftDoc: doc, draftUpdatedAt: new Date() })
+    .set({ draftDoc: enriched, draftUpdatedAt: new Date() })
     .where(eq(pages.nodeId, id));
   return true;
 }
@@ -326,12 +337,16 @@ export async function commitPage(
     .limit(1);
   if (!node) return null;
 
+  // Guarantee the committed doc carries stable per-block ids so the
+  // brain (via doc_text), Phase 2b block tools, and the editor diff
+  // view all see addressable blocks. Idempotent.
+  const enriched = ensureBlockIds(doc);
   const newData = { ...((node.data ?? {}) as Record<string, unknown>) };
   delete newData.summary;
   delete newData.summary_model;
   delete newData.summary_at;
   delete newData.entities;
-  const docText = docToText(doc);
+  const docText = docToText(enriched);
 
   const result = await db.transaction(async (tx) => {
     const [row] = await tx
@@ -343,7 +358,7 @@ export async function commitPage(
     await tx
       .update(pages)
       .set({
-        doc,
+        doc: enriched,
         docText,
         draftDoc: null,
         draftUpdatedAt: null,
@@ -351,7 +366,7 @@ export async function commitPage(
         updatedAt: new Date(),
       })
       .where(eq(pages.nodeId, id));
-    return detailOf(row, doc, null);
+    return detailOf(row, enriched, null);
   });
 
   await notifyNodeIngested(id);

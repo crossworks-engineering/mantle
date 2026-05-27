@@ -22,6 +22,7 @@
  * than throwing.
  */
 import { Marked, type TokenizerAndRendererExtension } from 'marked';
+import { ensureBlockIds } from './block-ids';
 
 type PMMark = { type: string; attrs?: Record<string, unknown> };
 type PMNode = {
@@ -384,5 +385,12 @@ export function markdownToDoc(source: string): Record<string, unknown> {
   }
   flush();
 
-  return { type: 'doc', content: content.length ? content : [{ type: 'paragraph' }] };
+  // Inject stable per-block ids so the produced doc is addressable by the
+  // Phase 2b block-edit tools + the Phase 3a editor diff view. Pure pass —
+  // doc shape unchanged except for added `attrs.id` on every block node.
+  // See block-ids.ts for the coverage list.
+  return ensureBlockIds({
+    type: 'doc',
+    content: content.length ? content : [{ type: 'paragraph' }],
+  });
 }

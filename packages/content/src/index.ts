@@ -77,6 +77,10 @@ export { docToText } from './doc-to-text';
 
 export { markdownToDoc } from './markdown-to-doc';
 
+export { ensureBlockIds, allBlocksHaveIds, BLOCK_NODE_TYPES } from './block-ids';
+
+export { listBlocks, type BlockListEntry, type ListBlocksOptions } from './block-list';
+
 export { referencedFileIds } from './doc-assets';
 
 export {

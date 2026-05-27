@@ -286,12 +286,34 @@ cache + `extract_cost_cap_micro_usd`.
 - **Formulas** — ✅ built. KaTeX via `@tiptap/extension-mathematics`
   (`inlineMath` `$…$`, `blockMath` `$$…$$`); stylesheet imported in
   `app/layout.tsx`; `latex` source flows into `docToText` for indexing.
-- **Pages agent + editor AI-assist panel** — designed, not built. The
-  agent operates on **block-addressed edits** (high-level ops the LLM
-  emits reliably), the server compiles those to ProseMirror `Step`s
-  (typed, atomic, invertible — free undo + history), and the editor
-  shows the proposed changes as a **per-block visual diff** before the
-  user commits:
+- **Pages agent** — ✅ built (Phase 2a). Slug `pages`, role `custom`,
+  model `anthropic/claude-sonnet-4.6`. Granted page tools (sans
+  `page_update` and `page_delete`) + file + search tools. Writes to
+  `draft_doc` only via `page_update_draft` — the live page is
+  structurally protected. Saskia delegates page-edits to it via
+  `invoke_agent({ agent_slug: 'pages', … })`. Seed: `pnpm seed:pages`.
+- **Block ids on every block-level node** — ✅ built (Phase 2b
+  foundation). Every paragraph / heading / callout / column / list
+  item / table cell / etc. carries an `attrs.id` (UUID, ~36 chars)
+  that survives the editor's parse / serialize / save round-trip via
+  the `BlockId` global-attribute extension. Source of truth:
+  `@mantle/content`'s `ensureBlockIds` runs server-side on
+  `markdownToDoc`, `getPage` (lazy backfill — legacy docs get ids on
+  read, persisted on next saveDraft / commit), `saveDraft`,
+  `commitPage`. The editor's `BlockId` TipTap extension preserves the
+  attr on every block type so user edits don't strip ids placed by
+  the agent.
+- **`page_blocks_list` tool** — ✅ built (Phase 2b foundation).
+  Lightweight TOC view: `[{ id, kind, depth, preview, meta? }]` per
+  block, body NOT returned. Powers the agent's "what's in this page?"
+  lookup. Agent reads the TOC, decides which blocks to touch (Phase
+  2b mutation tools land next), then fetches only those.
+- **Block-addressed editing + editor AI-assist panel** — designed,
+  not built. The agent operates on **block-addressed edits** (high-
+  level ops the LLM emits reliably), the server compiles those to
+  ProseMirror `Step`s (typed, atomic, invertible — free undo +
+  history), and the editor shows the proposed changes as a **per-
+  block visual diff** before the user commits:
   - removed content rendered with a **red background / strike-through**
   - new content rendered with a **green border / highlight**
   - per-block Accept / Discard controls (no all-or-nothing commit)

@@ -15,6 +15,7 @@ import { PageMention } from './mention';
 import { PageImage } from './image';
 import { FileEmbed } from './file-embed';
 import { TextColor } from './text-color';
+import { BlockId } from './block-id';
 import { highlightColor } from './highlight-colors';
 
 // Highlight mark with an optional themed `color` (a token key like `chart-2`,
@@ -84,6 +85,10 @@ export const pageExtensions: Extensions = [
   // imported in app/layout.tsx.
   Mathematics,
   TableKit.configure({ table: { resizable: true } }),
+  // Stable per-block ids on every block-level node — survives parse/render/
+  // serialize so user edits don't strip ids placed by the agent. Mirrors
+  // server-side ensureBlockIds in @mantle/content. Pure attribute; no UI.
+  BlockId,
   Placeholder.configure({
     // Only the first empty line shows it (showOnlyWhenEditable defaults true,
     // so the read-only PageView never renders a placeholder).
