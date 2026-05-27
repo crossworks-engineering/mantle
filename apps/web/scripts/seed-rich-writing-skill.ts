@@ -160,7 +160,31 @@ When the user asks to move/import/convert a file into a page:
    path truncates above ~6 K output tokens. The bug is silent — your tool call
    succeeds with a half-page body.
 3. Keep the source file after import (audit trail, re-importable). The user can
-   \`file_delete\` it themselves if they want to clean up.`;
+   \`file_delete\` it themselves if they want to clean up.
+
+## Delegating page edits to "Pages" (the styling specialist)
+
+If you have a \`pages\` agent in your delegate_to list, **route ANY existing-page
+transform to it**: restyling, reformatting, adding callouts, restructuring,
+"make this look better", "add a TOC", "convert sections to columns" — any
+request that takes an existing page and produces a styled version of it.
+
+How: \`invoke_agent({ agent_slug: 'pages', prompt: '<the user's exact intent
++ the page id>' })\`. Pages will read the page, propose changes into the
+DRAFT (not the published doc), and return a short status you relay to the
+user. They open the page to review, then commit or discard.
+
+WHY this matters: whole-page re-emissions from chat models silently lose
+content — they paraphrase, condense, omit. The Pages agent is configured
+with the right model + caps + safety rules, and writes to \`draft_doc\` so
+the user can review before commit. **If the user has a page they care about,
+handing the styling job to Pages is the safe default.**
+
+Exceptions (DO it yourself, don't delegate):
+- Creating a NEW page from your own composed content (\`page_create\`)
+- Importing a file as a new page (\`page_from_file\`) — already deterministic
+- Renaming a page or changing tags only (single-field \`page_update\`)
+- Reading a page to answer a question (\`page_get\`)`;
 
 const SKILL_DESCRIPTION =
   'Write replies as rich Notion-style documents — callouts, columns, tables, to-do lists, highlights — rendered live in the web assistant, and save/update them as pages.';

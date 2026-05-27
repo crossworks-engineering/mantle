@@ -19,6 +19,7 @@ import {
   listPages,
   markdownToDoc,
   docToText,
+  saveDraft,
   createShare,
   revokeShare,
   getActiveShareForNode,
@@ -123,6 +124,86 @@ const page_update: BuiltinToolDef = {
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
+  },
+};
+
+const page_update_draft: BuiltinToolDef = {
+  slug: 'page_update_draft',
+  name: 'Update a page (draft-only)',
+  description:
+    "Update an existing page WITHOUT publishing. Body changes (`markdown`) go to `draft_doc` — the published `doc` and its brain index are untouched until the operator opens the editor and commits. Metadata (`title` / `tags` / `icon`) updates apply directly (easily reversible if wrong). **The Pages agent uses this instead of `page_update` so a misbehaving transform can never silently overwrite the published page.** Pass ONLY the fields you're changing — every other field is left untouched. Returns a hint telling the user where to review the draft.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: 'page node id' },
+      title: { type: 'string' },
+      markdown: {
+        type: 'string',
+        description: `Replacement body — written to draft_doc, NOT the published doc. ${MARKDOWN_HINT}`,
+      },
+      tags: { type: 'array', items: { type: 'string' } },
+      icon: { type: 'string' },
+    },
+    required: ['id'],
+  },
+  handler: async (input, ctx) => {
+    const id = str(input.id).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+
+    // Metadata patch (low-risk, direct). Body change goes to draft separately.
+    const metaPatch: Record<string, unknown> = {};
+    if (typeof input.title === 'string') metaPatch.title = input.title.trim().slice(0, 200);
+    if (Array.isArray(input.tags)) metaPatch.tags = strArr(input.tags);
+    if (typeof input.icon === 'string') metaPatch.icon = input.icon.trim();
+
+    let metaUpdated = false;
+    if (Object.keys(metaPatch).length > 0) {
+      try {
+        const result = await updatePage(ctx.ownerId, id, metaPatch);
+        if (!result) return { ok: false, error: `page ${id} not found` };
+        metaUpdated = true;
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+
+    // Body change → draft only. saveDraft writes to pages.draft_doc and
+    // bumps draft_updated_at; the published `doc`, doc_text, summary,
+    // embedding, entities all stay as they were.
+    let draftSaved = false;
+    if (typeof input.markdown === 'string') {
+      try {
+        const doc = markdownToDoc(input.markdown);
+        const ok = await saveDraft(ctx.ownerId, id, doc);
+        if (!ok) return { ok: false, error: `page ${id} not found` };
+        draftSaved = true;
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+
+    if (!metaUpdated && !draftSaved) {
+      return { ok: false, error: 'nothing to update — pass title, markdown, tags, or icon' };
+    }
+
+    ctx.step?.setOutput({ id, meta_updated: metaUpdated, draft_saved: draftSaved });
+    return {
+      ok: true,
+      output: {
+        id,
+        ...(typeof metaPatch.title === 'string' ? { title: metaPatch.title } : {}),
+        meta_updated: metaUpdated,
+        draft_saved: draftSaved,
+        ...(draftSaved
+          ? {
+              hint:
+                `Body changes are in DRAFT only — the published page is unchanged. ` +
+                `Tell the user to open /pages/${id} to review the proposed body; ` +
+                `the editor shows the draft. Commit publishes, Discard reverts.`,
+            }
+          : {}),
+      },
+    };
   },
 };
 
@@ -392,6 +473,7 @@ export const PAGE_TOOLS: BuiltinToolDef[] = [
   page_create,
   page_from_file,
   page_update,
+  page_update_draft,
   page_delete,
   page_list,
   page_get,
