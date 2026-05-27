@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils';
 import type { ExplorerModel } from '@/lib/model-explorer';
 import {
   SUPPORTED_PROVIDERS,
+  getProvider,
   isProviderWired,
   providersForCapability,
 } from '@mantle/voice';
@@ -785,9 +786,15 @@ export function AgentsClient({
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider">
+                        <div className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+                          <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider">
                             {a.role}
+                          </span>
+                          <span className="shrink-0 text-[11px]">
+                            {getProvider(a.provider)?.label ?? a.provider}
+                          </span>
+                          <span className="shrink-0 text-[11px]" aria-hidden>
+                            ·
                           </span>
                           <code className="truncate font-mono text-[11px]">{a.model}</code>
                         </div>
