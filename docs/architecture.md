@@ -1521,7 +1521,10 @@ from this list; what's here is genuinely still open.
   agents forms expose the full provider dropdown; KeyValidityHint
   warns on cross-provider key mismatches. See [`ai-workers.md` §8.1](./ai-workers.md#81-provider-routing-today--what-goes-through-what)
   for the per-kind routing table and §7 for the shipped-stage list
-  with commit shas.
+  with commit shas. The architecture deep-dive + engineering
+  retrospective (call-site inventory, message-grammar walkthrough,
+  audit findings, cost math, known sharp edges) lives in
+  [`docs/phase-3-retrospective.md`](./phase-3-retrospective.md).
 - **Embedding is fully adapter-routed** as of the Stage 1 push
   (5dc3984). `@mantle/embeddings` dispatches through
   `getEmbeddingAdapter(provider)` — five adapters (openrouter, openai,
