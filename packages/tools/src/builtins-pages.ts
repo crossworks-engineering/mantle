@@ -94,7 +94,7 @@ const page_update: BuiltinToolDef = {
   slug: 'page_update',
   name: 'Update a page',
   description:
-    "Update an existing page by id. **Pass ONLY the fields you're changing — every other field is left untouched.** Fixing the title? Pass `{ id, title }`, nothing else. Re-tagging? Pass `{ id, tags }`. Pass `markdown` ONLY when you intend to replace the whole body — re-emitting it just to bundle a metadata fix is wasted output tokens (a 5K-token body adds 5K tokens of cost + risks truncation). `markdown` REPLACES the body in one shot (re-converted, page re-indexed); use page_get first if you need to read the current content before crafting a replacement.",
+    "Update an existing page by id. **Pass ONLY the fields you're changing — every other field is left untouched.** Fixing the title? Pass `{ id, title }`, nothing else. Re-tagging? Pass `{ id, tags }`. Pass `markdown` ONLY when you intend to replace the whole body — re-emitting it just to bundle a metadata fix is wasted output tokens (a 5K-token body adds 5K tokens of cost + risks truncation). `markdown` REPLACES the body in one shot (re-converted, page re-indexed); use page_get first if you need to read the current content before crafting a replacement. **For styling/restyling/reformatting an existing page (callouts, columns, restructure), DELEGATE to the `pages` agent via `invoke_agent` instead — the pages agent writes to draft_doc only and won't silently overwrite the live page on a bad transform.**",
   inputSchema: {
     type: 'object',
     properties: {
@@ -278,7 +278,7 @@ const page_get: BuiltinToolDef = {
   slug: 'page_get',
   name: 'Get a page',
   description:
-    'Read one page by id. Returns the title, tags, summary, and the document as plaintext (`content`). To edit it, send a full replacement body via page_update.',
+    "Read one page by id. Returns the title, tags, summary, and the document as plaintext (`content`). To edit metadata only (title / tags / icon), use `page_update`. **For body styling or restyling on an existing page, delegate to the `pages` agent via `invoke_agent` — it writes to draft_doc only (preserves the live page) and is configured with the right model + safety rules for whole-doc transforms.** For block-level structure (which blocks exist, addressable by id) use `page_blocks_list` instead — lighter, no body returned.",
   inputSchema: {
     type: 'object',
     properties: {

@@ -205,10 +205,13 @@ async function main() {
     systemPrompt: SYSTEM_PROMPT,
     toolSlugs: TOOL_SLUGS,
     skillSlugs: skillSlug ? [skillSlug] : [],
-    // 16K covers whole-doc transforms on pages up to ~12 KB comfortably. Phase
-    // 2b (block-addressed edits) is what handles larger pages without the
-    // output cap mattering.
-    params: { temperature: 0.3, max_tokens: 16000 },
+    // Sonnet 4.6 via OpenRouter advertises a 128K output cap (1M context).
+    // 32K is the sweet spot for Phase 2a whole-doc transforms — comfortably
+    // fits ~25 KB body without truncation while keeping the paraphrase-loss
+    // surface bounded (bigger cap = bigger window for the model to silently
+    // condense, even with the HARD RULE). Phase 2b (block-addressed edits)
+    // is what handles larger pages without the output cap mattering at all.
+    params: { temperature: 0.3, max_tokens: 32000 },
     priority: 100,
     enabled: true,
   };
