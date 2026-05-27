@@ -22,6 +22,9 @@ Companion docs:
 - [`pages.md`](./pages.md) — the Notion-style rich-document content type:
   TipTap editor, draft/commit model, custom blocks, and how pages plug into
   the brain (incl. `content_chunks` chunked retrieval + re-extract semantics).
+  Also covers the **"Pages" delegate agent** + Phase 2b block-addressed
+  editing (stable per-block ids, `page_blocks_list`, `page_block_*` tools)
+  + the Phase 3a editor AI-assist side panel.
 - [`recall.md`](./recall.md) — "Remy", the memory-recall agent: time-windowed
   replay of past conversations (`find_window` → `recall_window`) via the
   `invoke_agent` delegation path. Lossless paging vs. lossy digests.
@@ -542,6 +545,25 @@ whether to keep it via `note_create` (then the extractor indexes it).
 Both targets are wired into the responder's `delegate_to` by their seed
 scripts (`pnpm -C apps/web seed:remy` / `seed:researcher`). Full detail
 in [`recall.md`](./recall.md).
+
+**Shipped delegation target — "Pages" (document authoring + editing).**
+The third delegate, scoped to the `/pages` surface. Saskia hands off
+any existing-page transform (restyle, reformat, add callouts,
+restructure) and any file → page import to `pages` (slug); Pages
+operates on stable per-block ids (Phase 2b) via `page_blocks_list` →
+`page_block_get` → `page_block_update` (and `_insert_after`,
+`_delete`), so the output bytes scale with the **change**, not the
+document size — the lever that whole-doc round-trips through chat
+models lacks. All writes land in `pages.draft_doc` (never `doc`); the
+operator commits via the editor or via the new AI-assist side panel
+([`pages.md` §4 / §8](./pages.md)). Three structural protections worth
+naming: Pages does NOT hold `page_update` (the live-overwrite path)
+in its tool list, only `page_update_draft` + the block tools; its
+persona carries a HARD RULE preserving every word verbatim with a
+pre-flight word-count check; the editor's existing draft/commit
+machinery is the off-ramp if the model misbehaves. Seed:
+`pnpm -C apps/web seed:pages`. Model: `anthropic/claude-sonnet-4.6`,
+`max_tokens: 32000`.
 
 ## 9c. Encrypted API key vault
 

@@ -24,6 +24,7 @@ export function PageEditor({
   onChange,
   onBlur,
   onEditorReady,
+  editable = true,
 }: {
   content: JSONContent;
   onChange: (doc: JSONContent) => void;
@@ -32,6 +33,11 @@ export function PageEditor({
   /** Hands the editor instance up once ready (e.g. so the title can move focus
    *  into the body on Enter). */
   onEditorReady?: (editor: Editor) => void;
+  /** Toggle write access. Used by the AI-assist panel to lock the editor
+   *  while Pages is running — prevents the race where user typing lands
+   *  in `draft_doc` via autosave while the agent is mid-compute, then
+   *  gets clobbered by the agent's saveDraft at the end. */
+  editable?: boolean;
 }) {
   const onChangeRef = useRef(onChange);
   const onBlurRef = useRef(onBlur);
@@ -92,6 +98,12 @@ export function PageEditor({
     editorRef.current = editor;
     if (editor) onReadyRef.current?.(editor);
   }, [editor]);
+
+  // Sync TipTap's editable flag with the prop. setEditable also re-renders
+  // the view so the contenteditable attribute + selection handling update.
+  useEffect(() => {
+    if (editor) editor.setEditable(editable);
+  }, [editor, editable]);
 
   if (!editor) return null;
 

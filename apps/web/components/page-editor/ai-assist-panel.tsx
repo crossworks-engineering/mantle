@@ -26,7 +26,7 @@
  *   - Streaming token output. The endpoint is request/response.
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Send, Sparkles, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -59,6 +59,7 @@ export function AiAssistPanel({
   pageId,
   onChanged,
   onClose,
+  onPendingChange,
 }: {
   pageId: string;
   /** Called after Pages successfully edits the draft, so the parent can
@@ -66,6 +67,11 @@ export function AiAssistPanel({
   onChanged: () => void;
   /** Collapse the panel. The parent re-renders without it. */
   onClose: () => void;
+  /** Bubbles up the pending state so the parent can lock the editor
+   *  while Pages is running (prevents the race where user typing
+   *  lands in draft_doc while Pages is computing on a stale baseline,
+   *  then gets clobbered by Pages's saveDraft). */
+  onPendingChange?: (pending: boolean) => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState('');
@@ -73,6 +79,15 @@ export function AiAssistPanel({
   const [discarding, setDiscarding] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
+
+  // Bubble the pending flag up so the parent can lock the editor while
+  // the AI call is in flight. The cleanup releases the lock on unmount
+  // (defensive — should never fire while pending, but if the user closes
+  // the panel mid-call the editor must come back unlocked).
+  useEffect(() => {
+    onPendingChange?.(pending);
+    return () => onPendingChange?.(false);
+  }, [pending, onPendingChange]);
 
   const submit = useCallback(async () => {
     const prompt = draft.trim();
@@ -171,7 +186,11 @@ export function AiAssistPanel({
       {messages.some((m) => m.role === 'assistant' && (m.data.diff.added + m.data.diff.changed + m.data.diff.removed > 0)) && (
         <div className="border-t border-border bg-background/40 px-3 py-2 text-xs">
           <p className="text-muted-foreground">
-            Editor is showing the draft. Use the toolbar to <strong>Commit</strong> when ready, or:
+            Editor is showing the draft. Use the toolbar to <strong>Commit</strong> when ready, or revert below.
+          </p>
+          <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">
+            ⚠ Revert wipes the <strong>entire draft</strong> — both Pages&apos; changes AND
+            any unsaved typing of yours. Per-block discard is queued for Phase 3a.2.
           </p>
           <Button
             type="button"
@@ -181,7 +200,7 @@ export function AiAssistPanel({
             onClick={discardDraft}
             disabled={discarding}
           >
-            {discarding ? 'Discarding…' : 'Discard all draft changes'}
+            {discarding ? 'Reverting…' : 'Revert draft to last commit'}
           </Button>
         </div>
       )}

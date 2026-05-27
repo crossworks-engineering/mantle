@@ -245,6 +245,7 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
   // initial.draft; remount is the cleanest swap).
   const [aiOpen, setAiOpen] = useState(false);
   const [editorKey, setEditorKey] = useState(0);
+  const [aiPending, setAiPending] = useState(false);
   const onAiChanged = useCallback(() => {
     // Pull the latest draft from the server. router.refresh re-runs the
     // server component which re-reads getPage; the new initial.draft
@@ -349,7 +350,13 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
                 onChange={onDocChange}
                 onBlur={onEditorBlur}
                 onEditorReady={onEditorReady}
+                editable={!aiPending}
               />
+              {aiPending && (
+                <p className="mt-3 pl-10 text-xs italic text-muted-foreground">
+                  Editor locked while Pages is editing — your changes are safe.
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -359,6 +366,7 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
               pageId={initial.id}
               onChanged={onAiChanged}
               onClose={() => setAiOpen(false)}
+              onPendingChange={setAiPending}
             />
           </div>
         )}
