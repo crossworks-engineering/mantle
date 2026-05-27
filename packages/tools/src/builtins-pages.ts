@@ -92,7 +92,7 @@ const page_update: BuiltinToolDef = {
   slug: 'page_update',
   name: 'Update a page',
   description:
-    "Update an existing page by id. Any field omitted is left unchanged. Pass `markdown` to REPLACE the whole document body (it's re-converted and the page is re-indexed). Use page_get first to read the current content if you're making a targeted edit. `title`, `tags`, `icon` update metadata.",
+    "Update an existing page by id. **Pass ONLY the fields you're changing — every other field is left untouched.** Fixing the title? Pass `{ id, title }`, nothing else. Re-tagging? Pass `{ id, tags }`. Pass `markdown` ONLY when you intend to replace the whole body — re-emitting it just to bundle a metadata fix is wasted output tokens (a 5K-token body adds 5K tokens of cost + risks truncation). `markdown` REPLACES the body in one shot (re-converted, page re-indexed); use page_get first if you need to read the current content before crafting a replacement.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -262,15 +262,24 @@ const page_from_file: BuiltinToolDef = {
     const res = await readFileById({ ownerId: ctx.ownerId, fileId });
     if (!res) return { ok: false, error: 'file bytes unavailable' };
 
-    // Title resolution: explicit arg wins; otherwise derive from filename
-    // (strip extension, swap dashes/underscores for spaces, fall back to
-    // 'Untitled' on the empty result).
+    // Title resolution: explicit arg wins; otherwise derive from filename.
+    // Assistant + Telegram uploads land as
+    //   '<unix-ms-timestamp>-<slug>-<hex-hash>.<ext>'
+    // (the server's collision-safe naming scheme). The naive
+    // strip-ext + dashes→spaces derivation surfaced that as a useless
+    // 'Untitled' substitute — '1779877120189 he is the potter we are
+    // the clay 3621047f3c9e80ba96a9e6f6c08'. Try to recover the slug
+    // first; fall back to the naive form for hand-named uploads.
     const titleArg = str(input.title).trim();
+    const baseName = (meta.filename ?? 'Untitled').replace(/\.[^.]+$/, '');
+    const uploadPattern = /^\d{10,}-(.+?)-[a-f0-9]{20,}$/i;
+    const uploadMatch = baseName.match(uploadPattern);
+    const slugSource = uploadMatch ? uploadMatch[1]! : baseName;
     const derivedTitle =
-      (meta.filename ?? 'Untitled')
-        .replace(/\.[^.]+$/, '')
+      slugSource
         .replace(/[-_]+/g, ' ')
-        .trim() || 'Untitled';
+        .trim()
+        .replace(/^./, (c) => c.toUpperCase()) || 'Untitled';
     const title = (titleArg || derivedTitle).slice(0, 200);
 
     const tags = strArr(input.tags);

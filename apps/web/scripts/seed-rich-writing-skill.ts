@@ -136,9 +136,12 @@ like the reply you showed:
   file → page operation; reading then re-emitting the body will silently
   truncate near your max_tokens cap. Title defaults to the file basename if
   you omit it.
-- **page_update** { id, markdown? | title? | tags? } — \`markdown\` REPLACES the
-  whole body. page_get first if you're doing a targeted edit, then send the full
-  revised body.
+- **page_update** { id, markdown? | title? | tags? } — pass ONLY the fields
+  you're changing; omitted fields stay untouched. Fixing just the title? Send
+  \`{ id, title }\` — DO NOT also re-emit \`markdown\`, it's pure wasted output.
+  Pass \`markdown\` only when you actually want to replace the body (it
+  REPLACES in one shot). For a targeted body edit, page_get first, then send
+  the full revised body.
 - **page_get** { id } / **page_list** { query?, tag? } — read/find pages.
 - **page_delete** { id } — irreversible; confirm with the user first (it pauses
   for approval).
