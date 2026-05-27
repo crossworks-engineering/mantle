@@ -210,6 +210,104 @@ describe('anthropic-chat tool translation', () => {
     });
   });
 
+  it('cacheControl.lastUserMessage marks the trailing tool_result block on iter 2+ shape', async () => {
+    // The tool-loop's iter 2+ shape: previous assistant turn carried
+    // tool_use blocks; we coalesce the matching `tool` messages into
+    // a single user message with tool_result blocks. The cache marker
+    // should land on the trailing tool_result block — without this,
+    // only iter 1's [system, user_new] prefix caches and every later
+    // iteration pays full input rate on the growing suffix. This
+    // test is the safety net for the audit-#4 fix.
+    const calls = captureFetch({
+      content: [{ type: 'text', text: 'done' }],
+      model: 'claude-sonnet-4-6',
+      usage: {},
+    });
+    await anthropicChatAdapter.chat({
+      apiKey: 'sk-test',
+      model: 'claude-sonnet-4-6',
+      messages: [
+        { role: 'user', content: 'do two things' },
+        {
+          role: 'assistant',
+          content: null,
+          toolCalls: [
+            {
+              id: 'toolu_1',
+              type: 'function',
+              function: { name: 'a', arguments: '{}' },
+            },
+            {
+              id: 'toolu_2',
+              type: 'function',
+              function: { name: 'b', arguments: '{}' },
+            },
+          ],
+        },
+        { role: 'tool', toolCallId: 'toolu_1', content: 'res-a' },
+        { role: 'tool', toolCallId: 'toolu_2', content: 'res-b' },
+      ],
+      cacheControl: { lastUserMessage: true },
+    });
+    const body = JSON.parse(calls[0]!.body);
+    // The coalesced user message has two tool_result blocks; the
+    // cache marker lands on the LAST one (covers the cumulative
+    // prefix up through this turn).
+    expect(body.messages[2]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'tool_result', tool_use_id: 'toolu_1', content: 'res-a' },
+        {
+          type: 'tool_result',
+          tool_use_id: 'toolu_2',
+          content: 'res-b',
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
+    });
+    // The FIRST user message (the original inbound) is NOT marked —
+    // only the last user message in the array gets the marker.
+    expect(body.messages[0]).toEqual({ role: 'user', content: 'do two things' });
+  });
+
+  it('cacheControl.lastUserMessage marks the trailing image block on a vision turn', async () => {
+    // Responder turn carrying an image: the last user message is
+    // already array-shaped (text + image). The marker should attach
+    // to the trailing block (image) — the prefix-cache covers
+    // everything up through the image.
+    const calls = captureFetch({
+      content: [{ type: 'text', text: 'I see a cat' }],
+      model: 'claude-sonnet-4-6',
+      usage: {},
+    });
+    await anthropicChatAdapter.chat({
+      apiKey: 'sk-test',
+      model: 'claude-sonnet-4-6',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'what is this?' },
+            {
+              type: 'image_url',
+              imageUrl: { url: 'data:image/png;base64,iVBORw0KGgo=' },
+            },
+          ],
+        },
+      ],
+      cacheControl: { lastUserMessage: true },
+    });
+    const body = JSON.parse(calls[0]!.body);
+    expect(body.messages[0].content[0]).toEqual({
+      type: 'text',
+      text: 'what is this?',
+    });
+    expect(body.messages[0].content[1]).toMatchObject({
+      type: 'image',
+      cache_control: { type: 'ephemeral' },
+    });
+  });
+
   it('drops the tools field when toolChoice is "none"', async () => {
     const calls = captureFetch({
       content: [{ type: 'text', text: 'ok' }],

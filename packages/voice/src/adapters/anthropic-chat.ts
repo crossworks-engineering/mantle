@@ -50,6 +50,11 @@ type AnthropicToolUseBlock = {
   id: string;
   name: string;
   input: Record<string, unknown>;
+  /** Anthropic supports cache_control on tool_use blocks too. We
+   *  don't currently set it from this adapter (the runtime marks
+   *  user turns), but the field is kept so a downstream marker
+   *  function can attach it without a type cast. */
+  cache_control?: { type: 'ephemeral' };
 };
 
 type AnthropicToolResultBlock = {
@@ -59,6 +64,13 @@ type AnthropicToolResultBlock = {
   /** Set on the tool result when our local handler errored — Claude
    *  uses this to decide whether to retry vs. surface the failure. */
   is_error?: boolean;
+  /** Cache marker for the tool-loop. The runtime sets this on the
+   *  last tool_result block of the last user message every iteration
+   *  so the growing conversation prefix accumulates cache writes,
+   *  letting iter N+1 cache-read iter N's tool exchange. Anthropic's
+   *  4-breakpoint cap covers system (1) + lastUserMessage (1) — two
+   *  breakpoints, well under the cap. */
+  cache_control?: { type: 'ephemeral' };
 };
 
 /** Anthropic image block. The `source` shape varies by encoding:
@@ -72,6 +84,10 @@ type AnthropicImageBlock = {
   source:
     | { type: 'base64'; media_type: string; data: string }
     | { type: 'url'; url: string };
+  /** Cache marker for vision turns whose image is the last content
+   *  block of a user message (runtime emits this shape on
+   *  responder turns with image attachments). */
+  cache_control?: { type: 'ephemeral' };
 };
 
 type AnthropicContentBlock =
@@ -354,26 +370,21 @@ async function anthropicChat(opts: ChatOptions): Promise<ChatResult> {
   } else {
     systemField = undefined;
   }
+  // Mark the last user message for caching. Critical for the tool
+  // loop: on iter 2+ the last user message in the translated array is
+  // a synthetic user wrapping tool_result blocks (the runtime's
+  // consecutive `tool` messages coalesce into one user/tool_result on
+  // the Anthropic wire). Marking it lets iter N+1 cache-read iter N's
+  // tool exchange — without this, only iter 1's [system, user_new]
+  // prefix caches and every subsequent iter pays full input rate on
+  // the growing suffix. Anthropic supports cache_control on every
+  // content-block type (text, tool_use, tool_result, image), so the
+  // helper below attaches to whatever's at the tail without caring
+  // about its shape.
   const lastUserIdx = cacheControl?.lastUserMessage ? lastUserIndex(rest) : -1;
-  const messagesField: AnthropicMessage[] = rest.map((m, idx) => {
-    if (idx !== lastUserIdx) return m;
-    // The lastUser marker only attaches to a plain-string user message;
-    // a user message that's already a tool_result block array is left
-    // alone (cache_control on tool_result blocks isn't supported the
-    // same way, and tool-loop calls have their own cache shape via
-    // the system block).
-    if (typeof m.content !== 'string') return m;
-    return {
-      role: m.role,
-      content: [
-        {
-          type: 'text',
-          text: m.content,
-          cache_control: { type: 'ephemeral' },
-        },
-      ],
-    };
-  });
+  const messagesField: AnthropicMessage[] = rest.map((m, idx) =>
+    idx === lastUserIdx ? markLastBlockForCache(m) : m,
+  );
 
   const tools = buildAnthropicTools(opts);
 
@@ -439,6 +450,46 @@ function lastUserIndex(messages: AnthropicMessage[]): number {
     if (messages[i]!.role === 'user') return i;
   }
   return -1;
+}
+
+/** Attach a cache_control marker to the LAST content block of a user
+ *  message, regardless of its block type.
+ *
+ *  Three shapes the runtime might hand us:
+ *    - Plain-string content (the typical inbound text turn) → wrap as
+ *      a single text block carrying cache_control.
+ *    - Array content with the trailing block a text/image/tool_result
+ *      → clone the array and tag the last block. The marker applies
+ *      cumulatively (caches the entire prefix up through this turn).
+ *    - Empty array (defensive — shouldn't happen) → return the
+ *      message unchanged rather than emit a malformed block array.
+ *
+ *  Anthropic's 4-breakpoint cap: with systemPrompt + lastUserMessage
+ *  we ship at most 2 per request, well under. */
+function markLastBlockForCache(message: AnthropicMessage): AnthropicMessage {
+  if (typeof message.content === 'string') {
+    return {
+      role: message.role,
+      content: [
+        {
+          type: 'text',
+          text: message.content,
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
+    };
+  }
+  if (message.content.length === 0) return message;
+  // Clone the array + replace the last block with a marker-bearing
+  // copy. Spread on each block type preserves the discriminant so the
+  // wire shape stays valid.
+  const blocks = message.content.slice();
+  const last = blocks[blocks.length - 1]!;
+  blocks[blocks.length - 1] = {
+    ...last,
+    cache_control: { type: 'ephemeral' },
+  } as AnthropicContentBlock;
+  return { role: message.role, content: blocks };
 }
 
 /** Translate an OpenAI-shape image_url (which may be a data URL or a
