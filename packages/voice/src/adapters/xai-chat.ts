@@ -20,127 +20,24 @@ import type {
   ChatModelInfo,
   ChatOptions,
   ChatResult,
-  ChatToolCall,
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { XAI_BASE_URL, XAI_CHAT_MODELS } from '../catalogs/xai';
+import {
+  extractOpenAICompatToolCalls,
+  toOpenAICompatMessages,
+  type OpenAICompatChatResponse,
+} from './openai-compat';
 
-type XaiToolCall = {
+/** xAI's chat response shape — the shared OpenAI-compat envelope plus
+ *  one xAI-specific quirk: some routes return `choices[].text` as a
+ *  legacy fallback when `message.content` is empty. */
+type XaiChatResponse = OpenAICompatChatResponse & {
   id: string;
-  type: 'function';
-  function: { name: string; arguments: string };
+  choices: Array<
+    OpenAICompatChatResponse['choices'][number] & { text?: string }
+  >;
 };
-
-type XaiChatResponse = {
-  id: string;
-  model: string;
-  choices: Array<{
-    message?: {
-      role: string;
-      content?: string | null;
-      tool_calls?: XaiToolCall[];
-    };
-    text?: string;
-  }>;
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    /** xAI's automatic prompt caching surfaces hits via the OpenAI-
-     *  compatible `prompt_tokens_details.cached_tokens` field. No
-     *  cache_control markers needed — Grok applies caching server-side
-     *  based on prefix match. */
-    prompt_tokens_details?: { cached_tokens?: number };
-  };
-};
-
-/** xAI image content part — OpenAI-compat shape with snake_case
- *  image_url on the wire (Grok's vision endpoint accepts this exact
- *  shape since their API mirrors OpenAI's). */
-type XaiImageBlock = {
-  type: 'image_url';
-  image_url: { url: string; detail?: 'auto' | 'low' | 'high' };
-};
-
-type XaiTextBlock = { type: 'text'; text: string };
-
-/** xAI accepts OpenAI-shape messages. Tool messages use `tool_call_id`
- *  on the wire (snake_case); the adapter converts our `toolCallId`.
- *  User content can be a plain string OR an array of content parts
- *  (text + image_url) for vision-capable Grok models. */
-type XaiMessage =
-  | { role: 'system'; content: string }
-  | {
-      role: 'user';
-      content: string | Array<XaiTextBlock | XaiImageBlock>;
-    }
-  | {
-      role: 'assistant';
-      content: string | null;
-      tool_calls?: XaiToolCall[];
-    }
-  | { role: 'tool'; tool_call_id: string; content: string };
-
-function toXaiMessages(messages: ChatOptions['messages']): XaiMessage[] {
-  return messages.map((m): XaiMessage => {
-    if (m.role === 'system') {
-      // Flatten array-form system to a concatenated string. xAI's
-      // automatic prompt caching is opaque + prefix-based, so the
-      // joined text caches the same way the segmented form would
-      // (just without per-block cache_control breakpoints, which
-      // xAI doesn't expose anyway).
-      const content =
-        typeof m.content === 'string'
-          ? m.content
-          : m.content.map((p) => p.text).join('\n\n');
-      return { role: 'system', content };
-    }
-    if (m.role === 'user') {
-      if (typeof m.content === 'string') {
-        return { role: 'user', content: m.content };
-      }
-      // Multimodal array: translate text + image_url parts. xAI's
-      // wire format is camelCase imageUrl → snake_case image_url, so
-      // we rename here.
-      const parts: Array<XaiTextBlock | XaiImageBlock> = m.content.map(
-        (p): XaiTextBlock | XaiImageBlock => {
-          if (p.type === 'text') return { type: 'text', text: p.text };
-          return {
-            type: 'image_url',
-            image_url: {
-              url: p.imageUrl.url,
-              ...(p.imageUrl.detail ? { detail: p.imageUrl.detail } : {}),
-            },
-          };
-        },
-      );
-      return { role: 'user', content: parts };
-    }
-    if (m.role === 'assistant') {
-      const tc = 'toolCalls' in m && m.toolCalls
-        ? m.toolCalls.map((c) => ({ id: c.id, type: 'function' as const, function: c.function }))
-        : undefined;
-      return {
-        role: 'assistant',
-        content: (m.content as string | null) ?? null,
-        ...(tc ? { tool_calls: tc } : {}),
-      };
-    }
-    // tool
-    return { role: 'tool', tool_call_id: m.toolCallId, content: m.content };
-  });
-}
-
-function extractXaiToolCalls(
-  message: XaiChatResponse['choices'][number]['message'],
-): ChatToolCall[] | undefined {
-  const tc = message?.tool_calls;
-  if (!tc || tc.length === 0) return undefined;
-  return tc.map((c) => ({
-    id: c.id,
-    type: 'function' as const,
-    function: { name: c.function.name, arguments: c.function.arguments ?? '{}' },
-  }));
-}
 
 type ListModelsResponse = {
   data?: Array<{ id: string }>;
@@ -154,7 +51,7 @@ async function xaiChat(opts: ChatOptions): Promise<ChatResult> {
 
   const body: Record<string, unknown> = {
     model: opts.model,
-    messages: toXaiMessages(opts.messages),
+    messages: toOpenAICompatMessages(opts.messages),
     ...(tools ? { tools } : {}),
     ...(opts.toolChoice ? { tool_choice: opts.toolChoice } : {}),
     ...(typeof opts.temperature === 'number' ? { temperature: opts.temperature } : {}),
@@ -182,7 +79,7 @@ async function xaiChat(opts: ChatOptions): Promise<ChatResult> {
   // response routing.
   const message = parsed.choices?.[0]?.message;
   const text = message?.content ?? parsed.choices?.[0]?.text ?? '';
-  const toolCalls = extractXaiToolCalls(message);
+  const toolCalls = extractOpenAICompatToolCalls(message);
   return {
     text: text.trim(),
     model: parsed.model || opts.model,

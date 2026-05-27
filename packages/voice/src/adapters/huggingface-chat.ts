@@ -31,7 +31,6 @@ import type {
   ChatModelInfo,
   ChatOptions,
   ChatResult,
-  ChatToolCall,
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import {
@@ -40,107 +39,18 @@ import {
   HUGGINGFACE_ROUTING_POLICIES,
   type HuggingfaceRoutingPolicy,
 } from '../catalogs/huggingface';
+import {
+  extractOpenAICompatToolCalls,
+  toOpenAICompatMessages,
+  type OpenAICompatChatResponse,
+} from './openai-compat';
 
-type HfToolCall = {
-  id: string;
-  type: 'function';
-  function: { name: string; arguments: string };
-};
-
-type HfChatResponse = {
-  model: string;
-  choices: Array<{
-    message?: {
-      role: string;
-      content?: string | null;
-      tool_calls?: HfToolCall[];
-    };
-  }>;
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    /** Some HF sub-providers (Cerebras, Together) surface OpenAI-style
-     *  cached_tokens. The HF router itself doesn't standardise it, so
-     *  it may be undefined for any given route. */
-    prompt_tokens_details?: { cached_tokens?: number };
-  };
-};
-
-type HfImageBlock = {
-  type: 'image_url';
-  image_url: { url: string; detail?: 'auto' | 'low' | 'high' };
-};
-
-type HfTextBlock = { type: 'text'; text: string };
-
-type HfMessage =
-  | { role: 'system'; content: string }
-  | {
-      role: 'user';
-      content: string | Array<HfTextBlock | HfImageBlock>;
-    }
-  | {
-      role: 'assistant';
-      content: string | null;
-      tool_calls?: HfToolCall[];
-    }
-  | { role: 'tool'; tool_call_id: string; content: string };
-
-function toHfMessages(messages: ChatOptions['messages']): HfMessage[] {
-  return messages.map((m): HfMessage => {
-    if (m.role === 'system') {
-      // Flatten array-form system content. HF doesn't expose
-      // cache_control breakpoints — the underlying sub-providers
-      // handle caching automatically based on prefix match.
-      const content =
-        typeof m.content === 'string'
-          ? m.content
-          : m.content.map((p) => p.text).join('\n\n');
-      return { role: 'system', content };
-    }
-    if (m.role === 'user') {
-      if (typeof m.content === 'string') {
-        return { role: 'user', content: m.content };
-      }
-      const parts: Array<HfTextBlock | HfImageBlock> = m.content.map(
-        (p): HfTextBlock | HfImageBlock => {
-          if (p.type === 'text') return { type: 'text', text: p.text };
-          return {
-            type: 'image_url',
-            image_url: {
-              url: p.imageUrl.url,
-              ...(p.imageUrl.detail ? { detail: p.imageUrl.detail } : {}),
-            },
-          };
-        },
-      );
-      return { role: 'user', content: parts };
-    }
-    if (m.role === 'assistant') {
-      const tc = 'toolCalls' in m && m.toolCalls
-        ? m.toolCalls.map((c) => ({ id: c.id, type: 'function' as const, function: c.function }))
-        : undefined;
-      return {
-        role: 'assistant',
-        content: (m.content as string | null) ?? null,
-        ...(tc ? { tool_calls: tc } : {}),
-      };
-    }
-    return { role: 'tool', tool_call_id: m.toolCallId, content: m.content };
-  });
-}
-
-function extractHfToolCalls(
-  message: HfChatResponse['choices'][number]['message'],
-): ChatToolCall[] | undefined {
-  const tc = message?.tool_calls;
-  if (!tc || tc.length === 0) return undefined;
-  return tc.map((c) => ({
-    id: c.id,
-    type: 'function' as const,
-    function: { name: c.function.name, arguments: c.function.arguments ?? '{}' },
-  }));
-}
+/** HF's router speaks the OpenAI-compat wire shape verbatim — no
+ *  provider-specific quirks on the response side. Aliasing the shared
+ *  type keeps existing imports stable; future HF-router-specific
+ *  fields (sub-provider metadata, routing telemetry) can hang off the
+ *  intersection without touching the call sites. */
+type HfChatResponse = OpenAICompatChatResponse;
 
 type HfListModelsResponse = {
   data?: Array<{ id: string }>;
@@ -177,7 +87,7 @@ async function hfChat(opts: ChatOptions): Promise<ChatResult> {
 
   const body: Record<string, unknown> = {
     model,
-    messages: toHfMessages(opts.messages),
+    messages: toOpenAICompatMessages(opts.messages),
     ...(tools ? { tools } : {}),
     ...(opts.toolChoice ? { tool_choice: opts.toolChoice } : {}),
     ...(typeof opts.temperature === 'number' ? { temperature: opts.temperature } : {}),
@@ -201,7 +111,7 @@ async function hfChat(opts: ChatOptions): Promise<ChatResult> {
   const parsed = (await res.json()) as HfChatResponse;
   const message = parsed.choices?.[0]?.message;
   const text = message?.content ?? '';
-  const toolCalls = extractHfToolCalls(message);
+  const toolCalls = extractOpenAICompatToolCalls(message);
   return {
     text: text.trim(),
     // Echo the model HF says it actually served — useful for /traces
