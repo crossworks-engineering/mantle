@@ -239,20 +239,41 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
   };
 
   // AI assist panel state. Toggled on/off by the Sparkles button in the
-  // toolbar. When Pages writes to the draft we bump editorKey to force
-  // PageEditor to remount with the freshly-loaded draft content (router.
-  // refresh would re-fetch but PageEditor uses controlled content via
-  // initial.draft; remount is the cleanest swap).
+  // toolbar.
   const [aiOpen, setAiOpen] = useState(false);
   const [editorKey, setEditorKey] = useState(0);
   const [aiPending, setAiPending] = useState(false);
+
+  // Watch the SERVER-PROVIDED draft prop. When router.refresh() (called
+  // from onAiChanged after the AI run completes) brings back a NEW draft
+  // identity, this effect fires and bumps editorKey — which is what
+  // remounts PageEditor with the new content. TipTap's useEditor({ content })
+  // only seeds on mount, so remount is the correct primitive here. We
+  // can't bump editorKey synchronously inside onAiChanged because
+  // router.refresh() is async: the remount would race the prop update
+  // and reseed the editor with the STALE draft (Phase 3a Pass 1 bug:
+  // 'panel says it changed the page but the editor doesn't update').
+  const lastDraftRef = useRef<string>(JSON.stringify(initial.draft ?? null));
+  useEffect(() => {
+    const current = JSON.stringify(initial.draft ?? null);
+    if (current !== lastDraftRef.current) {
+      lastDraftRef.current = current;
+      // Also refresh our 'last committed' / 'last autosaved' refs to
+      // the new state so the editor doesn't immediately think it's dirty
+      // and re-autosave the freshly-arrived draft.
+      committedRef.current = JSON.stringify(initial.doc);
+      draftSavedRef.current = current;
+      setDocDirty(JSON.stringify(initial.draft ?? initial.doc) !== JSON.stringify(initial.doc));
+      setEditorKey((k) => k + 1);
+    }
+  }, [initial.draft, initial.doc]);
+
   const onAiChanged = useCallback(() => {
     // Pull the latest draft from the server. router.refresh re-runs the
     // server component which re-reads getPage; the new initial.draft
-    // propagates down. We also bump the editorKey so PageEditor remounts
-    // rather than diff-patching (TipTap's setContent has edge cases on
-    // large doc swaps; remount is safer for an AI-driven body change).
-    setEditorKey((k) => k + 1);
+    // propagates down. The useEffect above detects the prop change and
+    // bumps editorKey THEN — so PageEditor remounts with the right
+    // content, not the stale-before-refetch content.
     router.refresh();
   }, [router]);
 
