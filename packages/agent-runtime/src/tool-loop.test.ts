@@ -602,6 +602,149 @@ describe('runToolLoop — artifacts collection', () => {
   });
 });
 
+describe('runToolLoop — in-response duplicate suppression', () => {
+  // Some models (notably Grok-4.x) hedge by emitting multiple byte-
+  // identical tool_use blocks for the same write operation in one
+  // response. The loop must dispatch only the first and tell the model
+  // about the suppressed siblings — otherwise a `page_create` call gets
+  // executed N times, creating N pages. Real-world repro that motivated
+  // the guard: Grok emitted 3× and 2× page_create with identical
+  // arguments on two separate "move sermon to /pages" turns.
+  it('dispatches only the first of byte-identical tool calls within one response', async () => {
+    const tool = fakeTool({ slug: 'page_create' });
+    const args = '{"title":"Stand in Awe","markdown":"# Stand in Awe"}';
+    const { adapter } = makeFakeAdapter([
+      {
+        type: 'toolCalls',
+        toolCalls: [
+          { id: 'call_1', type: 'function', function: { name: 'page_create', arguments: args } },
+          { id: 'call_2', type: 'function', function: { name: 'page_create', arguments: args } },
+          { id: 'call_3', type: 'function', function: { name: 'page_create', arguments: args } },
+        ],
+      },
+      { type: 'text', text: 'page created' },
+    ]);
+    dispatchToolImpl = () => ({ ok: true, output: { id: 'page_42', title: 'Stand in Awe' } });
+
+    const result = await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'move sermon to /pages' }],
+      tools: [tool],
+    });
+
+    // Only ONE real dispatch despite the model emitting three tool_use blocks.
+    expect(dispatchToolCalls).toEqual([
+      { slug: 'page_create', input: { title: 'Stand in Awe', markdown: '# Stand in Awe' } },
+    ]);
+    // toolCalls record both the dispatched call and the two suppressed siblings,
+    // so /traces shows the model misbehaviour.
+    expect(result.toolCalls).toHaveLength(3);
+    expect(result.toolCalls[0]).toMatchObject({ slug: 'page_create', status: 'success' });
+    expect(result.toolCalls[1]).toMatchObject({
+      slug: 'page_create',
+      status: 'error',
+      error: 'duplicate_in_response',
+    });
+    expect(result.toolCalls[2]).toMatchObject({
+      slug: 'page_create',
+      status: 'error',
+      error: 'duplicate_in_response',
+    });
+    // Every tool_use needs a paired tool message (provider shape requirement).
+    // Suppressed calls get a synthetic envelope so the next request stays valid.
+    const toolMsgs = result.messages.filter((m) => m.role === 'tool');
+    expect(toolMsgs).toHaveLength(3);
+    expect(toolMsgs[0]!.content).toBe('{"id":"page_42","title":"Stand in Awe"}');
+    expect(toolMsgs[1]!.content).toContain('duplicate_in_response');
+    expect(toolMsgs[1]!.content).toContain('call_1'); // points at the first call.id
+    expect(toolMsgs[2]!.content).toContain('duplicate_in_response');
+    expect(toolMsgs[2]!.content).toContain('call_1');
+  });
+
+  it('treats same-name different-args as distinct (does not over-suppress)', async () => {
+    // page_create with different titles in one response is legitimate
+    // (operator asked Saskia to make two pages). The guard must key on
+    // (name, args), not just name.
+    const tool = fakeTool({ slug: 'page_create' });
+    const { adapter } = makeFakeAdapter([
+      {
+        type: 'toolCalls',
+        toolCalls: [
+          {
+            id: 'c1',
+            type: 'function',
+            function: { name: 'page_create', arguments: '{"title":"A"}' },
+          },
+          {
+            id: 'c2',
+            type: 'function',
+            function: { name: 'page_create', arguments: '{"title":"B"}' },
+          },
+        ],
+      },
+      { type: 'text', text: 'both pages created' },
+    ]);
+
+    const result = await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'make A and B' }],
+      tools: [tool],
+    });
+
+    expect(dispatchToolCalls).toEqual([
+      { slug: 'page_create', input: { title: 'A' } },
+      { slug: 'page_create', input: { title: 'B' } },
+    ]);
+    expect(result.toolCalls.every((c) => c.status === 'success')).toBe(true);
+    expect(result.reply).toBe('both pages created');
+  });
+
+  it('same call across DIFFERENT iterations dispatches both times', async () => {
+    // The dedup Map is scoped to one model response. If the model
+    // re-issues the same call in a later iteration (e.g. file_read after
+    // a previous step processed its result), both should dispatch.
+    const tool = fakeTool({ slug: 'file_read' });
+    const args = '{"file_id":"f1"}';
+    const { adapter } = makeFakeAdapter([
+      {
+        type: 'toolCalls',
+        toolCalls: [
+          { id: 'c1', type: 'function', function: { name: 'file_read', arguments: args } },
+        ],
+      },
+      {
+        type: 'toolCalls',
+        toolCalls: [
+          { id: 'c2', type: 'function', function: { name: 'file_read', arguments: args } },
+        ],
+      },
+      { type: 'text', text: 'second read done' },
+    ]);
+
+    const result = await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 're-read' }],
+      tools: [tool],
+    });
+
+    // Both dispatches happen — the guard is scoped per iteration.
+    expect(dispatchToolCalls).toHaveLength(2);
+    expect(result.toolCalls.every((c) => c.status === 'success')).toBe(true);
+  });
+});
+
 describe('runToolLoop — max iterations + force_final', () => {
   it('falls through to a force_final call with toolChoice="none" when maxIterations is exhausted', async () => {
     // Script: every iteration emits a tool call. With maxIterations=2,

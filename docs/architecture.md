@@ -1174,6 +1174,65 @@ caps embed-tier fan-out (adaptive chunking), and the TTL sweep bounds retention.
 The per-agent knobs (`inline_max` / `embed_min` / `spill_max`) live in the agents
 form; `MAX_CHUNKS` and `TTL_DAYS` are global store policy (env).
 
+## 9n. In-response duplicate tool-call guard
+
+A defensive guard against misbehaving models that emit parallel
+byte-identical `tool_use` blocks for the same write operation. Lives in
+[`tool-loop.ts`](../packages/agent-runtime/src/tool-loop.ts), inside the
+per-iteration dispatch loop.
+
+**The problem.** Some models (notably Grok-4.x) hedge by emitting
+multiple identical tool-call blocks in a single response. Pre-guard, the
+loop dispatched every one — a single "move this sermon to /pages" turn
+produced 3 duplicate pages because Grok emitted 3× `page_create` with
+byte-identical args. Same pattern on a second turn (2×). Confirmed in
+traces: same `(name, arguments)` triple, three sequential `compute
+success` steps, three rows in `nodes`.
+
+**The fix.** For each LLM response, hash every `tool_use` block by
+`(slug, raw args string)`. First occurrence dispatches normally. Each
+duplicate within the *same response*:
+
+- Does NOT call the handler.
+- Records a `tool: <slug>` step with status `skipped` and disposition
+  `duplicate_in_response` (visible in `/traces`).
+- Pushes a synthetic tool message paired with the duplicate's `call.id`
+  (provider-shape requirement — every `tool_use` must have a matching
+  `tool_result`, else the next request 400s):
+
+  ```json
+  {
+    "ok": false,
+    "error": "duplicate_in_response",
+    "note": "This exact tool call ... was suppressed ...",
+    "first_call_id": "call_1"
+  }
+  ```
+
+So the model sees its second attempt was a no-op + the id of the call
+that did land, and it can correctly tell the user "I created the page"
+rather than "I created 3 pages."
+
+**Scope: per LLM response, not lifetime of loop.** The `seenSignatures`
+Map is declared inside the iter loop. A model re-issuing the same call
+in a *later* iteration (e.g. `file_read` after processing a prior
+result) is legitimate and dispatches both times. Only same-response
+duplicates are suppressed.
+
+**Catches every mutating tool.** `page_create`, `note_create`,
+`todo_create`, `event_create`, `file_create`, `contact_create`,
+`telegram_send`, future ones. The guard is tool-agnostic — it doesn't
+look at the slug, just at byte-equal args. Non-mutating tools (`file_list`,
+`search`) gain the same protection from wasted dispatch but the
+correctness stakes are lower.
+
+**What the guard is NOT.** Not a UNIQUE constraint on `nodes (owner_id,
+title)` for pages — sermons re-preach, identical titles are legitimate
+across years. Not a per-handler "look up existing by title" — same
+reason. Not `requires_confirm: true` on every write — adds friction to
+every legitimate single call. The right scope is the tool-loop
+generically.
+
 ## 10. The MCP server
 
 `apps/mcp/src/server.ts`, ~340 LOC. Exposes Claude's tools over stdio

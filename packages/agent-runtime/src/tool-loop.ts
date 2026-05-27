@@ -264,9 +264,70 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     });
 
     // Execute each call, append tool message.
+    //
+    // In-response duplicate guard. Some models (notably Grok-4.x) hedge by
+    // emitting multiple BYTE-IDENTICAL `tool_use` blocks for the same write
+    // operation in a single response. Without this guard the loop happily
+    // dispatched all of them — 3× page_create with the same body created 3
+    // pages. Scope is per-iteration (one model response): an across-turn
+    // repeat is legitimate (the model re-reading after some processing), so
+    // the Map resets at the top of each iter. Raw-string compare is fine
+    // because models emit deterministic JSON within one response.
+    const seenSignatures = new Map<string, string>(); // signature → first call.id
     for (const call of calls) {
       const startedAt = Date.now();
       const slug = call.function.name;
+      const argsRaw = call.function.arguments ?? '{}';
+      const signature = `${slug}::${argsRaw}`;
+      const firstCallId = seenSignatures.get(signature);
+      if (firstCallId !== undefined) {
+        // Suppress. We still MUST push a tool message paired with this
+        // call.id — providers (OpenAI, Anthropic) reject the next request
+        // shape otherwise — so the synthetic result tells the model what
+        // happened and points at the first call's id for reference.
+        const dupNote = {
+          ok: false as const,
+          error: 'duplicate_in_response',
+          note:
+            `This exact tool call (same name + same arguments) appeared more ` +
+            `than once in your response. Only the first was dispatched ` +
+            `(call_id ${firstCallId}); this duplicate was suppressed to ` +
+            `prevent accidental write amplification. If you intended a ` +
+            `single operation, the first call's result stands. If you ` +
+            `intended distinct operations, re-issue with different arguments.`,
+          first_call_id: firstCallId,
+        };
+        await step(
+          {
+            name: `tool: ${slug}`,
+            kind: 'compute',
+            input: { slug, args: '<duplicate, suppressed>' },
+          },
+          async (handle) => {
+            handle.setSkipped('duplicate_in_response');
+            handle.setMeta({
+              duplicate_in_response: true,
+              first_call_id: firstCallId,
+              call_id: call.id,
+            });
+          },
+        );
+        toolCalls.push({
+          slug,
+          argsJson: argsRaw,
+          durationMs: 0,
+          status: 'error',
+          error: 'duplicate_in_response',
+        });
+        messages.push({
+          role: 'tool',
+          toolCallId: call.id,
+          content: JSON.stringify(dupNote),
+        });
+        continue;
+      }
+      seenSignatures.set(signature, call.id);
+
       const tool = toolsByName.get(slug);
       // Parse the LLM-supplied arguments string into a JSON object,
       // or capture a structured error for the tool_result. See
