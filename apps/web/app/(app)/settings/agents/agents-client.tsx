@@ -32,6 +32,7 @@ import { AvatarPicker } from '@/components/avatar-picker';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { PersonaNotesEditor } from './persona-notes-editor';
+import { AgentChatTestButton } from './chat-test-button';
 
 /** Built-in node types the extractor can be allow-listed against. Matches
  *  the `node_type` enum in packages/db/src/schema/nodes.ts minus `branch`
@@ -1451,6 +1452,21 @@ export function AgentsClient({
                 agentId={editing.agent.id}
                 initialNotes={editing.agent.personaNotes}
               />
+            )}
+
+            {editing.mode === 'edit' && (
+              <section className="space-y-2 border-t border-border pt-6">
+                <h3 className="text-sm font-semibold">Test chat</h3>
+                <p className="text-xs text-muted-foreground">
+                  Send a one-shot prompt through this agent&apos;s adapter (
+                  <code>{editing.agent.provider}</code>) and see what comes back.
+                  Uses the saved system prompt, model, and params — same path as
+                  the production responder. Useful for validating a new direct-
+                  provider key (Anthropic / Google / xAI) without sending a real
+                  Telegram message.
+                </p>
+                <AgentChatTestButton agentId={editing.agent.id} />
+              </section>
             )}
 
             <div className="flex justify-end gap-2 border-t border-border pt-3">

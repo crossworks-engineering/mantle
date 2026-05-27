@@ -595,11 +595,10 @@ export async function testChatAction(
   const adapter = getChatAdapter(worker.provider);
   if (!adapter) {
     throw new Error(
-      `no chat adapter for provider '${worker.provider}'. ` +
-        `Currently wired chat adapters: xai, huggingface, anthropic, google. ` +
-        `The existing reflector/extractor/summarizer workers still route ` +
-        `through OpenRouter directly — switch this worker's provider ` +
-        `to one of the wired ones to test via the adapter layer.`,
+      `No chat adapter registered for provider '${worker.provider}'. ` +
+        `Register one in packages/voice/src/adapters/index.ts, or pick a ` +
+        `wired provider (openrouter, anthropic, openai-via-openrouter, ` +
+        `google, xai, huggingface).`,
     );
   }
 
