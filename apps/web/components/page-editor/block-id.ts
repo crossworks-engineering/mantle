@@ -18,7 +18,12 @@
  */
 
 import { Extension } from '@tiptap/core';
-import { BLOCK_NODE_TYPES } from '@mantle/content';
+// IMPORTANT: import from the leaf-module sub-export, not from
+// '@mantle/content' root. The root index re-exports profile-preferences →
+// db/client → postgres, which is Node-only and breaks Turbopack's client
+// bundle ("Module not found: Can't resolve 'fs'"). Mirrors the same
+// browser-safe pattern as @mantle/content/contacts-format.
+import { BLOCK_NODE_TYPES } from '@mantle/content/block-ids';
 
 export const BlockId = Extension.create({
   name: 'blockId',
