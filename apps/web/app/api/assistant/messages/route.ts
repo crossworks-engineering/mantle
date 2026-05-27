@@ -26,12 +26,8 @@ export async function GET(req: NextRequest) {
   const agent = await resolveAssistantAgent(user.id, slug);
   if (!agent) return NextResponse.json({ messages: [] });
 
-  // Mirror the page's thread-scoping: default assistant/responder also
-  // includes legacy (pre-agentId) rows; custom agents get a clean thread.
-  const includeLegacy = agent.role === 'assistant' || agent.role === 'responder';
-  const messages = await assistantMessagesBefore(user.id, before, limit, {
-    agentId: agent.id,
-    includeLegacy,
-  });
+  // Per-agent thread — no cross-agent or legacy fold-in. See migration
+  // 0049 + the assistant_messages schema header.
+  const messages = await assistantMessagesBefore(user.id, agent.id, before, limit);
   return NextResponse.json({ messages }, { headers: { 'Cache-Control': 'no-store' } });
 }

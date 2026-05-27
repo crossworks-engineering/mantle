@@ -18,12 +18,11 @@ export default async function AssistantPage({
     resolveAssistantAgent(user.id, params.agent),
   ]);
 
-  // Per-agent thread: legacy (pre-agentId) rows fold into the default
-  // assistant/responder; a custom agent (e.g. coder) gets a clean thread.
-  const includeLegacy = agent ? agent.role === 'assistant' || agent.role === 'responder' : true;
-  const messages = agent
-    ? await recentAssistantMessages(user.id, 100, { agentId: agent.id, includeLegacy })
-    : [];
+  // Per-agent thread: each agent owns its own forever-conversation. The
+  // legacy fold-in (NULL agent_id → any assistant-role agent) was the
+  // "different agents show the same chat with content swapped" bug; killed
+  // by migration 0049 + the NOT NULL constraint on agent_id.
+  const messages = agent ? await recentAssistantMessages(user.id, agent.id, 100) : [];
 
   const accent = agent ? agentAccent(agent.slug) : null;
 
@@ -57,7 +56,7 @@ export default async function AssistantPage({
               {agent ? (
                 <>
                   <code className="font-mono">{agent.slug}</code> ·{' '}
-                  <code className="font-mono">{agent.model}</code> — each agent keeps its own thread.
+                  <code className="font-mono">{agent.model}</code> — separate thread per agent, shared brain.
                 </>
               ) : (
                 <span className="text-destructive">

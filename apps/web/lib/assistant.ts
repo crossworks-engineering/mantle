@@ -20,7 +20,7 @@
  * 'assistant_turn' trace kind in a follow-up if cost/visibility matters.
  */
 
-import { and, desc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
 import {
   db,
   agents,
@@ -128,7 +128,6 @@ async function loadContext(
   ownerId: string,
   agent: Agent,
   inboundText: string,
-  includeLegacy: boolean,
 ): Promise<{
   personaNotes: PersonaNote[];
   facts: FactSnippet[];
@@ -230,9 +229,7 @@ async function loadContext(
     .where(
       and(
         eq(assistantMessages.ownerId, ownerId),
-        includeLegacy
-          ? or(eq(assistantMessages.agentId, agent.id), isNull(assistantMessages.agentId))
-          : eq(assistantMessages.agentId, agent.id),
+        eq(assistantMessages.agentId, agent.id),
       ),
     )
     .orderBy(desc(assistantMessages.createdAt))
@@ -301,10 +298,6 @@ export async function runAssistantTurn(
       'No enabled assistant agent. Create one at /settings/agents (role=assistant or fallback responder).',
     );
   }
-  // Legacy (pre-agentId) rows belong to the original web persona — fold them
-  // into the assistant/responder thread, but keep custom agents (e.g. coder)
-  // on their own clean thread.
-  const includeLegacy = agent.role === 'assistant' || agent.role === 'responder';
   if (!agent.apiKeyId) {
     throw new Error(`Agent '${agent.slug}' has no api_key_id set — edit at /settings/agents.`);
   }
@@ -320,7 +313,7 @@ export async function runAssistantTurn(
   //    sent to the LLM as `newUserText` in buildChatMessages, and
   //    duplicating it makes the model think the user said the same
   //    thing twice ("you sent that twice — testing the double-tap?").
-  const ctx = await loadContext(ownerId, agent, trimmed, includeLegacy);
+  const ctx = await loadContext(ownerId, agent, trimmed);
   const filteredHistory = ctx.history;
 
   // 2. Persist inbound BEFORE the LLM call so the row survives a
@@ -580,16 +573,18 @@ export type AssistantTimelineRow = {
   createdAt: string;
 };
 
+/**
+ * Recent transcript for one (owner, agent) thread, chronological
+ * (oldest → newest). `agentId` is required — there is no
+ * cross-agent / "all messages" view: each agent owns its own
+ * forever-thread. The shared brain (nodes/facts/entities) is what
+ * agents have in common; the conversation is not.
+ */
 export async function recentAssistantMessages(
   ownerId: string,
+  agentId: string,
   limit = 100,
-  opts?: { agentId?: string; includeLegacy?: boolean },
 ): Promise<AssistantTimelineRow[]> {
-  const agentFilter = opts?.agentId
-    ? opts.includeLegacy
-      ? or(eq(assistantMessages.agentId, opts.agentId), isNull(assistantMessages.agentId))
-      : eq(assistantMessages.agentId, opts.agentId)
-    : undefined;
   const rows = await db
     .select({
       id: assistantMessages.id,
@@ -599,7 +594,9 @@ export async function recentAssistantMessages(
       createdAt: assistantMessages.createdAt,
     })
     .from(assistantMessages)
-    .where(and(eq(assistantMessages.ownerId, ownerId), agentFilter))
+    .where(
+      and(eq(assistantMessages.ownerId, ownerId), eq(assistantMessages.agentId, agentId)),
+    )
     .orderBy(desc(assistantMessages.createdAt))
     .limit(limit);
   return rows
@@ -614,22 +611,17 @@ export async function recentAssistantMessages(
 }
 
 /**
- * Page of assistant messages OLDER than `before` (an ISO timestamp),
- * for scroll-up lazy loading in the chat. Same shape/order as
+ * Page of (owner, agent) thread messages OLDER than `before` (an ISO
+ * timestamp), for scroll-up lazy loading. Same shape/order as
  * recentAssistantMessages (chronological, oldest→newest). Returns up to
  * `limit` rows; fewer than `limit` means the top of the thread is reached.
  */
 export async function assistantMessagesBefore(
   ownerId: string,
+  agentId: string,
   before: string,
   limit = 100,
-  opts?: { agentId?: string; includeLegacy?: boolean },
 ): Promise<AssistantTimelineRow[]> {
-  const agentFilter = opts?.agentId
-    ? opts.includeLegacy
-      ? or(eq(assistantMessages.agentId, opts.agentId), isNull(assistantMessages.agentId))
-      : eq(assistantMessages.agentId, opts.agentId)
-    : undefined;
   const rows = await db
     .select({
       id: assistantMessages.id,
@@ -642,8 +634,8 @@ export async function assistantMessagesBefore(
     .where(
       and(
         eq(assistantMessages.ownerId, ownerId),
+        eq(assistantMessages.agentId, agentId),
         lt(assistantMessages.createdAt, new Date(before)),
-        agentFilter,
       ),
     )
     .orderBy(desc(assistantMessages.createdAt))
