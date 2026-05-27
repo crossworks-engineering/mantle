@@ -103,12 +103,18 @@ export function buildAttachmentContextText(
   const kind = opts.kind ?? 'image';
   const noun = kind === 'file' ? 'file' : 'image';
   const Noun = kind === 'file' ? 'File' : 'Image';
-  const tool = kind === 'file' ? 'file_read' : 'extract_from_image';
-  const action = kind === 'file' ? 'for the full content' : 'to look closer';
   const label = kind === 'file' ? 'Extracted text' : 'Vision analysis';
-  const ref = opts.nodeId
-    ? ` (saved as file node ${opts.nodeId} — call ${tool} with that node_id ${action})`
-    : '';
+  // The reference hint lists EVERY tool the attached node_id slots into,
+  // so the model can pick the right one based on the user's intent
+  // (read / inspect vs. import). Pre-page_from_file the marker pinned
+  // `file_read` for documents, which steered the model toward
+  // file_read → re-emit-body → page_create on import requests — the
+  // truncation path Phase 1 (page_from_file) was built to replace.
+  const toolHint =
+    kind === 'file'
+      ? 'call file_read with that node_id to inspect the full content, or page_from_file with that node_id to import it as a page'
+      : 'call extract_from_image with that node_id to look closer';
+  const ref = opts.nodeId ? ` (saved as file node ${opts.nodeId} — ${toolHint})` : '';
   const transcript = opts.transcript?.trim();
   if (transcript) {
     return `${base}\n\n[Attached ${noun}${ref}. ${label}:]\n${transcript}`;
