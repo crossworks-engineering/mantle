@@ -708,6 +708,98 @@ blank. The resolver picks it up everywhere.
 
 ---
 
+## 5f. `max_tokens` — what the 1500 default actually means
+
+Background note for when we revisit the worker form. The `Max tokens`
+input on chat-shaped workers (reflector / extractor / summarizer)
+defaults to **1500** ([worker-form.tsx:1699](../apps/web/app/(app)/settings/ai-workers/worker-form.tsx#L1699));
+the vision worker defaults to **2000** ([worker-form.tsx:1328](../apps/web/app/(app)/settings/ai-workers/worker-form.tsx#L1328)).
+The agents form is different: empty placeholder `(provider default)`,
+no number ([agents-client.tsx:1435](../apps/web/app/(app)/settings/agents/agents-client.tsx#L1435)).
+
+**Key insight: 1500 is not load-bearing.** It's a UI placeholder, not
+a runtime constant. Nothing in the codebase branches on it:
+
+- **Summarizer chunking** uses `summarize_batch` (turn count, default
+  20), not tokens. Growing `max_tokens` makes one digest *richer* but
+  doesn't change how often summarization fires.
+- **Tool-result spill** uses `TOOL_RESULT_MAX_CHUNKS` (env, 200),
+  independent of any worker's `max_tokens`. See §9m of architecture.md.
+- **Tool-loop** ([tool-loop.ts:235](../packages/agent-runtime/src/tool-loop.ts#L235))
+  forwards the param verbatim if set, omits it if not. Adapters that
+  *require* it default high (Anthropic chat = 4096, vision adapters =
+  2000); adapters that don't (OpenRouter, Google, xAI, DeepSeek, HF)
+  omit the field and let the provider pick.
+
+So the parameter is genuinely just "ceiling on this one LLM call's
+reply length." Growing it is safe; the only cost is the LLM running
+longer per call.
+
+**Why 1500 specifically.** Pre-Phase-3 legacy: when everything went
+through OpenRouter + Claude Sonnet (4096 hard cap), 1500 left
+headroom for input and prevented a runaway summarizer from spending
+unbounded tokens on one digest. It made sense as a floor of safety,
+not as a ceiling of capability. Post-Phase-3, with adapters going
+direct to Anthropic / Google / xAI and Claude 4.x supporting **64K**
+output tokens (Gemini 2.5 Pro ~65K, GPT-4o ~16K), 1500 silently caps
+summaries and extractions well below what the model could do.
+
+**Why we don't auto-cap from the model catalog (yet).** OpenRouter's
+public `/api/v1/models` exposes `context_length` (total input+output)
+but **not** `max_completion_tokens` — the field isn't in the response
+shape cached by [`model-context.ts`](../packages/tracing/src/model-context.ts).
+The per-provider story:
+
+| Provider | Max output knowable from a public endpoint? |
+|---|---|
+| Anthropic | Yes — in Anthropic's `/v1/models` (e.g. Sonnet/Opus 4.x = 64K) |
+| OpenAI | Per-model, documented but not in `/v1/models` |
+| Google (Gemini) | Yes — `models.get` returns `outputTokenLimit` |
+| xAI / DeepSeek / Mistral | Documented, not in `/v1/models` |
+| HuggingFace | Model-card dependent |
+
+A live cap would need a per-provider lookup table plus opportunistic
+reads where `discoverModels()` returns the field (Google does).
+
+**When we come back to this.** Three sized options, in order of
+return-on-effort:
+
+1. **S — drop the 1500 placeholder** (~10 LOC). Leave the chat-worker
+   field empty by default, matching the agents form. Adapters already
+   omit `max_tokens` when unset; the provider picks. Existing workers
+   keep their saved value; only new ones change. Highest signal-to-cost.
+
+2. **M — slider against `context_length / 2`** (~80 LOC). Show a
+   slider whose max is `Math.min(contextLength * 0.5, 32768)` — a
+   defensible heuristic since output rarely exceeds half the context
+   window. Reads `contextLimitFor(model)` from the already-cached live
+   catalog; no new fetch, no curated table. A tooltip explains "Most
+   providers cap below this; we'll surface the real cap once the
+   catalog exposes it."
+
+3. **L — true per-provider `max_completion_tokens`** (~250 LOC).
+   Extend `LiveModelInfo` with `maxCompletionTokens?: number`. Curated
+   table for the 10–15 model slugs people actually use (Sonnet 4.x =
+   64K, Gemini 2.5 Pro = 65K, GPT-4o = 16K, Haiku 4.5 = 8K, …). Where
+   the adapter's existing `discoverModels()` returns the field, prefer
+   it. Slider clamps to the real cap.
+
+Recommendation when we get to it: do **S** first (clears the
+misleading number), then **M** (gives operators a visible ceiling that
+doesn't lie). Defer **L** until a surprising real-world cap actually
+bites — the curated table is the part that goes stale; the slider
+against `context_length` doesn't.
+
+**Chunking is not affected by this knob.** Worth repeating because the
+question came up: the chunking that *does* happen — summarizer
+batching, tool-result spill, content_chunks at ingest — all use their
+own size knobs (turn count, byte size, character count), none of which
+read `max_tokens`. So this work is purely about "let the model say
+more in one reply when it wants to," not about how content gets
+sliced for indexing.
+
+---
+
 ## 6. Testing affordances
 
 Each worker kind has a test button in `/settings/ai-workers/<id>`:
