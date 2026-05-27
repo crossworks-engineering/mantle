@@ -286,6 +286,26 @@ cache + `extract_cost_cap_micro_usd`.
 - **Formulas** — ✅ built. KaTeX via `@tiptap/extension-mathematics`
   (`inlineMath` `$…$`, `blockMath` `$$…$$`); stylesheet imported in
   `app/layout.tsx`; `latex` source flows into `docToText` for indexing.
+- **Pages agent + editor AI-assist panel** — designed, not built. The
+  agent operates on **block-addressed edits** (high-level ops the LLM
+  emits reliably), the server compiles those to ProseMirror `Step`s
+  (typed, atomic, invertible — free undo + history), and the editor
+  shows the proposed changes as a **per-block visual diff** before the
+  user commits:
+  - removed content rendered with a **red background / strike-through**
+  - new content rendered with a **green border / highlight**
+  - per-block Accept / Discard controls (no all-or-nothing commit)
+  - edits land in `draft_doc`; only Accept promotes to `doc` and fires
+    `node_ingested` (re-extract). Nothing damages the saved page until
+    the operator opts in.
+  - sweeping requests ("restyle the whole page") fall back to
+    section-by-section processing with a progress UI ("editing 4 of
+    12…") so the model never has to re-emit the full body. Output
+    bytes scale with **changes**, not document size — the lever that
+    Notion's "style this page" feature lacks.
+
+  See [architecture.md §9g](./architecture.md#9g-web-assistant--full-multimedia-parity-with-telegram)
+  for the surrounding /assistant context.
 
 ---
 
