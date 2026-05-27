@@ -768,7 +768,14 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
           {error}
         </p>
       )}
-      <div className="flex items-center gap-2 border-t border-border pt-6">
+      <div className="flex justify-end gap-2 border-t border-border pt-3">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => router.push('/settings/ai-workers')}
+        >
+          Cancel
+        </Button>
         <Button
           type="submit"
           // Hard block: when the operator picked an embedding model whose
@@ -781,13 +788,6 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
           }
         >
           {pending ? 'Saving…' : mode === 'create' ? 'Create' : 'Save changes'}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={() => router.push('/settings/ai-workers')}
-        >
-          Cancel
         </Button>
       </div>
     </form>
