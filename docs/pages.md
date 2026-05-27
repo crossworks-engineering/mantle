@@ -308,26 +308,87 @@ cache + `extract_cost_cap_micro_usd`.
   block, body NOT returned. Powers the agent's "what's in this page?"
   lookup. Agent reads the TOC, decides which blocks to touch (Phase
   2b mutation tools land next), then fetches only those.
-- **Block-addressed editing + editor AI-assist panel** — designed,
-  not built. The agent operates on **block-addressed edits** (high-
-  level ops the LLM emits reliably), the server compiles those to
-  ProseMirror `Step`s (typed, atomic, invertible — free undo +
-  history), and the editor shows the proposed changes as a **per-
-  block visual diff** before the user commits:
-  - removed content rendered with a **red background / strike-through**
-  - new content rendered with a **green border / highlight**
-  - per-block Accept / Discard controls (no all-or-nothing commit)
-  - edits land in `draft_doc`; only Accept promotes to `doc` and fires
-    `node_ingested` (re-extract). Nothing damages the saved page until
-    the operator opts in.
-  - sweeping requests ("restyle the whole page") fall back to
-    section-by-section processing with a progress UI ("editing 4 of
-    12…") so the model never has to re-emit the full body. Output
-    bytes scale with **changes**, not document size — the lever that
-    Notion's "style this page" feature lacks.
+- **Block-addressed editing tools** — ✅ built (Phase 2b). `page_block_get`,
+  `page_block_update`, `page_block_insert_after`, `page_block_delete`. All
+  write to `draft_doc`; first new block on `update` inherits the target's
+  id (agent continuity); delete refuses to leave a container empty.
+- **AI-assist side panel** — ✅ built (Phase 3a Pass 1). Side panel in the
+  page editor, chat input, per-reply diff summary card (counts + collapsible
+  per-change preview with red strike-through / green highlight), discard-
+  draft button. Editor remounts on AI changes via prop-keyed effect.
+  `/api/pages/[id]/ai-assist` invokes Pages via `invokeAgent`; Pages writes
+  to `draft_doc`; user reviews + commits via the existing toolbar.
+- **Editor visual diff (Phase 3a Pass 2)** — designed, not built. Today the
+  AI panel summarises the diff; the editor just shows the new draft as-is.
+  Pass 2 adds per-block decorations INSIDE the TipTap editor: red strike
+  on removed blocks, green border on added/changed. Per-block Accept /
+  Discard (vs today's whole-draft revert). Requires custom ProseMirror
+  decorations keyed by block id. Pass 1 already gives the complete editing
+  loop functionally; Pass 2 is the visual polish on top.
 
   See [architecture.md §9g](./architecture.md#9g-web-assistant--full-multimedia-parity-with-telegram)
   for the surrounding /assistant context.
+
+- **Hierarchy / sub-pages (Phase 4)** — designed, not built. The
+  architectural lever for documents past ~50 KB. Insight (2026-05-27 audit
+  conversation): no model AND no human reads a 170 KB document as one
+  unit. The right answer to "this doc is too long for Pages to restyle"
+  is not "make Pages handle bigger docs" — it's structure. Notion does
+  this via sub-pages; Mantle's `nodes.parent_id` + `ltree path` already
+  support the tree at the data layer, just not at the UX or content-model
+  layer.
+
+  Three slices, in order:
+
+  - **4a — Manual sub-pages (~280 LOC).** What makes Mantle a Notion peer.
+    1. New TipTap block-level node `childPage` with attrs
+       `{ pageId, title, icon? }` — renders as a clickable card inline in
+       the parent; clicking navigates to `/pages/<pageId>`. Lives alongside
+       `PageMention` (the existing inline equivalent).
+    2. Slash command `/page <title>` creates a new page with
+       `parent_id = current page`, inserts a `childPage` block at the
+       cursor.
+    3. `/pages` list rendered as a collapsible tree (currently flat).
+       Existing ltree paths give us this without schema changes.
+    4. Page creation API accepts `parent_id` (probably already does — just
+       expose).
+
+  - **4b — `page_split` tool for Pages (~150 LOC).** The AI-driven
+    scaling lever. Signature: `page_split({ page_id, by: 'h2' | 'h1',
+    preserve_intro?: boolean })`. Walks the doc, every Hx heading becomes
+    a child page's title, content until the next Hx becomes the child's
+    body. Original page becomes a TOC of `childPage` blocks. Server-side,
+    deterministic, byte-faithful — same shape as `page_from_file`.
+    Indexing implications: each child extracts independently → its own
+    summary, embedding, facts. Search becomes more granular ("find the
+    section about X" returns a child page, not a haystack). The brain
+    gets *better*, not just smaller per-page.
+
+  - **4c — Promote-to-sub-page (~120 LOC).** Quality-of-life. Drag-handle
+    affordance: "convert this heading + its body into a sub-page".
+    Agent equivalent: `page_extract_section({ page_id, heading_block_id })`
+    — lifts everything from the heading until the next equal-or-higher
+    heading into a new child, replaces the section with a `childPage`
+    block in the parent.
+
+  Pages persona update (lands with 4b): when a request like "restyle this
+  X-block document" exceeds a threshold, Pages PROPOSES a split first
+  rather than attempting the full transform. Stops pretending to scale
+  infinitely; starts coaching the user toward the right structure.
+
+  Bonus effect: the section-highlighting feature (an earlier Phase 3a.2
+  proposal) becomes less urgent — most "restyle a region" asks become
+  "restyle this sub-page", which is just a normal AI-assist call on a
+  smaller page.
+
+  Why this is the right shape:
+  - Data layer already supports it (parent_id + ltree). Zero schema cost.
+  - Matches how humans organise long content (the Notion paradigm).
+  - Each child stays within Pages's current iteration budget cleanly,
+    no architectural tuning needed.
+  - Each child is independently searchable, shareable, editable.
+  - The "wall of text" problem is dissolved at the model level, not
+    worked around at the tool level.
 
 ---
 
