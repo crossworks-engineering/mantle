@@ -226,7 +226,7 @@ Mantle knows about (12 today). Each entry has `id`, `label`,
   kind via `providersForCapability(cap)`)
 - The signup-link hint shown when a provider is selected
 
-Adding a provider:
+Adding a provider — five steps:
 
 1. Add an entry to `SUPPORTED_PROVIDERS`. Provider appears in
    dropdowns immediately (with "not yet wired" hint).
@@ -235,8 +235,18 @@ Adding a provider:
 3. Write the adapter (`adapters/<provider>-<capability>.ts`)
    implementing the relevant dispatcher interface.
 4. Register it in `adapters/index.ts` (one line).
-5. UI lights up automatically — "not yet wired" disappears, model
-   dropdown populates, test buttons work.
+5. Add wire-shape tests (`adapters/<provider>-<capability>.test.ts`)
+   so the audit-caught silent-drop patterns don't recur.
+
+UI lights up automatically once the adapter registers — "not yet
+wired" disappears, model dropdown populates, test buttons work.
+
+**For the cookbook with per-capability templates, the OpenAI-compat-
+vs-native decision tree, and the audit-caught gotchas to avoid,
+read [`docs/adding-a-provider.md`](./adding-a-provider.md).** AI
+agents working in `packages/voice/` get the local pointer
+auto-loaded from
+[`packages/voice/CLAUDE.md`](../packages/voice/CLAUDE.md).
 
 ---
 
