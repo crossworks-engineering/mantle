@@ -83,6 +83,16 @@ export default async function AssistantPage({
       </header>
 
       <AssistantClient
+        // Force a remount on agent change. Without this, Next.js soft-
+        // navigation preserves the client component's local state across
+        // ?agent= changes — so the draft input, attached image, recording
+        // state, and even the optimistic messages array carry from agent
+        // A to agent B. A keyed remount resets every useState cleanly:
+        // draft → '', messages → new agent's initialMessages, scroll →
+        // bottom (the useLayoutEffect inside fires on mount). The SSR
+        // initialMessages prop is already correct per-agent; the key just
+        // makes React honour the swap.
+        key={agent?.slug ?? '__none__'}
         initialMessages={messages}
         agentReady={!!agent}
         agentSlug={agent?.slug}

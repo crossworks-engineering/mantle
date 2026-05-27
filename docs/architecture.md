@@ -803,6 +803,28 @@ The `/assistant` chat (web) reaches Telegram-equivalent capability:
 Artifacts ride the `runToolLoop` result via a sidecar array — see
 [`ai-workers.md §5d`](./ai-workers.md) for the artifact convention.
 
+**Per-agent transcript model.** Each agent on `/assistant` owns its own
+forever-conversation. The shared brain (`nodes` / `facts` / `entities`,
+none of which are agent-partitioned) is what agents have in common; the
+transcripts are not. `assistant_messages.agent_id` is `NOT NULL` since
+migration 0049 — the bug class where N assistant-role agents all saw the
+same legacy NULL-agent_id rows ("different agents show the same chat
+with content swapped") is structurally extinct. The runtime gates are
+correspondingly thinner: `recentAssistantMessages(ownerId, agentId,
+limit)` and `assistantMessagesBefore(ownerId, agentId, before, limit)`
+both require `agentId` so any new caller that forgets to scope fails at
+typecheck instead of silently returning everything.
+
+**Last-selected agent persistence.** The dropdown's pick-handler writes
+`mantle_assistant_agent` (path=/, 1y, samesite=lax) before navigating to
+`?agent=<slug>`. Server reads it as the SSR default when the URL has no
+param. Pattern mirrors `mantle_spend_range`. Resolution order: URL param
+→ cookie → priority default. Switching agents force-remounts
+`AssistantClient` via `key={agent.slug}` so every piece of local state
+(draft, attached image, recording flag, optimistic messages) resets
+cleanly — without the key, Next.js soft-navigation preserves the prior
+agent's component state across the swap.
+
 ## 9h. Profile preferences + time-aware agent
 
 Two per-user preferences live in `profiles.preferences` jsonb:
