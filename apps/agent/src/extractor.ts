@@ -544,7 +544,7 @@ function parseClassifierDecision(raw: string): ClassifierDecision {
  * Returns the typed ChatResult so the call site can pass it straight
  * to `recordChatUsage` without scraping a raw response.
  */
-async function chatComplete(
+export async function chatComplete(
   adapter: ChatDispatcher,
   apiKey: string,
   model: string,
