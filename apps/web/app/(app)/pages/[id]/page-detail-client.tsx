@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Editor, JSONContent } from '@tiptap/react';
-import { Check, GitCommitHorizontal, Loader2, MoreHorizontal, Trash2 } from 'lucide-react';
+import { Check, GitCommitHorizontal, Loader2, MoreHorizontal, Sparkles, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TagInput } from '@/components/tag-input';
@@ -11,6 +11,7 @@ import { BackLink } from '@/components/layout/back-link';
 import { ShareControl } from '@/components/share/share-control';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { PageEditor } from '@/components/page-editor/page-editor';
+import { AiAssistPanel } from '@/components/page-editor/ai-assist-panel';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -237,6 +238,23 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
     }
   };
 
+  // AI assist panel state. Toggled on/off by the Sparkles button in the
+  // toolbar. When Pages writes to the draft we bump editorKey to force
+  // PageEditor to remount with the freshly-loaded draft content (router.
+  // refresh would re-fetch but PageEditor uses controlled content via
+  // initial.draft; remount is the cleanest swap).
+  const [aiOpen, setAiOpen] = useState(false);
+  const [editorKey, setEditorKey] = useState(0);
+  const onAiChanged = useCallback(() => {
+    // Pull the latest draft from the server. router.refresh re-runs the
+    // server component which re-reads getPage; the new initial.draft
+    // propagates down. We also bump the editorKey so PageEditor remounts
+    // rather than diff-patching (TipTap's setContent has edge cases on
+    // large doc swaps; remount is safer for an AI-driven body change).
+    setEditorKey((k) => k + 1);
+    router.refresh();
+  }, [router]);
+
   const confirmDelete = async () => {
     deletedRef.current = true; // suppress flush
     const res = await fetch(`/api/pages/${initial.id}`, { method: 'DELETE' });
@@ -259,6 +277,16 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
           <StatusIndicator committing={committing} draftSaving={draftSaving} dirty={docDirty} />
           <Button size="sm" onClick={() => void commit()} disabled={!docDirty || committing}>
             <GitCommitHorizontal /> Commit
+          </Button>
+          <Button
+            size="sm"
+            variant={aiOpen ? 'default' : 'outline'}
+            onClick={() => setAiOpen((v) => !v)}
+            aria-pressed={aiOpen}
+            aria-label="Toggle AI assist panel"
+            title="Ask Pages to edit this page"
+          >
+            <Sparkles /> AI assist
           </Button>
           <ShareControl nodeId={initial.id} beforeEnable={commit} />
           <DropdownMenu>
@@ -286,34 +314,54 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
         </div>
       </div>
 
-      <div
-        className={cn(
-          'mx-auto w-full px-6 py-10',
-          width === 'wide' ? 'max-w-none' : 'max-w-3xl',
+      {/* Side-by-side when the AI panel is open: editor scrolls in its own
+          pane, panel docks to the right. Min-h-0 on the wrapper is required
+          per ui-style-guide.md so neither pane hijacks the page scroll. */}
+      <div className={cn('flex min-h-0 flex-1', aiOpen ? 'flex-row' : 'flex-col')}>
+        <div className={cn('min-w-0 flex-1 overflow-y-auto', aiOpen && 'border-r border-border')}>
+          <div
+            className={cn(
+              'mx-auto w-full px-6 py-10',
+              // When the AI panel is open the editor area is already narrowed
+              // by the right-side panel; force narrow content so it doesn't
+              // sprawl into an awkward two-thirds line length.
+              aiOpen || width !== 'wide' ? 'max-w-3xl' : 'max-w-none',
+            )}
+          >
+            {/* pl-10 mirrors the editor's drag-handle gutter (globals.css
+                .ProseMirror[contenteditable]) so the title + tags line up with the
+                body text. */}
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={onTitleKeyDown}
+              placeholder="New page"
+              aria-label="Page title"
+              className="h-auto border-0 bg-transparent pl-10 pr-0 py-0 text-3xl font-bold shadow-none placeholder:text-muted-foreground/40 focus-visible:ring-0 md:text-3xl"
+            />
+            <div className="mt-3 pl-10">
+              <TagInput value={tags} onChange={setTags} placeholder="Add tags…" />
+            </div>
+            <div className="mt-6">
+              <PageEditor
+                key={editorKey}
+                content={initialDoc}
+                onChange={onDocChange}
+                onBlur={onEditorBlur}
+                onEditorReady={onEditorReady}
+              />
+            </div>
+          </div>
+        </div>
+        {aiOpen && (
+          <div className="hidden w-[380px] shrink-0 md:flex md:flex-col">
+            <AiAssistPanel
+              pageId={initial.id}
+              onChanged={onAiChanged}
+              onClose={() => setAiOpen(false)}
+            />
+          </div>
         )}
-      >
-        {/* pl-10 mirrors the editor's drag-handle gutter (globals.css
-            .ProseMirror[contenteditable]) so the title + tags line up with the
-            body text. */}
-        <Input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={onTitleKeyDown}
-          placeholder="New page"
-          aria-label="Page title"
-          className="h-auto border-0 bg-transparent pl-10 pr-0 py-0 text-3xl font-bold shadow-none placeholder:text-muted-foreground/40 focus-visible:ring-0 md:text-3xl"
-        />
-        <div className="mt-3 pl-10">
-          <TagInput value={tags} onChange={setTags} placeholder="Add tags…" />
-        </div>
-        <div className="mt-6">
-          <PageEditor
-            content={initialDoc}
-            onChange={onDocChange}
-            onBlur={onEditorBlur}
-            onEditorReady={onEditorReady}
-          />
-        </div>
       </div>
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>

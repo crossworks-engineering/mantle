@@ -363,6 +363,26 @@ export async function saveDraft(
  * one index per commit instead of one per pause. Returns the published detail,
  * or null if the page doesn't exist.
  */
+/**
+ * Throw away the working draft (set draft_doc=null). The published `doc`
+ * is untouched; brain index untouched. Used by the AI-assist panel's
+ * "Discard" button after the Pages agent writes changes the user
+ * decides not to keep. Returns false if the page doesn't exist.
+ */
+export async function discardDraft(ownerId: string, id: string): Promise<boolean> {
+  const [node] = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
+    .limit(1);
+  if (!node) return false;
+  await db
+    .update(pages)
+    .set({ draftDoc: null, draftUpdatedAt: null })
+    .where(eq(pages.nodeId, id));
+  return true;
+}
+
 export async function commitPage(
   ownerId: string,
   id: string,

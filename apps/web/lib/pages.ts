@@ -9,6 +9,7 @@ export {
   createPage,
   updatePage,
   saveDraft,
+  discardDraft,
   commitPage,
   deletePage,
   type PageRow,

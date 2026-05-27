@@ -63,6 +63,7 @@ export {
   createPage,
   updatePage,
   saveDraft,
+  discardDraft,
   commitPage,
   deletePage,
   type PageRow,
@@ -89,6 +90,8 @@ export {
   type FindResult,
   type PMBlockNode,
 } from './block-edit';
+
+export { diffBlocks, type BlockDiff, type BlockChange } from './block-diff';
 
 export { referencedFileIds } from './doc-assets';
 
