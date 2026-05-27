@@ -230,6 +230,11 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
             apiKey,
             model: worker.model,
             messages: flattenChatMessagesForAdapter(messages),
+            // System prompt is stable per worker — mark cacheable so
+            // the dispatch summariser, which fires in bursts as turns
+            // pile up, pays the cache-read rate from the 2nd batch
+            // onward on Anthropic-direct.
+            cacheControl: { systemPrompt: true },
             ...(typeof params.temperature === 'number'
               ? { temperature: params.temperature }
               : {}),
@@ -486,6 +491,9 @@ export async function summarizeWebConversation(ownerId: string): Promise<void> {
             apiKey,
             model: worker.model,
             messages: flattenChatMessagesForAdapter(messages),
+            // Same rationale as the Telegram summariser: system prompt
+            // is stable per worker, mark it cacheable.
+            cacheControl: { systemPrompt: true },
             ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
             ...(typeof params.max_tokens === 'number' ? { maxTokens: params.max_tokens } : {}),
             ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),

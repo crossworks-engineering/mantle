@@ -559,6 +559,14 @@ async function chatComplete(
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userText },
     ],
+    // The extractor's system prompt is identical across every node
+    // ingest (modulo per-worker customisation, which is also static
+    // per worker). Mark it cacheable — Anthropic-direct workers get
+    // ~10× cheaper input on the second+ call within the 5-min TTL;
+    // non-cache-aware providers (Google, xAI, HF) ignore the field.
+    // During a backfill or active ingest hour this is the dominant
+    // cost-saving knob.
+    cacheControl: { systemPrompt: true },
     ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
     ...(typeof params.max_tokens === 'number' ? { maxTokens: params.max_tokens } : {}),
     ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),

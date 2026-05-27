@@ -325,6 +325,13 @@ export async function reflect(ownerId: string): Promise<void> {
               },
               { role: 'user', content: userPayload },
             ],
+            // The reflector fires on a ~10-minute timer; Anthropic's
+            // cache TTL is 5min so most fires MISS cache and pay the
+            // 1.25× cache-write penalty without immediate benefit.
+            // Net-net close to break-even (back-to-back fires within
+            // 5min hit), and consistency with the other chat-shaped
+            // workers beats a clever skip.
+            cacheControl: { systemPrompt: true },
             ...(typeof params.temperature === 'number'
               ? { temperature: params.temperature }
               : {}),
