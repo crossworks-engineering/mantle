@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from 'react';
 import { CheckCircle2, Plus, Trash2 } from 'lucide-react';
 import type { AiWorker, AiWorkerKind } from '@mantle/db';
+import { getProvider } from '@mantle/voice';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -197,9 +198,13 @@ export function AiWorkersClient({
                                 </span>
                               )}
                             </div>
-                            <code className="block truncate font-mono text-[11px] text-muted-foreground">
-                              {w.model}
-                            </code>
+                            <div className="flex items-center gap-1 truncate text-[11px] text-muted-foreground">
+                              <span className="shrink-0">
+                                {getProvider(w.provider)?.label ?? w.provider}
+                              </span>
+                              <span aria-hidden>·</span>
+                              <code className="truncate font-mono">{w.model}</code>
+                            </div>
                           </div>
                         </div>
                       </button>
