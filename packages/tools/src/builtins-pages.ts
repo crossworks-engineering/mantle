@@ -24,6 +24,7 @@ import {
   getActiveShareForNode,
   shareUrlForToken,
 } from '@mantle/content';
+import { fileById, readFileById } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
 
@@ -42,7 +43,7 @@ const page_create: BuiltinToolDef = {
   slug: 'page_create',
   name: 'Create a page',
   description:
-    "Create a rich document (a `page` node under /pages) in the user's Mantle. `title` required; `markdown` is the body in the rich dialect (callouts, columns, tables, task lists, highlights). The page is indexed into the brain — summary, embedding, facts, entities — so it becomes searchable and recallable. Prefer this over note_create when the content is long-form or structured (a plan, a doc, a comparison) that deserves real formatting; use note_create for quick plain-text captures.",
+    "Create a rich document (a `page` node under /pages) in the user's Mantle from content YOU compose. `title` required; `markdown` is the body in the rich dialect (callouts, columns, tables, task lists, highlights). The page is indexed into the brain — summary, embedding, facts, entities — so it becomes searchable and recallable. Prefer this over note_create when the content is long-form or structured (a plan, a doc, a comparison) that deserves real formatting; use note_create for quick plain-text captures. **For importing an existing file (Notion export, sermon markdown, etc.) use `page_from_file` instead — re-emitting the file body in this tool's `markdown` arg truncates silently above ~6 K output tokens.**",
   inputSchema: {
     type: 'object',
     properties: {
@@ -225,6 +226,104 @@ const page_get: BuiltinToolDef = {
   },
 };
 
+const page_from_file: BuiltinToolDef = {
+  slug: 'page_from_file',
+  name: 'Create page from file',
+  description:
+    "Create a page by importing a markdown/text file's bytes directly — the bytes go server-side from `files` → `markdownToDoc` → `createPage` without round-tripping through your output. **Always prefer this over `file_read` + `page_create` for file → page operations.** It scales to arbitrarily large files (a 100 KB Notion export imports in one tool call instead of choking on your max_tokens cap) and the result is byte-faithful to the source. Returns the new page's id + title; the body is never echoed back to you (use page_get if you need to verify content). Title defaults to the file's basename without extension if you omit it. Only text-like files are accepted (markdown / plain text) — binaries (PDF / docx / xlsx) are rejected with a clear error since their indexed text already lives on the file node and can't be losslessly converted to a page.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      file_id: { type: 'string', format: 'uuid', description: 'id of the file node to import' },
+      title: {
+        type: 'string',
+        description: 'page title; defaults to the file basename (without extension) if omitted',
+      },
+      tags: { type: 'array', items: { type: 'string' } },
+      icon: { type: 'string', description: 'optional emoji icon, e.g. "📄"' },
+    },
+    required: ['file_id'],
+  },
+  handler: async (input, ctx) => {
+    const fileId = str(input.file_id).trim();
+    if (!fileId) return { ok: false, error: 'file_id is required' };
+    const meta = await fileById({ ownerId: ctx.ownerId, fileId });
+    if (!meta) return { ok: false, error: `file ${fileId} not found` };
+    if (!meta.isText) {
+      return {
+        ok: false,
+        error:
+          `page_from_file: '${meta.filename}' is a binary file (mime='${meta.mimeType}') ` +
+          `and cannot be imported as a page. The extractor already indexes its parsed ` +
+          `text on the file node; reference it via file_get instead, or convert the ` +
+          `source to markdown first.`,
+      };
+    }
+    const res = await readFileById({ ownerId: ctx.ownerId, fileId });
+    if (!res) return { ok: false, error: 'file bytes unavailable' };
+
+    // Title resolution: explicit arg wins; otherwise derive from filename
+    // (strip extension, swap dashes/underscores for spaces, fall back to
+    // 'Untitled' on the empty result).
+    const titleArg = str(input.title).trim();
+    const derivedTitle =
+      (meta.filename ?? 'Untitled')
+        .replace(/\.[^.]+$/, '')
+        .replace(/[-_]+/g, ' ')
+        .trim() || 'Untitled';
+    const title = (titleArg || derivedTitle).slice(0, 200);
+
+    const tags = strArr(input.tags);
+    const icon = str(input.icon).trim();
+
+    try {
+      const markdown = res.bytes.toString('utf8');
+      const doc = markdownToDoc(markdown);
+      const page = await createPage(ctx.ownerId, {
+        title,
+        doc,
+        tags,
+        ...(icon ? { icon } : {}),
+      });
+      ctx.step?.setOutput({
+        id: page.id,
+        title: page.title,
+        source_file_id: fileId,
+        source_byte_size: res.bytes.length,
+      });
+      void recordIngest({
+        source: 'agent_tool',
+        ownerId: ctx.ownerId,
+        nodeId: page.id,
+        summary: `Page imported from file: ${page.title}`,
+        payload: {
+          via: 'page_from_file_tool',
+          sourceFileId: fileId,
+          sourceFilename: meta.filename,
+          sourceByteSize: res.bytes.length,
+          tags,
+          ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
+        },
+        // Cap the snippet so we don't bloat trace storage on a 100 KB import —
+        // the full source is on the file node, retrievable via file_read.
+        snippet: markdown.slice(0, 4000),
+      });
+      return {
+        ok: true,
+        output: {
+          id: page.id,
+          title: page.title,
+          tags: page.tags,
+          source_file_id: fileId,
+          source_byte_size: res.bytes.length,
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
 const page_share: BuiltinToolDef = {
   slug: 'page_share',
   name: 'Share a page publicly',
@@ -282,6 +381,7 @@ const page_unshare: BuiltinToolDef = {
 
 export const PAGE_TOOLS: BuiltinToolDef[] = [
   page_create,
+  page_from_file,
   page_update,
   page_delete,
   page_list,

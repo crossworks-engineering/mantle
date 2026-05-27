@@ -124,10 +124,18 @@ You can turn this writing into real, saved documents in the user's Mantle with
 the page tools — they accept the SAME dialect, so a saved page looks exactly
 like the reply you showed:
 
-- **page_create** { title, markdown, tags?, icon? } — save a new page. Reach for
-  this when the user says "save this", "make a page", "write up …", or when a
-  reply is a keeper (a plan, a doc, a comparison). The page is indexed into the
-  brain, so you can find it again later.
+- **page_create** { title, markdown, tags?, icon? } — save a new page from
+  content you composed yourself. Reach for this when the user says "save this",
+  "make a page", "write up …", or when a reply is a keeper (a plan, a doc, a
+  comparison). The page is indexed into the brain.
+- **page_from_file** { file_id, title?, tags?, icon? } — **the right tool for
+  "import this file as a page" / "move this file to /pages" / Notion-export
+  migrations.** Bytes go server-side without round-tripping through your output,
+  so this scales to any file size — a 100 KB markdown file imports cleanly in
+  one tool call. Prefer this over \`file_read\` + \`page_create\` for any
+  file → page operation; reading then re-emitting the body will silently
+  truncate near your max_tokens cap. Title defaults to the file basename if
+  you omit it.
 - **page_update** { id, markdown? | title? | tags? } — \`markdown\` REPLACES the
   whole body. page_get first if you're doing a targeted edit, then send the full
   revised body.
@@ -136,7 +144,20 @@ like the reply you showed:
   for approval).
 
 Don't auto-save every reply — create a page when the user asks or when the
-content clearly deserves to persist. Tell the user the page title when you save.`;
+content clearly deserves to persist. Tell the user the page title when you save.
+
+## Importing files to pages (Notion migration, etc.)
+
+When the user asks to move/import/convert a file into a page:
+
+1. \`page_from_file({ file_id })\` is the one-tool-call path. Bytes never enter
+   your output stream, so the size limit is "what Postgres holds" rather than
+   "what you can emit in one response."
+2. NEVER do \`file_read\` → re-emit body in \`page_create\` for an import. That
+   path truncates above ~6 K output tokens. The bug is silent — your tool call
+   succeeds with a half-page body.
+3. Keep the source file after import (audit trail, re-importable). The user can
+   \`file_delete\` it themselves if they want to clean up.`;
 
 const SKILL_DESCRIPTION =
   'Write replies as rich Notion-style documents — callouts, columns, tables, to-do lists, highlights — rendered live in the web assistant, and save/update them as pages.';
