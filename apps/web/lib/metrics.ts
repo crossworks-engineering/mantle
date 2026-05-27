@@ -404,3 +404,63 @@ export async function recentFailures(userId: string, limit = 10): Promise<Recent
     error: r.error ?? '',
   }));
 }
+
+export type DuplicateSuppression = {
+  /** Model slug captured in trace_steps.meta.model at suppression time. */
+  model: string;
+  /** How many duplicate tool_use blocks were suppressed in the window. */
+  count: number;
+  /** Distinct tool slugs the duplicates targeted (top 5, comma-separated). */
+  topSlugs: string;
+  /** Most recent suppression, ISO string. */
+  lastAt: string;
+};
+
+/**
+ * Roll-up of in-response duplicate tool-call suppressions, grouped by model.
+ * Drives the `/debug` "Duplicates suppressed by model" widget — answers the
+ * question "is the dedup guard firing, and which model is the worst
+ * offender?" without an ad-hoc query.
+ *
+ * Background: some models (notably Grok-4.x) emit byte-identical parallel
+ * tool_use blocks for the same write op in one response. The tool-loop
+ * suppresses each duplicate and records a step with kind='compute',
+ * status='skipped', and meta.duplicate_in_response=true + meta.model so
+ * this rollup works without a join back to the trace's first llm_call.
+ * See architecture.md §9n.
+ */
+export async function duplicateSuppressionStats(
+  userId: string,
+  daysBack: number,
+): Promise<DuplicateSuppression[]> {
+  const since = new Date(Date.now() - daysBack * 86_400_000);
+  const rows = await db
+    .select({
+      model: sql<string>`coalesce(${traceSteps.meta}->>'model', '(unknown)')`,
+      count: sql<number>`count(*)::int`,
+      topSlugs: sql<string>`string_agg(
+        distinct coalesce(${traceSteps.input}->>'slug', '(unknown)'),
+        ', '
+        order by coalesce(${traceSteps.input}->>'slug', '(unknown)')
+      )`,
+      lastAt: sql<Date>`max(${traceSteps.startedAt})`,
+    })
+    .from(traceSteps)
+    .innerJoin(traces, eq(traceSteps.traceId, traces.id))
+    .where(
+      and(
+        eq(traces.ownerId, userId),
+        gte(traceSteps.startedAt, since),
+        sql`${traceSteps.meta}->>'duplicate_in_response' = 'true'`,
+      ),
+    )
+    .groupBy(sql`coalesce(${traceSteps.meta}->>'model', '(unknown)')`)
+    .orderBy(desc(sql`count(*)`));
+
+  return rows.map((r) => ({
+    model: r.model,
+    count: r.count,
+    topSlugs: r.topSlugs ?? '',
+    lastAt: r.lastAt instanceof Date ? r.lastAt.toISOString() : String(r.lastAt),
+  }));
+}

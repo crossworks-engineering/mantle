@@ -4,6 +4,7 @@ import { formatDateTime } from '@/lib/format-datetime';
 import { DebugTabs } from './debug-tabs';
 import { contentIndexCoverage, duplicateEdgeStats } from '@/lib/debug';
 import {
+  duplicateSuppressionStats,
   embedderCacheStats,
   recentFailures,
   spendByAgent,
@@ -20,17 +21,28 @@ import { SetPageTitle } from '@/components/layout/page-title';
  */
 export default async function DebugOverviewPage() {
   const user = await requireOwner();
-  const [traffic24h, spend7d, cache7d, errors7d, recentFails, daily14d, dupes, coverage] =
-    await Promise.all([
-      trafficWindow(user.id, 24),
-      spendByAgent(user.id, 7),
-      embedderCacheStats(user.id, 7),
-      topErrors(user.id, 7, 5),
-      recentFailures(user.id, 10),
-      spendByDay(user.id, 14),
-      duplicateEdgeStats(user.id),
-      contentIndexCoverage(user.id),
-    ]);
+  const [
+    traffic24h,
+    spend7d,
+    cache7d,
+    errors7d,
+    recentFails,
+    daily14d,
+    dupes,
+    coverage,
+    dupCalls7d,
+  ] = await Promise.all([
+    trafficWindow(user.id, 24),
+    spendByAgent(user.id, 7),
+    embedderCacheStats(user.id, 7),
+    topErrors(user.id, 7, 5),
+    recentFailures(user.id, 10),
+    spendByDay(user.id, 14),
+    duplicateEdgeStats(user.id),
+    contentIndexCoverage(user.id),
+    duplicateSuppressionStats(user.id, 7),
+  ]);
+  const dupCallTotal = dupCalls7d.reduce((a, b) => a + b.count, 0);
 
   const maxDaily = daily14d.reduce((m, d) => Math.max(m, d.costMicroUsd), 0);
   const totalSpend = spend7d.reduce((sum, r) => sum + r.costMicroUsd, 0);
@@ -126,6 +138,46 @@ export default async function DebugOverviewPage() {
                   {s.relation}
                 </span>
                 <span className="min-w-0 truncate">{s.label}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* ─── Duplicate tool calls suppressed (7d) ───────────────────────── */}
+      {dupCallTotal > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              Duplicates suppressed (7d)
+            </h2>
+            <span className="text-xs text-muted-foreground">
+              {dupCallTotal} tool call{dupCallTotal === 1 ? '' : 's'}
+            </span>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Models that emit byte-identical parallel <code>tool_use</code> blocks
+            for the same write — only the first is dispatched, duplicates are
+            suppressed. A high count here = the model is misbehaving; an
+            empty list = the guard never had to fire. See{' '}
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+              architecture.md §9n
+            </code>
+            .
+          </p>
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {dupCalls7d.map((d) => (
+              <li key={d.model} className="flex items-baseline gap-3 px-3 py-2 text-sm">
+                <span className="rounded-md bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+                  ×{d.count}
+                </span>
+                <code className="shrink-0 font-mono text-xs">{d.model}</code>
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                  {d.topSlugs}
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {formatDateTime(d.lastAt)}
+                </span>
               </li>
             ))}
           </ul>

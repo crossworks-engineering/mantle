@@ -1233,6 +1233,16 @@ reason. Not `requires_confirm: true` on every write — adds friction to
 every legitimate single call. The right scope is the tool-loop
 generically.
 
+**Visibility.** The suppression step's meta carries `model` (denormalised
+at write time, no join needed) so the `/debug` "Duplicates suppressed
+(7d)" widget can group by model. Empty list = the guard never had to
+fire in the window; a populated list answers "which model is
+misbehaving?" at a glance — operator-actionable, not just absence-of-
+symptom. See `duplicateSuppressionStats` in
+[`apps/web/lib/metrics.ts`](../apps/web/lib/metrics.ts) and the
+`duplicate_in_response` disposition in
+[`observability.md §6`](./observability.md#6-disposition-catalog--why-something-skipped).
+
 ## 10. The MCP server
 
 `apps/mcp/src/server.ts`, ~340 LOC. Exposes Claude's tools over stdio

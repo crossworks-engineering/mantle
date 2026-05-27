@@ -265,6 +265,18 @@ reason. The current catalog (extend as new pipelines land):
 - `no_new_activity` — nothing happened since the last successful run.
 - `api_key_not_decryptable`
 
+### Tool-loop (step-level, not trace-level)
+- `duplicate_in_response` — the model emitted multiple byte-identical
+  `tool_use` blocks for the same call in one response. First was
+  dispatched; this duplicate was suppressed to prevent write amplification.
+  Meta carries `first_call_id` (the call that did dispatch) + `model` (so
+  `/debug`'s "Duplicates suppressed by model" widget can group without a
+  join). Step name is `tool: <slug>` (uniform with successful dispatches)
+  + `kind=compute` + `status=skipped`. See [architecture.md §9n](./architecture.md#9n-in-response-duplicate-tool-call-guard).
+- `requires_confirm` — tool was flagged `requiresConfirm: true`; a
+  `pending_tool_calls` row was queued for the operator to approve at
+  `/pending`. Meta carries `pendingId` + `requiresConfirm: true`.
+
 `hint` is a free-text companion in `details` that points the
 operator at the right action ("Add 'X' to the worker's target_types
 param to extract it.").

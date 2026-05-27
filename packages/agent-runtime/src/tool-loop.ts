@@ -305,10 +305,15 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           },
           async (handle) => {
             handle.setSkipped('duplicate_in_response');
+            // `model` is denormalised onto the suppression step's meta so
+            // the /debug "duplicates suppressed by model" widget can group
+            // by it without a lateral join back to the trace's first
+            // llm_call step. Cheap to write, cheap to query.
             handle.setMeta({
               duplicate_in_response: true,
               first_call_id: firstCallId,
               call_id: call.id,
+              model: args.model,
             });
           },
         );
