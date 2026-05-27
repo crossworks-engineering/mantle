@@ -269,7 +269,15 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
   };
 
   return (
-    <div className="flex min-h-full flex-col">
+    // `h-full` (not min-h-full) is required so the side-by-side flex
+    // container below can give each pane a definite height — without it,
+    // the page wrapper grows past the viewport when the editor body is
+    // long, and the AI-assist panel's input form ends up off-screen
+    // (Phase 3a Pass 1 launch bug). The editor pane now handles its own
+    // scroll via the `overflow-y-auto` wrapper directly inside the
+    // side-by-side, which works equally well whether the panel is open
+    // or closed.
+    <div className="flex h-full min-h-0 flex-col">
       <SetPageTitle title={title || 'Untitled page'} />
 
       <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-background/80 px-4 py-2 backdrop-blur">
@@ -361,7 +369,10 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
           </div>
         </div>
         {aiOpen && (
-          <div className="hidden w-[380px] shrink-0 md:flex md:flex-col">
+          // `min-h-0` here lets the inner aside's `flex-1 min-h-0`
+          // scroller actually constrain — without it, the panel grows
+          // with content and pushes the input form off-screen.
+          <div className="hidden w-[380px] min-h-0 shrink-0 md:flex md:flex-col">
             <AiAssistPanel
               pageId={initial.id}
               onChanged={onAiChanged}
