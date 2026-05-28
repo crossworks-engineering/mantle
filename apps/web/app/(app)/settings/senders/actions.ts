@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import PgBoss from 'pg-boss';
 import {
   db,
@@ -102,10 +102,12 @@ export async function setDomainStatus(formData: FormData) {
       set: { status: next, decidedAt: new Date() },
     });
 
-  // 2. Cascade: every sender currently `pending` in this domain inherits
-  //    the new status. Senders the user has explicitly approved or denied
-  //    keep their existing status — the address-level decision overrides
-  //    the domain-level one, which is how the resolver behaves too.
+  // 2. Cascade: "Approve All" / "Deny All" is an authoritative domain decision,
+  //    so every sender in the domain that isn't already at the target status is
+  //    flipped — including ones previously approved/denied individually. The
+  //    most recent explicit action wins; if the user wants to spare one sender
+  //    in a denied domain they re-approve that one afterward. (Skipping rows
+  //    already at the target keeps `decidedAt` and the backfill set honest.)
   const cascaded = await db
     .update(emailSenders)
     .set({ status: next, decidedAt: new Date() })
@@ -113,7 +115,7 @@ export async function setDomainStatus(formData: FormData) {
       and(
         eq(emailSenders.userId, user.id),
         eq(emailSenders.domain, domain),
-        eq(emailSenders.status, 'pending'),
+        ne(emailSenders.status, next),
       ),
     )
     .returning({ address: emailSenders.address });
@@ -210,6 +212,8 @@ export async function addManualDecision(
       set: { status, decidedAt: now },
     });
 
+  // Authoritative domain decision — flip every sender in the domain not
+  // already at the target (mirrors setDomainStatus §2).
   const cascaded = await db
     .update(emailSenders)
     .set({ status, decidedAt: now })
@@ -217,7 +221,7 @@ export async function addManualDecision(
       and(
         eq(emailSenders.userId, user.id),
         eq(emailSenders.domain, cleaned),
-        eq(emailSenders.status, 'pending'),
+        ne(emailSenders.status, status),
       ),
     )
     .returning({ address: emailSenders.address });
