@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import type { Editor, JSONContent } from '@tiptap/react';
 import {
   Check,
+  ChevronDown,
+  ChevronUp,
   GitCommitHorizontal,
   Highlighter,
   Loader2,
@@ -287,6 +289,41 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
     }
   }, [marks, marksKey]);
 
+  // ── Cycle through highlights (marked blue + edited green), in doc order ──
+  const highlightCursor = useRef(-1);
+  const gotoHighlight = useCallback(
+    (dir: 1 | -1) => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      const set = new Set([...marks, ...editedIds]);
+      if (set.size === 0) return;
+      // Collect matching blocks in document order (descendants is pre-order).
+      const hits: { id: string; pos: number }[] = [];
+      editor.state.doc.descendants((node, pos) => {
+        const id = node.attrs?.id as string | undefined;
+        if (typeof id === 'string' && set.has(id) && !hits.some((h) => h.id === id)) {
+          hits.push({ id, pos });
+        }
+        return true;
+      });
+      if (hits.length === 0) return;
+      const cur = highlightCursor.current;
+      const next =
+        dir === 1
+          ? cur < 0
+            ? 0
+            : (cur + 1) % hits.length
+          : cur <= 0
+            ? hits.length - 1
+            : cur - 1;
+      highlightCursor.current = next;
+      const dom = editor.view.nodeDOM(hits[next]!.pos);
+      if (dom instanceof HTMLElement) dom.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    },
+    [marks, editedIds],
+  );
+  const highlightCount = new Set([...marks, ...editedIds]).size;
+
   // Watch the SERVER-PROVIDED draft prop. When router.refresh() (called
   // from onAiChanged after the AI run completes) brings back a NEW draft
   // identity, this effect fires and bumps editorKey — which is what
@@ -373,6 +410,33 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
             >
               Clear
             </Button>
+          )}
+          {highlightCount > 0 && (
+            <div className="flex items-center rounded-md border border-border">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-9 rounded-r-none"
+                onClick={() => gotoHighlight(-1)}
+                aria-label="Previous highlight"
+                title="Jump to previous highlight (marked + edited)"
+              >
+                <ChevronUp />
+              </Button>
+              <span className="px-1 text-xs tabular-nums text-muted-foreground" aria-hidden>
+                {highlightCount}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-9 rounded-l-none"
+                onClick={() => gotoHighlight(1)}
+                aria-label="Next highlight"
+                title="Jump to next highlight (marked + edited)"
+              >
+                <ChevronDown />
+              </Button>
+            </div>
           )}
           <Button
             size="sm"
