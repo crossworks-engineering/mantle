@@ -141,6 +141,12 @@ Shared app-level patterns (`components/`):
     (`<form action={…}>`) pass nothing — `SubmitButton` reads `useFormStatus`.
   - For create/edit dialogs, switch the label on mode:
     `{mode === 'create' ? 'Create agent' : 'Save agent'}`.
+- **Multi-select → `<ToggleList>`** (`components/toggle-list.tsx`), not a wall of
+  pills. Rows of name + description + a `Switch`, selected rows highlighted;
+  optional `group` clusters rows under sub-headers. It flows inline in the page
+  (no inner scroll); pass `collapsible` to fold a long catalog behind a header
+  that shows the `N of M selected` count. Used by the agents Tools/Skills/Delegates
+  pickers.
 
 ---
 
