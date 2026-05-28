@@ -1689,7 +1689,9 @@ function ToolPicker({
       </>
     ),
   }));
-  return <ToggleList items={items} selected={selected} onChange={onChange} collapsible />;
+  return (
+    <ToggleList items={items} selected={selected} onChange={onChange} collapsible searchable />
+  );
 }
 
 /**
@@ -1716,7 +1718,9 @@ function SkillPicker({
         </span>
       ) : undefined,
   }));
-  return <ToggleList items={items} selected={selected} onChange={onChange} collapsible />;
+  return (
+    <ToggleList items={items} selected={selected} onChange={onChange} collapsible searchable />
+  );
 }
 
 /**
@@ -1752,7 +1756,9 @@ function DelegatePicker({
       </>
     ),
   }));
-  return <ToggleList items={items} selected={selected} onChange={onChange} collapsible />;
+  return (
+    <ToggleList items={items} selected={selected} onChange={onChange} collapsible searchable />
+  );
 }
 
 /**
