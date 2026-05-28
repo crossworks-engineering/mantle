@@ -431,6 +431,16 @@ export interface VisionDispatcher extends AdapterMeta {
    *  trimmed text. */
   extract(image: Buffer, opts: VisionExtractOptions): Promise<VisionExtractResult>;
 
+  /** Optional. Extract text from a document (PDF) sent NATIVELY to the model —
+   *  no rasterization. Providers whose API accepts a document content block
+   *  (Anthropic, Google) implement this; the runtime PREFERS it over
+   *  rasterize→per-page image OCR for PDFs (whole-document context, real layout
+   *  and tables, one call, no PNG-conversion fidelity loss). Adapters that
+   *  can't take a document natively (OpenAI, xAI) omit it, and the caller falls
+   *  back to rasterizing the pages through `extract`. `opts.mimeType` is the
+   *  document MIME (e.g. 'application/pdf'). */
+  extractDocument?(document: Buffer, opts: VisionExtractOptions): Promise<VisionExtractResult>;
+
   /** Live-discover which vision-capable models the api key can use.
    *  Implementation parity with ChatDispatcher.discoverModels — when
    *  absent, the form falls back to the adapter's static catalog. */

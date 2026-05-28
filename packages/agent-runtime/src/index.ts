@@ -36,6 +36,7 @@ export { invokeAgent } from './invoke-agent';
 
 export {
   runVisionWorker,
+  runDocumentWorker,
   extractAttachmentForTurn,
   questionAwareVisionPrompt,
   DOC_TEXT_MAX,

@@ -120,6 +120,74 @@ export const anthropicVisionAdapter: VisionDispatcher = {
     };
   },
 
+  /**
+   * Native PDF extraction — send the whole PDF as a `document` content block
+   * (no rasterization). Claude reads the text layer AND the rendered pages, so
+   * it works on scanned/image PDFs too, with whole-document context. Limits
+   * (May 2026): 32 MB, 100 pages per request.
+   */
+  async extractDocument(pdf: Buffer, opts: VisionExtractOptions): Promise<VisionExtractResult> {
+    if (!opts.apiKey) throw new Error('anthropic-vision: apiKey required');
+    if (!pdf || pdf.length === 0) throw new Error('anthropic-vision: empty PDF buffer');
+    const MAX_PDF_BYTES = 32 * 1024 * 1024;
+    if (pdf.length > MAX_PDF_BYTES) {
+      throw new Error(
+        `anthropic-vision: PDF is ${(pdf.length / 1024 / 1024).toFixed(1)} MB; Anthropic caps at 32 MB.`,
+      );
+    }
+    const model = opts.model || DEFAULT_MODEL;
+    const body: Record<string, unknown> = {
+      model,
+      // Documents transcribe in one call (vs per-page), so allow more output.
+      max_tokens: opts.maxTokens ?? 8000,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'document',
+              source: {
+                type: 'base64',
+                media_type: 'application/pdf',
+                data: pdf.toString('base64'),
+              },
+            },
+            { type: 'text', text: opts.prompt },
+          ],
+        },
+      ],
+    };
+    if (opts.systemPrompt && opts.systemPrompt.trim()) body.system = opts.systemPrompt;
+
+    const res = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, {
+      method: 'POST',
+      headers: {
+        'x-api-key': opts.apiKey,
+        'anthropic-version': ANTHROPIC_API_VERSION,
+        // PDF support flag — harmless if the account already has it GA.
+        'anthropic-beta': 'pdfs-2024-09-25',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      // PDFs are heavier than a single image — give the call more headroom.
+      signal: AbortSignal.timeout(120_000),
+    });
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => '');
+      throw new Error(`anthropic-vision (pdf) ${res.status}: ${errBody.slice(0, 400)}`);
+    }
+    const parsed = (await res.json()) as AnthropicResponse;
+    const textBlock = parsed.content.find(
+      (c): c is { type: 'text'; text: string } => c.type === 'text',
+    );
+    return {
+      text: (textBlock?.text ?? '').trim(),
+      model: parsed.model || model,
+      tokensIn: parsed.usage?.input_tokens,
+      tokensOut: parsed.usage?.output_tokens,
+    };
+  },
+
   async discoverModels(apiKey: string): Promise<DiscoveryResult<VisionModelInfo>> {
     try {
       const res = await fetch(`${ANTHROPIC_BASE_URL}/v1/models?limit=100`, {

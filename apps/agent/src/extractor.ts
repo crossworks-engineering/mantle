@@ -54,7 +54,7 @@ import { getApiKeyById } from '@mantle/api-keys';
 import { embed } from '@mantle/embeddings';
 import { diskPathForFile, extOf, mimeForExt, parseDocumentBytes, INGESTABLE_EXTS, parserRouteForExt } from '@mantle/files';
 import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
-import { recordChatUsage, runVisionWorker } from '@mantle/agent-runtime';
+import { recordChatUsage, runDocumentWorker, runVisionWorker } from '@mantle/agent-runtime';
 import { getChatAdapter, type ChatDispatcher, type ChatResult } from '@mantle/voice';
 import { chunkDocText, mentionRefs } from '@mantle/content';
 import { isLikelyDifferentPerson } from './person-names';
@@ -448,6 +448,34 @@ async function ocrIngestPdfNode(
         },
       );
 
+      // 1) Native PDF first — one call to the vision model (Claude/Gemini),
+      //    whole-document context + real tables, no rasterization. Only runs
+      //    when the worker's provider supports it; else falls through to the
+      //    per-page raster OCR below.
+      const native = await step(
+        { name: 'extract_document', kind: 'llm_call', input: { mime: 'application/pdf', bytes: buf.length } },
+        async (h) => {
+          const r = await runDocumentWorker({ ownerId, bytes: buf, mimeType: 'application/pdf', filename });
+          h.setMeta({ ran: r.ran, note: r.note, model: r.model, textLength: r.text.length, tokensOut: r.tokensOut });
+          return r;
+        },
+      );
+      if (native.ran && native.text.trim()) {
+        const text = native.text.trim();
+        await step({ name: 'persist_vision_text', kind: 'db_write' }, async (h) => {
+          await db
+            .update(nodes)
+            .set({
+              data: sql`${nodes.data} || jsonb_build_object('text', ${text}::text, 'vision_model', ${native.model ?? ''}::text, 'ocr', true)`,
+              updatedAt: new Date(),
+            })
+            .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
+          h.setMeta({ chars: text.length, native: true });
+        });
+        return text;
+      }
+
+      // 2) Fall back to rasterize → per-page image OCR.
       const pages = await step(
         { name: 'rasterize_pdf', kind: 'compute', input: { max_pages: MAX_OCR_PAGES } },
         async (h) => {

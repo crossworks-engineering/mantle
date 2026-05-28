@@ -132,6 +132,86 @@ export async function runVisionWorker(opts: {
   }
 }
 
+/**
+ * Native document (PDF) extraction — send the whole PDF to the owner's default
+ * vision worker's model when its provider supports native documents (Anthropic
+ * today; Google next). One call, whole-document context, real layout/tables, no
+ * rasterization. Resolves the SAME vision worker (set it to Claude and PDFs go
+ * native automatically). Returns `ran:false` when the provider has no native
+ * document path, so callers fall back to rasterize → per-page OCR.
+ */
+export async function runDocumentWorker(opts: {
+  ownerId: string;
+  bytes: Buffer;
+  mimeType: string;
+  filename?: string | null;
+  prompt?: string;
+  maxTokens?: number;
+}): Promise<VisionResult> {
+  const worker = await getDefaultWorker(opts.ownerId, 'vision');
+  if (!worker?.apiKeyId) {
+    return { ran: false, text: '', note: 'No default vision worker configured.', model: null };
+  }
+  const adapter = getVisionAdapter(worker.provider);
+  if (!adapter?.extractDocument) {
+    return {
+      ran: false,
+      text: '',
+      note: `Vision provider '${worker.provider}' has no native PDF path; using page OCR.`,
+      model: worker.model,
+    };
+  }
+  const apiKey = await getApiKeyById(worker.apiKeyId);
+  if (!apiKey) {
+    return {
+      ran: false,
+      text: '',
+      note: `Vision worker '${worker.slug}' api_key could not be decrypted.`,
+      model: worker.model,
+    };
+  }
+  const params = (worker.params ?? {}) as { extraction_prompt?: string };
+  const prompt = opts.prompt ?? params.extraction_prompt?.trim() ?? DEFAULT_VISION_DESCRIBE_PROMPT;
+  try {
+    const r = await adapter.extractDocument(opts.bytes, {
+      apiKey,
+      mimeType: opts.mimeType,
+      prompt,
+      systemPrompt: worker.systemPrompt ?? undefined,
+      model: worker.model,
+      // Documents transcribe in one call, so don't inherit the per-image
+      // max_tokens (tuned small); give the whole doc room.
+      maxTokens: opts.maxTokens ?? 8000,
+    });
+    void bumpWorkerUsage(worker.id);
+    const text = r.text?.trim() ? r.text : '';
+    const tokensIn = r.tokensIn ?? 0;
+    const tokensOut = r.tokensOut ?? 0;
+    recordStepUsage({
+      model: worker.model,
+      input: tokensIn,
+      output: tokensOut,
+      costMicroUsd: fallbackCostMicroUsd(worker.model, { input: tokensIn, output: tokensOut }),
+    });
+    return {
+      ran: true,
+      text,
+      note: text ? null : 'Document worker returned no text.',
+      model: worker.model,
+      adapterName: adapter.adapterName,
+      tokensIn: r.tokensIn,
+      tokensOut: r.tokensOut,
+    };
+  } catch (err) {
+    return {
+      ran: false,
+      text: '',
+      note: `Document worker failed: ${err instanceof Error ? err.message : String(err)}`,
+      model: worker.model,
+    };
+  }
+}
+
 /** Page cap for the live-turn PDF OCR fallback — mirrors the extractor's
  *  MAX_OCR_PAGES, bounding rasterization memory + per-page vision spend. */
 const TURN_OCR_PAGES = 10;
@@ -278,10 +358,38 @@ export async function extractAttachmentForTurn(opts: {
         )
       ).trim();
       if (!raw) {
-        // No text layer. For a PDF this is usually a scan / image-only export
-        // (e.g. an invoice) — fall back to rasterize → vision OCR, the same
-        // path the durable extractor uses, so the live turn can read it too.
+        // No text layer — usually a scan / image-only export (e.g. an invoice).
         if (ext === 'pdf') {
+          // 1) Native PDF: hand the whole document to the vision model when its
+          //    provider supports it (Claude/Gemini). Best fidelity — whole-doc
+          //    context, real tables, no rasterization.
+          const native = await step(
+            {
+              name: 'extract_document',
+              kind: 'llm_call',
+              input: { mime: 'application/pdf', bytes: opts.bytes.length },
+            },
+            async (h) => {
+              const r = await runDocumentWorker({
+                ownerId: opts.ownerId,
+                bytes: opts.bytes,
+                mimeType: 'application/pdf',
+                filename: opts.filename,
+              });
+              h.setMeta({ ran: r.ran, note: r.note, model: r.model, textLength: r.text.length, tokensOut: r.tokensOut });
+              return r;
+            },
+          );
+          if (native.ran && native.text.trim()) {
+            const t = native.text.trim();
+            const capped =
+              t.length > DOC_TEXT_MAX
+                ? `${t.slice(0, DOC_TEXT_MAX)}\n\n[...truncated ${t.length - DOC_TEXT_MAX} more characters — call file_read on the node for the full document.]`
+                : t;
+            return { kind: 'file', text: capped, note: 'PDF read natively by the vision model.' };
+          }
+          // 2) Fall back to rasterize → per-page image OCR (providers without
+          //    native PDF, or if the native call failed).
           const ocr = await ocrPdfForTurn({
             ownerId: opts.ownerId,
             bytes: opts.bytes,
