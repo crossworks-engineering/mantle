@@ -3461,3 +3461,29 @@
 .ProseMirror a.file-embed::before {
   content: '📎';
 }
+
+/* Sub-page card on the raw/public render. In-app it's a React NodeView (a
+   Link); the public surface emits an inert [data-child-page] div (sub-pages
+   aren't part of a shared subtree), styled to match the in-app card. */
+.ProseMirror [data-child-page] {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin-block: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: var(--card);
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--foreground);
+}
+.ProseMirror [data-child-page] .child-page-icon {
+  flex: none;
+}
+.ProseMirror [data-child-page] .child-page-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

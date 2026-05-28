@@ -14,6 +14,7 @@ import {
   Columns2,
   Columns3,
   Columns4,
+  FilePlus2,
   Heading1,
   Heading2,
   Heading3,
@@ -46,6 +47,46 @@ function pickAndUpload(editor: Editor, range: Range, accept: string) {
     if (file) void uploadAndInsert(editor, file);
   };
   input.click();
+}
+
+/**
+ * Create a sub-page (Phase 4a) and drop a `childPage` card at the cursor. The
+ * parent id comes from the SlashCommand extension's storage (the page being
+ * edited). The child page row is created server-side immediately, so it exists
+ * in the tree the moment the card appears — the card insert itself is an editor
+ * change that autosaves into the parent's draft like any other edit. Rename the
+ * child from inside it; the card refreshes its title on mount.
+ */
+async function insertSubPage(editor: Editor, range: Range) {
+  const storage = editor.storage as unknown as Record<
+    string,
+    { pageId?: string | null } | undefined
+  >;
+  const parentId = storage.slashCommand?.pageId ?? null;
+  // Remove the "/page" text regardless — the menu has already committed.
+  editor.chain().focus().deleteRange(range).run();
+  if (!parentId) return; // not inside a saved page; nothing to parent to
+  try {
+    const res = await fetch('/api/pages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Untitled page', parentId }),
+    });
+    if (!res.ok) return;
+    const { page } = (await res.json()) as {
+      page: { id: string; title: string; icon: string | null };
+    };
+    editor
+      .chain()
+      .focus()
+      .insertContent({
+        type: 'childPage',
+        attrs: { pageId: page.id, title: page.title, icon: page.icon ?? null },
+      })
+      .run();
+  } catch {
+    // Best-effort; the slash text is already removed so the editor is clean.
+  }
 }
 
 export type SlashItem = {
@@ -92,6 +133,14 @@ const ITEMS: SlashItem[] = [
     keywords: ['h3'],
     command: ({ editor, range }) =>
       editor.chain().focus().deleteRange(range).setNode('heading', { level: 3 }).run(),
+  },
+  {
+    group: 'Pages',
+    title: 'Sub-page',
+    description: 'Create a nested page and link it here.',
+    icon: FilePlus2,
+    keywords: ['page', 'subpage', 'child', 'nested', 'doc', 'document'],
+    command: ({ editor, range }) => void insertSubPage(editor, range),
   },
   {
     group: 'Lists',

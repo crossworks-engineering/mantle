@@ -19,8 +19,29 @@ import {
  * No schema/nodes are added here, so this stays editor-only and the read-only
  * PageView (which omits it) renders identically.
  */
-export const SlashCommand = Extension.create({
+export interface SlashCommandOptions {
+  /** Id of the page being edited. The `/page` item creates a sub-page with
+   *  `parent_id` set to this, so it needs to know "which page am I in?".
+   *  Exposed via storage so the static slash items can read it off `editor`. */
+  pageId: string | null;
+}
+
+export const SlashCommand = Extension.create<SlashCommandOptions>({
   name: 'slashCommand',
+
+  addOptions() {
+    return { pageId: null };
+  },
+
+  // Mirror the page id into storage so a slash item's command (which only
+  // receives { editor, range }) can reach it via `editor.storage.slashCommand`.
+  addStorage() {
+    return { pageId: this.options.pageId };
+  },
+
+  onBeforeCreate() {
+    this.storage.pageId = this.options.pageId;
+  },
 
   addProseMirrorPlugins() {
     return [

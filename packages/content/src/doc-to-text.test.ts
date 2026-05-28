@@ -115,6 +115,17 @@ describe('docToText', () => {
     expect(docToText(doc)).toBe('[x] booked flights\n[ ] pack bags');
   });
 
+  it('surfaces sub-page card titles, newline-separated', () => {
+    const doc = {
+      type: 'doc',
+      content: [
+        { type: 'childPage', attrs: { pageId: 'p1', title: 'Architecture notes' } },
+        { type: 'childPage', attrs: { pageId: 'p2', title: 'Roadmap' } },
+      ],
+    };
+    expect(docToText(doc)).toBe('Architecture notes\nRoadmap');
+  });
+
   it('handles hard breaks', () => {
     const doc = {
       type: 'doc',

@@ -24,7 +24,7 @@
  * paragraph, heading, blockquote, codeBlock, horizontalRule, callout,
  * columnList, column, bulletList, orderedList, taskList, listItem, taskItem,
  * table, tableRow, tableCell, tableHeader, blockMath, image, pageImage,
- * fileEmbed. Inline text/marks + inlineMath stay un-id'd (they're not
+ * fileEmbed, childPage. Inline text/marks + inlineMath stay un-id'd (they're not
  * addressable units; the model edits their containing block instead).
  */
 
@@ -55,6 +55,8 @@ const BLOCK_TYPES = new Set([
   'pageImage',
   'fileEmbed',
   'blockMath',
+  // Sub-page link card (Phase 4a) — addressable so block tools can move/remove it
+  'childPage',
 ]);
 
 type AnyNode = {

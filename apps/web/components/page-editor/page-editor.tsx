@@ -21,12 +21,16 @@ import { handleDroppedFiles } from './upload';
  */
 export function PageEditor({
   content,
+  pageId,
   onChange,
   onBlur,
   onEditorReady,
   editable = true,
 }: {
   content: JSONContent;
+  /** Id of the page being edited — handed to the `/page` slash command so the
+   *  sub-pages it creates get `parent_id` set to this page (Phase 4a). */
+  pageId?: string | null;
   onChange: (doc: JSONContent) => void;
   /** Editor lost focus — a natural "settle" signal to flush / re-index. */
   onBlur?: () => void;
@@ -86,7 +90,8 @@ export function PageEditor({
 
   const editor = useEditor({
     // SlashCommand is editor-only (no schema), so PageView stays identical.
-    extensions: [...pageExtensions, SlashCommand],
+    // Configured with the current page id so `/page` parents sub-pages here.
+    extensions: [...pageExtensions, SlashCommand.configure({ pageId: pageId ?? null })],
     content,
     immediatelyRender: false, // required for Next.js SSR (avoids hydration mismatch)
     editorProps,

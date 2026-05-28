@@ -376,6 +376,7 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
               <PageEditor
                 key={editorKey}
                 content={initialDoc}
+                pageId={initial.id}
                 onChange={onDocChange}
                 onBlur={onEditorBlur}
                 onEditorReady={onEditorReady}

@@ -183,6 +183,14 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
       const name = esc(str(node.attrs?.filename) || 'file');
       return `<a class="file-embed" href="${escAttr(href || '#')}" target="_blank" rel="noopener">${name}</a>`;
     }
+    case 'childPage': {
+      // Sub-pages aren't part of a shared subtree (Phase 4a) — render the card
+      // as an inert label, not a link into a private child page.
+      const title = esc(str(node.attrs?.title) || 'Untitled page');
+      const icon = str(node.attrs?.icon);
+      const iconHtml = icon ? `<span class="child-page-icon">${esc(icon)}</span>` : '';
+      return `<div class="child-page" data-child-page>${iconHtml}<span class="child-page-title">${title}</span></div>`;
+    }
     default:
       // Unknown block — render its children if any, else drop.
       return node.content ? renderBlocks(node.content, opts) : '';

@@ -1,10 +1,18 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { JSONContent } from '@tiptap/react';
-import { ChevronLeft, ChevronRight, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -35,6 +43,7 @@ import { formatDateTime } from '@/lib/format-datetime';
 
 type PageRow = {
   id: string;
+  parentId: string | null;
   title: string;
   icon: string | null;
   tags: string[];
@@ -47,6 +56,7 @@ type PageRow = {
 type TagCount = { tag: string; count: number };
 
 export function PagesClient({
+  mode,
   pages,
   total,
   page,
@@ -55,6 +65,9 @@ export function PagesClient({
   activeTag,
   query,
 }: {
+  /** 'tree' = full hierarchy (no filter active); 'list' = flat paginated
+   *  results while searching / tag-filtering. */
+  mode: 'tree' | 'list';
   pages: PageRow[];
   total: number;
   page: number;
@@ -73,11 +86,38 @@ export function PagesClient({
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<PageRow | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const [searchInput, setSearchInput] = useState(query);
 
   const selected = pages.find((p) => p.id === selectedId) ?? pages[0] ?? null;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  // Tree index: parent id → sorted children (null key = top-level). A page
+  // whose parent isn't in the loaded set is treated as a root (defensive).
+  const childrenByParent = useMemo(() => {
+    const ids = new Set(pages.map((p) => p.id));
+    const m = new Map<string | null, PageRow[]>();
+    for (const p of pages) {
+      const key = p.parentId && ids.has(p.parentId) ? p.parentId : null;
+      const arr = m.get(key) ?? [];
+      arr.push(p);
+      m.set(key, arr);
+    }
+    for (const arr of m.values()) arr.sort((a, b) => a.title.localeCompare(b.title));
+    return m;
+  }, [pages]);
+
+  const hasChildren = (id: string) => (childrenByParent.get(id)?.length ?? 0) > 0;
+  const deleteHasChildren = deleteTarget ? hasChildren(deleteTarget.id) : false;
+
+  const toggle = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const buildHref = (over: { page?: number; tag?: string | null; q?: string | null }) => {
     const nextTag = over.tag !== undefined ? over.tag : activeTag;
@@ -132,6 +172,21 @@ export function PagesClient({
     }
   };
 
+  // Create a sub-page under `parentId` and open it (create & edit, like New).
+  const createChild = async (parentId: string) => {
+    const res = await fetch('/api/pages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Untitled page', parentId }),
+    });
+    if (!res.ok) {
+      toast.error('Could not create sub-page');
+      return;
+    }
+    const { page: created } = (await res.json()) as { page: PageRow };
+    router.push(`/pages/${created.id}`);
+  };
+
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     const res = await fetch(`/api/pages/${deleteTarget.id}`, { method: 'DELETE' });
@@ -139,14 +194,48 @@ export function PagesClient({
       toast.error('Could not delete page');
       return;
     }
-    toast.success('Page deleted');
+    toast.success(deleteHasChildren ? 'Page and sub-pages deleted' : 'Page deleted');
     if (selectedId === deleteTarget.id) setSelectedId(null);
     startNav(() => router.refresh());
   };
 
+  // Flatten the tree into rows honoring expand/collapse state.
+  const renderTree = (parentId: string | null, depth: number): ReactNode[] => {
+    const kids = childrenByParent.get(parentId) ?? [];
+    const rows: ReactNode[] = [];
+    for (const p of kids) {
+      const kidHasChildren = hasChildren(p.id);
+      const isExpanded = expanded.has(p.id);
+      rows.push(
+        <TreeRow
+          key={p.id}
+          row={p}
+          depth={depth}
+          hasChildren={kidHasChildren}
+          expanded={isExpanded}
+          selected={selected?.id === p.id}
+          onToggle={() => toggle(p.id)}
+          onSelect={() => setSelectedId(p.id)}
+          onAddChild={() => void createChild(p.id)}
+          onDelete={() => setDeleteTarget(p)}
+        />,
+      );
+      if (kidHasChildren && isExpanded) rows.push(...renderTree(p.id, depth + 1));
+    }
+    return rows;
+  };
+
+  const emptyState = (
+    <div className="rounded-md border border-dashed border-border bg-muted/30 px-6 py-12 text-center text-sm text-muted-foreground">
+      {mode === 'list'
+        ? 'No pages match your search or filter.'
+        : 'No pages yet. Click “New” to start writing.'}
+    </div>
+  );
+
   return (
     <div className="md:grid md:h-full md:grid-cols-[30%_minmax(0,1fr)] md:overflow-hidden">
-      {/* ── Left: list ─────────────────────────────────────────────── */}
+      {/* ── Left: list / tree ───────────────────────────────────────── */}
       <div className="flex flex-col border-b border-border md:h-full md:min-h-0 md:border-b-0 md:border-r">
         <div className="space-y-3 border-b border-border p-4">
           <div className="flex items-center gap-2">
@@ -192,49 +281,50 @@ export function PagesClient({
 
         <div
           className={cn(
-            'space-y-2 p-3 transition-opacity md:flex-1 md:overflow-y-auto md:scrollbar-thin',
+            'p-3 transition-opacity md:flex-1 md:overflow-y-auto md:scrollbar-thin',
+            mode === 'list' && 'space-y-2',
+            mode === 'tree' && 'space-y-0.5',
             navPending && 'opacity-60',
           )}
         >
-          {pages.length === 0 ? (
-            <div className="rounded-md border border-dashed border-border bg-muted/30 px-6 py-12 text-center text-sm text-muted-foreground">
-              {query || activeTag
-                ? 'No pages match your search or filter.'
-                : 'No pages yet. Click “New” to start writing.'}
-            </div>
-          ) : (
-            pages.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => setSelectedId(p.id)}
-                className={cn(
-                  'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-3 text-left transition-colors hover:bg-accent/40',
-                  selected?.id === p.id && 'border-l-primary bg-accent/50',
-                )}
-              >
-                <div className="flex items-start gap-2">
-                  <span className="mt-0.5 size-4 shrink-0 text-center text-sm leading-4" aria-hidden>
-                    {p.icon ?? '📄'}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{p.title}</div>
-                    {p.summary && (
-                      <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                        {p.summary}
-                      </p>
+          {pages.length === 0
+            ? emptyState
+            : mode === 'tree'
+              ? renderTree(null, 0)
+              : pages.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => setSelectedId(p.id)}
+                    className={cn(
+                      'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-3 text-left transition-colors hover:bg-accent/40',
+                      selected?.id === p.id && 'border-l-primary bg-accent/50',
                     )}
-                    {p.tags.length > 0 && (
-                      <div className="mt-1.5 flex flex-wrap gap-1">
-                        {p.tags.map((t) => (
-                          <TagPill key={t} tag={t} />
-                        ))}
+                  >
+                    <div className="flex items-start gap-2">
+                      <span
+                        className="mt-0.5 size-4 shrink-0 text-center text-sm leading-4"
+                        aria-hidden
+                      >
+                        {p.icon ?? '📄'}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium">{p.title}</div>
+                        {p.summary && (
+                          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                            {p.summary}
+                          </p>
+                        )}
+                        {p.tags.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {p.tags.map((t) => (
+                              <TagPill key={t} tag={t} />
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                </div>
-              </button>
-            ))
-          )}
+                    </div>
+                  </button>
+                ))}
         </div>
 
         {total > 0 && (
@@ -242,31 +332,33 @@ export function PagesClient({
             <span className="tabular-nums">
               {total} {total === 1 ? 'page' : 'pages'}
             </span>
-            <div className="flex items-center gap-1.5">
-              <span className="tabular-nums">
-                {page} / {totalPages}
-              </span>
-              <Button
-                size="icon"
-                variant="outline"
-                className="size-7"
-                disabled={page <= 1 || navPending}
-                onClick={() => go({ page: page - 1 })}
-                aria-label="Previous page"
-              >
-                <ChevronLeft />
-              </Button>
-              <Button
-                size="icon"
-                variant="outline"
-                className="size-7"
-                disabled={page >= totalPages || navPending}
-                onClick={() => go({ page: page + 1 })}
-                aria-label="Next page"
-              >
-                <ChevronRight />
-              </Button>
-            </div>
+            {mode === 'list' && (
+              <div className="flex items-center gap-1.5">
+                <span className="tabular-nums">
+                  {page} / {totalPages}
+                </span>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="size-7"
+                  disabled={page <= 1 || navPending}
+                  onClick={() => go({ page: page - 1 })}
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="size-7"
+                  disabled={page >= totalPages || navPending}
+                  onClick={() => go({ page: page + 1 })}
+                  aria-label="Next page"
+                >
+                  <ChevronRight />
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -287,7 +379,9 @@ export function PagesClient({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>New page</DialogTitle>
-            <DialogDescription>Give it a title — you’ll write the body in the editor.</DialogDescription>
+            <DialogDescription>
+              Give it a title — you’ll write the body in the editor.
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
@@ -325,7 +419,11 @@ export function PagesClient({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete “{deleteTarget?.title}”?</AlertDialogTitle>
-            <AlertDialogDescription>This can’t be undone.</AlertDialogDescription>
+            <AlertDialogDescription>
+              {deleteHasChildren
+                ? 'This page and all of its sub-pages will be deleted. This can’t be undone.'
+                : 'This can’t be undone.'}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -338,6 +436,87 @@ export function PagesClient({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+}
+
+/** One row in the hierarchy tree. Chevron toggles expand; the body selects
+ *  (drives the preview); hover reveals add-sub-page + delete. Indentation is
+ *  an inline `paddingLeft` (depth-driven, so not a Tailwind dynamic class). */
+function TreeRow({
+  row,
+  depth,
+  hasChildren,
+  expanded,
+  selected,
+  onToggle,
+  onSelect,
+  onAddChild,
+  onDelete,
+}: {
+  row: PageRow;
+  depth: number;
+  hasChildren: boolean;
+  expanded: boolean;
+  selected: boolean;
+  onToggle: () => void;
+  onSelect: () => void;
+  onAddChild: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div
+      className={cn(
+        'group flex items-center gap-1 rounded-md pr-1 transition-colors hover:bg-accent/40',
+        selected && 'bg-accent/60',
+      )}
+      style={{ paddingLeft: depth * 16 }}
+    >
+      {hasChildren ? (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label={expanded ? 'Collapse' : 'Expand'}
+          className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent"
+        >
+          {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+        </button>
+      ) : (
+        <span className="size-6 shrink-0" aria-hidden />
+      )}
+
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left"
+      >
+        <span className="size-4 shrink-0 text-center text-sm leading-4" aria-hidden>
+          {row.icon ?? '📄'}
+        </span>
+        <span className="min-w-0 truncate text-sm font-medium">{row.title}</span>
+      </button>
+
+      <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 text-muted-foreground"
+          onClick={onAddChild}
+          aria-label="Add sub-page"
+          title="Add sub-page"
+        >
+          <Plus />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 text-muted-foreground hover:text-destructive"
+          onClick={onDelete}
+          aria-label="Delete page"
+        >
+          <Trash2 />
+        </Button>
+      </div>
     </div>
   );
 }

@@ -51,6 +51,10 @@ const BLOCK_TYPES = new Set([
   'tableCell',
   'tableHeader',
   'figure',
+  // Sub-page link card (Phase 4a) — its `title` attr is surfaced via
+  // LABEL_KEYS; this just gives it a trailing newline so adjacent cards'
+  // titles don't run together in the indexed plaintext.
+  'childPage',
 ]);
 
 /** Attribute keys, in priority order, that carry a human-readable label on

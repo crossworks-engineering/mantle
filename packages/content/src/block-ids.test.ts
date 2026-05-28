@@ -136,6 +136,19 @@ describe('ensureBlockIds', () => {
     }
   });
 
+  it('injects an id on a childPage atom (Phase 4a — addressable sub-page card)', () => {
+    const doc = {
+      type: 'doc',
+      content: [{ type: 'childPage', attrs: { pageId: 'p1', title: 'Sub' } }],
+    };
+    const out = ensureBlockIds(doc) as {
+      content: { attrs?: { id?: string; pageId?: string } }[];
+    };
+    expect(typeof out.content[0]!.attrs?.id).toBe('string');
+    // The id is added alongside the existing attrs, never replacing them.
+    expect(out.content[0]!.attrs?.pageId).toBe('p1');
+  });
+
   it('idempotent — running twice produces the same ids', () => {
     const doc = {
       type: 'doc',

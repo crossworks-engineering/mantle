@@ -14,6 +14,7 @@ import { Column, ColumnList } from './column';
 import { PageMention } from './mention';
 import { PageImage } from './image';
 import { FileEmbed } from './file-embed';
+import { ChildPage } from './child-page';
 import { TextColor } from './text-color';
 import { BlockId } from './block-id';
 import { highlightColor } from './highlight-colors';
@@ -80,6 +81,9 @@ export const pageExtensions: Extensions = [
   Column,
   PageImage,
   FileEmbed,
+  // Inline card linking to a sub-page (Phase 4a). Shared so PageView renders
+  // the card too; created by the `/page` slash command.
+  ChildPage,
   // Inline ($…$) + block ($$…$$) math via KaTeX. Input rules convert as you
   // type; nodes are `inlineMath` / `blockMath` with a `latex` attr. KaTeX CSS is
   // imported in app/layout.tsx.

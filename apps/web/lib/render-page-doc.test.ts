@@ -77,6 +77,19 @@ describe('renderPageDoc', () => {
     expect(html).toContain('const'); // code text survives highlighting
   });
 
+  it('renders a childPage as an inert label, not a link (sub-pages stay private)', () => {
+    const html = renderPageDoc(
+      doc([{ type: 'childPage', attrs: { pageId: 'p1', title: '<Plans> & ideas', icon: '📋' } }]),
+      opts,
+    );
+    expect(html).toContain('data-child-page');
+    expect(html).toContain('<span class="child-page-title">&lt;Plans&gt; &amp; ideas</span>');
+    expect(html).toContain('<span class="child-page-icon">📋</span>');
+    // No link into the private child.
+    expect(html).not.toContain('/pages/p1');
+    expect(html).not.toContain('<a');
+  });
+
   it('neutralizes dangerous link protocols', () => {
     const html = renderPageDoc(
       doc([{ type: 'paragraph', content: [{ type: 'text', text: 'x', marks: [{ type: 'link', attrs: { href: 'javascript:alert(1)' } }] }] }]),
