@@ -3477,6 +3477,19 @@
   padding-right: 0.4rem;
 }
 
+/* Edited (green) — blocks Pages changed in the current draft. Same shape as the
+   marked highlight, distinct colour (chart-4, the theme's success/green), so a
+   post-run page reads as "this is what moved" at a glance. Cleared on commit. */
+.ProseMirror .is-edited {
+  position: relative;
+  border-radius: var(--radius);
+  background-color: color-mix(in oklab, var(--chart-4) 12%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--chart-4);
+  margin-left: -0.75rem;
+  padding-left: 0.75rem;
+  padding-right: 0.4rem;
+}
+
 /* Sub-page card on the raw/public render. In-app it's a React NodeView (a
    Link); the public surface emits an inert [data-child-page] div (sub-pages
    aren't part of a shared subtree), styled to match the in-app card. */

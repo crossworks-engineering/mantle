@@ -69,8 +69,10 @@ export function AiAssistPanel({
    *  byte-for-byte. */
   focusBlockIds?: string[];
   /** Called after Pages successfully edits the draft, so the parent can
-   *  refresh the editor's content from the server. */
-  onChanged: () => void;
+   *  refresh the editor's content from the server. Receives the block ids that
+   *  now differ from the committed doc (for the green "edited" highlight);
+   *  called with [] on discard so the parent clears it. */
+  onChanged: (changedBlockIds?: string[]) => void;
   /** Clear the gutter marks (offered after a focused edit). */
   onClearMarks?: () => void;
   /** Collapse the panel. The parent re-renders without it. */
@@ -113,7 +115,13 @@ export function AiAssistPanel({
         }),
       });
       const json = (await res.json().catch(() => ({}))) as
-        | { ok: true; reply: string; diff: AssistReply['diff']; hasDraft: boolean }
+        | {
+            ok: true;
+            reply: string;
+            changedBlockIds?: string[];
+            diff: AssistReply['diff'];
+            hasDraft: boolean;
+          }
         | { error: string };
       if (!res.ok || !('ok' in json)) {
         const err = 'error' in json ? json.error : `request failed (${res.status})`;
@@ -128,9 +136,9 @@ export function AiAssistPanel({
         { role: 'assistant', data: { reply: json.reply, diff: json.diff, hasDraft: json.hasDraft } },
       ]);
       // If Pages actually changed something, tell the parent so the
-      // editor refreshes from the new draft.
+      // editor refreshes from the new draft + highlights the edited blocks.
       const total = json.diff.added + json.diff.changed + json.diff.removed;
-      if (total > 0) onChanged();
+      if (total > 0) onChanged(json.changedBlockIds ?? []);
     } finally {
       setPending(false);
       // Defer scroll to next tick so the new message is in the DOM.

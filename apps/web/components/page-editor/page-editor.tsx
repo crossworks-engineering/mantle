@@ -26,6 +26,7 @@ export function PageEditor({
   pageId,
   markerMode = false,
   marks,
+  editedIds,
   onMarksChange,
   onChange,
   onBlur,
@@ -42,6 +43,9 @@ export function PageEditor({
   /** Block ids currently marked for Pages to focus on. Source of truth lives in
    *  the parent (persisted to localStorage); we just render + collect. */
   marks?: string[];
+  /** Block ids Pages changed in the current draft — highlighted green so the
+   *  user can see what moved after a run. Cleared on commit. */
+  editedIds?: string[];
   /** The gutter computed a new marked set (drag range / click toggle). */
   onMarksChange?: (ids: string[]) => void;
   onChange: (doc: JSONContent) => void;
@@ -128,12 +132,15 @@ export function PageEditor({
     if (editor) editor.setEditable(editable);
   }, [editor, editable]);
 
-  // Push the marked block-id set into the FocusMarks plugin (meta-only — no
-  // doc change, so no autosave). Re-runs whenever the parent's set changes.
+  // Push the marked + edited block-id sets into the FocusMarks plugin
+  // (meta-only — no doc change, so no autosave). Re-runs whenever either set
+  // changes (incl. after the AI-change editor remount, which re-seeds them).
   useEffect(() => {
     if (!editor) return;
-    editor.view.dispatch(editor.state.tr.setMeta(focusMarksKey, marks ?? []));
-  }, [editor, marks]);
+    editor.view.dispatch(
+      editor.state.tr.setMeta(focusMarksKey, { marked: marks ?? [], edited: editedIds ?? [] }),
+    );
+  }, [editor, marks, editedIds]);
 
   if (!editor) return null;
 

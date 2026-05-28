@@ -84,9 +84,19 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     (after.draft as Record<string, unknown> | null) ?? (after.doc as Record<string, unknown>),
   );
 
+  // Every block id that now differs from the committed doc (added or changed).
+  // The editor highlights these green so the user can see what Pages touched —
+  // useful precisely because an edited block's text no longer matches what they
+  // marked. Removed blocks have no current id to point at, so they're omitted.
+  const changedBlockIds = diff.ordered
+    .filter((c) => c.kind === 'added' || c.kind === 'changed')
+    .map((c) => (c.kind === 'added' ? c.block.id : c.to.id))
+    .filter((bid): bid is string => typeof bid === 'string' && bid.length > 0);
+
   return NextResponse.json({
     ok: true,
     reply: result.text,
+    changedBlockIds,
     diff: {
       added: diff.added.length,
       removed: diff.removed.length,

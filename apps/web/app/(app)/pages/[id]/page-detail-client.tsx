@@ -150,6 +150,7 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
       committedRef.current = docStr;
       draftSavedRef.current = docStr;
       setDocDirty(false);
+      setEditedIds([]); // changes are now committed — clear the green highlight
       toast.success('Committed');
     } finally {
       committingRef.current = false;
@@ -262,6 +263,10 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
   const marksKey = `mantle:page-marks:${initial.id}`;
   const [markerMode, setMarkerMode] = useState(false);
   const [marks, setMarks] = useState<string[]>([]);
+  // Blocks Pages changed in the current (uncommitted) draft — highlighted green
+  // so the user can spot what moved even when the text now reads differently.
+  // Session-only (not persisted); cleared on commit / discard.
+  const [editedIds, setEditedIds] = useState<string[]>([]);
 
   useEffect(() => {
     try {
@@ -306,7 +311,10 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
     }
   }, [initial.draft, initial.doc]);
 
-  const onAiChanged = useCallback(() => {
+  const onAiChanged = useCallback((changedBlockIds?: string[]) => {
+    // Remember which blocks now differ from the committed doc so the editor
+    // can highlight them green. Empty/undefined (e.g. on discard) clears it.
+    setEditedIds(changedBlockIds ?? []);
     // Pull the latest draft from the server. router.refresh re-runs the
     // server component which re-reads getPage; the new initial.draft
     // propagates down. The useEffect above detects the prop change and
@@ -437,6 +445,7 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
                 pageId={initial.id}
                 markerMode={markerMode}
                 marks={marks}
+                editedIds={editedIds}
                 onMarksChange={setMarks}
                 onChange={onDocChange}
                 onBlur={onEditorBlur}
