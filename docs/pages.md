@@ -343,29 +343,48 @@ cache + `extract_cost_cap_micro_usd`.
   remember Skills... maybe design a more structured ruleset for the
   models that does tasks like pages."*
 
-- **Hierarchy / sub-pages (Phase 4)** — designed, not built. The
-  architectural lever for documents past ~50 KB. Insight (2026-05-27 audit
-  conversation): no model AND no human reads a 170 KB document as one
-  unit. The right answer to "this doc is too long for Pages to restyle"
-  is not "make Pages handle bigger docs" — it's structure. Notion does
-  this via sub-pages; Mantle's `nodes.parent_id` + `ltree path` already
+- **Hierarchy / sub-pages (Phase 4)** — **4a shipped 2026-05-28**; 4b/4c
+  designed. The architectural lever for documents past ~50 KB. Insight
+  (2026-05-27 audit conversation): no model AND no human reads a 170 KB
+  document as one unit. The right answer to "this doc is too long for Pages
+  to restyle" is not "make Pages handle bigger docs" — it's structure. Notion
+  does this via sub-pages; Mantle's `nodes.parent_id` + `ltree path` already
   support the tree at the data layer, just not at the UX or content-model
   layer.
 
   Three slices, in order:
 
-  - **4a — Manual sub-pages (~280 LOC).** What makes Mantle a Notion peer.
-    1. New TipTap block-level node `childPage` with attrs
-       `{ pageId, title, icon? }` — renders as a clickable card inline in
-       the parent; clicking navigates to `/pages/<pageId>`. Lives alongside
-       `PageMention` (the existing inline equivalent).
-    2. Slash command `/page <title>` creates a new page with
-       `parent_id = current page`, inserts a `childPage` block at the
-       cursor.
-    3. `/pages` list rendered as a collapsible tree (currently flat).
-       Existing ltree paths give us this without schema changes.
-    4. Page creation API accepts `parent_id` (probably already does — just
-       expose).
+  - **4a — Manual sub-pages** — ✅ **built (2026-05-28).** What makes Mantle
+    a Notion peer.
+    1. TipTap block-level atom node `childPage` with attrs
+       `{ pageId, title, icon? }` (`components/page-editor/child-page.ts` +
+       `child-page-view.tsx`) — renders as a clickable card linking to
+       `/pages/<pageId>`; the block-level cousin of `PageMention`. The card
+       refreshes the child's live title/icon on mount so renames show up. In
+       the shared `pageExtensions` so PageView renders it too; the public
+       renderer emits an inert label (sub-pages aren't part of a shared
+       subtree). `childPage` joins `BLOCK_NODE_TYPES` (addressable +
+       block-id'd) and `docToText`'s `BLOCK_TYPES`.
+    2. `/page` slash command ("Sub-page") creates a page with
+       `parent_id = current page`, then inserts a `childPage` card at the
+       cursor. The page id reaches the static slash item via a `pageId`
+       option on the editor-only `SlashCommand` extension (exposed through
+       `editor.storage`); `PageEditor` gained a `pageId` prop. (Inline
+       `/page <title>` capture deferred — TipTap's Suggestion stops the query
+       at whitespace; the card is created "Untitled" and renamed in-child.)
+    3. `/pages` renders as a collapsible tree (built from `parent_id`) when
+       no filter is active; search / tag-filter falls back to the existing
+       flat paginated list (scattered matches aren't a tree — mirrors Notion).
+       Per-row hover actions: add sub-page, delete. Delete-confirm warns when
+       the target has sub-pages (`parent_id` is **ON DELETE CASCADE** — a
+       parent delete removes its whole subtree).
+    4. `createPage` accepts `parentId` (it did NOT before — it hardcoded the
+       flat `pages` root): it resolves the parent, sets `nodes.parent_id`,
+       and extends the parent's ltree `path` (`pages.<childId>`, nesting
+       deeper for grandchildren). Bad parent → `ParentPageNotFoundError` →
+       400 at `POST /api/pages`. New helper `listChildPages(ownerId, parentId)`.
+       The tree is driven by `parent_id` (the reliable FK); the ltree path is
+       the materialised mirror. Zero schema cost.
 
   - **4b — `page_split` tool for Pages (~150 LOC).** The AI-driven
     scaling lever. Signature: `page_split({ page_id, by: 'h2' | 'h1',
