@@ -8,6 +8,8 @@ import { EditorBubbleMenu } from './bubble-menu';
 import { EditorDragHandle } from './drag-handle';
 import { TableControls } from './table-controls';
 import { SlashCommand } from './slash-command';
+import { FocusMarks, focusMarksKey } from './focus-marks';
+import { FocusGutter } from './focus-gutter';
 import { handleDroppedFiles } from './upload';
 
 /**
@@ -22,6 +24,9 @@ import { handleDroppedFiles } from './upload';
 export function PageEditor({
   content,
   pageId,
+  markerMode = false,
+  marks,
+  onMarksChange,
   onChange,
   onBlur,
   onEditorReady,
@@ -31,6 +36,14 @@ export function PageEditor({
   /** Id of the page being edited — handed to the `/page` slash command so the
    *  sub-pages it creates get `parent_id` set to this page (Phase 4a). */
   pageId?: string | null;
+  /** When true the left gutter becomes a focus-marker strip (and the drag
+   *  handle steps aside). The marks themselves stay highlighted regardless. */
+  markerMode?: boolean;
+  /** Block ids currently marked for Pages to focus on. Source of truth lives in
+   *  the parent (persisted to localStorage); we just render + collect. */
+  marks?: string[];
+  /** The gutter computed a new marked set (drag range / click toggle). */
+  onMarksChange?: (ids: string[]) => void;
   onChange: (doc: JSONContent) => void;
   /** Editor lost focus — a natural "settle" signal to flush / re-index. */
   onBlur?: () => void;
@@ -89,13 +102,18 @@ export function PageEditor({
   );
 
   const editor = useEditor({
-    // SlashCommand is editor-only (no schema), so PageView stays identical.
-    // Configured with the current page id so `/page` parents sub-pages here.
-    extensions: [...pageExtensions, SlashCommand.configure({ pageId: pageId ?? null })],
+    // SlashCommand + FocusMarks are editor-only (no schema / no doc writes), so
+    // PageView stays identical. SlashCommand carries the page id so `/page`
+    // parents sub-pages here.
+    extensions: [...pageExtensions, SlashCommand.configure({ pageId: pageId ?? null }), FocusMarks],
     content,
     immediatelyRender: false, // required for Next.js SSR (avoids hydration mismatch)
     editorProps,
-    onUpdate: ({ editor }) => onChangeRef.current(editor.getJSON()),
+    // Guard on docChanged so meta-only transactions (e.g. pushing focus marks)
+    // never look like an edit — otherwise marking a section would trip autosave.
+    onUpdate: ({ editor, transaction }) => {
+      if (transaction.docChanged) onChangeRef.current(editor.getJSON());
+    },
     onBlur: () => onBlurRef.current?.(),
   });
 
@@ -110,14 +128,28 @@ export function PageEditor({
     if (editor) editor.setEditable(editable);
   }, [editor, editable]);
 
+  // Push the marked block-id set into the FocusMarks plugin (meta-only — no
+  // doc change, so no autosave). Re-runs whenever the parent's set changes.
+  useEffect(() => {
+    if (!editor) return;
+    editor.view.dispatch(editor.state.tr.setMeta(focusMarksKey, marks ?? []));
+  }, [editor, marks]);
+
   if (!editor) return null;
 
   return (
     <>
       <EditorBubbleMenu editor={editor} />
-      <EditorDragHandle editor={editor} />
+      {/* Marker mode swaps the gutter's job: the drag handle steps aside so the
+          focus strip owns the left band. Marks stay highlighted either way. */}
+      {markerMode ? null : <EditorDragHandle editor={editor} />}
       <TableControls editor={editor} />
-      <EditorContent editor={editor} />
+      <div className="relative">
+        {markerMode && onMarksChange && (
+          <FocusGutter editor={editor} marks={marks ?? []} onChange={onMarksChange} />
+        )}
+        <EditorContent editor={editor} />
+      </div>
     </>
   );
 }

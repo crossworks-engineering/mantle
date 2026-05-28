@@ -15,11 +15,15 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireOwner } from '@/lib/auth';
 import { getPage } from '@/lib/pages';
+import { buildFocusDirective } from '@/lib/focus-directive';
 import { diffBlocks } from '@mantle/content';
 import { invokeAgent } from '@mantle/agent-runtime';
 
 const Body = z.object({
   prompt: z.string().min(1).max(8000),
+  /** Block ids the user marked via the gutter focus marker. When present,
+   *  Pages is instructed to operate ONLY on these blocks. */
+  focusBlockIds: z.array(z.string()).max(200).optional(),
 });
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -35,6 +39,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const before = await getPage(user.id, id);
   if (!before) return NextResponse.json({ error: 'page not found' }, { status: 404 });
 
+  // A focus set narrows Pages to exactly the blocks the user marked in the
+  // gutter. Pages already edits by block id, so this is a prompt directive —
+  // no new tools (see buildFocusDirective for the safety contract).
+  const focusDirective = buildFocusDirective(parsed.data.focusBlockIds);
+
   // Compose the delegation prompt. Embed the page's id + title so Pages
   // doesn't have to guess + can start with page_blocks_list immediately.
   // The user's prompt is the actual intent ("add callouts on the quotes").
@@ -46,6 +55,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     `\n` +
     `Page id:    ${id}\n` +
     `Page title: ${before.title}\n` +
+    focusDirective +
     `\n` +
     `User request:\n${parsed.data.prompt}`;
 

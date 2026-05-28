@@ -3,7 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Editor, JSONContent } from '@tiptap/react';
-import { Check, GitCommitHorizontal, Loader2, MoreHorizontal, Sparkles, Trash2 } from 'lucide-react';
+import {
+  Check,
+  GitCommitHorizontal,
+  Highlighter,
+  Loader2,
+  MoreHorizontal,
+  Sparkles,
+  Trash2,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TagInput } from '@/components/tag-input';
@@ -244,6 +252,36 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
   const [editorKey, setEditorKey] = useState(0);
   const [aiPending, setAiPending] = useState(false);
 
+  // ── Focus marker ────────────────────────────────────────────────────
+  // `markerMode` turns the editor's left gutter into a section-marking strip;
+  // `marks` is the set of block ids the user has marked for Pages to focus on.
+  // Marks are an ephemeral working overlay — they never touch the document —
+  // but we persist them per page in localStorage so a reload doesn't lose a
+  // careful multi-section selection. They survive the editor remount on AI
+  // changes (they live here, not in the editor).
+  const marksKey = `mantle:page-marks:${initial.id}`;
+  const [markerMode, setMarkerMode] = useState(false);
+  const [marks, setMarks] = useState<string[]>([]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(marksKey);
+      if (raw) setMarks(JSON.parse(raw) as string[]);
+    } catch {
+      // ignore malformed / unavailable storage
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    try {
+      if (marks.length) localStorage.setItem(marksKey, JSON.stringify(marks));
+      else localStorage.removeItem(marksKey);
+    } catch {
+      // ignore
+    }
+  }, [marks, marksKey]);
+
   // Watch the SERVER-PROVIDED draft prop. When router.refresh() (called
   // from onAiChanged after the AI run completes) brings back a NEW draft
   // identity, this effect fires and bumps editorKey — which is what
@@ -308,6 +346,26 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
           <Button size="sm" onClick={() => void commit()} disabled={!docDirty || committing}>
             <GitCommitHorizontal /> Commit
           </Button>
+          <Button
+            size="sm"
+            variant={markerMode ? 'default' : 'outline'}
+            onClick={() => setMarkerMode((v) => !v)}
+            aria-pressed={markerMode}
+            aria-label="Toggle focus marker"
+            title="Marker — drag the left gutter to mark sections for Pages to focus on"
+          >
+            <Highlighter /> Mark{marks.length > 0 ? ` · ${marks.length}` : ''}
+          </Button>
+          {marks.length > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setMarks([])}
+              title="Clear all marked sections"
+            >
+              Clear
+            </Button>
+          )}
           <Button
             size="sm"
             variant={aiOpen ? 'default' : 'outline'}
@@ -377,6 +435,9 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
                 key={editorKey}
                 content={initialDoc}
                 pageId={initial.id}
+                markerMode={markerMode}
+                marks={marks}
+                onMarksChange={setMarks}
                 onChange={onDocChange}
                 onBlur={onEditorBlur}
                 onEditorReady={onEditorReady}
@@ -385,6 +446,14 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
               {aiPending && (
                 <p className="mt-3 pl-10 text-xs italic text-muted-foreground">
                   Editor locked while Pages is editing — your changes are safe.
+                </p>
+              )}
+              {markerMode && !aiPending && (
+                <p className="mt-3 pl-10 text-xs italic text-muted-foreground">
+                  Marker on — drag down the left gutter to mark sections (click a marked
+                  row to unmark)
+                  {marks.length > 0 ? `; ${marks.length} marked` : ''}. Then open AI assist
+                  and tell Pages what to do with them.
                 </p>
               )}
             </div>
@@ -397,7 +466,9 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
           <div className="hidden w-[380px] min-h-0 shrink-0 md:flex md:flex-col">
             <AiAssistPanel
               pageId={initial.id}
+              focusBlockIds={marks}
               onChanged={onAiChanged}
+              onClearMarks={() => setMarks([])}
               onClose={() => setAiOpen(false)}
               onPendingChange={setAiPending}
             />

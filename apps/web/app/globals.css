@@ -3462,6 +3462,21 @@
   content: '📎';
 }
 
+/* Focus marker (pages editor). Blocks the user marked via the left-gutter
+   marker get a primary accent bar + faint tint so a multi-section selection
+   reads at a glance. Editor-only (decorations); never serialized into the doc.
+   The negative-margin / padding pair pulls the tint into the gutter band and
+   keeps the text from shifting when a block becomes marked. */
+.ProseMirror .is-focus-marked {
+  position: relative;
+  border-radius: var(--radius);
+  background-color: color-mix(in oklab, var(--primary) 8%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--primary);
+  margin-left: -0.75rem;
+  padding-left: 0.75rem;
+  padding-right: 0.4rem;
+}
+
 /* Sub-page card on the raw/public render. In-app it's a React NodeView (a
    Link); the public surface emits an inert [data-child-page] div (sub-pages
    aren't part of a shared subtree), styled to match the in-app card. */

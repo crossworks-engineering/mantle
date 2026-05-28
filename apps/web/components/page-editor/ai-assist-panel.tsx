@@ -27,7 +27,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Send, Sparkles, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Send, Sparkles, X, ChevronDown, ChevronUp, Highlighter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
@@ -57,14 +57,22 @@ type Message =
 
 export function AiAssistPanel({
   pageId,
+  focusBlockIds = [],
   onChanged,
+  onClearMarks,
   onClose,
   onPendingChange,
 }: {
   pageId: string;
+  /** Block ids the user marked via the gutter focus marker. When non-empty,
+   *  Pages is told to operate ONLY on these blocks and leave the rest
+   *  byte-for-byte. */
+  focusBlockIds?: string[];
   /** Called after Pages successfully edits the draft, so the parent can
    *  refresh the editor's content from the server. */
   onChanged: () => void;
+  /** Clear the gutter marks (offered after a focused edit). */
+  onClearMarks?: () => void;
   /** Collapse the panel. The parent re-renders without it. */
   onClose: () => void;
   /** Bubbles up the pending state so the parent can lock the editor
@@ -99,7 +107,10 @@ export function AiAssistPanel({
       const res = await fetch(`/api/pages/${pageId}/ai-assist`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({
+          prompt,
+          focusBlockIds: focusBlockIds.length ? focusBlockIds : undefined,
+        }),
       });
       const json = (await res.json().catch(() => ({}))) as
         | { ok: true; reply: string; diff: AssistReply['diff']; hasDraft: boolean }
@@ -127,7 +138,7 @@ export function AiAssistPanel({
         if (scrollerRef.current) scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
       });
     }
-  }, [draft, pending, pageId, onChanged]);
+  }, [draft, pending, pageId, focusBlockIds, onChanged]);
 
   const discardDraft = useCallback(async () => {
     if (discarding) return;
@@ -205,6 +216,25 @@ export function AiAssistPanel({
         </div>
       )}
 
+      {/* ── Focus marker banner ─────────────────────────────────────── */}
+      {focusBlockIds.length > 0 && (
+        <div className="flex items-center justify-between gap-2 border-t border-border bg-primary/5 px-3 py-2 text-xs">
+          <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
+            <Highlighter className="size-3.5 text-primary" />
+            Focusing {focusBlockIds.length} marked section{focusBlockIds.length === 1 ? '' : 's'}
+          </span>
+          {onClearMarks && (
+            <button
+              type="button"
+              className="text-muted-foreground underline-offset-2 hover:underline"
+              onClick={onClearMarks}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ── Input row ───────────────────────────────────────────────── */}
       <form
         className="flex items-end gap-2 border-t border-border p-3"
@@ -216,7 +246,11 @@ export function AiAssistPanel({
         <Textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="What should Pages do to this page?"
+          placeholder={
+            focusBlockIds.length > 0
+              ? 'What should Pages do to the marked sections?'
+              : 'What should Pages do to this page?'
+          }
           rows={2}
           className="min-h-[3rem] resize-none text-sm"
           disabled={pending}
