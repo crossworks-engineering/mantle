@@ -92,6 +92,7 @@ export function AiWorkersClient({
   createAction,
   updateAction,
   deleteAction,
+  nativeDocProviders,
 }: {
   workers: AiWorker[];
   keys: KeyOption[];
@@ -99,6 +100,7 @@ export function AiWorkersClient({
   createAction: (formData: FormData) => Promise<void>;
   updateAction: (id: string, formData: FormData) => Promise<void>;
   deleteAction: (id: string) => Promise<void>;
+  nativeDocProviders: string[];
 }) {
   const [sel, setSel] = useState<Selection>(
     initialSelectedId ? { mode: 'edit', id: initialSelectedId } : null,
@@ -249,6 +251,7 @@ export function AiWorkersClient({
               action={createAction}
               enabled={enabled}
               isDefault={isDefault}
+              nativeDocProviders={nativeDocProviders}
             />
           </div>
         ) : editWorker ? (
@@ -288,6 +291,7 @@ export function AiWorkersClient({
               action={(fd) => updateAction(editWorker.id, fd)}
               enabled={enabled}
               isDefault={isDefault}
+              nativeDocProviders={nativeDocProviders}
             />
           </div>
         ) : (

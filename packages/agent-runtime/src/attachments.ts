@@ -132,13 +132,22 @@ export async function runVisionWorker(opts: {
   }
 }
 
+/** True if the owner's resolved document worker is set to `prefer_native` —
+ *  i.e. send PDFs to the model even when they have a text layer. Reads the
+ *  dedicated 'document' worker, falling back to 'vision' (which has no such
+ *  flag, so it returns false). Cheap metadata read. */
+export async function documentWorkerPrefersNative(ownerId: string): Promise<boolean> {
+  const worker = await getDefaultWorker(ownerId, 'document');
+  return Boolean((worker?.params as { prefer_native?: boolean } | undefined)?.prefer_native);
+}
+
 /**
- * Native document (PDF) extraction — send the whole PDF to the owner's default
- * vision worker's model when its provider supports native documents (Anthropic
- * today; Google next). One call, whole-document context, real layout/tables, no
- * rasterization. Resolves the SAME vision worker (set it to Claude and PDFs go
- * native automatically). Returns `ran:false` when the provider has no native
- * document path, so callers fall back to rasterize → per-page OCR.
+ * Native document (PDF) extraction — send the whole PDF to the owner's
+ * document worker's model (falling back to the vision worker) when its provider
+ * supports native documents (Anthropic today; Google next). One call,
+ * whole-document context, real layout/tables, no rasterization. Returns
+ * `ran:false` when the provider has no native document path, so callers fall
+ * back to rasterize → per-page OCR.
  */
 export async function runDocumentWorker(opts: {
   ownerId: string;
@@ -340,6 +349,46 @@ export async function extractAttachmentForTurn(opts: {
   }
 
   if (INGESTABLE_EXTS.has(ext)) {
+    const isPdf = ext === 'pdf';
+
+    // Native-PDF attempt (Claude/Gemini): the whole document in one call —
+    // real layout/tables, no rasterization. Returns null when the provider
+    // has no native path or the call produced nothing, so callers fall through.
+    const tryNativePdf = async (): Promise<AttachmentExtract | null> => {
+      const native = await step(
+        {
+          name: 'extract_document',
+          kind: 'llm_call',
+          input: { mime: 'application/pdf', bytes: opts.bytes.length },
+        },
+        async (h) => {
+          const r = await runDocumentWorker({
+            ownerId: opts.ownerId,
+            bytes: opts.bytes,
+            mimeType: 'application/pdf',
+            filename: opts.filename,
+          });
+          h.setMeta({ ran: r.ran, note: r.note, model: r.model, textLength: r.text.length, tokensOut: r.tokensOut });
+          return r;
+        },
+      );
+      if (!native.ran || !native.text.trim()) return null;
+      const t = native.text.trim();
+      const capped =
+        t.length > DOC_TEXT_MAX
+          ? `${t.slice(0, DOC_TEXT_MAX)}\n\n[...truncated ${t.length - DOC_TEXT_MAX} more characters — call file_read on the node for the full document.]`
+          : t;
+      return { kind: 'file', text: capped, note: 'PDF read natively by the model.' };
+    };
+
+    // prefer_native: skip the text-layer shortcut entirely (for tabular PDFs
+    // whose text layer scrambles columns — read the real layout instead).
+    const preferNative = isPdf && (await documentWorkerPrefersNative(opts.ownerId));
+    if (preferNative) {
+      const n = await tryNativePdf();
+      if (n) return n; // else fall through to text / rasterize below
+    }
+
     try {
       // Trace the parse for the live path too, mirroring the durable extractor
       // (apps/agent/src/extractor.ts readNodeBodyRaw). Makes Tika vs in-process
@@ -363,37 +412,12 @@ export async function extractAttachmentForTurn(opts: {
       ).trim();
       if (!raw) {
         // No text layer — usually a scan / image-only export (e.g. an invoice).
-        if (ext === 'pdf') {
-          // 1) Native PDF: hand the whole document to the vision model when its
-          //    provider supports it (Claude/Gemini). Best fidelity — whole-doc
-          //    context, real tables, no rasterization.
-          const native = await step(
-            {
-              name: 'extract_document',
-              kind: 'llm_call',
-              input: { mime: 'application/pdf', bytes: opts.bytes.length },
-            },
-            async (h) => {
-              const r = await runDocumentWorker({
-                ownerId: opts.ownerId,
-                bytes: opts.bytes,
-                mimeType: 'application/pdf',
-                filename: opts.filename,
-              });
-              h.setMeta({ ran: r.ran, note: r.note, model: r.model, textLength: r.text.length, tokensOut: r.tokensOut });
-              return r;
-            },
-          );
-          if (native.ran && native.text.trim()) {
-            const t = native.text.trim();
-            const capped =
-              t.length > DOC_TEXT_MAX
-                ? `${t.slice(0, DOC_TEXT_MAX)}\n\n[...truncated ${t.length - DOC_TEXT_MAX} more characters — call file_read on the node for the full document.]`
-                : t;
-            return { kind: 'file', text: capped, note: 'PDF read natively by the vision model.' };
+        if (isPdf) {
+          // Native first (unless prefer_native already tried it), then rasterize.
+          if (!preferNative) {
+            const n = await tryNativePdf();
+            if (n) return n;
           }
-          // 2) Fall back to rasterize → per-page image OCR (providers without
-          //    native PDF, or if the native call failed).
           const ocr = await ocrPdfForTurn({
             ownerId: opts.ownerId,
             bytes: opts.bytes,

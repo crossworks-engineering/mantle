@@ -113,6 +113,11 @@ export type VisionParams = {
 export type DocumentParams = {
   extraction_prompt?: string;
   max_tokens?: number;
+  /** Send PDFs to the model natively even when they HAVE a text layer, instead
+   *  of trusting `pdf-parse`. Off by default (cheap text path); turn on when
+   *  documents are tabular (invoices/statements) and the text layer mangles
+   *  columns — the model reads the real layout. Costs one LLM call per PDF. */
+  prefer_native?: boolean;
 };
 
 /** Params for `kind='image_gen'` workers. */

@@ -73,6 +73,7 @@ import { TtsTestButton } from './tts-test-button';
 import { SttTestButton } from './stt-test-button';
 import { ChatTestButton } from './chat-test-button';
 import { VisionTestButton } from './vision-test-button';
+import { DocumentTestButton } from './document-test-button';
 import { ImageGenTestButton } from './image-gen-test-button';
 
 type KeyOption = { id: string; service: string; label: string; masked: string };
@@ -87,6 +88,10 @@ type Props = {
    *  the submitted FormData so the server actions stay unchanged. */
   enabled: boolean;
   isDefault: boolean;
+  /** Provider ids whose vision adapter reads PDFs natively (derived from the
+   *  adapter registry, server-side). Drives the Document-worker provider badge
+   *  — non-native providers rasterize at ingest. */
+  nativeDocProviders: string[];
 };
 
 /** Default provider per kind. The dropdown is populated from the
@@ -196,7 +201,16 @@ const MODEL_HINT_FOR_KIND: Record<AiWorkerKind, string> = {
   embedding: 'openai/text-embedding-3-small',
 };
 
-export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefault }: Props) {
+export function WorkerForm({
+  mode,
+  kind,
+  worker,
+  keys,
+  action,
+  enabled,
+  isDefault,
+  nativeDocProviders,
+}: Props) {
   const router = useRouter();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
@@ -577,6 +591,9 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
                   {p.label}
                   {p.isAggregator ? ' (aggregator)' : ''}
                   {!isProviderWired(p.id, capability) ? ' — not yet wired' : ''}
+                  {kind === 'document' && !nativeDocProviders.includes(p.id)
+                    ? ' — page-OCR fallback'
+                    : ''}
                 </option>
               ))}
             </select>
@@ -760,6 +777,19 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
             prompt before the ingest pipeline starts feeding it photos.
           </p>
           <VisionTestButton workerId={worker.id} />
+        </section>
+      )}
+      {mode === 'edit' && worker && kind === 'document' && (
+        <section className="space-y-2 border-t border-border pt-6">
+          <h3 className="text-sm font-semibold">Test extraction</h3>
+          <p className="text-xs text-muted-foreground">
+            Pick a PDF from disk and we'll send it natively through this worker's adapter
+            ({provider}) using the saved prompt and model — the same path the ingest pipeline
+            uses. Use it to dial in the prompt before feeding it real invoices.
+            {!nativeDocProviders.includes(provider) &&
+              ' (This provider has no native-PDF adapter — at ingest it would rasterize instead.)'}
+          </p>
+          <DocumentTestButton workerId={worker.id} />
         </section>
       )}
       {mode === 'edit' && worker && kind === 'image_gen' && (
@@ -1408,6 +1438,22 @@ function DocumentFields({
           multi-page invoice. Long docs need more than the per-image vision default.
         </p>
       </div>
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          name="prefer_native"
+          defaultChecked={Boolean(params.prefer_native)}
+          className="mt-0.5 size-4"
+        />
+        <span>
+          <span className="font-medium">Always read PDFs natively</span>
+          <span className="block text-xs text-muted-foreground">
+            Send every PDF to the model, even when it has a text layer — best for tabular
+            docs (invoices/statements) whose text layer scrambles columns. Off by default:
+            PDFs with clean text use the cheap text path and skip the model.
+          </span>
+        </span>
+      </label>
     </div>
   );
 }

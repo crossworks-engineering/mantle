@@ -1,3 +1,4 @@
+import { nativeDocumentProviders } from '@mantle/voice';
 import { requireOwner } from '@/lib/auth';
 import { listAiWorkers } from '@/lib/ai-workers';
 import { listApiKeys } from '@/lib/api-keys';
@@ -39,6 +40,7 @@ export default async function AiWorkersPage({
         createAction={createAiWorkerAction}
         updateAction={updateAction}
         deleteAction={deleteAction}
+        nativeDocProviders={nativeDocumentProviders() as string[]}
       />
     </>
   );

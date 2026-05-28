@@ -117,6 +117,7 @@ export {
   listSttAdapters,
   registerVisionAdapter,
   getVisionAdapter,
+  nativeDocumentProviders,
   registerImageGenAdapter,
   getImageGenAdapter,
   registerEmbeddingAdapter,

@@ -25,6 +25,7 @@ import {
   getSttAdapter,
   getTtsAdapter,
   getVisionAdapter,
+  nativeDocumentProviders,
   type ChatModelInfo,
   type ImageGenModelInfo,
   type SttModelInfo,
@@ -565,6 +566,62 @@ export async function testVisionAction(
 }
 
 /**
+ * Test a Document worker against a PDF picked from disk — runs the same native
+ * extractDocument path the ingest pipeline uses, so the operator can dial in
+ * the prompt/model before feeding it real invoices. Errors clearly if the
+ * worker's provider has no native-PDF adapter (the runtime would rasterize
+ * instead — not what this button exercises).
+ */
+export async function testDocumentAction(
+  workerId: string,
+  pdfBase64: string,
+): Promise<{
+  ok: true;
+  text: string;
+  model: string;
+  adapter: string;
+  tokensIn: number | null;
+  tokensOut: number | null;
+}> {
+  const user = await requireOwner();
+  const worker = await getAiWorker(user.id, workerId);
+  if (!worker) throw new Error('worker not found');
+  if (worker.kind !== 'document') throw new Error('worker is not a document worker');
+  if (!worker.apiKeyId) throw new Error('worker has no api_key configured');
+  const apiKey = await getApiKeyById(worker.apiKeyId);
+  if (!apiKey) throw new Error('api key not found or could not decrypt');
+
+  const adapter = getVisionAdapter(worker.provider);
+  if (!adapter?.extractDocument) {
+    throw new Error(
+      `provider '${worker.provider}' has no native-PDF adapter. Native PDF is wired for: ` +
+        `${nativeDocumentProviders().join(', ') || '(none)'}. Other providers rasterize at ingest.`,
+    );
+  }
+  const bytes = Buffer.from(pdfBase64, 'base64');
+  if (bytes.length === 0) throw new Error('empty PDF buffer');
+
+  const params = (worker.params ?? {}) as { extraction_prompt?: string; max_tokens?: number };
+  const result = await adapter.extractDocument(bytes, {
+    apiKey,
+    mimeType: 'application/pdf',
+    prompt: params.extraction_prompt?.trim() || 'Transcribe this document in full, verbatim.',
+    systemPrompt: worker.systemPrompt ?? undefined,
+    model: worker.model,
+    maxTokens: params.max_tokens ?? 8000,
+  });
+
+  return {
+    ok: true,
+    text: result.text,
+    model: result.model,
+    adapter: adapter.adapterName,
+    tokensIn: result.tokensIn ?? null,
+    tokensOut: result.tokensOut ?? null,
+  };
+}
+
+/**
  * Test a chat worker by sending a one-shot prompt through its
  * configured adapter and returning the response. Used by the
  * "Test chat" button on chat-shaped worker forms (reflector,
@@ -679,11 +736,17 @@ function parseParamsFromForm(kind: AiWorkerKind, fd: FormData): AiWorkerParams {
         max_duration_seconds: num(fd.get('max_duration_seconds')),
       };
     }
-    case 'vision':
+    case 'vision': {
+      return {
+        extraction_prompt: str(fd.get('extraction_prompt')),
+        max_tokens: num(fd.get('max_tokens')),
+      } as AiWorkerParams;
+    }
     case 'document': {
       return {
         extraction_prompt: str(fd.get('extraction_prompt')),
         max_tokens: num(fd.get('max_tokens')),
+        prefer_native: fd.get('prefer_native') === 'on',
       } as AiWorkerParams;
     }
     case 'image_gen': {

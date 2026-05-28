@@ -81,6 +81,23 @@ export function getVisionAdapter(providerId: string): VisionDispatcher | null {
   return VISION.get(providerId as ProviderId) ?? null;
 }
 
+/**
+ * Provider ids whose vision adapter can read a PDF NATIVELY — i.e. implements
+ * `extractDocument`. This is the SELF-MAINTAINING source of truth for "which
+ * providers a Document worker can use natively": it reads the adapter registry,
+ * so the moment a new adapter (e.g. Google) gains `extractDocument`, it appears
+ * here with no second list to update. Native-PDF capability is a fact about OUR
+ * adapter code, not something the provider's API advertises — so the registry
+ * is the only honest place to derive it.
+ */
+export function nativeDocumentProviders(): ProviderId[] {
+  const out: ProviderId[] = [];
+  for (const [id, adapter] of VISION) {
+    if (typeof adapter.extractDocument === 'function') out.push(id);
+  }
+  return out;
+}
+
 // ─── Image generation (interface ready, no adapters yet) ─────────────
 
 export function registerImageGenAdapter(adapter: ImageGenDispatcher): void {

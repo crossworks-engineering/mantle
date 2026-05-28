@@ -465,8 +465,10 @@ async function ocrIngestPdfNode(
         await step({ name: 'persist_vision_text', kind: 'db_write' }, async (h) => {
           await db
             .update(nodes)
+            // native PDF read, not page OCR — flag it accordingly (`native_pdf`)
+            // so the marker is honest; downstream nothing reads `ocr` today.
             .set({
-              data: sql`${nodes.data} || jsonb_build_object('text', ${text}::text, 'vision_model', ${native.model ?? ''}::text, 'ocr', true)`,
+              data: sql`${nodes.data} || jsonb_build_object('text', ${text}::text, 'vision_model', ${native.model ?? ''}::text, 'native_pdf', true)`,
               updatedAt: new Date(),
             })
             .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
