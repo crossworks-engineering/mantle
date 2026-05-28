@@ -183,7 +183,7 @@ in the UI dropdown.
 
 | Provider | Chat | Embedding | TTS | STT | Vision | Image-gen |
 |---|---|---|---|---|---|---|
-| OpenRouter | ✅ (direct SDK¹) | ✅ openrouter-embedding (only multimodal-capable adapter) | — | — | — | — |
+| OpenRouter | ✅ (direct SDK¹) | ✅ openrouter-embedding (only multimodal-capable adapter) | — | — | ✅ openrouter-vision (+ native PDF) | — |
 | OpenAI | via OpenRouter¹ | ✅ openai-embedding | ✅ openai-tts | ✅ openai-stt | ✅ openai-vision | ✅ openai-image (gpt-image-1 / DALL-E 3 / DALL-E 2) |
 | xAI (Grok) | ✅ xai-chat | — | ✅ xai-tts | ✅ xai-stt | ✅ xai-vision | ✅ xai-image (grok-imagine-image) |
 | Hugging Face | ✅ huggingface-chat | — | — | — | — | ✅ huggingface-image (FLUX-1, SDXL, SD 3.5) |
@@ -208,7 +208,11 @@ that doesn't go through the registry" asymmetry retired with Phase 3.
 
 Vision providers also power the **Telegram photo ingest** pipeline
 (photo → default vision worker → note in `/files`) and Saskia's
-`extract_from_image` tool for on-demand OCR.
+`extract_from_image` tool for on-demand OCR. The **Vision** column doubles as
+the **Document (PDF) `kind`** provider set; adapters with `extractDocument`
+(Anthropic, OpenRouter today) read PDFs natively, the rest rasterize. See
+§5b′. With only an OpenRouter key the whole text+vision brain works; TTS/STT/
+image-gen still need a direct provider (§5b″).
 
 Image-gen providers power **Saskia's `generate_image` tool** —
 generated images land both inline in the chat (Telegram `sendPhoto`
@@ -451,6 +455,120 @@ HEIC/HEIF → JPEG via `heic-convert` (libheif WASM, no native dep), passthrough
 otherwise. Lazy-imported; on a decode failure it returns the original bytes and
 degrades as before. `heic-convert` is in `serverExternalPackages` so Next
 leaves its `.wasm` alone.
+
+---
+
+## 5b′. The Document (PDF) worker + native PDF (2026-05-28)
+
+A dedicated `kind='document'` worker, separate from `vision`, plus a
+native-PDF extraction path. This is the lever that turned "Mantle can't read a
+scanned invoice" into "Mantle reads every line."
+
+### Why a separate kind (not just the vision worker)
+
+You pick the *image* model and the *document* model differently. A cheap model
+(`gpt-4o-mini`) is fine for "describe this photo"; an invoice or statement wants
+a strong document model (Claude / Gemini) that reads the **whole PDF natively** —
+real layout, real tables. Forcing one worker to serve both means either
+overpaying for photo describe or under-reading documents. So `document` is its
+own kind with its own provider / model / prompt. Migration `0051` adds it to the
+`ai_worker_kind` enum; `DocumentParams` carries `extraction_prompt`,
+`max_tokens` (default **8000** — the whole doc transcribes in one call, so the
+per-image vision default is far too small), and `prefer_native`.
+
+### Native PDF vs rasterize — and why native is better
+
+Two ways to turn a PDF into text for a vision model:
+
+1. **Rasterize → page OCR** (the original path): render each page to PNG
+   (`rasterizePdfToPngs`, `@mantle/files/rasterize`, `@napi-rs/canvas`) and run
+   the vision worker per page. Works anywhere, but loses cross-page table
+   coherence, repeats page headers/footers, and costs N calls.
+2. **Native PDF** (the upgrade): hand the *whole* PDF to a document-capable
+   model in **one** call — it reads the text layer AND the rendered pages with
+   whole-document context. Better fidelity on dense tables, fewer calls, no
+   PNG-conversion loss.
+
+Native is an **optional adapter capability**: `VisionDispatcher.extractDocument`
+(`packages/voice/src/adapters/types.ts`). Anthropic implements it (a `document`
+content block, `anthropic-beta: pdfs-2024-09-25`, 32 MB cap, 120 s timeout);
+OpenRouter implements it (OR's `file-parser` plugin, `engine: 'native'`, routes
+to Claude/Gemini under the hood). Providers without it (OpenAI, xAI) omit the
+method and the caller **falls back to rasterize → page OCR** automatically.
+
+`runDocumentWorker` (`@mantle/agent-runtime/attachments`) resolves a `document`
+worker first, **falling back to the `vision` worker** when none is configured —
+so PDFs keep working out of the box; the dedicated worker is purely additive.
+
+### Where it's wired (both layers)
+
+- **Live turn** (`extractAttachmentForTurn`, web `/assistant` + Telegram):
+  `parse_document` (cheap text) → on empty, native PDF → rasterize. A new
+  `extract_document` trace step makes it visible in `/traces`.
+- **Indexer** (`apps/agent/src/extractor.ts` `ocrIngestPdfNode`): same
+  native-first → rasterize chain for the durable `data.text`. Native results are
+  flagged `native_pdf: true` (not `ocr`, which means page-OCR).
+
+**The bug this fixed.** Before this, the live turn ran *text-only* PDF parsing
+with no OCR fallback — a scanned invoice (no text layer) came back "No text
+could be extracted," even though the indexer already rasterized+OCR'd it. The
+asymmetry was real and trace-confirmed (`parse_document chars_out:0` → dead end
+on the live path). Native PDF + the OCR fallback closes it on both layers.
+
+### `prefer_native` — for digital PDFs with messy tables
+
+By default native/OCR only fires when there's **no text layer** (digital PDFs
+use the cheap text path). But a digital invoice can have a *complete but
+scrambled* text layer that mangles columns. The document worker's
+`prefer_native` toggle says "always send PDFs to the model, even with a text
+layer." Honoured on **both** the live turn and the indexer (the latter via
+`documentWorkerPrefersNative` → `ocrIngestPdfNode` on text-layer PDFs, keeping
+the text body if native yields nothing). Off by default — it costs one LLM call
+per PDF.
+
+### Cost
+
+A scanned ~5-page invoice on `claude-sonnet-4-6` is ~$0.06 per native
+extraction (≈8 K in / 2.4 K out). Note: each upload extracts twice (the live
+turn for the immediate reply, the indexer for the durable copy) — consistent
+with the two-layer design images already use. Direct-provider vision/document
+calls pass the **bare** model id (`claude-sonnet-4-6`), so `pricing.ts` keys
+both the bare ids and the dotted OpenRouter slugs — otherwise spend read $0 in
+`/debug`.
+
+### The native-capability source of truth
+
+"Which providers read PDFs natively?" is a fact about **our adapter code**, not
+something a provider API advertises. `nativeDocumentProviders()`
+(`adapters/registry.ts`) derives it live from the registry — the providers whose
+vision adapter implements `extractDocument`. Computed server-side, passed to the
+worker form, which badges non-native providers `— page-OCR fallback`. Add a new
+adapter's `extractDocument` and it appears automatically — no second list to
+keep in sync. Today: `['anthropic', 'openrouter']`.
+
+## 5b″. OpenRouter coverage — "one key, the whole brain"
+
+OpenRouter is the lowest-friction setup: with **only** an OpenRouter key, the
+entire text + vision brain is functional.
+
+| Capability | OpenRouter? | Notes |
+|---|---|---|
+| Chat (responder, extractor, summarizer, reflector) | ✅ | `openrouter-chat` adapter |
+| Embeddings | ✅ | `openrouter-embedding` adapter |
+| Vision (image OCR) | ✅ | `openrouter-vision.extract` — `image_url` content |
+| Document (native PDF) | ✅ | `openrouter-vision.extractDocument` — OR `file-parser` plugin |
+| **TTS (voice out)** | ❌ | OpenRouter does **not** proxy audio synthesis |
+| **STT (voice in)** | ❌ | OpenRouter does **not** proxy transcription |
+| **Image generation** | ❌ | OpenRouter does **not** proxy image generation |
+
+**The audio/image-gen limitation is real, not an oversight.** OpenRouter is a
+chat/embedding/multimodal-text aggregator — it has no TTS, STT, or image-gen
+endpoints. So voice replies, voice messages, and `generate_image` need a
+**direct** provider key (OpenAI for Whisper/TTS/DALL-E, ElevenLabs/Deepgram/etc.
+for voice, xAI/Google/HF for images). The provider catalogue reflects this:
+OpenRouter declares `capabilities: ['chat', 'embedding', 'vision']` only. These
+are *enhancements*, not core — an OR-only Mantle reads, writes, searches,
+remembers, and extracts documents; it just can't talk out loud or draw.
 
 ---
 
