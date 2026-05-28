@@ -16,12 +16,11 @@ export function PagePresenter({
 }) {
   const html = renderPageDoc(view.doc, { assetUrl });
   const widthClass = view.width === 'wide' ? 'max-w-5xl' : 'max-w-3xl';
+  // The page name is intentionally NOT rendered on the public surface — a
+  // shared page shows only its content. (The title still drives the browser
+  // tab / metadata in the route, just not an on-page heading.)
   return (
     <article className={`mx-auto ${widthClass} px-6 py-12 md:py-16`}>
-      <header className="mb-8">
-        {view.icon && <div className="mb-3 text-4xl leading-none">{view.icon}</div>}
-        <h1 className="text-3xl font-bold tracking-tight text-balance">{view.title}</h1>
-      </header>
       <div
         className="ProseMirror prose dark:prose-invert max-w-none"
         dangerouslySetInnerHTML={{ __html: html }}
