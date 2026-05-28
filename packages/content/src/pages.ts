@@ -19,6 +19,7 @@ import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { db, nodes, pages, notifyNodeIngested, type Node } from '@mantle/db';
 import { docToText } from './doc-to-text';
 import { ensureBlockIds } from './block-ids';
+import { childPagePath } from './page-path';
 
 export const PAGES_ROOT_LABEL = 'pages';
 
@@ -237,13 +238,6 @@ export class ParentPageNotFoundError extends Error {
   }
 }
 
-/** Derive a Postgres-ltree-safe label from a node UUID. ltree labels accept
- *  only [A-Za-z0-9_], so the UUID's hyphens become underscores. Using the
- *  child's own id keeps sibling pages from ever colliding on `path`. */
-function ltreeLabelFromId(id: string): string {
-  return id.replace(/-/g, '_');
-}
-
 export async function createPage(ownerId: string, input: CreatePageInput): Promise<PageDetail> {
   await ensureRoot(ownerId);
   const doc = input.doc ?? EMPTY_DOC;
@@ -269,7 +263,7 @@ export async function createPage(ownerId: string, input: CreatePageInput): Promi
   // Generate the id up front so the path can embed it (the path is built before
   // the insert; the explicit id overrides the column's gen_random_uuid()).
   const id = randomUUID();
-  const path = parentId ? `${basePath}.${ltreeLabelFromId(id)}` : PAGES_ROOT_LABEL;
+  const path = parentId ? childPagePath(basePath, id) : PAGES_ROOT_LABEL;
 
   return db.transaction(async (tx) => {
     const [node] = await tx

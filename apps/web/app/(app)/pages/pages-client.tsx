@@ -40,6 +40,7 @@ import { TagInput } from '@/components/tag-input';
 import { PageView } from '@/components/page-editor/page-view';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
+import { buildChildrenIndex } from './page-tree';
 
 type PageRow = {
   id: string;
@@ -93,20 +94,9 @@ export function PagesClient({
   const selected = pages.find((p) => p.id === selectedId) ?? pages[0] ?? null;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  // Tree index: parent id → sorted children (null key = top-level). A page
-  // whose parent isn't in the loaded set is treated as a root (defensive).
-  const childrenByParent = useMemo(() => {
-    const ids = new Set(pages.map((p) => p.id));
-    const m = new Map<string | null, PageRow[]>();
-    for (const p of pages) {
-      const key = p.parentId && ids.has(p.parentId) ? p.parentId : null;
-      const arr = m.get(key) ?? [];
-      arr.push(p);
-      m.set(key, arr);
-    }
-    for (const arr of m.values()) arr.sort((a, b) => a.title.localeCompare(b.title));
-    return m;
-  }, [pages]);
+  // Tree index: parent id → sorted children (null key = top-level). See
+  // buildChildrenIndex for the orphan-as-root + cycle-safety rules.
+  const childrenByParent = useMemo(() => buildChildrenIndex(pages), [pages]);
 
   const hasChildren = (id: string) => (childrenByParent.get(id)?.length ?? 0) > 0;
   const deleteHasChildren = deleteTarget ? hasChildren(deleteTarget.id) : false;
