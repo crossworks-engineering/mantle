@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Trash2 } from 'lucide-react';
+import { Loader2, Plus, Send, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -32,6 +32,7 @@ import type { AgentAvatar, PersonaNote } from '@mantle/db';
 import { AvatarPicker } from '@/components/avatar-picker';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { ToggleList, type ToggleListItem } from '@/components/toggle-list';
+import type { AgentTelegramBinding } from '@/lib/agent-telegram';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { PersonaNotesEditor } from './persona-notes-editor';
@@ -1290,6 +1291,34 @@ export function AgentsClient({
               )}
             </fieldset>
 
+            {form.role === 'responder' && (
+              <fieldset className="space-y-3 rounded-md border border-border p-3">
+                <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Telegram bot
+                </legend>
+                {editing.mode === 'edit' ? (
+                  <TelegramBotSection agentId={editing.agent.id} />
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Save this responder first, then link its Telegram bot here.
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  This responder long-polls its own bot. Create one with{' '}
+                  <a
+                    href="https://t.me/BotFather"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline"
+                  >
+                    @BotFather
+                  </a>{' '}
+                  and paste the token — it&apos;s encrypted at rest. DMs to this bot are answered
+                  by this agent.
+                </p>
+              </fieldset>
+            )}
+
             <fieldset className="space-y-3 rounded-md border border-border p-3">
               <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Tools
@@ -1758,6 +1787,141 @@ function DelegatePicker({
   }));
   return (
     <ToggleList items={items} selected={selected} onChange={onChange} collapsible searchable />
+  );
+}
+
+/**
+ * Telegram bot binding for a responder. Loads the agent's currently-linked bot
+ * (if any) and lets the operator paste a token to connect / rotate, or
+ * disconnect. The token is validated (getMe) + sealed server-side; only the
+ * bot @username + poll status come back here.
+ */
+function TelegramBotSection({ agentId }: { agentId: string }) {
+  const toast = useToast();
+  const router = useRouter();
+  const [, startRefresh] = useTransition();
+  // undefined = loading, null = not linked.
+  const [binding, setBinding] = useState<AgentTelegramBinding | null | undefined>(undefined);
+  const [token, setToken] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setBinding(undefined);
+    setToken('');
+    fetch(`/api/agents/${agentId}/telegram`)
+      .then((r) => r.json())
+      .then((b: { binding?: AgentTelegramBinding | null }) => {
+        if (active) setBinding(b.binding ?? null);
+      })
+      .catch(() => {
+        if (active) setBinding(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [agentId]);
+
+  const connect = async () => {
+    if (!token.trim()) return;
+    setBusy(true);
+    const res = await fetch(`/api/agents/${agentId}/telegram`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: token.trim() }),
+    });
+    setBusy(false);
+    const b = (await res.json().catch(() => ({}))) as {
+      binding?: AgentTelegramBinding;
+      error?: string;
+    };
+    if (!res.ok || !b.binding) {
+      toast.error(b.error ?? 'Could not link the bot.');
+      return;
+    }
+    setBinding(b.binding);
+    setToken('');
+    toast.success(`Linked @${b.binding.botUsername}`);
+    startRefresh(() => router.refresh());
+  };
+
+  const disconnect = async () => {
+    setBusy(true);
+    const res = await fetch(`/api/agents/${agentId}/telegram`, { method: 'DELETE' });
+    setBusy(false);
+    if (!res.ok) {
+      toast.error('Could not unlink the bot.');
+      return;
+    }
+    setBinding(null);
+    setToken('');
+    toast.success('Bot unlinked');
+    startRefresh(() => router.refresh());
+  };
+
+  if (binding === undefined) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin" aria-hidden /> Loading…
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {binding && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted px-2 py-1 font-mono text-xs">
+            <Send className="size-3.5" aria-hidden />@{binding.botUsername}
+          </span>
+          {binding.enabled ? (
+            <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+              <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden /> polling
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground">disabled</span>
+          )}
+          {binding.lastPollError && (
+            <span className="truncate text-xs text-destructive" title={binding.lastPollError}>
+              {binding.lastPollError}
+            </span>
+          )}
+        </div>
+      )}
+
+      <input
+        type="password"
+        autoComplete="off"
+        value={token}
+        onChange={(e) => setToken(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            void connect();
+          }
+        }}
+        placeholder={binding ? 'Paste a new token to rotate…' : 'Paste your bot token…'}
+        className="h-9 w-full rounded-md border border-input bg-background px-3 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+      />
+
+      <div className="flex gap-2">
+        <Button type="button" size="sm" onClick={connect} disabled={busy || !token.trim()}>
+          {busy && <Loader2 className="animate-spin" aria-hidden />}
+          {binding ? 'Update token' : 'Connect bot'}
+        </Button>
+        {binding && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={disconnect}
+            disabled={busy}
+          >
+            Disconnect
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }
 

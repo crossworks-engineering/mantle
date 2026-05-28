@@ -52,6 +52,12 @@ export const telegramAccounts = pgTable(
     botTokenEnc: bytea('bot_token_enc').notNull(),
     /** ltree branch under which telegram messages get hung. */
     branchPath: text('branch_path').notNull(),
+    /** Responder agent that owns this bot. Set when the token is entered from
+     *  the agent's /settings/agents form; NULL = unlinked (legacy/CLI-seeded).
+     *  Inbound messages on this bot resolve to this responder first. */
+    responderAgentId: uuid('responder_agent_id').references(() => agents.id, {
+      onDelete: 'set null',
+    }),
     /** Next getUpdates offset. Telegram caps at int32 but we use bigint for safety. */
     lastUpdateOffset: bigint('last_update_offset', { mode: 'number' }).default(0).notNull(),
     lastPollAt: timestamp('last_poll_at', { withTimezone: true }),
@@ -63,6 +69,10 @@ export const telegramAccounts = pgTable(
   (t) => [
     index('telegram_accounts_user_idx').on(t.userId),
     uniqueIndex('telegram_accounts_user_bot_uq').on(t.userId, t.botUsername),
+    // A responder owns at most one bot (partial — many NULLs allowed).
+    uniqueIndex('telegram_accounts_responder_uq')
+      .on(t.responderAgentId)
+      .where(sql`${t.responderAgentId} is not null`),
   ],
 );
 

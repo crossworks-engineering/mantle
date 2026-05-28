@@ -29,12 +29,13 @@ import {
   nodes,
   telegramMessages,
   telegramChats,
+  telegramAccounts,
   type Agent,
   type AgentMemoryConfig,
   type PersonaNote,
   type TelegramAccount,
 } from '@mantle/db';
-import { accountForChat, downloadTelegramFile, sendChatAction, sendMessage, sendVoice } from '@mantle/telegram';
+import { accountById, downloadTelegramFile, sendChatAction, sendMessage, sendVoice } from '@mantle/telegram';
 import { buildTimeContextLine, loadProfilePreferences } from '@mantle/content';
 import { ensureDatedUploadFolder, upsertFile } from '@mantle/files';
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
@@ -147,15 +148,19 @@ function startTyping(account: TelegramAccount, chatId: string): () => void {
 async function resolveResponderAgent(
   ownerId: string,
   overrideAgentId: string | null,
+  accountResponderId?: string | null,
 ): Promise<Agent | null> {
-  if (overrideAgentId) {
+  // Precedence: per-chat override (most specific) → the bot's owning responder
+  // → global highest-priority enabled responder (legacy / unlinked bots).
+  for (const pinnedId of [overrideAgentId, accountResponderId]) {
+    if (!pinnedId) continue;
     const [pinned] = await db
       .select()
       .from(agents)
-      .where(and(eq(agents.id, overrideAgentId), eq(agents.ownerId, ownerId), eq(agents.enabled, true)))
+      .where(and(eq(agents.id, pinnedId), eq(agents.ownerId, ownerId), eq(agents.enabled, true)))
       .limit(1);
     if (pinned) return pinned;
-    // Override exists in DB but agent disabled/missing → fall through to global default.
+    // Pinned agent disabled/missing → fall through to the next candidate.
   }
   const [row] = await db
     .select()
@@ -355,10 +360,12 @@ async function handleMessage(messageId: string): Promise<void> {
       fromName: telegramMessages.fromName,
       accountId: telegramMessages.accountId,
       responderAgentId: telegramChats.responderAgentId,
+      accountResponderId: telegramAccounts.responderAgentId,
       attachments: telegramMessages.attachments,
     })
     .from(telegramMessages)
     .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
+    .innerJoin(telegramAccounts, eq(telegramMessages.accountId, telegramAccounts.id))
     .where(eq(telegramMessages.id, messageId))
     .limit(1);
 
@@ -451,7 +458,7 @@ async function handleMessage(messageId: string): Promise<void> {
         },
       },
       async () => {
-        const account = await accountForChat(row.telegramChatId);
+        const account = await accountById(row.accountId);
         if (!account) {
           console.error('[agent] no telegram account for attachment download', row.telegramChatId);
           return null;
@@ -568,7 +575,7 @@ async function handleMessage(messageId: string): Promise<void> {
     // download failure). The row is already claimed so we won't retry — at
     // least tell the user instead of going silent.
     if (!attachmentContext) {
-      const account = await accountForChat(row.telegramChatId).catch(() => null);
+      const account = await accountById(row.accountId).catch(() => null);
       if (account) {
         await sendMessage(
           account,
@@ -584,7 +591,7 @@ async function handleMessage(messageId: string): Promise<void> {
   // Resolve the responder + key BEFORE opening a trace. Failure modes here
   // (no agent, no key) don't generate traces — there's nothing useful to
   // record about "the system was misconfigured."
-  const agent = await resolveResponderAgent(USER_ID!, row.responderAgentId);
+  const agent = await resolveResponderAgent(USER_ID!, row.responderAgentId, row.accountResponderId);
   if (!agent) {
     console.error(
       `[agent] no enabled responder agent — skipping ${messageId}. Create one at /settings/agents.`,
@@ -620,7 +627,7 @@ async function handleMessage(messageId: string): Promise<void> {
   let stopTyping: () => void = () => {};
 
   try {
-    const typingAccount = await accountForChat(row.telegramChatId).catch(() => null);
+    const typingAccount = await accountById(row.accountId).catch(() => null);
     if (typingAccount) stopTyping = startTyping(typingAccount, row.telegramChatId);
     await startTrace(
       {
@@ -684,7 +691,7 @@ async function handleMessage(messageId: string): Promise<void> {
                     'Switch the STT worker to a wired provider at /settings/ai-workers.',
                 );
               }
-              const account = await accountForChat(row.telegramChatId);
+              const account = await accountById(row.accountId);
               if (!account) {
                 throw new Error('no telegram account available for voice download');
               }
@@ -720,7 +727,7 @@ async function handleMessage(messageId: string): Promise<void> {
 
           if (!transcript || !transcript.text) {
             // Soft-fail: send Saskia a text apology, stay coherent.
-            const account = await accountForChat(row.telegramChatId);
+            const account = await accountById(row.accountId);
             if (account) {
               await sendMessage(
                 account,
@@ -1035,7 +1042,7 @@ async function handleMessage(messageId: string): Promise<void> {
           );
         }
 
-        const account = await accountForChat(row.telegramChatId);
+        const account = await accountById(row.accountId);
         if (!account) {
           console.error('[agent] no enabled telegram account for chat', row.telegramChatId);
           return;

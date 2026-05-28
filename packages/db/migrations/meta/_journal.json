@@ -351,6 +351,13 @@
       "when": 1779402100000,
       "tag": "0049_assistant_messages_per_agent",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1779402200000,
+      "tag": "0050_telegram_account_responder",
+      "breakpoints": true
     }
   ]
 }

@@ -11,4 +11,5 @@ export {
   reactToMessage,
   editMessage,
   accountForChat,
+  accountById,
 } from './outbound';

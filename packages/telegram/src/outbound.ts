@@ -253,6 +253,21 @@ export async function accountForChat(_chatId: string): Promise<TelegramAccount |
   return account ?? null;
 }
 
+/**
+ * The account (bot) a known message arrived on. Inbound rows carry the
+ * `account_id` of the bot that received them, so replies + file downloads use
+ * the *same* bot — the multi-bot-correct counterpart to `accountForChat`'s
+ * "first enabled" shortcut.
+ */
+export async function accountById(id: string): Promise<TelegramAccount | null> {
+  const [account] = await db
+    .select()
+    .from(telegramAccounts)
+    .where(eq(telegramAccounts.id, id))
+    .limit(1);
+  return account ?? null;
+}
+
 function chunkText(text: string, limit: number): string[] {
   if (text.length <= limit) return [text];
   const out: string[] = [];
