@@ -176,13 +176,19 @@ label)` so you can swap a key without affecting another label.
 inbound DM → telegram-poll worker → INSERT inbound telegram_messages row
           → pg_notify('telegram_message_inserted', new.id::text)   (inbound only)
           → apps/agent picks up
-          → resolve responder agent  (highest-priority enabled row in `agents`)
+          → resolve responder  (per-chat override → the bot's owning responder → global priority)
           → load conversation history  (last N inbound+outbound turns)
           → @openrouter/sdk call  (cache_control on system prompt for anthropic/*)
-          → telegram_send via @mantle/telegram
+          → telegram_send via @mantle/telegram  (on the inbound message's own bot)
           → INSERT outbound telegram_messages row
           → mark inbound processed
 ```
+
+Each `responder` can own its own bot: paste the token into the agent's
+**Telegram bot** section at `/settings/agents` (it binds
+`telegram_accounts.responder_agent_id`), approve pairing requests there with one
+click, and DMs to that bot are answered by that agent. See
+["Connecting a Telegram bot"](#connecting-a-telegram-bot) above.
 
 **Configuration** lives in the `agents` table — manage it at
 [`/settings/agents`](http://localhost:3000/settings/agents). Each row carries:

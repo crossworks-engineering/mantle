@@ -3,6 +3,16 @@
 This doc captures what was built, what's running, and what's still open so
 the next Claude Code session can pick up without re-deriving context.
 
+> **Update (2026-05-28): per-responder bots + in-app pairing.** Bot tokens are
+> now entered + rotated from the responder's `/settings/agents` **Telegram bot**
+> section (no longer CLI-only), bound via `telegram_accounts.responder_agent_id`
+> (migration 0050). Pairing requests are approved with one click there
+> (`telegram_pair` MCP tool remains the fallback). Reply routing answers on the
+> inbound message's own bot and resolution prefers the bot's owning responder.
+> The durable design now lives in
+> [`architecture.md` §9 / §9b](./architecture.md#9-telegram-pipeline); this
+> handoff stays as the original build diary.
+
 ## TL;DR
 
 Telegram is now a first-class data source in Mantle. A long-poll worker

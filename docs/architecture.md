@@ -375,13 +375,23 @@ Flow:
 1. **Long-poll worker.** `apps/web/workers/telegram-poll.ts` spawns one
    `bot.api.getUpdates` loop per enabled `telegram_accounts` row. ~25s
    long-poll timeout, exponential backoff on errors, advances
-   `last_update_offset` after each batch.
+   `last_update_offset` after each batch. It reconciles the enabled-account
+   set every 60s, so a newly connected bot starts polling without a restart.
+   Each `telegram_accounts` row holds the bot's AES-sealed token and (since
+   migration 0050) an optional `responder_agent_id` binding the bot to the
+   responder that owns it — see §9b. Tokens are entered + rotated from the
+   responder's `/settings/agents` **Telegram bot** section
+   (`lib/agent-telegram.ts` + `POST /api/agents/[id]/telegram`); the CLI
+   `seed:telegram` remains for bootstrap.
 2. **Inbound gate.** `packages/telegram/src/gate.ts` decides what happens
    to each message. DMs only (groups silently dropped in v1). Allowlist
    logic: known chat → deliver. New chat → issue a 6-char pairing code, DM
-   it back, wait for the operator to approve via `telegram_pair`. Replies
-   are capped at 2 per pending chat so an unknown sender can't farm
-   responses.
+   it back, wait for the owner to approve. Approval is **one click in the
+   responder's Telegram section** (pending requests list with Approve/Block,
+   polled every 10s) — the `telegram_pair` MCP tool is the equivalent
+   fallback. Approving flips the chat to `allowed` and sends a confirmation
+   DM that greets with the responder's name. Replies are capped at 2 per
+   pending chat so an unknown sender can't farm responses.
 3. **Persist.** A single transaction inserts a `nodes` row of type
    `telegram_message` + a `telegram_messages` row + bumps
    `telegram_chats.last_message_at`. A trigger
@@ -408,11 +418,11 @@ inbound DM
   → telegram-poll worker INSERTs into telegram_messages (direction='inbound')
   → trigger pg_notify('telegram_message_inserted', new.id::text)   (inbound only)
   → apps/agent's LISTEN connection wakes up
-  → resolve responder agent  (highest-priority enabled row in `agents`)
+  → resolve responder agent  (per-chat override → bot's owning responder → global priority)
   → load conversation history  (last N inbound+outbound turns, chronological)
   → buildChatMessages(...)  (cache_control on system block for anthropic/*)
   → @openrouter/sdk call
-  → @mantle/telegram sendMessage
+  → @mantle/telegram sendMessage  (on the inbound message's own bot)
   → INSERT outbound row + matching node
   → mark inbound processed
 ```
@@ -431,6 +441,17 @@ Key properties:
   via `responder_agent_id` (migration 0020); when set + the agent is
   enabled, that agent handles inbound for the chat. NULL falls back to
   global priority resolution. Managed inline on the `/debug` chats table.
+- **Per-bot binding (migration 0050).** A `telegram_accounts.responder_agent_id`
+  links a bot to the responder that owns it — set when you paste the token
+  into that responder's `/settings/agents` Telegram section. So one responder
+  = one bot, and a message resolves to the bot's owner. Full precedence:
+  **per-chat override → the bot's owning responder → global priority**
+  (`resolveResponderAgent(ownerId, perChatOverride, accountResponderId)`).
+  Replies + attachment downloads go out on the **inbound message's own bot**
+  (`accountById(row.accountId)`), not the "first enabled" account — this is
+  what makes several responder bots run side-by-side correctly. Unlinked bots
+  (`responder_agent_id` NULL, e.g. CLI-seeded) keep the old global-priority
+  behaviour.
 - **Recent turns (`recent_turns`).** Both inbound and outbound messages
   live in `telegram_messages` now, distinguished by the `direction` column.
   The runner loads the last `memory_config.history_limit ?? 20` turns for
