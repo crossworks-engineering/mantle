@@ -30,4 +30,9 @@ describe('buildFocusDirective', () => {
     expect(out).toContain('page_block_get');
     expect(out).toContain('page_block_update');
   });
+
+  it('tells Pages to skip page_blocks_list when it already has the ids', () => {
+    const out = buildFocusDirective(['x']);
+    expect(out).toContain('do NOT call page_blocks_list');
+  });
 });
