@@ -14,7 +14,8 @@
  * automatically on the next pg_notify('node_ingested'); `readNodeBodyRaw`
  * reads `doc_text` from the sidecar.
  */
-import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { db, nodes, pages, notifyNodeIngested, type Node } from '@mantle/db';
 import { docToText } from './doc-to-text';
 import { ensureBlockIds } from './block-ids';
@@ -33,6 +34,9 @@ export type PageWidth = 'narrow' | 'wide';
 
 export type PageRow = {
   id: string;
+  /** Parent page id, or null for a top-level page. Drives the /pages tree
+   *  and the `childPage` card (Phase 4a sub-pages). */
+  parentId: string | null;
   title: string;
   icon: string | null;
   tags: string[];
@@ -56,6 +60,7 @@ function rowOf(n: Node): PageRow {
   const d = (n.data ?? {}) as Record<string, unknown>;
   return {
     id: n.id,
+    parentId: n.parentId ?? null,
     title: n.title,
     icon: typeof d.icon === 'string' ? d.icon : null,
     tags: n.tags ?? [],
@@ -215,20 +220,67 @@ export type CreatePageInput = {
   doc?: Record<string, unknown>;
   tags?: string[];
   icon?: string;
+  /** Optional parent page id (Phase 4a sub-pages). When set, the new page
+   *  nests under it: `nodes.parent_id` points at the parent and the ltree
+   *  `path` extends the parent's, so the child stays a descendant of the
+   *  `pages` root. The tree itself is built from `parent_id`; the path is the
+   *  materialised mirror. The parent must be a page owned by the same user. */
+  parentId?: string | null;
 };
+
+/** Thrown by `createPage` when `parentId` doesn't resolve to one of the
+ *  owner's pages. The API layer maps this to a 400. */
+export class ParentPageNotFoundError extends Error {
+  constructor() {
+    super('createPage: parent page not found');
+    this.name = 'ParentPageNotFoundError';
+  }
+}
+
+/** Derive a Postgres-ltree-safe label from a node UUID. ltree labels accept
+ *  only [A-Za-z0-9_], so the UUID's hyphens become underscores. Using the
+ *  child's own id keeps sibling pages from ever colliding on `path`. */
+function ltreeLabelFromId(id: string): string {
+  return id.replace(/-/g, '_');
+}
 
 export async function createPage(ownerId: string, input: CreatePageInput): Promise<PageDetail> {
   await ensureRoot(ownerId);
   const doc = input.doc ?? EMPTY_DOC;
   const docText = docToText(doc);
+
+  // Resolve the parent (if any) up front. It must be a page owned by the same
+  // user; we extend its ltree path so the child stays under the `pages` root.
+  let parentId: string | null = null;
+  let basePath = PAGES_ROOT_LABEL;
+  if (input.parentId) {
+    const [parent] = await db
+      .select({ id: nodes.id, path: nodes.path })
+      .from(nodes)
+      .where(
+        and(eq(nodes.id, input.parentId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')),
+      )
+      .limit(1);
+    if (!parent) throw new ParentPageNotFoundError();
+    parentId = parent.id;
+    basePath = parent.path;
+  }
+
+  // Generate the id up front so the path can embed it (the path is built before
+  // the insert; the explicit id overrides the column's gen_random_uuid()).
+  const id = randomUUID();
+  const path = parentId ? `${basePath}.${ltreeLabelFromId(id)}` : PAGES_ROOT_LABEL;
+
   return db.transaction(async (tx) => {
     const [node] = await tx
       .insert(nodes)
       .values({
+        id,
         ownerId,
+        parentId,
         type: 'page',
         title: input.title.trim().slice(0, 200) || 'Untitled page',
-        path: PAGES_ROOT_LABEL,
+        path,
         data: {
           visibility: 'private',
           ...(input.icon ? { icon: input.icon } : {}),
@@ -240,6 +292,18 @@ export async function createPage(ownerId: string, input: CreatePageInput): Promi
     await tx.insert(pages).values({ nodeId: node.id, doc, docText });
     return detailOf(node, doc);
   });
+}
+
+/** Immediate children of a page — the tree's expand-one-level read, ordered by
+ *  title for a stable sidebar. Drives the /pages collapsible tree and lets the
+ *  `childPage` card refresh a child's current title/icon. */
+export async function listChildPages(ownerId: string, parentId: string): Promise<PageRow[]> {
+  const rows = await db
+    .select()
+    .from(nodes)
+    .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'page'), eq(nodes.parentId, parentId)))
+    .orderBy(asc(nodes.title));
+  return rows.map((r) => rowOf(r));
 }
 
 export type UpdatePageInput = Partial<{

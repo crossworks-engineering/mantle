@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireOwner } from '@/lib/auth';
-import { createPage, docToText, listPages } from '@/lib/pages';
+import { createPage, docToText, listPages, ParentPageNotFoundError } from '@/lib/pages';
 import { recordIngest } from '@mantle/tracing';
 
 /** A ProseMirror/TipTap document — an opaque object the editor owns. We only
@@ -13,6 +13,8 @@ const CreateBody = z.object({
   doc: DocSchema.optional(),
   icon: z.string().max(16).optional(),
   tags: z.array(z.string().max(40)).max(20).optional().default([]),
+  /** Optional parent page id — nests the new page as a sub-page (Phase 4a). */
+  parentId: z.string().uuid().optional(),
 });
 
 export async function GET(req: Request) {
@@ -35,7 +37,15 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const row = await createPage(user.id, parsed.data);
+  let row;
+  try {
+    row = await createPage(user.id, parsed.data);
+  } catch (err) {
+    if (err instanceof ParentPageNotFoundError) {
+      return NextResponse.json({ error: 'parent page not found' }, { status: 400 });
+    }
+    throw err;
+  }
   const snippet = docToText(row.doc);
   void recordIngest({
     source: 'page_create',
