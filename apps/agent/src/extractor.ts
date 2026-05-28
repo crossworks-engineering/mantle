@@ -54,7 +54,12 @@ import { getApiKeyById } from '@mantle/api-keys';
 import { embed } from '@mantle/embeddings';
 import { diskPathForFile, extOf, mimeForExt, parseDocumentBytes, INGESTABLE_EXTS, parserRouteForExt } from '@mantle/files';
 import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
-import { recordChatUsage, runDocumentWorker, runVisionWorker } from '@mantle/agent-runtime';
+import {
+  documentWorkerPrefersNative,
+  recordChatUsage,
+  runDocumentWorker,
+  runVisionWorker,
+} from '@mantle/agent-runtime';
 import { getChatAdapter, type ChatDispatcher, type ChatResult } from '@mantle/voice';
 import { chunkDocText, mentionRefs } from '@mantle/content';
 import { isLikelyDifferentPerson } from './person-names';
@@ -1011,6 +1016,19 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
     typeof existingData.filename === 'string' &&
     extOf(existingData.filename as string) === 'pdf' &&
     rawBody.trim() === node.title.trim();
+  // prefer_native: a PDF WITH a text layer, but the document worker is set to
+  // always read PDFs through the model (tabular docs whose text layer scrambles
+  // columns). Run the same native path; keep the text-layer body if native
+  // yields nothing, so we never end up worse than the cheap path.
+  const isPdfWithTextLayer =
+    node.type === 'file' &&
+    !existingData.text &&
+    !existingData.content &&
+    typeof existingData.filename === 'string' &&
+    extOf(existingData.filename as string) === 'pdf' &&
+    !isPdfWithoutTextLayer;
+  const preferNativePdf = isPdfWithTextLayer && (await documentWorkerPrefersNative(ownerId));
+
   if (isPdfWithoutTextLayer) {
     const ocrText = await ocrIngestPdfNode(node, ownerId);
     if (ocrText && ocrText.trim().length >= 20) {
@@ -1035,6 +1053,11 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       });
       return;
     }
+  } else if (preferNativePdf) {
+    const nativeText = await ocrIngestPdfNode(node, ownerId);
+    // Only replace the text-layer body if native produced something usable;
+    // otherwise keep the text we already have (native is best-effort here).
+    if (nativeText && nativeText.trim().length >= 20) rawBody = nativeText;
   }
 
   if (!rawBody || rawBody.trim().length < 20) {
