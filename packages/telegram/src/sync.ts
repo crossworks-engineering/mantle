@@ -64,11 +64,12 @@ export async function pollOnce(account: TelegramAccount, timeoutSec = 25): Promi
       const ok = await persist(account, inbound);
       if (ok) delivered++;
     } else if (result.action === 'pair') {
-      const lead = result.isResend ? 'Still pending' : 'Pairing required';
+      const lead = result.isResend ? 'Still pending approval' : 'Approval required';
       await bot.api
         .sendMessage(
           inbound.chatId,
-          `${lead} — run in Claude Code:\n\n/telegram:pair ${result.code}`,
+          `${lead}. The owner can approve this chat in Mantle: Settings → Agents → ` +
+            `this bot's responder → Telegram bot.\n\n(Pairing code: ${result.code})`,
         )
         .catch((e) => console.error(`[telegram-sync] pair-reply failed: ${e}`));
     }
