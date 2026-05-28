@@ -27,7 +27,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Send, Sparkles, X, ChevronDown, ChevronUp, Highlighter } from 'lucide-react';
+import { CornerDownLeft, Sparkles, X, ChevronDown, ChevronUp, Highlighter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
@@ -263,7 +263,9 @@ export function AiAssistPanel({
           className="min-h-[3rem] resize-none text-sm"
           disabled={pending}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            // Enter sends; Shift+Enter inserts a newline. Ignore Enter while an
+            // IME composition is in flight (don't send a half-typed CJK word).
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               void submit();
             }
@@ -274,8 +276,9 @@ export function AiAssistPanel({
           size="icon"
           disabled={!draft.trim() || pending}
           aria-label="Send to Pages"
+          title="Send (Enter · Shift+Enter for a new line)"
         >
-          <Send />
+          <CornerDownLeft />
         </Button>
       </form>
     </aside>
