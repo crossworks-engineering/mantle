@@ -149,7 +149,7 @@ export function FocusGutter({
   return (
     <div
       ref={containerRef}
-      className="group absolute bottom-0 left-0 top-0 z-20 w-10 cursor-crosshair"
+      className="group absolute bottom-0 left-0 top-0 z-20 w-10 cursor-ns-resize"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
