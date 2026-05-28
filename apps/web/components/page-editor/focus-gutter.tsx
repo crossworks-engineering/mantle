@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/react';
 import { cn } from '@/lib/utils';
+import { nearestBlockIndex } from './gutter-geometry';
 
 /**
  * FocusGutter — the interactive half of the gutter focus marker. A thin strip
@@ -41,26 +42,16 @@ export function FocusGutter({
 
   const blockEls = (): HTMLElement[] => Array.from(editor.view.dom.children) as HTMLElement[];
 
-  const indexAtY = (clientY: number): number => {
-    const els = blockEls();
-    if (els.length === 0) return -1;
-    // If the pointer is inside a block's rect, that's the block. Otherwise pick
-    // the vertically-NEAREST block: a pointer in the gap/margin around a thin
-    // element (e.g. a divider / "page break") then maps to that adjacent block
-    // instead of clamping to the last one — which used to mark the whole doc.
-    let best = 0;
-    let bestDist = Infinity;
-    for (let i = 0; i < els.length; i++) {
-      const r = els[i]!.getBoundingClientRect();
-      if (clientY >= r.top && clientY <= r.bottom) return i;
-      const dist = clientY < r.top ? r.top - clientY : clientY - r.bottom;
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = i;
-      }
-    }
-    return best;
-  };
+  // Inside a block's rect → that block; in a gap → the nearest block (never a
+  // far clamp, which used to balloon a drag over a divider to the whole doc).
+  const indexAtY = (clientY: number): number =>
+    nearestBlockIndex(
+      blockEls().map((el) => {
+        const r = el.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom };
+      }),
+      clientY,
+    );
 
   // Resolve a top-level block's id from the DOC MODEL, not the DOM. NodeView
   // blocks (callout, image, fileEmbed, childPage) render a React wrapper that
