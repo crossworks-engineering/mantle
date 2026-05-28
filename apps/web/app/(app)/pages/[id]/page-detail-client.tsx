@@ -495,7 +495,10 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
                 onKeyDown={onTitleKeyDown}
                 placeholder="New page"
                 aria-label="Page title"
-                className="h-auto border-0 bg-transparent p-0 text-3xl font-bold shadow-none placeholder:text-muted-foreground/40 focus-visible:ring-0 md:text-3xl"
+                // No box — only a bottom underline that appears (primary) while
+                // editing. A 2px transparent bottom border is always reserved so
+                // focusing doesn't shift the layout.
+                className="h-auto rounded-none border-x-0 border-t-0 border-b-2 border-transparent bg-transparent px-0 py-1 text-2xl font-bold shadow-none transition-colors placeholder:text-muted-foreground/40 focus-visible:border-primary focus-visible:ring-0 md:text-2xl"
               />
               <div className="mt-3">
                 <TagInput value={tags} onChange={setTags} placeholder="Add tags…" />
