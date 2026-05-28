@@ -682,9 +682,23 @@ export function AgentsClient({
     // the list around the still-selected row.
     const body2 = (await res.json().catch(() => ({}))) as { agent?: AgentSummary };
     if (body2.agent) {
-      setEditing({ mode: 'edit', agent: body2.agent });
-      setForm(formFromAgent(body2.agent));
+      const saved = body2.agent;
+      setEditing({ mode: 'edit', agent: saved });
+      setForm(formFromAgent(saved));
       setSlugTouched(true);
+      // Upsert the canonical row into the local list right away so the row
+      // (avatar, name, badges) repaints deterministically — don't rely solely
+      // on router.refresh()'s re-fetch, which races this client state and
+      // intermittently leaves the row stale (e.g. avatar not updating until a
+      // second save). Mirrors the delete path, which also mutates `agents`
+      // directly. router.refresh() below still reconciles ordering.
+      setAgents((prev) => {
+        const idx = prev.findIndex((x) => x.id === saved.id);
+        if (idx === -1) return [...prev, saved];
+        const next = prev.slice();
+        next[idx] = saved;
+        return next;
+      });
     } else {
       closeDialog();
     }
