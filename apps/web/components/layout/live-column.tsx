@@ -90,7 +90,7 @@ export function LiveColumn({
                 type="button"
                 onClick={onToggle}
                 aria-label="Collapse activity"
-                title="Collapse"
+                title="Collapse activity (⌘J)"
                 className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <PanelRightClose className="size-4" aria-hidden />
@@ -223,7 +223,7 @@ function CollapsedRail({
         type="button"
         onClick={onToggle}
         aria-label="Expand activity"
-        title="Expand activity"
+        title="Expand activity (⌘J)"
         className="flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <PanelRight className="size-4" aria-hidden />

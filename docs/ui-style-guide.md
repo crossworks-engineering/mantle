@@ -176,7 +176,9 @@ lg:right-[var(--activity-w)]` (see `main`, `FleetLayout`, the mail shell). A new
 full-screen fixed overlay that hardcodes the width will silently break collapse.
 Descendants that need to restyle when collapsed key off the root via
 `group-data-[nav-collapsed=true]/shell:…` (the mobile drawer portals outside the
-root, so it always renders expanded).
+root, so it always renders expanded). Shortcuts: **⌘/Ctrl+B** toggles the nav,
+**⌘/Ctrl+J** toggles Activity (suppressed while typing/editing, so ⌘B still bolds
+in the page editor).
 
 ### Full-height pages
 The app `<main>` is a fixed, full-height `overflow-y-auto scrollbar-thin`

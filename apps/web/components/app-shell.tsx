@@ -74,6 +74,34 @@ export function AppShell({
       return !v;
     });
 
+  // Keyboard shortcuts: ⌘/Ctrl+B toggles the nav, ⌘/Ctrl+J toggles Activity.
+  // Skipped while typing / editing so ⌘B still bolds in the page editor and we
+  // don't steal keystrokes from inputs. (setState setters are stable, so the
+  // listener is registered once.)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      const k = e.key.toLowerCase();
+      if (k !== 'b' && k !== 'j') return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
+      e.preventDefault();
+      if (k === 'b') {
+        setNavCollapsed((v) => {
+          writeCookie(NAV_COOKIE, !v);
+          return !v;
+        });
+      } else {
+        setActivityCollapsed((v) => {
+          writeCookie(ACTIVITY_COOKIE, !v);
+          return !v;
+        });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const body = (onNavigate?: () => void) => (
     <>
       {contextCard}
@@ -110,12 +138,15 @@ export function AppShell({
               type="button"
               onClick={toggleNav}
               aria-label={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
-              title={navCollapsed ? 'Expand' : 'Collapse'}
+              title={navCollapsed ? 'Expand sidebar (⌘B)' : 'Collapse sidebar (⌘B)'}
               className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-data-[nav-collapsed=true]/shell:justify-center group-data-[nav-collapsed=true]/shell:px-0"
             >
               <PanelLeftClose className="size-4 shrink-0 group-data-[nav-collapsed=true]/shell:hidden" aria-hidden />
               <PanelLeft className="hidden size-4 shrink-0 group-data-[nav-collapsed=true]/shell:block" aria-hidden />
               <span className="group-data-[nav-collapsed=true]/shell:hidden">Collapse</span>
+              <kbd className="ml-auto rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground group-data-[nav-collapsed=true]/shell:hidden">
+                ⌘B
+              </kbd>
             </button>
           </div>
         </aside>
