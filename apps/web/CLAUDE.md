@@ -19,6 +19,9 @@ Non-negotiables (full detail in the guide):
   `AlertDialog` (red action); feedback → `useToast()` (not inline error banners).
 - **Bare icons inside `<Button>`** — no `mr-*`/`h-*/w-*` (base gives `gap-2` + `size-4`).
   `Button size="sm"` is `h-9`; match it with `ToggleGroup size="default"`.
+- **Form submits use `<SubmitButton>`** (never bare `<Button type="submit">`) — descriptive
+  verb+noun label ("Save agent", "Create event"; not "Save"), no "Saving…" text-swap; pass
+  `pending={…}` for client forms, nothing for server-action forms. See style guide §6.
 - **Reuse shared patterns** — `<BackLink>` (detail back link), `<SetPageTitle>` (centered
   top-bar title; no duplicate on-page `<h1>`), `<TagInput>`/`<TagPill>` (tags as `string[]`,
   themed colors), `<MarkdownEditor>` (edit) / `ReactMarkdown`+`prose` (render),

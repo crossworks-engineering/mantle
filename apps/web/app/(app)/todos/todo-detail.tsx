@@ -66,7 +66,7 @@ export function TodoDetail({
         <h2 className="text-lg font-semibold">Edit todo</h2>
         <TodoForm
           initial={todoToForm(todo)}
-          submitLabel="Save"
+          submitLabel="Save todo"
           onSubmit={async (payload) => {
             if (await onSave(payload)) setEditing(false);
           }}

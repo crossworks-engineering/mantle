@@ -14,6 +14,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/ui/submit-button';
 import {
   Dialog,
   DialogContent,
@@ -397,9 +398,7 @@ export function PagesClient({
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? 'Creating…' : 'Create & edit'}
-              </Button>
+              <SubmitButton pending={saving}>Create page</SubmitButton>
             </div>
           </form>
         </DialogContent>

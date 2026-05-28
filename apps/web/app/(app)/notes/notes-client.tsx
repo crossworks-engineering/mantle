@@ -7,6 +7,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ChevronLeft, ChevronRight, FileText, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/ui/submit-button';
 import {
   Dialog,
   DialogContent,
@@ -337,9 +338,7 @@ export function NotesClient({
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? 'Saving…' : 'Save note'}
-              </Button>
+              <SubmitButton pending={saving}>Save note</SubmitButton>
             </div>
           </form>
         </DialogContent>

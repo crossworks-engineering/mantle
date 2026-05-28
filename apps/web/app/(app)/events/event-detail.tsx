@@ -216,7 +216,7 @@ export function EventDetail({
         <h2 className="text-lg font-semibold">Edit event</h2>
         <EventForm
           initial={eventToForm(meta)}
-          submitLabel="Save"
+          submitLabel="Save event"
           submitting={pending}
           onSubmit={saveEdit}
           onCancel={() => setEditing(false)}

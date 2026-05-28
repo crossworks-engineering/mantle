@@ -17,7 +17,7 @@
 
 import { useState, useTransition } from 'react';
 import { Compass } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
@@ -168,9 +168,7 @@ export function ProfileClient({
       )}
 
       <div>
-        <Button type="submit" disabled={pending}>
-          {pending ? 'Saving…' : 'Save preferences'}
-        </Button>
+        <SubmitButton pending={pending}>Save profile</SubmitButton>
       </div>
     </form>
   );

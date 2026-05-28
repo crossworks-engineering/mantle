@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, Loader2, Plus, RefreshCw, ShieldCheck, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { formatDateTime } from '@/lib/format-datetime';
 import { testApiKeyAction, type TestApiKeyResult } from './actions';
 import {
@@ -322,9 +323,7 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
                     Cancel
                   </Button>
                 )}
-                <Button type="submit" disabled={pending}>
-                  Save key
-                </Button>
+                <SubmitButton pending={pending}>Save key</SubmitButton>
               </div>
             </form>
           </div>

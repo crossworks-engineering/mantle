@@ -30,6 +30,7 @@ import {
 } from '@mantle/voice';
 import type { AgentAvatar, PersonaNote } from '@mantle/db';
 import { AvatarPicker } from '@/components/avatar-picker';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { PersonaNotesEditor } from './persona-notes-editor';
@@ -1494,9 +1495,9 @@ export function AgentsClient({
               <Button type="button" variant="outline" onClick={closeDialog}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={pending}>
-                {editing.mode === 'create' ? 'Create' : 'Save'}
-              </Button>
+              <SubmitButton pending={pending}>
+                {editing.mode === 'create' ? 'Create agent' : 'Save agent'}
+              </SubmitButton>
             </div>
               </form>
             </div>

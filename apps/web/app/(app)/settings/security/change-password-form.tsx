@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
@@ -105,9 +105,9 @@ export function ChangePasswordForm() {
         </p>
       )}
 
-      <Button type="submit" disabled={busy} className="w-full">
-        {busy ? 'Updating…' : 'Update password'}
-      </Button>
+      <SubmitButton pending={busy} className="w-full">
+        Update password
+      </SubmitButton>
     </form>
   );
 }

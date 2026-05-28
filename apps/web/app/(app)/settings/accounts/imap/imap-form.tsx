@@ -3,6 +3,7 @@
 import { useActionState, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { handleImapForm, type ImapFormResult } from './actions';
@@ -219,9 +220,9 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
         >
           {pending && state?.intent !== 'save' ? 'Testing…' : 'Test connection'}
         </Button>
-        <Button type="submit" name="intent" value="save" disabled={pending} className="flex-1">
-          {pending ? 'Saving…' : isEdit ? 'Save changes' : 'Connect & save'}
-        </Button>
+        <SubmitButton pending={pending} name="intent" value="save" className="flex-1">
+          {isEdit ? 'Save changes' : 'Connect & save'}
+        </SubmitButton>
       </div>
     </form>
   );

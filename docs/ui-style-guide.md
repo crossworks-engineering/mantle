@@ -127,8 +127,20 @@ Shared app-level patterns (`components/`):
   (`components/ui/date-time-picker.tsx`) — the shadcn Calendar in a popover +
   a time field. Don't use the native `datetime-local` input (used by events +
   heartbeats; value is a `Date | null`).
-- Submit buttons show progress (`disabled`, `Saving…`). For server-action
-  forms, `components/ui/submit-button.tsx` handles pending state.
+- **Every form submit uses `<SubmitButton>`** (`components/ui/submit-button.tsx`)
+  — never a bare `<Button type="submit">`. It standardises the two things a
+  save button must do:
+  - **Descriptive label — verb + noun.** "Save agent", "Save profile",
+    "Create event", "Save key" — never a bare "Save"/"Create", and the label
+    does **not** change while saving (no "Saving…" text-swap). The user should
+    always read *what* the button persists.
+  - **In-flight feedback.** While the submit runs the button disables itself
+    and shows a leading spinner; the label stays put (no layout reflow).
+  - **Driving the busy state:** client forms (the common case — `fetch` +
+    `useState`/`useTransition`) pass `pending={saving}`. Server-action forms
+    (`<form action={…}>`) pass nothing — `SubmitButton` reads `useFormStatus`.
+  - For create/edit dialogs, switch the label on mode:
+    `{mode === 'create' ? 'Create agent' : 'Save agent'}`.
 
 ---
 
@@ -302,6 +314,8 @@ as deep links** even after a master-detail supersedes the in-app navigation
 
 - ❌ Hardcoded colors (`#fff`, `text-[oklch(...)]`, `bg-gray-200`).
 - ❌ `window.prompt/confirm/alert`.
+- ❌ A bare `<Button type="submit">` in a form, a bare "Save"/"Create" label,
+  or a "Saving…" text-swap — use `<SubmitButton pending={…}>Save <noun></SubmitButton>` (§6).
 - ❌ `mr-1 h-3.5 w-3.5` (or any margin/size) on an icon inside a `<Button>`.
 - ❌ Native `<select>`/`<input type=checkbox>` when `Select`/`Checkbox` exist.
 - ❌ Inline error banners for transient failures (use toasts).

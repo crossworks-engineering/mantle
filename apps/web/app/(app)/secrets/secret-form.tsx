@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { TagInput } from '@/components/tag-input';
@@ -191,9 +192,7 @@ export function SecretForm({
         <Button type="button" variant="outline" onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="submit" disabled={submitting}>
-          {submitting ? 'Saving…' : submitLabel}
-        </Button>
+        <SubmitButton pending={submitting}>{submitLabel}</SubmitButton>
       </div>
     </form>
   );

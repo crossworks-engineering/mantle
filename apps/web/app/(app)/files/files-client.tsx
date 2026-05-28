@@ -19,6 +19,7 @@ import { FileEditor } from './file-editor';
 import { formatDate } from '@/lib/format-datetime';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -624,9 +625,9 @@ function CreateFolderDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!valid || busy}>
-              {busy ? 'Creating…' : 'Create folder'}
-            </Button>
+            <SubmitButton pending={busy} disabled={!valid}>
+              Create folder
+            </SubmitButton>
           </div>
         </form>
       </DialogContent>
@@ -729,9 +730,9 @@ function CreateFileDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!valid || busy}>
-              {busy ? 'Creating…' : 'Create file'}
-            </Button>
+            <SubmitButton pending={busy} disabled={!valid}>
+              Create file
+            </SubmitButton>
           </div>
         </form>
       </DialogContent>

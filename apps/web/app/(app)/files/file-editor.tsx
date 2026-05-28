@@ -5,6 +5,7 @@ import { Download, Eye, FileText, Loader2, PencilLine, Save, SplitSquareHorizont
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useToast } from '@/components/ui/toast';
@@ -160,9 +161,9 @@ export function FileEditor({
               placeholder="new-name"
             />
             <span className="text-xs text-muted-foreground">.{file.extension}</span>
-            <Button type="submit" size="sm" disabled={saving || !renameDraft.trim()}>
+            <SubmitButton pending={saving} disabled={!renameDraft.trim()} size="sm">
               Rename
-            </Button>
+            </SubmitButton>
             <Button type="button" size="sm" variant="outline" onClick={() => setRenaming(false)}>
               Cancel
             </Button>

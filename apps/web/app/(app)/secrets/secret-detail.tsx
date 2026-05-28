@@ -158,7 +158,7 @@ export function SecretDetail({
         <h2 className="text-lg font-semibold">Edit secret</h2>
         <SecretForm
           initial={editInitial}
-          submitLabel="Save"
+          submitLabel="Save secret"
           submitting={pending}
           onSubmit={saveEdit}
           onCancel={() => setEditing(false)}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { setIncludedFolders } from '../../folders-actions';
 
 /**
@@ -105,7 +105,7 @@ export function FolderPicker({
         immediate rescan.
       </p>
 
-      <Button type="submit">Save &amp; rescan</Button>
+      <SubmitButton>Save &amp; rescan</SubmitButton>
     </form>
   );
 }

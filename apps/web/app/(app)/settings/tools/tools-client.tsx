@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { Switch } from '@/components/ui/switch';
 import {
   AlertDialog,
@@ -433,9 +434,9 @@ export function ToolsClient({ initialTools }: { initialTools: ToolSummary[] }) {
                 <Button type="button" variant="outline" onClick={close}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={pending}>
-                  {editing.mode === 'create' ? 'Create' : 'Save'}
-                </Button>
+                <SubmitButton pending={pending}>
+                  {editing.mode === 'create' ? 'Create tool' : 'Save tool'}
+                </SubmitButton>
               </div>
             </form>
           </div>

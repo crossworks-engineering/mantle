@@ -57,6 +57,7 @@ import {
   type VisionModelInfo,
 } from '@mantle/voice';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ModelSelect } from '@/components/ui/model-select';
@@ -776,19 +777,16 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
         >
           Cancel
         </Button>
-        <Button
-          type="submit"
+        <SubmitButton
+          pending={pending}
           // Hard block: when the operator picked an embedding model whose
           // dim we KNOW is non-1536, save would persist a worker that
           // crashes ingest on its first call. Untested / unknown stays
           // saveable — the EmbeddingFields footer warns explicitly there.
-          disabled={
-            pending ||
-            (kind === 'embedding' && embeddingDim !== null && embeddingDim !== 1536)
-          }
+          disabled={kind === 'embedding' && embeddingDim !== null && embeddingDim !== 1536}
         >
-          {pending ? 'Saving…' : mode === 'create' ? 'Create' : 'Save changes'}
-        </Button>
+          {mode === 'create' ? 'Create worker' : 'Save worker'}
+        </SubmitButton>
       </div>
     </form>
   );

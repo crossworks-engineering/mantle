@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
@@ -49,9 +49,9 @@ export function LoginForm({ next, error: initialError }: { next?: string; error?
         />
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <Button type="submit" className="w-full" disabled={busy}>
-        {busy ? 'Signing in…' : 'Sign in'}
-      </Button>
+      <SubmitButton pending={busy} className="w-full">
+        Sign in
+      </SubmitButton>
     </form>
   );
 }

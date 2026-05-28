@@ -4,8 +4,9 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Pencil, Save, Sparkles, Trash2, X } from 'lucide-react';
+import { Pencil, Sparkles, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { MarkdownEditor } from '@/components/markdown-editor';
@@ -151,9 +152,9 @@ export function NoteDetailClient({ initial }: { initial: NoteRow }) {
               >
                 <X /> Cancel
               </Button>
-              <Button type="submit" size="sm" disabled={isPending}>
-                <Save /> {isPending ? 'Saving…' : 'Save'}
-              </Button>
+              <SubmitButton pending={isPending} size="sm">
+                Save note
+              </SubmitButton>
             </div>
           </header>
           <div className="space-y-1.5">
