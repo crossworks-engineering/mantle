@@ -21,6 +21,18 @@ describe('fallbackCostMicroUsd', () => {
     );
   });
 
+  it('prices the BARE Claude id the direct vision/document adapter passes', () => {
+    // The dedicated Document worker is provider=anthropic, model=claude-sonnet-4-6
+    // — the direct adapter passes the bare id (not anthropic/claude-sonnet-4.6),
+    // which used to fall through to $0 (native-PDF cost invisible in /debug).
+    const bare = fallbackCostMicroUsd('claude-sonnet-4-6', { input: 8010, output: 2370 });
+    expect(bare).toBeGreaterThan(0);
+    // Parity with the OpenRouter-slugged entry — same rates either way.
+    expect(bare).toBe(
+      fallbackCostMicroUsd('anthropic/claude-sonnet-4.6', { input: 8010, output: 2370 }),
+    );
+  });
+
   it('is case-insensitive on the model slug', () => {
     expect(fallbackCostMicroUsd('GPT-4o-Mini', { input: 1_000_000, output: 0 })).toBe(150_000);
   });

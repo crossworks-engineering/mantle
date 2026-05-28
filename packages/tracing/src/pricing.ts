@@ -34,6 +34,18 @@ const PRICING: Record<string, PricePerToken> = {
   'gpt-4o': { input: 0.0000025, output: 0.00001 },
   'gpt-4o-mini': { input: 0.00000015, output: 0.0000006 },
 
+  // Direct-Anthropic adapters (vision / document) call the Anthropic API
+  // natively and pass the BARE catalog id (claude-sonnet-4-6), not the dotted
+  // `anthropic/claude-sonnet-4.6` OpenRouter slug — so key both ways or a
+  // direct Claude vision/document worker prices at $0. Same rates as above.
+  'claude-haiku-4-5': { input: 0.0000008, output: 0.000004, cacheRead: 0.00000008 },
+  'claude-sonnet-4-6': { input: 0.000003, output: 0.000015, cacheRead: 0.0000003 },
+  'claude-opus-4-7': { input: 0.000015, output: 0.000075, cacheRead: 0.0000015 },
+
+  // Direct-Google (Gemini) vision/document workers pass bare ids too.
+  'gemini-2.5-flash': { input: 0.0000003, output: 0.0000025 },
+  'gemini-2.5-pro': { input: 0.00000125, output: 0.00001 },
+
   // DeepSeek
   'deepseek/deepseek-chat': { input: 0.00000027, output: 0.0000011 },
 
