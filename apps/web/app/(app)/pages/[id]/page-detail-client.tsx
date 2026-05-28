@@ -21,7 +21,9 @@ import { BackLink } from '@/components/layout/back-link';
 import { ShareControl } from '@/components/share/share-control';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { PageEditor } from '@/components/page-editor/page-editor';
+import { PageOutline } from '@/components/page-editor/page-outline';
 import { AiAssistPanel } from '@/components/page-editor/ai-assist-panel';
+import { buildPageToc, type TocEntry } from '@mantle/content/page-toc';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -215,10 +217,49 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  const [tocEditor, setTocEditor] = useState<Editor | null>(null);
+  const [toc, setToc] = useState<TocEntry[]>([]);
   const onEditorReady = useCallback((editor: Editor) => {
     editorRef.current = editor;
+    setTocEditor(editor);
   }, []);
   const onEditorBlur = useCallback(() => void saveDraftRef.current(), []);
+
+  // Build the outline from the live doc, rebuilt (rAF-throttled) on every edit.
+  // Re-subscribes when the editor remounts after an AI change (new instance).
+  useEffect(() => {
+    const ed = tocEditor;
+    if (!ed) return;
+    let raf = 0;
+    const rebuild = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => setToc(buildPageToc(ed.getJSON())));
+    };
+    rebuild();
+    ed.on('update', rebuild);
+    return () => {
+      cancelAnimationFrame(raf);
+      ed.off('update', rebuild);
+    };
+  }, [tocEditor]);
+
+  // Scroll the editor to a block by its stable id (outline click).
+  const jumpToBlock = useCallback((id: string) => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    let pos: number | null = null;
+    ed.state.doc.descendants((node, p) => {
+      if (pos != null) return false;
+      if (node.attrs?.id === id) {
+        pos = p;
+        return false;
+      }
+      return true;
+    });
+    if (pos == null) return;
+    const dom = ed.view.nodeDOM(pos);
+    if (dom instanceof HTMLElement) dom.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
 
   const onTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -494,42 +535,54 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
             </div>
           </header>
 
-          {/* Document body — on the page surface, below the chrome. */}
-          <div
-            className={cn(
-              'mx-auto w-full px-6 py-8',
-              // When the AI panel is open the editor area is already narrowed
-              // by the right-side panel; force narrow content so it doesn't
-              // sprawl into an awkward two-thirds line length.
-              aiOpen || width !== 'wide' ? 'max-w-3xl' : 'max-w-none',
+          {/* Document body — outline rail (left, wide screens) + centred content.
+              The rail is hidden while the AI panel is open (no room). */}
+          <div className="flex w-full gap-6 px-6 py-8">
+            {!aiOpen && toc.length > 0 && (
+              <aside className="hidden w-56 shrink-0 xl:block">
+                <div className="sticky top-6 max-h-[calc(100vh-9rem)] overflow-y-auto scrollbar-thin">
+                  <PageOutline entries={toc} onJump={jumpToBlock} />
+                </div>
+              </aside>
             )}
-          >
-            <PageEditor
-              key={editorKey}
-              content={initialDoc}
-              pageId={initial.id}
-              markerMode={markerMode}
-              marks={marks}
-              editedIds={editedIds}
-              onMarksChange={setMarks}
-              onChange={onDocChange}
-              onBlur={onEditorBlur}
-              onEditorReady={onEditorReady}
-              editable={!aiPending}
-            />
-            {aiPending && (
-              <p className="mt-3 pl-10 text-xs italic text-muted-foreground">
-                Editor locked while Pages is editing — your changes are safe.
-              </p>
-            )}
-            {markerMode && !aiPending && (
-              <p className="mt-3 pl-10 text-xs italic text-muted-foreground">
-                Marker on — drag down the left gutter to mark sections (click a marked
-                row to unmark)
-                {marks.length > 0 ? `; ${marks.length} marked` : ''}. Then open AI assist
-                and tell Pages what to do with them.
-              </p>
-            )}
+            <div className="min-w-0 flex-1">
+              <div
+                className={cn(
+                  'mx-auto w-full',
+                  // When the AI panel is open the editor area is already narrowed
+                  // by the right-side panel; force narrow content so it doesn't
+                  // sprawl into an awkward two-thirds line length.
+                  aiOpen || width !== 'wide' ? 'max-w-3xl' : 'max-w-none',
+                )}
+              >
+                <PageEditor
+                  key={editorKey}
+                  content={initialDoc}
+                  pageId={initial.id}
+                  markerMode={markerMode}
+                  marks={marks}
+                  editedIds={editedIds}
+                  onMarksChange={setMarks}
+                  onChange={onDocChange}
+                  onBlur={onEditorBlur}
+                  onEditorReady={onEditorReady}
+                  editable={!aiPending}
+                />
+                {aiPending && (
+                  <p className="mt-3 pl-10 text-xs italic text-muted-foreground">
+                    Editor locked while Pages is editing — your changes are safe.
+                  </p>
+                )}
+                {markerMode && !aiPending && (
+                  <p className="mt-3 pl-10 text-xs italic text-muted-foreground">
+                    Marker on — drag down the left gutter to mark sections (click a marked
+                    row to unmark)
+                    {marks.length > 0 ? `; ${marks.length} marked` : ''}. Then open AI assist
+                    and tell Pages what to do with them.
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
         </div>
         {aiOpen && (

@@ -15,7 +15,8 @@
     "./contacts-format": "./src/contacts-format.ts",
     "./block-ids": "./src/block-ids.ts",
     "./block-list": "./src/block-list.ts",
-    "./block-diff": "./src/block-diff.ts"
+    "./block-diff": "./src/block-diff.ts",
+    "./page-toc": "./src/page-toc.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

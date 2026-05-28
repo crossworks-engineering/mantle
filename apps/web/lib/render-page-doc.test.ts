@@ -77,6 +77,14 @@ describe('renderPageDoc', () => {
     expect(html).toContain('const'); // code text survives highlighting
   });
 
+  it('emits the block id on headings so the outline can anchor-scroll to them', () => {
+    const html = renderPageDoc(
+      doc([{ type: 'heading', attrs: { id: 'h-1', level: 2 }, content: [{ type: 'text', text: 'Section' }] }]),
+      opts,
+    );
+    expect(html).toBe('<h2 id="h-1">Section</h2>');
+  });
+
   it('renders a childPage as an inert label, not a link (sub-pages stay private)', () => {
     const html = renderPageDoc(
       doc([{ type: 'childPage', attrs: { pageId: 'p1', title: '<Plans> & ideas', icon: '📋' } }]),

@@ -130,7 +130,10 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
     }
     case 'heading': {
       const level = Math.min(Math.max(Number(node.attrs?.level) || 1, 1), 3);
-      return `<h${level}>${renderInline(node.content)}</h${level}>`;
+      // Emit the block id as the element id so the outline can anchor-scroll to it.
+      const id = str(node.attrs?.id);
+      const idAttr = id ? ` id="${escAttr(id)}"` : '';
+      return `<h${level}${idAttr}>${renderInline(node.content)}</h${level}>`;
     }
     case 'blockquote':
       return `<blockquote>${renderBlocks(node.content, opts)}</blockquote>`;
@@ -185,11 +188,14 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
     }
     case 'childPage': {
       // Sub-pages aren't part of a shared subtree (Phase 4a) — render the card
-      // as an inert label, not a link into a private child page.
+      // as an inert label, not a link into a private child page. The block id
+      // is emitted so the outline can anchor-scroll to it.
       const title = esc(str(node.attrs?.title) || 'Untitled page');
       const icon = str(node.attrs?.icon);
+      const id = str(node.attrs?.id);
+      const idAttr = id ? ` id="${escAttr(id)}"` : '';
       const iconHtml = icon ? `<span class="child-page-icon">${esc(icon)}</span>` : '';
-      return `<div class="child-page" data-child-page>${iconHtml}<span class="child-page-title">${title}</span></div>`;
+      return `<div class="child-page" data-child-page${idAttr}>${iconHtml}<span class="child-page-title">${title}</span></div>`;
     }
     default:
       // Unknown block — render its children if any, else drop.
