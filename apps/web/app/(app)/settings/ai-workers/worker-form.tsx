@@ -37,6 +37,7 @@ import {
   XAI_IMAGE_MODELS,
   XAI_STT_MODELS,
   XAI_VISION_MODELS,
+  OPENROUTER_VISION_MODELS,
   audioTagsForElevenLabsModel,
   audioTagsForGoogleTtsModel,
   audioTagsForXaiTtsModel,
@@ -288,7 +289,7 @@ export function WorkerForm({
   ]);
   // Which vision providers have an adapter today. Mirrors the chat
   // wiredChatProviders set — keeps "show a model dropdown" honest.
-  const wiredVisionProviders = new Set(['openai', 'anthropic', 'google', 'xai']);
+  const wiredVisionProviders = new Set(['openai', 'anthropic', 'google', 'xai', 'openrouter']);
   // Image-gen wiring as of this commit. HF is a real adapter but
   // surfaces a "type any repo id" free-text path too.
   const wiredImageGenProviders = new Set(['openai', 'xai', 'google', 'huggingface']);
@@ -340,12 +341,12 @@ export function WorkerForm({
     // Documents reuse the vision model catalogs (same multimodal models);
     // native PDF works on Anthropic today (Google next), others rasterize.
     if (forKind === 'vision' || forKind === 'document') {
-      // 4 wired vision providers; everyone else gets the OpenAI list
-      // as a placeholder (the form's "not yet wired" hint will steer
-      // them anyway).
+      // Wired vision providers; everyone else gets the OpenAI list as a
+      // placeholder (the form's "not yet wired" hint will steer them anyway).
       if (forProvider === 'anthropic') return [...ANTHROPIC_VISION_MODELS];
       if (forProvider === 'google') return [...GOOGLE_VISION_MODELS];
       if (forProvider === 'xai') return [...XAI_VISION_MODELS];
+      if (forProvider === 'openrouter') return [...OPENROUTER_VISION_MODELS];
       return [...OPENAI_VISION_MODELS];
     }
     if (forKind === 'image_gen') {

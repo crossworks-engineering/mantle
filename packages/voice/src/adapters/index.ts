@@ -44,6 +44,7 @@ import { openAiVisionAdapter } from './openai-vision';
 import { anthropicVisionAdapter } from './anthropic-vision';
 import { googleVisionAdapter } from './google-vision';
 import { xaiVisionAdapter } from './xai-vision';
+import { openrouterVisionAdapter } from './openrouter-vision';
 import { openAiImageAdapter } from './openai-image';
 import { xaiImageAdapter } from './xai-image';
 import { googleImageAdapter } from './google-image';
@@ -76,6 +77,7 @@ registerVisionAdapter(openAiVisionAdapter);
 registerVisionAdapter(anthropicVisionAdapter);
 registerVisionAdapter(googleVisionAdapter);
 registerVisionAdapter(xaiVisionAdapter);
+registerVisionAdapter(openrouterVisionAdapter);
 registerImageGenAdapter(openAiImageAdapter);
 registerImageGenAdapter(xaiImageAdapter);
 registerImageGenAdapter(googleImageAdapter);
@@ -225,6 +227,7 @@ export {
 } from '../catalogs/anthropic';
 export {
   OPENROUTER_CHAT_MODELS,
+  OPENROUTER_VISION_MODELS,
   OPENROUTER_BASE_URL,
 } from '../catalogs/openrouter';
 export {

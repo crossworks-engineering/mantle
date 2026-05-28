@@ -24,7 +24,7 @@
  * price in the dropdown and bill at a different one.
  */
 
-import type { ChatModelInfo } from '../adapters/types';
+import type { ChatModelInfo, VisionModelInfo } from '../adapters/types';
 
 /** OpenRouter API base. The SDK constructs this internally too; we
  *  expose it for the catalogue + discovery so both paths agree. */
@@ -149,5 +149,57 @@ export const OPENROUTER_CHAT_MODELS: readonly ChatModelInfo[] = [
     capabilities: ['function_calling', 'vision'],
     inputPricePer1M: 0.5,
     outputPricePer1M: 1.5,
+  },
+];
+
+/** Curated vision-capable OpenRouter routes for the Vision + Document worker
+ *  dropdowns (before discovery returns the live image-input list). The
+ *  Anthropic + Gemini routes also support native PDF, so they back the
+ *  Document worker's `extractDocument` path; gpt-4o is image-only here. */
+export const OPENROUTER_VISION_MODELS: readonly VisionModelInfo[] = [
+  {
+    id: 'anthropic/claude-sonnet-4.6',
+    label: 'Claude Sonnet 4.6',
+    description: 'Strong document + table reading; native PDF. Great default for invoices.',
+    contextTokens: 1_000_000,
+    inputPricePer1M: 3,
+    outputPricePer1M: 15,
+    tier: 'balanced',
+  },
+  {
+    id: 'anthropic/claude-opus-4.7',
+    label: 'Claude Opus 4.7',
+    description: 'Top-tier vision/document fidelity; native PDF. Highest cost.',
+    contextTokens: 1_000_000,
+    inputPricePer1M: 15,
+    outputPricePer1M: 75,
+    tier: 'quality',
+  },
+  {
+    id: 'anthropic/claude-haiku-4.5',
+    label: 'Claude Haiku 4.5',
+    description: 'Cheap + fast vision; native PDF. Good for high-volume describe/OCR.',
+    contextTokens: 200_000,
+    inputPricePer1M: 0.8,
+    outputPricePer1M: 4,
+    tier: 'fast',
+  },
+  {
+    id: 'google/gemini-2.5-pro',
+    label: 'Gemini 2.5 Pro',
+    description: 'Google multimodal; native PDF. Strong on dense layouts.',
+    contextTokens: 1_000_000,
+    inputPricePer1M: 1.25,
+    outputPricePer1M: 10,
+    tier: 'balanced',
+  },
+  {
+    id: 'openai/gpt-4o',
+    label: 'GPT-4o',
+    description: 'OpenAI multimodal (images). PDFs fall back to page OCR via OpenRouter.',
+    contextTokens: 128_000,
+    inputPricePer1M: 2.5,
+    outputPricePer1M: 10,
+    tier: 'balanced',
   },
 ];
