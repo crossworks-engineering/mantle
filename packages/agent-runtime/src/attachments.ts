@@ -148,9 +148,13 @@ export async function runDocumentWorker(opts: {
   prompt?: string;
   maxTokens?: number;
 }): Promise<VisionResult> {
-  const worker = await getDefaultWorker(opts.ownerId, 'vision');
+  // Prefer a dedicated 'document' worker; fall back to the 'vision' worker when
+  // none is configured (additive — PDFs still work via vision out of the box).
+  const worker =
+    (await getDefaultWorker(opts.ownerId, 'document')) ??
+    (await getDefaultWorker(opts.ownerId, 'vision'));
   if (!worker?.apiKeyId) {
-    return { ran: false, text: '', note: 'No default vision worker configured.', model: null };
+    return { ran: false, text: '', note: 'No default document or vision worker configured.', model: null };
   }
   const adapter = getVisionAdapter(worker.provider);
   if (!adapter?.extractDocument) {
@@ -170,7 +174,7 @@ export async function runDocumentWorker(opts: {
       model: worker.model,
     };
   }
-  const params = (worker.params ?? {}) as { extraction_prompt?: string };
+  const params = (worker.params ?? {}) as { extraction_prompt?: string; max_tokens?: number };
   const prompt = opts.prompt ?? params.extraction_prompt?.trim() ?? DEFAULT_VISION_DESCRIBE_PROMPT;
   try {
     const r = await adapter.extractDocument(opts.bytes, {
@@ -179,9 +183,9 @@ export async function runDocumentWorker(opts: {
       prompt,
       systemPrompt: worker.systemPrompt ?? undefined,
       model: worker.model,
-      // Documents transcribe in one call, so don't inherit the per-image
-      // max_tokens (tuned small); give the whole doc room.
-      maxTokens: opts.maxTokens ?? 8000,
+      // Documents transcribe in one call — honour the worker's max_tokens, but
+      // default generous (8000) since the per-image vision default is too small.
+      maxTokens: opts.maxTokens ?? params.max_tokens ?? 8000,
     });
     void bumpWorkerUsage(worker.id);
     const text = r.text?.trim() ? r.text : '';

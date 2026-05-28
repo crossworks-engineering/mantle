@@ -219,6 +219,10 @@ export const CAPABILITY_FOR_KIND: Record<string, ProviderCapability> = {
   tts: 'tts',
   stt: 'stt',
   vision: 'vision',
+  // Documents reuse the vision capability — same providers/keys/models (the
+  // multimodal chat models). Runtime routing differs (native PDF document
+  // block vs image OCR), but provider eligibility is identical.
+  document: 'vision',
   image_gen: 'image_gen',
   embedding: 'embedding',
 };

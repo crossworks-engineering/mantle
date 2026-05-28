@@ -679,7 +679,8 @@ function parseParamsFromForm(kind: AiWorkerKind, fd: FormData): AiWorkerParams {
         max_duration_seconds: num(fd.get('max_duration_seconds')),
       };
     }
-    case 'vision': {
+    case 'vision':
+    case 'document': {
       return {
         extraction_prompt: str(fd.get('extraction_prompt')),
         max_tokens: num(fd.get('max_tokens')),

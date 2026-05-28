@@ -35,6 +35,10 @@ export const aiWorkerKind = pgEnum('ai_worker_kind', [
   'tts',
   'stt',
   'vision',
+  // Documents (PDF) sent NATIVELY to a doc-capable model (Claude/Gemini) —
+  // separate from image vision so the operator can run a cheap model for photo
+  // describe but a strong one for invoices/statements. See migration 0051.
+  'document',
   'image_gen',
   // Embedding is genuinely cross-cutting — used by the extractor (writes),
   // the responder/assistant for semantic-memory retrieval, the recall
@@ -100,6 +104,14 @@ export type VisionParams = {
    *  the contents of this whiteboard as markdown" etc. */
   extraction_prompt?: string;
   /** Max output tokens. Vision-LLMs run unbounded otherwise. */
+  max_tokens?: number;
+};
+
+/** Params for `kind='document'` workers (PDF → text, sent natively). Same
+ *  shape as vision: a transcription prompt + an output cap (documents
+ *  transcribe in one call, so this should be generous). */
+export type DocumentParams = {
+  extraction_prompt?: string;
   max_tokens?: number;
 };
 
@@ -194,6 +206,7 @@ export type AiWorkerParams =
   | TtsParams
   | SttParams
   | VisionParams
+  | DocumentParams
   | ImageGenParams
   | ReflectorParams
   | ExtractorParams

@@ -99,6 +99,8 @@ const PROVIDER_FOR_KIND: Record<AiWorkerKind, string> = {
   tts: 'openai',
   stt: 'openai',
   vision: 'openrouter',
+  // Default to Anthropic — the provider that reads PDFs natively today.
+  document: 'anthropic',
   image_gen: 'openai',
   // Embeddings have a full adapter framework now (openrouter, openai,
   // google, mistral, cohere) — the provider dropdown for embedding
@@ -186,6 +188,7 @@ const MODEL_HINT_FOR_KIND: Record<AiWorkerKind, string> = {
   tts: 'gpt-4o-mini-tts',
   stt: 'whisper-1',
   vision: 'openai/gpt-4o',
+  document: 'claude-sonnet-4-6',
   image_gen: 'dall-e-3',
   // 1536-dim, cheap, the brain's existing column shape. Anything else
   // either matches dims (Gemini-embedding-2-preview, Nemotron) or
@@ -286,6 +289,7 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
     kind === 'tts' ||
     kind === 'stt' ||
     (kind === 'vision' && wiredVisionProviders.has(provider)) ||
+    (kind === 'document' && wiredVisionProviders.has(provider)) ||
     (kind === 'image_gen' && wiredImageGenProviders.has(provider)) ||
     (chatShaped && wiredChatProviders.has(provider)) ||
     // Embedding dispatches through the adapter registry — every provider
@@ -319,7 +323,9 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
       if (forProvider === 'google') return [...GOOGLE_STT_MODELS];
       return [...OPENAI_STT_MODELS];
     }
-    if (forKind === 'vision') {
+    // Documents reuse the vision model catalogs (same multimodal models);
+    // native PDF works on Anthropic today (Google next), others rasterize.
+    if (forKind === 'vision' || forKind === 'document') {
       // 4 wired vision providers; everyone else gets the OpenAI list
       // as a placeholder (the form's "not yet wired" hint will steer
       // them anyway).
@@ -392,7 +398,10 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
     // worker kind directly for tts/stt/vision/image_gen. We bail out
     // cleanly if the worker kind isn't supported by discovery yet.
     const discoveryKind =
-      kind === 'tts' || kind === 'stt' || kind === 'vision' || kind === 'image_gen'
+      // Documents discover through the vision adapter (same multimodal models).
+      kind === 'document'
+        ? 'vision'
+        : kind === 'tts' || kind === 'stt' || kind === 'vision' || kind === 'image_gen'
         ? kind
         : kind === 'embedding'
         ? 'embedding'
@@ -662,6 +671,7 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
           {kind === 'tts' && 'Voice settings'}
           {kind === 'stt' && 'Transcription settings'}
           {kind === 'vision' && 'Vision settings'}
+          {kind === 'document' && 'Document settings'}
           {kind === 'image_gen' && 'Image gen settings'}
           {kind === 'reflector' && 'Reflector settings'}
           {kind === 'extractor' && 'Extractor settings'}
@@ -679,6 +689,7 @@ export function WorkerForm({ mode, kind, worker, keys, action, enabled, isDefaul
         )}
         {kind === 'stt' && <SttFields params={params} />}
         {kind === 'vision' && <VisionFields params={params} systemPrompt={worker?.systemPrompt} />}
+        {kind === 'document' && <DocumentFields params={params} systemPrompt={worker?.systemPrompt} />}
         {kind === 'image_gen' && <ImageGenFields params={params} />}
         {kind === 'reflector' && <LlmWorkerFields params={params} systemPrompt={worker?.systemPrompt} kind="reflector" provider={provider} />}
         {kind === 'extractor' && <LlmWorkerFields params={params} systemPrompt={worker?.systemPrompt} kind="extractor" provider={provider} />}
@@ -1328,6 +1339,73 @@ function VisionFields({
         />
         <p className="text-xs text-muted-foreground">
           Caps cost on long transcripts. 2000 covers ~3 pages of dense handwriting.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function DocumentFields({
+  params,
+  systemPrompt,
+}: {
+  params: Record<string, unknown>;
+  systemPrompt: string | null | undefined;
+}) {
+  // Default prompt is document/table-aware — the whole PDF is sent natively to
+  // the model in one call (Anthropic today, Google next), so it should faithfully
+  // transcribe every row, not summarise.
+  const defaultPrompt =
+    'Transcribe this document in full, verbatim and complete — never summarize, condense, or skip anything. Preserve reading order and line breaks; mark anything illegible as [unclear]. If the content is tabular (an invoice, statement, receipt, or table), reproduce it row by row with columns aligned so every label stays with its value: list every line item, description, quantity, rate, and amount, and include all subtotals, taxes, and totals. A simple aligned-column layout or a basic markdown table is fine.';
+  return (
+    <div className="space-y-4">
+      <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+        PDFs are sent <strong>natively</strong> to the model (whole document, real
+        tables) on providers that support it — <strong>Anthropic (Claude)</strong> today,
+        Google next. Other providers fall back to page-by-page image OCR. If no document
+        worker is set, PDFs use the Vision worker.
+      </p>
+      <div className="space-y-1.5">
+        <Label htmlFor="systemPrompt">System prompt</Label>
+        <textarea
+          id="systemPrompt"
+          name="systemPrompt"
+          defaultValue={systemPrompt ?? ''}
+          rows={3}
+          placeholder="You are a precise document transcriber. Output exactly what's on the page — no commentary."
+          className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+        />
+        <p className="text-xs text-muted-foreground">
+          Optional. Steers behaviour across all calls. Leave blank for plain transcription.
+        </p>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="extraction_prompt">Per-document prompt</Label>
+        <textarea
+          id="extraction_prompt"
+          name="extraction_prompt"
+          defaultValue={(params.extraction_prompt as string) ?? defaultPrompt}
+          rows={5}
+          placeholder={defaultPrompt}
+          className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+        />
+        <p className="text-xs text-muted-foreground">
+          Sent alongside the PDF. The default is a faithful, table-aware transcription —
+          ideal for invoices and statements.
+        </p>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="max_tokens">Max output tokens</Label>
+        <Input
+          id="max_tokens"
+          name="max_tokens"
+          type="number"
+          defaultValue={(params.max_tokens as number) ?? 8000}
+          className="w-32"
+        />
+        <p className="text-xs text-muted-foreground">
+          The whole document transcribes in one call, so keep this generous — 8000 covers a
+          multi-page invoice. Long docs need more than the per-image vision default.
         </p>
       </div>
     </div>

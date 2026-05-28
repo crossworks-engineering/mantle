@@ -50,7 +50,12 @@ const KIND_META: Record<AiWorkerKind, { label: string; description: string }> = 
   vision: {
     label: 'Vision',
     description:
-      'Image → text. Whiteboards, receipts, document scans. Not wired in yet — config saved for when it lands.',
+      'Image → text. Whiteboards, receipts, photos. Also the fallback for PDFs when no Document worker is set.',
+  },
+  document: {
+    label: 'Document (PDF)',
+    description:
+      'PDF → text, sent natively to the model (whole document, real tables) on Anthropic/Google — best for invoices & statements. Falls back to page OCR on other providers, or to the Vision worker if unset.',
   },
   image_gen: { label: 'Image generation', description: 'Text → image. Reserved for future tooling.' },
   embedding: {
@@ -67,6 +72,7 @@ const KIND_ORDER: AiWorkerKind[] = [
   'tts',
   'stt',
   'vision',
+  'document',
   'extractor',
   'summarizer',
   'reflector',
