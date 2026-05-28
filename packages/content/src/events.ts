@@ -10,13 +10,19 @@
  *   nodes.data.remind_minutes_before  number, default 0
  *   nodes.data.remind_at            ISO, computed = starts_at - n minutes
  *   nodes.data.reminder_sent_at     ISO once the worker has delivered it
+ *   nodes.data.recur                'none'|'daily'|'weekly'|'monthly'|'yearly'
+ *   nodes.data.recur_until          ISO, optional end-of-series cutoff
  *
  * Under the `events` ltree root. The events-reminders worker polls every
  * 30s for rows where remind_at <= now() AND reminder_sent_at is null and
- * sends a Telegram ping via @mantle/telegram.
+ * sends a Telegram ping via @mantle/telegram. For a recurring event the
+ * worker rolls the single row forward to its next occurrence (re-arming
+ * the reminder) instead of marking it sent — see `rollForwardRecurrence`.
  */
 import { and, asc, desc, eq, gte, ilike, isNull, lt, or, sql } from 'drizzle-orm';
 import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
+
+export type { RecurFreq } from './events-time';
 
 export const EVENTS_ROOT_LABEL = 'events';
 
@@ -36,6 +42,10 @@ export type EventRow = {
    *  regardless of where the agent process or DB run. Defaults to
    *  'UTC' if the client didn't supply one. */
   timezone: string;
+  /** Recurrence frequency; 'none' for a one-shot event. */
+  recur: RecurFreq;
+  /** Optional end-of-series cutoff (ISO). null = repeats until deleted. */
+  recurUntil: string | null;
   tags: string[];
   summary: string | null;
   createdAt: string;
@@ -61,6 +71,8 @@ function rowOf(n: Node): EventRow {
     remindAt,
     reminderSentAt: typeof d.reminder_sent_at === 'string' ? d.reminder_sent_at : null,
     timezone: typeof d.timezone === 'string' && d.timezone.length > 0 ? d.timezone : 'UTC',
+    recur: sanitiseRecur(d.recur),
+    recurUntil: typeof d.recur_until === 'string' ? d.recur_until : null,
     tags: n.tags ?? [],
     summary: typeof d.summary === 'string' ? d.summary : null,
     createdAt: n.createdAt.toISOString(),
@@ -161,12 +173,23 @@ export type CreateEventInput = {
   /** IANA tz string from the client (e.g. `Intl.DateTimeFormat().
    *  resolvedOptions().timeZone`). Display only; falls back to 'UTC'. */
   timezone?: string;
+  /** Repeat frequency. Omit or 'none' for a one-shot event. */
+  recur?: RecurFreq;
+  /** Optional ISO cutoff; the series stops once the next occurrence
+   *  would fall after this. Ignored when recur is 'none'. */
+  recurUntil?: string | null;
   tags?: string[];
 };
 
 // Pure helpers live in events-time.ts so vitest can import them
 // without pulling in the @mantle/db runtime.
-import { computeRemindAt, sanitiseTimezone } from './events-time';
+import {
+  advanceToNextFuture,
+  computeRemindAt,
+  sanitiseRecur,
+  sanitiseTimezone,
+  type RecurFreq,
+} from './events-time';
 
 export async function createEvent(ownerId: string, input: CreateEventInput): Promise<EventRow> {
   await ensureRoot(ownerId);
@@ -175,13 +198,21 @@ export async function createEvent(ownerId: string, input: CreateEventInput): Pro
   const startsAt = new Date(input.startsAt);
   if (Number.isNaN(startsAt.getTime())) throw new Error('invalid starts_at');
   const remindMinutes = Math.max(0, Math.floor(input.remindMinutesBefore ?? 0));
+  const recur = sanitiseRecur(input.recur);
   const data: Record<string, unknown> = {
     body: input.body ?? '',
     starts_at: startsAt.toISOString(),
     remind_minutes_before: remindMinutes,
     remind_at: computeRemindAt(startsAt.toISOString(), remindMinutes),
     timezone: sanitiseTimezone(input.timezone),
+    recur,
   };
+  // recur_until is only meaningful for a repeating event.
+  if (recur !== 'none' && input.recurUntil) {
+    const until = new Date(input.recurUntil);
+    if (Number.isNaN(until.getTime())) throw new Error('invalid recur_until');
+    data.recur_until = until.toISOString();
+  }
   if (input.endsAt) {
     const endsAt = new Date(input.endsAt);
     if (Number.isNaN(endsAt.getTime())) throw new Error('invalid ends_at');
@@ -243,6 +274,23 @@ export async function updateEvent(
     newData.remind_minutes_before = Math.max(0, Math.floor(input.remindMinutesBefore));
   }
   if (input.timezone !== undefined) newData.timezone = sanitiseTimezone(input.timezone);
+  if (input.recur !== undefined) {
+    const recur = sanitiseRecur(input.recur);
+    newData.recur = recur;
+    // Turning recurrence off drops the cutoff so a later re-enable
+    // doesn't silently inherit a stale end date.
+    if (recur === 'none') delete newData.recur_until;
+  }
+  if (input.recurUntil !== undefined) {
+    const stillRecurs = sanitiseRecur(newData.recur) !== 'none';
+    if (input.recurUntil && stillRecurs) {
+      const until = new Date(input.recurUntil);
+      if (Number.isNaN(until.getTime())) throw new Error('invalid recur_until');
+      newData.recur_until = until.toISOString();
+    } else {
+      delete newData.recur_until;
+    }
+  }
   // Recompute remind_at if starts_at OR lead time moved. Clear
   // reminder_sent_at when the reminder time itself moves into the
   // future, so the worker fires the new ping.
@@ -331,6 +379,67 @@ export async function markReminderSent(eventId: string): Promise<void> {
       data: sql`coalesce(${nodes.data}, '{}'::jsonb) || ${JSON.stringify({ reminder_sent_at: new Date().toISOString() })}::jsonb`,
       updatedAt: new Date(),
     })
+    .where(eq(nodes.id, eventId));
+}
+
+/**
+ * Worker-facing: after a recurring event's reminder fires, roll the
+ * single row forward to its next occurrence and re-arm the reminder
+ * (clearing reminder_sent_at) instead of marking it permanently sent.
+ * Shifts starts_at + ends_at by the occurrence delta and recomputes
+ * remind_at. Collapses any backlog of missed occurrences into one hop
+ * (see `advanceToNextFuture`).
+ *
+ * If the next occurrence would fall after `recur_until`, the series is
+ * over: we mark it sent (the row stays at the last occurrence, becoming
+ * an ordinary past event). For a non-recurring row this just defers to
+ * `markReminderSent`, so the worker can call it unconditionally.
+ *
+ * Note: this does NOT re-fire `node_ingested` — only the time moved, not
+ * the content, so there's nothing new for the extractor to index. Keeps
+ * recurrence cost-free in LLM terms.
+ */
+export async function rollForwardRecurrence(eventId: string): Promise<void> {
+  const [node] = await db
+    .select()
+    .from(nodes)
+    .where(and(eq(nodes.id, eventId), eq(nodes.type, 'event')))
+    .limit(1);
+  if (!node) return;
+  const d = (node.data ?? {}) as Record<string, unknown>;
+  const recur = sanitiseRecur(d.recur);
+  if (recur === 'none') {
+    await markReminderSent(eventId);
+    return;
+  }
+  const currentStart = typeof d.starts_at === 'string' ? d.starts_at : null;
+  if (!currentStart) {
+    await markReminderSent(eventId);
+    return;
+  }
+  const remindMinutes =
+    typeof d.remind_minutes_before === 'number' ? d.remind_minutes_before : 0;
+  const nextStart = advanceToNextFuture(currentStart, recur, remindMinutes, Date.now());
+
+  // Series cutoff: stop once the next hit lands past recur_until.
+  const until = typeof d.recur_until === 'string' ? new Date(d.recur_until).getTime() : null;
+  if (until != null && new Date(nextStart).getTime() > until) {
+    await markReminderSent(eventId);
+    return;
+  }
+
+  const newData: Record<string, unknown> = { ...d };
+  newData.starts_at = nextStart;
+  // Shift the end by the same delta so duration is preserved.
+  if (typeof d.ends_at === 'string') {
+    const delta = new Date(nextStart).getTime() - new Date(currentStart).getTime();
+    newData.ends_at = new Date(new Date(d.ends_at).getTime() + delta).toISOString();
+  }
+  newData.remind_at = computeRemindAt(nextStart, remindMinutes);
+  delete newData.reminder_sent_at; // re-arm for the next occurrence
+  await db
+    .update(nodes)
+    .set({ data: newData, updatedAt: new Date() })
     .where(eq(nodes.id, eventId));
 }
 

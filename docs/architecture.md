@@ -154,7 +154,7 @@ MinIO from docker-compose. That's it.
 | `worker` (email)   | `apps/web/workers/email-sync.ts`. pg-boss queue consumer, runs IMAP syncs.    |
 | `tg`               | `apps/web/workers/telegram-poll.ts`. Long-polls Telegram for new DMs.         |
 | `files`            | `apps/web/workers/files-watch.ts`. chokidar on `MANTLE_FILES_ROOT`; mirrors external edits (vim, Syncthing, host `cp`) back into the DB. Loop-safe via `syncFileFromDisk`, which never re-writes bytes. |
-| `events`           | `apps/web/workers/events-reminders.ts`. Polls every 30s for events whose `remind_at` has passed and `reminder_sent_at` is null; sends a Telegram DM via `@mantle/telegram`. |
+| `events`           | `apps/web/workers/events-reminders.ts`. Polls every 30s for events whose `remind_at` has passed and `reminder_sent_at` is null; sends a Telegram DM via `@mantle/telegram`. A **recurring** event (`data.recur` = daily/weekly/monthly/yearly, optional `data.recur_until`) rolls its single row forward to the next occurrence and re-arms instead of marking sent — `rollForwardRecurrence` in `@mantle/content/events`. |
 | `agent`            | `apps/agent/src/main.ts`. LISTENs on `telegram_message_inserted`, replies via OpenRouter. Shares prompt-build + LLM helpers with the web `/assistant` via `@mantle/agent-runtime`. |
 
 The workers live under `apps/web/workers/` (not in their own app) because they

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { CalendarClock, MapPin, Plus, Search } from 'lucide-react';
+import { CalendarClock, MapPin, Plus, Repeat, Search } from 'lucide-react';
 import { useRealtime } from '@/components/realtime/use-realtime';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -153,7 +153,10 @@ export function EventsClient({
             {now ? (live ? 'now' : formatRelativeShort(e.startsAt, now)) : ''}
           </span>
         </div>
-        <div className="truncate text-xs text-muted-foreground">{fmt(e.startsAt)}</div>
+        <div className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+          {e.recur !== 'none' && <Repeat className="size-3 shrink-0" aria-label={`repeats ${e.recur}`} />}
+          <span className="truncate">{fmt(e.startsAt)}</span>
+        </div>
         {(e.location || e.tags.length > 0) && (
           <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
             {e.location && (

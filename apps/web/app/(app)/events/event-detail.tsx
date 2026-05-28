@@ -8,6 +8,7 @@ import {
   Clock,
   MapPin,
   Pencil,
+  Repeat,
   Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -45,6 +46,8 @@ export type EventRow = {
   remindMinutesBefore: number;
   remindAt: string;
   reminderSentAt: string | null;
+  recur: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+  recurUntil: string | null;
   tags: string[];
   summary: string | null;
   createdAt: string;
@@ -273,6 +276,15 @@ export function EventDetail({
                   meta.remindMinutesBefore === 0 ? 'at start' : `${meta.remindMinutesBefore}m before`
                 } · fires ${formatDateTime(meta.remindAt)}`}
           </p>
+          {meta.recur !== 'none' && (
+            <p className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+              <Repeat className="size-3.5 shrink-0" aria-hidden />
+              <span className="capitalize">{meta.recur}</span>
+              {meta.recurUntil && (
+                <span className="lowercase">until {formatDateTime(meta.recurUntil)}</span>
+              )}
+            </p>
+          )}
           {meta.tags.length > 0 && (
             <div className="flex flex-wrap gap-1 pt-0.5">
               {meta.tags.map((t) => (

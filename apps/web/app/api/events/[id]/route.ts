@@ -11,6 +11,8 @@ const PatchBody = z.object({
   location: z.string().max(200).nullable().optional(),
   remindMinutesBefore: z.number().int().min(0).max(60 * 24 * 30).optional(),
   timezone: z.string().max(64).optional(),
+  recur: z.enum(['none', 'daily', 'weekly', 'monthly', 'yearly']).optional(),
+  recurUntil: z.string().datetime().nullable().optional(),
   tags: z.array(z.string().max(40)).max(20).optional(),
 });
 

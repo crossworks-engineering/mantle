@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { TagInput } from '@/components/tag-input';
 import { DateTimePicker } from '@/components/ui/date-time-picker';
+import type { RecurFreq } from '@/lib/events';
 
 export const REMIND_PRESETS: { value: number; label: string }[] = [
   { value: 0, label: 'At start' },
@@ -14,6 +15,14 @@ export const REMIND_PRESETS: { value: number; label: string }[] = [
   { value: 15, label: '15 min before' },
   { value: 60, label: '1 hour before' },
   { value: 60 * 24, label: '1 day before' },
+];
+
+export const RECUR_PRESETS: { value: RecurFreq; label: string }[] = [
+  { value: 'none', label: 'Does not repeat' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'yearly', label: 'Yearly' },
 ];
 
 /** Form state — datetimes as Date|null (driven by DateTimePicker), tags as string[]. */
@@ -24,6 +33,8 @@ export type EventFormValues = {
   endsAt: Date | null;
   location: string;
   remindMinutesBefore: number;
+  recur: RecurFreq;
+  recurUntil: Date | null;
   tags: string[];
 };
 
@@ -35,6 +46,8 @@ export type EventPayload = {
   endsAt: string | null;
   location: string | null;
   remindMinutesBefore: number;
+  recur: RecurFreq;
+  recurUntil: string | null;
   tags: string[];
   timezone?: string;
 };
@@ -46,6 +59,8 @@ export const emptyEventForm = (): EventFormValues => ({
   endsAt: null,
   location: '',
   remindMinutesBefore: 0,
+  recur: 'none',
+  recurUntil: null,
   tags: [],
 });
 
@@ -56,6 +71,8 @@ export function eventToForm(e: {
   endsAt: string | null;
   location: string | null;
   remindMinutesBefore: number;
+  recur: RecurFreq;
+  recurUntil: string | null;
   tags: string[];
 }): EventFormValues {
   return {
@@ -65,6 +82,8 @@ export function eventToForm(e: {
     endsAt: e.endsAt ? new Date(e.endsAt) : null,
     location: e.location ?? '',
     remindMinutesBefore: e.remindMinutesBefore,
+    recur: e.recur,
+    recurUntil: e.recurUntil ? new Date(e.recurUntil) : null,
     tags: e.tags,
   };
 }
@@ -96,6 +115,10 @@ export function EventForm({
     if (!form.title.trim()) return setError('Title is required');
     if (!form.startsAt) return setError('Start time is required');
     if (form.endsAt && form.endsAt < form.startsAt) return setError('End time is before the start');
+    const recurring = form.recur !== 'none';
+    if (recurring && form.recurUntil && form.recurUntil < form.startsAt) {
+      return setError('Repeat-until date is before the start');
+    }
     await onSubmit({
       title: form.title.trim(),
       body: form.body,
@@ -103,6 +126,9 @@ export function EventForm({
       endsAt: form.endsAt ? form.endsAt.toISOString() : null,
       location: form.location.trim() || null,
       remindMinutesBefore: form.remindMinutesBefore,
+      recur: form.recur,
+      // Only carry an end date for a repeating event; clear it otherwise.
+      recurUntil: recurring && form.recurUntil ? form.recurUntil.toISOString() : null,
       tags: form.tags.map((t) => t.trim().toLowerCase()).filter(Boolean),
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || undefined,
     });
@@ -169,6 +195,36 @@ export function EventForm({
             placeholder="Where?"
           />
         </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="event-repeat">Repeat</Label>
+          <select
+            id="event-repeat"
+            value={form.recur}
+            onChange={(e) => setForm({ ...form, recur: e.target.value as RecurFreq })}
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          >
+            {RECUR_PRESETS.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        {form.recur !== 'none' && (
+          <div className="space-y-1.5">
+            <Label htmlFor="event-recur-until">Until (optional)</Label>
+            <DateTimePicker
+              id="event-recur-until"
+              value={form.recurUntil}
+              onChange={(recurUntil) => setForm({ ...form, recurUntil })}
+              placeholder="Repeats forever"
+              clearable
+            />
+          </div>
+        )}
       </div>
 
       <div className="space-y-1.5">

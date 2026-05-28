@@ -9,7 +9,13 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { computeRemindAt, sanitiseTimezone } from './events-time';
+import {
+  advanceToNextFuture,
+  computeRemindAt,
+  nextOccurrence,
+  sanitiseRecur,
+  sanitiseTimezone,
+} from './events-time';
 
 describe('sanitiseTimezone', () => {
   it('passes through a known IANA zone', () => {
@@ -70,5 +76,82 @@ describe('computeRemindAt', () => {
     // Guards against future regressions where minutesBefore is NaN.
     // `0 - NaN * 60_000` is NaN; new Date(NaN).toISOString() throws.
     expect(() => computeRemindAt('2026-05-20T10:00:00Z', Number.NaN)).toThrow();
+  });
+});
+
+describe('sanitiseRecur', () => {
+  it('passes through valid frequencies', () => {
+    for (const f of ['none', 'daily', 'weekly', 'monthly', 'yearly'] as const) {
+      expect(sanitiseRecur(f)).toBe(f);
+    }
+  });
+  it('falls back to none for junk / wrong type', () => {
+    expect(sanitiseRecur('fortnightly')).toBe('none');
+    expect(sanitiseRecur(undefined)).toBe('none');
+    expect(sanitiseRecur(7)).toBe('none');
+    expect(sanitiseRecur(null)).toBe('none');
+  });
+});
+
+describe('nextOccurrence', () => {
+  it('daily adds 24h (DST-agnostic UTC instant)', () => {
+    expect(nextOccurrence('2026-05-20T09:00:00.000Z', 'daily')).toBe('2026-05-21T09:00:00.000Z');
+  });
+  it('weekly adds 7 days', () => {
+    expect(nextOccurrence('2026-05-20T09:00:00.000Z', 'weekly')).toBe('2026-05-27T09:00:00.000Z');
+  });
+  it('monthly preserves day-of-month and time', () => {
+    expect(nextOccurrence('2026-05-15T08:30:00.000Z', 'monthly')).toBe('2026-06-15T08:30:00.000Z');
+  });
+  it('monthly clamps to end-of-month instead of overflowing', () => {
+    // Jan 31 + 1 month → Feb 28 (2026 is not a leap year), NOT Mar 3.
+    expect(nextOccurrence('2026-01-31T10:00:00.000Z', 'monthly')).toBe('2026-02-28T10:00:00.000Z');
+  });
+  it('yearly clamps Feb 29 → Feb 28 on a non-leap target', () => {
+    // 2028 is a leap year; +1 year lands on 2029 which is not.
+    expect(nextOccurrence('2028-02-29T12:00:00.000Z', 'yearly')).toBe('2029-02-28T12:00:00.000Z');
+  });
+  it('none returns the same instant', () => {
+    expect(nextOccurrence('2026-05-20T09:00:00.000Z', 'none')).toBe('2026-05-20T09:00:00.000Z');
+  });
+});
+
+describe('advanceToNextFuture', () => {
+  const now = Date.parse('2026-05-20T12:00:00Z');
+
+  it('steps a single past daily occurrence to the next future one', () => {
+    // Yesterday 09:00 → next future hit is tomorrow 09:00 (today 09:00 is
+    // already past `now`, so it skips it).
+    expect(advanceToNextFuture('2026-05-19T09:00:00.000Z', 'daily', 0, now)).toBe(
+      '2026-05-21T09:00:00.000Z',
+    );
+  });
+
+  it('collapses a long backlog into one hop (no burst)', () => {
+    // A daily event 10 days stale rolls forward to the first future hit,
+    // not ten times.
+    const result = advanceToNextFuture('2026-05-10T09:00:00.000Z', 'daily', 0, now);
+    expect(result).toBe('2026-05-21T09:00:00.000Z');
+  });
+
+  it('honours the reminder lead time when deciding "future"', () => {
+    // remind 60m before. An occurrence at 12:30 has remind_at 11:30 (past
+    // 12:00 now) so it's skipped; next day 12:30 (remind 11:30) is future.
+    expect(advanceToNextFuture('2026-05-20T12:30:00.000Z', 'daily', 60, now)).toBe(
+      '2026-05-21T12:30:00.000Z',
+    );
+  });
+
+  it('advances at least once even when already future', () => {
+    // The current occurrence's reminder just fired, so we always move on.
+    expect(advanceToNextFuture('2026-05-25T09:00:00.000Z', 'weekly', 0, now)).toBe(
+      '2026-06-01T09:00:00.000Z',
+    );
+  });
+
+  it('none is a no-op', () => {
+    expect(advanceToNextFuture('2026-05-19T09:00:00.000Z', 'none', 0, now)).toBe(
+      '2026-05-19T09:00:00.000Z',
+    );
   });
 });

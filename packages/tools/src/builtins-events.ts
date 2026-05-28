@@ -27,8 +27,11 @@ import {
   listEvents,
   loadProfilePreferences,
   updateEvent,
+  type RecurFreq,
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
+
+const RECUR_VALUES: readonly RecurFreq[] = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -44,6 +47,12 @@ function strArr(v: unknown): string[] | undefined {
   if (!Array.isArray(v)) return undefined;
   const out = v.filter((s): s is string => typeof s === 'string');
   return out.length > 0 ? out : undefined;
+}
+/** Validated RecurFreq, or undefined to leave unchanged on update. */
+function recurOpt(v: unknown): RecurFreq | undefined {
+  return typeof v === 'string' && (RECUR_VALUES as readonly string[]).includes(v)
+    ? (v as RecurFreq)
+    : undefined;
 }
 
 const event_list: BuiltinToolDef = {
@@ -137,6 +146,17 @@ const event_create: BuiltinToolDef = {
         description:
           "IANA timezone for display in the reminder. Defaults to the user's profile timezone.",
       },
+      recur: {
+        type: 'string',
+        enum: ['none', 'daily', 'weekly', 'monthly', 'yearly'],
+        description:
+          "How often the event repeats. Defaults to 'none' (one-shot). A recurring event re-arms its reminder for the next occurrence after each ping.",
+      },
+      recurUntil: {
+        type: 'string',
+        description:
+          'Optional UTC ISO 8601 cutoff — the series stops once the next occurrence would fall after this. Only meaningful with recur set.',
+      },
       tags: {
         type: 'array',
         items: { type: 'string' },
@@ -168,6 +188,8 @@ const event_create: BuiltinToolDef = {
         endsAt: strOpt(input.endsAt) ?? null,
         location: strOpt(input.location) ?? null,
         remindMinutesBefore: num(input.remindMinutesBefore, 0),
+        recur: recurOpt(input.recur),
+        recurUntil: strOpt(input.recurUntil) ?? null,
         timezone,
         tags: strArr(input.tags),
       });
@@ -183,7 +205,7 @@ const event_update: BuiltinToolDef = {
   slug: 'event_update',
   name: 'Update a calendar event',
   description:
-    "Update an existing event. Any field omitted stays unchanged. If you move `startsAt` or `remindMinutesBefore` forward and the new reminder time is still in the future, a previously-sent reminder fires again. `startsAt` / `endsAt` are UTC ISO 8601 instants.",
+    "Update an existing event. Any field omitted stays unchanged. If you move `startsAt` or `remindMinutesBefore` forward and the new reminder time is still in the future, a previously-sent reminder fires again. `startsAt` / `endsAt` are UTC ISO 8601 instants. Set `recur` to make it repeat (or 'none' to stop repeating); `recurUntil` caps the series.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -195,6 +217,15 @@ const event_update: BuiltinToolDef = {
       location: { type: 'string', maxLength: 200 },
       remindMinutesBefore: { type: 'integer', minimum: 0, maximum: 60 * 24 * 30 },
       timezone: { type: 'string' },
+      recur: {
+        type: 'string',
+        enum: ['none', 'daily', 'weekly', 'monthly', 'yearly'],
+        description: "Repeat frequency; 'none' turns recurrence off.",
+      },
+      recurUntil: {
+        type: 'string',
+        description: 'Optional UTC ISO 8601 end-of-series cutoff.',
+      },
       tags: { type: 'array', items: { type: 'string' } },
     },
     required: ['id'],
@@ -211,6 +242,9 @@ const event_update: BuiltinToolDef = {
         location: strOpt(input.location) ?? null,
         remindMinutesBefore: num(input.remindMinutesBefore),
         timezone: strOpt(input.timezone),
+        recur: recurOpt(input.recur),
+        // Omit → leave unchanged (don't clobber an existing cutoff).
+        recurUntil: strOpt(input.recurUntil),
         tags: strArr(input.tags),
       });
       if (!row) return { ok: false, error: `event ${id} not found` };

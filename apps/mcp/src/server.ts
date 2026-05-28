@@ -988,7 +988,7 @@ server.tool(
 
 server.tool(
   'event_create',
-  'Create a calendar event. `startsAt` is an ISO 8601 instant. `remindMinutesBefore` controls when the Telegram reminder fires (0 = right at start). The reminder lands in the owner\'s most-recent allowed Telegram DM. `timezone` is an optional IANA tz (e.g. "Africa/Johannesburg") used to format the reminder message — the storage is always UTC.',
+  'Create a calendar event. `startsAt` is an ISO 8601 instant. `remindMinutesBefore` controls when the Telegram reminder fires (0 = right at start). The reminder lands in the owner\'s most-recent allowed Telegram DM. `timezone` is an optional IANA tz (e.g. "Africa/Johannesburg") used to format the reminder message — the storage is always UTC. Set `recur` (daily/weekly/monthly/yearly) to repeat; `recurUntil` (ISO) caps the series.',
   {
     title: z.string().min(1).max(200),
     body: z.string().max(50_000).optional(),
@@ -997,6 +997,8 @@ server.tool(
     location: z.string().max(200).nullable().optional(),
     remindMinutesBefore: z.number().int().min(0).max(60 * 24 * 30).optional(),
     timezone: z.string().max(64).optional(),
+    recur: z.enum(['none', 'daily', 'weekly', 'monthly', 'yearly']).optional(),
+    recurUntil: z.string().datetime().nullable().optional(),
     tags: z.array(z.string()).optional(),
   },
   async (args) => {
@@ -1007,7 +1009,7 @@ server.tool(
 
 server.tool(
   'event_update',
-  'Update a calendar event. If you move `startsAt` or `remindMinutesBefore` and the new reminder time is still in the future, a previously-sent reminder will fire again. Pass `timezone` (IANA tz) to change how the reminder message formats the time.',
+  'Update a calendar event. If you move `startsAt` or `remindMinutesBefore` and the new reminder time is still in the future, a previously-sent reminder will fire again. Pass `timezone` (IANA tz) to change how the reminder message formats the time. Set `recur` to change the repeat frequency (\'none\' stops it); `recurUntil` caps the series.',
   {
     id: z.string(),
     title: z.string().min(1).max(200).optional(),
@@ -1017,6 +1019,8 @@ server.tool(
     location: z.string().max(200).nullable().optional(),
     remindMinutesBefore: z.number().int().min(0).max(60 * 24 * 30).optional(),
     timezone: z.string().max(64).optional(),
+    recur: z.enum(['none', 'daily', 'weekly', 'monthly', 'yearly']).optional(),
+    recurUntil: z.string().datetime().nullable().optional(),
     tags: z.array(z.string()).optional(),
   },
   async ({ id, ...rest }) => {

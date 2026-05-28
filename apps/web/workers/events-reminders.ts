@@ -28,6 +28,7 @@ import { maybeSweep } from '@mantle/tools';
 import {
   listDueReminders,
   markReminderSent,
+  rollForwardRecurrence,
   ownersWithEvents,
   type EventRow,
 } from '../lib/events';
@@ -78,6 +79,7 @@ function formatReminder(e: EventRow): string {
   }
   const lines = [`⏰ Reminder: *${e.title}*`, `Starts: ${startTime}`];
   if (e.location) lines.push(`Where: ${e.location}`);
+  if (e.recur !== 'none') lines.push(`🔁 Repeats ${e.recur}`);
   if (e.body) lines.push('', e.body);
   return lines.join('\n');
 }
@@ -101,9 +103,18 @@ async function tick(): Promise<void> {
     for (const evt of due) {
       try {
         await sendMessage(target.account, target.telegramChatId, formatReminder(evt));
-        await markReminderSent(evt.id);
+        // Recurring events roll their single row forward to the next
+        // occurrence (re-arming the reminder); one-shots just get marked
+        // sent. rollForwardRecurrence handles both, so call it always.
+        if (evt.recur !== 'none') {
+          await rollForwardRecurrence(evt.id);
+        } else {
+          await markReminderSent(evt.id);
+        }
         console.log(
-          `[events-reminders] sent reminder for "${evt.title}" → chat ${target.telegramChatId}`,
+          `[events-reminders] sent reminder for "${evt.title}"` +
+            (evt.recur !== 'none' ? ` (repeats ${evt.recur}, rolled forward)` : '') +
+            ` → chat ${target.telegramChatId}`,
         );
       } catch (err) {
         console.error(

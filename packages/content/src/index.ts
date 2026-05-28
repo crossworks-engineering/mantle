@@ -47,10 +47,12 @@ export {
   deleteEvent,
   listDueReminders,
   markReminderSent,
+  rollForwardRecurrence,
   ownersWithEvents,
   type EventRow,
   type CreateEventInput,
   type UpdateEventInput,
+  type RecurFreq,
 } from './events';
 
 export {
