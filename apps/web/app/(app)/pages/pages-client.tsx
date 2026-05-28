@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, useTransition, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { JSONContent } from '@tiptap/react';
@@ -91,6 +91,24 @@ export function PagesClient({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const [searchInput, setSearchInput] = useState(query);
+
+  // Tag filter row collapses to a single line; a toggle reveals the rest.
+  // `tagsOverflow` (measured while collapsed) gates the toggle so it only shows
+  // when the tags actually wrap past one row.
+  const tagRowRef = useRef<HTMLDivElement>(null);
+  const [tagsExpanded, setTagsExpanded] = useState(false);
+  const [tagsOverflow, setTagsOverflow] = useState(false);
+
+  useEffect(() => {
+    if (tagsExpanded) return; // keep the toggle visible while expanded
+    const el = tagRowRef.current;
+    if (!el) return;
+    const check = () => setTagsOverflow(el.scrollHeight - el.clientHeight > 4);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [tags, tagsExpanded]);
 
   const selected = pages.find((p) => p.id === selectedId) ?? pages[0] ?? null;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -225,7 +243,7 @@ export function PagesClient({
   );
 
   return (
-    <div className="md:grid md:h-full md:grid-cols-[30%_minmax(0,1fr)] md:overflow-hidden">
+    <div className="md:grid md:h-full md:grid-cols-[300px_minmax(0,1fr)] md:overflow-hidden">
       {/* ── Left: list / tree ───────────────────────────────────────── */}
       <div className="flex flex-col border-b border-border md:h-full md:min-h-0 md:border-b-0 md:border-r">
         <div className="space-y-3 border-b border-border p-4">
@@ -245,27 +263,47 @@ export function PagesClient({
           </div>
 
           {tags.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <Button
-                size="sm"
-                variant={activeTag ? 'outline' : 'default'}
-                className="h-7 rounded-full px-3"
-                onClick={() => go({ tag: null, page: 1 })}
+            <div className="flex items-start gap-1.5">
+              <div
+                ref={tagRowRef}
+                className={cn(
+                  'flex flex-1 flex-wrap items-center gap-1.5',
+                  !tagsExpanded && 'max-h-7 overflow-hidden',
+                )}
               >
-                All
-              </Button>
-              {tags.map((t) => (
                 <Button
-                  key={t.tag}
                   size="sm"
-                  variant={activeTag === t.tag ? 'default' : 'outline'}
+                  variant={activeTag ? 'outline' : 'default'}
                   className="h-7 rounded-full px-3"
-                  onClick={() => go({ tag: activeTag === t.tag ? null : t.tag, page: 1 })}
+                  onClick={() => go({ tag: null, page: 1 })}
                 >
-                  {t.tag}
-                  <span className="ml-1 opacity-60">{t.count}</span>
+                  All
                 </Button>
-              ))}
+                {tags.map((t) => (
+                  <Button
+                    key={t.tag}
+                    size="sm"
+                    variant={activeTag === t.tag ? 'default' : 'outline'}
+                    className="h-7 rounded-full px-3"
+                    onClick={() => go({ tag: activeTag === t.tag ? null : t.tag, page: 1 })}
+                  >
+                    {t.tag}
+                    <span className="ml-1 opacity-60">{t.count}</span>
+                  </Button>
+                ))}
+              </div>
+              {tagsOverflow && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-7 shrink-0"
+                  onClick={() => setTagsExpanded((v) => !v)}
+                  aria-label={tagsExpanded ? 'Show fewer tags' : 'Show all tags'}
+                  title={tagsExpanded ? 'Show fewer tags' : 'Show all tags'}
+                >
+                  <ChevronDown className={cn('transition-transform', tagsExpanded && 'rotate-180')} />
+                </Button>
+              )}
             </div>
           )}
         </div>
