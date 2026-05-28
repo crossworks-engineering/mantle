@@ -329,6 +329,36 @@ cache + `extract_cost_cap_micro_usd`.
   See [architecture.md §9g](./architecture.md#9g-web-assistant--full-multimedia-parity-with-telegram)
   for the surrounding /assistant context.
 
+- **Gutter focus marker** — ✅ **built (2026-05-28).** A left-gutter
+  "highlighter" for marking *many* sections of a page, then handing exactly
+  those blocks to Pages — the scalable answer to "rephrase these bits, leave
+  the rest alone". Deliberately NOT a pen-over-text highlighter (that fights
+  ProseMirror's selection model and spans partial blocks); the gutter maps
+  cleanly onto the Phase 2b stable block ids.
+  - `focus-marks.ts` — editor-only extension; highlights a SET of blocks by
+    `attrs.id` via ProseMirror node decorations (left accent bar + tint).
+    Driven by a meta transaction, so it never mutates the doc (and
+    `PageEditor.onUpdate` now guards on `transaction.docChanged`, so a
+    meta-only mark push can't trip autosave). Same decoration primitive the
+    Phase 3a Pass 2 visual diff will reuse.
+  - `focus-gutter.tsx` — a strip over the editor's 2.5rem left padding,
+    shown only in marker mode (the drag handle steps aside). Drag → mark a
+    contiguous run (added to the set; repeat for multiple ranges); click a row
+    → toggle. Resolves blocks off `data-block-id` in the rendered DOM, hit-test
+    by vertical rect (x/scroll-independent); id-less unsaved blocks skipped.
+  - State lives in `page-detail-client` ("Mark" toolbar toggle + count + Clear),
+    persisted per page in `localStorage` (survives reload + the AI-change
+    editor remount); never serialized into the document.
+  - Hand-off: the AI-assist panel shows "Focusing N marked sections" and sends
+    `focusBlockIds`; `/api/pages/[id]/ai-assist` injects a FOCUS directive
+    (`lib/focus-directive.ts`) telling Pages to operate ONLY on those ids and
+    leave the rest byte-for-byte. **No new agent tools** — Pages already edits
+    by block id; the marker just names the targets.
+  - Deferred (next slice): **gutter break → child page** — a between-blocks
+    "break here" / "extract marked range → sub-page" that creates a child from
+    the selected blocks and drops a `childPage` card in their place (Phase 4c
+    realized through the gutter, landing on the 4a foundation).
+
 - **Block-editor safety skill (architectural note, not slated)** — Pages's
   HARD RULE block grew organically over the testing days (preserve words,
   preserve block kind, use `kinds` filter, mandatory pre-flight checks).
