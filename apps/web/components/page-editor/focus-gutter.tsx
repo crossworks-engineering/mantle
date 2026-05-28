@@ -45,13 +45,24 @@ export function FocusGutter({
     return clientY < els[0]!.getBoundingClientRect().top ? 0 : els.length - 1;
   };
 
+  // Resolve a top-level block's id from the DOC MODEL, not the DOM. NodeView
+  // blocks (callout, image, fileEmbed, childPage) render a React wrapper that
+  // doesn't emit the global `data-block-id` attribute, so reading the DOM
+  // misses them — but `attrs.id` is always on the PM node. The editable's
+  // direct children line up 1:1 with the doc's top-level nodes by index, so
+  // the rect-based index maps straight to `doc.child(index)`.
+  const idAtIndex = (i: number): string | null => {
+    const node = editor.state.doc.maybeChild(i);
+    const id = node?.attrs?.id;
+    return typeof id === 'string' && id ? id : null;
+  };
+
   const idsInRange = (a: number, b: number): string[] => {
-    const els = blockEls();
     const lo = Math.min(a, b);
     const hi = Math.max(a, b);
     const ids: string[] = [];
     for (let i = lo; i <= hi; i++) {
-      const id = els[i]?.getAttribute('data-block-id');
+      const id = idAtIndex(i);
       if (id) ids.push(id);
     }
     return ids;
@@ -81,7 +92,7 @@ export function FocusGutter({
     drag.current = null;
     if (!d || d.moved) return;
     // No drag → a click toggles the single anchored block.
-    const id = blockEls()[d.anchorIndex]?.getAttribute('data-block-id');
+    const id = idAtIndex(d.anchorIndex);
     if (!id) return;
     const next = new Set(d.base);
     if (next.has(id)) next.delete(id);
