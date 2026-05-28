@@ -31,6 +31,7 @@ import {
 import type { AgentAvatar, PersonaNote } from '@mantle/db';
 import { AvatarPicker } from '@/components/avatar-picker';
 import { SubmitButton } from '@/components/ui/submit-button';
+import { ToggleList, type ToggleListItem } from '@/components/toggle-list';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { PersonaNotesEditor } from './persona-notes-editor';
@@ -1669,54 +1670,28 @@ function ToolPicker({
   selected: string[];
   onChange: (next: string[]) => void;
 }) {
-  const set = new Set(selected);
-  const toggle = (slug: string) => {
-    const next = new Set(set);
-    if (next.has(slug)) next.delete(slug);
-    else next.add(slug);
-    onChange(Array.from(next));
-  };
-
   // Group by handler kind so built-ins, http, shell each cluster.
-  const groups = available.reduce<Record<string, ToolOption[]>>((acc, t) => {
-    const k = t.kind;
-    (acc[k] ??= []).push(t);
-    return acc;
-  }, {});
-
+  const items: ToggleListItem[] = available.map((t) => ({
+    value: t.slug,
+    label: t.name,
+    description: t.description,
+    group: t.kind,
+    meta: (
+      <>
+        <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+          {t.slug}
+        </code>
+        {t.requiresConfirm && (
+          <span className="rounded bg-amber-500/15 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">
+            confirm
+          </span>
+        )}
+      </>
+    ),
+  }));
   return (
-    <div className="space-y-3">
-      {Object.entries(groups).map(([kind, tools]) => (
-        <div key={kind} className="space-y-1.5">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            {kind} · {tools.length}
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {tools.map((t) => {
-              const on = set.has(t.slug);
-              return (
-                <button
-                  key={t.slug}
-                  type="button"
-                  onClick={() => toggle(t.slug)}
-                  title={t.description}
-                  className={
-                    'rounded-full border px-2.5 py-0.5 text-xs font-mono transition ' +
-                    (on
-                      ? 'border-primary bg-primary text-primary-foreground'
-                      : 'border-input bg-background text-muted-foreground hover:border-muted-foreground/50')
-                  }
-                >
-                  {t.slug}
-                  {t.requiresConfirm && (
-                    <span className="ml-1 text-[9px] uppercase opacity-70">⚠</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ))}
+    <div className="space-y-2">
+      <ToggleList items={items} selected={selected} onChange={onChange} />
       {selected.length > 0 && (
         <p className="text-xs text-muted-foreground">
           {selected.length} tool{selected.length === 1 ? '' : 's'} selected
@@ -1727,9 +1702,8 @@ function ToolPicker({
 }
 
 /**
- * Skill multi-select. Like ToolPicker but each chip is a skill slug;
- * hover shows the skill description. Selected skills will have their
- * instructions appended to the system prompt at run time.
+ * Skill multi-select — one row per skill (name + description + Switch), with a
+ * count of the tools each skill folds into the agent's allowlist.
  */
 function SkillPicker({
   available,
@@ -1740,37 +1714,25 @@ function SkillPicker({
   selected: string[];
   onChange: (next: string[]) => void;
 }) {
-  const set = new Set(selected);
-  const toggle = (slug: string) => {
-    const next = new Set(set);
-    if (next.has(slug)) next.delete(slug);
-    else next.add(slug);
-    onChange(Array.from(next));
-  };
+  const items: ToggleListItem[] = available.map((s) => ({
+    value: s.slug,
+    label: s.name,
+    description: s.description,
+    meta:
+      s.toolSlugs.length > 0 ? (
+        <span className="shrink-0 text-[10px] text-muted-foreground">
+          +{s.toolSlugs.length} tool{s.toolSlugs.length === 1 ? '' : 's'}
+        </span>
+      ) : undefined,
+  }));
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {available.map((s) => {
-        const on = set.has(s.slug);
-        return (
-          <button
-            key={s.slug}
-            type="button"
-            onClick={() => toggle(s.slug)}
-            title={s.description}
-            className={
-              'rounded-full border px-2.5 py-0.5 text-xs transition ' +
-              (on
-                ? 'border-primary bg-primary text-primary-foreground'
-                : 'border-input bg-background text-muted-foreground hover:border-muted-foreground/50')
-            }
-          >
-            {s.name}
-            {s.toolSlugs.length > 0 && (
-              <span className="ml-1 opacity-70">·{s.toolSlugs.length}🔧</span>
-            )}
-          </button>
-        );
-      })}
+    <div className="space-y-2">
+      <ToggleList items={items} selected={selected} onChange={onChange} />
+      {selected.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {selected.length} skill{selected.length === 1 ? '' : 's'} selected
+        </p>
+      )}
     </div>
   );
 }
@@ -1791,39 +1753,26 @@ function DelegatePicker({
   selected: string[];
   onChange: (next: string[]) => void;
 }) {
-  const set = new Set(selected);
-  const toggle = (slug: string) => {
-    const next = new Set(set);
-    if (next.has(slug)) next.delete(slug);
-    else next.add(slug);
-    onChange(Array.from(next));
-  };
+  const items: ToggleListItem[] = available.map((a) => ({
+    value: a.slug,
+    label: a.name,
+    description: a.enabled ? undefined : 'Disabled — won’t resolve until re-enabled',
+    meta: (
+      <>
+        <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+          {a.slug}
+        </code>
+        {!a.enabled && (
+          <span className="rounded bg-muted px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+            off
+          </span>
+        )}
+      </>
+    ),
+  }));
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap gap-1.5">
-        {available.map((a) => {
-          const on = set.has(a.slug);
-          return (
-            <button
-              key={a.slug}
-              type="button"
-              onClick={() => toggle(a.slug)}
-              title={a.enabled ? a.name : `${a.name} (disabled)`}
-              className={
-                'rounded-full border px-2.5 py-0.5 text-xs font-mono transition ' +
-                (on
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-input bg-background text-muted-foreground hover:border-muted-foreground/50')
-              }
-            >
-              {a.slug}
-              {!a.enabled && (
-                <span className="ml-1 text-[9px] uppercase opacity-70">off</span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+      <ToggleList items={items} selected={selected} onChange={onChange} />
       {selected.length > 0 && (
         <p className="text-xs text-muted-foreground">
           {selected.length} delegate{selected.length === 1 ? '' : 's'} selected
