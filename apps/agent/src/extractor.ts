@@ -1560,10 +1560,21 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
           }
           const output: Record<string, unknown> = { ...t };
           if (capExceededAt != null) {
+            const dropped = parsed.facts.length - capExceededAt;
             output.costCapHitAt = capExceededAt;
             output.processed = capExceededAt;
-            output.skipped = parsed.facts.length - capExceededAt;
+            output.skipped = dropped;
+            // Flip the step to `skipped` so a cost-cap-exhausted fact run is
+            // amber in /traces and the node-biography instead of a green
+            // "success" that hides paid-for facts being dropped — the exact
+            // silent-miss class observability.md §4 used to warn was invisible.
+            // `fact_cost_cap`/`dropped`/`model` mirror the duplicate-guard
+            // meta so /debug's widget rolls it up without a join. See §9n.
+            h.setSkipped('fact_cost_cap');
             h.setMeta({
+              fact_cost_cap: true,
+              dropped,
+              model: worker.model,
               costCapMicroUsd: costCap,
               spentMicroUsd: currentTrace()?.costMicroUsd ?? 0,
             });

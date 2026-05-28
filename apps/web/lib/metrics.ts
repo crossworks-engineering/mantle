@@ -464,3 +464,59 @@ export async function duplicateSuppressionStats(
     lastAt: r.lastAt instanceof Date ? r.lastAt.toISOString() : String(r.lastAt),
   }));
 }
+
+export type FactCostCapStats = {
+  /** Extractor model slug captured in trace_steps.meta.model. */
+  model: string;
+  /** How many process_facts steps dropped facts to the cap in the window. */
+  runs: number;
+  /** Total facts discarded across those runs (sum of meta.dropped). */
+  factsDropped: number;
+  /** Most recent occurrence, ISO string. */
+  lastAt: string;
+};
+
+/**
+ * Roll-up of fact runs that hit the extractor's cost cap and discarded
+ * facts the LLM already produced (and we already paid for), grouped by
+ * model. Drives the `/debug` "Facts dropped to cost cap" widget — the
+ * answer to "is a mis-set cap silently eating my profile facts?".
+ *
+ * Background: `process_facts` marks the step `skipped` + sets
+ * meta.fact_cost_cap=true / meta.dropped / meta.model when the per-node
+ * fact-classification budget is exhausted. A cap of 0 used to read as
+ * "zero budget" and drop *every* fact while the run still reported
+ * success — invisible until you hand-traced it. This widget surfaces it.
+ * See observability.md §6 (disposition catalog) + data-flow-tracing.md §4.
+ */
+export async function factCostCapStats(
+  userId: string,
+  daysBack: number,
+): Promise<FactCostCapStats[]> {
+  const since = new Date(Date.now() - daysBack * 86_400_000);
+  const rows = await db
+    .select({
+      model: sql<string>`coalesce(${traceSteps.meta}->>'model', '(unknown)')`,
+      runs: sql<number>`count(*)::int`,
+      factsDropped: sql<number>`coalesce(sum((${traceSteps.meta}->>'dropped')::int), 0)::int`,
+      lastAt: sql<Date>`max(${traceSteps.startedAt})`,
+    })
+    .from(traceSteps)
+    .innerJoin(traces, eq(traceSteps.traceId, traces.id))
+    .where(
+      and(
+        eq(traces.ownerId, userId),
+        gte(traceSteps.startedAt, since),
+        sql`${traceSteps.meta}->>'fact_cost_cap' = 'true'`,
+      ),
+    )
+    .groupBy(sql`coalesce(${traceSteps.meta}->>'model', '(unknown)')`)
+    .orderBy(desc(sql`coalesce(sum((${traceSteps.meta}->>'dropped')::int), 0)`));
+
+  return rows.map((r) => ({
+    model: r.model,
+    runs: r.runs,
+    factsDropped: r.factsDropped,
+    lastAt: r.lastAt instanceof Date ? r.lastAt.toISOString() : String(r.lastAt),
+  }));
+}

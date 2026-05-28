@@ -6,6 +6,7 @@ import { contentIndexCoverage, duplicateEdgeStats } from '@/lib/debug';
 import {
   duplicateSuppressionStats,
   embedderCacheStats,
+  factCostCapStats,
   recentFailures,
   spendByAgent,
   spendByDay,
@@ -31,6 +32,7 @@ export default async function DebugOverviewPage() {
     dupes,
     coverage,
     dupCalls7d,
+    factCap7d,
   ] = await Promise.all([
     trafficWindow(user.id, 24),
     spendByAgent(user.id, 7),
@@ -41,8 +43,10 @@ export default async function DebugOverviewPage() {
     duplicateEdgeStats(user.id),
     contentIndexCoverage(user.id),
     duplicateSuppressionStats(user.id, 7),
+    factCostCapStats(user.id, 7),
   ]);
   const dupCallTotal = dupCalls7d.reduce((a, b) => a + b.count, 0);
+  const factCapDropped = factCap7d.reduce((a, b) => a + b.factsDropped, 0);
 
   const maxDaily = daily14d.reduce((m, d) => Math.max(m, d.costMicroUsd), 0);
   const totalSpend = spend7d.reduce((sum, r) => sum + r.costMicroUsd, 0);
@@ -177,6 +181,48 @@ export default async function DebugOverviewPage() {
                 </span>
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {formatDateTime(d.lastAt)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* ─── Facts dropped to cost cap (7d) ──────────────────────────────── */}
+      {factCapDropped > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              Facts dropped to cost cap (7d)
+            </h2>
+            <span className="text-xs text-muted-foreground">
+              {factCapDropped} fact{factCapDropped === 1 ? '' : 's'}
+            </span>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Extractor runs whose per-node fact budget
+            (<code>extract_cost_cap_micro_usd</code>) was exhausted — the model
+            produced these facts, but they were discarded before reaching your
+            profile. A non-zero count usually means the cap is set too low (a
+            cap of <code>0</code> means unlimited). Re-fire the node after
+            raising it to recover them. See{' '}
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+              data-flow-tracing.md §4
+            </code>
+            .
+          </p>
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {factCap7d.map((f) => (
+              <li key={f.model} className="flex items-baseline gap-3 px-3 py-2 text-sm">
+                <span className="rounded-md bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+                  −{f.factsDropped}
+                </span>
+                <code className="shrink-0 font-mono text-xs">{f.model}</code>
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                  {f.runs} run{f.runs === 1 ? '' : 's'}
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {formatDateTime(f.lastAt)}
                 </span>
               </li>
             ))}

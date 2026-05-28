@@ -236,6 +236,16 @@ When `recordSkippedTrace` fires, `data.disposition` names the
 reason. The current catalog (extend as new pipelines land):
 
 ### Extractor
+- `fact_cost_cap` — **step-level, not trace-level.** The per-node fact
+  budget (`extract_cost_cap_micro_usd`) was exhausted, so facts the LLM
+  already produced were discarded before reaching the profile. The
+  `process_facts` step is marked `status=skipped`; meta carries
+  `fact_cost_cap=true` + `dropped` (count) + `model` so `/debug`'s "Facts
+  dropped to cost cap" widget groups without a join. The enclosing
+  `extractor_run` still finishes `success` (summary/embedding/entities did
+  land) — this is the one place a partial-loss event lives on a step, not
+  the trace. A cap of `0` / negative reads as **unlimited**; only a positive
+  cap can drop facts.
 - `no_extractor_worker` — no default extractor configured at /settings/ai-workers.
 - `node_not_found` — race: notify fired but the row was already deleted.
 - `hard_skip_type` — transient/internal type the extractor refuses by design.
