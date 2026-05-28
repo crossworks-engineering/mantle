@@ -131,11 +131,14 @@ can read and reply.
 
 1. **Create a bot.** DM [@BotFather](https://t.me/BotFather), `/newbot`,
    write down the token.
-2. **Seed it.** For now the bot lives in `~/.claude/channels/telegram/`
-   (legacy). Drop a `.env` with `TELEGRAM_BOT_TOKEN=…` and an
-   `access.json` listing allowed Telegram user IDs (`{"allowFrom": ["431…"]}`).
-   Then `pnpm -C apps/web seed:telegram` upserts the bot + allowlist
-   into Postgres with the token AES-encrypted at rest.
+2. **Link it to a responder.** Open [`/settings/agents`](http://localhost:3000/settings/agents),
+   select (or create) a `responder` agent, and paste the token into its
+   **Telegram bot** section. Mantle validates it (`getMe`), seals it
+   AES-256-GCM at rest, and binds the bot to that responder — so DMs to that
+   bot are answered by that agent. The poll worker picks it up within ~60s.
+   (The token lives in `telegram_accounts`, now with a `responder_agent_id`
+   link; CLI bootstrap via `pnpm -C apps/web seed:telegram` from
+   `~/.claude/channels/telegram/.env` still works for migrating a legacy setup.)
 3. **Pair.** DM your bot from your phone. Within ~25s the worker
    gates the message, generates a 6-char pairing code, and DMs it back.
    In Claude (with the MCP server connected), call
