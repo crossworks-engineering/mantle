@@ -18,13 +18,14 @@ describe('buildChildrenIndex', () => {
     expect(idx.get('a')?.map((n) => n.id)).toEqual(['b', 'c']);
   });
 
-  it('sorts siblings by title (not input order)', () => {
+  it('preserves input (server-sorted) sibling order', () => {
     const idx = buildChildrenIndex([
       p('a', null, 'Zeta'),
       p('b', null, 'Alpha'),
       p('c', null, 'Mu'),
     ]);
-    expect(idx.get(null)?.map((n) => n.title)).toEqual(['Alpha', 'Mu', 'Zeta']);
+    // Order is whatever the server returned — buildChildrenIndex does not re-sort.
+    expect(idx.get(null)?.map((n) => n.title)).toEqual(['Zeta', 'Alpha', 'Mu']);
   });
 
   it('treats a page with an unresolvable parent as a root (orphan-as-root)', () => {

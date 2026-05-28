@@ -1,7 +1,9 @@
 import { requireOwner } from '@/lib/auth';
-import { countPages, listPageTags, listPages } from '@/lib/pages';
+import { countPages, listPageTags, listPages, type PageSort } from '@/lib/pages';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { PagesClient } from './pages-client';
+
+const SORTS: PageSort[] = ['edited', 'newest', 'oldest', 'title'];
 
 const PAGE_SIZE = 50;
 // Tree mode loads the whole hierarchy at once (a personal KB is hundreds of
@@ -13,7 +15,7 @@ const TREE_LIMIT = 2000;
 export default async function PagesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; tag?: string; q?: string }>;
+  searchParams: Promise<{ page?: string; tag?: string; q?: string; sort?: string }>;
 }) {
   const user = await requireOwner();
   const sp = await searchParams;
@@ -21,6 +23,7 @@ export default async function PagesPage({
   const page = Math.max(1, Number.parseInt(sp.page ?? '1', 10) || 1);
   const query = sp.q?.trim() || undefined;
   const tag = sp.tag?.trim() || undefined;
+  const sort: PageSort = SORTS.includes(sp.sort as PageSort) ? (sp.sort as PageSort) : 'edited';
   const filtering = Boolean(query || tag);
 
   const tagsPromise = listPageTags(user.id);
@@ -28,7 +31,7 @@ export default async function PagesPage({
   if (filtering) {
     // Flat, paginated, filtered list.
     const [pages, total, tags] = await Promise.all([
-      listPages(user.id, { query, tag, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+      listPages(user.id, { query, tag, sort, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
       countPages(user.id, { query, tag }),
       tagsPromise,
     ]);
@@ -44,6 +47,7 @@ export default async function PagesPage({
           tags={tags}
           activeTag={tag ?? null}
           query={query ?? ''}
+          sort={sort}
         />
       </>
     );
@@ -51,7 +55,7 @@ export default async function PagesPage({
 
   // Tree mode — the whole hierarchy, built client-side from parent_id.
   const [pages, tags] = await Promise.all([
-    listPages(user.id, { limit: TREE_LIMIT }),
+    listPages(user.id, { sort, limit: TREE_LIMIT }),
     tagsPromise,
   ]);
   return (
@@ -66,6 +70,7 @@ export default async function PagesPage({
         tags={tags}
         activeTag={null}
         query=""
+        sort={sort}
       />
     </>
   );

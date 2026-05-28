@@ -98,7 +98,25 @@ async function ensureRoot(ownerId: string): Promise<void> {
     });
 }
 
-type ListPagesOpts = { query?: string; tag?: string };
+/** Sort order for the pages list. 'edited' (last updated) is the default. */
+export type PageSort = 'edited' | 'newest' | 'oldest' | 'title';
+
+type ListPagesOpts = { query?: string; tag?: string; sort?: PageSort };
+
+/** Map a sort key to its ORDER BY clause. */
+function pageOrderBy(sort?: PageSort) {
+  switch (sort) {
+    case 'newest':
+      return desc(nodes.createdAt);
+    case 'oldest':
+      return asc(nodes.createdAt);
+    case 'title':
+      return asc(nodes.title);
+    case 'edited':
+    default:
+      return desc(nodes.updatedAt);
+  }
+}
 
 /** Shared WHERE conditions for page list/count queries. Joins the `pages`
  *  sidecar so the text query can match the document body (`doc_text`). */
@@ -126,7 +144,7 @@ export async function listPages(
     .from(nodes)
     .leftJoin(pages, eq(pages.nodeId, nodes.id))
     .where(and(...pageConds(ownerId, opts)))
-    .orderBy(desc(nodes.updatedAt))
+    .orderBy(pageOrderBy(opts.sort))
     .limit(opts.limit ?? 500)
     .offset(opts.offset ?? 0);
   return rows.map((r) => rowOf(r.nodes));

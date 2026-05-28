@@ -18,6 +18,7 @@ export {
   type PageDetail,
   type PageVisibility,
   type PageWidth,
+  type PageSort,
   type CreatePageInput,
   type UpdatePageInput,
 } from '@mantle/content/pages';

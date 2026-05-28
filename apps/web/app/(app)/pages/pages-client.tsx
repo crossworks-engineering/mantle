@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { JSONContent } from '@tiptap/react';
 import {
+  ArrowUpDown,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -14,6 +15,14 @@ import {
   Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import type { PageSort } from '@/lib/pages';
 import { SubmitButton } from '@/components/ui/submit-button';
 import {
   Dialog,
@@ -57,6 +66,13 @@ type PageRow = {
 
 type TagCount = { tag: string; count: number };
 
+const SORT_LABELS: Record<PageSort, string> = {
+  edited: 'Last edited',
+  newest: 'Newest',
+  oldest: 'Oldest',
+  title: 'Title A–Z',
+};
+
 export function PagesClient({
   mode,
   pages,
@@ -66,6 +82,7 @@ export function PagesClient({
   tags,
   activeTag,
   query,
+  sort,
 }: {
   /** 'tree' = full hierarchy (no filter active); 'list' = flat paginated
    *  results while searching / tag-filtering. */
@@ -77,6 +94,7 @@ export function PagesClient({
   tags: TagCount[];
   activeTag: string | null;
   query: string;
+  sort: PageSort;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -171,14 +189,21 @@ export function PagesClient({
       return next;
     });
 
-  const buildHref = (over: { page?: number; tag?: string | null; q?: string | null }) => {
+  const buildHref = (over: {
+    page?: number;
+    tag?: string | null;
+    q?: string | null;
+    sort?: PageSort;
+  }) => {
     const nextTag = over.tag !== undefined ? over.tag : activeTag;
     const nextQ = over.q !== undefined ? over.q : query || null;
     const nextPage = over.page !== undefined ? over.page : page;
+    const nextSort = over.sort !== undefined ? over.sort : sort;
     const params = new URLSearchParams();
     if (nextTag) params.set('tag', nextTag);
     if (nextQ) params.set('q', nextQ);
     if (nextPage && nextPage > 1) params.set('page', String(nextPage));
+    if (nextSort && nextSort !== 'edited') params.set('sort', nextSort); // 'edited' is default
     const s = params.toString();
     return s ? `${pathname}?${s}` : pathname;
   };
@@ -319,6 +344,33 @@ export function PagesClient({
               <Plus /> New
             </Button>
           </div>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 px-2 text-muted-foreground"
+                title="Sort pages"
+              >
+                <ArrowUpDown className="size-3.5" />
+                {SORT_LABELS[sort]}
+                <ChevronDown className="size-3.5 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuRadioGroup
+                value={sort}
+                onValueChange={(v) => go({ sort: v as PageSort, page: 1 })}
+              >
+                {(Object.keys(SORT_LABELS) as PageSort[]).map((s) => (
+                  <DropdownMenuRadioItem key={s} value={s}>
+                    {SORT_LABELS[s]}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {tags.length > 0 && (
             <div className="flex items-start gap-1.5">

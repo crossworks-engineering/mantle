@@ -14,8 +14,9 @@ export interface TreeInput {
  * Group pages by parent id for the collapsible tree. The `null` key holds the
  * top-level pages. A page whose `parentId` doesn't resolve to a loaded page is
  * treated as a root (defensive — e.g. its parent fell outside the load limit),
- * so nothing is ever silently dropped from the tree. Children are sorted by
- * title for a stable sidebar.
+ * so nothing is ever silently dropped from the tree. Sibling order is
+ * PRESERVED from the input — the server already returns pages in the chosen
+ * sort order (last edited / newest / title / …), so the tree honours it.
  *
  * Cycle-safety: if two pages point at each other (A.parent=B, B.parent=A),
  * both have a resolvable parent so neither lands under the `null` key — the
@@ -32,6 +33,5 @@ export function buildChildrenIndex<T extends TreeInput>(pages: T[]): Map<string 
     arr.push(p);
     m.set(key, arr);
   }
-  for (const arr of m.values()) arr.sort((a, b) => a.title.localeCompare(b.title));
   return m;
 }
