@@ -3124,13 +3124,17 @@
   fill: currentColor;
 }
 
-/* Drag-handle gutter (pages editor only). The block drag handle lives in this
-   left padding band, INSIDE the editable surface, so moving the mouse toward it
-   never leaves .ProseMirror — which is what made it vanish before you could grab
-   it (the library hides on the editor's mouseleave). Scoped to the editable
-   instance so the read-only PageView + public render aren't indented. The page
-   title + tags are padded to match in page-detail-client.tsx. */
-.ProseMirror[contenteditable='true'] {
+/* Drag-handle / focus-marker gutter (pages editor only). The block drag handle
+   + focus-marker strip live in this left padding band, INSIDE the editing
+   surface, so moving the mouse toward them never leaves .ProseMirror — which is
+   what made the handle vanish before you could grab it (the library hides on
+   the editor's mouseleave). Scoped to the `page-gutter` class (added only by
+   PageEditor) so the read-only PageView + public render aren't indented — and,
+   unlike the old [contenteditable='true'] scope, the padding STAYS while the
+   editor is locked during an AI run (setEditable(false) flips contenteditable
+   to 'false', which used to collapse the padding and slide text under the
+   gutter). The page title + tags are padded to match in page-detail-client. */
+.ProseMirror.page-gutter {
   padding-left: 2.5rem;
 }
 

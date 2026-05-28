@@ -80,7 +80,11 @@ export function PageEditor({
   const editorProps = useMemo<EditorProps>(
     () => ({
       attributes: {
-        class: 'prose dark:prose-invert max-w-none min-h-[50vh] focus:outline-none',
+        // `page-gutter` carries the left-gutter padding (drag handle / focus
+        // marker) and stays put even when the editor is locked during an AI
+        // run — scoping it to [contenteditable='true'] dropped the padding the
+        // moment setEditable(false) fired, sliding text under the gutter.
+        class: 'page-gutter prose dark:prose-invert max-w-none min-h-[50vh] focus:outline-none',
       },
       // Drop images/files onto the canvas → upload + insert at the drop point.
       handleDrop: (view, event) => {
