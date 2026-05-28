@@ -9,7 +9,7 @@
  * Telegram's getMe (also yields the bot username + branch path), then seal.
  */
 import { and, eq } from 'drizzle-orm';
-import { db, telegramAccounts, telegramChats } from '@mantle/db';
+import { agents, db, telegramAccounts, telegramChats } from '@mantle/db';
 import { seal } from '@mantle/crypto';
 import { sendMessage } from '@mantle/telegram';
 
@@ -251,8 +251,14 @@ export async function setAgentTelegramChatStatus(
       .where(eq(telegramAccounts.id, binding.accountId))
       .limit(1);
     if (account) {
+      const [agentRow] = await db
+        .select({ name: agents.name })
+        .from(agents)
+        .where(eq(agents.id, agentId))
+        .limit(1);
+      const name = agentRow?.name ?? 'your assistant';
       // Best-effort — the chat is paired in the DB regardless.
-      await sendMessage(account, chat.telegramChatId, 'Paired! Say hi to Claude.').catch((err) => {
+      await sendMessage(account, chat.telegramChatId, `Paired! Say hi to ${name}.`).catch((err) => {
         console.error('[telegram pair] confirm DM failed:', err);
       });
     }

@@ -23,6 +23,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import {
   db,
+  agents,
   emails,
   nodes,
   telegramAccounts,
@@ -747,8 +748,17 @@ server.tool(
       .where(eq(telegramAccounts.id, chat.accountId))
       .limit(1);
     if (account) {
+      let name = 'your assistant';
+      if (account.responderAgentId) {
+        const [agentRow] = await db
+          .select({ name: agents.name })
+          .from(agents)
+          .where(eq(agents.id, account.responderAgentId))
+          .limit(1);
+        if (agentRow?.name) name = agentRow.name;
+      }
       try {
-        await sendMessage(account, chat.telegramChatId, 'Paired! Say hi to Claude.');
+        await sendMessage(account, chat.telegramChatId, `Paired! Say hi to ${name}.`);
       } catch (err) {
         // The chat is paired in the DB; the confirmation DM is best-effort.
         console.error('[mantle-mcp] pair confirm DM failed:', err);
