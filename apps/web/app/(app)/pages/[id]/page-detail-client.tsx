@@ -479,57 +479,66 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
           per ui-style-guide.md so neither pane hijacks the page scroll. */}
       <div className={cn('flex min-h-0 flex-1', aiOpen ? 'flex-row' : 'flex-col')}>
         <div className={cn('min-w-0 flex-1 overflow-y-auto', aiOpen && 'border-r border-border')}>
+          {/* Header band — page chrome (name + tags). A themed strip with a
+              bottom border so the title reads as a label ABOUT the page, not as
+              the document's first line. Full-width bg; content stays centred. */}
+          <header className="border-b border-border bg-muted/40">
+            <div
+              className={cn(
+                'mx-auto w-full px-6 py-6',
+                aiOpen || width !== 'wide' ? 'max-w-3xl' : 'max-w-none',
+              )}
+            >
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onKeyDown={onTitleKeyDown}
+                placeholder="New page"
+                aria-label="Page title"
+                className="h-auto border-0 bg-transparent p-0 text-3xl font-bold shadow-none placeholder:text-muted-foreground/40 focus-visible:ring-0 md:text-3xl"
+              />
+              <div className="mt-3">
+                <TagInput value={tags} onChange={setTags} placeholder="Add tags…" />
+              </div>
+            </div>
+          </header>
+
+          {/* Document body — on the page surface, below the chrome. */}
           <div
             className={cn(
-              'mx-auto w-full px-6 py-10',
+              'mx-auto w-full px-6 py-8',
               // When the AI panel is open the editor area is already narrowed
               // by the right-side panel; force narrow content so it doesn't
               // sprawl into an awkward two-thirds line length.
               aiOpen || width !== 'wide' ? 'max-w-3xl' : 'max-w-none',
             )}
           >
-            {/* pl-10 mirrors the editor's drag-handle gutter (globals.css
-                .ProseMirror[contenteditable]) so the title + tags line up with the
-                body text. */}
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={onTitleKeyDown}
-              placeholder="New page"
-              aria-label="Page title"
-              className="h-auto border-0 bg-transparent pl-10 pr-0 py-0 text-3xl font-bold shadow-none placeholder:text-muted-foreground/40 focus-visible:ring-0 md:text-3xl"
+            <PageEditor
+              key={editorKey}
+              content={initialDoc}
+              pageId={initial.id}
+              markerMode={markerMode}
+              marks={marks}
+              editedIds={editedIds}
+              onMarksChange={setMarks}
+              onChange={onDocChange}
+              onBlur={onEditorBlur}
+              onEditorReady={onEditorReady}
+              editable={!aiPending}
             />
-            <div className="mt-3 pl-10">
-              <TagInput value={tags} onChange={setTags} placeholder="Add tags…" />
-            </div>
-            <div className="mt-6">
-              <PageEditor
-                key={editorKey}
-                content={initialDoc}
-                pageId={initial.id}
-                markerMode={markerMode}
-                marks={marks}
-                editedIds={editedIds}
-                onMarksChange={setMarks}
-                onChange={onDocChange}
-                onBlur={onEditorBlur}
-                onEditorReady={onEditorReady}
-                editable={!aiPending}
-              />
-              {aiPending && (
-                <p className="mt-3 pl-10 text-xs italic text-muted-foreground">
-                  Editor locked while Pages is editing — your changes are safe.
-                </p>
-              )}
-              {markerMode && !aiPending && (
-                <p className="mt-3 pl-10 text-xs italic text-muted-foreground">
-                  Marker on — drag down the left gutter to mark sections (click a marked
-                  row to unmark)
-                  {marks.length > 0 ? `; ${marks.length} marked` : ''}. Then open AI assist
-                  and tell Pages what to do with them.
-                </p>
-              )}
-            </div>
+            {aiPending && (
+              <p className="mt-3 pl-10 text-xs italic text-muted-foreground">
+                Editor locked while Pages is editing — your changes are safe.
+              </p>
+            )}
+            {markerMode && !aiPending && (
+              <p className="mt-3 pl-10 text-xs italic text-muted-foreground">
+                Marker on — drag down the left gutter to mark sections (click a marked
+                row to unmark)
+                {marks.length > 0 ? `; ${marks.length} marked` : ''}. Then open AI assist
+                and tell Pages what to do with them.
+              </p>
+            )}
           </div>
         </div>
         {aiOpen && (
