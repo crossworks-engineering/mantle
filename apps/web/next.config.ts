@@ -24,7 +24,18 @@ const nextConfig: NextConfig = {
   // heic-convert bundles a libheif WASM binary — leave it external so the
   // bundler doesn't choke on the .wasm (the /assistant route lazy-imports it
   // to transcode iPhone HEIC photos before vision).
-  serverExternalPackages: ['pg-boss', 'postgres', 'heic-convert'],
+  // pdf-to-png-converter (+ its @napi-rs/canvas native binding) powers the
+  // scanned-PDF OCR fallback (rasterize → vision). Turbopack can't bundle the
+  // native .node binary — externalize so it's required from node_modules at
+  // runtime ("Cannot find native binding" otherwise). Works in plain Node
+  // (the extractor) already; this fixes the web /assistant turn.
+  serverExternalPackages: [
+    'pg-boss',
+    'postgres',
+    'heic-convert',
+    'pdf-to-png-converter',
+    '@napi-rs/canvas',
+  ],
   reactStrictMode: true,
 };
 
