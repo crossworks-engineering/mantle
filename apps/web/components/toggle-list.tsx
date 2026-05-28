@@ -3,7 +3,6 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { ChevronRight, Search } from 'lucide-react';
-import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 
 export type ToggleListItem = {
@@ -172,12 +171,23 @@ export function ToggleList({
                       </p>
                     )}
                   </div>
-                  <Switch
-                    checked={on}
+                  {/* Presentational switch — a real <Switch> is a <button>,
+                      which can't nest inside this row's <button>. The row is
+                      the single interactive control (aria-pressed above). */}
+                  <span
                     aria-hidden
-                    tabIndex={-1}
-                    className="pointer-events-none shrink-0"
-                  />
+                    className={cn(
+                      'inline-flex h-5 w-9 shrink-0 items-center rounded-full border-2 border-transparent transition-colors',
+                      on ? 'bg-primary' : 'bg-input',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'block size-4 rounded-full bg-background shadow-lg transition-transform',
+                        on ? 'translate-x-4' : 'translate-x-0',
+                      )}
+                    />
+                  </span>
                 </button>
               );
             })}
