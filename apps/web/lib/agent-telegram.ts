@@ -9,8 +9,9 @@
  * Telegram's getMe (also yields the bot username + branch path), then seal.
  */
 import { and, eq } from 'drizzle-orm';
-import { db, telegramAccounts } from '@mantle/db';
+import { db, telegramAccounts, telegramChats } from '@mantle/db';
 import { seal } from '@mantle/crypto';
+import { sendMessage } from '@mantle/telegram';
 
 export type AgentTelegramBinding = {
   accountId: string;
@@ -155,4 +156,105 @@ export async function disconnectAgentTelegram(ownerId: string, agentId: string):
     .where(
       and(eq(telegramAccounts.userId, ownerId), eq(telegramAccounts.responderAgentId, agentId)),
     );
+}
+
+export type AgentTelegramChat = {
+  id: string;
+  telegramChatId: string;
+  label: string;
+  status: 'pending' | 'allowed' | 'denied';
+  lastMessageAt: string | null;
+};
+
+const STATUS_ORDER: Record<AgentTelegramChat['status'], number> = {
+  pending: 0,
+  allowed: 1,
+  denied: 2,
+};
+
+/**
+ * Chats this agent's bot has seen — pending pairing requests first, then
+ * allowed, then denied; recent within each. Powers the in-form pairing UI so
+ * the owner can approve a DM without copying a code into the MCP tool.
+ */
+export async function listAgentTelegramChats(
+  ownerId: string,
+  agentId: string,
+): Promise<AgentTelegramChat[]> {
+  const binding = await getAgentTelegram(ownerId, agentId);
+  if (!binding) return [];
+  const rows = await db
+    .select()
+    .from(telegramChats)
+    .where(
+      and(
+        eq(telegramChats.userId, ownerId),
+        eq(telegramChats.accountId, binding.accountId),
+      ),
+    );
+  return rows
+    .map((r) => ({
+      id: r.id,
+      telegramChatId: r.telegramChatId,
+      label: r.title ?? (r.username ? `@${r.username}` : r.telegramChatId),
+      status: r.allowlistStatus,
+      lastMessageAt: r.lastMessageAt?.toISOString() ?? null,
+    }))
+    .sort((a, b) => {
+      const s = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+      if (s !== 0) return s;
+      return (b.lastMessageAt ?? '').localeCompare(a.lastMessageAt ?? '');
+    });
+}
+
+/**
+ * Allow or deny a chat on this agent's bot (the UI equivalent of the
+ * `telegram_pair` MCP tool, keyed by chat id since the owner is authenticated).
+ * Allowing clears the pairing code and sends a best-effort confirmation DM.
+ */
+export async function setAgentTelegramChatStatus(
+  ownerId: string,
+  agentId: string,
+  chatId: string,
+  status: 'allowed' | 'denied',
+): Promise<void> {
+  const binding = await getAgentTelegram(ownerId, agentId);
+  if (!binding) throw new TelegramTokenError('No bot is linked to this agent.');
+  const [chat] = await db
+    .select()
+    .from(telegramChats)
+    .where(
+      and(
+        eq(telegramChats.id, chatId),
+        eq(telegramChats.userId, ownerId),
+        eq(telegramChats.accountId, binding.accountId),
+      ),
+    )
+    .limit(1);
+  if (!chat) throw new TelegramTokenError('Chat not found for this bot.');
+
+  await db
+    .update(telegramChats)
+    .set({
+      allowlistStatus: status,
+      pairingCode: null,
+      pairingExpiresAt: null,
+      pairingReplies: 0,
+      updatedAt: new Date(),
+    })
+    .where(eq(telegramChats.id, chat.id));
+
+  if (status === 'allowed') {
+    const [account] = await db
+      .select()
+      .from(telegramAccounts)
+      .where(eq(telegramAccounts.id, binding.accountId))
+      .limit(1);
+    if (account) {
+      // Best-effort — the chat is paired in the DB regardless.
+      await sendMessage(account, chat.telegramChatId, 'Paired! Say hi to Claude.').catch((err) => {
+        console.error('[telegram pair] confirm DM failed:', err);
+      });
+    }
+  }
 }

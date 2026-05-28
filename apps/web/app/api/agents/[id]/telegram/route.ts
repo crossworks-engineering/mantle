@@ -6,6 +6,7 @@ import {
   connectAgentTelegram,
   disconnectAgentTelegram,
   getAgentTelegram,
+  listAgentTelegramChats,
   TelegramTokenError,
 } from '@/lib/agent-telegram';
 
@@ -25,7 +26,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const { agent, error } = await resolveAgent(user.id, await ctx.params);
   if (error) return error;
   const binding = await getAgentTelegram(user.id, agent.id);
-  return NextResponse.json({ binding });
+  const chats = binding ? await listAgentTelegramChats(user.id, agent.id) : [];
+  return NextResponse.json({ binding, chats });
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {

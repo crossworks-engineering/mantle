@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Plus, Send, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -32,7 +32,7 @@ import type { AgentAvatar, PersonaNote } from '@mantle/db';
 import { AvatarPicker } from '@/components/avatar-picker';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { ToggleList, type ToggleListItem } from '@/components/toggle-list';
-import type { AgentTelegramBinding } from '@/lib/agent-telegram';
+import type { AgentTelegramBinding, AgentTelegramChat } from '@/lib/agent-telegram';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { PersonaNotesEditor } from './persona-notes-editor';
@@ -1802,25 +1802,38 @@ function TelegramBotSection({ agentId }: { agentId: string }) {
   const [, startRefresh] = useTransition();
   // undefined = loading, null = not linked.
   const [binding, setBinding] = useState<AgentTelegramBinding | null | undefined>(undefined);
+  const [chats, setChats] = useState<AgentTelegramChat[]>([]);
   const [token, setToken] = useState('');
   const [busy, setBusy] = useState(false);
+  const [busyChat, setBusyChat] = useState<string | null>(null);
+
+  // `initial` shows the loading state + flips to null on failure; polled
+  // refreshes update in place without flashing.
+  const load = useCallback(
+    async (initial = false) => {
+      if (initial) setBinding(undefined);
+      try {
+        const res = await fetch(`/api/agents/${agentId}/telegram`);
+        const b = (await res.json()) as {
+          binding?: AgentTelegramBinding | null;
+          chats?: AgentTelegramChat[];
+        };
+        setBinding(b.binding ?? null);
+        setChats(b.chats ?? []);
+      } catch {
+        if (initial) setBinding(null);
+      }
+    },
+    [agentId],
+  );
 
   useEffect(() => {
-    let active = true;
-    setBinding(undefined);
     setToken('');
-    fetch(`/api/agents/${agentId}/telegram`)
-      .then((r) => r.json())
-      .then((b: { binding?: AgentTelegramBinding | null }) => {
-        if (active) setBinding(b.binding ?? null);
-      })
-      .catch(() => {
-        if (active) setBinding(null);
-      });
-    return () => {
-      active = false;
-    };
-  }, [agentId]);
+    void load(true);
+    // Poll so a fresh DM's pairing request shows up without a manual refresh.
+    const timer = setInterval(() => void load(), 10_000);
+    return () => clearInterval(timer);
+  }, [load]);
 
   const connect = async () => {
     if (!token.trim()) return;
@@ -1839,9 +1852,9 @@ function TelegramBotSection({ agentId }: { agentId: string }) {
       toast.error(b.error ?? 'Could not link the bot.');
       return;
     }
-    setBinding(b.binding);
     setToken('');
     toast.success(`Linked @${b.binding.botUsername}`);
+    void load();
     startRefresh(() => router.refresh());
   };
 
@@ -1854,9 +1867,27 @@ function TelegramBotSection({ agentId }: { agentId: string }) {
       return;
     }
     setBinding(null);
+    setChats([]);
     setToken('');
     toast.success('Bot unlinked');
     startRefresh(() => router.refresh());
+  };
+
+  const setChatStatus = async (chatId: string, status: 'allowed' | 'denied') => {
+    setBusyChat(chatId);
+    const res = await fetch(`/api/agents/${agentId}/telegram/chats`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chatId, status }),
+    });
+    setBusyChat(null);
+    if (!res.ok) {
+      const b = (await res.json().catch(() => ({}))) as { error?: string };
+      toast.error(b.error ?? 'Could not update the chat.');
+      return;
+    }
+    toast.success(status === 'allowed' ? 'Paired' : 'Blocked');
+    void load();
   };
 
   if (binding === undefined) {
@@ -1866,6 +1897,9 @@ function TelegramBotSection({ agentId }: { agentId: string }) {
       </div>
     );
   }
+
+  const pending = chats.filter((c) => c.status === 'pending');
+  const allowedCount = chats.filter((c) => c.status === 'allowed').length;
 
   return (
     <div className="space-y-2">
@@ -1881,11 +1915,51 @@ function TelegramBotSection({ agentId }: { agentId: string }) {
           ) : (
             <span className="text-xs text-muted-foreground">disabled</span>
           )}
+          {allowedCount > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {allowedCount} paired chat{allowedCount === 1 ? '' : 's'}
+            </span>
+          )}
           {binding.lastPollError && (
             <span className="truncate text-xs text-destructive" title={binding.lastPollError}>
               {binding.lastPollError}
             </span>
           )}
+        </div>
+      )}
+
+      {/* Pending pairing requests — approve a DM without copying a code. */}
+      {pending.length > 0 && (
+        <div className="space-y-1.5 rounded-md border border-amber-500/40 bg-amber-500/5 p-2">
+          <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+            Pairing request{pending.length === 1 ? '' : 's'} — someone DM&apos;d this bot
+          </p>
+          {pending.map((c) => (
+            <div key={c.id} className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-sm">
+                {c.label}{' '}
+                <code className="text-[11px] text-muted-foreground">{c.telegramChatId}</code>
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setChatStatus(c.id, 'allowed')}
+                disabled={busyChat === c.id}
+              >
+                {busyChat === c.id && <Loader2 className="animate-spin" aria-hidden />}
+                Approve
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setChatStatus(c.id, 'denied')}
+                disabled={busyChat === c.id}
+              >
+                Block
+              </Button>
+            </div>
+          ))}
         </div>
       )}
 
