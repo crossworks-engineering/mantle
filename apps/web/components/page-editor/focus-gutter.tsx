@@ -44,12 +44,22 @@ export function FocusGutter({
   const indexAtY = (clientY: number): number => {
     const els = blockEls();
     if (els.length === 0) return -1;
+    // If the pointer is inside a block's rect, that's the block. Otherwise pick
+    // the vertically-NEAREST block: a pointer in the gap/margin around a thin
+    // element (e.g. a divider / "page break") then maps to that adjacent block
+    // instead of clamping to the last one — which used to mark the whole doc.
+    let best = 0;
+    let bestDist = Infinity;
     for (let i = 0; i < els.length; i++) {
       const r = els[i]!.getBoundingClientRect();
       if (clientY >= r.top && clientY <= r.bottom) return i;
+      const dist = clientY < r.top ? r.top - clientY : clientY - r.bottom;
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = i;
+      }
     }
-    // Above the first / below the last block → clamp to the nearest end.
-    return clientY < els[0]!.getBoundingClientRect().top ? 0 : els.length - 1;
+    return best;
   };
 
   // Resolve a top-level block's id from the DOC MODEL, not the DOM. NodeView
