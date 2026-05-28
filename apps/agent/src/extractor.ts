@@ -1483,7 +1483,14 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
         return;
       }
 
-      const costCap = params.extract_cost_cap_micro_usd ?? null;
+      // Treat 0 / negative / non-numeric as "no cap". `?? null` alone is a
+      // trap: a configured 0 survives (0 ?? null === 0) and, because the
+      // llm_extract step has already spent money by the time we get here,
+      // `spent >= 0` is always true — so every fact gets dropped at #0. A 0
+      // means "unlimited", not "zero budget".
+      const rawCostCap = params.extract_cost_cap_micro_usd;
+      const costCap =
+        typeof rawCostCap === 'number' && rawCostCap > 0 ? rawCostCap : null;
 
       const tally = await step(
         {
