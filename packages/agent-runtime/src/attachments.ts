@@ -132,6 +132,80 @@ export async function runVisionWorker(opts: {
   }
 }
 
+/** Page cap for the live-turn PDF OCR fallback — mirrors the extractor's
+ *  MAX_OCR_PAGES, bounding rasterization memory + per-page vision spend. */
+const TURN_OCR_PAGES = 10;
+
+/**
+ * OCR a scanned / image-only PDF for the CURRENT turn: rasterize its pages to
+ * PNG and run each through the default vision worker (neutral transcribe) — the
+ * same path the durable extractor takes for a PDF with no text layer. Returns
+ * the concatenated text (capped at DOC_TEXT_MAX) or null if it can't render /
+ * the worker is unavailable / the scan is blank. Each page is its own trace
+ * step for /traces visibility. This is what lets the live reply read a scanned
+ * invoice — `parseDocumentBytes` (text extraction) returns nothing for those.
+ */
+async function ocrPdfForTurn(opts: {
+  ownerId: string;
+  bytes: Buffer;
+  filename: string;
+}): Promise<{ text: string; note: string | null } | null> {
+  const pages = await (async () => {
+    try {
+      const { rasterizePdfToPngs } = await import('@mantle/files/rasterize');
+      return await step(
+        { name: 'rasterize_pdf', kind: 'compute', input: { max_pages: TURN_OCR_PAGES } },
+        async (h) => {
+          const r = await rasterizePdfToPngs(opts.bytes, { maxPages: TURN_OCR_PAGES });
+          h.setMeta({ pages: r.length });
+          return r;
+        },
+      );
+    } catch {
+      return []; // unrenderable / corrupt / encrypted PDF
+    }
+  })();
+  if (pages.length === 0) return null;
+
+  const parts: string[] = [];
+  for (const pg of pages) {
+    const res = await step(
+      {
+        name: 'extract_vision',
+        kind: 'llm_call',
+        input: { page: pg.pageNumber, mime: 'image/png', bytes: pg.png.length },
+      },
+      async (h) => {
+        const r = await runVisionWorker({
+          ownerId: opts.ownerId,
+          bytes: pg.png,
+          mimeType: 'image/png',
+          filename: `${opts.filename}#page-${pg.pageNumber}.png`,
+        });
+        h.setMeta({
+          ran: r.ran,
+          note: r.note,
+          model: r.model,
+          page: pg.pageNumber,
+          textLength: r.text.length,
+        });
+        return r;
+      },
+    );
+    if (res.text.trim()) {
+      parts.push(pages.length > 1 ? `[Page ${pg.pageNumber}]\n${res.text.trim()}` : res.text.trim());
+    }
+  }
+
+  const text = parts.join('\n\n').trim();
+  if (!text) return null;
+  const capped =
+    text.length > DOC_TEXT_MAX
+      ? `${text.slice(0, DOC_TEXT_MAX)}\n\n[...truncated ${text.length - DOC_TEXT_MAX} more characters — call file_read on the node for the full document.]`
+      : text;
+  return { text: capped, note: 'Scanned PDF — text recovered via vision OCR.' };
+}
+
 /** Question-aware vision prompt: answer what the user asked, grounded only in
  *  what's visible, plus one line of description so the reply also reads as a
  *  record of the image. */
@@ -204,6 +278,17 @@ export async function extractAttachmentForTurn(opts: {
         )
       ).trim();
       if (!raw) {
+        // No text layer. For a PDF this is usually a scan / image-only export
+        // (e.g. an invoice) — fall back to rasterize → vision OCR, the same
+        // path the durable extractor uses, so the live turn can read it too.
+        if (ext === 'pdf') {
+          const ocr = await ocrPdfForTurn({
+            ownerId: opts.ownerId,
+            bytes: opts.bytes,
+            filename: opts.filename,
+          });
+          if (ocr) return { kind: 'file', text: ocr.text, note: ocr.note };
+        }
         return { kind: 'file', text: '', note: `No text could be extracted from ${opts.filename}.` };
       }
       const text =
