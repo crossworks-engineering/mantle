@@ -1689,16 +1689,7 @@ function ToolPicker({
       </>
     ),
   }));
-  return (
-    <div className="space-y-2">
-      <ToggleList items={items} selected={selected} onChange={onChange} />
-      {selected.length > 0 && (
-        <p className="text-xs text-muted-foreground">
-          {selected.length} tool{selected.length === 1 ? '' : 's'} selected
-        </p>
-      )}
-    </div>
-  );
+  return <ToggleList items={items} selected={selected} onChange={onChange} collapsible />;
 }
 
 /**
@@ -1725,16 +1716,7 @@ function SkillPicker({
         </span>
       ) : undefined,
   }));
-  return (
-    <div className="space-y-2">
-      <ToggleList items={items} selected={selected} onChange={onChange} />
-      {selected.length > 0 && (
-        <p className="text-xs text-muted-foreground">
-          {selected.length} skill{selected.length === 1 ? '' : 's'} selected
-        </p>
-      )}
-    </div>
-  );
+  return <ToggleList items={items} selected={selected} onChange={onChange} collapsible />;
 }
 
 /**
@@ -1770,16 +1752,7 @@ function DelegatePicker({
       </>
     ),
   }));
-  return (
-    <div className="space-y-2">
-      <ToggleList items={items} selected={selected} onChange={onChange} />
-      {selected.length > 0 && (
-        <p className="text-xs text-muted-foreground">
-          {selected.length} delegate{selected.length === 1 ? '' : 's'} selected
-        </p>
-      )}
-    </div>
-  );
+  return <ToggleList items={items} selected={selected} onChange={onChange} collapsible />;
 }
 
 /**
