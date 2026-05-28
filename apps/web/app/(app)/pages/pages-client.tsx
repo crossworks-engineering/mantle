@@ -110,6 +110,49 @@ export function PagesClient({
     return () => ro.disconnect();
   }, [tags, tagsExpanded]);
 
+  // Draggable list-pane width (md+). Default 300px; persisted so it sticks.
+  const WIDTH_KEY = 'mantle:pages-list-width';
+  const LIST_MIN = 220;
+  const LIST_MAX = 560;
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [listWidth, setListWidth] = useState(300);
+
+  useEffect(() => {
+    try {
+      const v = Number(localStorage.getItem(WIDTH_KEY));
+      if (Number.isFinite(v) && v >= LIST_MIN && v <= LIST_MAX) setListWidth(v);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(WIDTH_KEY, String(Math.round(listWidth)));
+    } catch {
+      // ignore
+    }
+  }, [listWidth]);
+
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const onMove = (ev: PointerEvent) => {
+      const left = gridRef.current?.getBoundingClientRect().left ?? 0;
+      setListWidth(Math.min(LIST_MAX, Math.max(LIST_MIN, ev.clientX - left)));
+    };
+    const onUp = () => {
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    // Suppress text selection + force the resize cursor for the whole drag.
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
   const selected = pages.find((p) => p.id === selectedId) ?? pages[0] ?? null;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -243,7 +286,22 @@ export function PagesClient({
   );
 
   return (
-    <div className="md:grid md:h-full md:grid-cols-[300px_minmax(0,1fr)] md:overflow-hidden">
+    <div
+      ref={gridRef}
+      className="relative md:grid md:h-full md:overflow-hidden"
+      // Inline template columns drive the draggable left width. Only takes
+      // effect at md+ (below md the container is block-stacked, not a grid).
+      style={{ gridTemplateColumns: `${listWidth}px minmax(0, 1fr)` }}
+    >
+      {/* Draggable divider between list + preview (md+ only). */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize list"
+        onPointerDown={startResize}
+        className="absolute inset-y-0 z-20 hidden w-2 -translate-x-1/2 cursor-col-resize transition-colors hover:bg-primary/20 md:block"
+        style={{ left: `${listWidth}px` }}
+      />
       {/* ── Left: list / tree ───────────────────────────────────────── */}
       <div className="flex flex-col border-b border-border md:h-full md:min-h-0 md:border-b-0 md:border-r">
         <div className="space-y-3 border-b border-border p-4">
