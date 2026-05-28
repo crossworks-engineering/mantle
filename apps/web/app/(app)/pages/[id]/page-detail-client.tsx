@@ -10,8 +10,8 @@ import {
   GitCommitHorizontal,
   Highlighter,
   Loader2,
-  MoreHorizontal,
   Sparkles,
+  StretchHorizontal,
   Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -22,14 +22,6 @@ import { ShareControl } from '@/components/share/share-control';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { PageEditor } from '@/components/page-editor/page-editor';
 import { AiAssistPanel } from '@/components/page-editor/ai-assist-panel';
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -448,29 +440,25 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
           >
             <Sparkles /> AI assist
           </Button>
+          <Button
+            size="sm"
+            variant={width === 'wide' ? 'default' : 'outline'}
+            onClick={() => void applyWidth(width === 'wide' ? 'narrow' : 'wide')}
+            aria-pressed={width === 'wide'}
+            title="Toggle full width"
+          >
+            <StretchHorizontal /> Full width
+          </Button>
           <ShareControl nodeId={initial.id} beforeEnable={commit} />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="size-8" aria-label="Page options">
-                <MoreHorizontal />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuCheckboxItem
-                checked={width === 'wide'}
-                onCheckedChange={(c) => void applyWidth(c ? 'wide' : 'narrow')}
-              >
-                Full width
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onSelect={() => setDeleteOpen(true)}
-              >
-                <Trash2 /> Delete page
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-muted-foreground hover:text-destructive"
+            onClick={() => setDeleteOpen(true)}
+            title="Delete page"
+          >
+            <Trash2 /> Delete
+          </Button>
         </div>
       </div>
 
