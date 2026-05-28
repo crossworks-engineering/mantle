@@ -147,7 +147,7 @@ describe('replaceBlock', () => {
     expect(r.found).toBe(true);
     const inner = (r.doc as { content: N[] }).content[0]!.content![0]!;
     expect(inner.attrs.id).toBe(innerId);
-    expect((inner.content as Array<{ text: string }>)[0]!.text).toBe('new');
+    expect((inner.content as unknown as Array<{ text: string }>)[0]!.text).toBe('new');
   });
 
   it('does not mutate the input doc', () => {
