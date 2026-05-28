@@ -9,11 +9,11 @@ import { Scrollable, type ScrollbarStyle } from '@/components/ui/scrollable';
  *  - Right column: detail/content for the selected item (desktop only)
  *
  * Renders a fixed overlay filling the shell's content area — it offsets
- * for the header (top-16), left sidebar (md:left-80) and right live
- * column (lg:right-80), and each column scrolls independently while the
- * page itself never scrolls. Below lg the right column hides and the
- * list takes the full width (mobile uses route/query state to swap to a
- * detail view).
+ * for the header (top-16) and the collapsible sidebar / live column via
+ * the shell's `--nav-w` / `--activity-w` CSS vars, so it reflows with them.
+ * Each column scrolls independently while the page itself never scrolls.
+ * Below lg the right column hides and the list takes the full width (mobile
+ * uses route/query state to swap to a detail view).
  */
 export function FleetLayout({
   header,
@@ -37,7 +37,7 @@ export function FleetLayout({
   return (
     <div
       className={cn(
-        'fixed inset-x-0 bottom-0 top-16 z-10 flex flex-col overflow-hidden bg-background md:left-80 lg:right-80',
+        'fixed inset-x-0 bottom-0 top-16 z-10 flex flex-col overflow-hidden bg-background transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[var(--activity-w)]',
         className,
       )}
     >

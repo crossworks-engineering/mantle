@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, emailSenders } from '@mantle/db';
 import { countPending } from '@mantle/tools';
@@ -26,6 +27,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     ? { style: prefs.avatarStyle, seed: prefs.avatarSeed || user.id }
     : null;
 
+  // Persisted collapse state — read server-side so the shell renders at the
+  // right width on first paint (no expand→collapse flash). Toggled client-side
+  // (AppShell writes the same cookies).
+  const cookieStore = await cookies();
+  const navCollapsed = cookieStore.get('mantle_nav_collapsed')?.value === '1';
+  const activityCollapsed = cookieStore.get('mantle_activity_collapsed')?.value === '1';
+
   return (
     <AppShell
       email={user.email ?? null}
@@ -33,6 +41,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       pendingSenders={pendingCount}
       pendingApprovals={pendingApprovals}
       contextCard={<UsageCard ownerId={user.id} />}
+      initialNavCollapsed={navCollapsed}
+      initialActivityCollapsed={activityCollapsed}
     >
       {children}
     </AppShell>

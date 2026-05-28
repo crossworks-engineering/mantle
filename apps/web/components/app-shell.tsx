@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import { PanelLeft, PanelLeftClose } from 'lucide-react';
 import { Header } from '@/components/layout/header';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { LiveColumn } from '@/components/layout/live-column';
@@ -14,13 +15,33 @@ import { PageTitleProvider } from '@/components/layout/page-title';
  * column) framing a scrollable content area. The sidebar collapses into
  * a Sheet drawer below md. The server-rendered context+cost card is
  * passed in as a prop.
+ *
+ * Collapse: the left nav and right Activity column each collapse to an
+ * icon rail. Their widths are published as the `--nav-w` / `--activity-w`
+ * CSS variables on the shell root, which every framing element (sidebar,
+ * main, FleetLayout, mail shell, live column) offsets against — so one
+ * state flip reflows the whole shell. Collapsed state is also mirrored as
+ * `data-{nav,activity}-collapsed` for descendants to restyle via
+ * `group-data-[…]/shell:` (the mobile drawer portals outside this root, so
+ * it always renders expanded). State is persisted to cookies and seeded
+ * from them server-side (see layout.tsx) for a flash-free first paint.
  */
+
+const NAV_COOKIE = 'mantle_nav_collapsed';
+const ACTIVITY_COOKIE = 'mantle_activity_collapsed';
+
+function writeCookie(name: string, on: boolean) {
+  document.cookie = `${name}=${on ? '1' : '0'}; path=/; max-age=31536000; samesite=lax`;
+}
+
 export function AppShell({
   email,
   userAvatar,
   pendingSenders,
   pendingApprovals,
   contextCard,
+  initialNavCollapsed = false,
+  initialActivityCollapsed = false,
   children,
 }: {
   email: string | null;
@@ -28,15 +49,30 @@ export function AppShell({
   pendingSenders: number;
   pendingApprovals: number;
   contextCard: React.ReactNode;
+  initialNavCollapsed?: boolean;
+  initialActivityCollapsed?: boolean;
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [navCollapsed, setNavCollapsed] = useState(initialNavCollapsed);
+  const [activityCollapsed, setActivityCollapsed] = useState(initialActivityCollapsed);
   const pathname = usePathname();
 
   // Close the drawer on navigation.
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
+
+  const toggleNav = () =>
+    setNavCollapsed((v) => {
+      writeCookie(NAV_COOKIE, !v);
+      return !v;
+    });
+  const toggleActivity = () =>
+    setActivityCollapsed((v) => {
+      writeCookie(ACTIVITY_COOKIE, !v);
+      return !v;
+    });
 
   const body = (onNavigate?: () => void) => (
     <>
@@ -52,15 +88,40 @@ export function AppShell({
   return (
     <ToastProvider>
       <PageTitleProvider>
-      <div className="h-screen bg-background">
+      <div
+        className="group/shell h-screen bg-background"
+        data-nav-collapsed={navCollapsed ? 'true' : 'false'}
+        data-activity-collapsed={activityCollapsed ? 'true' : 'false'}
+        style={
+          {
+            '--nav-w': navCollapsed ? '3.5rem' : '16rem',
+            '--activity-w': activityCollapsed ? '3.5rem' : '20rem',
+          } as React.CSSProperties
+        }
+      >
         <Header email={email} userAvatar={userAvatar} onMenuClick={() => setMobileOpen(true)} />
 
         {/* Desktop sidebar */}
-        <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r bg-sidebar pt-16 md:flex">
-          <div className="flex-1 overflow-y-auto scrollbar-thin">{body()}</div>
+        <aside className="fixed inset-y-0 left-0 z-30 hidden w-[var(--nav-w)] flex-col border-r bg-sidebar pt-16 transition-[width] duration-200 ease-in-out md:flex">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">{body()}</div>
+          {/* Collapse toggle, pinned at the foot of the rail. */}
+          <div className="shrink-0 border-t border-border p-2">
+            <button
+              type="button"
+              onClick={toggleNav}
+              aria-label={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+              title={navCollapsed ? 'Expand' : 'Collapse'}
+              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-data-[nav-collapsed=true]/shell:justify-center group-data-[nav-collapsed=true]/shell:px-0"
+            >
+              <PanelLeftClose className="size-4 shrink-0 group-data-[nav-collapsed=true]/shell:hidden" aria-hidden />
+              <PanelLeft className="hidden size-4 shrink-0 group-data-[nav-collapsed=true]/shell:block" aria-hidden />
+              <span className="group-data-[nav-collapsed=true]/shell:hidden">Collapse</span>
+            </button>
+          </div>
         </aside>
 
-        {/* Mobile sidebar drawer */}
+        {/* Mobile sidebar drawer — portaled outside the shell root, so it
+            always renders expanded regardless of collapse state. */}
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
           <SheetContent side="left" className="w-80 overflow-y-auto p-0 pt-4 scrollbar-thin">
             <SheetTitle className="sr-only">Navigation</SheetTitle>
@@ -69,10 +130,10 @@ export function AppShell({
         </Sheet>
 
         {/* Right live-activity column */}
-        <LiveColumn />
+        <LiveColumn collapsed={activityCollapsed} onToggle={toggleActivity} />
 
         {/* Content area */}
-        <main className="fixed inset-0 top-16 overflow-y-auto scrollbar-thin md:left-64 lg:right-80">
+        <main className="fixed inset-0 top-16 overflow-y-auto scrollbar-thin transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[var(--activity-w)]">
           {children}
         </main>
       </div>

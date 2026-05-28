@@ -49,11 +49,10 @@ export function MailClient({
   const [isCollapsed, setIsCollapsed] = React.useState(defaultCollapsed);
 
   return (
-    // `md:left-64` flushes the mail shell up against the AppShell sidebar
-    // (`<aside w-64>`); the previous `md:left-80` left a ~64px stripe of
-    // empty background between the global nav and the folder rail.
-    // `lg:right-80` keeps the right edge aligned with the live-activity column.
-    <div className="fixed inset-x-0 bottom-0 top-16 z-10 overflow-hidden bg-background md:left-64 lg:right-80">
+    // Offsets track the shell's collapsible sidebar / live column via the
+    // `--nav-w` / `--activity-w` CSS vars, so the mail shell stays flush
+    // against the global nav and live-activity column at any collapse state.
+    <div className="fixed inset-x-0 bottom-0 top-16 z-10 overflow-hidden bg-background transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[var(--activity-w)]">
       <TooltipProvider delayDuration={0}>
         <ResizablePanelGroup
           orientation="horizontal"

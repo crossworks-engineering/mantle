@@ -30,26 +30,81 @@ export async function UsageCard({ ownerId }: { ownerId: string }) {
     recentAgentContext(ownerId),
   ]);
 
+  // Most relevant context window to surface when collapsed: the first with a
+  // known percentage, else the most recent.
+  const topCtx = contexts.find((c) => c.pct != null) ?? contexts[0] ?? null;
+
   return (
-    <div className="border-b border-border px-4 py-2">
-      <Link
-        href="/debug"
-        className="flex items-baseline justify-between text-sm hover:text-foreground"
-        title={`${spend.runs} runs in ${RANGE_LABEL[range]}`}
-      >
-        <span className="font-semibold tabular-nums">{formatSpend(spend.costMicroUsd)}</span>
-        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-          {RANGE_LABEL[range]}
-        </span>
-      </Link>
-      <UsageCardPills current={range} />
-      {contexts.length > 0 && (
-        <ul className="mt-2 flex flex-col gap-1 border-t border-border pt-2">
-          {contexts.map((c) => (
-            <AgentContextRow key={c.agentId} ctx={c} />
-          ))}
-        </ul>
-      )}
+    <>
+      {/* Full card (expanded rail) */}
+      <div className="border-b border-border px-4 py-2 group-data-[nav-collapsed=true]/shell:hidden">
+        <Link
+          href="/debug"
+          className="flex items-baseline justify-between text-sm hover:text-foreground"
+          title={`${spend.runs} runs in ${RANGE_LABEL[range]}`}
+        >
+          <span className="font-semibold tabular-nums">{formatSpend(spend.costMicroUsd)}</span>
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            {RANGE_LABEL[range]}
+          </span>
+        </Link>
+        <UsageCardPills current={range} />
+        {contexts.length > 0 && (
+          <ul className="mt-2 flex flex-col gap-1 border-t border-border pt-2">
+            {contexts.map((c) => (
+              <AgentContextRow key={c.agentId} ctx={c} />
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Collapsed rail: a small price tag + a context circle. */}
+      <div className="hidden flex-col items-center gap-2 border-b border-border px-1 py-3 group-data-[nav-collapsed=true]/shell:flex">
+        <Link
+          href="/debug"
+          title={`${formatSpend(spend.costMicroUsd)} · ${RANGE_LABEL[range]} · ${spend.runs} runs`}
+          className="max-w-full truncate text-[10px] font-semibold tabular-nums text-foreground hover:text-primary"
+        >
+          {formatSpend(spend.costMicroUsd)}
+        </Link>
+        {topCtx?.pct != null && (
+          <ContextRing
+            pct={topCtx.pct}
+            title={`${topCtx.agentName ?? topCtx.agentSlug ?? 'agent'} — ${Math.round(
+              topCtx.pct * 100,
+            )}% of context window`}
+          />
+        )}
+      </div>
+    </>
+  );
+}
+
+/** A small donut showing how full an agent's context window is — the
+ *  collapsed-rail stand-in for the full per-agent progress bars. */
+function ContextRing({ pct, title }: { pct: number; title?: string }) {
+  const r = 10;
+  const circ = 2 * Math.PI * r;
+  const clamped = Math.min(1, Math.max(0, pct));
+  return (
+    <div className="relative grid size-7 place-items-center" title={title}>
+      <svg viewBox="0 0 28 28" className="size-7 -rotate-90" aria-hidden>
+        <circle cx="14" cy="14" r={r} fill="none" strokeWidth="3" className="stroke-accent" />
+        <circle
+          cx="14"
+          cy="14"
+          r={r}
+          fill="none"
+          strokeWidth="3"
+          strokeLinecap="round"
+          className="stroke-emerald-500"
+          strokeDasharray={circ}
+          strokeDashoffset={circ * (1 - clamped)}
+        />
+      </svg>
+      <span className="absolute text-[8px] font-medium tabular-nums text-muted-foreground">
+        {Math.round(clamped * 100)}
+      </span>
     </div>
   );
 }

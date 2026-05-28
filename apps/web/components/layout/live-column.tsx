@@ -1,7 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { Activity, AlertCircle, Loader2 } from 'lucide-react';
+import {
+  Activity,
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
+  PanelRight,
+  PanelRightClose,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatMicroUsd } from '@/lib/traces-format';
 import { ActionIcon } from '@/components/journey/action-icon';
@@ -18,6 +25,10 @@ import type { ActivityItem } from '@/lib/journey';
  * (active-first, with stall detection), anything that recently failed, and the
  * stream of what entered the brain — human-labelled with outcome counts, not
  * raw trace kinds. Links into the Journey story. Polls /api/activity every 5s.
+ *
+ * Collapses to a narrow icon rail (`collapsed`): just status pips — running /
+ * failed / recent counts — that expand the panel on click. Width tracks the
+ * shell's `--activity-w` var so `main`/FleetLayout offsets stay in lockstep.
  */
 
 /** "what entered the brain" — outcome summary for content actions. */
@@ -30,7 +41,13 @@ function outcomeText(it: ActivityItem): string | null {
   return parts.length ? parts.join(' · ') : 'indexed';
 }
 
-export function LiveColumn() {
+export function LiveColumn({
+  collapsed,
+  onToggle,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
   const { data, loaded, tick } = useLiveActivity();
   void tick; // re-render cue for relative timestamps
   const active = data?.active ?? [];
@@ -38,120 +55,246 @@ export function LiveColumn() {
   const recent = data?.recent ?? [];
   const live = active.length > 0;
   const hasAny = active.length + failures.length + recent.length > 0;
+  const anyStalled = active.some((it) => ageSeconds(it.startedAt) > STALL_THRESHOLD_S);
 
   return (
-    <aside className="fixed inset-y-0 right-0 z-30 hidden w-80 flex-col border-l bg-sidebar pt-16 lg:flex">
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <div className="flex items-center gap-2">
-          <Activity
-            className={cn('size-4', live ? 'animate-pulse text-emerald-500' : 'text-muted-foreground')}
+    <aside className="fixed inset-y-0 right-0 z-30 hidden w-[var(--activity-w)] flex-col border-l bg-sidebar pt-16 transition-[width] duration-200 ease-in-out lg:flex">
+      {collapsed ? (
+        <CollapsedRail
+          active={active.length}
+          failures={failures.length}
+          recent={recent.length}
+          anyStalled={anyStalled}
+          loaded={loaded}
+          onToggle={onToggle}
+        />
+      ) : (
+        <>
+          <div className="flex items-center justify-between border-b px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Activity
+                className={cn('size-4', live ? 'animate-pulse text-emerald-500' : 'text-muted-foreground')}
+                aria-hidden
+              />
+              <h2 className="text-sm font-semibold">Activity</h2>
+              {live && <span className="text-xs text-emerald-500">{active.length} live</span>}
+            </div>
+            <div className="flex items-center gap-1">
+              <Link
+                href="/debug/journey"
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                View all
+              </Link>
+              <button
+                type="button"
+                onClick={onToggle}
+                aria-label="Collapse activity"
+                title="Collapse"
+                className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <PanelRightClose className="size-4" aria-hidden />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto scrollbar-thin">
+            {!loaded ? (
+              <div className="flex items-center justify-center py-12 text-muted-foreground">
+                <Loader2 className="size-5 animate-spin" aria-hidden />
+              </div>
+            ) : !hasAny ? (
+              <div className="flex flex-col items-center justify-center px-4 py-12 text-center text-sm text-muted-foreground">
+                <Activity className="mb-3 size-10 opacity-30" aria-hidden />
+                <p className="font-medium">No recent activity</p>
+                <p className="mt-1 text-xs">Agent runs, ingests, and heartbeats will stream in here.</p>
+              </div>
+            ) : (
+              <>
+                {active.length > 0 && (
+                  <Section label="Active now">
+                    {active.map((it) => {
+                      const stalled = ageSeconds(it.startedAt) > STALL_THRESHOLD_S;
+                      return (
+                        <Row key={it.traceId} it={it}>
+                          <div className="flex items-center gap-2">
+                            <Loader2
+                              className={cn(
+                                'size-3.5 shrink-0',
+                                stalled ? 'text-amber-500' : 'animate-spin text-emerald-500',
+                              )}
+                              aria-hidden
+                            />
+                            <ActionIcon iconKey={it.iconKey} className="size-3.5 shrink-0 text-muted-foreground" />
+                            <span className="truncate text-sm font-medium">{it.label}</span>
+                            <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+                              {relativeTime(it.startedAt)}
+                            </span>
+                          </div>
+                          {stalled && (
+                            <div className="pl-5 text-xs text-amber-600 dark:text-amber-400">
+                              running unusually long — may be stalled
+                            </div>
+                          )}
+                        </Row>
+                      );
+                    })}
+                  </Section>
+                )}
+
+                {failures.length > 0 && (
+                  <Section label="Needs attention">
+                    {failures.map((it) => (
+                      <Row key={it.traceId} it={it}>
+                        <div className="flex items-center gap-2">
+                          <AlertCircle className="size-3.5 shrink-0 text-destructive" aria-hidden />
+                          <ActionIcon iconKey={it.iconKey} className="size-3.5 shrink-0 text-destructive" />
+                          <span className="truncate text-sm font-medium">{it.label}</span>
+                          <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+                            {relativeTime(it.startedAt)}
+                          </span>
+                        </div>
+                        <div className="pl-5 text-xs text-destructive">failed</div>
+                      </Row>
+                    ))}
+                  </Section>
+                )}
+
+                {recent.length > 0 && (
+                  <Section label="Recent">
+                    {recent.map((it) => {
+                      const outcome = outcomeText(it);
+                      return (
+                        <Row key={it.traceId} it={it}>
+                          <div className="flex items-center gap-2">
+                            <ActionIcon iconKey={it.iconKey} className="size-3.5 shrink-0 text-muted-foreground" />
+                            <span className="truncate text-sm font-medium">{it.label}</span>
+                            <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+                              {relativeTime(it.startedAt)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 pl-5 text-xs text-muted-foreground">
+                            {it.title && <span className="truncate">{it.title}</span>}
+                            {outcome && (
+                              <span className="ml-auto shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-700 dark:text-emerald-300">
+                                {outcome}
+                              </span>
+                            )}
+                            {!outcome && it.costMicroUsd > 0 && (
+                              <span className="ml-auto shrink-0 tabular-nums">
+                                {formatMicroUsd(it.costMicroUsd)}
+                              </span>
+                            )}
+                          </div>
+                        </Row>
+                      );
+                    })}
+                  </Section>
+                )}
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </aside>
+  );
+}
+
+/** The collapsed icon rail: an expand button + busy / failed / done pips. */
+function CollapsedRail({
+  active,
+  failures,
+  recent,
+  anyStalled,
+  loaded,
+  onToggle,
+}: {
+  active: number;
+  failures: number;
+  recent: number;
+  anyStalled: boolean;
+  loaded: boolean;
+  onToggle: () => void;
+}) {
+  const idle = loaded && active + failures + recent === 0;
+  return (
+    <div className="flex flex-1 flex-col items-center gap-1 overflow-y-auto py-2 scrollbar-none">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label="Expand activity"
+        title="Expand activity"
+        className="flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <PanelRight className="size-4" aria-hidden />
+      </button>
+      <div className="my-1 h-px w-6 bg-border" />
+
+      {!loaded && <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden />}
+
+      <StatusPip
+        show={active > 0}
+        count={active}
+        title={`${active} running`}
+        onClick={onToggle}
+        icon={
+          <Loader2
+            className={cn('size-4', anyStalled ? 'text-amber-500' : 'animate-spin text-emerald-500')}
             aria-hidden
           />
-          <h2 className="text-sm font-semibold">Activity</h2>
-          {live && <span className="text-xs text-emerald-500">{active.length} live</span>}
-        </div>
-        <Link href="/debug/journey" className="text-xs text-muted-foreground hover:text-foreground">
-          View all
-        </Link>
-      </div>
+        }
+      />
+      <StatusPip
+        show={failures > 0}
+        count={failures}
+        title={`${failures} failed`}
+        onClick={onToggle}
+        icon={<AlertCircle className="size-4 text-destructive" aria-hidden />}
+      />
+      <StatusPip
+        show={recent > 0}
+        count={recent}
+        title={`${recent} recently completed`}
+        onClick={onToggle}
+        icon={<CheckCircle2 className="size-4 text-muted-foreground" aria-hidden />}
+      />
 
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
-        {!loaded ? (
-          <div className="flex items-center justify-center py-12 text-muted-foreground">
-            <Loader2 className="size-5 animate-spin" aria-hidden />
-          </div>
-        ) : !hasAny ? (
-          <div className="flex flex-col items-center justify-center px-4 py-12 text-center text-sm text-muted-foreground">
-            <Activity className="mb-3 size-10 opacity-30" aria-hidden />
-            <p className="font-medium">No recent activity</p>
-            <p className="mt-1 text-xs">Agent runs, ingests, and heartbeats will stream in here.</p>
-          </div>
-        ) : (
-          <>
-            {active.length > 0 && (
-              <Section label="Active now">
-                {active.map((it) => {
-                  const stalled = ageSeconds(it.startedAt) > STALL_THRESHOLD_S;
-                  return (
-                    <Row key={it.traceId} it={it}>
-                      <div className="flex items-center gap-2">
-                        <Loader2
-                          className={cn(
-                            'size-3.5 shrink-0',
-                            stalled ? 'text-amber-500' : 'animate-spin text-emerald-500',
-                          )}
-                          aria-hidden
-                        />
-                        <ActionIcon iconKey={it.iconKey} className="size-3.5 shrink-0 text-muted-foreground" />
-                        <span className="truncate text-sm font-medium">{it.label}</span>
-                        <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
-                          {relativeTime(it.startedAt)}
-                        </span>
-                      </div>
-                      {stalled && (
-                        <div className="pl-5 text-xs text-amber-600 dark:text-amber-400">
-                          running unusually long — may be stalled
-                        </div>
-                      )}
-                    </Row>
-                  );
-                })}
-              </Section>
-            )}
+      {idle && (
+        <Activity className="mt-1 size-4 text-muted-foreground opacity-30" aria-hidden />
+      )}
+    </div>
+  );
+}
 
-            {failures.length > 0 && (
-              <Section label="Needs attention">
-                {failures.map((it) => (
-                  <Row key={it.traceId} it={it}>
-                    <div className="flex items-center gap-2">
-                      <AlertCircle className="size-3.5 shrink-0 text-destructive" aria-hidden />
-                      <ActionIcon iconKey={it.iconKey} className="size-3.5 shrink-0 text-destructive" />
-                      <span className="truncate text-sm font-medium">{it.label}</span>
-                      <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
-                        {relativeTime(it.startedAt)}
-                      </span>
-                    </div>
-                    <div className="pl-5 text-xs text-destructive">failed</div>
-                  </Row>
-                ))}
-              </Section>
-            )}
-
-            {recent.length > 0 && (
-              <Section label="Recent">
-                {recent.map((it) => {
-                  const outcome = outcomeText(it);
-                  return (
-                    <Row key={it.traceId} it={it}>
-                      <div className="flex items-center gap-2">
-                        <ActionIcon iconKey={it.iconKey} className="size-3.5 shrink-0 text-muted-foreground" />
-                        <span className="truncate text-sm font-medium">{it.label}</span>
-                        <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
-                          {relativeTime(it.startedAt)}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 pl-5 text-xs text-muted-foreground">
-                        {it.title && <span className="truncate">{it.title}</span>}
-                        {outcome && (
-                          <span className="ml-auto shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-700 dark:text-emerald-300">
-                            {outcome}
-                          </span>
-                        )}
-                        {!outcome && it.costMicroUsd > 0 && (
-                          <span className="ml-auto shrink-0 tabular-nums">
-                            {formatMicroUsd(it.costMicroUsd)}
-                          </span>
-                        )}
-                      </div>
-                    </Row>
-                  );
-                })}
-              </Section>
-            )}
-          </>
-        )}
-      </div>
-    </aside>
+function StatusPip({
+  icon,
+  count,
+  title,
+  onClick,
+  show,
+}: {
+  icon: React.ReactNode;
+  count: number;
+  title: string;
+  onClick: () => void;
+  show: boolean;
+}) {
+  if (!show) return null;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      className="relative flex size-9 items-center justify-center rounded-md transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {icon}
+      {count > 0 && (
+        <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-semibold text-primary-foreground ring-2 ring-sidebar">
+          {count > 9 ? '9+' : count}
+        </span>
+      )}
+    </button>
   );
 }
 

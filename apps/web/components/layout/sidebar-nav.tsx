@@ -106,36 +106,57 @@ export function SidebarNav({
   const isActive = (item: NavItem) =>
     item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(item.href + '/');
 
+  // Collapsed (icon-rail) styling is driven entirely by the shell root's
+  // `data-nav-collapsed` via `group-data-[…]/shell:` — no prop needed, and the
+  // portaled mobile drawer (outside the group) always renders expanded.
   return (
-    <nav className="flex flex-col gap-4 px-3 py-3" aria-label="Primary">
+    <nav
+      className="flex flex-col gap-4 px-3 py-3 group-data-[nav-collapsed=true]/shell:px-2"
+      aria-label="Primary"
+    >
       {groups.map((group) => (
         <div key={group.label} className="flex flex-col gap-0.5">
-          <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground group-data-[nav-collapsed=true]/shell:hidden">
             {group.label}
           </p>
           {group.items.map((item) => {
             const active = isActive(item);
             const Icon = item.icon;
+            const hasBadge = item.badge != null && item.badge > 0;
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 onClick={onNavigate}
                 aria-current={active ? 'page' : undefined}
+                title={item.name}
                 className={cn(
-                  'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                  'relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  'group-data-[nav-collapsed=true]/shell:justify-center group-data-[nav-collapsed=true]/shell:gap-0 group-data-[nav-collapsed=true]/shell:px-0',
                   active
                     ? 'bg-sidebar-accent text-sidebar-accent-foreground'
                     : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
                 )}
               >
                 <Icon className="size-4 shrink-0" aria-hidden />
-                <span className="flex-1 truncate">{item.name}</span>
-                {item.badge != null && item.badge > 0 && (
-                  <Badge variant="secondary" className="h-5 min-w-5 justify-center px-1.5 text-[11px]">
-                    {item.badge > 99 ? '99+' : item.badge}
-                  </Badge>
+                <span className="flex-1 truncate group-data-[nav-collapsed=true]/shell:hidden">
+                  {item.name}
+                </span>
+                {hasBadge && (
+                  <>
+                    <Badge
+                      variant="secondary"
+                      className="h-5 min-w-5 justify-center px-1.5 text-[11px] group-data-[nav-collapsed=true]/shell:hidden"
+                    >
+                      {item.badge! > 99 ? '99+' : item.badge}
+                    </Badge>
+                    {/* Collapsed: a dot stands in for the count. */}
+                    <span
+                      className="absolute right-1.5 top-1.5 hidden size-2 rounded-full bg-primary ring-2 ring-sidebar group-data-[nav-collapsed=true]/shell:block"
+                      aria-hidden
+                    />
+                  </>
                 )}
               </Link>
             );
