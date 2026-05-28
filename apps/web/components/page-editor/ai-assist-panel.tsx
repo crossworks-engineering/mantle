@@ -378,9 +378,21 @@ function ChangeChip({ kind }: { kind: ChangeKind }) {
 
 function PendingIndicator() {
   return (
-    <div className="mr-6 flex items-center gap-2 rounded-md border border-border bg-background/40 p-2 text-xs text-muted-foreground">
-      <Sparkles className="size-3 animate-pulse" />
-      Pages is thinking…
+    <div className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/10 p-3 text-sm shadow-sm">
+      <span className="relative flex size-6 shrink-0 items-center justify-center">
+        <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary/30" />
+        <Sparkles className="relative size-4 text-primary" aria-hidden />
+      </span>
+      <span className="font-medium text-foreground">Pages is working</span>
+      <span className="ml-0.5 flex items-end gap-1" aria-hidden>
+        {[0, 150, 300].map((d) => (
+          <span
+            key={d}
+            className="size-1.5 animate-bounce rounded-full bg-primary"
+            style={{ animationDelay: `${d}ms` }}
+          />
+        ))}
+      </span>
     </div>
   );
 }

@@ -371,12 +371,17 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
     const current = JSON.stringify(initial.draft ?? null);
     if (current !== lastDraftRef.current) {
       lastDraftRef.current = current;
-      // Also refresh our 'last committed' / 'last autosaved' refs to
-      // the new state so the editor doesn't immediately think it's dirty
-      // and re-autosave the freshly-arrived draft.
+      // The editor remounts with this content; sync docRef to it too. Without
+      // this, `docRef.current` still held the pre-run doc after a Pages edit
+      // (onChange only fires on user typing), so Commit saw "nothing to commit"
+      // (docStr === committedRef) and silently no-oped. commitPage commits the
+      // POSTED doc, so docRef MUST reflect the freshly-loaded draft.
+      const next = (initial.draft ?? initial.doc) as JSONContent;
+      const nextStr = JSON.stringify(next);
+      docRef.current = next;
       committedRef.current = JSON.stringify(initial.doc);
-      draftSavedRef.current = current;
-      setDocDirty(JSON.stringify(initial.draft ?? initial.doc) !== JSON.stringify(initial.doc));
+      draftSavedRef.current = nextStr;
+      setDocDirty(nextStr !== committedRef.current);
       setEditorKey((k) => k + 1);
     }
   }, [initial.draft, initial.doc]);
@@ -569,9 +574,11 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
                   editable={!aiPending}
                 />
                 {aiPending && (
-                  <p className="mt-3 pl-10 text-xs italic text-muted-foreground">
-                    Editor locked while Pages is editing — your changes are safe.
-                  </p>
+                  <div className="mt-3 flex items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm shadow-sm">
+                    <Loader2 className="size-4 shrink-0 animate-spin text-primary" aria-hidden />
+                    <span className="font-medium text-foreground">Pages is editing your page…</span>
+                    <span className="text-muted-foreground">— your changes are safe</span>
+                  </div>
                 )}
                 {markerMode && !aiPending && (
                   <p className="mt-3 pl-10 text-xs italic text-muted-foreground">
