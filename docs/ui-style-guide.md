@@ -166,6 +166,18 @@ Shared app-level patterns (`components/`):
 ### Centered content pages
 Simple/standalone pages: `mx-auto max-w-{2xl..6xl} space-y-6 px-6 py-8`.
 
+### Collapsible shell rails (`--nav-w` / `--activity-w`)
+The left nav and right Activity column collapse to a 3.5rem icon rail. Their
+live widths are published by `AppShell` as the `--nav-w` / `--activity-w` CSS
+variables on the shell root (with matching `data-{nav,activity}-collapsed`).
+**Any element that frames the content by offsetting against a rail must use the
+vars, never a hardcoded `md:left-64` / `lg:right-80`** — e.g. `md:left-[var(--nav-w)]
+lg:right-[var(--activity-w)]` (see `main`, `FleetLayout`, the mail shell). A new
+full-screen fixed overlay that hardcodes the width will silently break collapse.
+Descendants that need to restyle when collapsed key off the root via
+`group-data-[nav-collapsed=true]/shell:…` (the mobile drawer portals outside the
+root, so it always renders expanded).
+
 ### Full-height pages
 The app `<main>` is a fixed, full-height `overflow-y-auto scrollbar-thin`
 region. For full-height screens the **page wrapper returns the client directly**
