@@ -498,7 +498,7 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
                 // No box — only a bottom underline that appears (primary) while
                 // editing. A 2px transparent bottom border is always reserved so
                 // focusing doesn't shift the layout.
-                className="h-auto rounded-none border-x-0 border-t-0 border-b-2 border-transparent bg-transparent px-0 py-0.5 text-2xl font-bold shadow-none transition-colors placeholder:text-muted-foreground/40 focus-visible:border-primary focus-visible:ring-0 md:text-2xl"
+                className="h-auto rounded-none border-x-0 border-t-0 border-b-2 border-transparent bg-transparent px-0 py-0.5 text-center text-2xl font-bold shadow-none transition-colors placeholder:text-muted-foreground/40 focus-visible:border-primary focus-visible:ring-0 md:text-2xl"
               />
               <div className="mt-2">
                 <TagInput value={tags} onChange={setTags} placeholder="Add tags…" />
