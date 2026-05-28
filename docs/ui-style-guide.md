@@ -145,8 +145,9 @@ Shared app-level patterns (`components/`):
   pills. Rows of name + description + a `Switch`, selected rows highlighted;
   optional `group` clusters rows under sub-headers. It flows inline in the page
   (no inner scroll); pass `collapsible` to fold a long catalog behind a header
-  that shows the `N of M selected` count. Used by the agents Tools/Skills/Delegates
-  pickers.
+  that shows the `N of M selected` count, and `searchable` for a filter bar
+  (text search + an All / On / Off selection filter, shown once a list exceeds
+  ~6 items). Used by the agents Tools/Skills/Delegates pickers.
 
 ---
 
