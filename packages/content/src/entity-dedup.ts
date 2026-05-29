@@ -21,7 +21,20 @@
  * helpers are exported for unit testing without a DB.
  */
 import { and, eq, or, sql } from 'drizzle-orm';
-import { db, entities, entityEdges, facts, nodes, type Entity } from '@mantle/db';
+import {
+  db,
+  entities,
+  entityEdges,
+  entityMergeDismissals,
+  facts,
+  nodes,
+  type Entity,
+} from '@mantle/db';
+
+/** Order two ids so a pair is direction-agnostic (matches the dismissal store). */
+function orderedPair(a: string, b: string): [low: string, high: string] {
+  return a < b ? [a, b] : [b, a];
+}
 
 // ─── Pure rule helpers (no DB — unit-tested) ─────────────────────────────────
 
@@ -148,11 +161,20 @@ export async function findDuplicateCandidates(ownerId: string): Promise<MergeCan
   const personByLowerName = new Map<string, EntRow>();
   for (const e of ents) if (e.kind === 'person') personByLowerName.set(e.name.trim().toLowerCase(), e);
 
+  // Pairs the operator has rejected — never re-suggest them.
+  const dismissedRows = await db
+    .select({ lowId: entityMergeDismissals.lowId, highId: entityMergeDismissals.highId })
+    .from(entityMergeDismissals)
+    .where(eq(entityMergeDismissals.ownerId, ownerId));
+  const dismissed = new Set(dismissedRows.map((r) => `${r.lowId}|${r.highId}`));
+
   const candidates: MergeCandidate[] = [];
   const claimedDup = new Set<string>(); // a dup merges into at most one canonical
 
   const add = (canonical: EntRow, dup: EntRow, tier: MergeTier, reason: string) => {
     if (canonical.id === dup.id || claimedDup.has(dup.id)) return;
+    const [low, high] = orderedPair(canonical.id, dup.id);
+    if (dismissed.has(`${low}|${high}`)) return;
     claimedDup.add(dup.id);
     candidates.push({
       canonicalId: canonical.id,
@@ -266,4 +288,21 @@ export async function mergeEntities(
     await tx.delete(entities).where(and(eq(entities.id, dupId), eq(entities.ownerId, ownerId)));
     return true;
   });
+}
+
+/**
+ * Record that two entities are NOT duplicates, so the pair is never suggested
+ * again. Direction-agnostic (stored as the ordered pair). Idempotent.
+ */
+export async function dismissMergeCandidate(
+  ownerId: string,
+  idA: string,
+  idB: string,
+): Promise<void> {
+  if (idA === idB) return;
+  const [lowId, highId] = orderedPair(idA, idB);
+  await db
+    .insert(entityMergeDismissals)
+    .values({ ownerId, lowId, highId })
+    .onConflictDoNothing();
 }

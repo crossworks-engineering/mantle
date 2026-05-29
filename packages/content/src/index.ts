@@ -124,6 +124,7 @@ export {
 export {
   mergeEntities,
   findDuplicateCandidates,
+  dismissMergeCandidate,
   normaliseOrgName,
   isEmailName,
   isPhoneName,
