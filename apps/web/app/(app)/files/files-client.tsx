@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ChevronDown,
   ChevronRight,
+  ChevronsRight,
   FileJson,
   FileText,
   Folder,
@@ -16,6 +17,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { FileEditor } from './file-editor';
+import { useRealtime } from '@/components/realtime/use-realtime';
 import { formatDate } from '@/lib/format-datetime';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { Button } from '@/components/ui/button';
@@ -126,6 +128,11 @@ export function FilesClient({
   const refresh = useCallback(() => {
     startTransition(() => router.refresh());
   }, [router]);
+
+  // Live updates: a new file/folder (node_ingested) or a finished extraction
+  // (node_indexed) for this owner repaints the list — the summary appears the
+  // moment the extractor writes it, with no manual refresh.
+  useRealtime(['file', 'branch'], refresh);
 
   const navigateFolder = (path: string) => {
     const sp = new URLSearchParams();
@@ -453,6 +460,14 @@ export function FilesClient({
                             <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
                               {f.extension}
                             </span>
+                            {f.summary && (
+                              <span
+                                title="Indexed — summary ready"
+                                className="inline-flex items-center text-primary"
+                              >
+                                <ChevronsRight className="size-3.5 shrink-0" />
+                              </span>
+                            )}
                           </button>
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">

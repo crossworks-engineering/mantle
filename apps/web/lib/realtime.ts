@@ -41,12 +41,20 @@ async function ensureListening(): Promise<void> {
     // Dedicated single connection — a LISTEN monopolises its connection, so
     // keep it off the shared query pool.
     const sql = postgres(url, { max: 1, prepare: false });
-    const sub = await sql.listen('node_ingested', (nodeId) => {
+    // Two channels: `node_ingested` (a row was inserted — the file/note/event
+    // appears) and `node_indexed` (the extractor finished — summary + embedding
+    // landed). Both fan out the same typed change; the second is what makes a
+    // freshly-summarised file repaint without a manual refresh.
+    const subIngested = await sql.listen('node_ingested', (nodeId) => {
+      void fanout(nodeId);
+    });
+    const subIndexed = await sql.listen('node_indexed', (nodeId) => {
       void fanout(nodeId);
     });
     bridge.stop = async () => {
       try {
-        await sub.unlisten();
+        await subIngested.unlisten();
+        await subIndexed.unlisten();
       } catch {
         /* ignore */
       }

@@ -40,6 +40,7 @@ import {
   entityEdges,
   getDefaultWorker,
   nodes,
+  notifyNodeIndexed,
   emails,
   pages,
   contentChunks,
@@ -1485,6 +1486,12 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
           });
         },
       );
+
+      // The summary + embedding are now on the row. Announce it on the
+      // reader-only `node_indexed` channel so live UI (the files screen) paints
+      // the summary the instant it lands — no manual refresh. Not `node_ingested`
+      // (that drives the extractor and would re-index our own output).
+      await notifyNodeIndexed(node.id);
 
       console.log(
         `[extractor]   → content_index: summary (${summary.length}c), ${uniqueMentions.length} entities`,

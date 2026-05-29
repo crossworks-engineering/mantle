@@ -22,3 +22,19 @@ export async function notifyNodeIngested(nodeId: string): Promise<void> {
     console.error('[db] notifyNodeIngested failed:', err instanceof Error ? err.message : err);
   }
 }
+
+/**
+ * Announce that a node was just (re-)indexed — the extractor finished writing
+ * `data.summary` + `embedding`. Distinct channel from `node_ingested` on
+ * purpose: that one drives the extractor, so re-using it here would loop the
+ * extractor on its own output. This channel is for *readers* — the realtime
+ * bridge fans it out to live UI so a freshly-summarised file repaints without a
+ * manual refresh. Best-effort: a missed notify only costs a manual refresh.
+ */
+export async function notifyNodeIndexed(nodeId: string): Promise<void> {
+  try {
+    await db.execute(sql`SELECT pg_notify('node_indexed', ${nodeId}::text)`);
+  } catch (err) {
+    console.error('[db] notifyNodeIndexed failed:', err instanceof Error ? err.message : err);
+  }
+}
