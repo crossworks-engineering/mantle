@@ -32,6 +32,7 @@ import type { AgentAvatar, PersonaNote } from '@mantle/db';
 import { AvatarPicker } from '@/components/avatar-picker';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { ToggleList, type ToggleListItem } from '@/components/toggle-list';
+import { ToolPicker, type ToolOption } from '@/components/tool-picker';
 import type { AgentTelegramBinding, AgentTelegramChat } from '@/lib/agent-telegram';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
@@ -131,14 +132,6 @@ type AgentSummary = {
 };
 
 type ApiKeyOption = { id: string; service: string; label: string; masked: string };
-
-export type ToolOption = {
-  slug: string;
-  name: string;
-  description: string;
-  requiresConfirm: boolean;
-  kind: string;
-};
 
 export type SkillOption = {
   slug: string;
@@ -1694,39 +1687,6 @@ function NodeTypePicker({
  * operator can see at a glance which ones will (eventually) pause for
  * approval. Hovering shows the description.
  */
-function ToolPicker({
-  available,
-  selected,
-  onChange,
-}: {
-  available: ToolOption[];
-  selected: string[];
-  onChange: (next: string[]) => void;
-}) {
-  // Group by handler kind so built-ins, http, shell each cluster.
-  const items: ToggleListItem[] = available.map((t) => ({
-    value: t.slug,
-    label: t.name,
-    description: t.description,
-    group: t.kind,
-    meta: (
-      <>
-        <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
-          {t.slug}
-        </code>
-        {t.requiresConfirm && (
-          <span className="rounded bg-amber-500/15 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">
-            confirm
-          </span>
-        )}
-      </>
-    ),
-  }));
-  return (
-    <ToggleList items={items} selected={selected} onChange={onChange} collapsible searchable />
-  );
-}
-
 /**
  * Skill multi-select — one row per skill (name + description + Switch), with a
  * count of the tools each skill folds into the agent's allowlist.

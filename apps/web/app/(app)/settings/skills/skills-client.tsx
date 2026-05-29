@@ -19,6 +19,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
+import { ToolPicker, type ToolOption } from '@/components/tool-picker';
 import { cn } from '@/lib/utils';
 
 type SkillSummary = {
@@ -33,14 +34,6 @@ type SkillSummary = {
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
-};
-
-type ToolOption = {
-  slug: string;
-  name: string;
-  description: string;
-  requiresConfirm: boolean;
-  kind: string;
 };
 
 type FormState = {
@@ -361,34 +354,11 @@ export function SkillsClient({
                   No tools registered yet. Start <code>pnpm dev</code> to seed built-ins.
                 </p>
               ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {availableTools.map((t) => {
-                    const on = form.toolSlugs.includes(t.slug);
-                    return (
-                      <button
-                        key={t.slug}
-                        type="button"
-                        onClick={() =>
-                          setForm((f) => ({
-                            ...f,
-                            toolSlugs: on
-                              ? f.toolSlugs.filter((s) => s !== t.slug)
-                              : [...f.toolSlugs, t.slug],
-                          }))
-                        }
-                        title={t.description}
-                        className={
-                          'rounded-full border px-2.5 py-0.5 text-xs font-mono transition ' +
-                          (on
-                            ? 'border-primary bg-primary text-primary-foreground'
-                            : 'border-input bg-background text-muted-foreground hover:border-muted-foreground/50')
-                        }
-                      >
-                        {t.slug}
-                      </button>
-                    );
-                  })}
-                </div>
+                <ToolPicker
+                  available={availableTools}
+                  selected={form.toolSlugs}
+                  onChange={(next) => setForm((f) => ({ ...f, toolSlugs: next }))}
+                />
               )}
             </div>
 
