@@ -3283,6 +3283,26 @@
   color: inherit;
 }
 
+/* Tighter lists. Tailwind Typography spaces list items almost as far apart as
+   headings (ul/ol ~1.25em, li ~0.5em, plus the <p> TipTap wraps each item in).
+   Pull bullets / numbers / items together so a list reads like normal running
+   text. em-based to track the prose scale; applies to every .prose surface
+   (Pages editor + read view + public share + notes + assistant). */
+.prose :is(ul, ol) {
+  margin-block: 0.5em;
+}
+.prose :is(ul, ol) :is(ul, ol) {
+  margin-block: 0.15em;
+}
+.prose li {
+  margin-block: 0.15em;
+}
+/* TipTap wraps each item's content in a <p>; that paragraph's own margins are
+   the biggest gap. Collapse them so the line sits snug against its marker. */
+.prose li > p {
+  margin-block: 0;
+}
+
 /* Pages to-do lists: no bullets, themed checkbox aligned to the first line;
    completed items dim + strike. */
 .ProseMirror ul[data-type='taskList'] {
