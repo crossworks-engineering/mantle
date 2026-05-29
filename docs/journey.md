@@ -68,7 +68,10 @@ The six layers (see [`memory.md`](./memory.md) for the full treatment):
 
 The full set of **trace kinds** (`TraceKind` in `packages/tracing/src/store.ts`):
 `responder_turn`, `extractor_run`, `summarizer_run`, `reflector_run`,
-`photo_ingest`, `content_ingest`, `heartbeat_fire`, `manual`.
+`photo_ingest`, `content_ingest`, `heartbeat_fire`, `federation_request`
+(an inbound cross-Mantle read — see [`federation.md`](./federation.md)),
+`manual`. The extractor also now emits a **relations** outcome alongside facts +
+entities — entity↔entity edges; see [`knowledge-graph.md`](./knowledge-graph.md).
 
 ---
 

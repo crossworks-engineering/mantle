@@ -5,8 +5,14 @@ document to read before touching the codebase, this is it.
 
 Companion docs:
 - [`memory.md`](./memory.md) — the memory layer in depth: tier taxonomy,
-  vector vs graph retrieval, planned `memories` / `entities` / `entity_edges`
+  vector vs graph retrieval, the `memories` / `entities` / `entity_edges`
   schema, the build sequence.
+- [`knowledge-graph.md`](./knowledge-graph.md) — the graph axis (shipped): how
+  entity↔entity relations are extracted, traversed (`graph_path`), kept clean
+  (entity-resolution integrity + near-dup consolidation), and why it's all
+  Postgres, not a graph DB.
+- [`federation.md`](./federation.md) — Mantle-to-Mantle federation: sealed
+  per-peer tokens, scoped per-node grants, the traced `/api/federation` surface.
 - [`observability.md`](./observability.md) — the tracing layer: how every
   agent run becomes a `traces` row + `trace_steps` tree, the reactflow
   visual, the dashboard widgets, and how to add a new trace kind.

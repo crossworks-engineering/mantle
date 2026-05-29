@@ -513,6 +513,14 @@ engine when traversal becomes the bottleneck of a high-throughput
 production system: social graphs, fraud detection, recommendations at
 internet scale. None of those apply here.
 
+> **Shipped + confirmed (2026-05).** The graph axis is live: entity↔entity
+> relations extracted into `entity_edges`, multi-hop `graph_path` traversal via
+> recursive CTE, entity-resolution integrity, and near-dup consolidation. At
+> 2,200 edges / 1,365 documents Postgres traverses instantly, and the remaining
+> hard problems (entity resolution, verb consistency) turned out to be
+> *modelling* problems a graph engine wouldn't solve — so the "no Neo4j" call
+> held under real load. Full design: [`knowledge-graph.md`](./knowledge-graph.md).
+
 ### 4.3 Why both together
 
 | Query shape | Best tool | Example |
@@ -538,7 +546,7 @@ sits behind it, and what's planned:
 | `persona` | `agents.system_prompt` (seed) + planned `agents.persona_notes` jsonb (or sibling `agent_notes` table if it grows) | **Relational** + **jsonb** | Seed live; evolution unbuilt |
 | `recent_turns` | `telegram_messages` rows, direction-tagged. Schema in `packages/db/src/schema/telegram.ts` | **Relational** + **btree** index `(chat_id, sent_at desc)` | ✓ Live |
 | `conversation_digest` | `nodes` rows of `type='note'` with `tags @> ['conversation-digest']`. jsonb data carries summary, period, source turn ids | **Relational** + **jsonb** + **FTS** (tsvector) + **pgvector** (planned, for relevance ranking) | ✓ Live (migration 0013) |
-| `profile` | `facts` table (planned 0014). Optional `entities` + `entity_edges` (planned 0015+) for the graph axis | **Relational** + **jsonb** + **pgvector** (every fact embedded) + **Graph** via tables + recursive CTEs (no Neo4j) | Planned |
+| `profile` | `facts` table + `entities` + `entity_edges` for the graph axis (entity↔entity relations, traversed via `graph_path`) | **Relational** + **jsonb** + **pgvector** (every fact embedded) + **Graph** via tables + recursive CTEs (no Neo4j) | ✓ Live — see [`knowledge-graph.md`](./knowledge-graph.md) |
 | `content_index` | Columns on existing `nodes`: `title`, `tags`, `data.summary`, `data.entities`, `embedding`, `search_tsv` | **Relational** + **jsonb** + **FTS** (tsvector + GIN) + **pgvector** (IVFFlat) + **ltree** + **GIN** on tags array | Columns exist; population unbuilt |
 | `content_store` | Existing `nodes` + specialised tables (`emails`, `email_attachments`, `telegram_messages`, `secrets`, future `files`) + MinIO for attachment bytes | **Relational** + **jsonb** + **ltree** (hierarchical paths) + **S3** (object bytes via MinIO) | ✓ Live |
 

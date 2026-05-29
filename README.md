@@ -257,15 +257,21 @@ pnpm -C apps/web extract:backfill --since=2025-01-01
 The agent must be running — the script just feeds `pg_notify('node_ingested')`;
 the listener does the work.
 
-What still isn't there: entity-anchored retrieval / graph traversal API,
-cost ceilings on extractor runs, web-assistant surface. See
+Entity-anchored retrieval and the **graph traversal API are now shipped** —
+relations between entities, `graph_path` multi-hop queries, and a clean entity
+layer (see [`docs/knowledge-graph.md`](./docs/knowledge-graph.md)). What's
+deliberately parked: the industrial/RBI fork
+([`docs/future/`](./docs/future/industrial-fork-and-graph.md)), OCR for
+scanned-AND-encrypted PDFs, and federation pairing/rate-limiting. See
 [`docs/architecture.md`](./docs/architecture.md#16-known-sharp-edges--future-work).
 
 ## Docs
 
 - [`docs/architecture.md`](./docs/architecture.md) — full architecture tour: the five processes, the data plane, the `nodes` abstraction, the ingest pipelines, the MCP tools, the workspace layout. Read this before touching the codebase.
 - [`docs/agent-overhaul-2026-05.md`](./docs/agent-overhaul-2026-05.md) — **overview of the May 2026 agent & tool-result overhaul:** the through-line principles + a tour of what changed — wrapping speech tags, delegation made real (`delegate_to` UI + merge), the live model catalog (context + vision), the **tool-result spill store** (`read_result`: page/grep/semantic query — the fix for assistants quitting mid-job on truncated tool output), and the duplicate-edge guard. Start here, then dive into the `architecture.md` §9b'/§9l/§9m sections it links.
-- [`docs/memory.md`](./docs/memory.md) — the memory layer: tier taxonomy (conversation / session / user), vector vs graph retrieval, the planned `memories` / `entities` / `entity_edges` schema, and the build sequence beyond what's shipped.
+- [`docs/memory.md`](./docs/memory.md) — the memory layer: tier taxonomy (conversation / session / user), vector vs graph retrieval, the `memories` / `entities` / `entity_edges` schema, and the build sequence.
+- [`docs/knowledge-graph.md`](./docs/knowledge-graph.md) — **the knowledge graph** (shipped 2026-05): relationships *between* the things in your life (`employed_by`, `banks_with`, …) extracted into `entity_edges` in the same LLM pass as facts, the `graph_path` multi-hop traversal (recursive CTE, no graph DB), entity-resolution integrity (unique constraint + race-proof upsert), verb canonicalization, and conservative near-dup consolidation with the `/settings/entities` review UI. Includes why Postgres, not Neo4j.
+- [`docs/federation.md`](./docs/federation.md) — **Mantle-to-Mantle federation:** two sovereign single-user instances exchanging *scoped* data — sealed per-peer tokens, explicit per-node grants, an authenticated `/api/federation` surface (every cross-Mantle read traced), and the `peer_*` tools so Saskia can query a peer in natural language. Federation of separate brains, not multi-tenancy.
 - [`docs/recall.md`](./docs/recall.md) — **Remy**, the memory-recall agent: time-windowed replay of past conversations (`find_window` → `recall_window`) via `invoke_agent` delegation — lossless paging back to what was *actually said*, vs. the lossy conversation digests.
 - [`docs/research.md`](./docs/research.md) — **Researcher**, the web-search agent: the outward twin of Remy. `web_search` (Perplexity Sonar via OpenRouter) + a synthesising agent; Saskia delegates and decides whether to save the cited result as a note.
 - [`docs/contacts.md`](./docs/contacts.md) — the index of people/orgs Saskia may reach: `contact` node type with fields (name + company + email + cell + description), the master-detail `/contacts` UI, the `contact_*` builtins, and the per-method counters bumped on send. **Contacts ARE the email allowlist** — non-empty contacts engages the gate.
