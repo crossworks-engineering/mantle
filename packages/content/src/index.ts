@@ -105,6 +105,13 @@ export {
   type PeerNodeDetail,
 } from './peers';
 
+export {
+  queryPeer,
+  getPeerNode,
+  type PeerClientResult,
+  type PeerQueryResult,
+} from './peers-client';
+
 export { docToText } from './doc-to-text';
 
 export { markdownToDoc } from './markdown-to-doc';

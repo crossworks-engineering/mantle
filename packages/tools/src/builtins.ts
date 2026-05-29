@@ -41,6 +41,7 @@ import { EMAIL_TOOLS } from './builtins-email';
 import { PAGE_TOOLS } from './builtins-pages';
 import { TOOL_RESULT_TOOLS } from './builtins-tool-results';
 import { CONTACT_TOOLS } from './builtins-contacts';
+import { PEER_TOOLS } from './builtins-peers';
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -922,4 +923,7 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Contacts list IS the email allowlist; adding a contact extends reach.
   // Saskia adds/edits only when explicitly asked (tool descriptions emphasise).
   ...CONTACT_TOOLS,
+  // Federation — query other people's Mantles for data they've shared with
+  // you. Outbound half of docs/federation.md; reads only what a peer granted.
+  ...PEER_TOOLS,
 ];

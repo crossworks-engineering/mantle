@@ -84,6 +84,9 @@ import {
   listNotes,
   listPages,
   listTodos,
+  listPeers,
+  queryPeer,
+  getPeerNode,
   updateEvent,
   updateNote,
   updateTodo,
@@ -1037,6 +1040,50 @@ server.tool(
   async ({ id }) => {
     const ok = await deleteEvent(OWNER_ID!, id);
     return { content: [{ type: 'text', text: ok ? 'deleted' : 'not found' }] };
+  },
+);
+
+// ── Federation: query other people's Mantles for data they've shared ─────────
+server.tool(
+  'peer_list',
+  'List the federated Mantle peers configured for this account — other Mantle systems you can query for data they have shared with you. Returns each peer id, name, base URL, and status.',
+  {},
+  async () => {
+    const peers = await listPeers(OWNER_ID!);
+    return { content: [{ type: 'text', text: JSON.stringify(peers, null, 2) }] };
+  },
+);
+
+server.tool(
+  'peer_query',
+  "Ask a federated peer Mantle for data it has shared with you. `peer` is the peer's name or id (see peer_list); `query` matches the titles/summaries of nodes the peer GRANTED you — you only ever see what they shared. Optionally narrow by `types`. Use peer_node_get for one node's full content.",
+  {
+    peer: z.string(),
+    query: z.string().max(500).optional(),
+    types: z.array(z.string()).optional(),
+    limit: z.number().int().min(1).max(100).optional(),
+  },
+  async ({ peer, ...opts }) => {
+    const res = await queryPeer(OWNER_ID!, peer, opts);
+    return {
+      content: [
+        { type: 'text', text: res.ok ? JSON.stringify(res.data, null, 2) : `Error: ${res.error}` },
+      ],
+    };
+  },
+);
+
+server.tool(
+  'peer_node_get',
+  "Fetch one shared node's full content from a federated peer. `peer` is the peer's name or id; `nodeId` is an id from peer_query. Fails if the peer hasn't granted you that node.",
+  { peer: z.string(), nodeId: z.string() },
+  async ({ peer, nodeId }) => {
+    const res = await getPeerNode(OWNER_ID!, peer, nodeId);
+    return {
+      content: [
+        { type: 'text', text: res.ok ? JSON.stringify(res.data, null, 2) : `Error: ${res.error}` },
+      ],
+    };
   },
 );
 

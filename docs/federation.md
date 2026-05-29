@@ -85,7 +85,17 @@ Her Mantle (asking)                         Your Mantle (answering)
   `getNodeForPeer` currently returns the node's `data` (summary/tags) without
   the rich page body — fine for files/notes; page-body federation is a later
   pass.
-- **Phase 4 — outbound tools.** `peer_query` / `peer_list` builtins (the
-  researcher/Remy delegation pattern) + MCP equivalents.
+- **Phase 4 — outbound tools (DONE, 2026-05-29).** Shared outbound client
+  `@mantle/content/peers-client` (`queryPeer` / `getPeerNode` — resolve peer by
+  name/id, sign with the sealed outbound token, fetch with a 15s timeout).
+  Surfaced as three builtins (`peer_list` / `peer_query` / `peer_node_get`, in
+  `@mantle/tools`) for Saskia AND three MCP tools (same names) for Claude
+  Desktop/Code — both thin wrappers over the one client. Verified live via a
+  self-loopback peer (outbound token = own inbound token, base_url =
+  localhost:3000): query returns the granted node, type filter scopes, node
+  fetch works, unknown peer errors. **Operator step:** the builtins seed into
+  the `tools` table on the next `apps/agent` boot; grant `peer_query` /
+  `peer_node_get` / `peer_list` to a responder at `/settings/agents` for Saskia
+  to use them.
 - **Phase 5 — UI.** `/settings/peers` master-detail: add a peer, exchange
   tokens, manage `peer_shares`, enable/revoke.
