@@ -18,9 +18,12 @@ import {
   extractFirstJsonObject,
   isValidEntity,
   isValidFact,
+  isValidRelation,
   parseExtractorOutput,
   sanitiseFactEntities,
+  sanitiseRelation,
   type ExtractedFact,
+  type ExtractedRelation,
 } from './extractor-parse';
 
 // Quiet the [extractor] error log in tests; assert it fired when we
@@ -73,6 +76,7 @@ describe('parseExtractorOutput — happy path', () => {
       summary: '',
       facts: [],
       entities: [],
+      relations: [],
     });
   });
 });
@@ -110,7 +114,7 @@ describe('parseExtractorOutput — trailing-content recovery', () => {
   it('still returns empty + logs on a genuinely truncated object', () => {
     // No closing brace — unbalanced, unrecoverable.
     const out = parseExtractorOutput('{"summary": "half a tho');
-    expect(out).toEqual({ summary: '', facts: [], entities: [] });
+    expect(out).toEqual({ summary: '', facts: [], entities: [], relations: [] });
     expect(errorSpy).toHaveBeenCalled();
   });
 });
@@ -136,7 +140,7 @@ describe('extractFirstJsonObject', () => {
 describe('parseExtractorOutput — error path', () => {
   it('returns an empty result on malformed JSON', () => {
     const out = parseExtractorOutput('not json [[[');
-    expect(out).toEqual({ summary: '', facts: [], entities: [] });
+    expect(out).toEqual({ summary: '', facts: [], entities: [], relations: [] });
   });
 
   it('logs a structured error with the node id and a preview', () => {
@@ -268,5 +272,77 @@ describe('sanitiseFactEntities', () => {
       entities: 'not-an-array' as unknown as { name: string; kind: string }[],
     } as ExtractedFact;
     expect(sanitiseFactEntities(f).entities).toBe('not-an-array');
+  });
+});
+
+describe('isValidRelation', () => {
+  it('accepts a well-formed relation', () => {
+    expect(isValidRelation({ subject: 'Sarah', relation: 'works_at', object: 'Lister' })).toBe(true);
+  });
+  it('rejects missing/blank endpoints', () => {
+    expect(isValidRelation({ subject: 'Sarah', relation: 'works_at', object: '' })).toBe(false);
+    expect(isValidRelation({ subject: '', relation: 'works_at', object: 'Lister' })).toBe(false);
+    expect(isValidRelation({ subject: 'Sarah', relation: '', object: 'Lister' })).toBe(false);
+  });
+  it('rejects self-loops (subject == object, case-insensitive)', () => {
+    expect(isValidRelation({ subject: 'Lister', relation: 'is', object: 'lister' })).toBe(false);
+  });
+  it('rejects non-objects', () => {
+    expect(isValidRelation(null)).toBe(false);
+    expect(isValidRelation('Sarah works at Lister')).toBe(false);
+  });
+});
+
+describe('sanitiseRelation', () => {
+  it('snake_cases + lowercases the verb', () => {
+    const r = sanitiseRelation({ subject: 'Sarah', relation: 'Works At', object: 'Lister', confidence: 0.9 });
+    expect(r.relation).toBe('works_at');
+  });
+  it('strips punctuation from the verb', () => {
+    expect(sanitiseRelation({ subject: 'A', relation: 'father-of!', object: 'B', confidence: 1 }).relation).toBe('father_of');
+  });
+  it('trims endpoints and clamps confidence; defaults missing confidence to 0.8', () => {
+    const r = sanitiseRelation({ subject: '  Sarah ', relation: 'owns', object: ' Car ', confidence: 5 } as ExtractedRelation);
+    expect(r.subject).toBe('Sarah');
+    expect(r.object).toBe('Car');
+    expect(r.confidence).toBe(1);
+    const d = sanitiseRelation({ subject: 'A', relation: 'owns', object: 'B' } as unknown as ExtractedRelation);
+    expect(d.confidence).toBe(0.8);
+  });
+});
+
+describe('parseExtractorOutput — relations', () => {
+  it('parses + sanitises a relations array', () => {
+    const out = parseExtractorOutput(
+      JSON.stringify({
+        summary: 'x',
+        facts: [],
+        entities: [{ name: 'Sarah', kind: 'person' }, { name: 'Lister', kind: 'org' }],
+        relations: [{ subject: 'Sarah', relation: 'Works At', object: 'Lister', confidence: 0.9 }],
+      }),
+    );
+    expect(out.relations).toHaveLength(1);
+    expect(out.relations[0]).toMatchObject({ subject: 'Sarah', relation: 'works_at', object: 'Lister' });
+  });
+  it('drops invalid relations (self-loop, blank, verb→empty)', () => {
+    const out = parseExtractorOutput(
+      JSON.stringify({
+        summary: 'x',
+        facts: [],
+        entities: [],
+        relations: [
+          { subject: 'A', relation: 'is', object: 'a' }, // self-loop
+          { subject: 'A', relation: '', object: 'B' }, // blank verb
+          { subject: 'A', relation: '!!!', object: 'B' }, // verb sanitises to empty
+          { subject: 'A', relation: 'knows', object: 'B' }, // valid
+        ],
+      }),
+    );
+    expect(out.relations).toHaveLength(1);
+    expect(out.relations[0]!.relation).toBe('knows');
+  });
+  it('defaults relations to [] when absent (back-compat with old prompt)', () => {
+    const out = parseExtractorOutput(JSON.stringify({ summary: 'x', facts: [], entities: [] }));
+    expect(out.relations).toEqual([]);
   });
 });

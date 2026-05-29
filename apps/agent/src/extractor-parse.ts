@@ -15,10 +15,26 @@ export type ExtractedFact = {
   entities?: { name: string; kind: string }[];
 };
 
+/**
+ * A directed relationship between two entities the model found in the same
+ * content — e.g. {subject:'Sarah', relation:'works_at', object:'Lister'}.
+ * `relation` is a free-text lowercase verb phrase: the taxonomy is emergent,
+ * not a fixed vocabulary (the agent names relations as it sees them). Endpoints
+ * are entity NAMES; they're resolved to entity ids at write time, and a
+ * relation whose endpoints don't resolve is dropped.
+ */
+export type ExtractedRelation = {
+  subject: string;
+  relation: string;
+  object: string;
+  confidence: number;
+};
+
 export type ExtractorOutput = {
   summary: string;
   facts: ExtractedFact[];
   entities: { name: string; kind: string }[];
+  relations: ExtractedRelation[];
 };
 
 const FACT_KINDS = new Set(['factual', 'episodic', 'semantic', 'preference']);
@@ -51,6 +67,42 @@ export function isValidEntity(e: unknown): e is { name: string; kind: string } {
     typeof o.kind === 'string' &&
     o.kind.trim().length > 0
   );
+}
+
+const RELATION_MAX_LEN = 60;
+
+/** A relation is usable iff subject, relation, and object are all non-empty
+ *  strings and subject !== object (no self-loops). */
+export function isValidRelation(r: unknown): r is ExtractedRelation {
+  if (!r || typeof r !== 'object') return false;
+  const o = r as Record<string, unknown>;
+  return (
+    typeof o.subject === 'string' &&
+    o.subject.trim().length > 0 &&
+    typeof o.relation === 'string' &&
+    o.relation.trim().length > 0 &&
+    typeof o.object === 'string' &&
+    o.object.trim().length > 0 &&
+    o.subject.trim().toLowerCase() !== o.object.trim().toLowerCase()
+  );
+}
+
+/** Normalise a parsed relation: trim endpoints, lowercase + snake_case the
+ *  relation verb to a stable form, clamp confidence to [0,1] (default 0.8). */
+export function sanitiseRelation(r: ExtractedRelation): ExtractedRelation {
+  const relation = r.relation
+    .trim()
+    .toLowerCase()
+    // any run of non-alphanumerics (spaces, hyphens, punctuation) → one "_"
+    .replace(/[^a-z0-9]+/g, '_')
+    // drop leading/trailing underscores left by edge punctuation
+    .replace(/^_+|_+$/g, '')
+    .slice(0, RELATION_MAX_LEN);
+  const confidence =
+    typeof r.confidence === 'number' && Number.isFinite(r.confidence)
+      ? Math.min(1, Math.max(0, r.confidence))
+      : 0.8;
+  return { subject: r.subject.trim(), relation, object: r.object.trim(), confidence };
 }
 
 /**
@@ -129,7 +181,7 @@ export function parseExtractorOutput(
         model: context?.model,
         preview: cleaned.slice(0, 200),
       });
-      return { summary: '', facts: [], entities: [] };
+      return { summary: '', facts: [], entities: [], relations: [] };
     }
   }
   const obj = parsed as Partial<ExtractorOutput>;
@@ -139,5 +191,12 @@ export function parseExtractorOutput(
       ? obj.facts.filter(isValidFact).map(sanitiseFactEntities)
       : [],
     entities: Array.isArray(obj.entities) ? obj.entities.filter(isValidEntity) : [],
+    relations: Array.isArray(obj.relations)
+      ? obj.relations
+          .filter(isValidRelation)
+          .map(sanitiseRelation)
+          // a verb that sanitised down to empty (all punctuation) is unusable
+          .filter((r) => r.relation.length > 0)
+      : [],
   };
 }

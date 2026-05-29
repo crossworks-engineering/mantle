@@ -112,11 +112,13 @@ const ENTITY_DEDUP_THRESHOLD = 0.25;
 
 // ─── Prompts ────────────────────────────────────────────────────────────────
 
-export const DEFAULT_EXTRACTOR_PROMPT = `You are a memory extractor for a personal AI assistant. You will be given the title and body of a piece of content (a note, document, email, etc.) belonging to a single user. Your job is to produce TWO outputs:
+export const DEFAULT_EXTRACTOR_PROMPT = `You are a memory extractor for a personal AI assistant. You will be given the title and body of a piece of content (a note, document, email, etc.) belonging to a single user. Your job is to produce THREE outputs:
 
 1. A 1-2 sentence summary of what this content is about. Be specific — names, dates, projects, numbers. Avoid filler ("this document discusses..."). Write it as a *spine* you could read to remember what's in the document without reading the document.
 
 2. A list of facts about the user or their world that this content reveals. Each fact is a single declarative sentence. Include the entities mentioned (people, projects, places, organisations, events) so they can be cross-referenced.
+
+3. A list of relations: direct relationships BETWEEN two named entities that this content establishes — e.g. Sarah works at Lister, Don is Jason's father, this invoice is from Pivotal Accounting. These build the user's knowledge graph.
 
 Output STRICT JSON, no markdown, no commentary outside the JSON:
 
@@ -130,8 +132,17 @@ Output STRICT JSON, no markdown, no commentary outside the JSON:
       "entities": [{ "name": "<entity>", "kind": "person" | "project" | "place" | "org" | "event" }]
     }
   ],
-  "entities": [{ "name": "<entity>", "kind": "person" | "project" | "place" | "org" | "event" }]
+  "entities": [{ "name": "<entity>", "kind": "person" | "project" | "place" | "org" | "event" }],
+  "relations": [
+    { "subject": "<entity name>", "relation": "<verb>", "object": "<entity name>", "confidence": 0.0-1.0 }
+  ]
 }
+
+Relations:
+- subject and object MUST be names that appear in your "entities" list above. Never relate an entity to itself.
+- "relation" is a short lowercase verb phrase naming the connection AS IT APPEARS in the content — e.g. works_at, employs, father_of, married_to, located_in, owns, invoiced_by, member_of, reports_to, supplies. Use whatever verb fits; there is no fixed list. Keep it 1-3 words, snake_case.
+- Direction matters: subject → relation → object reads as a sentence ("Sarah works_at Lister").
+- Only extract relations the content actually states or strongly implies. Same confidence rule as facts: omit anything below 0.6. If the content establishes no relationships between entities, return an empty relations array.
 
 Fact kinds:
 - "factual" = a verifiable claim with a value ("Jason's birthday is March 4").
@@ -1594,6 +1605,85 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
           return map;
         },
       );
+
+      // ─── relation pass (entity↔entity edges → knowledge graph) ───────
+      // Runs whenever the deep-extraction tier is on, independent of whether
+      // any facts were found — a document can establish relationships
+      // ("Sarah works_at Lister") without a fact worth storing. Edges stamp
+      // source_node_id + confidence so a relation is citable + auditable, and
+      // are rebuilt-keyed-by-node: delete this node's prior relation edges
+      // (the only edges that carry source_node_id) then re-insert, so a
+      // re-extract REPLACES rather than appends — and a doc that no longer
+      // yields a relation has its stale edge cleared.
+      if (params.extract_facts !== false) {
+        await step(
+          {
+            name: 'process_relations',
+            kind: 'compute',
+            input: {
+              candidates: parsed.relations.length,
+              preview: parsed.relations.map((r) => ({
+                subject: r.subject,
+                relation: r.relation,
+                object: r.object,
+              })),
+            },
+          },
+          async (h) => {
+            await db
+              .delete(entityEdges)
+              .where(
+                and(
+                  eq(entityEdges.ownerId, ownerId),
+                  sql`${entityEdges.data}->>'source_node_id' = ${node.id}`,
+                ),
+              );
+            const t = { ADD: 0, NOOP: 0, skipped: 0 };
+            const seen = new Set<string>();
+            for (const rel of parsed.relations) {
+              const subjId = entityIdByName.get(rel.subject.trim().toLowerCase());
+              const objId = entityIdByName.get(rel.object.trim().toLowerCase());
+              // Skip endpoints that didn't resolve to a known entity — we never
+              // invent entities from a relation, to keep graph junk out.
+              if (!subjId || !objId || subjId === objId) {
+                t.skipped++;
+                continue;
+              }
+              const key = `${subjId}|${rel.relation}|${objId}`;
+              if (seen.has(key)) {
+                t.NOOP++;
+                continue;
+              }
+              seen.add(key);
+              try {
+                await db.insert(entityEdges).values({
+                  ownerId,
+                  sourceId: subjId,
+                  sourceKind: 'entity',
+                  targetId: objId,
+                  targetKind: 'entity',
+                  relation: rel.relation,
+                  validFrom: new Date(),
+                  data: { source_node_id: node.id, confidence: rel.confidence },
+                });
+                t.ADD++;
+              } catch (err) {
+                t.skipped++;
+                console.error(
+                  `[extractor]   relation '${rel.subject} ${rel.relation} ${rel.object}' failed:`,
+                  err instanceof Error ? err.message : err,
+                );
+              }
+            }
+            h.setOutput(t);
+            h.setMeta({ added: t.ADD, deduped: t.NOOP, unresolved: t.skipped });
+            console.log(
+              `[extractor]   → relations: ADD=${t.ADD} NOOP=${t.NOOP} skipped=${t.skipped}`,
+            );
+            return t;
+          },
+        );
+      }
 
       // ─── fact extraction pass ────────────────────────────────────────
       if (params.extract_facts === false || parsed.facts.length === 0) {

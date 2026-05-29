@@ -166,18 +166,21 @@ Output STRICT JSON:
 
 Every turn number must appear exactly once across all topics combined.`;
 
-const DEFAULT_EXTRACTOR_PROMPT = `You are a memory extractor for a personal AI assistant. You will be given the title and body of a piece of content (a note, document, email, etc.) belonging to a single user. Your job is to produce TWO outputs:
+const DEFAULT_EXTRACTOR_PROMPT = `You are a memory extractor for a personal AI assistant. You will be given the title and body of a piece of content (a note, document, email, etc.) belonging to a single user. Your job is to produce THREE outputs:
 
 1. A 1-2 sentence summary of what this content is about. Be specific — names, dates, projects, numbers. Avoid filler.
 
 2. A list of facts about the user or their world that this content reveals. Each fact is a single declarative sentence with the entities mentioned (people, projects, places, organisations, events) for cross-referencing.
+
+3. A list of relations: direct relationships BETWEEN two named entities the content establishes (Sarah works_at Lister, Don father_of Jason). These build the user's knowledge graph.
 
 Output STRICT JSON, no markdown:
 
 {
   "summary": "<1-2 sentences>",
   "facts": [{ "content": "<sentence>", "kind": "factual|episodic|semantic|preference", "confidence": 0.0-1.0, "entities": [{ "name": "...", "kind": "person|project|place|org|event" }] }],
-  "entities": [{ "name": "...", "kind": "..." }]
+  "entities": [{ "name": "...", "kind": "..." }],
+  "relations": [{ "subject": "<entity name>", "relation": "<verb>", "object": "<entity name>", "confidence": 0.0-1.0 }]
 }
 
 Guidelines:
@@ -185,6 +188,7 @@ Guidelines:
 - episodic = something that happened on a date.
 - semantic = a stable abstract identity.
 - preference = how the user prefers to be helped.
+- Relations: subject + object must be names in your "entities" list; "relation" is a short lowercase snake_case verb (works_at, owns, invoiced_by) — no fixed vocabulary; subject → relation → object reads as a sentence; never relate an entity to itself; omit below 0.6 confidence.
 - Be conservative on confidence — 1.0 only for explicit; 0.5-0.8 for reasonable inferences.
 - DO NOT extract secrets, passwords, or credentials.`;
 
