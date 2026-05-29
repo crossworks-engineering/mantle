@@ -1284,6 +1284,17 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
     if (native.text && native.text.trim().length >= 20) rawBody = native.text;
   }
 
+  // NUL guard — the chokepoint where every body-source converges. The
+  // `readNodeBodyRaw` returns are already NUL-stripped, but the branches above
+  // REASSIGN rawBody from sources that bypass that cleaning: OCR text
+  // (`ocr.text`), a vaulted-password PDF unlock (`unlocked`), and the
+  // prefer-native parse (`native.text`). Postgres text/jsonb cannot store a
+  // NUL byte — the `update_index` write throws `unsupported Unicode escape
+  // sequence` and a document that read perfectly is lost on persist (18 invoice
+  // PDFs hit exactly this). Clean once here, after the last reassignment and
+  // before `body`, `persistedText`, and the chunk index all derive from it.
+  rawBody = cleanText(rawBody);
+
   if (!rawBody || rawBody.trim().length < 20) {
     // Not enough content to extract meaningfully.
     await recordSkippedTrace({
