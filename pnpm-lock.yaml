@@ -481,6 +481,9 @@ importers:
 
   packages/content:
     dependencies:
+      '@mantle/crypto':
+        specifier: workspace:*
+        version: link:../crypto
       '@mantle/db':
         specifier: workspace:*
         version: link:../db

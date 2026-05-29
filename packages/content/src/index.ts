@@ -76,6 +76,33 @@ export {
   type UpdatePageInput,
 } from './pages';
 
+export {
+  PEERS_ROOT_LABEL,
+  PEER_TOKEN_PREFIX,
+  createPeer,
+  listPeers,
+  getPeer,
+  getOutboundToken,
+  rotateInboundToken,
+  setOutboundToken,
+  setPeerEnabled,
+  deletePeer,
+  verifyInboundToken,
+  grantPeerShare,
+  revokePeerShare,
+  listPeerShares,
+  queryForPeer,
+  markPeerContacted,
+  hashToken,
+  mintInboundToken,
+  tokenMatchesHash,
+  type PeerRow,
+  type CreatePeerInput,
+  type PeerShareRow,
+  type PeerQueryOpts,
+  type PeerQueryHit,
+} from './peers';
+
 export { docToText } from './doc-to-text';
 
 export { markdownToDoc } from './markdown-to-doc';

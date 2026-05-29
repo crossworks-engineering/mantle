@@ -66,10 +66,13 @@ Her Mantle (asking)                         Your Mantle (answering)
 
 - **Phase 1 — foundation (DONE, 2026-05-29).** `mantle_peer` node type +
   `mantle_peers` + `peer_shares` tables + Drizzle schema. Migration 0052.
-- **Phase 2 — data + crypto layer.** `@mantle/content/peers`: `createPeer`
-  (seal outbound, mint+hash inbound), `verifyInboundToken`, `grantPeerShare` /
-  `revokePeerShare`, and `queryForPeer` (scoped search). Unit tests for token
-  hashing + scope intersection.
+- **Phase 2 — data + crypto layer (DONE, 2026-05-29).** `@mantle/content/peers`:
+  `createPeer` (seal outbound, mint+hash inbound), `verifyInboundToken`
+  (constant-time, bumps `last_seen_at`), `getOutboundToken`, `grant`/
+  `revokePeerShare`, `listPeerShares`, and `queryForPeer` (the scoped read —
+  active grants ∩ request filters, no unscoped variant exists). Pure token
+  helpers in `peers-crypto.ts` with 9 unit tests; full create→verify→grant→
+  query→revoke→delete path verified live against the dev DB.
 - **Phase 3 — HTTP federation API.** `POST /api/federation/query` +
   `/api/federation/node/[id]`, bearer-verified, `federation_request` trace kind.
 - **Phase 4 — outbound tools.** `peer_query` / `peer_list` builtins (the

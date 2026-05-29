@@ -10,6 +10,8 @@
     "./notes": "./src/notes.ts",
     "./todos": "./src/todos.ts",
     "./events": "./src/events.ts",
+    "./peers": "./src/peers.ts",
+    "./peers-crypto": "./src/peers-crypto.ts",
     "./pages": "./src/pages.ts",
     "./markdown": "./src/markdown-to-doc.ts",
     "./contacts-format": "./src/contacts-format.ts",
@@ -22,6 +24,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
     "drizzle-orm": "^0.38.3",
     "marked": "^18.0.4"
