@@ -62,6 +62,9 @@ importers:
       drizzle-orm:
         specifier: ^0.38.3
         version: 0.38.4(@types/react@19.2.14)(pg@8.20.0)(postgres@3.4.9)(react@19.2.6)
+      pg-boss:
+        specifier: ^10.1.6
+        version: 10.4.2
       postgres:
         specifier: ^3.4.5
         version: 3.4.9

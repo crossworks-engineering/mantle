@@ -101,7 +101,7 @@ registerAgentInvoker(invokeAgent);
 // from the in-memory registry. Idempotent.
 registerHeartbeatTools();
 import { summarizeChat, summarizeWebConversation } from './summarizer.js';
-import { extractNode } from './extractor.js';
+import { enqueueExtract, startExtractQueue, stopExtractQueue } from './extract-queue.js';
 import { reflect } from './reflector.js';
 
 const USER_ID = process.env.ALLOWED_USER_ID;
@@ -1287,12 +1287,13 @@ async function drainPending(): Promise<void> {
 }
 
 /**
- * Boot-time recovery for the extractor debounce. Debounced work lives
- * in an in-memory Set; a crash inside the 2-second window loses any
- * pending node ids. This catches the case by scanning for recently-
- * inserted nodes of an extractable type that have no summary yet, and
- * queueing them through the same `scheduleExtract` pipeline as if a
- * fresh `pg_notify('node_ingested')` had arrived.
+ * Boot-time recovery for the extractor queue. The extract jobs themselves are
+ * durable (pg-boss), so a crash no longer loses queued work — but a node
+ * inserted while the agent (and its boss) was DOWN fired `pg_notify` into the
+ * void with no listener, so no job was ever enqueued. This catches that case by
+ * scanning for recently-inserted nodes of an extractable type that still have
+ * no embedding, and enqueueing them through the same `enqueueExtract` path as a
+ * fresh `pg_notify('node_ingested')`.
  *
  * Scoped to the last 24h so we don't re-extract years of history if
  * someone bumps the agent for the first time on an old DB. The
@@ -1318,7 +1319,7 @@ async function drainUnextractedNodes(): Promise<void> {
     return;
   }
   console.log(`[agent] drain extractor: queueing ${rows.length} unextracted node(s) from last 24h`);
-  for (const r of rows) scheduleExtract(r.id);
+  for (const r of rows) await enqueueExtract(r.id);
 }
 
 /** Debounce window for summarize_due — collapses a burst of inserts in the
@@ -1361,28 +1362,6 @@ function scheduleSummarizeWeb(ownerId: string): void {
       );
     }
   }, SUMMARIZE_DEBOUNCE_MS);
-}
-
-/** Debounce window for node_ingested. Same per-node coalescing logic as
- *  summarize_due — multiple inserts of the same node id within 2s collapse
- *  to one extractor call. Cross-node parallelism preserved (Set iteration). */
-const EXTRACT_DEBOUNCE_MS = 2000;
-const extractPending = new Set<string>();
-let extractTimer: NodeJS.Timeout | null = null;
-
-function scheduleExtract(nodeId: string): void {
-  extractPending.add(nodeId);
-  if (extractTimer) return;
-  extractTimer = setTimeout(() => {
-    extractTimer = null;
-    const batch = [...extractPending];
-    extractPending.clear();
-    for (const id of batch) {
-      extractNode(id, USER_ID!).catch((err) =>
-        console.error('[agent] extract error:', err instanceof Error ? err.message : err),
-      );
-    }
-  }, EXTRACT_DEBOUNCE_MS);
 }
 
 /** Core builtins every conversational agent should have without manual
@@ -1493,9 +1472,15 @@ async function main() {
   });
   console.log('[agent] LISTENing on summarize_web_due');
 
+  // Durable, concurrency-capped extractor queue. Must start BEFORE the
+  // node_ingested listener (so enqueues land) and before the boot drain below.
+  await startExtractQueue(DATABASE_URL!, USER_ID!);
+
   await pg.listen('node_ingested', (payload: string) => {
     if (!payload) return;
-    scheduleExtract(payload);
+    enqueueExtract(payload).catch((err) =>
+      console.error('[agent] enqueue extract error:', err instanceof Error ? err.message : err),
+    );
   });
   console.log('[agent] LISTENing on node_ingested');
 
@@ -1591,6 +1576,16 @@ async function main() {
       });
   }, HEARTBEAT_TICK_MS);
   console.log(`[agent] heartbeat tick every ${HEARTBEAT_TICK_MS / 1000}s (with failure backoff up to 30min)`);
+
+  // Stop the extractor queue gracefully on shutdown so in-flight jobs finish
+  // (and aren't left `active` in pgboss until the maintenance reaper expires
+  // them). Registered once; the handler is idempotent via stopExtractQueue.
+  for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(sig, () => {
+      console.log(`[agent] ${sig} — stopping extract queue`);
+      stopExtractQueue().finally(() => process.exit(0));
+    });
+  }
 
   await drainPending();
   await drainUnextractedNodes();
