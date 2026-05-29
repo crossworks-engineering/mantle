@@ -259,6 +259,12 @@ reason. The current catalog (extend as new pipelines land):
   unrenderable PDF, or a blank scan). Replaces the old silent failure where the
   filename fallback (≥20 chars) slipped past `body_too_short` and indexed a
   filename-only summary as `success`.
+- `encrypted_pdf` — a password-protected PDF. The reader (native document
+  worker + raster fallback) reports "password protected" / "No password given",
+  so we record this distinct skip rather than the misleading `no_text_layer` —
+  it's LOCKED, not blank. Hint points at supplying a password / re-saving
+  without one. (Bytes read fine — from disk OR object storage; the lock is the
+  only blocker.)
 
 ### Summarizer
 - `no_summarizer_worker` — no default summarizer configured.

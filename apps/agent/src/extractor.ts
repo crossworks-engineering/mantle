@@ -193,6 +193,17 @@ function truncateForPrompt(body: string): string {
 }
 
 /**
+ * Strip NUL bytes from extracted text. Postgres text/jsonb cannot
+ * store a NUL — a write throws `unsupported Unicode escape sequence` — and
+ * OCR / PDF parsers occasionally emit them. Left unhandled, a document that
+ * read perfectly is lost on the persist step (18 invoice PDFs hit exactly
+ * this). NULs carry no information, so dropping them is safe.
+ */
+function cleanText(s: string): string {
+  return s.replace(/\x00/g, '');
+}
+
+/**
  * Read a file node's bytes, wherever they live. Uploads (web / MCP / disk-sync)
  * write to the local disk keyed by `data.filename`; EMAIL ATTACHMENTS write to
  * object storage, content-addressed by `data.sha256`, and carry no
@@ -360,7 +371,7 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
             return t;
           },
         );
-        if (text.trim().length > 0) return text;
+        if (text.trim().length > 0) return cleanText(text);
       } catch {
         // Parse / read failed. The step (if it opened) already recorded the
         // error; fall through to the title.
@@ -437,6 +448,7 @@ async function visionIngestImageNode(
       );
 
       if (!result.text) return null; // nothing to index; the trace records why.
+      const text = cleanText(result.text); // strip NULs the model/OCR may emit
 
       // Persist data.text now (robustness — survives a later index failure),
       // then hand the text back to extractNode to index in this same pass.
@@ -444,13 +456,13 @@ async function visionIngestImageNode(
         await db
           .update(nodes)
           .set({
-            data: sql`${nodes.data} || jsonb_build_object('text', ${result.text}::text, 'vision_model', ${result.model ?? ''}::text)`,
+            data: sql`${nodes.data} || jsonb_build_object('text', ${text}::text, 'vision_model', ${result.model ?? ''}::text)`,
             updatedAt: new Date(),
           })
           .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
-        h.setMeta({ chars: result.text.length });
+        h.setMeta({ chars: text.length });
       });
-      return result.text;
+      return text;
     },
   );
 }
@@ -472,10 +484,10 @@ const MAX_OCR_PAGES = 10;
 async function ocrIngestPdfNode(
   node: typeof nodes.$inferSelect,
   ownerId: string,
-): Promise<string | null> {
+): Promise<{ text: string | null; encrypted: boolean }> {
   // Bytes from disk (uploads) or object storage (email PDF attachments).
   const loaded = await loadFileBytes(node);
-  if (!loaded) return null;
+  if (!loaded) return { text: null, encrypted: false };
   const filename = loaded.filename;
 
   return await startTrace(
@@ -507,8 +519,13 @@ async function ocrIngestPdfNode(
           return r;
         },
       );
+      // A password-protected PDF surfaces here as a provider 400 whose message
+      // says "password protected" (and the raster fallback fails the same way).
+      // Track it so the caller can record an honest `encrypted_pdf` skip rather
+      // than the misleading `no_text_layer`.
+      let encrypted = !native.ran && /password/i.test(native.note ?? '');
       if (native.ran && native.text.trim()) {
-        const text = native.text.trim();
+        const text = cleanText(native.text.trim());
         await step({ name: 'persist_vision_text', kind: 'db_write' }, async (h) => {
           await db
             .update(nodes)
@@ -521,7 +538,7 @@ async function ocrIngestPdfNode(
             .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
           h.setMeta({ chars: text.length, native: true });
         });
-        return text;
+        return { text, encrypted: false };
       }
 
       // 2) Fall back to rasterize → per-page image OCR.
@@ -535,12 +552,14 @@ async function ocrIngestPdfNode(
             return r;
           } catch (err) {
             // Unrenderable / corrupt / encrypted PDF — record and give up.
-            h.setMeta({ pages: 0, error: err instanceof Error ? err.message : String(err) });
+            const msg = err instanceof Error ? err.message : String(err);
+            if (/password/i.test(msg)) encrypted = true;
+            h.setMeta({ pages: 0, error: msg });
             return [];
           }
         },
       );
-      if (pages.length === 0) return null;
+      if (pages.length === 0) return { text: null, encrypted };
 
       const parts: string[] = [];
       let model: string | null = null;
@@ -574,8 +593,8 @@ async function ocrIngestPdfNode(
         }
       }
 
-      const text = parts.join('\n\n').trim();
-      if (!text) return null; // worker unavailable / blank scan — trace records why.
+      const text = cleanText(parts.join('\n\n').trim());
+      if (!text) return { text: null, encrypted }; // worker unavailable / blank scan / encrypted
 
       await step({ name: 'persist_vision_text', kind: 'db_write' }, async (h) => {
         await db
@@ -587,7 +606,7 @@ async function ocrIngestPdfNode(
           .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
         h.setMeta({ chars: text.length, pages: pages.length });
       });
-      return text;
+      return { text, encrypted: false };
     },
   );
 }
@@ -1080,9 +1099,28 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
   const preferNativePdf = isPdfWithTextLayer && (await documentWorkerPrefersNative(ownerId));
 
   if (isPdfWithoutTextLayer) {
-    const ocrText = await ocrIngestPdfNode(node, ownerId);
-    if (ocrText && ocrText.trim().length >= 20) {
-      rawBody = ocrText;
+    const ocr = await ocrIngestPdfNode(node, ownerId);
+    if (ocr.text && ocr.text.trim().length >= 20) {
+      rawBody = ocr.text;
+    } else if (ocr.encrypted) {
+      // Password-protected PDF — we genuinely can't read it without the
+      // password. An honest, distinct skip (not the misleading no_text_layer)
+      // so the operator knows it's LOCKED, not blank.
+      await recordSkippedTrace({
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'encrypted_pdf',
+        details: {
+          worker_slug: worker.slug,
+          node_type: node.type,
+          title: node.title,
+          filename: existingData.filename,
+          hint: 'PDF is password-protected. Supply the password (a PDF-password vault is planned) or open + re-save it without a password, then re-upload.',
+        },
+      });
+      return;
     } else {
       // No text layer AND OCR produced nothing (no/unwired vision worker, an
       // unrenderable PDF, or a blank scan). Record an honest skip instead of a
@@ -1104,10 +1142,10 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       return;
     }
   } else if (preferNativePdf) {
-    const nativeText = await ocrIngestPdfNode(node, ownerId);
+    const native = await ocrIngestPdfNode(node, ownerId);
     // Only replace the text-layer body if native produced something usable;
     // otherwise keep the text we already have (native is best-effort here).
-    if (nativeText && nativeText.trim().length >= 20) rawBody = nativeText;
+    if (native.text && native.text.trim().length >= 20) rawBody = native.text;
   }
 
   if (!rawBody || rawBody.trim().length < 20) {
