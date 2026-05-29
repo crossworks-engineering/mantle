@@ -53,6 +53,7 @@ import {
 import { getApiKeyById } from '@mantle/api-keys';
 import { embed } from '@mantle/embeddings';
 import { diskPathForFile, extOf, mimeForExt, parseDocumentBytes, INGESTABLE_EXTS, parserRouteForExt } from '@mantle/files';
+import { contentKey, getContent } from '@mantle/storage';
 import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import {
   documentWorkerPrefersNative,
@@ -191,6 +192,52 @@ function truncateForPrompt(body: string): string {
   return `${head}\n\n[…truncated ${body.length - BODY_MAX_CHARS} chars…]\n\n${tail}`;
 }
 
+/**
+ * Read a file node's bytes, wherever they live. Uploads (web / MCP / disk-sync)
+ * write to the local disk keyed by `data.filename`; EMAIL ATTACHMENTS write to
+ * object storage, content-addressed by `data.sha256`, and carry no
+ * `data.filename`. The extractor used to know only the disk path, so every
+ * email attachment fell back to its title — indexed as a hollow filename-only
+ * summary (the accountant-invoice bug). This tries disk first, then object
+ * storage, so a PDF/image arriving by email extracts (and OCRs) exactly like an
+ * uploaded one. Ext/mime derive from `data.filename` when present, else the
+ * title (which IS the filename for attachment nodes) / `data.mimeType`.
+ */
+async function loadFileBytes(
+  node: typeof nodes.$inferSelect,
+): Promise<{ bytes: Buffer; filename: string; ext: string; mime: string } | null> {
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  const nameForExt = typeof data.filename === 'string' ? data.filename : node.title;
+  const ext = extOf(nameForExt);
+  const mime = typeof data.mimeType === 'string' ? data.mimeType : mimeForExt(ext);
+  // 1) Local disk — uploads, the disk-sync watcher, MCP file_upload.
+  if (typeof data.filename === 'string') {
+    const diskPath = diskPathForFile(node.path, data.filename);
+    if (diskPath) {
+      try {
+        const { promises: fs } = await import('node:fs');
+        return { bytes: await fs.readFile(diskPath), filename: data.filename, ext, mime };
+      } catch {
+        // fall through to object storage
+      }
+    }
+  }
+  // 2) Object storage — email attachments live here, content-addressed.
+  if (typeof data.sha256 === 'string') {
+    try {
+      const { body } = await getContent(contentKey(data.sha256));
+      const chunks: Buffer[] = [];
+      for await (const chunk of body as AsyncIterable<Buffer | string>) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      return { bytes: Buffer.concat(chunks), filename: nameForExt, ext, mime };
+    } catch {
+      // unreachable storage / missing object — caller falls back to the title
+    }
+  }
+  return null;
+}
+
 async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string> {
   // ─── Secrets — metadata only ─────────────────────────────────────────
   // Critical security invariant: secrets pass title + description + tags
@@ -280,44 +327,43 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
   const data = (node.data ?? {}) as Record<string, unknown>;
   const candidates = [data.content, data.text, data.body, data.markdown];
   for (const c of candidates) {
-    if (typeof c === 'string' && c.trim().length > 0) return c;
+    // Ignore a cached value that's just the title — that's the hollow
+    // filename-only fallback a prior (buggy) extract may have stored; using
+    // it would shortcut the real parse below and re-index nothing. Forces a
+    // re-parse from disk/storage on the next run.
+    if (typeof c === 'string' && c.trim().length > 0 && c.trim() !== node.title.trim()) return c;
   }
-  // file fallback: if data.content wasn't cached (binary uploads, or
-  // text > 1MB), read from disk and parse via the shared dispatcher
-  // (pdf/docx/xlsx → parser, text → UTF-8). On any parse failure
-  // (encrypted/scanned/corrupt) fall through to the title.
-  if (node.type === 'file' && typeof data.filename === 'string') {
-    const filename = data.filename as string;
-    const ext = extOf(filename);
-    const diskPath = diskPathForFile(node.path, filename);
-    if (!diskPath) return node.title;
-    if (INGESTABLE_EXTS.has(ext)) {
+  // file fallback: if no usable cached body, read the bytes (local disk for
+  // uploads, OBJECT STORAGE for email attachments — see loadFileBytes) and
+  // parse via the shared dispatcher (pdf/docx/xlsx → parser, text → UTF-8).
+  // On any parse failure (encrypted/scanned/corrupt) fall through to the title.
+  if (node.type === 'file') {
+    const loaded = await loadFileBytes(node);
+    if (loaded && INGESTABLE_EXTS.has(loaded.ext)) {
       try {
-        const { promises: fs } = await import('node:fs');
-        const buf = await fs.readFile(diskPath);
         // Wrap the parse in a step so the trace shows WHICH tier ran
         // (pdf-parse / mammoth / sheetjs / utf8 / tika), how long it took,
         // and how many chars came out. Particularly important for Tika
         // since it's an HTTP call with its own failure modes (service down,
         // timeout, unparseable bytes — all swallowed to '' by design); the
         // step makes Tika invisible→visible without changing behaviour.
-        const route = parserRouteForExt(ext);
+        const route = parserRouteForExt(loaded.ext);
         const text = await step(
           {
             name: 'parse_document',
             kind: 'compute',
-            input: { ext, parser: route, bytes_in: buf.length, filename },
+            input: { ext: loaded.ext, parser: route, bytes_in: loaded.bytes.length, filename: loaded.filename },
           },
           async (h) => {
-            const t = await parseDocumentBytes(buf, ext);
+            const t = await parseDocumentBytes(loaded.bytes, loaded.ext);
             h.setMeta({ parser: route, chars_out: t.length, empty: t.trim().length === 0 });
             return t;
           },
         );
         if (text.trim().length > 0) return text;
       } catch {
-        // Parse / disk read failed. The step (if it opened) already
-        // recorded the error; fall through to the title.
+        // Parse / read failed. The step (if it opened) already recorded the
+        // error; fall through to the title.
       }
     }
   }
@@ -346,10 +392,10 @@ async function visionIngestImageNode(
   node: typeof nodes.$inferSelect,
   ownerId: string,
 ): Promise<string | null> {
-  const data = (node.data ?? {}) as Record<string, unknown>;
-  const filename = data.filename as string;
-  const diskPath = diskPathForFile(node.path, filename);
-  if (!diskPath) return null;
+  // Bytes from disk (uploads) or object storage (email image attachments).
+  const loaded = await loadFileBytes(node);
+  if (!loaded) return null;
+  const filename = loaded.filename;
 
   return await startTrace(
     {
@@ -363,13 +409,11 @@ async function visionIngestImageNode(
       const bytes = await step(
         { name: 'read_file', kind: 'compute', input: { filename } },
         async (h) => {
-          const { promises: fs } = await import('node:fs');
-          const buf = await fs.readFile(diskPath);
-          h.setMeta({ bytes: buf.length });
-          return buf;
+          h.setMeta({ bytes: loaded.bytes.length });
+          return loaded.bytes;
         },
       );
-      const mimeType = mimeForExt(extOf(filename));
+      const mimeType = loaded.mime;
       const result = await step(
         { name: 'extract_vision', kind: 'llm_call', input: { mime: mimeType, bytes: bytes.length } },
         async (h) => {
@@ -429,10 +473,10 @@ async function ocrIngestPdfNode(
   node: typeof nodes.$inferSelect,
   ownerId: string,
 ): Promise<string | null> {
-  const data = (node.data ?? {}) as Record<string, unknown>;
-  const filename = data.filename as string;
-  const diskPath = diskPathForFile(node.path, filename);
-  if (!diskPath) return null;
+  // Bytes from disk (uploads) or object storage (email PDF attachments).
+  const loaded = await loadFileBytes(node);
+  if (!loaded) return null;
+  const filename = loaded.filename;
 
   return await startTrace(
     {
@@ -446,10 +490,8 @@ async function ocrIngestPdfNode(
       const buf = await step(
         { name: 'read_file', kind: 'compute', input: { filename } },
         async (h) => {
-          const { promises: fs } = await import('node:fs');
-          const b = await fs.readFile(diskPath);
-          h.setMeta({ bytes: b.length });
-          return b;
+          h.setMeta({ bytes: loaded.bytes.length });
+          return loaded.bytes;
         },
       );
 
@@ -985,12 +1027,21 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
   // — no second extractor round-trip. One code path turns image bytes into
   // searchable text however the image landed. Images that already carry
   // data.text (e.g. re-extraction) fall through to readNodeBodyRaw unchanged.
+  // Type/mime resolution that works for BOTH upload nodes (data.filename) and
+  // email-attachment nodes (no filename — the title is the filename, mime is in
+  // data.mimeType). Without this, attachments fell through every vision/OCR
+  // gate and indexed as filename-only summaries.
+  const fileNameForType =
+    typeof existingData.filename === 'string' ? existingData.filename : node.title;
+  const fileExt = extOf(fileNameForType);
+  const fileMime =
+    typeof existingData.mimeType === 'string' ? existingData.mimeType : mimeForExt(fileExt);
+
   const isImageNeedingVision =
     node.type === 'file' &&
     !existingData.text &&
     !existingData.content &&
-    typeof existingData.filename === 'string' &&
-    mimeForExt(extOf(existingData.filename)).startsWith('image/');
+    fileMime.startsWith('image/');
 
   // Read the FULL extracted text once. `body` (truncated) is what the LLM
   // sees; `rawBody` is what we persist so the document stays retrievable.
@@ -1009,12 +1060,12 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
   // giving up, try OCR via the vision worker (rasterize → describe+OCR), the
   // same route images take. Only triggered when the body IS the filename, so a
   // PDF with a real text layer never pays the OCR cost.
+  const isPdf = fileExt === 'pdf' || fileMime === 'application/pdf';
   const isPdfWithoutTextLayer =
     node.type === 'file' &&
     !existingData.text &&
     !existingData.content &&
-    typeof existingData.filename === 'string' &&
-    extOf(existingData.filename as string) === 'pdf' &&
+    isPdf &&
     rawBody.trim() === node.title.trim();
   // prefer_native: a PDF WITH a text layer, but the document worker is set to
   // always read PDFs through the model (tabular docs whose text layer scrambles
@@ -1024,8 +1075,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
     node.type === 'file' &&
     !existingData.text &&
     !existingData.content &&
-    typeof existingData.filename === 'string' &&
-    extOf(existingData.filename as string) === 'pdf' &&
+    isPdf &&
     !isPdfWithoutTextLayer;
   const preferNativePdf = isPdfWithTextLayer && (await documentWorkerPrefersNative(ownerId));
 
