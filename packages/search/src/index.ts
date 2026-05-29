@@ -6,6 +6,7 @@ export {
   entityNeighbors,
   entityFacts,
   entityMentions,
+  graphPath,
   type EntitySearchOptions,
   type EntityHit,
   type NeighborOptions,
@@ -13,6 +14,9 @@ export {
   type FactsOptions,
   type MentionsOptions,
   type EntityMention,
+  type GraphPathOptions,
+  type GraphHop,
+  type GraphPathResult,
 } from './entities';
 
 export { searchChunks, type ChunkHit, type ChunkSearchOptions } from './chunks';

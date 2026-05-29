@@ -17,6 +17,7 @@ import {
   entityNeighbors,
   entityFacts,
   entityMentions,
+  graphPath,
 } from '@mantle/search';
 import {
   fileById,
@@ -58,6 +59,12 @@ function num(v: unknown, dflt?: number): number | undefined {
 
 function bool(v: unknown): boolean | undefined {
   return typeof v === 'boolean' ? v : undefined;
+}
+
+function strArr(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v.filter((s): s is string => typeof s === 'string' && s.length > 0);
+  return out.length > 0 ? out : undefined;
 }
 
 // ─── search / tree ────────────────────────────────────────────────────────
@@ -223,6 +230,55 @@ const entity_neighbors: BuiltinToolDef = {
     });
     ctx.step?.setOutput({ count: rows.length });
     return { ok: true, output: rows };
+  },
+};
+
+const graph_path: BuiltinToolDef = {
+  slug: 'graph_path',
+  name: 'Walk the entity graph (multi-hop)',
+  description:
+    "Multi-hop traversal of the knowledge graph — the relationships BETWEEN entities (e.g. 'Sarah works_at Lister', 'Lister supplies Acme'). Use for connection questions one hop can't answer: 'how is Sarah connected to Acme?' (pass from_id + to_id → shortest path) or 'what's within 2 hops of Lister?' (pass from_id only → reachable neighbourhood). Get ids from entity_search first. `relations` filters which verbs to follow; `directed:true` follows subject→object only (default treats edges as undirected for connectivity). For a single hop use entity_neighbors instead.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      from_id: { type: 'string', format: 'uuid', description: 'Start entity id.' },
+      to_id: {
+        type: 'string',
+        format: 'uuid',
+        description: 'Optional target entity id — returns shortest path(s) to it.',
+      },
+      max_depth: { type: 'integer', minimum: 1, maximum: 6, default: 3 },
+      relations: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "Only follow these relation verbs, e.g. ['employed_by','owns'].",
+      },
+      directed: { type: 'boolean', default: false },
+      limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+    },
+    required: ['from_id'],
+  },
+  handler: async (input, ctx) => {
+    const fromId = str(input.from_id);
+    if (!fromId) return { ok: false, error: 'from_id required' };
+    const rows = await graphPath({
+      ownerId: ctx.ownerId,
+      fromId,
+      toId: strOpt(input.to_id),
+      maxDepth: num(input.max_depth, 3),
+      relations: strArr(input.relations),
+      directed: bool(input.directed),
+      limit: num(input.limit, 50),
+    });
+    ctx.step?.setMeta({ count: rows.length, reached: !!input.to_id && rows.length > 0 });
+    return {
+      ok: true,
+      output: rows.map((r) => ({
+        entity: { id: r.entity.id, name: r.entity.name, kind: r.entity.kind },
+        depth: r.depth,
+        path: r.path,
+      })),
+    };
   },
 };
 
@@ -863,6 +919,7 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   tree_list,
   entity_search,
   entity_neighbors,
+  graph_path,
   entity_facts,
   entity_mentions,
   folder_list,

@@ -34,6 +34,7 @@ import {
   entityFacts,
   entityMentions,
   entityNeighbors,
+  graphPath,
   searchEntities,
   searchNodes,
   searchChunks,
@@ -515,6 +516,31 @@ server.tool(
       relation,
       direction,
       currentOnly: current_only,
+      limit,
+    });
+    return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+  },
+);
+
+server.tool(
+  'graph_path',
+  "Multi-hop traversal of the entity knowledge graph (relationships BETWEEN entities). Pass from_id + to_id for the shortest path(s) between two entities ('how is Sarah connected to Acme?'); pass from_id only for everything reachable within max_depth ('what's within 2 hops of Lister?'). `relations` limits which verbs to follow; `directed:true` follows subject→object only (default undirected). For a single hop use entity_neighbors.",
+  {
+    from_id: z.string().uuid(),
+    to_id: z.string().uuid().optional(),
+    max_depth: z.number().int().min(1).max(6).optional(),
+    relations: z.array(z.string()).optional(),
+    directed: z.boolean().optional(),
+    limit: z.number().int().min(1).max(200).optional(),
+  },
+  async ({ from_id, to_id, max_depth, relations, directed, limit }) => {
+    const rows = await graphPath({
+      ownerId: OWNER_ID!,
+      fromId: from_id,
+      toId: to_id,
+      maxDepth: max_depth,
+      relations,
+      directed,
       limit,
     });
     return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
