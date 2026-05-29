@@ -38,6 +38,8 @@ function outcomeText(it: ActivityItem): string | null {
   if (it.factCount > 0) parts.push(`${it.factCount} fact${it.factCount === 1 ? '' : 's'}`);
   if (it.mentionCount > 0)
     parts.push(`${it.mentionCount} ${it.mentionCount === 1 ? 'entity' : 'entities'}`);
+  if (it.relationCount > 0)
+    parts.push(`${it.relationCount} relation${it.relationCount === 1 ? '' : 's'}`);
   return parts.length ? parts.join(' · ') : 'indexed';
 }
 

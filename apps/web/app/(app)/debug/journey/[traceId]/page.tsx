@@ -247,6 +247,31 @@ export default async function JourneyDetailPage({
               </div>
             )}
           </div>
+
+          {/* Graph · Relations */}
+          <div className="rounded-lg border border-border p-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Network className="h-4 w-4 text-muted-foreground" /> Graph · Relations drawn
+              </div>
+              <span className="text-xs text-muted-foreground">{j.landed.relations.length}</span>
+            </div>
+            {j.landed.relations.length === 0 ? (
+              <p className="mt-1 text-xs text-muted-foreground">No relations drawn.</p>
+            ) : (
+              <ul className="mt-1 space-y-1">
+                {j.landed.relations.map((r, i) => (
+                  <li key={i} className="text-xs">
+                    <span className="text-foreground">{r.subject}</span>{' '}
+                    <span className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+                      {r.relation}
+                    </span>{' '}
+                    <span className="text-foreground">{r.object}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </section>
       ) : (
         <section className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">

@@ -1,4 +1,5 @@
 import { and, desc, eq, gte, isNull, lt, ne, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { db, entities, entityEdges, facts, nodes, traces } from '@mantle/db';
 import { getTrace } from './traces';
 import type { TraceDetail } from './traces-format';
@@ -25,10 +26,12 @@ export type ActivityItem = ActionPresentation & {
   title: string | null;
   subjectKind: string | null;
   subjectId: string | null;
-  /** Outcome — what entered the brain. Facts mined + entities linked from this
-   *  action's node (0 for non-content / dialog actions). */
+  /** Outcome — what entered the brain. Facts mined + entities linked +
+   *  relations drawn from this action's node (0 for non-content / dialog
+   *  actions). */
   factCount: number;
   mentionCount: number;
+  relationCount: number;
 };
 
 /** Live snapshot for the always-on Activity surfaces: what's running right now,
@@ -53,6 +56,8 @@ export type LandedLayers = {
   facts: { content: string; kind: string; entityName: string | null }[];
   /** Graph — entities mentioned in this node. */
   mentions: { name: string; kind: string }[];
+  /** Graph — relations this node drew between entities (subject→object). */
+  relations: { subject: string; relation: string; object: string }[];
 };
 
 export type JourneyDetail = TraceDetail & { landed: LandedLayers | null };
@@ -79,6 +84,7 @@ function mapActivityRow(r: {
   nodeData: unknown;
   factCount: number | null;
   mentionCount: number | null;
+  relationCount: number | null;
 }): ActivityItem {
   const traceData = (r.data ?? {}) as Record<string, unknown>;
   const nodeData = (r.nodeData ?? {}) as Record<string, unknown>;
@@ -100,6 +106,7 @@ function mapActivityRow(r: {
     subjectId: r.subjectId,
     factCount: r.factCount ?? 0,
     mentionCount: r.mentionCount ?? 0,
+    relationCount: r.relationCount ?? 0,
   };
 }
 
@@ -127,6 +134,7 @@ async function queryActivity(
       nodeData: nodes.data,
       factCount: sql<number>`(select count(*)::int from ${facts} where ${facts.sourceNodeId} = ${traces.subjectId} and ${facts.validTo} is null)`,
       mentionCount: sql<number>`(select count(*)::int from ${entityEdges} where ${entityEdges.targetId} = ${traces.subjectId} and ${entityEdges.targetKind} = 'node' and ${entityEdges.relation} = 'mentioned_in')`,
+      relationCount: sql<number>`(select count(*)::int from ${entityEdges} where ${entityEdges.data}->>'source_node_id' = ${traces.subjectId}::text)`,
     })
     .from(traces)
     .leftJoin(
@@ -268,6 +276,18 @@ async function loadLanded(userId: string, nodeId: string): Promise<LandedLayers 
     )
     .limit(50);
 
+  // Graph relations this node drew between entities (entity↔entity, stamped
+  // with source_node_id). Join both endpoints for a readable subject→object.
+  const subjEnt = alias(entities, 'subj_ent');
+  const objEnt = alias(entities, 'obj_ent');
+  const relationRows = await db
+    .select({ subject: subjEnt.name, relation: entityEdges.relation, object: objEnt.name })
+    .from(entityEdges)
+    .innerJoin(subjEnt, eq(entityEdges.sourceId, subjEnt.id))
+    .innerJoin(objEnt, eq(entityEdges.targetId, objEnt.id))
+    .where(and(eq(entityEdges.ownerId, userId), sql`${entityEdges.data}->>'source_node_id' = ${nodeId}`))
+    .limit(50);
+
   return {
     node: { id: node.id, type: node.type as string, title: node.title },
     index: {
@@ -282,5 +302,10 @@ async function loadLanded(userId: string, nodeId: string): Promise<LandedLayers 
       entityName: f.entityName,
     })),
     mentions: mentionRows.map((m) => ({ name: m.name, kind: m.kind as string })),
+    relations: relationRows.map((r) => ({
+      subject: r.subject,
+      relation: r.relation,
+      object: r.object,
+    })),
   };
 }
