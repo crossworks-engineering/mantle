@@ -51,16 +51,21 @@ useEffect(() => setRows(initialRows), [initialRows]);
   `globalThis` singleton so Next.js dev HMR doesn't stack duplicates.
 - **Self-healing.** `EventSource` auto-reconnects on drop; a 25s heartbeat
   comment keeps idle connections off proxy/idle timeouts.
-- **Scope today:** fires on `nodes` inserts (covers events, notes, files,
-  emails, telegram messages, …). Pure column updates that don't insert a row
-  won't notify yet — add a trigger on the relevant table + channel if needed.
+- **Scope today:** two channels, both fanned out the same way —
+  `node_ingested` (migration 0018 trigger, every `nodes` insert: events, notes,
+  files, emails, telegram, …) and `node_indexed` (the extractor's explicit
+  `notifyNodeIndexed` after it writes `data.summary` + `embedding`). The second
+  is what makes a freshly-summarised file repaint live — the insert alone has no
+  summary yet. Other pure column updates still won't notify; emit on
+  `node_indexed` (or add a table+channel) from the code that does the update.
 
 ## Source of truth
 
 | Concern | File |
 |---|---|
 | The `node_ingested` trigger | `packages/db/migrations/0018_node_ingested_trigger.sql` |
-| LISTEN bridge + fan-out | `apps/web/lib/realtime.ts` |
+| The `node_indexed` notify (extractor) | `packages/db/src/notify.ts` (`notifyNodeIndexed`) |
+| LISTEN bridge + fan-out (both channels) | `apps/web/lib/realtime.ts` |
 | SSE endpoint | `apps/web/app/api/realtime/route.ts` |
 | Client hook | `apps/web/components/realtime/use-realtime.ts` |
 | Reference consumer | `apps/web/app/(app)/events/events-client.tsx` |
