@@ -15,6 +15,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  canonicaliseRelation,
   extractFirstJsonObject,
   isValidEntity,
   isValidFact,
@@ -295,8 +296,8 @@ describe('isValidRelation', () => {
 
 describe('sanitiseRelation', () => {
   it('snake_cases + lowercases the verb', () => {
-    const r = sanitiseRelation({ subject: 'Sarah', relation: 'Works At', object: 'Lister', confidence: 0.9 });
-    expect(r.relation).toBe('works_at');
+    const r = sanitiseRelation({ subject: 'Sarah', relation: 'Reports To', object: 'Lister', confidence: 0.9 });
+    expect(r.relation).toBe('reports_to');
   });
   it('strips punctuation from the verb', () => {
     expect(sanitiseRelation({ subject: 'A', relation: 'father-of!', object: 'B', confidence: 1 }).relation).toBe('father_of');
@@ -311,18 +312,64 @@ describe('sanitiseRelation', () => {
   });
 });
 
+describe('canonicaliseRelation', () => {
+  it('collapses employment synonyms to employed_by', () => {
+    for (const v of ['works_at', 'works_for', 'employed_at', 'employee_of'])
+      expect(canonicaliseRelation(v)).toBe('employed_by');
+  });
+  it('collapses a few other obvious synonyms', () => {
+    expect(canonicaliseRelation('owner_of')).toBe('owns');
+    expect(canonicaliseRelation('located_at')).toBe('located_in');
+    expect(canonicaliseRelation('spouse_of')).toBe('married_to');
+  });
+  it('drops vacuous verbs to empty', () => {
+    for (const v of ['is', 'has', 'related_to', 'associated_with', 'of'])
+      expect(canonicaliseRelation(v)).toBe('');
+  });
+  it('leaves distinct senses untouched (no over-merging)', () => {
+    expect(canonicaliseRelation('provides')).toBe('provides');
+    expect(canonicaliseRelation('provides_services_to')).toBe('provides_services_to');
+    expect(canonicaliseRelation('contracts_for')).toBe('contracts_for');
+  });
+});
+
+describe('sanitiseRelation — canonicalization', () => {
+  it('normalises then canonicalises ("Works At" → employed_by)', () => {
+    expect(sanitiseRelation({ subject: 'S', relation: 'Works At', object: 'O', confidence: 1 }).relation).toBe('employed_by');
+  });
+  it('vacuous verb sanitises to empty (so parse drops it)', () => {
+    expect(sanitiseRelation({ subject: 'S', relation: 'is', object: 'O', confidence: 1 }).relation).toBe('');
+  });
+});
+
 describe('parseExtractorOutput — relations', () => {
+  it('canonicalises synonyms and drops vacuous verbs end-to-end', () => {
+    const out = parseExtractorOutput(
+      JSON.stringify({
+        summary: 'x', facts: [], entities: [],
+        relations: [
+          { subject: 'Sarah', relation: 'works at', object: 'Lister' },
+          { subject: 'Jason', relation: 'is', object: 'busy' }, // vacuous → dropped
+        ],
+      }),
+    );
+    expect(out.relations).toHaveLength(1);
+    expect(out.relations[0]).toMatchObject({ subject: 'Sarah', relation: 'employed_by', object: 'Lister' });
+  });
+});
+
+describe('parseExtractorOutput — relations (basic)', () => {
   it('parses + sanitises a relations array', () => {
     const out = parseExtractorOutput(
       JSON.stringify({
         summary: 'x',
         facts: [],
         entities: [{ name: 'Sarah', kind: 'person' }, { name: 'Lister', kind: 'org' }],
-        relations: [{ subject: 'Sarah', relation: 'Works At', object: 'Lister', confidence: 0.9 }],
+        relations: [{ subject: 'Sarah', relation: 'Reports To', object: 'Lister', confidence: 0.9 }],
       }),
     );
     expect(out.relations).toHaveLength(1);
-    expect(out.relations[0]).toMatchObject({ subject: 'Sarah', relation: 'works_at', object: 'Lister' });
+    expect(out.relations[0]).toMatchObject({ subject: 'Sarah', relation: 'reports_to', object: 'Lister' });
   });
   it('drops invalid relations (self-loop, blank, verb→empty)', () => {
     const out = parseExtractorOutput(

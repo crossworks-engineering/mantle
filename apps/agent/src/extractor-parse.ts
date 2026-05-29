@@ -71,6 +71,55 @@ export function isValidEntity(e: unknown): e is { name: string; kind: string } {
 
 const RELATION_MAX_LEN = 60;
 
+/**
+ * Vacuous verbs that carry no relational meaning (or merely restate
+ * `mentioned_in`). A relation that canonicalises to one of these is dropped —
+ * "X is Y" / "X related_to Y" pollute the graph without adding a queryable edge.
+ */
+const VACUOUS_RELATIONS = new Set([
+  'is',
+  'are',
+  'was',
+  'were',
+  'be',
+  'has',
+  'have',
+  'related_to',
+  'associated_with',
+  'connected_to',
+  'linked_to',
+  'mentioned_with',
+  'about',
+  'of',
+]);
+
+/**
+ * Canonical synonyms — collapse different verbs for the SAME relation to one
+ * stable form, so `graph_path(relations: ['employed_by'])` doesn't miss the
+ * `works_at` edges. Deliberately TIGHT: only verbs that are unambiguously the
+ * same relation. Senses that genuinely differ (e.g. `provides` a product vs
+ * `provides_services_to`) are left distinct — over-merging loses meaning. The
+ * taxonomy stays emergent; this only de-duplicates obvious synonyms.
+ */
+const RELATION_SYNONYMS: Record<string, string> = {
+  works_at: 'employed_by',
+  works_for: 'employed_by',
+  employed_at: 'employed_by',
+  employee_of: 'employed_by',
+  spouse_of: 'married_to',
+  located_at: 'located_in',
+  based_in: 'located_in',
+  owner_of: 'owns',
+  founded: 'founder_of',
+};
+
+/** Canonicalise a snake_cased verb: '' if vacuous (caller drops it), else the
+ *  synonym's canonical form, else the verb unchanged. Pure + exported for test. */
+export function canonicaliseRelation(verb: string): string {
+  if (VACUOUS_RELATIONS.has(verb)) return '';
+  return RELATION_SYNONYMS[verb] ?? verb;
+}
+
 /** A relation is usable iff subject, relation, and object are all non-empty
  *  strings and subject !== object (no self-loops). */
 export function isValidRelation(r: unknown): r is ExtractedRelation {
@@ -98,11 +147,15 @@ export function sanitiseRelation(r: ExtractedRelation): ExtractedRelation {
     // drop leading/trailing underscores left by edge punctuation
     .replace(/^_+|_+$/g, '')
     .slice(0, RELATION_MAX_LEN);
+  // Collapse synonyms / drop vacuous verbs so the graph has a stable, queryable
+  // vocabulary. canonicaliseRelation returns '' for vacuous verbs; the
+  // parseExtractorOutput filter then drops the relation entirely.
+  const canonical = canonicaliseRelation(relation);
   const confidence =
     typeof r.confidence === 'number' && Number.isFinite(r.confidence)
       ? Math.min(1, Math.max(0, r.confidence))
       : 0.8;
-  return { subject: r.subject.trim(), relation, object: r.object.trim(), confidence };
+  return { subject: r.subject.trim(), relation: canonical, object: r.object.trim(), confidence };
 }
 
 /**
