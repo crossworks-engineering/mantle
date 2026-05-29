@@ -140,8 +140,14 @@ Output STRICT JSON, no markdown, no commentary outside the JSON:
 
 Relations:
 - subject and object MUST be names that appear in your "entities" list above. Never relate an entity to itself.
-- "relation" is a short lowercase verb phrase naming the connection AS IT APPEARS in the content — e.g. works_at, employs, father_of, married_to, located_in, owns, invoiced_by, member_of, reports_to, supplies. Use whatever verb fits; there is no fixed list. Keep it 1-3 words, snake_case.
-- Direction matters: subject → relation → object reads as a sentence ("Sarah works_at Lister").
+- "relation" is a short lowercase snake_case verb (1-3 words) naming the connection. Direction matters: subject → relation → object reads as a sentence ("Sarah employed_by Lister").
+- PREFER these common verbs when one fits, and REUSE the same verb for the same kind of relationship rather than coining a near-synonym — a consistent vocabulary keeps the graph queryable:
+  · people/work: employed_by, founder_of, owns, member_of, reports_to, colleague_of
+  · family: married_to, parent_of, child_of, sibling_of
+  · place: located_in, lives_at
+  · money/business: banks_with, invoiced_by, paid_by, supplier_of, client_of, provides_services_to
+  · things/tech: developed, uses, licensed_from, alternative_to, part_of
+  Example: use "banks_with" (not holds_account_at / maintains_account_at); "employed_by" (not works_at / works_for / receives_salary_from). Only coin a NEW verb when none of the above expresses the relationship.
 - Only extract relations the content actually states or strongly implies. Same confidence rule as facts: omit anything below 0.6. If the content establishes no relationships between entities, return an empty relations array.
 
 Fact kinds:

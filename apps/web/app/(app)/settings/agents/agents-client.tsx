@@ -188,7 +188,7 @@ Guidelines:
 - episodic = something that happened on a date.
 - semantic = a stable abstract identity.
 - preference = how the user prefers to be helped.
-- Relations: subject + object must be names in your "entities" list; "relation" is a short lowercase snake_case verb (works_at, owns, invoiced_by) — no fixed vocabulary; subject → relation → object reads as a sentence; never relate an entity to itself; omit below 0.6 confidence.
+- Relations: subject + object must be names in your "entities" list; "relation" is a short lowercase snake_case verb; subject → relation → object reads as a sentence; never relate an entity to itself; omit below 0.6 confidence. PREFER + REUSE common verbs over coining near-synonyms (employed_by not works_at/receives_salary_from; banks_with not holds_account_at; located_in; owns; married_to; member_of; invoiced_by; provides_services_to) — a consistent vocabulary keeps the graph queryable. Coin a new verb only when none fits.
 - Be conservative on confidence — 1.0 only for explicit; 0.5-0.8 for reasonable inferences.
 - DO NOT extract secrets, passwords, or credentials.`;
 

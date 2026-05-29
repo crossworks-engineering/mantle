@@ -102,10 +102,19 @@ const VACUOUS_RELATIONS = new Set([
  * taxonomy stays emergent; this only de-duplicates obvious synonyms.
  */
 const RELATION_SYNONYMS: Record<string, string> = {
+  // employment (X employed_by Y)
   works_at: 'employed_by',
   works_for: 'employed_by',
   employed_at: 'employed_by',
   employee_of: 'employed_by',
+  receives_salary_from: 'employed_by',
+  salaried_by: 'employed_by',
+  // banking (X banks_with Y) — observed drift in stage-1 backfill
+  holds_account_at: 'banks_with',
+  maintains_account_at: 'banks_with',
+  account_at: 'banks_with',
+  banks_at: 'banks_with',
+  // family / place / ownership
   spouse_of: 'married_to',
   located_at: 'located_in',
   based_in: 'located_in',

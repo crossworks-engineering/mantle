@@ -322,6 +322,11 @@ describe('canonicaliseRelation', () => {
     expect(canonicaliseRelation('located_at')).toBe('located_in');
     expect(canonicaliseRelation('spouse_of')).toBe('married_to');
   });
+  it('collapses the observed stage-1 drift (banking + salary → canonical)', () => {
+    expect(canonicaliseRelation('holds_account_at')).toBe('banks_with');
+    expect(canonicaliseRelation('maintains_account_at')).toBe('banks_with');
+    expect(canonicaliseRelation('receives_salary_from')).toBe('employed_by');
+  });
   it('drops vacuous verbs to empty', () => {
     for (const v of ['is', 'has', 'related_to', 'associated_with', 'of'])
       expect(canonicaliseRelation(v)).toBe('');
