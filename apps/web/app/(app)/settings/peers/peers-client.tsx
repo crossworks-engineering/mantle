@@ -1,0 +1,430 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { Check, Copy, KeyRound, Network, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { SubmitButton } from '@/components/ui/submit-button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { useToast } from '@/components/ui/toast';
+import { cn } from '@/lib/utils';
+import { formatDateTime } from '@/lib/format-datetime';
+
+type Peer = {
+  id: string;
+  displayName: string;
+  baseUrl: string;
+  status: string;
+  enabled: boolean;
+  lastContactedAt: string | null;
+  lastSeenAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+type Share = { id: string; nodeId: string; nodeType: string; title: string; createdAt: string };
+type NodeHit = { id: string; title: string; type: string };
+type Selection = { mode: 'create' } | { mode: 'view'; id: string };
+
+/** Reveal-once box for a freshly-minted inbound token. */
+function TokenReveal({ token, onDone }: { token: string; onDone: () => void }) {
+  const toast = useToast();
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    await navigator.clipboard.writeText(token);
+    setCopied(true);
+    toast.success('Token copied');
+  };
+  return (
+    <div className="space-y-2 rounded-md border border-primary/40 bg-primary/5 p-3">
+      <p className="text-sm font-medium">Inbound token — shown once</p>
+      <p className="text-xs text-muted-foreground">
+        Give this to the peer so their Mantle can authenticate to yours. We store only its hash —
+        you can&apos;t see it again (rotate to mint a new one).
+      </p>
+      <div className="flex items-center gap-2">
+        <code className="min-w-0 flex-1 truncate rounded bg-muted px-2 py-1.5 font-mono text-xs">
+          {token}
+        </code>
+        <Button type="button" size="sm" variant="outline" onClick={copy}>
+          {copied ? <Check /> : <Copy />}
+        </Button>
+      </div>
+      <Button type="button" size="sm" onClick={onDone}>
+        I&apos;ve saved it
+      </Button>
+    </div>
+  );
+}
+
+export function PeersClient({ initialPeers }: { initialPeers: Peer[] }) {
+  const toast = useToast();
+  const [peers, setPeers] = useState<Peer[]>(initialPeers);
+  const [sel, setSel] = useState<Selection>(
+    initialPeers[0] ? { mode: 'view', id: initialPeers[0].id } : { mode: 'create' },
+  );
+  const [reveal, setReveal] = useState<string | null>(null);
+
+  const selected = sel.mode === 'view' ? peers.find((p) => p.id === sel.id) ?? null : null;
+
+  return (
+    <div className="md:grid md:h-full md:grid-cols-[340px_1fr] md:overflow-hidden">
+      {/* ── Left: peer list ───────────────────────────────────────── */}
+      <div className="flex flex-col border-b border-border md:h-full md:min-h-0 md:border-b-0 md:border-r">
+        <div className="flex items-center justify-between gap-2 border-b border-border p-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Peers
+          </h2>
+          <Button type="button" size="sm" onClick={() => { setReveal(null); setSel({ mode: 'create' }); }}>
+            <Plus /> New
+          </Button>
+        </div>
+        <div className="space-y-2 p-3 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
+          {peers.length === 0 ? (
+            <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
+              No peers yet. Click <strong>New</strong> to connect another Mantle.
+            </p>
+          ) : (
+            peers.map((p) => {
+              const isSel = sel.mode === 'view' && sel.id === p.id;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => { setReveal(null); setSel({ mode: 'view', id: p.id }); }}
+                  className={cn(
+                    'block w-full rounded-lg border border-l-[3px] border-border bg-card p-2.5 text-left transition-colors hover:bg-accent/40',
+                    isSel ? 'border-l-primary bg-accent/50' : 'border-l-border',
+                    !p.enabled && 'opacity-60',
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <Network className="size-4 shrink-0 text-muted-foreground" />
+                    <span className="truncate text-sm font-medium">{p.displayName}</span>
+                    <span
+                      className={cn(
+                        'ml-auto size-2 shrink-0 rounded-full',
+                        p.enabled && p.status === 'active' ? 'bg-primary' : 'bg-muted-foreground/40',
+                      )}
+                      aria-label={p.enabled ? p.status : 'disabled'}
+                    />
+                  </div>
+                  <div className="truncate text-xs text-muted-foreground">{p.baseUrl}</div>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* ── Right: create | detail ────────────────────────────────── */}
+      <div className="md:h-full md:min-h-0 md:overflow-y-auto md:scrollbar-thin">
+        {sel.mode === 'create' ? (
+          <CreatePeer
+            onCreated={(peer, inboundToken) => {
+              setPeers((p) => [peer, ...p]);
+              setReveal(inboundToken);
+              setSel({ mode: 'view', id: peer.id });
+            }}
+          />
+        ) : selected ? (
+          <PeerDetail
+            key={selected.id}
+            peer={selected}
+            revealToken={reveal}
+            onClearReveal={() => setReveal(null)}
+            onChanged={(patch) =>
+              setPeers((list) => list.map((p) => (p.id === selected.id ? { ...p, ...patch } : p)))
+            }
+            onRevealNew={(t) => setReveal(t)}
+            onDeleted={() => {
+              const next = peers.filter((p) => p.id !== selected.id);
+              setPeers(next);
+              setReveal(null);
+              setSel(next[0] ? { mode: 'view', id: next[0].id } : { mode: 'create' });
+            }}
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center p-10 text-center text-sm text-muted-foreground">
+            Select a peer, or add a new one.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CreatePeer({ onCreated }: { onCreated: (peer: Peer, inboundToken: string) => void }) {
+  const toast = useToast();
+  const [displayName, setName] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [outboundToken, setOutbound] = useState('');
+  const [pending, setPending] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!displayName.trim() || !baseUrl.trim() || !outboundToken.trim()) {
+      toast.error('Name, base URL, and the peer&apos;s token are all required');
+      return;
+    }
+    setPending(true);
+    const res = await fetch('/api/peers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ displayName, baseUrl, outboundToken }),
+    });
+    setPending(false);
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      toast.error(j.error ?? `Could not add peer (${res.status})`);
+      return;
+    }
+    const { peer, inboundToken } = await res.json();
+    toast.success(`Added ${peer.displayName}`);
+    onCreated(peer, inboundToken);
+  };
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-4 p-6">
+      <div className="flex items-center gap-2">
+        <Network className="size-5 text-primary" aria-hidden />
+        <h2 className="text-lg font-semibold">Connect a Mantle</h2>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Add another person&apos;s Mantle as a peer. Paste the token <em>they</em> gave you (used to
+        call them); we&apos;ll mint a token for <em>you</em> to give them back.
+      </p>
+      <form onSubmit={submit} className="space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="peer-name">Display name</Label>
+          <Input id="peer-name" value={displayName} onChange={(e) => setName(e.target.value)} placeholder="e.g. Her Mantle" autoFocus />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="peer-url">Base URL</Label>
+          <Input id="peer-url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://her-mantle.example.com" />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="peer-token">Their token (outbound)</Label>
+          <Input id="peer-token" value={outboundToken} onChange={(e) => setOutbound(e.target.value)} placeholder="mtlpeer_…" />
+          <p className="text-xs text-muted-foreground">Sealed at rest. Sent as the bearer when you query them.</p>
+        </div>
+        <div className="flex justify-end border-t border-border pt-3">
+          <SubmitButton pending={pending}>Add peer</SubmitButton>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function PeerDetail({
+  peer,
+  revealToken,
+  onClearReveal,
+  onChanged,
+  onRevealNew,
+  onDeleted,
+}: {
+  peer: Peer;
+  revealToken: string | null;
+  onClearReveal: () => void;
+  onChanged: (patch: Partial<Peer>) => void;
+  onRevealNew: (token: string) => void;
+  onDeleted: () => void;
+}) {
+  const toast = useToast();
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [shares, setShares] = useState<Share[]>([]);
+  const [q, setQ] = useState('');
+  const [hits, setHits] = useState<NodeHit[]>([]);
+  const [newOutbound, setNewOutbound] = useState('');
+
+  const loadShares = useCallback(async () => {
+    const res = await fetch(`/api/peers/${peer.id}/shares`);
+    if (res.ok) setShares((await res.json()).shares ?? []);
+  }, [peer.id]);
+
+  useEffect(() => { void loadShares(); }, [loadShares]);
+
+  // Debounced node search for the grant picker.
+  useEffect(() => {
+    if (!q.trim()) { setHits([]); return; }
+    const h = setTimeout(async () => {
+      const res = await fetch(`/api/peers/nodes?q=${encodeURIComponent(q.trim())}`);
+      if (res.ok) setHits((await res.json()).nodes ?? []);
+    }, 300);
+    return () => clearTimeout(h);
+  }, [q]);
+
+  const toggleEnabled = async (enabled: boolean) => {
+    const res = await fetch(`/api/peers/${peer.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    if (!res.ok) return toast.error('Could not update');
+    onChanged({ enabled, status: enabled ? 'active' : 'revoked' });
+  };
+
+  const rotate = async () => {
+    const res = await fetch(`/api/peers/${peer.id}/rotate`, { method: 'POST' });
+    if (!res.ok) return toast.error('Could not rotate');
+    onRevealNew((await res.json()).inboundToken);
+    toast.success('New inbound token minted');
+  };
+
+  const saveOutbound = async () => {
+    if (!newOutbound.trim()) return;
+    const res = await fetch(`/api/peers/${peer.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ outboundToken: newOutbound.trim() }),
+    });
+    if (!res.ok) return toast.error('Could not update token');
+    setNewOutbound('');
+    toast.success('Outbound token updated');
+  };
+
+  const grant = async (nodeId: string) => {
+    const res = await fetch(`/api/peers/${peer.id}/shares`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nodeId }),
+    });
+    if (!res.ok) return toast.error('Could not grant');
+    setQ('');
+    setHits([]);
+    await loadShares();
+  };
+
+  const revoke = async (nodeId: string) => {
+    const res = await fetch(`/api/peers/${peer.id}/shares?nodeId=${nodeId}`, { method: 'DELETE' });
+    if (!res.ok) return toast.error('Could not revoke');
+    await loadShares();
+  };
+
+  const confirmDelete = async () => {
+    setDeleteOpen(false);
+    const res = await fetch(`/api/peers/${peer.id}`, { method: 'DELETE' });
+    if (!res.ok) return toast.error('Could not delete peer');
+    toast.success(`Removed ${peer.displayName}`);
+    onDeleted();
+  };
+
+  const grantedIds = new Set(shares.map((s) => s.nodeId));
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-5 p-6">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="truncate text-xl font-semibold">{peer.displayName}</h2>
+          <p className="truncate text-sm text-muted-foreground">{peer.baseUrl}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Enabled</span>
+            <Switch checked={peer.enabled} onCheckedChange={toggleEnabled} />
+          </div>
+          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteOpen(true)}>
+            <Trash2 /> Delete
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 rounded-md border border-border bg-card p-3 text-xs text-muted-foreground">
+        <div>Status: <span className="font-medium text-foreground">{peer.enabled ? peer.status : 'disabled'}</span></div>
+        <div>Added: {formatDateTime(peer.createdAt)}</div>
+        <div>Last called them: {peer.lastContactedAt ? formatDateTime(peer.lastContactedAt) : '—'}</div>
+        <div>Last seen from them: {peer.lastSeenAt ? formatDateTime(peer.lastSeenAt) : '—'}</div>
+      </div>
+
+      {revealToken && <TokenReveal token={revealToken} onDone={onClearReveal} />}
+
+      {/* Tokens */}
+      <div className="space-y-3 rounded-md border border-border p-3">
+        <div className="flex items-center justify-between">
+          <p className="inline-flex items-center gap-2 text-sm font-medium"><KeyRound className="size-4" /> Tokens</p>
+          <Button type="button" size="sm" variant="outline" onClick={rotate}>
+            <RefreshCw /> Rotate inbound
+          </Button>
+        </div>
+        <div className="flex items-center gap-2">
+          <Input value={newOutbound} onChange={(e) => setNewOutbound(e.target.value)} placeholder="Update their token (outbound)…" />
+          <Button type="button" size="sm" variant="outline" onClick={saveOutbound} disabled={!newOutbound.trim()}>
+            Save
+          </Button>
+        </div>
+      </div>
+
+      {/* Grants */}
+      <div className="space-y-3">
+        <p className="text-sm font-medium">Shared with {peer.displayName}</p>
+        <p className="text-xs text-muted-foreground">
+          Only these nodes are visible to this peer. Everything else stays private.
+        </p>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a note, file, contact… to share" className="pl-8" />
+        </div>
+        {hits.length > 0 && (
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {hits.map((h) => (
+              <li key={h.id} className="flex items-center gap-2 px-3 py-2 text-sm">
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">{h.type}</span>
+                <span className="min-w-0 flex-1 truncate">{h.title}</span>
+                {grantedIds.has(h.id) ? (
+                  <span className="text-xs text-muted-foreground">shared</span>
+                ) : (
+                  <Button type="button" size="sm" variant="outline" onClick={() => grant(h.id)}>Share</Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {shares.length === 0 ? (
+          <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-6 text-center text-xs text-muted-foreground">
+            Nothing shared yet — this peer can read nothing.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {shares.map((s) => (
+              <li key={s.id} className="flex items-center gap-2 px-3 py-2 text-sm">
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">{s.nodeType}</span>
+                <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                <Button type="button" size="icon" variant="ghost" className="size-7 text-muted-foreground hover:text-destructive" onClick={() => revoke(s.nodeId)} aria-label="Revoke">
+                  <X className="size-4" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove “{peer.displayName}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Both tokens stop working immediately and all grants are dropped. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={confirmDelete}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}

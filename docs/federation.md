@@ -97,5 +97,15 @@ Her Mantle (asking)                         Your Mantle (answering)
   the `tools` table on the next `apps/agent` boot; grant `peer_query` /
   `peer_node_get` / `peer_list` to a responder at `/settings/agents` for Saskia
   to use them.
-- **Phase 5 — UI.** `/settings/peers` master-detail: add a peer, exchange
-  tokens, manage `peer_shares`, enable/revoke.
+- **Phase 5 — UI (DONE, 2026-05-29).** `/settings/peers` master-detail (sidebar
+  nav entry added): add a peer (paste their token → mint + reveal-once yours),
+  enable/disable, rotate inbound token, update outbound token, delete; and a
+  search-and-grant picker over your nodes (excludes branches/secrets/peer
+  records) with revoke. Backed by `/api/peers` (+ `/[id]`, `/[id]/rotate`,
+  `/[id]/shares`, `/nodes`). Mirrors the `/settings/keys` reveal-once pattern.
+
+**Status: feature complete.** Two sovereign Mantles can now register each other,
+exchange tokens via the UI, grant specific nodes, and query across the border —
+Saskia (or Claude) on one side, the scoped HTTP API on the other, every read
+traced. Remaining nice-to-haves: page-body federation (Phase 3 note), a
+handshake/pairing flow to auto-exchange tokens, and per-peer rate limiting.
