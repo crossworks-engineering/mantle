@@ -99,7 +99,7 @@ export function EntitiesClient({ initial }: { initial: Candidate[] }) {
     );
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-6">
+    <div className="mx-auto max-w-7xl space-y-6 p-6">
       <div className="space-y-1.5">
         <div className="flex items-center gap-2">
           <Network className="size-5 text-primary" aria-hidden />
