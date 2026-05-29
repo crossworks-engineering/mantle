@@ -23,6 +23,7 @@
     "test:fire-heartbeat": "tsx --env-file-if-exists=./.env.local scripts/test-fire-heartbeat.ts",
     "extract:backfill": "tsx --env-file-if-exists=./.env.local scripts/extract-backfill.ts",
     "relations:backfill": "tsx --env-file-if-exists=./.env.local scripts/relations-backfill.ts",
+    "entities:dedupe": "tsx --env-file-if-exists=./.env.local scripts/entities-dedupe.ts",
     "backfill:block-ids": "tsx --env-file-if-exists=./.env.local scripts/backfill-block-ids.ts",
     "dedupe:edges": "tsx --env-file-if-exists=./.env.local scripts/dedupe-edges.ts",
     "regenerate:digests": "tsx --env-file-if-exists=./.env.local scripts/regenerate-digests.ts",

@@ -121,6 +121,17 @@ export {
   type PdfPasswordRow,
 } from './pdf-passwords';
 
+export {
+  mergeEntities,
+  findDuplicateCandidates,
+  normaliseOrgName,
+  isEmailName,
+  isPhoneName,
+  isNameSubset,
+  type MergeTier,
+  type MergeCandidate,
+} from './entity-dedup';
+
 export { docToText } from './doc-to-text';
 
 export { markdownToDoc } from './markdown-to-doc';

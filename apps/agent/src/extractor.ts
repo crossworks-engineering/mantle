@@ -67,6 +67,7 @@ import {
   mentionRefs,
   getPdfPasswordCandidates,
   markPdfPasswordUsed,
+  normaliseOrgName,
 } from '@mantle/content';
 import { isLikelyDifferentPerson } from './person-names';
 
@@ -811,6 +812,33 @@ async function reconcileEntity(
     }
   } catch {
     // embedding failure shouldn't block entity creation.
+  }
+
+  // 3b. Org legal-suffix match — "Acme (Pty) Ltd" ↔ existing "Acme". Last
+  // chance before creating: only orgs, only when the legal-suffix-stripped
+  // names are equal (the same conservative rule the dedup pass uses), so a new
+  // legal-form variant resolves to the canonical instead of fragmenting the
+  // graph. Folds the variant in as an alias for instant future matches.
+  if (mention.kind === 'org') {
+    const norm = normaliseOrgName(trimmed);
+    if (norm) {
+      const orgs = await db
+        .select()
+        .from(entities)
+        .where(and(eq(entities.ownerId, ownerId), eq(entities.kind, 'org')));
+      const hit = orgs.find(
+        (o) => normaliseOrgName(o.name) === norm && o.name.toLowerCase() !== trimmed.toLowerCase(),
+      );
+      if (hit) {
+        if (!hit.aliases.includes(trimmed)) {
+          await db
+            .update(entities)
+            .set({ aliases: [...hit.aliases, trimmed], updatedAt: new Date() })
+            .where(eq(entities.id, hit.id));
+        }
+        return hit;
+      }
+    }
   }
 
   // 4. No match — create new entity (embed its name + kind for future matches).
