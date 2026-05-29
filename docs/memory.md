@@ -74,7 +74,7 @@ flowchart TD
     N --> TR{{"pg_notify('node_ingested', node_id)<br/>migration 0018, AFTER INSERT"}}
 
     %% Extractor agent
-    TR --> EX["extractor agent<br/>(apps/agent listens, debounces 2s)"]:::agent
+    TR --> EX["extractor agent<br/>(apps/agent listens → durable pg-boss queue,<br/>concurrency-capped + retry/backoff)"]:::agent
     EX -- "secret type:<br/>title + description only" --> EX
     EX --> SUM["LLM call:<br/>summary + facts + entities JSON<br/>(model from agents row)"]:::agent
     SUM --> EMB["embed summary →<br/>vector(1536)"]:::agent

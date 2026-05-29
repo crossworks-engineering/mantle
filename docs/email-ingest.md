@@ -207,10 +207,13 @@ Identical to the file / note path:
 
 1. `db.transaction` commits `nodes` (type `email`) + `emails` + `email_attachments`.
 2. AFTER INSERT trigger from migration 0018 fires `pg_notify('node_ingested', node.id)`.
-3. Extractor in `apps/agent/src/extractor.ts` debounces 2s, then runs the
-   standard cascade: read body (joins `emails` table for subject +
-   `body_text` — `bodyHtml` is ignored) → LLM summary + entities + embedding
-   → fact extraction → entity reconciliation.
+3. The agent's `node_ingested` listener enqueues the node on the durable
+   `mantle.extract` pg-boss queue (`apps/agent/src/extract-queue.ts`); a
+   concurrency-capped worker then runs `extractNode` — the standard cascade:
+   read body (joins `emails` table for subject + `body_text` — `bodyHtml` is
+   ignored) → LLM summary + entities + embedding → fact extraction → entity
+   reconciliation. A burst (e.g. a Gmail sync) drains at the capped rate with
+   retry/backoff instead of firing every extraction at once.
 4. Attachments are real `file` nodes under
    `inbox.<account>.attachments`, linked back via
    `email_attachments.file_node_id`. They extract through the same path as
