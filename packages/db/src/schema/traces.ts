@@ -27,6 +27,10 @@ export const traceKind = pgEnum('trace_kind', [
   // record to heartbeat_fires only, no trace row). subject_kind
   // = 'heartbeat', subject_id = heartbeat row id.
   'heartbeat_fire',
+  // One per inbound cross-Mantle read: a federated peer querying our
+  // federation API. subject_kind = 'mantle_peer', subject_id = peer row id.
+  // See docs/federation.md.
+  'federation_request',
   'manual',
 ]);
 

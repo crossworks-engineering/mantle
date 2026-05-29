@@ -23,6 +23,7 @@ export type TraceKind =
   | 'photo_ingest'
   | 'content_ingest'
   | 'heartbeat_fire'
+  | 'federation_request'
   | 'manual';
 
 export type TraceStepKind =

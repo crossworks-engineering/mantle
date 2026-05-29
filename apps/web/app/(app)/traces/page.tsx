@@ -17,6 +17,7 @@ const KIND_LABEL: Record<string, string> = {
   content_ingest: 'Ingest',
   photo_ingest: 'Photo',
   heartbeat_fire: 'Heartbeat',
+  federation_request: 'Federation',
   manual: 'Manual',
 };
 
@@ -28,6 +29,7 @@ const KIND_OPTIONS: Array<[string, string]> = [
   ['reflector_run', 'Reflector'],
   ['content_ingest', 'Ingest'],
   ['photo_ingest', 'Photo'],
+  ['federation_request', 'Federation'],
 ];
 
 const STATUS_OPTIONS: Array<[string, string]> = [

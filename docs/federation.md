@@ -73,8 +73,18 @@ Her Mantle (asking)                         Your Mantle (answering)
   active grants ∩ request filters, no unscoped variant exists). Pure token
   helpers in `peers-crypto.ts` with 9 unit tests; full create→verify→grant→
   query→revoke→delete path verified live against the dev DB.
-- **Phase 3 — HTTP federation API.** `POST /api/federation/query` +
-  `/api/federation/node/[id]`, bearer-verified, `federation_request` trace kind.
+- **Phase 3 — HTTP federation API (DONE, 2026-05-29).** `POST
+  /api/federation/query` + `GET /api/federation/node/[id]`, bearer-verified via
+  `authenticatePeer` (the `/api/federation` prefix is a PUBLIC_PATH — it gates
+  on the peer token, not the owner cookie). New `federation_request` trace kind
+  (migration 0053) — every cross-Mantle read opens one under the answering
+  owner, visible on `/traces`. Ungranted node → 404 (indistinguishable from
+  not-found, so a peer can't probe). Verified live over loopback: auth (401 on
+  no/wrong token), scope (type filter), node fetch, 404, and traces all
+  correct. *Known refinement:* a `page`'s body lives in the `pages` sidecar, so
+  `getNodeForPeer` currently returns the node's `data` (summary/tags) without
+  the rich page body — fine for files/notes; page-body federation is a later
+  pass.
 - **Phase 4 — outbound tools.** `peer_query` / `peer_list` builtins (the
   researcher/Remy delegation pattern) + MCP equivalents.
 - **Phase 5 — UI.** `/settings/peers` master-detail: add a peer, exchange

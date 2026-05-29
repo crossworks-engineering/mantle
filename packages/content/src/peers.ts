@@ -428,6 +428,63 @@ export async function queryForPeer(peerId: string, opts: PeerQueryOpts = {}): Pr
   }));
 }
 
+export type PeerNodeDetail = {
+  id: string;
+  type: string;
+  title: string;
+  summary: string | null;
+  tags: string[];
+  data: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/**
+ * Fetch one node's full content for a peer — **only** if it has an active
+ * grant. Returns null when ungranted (indistinguishable from not-found, so a
+ * peer can't probe for the existence of nodes it wasn't given). The data bag is
+ * returned verbatim so the peer gets the body/content it was granted; secrets
+ * are never node-data anyway, and ungranted nodes never reach here.
+ */
+export async function getNodeForPeer(
+  peerId: string,
+  nodeId: string,
+): Promise<PeerNodeDetail | null> {
+  const [row] = await db
+    .select({
+      id: nodes.id,
+      type: nodes.type,
+      title: nodes.title,
+      tags: nodes.tags,
+      data: nodes.data,
+      createdAt: nodes.createdAt,
+      updatedAt: nodes.updatedAt,
+    })
+    .from(peerShares)
+    .innerJoin(nodes, eq(nodes.id, peerShares.nodeId))
+    .where(
+      and(
+        eq(peerShares.peerId, peerId),
+        eq(peerShares.nodeId, nodeId),
+        isNull(peerShares.revokedAt),
+      ),
+    )
+    .limit(1);
+  if (!row) return null;
+  const data = (row.data ?? {}) as Record<string, unknown>;
+  const summary = typeof data.summary === 'string' ? data.summary : null;
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    summary,
+    tags: row.tags ?? [],
+    data,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
 /** Mark that we just successfully called this peer. */
 export async function markPeerContacted(ownerId: string, id: string): Promise<void> {
   await db

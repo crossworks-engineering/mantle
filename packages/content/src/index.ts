@@ -92,6 +92,7 @@ export {
   revokePeerShare,
   listPeerShares,
   queryForPeer,
+  getNodeForPeer,
   markPeerContacted,
   hashToken,
   mintInboundToken,
@@ -101,6 +102,7 @@ export {
   type PeerShareRow,
   type PeerQueryOpts,
   type PeerQueryHit,
+  type PeerNodeDetail,
 } from './peers';
 
 export { docToText } from './doc-to-text';
