@@ -3303,6 +3303,18 @@
   margin-block: 0;
 }
 
+/* Tighter heading-to-body gap. Typography leaves a lot of room below a heading
+   (h1 ~0.89em/32px, h2 ~1em/24px, h3 ~0.6em/12px); trim the bottom margin so a
+   heading sits closer to the text it introduces. Top margins (section
+   separation above a heading) are left as-is. em-based, so it scales per
+   level — h1 0.5em→18px, h2 0.5em→12px, h3 0.4em→8px, h4 0.4em→~6px. */
+.prose :is(h1, h2) {
+  margin-bottom: 0.5em;
+}
+.prose :is(h3, h4, h5, h6) {
+  margin-bottom: 0.4em;
+}
+
 /* Pages to-do lists: no bullets, themed checkbox aligned to the first line;
    completed items dim + strike. */
 .ProseMirror ul[data-type='taskList'] {
