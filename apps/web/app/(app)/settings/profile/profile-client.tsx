@@ -20,26 +20,42 @@ import { Compass } from 'lucide-react';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
 import { AvatarPicker, type AvatarValue } from '@/components/avatar-picker';
 import type { ProfilePreferences } from '@mantle/content';
+
+/** Sentinel for "no pinned responder" — Radix Select can't use an empty-string
+ *  value, so we map this to '' before submitting. */
+const REMINDER_AUTO = '__auto__';
 
 export function ProfileClient({
   defaults,
   defaultsFallback,
   samplePreview,
   userId,
+  reminderAgents,
   action,
 }: {
   defaults: ProfilePreferences;
   defaultsFallback: ProfilePreferences;
   samplePreview: string;
   userId: string;
+  reminderAgents: { slug: string; name: string }[];
   action: (formData: FormData) => Promise<void>;
 }) {
   const toast = useToast();
   const [tz, setTz] = useState(defaults.timezone);
   const [loc, setLoc] = useState(defaults.locale);
+  const [reminderAgent, setReminderAgent] = useState(
+    defaults.reminderAgentSlug ?? REMINDER_AUTO,
+  );
   const [avatar, setAvatar] = useState<AvatarValue | null>(
     defaults.avatarStyle ? { style: defaults.avatarStyle, seed: defaults.avatarSeed || userId } : null,
   );
@@ -159,6 +175,35 @@ export function ProfileClient({
             <code className="font-mono">5/19/2026, 5:35 PM</code>.
           </p>
         </div>
+      </section>
+
+      <section className="space-y-1.5">
+        <Label htmlFor="reminderAgent">Event reminders from</Label>
+        <Select value={reminderAgent} onValueChange={setReminderAgent}>
+          <SelectTrigger id="reminderAgent">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={REMINDER_AUTO}>
+              Most recent chat (default)
+            </SelectItem>
+            {reminderAgents.map((a) => (
+              <SelectItem key={a.slug} value={a.slug}>
+                {a.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <input
+          type="hidden"
+          name="reminderAgentSlug"
+          value={reminderAgent === REMINDER_AUTO ? '' : reminderAgent}
+        />
+        <p className="text-xs text-muted-foreground">
+          Which assistant&apos;s Telegram bot sends event reminders. Default
+          uses whichever bot you last messaged; pin one (e.g. Saskia) so
+          reminders always come from the same persona.
+        </p>
       </section>
 
       {error && (

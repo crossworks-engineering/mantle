@@ -34,6 +34,12 @@ export type ProfilePreferences = {
   /** Seed for the avatar; the UI defaults it to the user id when unset so an
    *  avatar still renders. */
   avatarSeed?: string;
+  /** Slug of the responder agent whose Telegram bot delivers event reminders.
+   *  Unset → the reminder worker falls back to the most-recently-active allowed
+   *  DM (whichever bot you last messaged). Set it to pin reminders to one
+   *  persona, e.g. 'telegram-default' (Saskia), so they don't come from
+   *  whichever bot happened to be most recent. */
+  reminderAgentSlug?: string;
 };
 
 export const DEFAULT_PREFERENCES: ProfilePreferences = {
@@ -83,6 +89,10 @@ export async function loadProfilePreferences(
     avatarSeed:
       typeof prefs.avatarSeed === 'string' && prefs.avatarSeed.length > 0
         ? prefs.avatarSeed
+        : undefined,
+    reminderAgentSlug:
+      typeof prefs.reminderAgentSlug === 'string' && prefs.reminderAgentSlug.length > 0
+        ? prefs.reminderAgentSlug
         : undefined,
   };
 }
@@ -153,6 +163,7 @@ export async function updateProfilePreferences(
     locale: merged.locale ?? DEFAULT_PREFERENCES.locale,
     avatarStyle: merged.avatarStyle || undefined,
     avatarSeed: merged.avatarSeed || undefined,
+    reminderAgentSlug: merged.reminderAgentSlug || undefined,
   };
 }
 

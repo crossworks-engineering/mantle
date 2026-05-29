@@ -20,6 +20,8 @@ export async function updatePreferencesAction(formData: FormData): Promise<void>
   // treats empty as "unset".
   const avatarStyle = String(formData.get('avatarStyle') ?? '').trim();
   const avatarSeed = String(formData.get('avatarSeed') ?? '').trim();
+  // Empty string = "most recent chat" (unset); the loader treats '' as undefined.
+  const reminderAgentSlug = String(formData.get('reminderAgentSlug') ?? '').trim();
   if (!timezone && !locale) {
     throw new Error('Set timezone or locale (or both) before saving.');
   }
@@ -28,6 +30,7 @@ export async function updatePreferencesAction(formData: FormData): Promise<void>
     ...(locale ? { locale } : {}),
     avatarStyle,
     avatarSeed,
+    reminderAgentSlug,
   });
   // Lots of pages render dates — refresh the cache so the new
   // timezone takes effect immediately on next nav rather than after

@@ -1,9 +1,11 @@
+import { and, eq } from 'drizzle-orm';
 import { requireOwner } from '@/lib/auth';
 import {
   DEFAULT_PREFERENCES,
   loadProfilePreferences,
   formatInProfile,
 } from '@mantle/content';
+import { db, agents, telegramAccounts } from '@mantle/db';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { ProfileClient } from './profile-client';
 import { updatePreferencesAction } from './actions';
@@ -23,6 +25,20 @@ import { updatePreferencesAction } from './actions';
 export default async function ProfilePage() {
   const user = await requireOwner();
   const prefs = await loadProfilePreferences(user.id);
+  // Responders that can actually deliver a reminder — an enabled bot paired to
+  // an enabled responder agent. The user picks one as the event-reminder sender.
+  const reminderAgents = await db
+    .selectDistinct({ slug: agents.slug, name: agents.name })
+    .from(agents)
+    .innerJoin(telegramAccounts, eq(telegramAccounts.responderAgentId, agents.id))
+    .where(
+      and(
+        eq(agents.ownerId, user.id),
+        eq(agents.enabled, true),
+        eq(telegramAccounts.enabled, true),
+      ),
+    )
+    .orderBy(agents.name);
   // Render a sample "this is what now() looks like" so the operator
   // sees the effect of the chosen settings before saving anything
   // else that depends on them.
@@ -40,6 +56,7 @@ export default async function ProfilePage() {
         defaultsFallback={DEFAULT_PREFERENCES}
         samplePreview={samplePreview}
         userId={user.id}
+        reminderAgents={reminderAgents}
         action={updatePreferencesAction}
       />
     </div>

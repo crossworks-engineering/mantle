@@ -19,11 +19,13 @@
 import { and, desc, eq } from 'drizzle-orm';
 import {
   db,
+  agents,
   telegramAccounts,
   telegramChats,
   type TelegramAccount,
 } from '@mantle/db';
 import { sendMessage } from '@mantle/telegram';
+import { loadProfilePreferences } from '@mantle/content';
 import { maybeSweep } from '@mantle/tools';
 import {
   listDueReminders,
@@ -35,27 +37,59 @@ import {
 
 const TICK_MS = 30_000;
 
-async function findReminderChat(ownerId: string): Promise<{
-  account: TelegramAccount;
-  telegramChatId: string;
-} | null> {
-  const [row] = await db
-    .select({
-      telegramChatId: telegramChats.telegramChatId,
-      account: telegramAccounts,
-    })
-    .from(telegramChats)
-    .innerJoin(telegramAccounts, eq(telegramAccounts.id, telegramChats.accountId))
-    .where(
-      and(
-        eq(telegramChats.userId, ownerId),
-        eq(telegramChats.chatType, 'private'),
-        eq(telegramChats.allowlistStatus, 'allowed'),
-        eq(telegramAccounts.enabled, true),
-      ),
-    )
-    .orderBy(desc(telegramChats.lastMessageAt))
-    .limit(1);
+type ReminderTarget = { account: TelegramAccount; telegramChatId: string };
+
+/** The owner's allowed private DM, ordered most-recent-first. When
+ *  `preferredAgentSlug` is set, restrict to the bot whose responder is that
+ *  agent (so reminders come from a chosen persona, e.g. Saskia). */
+async function findReminderChat(
+  ownerId: string,
+  preferredAgentSlug?: string,
+): Promise<ReminderTarget | null> {
+  const query = (responderAgentId?: string) =>
+    db
+      .select({
+        telegramChatId: telegramChats.telegramChatId,
+        account: telegramAccounts,
+      })
+      .from(telegramChats)
+      .innerJoin(telegramAccounts, eq(telegramAccounts.id, telegramChats.accountId))
+      .where(
+        and(
+          eq(telegramChats.userId, ownerId),
+          eq(telegramChats.chatType, 'private'),
+          eq(telegramChats.allowlistStatus, 'allowed'),
+          eq(telegramAccounts.enabled, true),
+          ...(responderAgentId
+            ? [eq(telegramAccounts.responderAgentId, responderAgentId)]
+            : []),
+        ),
+      )
+      .orderBy(desc(telegramChats.lastMessageAt))
+      .limit(1);
+
+  // Preferred persona: resolve its agent id, then its bot's allowed DM.
+  if (preferredAgentSlug) {
+    const [agent] = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, preferredAgentSlug)))
+      .limit(1);
+    if (agent) {
+      const [row] = await query(agent.id);
+      if (row) return { account: row.account, telegramChatId: row.telegramChatId };
+      console.warn(
+        `[events-reminders] reminder agent '${preferredAgentSlug}' has no allowed DM; falling back to the most-recent chat.`,
+      );
+    } else {
+      console.warn(
+        `[events-reminders] reminder agent '${preferredAgentSlug}' not found; falling back to the most-recent chat.`,
+      );
+    }
+  }
+
+  // Fallback: most-recently-active allowed private chat, any enabled bot.
+  const [row] = await query();
   if (!row) return null;
   return { account: row.account, telegramChatId: row.telegramChatId };
 }
@@ -93,7 +127,8 @@ async function tick(): Promise<void> {
   for (const ownerId of owners) {
     const due = await listDueReminders(ownerId, 50);
     if (due.length === 0) continue;
-    const target = await findReminderChat(ownerId);
+    const prefs = await loadProfilePreferences(ownerId);
+    const target = await findReminderChat(ownerId, prefs.reminderAgentSlug);
     if (!target) {
       console.warn(
         `[events-reminders] ${due.length} reminders due for owner ${ownerId}, but no allowed Telegram DM. Skipping.`,
