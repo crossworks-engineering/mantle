@@ -539,10 +539,15 @@ const MAX_OCR_PAGES = 10;
 async function ocrIngestPdfNode(
   node: typeof nodes.$inferSelect,
   ownerId: string,
-): Promise<{ text: string | null; encrypted: boolean }> {
+): Promise<{ text: string | null; encrypted: boolean; bytesMissing: boolean }> {
   // Bytes from disk (uploads) or object storage (email PDF attachments).
   const loaded = await loadFileBytes(node);
-  if (!loaded) return { text: null, encrypted: false };
+  // bytesMissing = we couldn't retrieve the file at all (no disk path, and the
+  // object isn't in storage — e.g. an email attachment indexed by metadata
+  // whose body was never persisted). Distinct from "we have it but it's an
+  // unreadable scan": the caller records `bytes_unavailable`, not the
+  // misleading `no_text_layer`, so the operator knows to RE-FETCH not re-OCR.
+  if (!loaded) return { text: null, encrypted: false, bytesMissing: true };
   const filename = loaded.filename;
 
   return await startTrace(
@@ -593,7 +598,7 @@ async function ocrIngestPdfNode(
             .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
           h.setMeta({ chars: text.length, native: true });
         });
-        return { text, encrypted: false };
+        return { text, encrypted: false, bytesMissing: false };
       }
 
       // 2) Fall back to rasterize → per-page image OCR.
@@ -614,7 +619,7 @@ async function ocrIngestPdfNode(
           }
         },
       );
-      if (pages.length === 0) return { text: null, encrypted };
+      if (pages.length === 0) return { text: null, encrypted, bytesMissing: false };
 
       const parts: string[] = [];
       let model: string | null = null;
@@ -649,7 +654,7 @@ async function ocrIngestPdfNode(
       }
 
       const text = cleanText(parts.join('\n\n').trim());
-      if (!text) return { text: null, encrypted }; // worker unavailable / blank scan / encrypted
+      if (!text) return { text: null, encrypted, bytesMissing: false }; // worker unavailable / blank scan / encrypted
 
       await step({ name: 'persist_vision_text', kind: 'db_write' }, async (h) => {
         await db
@@ -661,7 +666,7 @@ async function ocrIngestPdfNode(
           .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
         h.setMeta({ chars: text.length, pages: pages.length });
       });
-      return { text, encrypted: false };
+      return { text, encrypted: false, bytesMissing: false };
     },
   );
 }
@@ -1203,6 +1208,27 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
         });
         return;
       }
+    } else if (ocr.bytesMissing) {
+      // We never had the file's bytes (no disk path + not in object storage —
+      // e.g. an email attachment indexed by metadata whose body was never
+      // fetched). Distinct from a bad scan: the fix is to RE-FETCH the file,
+      // not to OCR it. Honest disposition so the operator can tell the two apart.
+      await recordSkippedTrace({
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'bytes_unavailable',
+        details: {
+          worker_slug: worker.slug,
+          node_type: node.type,
+          title: node.title,
+          filename: existingData.filename,
+          sha256: typeof existingData.sha256 === 'string' ? existingData.sha256 : undefined,
+          hint: "The file's bytes aren't in object storage (metadata-only node — e.g. an email attachment whose body was never fetched). Re-fetch the source to extract it; OCR can't help.",
+        },
+      });
+      return;
     } else {
       // No text layer AND OCR produced nothing (no/unwired vision worker, an
       // unrenderable PDF, or a blank scan). Record an honest skip instead of a

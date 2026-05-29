@@ -259,6 +259,11 @@ reason. The current catalog (extend as new pipelines land):
   unrenderable PDF, or a blank scan). Replaces the old silent failure where the
   filename fallback (≥20 chars) slipped past `body_too_short` and indexed a
   filename-only summary as `success`.
+- `bytes_unavailable` — the file's bytes couldn't be retrieved at all: no disk
+  path AND the object isn't in storage (a metadata-only node — e.g. an email
+  attachment indexed from headers whose body was never fetched). Distinct from
+  `no_text_layer` (we HAVE the file but it's an unreadable scan): the fix is to
+  re-fetch the source, not to OCR. `details` carries the sha256.
 - `encrypted_pdf` — a password-protected PDF. The reader (native document
   worker + raster fallback) reports "password protected" / "No password given",
   so we record this distinct skip rather than the misleading `no_text_layer` —
