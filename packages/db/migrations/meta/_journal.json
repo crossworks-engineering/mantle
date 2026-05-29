@@ -365,6 +365,13 @@
       "when": 1779402300000,
       "tag": "0051_ai_worker_kind_document",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1779402400000,
+      "tag": "0052_mantle_federation",
+      "breakpoints": true
     }
   ]
 }

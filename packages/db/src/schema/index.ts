@@ -6,6 +6,8 @@ export * from './emails';
 export * from './secrets';
 export * from './pages';
 export * from './shares';
+export * from './mantle-peers';
+export * from './peer-shares';
 export * from './content-chunks';
 export * from './rules';
 export * from './filters';
