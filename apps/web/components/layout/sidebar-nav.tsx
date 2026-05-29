@@ -93,6 +93,7 @@ export function SidebarNav({
         { name: 'Skills', href: '/settings/skills', icon: Sparkles },
         { name: 'Heartbeats', href: '/settings/heartbeats', icon: HeartPulse },
         { name: 'Peers', href: '/settings/peers', icon: Network },
+        { name: 'PDF passwords', href: '/settings/pdf-passwords', icon: Lock },
         { name: 'Security', href: '/settings/security', icon: KeyRound },
       ],
     },

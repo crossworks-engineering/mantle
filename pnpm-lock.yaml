@@ -632,6 +632,9 @@ importers:
       pdf-to-png-converter:
         specifier: ^4.0.0
         version: 4.0.0
+      pdfjs-dist:
+        specifier: ^5.7.284
+        version: 5.7.284
       xlsx:
         specifier: ^0.18.5
         version: 0.18.5

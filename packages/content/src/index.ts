@@ -112,6 +112,15 @@ export {
   type PeerQueryResult,
 } from './peers-client';
 
+export {
+  listPdfPasswords,
+  createPdfPassword,
+  deletePdfPassword,
+  getPdfPasswordCandidates,
+  markPdfPasswordUsed,
+  type PdfPasswordRow,
+} from './pdf-passwords';
+
 export { docToText } from './doc-to-text';
 
 export { markdownToDoc } from './markdown-to-doc';

@@ -52,7 +52,7 @@ import {
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { embed } from '@mantle/embeddings';
-import { diskPathForFile, extOf, mimeForExt, parseDocumentBytes, INGESTABLE_EXTS, parserRouteForExt } from '@mantle/files';
+import { diskPathForFile, extOf, mimeForExt, parseDocumentBytes, INGESTABLE_EXTS, parserRouteForExt, extractPdfTextWithPassword } from '@mantle/files';
 import { contentKey, getContent } from '@mantle/storage';
 import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import {
@@ -62,7 +62,12 @@ import {
   runVisionWorker,
 } from '@mantle/agent-runtime';
 import { getChatAdapter, type ChatDispatcher, type ChatResult } from '@mantle/voice';
-import { chunkDocText, mentionRefs } from '@mantle/content';
+import {
+  chunkDocText,
+  mentionRefs,
+  getPdfPasswordCandidates,
+  markPdfPasswordUsed,
+} from '@mantle/content';
 import { isLikelyDifferentPerson } from './person-names';
 
 /** Types we will NEVER extract from, no matter what the agent config says.
@@ -247,6 +252,39 @@ async function loadFileBytes(
     }
   }
   return null;
+}
+
+/**
+ * Last resort for a password-protected PDF: try each vaulted password
+ * (most-recently-useful first) to open and read its text layer. Returns the
+ * text on the first that works (marking that password used), else null. Covers
+ * digital statements whose only barrier is the password; a scanned-AND-encrypted
+ * PDF still falls through (render+OCR-with-password is a later enhancement).
+ * Runs as an `unlock_pdf` step under the active extractor_run trace.
+ */
+async function tryUnlockPdf(
+  node: typeof nodes.$inferSelect,
+  ownerId: string,
+): Promise<string | null> {
+  const loaded = await loadFileBytes(node);
+  if (!loaded) return null;
+  const candidates = await getPdfPasswordCandidates(ownerId);
+  if (candidates.length === 0) return null;
+  return step(
+    { name: 'unlock_pdf', kind: 'compute', input: { candidates: candidates.length } },
+    async (h) => {
+      for (const c of candidates) {
+        const r = await extractPdfTextWithPassword(loaded.bytes, c.password);
+        if (r.ok && r.text.trim().length >= 20) {
+          await markPdfPasswordUsed(c.id);
+          h.setMeta({ unlocked: true, chars: r.text.length, password_id: c.id });
+          return cleanText(r.text);
+        }
+      }
+      h.setMeta({ unlocked: false, tried: candidates.length });
+      return null;
+    },
+  );
 }
 
 async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string> {
@@ -1103,24 +1141,29 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
     if (ocr.text && ocr.text.trim().length >= 20) {
       rawBody = ocr.text;
     } else if (ocr.encrypted) {
-      // Password-protected PDF — we genuinely can't read it without the
-      // password. An honest, distinct skip (not the misleading no_text_layer)
-      // so the operator knows it's LOCKED, not blank.
-      await recordSkippedTrace({
-        kind: 'extractor_run',
-        ownerId,
-        subjectId: node.id,
-        subjectKind: 'node',
-        disposition: 'encrypted_pdf',
-        details: {
-          worker_slug: worker.slug,
-          node_type: node.type,
-          title: node.title,
-          filename: existingData.filename,
-          hint: 'PDF is password-protected. Supply the password (a PDF-password vault is planned) or open + re-save it without a password, then re-upload.',
-        },
-      });
-      return;
+      // Password-protected PDF. Try the vaulted passwords before giving up.
+      const unlocked = await tryUnlockPdf(node, ownerId);
+      if (unlocked && unlocked.trim().length >= 20) {
+        rawBody = unlocked;
+      } else {
+        // No stored password opened it. Honest, distinct skip (not the
+        // misleading no_text_layer) so the operator knows it's LOCKED, not blank.
+        await recordSkippedTrace({
+          kind: 'extractor_run',
+          ownerId,
+          subjectId: node.id,
+          subjectKind: 'node',
+          disposition: 'encrypted_pdf',
+          details: {
+            worker_slug: worker.slug,
+            node_type: node.type,
+            title: node.title,
+            filename: existingData.filename,
+            hint: 'PDF is password-protected and no stored password opened it. Add the password at /settings/pdf-passwords, then re-extract.',
+          },
+        });
+        return;
+      }
     } else {
       // No text layer AND OCR produced nothing (no/unwired vision worker, an
       // unrenderable PDF, or a blank scan). Record an honest skip instead of a
