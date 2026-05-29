@@ -398,7 +398,7 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
     // filename-only fallback a prior (buggy) extract may have stored; using
     // it would shortcut the real parse below and re-index nothing. Forces a
     // re-parse from disk/storage on the next run.
-    if (typeof c === 'string' && c.trim().length > 0 && c.trim() !== node.title.trim()) return c;
+    if (typeof c === 'string' && c.trim().length > 0 && c.trim() !== node.title.trim()) return cleanText(c);
   }
   // file fallback: if no usable cached body, read the bytes (local disk for
   // uploads, OBJECT STORAGE for email attachments — see loadFileBytes) and
