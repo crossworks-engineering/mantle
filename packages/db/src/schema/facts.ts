@@ -33,6 +33,11 @@ export const factKind = pgEnum('fact_kind', [
  * Temporal window via valid_from / valid_to means superseded facts stay
  * queryable for audit + history. UPDATE flow: set valid_to on the old row,
  * INSERT a new row with superseded_by pointing at the old.
+ *
+ * On source-node DELETE (kind-aware, migration 0059): episodic + factual facts
+ * are document-specific and hard-delete with the source; semantic + preference
+ * facts are durable and kept — the source_node_id FK below is ON DELETE SET
+ * NULL, so they survive sourceless.
  */
 export const facts = pgTable(
   'facts',

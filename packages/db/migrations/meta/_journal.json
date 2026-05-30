@@ -414,6 +414,13 @@
       "when": 1779403000000,
       "tag": "0058_entity_edges_cleanup_trigger",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1779403100000,
+      "tag": "0059_kind_aware_fact_delete",
+      "breakpoints": true
     }
   ]
 }
