@@ -1558,14 +1558,20 @@ stack. `pg_restore --data-only` loads the latest backup. Insert your
 ## 16. Known sharp edges / future work
 
 In rough priority order. Items the audit completed have been removed
-from this list; what's here is genuinely still open.
+from this list; what's here is genuinely still open. The May 2026
+hardening pass closed a batch of these — see
+[`hardening-audit-2026-05.md`](./hardening-audit-2026-05.md) for what
+was fixed, accepted, or deliberately left (and why).
 
 **Deployment & operations**
-- **Production deploy untested on a real VPS.** `Dockerfile` (multi-
-  target) and `docker-compose.yml` exist; the dev path
-  (`docker-compose.dev.yml` + `pnpm dev`) is the only one exercised
-  end-to-end. First-deploy runbook + HTTPS-only cookie verification +
-  Caddy reverse proxy config still need to land.
+- **Production deploy untested on a real VPS.** All six daemons are now
+  containerized (`Dockerfile` targets web/agent/worker-email/-telegram/
+  -files/-events) and a one-shot `migrate` service runs schema
+  migrations before any app service starts, so the compose stack is no
+  longer a degraded stub. Still unexercised end-to-end on real hardware:
+  first-deploy runbook + HTTPS-only cookie verification + Caddy reverse
+  proxy config. (`apps/mcp` stays out of compose — stdio-only, would
+  crash-loop as a daemon until the HTTP transport lands.)
 - **No backup/restore drill.** `pg_dump` + MinIO `mc mirror` would
   work; nothing's scripted or rehearsed.
 - **No HSTS, no Content-Security-Policy** on web responses. Acceptable
