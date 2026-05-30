@@ -113,6 +113,7 @@ async function main() {
 
     const messages = buildChatMessages({
       model: worker.model,
+      provider: worker.provider,
       systemPrompt: REGEN_PROMPT,
       personaNotes: [],
       facts: [],

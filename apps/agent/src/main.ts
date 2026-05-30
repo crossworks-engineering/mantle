@@ -923,6 +923,7 @@ async function handleMessage(messageId: string): Promise<void> {
           async (h) => {
             const m = buildChatMessages({
               model: agent.model,
+              provider: agent.provider,
               systemPrompt: effectiveSystemPrompt,
               personaNotes,
               facts: relevantFacts,

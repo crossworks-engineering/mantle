@@ -81,10 +81,20 @@ type GeminiListModelsResponse = {
   }>;
 };
 
-/** Synthetic id Gemini calls don't have natural ids. We mint
- *  `gemini_call_<n>` so the runtime's tool-loop can pair the result. */
-function synthCallId(counter: number): string {
-  return `gemini_call_${counter}`;
+/** Monotonic across the whole process — NOT reset per response. Synthetic ids
+ *  must be unique across tool-loop iterations: a multi-iteration request
+ *  carries every prior assistant turn's tool calls, and `splitSystemAndContents`
+ *  builds a single `toolCallNameById` map over all of them. If two iterations
+ *  both minted `gemini_call_1`, the map would collide (last wins) and a tool
+ *  result would resolve to the WRONG function name on the wire. */
+let synthCallSeq = 0;
+
+/** Synthetic id — Gemini's functionCall has no natural id. We mint a
+ *  process-unique `gemini_call_<n>` so the runtime's tool-loop can pair the
+ *  result back, with no cross-iteration collisions. */
+function nextSynthCallId(): string {
+  synthCallSeq += 1;
+  return `gemini_call_${synthCallSeq}`;
 }
 
 /**
@@ -234,12 +244,10 @@ function extractGoogleToolCalls(
 ): ChatToolCall[] | undefined {
   if (!parts) return undefined;
   const calls: ChatToolCall[] = [];
-  let counter = 0;
   for (const p of parts) {
     if ('functionCall' in p) {
-      counter += 1;
       calls.push({
-        id: synthCallId(counter),
+        id: nextSynthCallId(),
         type: 'function',
         function: {
           name: p.functionCall.name,

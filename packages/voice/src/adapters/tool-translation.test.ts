@@ -391,6 +391,40 @@ describe('google-chat tool translation', () => {
     expect(result.toolCalls?.[0]?.id).toMatch(/^gemini_call_/);
   });
 
+  it('mints unique synthetic ids across separate responses (no cross-call collision)', async () => {
+    // A multi-iteration tool loop re-sends every prior assistant turn in one
+    // request, and splitSystemAndContents builds a single toolCallNameById map
+    // over all of them. If two iterations both minted `gemini_call_1`, the map
+    // would collide and a tool result would resolve to the wrong function name.
+    // So synthetic ids must be process-unique, not reset per response.
+    const oneFnResponse = {
+      candidates: [
+        { content: { parts: [{ functionCall: { name: 'note_create', args: {} } }] } },
+      ],
+      usageMetadata: {},
+      modelVersion: 'gemini-2.5-flash',
+    };
+    captureFetch(oneFnResponse);
+    const first = await googleChatAdapter.chat({
+      apiKey: 'gk-test',
+      model: 'gemini-2.5-flash',
+      messages: [{ role: 'user', content: 'a' }],
+      tools: [SAMPLE_TOOL],
+    });
+    captureFetch(oneFnResponse);
+    const second = await googleChatAdapter.chat({
+      apiKey: 'gk-test',
+      model: 'gemini-2.5-flash',
+      messages: [{ role: 'user', content: 'b' }],
+      tools: [SAMPLE_TOOL],
+    });
+    const id1 = first.toolCalls?.[0]?.id;
+    const id2 = second.toolCalls?.[0]?.id;
+    expect(id1).toMatch(/^gemini_call_/);
+    expect(id2).toMatch(/^gemini_call_/);
+    expect(id1).not.toBe(id2);
+  });
+
   it('translates a tool result back to a user message with functionResponse', async () => {
     const calls = captureFetch({
       candidates: [{ content: { parts: [{ text: 'thanks' }] } }],

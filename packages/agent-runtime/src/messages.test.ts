@@ -1,0 +1,66 @@
+import { describe, it, expect } from 'vitest';
+import { buildChatMessages, type Digest, type ChatMessage } from './messages';
+
+const DIGEST: Digest = {
+  summary: 'We discussed the Lister rebuild.',
+  periodStart: '2026-05-01',
+  periodEnd: '2026-05-02',
+  topic: 'Lister',
+};
+
+function build(opts: { model: string; provider?: string }): ChatMessage[] {
+  return buildChatMessages({
+    model: opts.model,
+    provider: opts.provider,
+    systemPrompt: 'You are Saskia.',
+    personaNotes: [],
+    facts: [],
+    digests: [DIGEST],
+    contentHits: [],
+    history: [],
+    newUserText: 'hi',
+  });
+}
+
+function systemMessages(
+  msgs: ChatMessage[],
+): Array<Extract<ChatMessage, { role: 'system' }>> {
+  return msgs.filter(
+    (m): m is Extract<ChatMessage, { role: 'system' }> => m.role === 'system',
+  );
+}
+
+describe('buildChatMessages — explicit cache breakpoints', () => {
+  it('emits per-block cache markers for direct Anthropic (bare model id)', () => {
+    // The regression: provider='anthropic' uses bare ids, so the `anthropic/`
+    // slug check alone returned false → persona + digest collapsed into one
+    // cache block and a digest refresh busted the persona cache.
+    const sys = systemMessages(build({ model: 'claude-sonnet-4-6', provider: 'anthropic' }));
+    expect(sys.length).toBeGreaterThanOrEqual(2); // persona + digest, own breakpoints
+    for (const m of sys) {
+      expect(Array.isArray(m.content)).toBe(true);
+      const blocks = m.content as Array<{ cacheControl?: { type: string } }>;
+      expect(blocks[0]?.cacheControl).toEqual({ type: 'ephemeral' });
+    }
+  });
+
+  it('emits per-block cache markers for the OpenRouter anthropic/ slug', () => {
+    const sys = systemMessages(
+      build({ model: 'anthropic/claude-sonnet-4.6', provider: 'openrouter' }),
+    );
+    expect(Array.isArray(sys[0]?.content)).toBe(true);
+  });
+
+  it('uses plain-string system blocks for non-Anthropic providers', () => {
+    const sys = systemMessages(build({ model: 'openai/gpt-4o', provider: 'openrouter' }));
+    for (const m of sys) expect(typeof m.content).toBe('string');
+  });
+
+  it('falls back to slug-only behaviour when provider is omitted', () => {
+    // Backward compat: callers that don't pass provider keep the old gate.
+    const slug = systemMessages(build({ model: 'anthropic/claude-sonnet-4.6' }));
+    expect(Array.isArray(slug[0]?.content)).toBe(true);
+    const bare = systemMessages(build({ model: 'claude-sonnet-4-6' }));
+    expect(typeof bare[0]?.content).toBe('string');
+  });
+});

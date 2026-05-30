@@ -198,6 +198,7 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
       // as its user message, with the worker's prompt as the system block.
       const messages = buildChatMessages({
         model: worker.model,
+        provider: worker.provider,
         systemPrompt: worker.systemPrompt ?? DEFAULT_SUMMARIZER_PROMPT,
         personaNotes: [],
         facts: [],
@@ -461,6 +462,7 @@ export async function summarizeWebConversation(ownerId: string): Promise<void> {
 
       const messages = buildChatMessages({
         model: worker.model,
+        provider: worker.provider,
         systemPrompt: worker.systemPrompt ?? DEFAULT_SUMMARIZER_PROMPT,
         personaNotes: [],
         facts: [],

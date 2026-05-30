@@ -414,6 +414,7 @@ export async function runAssistantTurn(
   const buildMessages = (image: UserImage | undefined, userText: string) =>
     buildChatMessages({
       model: agent.model,
+      provider: agent.provider,
       systemPrompt: effectiveSystemPrompt,
       personaNotes: ctx.personaNotes,
       facts: ctx.facts,

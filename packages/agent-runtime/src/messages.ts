@@ -174,6 +174,10 @@ export function flattenChatMessagesForAdapter(
 
 export function buildChatMessages(args: {
   model: string;
+  /** Resolved provider id (agent.provider). Direct 'anthropic' uses bare model
+   *  ids (e.g. 'claude-sonnet-4-6'), so the `anthropic/` slug check alone misses
+   *  it — see supportsExplicitCache. Optional: omit ⇒ slug-only behaviour. */
+  provider?: string;
   systemPrompt: string;
   personaNotes: PersonaNote[];
   facts: FactSnippet[];
@@ -197,7 +201,14 @@ export function buildChatMessages(args: {
     userImage,
   } = args;
 
-  const supportsExplicitCache = model.startsWith('anthropic/');
+  // Emit per-block cache breakpoints (persona + digest each get their own) when
+  // the downstream provider is Anthropic — either direct (provider='anthropic',
+  // bare model id) or via OpenRouter's `anthropic/…` slug, which forwards the
+  // cache_control markers. Gating on the slug alone missed the direct path, so a
+  // direct-Anthropic responder collapsed persona+digest into one cache block and
+  // a digest refresh busted the persona cache too.
+  const supportsExplicitCache =
+    args.provider === 'anthropic' || model.startsWith('anthropic/');
   const ephemeral = { type: 'ephemeral' as const };
 
   // ─── Block 1: persona + persona_notes + profile facts ─────────────────
