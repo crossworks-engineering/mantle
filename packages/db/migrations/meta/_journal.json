@@ -407,6 +407,13 @@
       "when": 1779402900000,
       "tag": "0057_nodes_embedding_index",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1779403000000,
+      "tag": "0058_entity_edges_cleanup_trigger",
+      "breakpoints": true
     }
   ]
 }

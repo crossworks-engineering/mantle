@@ -129,6 +129,17 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   }
   const res = await deleteFileById({ ownerId: user.id, fileId: idParsed.data.id });
-  if (!res.ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  if (!res.ok) {
+    if (res.reason === 'attachment') {
+      return NextResponse.json(
+        {
+          error:
+            "Can't delete — this file is an email attachment. Delete it from the email instead.",
+        },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
   return NextResponse.json({ ok: true });
 }

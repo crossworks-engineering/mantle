@@ -35,7 +35,7 @@ import {
   writeFile as writeFileOnDisk,
   deleteFile as deleteFileOnDisk,
 } from './index';
-import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
+import { db, emailAttachments, nodes, notifyNodeIngested, type Node } from '@mantle/db';
 
 export type FolderRow = {
   id: string;
@@ -518,13 +518,23 @@ export async function readFileById(args: {
 export async function deleteFileById(args: {
   ownerId: string;
   fileId: string;
-}): Promise<{ ok: boolean }> {
+}): Promise<{ ok: boolean; reason?: 'not_found' | 'attachment' }> {
   const [node] = await db
     .select()
     .from(nodes)
     .where(and(eq(nodes.id, args.fileId), eq(nodes.ownerId, args.ownerId)))
     .limit(1);
-  if (!node || node.type !== 'file') return { ok: false };
+  if (!node || node.type !== 'file') return { ok: false, reason: 'not_found' };
+  // Block deletion of a file that's an email attachment: email_attachments
+  // .file_node_id is ON DELETE RESTRICT, so a bare delete would raise an FK
+  // violation and surface as a 500. Return a clean refusal the caller can show
+  // instead — the bytes are owned by the email; delete it from there.
+  const [attachment] = await db
+    .select({ id: emailAttachments.id })
+    .from(emailAttachments)
+    .where(eq(emailAttachments.fileNodeId, node.id))
+    .limit(1);
+  if (attachment) return { ok: false, reason: 'attachment' };
   const data = (node.data ?? {}) as Record<string, unknown>;
   const filename = String(data.filename ?? '');
   await db.delete(nodes).where(eq(nodes.id, node.id));

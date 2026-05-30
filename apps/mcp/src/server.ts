@@ -423,7 +423,11 @@ server.tool(
   async ({ file_id }) => {
     const res = await deleteFileById({ ownerId: OWNER_ID!, fileId: file_id });
     if (!res.ok) {
-      return { content: [{ type: 'text', text: 'file not found' }], isError: true };
+      const text =
+        res.reason === 'attachment'
+          ? "can't delete — this file is an email attachment; delete it from the email instead"
+          : 'file not found';
+      return { content: [{ type: 'text', text }], isError: true };
     }
     return { content: [{ type: 'text', text: 'deleted' }] };
   },
