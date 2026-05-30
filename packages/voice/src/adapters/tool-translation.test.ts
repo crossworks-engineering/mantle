@@ -175,6 +175,36 @@ describe('anthropic-chat tool translation', () => {
     });
   });
 
+  it('marks a failed tool result with is_error', async () => {
+    const calls = captureFetch({
+      content: [{ type: 'text', text: 'ok' }],
+      model: 'claude-sonnet-4-6',
+      usage: {},
+    });
+    await anthropicChatAdapter.chat({
+      apiKey: 'sk-test',
+      model: 'claude-sonnet-4-6',
+      messages: [
+        { role: 'user', content: 'do it' },
+        {
+          role: 'assistant',
+          content: null,
+          toolCalls: [
+            { id: 'toolu_1', type: 'function', function: { name: 'note_create', arguments: '{}' } },
+          ],
+        },
+        { role: 'tool', toolCallId: 'toolu_1', content: '{"error":"boom"}', isError: true },
+      ],
+    });
+    const body = JSON.parse(calls[0]!.body);
+    expect(body.messages[2].content[0]).toEqual({
+      type: 'tool_result',
+      tool_use_id: 'toolu_1',
+      content: '{"error":"boom"}',
+      is_error: true,
+    });
+  });
+
   it('coalesces consecutive tool messages into a single user message with multiple tool_result blocks', async () => {
     const calls = captureFetch({
       content: [{ type: 'text', text: 'done' }],
@@ -611,7 +641,7 @@ describe('multimodal user content (vision)', () => {
     });
   });
 
-  it('google-chat falls back to text-only when given multimodal content (image_url dropped)', async () => {
+  it('google-chat translates a data-URL image_url to an inlineData part', async () => {
     const calls = captureFetch({
       candidates: [{ content: { parts: [{ text: 'ok' }] } }],
       usageMetadata: {},
@@ -631,12 +661,34 @@ describe('multimodal user content (vision)', () => {
       ],
     });
     const body = JSON.parse(calls[0]!.body);
-    // Text part survives; image_url is dropped (the dedicated
-    // google-vision adapter handles image understanding).
     expect(body.contents[0]).toEqual({
       role: 'user',
-      parts: [{ text: 'hi' }],
+      parts: [{ text: 'hi' }, { inlineData: { mimeType: 'image/png', data: 'abc' } }],
     });
+  });
+
+  it('google-chat drops a non-data-URL image_url (text-only fallback)', async () => {
+    const calls = captureFetch({
+      candidates: [{ content: { parts: [{ text: 'ok' }] } }],
+      usageMetadata: {},
+      modelVersion: 'gemini-2.5-flash',
+    });
+    await googleChatAdapter.chat({
+      apiKey: 'gk-test',
+      model: 'gemini-2.5-flash',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'hi' },
+            { type: 'image_url', imageUrl: { url: 'https://example.com/cat.png' } },
+          ],
+        },
+      ],
+    });
+    const body = JSON.parse(calls[0]!.body);
+    // http(s) URLs aren't translated here — only the text part survives.
+    expect(body.contents[0]).toEqual({ role: 'user', parts: [{ text: 'hi' }] });
   });
 });
 

@@ -49,6 +49,7 @@ import {
 import {
   bumpWorkerUsage as bumpAiWorkerUsage,
   getDefaultWorker,
+  type AgentParams,
   type SttParams,
   type TelegramAttachment,
   type TtsParams,
@@ -991,7 +992,7 @@ async function handleMessage(messageId: string): Promise<void> {
           adapter: chatAdapter,
           apiKey,
           model: agent.model,
-          params: (agent.params ?? {}) as Record<string, never>,
+          params: (agent.params ?? {}) as AgentParams,
           ownerId: USER_ID!,
           agentId: agent.id,
           agentSlug: agent.slug,

@@ -229,6 +229,9 @@ function splitSystemAndMessages(
         type: 'tool_result',
         tool_use_id: m.toolCallId,
         content: m.content,
+        // Surface tool failures via Anthropic's own signal so the model
+        // treats them as errors, not as a normal result it must parse.
+        ...(m.isError ? { is_error: true } : {}),
       });
       continue;
     }

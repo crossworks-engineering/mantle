@@ -61,8 +61,19 @@ async function resolveReadResultTool(ownerId: string): Promise<Tool | null> {
   const cached = readResultToolByOwner.get(ownerId);
   if (cached) return cached;
   const row = await resolveTool(ownerId, 'read_result');
-  if (row) readResultToolByOwner.set(ownerId, row);
-  return row;
+  if (!row) return null;
+  // read_result is auto-offered so a spilled (oversized) result is never a dead
+  // end. If it were ever flagged requires_confirm, the spill-recovery call would
+  // block behind /pending and strand the model mid-turn — force it off for the
+  // always-offer path (it's a read-only system capability, safe to auto-run).
+  if (row.requiresConfirm) {
+    console.warn(
+      '[tool-loop] read_result is flagged requires_confirm; overriding to false for the auto-offer path',
+    );
+  }
+  const safe: Tool = row.requiresConfirm ? { ...row, requiresConfirm: false } : row;
+  readResultToolByOwner.set(ownerId, safe);
+  return safe;
 }
 
 export type ToolLoopResult = {
@@ -508,6 +519,9 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         role: 'tool',
         toolCallId: call.id,
         content: payload,
+        // Tell cache-aware adapters this result is an error (the runtime
+        // knows via outcome.ok) so they set the provider's is_error flag.
+        ...(outcome.ok ? {} : { isError: true as const }),
       });
     }
   }

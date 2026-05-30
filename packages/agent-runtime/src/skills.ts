@@ -63,6 +63,12 @@ export function composeSystemPromptWithSkills(
   return `${basePrompt.trim()}\n\n${blocks}`;
 }
 
+/** Upper bound on the effective tool-slug union sent to a model. Agent slugs
+ *  and each skill's slugs are individually capped at 256; many attached skills
+ *  could still union into a huge `tools` array that bloats the prompt or trips
+ *  a provider limit. Generous enough that no legitimate config hits it. */
+const MAX_EFFECTIVE_TOOL_SLUGS = 512;
+
 /** Union of an agent's own toolSlugs and every attached skill's toolSlugs. */
 export function effectiveToolSlugs(
   agentToolSlugs: string[],
@@ -70,5 +76,15 @@ export function effectiveToolSlugs(
 ): string[] {
   const set = new Set<string>(agentToolSlugs);
   for (const s of skillsList) for (const slug of s.toolSlugs) set.add(slug);
-  return Array.from(set);
+  const all = Array.from(set);
+  if (all.length > MAX_EFFECTIVE_TOOL_SLUGS) {
+    const dropped = all.slice(MAX_EFFECTIVE_TOOL_SLUGS);
+    // Not silent — log exactly which slugs were cut so a misconfiguration is
+    // diagnosable rather than presenting as "some tools just don't work".
+    console.warn(
+      `[skills] effective tool-slug union (${all.length}) exceeds cap ${MAX_EFFECTIVE_TOOL_SLUGS}; dropping ${dropped.length}: ${dropped.join(', ')}`,
+    );
+    return all.slice(0, MAX_EFFECTIVE_TOOL_SLUGS);
+  }
+  return all;
 }

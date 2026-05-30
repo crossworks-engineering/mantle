@@ -241,6 +241,11 @@ export type ChatToolMessage = {
   toolCallId: string;
   /** The tool result, already serialised to a string. */
   content: string;
+  /** The tool threw / returned an error. Cache-aware adapters (Anthropic) set
+   *  the provider's `is_error` flag so the model treats it as a failure rather
+   *  than inferring from the serialised body. Providers without the concept
+   *  ignore it. */
+  isError?: boolean;
 };
 
 /** Assistant turn — can carry text content, tool calls, or both. The

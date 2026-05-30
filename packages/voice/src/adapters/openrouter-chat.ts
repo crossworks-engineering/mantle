@@ -287,29 +287,24 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
   const messages = buildMessages(opts.messages, opts.cacheControl);
   const tools = buildTools(opts);
 
+  const chatRequest = {
+    model: opts.model,
+    messages,
+    ...(tools ? { tools } : {}),
+    ...(opts.toolChoice ? { toolChoice: opts.toolChoice } : {}),
+    ...(typeof opts.temperature === 'number' ? { temperature: opts.temperature } : {}),
+    ...(typeof opts.maxTokens === 'number' ? { maxTokens: opts.maxTokens } : {}),
+    ...(typeof opts.topP === 'number' ? { topP: opts.topP } : {}),
+    ...(opts.extra ?? {}),
+  };
+  // Single typed boundary: our structurally-clean builders (OrChatMessage /
+  // tool records) aren't nominally assignable to the SDK's zod-generated input
+  // types, so we bridge once here rather than scattering `as unknown as` over
+  // individual fields. Behaviour is unchanged; the laundering is one line.
   const result = await client.chat.send({
-    chatRequest: {
-      model: opts.model,
-      messages: messages as unknown as Parameters<
-        typeof client.chat.send
-      >[0]['chatRequest']['messages'],
-      ...(tools
-        ? {
-            tools: tools as unknown as Parameters<
-              typeof client.chat.send
-            >[0]['chatRequest']['tools'],
-          }
-        : {}),
-      ...(opts.toolChoice
-        ? { toolChoice: opts.toolChoice as 'auto' | 'none' }
-        : {}),
-      ...(typeof opts.temperature === 'number'
-        ? { temperature: opts.temperature }
-        : {}),
-      ...(typeof opts.maxTokens === 'number' ? { maxTokens: opts.maxTokens } : {}),
-      ...(typeof opts.topP === 'number' ? { topP: opts.topP } : {}),
-      ...(opts.extra ?? {}),
-    },
+    chatRequest: chatRequest as unknown as Parameters<
+      typeof client.chat.send
+    >[0]['chatRequest'],
   });
   if (!('choices' in result)) {
     throw new Error(

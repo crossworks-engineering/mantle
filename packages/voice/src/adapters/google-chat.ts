@@ -36,6 +36,7 @@ import { GOOGLE_BASE_URL, GOOGLE_CHAT_MODELS } from '../catalogs/google';
  *  - functionResponse: our tool result fed back (on a user-role content) */
 type GeminiPart =
   | { text: string }
+  | { inlineData: { mimeType: string; data: string } }
   | { functionCall: { name: string; args: Record<string, unknown> } }
   | { functionResponse: { name: string; response: Record<string, unknown> } };
 
@@ -97,6 +98,18 @@ function nextSynthCallId(): string {
   return `gemini_call_${synthCallSeq}`;
 }
 
+/** Translate an OpenAI-shape image_url into a Gemini inlineData part. Only
+ *  `data:` URLs are handled (the responder always sends base64 data URLs); an
+ *  http(s) URL returns null so the caller can warn + skip — the dedicated
+ *  google-vision adapter remains the path for remote-image understanding. */
+function toGeminiInlineData(
+  url: string,
+): { inlineData: { mimeType: string; data: string } } | null {
+  const m = /^data:([^;,]+);base64,(.+)$/.exec(url);
+  if (!m) return null;
+  return { inlineData: { mimeType: m[1]!, data: m[2]! } };
+}
+
 /**
  * Translate ChatOptions.messages → Gemini's `contents` + separate
  * `systemInstruction`. Handles four transformations:
@@ -150,16 +163,22 @@ function splitSystemAndContents(
         contents.push({ role: 'user', parts: [{ text: m.content }] });
         continue;
       }
-      // Array content (multimodal): walk parts. text → text part;
-      // image_url is best-effort dropped here (Gemini vision uses a
-      // different inline_data shape we don't translate yet — the
-      // dedicated google-vision adapter is the production path for
-      // image understanding). Falling back to text-only keeps the
-      // turn structurally valid rather than 400ing on an unknown
-      // part shape.
+      // Array content (multimodal): walk parts. text → text part; image_url
+      // `data:` URLs → Gemini inlineData (base64). A non-data URL isn't
+      // translated here — we warn + skip rather than 400, and the dedicated
+      // google-vision adapter remains the path for remote-image understanding.
       const parts: GeminiPart[] = [];
       for (const part of m.content) {
-        if (part.type === 'text') parts.push({ text: part.text });
+        if (part.type === 'text') {
+          parts.push({ text: part.text });
+        } else if (part.type === 'image_url') {
+          const inline = toGeminiInlineData(part.imageUrl.url);
+          if (inline) parts.push(inline);
+          else
+            console.warn(
+              '[google-chat] dropping non-data-URL image part — use the google-vision adapter for remote images',
+            );
+        }
       }
       if (parts.length === 0) parts.push({ text: '' });
       contents.push({ role: 'user', parts });

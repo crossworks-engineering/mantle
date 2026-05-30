@@ -75,7 +75,7 @@ export type ChatMessage =
           >;
     }
   | { role: 'assistant'; content: string | null; toolCalls?: ToolCallRequest[] }
-  | { role: 'tool'; toolCallId: string; content: string };
+  | { role: 'tool'; toolCallId: string; content: string; isError?: boolean };
 
 /** An image to attach to the new user turn (vision-capable models only). */
 export type UserImage = { base64: string; mimeType: string };
