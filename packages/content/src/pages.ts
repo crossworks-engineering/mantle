@@ -318,6 +318,28 @@ export async function listChildPages(ownerId: string, parentId: string): Promise
   return rows.map((r) => rowOf(r));
 }
 
+/** Count ALL descendant pages (children, grandchildren, …) under a page via the
+ *  parent_id tree. Used to warn before delete: parent_id is ON DELETE CASCADE,
+ *  so deleting a parent silently takes its whole subtree. `UNION` (not UNION
+ *  ALL) makes it cycle-safe even if the tree ever contained a loop. */
+export async function countPageDescendants(ownerId: string, id: string): Promise<number> {
+  const result = await db.execute<{ count: number }>(sql`
+    WITH RECURSIVE descendants AS (
+      SELECT id FROM ${nodes}
+       WHERE parent_id = ${id} AND owner_id = ${ownerId} AND type = 'page'
+      UNION
+      SELECT n.id FROM ${nodes} n
+        JOIN descendants d ON n.parent_id = d.id
+       WHERE n.owner_id = ${ownerId} AND n.type = 'page'
+    )
+    SELECT count(*)::int AS count FROM descendants
+  `);
+  const rows = (
+    Array.isArray(result) ? result : (result as { rows?: Array<{ count: number }> }).rows ?? []
+  ) as Array<{ count: number }>;
+  return rows[0]?.count ?? 0;
+}
+
 export type UpdatePageInput = Partial<{
   title: string;
   doc: Record<string, unknown>;

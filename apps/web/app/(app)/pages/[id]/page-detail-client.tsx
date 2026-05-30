@@ -75,6 +75,25 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
   const [draftSaving, setDraftSaving] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  // Nested-page count for the delete warning — parent_id is ON DELETE CASCADE,
+  // so deleting this page takes its whole subtree. Fetched when the dialog opens.
+  const [deleteDescendants, setDeleteDescendants] = useState<number | null>(null);
+  useEffect(() => {
+    if (!deleteOpen) {
+      setDeleteDescendants(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/pages/${initial.id}/descendant-count`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d) setDeleteDescendants(typeof d.count === 'number' ? d.count : 0);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [deleteOpen, initial.id]);
 
   const docRef = useRef<JSONContent>(initialDoc);
   const editorRef = useRef<Editor | null>(null);
@@ -613,7 +632,11 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete “{title || 'Untitled page'}”?</AlertDialogTitle>
-            <AlertDialogDescription>This can’t be undone.</AlertDialogDescription>
+            <AlertDialogDescription>
+              {deleteDescendants && deleteDescendants > 0
+                ? `This also permanently deletes ${deleteDescendants} nested page${deleteDescendants === 1 ? '' : 's'}. This can’t be undone.`
+                : 'This can’t be undone.'}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>

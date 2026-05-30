@@ -105,6 +105,10 @@ export function PagesClient({
   const [form, setForm] = useState<{ title: string; tags: string[] }>({ title: '', tags: [] });
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<PageRow | null>(null);
+  // Authoritative descendant count for the delete warning — fetched on open so
+  // it's accurate even in filtered/paginated 'list' mode (where the client
+  // doesn't hold the whole tree). null = not yet loaded.
+  const [deleteDescendants, setDeleteDescendants] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -180,6 +184,23 @@ export function PagesClient({
 
   const hasChildren = (id: string) => (childrenByParent.get(id)?.length ?? 0) > 0;
   const deleteHasChildren = deleteTarget ? hasChildren(deleteTarget.id) : false;
+  useEffect(() => {
+    if (!deleteTarget) {
+      setDeleteDescendants(null);
+      return;
+    }
+    let cancelled = false;
+    setDeleteDescendants(null);
+    fetch(`/api/pages/${deleteTarget.id}/descendant-count`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d) setDeleteDescendants(typeof d.count === 'number' ? d.count : 0);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [deleteTarget]);
 
   const toggle = (id: string) =>
     setExpanded((prev) => {
@@ -271,7 +292,13 @@ export function PagesClient({
       toast.error('Could not delete page');
       return;
     }
-    toast.success(deleteHasChildren ? 'Page and sub-pages deleted' : 'Page deleted');
+    toast.success(
+      deleteDescendants && deleteDescendants > 0
+        ? `Page and ${deleteDescendants} sub-page${deleteDescendants === 1 ? '' : 's'} deleted`
+        : deleteHasChildren
+          ? 'Page and sub-pages deleted'
+          : 'Page deleted',
+    );
     if (selectedId === deleteTarget.id) setSelectedId(null);
     startNav(() => router.refresh());
   };
@@ -557,9 +584,11 @@ export function PagesClient({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete “{deleteTarget?.title}”?</AlertDialogTitle>
             <AlertDialogDescription>
-              {deleteHasChildren
-                ? 'This page and all of its sub-pages will be deleted. This can’t be undone.'
-                : 'This can’t be undone.'}
+              {deleteDescendants && deleteDescendants > 0
+                ? `This also permanently deletes ${deleteDescendants} nested page${deleteDescendants === 1 ? '' : 's'}. This can’t be undone.`
+                : deleteHasChildren
+                  ? 'This page and all of its sub-pages will be deleted. This can’t be undone.'
+                  : 'This can’t be undone.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -6,6 +6,7 @@ export {
   countPages,
   listPageTags,
   listChildPages,
+  countPageDescendants,
   getPage,
   createPage,
   ParentPageNotFoundError,
