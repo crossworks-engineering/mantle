@@ -354,10 +354,18 @@ async function doEmbed(
       apiKey = await getApiKey(ownerId, provider);
     }
     if (!apiKey) {
-      throw new Error(
-        `embed: no api key for provider '${provider}'. Add one at /settings/keys ` +
-          `and assign it to your embedding worker at /settings/ai-workers/embedding.`,
-      );
+      // The `local` provider points at a self-hosted OpenAI-compatible server
+      // (Ollama / LM Studio / llama.cpp) on your own hardware — no credential
+      // needed. The adapter sends a placeholder Bearer the server ignores, so
+      // don't demand a key here.
+      if (provider === 'local') {
+        apiKey = 'local';
+      } else {
+        throw new Error(
+          `embed: no api key for provider '${provider}'. Add one at /settings/keys ` +
+            `and assign it to your embedding worker at /settings/ai-workers/embedding.`,
+        );
+      }
     }
 
     for (let start = 0; start < missInputs.length; start += MAX_BATCH) {
