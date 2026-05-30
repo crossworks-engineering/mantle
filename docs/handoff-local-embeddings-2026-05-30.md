@@ -62,7 +62,20 @@ two reasons discovered live:
 2. The CLI defaults the model to `DEFAULT_EMBEDDING_MODEL` (env), not the worker
    config — so it resolved the *old* `openai/text-embedding-3-small`.
 
-### Recommended path A — fix `runReembed` to repopulate (cheap, embeddings-only)
+### ✅ Path A — repopulate via re-embed (SHIPPED — just run it)
+The `runReembed` repopulate fix is **done** (commit: `--repopulate` /
+`includeUnembedded` + the CLI content_chunks gap). Run this (model id is
+REQUIRED — without it the CLI defaults to the old cloud model and asks Ollama
+for one it doesn't have; provider resolves to `local` from the worker):
+```
+cd ~/Projects/mantle && ollama serve   # keep EmbeddingGemma up on :11434
+pnpm -C apps/web re-embed --repopulate --model=embeddinggemma:latest
+```
+Dry-run confirmed it finds ~14.7K rows (nodes minus branch/telegram, all facts/
+entities/chunks). Local = free. Verify with the checks below, then restart the
+dev stack. Original design notes for the fix (now implemented) follow.
+
+#### (implemented) how the fix works
 In `packages/embeddings/src/reembed.ts`, the per-table fetchers use
 `isNotNull(<table>.embedding)`. For a dimension-migration repopulation we want
 "embed every row that *should* have an embedding," i.e.:
