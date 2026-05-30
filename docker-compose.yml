@@ -29,7 +29,7 @@ volumes:
   # back up / sync from (Syncthing, restic, etc.).
   mantle_files_data:
 
-# Shared env block for app services — anchor + alias keeps the four
+# Shared env block for app services — anchor + alias keeps the app
 # services in lockstep.
 x-app-env: &app-env
   DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/postgres
@@ -161,6 +161,34 @@ services:
       context: .
       target: worker-telegram
     container_name: mantle_worker_telegram
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      <<: *app-env
+
+  # External-edit watcher: chokidar over MANTLE_FILES_ROOT mirrors host file
+  # changes (Syncthing / vim / cp) into the brain. Needs the files volume.
+  worker_files:
+    build:
+      context: .
+      target: worker-files
+    container_name: mantle_worker_files
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      <<: *app-env
+    volumes:
+      - mantle_files_data:/data/files
+
+  # Event-reminder poller: fires due calendar/event reminders. Without this,
+  # reminders silently never fire in prod (they work in `pnpm dev`).
+  worker_events:
+    build:
+      context: .
+      target: worker-events
+    container_name: mantle_worker_events
     restart: unless-stopped
     depends_on:
       postgres: { condition: service_healthy }

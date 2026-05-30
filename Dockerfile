@@ -1,9 +1,15 @@
-# Multi-stage Dockerfile producing four runtime targets — web, agent,
-# worker-email, worker-telegram — all sharing one workspace install. Build
-# any single image with:
+# Multi-stage Dockerfile producing six runtime targets — web, agent,
+# worker-email, worker-telegram, worker-files, worker-events — all sharing one
+# workspace install. Build any single image with:
 #   docker build --target web -t mantle/web .
 #
-# Or use docker-compose.yml, which wires all four behind postgres+minio.
+# Or use docker-compose.yml, which wires all six behind postgres+minio.
+#
+# Note: apps/mcp is intentionally NOT a target here. The MCP server is
+# stdio-only (StdioServerTransport) — it has no stdio peer when run as a
+# detached daemon, so a long-lived container would just hit EOF on stdin and
+# crash-loop. It runs as a subprocess of whatever launches it (Claude Desktop)
+# until the HTTP transport lands. See docs/architecture.md §16.
 #
 # We install dev deps too (tsx, next, typescript) so the agent + workers can
 # keep running TypeScript directly via tsx in production. At personal scale
@@ -79,3 +85,17 @@ CMD ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/email-sync.ts"]
 FROM deps AS worker-telegram
 ENV NODE_ENV=production
 CMD ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/telegram-poll.ts"]
+
+# ── 7. worker-files runtime ─────────────────────────────────────────────────
+# Chokidar watcher over MANTLE_FILES_ROOT — mirrors host file edits into the
+# brain. Needs the mantle_files_data volume mounted at /data/files (compose).
+FROM deps AS worker-files
+ENV NODE_ENV=production
+CMD ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/files-watch.ts"]
+
+# ── 8. worker-events runtime ────────────────────────────────────────────────
+# Polls for due event reminders and fires them (e.g. Telegram). Without this
+# running, calendar/event reminders never fire in prod.
+FROM deps AS worker-events
+ENV NODE_ENV=production
+CMD ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/events-reminders.ts"]

@@ -69,8 +69,9 @@ export const nodes = pgTable(
     uniqueIndex('nodes_branch_owner_path_uq')
       .on(t.ownerId, t.path)
       .where(sql`${t.type} = 'branch'`),
-    // GiST on path, GIN on tags + tsvector, IVFFlat on embedding live in the
-    // SQL migration (Drizzle can't emit those operator classes yet).
+    // GiST on path, GIN on tags + tsvector, and the HNSW index on embedding
+    // (partial, WHERE embedding IS NOT NULL — migration 0057) live in the SQL
+    // migrations (Drizzle can't emit those operator classes yet).
   ],
 );
 

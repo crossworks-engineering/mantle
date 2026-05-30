@@ -400,6 +400,13 @@
       "when": 1779402800000,
       "tag": "0056_entity_merge_dismissals",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1779402900000,
+      "tag": "0057_nodes_embedding_index",
+      "breakpoints": true
     }
   ]
 }
