@@ -54,7 +54,7 @@ import {
   type TelegramAttachment,
   type TtsParams,
 } from '@mantle/db';
-import { embed } from '@mantle/embeddings';
+import { embed, resolveEmbeddingModel } from '@mantle/embeddings';
 import { maxImageBytesFor, modelSupportsVision, recordIngest, refreshModelCatalog, startTrace, step } from '@mantle/tracing';
 import {
   buildChatMessages,
@@ -1307,31 +1307,84 @@ async function drainPending(): Promise<void> {
  * no embedding, and enqueueing them through the same `enqueueExtract` path as a
  * fresh `pg_notify('node_ingested')`.
  *
- * Scoped to the last 24h so we don't re-extract years of history if
- * someone bumps the agent for the first time on an old DB. The
- * extractor's own per-agent / per-type guards take it from there.
+ * Window + cap are configurable (MANTLE_EXTRACT_DRAIN_WINDOW_HOURS, default 7d;
+ * MANTLE_EXTRACT_DRAIN_LIMIT, default 1000) so a longer outage can still
+ * self-heal without re-extracting years of history on an old DB. The cap is
+ * NOT optional: each drained node is an extraction (LLM calls), so an unbounded
+ * sweep over a large backlog would be a cost burst. A truncated drain is logged
+ * loudly so a partial self-heal is visible, not silent — re-run or raise the
+ * cap to catch up. The extractor's own per-agent / per-type guards take it from
+ * there.
  */
 async function drainUnextractedNodes(): Promise<void> {
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const rows = await db
-    .select({ id: nodes.id })
+  const windowHours = Number(process.env.MANTLE_EXTRACT_DRAIN_WINDOW_HOURS) || 168;
+  const limit = Number(process.env.MANTLE_EXTRACT_DRAIN_LIMIT) || 1000;
+  const since = new Date(Date.now() - windowHours * 60 * 60 * 1000);
+  const conds = and(
+    eq(nodes.ownerId, USER_ID!),
+    ne(nodes.type, 'branch'),
+    gte(nodes.createdAt, since),
+    isNull(nodes.embedding),
+  );
+  const countRows = await db
+    .select({ total: sql<number>`count(*)::int` })
     .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, USER_ID!),
-        ne(nodes.type, 'branch'),
-        gte(nodes.createdAt, since),
-        isNull(nodes.embedding),
-      ),
-    )
-    .orderBy(asc(nodes.createdAt))
-    .limit(500);
-  if (rows.length === 0) {
+    .where(conds);
+  const total = countRows[0]?.total ?? 0;
+  if (!total) {
     console.log('[agent] drain extractor: queue empty');
     return;
   }
-  console.log(`[agent] drain extractor: queueing ${rows.length} unextracted node(s) from last 24h`);
+  const rows = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(conds)
+    .orderBy(asc(nodes.createdAt))
+    .limit(limit);
+  if (total > rows.length) {
+    console.warn(
+      `[agent] drain extractor: ${total} unextracted node(s) in last ${windowHours}h; queueing the oldest ${rows.length} (capped by MANTLE_EXTRACT_DRAIN_LIMIT=${limit} to avoid an extraction cost burst — re-run or raise the cap to catch up).`,
+    );
+  } else {
+    console.log(
+      `[agent] drain extractor: queueing ${rows.length} unextracted node(s) from last ${windowHours}h`,
+    );
+  }
   for (const r of rows) await enqueueExtract(r.id);
+}
+
+/**
+ * Boot-time guard for the embedding-model invariant. The model used to WRITE
+ * vectors (the resolved embedding worker) and the model each retrieval agent
+ * embeds its QUERY with (`memory_config.embedding_model`) must match, or query
+ * and corpus vectors land in incompatible spaces and semantic retrieval
+ * silently returns garbage-space hits. Overrides are null by default
+ * (everything resolves to one model), so this only fires on a real divergence —
+ * which is otherwise invisible. Warn, don't throw: a misconfig shouldn't brick
+ * the agent, just be loud.
+ */
+async function assertEmbeddingModelConsistency(): Promise<void> {
+  try {
+    const resolved = await resolveEmbeddingModel(USER_ID!);
+    const rows = await db
+      .select({ slug: agents.slug, memoryConfig: agents.memoryConfig })
+      .from(agents)
+      .where(eq(agents.ownerId, USER_ID!));
+    const divergent = rows
+      .map((r) => ({ slug: r.slug, model: r.memoryConfig?.embedding_model }))
+      .filter((r): r is { slug: string; model: string } => !!r.model && r.model !== resolved);
+    if (divergent.length > 0) {
+      console.warn(
+        `[agent] ⚠ embedding-model mismatch — write side resolves to '${resolved}', but these agents pin a different memory_config.embedding_model, so their semantic retrieval will silently return wrong results until aligned (set to '${resolved}' or null, then run \`pnpm re-embed\`): ` +
+          divergent.map((d) => `${d.slug}=${d.model}`).join(', '),
+      );
+    }
+  } catch (err) {
+    console.error(
+      '[agent] embedding-model consistency check failed:',
+      err instanceof Error ? err.message : err,
+    );
+  }
 }
 
 /** Debounce window for summarize_due — collapses a burst of inserts in the
@@ -1599,6 +1652,7 @@ async function main() {
     });
   }
 
+  await assertEmbeddingModelConsistency();
   await drainPending();
   await drainUnextractedNodes();
 
