@@ -54,6 +54,7 @@ import { openaiEmbedding } from './openai-embedding';
 import { googleEmbedding } from './google-embedding';
 import { mistralEmbedding } from './mistral-embedding';
 import { cohereEmbedding } from './cohere-embedding';
+import { localEmbedding } from './local-embedding';
 
 // Built-in adapters. Order doesn't matter — these are just into a
 // Map keyed by providerId.
@@ -87,6 +88,7 @@ registerEmbeddingAdapter(openaiEmbedding);
 registerEmbeddingAdapter(googleEmbedding);
 registerEmbeddingAdapter(mistralEmbedding);
 registerEmbeddingAdapter(cohereEmbedding);
+registerEmbeddingAdapter(localEmbedding);
 
 // Surface drift between registered adapters and the providers catalog
 // at module-load time. The catalog drives UI dropdown filters via

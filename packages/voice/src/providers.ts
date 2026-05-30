@@ -37,7 +37,8 @@ export type ProviderId =
   | 'cohere'
   | 'deepgram'
   | 'elevenlabs'
-  | 'assemblyai';
+  | 'assemblyai'
+  | 'local';
 
 /** What a provider can do. Mapped 1:1 to `ai_workers.kind` plus 'chat'
  *  (for conversational agents) and 'embedding' (for memory embeddings —
@@ -186,6 +187,15 @@ export const SUPPORTED_PROVIDERS: readonly Provider[] = [
     capabilities: ['stt'],
     signupUrl: 'https://www.assemblyai.com/dashboard',
     docsUrl: 'https://www.assemblyai.com/docs',
+  },
+  {
+    id: 'local',
+    label: 'Local (self-hosted)',
+    description:
+      'A self-hosted OpenAI-compatible server (Ollama, LM Studio, llama.cpp, TEI, vLLM) on your own hardware — embedded text never leaves your network. Base URL via MANTLE_LOCAL_EMBEDDING_URL (default http://localhost:11434/v1).',
+    capabilities: ['embedding'],
+    signupUrl: 'https://ollama.com/download',
+    docsUrl: 'https://github.com/ollama/ollama/blob/main/docs/openai.md',
   },
 ] as const;
 
