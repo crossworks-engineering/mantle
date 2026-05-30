@@ -21,6 +21,7 @@ import type {
   TtsDispatcher,
   VisionDispatcher,
 } from './types';
+import { withChatRetry } from './retry';
 
 const CHAT = new Map<ProviderId, ChatDispatcher>();
 const TTS = new Map<ProviderId, TtsDispatcher>();
@@ -36,7 +37,14 @@ export function registerChatAdapter(adapter: ChatDispatcher): void {
 }
 
 export function getChatAdapter(providerId: string): ChatDispatcher | null {
-  return CHAT.get(providerId as ProviderId) ?? null;
+  const adapter = CHAT.get(providerId as ProviderId) ?? null;
+  if (!adapter) return null;
+  // OpenRouter's SDK already retries transient errors internally; wrapping it
+  // would compound attempt counts. The native-fetch adapters (anthropic /
+  // google / xai / huggingface / deepseek) have no retry of their own, so wrap
+  // those once here for uniform 429/5xx/network/timeout backoff.
+  if (adapter.providerId === 'openrouter') return adapter;
+  return withChatRetry(adapter);
 }
 
 export function listChatAdapters(): ChatDispatcher[] {

@@ -33,7 +33,9 @@ describe('Anthropic chat adapter', () => {
     const a = getChatAdapter('anthropic');
     expect(a).not.toBeNull();
     expect(a?.adapterName).toBe('anthropic-chat');
-    expect(a).toBe(anthropicChatAdapter);
+    // getChatAdapter returns a retry-wrapped dispatcher for direct providers
+    // (not the raw export ref), so assert resolution by identity, not ===.
+    expect(a?.providerId).toBe(anthropicChatAdapter.providerId);
   });
 
   it('is reported wired for chat by isProviderWired', () => {
@@ -66,7 +68,7 @@ describe('Google (Gemini) chat adapter', () => {
     const a = getChatAdapter('google');
     expect(a).not.toBeNull();
     expect(a?.adapterName).toBe('google-chat');
-    expect(a).toBe(googleChatAdapter);
+    expect(a?.providerId).toBe(googleChatAdapter.providerId);
   });
 
   it('is reported wired for chat by isProviderWired', () => {

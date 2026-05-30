@@ -36,14 +36,16 @@ describe('chat adapter self-registration', () => {
     const a = getChatAdapter('xai');
     expect(a).not.toBeNull();
     expect(a?.adapterName).toBe('xai-chat');
-    expect(a).toBe(xaiChatAdapter);
+    // getChatAdapter returns a retry-wrapped dispatcher for direct providers
+    // (not the raw export ref), so assert resolution by identity, not ===.
+    expect(a?.providerId).toBe(xaiChatAdapter.providerId);
   });
 
   it('registers huggingface-chat on import', () => {
     const a = getChatAdapter('huggingface');
     expect(a).not.toBeNull();
     expect(a?.adapterName).toBe('huggingface-chat');
-    expect(a).toBe(huggingfaceChatAdapter);
+    expect(a?.providerId).toBe(huggingfaceChatAdapter.providerId);
   });
 
   it('registers openrouter-chat on import', () => {
@@ -57,7 +59,7 @@ describe('chat adapter self-registration', () => {
     const a = getChatAdapter('deepseek');
     expect(a).not.toBeNull();
     expect(a?.adapterName).toBe('deepseek-chat');
-    expect(a).toBe(deepseekChatAdapter);
+    expect(a?.providerId).toBe(deepseekChatAdapter.providerId);
   });
 
   it('lists at least two chat adapters', () => {

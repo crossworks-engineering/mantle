@@ -338,6 +338,12 @@ export interface ChatOptions {
   temperature?: number;
   maxTokens?: number;
   topP?: number;
+  /** Retries AFTER the first attempt on transient errors (429/5xx/network/
+   *  timeout), with exponential backoff + jitter. Undefined ⇒
+   *  DEFAULT_MAX_RETRIES (2); 0 disables. Honored by withChatRetry, which the
+   *  registry applies to the direct-provider adapters (OpenRouter relies on
+   *  its SDK's own retries). */
+  maxRetries?: number;
   /** Provider-neutral prompt-cache hints. See {@link ChatCacheControl}.
    *  Adapters that don't talk to a cache-aware provider ignore this. */
   cacheControl?: ChatCacheControl;

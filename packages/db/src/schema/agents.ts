@@ -109,6 +109,12 @@ export type AgentParams = {
   temperature?: number;
   max_tokens?: number;
   top_p?: number;
+  /** Retries AFTER the first chat attempt on transient errors (429, 5xx,
+   *  network blips, request timeout) with exponential backoff + jitter.
+   *  Undefined ⇒ 2 (the chat adapter's default); 0 disables. Threaded into
+   *  ChatOptions.maxRetries by the tool loop; honored by withChatRetry for
+   *  direct-provider adapters (OpenRouter retries via its own SDK). */
+  max_retries?: number;
   /** Voice-reply config. Used by `apps/agent` when an inbound message
    *  came in as a Telegram voice note: the agent's reply gets piped
    *  through OpenAI TTS and sent as `sendVoice` instead of plain text.

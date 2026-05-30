@@ -29,6 +29,7 @@ import type {
   ChatResult,
   ChatToolCall,
 } from './types';
+import { ChatHttpError, parseRetryAfterMs } from './retry';
 import type { DiscoveryResult } from '../discover';
 import {
   ANTHROPIC_API_VERSION,
@@ -423,7 +424,7 @@ async function anthropicChat(opts: ChatOptions): Promise<ChatResult> {
   });
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
-    throw new Error(`anthropic chat ${res.status}: ${errBody.slice(0, 400)}`);
+    throw new ChatHttpError({ provider: 'anthropic', status: res.status, body: errBody, retryAfterMs: parseRetryAfterMs(res.headers) });
   }
   const parsed = (await res.json()) as AnthropicResponse;
   // Response shape: content is an array of blocks; collect every text

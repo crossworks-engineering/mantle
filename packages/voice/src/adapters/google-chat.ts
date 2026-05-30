@@ -26,6 +26,7 @@ import type {
   ChatResult,
   ChatToolCall,
 } from './types';
+import { ChatHttpError, parseRetryAfterMs } from './retry';
 import type { DiscoveryResult } from '../discover';
 import { GOOGLE_BASE_URL, GOOGLE_CHAT_MODELS } from '../catalogs/google';
 
@@ -298,7 +299,7 @@ async function googleChat(opts: ChatOptions): Promise<ChatResult> {
   );
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
-    throw new Error(`google chat ${res.status}: ${errBody.slice(0, 400)}`);
+    throw new ChatHttpError({ provider: 'google', status: res.status, body: errBody, retryAfterMs: parseRetryAfterMs(res.headers) });
   }
   const parsed = (await res.json()) as GeminiResponse;
   // Response shape: candidates[0].content.parts[]. Walk every part:

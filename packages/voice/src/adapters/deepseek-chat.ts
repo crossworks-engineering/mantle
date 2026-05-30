@@ -30,6 +30,7 @@ import type {
   ChatOptions,
   ChatResult,
 } from './types';
+import { ChatHttpError, parseRetryAfterMs } from './retry';
 import type { DiscoveryResult } from '../discover';
 import { DEEPSEEK_BASE_URL, DEEPSEEK_CHAT_MODELS } from '../catalogs/deepseek';
 import {
@@ -85,7 +86,7 @@ async function deepseekChat(opts: ChatOptions): Promise<ChatResult> {
   });
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
-    throw new Error(`deepseek chat ${res.status}: ${errBody.slice(0, 400)}`);
+    throw new ChatHttpError({ provider: 'deepseek', status: res.status, body: errBody, retryAfterMs: parseRetryAfterMs(res.headers) });
   }
   const parsed = (await res.json()) as DeepseekChatResponse;
   const message = parsed.choices?.[0]?.message;

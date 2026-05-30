@@ -21,6 +21,7 @@ import type {
   ChatOptions,
   ChatResult,
 } from './types';
+import { ChatHttpError, parseRetryAfterMs } from './retry';
 import type { DiscoveryResult } from '../discover';
 import { XAI_BASE_URL, XAI_CHAT_MODELS } from '../catalogs/xai';
 import {
@@ -71,7 +72,7 @@ async function xaiChat(opts: ChatOptions): Promise<ChatResult> {
   });
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
-    throw new Error(`xai chat ${res.status}: ${errBody.slice(0, 400)}`);
+    throw new ChatHttpError({ provider: 'xai', status: res.status, body: errBody, retryAfterMs: parseRetryAfterMs(res.headers) });
   }
   const parsed = (await res.json()) as XaiChatResponse;
   // OpenAI-compat shape — text lives at choices[0].message.content,

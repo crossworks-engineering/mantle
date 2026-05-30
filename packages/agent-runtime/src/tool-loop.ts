@@ -235,6 +235,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           ...(typeof args.params.temperature === 'number' ? { temperature: args.params.temperature } : {}),
           ...(typeof args.params.max_tokens === 'number' ? { maxTokens: args.params.max_tokens } : {}),
           ...(typeof args.params.top_p === 'number' ? { topP: args.params.top_p } : {}),
+          ...(typeof args.params.max_retries === 'number' ? { maxRetries: args.params.max_retries } : {}),
         });
         recordChatUsage(h, r, args.model);
         return r;
@@ -536,6 +537,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         // (Anthropic) or no-op (xAI/HF treat it as auto).
         toolChoice: 'none',
         cacheControl: { systemPrompt: true },
+        ...(typeof args.params.max_retries === 'number' ? { maxRetries: args.params.max_retries } : {}),
       });
       recordChatUsage(h, r, args.model);
       return r;
