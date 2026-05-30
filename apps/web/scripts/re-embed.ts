@@ -58,7 +58,7 @@ type ParsedArgs = ReembedOpts & {
 function parseArgs(argv: string[]): ParsedArgs {
   const out: ParsedArgs = {
     model: DEFAULT_EMBEDDING_MODEL,
-    tables: ['nodes', 'facts', 'entities'],
+    tables: ['nodes', 'facts', 'entities', 'content_chunks'],
     types: undefined,
     limit: undefined,
     batchSize: 50,
@@ -72,8 +72,9 @@ function parseArgs(argv: string[]): ParsedArgs {
         .slice('--tables='.length)
         .split(',')
         .map((s) => s.trim().toLowerCase())
-        .filter((s): s is 'nodes' | 'facts' | 'entities' =>
-          s === 'nodes' || s === 'facts' || s === 'entities',
+        .filter(
+          (s): s is 'nodes' | 'facts' | 'entities' | 'content_chunks' =>
+            s === 'nodes' || s === 'facts' || s === 'entities' || s === 'content_chunks',
         );
     } else if (arg.startsWith('--types=')) {
       out.types = arg
@@ -89,6 +90,10 @@ function parseArgs(argv: string[]): ParsedArgs {
       if (!Number.isNaN(n) && n > 0) out.batchSize = n;
     } else if (arg === '--dry-run') {
       out.dryRun = true;
+    } else if (arg === '--repopulate') {
+      // Embed rows whose embedding is currently NULL too (post dimension
+      // migration). Default only re-embeds already-embedded rows.
+      out.includeUnembedded = true;
     }
   }
   return out;

@@ -50,6 +50,12 @@ export interface ReembedOpts {
   tables?: ReadonlyArray<ReembedTable>;
   /** Restrict by node type (only affects the nodes pass). */
   types?: string[];
+  /** Repopulate mode: also embed rows whose embedding is currently NULL — used
+   *  after a dimension migration that nulled the column (a same-model swap
+   *  leaves vectors in place, so the default only touches already-embedded
+   *  rows). For the nodes pass this embeds every node EXCEPT the kinds the
+   *  extractor never embeds (branch, telegram_message, conversation-digest). */
+  includeUnembedded?: boolean;
   /** Cap rows per table — useful for a smoke test. */
   limit?: number;
   /** Embed batch size. Default 50. Cache hits are free so larger batches
@@ -198,6 +204,7 @@ async function _runReembedInner(
   const dryRun = opts.dryRun ?? false;
   const limit = opts.limit ?? null;
   const types = opts.types ?? null;
+  const includeUnembedded = opts.includeUnembedded ?? false;
 
   const byTable: ReembedResult['byTable'] = {
     nodes: { rows: 0, chars: 0, written: 0 },
@@ -207,7 +214,17 @@ async function _runReembedInner(
   };
 
   if (tables.has('nodes')) {
-    const conds: SQL[] = [eq(nodes.ownerId, ownerId), isNotNull(nodes.embedding)];
+    const conds: SQL[] = [eq(nodes.ownerId, ownerId)];
+    if (includeUnembedded) {
+      // Repopulation: embed every node the extractor would embed regardless of
+      // current null state — excluding the kinds it never embeds.
+      conds.push(
+        sql`${nodes.type}::text not in ('branch','telegram_message')`,
+        sql`not (${nodes.tags} @> ARRAY['conversation-digest']::text[])`,
+      );
+    } else {
+      conds.push(isNotNull(nodes.embedding));
+    }
     if (types && types.length > 0) {
       conds.push(sql`${nodes.type}::text = any(${types}::text[])`);
     }
@@ -249,7 +266,7 @@ async function _runReembedInner(
             and(
               eq(facts.ownerId, ownerId),
               isNull(facts.validTo),
-              isNotNull(facts.embedding),
+              ...(includeUnembedded ? [] : [isNotNull(facts.embedding)]),
             ),
           );
         const rows = limit ? await q.limit(limit) : await q;
@@ -277,7 +294,12 @@ async function _runReembedInner(
         const q = db
           .select()
           .from(entities)
-          .where(and(eq(entities.ownerId, ownerId), isNotNull(entities.embedding)));
+          .where(
+            and(
+              eq(entities.ownerId, ownerId),
+              ...(includeUnembedded ? [] : [isNotNull(entities.embedding)]),
+            ),
+          );
         const rows = limit ? await q.limit(limit) : await q;
         return rows as Entity[];
       },
@@ -306,7 +328,12 @@ async function _runReembedInner(
         const q = db
           .select()
           .from(contentChunks)
-          .where(and(eq(contentChunks.ownerId, ownerId), isNotNull(contentChunks.embedding)));
+          .where(
+            and(
+              eq(contentChunks.ownerId, ownerId),
+              ...(includeUnembedded ? [] : [isNotNull(contentChunks.embedding)]),
+            ),
+          );
         const rows = limit ? await q.limit(limit) : await q;
         return rows as ContentChunk[];
       },
