@@ -421,6 +421,13 @@
       "when": 1779403100000,
       "tag": "0059_kind_aware_fact_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1779403200000,
+      "tag": "0060_embedding_dim_768",
+      "breakpoints": true
     }
   ]
 }

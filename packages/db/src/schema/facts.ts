@@ -51,7 +51,7 @@ export const facts = pgTable(
     validFrom: timestamp('valid_from', { withTimezone: true }),
     validTo: timestamp('valid_to', { withTimezone: true }),
     sourceNodeId: uuid('source_node_id').references(() => nodes.id, { onDelete: 'set null' }),
-    embedding: vector(1536)('embedding'),
+    embedding: vector(768)('embedding'),
     supersededBy: uuid('superseded_by'),
     data: jsonb('data').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
     /** True if the source node was edited and this fact should be re-extracted. */

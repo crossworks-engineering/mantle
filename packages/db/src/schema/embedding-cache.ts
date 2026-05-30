@@ -9,7 +9,7 @@ import { vector } from './_shared';
  */
 export const embeddingCache = pgTable('embedding_cache', {
   contentHash: text('content_hash').primaryKey(),
-  embedding: vector(1536)('embedding').notNull(),
+  embedding: vector(768)('embedding').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 

@@ -24,7 +24,7 @@ export const contentChunks = pgTable(
     /** The section heading in effect at this chunk's start, if any. */
     headingPath: text('heading_path'),
     text: text('text').notNull(),
-    embedding: vector(1536)('embedding'),
+    embedding: vector(768)('embedding'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [

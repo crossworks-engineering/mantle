@@ -58,7 +58,7 @@ const FALLBACK_MODEL = 'openai/text-embedding-3-small';
  */
 export const DEFAULT_EMBEDDING_MODEL =
   process.env.MANTLE_EMBEDDING_MODEL?.trim() || FALLBACK_MODEL;
-export const EMBEDDING_DIMS = 1536;
+export const EMBEDDING_DIMS = 768;
 
 // ── Per-owner resolver ─────────────────────────────────────────────────────
 //

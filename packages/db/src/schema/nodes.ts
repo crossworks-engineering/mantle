@@ -45,7 +45,7 @@ export const nodes = pgTable(
     data: jsonb('data').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
     path: ltree('path').notNull(),
     tags: text('tags').array().default(sql`'{}'::text[]`).notNull(),
-    embedding: vector(1536)('embedding'),
+    embedding: vector(768)('embedding'),
     // `search_tsv` is a GENERATED ALWAYS column — declared here as a regular
     // tsvector so SELECTs can read it; the actual `GENERATED` clause is in
     // the SQL migration since Drizzle doesn't model that yet.

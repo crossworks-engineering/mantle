@@ -20,7 +20,7 @@ export const entities = pgTable(
     name: text('name').notNull(),
     aliases: text('aliases').array().default(sql`'{}'::text[]`).notNull(),
     data: jsonb('data').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
-    embedding: vector(1536)('embedding'),
+    embedding: vector(768)('embedding'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

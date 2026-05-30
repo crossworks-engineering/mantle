@@ -58,7 +58,7 @@ export const toolResultChunks = pgTable(
       .references(() => toolResults.id, { onDelete: 'cascade' }),
     ordinal: integer('ordinal').notNull(),
     text: text('text').notNull(),
-    embedding: vector(1536)('embedding'),
+    embedding: vector(768)('embedding'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [index('tool_result_chunks_result_idx').on(t.resultId)],
