@@ -24,6 +24,9 @@ part is **done and committed**. Two steps remain:
   clean, merged to `main`.
 - The `local` provider + `local-embedding` adapter (Phase 1, commit `b6dea96`)
   are live and verified against EmbeddingGemma.
+- The embed path now treats `local` as **keyless** (it threw "no api key for
+  provider 'local'" otherwise — local servers need no credential). Required for
+  both live extraction and the repopulation below.
 
 **NOT DONE (do these next):**
 1. **EVERY embedding is currently NULL** (1929 nodes / 5735 facts / 2421
