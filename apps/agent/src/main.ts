@@ -238,11 +238,21 @@ async function loadContext(
       )
       .orderBy(sql`${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector`)
       .limit(factLimit);
-    factRows = rows.map((r) => ({
-      content: r.content,
-      kind: r.kind as string,
-      entityName: r.entityName,
-    }));
+    factRows = rows
+      // Mismatch guard: if the query vector and stored fact vectors are in
+      // different embedding-model spaces (the per-agent override / write-side
+      // can drift), cosine distances cluster near 1.0. Drop those so a mismatch
+      // degrades to "no facts" (visible) rather than surfacing garbage-space
+      // rows as real profile facts. Loose by design (0.85) — legitimate facts
+      // still pass even when only loosely related to the message; this only
+      // catches the mismatch, unlike the content-hit cutoff (0.6) which also
+      // filters for query relevance.
+      .filter((r) => (r.dist ?? 1) < 0.85)
+      .map((r) => ({
+        content: r.content,
+        kind: r.kind as string,
+        entityName: r.entityName,
+      }));
   }
 
   // ─── Content index hits ────────────────────────────────────────────

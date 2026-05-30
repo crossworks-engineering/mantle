@@ -951,7 +951,12 @@ async function classifyAndApplyFact(
   const targetIdx = decision.target_index ? decision.target_index - 1 : null;
   const target = targetIdx != null ? closeNeighbours[targetIdx] : null;
 
-  if (decision.decision === 'NOOP') return 'NOOP';
+  if (decision.decision === 'NOOP') {
+    // Re-confirmed by this extraction — clear the suspect flag so the
+    // re-extract sweep (H4) keeps it rather than retiring it as stale.
+    if (target) await db.update(facts).set({ dirty: false }).where(eq(facts.id, target.id));
+    return 'NOOP';
+  }
 
   const now = new Date();
   if (decision.decision === 'DELETE' && target) {
@@ -1820,6 +1825,21 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
         },
         async (h) => {
           const t = { ADD: 0, UPDATE: 0, DELETE: 0, NOOP: 0 };
+          // H4 (re-extract reconciliation): mark this node's live facts suspect.
+          // Each re-asserted by the new extraction gets cleared (NOOP/UPDATE);
+          // the rest are retired after the loop. Without this, a fact dropped
+          // from an edited document stays valid_to=NULL forever. No-op for a
+          // fresh node (0 prior facts).
+          await db
+            .update(facts)
+            .set({ dirty: true })
+            .where(
+              and(
+                eq(facts.ownerId, ownerId),
+                eq(facts.sourceNodeId, node.id),
+                isNull(facts.validTo),
+              ),
+            );
           let capExceededAt: number | null = null;
           for (let i = 0; i < parsed.facts.length; i++) {
             if (costCap != null) {
@@ -1868,7 +1888,39 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
               );
             }
           }
-          const output: Record<string, unknown> = { ...t };
+          // H4: retire facts this extraction didn't re-assert (still dirty) —
+          // but only on a complete pass. A cost-cap break leaves later
+          // candidates unprocessed, so their facts must NOT be retired; just
+          // clear the suspect flag in that case.
+          let retired = 0;
+          if (capExceededAt == null) {
+            const retiredRows = await db
+              .update(facts)
+              .set({ validTo: new Date(), dirty: false, updatedAt: new Date() })
+              .where(
+                and(
+                  eq(facts.ownerId, ownerId),
+                  eq(facts.sourceNodeId, node.id),
+                  isNull(facts.validTo),
+                  eq(facts.dirty, true),
+                ),
+              )
+              .returning({ id: facts.id });
+            retired = retiredRows.length;
+          } else {
+            await db
+              .update(facts)
+              .set({ dirty: false })
+              .where(
+                and(
+                  eq(facts.ownerId, ownerId),
+                  eq(facts.sourceNodeId, node.id),
+                  isNull(facts.validTo),
+                  eq(facts.dirty, true),
+                ),
+              );
+          }
+          const output: Record<string, unknown> = { ...t, retired };
           if (capExceededAt != null) {
             const dropped = parsed.facts.length - capExceededAt;
             output.costCapHitAt = capExceededAt;
@@ -1893,12 +1945,12 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
             );
           }
           h.setOutput(output);
-          return t;
+          return { ...t, retired };
         },
       );
 
       console.log(
-        `[extractor]   → facts: ADD=${tally.ADD} UPDATE=${tally.UPDATE} DELETE=${tally.DELETE} NOOP=${tally.NOOP}`,
+        `[extractor]   → facts: ADD=${tally.ADD} UPDATE=${tally.UPDATE} DELETE=${tally.DELETE} NOOP=${tally.NOOP} retired=${tally.retired}`,
       );
 
       void bumpWorkerUsage(worker.id);

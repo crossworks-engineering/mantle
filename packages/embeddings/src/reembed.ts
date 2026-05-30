@@ -8,7 +8,7 @@
  * didn't change, but the stored vectors are now in a different model's
  * space than what the responder will use at query time — cosine
  * similarity across models is meaningless, so retrieval silently
- * degrades. This walks `nodes`, `facts`, and `entities` and re-runs
+ * degrades. This walks `nodes`, `facts`, `entities`, and `content_chunks` and re-runs
  * `embed()` over every row.
  *
  * **Idempotency:** cache-keyed by (model, content_hash). Re-running with
@@ -24,15 +24,22 @@
 
 import { and, eq, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
 import {
+  contentChunks,
   db,
   entities,
   facts,
   nodes,
+  type ContentChunk,
   type Entity,
   type Fact,
   type Node,
 } from '@mantle/db';
 import { embedBatch } from './index';
+
+/** Tables a rebuild walks. tool_result_chunks is intentionally excluded: it's a
+ *  transient spill-store (read_result) continuously regenerated and queried
+ *  only within the turn that created it, so a model swap self-heals there. */
+type ReembedTable = 'nodes' | 'facts' | 'entities' | 'content_chunks';
 
 export interface ReembedOpts {
   /** Embedding model slug (OpenRouter or direct). Must be the model whose
@@ -40,7 +47,7 @@ export interface ReembedOpts {
    *  `resolveEmbeddingModel(ownerId)` will return after the worker save. */
   model: string;
   /** Subset of tables to rebuild. Default: all three. */
-  tables?: ReadonlyArray<'nodes' | 'facts' | 'entities'>;
+  tables?: ReadonlyArray<ReembedTable>;
   /** Restrict by node type (only affects the nodes pass). */
   types?: string[];
   /** Cap rows per table — useful for a smoke test. */
@@ -55,11 +62,11 @@ export interface ReembedOpts {
 }
 
 export type ReembedProgressEvent =
-  | { kind: 'table_start'; table: 'nodes' | 'facts' | 'entities'; rows: number; chars: number }
-  | { kind: 'table_done'; table: 'nodes' | 'facts' | 'entities'; written: number; durationMs: number };
+  | { kind: 'table_start'; table: ReembedTable; rows: number; chars: number }
+  | { kind: 'table_done'; table: ReembedTable; written: number; durationMs: number };
 
 export interface ReembedResult {
-  byTable: Record<'nodes' | 'facts' | 'entities', TableResult>;
+  byTable: Record<ReembedTable, TableResult>;
   totalRows: number;
   totalChars: number;
   totalWritten: number;
@@ -75,7 +82,7 @@ interface TableResult {
   written: number;
 }
 
-const DEFAULT_TABLES = ['nodes', 'facts', 'entities'] as const;
+const DEFAULT_TABLES = ['nodes', 'facts', 'entities', 'content_chunks'] as const;
 const DEFAULT_BATCH_SIZE = 50;
 
 // In-flight rebuilds, keyed by ownerId. Coalesces double-clicks /
@@ -115,7 +122,7 @@ function textForEntity(row: Entity): string {
 
 async function reEmbedTable<T extends { id: string }>(opts: {
   ownerId: string;
-  label: 'nodes' | 'facts' | 'entities';
+  label: ReembedTable;
   fetcher: () => Promise<T[]>;
   textFor: (row: T) => string;
   writer: (id: string, vec: number[]) => Promise<void>;
@@ -196,6 +203,7 @@ async function _runReembedInner(
     nodes: { rows: 0, chars: 0, written: 0 },
     facts: { rows: 0, chars: 0, written: 0 },
     entities: { rows: 0, chars: 0, written: 0 },
+    content_chunks: { rows: 0, chars: 0, written: 0 },
   };
 
   if (tables.has('nodes')) {
@@ -283,10 +291,44 @@ async function _runReembedInner(
     });
   }
 
-  const totalRows = byTable.nodes.rows + byTable.facts.rows + byTable.entities.rows;
-  const totalChars = byTable.nodes.chars + byTable.facts.chars + byTable.entities.chars;
+  if (tables.has('content_chunks')) {
+    // search_chunks is the primary long-document retrieval primitive; leaving
+    // chunk vectors in the old model's space after a rebuild is the split-brain
+    // the rest of this walk exists to prevent. Chunks carry their own `text`.
+    byTable.content_chunks = await reEmbedTable<ContentChunk>({
+      ownerId,
+      label: 'content_chunks',
+      model: opts.model,
+      batchSize,
+      dryRun,
+      onProgress: opts.onProgress,
+      fetcher: async () => {
+        const q = db
+          .select()
+          .from(contentChunks)
+          .where(and(eq(contentChunks.ownerId, ownerId), isNotNull(contentChunks.embedding)));
+        const rows = limit ? await q.limit(limit) : await q;
+        return rows as ContentChunk[];
+      },
+      textFor: (row) => row.text,
+      writer: async (id, vec) => {
+        await db.update(contentChunks).set({ embedding: vec }).where(eq(contentChunks.id, id));
+      },
+    });
+  }
+
+  const totalRows =
+    byTable.nodes.rows + byTable.facts.rows + byTable.entities.rows + byTable.content_chunks.rows;
+  const totalChars =
+    byTable.nodes.chars +
+    byTable.facts.chars +
+    byTable.entities.chars +
+    byTable.content_chunks.chars;
   const totalWritten =
-    byTable.nodes.written + byTable.facts.written + byTable.entities.written;
+    byTable.nodes.written +
+    byTable.facts.written +
+    byTable.entities.written +
+    byTable.content_chunks.written;
 
   return {
     byTable,

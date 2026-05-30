@@ -99,3 +99,11 @@ CMD ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/files-watch.ts"]
 FROM deps AS worker-events
 ENV NODE_ENV=production
 CMD ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/events-reminders.ts"]
+
+# ── 9. migrate: one-shot schema migration ───────────────────────────────────
+# Runs the drizzle migrations and exits. The compose stack makes every app
+# service depend on this completing, so the schema is never a step behind the
+# code on a redeploy — and one dedicated migrator means no multi-container race.
+FROM deps AS migrate
+ENV NODE_ENV=production
+CMD ["pnpm", "-C", "packages/db", "migrate"]

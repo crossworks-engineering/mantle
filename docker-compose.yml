@@ -18,8 +18,8 @@ name: mantle
 #   docker compose build
 #   docker compose up -d --wait
 #
-# After first boot, run migrations once:
-#   docker compose run --rm web pnpm -C packages/db migrate
+# Migrations run automatically — the one-shot `migrate` service applies them
+# before any app service starts (each depends on it completing). No manual step.
 
 volumes:
   mantle_pg_data:
@@ -115,6 +115,20 @@ services:
       retries: 12
       start_period: 30s
 
+  # One-shot schema migration. App services wait for this to complete
+  # successfully before starting, so the DB schema is never behind the code on
+  # a redeploy — and a single dedicated migrator means no race on the migrator.
+  migrate:
+    build:
+      context: .
+      target: migrate
+    container_name: mantle_migrate
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      <<: *app-env
+
   web:
     build:
       context: .
@@ -124,6 +138,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       minio:    { condition: service_healthy }
+      migrate:  { condition: service_completed_successfully }
     environment:
       <<: *app-env
     volumes:
@@ -139,6 +154,7 @@ services:
     restart: unless-stopped
     depends_on:
       postgres: { condition: service_healthy }
+      migrate:  { condition: service_completed_successfully }
     environment:
       <<: *app-env
     volumes:
@@ -153,6 +169,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       minio:    { condition: service_healthy }
+      migrate:  { condition: service_completed_successfully }
     environment:
       <<: *app-env
 
@@ -164,6 +181,7 @@ services:
     restart: unless-stopped
     depends_on:
       postgres: { condition: service_healthy }
+      migrate:  { condition: service_completed_successfully }
     environment:
       <<: *app-env
 
@@ -177,6 +195,7 @@ services:
     restart: unless-stopped
     depends_on:
       postgres: { condition: service_healthy }
+      migrate:  { condition: service_completed_successfully }
     environment:
       <<: *app-env
     volumes:
@@ -192,5 +211,6 @@ services:
     restart: unless-stopped
     depends_on:
       postgres: { condition: service_healthy }
+      migrate:  { condition: service_completed_successfully }
     environment:
       <<: *app-env
