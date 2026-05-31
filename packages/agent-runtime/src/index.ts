@@ -26,6 +26,16 @@ export {
 } from './tool-loop';
 
 export {
+  resolveChatRoutes,
+  resolveRouteAdapter,
+  isChatFailover,
+  type ChatRoute,
+  type ChatRoutes,
+  type ChatRouteRow,
+  type ResolvedChatRoute,
+} from './chat-failover';
+
+export {
   resolveAgentSkills,
   composeSystemPromptWithSkills,
   effectiveToolSlugs,

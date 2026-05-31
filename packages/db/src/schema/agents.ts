@@ -184,6 +184,17 @@ export const agents = pgTable(
     model: text('model').notNull(),
     /** Which entry in api_keys to use. SET NULL on key delete, not cascade. */
     apiKeyId: uuid('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
+    /** Optional BACKUP chat route — same shape as the active (primary)
+     *  provider/model/apiKeyId above. When `backupEnabled` and a route-DOWN /
+     *  429 error hits the primary, the runtime fails over to this route. Unlike
+     *  embeddings, a chat backup may be a DIFFERENT model (no vector-space
+     *  lock) — that's what lets a local model be primary with a cloud backup.
+     *  The "make backup primary" UI toggle swaps these with the primary cols,
+     *  so the primary cols are always the active route. See migration 0062. */
+    backupProvider: text('backup_provider'),
+    backupModel: text('backup_model'),
+    backupApiKeyId: uuid('backup_api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
+    backupEnabled: boolean('backup_enabled').default(false).notNull(),
     systemPrompt: text('system_prompt').notNull(),
     /** Legacy free-form MCP tool name array. Superseded by `tool_slugs` /
      *  `skill_slugs` below; kept for back-compat with existing rows. */

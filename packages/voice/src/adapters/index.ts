@@ -162,6 +162,11 @@ export {
   type AdapterMeta,
 } from './types';
 
+// Chat error classification — exposed so the agent-runtime failover layer
+// reuses the SAME transient-vs-permanent predicate the per-adapter retry
+// wrapper uses (429 / 5xx / network → transient; 4xx bad-input → permanent).
+export { ChatHttpError, classifyChatError, parseRetryAfterMs } from './retry';
+
 // Re-export the built-in adapter objects so apps can compose them
 // (e.g. for testing against a mocked HTTP layer).
 export { openAiTtsAdapter } from './openai-tts';

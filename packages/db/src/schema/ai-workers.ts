@@ -228,6 +228,15 @@ export const aiWorkers = pgTable(
     provider: text('provider').notNull(),
     model: text('model').notNull(),
     apiKeyId: uuid('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
+    /** Optional BACKUP chat route — same shape as the active provider/model/
+     *  apiKeyId above. On a route-DOWN / 429 failure of the primary the runtime
+     *  fails over here (a chat backup may be a different model). The "make
+     *  backup primary" toggle swaps these with the primary cols. Migration 0062.
+     *  Not used by non-chat kinds (tts/stt/vision/embedding ignore it). */
+    backupProvider: text('backup_provider'),
+    backupModel: text('backup_model'),
+    backupApiKeyId: uuid('backup_api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
+    backupEnabled: boolean('backup_enabled').default(false).notNull(),
     systemPrompt: text('system_prompt'),
     params: jsonb('params').$type<AiWorkerParams>().default(sql`'{}'::jsonb`).notNull(),
     enabled: boolean('enabled').default(true).notNull(),
