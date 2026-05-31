@@ -736,7 +736,6 @@ export async function chatComplete(
 async function reconcileEntity(
   ownerId: string,
   mention: { name: string; kind: string },
-  embeddingModel?: string,
 ): Promise<Entity> {
   // 1. Exact name (case-insensitive) or alias match first — cheapest.
   const trimmed = mention.name.trim();
@@ -784,9 +783,7 @@ async function reconcileEntity(
   // 3. Embedding match (when populated). We embed the mention only when we
   // need to compare; cheap thanks to the embedding_cache.
   try {
-    const [mentionVec] = await Promise.all([
-      embed(ownerId, trimmed, embeddingModel ? { model: embeddingModel } : undefined),
-    ]);
+    const [mentionVec] = await Promise.all([embed(ownerId, trimmed)]);
     const vecHits = await db
       .select({
         row: entities,
@@ -845,11 +842,7 @@ async function reconcileEntity(
   // 4. No match — create new entity (embed its name + kind for future matches).
   let embedding: number[] | null = null;
   try {
-    embedding = await embed(
-      ownerId,
-      `${mention.kind}: ${trimmed}`,
-      embeddingModel ? { model: embeddingModel } : undefined,
-    );
+    embedding = await embed(ownerId, `${mention.kind}: ${trimmed}`);
   } catch {
     // OK to create without embedding; can be backfilled later.
   }
@@ -1352,9 +1345,6 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
     `[extractor] node ${node.id.slice(0, 8)} (${node.type}, ${node.title.slice(0, 40)}) via ${adapter.adapterName}:${worker.model}`,
   );
 
-  const embeddingModel = params.embedding_model;
-  const embedOpts = embeddingModel ? { model: embeddingModel } : undefined;
-
   await startTrace(
     {
       kind: 'extractor_run',
@@ -1374,7 +1364,6 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
         provider: worker.provider,
         worker_slug: worker.slug,
         worker_id: worker.id,
-        embeddingModel: embeddingModel ?? null,
       },
     },
     async () => {
@@ -1454,7 +1443,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
         .join('\n\n');
       let embedding: number[] | null = null;
       try {
-        embedding = await embed(ownerId, embedText, embedOpts);
+        embedding = await embed(ownerId, embedText);
       } catch (err) {
         console.error('[extractor] embed failed:', err instanceof Error ? err.message : err);
       }
@@ -1522,7 +1511,6 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
             vectors = await embedBatch(
               ownerId,
               pieces.map((p) => p.text),
-              embedOpts,
             );
           } catch (err) {
             console.error(
@@ -1604,7 +1592,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
                   ),
                 )
                 .limit(1);
-              const ent = await reconcileEntity(ownerId, mention, embeddingModel);
+              const ent = await reconcileEntity(ownerId, mention);
               map.set(mention.name.trim().toLowerCase(), ent.id);
               if (before.length > 0) matched++;
               else created++;
@@ -1789,7 +1777,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       let factVectors: number[][] = [];
       try {
         const { embedBatch } = await import('@mantle/embeddings');
-        factVectors = await embedBatch(ownerId, factTexts, embedOpts);
+        factVectors = await embedBatch(ownerId, factTexts);
       } catch (err) {
         console.error(
           '[extractor] fact embed batch failed:',

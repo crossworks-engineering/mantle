@@ -168,9 +168,8 @@ export type ExtractorParams = ChatLlmParams & {
   /** Whether to do the fact-extraction pass (in addition to summary +
    *  entity extraction). Defaults to true. */
   extract_facts?: boolean;
-  /** Embedding model to use for the node embedding + facts. Falls back
-   *  to the global default in @mantle/embeddings if omitted. */
-  embedding_model?: string;
+  // NOTE: no per-extractor embedding_model. The embedder is the single
+  // `embedding_config` row (migration 0061) — the extractor embeds through it.
   /** Hard cost cap per node extraction in micro-USD. Once the running
    *  trace cost exceeds this, remaining facts are dropped and a warning
    *  is logged. Null = no cap. */

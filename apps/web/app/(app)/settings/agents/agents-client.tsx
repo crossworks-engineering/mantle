@@ -59,19 +59,8 @@ const KNOWN_NODE_TYPES = [
 // (and a matching `case` in extractor.ts:readNodeBodyRaw) if a surface
 // for one of them is ever built.
 
-/** Curated embedding models — all output (or can be coerced to) 768 dims to
- *  match the `nodes.embedding vector(768)` column (migration 0060). Empty value
- *  = use the brain's `embedding` AI-worker (the local `embeddinggemma:latest`
- *  default). NOTE: any override here that differs from the brain's write-side
- *  model puts this agent's queries in a different vector space than the indexed
- *  corpus — retrieval silently returns wrong results. The boot consistency
- *  check warns when an override diverges. Prefer leaving this on Default. */
-const EMBEDDING_MODELS: { value: string; label: string; note?: string }[] = [
-  { value: '', label: 'Default (brain worker · local embeddinggemma)', note: '768 dims · free / local' },
-  { value: 'embeddinggemma:latest', label: 'embeddinggemma:latest (local)', note: '768 dims · free / local' },
-  { value: 'google/gemini-embedding-001', label: 'google/gemini-embedding-001', note: 'cloud · coerced → 768 · $0.15/1M tok' },
-  { value: 'google/gemini-embedding-2-preview', label: 'google/gemini-embedding-2-preview', note: 'cloud · multimodal · → 768 · $0.20/1M tok' },
-];
+// The embedder is no longer agent-configurable — it's the single
+// `embedding_config` row, managed at /settings/embedding (migration 0061).
 
 // The static MODEL_SUGGESTIONS list was retired with the ModelSelect rollout —
 // the form now reads the full live OpenRouter catalog (~330+ models) from
@@ -101,7 +90,6 @@ type MemoryConfig = {
   extract_types?: string[];
   extract_facts?: boolean;
   extract_cost_cap_micro_usd?: number | null;
-  embedding_model?: string;
   /** Agent slugs this agent may delegate to via invoke_agent. */
   delegate_to?: string[];
   /** Tool-result spill thresholds (KB). Empty = env/global defaults. */
@@ -292,8 +280,6 @@ type FormState = {
   extractFacts: boolean;
   /** Cap in cents (UI-friendlier than micro-USD; converted on save). Empty = no cap. */
   extractCostCapCents: string;
-  /** OpenRouter slug. Empty = use the env default. */
-  embeddingModel: string;
   /** Slugs this agent may call during a turn. */
   toolSlugs: string[];
   skillSlugs: string[];
@@ -332,7 +318,6 @@ function emptyForm(role: Role = 'responder'): FormState {
     extractTypes: d.extractTypes,
     extractFacts: true,
     extractCostCapCents: '',
-    embeddingModel: '',
     toolSlugs: [],
     skillSlugs: [],
     delegateTo: [],
@@ -371,7 +356,6 @@ function formFromAgent(a: AgentSummary): FormState {
       a.memoryConfig.extract_cost_cap_micro_usd != null
         ? (a.memoryConfig.extract_cost_cap_micro_usd / 10_000).toString()
         : '',
-    embeddingModel: a.memoryConfig.embedding_model ?? '',
     toolSlugs: a.toolSlugs ?? [],
     skillSlugs: a.skillSlugs ?? [],
     delegateTo: a.memoryConfig.delegate_to ?? [],
@@ -609,16 +593,6 @@ export function AgentsClient({
         }
       }
     }
-    // Embedding model: shown for any role that embeds. Empty value = use env default.
-    if (
-      form.role === 'extractor' ||
-      form.role === 'responder' ||
-      form.role === 'assistant'
-    ) {
-      const m = form.embeddingModel.trim();
-      if (m) memoryConfig.embedding_model = m;
-    }
-
     // Delegation allowlist. Always send it (even empty) so de-selecting every
     // delegate actually clears it — the server merges memory_config, so an
     // omitted key would otherwise be preserved.
@@ -1260,36 +1234,6 @@ export function AgentsClient({
                 </div>
               )}
 
-              {(form.role === 'extractor' ||
-                form.role === 'responder' ||
-                form.role === 'assistant') && (
-                <div className="space-y-1.5 border-t border-border pt-3">
-                  <Label htmlFor="embeddingModel">Embedding model</Label>
-                  <select
-                    id="embeddingModel"
-                    value={form.embeddingModel}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, embeddingModel: e.target.value }))
-                    }
-                    className={SELECT_CLASS}
-                  >
-                    {EMBEDDING_MODELS.map((m) => (
-                      <option key={m.value} value={m.value}>
-                        {m.label}
-                        {m.note ? ` — ${m.note}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-muted-foreground">
-                    Used wherever this agent calls <code>embed()</code>. All listed
-                    models output 1536-dim vectors (matching{' '}
-                    <code>nodes.embedding</code>). <strong>Important:</strong> the
-                    extractor&apos;s model must match the responder/assistant&apos;s for
-                    retrieval to work — vectors from different models live in
-                    different spaces and don&apos;t compare.
-                  </p>
-                </div>
-              )}
             </fieldset>
 
             {form.role === 'responder' && (

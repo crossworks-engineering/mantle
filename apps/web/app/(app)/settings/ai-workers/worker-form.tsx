@@ -1892,32 +1892,6 @@ function LlmWorkerFields({
               />
             </div>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="embedding_model">
-              Embedding model override{' '}
-              <span className="text-muted-foreground">(advanced)</span>
-            </Label>
-            <Input
-              id="embedding_model"
-              name="embedding_model"
-              defaultValue={(params.embedding_model as string) ?? ''}
-              placeholder="blank = use the global Embedding worker"
-            />
-            <p className="text-xs text-muted-foreground">
-              Per-extractor override. Leave blank to use the global{' '}
-              <a
-                href="/settings/ai-workers"
-                className="underline decoration-dotted underline-offset-2"
-              >
-                Embedding worker
-              </a>{' '}
-              — that's the canonical place to pick the model now, since
-              embeddings are used by more than just the extractor (recall,
-              MCP search, tool-result spill). Set a value here only if you
-              genuinely want this one worker to use a different model from
-              the rest of the stack.
-            </p>
-          </div>
         </>
       )}
       {kind === 'summarizer' && (

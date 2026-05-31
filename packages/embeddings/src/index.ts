@@ -5,11 +5,13 @@
  *   embedBatch(texts)        → vector(768)[], cached per-input.
  *   embedMultimodal(inputs)  → vector(768)[] for text / image / audio / file.
  *
- * Default backend (since migration 0060): the `local` provider —
- * `embeddinggemma:latest` (768 dims) via Ollama, keyless. Override globally
- * with the `MANTLE_EMBEDDING_MODEL` env var, or per call with `opts.model`;
- * normally the operator's `embedding` AI-worker row wins via
- * `resolveEmbeddingConfig`.
+ * The embedder is the single `embedding_config` row (migration 0061), resolved
+ * via {@link resolveEmbeddingConfig}: one model + one dimension + a primary
+ * route and an optional same-model backup. Default backend is the `local`
+ * provider — `embeddinggemma:latest` (768 dims) via Ollama, keyless. With no
+ * config row the resolver falls back to that local default; the
+ * `MANTLE_EMBEDDING_MODEL` env only seeds that fallback's model id. `opts.model`
+ * survives for internal callers (the re-embed CLI, the dim probe) only.
  *
  * Multimodal models (`google/gemini-embedding-2-preview`,
  * `nvidia/llama-nemotron-embed-vl-1b-v2`) accept richer inputs via
@@ -52,8 +54,8 @@ export function isMultimodalModel(model: string): boolean {
 
 const FALLBACK_MODEL = 'embeddinggemma:latest';
 /**
- * Process-level fallback when no `embedding` AI worker is configured and no
- * `MANTLE_EMBEDDING_MODEL` env override is set. Exported for the few call
+ * Process-level fallback model id when no `embedding_config` row exists and no
+ * `MANTLE_EMBEDDING_MODEL` env seed is set. Exported for the few call
  * sites (re-embed script, eager preview generation) that don't have an
  * `ownerId` in hand and so can't go through {@link resolveEmbeddingModel}.
  * Normal runtime paths should NOT read this directly — they should call

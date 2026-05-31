@@ -69,14 +69,8 @@ export type AgentMemoryConfig = {
    *  initial llm_extract call is allowed to overshoot — the cap is checked
    *  per-iteration in the classifier loop. */
   extract_cost_cap_micro_usd?: number | null;
-  /** Embedding model override. Falls back to MANTLE_EMBEDDING_MODEL env,
-   *  then to the local `embeddinggemma:latest` default. Applies wherever this
-   *  agent calls embed() — extractor writes vectors, responder/assistant read
-   *  query vectors. For retrieval to work, the extractor's model must
-   *  match the responder/assistant's — vectors from different models live
-   *  in different spaces and don't compare. Allowed values must output
-   *  768-dim vectors (the `nodes.embedding` column shape, migration 0060). */
-  embedding_model?: string;
+  // NOTE: there is no per-agent embedding_model. The embedder is the single
+  // `embedding_config` row (migration 0061); agents display it, never set it.
   /** Agent slugs this agent is allowed to invoke via the `invoke_agent`
    *  builtin. Empty/missing means no delegation permitted (fail closed).
    *  Self-references are refused at dispatch time. The depth chain is

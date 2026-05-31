@@ -776,7 +776,6 @@ function parseParamsFromForm(kind: AiWorkerKind, fd: FormData): AiWorkerParams {
           ? targetTypes.split(',').map((s) => s.trim()).filter(Boolean)
           : undefined,
         extract_facts: fd.get('extract_facts') === 'on',
-        embedding_model: str(fd.get('embedding_model')),
         extract_cost_cap_micro_usd: num(fd.get('extract_cost_cap_micro_usd')),
         huggingface_routing: str(fd.get('huggingface_routing')),
       } as AiWorkerParams;

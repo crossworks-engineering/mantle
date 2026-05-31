@@ -138,19 +138,15 @@ async function loadContext(
   const historyLimit = memoryConfig.history_limit ?? 20;
   const factLimit = memoryConfig.fact_limit ?? 10;
   const contentHitLimit = memoryConfig.content_hit_limit ?? 3;
-  const embeddingModel = memoryConfig.embedding_model;
 
   const personaNotes: PersonaNote[] = (agent.personaNotes ?? []) as PersonaNote[];
 
-  // Embed the inbound once for both fact + content_index lookups.
+  // Embed the inbound once for both fact + content_index lookups. The embedder
+  // is resolved centrally from embedding_config — no per-agent override.
   let queryVec: number[] | null = null;
   if ((factLimit > 0 || contentHitLimit > 0) && inboundText.trim().length > 0) {
     try {
-      queryVec = await embed(
-        ownerId,
-        inboundText.slice(0, 2000),
-        embeddingModel ? { model: embeddingModel } : undefined,
-      );
+      queryVec = await embed(ownerId, inboundText.slice(0, 2000));
     } catch (err) {
       console.error(
         '[assistant] query embed failed:',

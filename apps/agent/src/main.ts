@@ -54,7 +54,7 @@ import {
   type TelegramAttachment,
   type TtsParams,
 } from '@mantle/db';
-import { embed, resolveEmbeddingModel } from '@mantle/embeddings';
+import { embed, resolveEmbeddingConfig } from '@mantle/embeddings';
 import { maxImageBytesFor, modelSupportsVision, recordIngest, refreshModelCatalog, startTrace, step } from '@mantle/tracing';
 import {
   buildChatMessages,
@@ -196,19 +196,16 @@ async function loadContext(
   const digestLimit = memoryConfig.digest_limit ?? 3;
   const factLimit = memoryConfig.fact_limit ?? 10;
   const contentHitLimit = memoryConfig.content_hit_limit ?? 3;
-  const embeddingModel = memoryConfig.embedding_model;
 
   const personaNotes: PersonaNote[] = (agent.personaNotes ?? []) as PersonaNote[];
 
   // Embed once for both fact + content_index lookups. Skip if either limit is 0.
+  // The embedder is resolved centrally from embedding_config — no per-agent
+  // override (the query must share the corpus's vector space).
   let queryVec: number[] | null = null;
   if ((factLimit > 0 || contentHitLimit > 0) && inboundText.trim().length > 0) {
     try {
-      queryVec = await embed(
-        ownerId,
-        inboundText.slice(0, 2000),
-        embeddingModel ? { model: embeddingModel } : undefined,
-      );
+      queryVec = await embed(ownerId, inboundText.slice(0, 2000));
     } catch (err) {
       console.error(
         '[agent] loadContext: query embed failed:',
@@ -1354,34 +1351,26 @@ async function drainUnextractedNodes(): Promise<void> {
 }
 
 /**
- * Boot-time guard for the embedding-model invariant. The model used to WRITE
- * vectors (the resolved embedding worker) and the model each retrieval agent
- * embeds its QUERY with (`memory_config.embedding_model`) must match, or query
- * and corpus vectors land in incompatible spaces and semantic retrieval
- * silently returns garbage-space hits. Overrides are null by default
- * (everything resolves to one model), so this only fires on a real divergence —
- * which is otherwise invisible. Warn, don't throw: a misconfig shouldn't brick
- * the agent, just be loud.
+ * Boot-time log of the active embedder. Since migration 0061 there is exactly
+ * ONE embedder (the `embedding_config` row) — no per-agent or per-worker
+ * override exists any more, so the write-side and query-side models can't
+ * diverge by construction. We just surface what's configured. The remaining
+ * sharp edge — a backup route serving a different dimension than the column —
+ * is caught live by `/settings/embedding`'s per-route dim probe, not re-probed
+ * here at boot (that would add a network call to every start).
  */
 async function assertEmbeddingModelConsistency(): Promise<void> {
   try {
-    const resolved = await resolveEmbeddingModel(USER_ID!);
-    const rows = await db
-      .select({ slug: agents.slug, memoryConfig: agents.memoryConfig })
-      .from(agents)
-      .where(eq(agents.ownerId, USER_ID!));
-    const divergent = rows
-      .map((r) => ({ slug: r.slug, model: r.memoryConfig?.embedding_model }))
-      .filter((r): r is { slug: string; model: string } => !!r.model && r.model !== resolved);
-    if (divergent.length > 0) {
-      console.warn(
-        `[agent] ⚠ embedding-model mismatch — write side resolves to '${resolved}', but these agents pin a different memory_config.embedding_model, so their semantic retrieval will silently return wrong results until aligned (set to '${resolved}' or null, then run \`pnpm re-embed\`): ` +
-          divergent.map((d) => `${d.slug}=${d.model}`).join(', '),
-      );
-    }
+    const config = await resolveEmbeddingConfig(USER_ID!);
+    const backup = config.backup
+      ? ` · backup via ${config.backup.provider}${config.backup.label ? ` (${config.backup.label})` : ''}`
+      : ' · no backup';
+    console.log(
+      `[agent] embedder: ${config.model} @ ${config.dimensions}d via ${config.primary.provider}${backup}`,
+    );
   } catch (err) {
     console.error(
-      '[agent] embedding-model consistency check failed:',
+      '[agent] embedding config check failed:',
       err instanceof Error ? err.message : err,
     );
   }
