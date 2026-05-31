@@ -76,7 +76,8 @@ const KIND_ORDER: AiWorkerKind[] = [
   'extractor',
   'summarizer',
   'reflector',
-  'embedding',
+  // 'embedding' is retired as a worker kind — the embedder lives at
+  // /settings/embedding (one config row, migration 0061). Hidden here.
   'image_gen',
 ];
 

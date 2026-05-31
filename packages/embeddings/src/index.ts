@@ -205,6 +205,36 @@ export function clearEmbeddingModelCache(ownerId?: string): void {
   else _resolverCache.clear();
 }
 
+/**
+ * Probe ONE specific route (provider + model + baseUrl + key) and return the
+ * actual output dimension. Calls the adapter directly — bypasses the resolver
+ * AND the cache — so the `/settings/embedding` UI can verify each route (primary
+ * and backup) emits the locked dimension before saving. Throws a clear error if
+ * the route is unreachable / mis-keyed; the form surfaces it inline.
+ */
+export async function probeEmbeddingRoute(
+  ownerId: string,
+  route: { provider: string; model: string; baseUrl?: string | null; apiKeyId?: string | null },
+): Promise<number> {
+  const adapter = getEmbeddingAdapter(route.provider);
+  if (!adapter) throw new Error(`no embedding adapter registered for provider '${route.provider}'`);
+  let apiKey: string | null = null;
+  if (route.apiKeyId) apiKey = await getApiKeyById(route.apiKeyId);
+  if (!apiKey) apiKey = await getApiKey(ownerId, route.provider);
+  if (!apiKey) apiKey = route.provider === 'local' ? 'local' : null;
+  if (!apiKey) throw new Error(`no api key for provider '${route.provider}'`);
+  const res = await adapter.embed({
+    apiKey,
+    model: route.model,
+    input: ['dimension probe'],
+    dimensions: EMBEDDING_DIMS,
+    baseUrl: route.baseUrl ?? undefined,
+  });
+  const vec = res.vectors[0];
+  if (!vec) throw new Error('probe returned no vector');
+  return vec.length;
+}
+
 /** OpenRouter caps batch size; 100 is well inside provider limits. */
 const MAX_BATCH = 100;
 
