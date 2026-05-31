@@ -45,6 +45,12 @@ export type CreateAiWorkerInput = {
   priority?: number;
   isDefault?: boolean;
   slug?: string;
+  /** Optional BACKUP chat route (chat-shaped workers; migration 0062). A chat
+   *  backup may be a different provider+model. */
+  backupProvider?: string | null;
+  backupModel?: string | null;
+  backupApiKeyId?: string | null;
+  backupEnabled?: boolean;
 };
 
 /** Convert a free-form name into a slug-safe string. Lower-cased,
@@ -79,6 +85,10 @@ export async function createAiWorker(input: CreateAiWorkerInput): Promise<AiWork
     enabled: input.enabled ?? true,
     priority: input.priority ?? 100,
     isDefault: false, // set via setDefaultWorker below if requested
+    backupProvider: input.backupProvider ?? null,
+    backupModel: input.backupModel ?? null,
+    backupApiKeyId: input.backupApiKeyId ?? null,
+    backupEnabled: input.backupEnabled ?? false,
   };
   return await db.transaction(async (tx) => {
     const [inserted] = await tx.insert(aiWorkers).values(row).returning();
@@ -117,6 +127,10 @@ export type UpdateAiWorkerInput = Partial<
     | 'params'
     | 'enabled'
     | 'priority'
+    | 'backupProvider'
+    | 'backupModel'
+    | 'backupApiKeyId'
+    | 'backupEnabled'
   >
 >;
 

@@ -28,6 +28,13 @@ export type AgentSummary = {
   provider: string;
   model: string;
   apiKeyId: string | null;
+  /** Optional BACKUP chat route (migration 0062). When backupEnabled and the
+   *  primary fails over (route-down / 429 / 5xx), the runtime answers here.
+   *  Unlike embeddings, a chat backup may be a DIFFERENT model. */
+  backupProvider: string | null;
+  backupModel: string | null;
+  backupApiKeyId: string | null;
+  backupEnabled: boolean;
   systemPrompt: string;
   tools: string[];
   toolSlugs: string[];
@@ -57,6 +64,10 @@ function toSummary(a: Agent): AgentSummary {
     provider: a.provider,
     model: a.model,
     apiKeyId: a.apiKeyId,
+    backupProvider: a.backupProvider,
+    backupModel: a.backupModel,
+    backupApiKeyId: a.backupApiKeyId,
+    backupEnabled: a.backupEnabled,
     systemPrompt: a.systemPrompt,
     tools: a.tools ?? [],
     toolSlugs: a.toolSlugs ?? [],
@@ -112,6 +123,10 @@ export type CreateAgentInput = {
   provider?: string;
   model: string;
   apiKeyId: string | null;
+  backupProvider?: string | null;
+  backupModel?: string | null;
+  backupApiKeyId?: string | null;
+  backupEnabled?: boolean;
   systemPrompt: string;
   tools?: string[];
   toolSlugs?: string[];
@@ -138,6 +153,10 @@ export async function createAgent(
       provider: input.provider ?? 'openrouter',
       model: input.model,
       apiKeyId: input.apiKeyId,
+      backupProvider: input.backupProvider ?? null,
+      backupModel: input.backupModel ?? null,
+      backupApiKeyId: input.backupApiKeyId ?? null,
+      backupEnabled: input.backupEnabled ?? false,
       systemPrompt: input.systemPrompt,
       tools: input.tools ?? [],
       toolSlugs: input.toolSlugs ?? [],
@@ -167,6 +186,10 @@ export async function updateAgent(
   if (patch.provider !== undefined) next.provider = patch.provider;
   if (patch.model !== undefined) next.model = patch.model;
   if (patch.apiKeyId !== undefined) next.apiKeyId = patch.apiKeyId;
+  if (patch.backupProvider !== undefined) next.backupProvider = patch.backupProvider;
+  if (patch.backupModel !== undefined) next.backupModel = patch.backupModel;
+  if (patch.backupApiKeyId !== undefined) next.backupApiKeyId = patch.backupApiKeyId;
+  if (patch.backupEnabled !== undefined) next.backupEnabled = patch.backupEnabled;
   if (patch.systemPrompt !== undefined) next.systemPrompt = patch.systemPrompt;
   if (patch.tools !== undefined) next.tools = patch.tools;
   if (patch.toolSlugs !== undefined) next.toolSlugs = patch.toolSlugs;

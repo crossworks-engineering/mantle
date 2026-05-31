@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Plus, Send, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, Loader2, Plus, Send, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -107,6 +107,10 @@ type AgentSummary = {
   provider: string;
   model: string;
   apiKeyId: string | null;
+  backupProvider: string | null;
+  backupModel: string | null;
+  backupApiKeyId: string | null;
+  backupEnabled: boolean;
   systemPrompt: string;
   tools: string[];
   toolSlugs: string[];
@@ -266,6 +270,11 @@ type FormState = {
   provider: string;
   model: string;
   apiKeyId: string;
+  /** Optional BACKUP chat route. Unlike embeddings, may be a different model. */
+  backupEnabled: boolean;
+  backupProvider: string;
+  backupModel: string;
+  backupApiKeyId: string;
   systemPrompt: string;
   priority: string;
   enabled: boolean;
@@ -305,6 +314,10 @@ function emptyForm(role: Role = 'responder'): FormState {
     provider: 'openrouter',
     model: d.model,
     apiKeyId: '',
+    backupEnabled: false,
+    backupProvider: 'openrouter',
+    backupModel: '',
+    backupApiKeyId: '',
     systemPrompt: d.systemPrompt,
     priority: '100',
     enabled: true,
@@ -340,6 +353,10 @@ function formFromAgent(a: AgentSummary): FormState {
     provider: a.provider,
     model: a.model,
     apiKeyId: a.apiKeyId ?? '',
+    backupEnabled: a.backupEnabled,
+    backupProvider: a.backupProvider ?? 'openrouter',
+    backupModel: a.backupModel ?? '',
+    backupApiKeyId: a.backupApiKeyId ?? '',
     systemPrompt: a.systemPrompt,
     priority: String(a.priority),
     enabled: a.enabled,
@@ -503,6 +520,59 @@ export function AgentsClient({
     };
   }, [form.provider]);
 
+  // Backup-route model catalog — same shape as the primary above, keyed on
+  // form.backupProvider so the backup's ModelSelect lists the right slugs.
+  // Only fetched while the backup section is open (backupEnabled) to avoid a
+  // wasted /api/models call on every agent that has no backup.
+  const [backupCatalog, setBackupCatalog] = useState<ExplorerModel[]>([]);
+  const [backupCatalogState, setBackupCatalogState] = useState<{
+    loading: boolean;
+    error: string | null;
+  }>({ loading: true, error: null });
+  useEffect(() => {
+    if (!form.backupEnabled) return;
+    const provider = form.backupProvider || 'openrouter';
+    let cancelled = false;
+    setBackupCatalogState({ loading: true, error: null });
+    setBackupCatalog([]);
+    fetch(`/api/models?provider=${encodeURIComponent(provider)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled) return;
+        if (d?.models && Array.isArray(d.models)) {
+          setBackupCatalog(d.models as ExplorerModel[]);
+          setBackupCatalogState({ loading: false, error: d.error ?? null });
+        } else {
+          setBackupCatalogState({ loading: false, error: d?.error ?? 'No catalog returned' });
+        }
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setBackupCatalogState({
+          loading: false,
+          error: err instanceof Error ? err.message : 'Catalog fetch failed',
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.backupProvider, form.backupEnabled]);
+
+  // "Make backup primary" — exchange the primary↔backup form values. The
+  // runtime always treats the primary columns as the active route, so this
+  // pure value-swap is the whole switch (mirrors the embedding page + the
+  // documented chat-failover design). Only meaningful when a backup exists.
+  const swapPrimaryBackup = () =>
+    setForm((f) => ({
+      ...f,
+      provider: f.backupProvider || 'openrouter',
+      model: f.backupModel,
+      apiKeyId: f.backupApiKeyId,
+      backupProvider: f.provider,
+      backupModel: f.model,
+      backupApiKeyId: f.apiKeyId,
+    }));
+
   const openCreate = () => {
     setForm(emptyForm());
     setSlugTouched(false);
@@ -628,6 +698,13 @@ export function AgentsClient({
       provider: form.provider.trim() || 'openrouter',
       model: form.model.trim(),
       apiKeyId: form.apiKeyId || null,
+      // Backup chat route. Always send all four so toggling failover off (or
+      // clearing a field) actually persists — the PATCH set-map writes each
+      // explicitly. backupEnabled gates failover at runtime, not the columns.
+      backupEnabled: form.backupEnabled,
+      backupProvider: form.backupProvider.trim() || null,
+      backupModel: form.backupModel.trim() || null,
+      backupApiKeyId: form.backupApiKeyId || null,
       systemPrompt: form.systemPrompt,
       memoryConfig,
       params,
@@ -1057,6 +1134,147 @@ export function AgentsClient({
                 })()}
               </div>
             </div>
+
+            {/* ── Backup chat route (failover) ──────────────────────────────
+                Unlike embeddings, a chat backup may be a DIFFERENT provider +
+                model — there's no vector-space lock. When failover is on and
+                the primary is unreachable (route-down / 429 / 5xx), the
+                responder/assistant/heartbeat loop answers here (sticky for the
+                rest of that turn). See docs/chat-failover.md. */}
+            <fieldset className="space-y-3 rounded-md border border-border p-3">
+              <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Backup route
+              </legend>
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="backupEnabled" className="cursor-pointer">
+                    Enable failover
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    On a route-down / 429 / 5xx from the primary, fall over to a
+                    backup route. May be a different provider + model — that&apos;s
+                    what enables a local primary with a cloud safety net (or the
+                    reverse).
+                  </p>
+                </div>
+                <Switch
+                  id="backupEnabled"
+                  checked={form.backupEnabled}
+                  onCheckedChange={(v) => setForm((f) => ({ ...f, backupEnabled: v }))}
+                />
+              </div>
+
+              {form.backupEnabled && (
+                <>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs text-muted-foreground">
+                      The <strong>primary</strong> above is always the active route.
+                      Swap to promote this backup.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={swapPrimaryBackup}
+                    >
+                      <ArrowLeftRight />
+                      Make backup primary
+                    </Button>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="backupProvider">Provider</Label>
+                      {(() => {
+                        const chatProviders = providersForCapability('chat');
+                        return (
+                          <>
+                            <select
+                              id="backupProvider"
+                              value={form.backupProvider}
+                              onChange={(e) =>
+                                setForm((f) => ({ ...f, backupProvider: e.target.value }))
+                              }
+                              className={SELECT_CLASS}
+                            >
+                              {chatProviders.map((p) => {
+                                const wired = isProviderWired(p.id, 'chat');
+                                return (
+                                  <option key={p.id} value={p.id}>
+                                    {p.label}
+                                    {wired ? '' : ' · not yet wired'}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                            {!isProviderWired(form.backupProvider, 'chat') && (
+                              <p className="text-xs text-amber-600 dark:text-amber-400">
+                                No chat adapter registered for{' '}
+                                <code>{form.backupProvider}</code> — failover to it
+                                will fail until one ships.
+                              </p>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="backupModel">Model</Label>
+                      <ModelSelect
+                        id="backupModel"
+                        value={form.backupModel}
+                        onValueChange={(next) =>
+                          setForm((f) => ({ ...f, backupModel: next }))
+                        }
+                        models={backupCatalog}
+                        loading={backupCatalogState.loading}
+                        error={backupCatalogState.error}
+                        placeholder="— pick a model —"
+                        emptyMessage="No matching models in the catalog."
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="backupApiKey">API key</Label>
+                      {(() => {
+                        const eligibleBackupKeys = apiKeys.filter(
+                          (k) => k.service === form.backupProvider,
+                        );
+                        return (
+                          <>
+                            <select
+                              id="backupApiKey"
+                              value={form.backupApiKeyId}
+                              onChange={(e) =>
+                                setForm((f) => ({ ...f, backupApiKeyId: e.target.value }))
+                              }
+                              className={SELECT_CLASS}
+                            >
+                              <option value="">
+                                {form.backupProvider === 'local'
+                                  ? 'None (keyless / local)'
+                                  : '— select a key —'}
+                              </option>
+                              {eligibleBackupKeys.map((k) => (
+                                <option key={k.id} value={k.id}>
+                                  {k.service} / {k.label} ({k.masked})
+                                </option>
+                              ))}
+                            </select>
+                            {apiKeys.length > 0 &&
+                              eligibleBackupKeys.length === 0 &&
+                              form.backupProvider !== 'local' && (
+                                <p className="text-xs text-amber-600 dark:text-amber-400">
+                                  None of your saved keys are for{' '}
+                                  <code>{form.backupProvider}</code>.
+                                </p>
+                              )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </>
+              )}
+            </fieldset>
 
             <div className="space-y-1.5">
               <Label htmlFor="systemPrompt">System prompt</Label>

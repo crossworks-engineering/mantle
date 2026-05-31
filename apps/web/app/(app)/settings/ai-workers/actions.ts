@@ -43,6 +43,32 @@ import {
 } from '@mantle/embeddings';
 import type { AiWorkerKind, AiWorkerParams } from '@mantle/db';
 
+/**
+ * Parse the optional backup chat-route fields the worker form sends for
+ * chat-shaped kinds (reflector / extractor / summarizer). The form only emits
+ * these when chatShaped; for other kinds they're absent and this returns the
+ * "no backup" shape (enabled=false, nulls) so a save can't accidentally enable
+ * failover on a worker that has no backup section. Always returns all four so
+ * the update set-map clears stale values when failover is toggled off.
+ */
+function parseBackupFromForm(formData: FormData): {
+  backupEnabled: boolean;
+  backupProvider: string | null;
+  backupModel: string | null;
+  backupApiKeyId: string | null;
+} {
+  const backupEnabled = formData.get('backup_enabled') === 'on';
+  const provider = String(formData.get('backup_provider') ?? '').trim();
+  const model = String(formData.get('backup_model') ?? '').trim();
+  const apiKeyId = (formData.get('backup_api_key_id') as string) || null;
+  return {
+    backupEnabled,
+    backupProvider: provider || null,
+    backupModel: model || null,
+    backupApiKeyId: apiKeyId,
+  };
+}
+
 export async function createAiWorkerAction(formData: FormData): Promise<void> {
   const user = await requireOwner();
   const kind = String(formData.get('kind') ?? '') as AiWorkerKind;
@@ -68,6 +94,7 @@ export async function createAiWorkerAction(formData: FormData): Promise<void> {
     params,
     enabled: formData.get('enabled') !== 'off',
     isDefault: formData.get('isDefault') === 'on',
+    ...parseBackupFromForm(formData),
   });
   // Embedding model changes need the resolver cache to drop NOW, not in
   // 60s — otherwise the first ingest / recall after a save would still
@@ -94,6 +121,7 @@ export async function updateAiWorkerAction(
     params,
     enabled: formData.get('enabled') === 'on',
     priority: Number(formData.get('priority') ?? existing.priority),
+    ...parseBackupFromForm(formData),
   });
   if (formData.get('isDefault') === 'on') {
     await setDefaultWorker(user.id, id);

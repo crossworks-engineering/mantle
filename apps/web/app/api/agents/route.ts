@@ -78,6 +78,12 @@ const CreateBody = z.object({
   provider: z.string().min(1).max(64).default('openrouter'),
   model: z.string().min(1).max(200),
   apiKeyId: z.string().uuid().nullable(),
+  // Optional BACKUP chat route (migration 0062). A chat backup may be a
+  // DIFFERENT provider+model — that's what enables local-primary/cloud-fallback.
+  backupProvider: z.string().min(1).max(64).nullish(),
+  backupModel: z.string().min(1).max(200).nullish(),
+  backupApiKeyId: z.string().uuid().nullish(),
+  backupEnabled: z.boolean().optional(),
   systemPrompt: z.string().min(1).max(40_000),
   tools: z.array(z.string()).max(256).optional(),
   toolSlugs: z.array(z.string().min(1).max(120)).max(256).optional(),

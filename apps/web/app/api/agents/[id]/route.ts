@@ -67,6 +67,11 @@ const PatchBody = z
     provider: z.string().min(1).max(64),
     model: z.string().min(1).max(200),
     apiKeyId: z.string().uuid().nullable(),
+    // Optional BACKUP chat route (migration 0062) — may be a different model.
+    backupProvider: z.string().min(1).max(64).nullable(),
+    backupModel: z.string().min(1).max(200).nullable(),
+    backupApiKeyId: z.string().uuid().nullable(),
+    backupEnabled: z.boolean(),
     systemPrompt: z.string().min(1).max(40_000),
     tools: z.array(z.string()).max(256),
     toolSlugs: z.array(z.string().min(1).max(120)).max(256),

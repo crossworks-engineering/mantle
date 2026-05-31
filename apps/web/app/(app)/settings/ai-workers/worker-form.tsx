@@ -12,7 +12,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { RefreshCw } from 'lucide-react';
+import { ArrowLeftRight, RefreshCw } from 'lucide-react';
 import type { AiWorker, AiWorkerKind } from '@mantle/db';
 import {
   ANTHROPIC_CHAT_MODELS,
@@ -61,6 +61,7 @@ import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { ModelSelect } from '@/components/ui/model-select';
 import { useToast } from '@/components/ui/toast';
 import type { ExplorerModel } from '@/lib/model-explorer';
@@ -233,6 +234,18 @@ export function WorkerForm({
   const [provider, setProvider] = useState<string>(
     worker?.provider ?? PROVIDER_FOR_KIND[kind],
   );
+
+  // Backup chat route (chat-shaped workers only). Unlike embeddings, a chat
+  // backup may be a DIFFERENT provider + model — the enabler for a local
+  // primary with a cloud safety net. Submitted as backup_* form fields and
+  // parsed in actions.ts. Free-text model id (the operator knows the backup's
+  // slug; we don't run a second discovery pass for it).
+  const [backupEnabled, setBackupEnabled] = useState<boolean>(worker?.backupEnabled ?? false);
+  const [backupProvider, setBackupProvider] = useState<string>(
+    worker?.backupProvider ?? 'openrouter',
+  );
+  const [backupModel, setBackupModel] = useState<string>(worker?.backupModel ?? '');
+  const [backupApiKeyId, setBackupApiKeyId] = useState<string>(worker?.backupApiKeyId ?? '');
 
   // Filtered provider list — only providers that support this worker's
   // kind appear in the dropdown. Adding a new provider is a one-line
@@ -488,6 +501,14 @@ export function WorkerForm({
         fd.set('kind', kind);
         fd.set('enabled', enabled ? 'on' : 'off');
         fd.set('isDefault', isDefault ? 'on' : 'off');
+        // Backup chat route (chat-shaped workers). Always send all four so
+        // toggling failover off or clearing a field actually persists.
+        if (chatShaped) {
+          fd.set('backup_enabled', backupEnabled ? 'on' : 'off');
+          fd.set('backup_provider', backupProvider.trim());
+          fd.set('backup_model', backupModel.trim());
+          fd.set('backup_api_key_id', backupApiKeyId);
+        }
         startTransition(async () => {
           try {
             await action(fd);
@@ -682,6 +703,119 @@ export function WorkerForm({
           </div>
         </div>
       </section>
+
+      {/* ── Backup chat route (failover) ─────────────────────────────
+          Chat-shaped workers only (reflector / extractor / summarizer).
+          Unlike embeddings, a chat backup may be a DIFFERENT provider +
+          model — when the primary is unreachable (route-down / 429 / 5xx)
+          chatWithFailover answers here. See docs/chat-failover.md. */}
+      {chatShaped && (
+        <section className="space-y-4 border-t border-border pt-6">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Backup route
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                On a route-down / 429 / 5xx from the primary, fall over to a backup —
+                may be a different provider + model (e.g. local primary, cloud fallback).
+              </p>
+            </div>
+            <Switch
+              id="backup_enabled"
+              checked={backupEnabled}
+              onCheckedChange={setBackupEnabled}
+            />
+          </div>
+
+          {backupEnabled && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  The <strong>primary</strong> above is always the active route. Swap to
+                  promote this backup.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    // Exchange primary↔backup values. The runtime always treats
+                    // the primary fields as active, so this value-swap is the
+                    // whole switch (mirrors the agents form + the failover design).
+                    const p = provider;
+                    const m = model;
+                    const k = apiKeyId;
+                    setProvider(backupProvider || 'openrouter');
+                    setModel(backupModel);
+                    setApiKeyId(backupApiKeyId);
+                    setBackupProvider(p);
+                    setBackupModel(m);
+                    setBackupApiKeyId(k);
+                  }}
+                >
+                  <ArrowLeftRight />
+                  Make backup primary
+                </Button>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="backup_provider">Provider</Label>
+                  <select
+                    id="backup_provider"
+                    value={backupProvider}
+                    onChange={(e) => setBackupProvider(e.target.value)}
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                  >
+                    {eligibleProviders.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                        {p.isAggregator ? ' (aggregator)' : ''}
+                        {!isProviderWired(p.id, capability) ? ' — not yet wired' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {!isProviderWired(backupProvider, capability) && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      No adapter registered for <code>{backupProvider}</code> — failover
+                      to it will fail until one ships.
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="backup_model">Model</Label>
+                  <Input
+                    id="backup_model"
+                    value={backupModel}
+                    onChange={(e) => setBackupModel(e.target.value)}
+                    placeholder={MODEL_HINT_FOR_KIND[kind]}
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="backup_api_key_id">API key</Label>
+                <select
+                  id="backup_api_key_id"
+                  value={backupApiKeyId}
+                  onChange={(e) => setBackupApiKeyId(e.target.value)}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                >
+                  <option value="">
+                    {backupProvider === 'local' ? 'None (keyless / local)' : '— none —'}
+                  </option>
+                  {keys
+                    .filter((k) => k.service === backupProvider)
+                    .map((k) => (
+                      <option key={k.id} value={k.id}>
+                        {k.service}/{k.label} ({k.masked})
+                      </option>
+                    ))}
+                </select>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* ── Kind-specific config ─────────────────────────────────── */}
       <section className="space-y-4 border-t border-border pt-6">
