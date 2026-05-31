@@ -638,8 +638,8 @@ can run for the same worker without conflicting.
 This section covers the runtime mechanics — how dispatch resolves, how
 the cache works, what the rebuild button is wired to. For **which
 embedding model to pick and why** (operator-facing decision guide,
-small vs large vs gemini vs cohere with the benchmark numbers + the
-1536-dim constraint), see [`docs/embeddings.md`](./embeddings.md).
+local Gemma vs cloud large/gemini/cohere with the benchmark numbers + the
+768-dim constraint), see [`docs/embeddings.md`](./embeddings.md).
 
 Added in migration `0047_ai_worker_kind_embedding.sql`. Unlike the
 other worker kinds (which are each triggered by one signal — `tts` by
@@ -734,7 +734,7 @@ embed(ownerId, text) → embedBatch → embedMultimodal
    ├─ embedding_cache lookup by (model, content_hash)
    ├─ for misses: apiKey via getApiKeyById(apiKeyId) or
    │     getApiKey(ownerId, provider) fallback
-   └─ adapter.embed({apiKey, model, input, dimensions: 1536})
+   └─ adapter.embed({apiKey, model, input, dimensions: 768})
 ```
 
 The cache stays keyed on `(model, content_hash)` so two providers
@@ -775,23 +775,32 @@ MPNet, paraphrase families). The /models fetcher overrides
 
 A model swap can fail in two distinct ways. The form surfaces both:
 
-**(a) Dimension mismatch — column rejects the insert.** The brain has
-`vector(1536)` columns (`nodes.embedding`, `entities.embedding`,
-`facts.embedding`, `content_chunks.embedding`). Switching to a model
-that emits anything other than 1536 dims (e.g. `text-embedding-3-large`
-at 3072) would crash ingest on its first call.
+**(a) Dimension mismatch — column rejects the insert.** Since migration
+`0060` the brain has `vector(768)` columns (`nodes.embedding`,
+`entities.embedding`, `facts.embedding`, `content_chunks.embedding`,
+`tool_result_chunks.embedding`). Switching to a model that emits
+anything other than 768 dims (e.g. `text-embedding-3-small` at 1536, or
+`-3-large` at 3072 without MRL truncation) would crash ingest on its
+first call.
 
 The form has a **"Test dimensions" button** that embeds the string
 `'dimension probe'` with the picked model and reads back the actual
 vector length. The result populates a per-slug detected-dim cache and
-also drives a hand-curated `KNOWN_DIMS` allow-list (12 verified slugs)
-as a fallback. When dim is **known and ≠ 1536**, the Save button is
-hard-blocked with a destructive-banner explanation — switching to a
-non-1536 model needs a schema migration on every vector column, which
-isn't a button.
+also drives a hand-curated `KNOWN_DIMS` allow-list as a fallback. When
+dim is **known and ≠ 768**, the Save button is hard-blocked with a
+destructive-banner explanation — switching to a non-768 model needs a
+schema migration on every vector column, which isn't a button.
+
+> **⚠ Known gap (2026-05-31):** the form's guard (`COLUMN_DIMS` /
+> `KNOWN_DIMS` in [`worker-form.tsx`](../apps/web/app/(app)/settings/ai-workers/worker-form.tsx))
+> and the per-agent embedding dropdown still hardcode **1536**, not 768 —
+> they were not flipped during the 0060 migration. Until fixed, the guard
+> is inverted: it blocks the live 768 model and permits the old 1536 ones.
+> The runtime is correct (the DB worker row is `local`/768); only the UI is
+> stale.
 
 **(b) Vector-space drift — column accepts, retrieval silently breaks.**
-Two embedding models with the same dim (both 1536) produce vectors in
+Two embedding models with the same dim produce vectors in
 *completely different coordinate systems*. Cosine similarity across
 spaces is meaningless: existing vectors embedded with model A return
 random matches for queries embedded with model B. The column accepts
@@ -1030,11 +1039,14 @@ What an operator needs to do to make every capability work:
      OpenAI gpt-4o-mini-tts with voice=nova.
    - **STT** — required for voice-message transcription. Default:
      OpenAI whisper-1.
-   - **Embedding** — optional but recommended. Without one, the
-     resolver falls through env → hardcoded
-     `openai/text-embedding-3-small`. Creating the worker makes the
-     model an explicit DB choice instead of an env-implicit fallback,
-     and unlocks the form's Test / Rebuild affordances. See §5e.
+   - **Embedding** — the brain ships configured for `local` /
+     `embeddinggemma:latest` (768-dim, keyless, via Ollama). Keep this
+     worker row present: without it the resolver falls through env →
+     hardcoded `openai/text-embedding-3-small` (1536), which would crash
+     ingest against the `vector(768)` columns. The worker row makes the
+     model an explicit DB choice and unlocks the form's Test / Rebuild
+     affordances. See §5e. *(Note: that cloud fallback default is itself
+     a latent footgun post-768 — see the §5e.4 known-gap note.)*
    - Vision / image-gen — config saved but dispatch not yet wired.
 
 Each worker has its own model, API key, params. Multiple workers per
