@@ -13,13 +13,22 @@ name: mantle
 #   S3_ACCESS_KEY / S3_SECRET_KEY (default: minio/minio12345)
 #   MANTLE_PUBLIC_URL       (recommended — public origin for share/email links,
 #                            e.g. https://mantle.crossworks.network)
+#   MANTLE_LOCAL_EMBEDDING_URL (default: http://ollama:11434/v1 — the bundled
+#                            embedder; no need to set unless pointing elsewhere)
+#   MANTLE_EMBEDDING_PULL_MODEL (default: embeddinggemma — the model the one-shot
+#                            pulls on first boot)
+#   OLLAMA_KEEP_ALIVE       (default: 5m — set to -1 to keep the embedder always
+#                            resident instead of unloading when idle)
 #
 # Build & run:
 #   docker compose build
 #   docker compose up -d --wait
 #
-# Migrations run automatically — the one-shot `migrate` service applies them
-# before any app service starts (each depends on it completing). No manual step.
+# First boot pulls the embedder (EmbeddingGemma, ~300MB) once into a named
+# volume via the `ollama_pull` one-shot — local embedding then works with no
+# cloud key. Migrations run automatically — the one-shot `migrate` service
+# applies them before any app service starts (each depends on it completing).
+# No manual step.
 
 volumes:
   mantle_pg_data:
@@ -28,6 +37,10 @@ volumes:
   # MCP, and the web /files UI. Mount this somewhere on the host you can
   # back up / sync from (Syncthing, restic, etc.).
   mantle_files_data:
+  # Ollama model store — the shipped embedder (EmbeddingGemma, ~300MB) is
+  # pulled once into here by the `ollama_pull` one-shot and persists across
+  # restarts/redeploys, so it's never re-downloaded.
+  mantle_ollama_data:
 
 # Shared env block for app services — anchor + alias keeps the app
 # services in lockstep.
@@ -44,6 +57,11 @@ x-app-env: &app-env
   S3_FORCE_PATH_STYLE: 'true'
   NODE_ENV: production
   MANTLE_EMBEDDING_MODEL: ${MANTLE_EMBEDDING_MODEL:-}
+  # Self-hosted embedder. Points at the bundled `ollama` service serving
+  # EmbeddingGemma (768-dim). This is what makes local embedding work out of
+  # the box — no cloud key, no API calls, fast. The resolver already defaults
+  # a fresh install to local/embeddinggemma:latest; this just supplies the host.
+  MANTLE_LOCAL_EMBEDDING_URL: ${MANTLE_LOCAL_EMBEDDING_URL:-http://ollama:11434/v1}
   MANTLE_FILES_ROOT: /data/files
   # Public origin for absolute links built outside an HTTP request — e.g. the
   # agent's page_share / email_page tools. Falls back to localhost in code if
@@ -115,6 +133,43 @@ services:
       retries: 12
       start_period: 30s
 
+  # Ollama — serves the bundled local embedder (EmbeddingGemma, 768-dim) over an
+  # OpenAI-compatible API. CPU-only; the embedder is a small encoder (~300MB,
+  # a few hundred MB RAM when loaded) that fits comfortably on the 8GB/6-core
+  # base VPS alongside the rest. Self-hosted — the text the brain embeds never
+  # leaves the box. The app reaches it at http://ollama:11434/v1 (MANTLE_LOCAL_
+  # EMBEDDING_URL). Set OLLAMA_KEEP_ALIVE=-1 to keep the model always resident
+  # (default unloads after ~5min idle to free RAM; next embed reloads in ~1s).
+  ollama:
+    image: ollama/ollama:latest
+    container_name: mantle_ollama
+    restart: unless-stopped
+    environment:
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}
+    volumes:
+      - mantle_ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # One-shot: pull the shipped embedder into the model volume, then exit.
+  # Mirrors the `migrate` pattern — app services that embed wait for it to
+  # complete. Idempotent: a no-op once the model is already in the volume, so
+  # it's safe on every `up` / redeploy. Override the model via env if you ship
+  # a different default.
+  ollama_pull:
+    image: ollama/ollama:latest
+    container_name: mantle_ollama_pull
+    restart: "no"
+    depends_on:
+      ollama: { condition: service_healthy }
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama", "pull", "${MANTLE_EMBEDDING_PULL_MODEL:-embeddinggemma}"]
+
   # One-shot schema migration. App services wait for this to complete
   # successfully before starting, so the DB schema is never behind the code on
   # a redeploy — and a single dedicated migrator means no race on the migrator.
@@ -136,9 +191,10 @@ services:
     container_name: mantle_web
     restart: unless-stopped
     depends_on:
-      postgres: { condition: service_healthy }
-      minio:    { condition: service_healthy }
-      migrate:  { condition: service_completed_successfully }
+      postgres:    { condition: service_healthy }
+      minio:       { condition: service_healthy }
+      migrate:     { condition: service_completed_successfully }
+      ollama_pull: { condition: service_completed_successfully }
     environment:
       <<: *app-env
     volumes:
@@ -153,8 +209,9 @@ services:
     container_name: mantle_agent
     restart: unless-stopped
     depends_on:
-      postgres: { condition: service_healthy }
-      migrate:  { condition: service_completed_successfully }
+      postgres:    { condition: service_healthy }
+      migrate:     { condition: service_completed_successfully }
+      ollama_pull: { condition: service_completed_successfully }
     environment:
       <<: *app-env
     volumes:
