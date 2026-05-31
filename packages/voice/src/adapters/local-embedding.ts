@@ -26,9 +26,12 @@ import type { DiscoveryResult } from '../discover';
 
 const DEFAULT_BASE_URL = 'http://localhost:11434/v1';
 
-/** Resolved per-call so a config/env change takes effect without a restart. */
-function baseUrl(): string {
-  return (process.env.MANTLE_LOCAL_EMBEDDING_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
+/** Resolved per-call so a config/env change takes effect without a restart.
+ *  Precedence: the embedding config's per-route `baseUrl` (so primary and
+ *  backup can target different hosts) → the `MANTLE_LOCAL_EMBEDDING_URL` env
+ *  → the Ollama default. */
+function baseUrl(override?: string): string {
+  return (override || process.env.MANTLE_LOCAL_EMBEDDING_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
 }
 
 function assertTextOnly(input: EmbedInput[]): void {
@@ -63,7 +66,7 @@ export const localEmbedding: EmbeddingDispatcher = {
     // actually lands in the column, so the caller must size accordingly.
     if (req.dimensions) body.dimensions = req.dimensions;
 
-    const res = await fetch(`${baseUrl()}/embeddings`, {
+    const res = await fetch(`${baseUrl(req.baseUrl)}/embeddings`, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${req.apiKey || 'local'}`,

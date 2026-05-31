@@ -582,6 +582,11 @@ export interface EmbedRequest {
    *  family honours it (truncation by MRL); Google's gemini-embedding-2
    *  honours it as `output_dimensionality`. Everything else ignores. */
   dimensions?: number;
+  /** Per-call base URL override for self-hosted / OpenAI-compatible routes.
+   *  Lets the embedding config point primary and backup at different hosts
+   *  serving the SAME model (failover). The `local` adapter honours it;
+   *  fixed-endpoint cloud adapters ignore it. */
+  baseUrl?: string;
 }
 
 export interface EmbedResult {

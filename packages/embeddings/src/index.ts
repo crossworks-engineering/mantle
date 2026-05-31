@@ -339,44 +339,11 @@ async function doEmbed(
   stepHandle?: EmbedStepHandle,
 ): Promise<number[][]> {
   if (inputs.length === 0) return [];
-  // Phase 1: always the primary route. Phase 2 adds backup failover here.
   const { model, dimensions } = config;
-  const route = config.primary;
-  const provider = route.provider;
 
-  // 0. Resolve adapter. Surface a clear error rather than silently
-  //    routing through OR if the provider isn't wired.
-  const adapter = getEmbeddingAdapter(provider);
-  if (!adapter) {
-    throw new Error(
-      `embed: no adapter registered for provider '${provider}'. The embedding ` +
-        `worker config points at an unknown provider — pick one of ` +
-        `openrouter / openai / google / mistral / cohere at /settings/ai-workers.`,
-    );
-  }
-
-  // 1. Validate: every input must be accepted by the adapter. Text-only
-  //    providers (every direct provider) reject image/audio/file inputs
-  //    up front so the caller gets a clear error before the API call.
-  if (adapter.acceptsInput) {
-    for (const item of inputs) {
-      if (!adapter.acceptsInput(item)) {
-        const itemType = typeof item === 'string' ? 'text' : item.type;
-        throw new Error(
-          `embed: input type '${itemType}' not accepted by adapter '${adapter.adapterName}' ` +
-            `(model='${model}'). Multimodal inputs require the OpenRouter provider with ` +
-            `a multimodal model (e.g. google/gemini-embedding-2-preview).`,
-        );
-      }
-    }
-  }
-
-  // 2. Cache lookup, keyed by (model, content). Two providers serving the
-  //    same model would share cache entries — fine, same underlying model
-  //    means same vectors. Different slugs (OR's 'openai/text-embedding-3-small'
-  //    vs OpenAI direct's 'text-embedding-3-small') cache separately, which
-  //    is also fine — they produce identical vectors but go through different
-  //    keys.
+  // 1. Cache lookup, keyed by (model, content) — ROUTE-independent. Primary
+  //    and backup serve the SAME model, so they share cache entries (identical
+  //    vectors); a failover never pollutes the cache.
   const hashes = inputs.map((i) => hashKey(model, i));
   const out: (number[] | null)[] = inputs.map(() => null);
   const cachedRows = await db
@@ -390,7 +357,7 @@ async function doEmbed(
     if (cached) out[i] = cached;
   }
 
-  // 3. Compute misses.
+  // 2. Compute misses.
   const missIndexes: number[] = [];
   const missInputs: EmbedInput[] = [];
   for (let i = 0; i < inputs.length; i++) {
@@ -401,45 +368,68 @@ async function doEmbed(
   }
 
   let apiCalls = 0;
-  if (missInputs.length > 0) {
-    // Resolve the api key. Worker-pinned id wins; fall back to the
-    // provider's canonical service slug. The fallback covers two cases:
-    // (a) no embedding worker configured at all (config.apiKeyId is null,
-    // provider stays 'openrouter'), (b) worker exists but its apiKeyId
-    // was nulled (key deleted out from under it).
+
+  // 3. Embed the misses against ONE route — resolve its adapter + api key,
+  //    validate inputs, run the batch loop, mutating `out` + the cache. Runs
+  //    for the primary first; the failover below re-runs it on the backup
+  //    (same model ⇒ same vector space ⇒ safe) only on a route-down error.
+  async function fillMisses(r: EmbeddingRoute): Promise<void> {
+    const adapter = getEmbeddingAdapter(r.provider);
+    if (!adapter) {
+      throw new Error(
+        `embed: no adapter registered for provider '${r.provider}'. The embedding ` +
+          `config points at an unknown provider — fix it at /settings/embedding.`,
+      );
+    }
+    if (adapter.acceptsInput) {
+      for (const item of missInputs) {
+        if (!adapter.acceptsInput(item)) {
+          const itemType = typeof item === 'string' ? 'text' : item.type;
+          throw new Error(
+            `embed: input type '${itemType}' not accepted by adapter '${adapter.adapterName}' ` +
+              `(model='${model}'). Multimodal inputs require a multimodal-capable provider/model.`,
+          );
+        }
+      }
+    }
+    // Resolve the api key. Route-pinned id wins; fall back to the provider's
+    // canonical service slug; `local` is keyless (self-hosted server).
     let apiKey: string | null = null;
-    if (route.apiKeyId) {
-      apiKey = await getApiKeyById(route.apiKeyId);
-    }
+    if (r.apiKeyId) apiKey = await getApiKeyById(r.apiKeyId);
+    if (!apiKey) apiKey = await getApiKey(ownerId, r.provider);
     if (!apiKey) {
-      apiKey = await getApiKey(ownerId, provider);
-    }
-    if (!apiKey) {
-      // The `local` provider points at a self-hosted OpenAI-compatible server
-      // (Ollama / LM Studio / llama.cpp) on your own hardware — no credential
-      // needed. The adapter sends a placeholder Bearer the server ignores, so
-      // don't demand a key here.
-      if (provider === 'local') {
+      if (r.provider === 'local') {
         apiKey = 'local';
       } else {
         throw new Error(
-          `embed: no api key for provider '${provider}'. Add one at /settings/keys ` +
-            `and assign it to your embedding worker at /settings/ai-workers/embedding.`,
+          `embed: no api key for provider '${r.provider}'. Add one at /settings/keys ` +
+            `and assign it to the route at /settings/embedding.`,
         );
       }
     }
 
     for (let start = 0; start < missInputs.length; start += MAX_BATCH) {
-      const slice = missInputs.slice(start, start + MAX_BATCH);
+      // Only embed slots still null — on a failover the backup picks up
+      // exactly what a partial primary run left behind.
+      const sliceIdx: number[] = [];
+      const slice: EmbedInput[] = [];
+      for (let j = start; j < Math.min(start + MAX_BATCH, missInputs.length); j++) {
+        const inputIdx = missIndexes[j]!;
+        if (out[inputIdx] === null) {
+          sliceIdx.push(inputIdx);
+          slice.push(missInputs[j]!);
+        }
+      }
+      if (slice.length === 0) continue;
       const result = await adapter.embed({
         apiKey,
         model,
         input: slice,
-        // Used by adapters that honour MRL truncation (OpenAI's text-embedding-3-*,
-        // Google's gemini-embedding-*). Adapters that ignore it pass through
-        // unaffected. The brain's pgvector column is fixed at `dimensions` (768)
-        // so requesting it across the board keeps inserts compatible.
+        // MRL truncation where supported (OpenAI's text-embedding-3-*, Google's
+        // gemini-embedding-*); ignored elsewhere. The column is `dimensions`
+        // (768) so requesting it everywhere keeps inserts compatible.
         dimensions,
+        baseUrl: r.baseUrl ?? undefined,
       });
       apiCalls++;
       if (result.vectors.length !== slice.length) {
@@ -448,12 +438,36 @@ async function doEmbed(
         );
       }
       const cacheRows = result.vectors.map((vec, j) => {
-        const inputIdx = missIndexes[start + j]!;
-        const hash = hashes[inputIdx]!;
+        const inputIdx = sliceIdx[j]!;
         out[inputIdx] = vec;
-        return { contentHash: hash, embedding: vec };
+        return { contentHash: hashes[inputIdx]!, embedding: vec };
       });
       await db.insert(embeddingCache).values(cacheRows).onConflictDoNothing();
+    }
+  }
+
+  // 3a. Run primary, fail over to the same-model backup only when the route
+  //     is DOWN (connection refused / timeout / 5xx). Bad-input errors (4xx,
+  //     unsupported input) rethrow — failover wouldn't help.
+  let usedProvider = config.primary.provider;
+  let failedOver = false;
+  if (missInputs.length > 0) {
+    try {
+      await fillMisses(config.primary);
+    } catch (err) {
+      if (config.backup && isRouteDownError(err)) {
+        console.warn(
+          `[embeddings] primary route '${config.primary.provider}' unavailable — failing over to ` +
+            `backup '${config.backup.provider}' (same model '${model}'): ` +
+            (err instanceof Error ? err.message : String(err)),
+        );
+        usedProvider = config.backup.provider;
+        failedOver = true;
+        await fillMisses(config.backup);
+        void stampFailover(ownerId);
+      } else {
+        throw err;
+      }
     }
   }
 
@@ -472,8 +486,47 @@ async function doEmbed(
     cache_misses: missInputs.length,
     api_calls: apiCalls,
     model,
-    provider,
+    provider: usedProvider,
+    failed_over: failedOver,
   });
 
   return out as number[][];
+}
+
+/**
+ * True when an embed error means the ROUTE is unreachable — connection
+ * refused, DNS failure, request timeout, or a 5xx from the server. Those are
+ * safe to fail over to the same-model backup. A bad-input / 4xx error (or an
+ * unsupported-input throw) returns false: a second route wouldn't help and
+ * would just burn another call. When uncertain, returns false (don't fail over).
+ */
+export function isRouteDownError(err: unknown): boolean {
+  if (err instanceof Error) {
+    // Native fetch network failures surface as TypeError (undici) or an
+    // AbortError/TimeoutError when AbortSignal.timeout fires.
+    if (err instanceof TypeError) return true;
+    if (err.name === 'AbortError' || err.name === 'TimeoutError') return true;
+    const m = err.message;
+    if (/ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|ETIMEDOUT|fetch failed|network|socket hang up|timed? ?out/i.test(m)) {
+      return true;
+    }
+    // Adapters throw "… failed: <status> <statusText> — …". 5xx = server-side
+    // (route down / overloaded); 4xx = bad input (don't fail over).
+    if (/\b4\d\d\b/.test(m)) return false;
+    if (/\b5\d\d\b/.test(m)) return true;
+  }
+  return false;
+}
+
+/** Best-effort stamp of the last primary→backup failover for the UI. Never
+ *  throws — a failed stamp must not break the embed that just succeeded. */
+async function stampFailover(ownerId: string): Promise<void> {
+  try {
+    await db
+      .update(embeddingConfig)
+      .set({ lastFailoverAt: new Date(), updatedAt: new Date() })
+      .where(eq(embeddingConfig.ownerId, ownerId));
+  } catch {
+    /* best-effort */
+  }
 }
