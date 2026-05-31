@@ -88,7 +88,8 @@ type ReflectorParams = ChatLlmParams & {
 type ExtractorParams = ChatLlmParams & {
   target_types?: string[]; extract_facts?: boolean
   extract_cost_cap_micro_usd?: number
-  embedding_model?: string                        // legacy override; see §5e
+  // (embedding_model removed in 0061 — the embedder is the single
+  //  embedding_config row at /settings/embedding, not a per-worker field)
 }
 type EmbeddingParams = {
   output_dimensions?: number                      // rare — only honoured by
@@ -634,6 +635,17 @@ can run for the same worker without conflicting.
 ---
 
 ## 5e. Embedding — the cross-cutting kind
+
+> **⚠ SUPERSEDED (migration 0061).** Embedding is **no longer an ai-worker
+> kind**. It moved to a dedicated singleton — the `embedding_config` row, edited
+> at `/settings/embedding` — with one model, one dimension, and a primary +
+> same-model **backup route** (failover). The per-agent / per-extractor /
+> env overrides described below are all **removed**; `resolveEmbeddingConfig`
+> reads only the one row. The adapter-dispatch, cache, and discovery mechanics
+> in §5e.2–5e.3 still apply (the embedding adapters are unchanged); the
+> worker-form / per-kind / override material in §5e.1, §5e.4, §5e.5 is
+> **historical**. The current operator guide is [`docs/embeddings.md`](./embeddings.md)
+> (see "The one config: /settings/embedding" and "Primary + backup routes").
 
 This section covers the runtime mechanics — how dispatch resolves, how
 the cache works, what the rebuild button is wired to. For **which

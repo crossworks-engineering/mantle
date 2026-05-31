@@ -85,14 +85,7 @@ All four retrieval indexes are **HNSW** (rebuilt during the migration).
 
 2. **A model that supports MRL truncation to 768 also fits.** `openai/text-embedding-3-large` (native 3072) and `google/gemini-embedding-001` (native 3072) both honour a request for 768 dims — Mantle's dispatcher sends `dimensions: 768` (the `EMBEDDING_DIMS` constant in [`packages/embeddings/src/index.ts`](../packages/embeddings/src/index.ts)). You get the model's better signal compressed into 768 dims, at the cost of cloud calls.
 
-3. **A model that emits something else (1536, 1024, 3072-fixed) DOES NOT fit.** The old `openai/text-embedding-3-small` (1536), Mistral and Cohere (1024 native) would crash on first insert against the 768 column. The workers form's **Test Dimensions** button is meant to catch this BEFORE the save — switching to a model whose detected dim ≠ 768 should trigger a destructive-banner warning that blocks the save.
-
-> **⚠ Known gap (2026-05-31):** the form's dim guard + the per-agent embedding
-> dropdown were not flipped from 1536 to 768 during the migration. Until they
-> are, the workers form will *block* a 768 model and *permit* the old 1536 ones
-> (exactly backwards), and the agents dropdown still offers cloud 1536 models.
-> The runtime is unaffected (the DB worker row is correct), but don't trust the
-> UI dim guard to protect you yet. Tracked alongside this migration.
+3. **A model that emits something else (1536, 1024, 3072-fixed) DOES NOT fit.** The old `openai/text-embedding-3-small` (1536), Mistral and Cohere (1024 native) would crash on first insert against the 768 column. The **[`/settings/embedding`](#the-one-config-settingsembedding) per-route dim probe** catches this — it embeds a sentinel string against the route and shows the live dimension, with a hard warning when it isn't 768.
 
 To switch back to a cloud 1536 model (or a 1024 Cohere/Mistral model), every `vector(N)` column needs an ALTER TABLE to the new dim + an index rebuild + a full re-embed — the same shape as migration `0060`. Doable, not a button.
 
@@ -123,16 +116,21 @@ Switching models means re-embedding your entire corpus and — if the new model'
 
 ---
 
+## The one config: `/settings/embedding`
+
+Since migration `0061` the embedder is **one row** (`embedding_config`) edited at a dedicated page — not the `ai-workers` embedding kind (retired), not a per-agent or per-extractor field (removed), not an env var (now only seeds the no-row fallback). Every `embed()` call — ingest, retrieval, recall, MCP search, the spill store — resolves from this one row via `resolveEmbeddingConfig`. Agents *display* the embedder; they can't set it. This is deliberate: the brain is **vector-space-locked** (every stored vector must come from the same model, or cosine similarity across the corpus is meaningless), so a single chokepoint is the only safe design.
+
+The page holds: the **model** identity, a **primary route**, and an optional **same-model backup route** (see failover below). Each route has a **Test dimensions** probe that embeds a sentinel against that exact route (bypassing resolver + cache) and shows the live dim with a hard warning when it isn't 768.
+
 ## How to switch
 
-In `/settings/ai-workers`:
+At `/settings/embedding`:
 
-1. **For a cloud model:** add an API key at `/settings/keys` for the target provider. (The `local` provider is keyless — Ollama needs no credential.)
-2. **Edit the embedding worker** (provider + model). The shipped default is `provider=local`, `model=embeddinggemma:latest`, no API key.
-3. **Pick the new model** from the dropdown. The form auto-fetches the provider's catalog.
-4. **Click Test Dimensions** to confirm the model emits 768 (or can be MRL-truncated to it). The form blocks the save if dims don't fit. *(See the known-gap note above — the guard currently checks against 1536, not 768.)*
-5. **If the native dim differs from 768**, write + apply a schema migration across every `vector()` column first. There is no button for this.
-6. **Save** the worker, then **Rebuild Index** — the helper at [`packages/embeddings/src/reembed.ts`](../packages/embeddings/src/reembed.ts) walks `nodes`, `entities`, `facts`, `content_chunks`; re-embeds every row against the new model; idempotent under the `embedding_cache` so re-running against the same model is free.
+1. **For a cloud model:** add an API key at `/settings/keys` first. (The `local` provider is keyless — Ollama needs no credential.)
+2. **Set the model** (e.g. `embeddinggemma:latest`) and the **primary route** (provider + optional base URL + key).
+3. **Click Test dimensions** on the route to confirm it emits 768 (or MRL-truncates to it). A non-768 result shows a destructive warning.
+4. **If the native dim differs from 768**, write + apply a schema migration across every `vector()` column first. There is no button for this.
+5. **Save**, then **Rebuild index** (or **Repopulate** if the column was nulled by a migration) — the helper at [`packages/embeddings/src/reembed.ts`](../packages/embeddings/src/reembed.ts) walks `nodes`, `entities`, `facts`, `content_chunks`; idempotent under the `embedding_cache`.
 
 The CLI alternative is the same code path:
 ```
@@ -157,6 +155,20 @@ The shipped default. Worth knowing how it's wired:
 - **Keyless:** the `local` provider needs no API key; the embed path treats it as keyless (an earlier version threw "no api key for provider 'local'").
 - **Free:** no per-token cost. The cost dashboard shows $0 for embedding traffic, correctly.
 - **Adapter:** `local-embedding` (OpenAI-compatible shape). Lives in `packages/voice/src/adapters/`.
+
+---
+
+## Primary + backup routes (failover)
+
+Availability without breaking the space lock. The config holds **two routes to the same model**: a primary and an optional backup. They differ only in *route* — provider, base URL, API key — **never in model**. The `/settings/embedding` form keeps the backup pinned to the primary's model id for exactly this reason.
+
+How it behaves at runtime ([`doEmbed`](../packages/embeddings/src/index.ts)):
+- The primary route runs first.
+- On a **route-down** error — connection refused, DNS failure, request timeout, or a 5xx (classified by `isRouteDownError`) — it retries the misses on the backup route and stamps `last_failover_at` (surfaced on the page).
+- On a **bad-input** error (4xx, unsupported input) it rethrows — a second route wouldn't help.
+- The cache is keyed on **model only**, so both routes share entries and a failover never pollutes the cache.
+
+**Why same-model only.** Unlike chat (where a different backup model is fine), a different *embedding* model produces vectors in a different coordinate system. If the backup embedded the query with another model, it wouldn't cosine-match the corpus the primary built — retrieval would silently return garbage, and anything ingested during the outage would be permanently off-space until re-embedded. So a safe embedding backup is the *same* model on a different host: e.g. primary `local` Ollama on the Mac → backup a second Ollama / a hosted EmbeddingGemma. (Cloud models that aren't EmbeddingGemma make sense as a *primary* you commit to, not as a failover target.)
 
 **Why EmbeddingGemma and not jina-embeddings-v5?** jina-v5 was evaluated and rejected for the LM Studio path — it loads as `type=llm` there (Qwen3 base) and LM Studio silently falls back to another embedder. EmbeddingGemma loads as a real embedder (768-dim, proper pooling). If jina-v5 is ever wanted, serve it via llama.cpp `--pooling last` / TEI / vLLM, not LM Studio.
 

@@ -61,7 +61,12 @@ vi.mock('@mantle/voice', () => ({
   },
 }));
 
-import { clearEmbeddingModelCache, embedBatch, isRouteDownError } from './index';
+import {
+  clearEmbeddingModelCache,
+  embedBatch,
+  isRouteDownError,
+  resolveEmbeddingConfig,
+} from './index';
 
 function configRow(over: Record<string, unknown> = {}) {
   return {
@@ -110,6 +115,47 @@ describe('embedding failover', () => {
     h.state.configRow = configRow({ backupEnabled: false });
     await expect(embedBatch('owner-1', ['hi'])).rejects.toThrow(/fetch failed/);
     expect(h.state.embedCalls).toEqual(['http://primary']);
+  });
+});
+
+describe('resolveEmbeddingConfig', () => {
+  beforeEach(() => {
+    h.state.configRow = null;
+    clearEmbeddingModelCache();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  it('maps the config row to {model, dimensions, primary, backup}', async () => {
+    h.state.configRow = configRow();
+    const c = await resolveEmbeddingConfig('owner-1');
+    expect(c.model).toBe('m');
+    expect(c.dimensions).toBe(3);
+    expect(c.primary).toEqual({
+      provider: 'local',
+      baseUrl: 'http://primary',
+      apiKeyId: null,
+      label: 'Primary',
+    });
+    expect(c.backup).toEqual({
+      provider: 'local',
+      baseUrl: 'http://backup',
+      apiKeyId: null,
+      label: 'Backup',
+    });
+  });
+
+  it('returns backup=null when failover is disabled', async () => {
+    h.state.configRow = configRow({ backupEnabled: false });
+    const c = await resolveEmbeddingConfig('owner-1');
+    expect(c.backup).toBeNull();
+  });
+
+  it('falls back to the local-768 default when there is no row', async () => {
+    h.state.configRow = null;
+    const c = await resolveEmbeddingConfig('owner-1');
+    expect(c.dimensions).toBe(768);
+    expect(c.primary.provider).toBe('local');
+    expect(c.backup).toBeNull();
   });
 });
 
