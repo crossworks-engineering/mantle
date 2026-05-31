@@ -356,6 +356,11 @@ export interface ChatOptions {
    *  Used for things like xAI's `reasoning_effort` or HF's `:fastest`
    *  routing suffix. */
   extra?: Record<string, unknown>;
+  /** Per-route base URL override for self-hosted / OpenAI-compatible chat
+   *  servers. Lets a `local` chat route target a specific host (a LAN/tailnet
+   *  box). The `local-chat` adapter honours it; fixed-endpoint cloud adapters
+   *  ignore it. Mirrors `EmbedRequest.baseUrl`. */
+  baseUrl?: string;
 }
 
 export interface ChatDispatcher extends AdapterMeta {

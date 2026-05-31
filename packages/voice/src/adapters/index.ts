@@ -55,6 +55,7 @@ import { googleEmbedding } from './google-embedding';
 import { mistralEmbedding } from './mistral-embedding';
 import { cohereEmbedding } from './cohere-embedding';
 import { localEmbedding } from './local-embedding';
+import { localChatAdapter } from './local-chat';
 
 // Built-in adapters. Order doesn't matter — these are just into a
 // Map keyed by providerId.
@@ -74,6 +75,7 @@ registerChatAdapter(anthropicChatAdapter);
 registerChatAdapter(googleChatAdapter);
 registerChatAdapter(openrouterChatAdapter);
 registerChatAdapter(deepseekChatAdapter);
+registerChatAdapter(localChatAdapter);
 registerVisionAdapter(openAiVisionAdapter);
 registerVisionAdapter(anthropicVisionAdapter);
 registerVisionAdapter(googleVisionAdapter);
@@ -194,6 +196,7 @@ export { anthropicChatAdapter } from './anthropic-chat';
 export { googleChatAdapter } from './google-chat';
 export { openrouterChatAdapter } from './openrouter-chat';
 export { deepseekChatAdapter } from './deepseek-chat';
+export { localChatAdapter } from './local-chat';
 export { googleTtsAdapter } from './google-tts';
 export { xaiTtsAdapter } from './xai-tts';
 export { elevenLabsTtsAdapter } from './elevenlabs-tts';

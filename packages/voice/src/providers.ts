@@ -192,8 +192,8 @@ export const SUPPORTED_PROVIDERS: readonly Provider[] = [
     id: 'local',
     label: 'Local (self-hosted)',
     description:
-      'A self-hosted OpenAI-compatible server (Ollama, LM Studio, llama.cpp, TEI, vLLM) on your own hardware — embedded text never leaves your network. Base URL via MANTLE_LOCAL_EMBEDDING_URL (default http://localhost:11434/v1).',
-    capabilities: ['embedding'],
+      'A self-hosted OpenAI-compatible server (Ollama, LM Studio, llama.cpp, TEI, vLLM) on your own hardware — text never leaves your network. Chat base URL via MANTLE_LOCAL_CHAT_URL or a per-route base URL; embedding via MANTLE_LOCAL_EMBEDDING_URL. Both default to http://localhost:11434/v1.',
+    capabilities: ['chat', 'embedding'],
     signupUrl: 'https://ollama.com/download',
     docsUrl: 'https://github.com/ollama/ollama/blob/main/docs/openai.md',
   },
