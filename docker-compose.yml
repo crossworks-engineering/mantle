@@ -20,6 +20,15 @@ name: mantle
 #   OLLAMA_KEEP_ALIVE       (default: 5m — set to -1 to keep the embedder always
 #                            resident instead of unloading when idle)
 #
+# Optional — reach models on a box you own behind NAT (home GPU / LAN server):
+#   docker compose --profile tailnet up -d   (off by default)
+#   TS_AUTHKEY              (Tailscale auth key — generate in the TS admin
+#                            console; required to bring the tailnet profile up)
+#   TS_HOSTNAME            (default: mantle-vps — this node's name on the tailnet)
+#   MANTLE_TAILNET_PROXY_URL (default: http://tailscale:1055 — the in-compose
+#                            HTTP proxy; only used by routes flagged "via tailnet")
+#   See docs/future/tailscale-remote-inference.md.
+#
 # Build & run:
 #   docker compose build
 #   docker compose up -d --wait
@@ -41,6 +50,9 @@ volumes:
   # pulled once into here by the `ollama_pull` one-shot and persists across
   # restarts/redeploys, so it's never re-downloaded.
   mantle_ollama_data:
+  # Tailscale node state (identity + keys) — persists across restarts so the
+  # node doesn't re-auth every boot. Only used by the optional `tailnet` profile.
+  mantle_tailscale_data:
 
 # Shared env block for app services — anchor + alias keeps the app
 # services in lockstep.
@@ -62,6 +74,10 @@ x-app-env: &app-env
   # the box — no cloud key, no API calls, fast. The resolver already defaults
   # a fresh install to local/embeddinggemma:latest; this just supplies the host.
   MANTLE_LOCAL_EMBEDDING_URL: ${MANTLE_LOCAL_EMBEDDING_URL:-http://ollama:11434/v1}
+  # HTTP forward-proxy for reaching models on your tailnet (the optional
+  # `tailnet` profile). Only used for routes the operator flags "via tailnet";
+  # harmless otherwise. Points at the bundled tailscale service.
+  MANTLE_TAILNET_PROXY_URL: ${MANTLE_TAILNET_PROXY_URL:-http://tailscale:1055}
   MANTLE_FILES_ROOT: /data/files
   # Public origin for absolute links built outside an HTTP request — e.g. the
   # agent's page_share / email_page tools. Falls back to localhost in code if
@@ -169,6 +185,43 @@ services:
     environment:
       OLLAMA_HOST: http://ollama:11434
     entrypoint: ["ollama", "pull", "${MANTLE_EMBEDDING_PULL_MODEL:-embeddinggemma}"]
+
+  # ── Tailscale (OPTIONAL — `tailnet` profile) ──────────────────────────────
+  # Reaches capable chat/vision models running on a box you own (home GPU, LAN
+  # server) that's behind NAT — without port-forwarding or public IPs. Joins
+  # your tailnet; the app then reaches `http://<magicdns-name>:<port>` for that
+  # box by name. See docs/future/tailscale-remote-inference.md.
+  #
+  # Off by default. Enable with:  docker compose --profile tailnet up -d
+  # Set TS_AUTHKEY (generate one in the Tailscale admin console) before bringing
+  # it up. Userspace networking → no TUN device / NET_ADMIN cap needed (safe).
+  # Exposes an HTTP forward-proxy on :1055 that the app dispatches tailnet-bound
+  # model calls through (MANTLE_TAILNET_PROXY_URL), keeping compose service-DNS
+  # intact for everything internal.
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: mantle_tailscale
+    restart: unless-stopped
+    profiles: ["tailnet"]
+    hostname: ${TS_HOSTNAME:-mantle-vps}
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_HOSTNAME: ${TS_HOSTNAME:-mantle-vps}
+      TS_USERSPACE: "true"
+      TS_STATE_DIR: /var/lib/tailscale
+      # HTTP forward-proxy for outbound tailnet traffic — undici ProxyAgent
+      # speaks to this. (SOCKS5 is also available via TS_SOCKS5_SERVER if a
+      # client needs it, but the Node fetch path uses the HTTP proxy.)
+      TS_OUTBOUND_HTTP_PROXY_LISTEN: 0.0.0.0:1055
+      TS_EXTRA_ARGS: ${TS_EXTRA_ARGS:-}
+    volumes:
+      - mantle_tailscale_data:/var/lib/tailscale
+    healthcheck:
+      test: ["CMD", "tailscale", "status"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
 
   # One-shot schema migration. App services wait for this to complete
   # successfully before starting, so the DB schema is never behind the code on
