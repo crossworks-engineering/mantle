@@ -23,11 +23,17 @@ import {
   type ChatResult,
 } from '@mantle/voice';
 
-/** A configured chat route — which provider/model, and which key. */
+/** A configured chat route — which provider/model, which key, and where. */
 export interface ChatRoute {
   provider: string;
   model: string;
   apiKeyId: string | null;
+  /** Per-route host override (migration 0063). Blank/null = provider default.
+   *  Only the `local` chat adapter reads it today; others ignore it. */
+  baseUrl: string | null;
+  /** Dispatch this route's HTTP through the Tailscale proxy so a `baseUrl` at a
+   *  MagicDNS name reaches a NAT'd box. Inert unless the tailnet proxy is up. */
+  viaTailnet: boolean;
 }
 
 /** The active + optional backup routes resolved from a row. */
@@ -41,23 +47,35 @@ export interface ChatRouteRow {
   provider: string;
   model: string;
   apiKeyId: string | null;
+  baseUrl: string | null;
+  viaTailnet: boolean;
   backupProvider: string | null;
   backupModel: string | null;
   backupApiKeyId: string | null;
   backupEnabled: boolean;
+  backupBaseUrl: string | null;
+  backupViaTailnet: boolean;
 }
 
 /** Split a row into its active (primary) + optional backup routes. The backup
  *  is only live when enabled AND fully configured. */
 export function resolveChatRoutes(row: ChatRouteRow): ChatRoutes {
   return {
-    primary: { provider: row.provider, model: row.model, apiKeyId: row.apiKeyId ?? null },
+    primary: {
+      provider: row.provider,
+      model: row.model,
+      apiKeyId: row.apiKeyId ?? null,
+      baseUrl: row.baseUrl ?? null,
+      viaTailnet: row.viaTailnet ?? false,
+    },
     backup:
       row.backupEnabled && row.backupProvider && row.backupModel
         ? {
             provider: row.backupProvider,
             model: row.backupModel,
             apiKeyId: row.backupApiKeyId ?? null,
+            baseUrl: row.backupBaseUrl ?? null,
+            viaTailnet: row.backupViaTailnet ?? false,
           }
         : null,
   };
@@ -81,6 +99,10 @@ export interface ResolvedChatRoute {
   apiKey: string;
   model: string;
   provider: string;
+  /** Per-route host + tailnet flag, passed into `adapter.chat()` (migration
+   *  0063). The `local` chat adapter honours them; others ignore them. */
+  baseUrl: string | null;
+  viaTailnet: boolean;
 }
 
 /**
@@ -106,7 +128,14 @@ export async function resolveRouteAdapter(
       `chat: no api key for provider '${route.provider}'. Add one at /settings/keys.`,
     );
   }
-  return { adapter, apiKey, model: route.model, provider: route.provider };
+  return {
+    adapter,
+    apiKey,
+    model: route.model,
+    provider: route.provider,
+    baseUrl: route.baseUrl ?? null,
+    viaTailnet: route.viaTailnet ?? false,
+  };
 }
 
 /**
@@ -163,6 +192,8 @@ export async function chatWithFailover(
       ...opts,
       apiKey: primary.apiKey,
       model: primary.model,
+      ...(primary.baseUrl ? { baseUrl: primary.baseUrl } : {}),
+      ...(primary.viaTailnet ? { viaTailnet: true } : {}),
     });
     return { result, usedProvider: primary.provider, failedOver: false };
   } catch (err) {
@@ -177,6 +208,8 @@ export async function chatWithFailover(
       ...opts,
       apiKey: backup.apiKey,
       model: backup.model,
+      ...(backup.baseUrl ? { baseUrl: backup.baseUrl } : {}),
+      ...(backup.viaTailnet ? { viaTailnet: true } : {}),
     });
     return { result, usedProvider: backup.provider, failedOver: true };
   }

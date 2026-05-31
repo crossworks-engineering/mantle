@@ -159,6 +159,8 @@ export const invokeAgent: AgentInvoker = async ({
         adapter: childAdapter,
         apiKey,
         model: target.model,
+        baseUrl: target.baseUrl,
+        viaTailnet: target.viaTailnet,
         backup: await resolveBackupAdapter(ownerId, target),
         params: (target.params ?? {}) as AgentParams,
         ownerId,

@@ -13,6 +13,10 @@ const h = vi.hoisted(() => ({
   ) => unknown,
   primaryCalls: 0,
   backupCalls: 0,
+  // Last opts each route received — lets a test assert per-route baseUrl/
+  // viaTailnet actually reach adapter.chat (migration 0063).
+  lastPrimaryOpts: null as Record<string, unknown> | null,
+  lastBackupOpts: null as Record<string, unknown> | null,
 }));
 
 vi.mock('@mantle/voice', async (importOriginal) => {
@@ -25,9 +29,11 @@ vi.mock('@mantle/voice', async (importOriginal) => {
       chat: async (opts: { model: string }) => {
         if (provider === 'backup') {
           h.backupCalls++;
+          h.lastBackupOpts = opts as Record<string, unknown>;
           return { text: 'backup-reply', model: opts.model };
         }
         h.primaryCalls++;
+        h.lastPrimaryOpts = opts as Record<string, unknown>;
         return h.primaryChat(opts);
       },
     }),
@@ -43,8 +49,8 @@ import { chatWithFailover, isChatFailover, resolveChatRoutes } from './chat-fail
 import type { ChatRoutes } from './chat-failover';
 
 const ROUTES: ChatRoutes = {
-  primary: { provider: 'primary', model: 'p-model', apiKeyId: null },
-  backup: { provider: 'backup', model: 'b-model', apiKeyId: null },
+  primary: { provider: 'primary', model: 'p-model', apiKeyId: null, baseUrl: null, viaTailnet: false },
+  backup: { provider: 'backup', model: 'b-model', apiKeyId: null, baseUrl: null, viaTailnet: false },
 };
 const OPTS = { messages: [{ role: 'user' as const, content: 'hi' }] };
 const down = () => {
@@ -58,6 +64,8 @@ describe('chatWithFailover', () => {
   beforeEach(() => {
     h.primaryCalls = 0;
     h.backupCalls = 0;
+    h.lastPrimaryOpts = null;
+    h.lastBackupOpts = null;
     h.primaryChat = () => ({ text: 'primary-reply', model: 'p-model' });
     vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
@@ -94,6 +102,43 @@ describe('chatWithFailover', () => {
     ).rejects.toThrow(/service unavailable/);
     expect(h.backupCalls).toBe(0);
   });
+
+  it('passes the primary route baseUrl + viaTailnet into adapter.chat (migration 0063)', async () => {
+    const routes: ChatRoutes = {
+      primary: {
+        provider: 'primary',
+        model: 'p-model',
+        apiKeyId: null,
+        baseUrl: 'http://gpu-box:11434/v1',
+        viaTailnet: true,
+      },
+      backup: null,
+    };
+    await chatWithFailover('o', routes, OPTS);
+    expect(h.lastPrimaryOpts?.baseUrl).toBe('http://gpu-box:11434/v1');
+    expect(h.lastPrimaryOpts?.viaTailnet).toBe(true);
+  });
+
+  it('fails over to a backup carrying its OWN baseUrl/viaTailnet (no inheritance)', async () => {
+    // Local-via-tailnet primary goes down → cloud-direct backup answers. The
+    // backup call must NOT inherit the primary's baseUrl/viaTailnet — they're
+    // only spread when truthy, so a plain backup carries neither.
+    h.primaryChat = down;
+    const routes: ChatRoutes = {
+      primary: {
+        provider: 'primary',
+        model: 'p-model',
+        apiKeyId: null,
+        baseUrl: 'http://primary-box:11434/v1',
+        viaTailnet: true,
+      },
+      backup: { provider: 'backup', model: 'b-model', apiKeyId: null, baseUrl: null, viaTailnet: false },
+    };
+    const r = await chatWithFailover('o', routes, OPTS);
+    expect(r.failedOver).toBe(true);
+    expect(h.lastBackupOpts?.baseUrl).toBeUndefined();
+    expect(h.lastBackupOpts?.viaTailnet).toBeUndefined();
+  });
 });
 
 describe('resolveChatRoutes', () => {
@@ -101,16 +146,32 @@ describe('resolveChatRoutes', () => {
     provider: 'anthropic',
     model: 'claude',
     apiKeyId: 'k1',
+    baseUrl: 'http://gpu-box:11434/v1',
+    viaTailnet: true,
     backupProvider: 'openrouter',
     backupModel: 'gpt',
     backupApiKeyId: 'k2',
     backupEnabled: true,
+    backupBaseUrl: null,
+    backupViaTailnet: false,
   };
 
-  it('maps primary + enabled backup', () => {
+  it('maps primary + enabled backup (incl. per-route baseUrl/viaTailnet)', () => {
     const r = resolveChatRoutes(base);
-    expect(r.primary).toEqual({ provider: 'anthropic', model: 'claude', apiKeyId: 'k1' });
-    expect(r.backup).toEqual({ provider: 'openrouter', model: 'gpt', apiKeyId: 'k2' });
+    expect(r.primary).toEqual({
+      provider: 'anthropic',
+      model: 'claude',
+      apiKeyId: 'k1',
+      baseUrl: 'http://gpu-box:11434/v1',
+      viaTailnet: true,
+    });
+    expect(r.backup).toEqual({
+      provider: 'openrouter',
+      model: 'gpt',
+      apiKeyId: 'k2',
+      baseUrl: null,
+      viaTailnet: false,
+    });
   });
 
   it('returns backup=null when disabled or incomplete', () => {

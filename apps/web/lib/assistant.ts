@@ -486,6 +486,8 @@ export async function runAssistantTurn(
           adapter: assistantAdapter,
           apiKey,
           model: agent.model,
+          baseUrl: agent.baseUrl,
+          viaTailnet: agent.viaTailnet,
           backup: await resolveBackupAdapter(ownerId, agent),
           params,
           ownerId,

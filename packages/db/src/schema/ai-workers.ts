@@ -237,6 +237,14 @@ export const aiWorkers = pgTable(
     backupModel: text('backup_model'),
     backupApiKeyId: uuid('backup_api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
     backupEnabled: boolean('backup_enabled').default(false).notNull(),
+    /** Per-route host + tailnet flag (migration 0063). See agents.ts for the
+     *  full rationale — `baseUrl` overrides the provider default host for this
+     *  route, `viaTailnet` routes its HTTP through the bundled Tailscale proxy.
+     *  Both primary + backup carry their own pair. */
+    baseUrl: text('base_url'),
+    viaTailnet: boolean('via_tailnet').default(false).notNull(),
+    backupBaseUrl: text('backup_base_url'),
+    backupViaTailnet: boolean('backup_via_tailnet').default(false).notNull(),
     systemPrompt: text('system_prompt'),
     params: jsonb('params').$type<AiWorkerParams>().default(sql`'{}'::jsonb`).notNull(),
     enabled: boolean('enabled').default(true).notNull(),

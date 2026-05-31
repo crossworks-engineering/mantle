@@ -1000,6 +1000,8 @@ async function handleMessage(messageId: string): Promise<void> {
           adapter: chatAdapter,
           apiKey,
           model: agent.model,
+          baseUrl: agent.baseUrl,
+          viaTailnet: agent.viaTailnet,
           backup: await resolveBackupAdapter(USER_ID!, agent),
           params: (agent.params ?? {}) as AgentParams,
           ownerId: USER_ID!,

@@ -47,7 +47,13 @@ import { chatComplete } from './extractor';
 import type { ChatRoutes } from '@mantle/agent-runtime';
 
 const ROUTES: ChatRoutes = {
-  primary: { provider: 'anthropic', model: 'claude-haiku-4-5', apiKeyId: null },
+  primary: {
+    provider: 'anthropic',
+    model: 'claude-haiku-4-5',
+    apiKeyId: null,
+    baseUrl: null,
+    viaTailnet: false,
+  },
   backup: null,
 };
 

@@ -195,6 +195,17 @@ export const agents = pgTable(
     backupModel: text('backup_model'),
     backupApiKeyId: uuid('backup_api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
     backupEnabled: boolean('backup_enabled').default(false).notNull(),
+    /** Per-route host + tailnet flag (migration 0063). `baseUrl` overrides the
+     *  provider's default host for this route (e.g. a self-hosted OpenAI-compat
+     *  chat server); blank = provider default. `viaTailnet` dispatches this
+     *  route's HTTP through the bundled Tailscale proxy so a baseUrl at a
+     *  MagicDNS name reaches a NAT'd box (inert unless the tailnet profile is
+     *  up). Both routes get their own pair, so a local-via-tailnet primary can
+     *  pair with a cloud-direct backup. */
+    baseUrl: text('base_url'),
+    viaTailnet: boolean('via_tailnet').default(false).notNull(),
+    backupBaseUrl: text('backup_base_url'),
+    backupViaTailnet: boolean('backup_via_tailnet').default(false).notNull(),
     systemPrompt: text('system_prompt').notNull(),
     /** Legacy free-form MCP tool name array. Superseded by `tool_slugs` /
      *  `skill_slugs` below; kept for back-compat with existing rows. */

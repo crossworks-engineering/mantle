@@ -112,13 +112,24 @@ export type ToolLoopArgs = {
    *  column the ai_workers table uses). */
   apiKey: string;
   model: string;
+  /** Per-route host + tailnet flag for the PRIMARY (migration 0063). The
+   *  `local` chat adapter honours them; others ignore them. */
+  baseUrl?: string | null;
+  viaTailnet?: boolean;
   /** Optional BACKUP chat route (a different provider/model is fine for chat).
    *  Resolved by the caller via `resolveRouteAdapter(ownerId, routes.backup)`.
    *  When set and the primary hits a route-DOWN / 429 / 5xx error mid-loop, the
    *  loop fails over to this route and stays on it for the REST of the turn
    *  (sticky — no flip-flopping models mid-reasoning). The next turn starts on
-   *  the primary again. */
-  backup?: { adapter: ChatDispatcher; apiKey: string; model: string };
+   *  the primary again. Carries its OWN baseUrl/viaTailnet (a cloud-direct
+   *  backup must not inherit a local-via-tailnet primary's routing). */
+  backup?: {
+    adapter: ChatDispatcher;
+    apiKey: string;
+    model: string;
+    baseUrl?: string | null;
+    viaTailnet?: boolean;
+  };
   params: AgentParams;
   ownerId: string;
   /** The agent row's id, written onto any pending_tool_calls rows so the
@@ -228,7 +239,13 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // failure flips it to the backup for the REST of this turn (sticky), so we
   // don't switch models halfway through a reasoning chain. A fresh turn calls
   // runToolLoop again and starts on the primary.
-  let active = { adapter: args.adapter, apiKey: args.apiKey, model: args.model };
+  let active = {
+    adapter: args.adapter,
+    apiKey: args.apiKey,
+    model: args.model,
+    baseUrl: args.baseUrl ?? null,
+    viaTailnet: args.viaTailnet ?? false,
+  };
   let failedOver = false;
 
   for (let iter = 0; iter < maxIters; iter++) {
@@ -266,6 +283,8 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           const r = await active.adapter.chat({
             apiKey: active.apiKey,
             model: active.model,
+            ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
+            ...(active.viaTailnet ? { viaTailnet: true } : {}),
             ...chatOpts,
           });
           recordChatUsage(h, r, active.model);
@@ -284,11 +303,15 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
             adapter: args.backup.adapter,
             apiKey: args.backup.apiKey,
             model: args.backup.model,
+            baseUrl: args.backup.baseUrl ?? null,
+            viaTailnet: args.backup.viaTailnet ?? false,
           };
           failedOver = true;
           const r = await active.adapter.chat({
             apiKey: active.apiKey,
             model: active.model,
+            ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
+            ...(active.viaTailnet ? { viaTailnet: true } : {}),
             ...chatOpts,
           });
           recordChatUsage(h, r, active.model);

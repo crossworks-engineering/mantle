@@ -247,6 +247,8 @@ async function fireInner(
             adapter: hbAdapter,
             apiKey,
             model: agent.model,
+            baseUrl: agent.baseUrl,
+            viaTailnet: agent.viaTailnet,
             backup: hbBackup,
             params: (agent.params ?? {}) as AgentParams,
             ownerId: hb.ownerId,
