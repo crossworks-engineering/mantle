@@ -45,6 +45,11 @@ Companion docs:
   list IS the email allowlist: non-empty contacts engages the send gate.
   Per-method send counters bumped on success. Same-surname-different-given
   reconciler refinement lives here too.
+- [`chat-failover.md`](./chat-failover.md) — primary + backup chat routes for
+  agents and chat workers (migration 0062): a different-model backup the runtime
+  fails over to on route-down / 429 / 5xx. Single-shot `chatWithFailover` +
+  sticky-within-turn tool-loop failover. The enabler for local-primary +
+  cloud-fallback. Operator-facing summary in `ai-workers.md` §7a.
 
 ---
 

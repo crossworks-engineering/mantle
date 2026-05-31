@@ -1025,6 +1025,8 @@ generation.
 
 ## 7a. Chat route failover (primary + backup)
 
+> Full implementation deep-dive: [`docs/chat-failover.md`](./chat-failover.md).
+
 Every **agent** and chat-shaped **ai_worker** can carry a second chat route — a
 `backup_provider` / `backup_model` / `backup_api_key_id` (+ `backup_enabled`)
 alongside the active `provider` / `model` / `api_key_id` (migration `0062`). The
