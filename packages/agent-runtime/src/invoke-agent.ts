@@ -40,6 +40,7 @@ import type { AgentInvoker, InvokeAgentResult } from '@mantle/tools';
 import { MAX_AGENT_DEPTH } from '@mantle/tools';
 import { getChatAdapter } from '@mantle/voice';
 import { resolveAgentTools, runToolLoop } from './tool-loop';
+import { resolveBackupAdapter } from './chat-failover';
 import { resolveAgentSkills, composeSystemPromptWithSkills, effectiveToolSlugs } from './skills';
 import type { ChatMessage } from './messages';
 
@@ -158,6 +159,7 @@ export const invokeAgent: AgentInvoker = async ({
         adapter: childAdapter,
         apiKey,
         model: target.model,
+        backup: await resolveBackupAdapter(ownerId, target),
         params: (target.params ?? {}) as AgentParams,
         ownerId,
         agentId: target.id,

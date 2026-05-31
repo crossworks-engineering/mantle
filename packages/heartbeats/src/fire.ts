@@ -38,6 +38,7 @@ import {
   effectiveToolSlugs,
   resolveAgentSkills,
   resolveAgentTools,
+  resolveBackupAdapter,
   runToolLoop,
   type ChatMessage,
 } from '@mantle/agent-runtime';
@@ -240,11 +241,13 @@ async function fireInner(
         // currentTrace() is safe to read here — we're inside the
         // AsyncLocalStorage scope startTrace just opened.
         openedTraceId = currentTrace()?.id ?? null;
+        const hbBackup = await resolveBackupAdapter(hb.ownerId, agent);
         const result = await withHeartbeatContext({ heartbeatId: hb.id, slug: hb.slug, ownerId: hb.ownerId }, () =>
           runToolLoop({
             adapter: hbAdapter,
             apiKey,
             model: agent.model,
+            backup: hbBackup,
             params: (agent.params ?? {}) as AgentParams,
             ownerId: hb.ownerId,
             agentId: agent.id,

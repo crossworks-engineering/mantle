@@ -109,6 +109,29 @@ export async function resolveRouteAdapter(
   return { adapter, apiKey, model: route.model, provider: route.provider };
 }
 
+/**
+ * Resolve a row's BACKUP route to a callable adapter for `runToolLoop`'s
+ * `backup` arg — or `undefined` when there's no backup OR it can't be resolved.
+ * A broken backup (unwired provider, missing key) must NEVER break the primary
+ * path: failover just won't be available, and we log why.
+ */
+export async function resolveBackupAdapter(
+  ownerId: string,
+  row: ChatRouteRow,
+): Promise<ResolvedChatRoute | undefined> {
+  const { backup } = resolveChatRoutes(row);
+  if (!backup) return undefined;
+  try {
+    return await resolveRouteAdapter(ownerId, backup);
+  } catch (err) {
+    console.warn(
+      `[chat] backup route '${backup.provider}/${backup.model}' unavailable — failover disabled: ` +
+        (err instanceof Error ? err.message : String(err)),
+    );
+    return undefined;
+  }
+}
+
 /** Chat options minus the per-route fields — `apiKey` and `model` are supplied
  *  by each route (the backup may run a different model). */
 export type RoutelessChatOptions = Omit<ChatOptions, 'apiKey' | 'model'>;

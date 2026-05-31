@@ -28,6 +28,7 @@ export {
 export {
   resolveChatRoutes,
   resolveRouteAdapter,
+  resolveBackupAdapter,
   isChatFailover,
   chatWithFailover,
   type ChatRoute,

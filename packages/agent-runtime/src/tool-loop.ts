@@ -46,6 +46,7 @@ import {
   type ChatToolDefinition,
 } from '@mantle/voice';
 import { recordChatUsage } from './llm-usage';
+import { isChatFailover } from './chat-failover';
 import type { ChatMessage } from './messages';
 import { parseToolArgs } from './tool-args';
 
@@ -111,6 +112,13 @@ export type ToolLoopArgs = {
    *  column the ai_workers table uses). */
   apiKey: string;
   model: string;
+  /** Optional BACKUP chat route (a different provider/model is fine for chat).
+   *  Resolved by the caller via `resolveRouteAdapter(ownerId, routes.backup)`.
+   *  When set and the primary hits a route-DOWN / 429 / 5xx error mid-loop, the
+   *  loop fails over to this route and stays on it for the REST of the turn
+   *  (sticky — no flip-flopping models mid-reasoning). The next turn starts on
+   *  the primary again. */
+  backup?: { adapter: ChatDispatcher; apiKey: string; model: string };
   params: AgentParams;
   ownerId: string;
   /** The agent row's id, written onto any pending_tool_calls rows so the
@@ -216,26 +224,32 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // send* calls and don't populate this.
   const artifacts: ToolArtifact[] = [];
 
+  // The active route. Starts on the primary; a mid-loop route-DOWN / 429 / 5xx
+  // failure flips it to the backup for the REST of this turn (sticky), so we
+  // don't switch models halfway through a reasoning chain. A fresh turn calls
+  // runToolLoop again and starts on the primary.
+  let active = { adapter: args.adapter, apiKey: args.apiKey, model: args.model };
+  let failedOver = false;
+
   for (let iter = 0; iter < maxIters; iter++) {
     const result = await step(
       {
         name:
           iter === 0
-            ? `${args.adapter.adapterName}_chat`
-            : `${args.adapter.adapterName}_chat[${iter}]`,
+            ? `${active.adapter.adapterName}_chat`
+            : `${active.adapter.adapterName}_chat[${iter}]`,
         kind: 'llm_call',
         input: {
-          model: args.model,
-          provider: args.adapter.providerId,
+          model: active.model,
+          provider: active.adapter.providerId,
           iter,
           tools: toolsForModel.length,
+          ...(failedOver ? { failed_over: true } : {}),
         },
       },
       async (h) => {
-        const r = await args.adapter.chat({
-          apiKey: args.apiKey,
-          model: args.model,
-          messages: messages,
+        const chatOpts = {
+          messages,
           ...(sendTools ? { tools: toolsForModel } : {}),
           // Prompt-cache breakpoints: mark the system block (persona +
           // skills stay turn-to-turn) and the most recent user message
@@ -247,9 +261,39 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           ...(typeof args.params.max_tokens === 'number' ? { maxTokens: args.params.max_tokens } : {}),
           ...(typeof args.params.top_p === 'number' ? { topP: args.params.top_p } : {}),
           ...(typeof args.params.max_retries === 'number' ? { maxRetries: args.params.max_retries } : {}),
-        });
-        recordChatUsage(h, r, args.model);
-        return r;
+        };
+        try {
+          const r = await active.adapter.chat({
+            apiKey: active.apiKey,
+            model: active.model,
+            ...chatOpts,
+          });
+          recordChatUsage(h, r, active.model);
+          return r;
+        } catch (err) {
+          // Fail over to the backup once per turn, only on a route-DOWN /
+          // 429 / 5xx error. 4xx bad-input would fail identically on the
+          // backup, so rethrow those.
+          if (!args.backup || failedOver || !isChatFailover(err)) throw err;
+          console.warn(
+            `[tool-loop] primary '${active.adapter.adapterName}:${active.model}' failed ` +
+              `(${err instanceof Error ? err.message : String(err)}) — failing over to backup ` +
+              `'${args.backup.adapter.adapterName}:${args.backup.model}' for the rest of this turn`,
+          );
+          active = {
+            adapter: args.backup.adapter,
+            apiKey: args.backup.apiKey,
+            model: args.backup.model,
+          };
+          failedOver = true;
+          const r = await active.adapter.chat({
+            apiKey: active.apiKey,
+            model: active.model,
+            ...chatOpts,
+          });
+          recordChatUsage(h, r, active.model);
+          return r;
+        }
       },
     );
 
