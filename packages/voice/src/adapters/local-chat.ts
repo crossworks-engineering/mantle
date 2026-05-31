@@ -25,6 +25,7 @@ import {
   toOpenAICompatMessages,
   type OpenAICompatChatResponse,
 } from './openai-compat';
+import { tailnetFetch } from './tailnet';
 
 const DEFAULT_BASE_URL = 'http://localhost:11434/v1';
 
@@ -50,7 +51,9 @@ async function localChat(opts: ChatOptions): Promise<ChatResult> {
 
   // Local generation can be slow on CPU; allow a generous ceiling. A box that's
   // OFF refuses fast (fed to the failover layer); a hang hits this timeout.
-  const res = await fetch(`${baseUrl(opts.baseUrl)}/chat/completions`, {
+  // `viaTailnet` routes through the Tailscale proxy to reach a NAT'd host.
+  const doFetch = opts.viaTailnet ? tailnetFetch : fetch;
+  const res = await doFetch(`${baseUrl(opts.baseUrl)}/chat/completions`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${opts.apiKey || 'local'}`,

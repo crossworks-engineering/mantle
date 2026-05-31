@@ -361,6 +361,11 @@ export interface ChatOptions {
    *  box). The `local-chat` adapter honours it; fixed-endpoint cloud adapters
    *  ignore it. Mirrors `EmbedRequest.baseUrl`. */
   baseUrl?: string;
+  /** When true, the request is dispatched through the Tailscale forward-proxy
+   *  ({@link tailnetFetch}) so a `baseUrl` pointing at a tailnet host reaches a
+   *  box behind NAT. Honoured by the `local-chat` adapter; inert when no proxy
+   *  is configured. */
+  viaTailnet?: boolean;
 }
 
 export interface ChatDispatcher extends AdapterMeta {
@@ -592,6 +597,11 @@ export interface EmbedRequest {
    *  serving the SAME model (failover). The `local` adapter honours it;
    *  fixed-endpoint cloud adapters ignore it. */
   baseUrl?: string;
+  /** When true, the request is dispatched through the Tailscale forward-proxy
+   *  ({@link tailnetFetch}) so a `baseUrl` pointing at a tailnet host reaches a
+   *  box behind NAT. Honoured by the `local-embedding` adapter; inert when no
+   *  proxy is configured. */
+  viaTailnet?: boolean;
 }
 
 export interface EmbedResult {

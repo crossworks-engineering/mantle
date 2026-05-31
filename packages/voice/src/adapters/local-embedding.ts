@@ -23,6 +23,7 @@ import type {
   EmbeddingModelInfo,
 } from './types';
 import type { DiscoveryResult } from '../discover';
+import { tailnetFetch } from './tailnet';
 
 const DEFAULT_BASE_URL = 'http://localhost:11434/v1';
 
@@ -66,7 +67,8 @@ export const localEmbedding: EmbeddingDispatcher = {
     // actually lands in the column, so the caller must size accordingly.
     if (req.dimensions) body.dimensions = req.dimensions;
 
-    const res = await fetch(`${baseUrl(req.baseUrl)}/embeddings`, {
+    const doFetch = req.viaTailnet ? tailnetFetch : fetch;
+    const res = await doFetch(`${baseUrl(req.baseUrl)}/embeddings`, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${req.apiKey || 'local'}`,

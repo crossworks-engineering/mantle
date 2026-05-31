@@ -153,7 +153,7 @@ function fakeTool(overrides: Partial<Tool> = {}): Tool {
 function makeThrowingAdapter(status: number): { adapter: ChatDispatcher; calls: ChatOptions[] } {
   const calls: ChatOptions[] = [];
   const adapter: ChatDispatcher = {
-    providerId: 'primary',
+    providerId: 'anthropic',
     adapterName: 'primary-chat',
     chat: vi.fn(async (opts: ChatOptions): Promise<ChatResult> => {
       calls.push(opts);
