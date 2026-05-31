@@ -15,7 +15,13 @@
  * fresh call / turn tries the primary first again (no circuit breaker).
  */
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
-import { classifyChatError, getChatAdapter, type ChatDispatcher } from '@mantle/voice';
+import {
+  classifyChatError,
+  getChatAdapter,
+  type ChatDispatcher,
+  type ChatOptions,
+  type ChatResult,
+} from '@mantle/voice';
 
 /** A configured chat route — which provider/model, and which key. */
 export interface ChatRoute {
@@ -101,4 +107,54 @@ export async function resolveRouteAdapter(
     );
   }
   return { adapter, apiKey, model: route.model, provider: route.provider };
+}
+
+/** Chat options minus the per-route fields — `apiKey` and `model` are supplied
+ *  by each route (the backup may run a different model). */
+export type RoutelessChatOptions = Omit<ChatOptions, 'apiKey' | 'model'>;
+
+export interface ChatWithFailoverResult {
+  result: ChatResult;
+  /** The provider that actually served the reply. */
+  usedProvider: string;
+  /** True when the primary failed and the backup answered. */
+  failedOver: boolean;
+}
+
+/**
+ * Single-shot chat with primary→backup failover — the wrapper the chat-shaped
+ * workers (extractor / summarizer / reflector) use in place of a bare
+ * `adapter.chat()`. Tries the primary route; on a route-DOWN / 429 / 5xx error
+ * (and only if a backup is configured) resolves and calls the backup. Each call
+ * starts on the primary again (optimistic, stateless switch-back).
+ */
+export async function chatWithFailover(
+  ownerId: string,
+  routes: ChatRoutes,
+  opts: RoutelessChatOptions,
+  log?: (msg: string) => void,
+): Promise<ChatWithFailoverResult> {
+  const primary = await resolveRouteAdapter(ownerId, routes.primary);
+  try {
+    const result = await primary.adapter.chat({
+      ...opts,
+      apiKey: primary.apiKey,
+      model: primary.model,
+    });
+    return { result, usedProvider: primary.provider, failedOver: false };
+  } catch (err) {
+    if (!routes.backup || !isChatFailover(err)) throw err;
+    log?.(
+      `[chat] primary '${routes.primary.provider}/${routes.primary.model}' failed ` +
+        `(${err instanceof Error ? err.message : String(err)}) — failing over to backup ` +
+        `'${routes.backup.provider}/${routes.backup.model}'`,
+    );
+    const backup = await resolveRouteAdapter(ownerId, routes.backup);
+    const result = await backup.adapter.chat({
+      ...opts,
+      apiKey: backup.apiKey,
+      model: backup.model,
+    });
+    return { result, usedProvider: backup.provider, failedOver: true };
+  }
 }

@@ -57,12 +57,15 @@ import { diskPathForFile, extOf, mimeForExt, parseDocumentBytes, INGESTABLE_EXTS
 import { contentKey, getContent } from '@mantle/storage';
 import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import {
+  chatWithFailover,
   documentWorkerPrefersNative,
   recordChatUsage,
+  resolveChatRoutes,
   runDocumentWorker,
   runVisionWorker,
+  type ChatRoutes,
 } from '@mantle/agent-runtime';
-import { getChatAdapter, type ChatDispatcher, type ChatResult } from '@mantle/voice';
+import { getChatAdapter, type ChatResult } from '@mantle/voice';
 import {
   chunkDocText,
   mentionRefs,
@@ -703,32 +706,36 @@ function parseClassifierDecision(raw: string): ClassifierDecision {
  * to `recordChatUsage` without scraping a raw response.
  */
 export async function chatComplete(
-  adapter: ChatDispatcher,
-  apiKey: string,
-  model: string,
+  ownerId: string,
+  routes: ChatRoutes,
   systemPrompt: string,
   userText: string,
   params: ExtractorParams,
 ): Promise<ChatResult> {
-  return await adapter.chat({
-    apiKey,
-    model,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userText },
-    ],
-    // The extractor's system prompt is identical across every node
-    // ingest (modulo per-worker customisation, which is also static
-    // per worker). Mark it cacheable — Anthropic-direct workers get
-    // ~10× cheaper input on the second+ call within the 5-min TTL;
-    // non-cache-aware providers (Google, xAI, HF) ignore the field.
-    // During a backfill or active ingest hour this is the dominant
-    // cost-saving knob.
-    cacheControl: { systemPrompt: true },
-    ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
-    ...(typeof params.max_tokens === 'number' ? { maxTokens: params.max_tokens } : {}),
-    ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
-  });
+  const { result, failedOver, usedProvider } = await chatWithFailover(
+    ownerId,
+    routes,
+    {
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userText },
+      ],
+      // The extractor's system prompt is identical across every node
+      // ingest (modulo per-worker customisation, which is also static
+      // per worker). Mark it cacheable — Anthropic-direct workers get
+      // ~10× cheaper input on the second+ call within the 5-min TTL;
+      // non-cache-aware providers (Google, xAI, HF) ignore the field.
+      // During a backfill or active ingest hour this is the dominant
+      // cost-saving knob.
+      cacheControl: { systemPrompt: true },
+      ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
+      ...(typeof params.max_tokens === 'number' ? { maxTokens: params.max_tokens } : {}),
+      ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
+    },
+    (m) => console.warn(`[extractor] ${m}`),
+  );
+  if (failedOver) console.warn(`[extractor] completed via backup route (${usedProvider})`);
+  return result;
 }
 
 // ─── Entity reconciliation ──────────────────────────────────────────────────
@@ -890,8 +897,6 @@ async function classifyAndApplyFact(
   candidateEmbedding: number[],
   sourceNodeId: string,
   primaryEntityId: string | null,
-  adapter: ChatDispatcher,
-  apiKey: string,
   worker: AiWorker,
 ): Promise<'ADD' | 'UPDATE' | 'DELETE' | 'NOOP'> {
   // Find near-neighbour facts among currently-valid rows.
@@ -932,9 +937,8 @@ async function classifyAndApplyFact(
   // Slow path: call the classifier to decide.
   const params = (worker.params ?? {}) as ExtractorParams;
   const decisionResult = await chatComplete(
-    adapter,
-    apiKey,
-    worker.model,
+    ownerId,
+    resolveChatRoutes(worker),
     'You are a precise JSON output assistant. Output strictly the JSON requested, with no additional commentary.',
     CLASSIFIER_PROMPT_TEMPLATE(candidate.content, closeNeighbours.map((n) => n.content)),
     params,
@@ -1341,8 +1345,10 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
     return;
   }
 
+  const routes = resolveChatRoutes(worker);
   console.log(
-    `[extractor] node ${node.id.slice(0, 8)} (${node.type}, ${node.title.slice(0, 40)}) via ${adapter.adapterName}:${worker.model}`,
+    `[extractor] node ${node.id.slice(0, 8)} (${node.type}, ${node.title.slice(0, 40)}) via ${adapter.adapterName}:${worker.model}` +
+      (routes.backup ? ` (backup ${routes.backup.provider}:${routes.backup.model})` : ''),
   );
 
   await startTrace(
@@ -1389,15 +1395,8 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
           },
         },
         async (h) => {
-          const r = await chatComplete(
-            adapter,
-            apiKey,
-            worker.model,
-            systemPrompt,
-            userPayload,
-            params,
-          );
-          recordChatUsage(h, r, worker.model);
+          const r = await chatComplete(ownerId, routes, systemPrompt, userPayload, params);
+          recordChatUsage(h, r, r.model || worker.model);
           const result = parseExtractorOutput(r.text, { nodeId: node.id, model: worker.model });
           // Capture the full model output — summary, all entities,
           // all facts. truncateJson at the tracing layer will only
@@ -1864,8 +1863,6 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
                 vec,
                 node.id,
                 primaryEntityId,
-                adapter,
-                apiKey,
                 worker,
               );
               t[decision]++;

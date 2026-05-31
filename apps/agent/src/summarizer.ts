@@ -25,14 +25,14 @@ import {
   type AiWorker,
   type SummarizerParams,
 } from '@mantle/db';
-import { getApiKeyById } from '@mantle/api-keys';
 import { recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import {
   buildChatMessages,
+  chatWithFailover,
   flattenChatMessagesForAdapter,
   recordChatUsage,
+  resolveChatRoutes,
 } from '@mantle/agent-runtime';
-import { getChatAdapter } from '@mantle/voice';
 
 /** Default seeded into the UI when role flips to `summarizer`. The user can
  *  edit it on the agent row at any time. */
@@ -179,13 +179,6 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
         },
       );
 
-      const apiKey = await getApiKeyById(worker.apiKeyId!);
-      if (!apiKey) {
-        throw new Error(
-          `summarizer: api_key_id ${worker.apiKeyId} not found`,
-        );
-      }
-
       const transcript = batch
         .map((t, i) => {
           const who = t.direction === 'outbound' ? 'assistant' : (t.fromName ?? 'user');
@@ -208,16 +201,12 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
         newUserText: transcript,
       });
 
-      const adapter = getChatAdapter(worker.provider);
-      if (!adapter) {
-        throw new Error(
-          `summarizer: no chat adapter registered for provider '${worker.provider}'. ` +
-            `Register one in packages/voice/src/adapters/index.ts, or switch the worker.`,
-        );
-      }
+      const routes = resolveChatRoutes(worker);
 
       console.log(
-        `[agent] summarizing chat ${chatPk} (${batch.length} turns, ${adapter.adapterName}:${worker.model})`,
+        `[agent] summarizing chat ${chatPk} (${batch.length} turns, ${routes.primary.provider}:${routes.primary.model}` +
+          (routes.backup ? ` · backup ${routes.backup.provider}:${routes.backup.model}` : '') +
+          ')',
       );
 
       const result = await step(
@@ -227,24 +216,28 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
           input: { model: worker.model, provider: worker.provider },
         },
         async (h) => {
-          const r = await adapter.chat({
-            apiKey,
-            model: worker.model,
-            messages: flattenChatMessagesForAdapter(messages),
-            // System prompt is stable per worker — mark cacheable so
-            // the dispatch summariser, which fires in bursts as turns
-            // pile up, pays the cache-read rate from the 2nd batch
-            // onward on Anthropic-direct.
-            cacheControl: { systemPrompt: true },
-            ...(typeof params.temperature === 'number'
-              ? { temperature: params.temperature }
-              : {}),
-            ...(typeof params.max_tokens === 'number'
-              ? { maxTokens: params.max_tokens }
-              : {}),
-            ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
-          });
-          recordChatUsage(h, r, worker.model);
+          const { result: r, failedOver, usedProvider } = await chatWithFailover(
+            ownerId,
+            routes,
+            {
+              messages: flattenChatMessagesForAdapter(messages),
+              // System prompt is stable per worker — mark cacheable so
+              // the dispatch summariser, which fires in bursts as turns
+              // pile up, pays the cache-read rate from the 2nd batch
+              // onward on Anthropic-direct.
+              cacheControl: { systemPrompt: true },
+              ...(typeof params.temperature === 'number'
+                ? { temperature: params.temperature }
+                : {}),
+              ...(typeof params.max_tokens === 'number'
+                ? { maxTokens: params.max_tokens }
+                : {}),
+              ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
+            },
+            (m) => console.warn(`[summarizer] ${m}`),
+          );
+          if (failedOver) console.warn(`[summarizer] summarized via backup route (${usedProvider})`);
+          recordChatUsage(h, r, r.model || routes.primary.model);
           return r;
         },
       );
@@ -450,9 +443,6 @@ export async function summarizeWebConversation(ownerId: string): Promise<void> {
       );
       if (batch.length === 0) return;
 
-      const apiKey = await getApiKeyById(worker.apiKeyId!);
-      if (!apiKey) throw new Error(`summarizer: api_key_id ${worker.apiKeyId} not found`);
-
       const transcript = batch
         .map((t, i) => {
           const who = t.direction === 'outbound' ? 'assistant' : 'user';
@@ -472,14 +462,11 @@ export async function summarizeWebConversation(ownerId: string): Promise<void> {
         newUserText: transcript,
       });
 
-      const adapter = getChatAdapter(worker.provider);
-      if (!adapter) {
-        throw new Error(
-          `summarizer (web): no chat adapter registered for provider '${worker.provider}'.`,
-        );
-      }
+      const routes = resolveChatRoutes(worker);
       console.log(
-        `[agent] summarizing web conversation (${batch.length} turns, ${adapter.adapterName}:${worker.model})`,
+        `[agent] summarizing web conversation (${batch.length} turns, ${routes.primary.provider}:${routes.primary.model}` +
+          (routes.backup ? ` · backup ${routes.backup.provider}:${routes.backup.model}` : '') +
+          ')',
       );
 
       const result = await step(
@@ -489,18 +476,22 @@ export async function summarizeWebConversation(ownerId: string): Promise<void> {
           input: { model: worker.model, provider: worker.provider },
         },
         async (h) => {
-          const r = await adapter.chat({
-            apiKey,
-            model: worker.model,
-            messages: flattenChatMessagesForAdapter(messages),
-            // Same rationale as the Telegram summariser: system prompt
-            // is stable per worker, mark it cacheable.
-            cacheControl: { systemPrompt: true },
-            ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
-            ...(typeof params.max_tokens === 'number' ? { maxTokens: params.max_tokens } : {}),
-            ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
-          });
-          recordChatUsage(h, r, worker.model);
+          const { result: r, failedOver, usedProvider } = await chatWithFailover(
+            ownerId,
+            routes,
+            {
+              messages: flattenChatMessagesForAdapter(messages),
+              // Same rationale as the Telegram summariser: system prompt
+              // is stable per worker, mark it cacheable.
+              cacheControl: { systemPrompt: true },
+              ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
+              ...(typeof params.max_tokens === 'number' ? { maxTokens: params.max_tokens } : {}),
+              ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
+            },
+            (m) => console.warn(`[summarizer] ${m}`),
+          );
+          if (failedOver) console.warn(`[summarizer] summarized via backup route (${usedProvider})`);
+          recordChatUsage(h, r, r.model || routes.primary.model);
           return r;
         },
       );

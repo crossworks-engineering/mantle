@@ -33,8 +33,7 @@ import {
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { recordSkippedTrace, startTrace, step } from '@mantle/tracing';
-import { recordChatUsage } from '@mantle/agent-runtime';
-import { getChatAdapter } from '@mantle/voice';
+import { chatWithFailover, recordChatUsage, resolveChatRoutes } from '@mantle/agent-runtime';
 
 /** How many recent turns the reflector reviews per run. */
 const REFLECTION_WINDOW = 50;
@@ -296,16 +295,11 @@ export async function reflect(ownerId: string): Promise<void> {
       const userPayload = `Existing persona_notes:\n${existingNotesText}\n\nRecent transcript (${turns.length} turns):\n${transcript}`;
 
       const params = (reflector.params ?? {}) as ReflectorParams;
-      const adapter = getChatAdapter(reflector.provider);
-      if (!adapter) {
-        throw new Error(
-          `reflector: no chat adapter registered for provider '${reflector.provider}'. ` +
-            `Register one in packages/voice/src/adapters/index.ts, or switch the worker.`,
-        );
-      }
+      const routes = resolveChatRoutes(reflector);
 
       console.log(
-        `[reflector] reviewing ${turns.length} turns (since ${since.toISOString()}) via ${adapter.adapterName}:${reflector.model}`,
+        `[reflector] reviewing ${turns.length} turns (since ${since.toISOString()}) via ${routes.primary.provider}:${routes.primary.model}` +
+          (routes.backup ? ` (backup ${routes.backup.provider}:${routes.backup.model})` : ''),
       );
 
       const result = await step(
@@ -315,33 +309,37 @@ export async function reflect(ownerId: string): Promise<void> {
           input: { model: reflector.model, provider: reflector.provider },
         },
         async (h) => {
-          const r = await adapter.chat({
-            apiKey,
-            model: reflector.model,
-            messages: [
-              {
-                role: 'system',
-                content: reflector.systemPrompt || DEFAULT_REFLECTOR_PROMPT,
-              },
-              { role: 'user', content: userPayload },
-            ],
-            // The reflector fires on a ~10-minute timer; Anthropic's
-            // cache TTL is 5min so most fires MISS cache and pay the
-            // 1.25× cache-write penalty without immediate benefit.
-            // Net-net close to break-even (back-to-back fires within
-            // 5min hit), and consistency with the other chat-shaped
-            // workers beats a clever skip.
-            cacheControl: { systemPrompt: true },
-            ...(typeof params.temperature === 'number'
-              ? { temperature: params.temperature }
-              : {}),
-            ...(typeof params.max_tokens === 'number'
-              ? { maxTokens: params.max_tokens }
-              : {}),
-            ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
-          });
-          recordChatUsage(h, r, reflector.model);
-          return r;
+          const { result, failedOver, usedProvider } = await chatWithFailover(
+            ownerId,
+            routes,
+            {
+              messages: [
+                {
+                  role: 'system',
+                  content: reflector.systemPrompt || DEFAULT_REFLECTOR_PROMPT,
+                },
+                { role: 'user', content: userPayload },
+              ],
+              // The reflector fires on a ~10-minute timer; Anthropic's
+              // cache TTL is 5min so most fires MISS cache and pay the
+              // 1.25× cache-write penalty without immediate benefit.
+              // Net-net close to break-even (back-to-back fires within
+              // 5min hit), and consistency with the other chat-shaped
+              // workers beats a clever skip.
+              cacheControl: { systemPrompt: true },
+              ...(typeof params.temperature === 'number'
+                ? { temperature: params.temperature }
+                : {}),
+              ...(typeof params.max_tokens === 'number'
+                ? { maxTokens: params.max_tokens }
+                : {}),
+              ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
+            },
+            (m) => console.warn(`[reflector] ${m}`),
+          );
+          if (failedOver) console.warn(`[reflector] reflected via backup route (${usedProvider})`);
+          recordChatUsage(h, result, result.model || routes.primary.model);
+          return result;
         },
       );
 

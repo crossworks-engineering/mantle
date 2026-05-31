@@ -29,10 +29,13 @@ export {
   resolveChatRoutes,
   resolveRouteAdapter,
   isChatFailover,
+  chatWithFailover,
   type ChatRoute,
   type ChatRoutes,
   type ChatRouteRow,
   type ResolvedChatRoute,
+  type RoutelessChatOptions,
+  type ChatWithFailoverResult,
 } from './chat-failover';
 
 export {
