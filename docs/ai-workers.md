@@ -1023,6 +1023,44 @@ generation.
 
 ---
 
+## 7a. Chat route failover (primary + backup)
+
+Every **agent** and chat-shaped **ai_worker** can carry a second chat route — a
+`backup_provider` / `backup_model` / `backup_api_key_id` (+ `backup_enabled`)
+alongside the active `provider` / `model` / `api_key_id` (migration `0062`). The
+active columns are always "the primary"; a "make backup primary" UI swap just
+exchanges the two sets of values, so the runtime needs no precedence logic.
+
+**Unlike embeddings, the backup may be a DIFFERENT model.** Chat has no
+vector-space lock — answering a turn on another model has no correctness cost.
+That's the enabler for running a **local** model (e.g. gemma-3 via LM Studio /
+Ollama) as the primary for the summarizer / extractor / reflector with a cloud
+model as the safety net (or the reverse).
+
+**Failover policy** (in [`packages/agent-runtime/src/chat-failover.ts`](../packages/agent-runtime/src/chat-failover.ts)):
+- **Triggers:** a route-DOWN error (connection refused / DNS / timeout), **429**
+  rate-limit, or **5xx** — classified by reusing `@mantle/voice`'s
+  `classifyChatError` (the same transient/permanent split the per-adapter retry
+  wrapper uses). The primary's own internal retries run first; failover only
+  fires once those are exhausted.
+- **No failover on 4xx** (bad input, context-length, auth) — the backup would
+  fail identically, so those rethrow.
+- **Single-shot workers** (extractor / summarizer / reflector) use
+  `chatWithFailover(ownerId, routes, opts)` — try primary, on a trigger call the
+  backup. Each invocation starts on the primary again (optimistic, stateless).
+- **Tool-loop agents** (responder / assistant / heartbeat / invoke_agent):
+  `runToolLoop` takes an optional `backup` route and holds an active-route
+  pointer. On a mid-loop trigger it flips to the backup **for the rest of that
+  turn** (sticky — no flip-flopping models mid-reasoning); the next turn starts
+  on the primary again. A broken backup never breaks the primary path
+  (`resolveBackupAdapter` returns `undefined` and logs).
+
+There is **no circuit breaker** (decision: start simple). A primary that
+*refuses fast* (box off) costs ~nothing per turn; a primary that *hangs* costs
+one timeout per turn until it recovers — add a breaker later only if that bites.
+
+---
+
 ## 8. The configuration surface (operator view)
 
 What an operator needs to do to make every capability work:

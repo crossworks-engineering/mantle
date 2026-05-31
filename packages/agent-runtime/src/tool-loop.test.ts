@@ -148,6 +148,21 @@ function fakeTool(overrides: Partial<Tool> = {}): Tool {
   } as Tool;
 }
 
+/** A primary adapter that always throws an HTTP-status error — to drive the
+ *  route-down failover path. */
+function makeThrowingAdapter(status: number): { adapter: ChatDispatcher; calls: ChatOptions[] } {
+  const calls: ChatOptions[] = [];
+  const adapter: ChatDispatcher = {
+    providerId: 'primary',
+    adapterName: 'primary-chat',
+    chat: vi.fn(async (opts: ChatOptions): Promise<ChatResult> => {
+      calls.push(opts);
+      throw Object.assign(new Error(`primary upstream ${status}`), { status });
+    }),
+  };
+  return { adapter, calls };
+}
+
 // ─── Setup / teardown ──────────────────────────────────────────────────────
 
 beforeEach(() => {
@@ -162,6 +177,79 @@ afterEach(() => {
 });
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
+
+describe('runToolLoop — failover', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  it('fails over to the backup route on a route-down (5xx) error', async () => {
+    const { adapter: primary, calls: pCalls } = makeThrowingAdapter(503);
+    const { adapter: backup, calls: bCalls } = makeFakeAdapter([
+      { type: 'text', text: 'backup answer' },
+    ]);
+    const result = await runToolLoop({
+      adapter: primary,
+      apiKey: 'k',
+      model: 'p-model',
+      backup: { adapter: backup, apiKey: 'k2', model: 'b-model' },
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'hi' }],
+      tools: [],
+    });
+    expect(result.reply).toBe('backup answer');
+    expect(pCalls).toHaveLength(1);
+    expect(bCalls).toHaveLength(1);
+    expect(bCalls[0]!.model).toBe('b-model'); // the backup's (different) model
+  });
+
+  it('does NOT fail over on a 4xx error — rethrows, backup untouched', async () => {
+    const { adapter: primary } = makeThrowingAdapter(400);
+    const { adapter: backup, calls: bCalls } = makeFakeAdapter([{ type: 'text', text: 'x' }]);
+    await expect(
+      runToolLoop({
+        adapter: primary,
+        apiKey: 'k',
+        model: 'p',
+        backup: { adapter: backup, apiKey: 'k2', model: 'b' },
+        params: {},
+        ownerId: 'owner-1',
+        initialMessages: [{ role: 'user', content: 'hi' }],
+        tools: [],
+      }),
+    ).rejects.toThrow(/400/);
+    expect(bCalls).toHaveLength(0);
+  });
+
+  it('stays sticky on the backup for the rest of the turn (no primary re-attempt)', async () => {
+    const { adapter: primary, calls: pCalls } = makeThrowingAdapter(503);
+    const { adapter: backup, calls: bCalls } = makeFakeAdapter([
+      {
+        type: 'toolCalls',
+        toolCalls: [
+          { id: 'call_1', type: 'function', function: { name: 'fake_tool', arguments: '{}' } },
+        ],
+      },
+      { type: 'text', text: 'done on backup' },
+    ]);
+    const result = await runToolLoop({
+      adapter: primary,
+      apiKey: 'k',
+      model: 'p-model',
+      backup: { adapter: backup, apiKey: 'k2', model: 'b-model' },
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'hi' }],
+      tools: [fakeTool()],
+    });
+    expect(result.reply).toBe('done on backup');
+    expect(result.iterations).toBe(2);
+    // Primary tried exactly once (iter 1); iter 2 went straight to the backup.
+    expect(pCalls).toHaveLength(1);
+    expect(bCalls).toHaveLength(2);
+  });
+});
 
 describe('runToolLoop — happy paths', () => {
   it('returns the reply on a single LLM call with no tool requests', async () => {
