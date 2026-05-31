@@ -17,7 +17,7 @@
  *     `embedding_types` (we always request `float`).
  *
  * Coverage: embed-english-v3.0 (1024-dim), embed-multilingual-v3.0
- * (1024-dim) — neither fits Mantle's vector(1536) column without a
+ * (1024-dim) — neither fits Mantle's vector(768) column without a
  * schema migration. The form's dim-safety block will catch it.
  */
 
@@ -38,7 +38,7 @@ const STATIC_CATALOG: readonly EmbeddingModelInfo[] = [
     id: 'embed-english-v3.0',
     label: 'embed-english-v3.0',
     description:
-      '1024-dim — does NOT fit the brain\'s vector(1536) column. Excellent English retrieval; needs a schema migration to use as Mantle\'s embedding.',
+      '1024-dim — does NOT fit the brain\'s vector(768) column. Excellent English retrieval; needs a schema migration to use as Mantle\'s embedding.',
     contextTokens: 512,
     dimensions: 1024,
     inputPricePer1M: 0.1,

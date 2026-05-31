@@ -1,18 +1,21 @@
 /**
  * Embeddings — the shared utility every memory layer leans on.
  *
- *   embed(text)              → vector(1536), cached by content hash.
- *   embedBatch(texts)        → vector(1536)[], cached per-input.
- *   embedMultimodal(inputs)  → vector(1536)[] for text / image / audio / file.
+ *   embed(text)              → vector(768), cached by content hash.
+ *   embedBatch(texts)        → vector(768)[], cached per-input.
+ *   embedMultimodal(inputs)  → vector(768)[] for text / image / audio / file.
  *
- * Default backend: OpenRouter `openai/text-embedding-3-small` (1536 dims) using
- * the `openrouter` key from @mantle/api-keys. Override globally with the
- * `MANTLE_EMBEDDING_MODEL` env var, or per call with `opts.model`.
+ * Default backend (since migration 0060): the `local` provider —
+ * `embeddinggemma:latest` (768 dims) via Ollama, keyless. Override globally
+ * with the `MANTLE_EMBEDDING_MODEL` env var, or per call with `opts.model`;
+ * normally the operator's `embedding` AI-worker row wins via
+ * `resolveEmbeddingConfig`.
  *
  * Multimodal models (`google/gemini-embedding-2-preview`,
  * `nvidia/llama-nemotron-embed-vl-1b-v2`) accept richer inputs via
- * `embedMultimodal`. The column stays at 1536 — Gemini's `output_dimensionality`
- * is passed through so the response fits without a schema change.
+ * `embedMultimodal`. The column is 768 — MRL-capable models have their
+ * `output_dimensionality` / `dimensions` truncated so the response fits
+ * without a schema change.
  *
  * Cache lives in the `embedding_cache` table keyed by
  * sha256(model || ':' || canonical(input)), so re-embedding identical
@@ -47,7 +50,7 @@ export function isMultimodalModel(model: string): boolean {
   return MULTIMODAL_MODELS.has(model.toLowerCase());
 }
 
-const FALLBACK_MODEL = 'openai/text-embedding-3-small';
+const FALLBACK_MODEL = 'embeddinggemma:latest';
 /**
  * Process-level fallback when no `embedding` AI worker is configured and no
  * `MANTLE_EMBEDDING_MODEL` env override is set. Exported for the few call
@@ -55,6 +58,11 @@ const FALLBACK_MODEL = 'openai/text-embedding-3-small';
  * `ownerId` in hand and so can't go through {@link resolveEmbeddingModel}.
  * Normal runtime paths should NOT read this directly — they should call
  * `resolveEmbeddingModel(ownerId)` so the operator's worker pick wins.
+ *
+ * Points at the local 768-dim model (migration 0060): a missing worker row
+ * must NOT silently fall back to a cloud 1536 model, which would crash on
+ * insert against the `vector(768)` columns. Paired with the `local` provider
+ * default in {@link resolveEmbeddingConfig}.
  */
 export const DEFAULT_EMBEDDING_MODEL =
   process.env.MANTLE_EMBEDDING_MODEL?.trim() || FALLBACK_MODEL;
@@ -109,7 +117,9 @@ export async function resolveEmbeddingConfig(ownerId: string): Promise<Embedding
   if (cached && cached.expiresAt > Date.now()) return cached.config;
   let config: EmbeddingConfig = {
     model: DEFAULT_EMBEDDING_MODEL,
-    provider: 'openrouter',
+    // Local + keyless: a missing worker row falls back to the 768-dim local
+    // model, not a cloud 1536 one that would crash on the vector(768) columns.
+    provider: 'local',
     apiKeyId: null,
   };
   try {
@@ -376,8 +386,8 @@ async function doEmbed(
         input: slice,
         // Used by adapters that honour MRL truncation (OpenAI's text-embedding-3-*,
         // Google's gemini-embedding-*). Adapters that ignore it pass through
-        // unaffected. The brain's pgvector column is fixed at 1536 so requesting
-        // 1536 across the board keeps inserts compatible.
+        // unaffected. The brain's pgvector column is fixed at 768 so requesting
+        // EMBEDDING_DIMS across the board keeps inserts compatible.
         dimensions: EMBEDDING_DIMS,
       });
       apiCalls++;

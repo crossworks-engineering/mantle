@@ -61,7 +61,7 @@ const KIND_META: Record<AiWorkerKind, { label: string; description: string }> = 
   embedding: {
     label: 'Embedding',
     description:
-      'Text → 1536-dim vector. Drives the brain index, semantic memory retrieval, and the recall/MCP/spill-store search paths. One pick applies everywhere.',
+      'Text → 768-dim vector. Drives the brain index, semantic memory retrieval, and the recall/MCP/spill-store search paths. One pick applies everywhere.',
   },
 };
 

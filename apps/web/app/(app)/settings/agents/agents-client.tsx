@@ -59,14 +59,18 @@ const KNOWN_NODE_TYPES = [
 // (and a matching `case` in extractor.ts:readNodeBodyRaw) if a surface
 // for one of them is ever built.
 
-/** Curated embedding models — all output (or can be coerced to) 1536 dims to
- *  match the `nodes.embedding vector(1536)` column. Empty value = fall back to
- *  MANTLE_EMBEDDING_MODEL env (or the hard-coded `openai/text-embedding-3-small`). */
+/** Curated embedding models — all output (or can be coerced to) 768 dims to
+ *  match the `nodes.embedding vector(768)` column (migration 0060). Empty value
+ *  = use the brain's `embedding` AI-worker (the local `embeddinggemma:latest`
+ *  default). NOTE: any override here that differs from the brain's write-side
+ *  model puts this agent's queries in a different vector space than the indexed
+ *  corpus — retrieval silently returns wrong results. The boot consistency
+ *  check warns when an override diverges. Prefer leaving this on Default. */
 const EMBEDDING_MODELS: { value: string; label: string; note?: string }[] = [
-  { value: '', label: 'Default (env / openai/text-embedding-3-small)', note: '1536 dims · $0.02/1M tok' },
-  { value: 'openai/text-embedding-3-small', label: 'openai/text-embedding-3-small', note: '1536 dims · $0.02/1M tok' },
-  { value: 'google/gemini-embedding-001', label: 'google/gemini-embedding-001', note: 'configurable → 1536 · $0.15/1M tok' },
-  { value: 'google/gemini-embedding-2-preview', label: 'google/gemini-embedding-2-preview', note: 'multimodal · 1536 · $0.20/1M tok' },
+  { value: '', label: 'Default (brain worker · local embeddinggemma)', note: '768 dims · free / local' },
+  { value: 'embeddinggemma:latest', label: 'embeddinggemma:latest (local)', note: '768 dims · free / local' },
+  { value: 'google/gemini-embedding-001', label: 'google/gemini-embedding-001', note: 'cloud · coerced → 768 · $0.15/1M tok' },
+  { value: 'google/gemini-embedding-2-preview', label: 'google/gemini-embedding-2-preview', note: 'cloud · multimodal · → 768 · $0.20/1M tok' },
 ];
 
 // The static MODEL_SUGGESTIONS list was retired with the ModelSelect rollout —

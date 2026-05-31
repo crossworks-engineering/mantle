@@ -5,8 +5,8 @@
  * to openai-embedding with a different base URL + slightly narrower
  * model catalog.
  *
- * One model today: `mistral-embed` (1024-dim native — note, NOT 1536, so
- * doesn't fit Mantle's vector(1536) column without a schema migration).
+ * One model today: `mistral-embed` (1024-dim native — note, NOT 768, so
+ * doesn't fit Mantle's vector(768) column without a schema migration).
  * Listed here for completeness and direct-routing parity; the form's
  * dim-safety block will catch the mismatch at save time.
  */
@@ -28,7 +28,7 @@ const STATIC_CATALOG: readonly EmbeddingModelInfo[] = [
     id: 'mistral-embed',
     label: 'mistral-embed',
     description:
-      '1024-dim native — does NOT fit the brain\'s vector(1536) column. Solid multilingual recall; pair with a schema migration if you want to use it.',
+      '1024-dim native — does NOT fit the brain\'s vector(768) column. Solid multilingual recall; pair with a schema migration if you want to use it.',
     contextTokens: 8192,
     dimensions: 1024,
     inputPricePer1M: 0.1,

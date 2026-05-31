@@ -3,10 +3,12 @@
  * with the user's OpenAI key (not the OpenRouter routed slug). Skips
  * OR's ~5% margin for high-volume embedding workloads.
  *
- * Coverage: text-embedding-3-small (1536), text-embedding-3-large (3072
- * — note the dim mismatch with Mantle's vector(1536) column; the form's
- * dim-safety block catches it), text-embedding-ada-002 (1536, legacy).
- * Text-only — OpenAI doesn't ship multimodal embedding.
+ * Coverage: text-embedding-3-small (1536), text-embedding-3-large (3072,
+ * MRL-truncatable to 768), text-embedding-ada-002 (1536, legacy). Since
+ * migration 0060 the brain column is vector(768): -3-small / ada (fixed
+ * 1536) don't fit without a schema migration; -3-large can be coerced to
+ * 768 via the `dimensions` param. The form's dim-safety block surfaces
+ * the mismatch. Text-only — OpenAI doesn't ship multimodal embedding.
  */
 
 import type {
@@ -29,7 +31,7 @@ const STATIC_CATALOG: readonly EmbeddingModelInfo[] = [
   {
     id: 'text-embedding-3-small',
     label: 'text-embedding-3-small',
-    description: '1536-dim, the brain default. Cheapest OpenAI embedding.',
+    description: '1536-dim — does NOT fit the brain\'s vector(768) column without a schema migration. Cheapest OpenAI embedding. Was the pre-0060 default.',
     contextTokens: 8191,
     dimensions: 1536,
     inputPricePer1M: 0.02,
@@ -38,7 +40,7 @@ const STATIC_CATALOG: readonly EmbeddingModelInfo[] = [
     id: 'text-embedding-3-large',
     label: 'text-embedding-3-large',
     description:
-      '3072-dim native — NOT compatible with the brain\'s vector(1536) column. Higher recall but needs the `dimensions` param truncating to 1536 to fit, or a schema migration.',
+      '3072-dim native — MRL-truncatable to the brain\'s vector(768) column via the `dimensions` param. Higher recall than the local default, but cloud + paid.',
     contextTokens: 8191,
     dimensions: 3072,
     inputPricePer1M: 0.13,
@@ -46,7 +48,7 @@ const STATIC_CATALOG: readonly EmbeddingModelInfo[] = [
   {
     id: 'text-embedding-ada-002',
     label: 'text-embedding-ada-002',
-    description: '1536-dim, legacy. Kept for parity with vectors embedded before 3-small shipped.',
+    description: '1536-dim, legacy — does NOT fit the brain\'s vector(768) column without a schema migration. Skip for new installs.',
     contextTokens: 8191,
     dimensions: 1536,
     inputPricePer1M: 0.1,

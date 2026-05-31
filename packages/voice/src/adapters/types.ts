@@ -544,7 +544,7 @@ export interface ImageGenDispatcher extends AdapterMeta {
 /** A text→vector model entry. Embedding pricing is input-only
  *  (the response is the vector, not a token stream — no output cost
  *  to bill). Native `dimensions` is exposed so the form can verify
- *  compatibility with the brain's `vector(1536)` column before save. */
+ *  compatibility with the brain's `vector(768)` column before save. */
 export interface EmbeddingModelInfo {
   id: string;
   label: string;

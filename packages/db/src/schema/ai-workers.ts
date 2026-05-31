@@ -199,10 +199,10 @@ export type SummarizerParams = ChatLlmParams & {
  *  models that support it (currently only `google/gemini-embedding-2-preview`
  *  via OpenRouter, which honours `output_dimensionality`). */
 export type EmbeddingParams = {
-  /** Dimension override sent to providers that accept it. The DB column is
-   *  `vector(1536)`, so callers MUST keep this at 1536 or re-embed. Setting
-   *  it to anything else would mismatch the index and crash inserts. The
-   *  worker form surfaces a warning to prevent that footgun. */
+  /** Dimension override sent to providers that accept it. Since migration
+   *  0060 the DB column is `vector(768)`, so callers MUST keep this at 768 or
+   *  re-embed. Setting it to anything else would mismatch the index and crash
+   *  inserts. The worker form surfaces a warning to prevent that footgun. */
   output_dimensions?: number;
 };
 

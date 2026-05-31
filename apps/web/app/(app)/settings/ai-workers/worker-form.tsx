@@ -196,10 +196,10 @@ const MODEL_HINT_FOR_KIND: Record<AiWorkerKind, string> = {
   vision: 'openai/gpt-4o',
   document: 'claude-sonnet-4-6',
   image_gen: 'dall-e-3',
-  // 1536-dim, cheap, the brain's existing column shape. Anything else
-  // either matches dims (Gemini-embedding-2-preview, Nemotron) or
+  // 768-dim local default (migration 0060), keyless via Ollama — the
+  // brain's current column shape. Anything else either matches 768 or
   // requires a re-embed pass — the form's dim guard will warn.
-  embedding: 'openai/text-embedding-3-small',
+  embedding: 'embeddinggemma:latest',
 };
 
 export function WorkerForm({
@@ -218,8 +218,8 @@ export function WorkerForm({
   const [error, setError] = useState<string | null>(null);
   // Embedding-kind only: lifted from EmbeddingFields so the save button
   // can disable itself when the picked model emits a dim that doesn't
-  // fit the brain's vector(1536) column. Null = unknown (untested,
-  // unlisted), 1536 = compatible, anything else = save blocked.
+  // fit the brain's vector(768) column. Null = unknown (untested,
+  // unlisted), 768 = compatible, anything else = save blocked.
   const [embeddingDim, setEmbeddingDim] = useState<number | null>(null);
 
   const params = (worker?.params ?? {}) as Record<string, unknown>;
@@ -822,10 +822,10 @@ export function WorkerForm({
         <SubmitButton
           pending={pending}
           // Hard block: when the operator picked an embedding model whose
-          // dim we KNOW is non-1536, save would persist a worker that
+          // dim we KNOW is non-768, save would persist a worker that
           // crashes ingest on its first call. Untested / unknown stays
           // saveable — the EmbeddingFields footer warns explicitly there.
-          disabled={kind === 'embedding' && embeddingDim !== null && embeddingDim !== 1536}
+          disabled={kind === 'embedding' && embeddingDim !== null && embeddingDim !== COLUMN_DIMS}
         >
           {mode === 'create' ? 'Create worker' : 'Save worker'}
         </SubmitButton>
@@ -1519,15 +1519,22 @@ function ImageGenFields({ params }: { params: Record<string, unknown> }) {
  *      the runtime will throw on first insert if the dim doesn't fit.
  *
  * `onDimChange` lifts the resolved dim up to the form so the Save button
- * can hard-block when it's non-1536 — same model gets blocked here AND
+ * can hard-block when it's non-768 — same model gets blocked here AND
  * at runtime, but blocking at save time avoids the operator getting a
  * confusing "ingest crashed" message ten minutes later.
  */
-const COLUMN_DIMS = 1536;
+// Mirrors `EMBEDDING_DIMS` in @mantle/embeddings and the `vector(768)`
+// schema columns (migration 0060). Kept as a local literal — importing the
+// server module into this client component would drag `postgres` into the
+// browser bundle. If you migrate the column dim again, change both.
+const COLUMN_DIMS = 768;
 const KNOWN_DIMS: Record<string, number> = {
-  // Lower-cased slug → dimensions for OR routes we've confirmed.
+  // Lower-cased slug → NATIVE dimensions for routes we've confirmed.
   // Keep growing this map; anything not here triggers the Test button
-  // affordance below to verify live.
+  // affordance below to verify live. Native-768 models fit the column;
+  // MRL models (3-large, gemini) list their native dim here and are
+  // blocked by the guard — truncation-aware fit isn't modelled yet.
+  'embeddinggemma:latest': 768,
   'openai/text-embedding-3-small': 1536,
   'openai/text-embedding-3-large': 3072,
   'openai/text-embedding-ada-002': 1536,
@@ -1554,7 +1561,7 @@ function EmbeddingFields({
    *  needs save-first. */
   savedModel: string | null;
   /** Lifts the resolved-dim state (just-tested OR known) so the parent
-   *  form's save button can hard-block when it's non-1536. Called on
+   *  form's save button can hard-block when it's non-768. Called on
    *  every dim change, including null (no signal). */
   onDimChange: (dim: number | null) => void;
 }) {
@@ -1711,7 +1718,7 @@ function EmbeddingFields({
           </p>
           <p className="text-destructive/80">
             To use a non-{COLUMN_DIMS}-dim model you'd need a schema migration
-            on every <code className="font-mono">vector(1536)</code> column
+            on every <code className="font-mono">vector({COLUMN_DIMS})</code> column
             (nodes, entities, facts, content_chunks) plus a full re-embed.
             Not a button — drop into <code className="font-mono">psql</code>{' '}
             and use <code className="font-mono">pnpm re-embed</code>.

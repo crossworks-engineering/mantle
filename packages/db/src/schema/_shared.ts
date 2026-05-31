@@ -18,8 +18,9 @@ export const tsvector = customType<{ data: string; driverData: string }>({
   },
 });
 
-/** Dimension passed in at call site so we can use 1536 for OpenAI small,
- *  3072 for large, etc. without parallel column types. */
+/** Dimension passed in at call site so we can use 768 for the local
+ *  EmbeddingGemma default, or a different dim after a re-embed migration,
+ *  without parallel column types. */
 export const vector = (dim: number) =>
   customType<{ data: number[]; driverData: string }>({
     dataType() {

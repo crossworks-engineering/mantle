@@ -70,12 +70,12 @@ export type AgentMemoryConfig = {
    *  per-iteration in the classifier loop. */
   extract_cost_cap_micro_usd?: number | null;
   /** Embedding model override. Falls back to MANTLE_EMBEDDING_MODEL env,
-   *  then to `openai/text-embedding-3-small`. Applies wherever this agent
-   *  calls embed() — extractor writes vectors, responder/assistant read
+   *  then to the local `embeddinggemma:latest` default. Applies wherever this
+   *  agent calls embed() — extractor writes vectors, responder/assistant read
    *  query vectors. For retrieval to work, the extractor's model must
    *  match the responder/assistant's — vectors from different models live
    *  in different spaces and don't compare. Allowed values must output
-   *  1536-dim vectors (the `nodes.embedding` column shape). */
+   *  768-dim vectors (the `nodes.embedding` column shape, migration 0060). */
   embedding_model?: string;
   /** Agent slugs this agent is allowed to invoke via the `invoke_agent`
    *  builtin. Empty/missing means no delegation permitted (fail closed).
