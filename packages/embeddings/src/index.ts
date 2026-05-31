@@ -23,8 +23,8 @@
  */
 
 import { createHash } from 'node:crypto';
-import { inArray } from 'drizzle-orm';
-import { db, embeddingCache, getDefaultWorker } from '@mantle/db';
+import { eq, inArray } from 'drizzle-orm';
+import { db, embeddingCache, embeddingConfig } from '@mantle/db';
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
 import { currentTrace, step } from '@mantle/tracing';
 // `@mantle/voice` self-registers all built-in adapters on import. The
@@ -85,58 +85,99 @@ export const EMBEDDING_DIMS = 768;
 
 const RESOLVER_TTL_MS = 60_000;
 
-/** Worker-derived config the runtime uses for one embedding call. */
-export interface EmbeddingConfig {
-  /** Model slug. For OpenRouter this is `provider/model-name`; for direct
-   *  providers it's the bare id (e.g. `text-embedding-3-small`). */
-  model: string;
-  /** Provider id matching `ai_workers.provider`. Drives adapter dispatch. */
+/** One route to the embedding model — a provider + endpoint + key. The
+ *  primary and backup are two routes to the SAME model (for availability),
+ *  never two different models. */
+export interface EmbeddingRoute {
+  /** Provider id driving adapter dispatch (e.g. `local`, `openrouter`). */
   provider: string;
-  /** When set, the worker pinned a specific API key — `getApiKeyById`
-   *  resolves it. Null = fall through to `getApiKey(ownerId, provider)`. */
+  /** Per-route base URL override, or null for the adapter's own default
+   *  (e.g. the `local` adapter's `MANTLE_LOCAL_EMBEDDING_URL`). */
+  baseUrl: string | null;
+  /** Pinned API key id — `getApiKeyById` resolves it. Null = fall through
+   *  to `getApiKey(ownerId, provider)`; keyless providers (`local`) stay null. */
   apiKeyId: string | null;
+  /** Operator-facing label for the failover UI ("Mac Ollama", "HF endpoint"). */
+  label: string | null;
 }
+
+/**
+ * The resolved embedding config — THE single source of truth (one row in
+ * `embedding_config`). One model, one dimension, a primary route and an
+ * optional SAME-MODEL backup route. Nothing else in the system chooses an
+ * embedder; every `embed()` call resolves from here.
+ */
+export interface EmbeddingConfig {
+  /** Model slug. For OpenRouter `provider/model-name`; for direct providers
+   *  the bare id; for `local` the served id (e.g. `embeddinggemma:latest`). */
+  model: string;
+  /** Locked output dimension — must match the `vector(N)` columns (768). */
+  dimensions: number;
+  /** The route tried first. */
+  primary: EmbeddingRoute;
+  /** Same-model fallback route, or null when failover is disabled. */
+  backup: EmbeddingRoute | null;
+}
+
+/** Used when the owner has no `embedding_config` row (fresh install, or the
+ *  DB is unreachable). Local + keyless + 768 — never a cloud 1536 model that
+ *  would crash on the `vector(768)` columns. */
+const LOCAL_FALLBACK_CONFIG: EmbeddingConfig = {
+  model: DEFAULT_EMBEDDING_MODEL,
+  dimensions: EMBEDDING_DIMS,
+  primary: { provider: 'local', baseUrl: null, apiKeyId: null, label: 'Local' },
+  backup: null,
+};
 
 const _resolverCache = new Map<string, { config: EmbeddingConfig; expiresAt: number }>();
 
 /**
- * Return the full embedding worker config (model + provider + apiKeyId)
- * for this owner. Resolution order:
- *   1. `ai_workers` row with `kind='embedding'`, `enabled=true`, the
- *      default-flagged or highest-priority match — use its model,
- *      provider, and apiKeyId.
- *   2. No worker → default provider `openrouter`, model from
- *      `MANTLE_EMBEDDING_MODEL` env var (or hardcoded fallback),
- *      apiKeyId null (caller falls back to `getApiKey(ownerId, 'openrouter')`).
+ * Return the single embedding config for this owner from `embedding_config`.
+ * No row (fresh install / DB down) → {@link LOCAL_FALLBACK_CONFIG}.
  *
- * Cached per ownerId for 60s. Mutations on `/settings/ai-workers` call
- * {@link clearEmbeddingModelCache} so a model swap kicks in immediately.
+ * This is the ONLY place embedder selection resolves. There is no per-agent,
+ * per-worker, or env override any more — those were collapsed into the one
+ * config row in migration 0061.
+ *
+ * Cached per ownerId for 60s. Mutations on `/settings/embedding` call
+ * {@link clearEmbeddingModelCache} so a change kicks in immediately.
  */
 export async function resolveEmbeddingConfig(ownerId: string): Promise<EmbeddingConfig> {
   const cached = _resolverCache.get(ownerId);
   if (cached && cached.expiresAt > Date.now()) return cached.config;
-  let config: EmbeddingConfig = {
-    model: DEFAULT_EMBEDDING_MODEL,
-    // Local + keyless: a missing worker row falls back to the 768-dim local
-    // model, not a cloud 1536 one that would crash on the vector(768) columns.
-    provider: 'local',
-    apiKeyId: null,
-  };
+  let config: EmbeddingConfig = LOCAL_FALLBACK_CONFIG;
   try {
-    const worker = await getDefaultWorker(ownerId, 'embedding');
-    if (worker?.model && worker.provider) {
+    const [row] = await db
+      .select()
+      .from(embeddingConfig)
+      .where(eq(embeddingConfig.ownerId, ownerId))
+      .limit(1);
+    if (row) {
       config = {
-        model: worker.model,
-        provider: worker.provider,
-        apiKeyId: worker.apiKeyId ?? null,
+        model: row.model,
+        dimensions: row.dimensions,
+        primary: {
+          provider: row.primaryProvider,
+          baseUrl: row.primaryBaseUrl ?? null,
+          apiKeyId: row.primaryApiKeyId ?? null,
+          label: row.primaryLabel ?? 'Primary',
+        },
+        backup:
+          row.backupEnabled && row.backupProvider
+            ? {
+                provider: row.backupProvider,
+                baseUrl: row.backupBaseUrl ?? null,
+                apiKeyId: row.backupApiKeyId ?? null,
+                label: row.backupLabel ?? 'Backup',
+              }
+            : null,
       };
     }
   } catch (err) {
-    // DB unreachable? Fall back gracefully — embedding still works against
-    // whatever the env / hardcoded default points at. Log so operators can
-    // notice if it's a persistent state.
+    // DB unreachable? Fall back gracefully — embedding still works against the
+    // local default. Log so operators notice if it's a persistent state.
     console.warn(
-      '[embeddings] resolveEmbeddingConfig: DB lookup failed, using fallback —',
+      '[embeddings] resolveEmbeddingConfig: DB lookup failed, using local fallback —',
       err instanceof Error ? err.message : err,
     );
   }
@@ -228,10 +269,17 @@ export async function embedMultimodal(
   // optional provider/apiKeyId) win over the resolver, preserving the
   // per-call escape hatch the extractor's override path uses.
   const baseConfig = await resolveEmbeddingConfig(ownerId);
+  // Per-call overrides (the re-embed CLI targeting a specific model, the dim
+  // probe) apply to the PRIMARY route only; the backup route stays as resolved.
   const config: EmbeddingConfig = {
     model: opts?.model ?? baseConfig.model,
-    provider: opts?.provider ?? baseConfig.provider,
-    apiKeyId: opts?.apiKeyId !== undefined ? opts.apiKeyId : baseConfig.apiKeyId,
+    dimensions: baseConfig.dimensions,
+    primary: {
+      ...baseConfig.primary,
+      provider: opts?.provider ?? baseConfig.primary.provider,
+      apiKeyId: opts?.apiKeyId !== undefined ? opts.apiKeyId : baseConfig.primary.apiKeyId,
+    },
+    backup: baseConfig.backup,
   };
   // No trace → fast path with no instrumentation overhead.
   if (!currentTrace()) {
@@ -251,7 +299,7 @@ export async function embedMultimodal(
       input: {
         count: inputs.length,
         model: config.model,
-        provider: config.provider,
+        provider: config.primary.provider,
         preview: inputs.map(previewOfInput),
       },
     },
@@ -291,7 +339,10 @@ async function doEmbed(
   stepHandle?: EmbedStepHandle,
 ): Promise<number[][]> {
   if (inputs.length === 0) return [];
-  const { model, provider } = config;
+  // Phase 1: always the primary route. Phase 2 adds backup failover here.
+  const { model, dimensions } = config;
+  const route = config.primary;
+  const provider = route.provider;
 
   // 0. Resolve adapter. Surface a clear error rather than silently
   //    routing through OR if the provider isn't wired.
@@ -357,8 +408,8 @@ async function doEmbed(
     // provider stays 'openrouter'), (b) worker exists but its apiKeyId
     // was nulled (key deleted out from under it).
     let apiKey: string | null = null;
-    if (config.apiKeyId) {
-      apiKey = await getApiKeyById(config.apiKeyId);
+    if (route.apiKeyId) {
+      apiKey = await getApiKeyById(route.apiKeyId);
     }
     if (!apiKey) {
       apiKey = await getApiKey(ownerId, provider);
@@ -386,9 +437,9 @@ async function doEmbed(
         input: slice,
         // Used by adapters that honour MRL truncation (OpenAI's text-embedding-3-*,
         // Google's gemini-embedding-*). Adapters that ignore it pass through
-        // unaffected. The brain's pgvector column is fixed at 768 so requesting
-        // EMBEDDING_DIMS across the board keeps inserts compatible.
-        dimensions: EMBEDDING_DIMS,
+        // unaffected. The brain's pgvector column is fixed at `dimensions` (768)
+        // so requesting it across the board keeps inserts compatible.
+        dimensions,
       });
       apiCalls++;
       if (result.vectors.length !== slice.length) {
@@ -408,10 +459,10 @@ async function doEmbed(
 
   // 4. Sanity check.
   for (let i = 0; i < out.length; i++) {
-    if (!out[i] || out[i]!.length !== EMBEDDING_DIMS) {
+    if (!out[i] || out[i]!.length !== dimensions) {
       throw new Error(
-        `embed: missing or wrong-shaped vector at index ${i} (got length=${out[i]?.length ?? 'null'}, expected ${EMBEDDING_DIMS}). ` +
-          `If you just switched models, check the form's dim guard — the picked model may not emit ${EMBEDDING_DIMS}-dim vectors.`,
+        `embed: missing or wrong-shaped vector at index ${i} (got length=${out[i]?.length ?? 'null'}, expected ${dimensions}). ` +
+          `If you just switched models, check the embedding config's dim probe — the picked model may not emit ${dimensions}-dim vectors.`,
       );
     }
   }

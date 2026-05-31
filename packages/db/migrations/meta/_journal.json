@@ -428,6 +428,13 @@
       "when": 1779403200000,
       "tag": "0060_embedding_dim_768",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1779489600000,
+      "tag": "0061_embedding_config",
+      "breakpoints": true
     }
   ]
 }

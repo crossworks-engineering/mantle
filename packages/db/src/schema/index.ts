@@ -19,6 +19,7 @@ export * from './telegram';
 export * from './agents';
 export * from './ai-workers';
 export * from './embedding-cache';
+export * from './embedding-config';
 export * from './entities';
 export * from './entity-edges';
 export * from './facts';
