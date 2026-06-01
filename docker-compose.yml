@@ -204,15 +204,21 @@ services:
   # Reaches capable chat/vision models running on a box you own (home GPU, LAN
   # server) behind NAT — without port-forwarding. Joins your tailnet; the app
   # then reaches `http://<magicdns-name>:<port>` for that box. See docs/tailscale.md.
-  # Enable with:  docker compose --profile tailnet up -d   (set TS_AUTHKEY first).
+  # Always-up so the app can drive login from the UI (/settings/network). It
+  # runs UNAUTHENTICATED until you save an auth key + click Activate — the app
+  # then logs tailscaled in over the shared socket (TS_AUTHKEY stays empty here;
+  # see lib/tailscale.ts tailnetUp/Down). TS_AUTH_ONCE keeps the persisted node
+  # identity across restarts. Image is PINNED: `:latest` has regressed the
+  # "stay up unauthenticated" behaviour (tailscale/tailscale#16108); override
+  # via TS_IMAGE_TAG once a newer tag is verified.
   tailscale:
-    image: tailscale/tailscale:latest
+    image: tailscale/tailscale:${TS_IMAGE_TAG:-v1.98.4}
     container_name: mantle_tailscale
     restart: unless-stopped
-    profiles: ["tailnet"]
     hostname: ${TS_HOSTNAME:-mantle-vps}
     environment:
       TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_AUTH_ONCE: "true"
       TS_HOSTNAME: ${TS_HOSTNAME:-mantle-vps}
       TS_USERSPACE: "true"
       TS_STATE_DIR: /var/lib/tailscale
@@ -222,8 +228,11 @@ services:
     volumes:
       - mantle_tailscale_data:/var/lib/tailscale
       - mantle_tailscale_sock:/var/run/tailscale
+    # `tailscale status` exits non-zero while unauthenticated, so health is just
+    # "tailscaled is up + the socket is listening" — true whether or not we've
+    # joined a tailnet. Nothing depends_on this service.
     healthcheck:
-      test: ["CMD", "tailscale", "status"]
+      test: ["CMD-SHELL", "test -S /var/run/tailscale/tailscaled.sock"]
       interval: 15s
       timeout: 5s
       retries: 8
@@ -259,10 +268,12 @@ services:
       <<: *app-env
     volumes:
       - ${MANTLE_DATA_DIR:-./data}/files:/data/files
-      # Read-only view of the tailscaled LocalAPI socket for the
-      # /settings/network status tile + peer dropdown. Empty until the
-      # `tailnet` profile is up; the reader degrades gracefully when absent.
-      - mantle_tailscale_sock:/var/run/tailscale:ro
+      # READ-WRITE view of the tailscaled LocalAPI socket. Read drives the
+      # /settings/network status tile + peer dropdown; write lets the app log
+      # tailscaled in/out from the UI (Activate/Deactivate). RW is the one
+      # security-relevant change — the app can control tailnet membership —
+      # acceptable on a single-user box. Degrades gracefully when absent.
+      - mantle_tailscale_sock:/var/run/tailscale
     # No public port: Caddy fronts the app and reaches it at web:3000 on the
     # internal network. Bound to localhost only for on-host debugging / ssh
     # tunnels — not reachable from the internet.
