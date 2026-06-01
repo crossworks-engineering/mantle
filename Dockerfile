@@ -68,4 +68,4 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # incremental re-pulls small (the runtime .next is only ~50MB).
 RUN pnpm -C apps/web build && rm -rf apps/web/.next/cache
 EXPOSE 3000
-CMD ["pnpm", "-C", "apps/web", "start", "--", "-H", "0.0.0.0", "-p", "3000"]
+CMD ["pnpm", "-C", "apps/web", "exec", "next", "start", "-H", "0.0.0.0", "-p", "3000"]
