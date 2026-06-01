@@ -121,13 +121,13 @@ const CHECKS: CheckDef[] = [
     key: 'unembedded_facts',
     label: 'Unembedded facts',
     severity: 'medium',
-    note: 'a fact with no embedding is invisible to vector retrieval — every fact should be embedded at write time.',
+    note: 'a currently-valid fact with no embedding is invisible to vector retrieval — every live fact should be embedded at write time. Retired facts (valid_to set) are excluded: they are superseded history, never queried, and the re-embed walk skips them too.',
     query: (o) => sql`
       SELECT id, kind::text AS kind, left(content, 60) AS detail
-      FROM facts WHERE owner_id = ${o} AND embedding IS NULL LIMIT ${CAP}`,
+      FROM facts WHERE owner_id = ${o} AND embedding IS NULL AND valid_to IS NULL LIMIT ${CAP}`,
     spanQuery: (o) => sql`
       SELECT min(created_at)::date::text AS oldest, max(created_at)::date::text AS newest
-      FROM facts WHERE owner_id = ${o} AND embedding IS NULL`,
+      FROM facts WHERE owner_id = ${o} AND embedding IS NULL AND valid_to IS NULL`,
   },
   {
     key: 'reaper_miss_facts',
