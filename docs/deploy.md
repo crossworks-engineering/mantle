@@ -71,6 +71,22 @@ Certs persist in the `caddy_data` volume — don't wipe it, or you risk LE rate 
 
 ## 2. Build & push images (build machine)
 
+> **⚠️ Architecture must match the VPS.** A Docker image is arch-specific. An
+> Apple-Silicon Mac builds **arm64**; most VPSes (incl. Contabo) are **amd64**,
+> and an arm64 image won't run there (`exec format error`). Three options:
+> - **Build natively on the VPS** (simplest for a first deploy + frequent
+>   updates — no emulation, no registry pull): `rsync` the source to the VPS and
+>   run `docker compose build web` there. The image is local, so no `docker login`
+>   / pull needed. This is how the Contabo deploy was done — see
+>   [`handoff-deploy-contabo-2026-06-01.md`](./handoff-deploy-contabo-2026-06-01.md).
+> - **Cross-build for amd64 on the Mac**: `docker buildx build --platform
+>   linux/amd64 -t <ns>/mantle:<tag> --push .` (runs amd64 under QEMU — slow).
+> - **Multi-arch**: `--platform linux/amd64,linux/arm64` (slowest; one tag runs
+>   anywhere). Only worth it if you pull on both arches.
+>
+> The `docker compose build` / push flow below assumes the build machine and the
+> VPS share an arch. If they don't, use one of the above.
+
 ```bash
 docker login
 MANTLE_IMAGE_NAMESPACE=youruser MANTLE_IMAGE_TAG=v1 scripts/docker-build-push.sh
