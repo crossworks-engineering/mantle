@@ -12,7 +12,7 @@
  * those from the live worker config and add update/delete sub-tests.
  */
 import type { FixtureExpectation, FixtureExpectation as Exp } from './types';
-import type { FixtureBuilder } from './fixtures';
+import type { FixtureBuilder, FixtureUpdater } from './fixtures';
 import {
   buildNote,
   buildPage,
@@ -37,6 +37,13 @@ import {
   buildSvg,
   buildXml,
   buildAudio,
+  updateNoteFixture,
+  updatePageFixture,
+  updateTodoFixture,
+  updateEventFixture,
+  updateContactFixture,
+  updateSecretFixture,
+  updateTextFileFixture,
 } from './fixtures';
 
 export type FixtureSpec = {
@@ -50,6 +57,8 @@ export type FixtureSpec = {
   pipeline: 'content' | 'file';
   build: FixtureBuilder;
   expect: FixtureExpectation;
+  /** Optional edit that should re-trigger extraction — drives the update sub-test. */
+  update?: FixtureUpdater;
 };
 
 /** A fully-processed content node: summary + 768 embedding + tsv + facts + graph. */
@@ -98,8 +107,8 @@ const SKIP_EXPECTED: Exp = {
 };
 
 export const SPECS: FixtureSpec[] = [
-  { key: 'note', label: 'Note', nodeType: 'note', pipeline: 'content', build: buildNote, expect: FULL },
-  { key: 'page', label: 'Page', nodeType: 'page', pipeline: 'content', build: buildPage, expect: FULL },
+  { key: 'note', label: 'Note', nodeType: 'note', pipeline: 'content', build: buildNote, expect: FULL, update: updateNoteFixture },
+  { key: 'page', label: 'Page', nodeType: 'page', pipeline: 'content', build: buildPage, expect: FULL, update: updatePageFixture },
   {
     key: 'todo',
     label: 'Todo / task',
@@ -108,6 +117,7 @@ export const SPECS: FixtureSpec[] = [
     build: buildTodo,
     // task facts only land if the type is in the extractor's target_types.
     expect: { ...INDEXED_SOFT, trace: { status: 'either', skipDisposition: 'type_not_in_allowlist' } },
+    update: updateTodoFixture,
   },
   {
     key: 'event',
@@ -116,6 +126,7 @@ export const SPECS: FixtureSpec[] = [
     pipeline: 'content',
     build: buildEvent,
     expect: { ...INDEXED_SOFT, trace: { status: 'either', skipDisposition: 'type_not_in_allowlist' } },
+    update: updateEventFixture,
   },
   {
     key: 'contact',
@@ -124,6 +135,7 @@ export const SPECS: FixtureSpec[] = [
     pipeline: 'content',
     build: buildContact,
     expect: INDEXED_SOFT,
+    update: updateContactFixture,
   },
   {
     key: 'secret',
@@ -134,9 +146,10 @@ export const SPECS: FixtureSpec[] = [
     // The sealed body must never reach the LLM — only title+description+tags
     // are indexed. So: indexed, but facts/graph are not expected.
     expect: { trace: { status: 'success' }, summary: 'present', embedding: 'present', tsv: 'present', facts: 'optional', graph: 'optional' },
+    update: updateSecretFixture,
   },
   // In-process parsers — must index regardless of external services.
-  { key: 'file_text', label: 'File · text', nodeType: 'file', pipeline: 'file', build: buildTextFile, expect: INDEXED_SOFT },
+  { key: 'file_text', label: 'File · text', nodeType: 'file', pipeline: 'file', build: buildTextFile, expect: INDEXED_SOFT, update: updateTextFileFixture },
   { key: 'file_md', label: 'File · Markdown', nodeType: 'file', pipeline: 'file', build: buildMd, expect: INDEXED_SOFT },
   { key: 'file_csv', label: 'File · CSV', nodeType: 'file', pipeline: 'file', build: buildCsv, expect: INDEXED_SOFT },
   { key: 'file_json', label: 'File · JSON', nodeType: 'file', pipeline: 'file', build: buildJson, expect: INDEXED_SOFT },

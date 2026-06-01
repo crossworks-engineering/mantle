@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/components/ui/toast';
 import {
   AlertDialog,
@@ -46,6 +47,29 @@ function CheckPill({ check }: { check: CheckResult }) {
   );
 }
 
+function groupPillStyle(checks: CheckResult[]): string {
+  if (checks.some((c) => c.status === 'fail'))
+    return 'bg-destructive/10 text-destructive border-destructive/30';
+  if (checks.some((c) => c.status === 'pass'))
+    return 'bg-primary/10 text-primary border-primary/30';
+  return 'bg-muted text-muted-foreground border-border';
+}
+
+function CheckGroup({ title, checks }: { title: string; checks: CheckResult[] }) {
+  return (
+    <div className="space-y-1 border-t border-border pt-1.5">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</div>
+      {checks.map((c, i) => (
+        <div key={i} className="flex gap-2">
+          <span className="w-24 shrink-0 text-muted-foreground">{c.label}</span>
+          <span className="font-mono">{c.status}</span>
+          {c.detail && <span className="text-muted-foreground">— {c.detail}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ResultRow({ result }: { result: FixtureResult }) {
   const [open, setOpen] = useState(false);
   const s = STATE_STYLE[result.state];
@@ -69,6 +93,16 @@ function ResultRow({ result }: { result: FixtureResult }) {
           {result.checks.map((c, i) => (
             <CheckPill key={i} check={c} />
           ))}
+          {result.updateChecks && (
+            <span className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[11px] ${groupPillStyle(result.updateChecks)}`}>
+              ↻ update
+            </span>
+          )}
+          {result.deleteChecks && (
+            <span className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[11px] ${groupPillStyle(result.deleteChecks)}`}>
+              ⌫ delete
+            </span>
+          )}
         </span>
       </button>
 
@@ -87,11 +121,14 @@ function ResultRow({ result }: { result: FixtureResult }) {
               <span className="font-mono">{result.footprint.run.stepNames.join(' → ') || '—'}</span>
             </div>
           )}
-          {result.nodeId && (
+          {result.updateChecks && <CheckGroup title="Update (re-extraction)" checks={result.updateChecks} />}
+          {result.deleteChecks && <CheckGroup title="Delete (kind-aware reapers)" checks={result.deleteChecks} />}
+          {result.nodeId && !result.deleted && (
             <a href={`/nodes/${result.nodeId}/history`} className="inline-block pt-1 underline">
               node biography →
             </a>
           )}
+          {result.deleted && <div className="pt-1 text-muted-foreground">node deleted by the delete sub-test</div>}
         </div>
       )}
     </li>
@@ -102,6 +139,8 @@ export function IntegrityClient({ specs }: { specs: SpecMeta[] }) {
   const toast = useToast();
   const [running, setRunning] = useState(false);
   const [cleaning, setCleaning] = useState(false);
+  const [includeUpdate, setIncludeUpdate] = useState(false);
+  const [includeDelete, setIncludeDelete] = useState(false);
   const [report, setReport] = useState<SuiteReport | null>(null);
 
   async function runSuite() {
@@ -110,7 +149,7 @@ export function IntegrityClient({ specs }: { specs: SpecMeta[] }) {
       const res = await fetch('/api/debug/integrity/run', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ includeUpdate, includeDelete }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
       const data = (await res.json()) as SuiteReport;
@@ -155,12 +194,34 @@ export function IntegrityClient({ specs }: { specs: SpecMeta[] }) {
             Inserts one synthetic fixture per content type, waits for the extractor, and
             asserts the expected footprint landed (L5 summary · 768-dim embedding · L4 facts ·
             graph). Green = matched the expectation for that type (including correct skips).
-            Clean up the run afterward to remove fixtures + their traces.
+            Optional <strong>update</strong> tests assert an edit re-extracts (no duplicate
+            edges); <strong>delete</strong> tests assert the kind-aware reapers fire (and
+            self-remove the fixture). Clean up the run afterward to remove fixtures + traces.
           </p>
         </div>
-        <Button onClick={runSuite} disabled={running || cleaning}>
-          {running ? 'Running…' : 'Run integrity suite'}
-        </Button>
+        <div className="flex flex-col items-end gap-2">
+          <Button onClick={runSuite} disabled={running || cleaning}>
+            {running ? 'Running…' : 'Run integrity suite'}
+          </Button>
+          <div className="flex gap-4">
+            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+              <Checkbox
+                checked={includeUpdate}
+                onCheckedChange={(v) => setIncludeUpdate(v === true)}
+                disabled={running}
+              />
+              Update tests
+            </label>
+            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+              <Checkbox
+                checked={includeDelete}
+                onCheckedChange={(v) => setIncludeDelete(v === true)}
+                disabled={running}
+              />
+              Delete tests
+            </label>
+          </div>
+        </div>
       </div>
 
       {!report && (

@@ -50,14 +50,27 @@ export type ProbeFootprint = {
   hasTsv: boolean;
   nFacts: number;
   factKinds: string[];
+  /** mentioned_in edges (entity → node). */
   nEntities: number;
+  /** Duplicate mentioned_in edges (same entity → node twice) — must be 0 if the
+   *  extractor rebuilds idempotently rather than appending on re-extract. */
+  dupMentionEdges: number;
+  /** content_chunks rows for this node. */
+  nChunks: number;
   run: {
+    /** Trace id + start — used to detect a *new* run after an update. */
+    traceId: string;
+    startedAt: string;
     status: string;
     disposition: string | null;
     stepNames: string[];
     costMicroUsd: number;
   } | null;
 };
+
+/** A fact's identity + kind — captured before a delete to verify the kind-aware
+ *  reaper (0059): episodic/factual die, semantic/preference are kept sourceless. */
+export type FactRef = { id: string; kind: string };
 
 export type CheckStatus = 'pass' | 'fail' | 'info';
 
@@ -79,6 +92,12 @@ export type FixtureResult = {
   nodeId: string | null;
   footprint: ProbeFootprint | null;
   checks: CheckResult[];
+  /** Re-extraction-after-edit checks (only when the update sub-test ran). */
+  updateChecks?: CheckResult[];
+  /** Kind-aware cleanup checks (only when the delete sub-test ran). */
+  deleteChecks?: CheckResult[];
+  /** True once the delete sub-test removed the node. */
+  deleted?: boolean;
   costMicroUsd: number;
   durationMs: number;
   error?: string;

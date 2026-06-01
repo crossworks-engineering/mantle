@@ -13,6 +13,8 @@ export const maxDuration = 300;
 const Body = z.object({
   only: z.array(z.string()).optional(),
   timeoutMs: z.number().int().min(5_000).max(120_000).optional(),
+  includeUpdate: z.boolean().optional(),
+  includeDelete: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {

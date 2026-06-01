@@ -12,15 +12,29 @@ import { randomBytes } from 'node:crypto';
 
 import { SPECS, SPEC_BY_KEY } from './spec';
 import { waitForExtractor } from './footprint';
-import { evaluate, stateOf, summarise } from './assert';
-import { PROBE_BASE_TAG, probeRunTag, type FixtureResult, type SuiteReport } from './types';
+import { evaluate, summarise } from './assert';
+import { runUpdate, runDelete } from './lifecycle';
+import { PROBE_BASE_TAG, probeRunTag, type CheckResult, type FixtureState, type FixtureResult, type SuiteReport } from './types';
 
 export type RunOptions = {
   /** Restrict to these fixture keys; empty/undefined = all. */
   only?: string[];
   /** Per-fixture extractor wait budget. */
   timeoutMs?: number;
+  /** Also edit each fixture and assert it re-extracts (where an updater exists). */
+  includeUpdate?: boolean;
+  /** Also delete each fixture and assert the kind-aware reapers fire. */
+  includeDelete?: boolean;
 };
+
+/** Roll all check groups into one state. */
+function rollup(base: ProbeRun, extra: CheckResult[][]): FixtureState {
+  if (base.fp && !base.fp.run) return 'stalled';
+  const all = [...base.checks, ...extra.flat()];
+  return all.some((c) => c.status === 'fail') ? 'fail' : 'ok';
+}
+
+type ProbeRun = { fp: import('./types').ProbeFootprint | null; checks: CheckResult[] };
 
 export async function runIntegritySuite(ownerId: string, opts: RunOptions = {}): Promise<SuiteReport> {
   const runId = randomBytes(4).toString('hex');
@@ -53,15 +67,39 @@ export async function runIntegritySuite(ownerId: string, opts: RunOptions = {}):
 
       const fp = await waitForExtractor(ownerId, built.nodeId, timeoutMs);
       const checks = evaluate(spec.expect, fp);
+
+      let updateChecks: CheckResult[] | undefined;
+      let deleteChecks: CheckResult[] | undefined;
+      let deleted = false;
+      let cost = fp.run?.costMicroUsd ?? 0;
+      // Only run lifecycle sub-tests when the base run actually settled.
+      if (fp.run) {
+        let current = fp;
+        if (opts.includeUpdate && spec.update) {
+          const up = await runUpdate(ownerId, spec, { ownerId, tags, runId }, built.nodeId, current, timeoutMs);
+          updateChecks = up.checks;
+          current = up.after;
+          cost += up.after.run?.traceId !== fp.run.traceId ? up.after.run?.costMicroUsd ?? 0 : 0;
+        }
+        if (opts.includeDelete) {
+          const del = await runDelete(ownerId, spec, built.nodeId, current);
+          deleteChecks = del.checks;
+          deleted = true;
+        }
+      }
+
       results.push({
         key: spec.key,
         label: spec.label,
         nodeType: spec.nodeType,
-        state: stateOf(fp, checks),
+        state: rollup({ fp, checks }, [updateChecks ?? [], deleteChecks ?? []]),
         nodeId: built.nodeId,
         footprint: fp,
         checks,
-        costMicroUsd: fp.run?.costMicroUsd ?? 0,
+        updateChecks,
+        deleteChecks,
+        deleted,
+        costMicroUsd: cost,
         durationMs: Date.now() - t0,
       });
     } catch (err) {

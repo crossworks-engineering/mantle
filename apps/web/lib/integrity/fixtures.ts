@@ -19,9 +19,20 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { createNote, createTodo, createEvent, createContact, createPage } from '@mantle/content';
+import {
+  createNote,
+  updateNote,
+  createTodo,
+  updateTodo,
+  createEvent,
+  updateEvent,
+  createContact,
+  updateContact,
+  createPage,
+  commitPage,
+} from '@mantle/content';
 import { ensureFilesRootBranch, upsertFile, FILES_ROOT_LABEL } from '@mantle/files';
-import { createSecret } from '@/lib/secrets';
+import { createSecret, updateSecret } from '@/lib/secrets';
 
 export type BuildResult = { nodeId: string } | { missing: true; reason: string };
 
@@ -208,6 +219,87 @@ export const buildPhoto: FixtureBuilder = fileFixture('sample-photo.jpg');
 export const buildSvg: FixtureBuilder = fileFixture('sample.svg');
 export const buildXml: FixtureBuilder = fileFixture('sample.xml');
 export const buildAudio: FixtureBuilder = fileFixture('sample-audio.mp3');
+
+// ─── update builders (trigger re-extraction) ────────────────────────────────
+//
+// Each mutates an extractor-visible field so the content fn clears the prior
+// summary/embedding and re-fires node_ingested. Used by the update sub-test to
+// verify the edit re-extracts (and rebuilds chunks/edges idempotently).
+
+export type FixtureUpdater = (ctx: BuildCtx, nodeId: string) => Promise<void>;
+
+export const updateNoteFixture: FixtureUpdater = async ({ ownerId }, nodeId) => {
+  await updateNote(ownerId, nodeId, {
+    content:
+      'REVISED note — Quintus Bramblewick added a Borrowdale heated chamber to the Vorthelm ' +
+      'Dynamics gantry rebuild in Thelby after the MGN12 rail swap. Re-extraction should ' +
+      're-summarise and rebuild facts/entities without duplicating edges.',
+  });
+};
+
+export const updateTodoFixture: FixtureUpdater = async ({ ownerId }, nodeId) => {
+  await updateTodo(ownerId, nodeId, {
+    body: 'UPDATED: reflash, THEN fit the Borrowdale heated chamber on the Vorthelm gantry.',
+  });
+};
+
+export const updateEventFixture: FixtureUpdater = async ({ ownerId }, nodeId) => {
+  await updateEvent(ownerId, nodeId, {
+    body: 'UPDATED agenda: gantry review now also covers the Borrowdale heated chamber.',
+  });
+};
+
+export const updateContactFixture: FixtureUpdater = async ({ ownerId }, nodeId) => {
+  await updateContact(ownerId, nodeId, {
+    description:
+      'UPDATED: Quintus Bramblewick now also leads Vorthelm Dynamics procurement in Thelby.',
+  });
+};
+
+export const updateSecretFixture: FixtureUpdater = async ({ ownerId }, nodeId) => {
+  await updateSecret(ownerId, nodeId, {
+    description:
+      'UPDATED metadata: Vorthelm Dynamics workshop wifi, now also covers the Borrowdale annex.',
+  });
+};
+
+export const updatePageFixture: FixtureUpdater = async ({ ownerId }, nodeId) => {
+  const doc = {
+    type: 'doc',
+    content: [
+      {
+        type: 'paragraph',
+        content: [
+          {
+            type: 'text',
+            text:
+              'UPDATED — Quintus Bramblewick added a Borrowdale heated chamber to the Vorthelm ' +
+              'Dynamics gantry rebuild in Thelby. Re-extraction should re-summarise this page.',
+          },
+        ],
+      },
+    ],
+  } as Record<string, unknown>;
+  await commitPage(ownerId, nodeId, doc);
+};
+
+export const updateTextFileFixture: FixtureUpdater = async ({ ownerId, runId }, nodeId) => {
+  void nodeId;
+  const bytes = Buffer.from(
+    'Vorthelm Dynamics gantry rebuild — field notes (REVISED).\n\n' +
+      'Quintus Bramblewick fitted a Borrowdale heated chamber in Thelby after the rail swap. ' +
+      'This revision verifies that overwriting a file re-extracts it.\n',
+    'utf8',
+  );
+  await ensureFilesRootBranch(ownerId);
+  await upsertFile({
+    ownerId,
+    parentPath: FILES_ROOT_LABEL,
+    filename: `probe-notes-${runId}.txt`,
+    bytes,
+    overwrite: true,
+  });
+};
 
 // ─── helper ────────────────────────────────────────────────────────────────
 
