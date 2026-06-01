@@ -151,12 +151,12 @@ describe('isProviderWired for chat', () => {
     expect(isProviderWired('openrouter', 'chat')).toBe(true);
   });
 
-  it('returns true for openai+chat (carve-out — OpenAI is reached via OpenRouter)', () => {
-    // No direct openai-chat adapter exists; OpenAI chat is reached
-    // through the OpenRouter aggregator. The carve-out keeps the
-    // provider eligible in the form dropdown for the workers whose
-    // service key happens to be 'openai' (i.e. an OR-via-OpenAI route).
-    expect(isProviderWired('openai', 'chat')).toBe(true);
+  it('returns false for openai+chat (no direct adapter — reached via OpenRouter)', () => {
+    // There is no direct openai-chat adapter; OpenAI chat is reached through the
+    // openrouter provider with an `openai/*` model. The old carve-out marked
+    // openai chat-wired, which surfaced it in the dropdown but with no models —
+    // confusing. It's now honestly not wired.
+    expect(isProviderWired('openai', 'chat')).toBe(false);
   });
 
   it('returns false for unknown chat providers', () => {

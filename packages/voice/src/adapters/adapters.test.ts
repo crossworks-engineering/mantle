@@ -102,16 +102,14 @@ describe('isProviderWired', () => {
 
   it('treats openrouter + openai as chat-wired by convention', () => {
     // Post-Phase-3, every chat provider routes through the adapter
-    // registry. openrouter has a real openrouter-chat adapter;
-    // openai stays a registry carve-out because OpenAI chat is
-    // reached via the OpenRouter aggregator (no direct openai-chat
-    // adapter today — see registry.ts isProviderWired for the
-    // openai carve-out reasoning).
+    // registry. openrouter has a real openrouter-chat adapter.
+    // OpenAI is NOT chat-wired: there's no direct openai-chat adapter —
+    // OpenAI chat is reached via the openrouter provider with an
+    // `openai/*` model. Surfacing it as wired only produced an empty
+    // model dropdown, so isProviderWired reports it honestly as not wired.
     expect(isProviderWired('openrouter', 'chat')).toBe(true);
-    expect(isProviderWired('openai', 'chat')).toBe(true);
-    // To exercise the "not wired" branch, use a provider whose
-    // capabilities[] in providers.ts doesn't include 'chat' at all.
-    // Deepgram is the canonical example — STT-only, no chat planned.
+    expect(isProviderWired('openai', 'chat')).toBe(false);
+    // Deepgram is STT-only — its catalog doesn't declare chat at all.
     expect(isProviderWired('deepgram', 'chat')).toBe(false);
   });
 });
@@ -166,14 +164,15 @@ describe('wiredCapabilitiesFor', () => {
     expect(unwired).toEqual([]);
   });
 
-  it('preserves the catalog declaration order', () => {
-    // OpenAI's catalog lists ['chat', 'embedding', 'tts', 'stt', 'vision', 'image_gen']
-    // — and every one is wired (chat via OR carve-out). Order in the
-    // result must match what providers.ts declares so the UI renders
-    // a stable list across renders.
+  it('preserves the catalog declaration order, splitting out unwired chat', () => {
+    // OpenAI's catalog lists ['chat', 'embedding', 'tts', 'stt', 'vision', 'image_gen'].
+    // Everything but chat is wired (chat has no direct adapter → via OpenRouter),
+    // and the wired list preserves the catalog's declaration order so the UI
+    // renders a stable list across renders.
     const openai = getProvider('openai')!;
-    const { wired } = wiredCapabilitiesFor(openai);
-    expect(wired).toEqual([...openai.capabilities]);
+    const { wired, unwired } = wiredCapabilitiesFor(openai);
+    expect(wired).toEqual(['embedding', 'tts', 'stt', 'vision', 'image_gen']);
+    expect(unwired).toEqual(['chat']);
   });
 
   it('every provider in SUPPORTED_PROVIDERS has at least one wired capability', () => {

@@ -36,7 +36,8 @@ export * from './catalogs/deepseek';
 
 // Pure wiring metadata (no adapter modules pulled — registry.ts only imports
 // the retry helper, which is itself dependency-free).
-export { isProviderWired, wiredCapabilitiesFor } from './adapters/registry';
+export { isProviderWired, wiredCapabilitiesFor, WIRED_PROVIDERS } from './adapters/registry';
+export type { WiredCapability } from './adapters/registry';
 
 // Shared types.
 export { TTS_VOICES } from './types';

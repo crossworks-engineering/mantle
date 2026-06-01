@@ -45,6 +45,7 @@ import {
   getProvider,
   isProviderId,
   isProviderWired,
+  WIRED_PROVIDERS,
   providersForCapability,
   voicesForModel,
   type AudioTag,
@@ -299,44 +300,20 @@ export function WorkerForm({
   // xAI and Hugging Face. OpenRouter chat doesn't go through this
   // registry; the user types model ids by hand for OpenRouter.
   const chatShaped = kind === 'reflector' || kind === 'extractor' || kind === 'summarizer';
-  // Which chat providers have an adapter today. Keep this list as
-  // the single source of truth for "show a model dropdown" — any
-  // provider not listed here gets a free-text model input instead.
-  // OpenRouter joined this set when openrouter-chat shipped (Pre-work
-  // B of Phase 3); its discoverModels hits the keyless
-  // /api/v1/models endpoint so the dropdown populates even before
-  // the user picks a key.
-  const wiredChatProviders = new Set([
-    'openrouter',
-    'xai',
-    'huggingface',
-    'anthropic',
-    'google',
-  ]);
-  // Which vision providers have an adapter today. Mirrors the chat
-  // wiredChatProviders set — keeps "show a model dropdown" honest.
-  const wiredVisionProviders = new Set(['openai', 'anthropic', 'google', 'xai', 'openrouter']);
-  // Image-gen wiring as of this commit. HF is a real adapter but
-  // surfaces a "type any repo id" free-text path too.
-  const wiredImageGenProviders = new Set(['openai', 'xai', 'google', 'huggingface']);
-  const wiredEmbeddingProviders = new Set([
-    'openrouter',
-    'openai',
-    'google',
-    'mistral',
-    'cohere',
-  ]);
+  // Whether to show a model dropdown (vs. free-text) is gated on the SAME
+  // wired-provider table that drives the "not wired yet" hint — WIRED_PROVIDERS
+  // from @mantle/voice (the static mirror of the adapter registry). One source
+  // of truth, so the two can't drift (this duplicated four hand-kept Sets that
+  // had already fallen behind — e.g. missing deepseek/local chat + local
+  // embedding). tts/stt always discover (every key surfaces voices/models).
   const supportsDiscovery =
     kind === 'tts' ||
     kind === 'stt' ||
-    (kind === 'vision' && wiredVisionProviders.has(provider)) ||
-    (kind === 'document' && wiredVisionProviders.has(provider)) ||
-    (kind === 'image_gen' && wiredImageGenProviders.has(provider)) ||
-    (chatShaped && wiredChatProviders.has(provider)) ||
-    // Embedding dispatches through the adapter registry — every provider
-    // listed here is fully wired (OR keyless + 4 direct providers with
-    // discoverModels + staticCatalog fallback).
-    (kind === 'embedding' && wiredEmbeddingProviders.has(provider));
+    (kind === 'vision' && WIRED_PROVIDERS.vision.has(provider)) ||
+    (kind === 'document' && WIRED_PROVIDERS.vision.has(provider)) ||
+    (kind === 'image_gen' && WIRED_PROVIDERS.image_gen.has(provider)) ||
+    (chatShaped && WIRED_PROVIDERS.chat.has(provider)) ||
+    (kind === 'embedding' && WIRED_PROVIDERS.embedding.has(provider));
 
   // The initial model list rendered before live discovery returns
   // depends on which provider+kind we're configuring. Picking the

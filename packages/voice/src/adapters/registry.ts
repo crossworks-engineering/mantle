@@ -30,6 +30,42 @@ const VISION = new Map<ProviderId, VisionDispatcher>();
 const IMAGE_GEN = new Map<ProviderId, ImageGenDispatcher>();
 const EMBEDDING = new Map<ProviderId, EmbeddingDispatcher>();
 
+export type WiredCapability = 'chat' | 'tts' | 'stt' | 'vision' | 'image_gen' | 'embedding';
+
+/**
+ * STATIC mirror of which providers have a registered adapter, per capability —
+ * the source of truth for `isProviderWired` and the settings UI.
+ *
+ * Why static and not "read the live Maps above": the built-in adapters only land
+ * in those Maps when `./index.ts` runs its `register*Adapter(...)` chain, which
+ * pulls in node-only deps (undici / node:crypto). The browser bundle imports the
+ * adapter-free `@mantle/voice/client` leaf, so client-side the Maps are EMPTY —
+ * reading them there reported EVERY provider as "not wired". This pure-data table
+ * gives the correct answer in both bundles. It's kept in lockstep with the live
+ * registrations by `registry.test.ts` (register an adapter without adding it here
+ * → the drift test fails). Mirror `adapters/index.ts` exactly when editing.
+ */
+export const WIRED_PROVIDERS: Record<WiredCapability, ReadonlySet<ProviderId>> = {
+  chat: new Set<ProviderId>(['openrouter', 'anthropic', 'google', 'xai', 'huggingface', 'deepseek', 'local']),
+  tts: new Set<ProviderId>(['openai', 'elevenlabs', 'xai', 'google']),
+  stt: new Set<ProviderId>(['openai', 'xai', 'elevenlabs', 'deepgram', 'assemblyai', 'google']),
+  vision: new Set<ProviderId>(['openai', 'anthropic', 'google', 'xai', 'openrouter']),
+  image_gen: new Set<ProviderId>(['openai', 'xai', 'google', 'huggingface']),
+  embedding: new Set<ProviderId>(['openrouter', 'openai', 'google', 'mistral', 'cohere', 'local']),
+};
+
+function mapFor(capability: WiredCapability): ReadonlyMap<ProviderId, unknown> {
+  return { chat: CHAT, tts: TTS, stt: STT, vision: VISION, image_gen: IMAGE_GEN, embedding: EMBEDDING }[
+    capability
+  ];
+}
+
+/** Live-registry provider ids for a capability — used by the drift test to prove
+ *  WIRED_PROVIDERS matches what `adapters/index.ts` actually registered. */
+export function registeredProviderIds(capability: WiredCapability): ProviderId[] {
+  return [...mapFor(capability).keys()];
+}
+
 // ─── Chat ────────────────────────────────────────────────────────────
 
 export function registerChatAdapter(adapter: ChatDispatcher): void {
@@ -197,38 +233,16 @@ export function findAdapterCatalogDrift(
  * given capability? Drives the "wired" / "not yet wired" hint in the
  * settings UI so the catalog stays honest.
  */
-export function isProviderWired(
-  providerId: string,
-  capability: 'tts' | 'stt' | 'vision' | 'image_gen' | 'chat' | 'embedding',
-): boolean {
-  switch (capability) {
-    case 'tts':
-      return TTS.has(providerId as ProviderId);
-    case 'stt':
-      return STT.has(providerId as ProviderId);
-    case 'vision':
-      return VISION.has(providerId as ProviderId);
-    case 'image_gen':
-      return IMAGE_GEN.has(providerId as ProviderId);
-    case 'chat':
-      // Chat is wired if a chat adapter is registered for this
-      // provider. OpenRouter has its own adapter now (closes the
-      // pre-Phase-3 special case where OR was the only chat provider
-      // without an adapter file). The 'openai' carve-out stays because
-      // there's no direct openai-chat adapter — OpenAI chat is reached
-      // via OpenRouter today and probably forever (OR's OpenAI route
-      // is identical pricing + adds failover).
-      return (
-        CHAT.has(providerId as ProviderId) || providerId === 'openai'
-      );
-    case 'embedding':
-      // As of Stage 1 of the embedding adapter framework, every
-      // embedding provider goes through the registry. Treat
-      // "registered adapter exists" as the truth.
-      return EMBEDDING.has(providerId as ProviderId);
-    default:
-      return false;
-  }
+export function isProviderWired(providerId: string, capability: WiredCapability): boolean {
+  const id = providerId as ProviderId;
+  // Union of the STATIC table (covers the built-in adapters — and is the ONLY
+  // thing visible in the adapter-free browser bundle, where the live Maps are
+  // empty) and the LIVE registry (honours adapters registered at runtime, e.g.
+  // custom/hot-swapped). No 'openai' chat carve-out: OpenAI has no direct chat
+  // adapter (it's reached via the `openrouter` provider with an `openai/*`
+  // model), so for chat it is honestly "not wired" — surfacing it as wired only
+  // produced an empty model dropdown.
+  return (WIRED_PROVIDERS[capability]?.has(id) ?? false) || mapFor(capability).has(id);
 }
 
 /**
