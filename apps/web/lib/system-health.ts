@@ -52,6 +52,19 @@ export type SystemHealth = {
     up: boolean;
     version: string | null;
   };
+  /** The configured embedding server. For the `local` provider this is the
+   *  self-hosted Ollama/LM Studio/TEI on MANTLE_LOCAL_EMBEDDING_URL (the
+   *  bundled `ollama` compose service in prod). `up: true` means it's
+   *  reachable AND the configured model is loaded — the only state in which
+   *  ingest can actually embed. `up: null` = a remote/cloud embedder
+   *  (openrouter/openai/google), which isn't pingable from here without a key,
+   *  so it's surfaced as "remote" rather than a misleading red dot. */
+  embedder: {
+    up: boolean | null;
+    provider: string | null;
+    model: string | null;
+    detail: string | null;
+  };
   degraded: string[];
 };
 
@@ -90,6 +103,49 @@ async function pgHealth() {
     cacheHitPct: stats?.cache_hit != null ? Number(stats.cache_hit) * 100 : null,
     topTables: tables.map((t) => ({ name: t.name, bytes: Number(t.bytes) })),
   };
+}
+
+const DEFAULT_LOCAL_EMBED_URL = 'http://localhost:11434/v1';
+type EmbedConfigRow = { model: string; provider: string; base_url: string | null };
+
+/** Probe the configured embedder. Only the `local` provider is a self-hosted
+ *  server we can ping (Ollama/LM Studio/TEI on the per-route base URL or
+ *  MANTLE_LOCAL_EMBEDDING_URL); we GET its OpenAI-compatible `/models` and
+ *  confirm the configured model is loaded — "reachable AND serving the right
+ *  model" is the only state that actually embeds. Cloud providers need a key
+ *  and cost a call, so they report as remote (up: null). Never throws. */
+async function embedderHealth(userId: string): Promise<SystemHealth['embedder']> {
+  let row: EmbedConfigRow | undefined;
+  try {
+    const result = await db.execute<EmbedConfigRow>(sql`
+      SELECT model, primary_provider AS provider, primary_base_url AS base_url
+      FROM embedding_config WHERE owner_id = ${userId} LIMIT 1
+    `);
+    row = (Array.isArray(result) ? result : (result as { rows?: EmbedConfigRow[] }).rows ?? [])[0];
+  } catch {
+    return { up: null, provider: null, model: null, detail: null };
+  }
+  if (!row) return { up: null, provider: null, model: null, detail: 'not configured' };
+  const { provider, model } = row;
+  if (provider !== 'local') {
+    return { up: null, provider, model, detail: `remote · ${provider}` };
+  }
+  const base = (row.base_url || process.env.MANTLE_LOCAL_EMBEDDING_URL || DEFAULT_LOCAL_EMBED_URL).replace(/\/+$/, '');
+  try {
+    const res = await fetch(`${base}/models`, { signal: AbortSignal.timeout(1_200) });
+    if (!res.ok) return { up: false, provider, model, detail: `unreachable · HTTP ${res.status}` };
+    const body = (await res.json()) as { data?: Array<{ id?: string }> };
+    const ids = (body.data ?? []).map((m) => m.id).filter((x): x is string => typeof x === 'string');
+    // Ollama reports ids like `embeddinggemma:latest`; tolerate the `:latest`
+    // suffix on either side so a bare-name config still matches.
+    const norm = (s: string) => s.replace(/:latest$/, '');
+    const present = ids.some((id) => norm(id) === norm(model));
+    return present
+      ? { up: true, provider, model, detail: `${model} · loaded` }
+      : { up: false, provider, model, detail: `${model} not loaded` };
+  } catch {
+    return { up: false, provider, model, detail: 'unreachable' };
+  }
 }
 
 /** Disk usage of the volume holding MANTLE_FILES_ROOT, via systeminformation's
@@ -136,7 +192,7 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     }
   }
 
-  const [load, mem, disk, pg, attBytes, minioUp, tikaVer] = await Promise.all([
+  const [load, mem, disk, pg, attBytes, minioUp, tikaVer, emb] = await Promise.all([
     probe('host.cpu', () => si.currentLoad()),
     probe('host.mem', () => si.mem()),
     probe('host.disk', () => filesDisk()),
@@ -147,6 +203,8 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     // so the probe wrapper is mostly belt-and-braces here — the timeout
     // still applies if the wrapper hangs longer than expected.
     probe('tika', () => tikaVersion(1_500)),
+    // embedderHealth is likewise never-throws; the wrapper just bounds it.
+    probe('embedder', () => embedderHealth(userId)),
   ]);
 
   const memInfo = mem
@@ -189,6 +247,7 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
       up: typeof tikaVer === 'string' && tikaVer.length > 0,
       version: typeof tikaVer === 'string' ? tikaVer : null,
     },
+    embedder: emb ?? { up: null, provider: null, model: null, detail: null },
     degraded,
   };
 }
