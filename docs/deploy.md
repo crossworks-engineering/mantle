@@ -76,10 +76,10 @@ docker login
 MANTLE_IMAGE_NAMESPACE=youruser MANTLE_IMAGE_TAG=v1 scripts/docker-build-push.sh
 ```
 
-Builds + pushes the seven images (`mantle-migrate`, `mantle-web`, `mantle-agent`,
-`mantle-worker-{email,telegram,files,events}`). They share base layers, so only
-the first push is large; later pushes upload only the diff. Use a real tag
-(`v1`, a date, or a git sha) — `latest` is fine but harder to roll back from.
+Builds + pushes **one image** — `<youruser>/mantle:v1`. Every service (web,
+agent, the four workers, migrate) runs from that same image, differing only in
+the compose `command:`. Use a real tag (`v1`, a date, or a git sha) — `latest`
+is fine but harder to roll back from.
 
 ---
 

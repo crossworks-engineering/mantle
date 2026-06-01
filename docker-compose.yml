@@ -226,10 +226,8 @@ services:
   # One-shot schema migration. App services wait for this to complete
   # successfully before starting, so the DB schema is never behind the code.
   migrate:
-    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle-migrate:${MANTLE_IMAGE_TAG:-latest}
-    build:
-      context: .
-      target: migrate
+    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    command: ["pnpm", "-C", "packages/db", "migrate"]
     container_name: mantle_migrate
     restart: "no"
     depends_on:
@@ -237,11 +235,13 @@ services:
     environment:
       <<: *app-env
 
+  # `web` is the one service that BUILDS the shared image (target: app); every
+  # other service just references the same image with its own command.
   web:
-    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle-web:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle:${MANTLE_IMAGE_TAG:-latest}
     build:
       context: .
-      target: web
+      target: app
     container_name: mantle_web
     restart: unless-stopped
     depends_on:
@@ -286,10 +286,8 @@ services:
       - caddy_config:/config
 
   agent:
-    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle-agent:${MANTLE_IMAGE_TAG:-latest}
-    build:
-      context: .
-      target: agent
+    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    command: ["pnpm", "-C", "apps/agent", "start"]
     container_name: mantle_agent
     restart: unless-stopped
     depends_on:
@@ -302,10 +300,8 @@ services:
       - ${MANTLE_DATA_DIR:-./data}/files:/data/files
 
   worker_email:
-    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle-worker-email:${MANTLE_IMAGE_TAG:-latest}
-    build:
-      context: .
-      target: worker-email
+    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/email-sync.ts"]
     container_name: mantle_worker_email
     restart: unless-stopped
     depends_on:
@@ -316,10 +312,8 @@ services:
       <<: *app-env
 
   worker_telegram:
-    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle-worker-telegram:${MANTLE_IMAGE_TAG:-latest}
-    build:
-      context: .
-      target: worker-telegram
+    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/telegram-poll.ts"]
     container_name: mantle_worker_telegram
     restart: unless-stopped
     depends_on:
@@ -331,10 +325,8 @@ services:
   # External-edit watcher: chokidar over MANTLE_FILES_ROOT mirrors host file
   # changes (Syncthing / vim / cp) into the brain. Needs the files volume.
   worker_files:
-    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle-worker-files:${MANTLE_IMAGE_TAG:-latest}
-    build:
-      context: .
-      target: worker-files
+    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/files-watch.ts"]
     container_name: mantle_worker_files
     restart: unless-stopped
     depends_on:
@@ -348,10 +340,8 @@ services:
   # Event-reminder poller: fires due calendar/event reminders. Without this,
   # reminders silently never fire in prod (they work in `pnpm dev`).
   worker_events:
-    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle-worker-events:${MANTLE_IMAGE_TAG:-latest}
-    build:
-      context: .
-      target: worker-events
+    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/events-reminders.ts"]
     container_name: mantle_worker_events
     restart: unless-stopped
     depends_on:
