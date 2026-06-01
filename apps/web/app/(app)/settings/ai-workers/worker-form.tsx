@@ -94,6 +94,9 @@ type Props = {
    *  adapter registry, server-side). Drives the Document-worker provider badge
    *  — non-native providers rasterize at ingest. */
   nativeDocProviders: string[];
+  /** Online tailnet peer MagicDNS names — backs the route base-URL datalist
+   *  when a tailnet is up. Empty otherwise (input stays free-text). */
+  tailnetPeers?: string[];
 };
 
 /** Default provider per kind. The dropdown is populated from the
@@ -212,6 +215,7 @@ export function WorkerForm({
   enabled,
   isDefault,
   nativeDocProviders,
+  tailnetPeers = [],
 }: Props) {
   const router = useRouter();
   const toast = useToast();
@@ -723,6 +727,7 @@ export function WorkerForm({
             idPrefix="primary"
             baseUrl={baseUrl}
             viaTailnet={viaTailnet}
+            peers={tailnetPeers}
             onBaseUrl={setBaseUrl}
             onViaTailnet={setViaTailnet}
           />
@@ -842,6 +847,7 @@ export function WorkerForm({
                   idPrefix="backup"
                   baseUrl={backupBaseUrl}
                   viaTailnet={backupViaTailnet}
+                  peers={tailnetPeers}
                   onBaseUrl={setBackupBaseUrl}
                   onViaTailnet={setBackupViaTailnet}
                 />
@@ -1029,15 +1035,19 @@ function RouteHostFields({
   idPrefix,
   baseUrl,
   viaTailnet,
+  peers = [],
   onBaseUrl,
   onViaTailnet,
 }: {
   idPrefix: string;
   baseUrl: string;
   viaTailnet: boolean;
+  /** Online tailnet peer MagicDNS names — surfaced as base-URL autocomplete. */
+  peers?: string[];
   onBaseUrl: (v: string) => void;
   onViaTailnet: (v: boolean) => void;
 }) {
+  const listId = `${idPrefix}-worker-tailnet-peers`;
   return (
     <div className="space-y-3 rounded-md border border-dashed border-border p-3">
       <div className="space-y-1.5">
@@ -1047,12 +1057,21 @@ function RouteHostFields({
           value={baseUrl}
           onChange={(e) => onBaseUrl(e.target.value)}
           placeholder="blank = http://localhost:11434/v1 (Ollama default)"
+          list={peers.length > 0 ? listId : undefined}
         />
+        {peers.length > 0 && (
+          <datalist id={listId}>
+            {peers.map((p) => (
+              <option key={p} value={`http://${p}:1234/v1`} />
+            ))}
+          </datalist>
+        )}
         <p className="text-xs text-muted-foreground">
           Where this <code>local</code> route&apos;s server lives — e.g.{' '}
           <code>http://gemma-box:11434/v1</code> (Ollama) or{' '}
           <code>http://192.168.0.50:1234/v1</code> (LM Studio). Blank uses the{' '}
           <code>MANTLE_LOCAL_CHAT_URL</code> env / localhost default.
+          {peers.length > 0 && ' Tailnet devices are suggested as you type.'}
         </p>
       </div>
       <div className="flex items-center justify-between gap-3">

@@ -53,6 +53,11 @@ volumes:
   # Tailscale node state (identity + keys) — persists across restarts so the
   # node doesn't re-auth every boot. Only used by the optional `tailnet` profile.
   mantle_tailscale_data:
+  # Tailscale runtime socket dir (tailscaled.sock) — shared so the app can read
+  # the LocalAPI (`status`) for the /settings/network status tile + peer
+  # dropdown. Only the optional `tailnet` profile populates it; the app reads it
+  # read-only and degrades to "tailnet not running" when absent.
+  mantle_tailscale_sock:
 
 # Shared env block for app services — anchor + alias keeps the app
 # services in lockstep.
@@ -78,6 +83,10 @@ x-app-env: &app-env
   # `tailnet` profile). Only used for routes the operator flags "via tailnet";
   # harmless otherwise. Points at the bundled tailscale service.
   MANTLE_TAILNET_PROXY_URL: ${MANTLE_TAILNET_PROXY_URL:-http://tailscale:1055}
+  # Path to the tailscaled LocalAPI socket (shared from the tailscale sidecar).
+  # The /settings/network status tile + peer dropdown read `status` over it.
+  # Absent socket → the reader reports "tailnet not running" (never throws).
+  MANTLE_TAILSCALE_SOCK: ${MANTLE_TAILSCALE_SOCK:-/var/run/tailscale/tailscaled.sock}
   MANTLE_FILES_ROOT: /data/files
   # Public origin for absolute links built outside an HTTP request — e.g. the
   # agent's page_share / email_page tools. Falls back to localhost in code if
@@ -214,8 +223,11 @@ services:
       # client needs it, but the Node fetch path uses the HTTP proxy.)
       TS_OUTBOUND_HTTP_PROXY_LISTEN: 0.0.0.0:1055
       TS_EXTRA_ARGS: ${TS_EXTRA_ARGS:-}
+      # Pin the socket into the shared volume so the app can read LocalAPI.
+      TS_SOCKET: /var/run/tailscale/tailscaled.sock
     volumes:
       - mantle_tailscale_data:/var/lib/tailscale
+      - mantle_tailscale_sock:/var/run/tailscale
     healthcheck:
       test: ["CMD", "tailscale", "status"]
       interval: 15s
@@ -252,6 +264,10 @@ services:
       <<: *app-env
     volumes:
       - mantle_files_data:/data/files
+      # Read-only view of the tailscaled LocalAPI socket for the
+      # /settings/network status tile + peer dropdown. Empty until the
+      # `tailnet` profile is up; the reader degrades gracefully when absent.
+      - mantle_tailscale_sock:/var/run/tailscale:ro
     ports:
       - "3000:3000"
 

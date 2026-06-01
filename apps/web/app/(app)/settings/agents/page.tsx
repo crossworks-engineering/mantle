@@ -4,12 +4,13 @@ import { requireOwner } from '@/lib/auth';
 import { listAgents } from '@/lib/agents';
 import { listApiKeys } from '@/lib/api-keys';
 import { listSkills } from '@/lib/skills';
+import { getTailnetPeerNames } from '@/lib/tailscale';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { AgentsClient } from './agents-client';
 
 export default async function AgentsSettingsPage() {
   const user = await requireOwner();
-  const [agents, keys, toolRows, skillRows] = await Promise.all([
+  const [agents, keys, toolRows, skillRows, tailnetPeers] = await Promise.all([
     listAgents(user.id),
     listApiKeys(user.id),
     db
@@ -24,6 +25,7 @@ export default async function AgentsSettingsPage() {
       .where(eq(tools.ownerId, user.id))
       .orderBy(tools.slug),
     listSkills(user.id),
+    getTailnetPeerNames(),
   ]);
 
   return (
@@ -31,6 +33,7 @@ export default async function AgentsSettingsPage() {
       <SetPageTitle title="Agents" />
       <AgentsClient
         initialAgents={agents}
+        tailnetPeers={tailnetPeers}
         apiKeys={keys.map((k) => ({
           id: k.id,
           service: k.service,

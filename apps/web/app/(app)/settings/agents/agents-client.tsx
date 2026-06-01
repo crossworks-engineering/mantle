@@ -446,11 +446,15 @@ export function AgentsClient({
   apiKeys,
   availableTools,
   availableSkills,
+  tailnetPeers = [],
 }: {
   initialAgents: AgentSummary[];
   apiKeys: ApiKeyOption[];
   availableTools: ToolOption[];
   availableSkills: SkillOption[];
+  /** MagicDNS names of online tailnet peers — backs the base-URL datalist when
+   *  a tailnet is up. Empty otherwise (input stays free-text). */
+  tailnetPeers?: string[];
 }) {
   const router = useRouter();
   const [agents, setAgents] = useState<AgentSummary[]>(initialAgents);
@@ -1169,6 +1173,7 @@ export function AgentsClient({
                 idPrefix="primary"
                 baseUrl={form.baseUrl}
                 viaTailnet={form.viaTailnet}
+                peers={tailnetPeers}
                 onBaseUrl={(v) => setForm((f) => ({ ...f, baseUrl: v }))}
                 onViaTailnet={(v) => setForm((f) => ({ ...f, viaTailnet: v }))}
               />
@@ -1316,6 +1321,7 @@ export function AgentsClient({
                       idPrefix="backup"
                       baseUrl={form.backupBaseUrl}
                       viaTailnet={form.backupViaTailnet}
+                      peers={tailnetPeers}
                       onBaseUrl={(v) => setForm((f) => ({ ...f, backupBaseUrl: v }))}
                       onViaTailnet={(v) => setForm((f) => ({ ...f, backupViaTailnet: v }))}
                     />
@@ -2226,15 +2232,19 @@ function RouteHostFields({
   idPrefix,
   baseUrl,
   viaTailnet,
+  peers = [],
   onBaseUrl,
   onViaTailnet,
 }: {
   idPrefix: string;
   baseUrl: string;
   viaTailnet: boolean;
+  /** Online tailnet peer MagicDNS names — surfaced as base-URL autocomplete. */
+  peers?: string[];
   onBaseUrl: (v: string) => void;
   onViaTailnet: (v: boolean) => void;
 }) {
+  const listId = `${idPrefix}-tailnet-peers`;
   return (
     <div className="space-y-3 rounded-md border border-dashed border-border p-3">
       <div className="space-y-1.5">
@@ -2244,12 +2254,23 @@ function RouteHostFields({
           value={baseUrl}
           onChange={(e) => onBaseUrl(e.target.value)}
           placeholder="blank = http://localhost:11434/v1 (Ollama default)"
+          list={peers.length > 0 ? listId : undefined}
         />
+        {peers.length > 0 && (
+          // Suggest tailnet peers as `http://<name>:PORT/v1`. Free-text still
+          // works; this is just autocomplete when a tailnet is up.
+          <datalist id={listId}>
+            {peers.map((p) => (
+              <option key={p} value={`http://${p}:1234/v1`} />
+            ))}
+          </datalist>
+        )}
         <p className="text-xs text-muted-foreground">
           Where this <code>local</code> route&apos;s server lives — e.g.{' '}
           <code>http://gemma-box:11434/v1</code> (Ollama) or{' '}
           <code>http://192.168.0.50:1234/v1</code> (LM Studio). Blank uses the{' '}
           <code>MANTLE_LOCAL_CHAT_URL</code> env / localhost default.
+          {peers.length > 0 && ' Tailnet devices are suggested as you type.'}
         </p>
       </div>
       <div className="flex items-center justify-between gap-3">

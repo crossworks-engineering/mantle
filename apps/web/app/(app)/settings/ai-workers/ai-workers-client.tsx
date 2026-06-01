@@ -94,6 +94,7 @@ export function AiWorkersClient({
   updateAction,
   deleteAction,
   nativeDocProviders,
+  tailnetPeers = [],
 }: {
   workers: AiWorker[];
   keys: KeyOption[];
@@ -102,6 +103,8 @@ export function AiWorkersClient({
   updateAction: (id: string, formData: FormData) => Promise<void>;
   deleteAction: (id: string) => Promise<void>;
   nativeDocProviders: string[];
+  /** Online tailnet peer MagicDNS names — backs the route base-URL datalist. */
+  tailnetPeers?: string[];
 }) {
   const [sel, setSel] = useState<Selection>(
     initialSelectedId ? { mode: 'edit', id: initialSelectedId } : null,
@@ -253,6 +256,7 @@ export function AiWorkersClient({
               enabled={enabled}
               isDefault={isDefault}
               nativeDocProviders={nativeDocProviders}
+              tailnetPeers={tailnetPeers}
             />
           </div>
         ) : editWorker ? (
@@ -293,6 +297,7 @@ export function AiWorkersClient({
               enabled={enabled}
               isDefault={isDefault}
               nativeDocProviders={nativeDocProviders}
+              tailnetPeers={tailnetPeers}
             />
           </div>
         ) : (

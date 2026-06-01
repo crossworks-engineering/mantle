@@ -2,6 +2,7 @@ import { nativeDocumentProviders } from '@mantle/voice';
 import { requireOwner } from '@/lib/auth';
 import { listAiWorkers } from '@/lib/ai-workers';
 import { listApiKeys } from '@/lib/api-keys';
+import { getTailnetPeerNames } from '@/lib/tailscale';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { AiWorkersClient } from './ai-workers-client';
 import { createAiWorkerAction, deleteAiWorkerAction, updateAiWorkerAction } from './actions';
@@ -13,7 +14,11 @@ export default async function AiWorkersPage({
 }) {
   const user = await requireOwner();
   const sp = await searchParams;
-  const [workers, keys] = await Promise.all([listAiWorkers(user.id), listApiKeys(user.id)]);
+  const [workers, keys, tailnetPeers] = await Promise.all([
+    listAiWorkers(user.id),
+    listApiKeys(user.id),
+    getTailnetPeerNames(),
+  ]);
 
   // Generic wrappers so the client can call them with a runtime-selected id.
   async function updateAction(id: string, formData: FormData) {
@@ -41,6 +46,7 @@ export default async function AiWorkersPage({
         updateAction={updateAction}
         deleteAction={deleteAction}
         nativeDocProviders={nativeDocumentProviders() as string[]}
+        tailnetPeers={tailnetPeers}
       />
     </>
   );
