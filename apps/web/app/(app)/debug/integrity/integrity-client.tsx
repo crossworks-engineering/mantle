@@ -181,8 +181,20 @@ const SEVERITY_STYLE: Record<AuditSeverity, string> = {
   low: 'bg-muted text-muted-foreground border-border',
 };
 
+/** Format an audit check's age span + decide whether it reads as "recent"
+ *  (the live pipeline may still be producing these) vs inert pre-fix sediment.
+ *  Date-only `YYYY-MM-DD` strings compare lexicographically, so a string ≥ is a
+ *  valid date ≥. */
+function spanMeta(check: AuditCheck): { text: string; recent: boolean } | null {
+  if (check.ok || !check.oldestAt || !check.newestAt) return null;
+  const text = check.oldestAt === check.newestAt ? check.oldestAt : `${check.oldestAt} → ${check.newestAt}`;
+  const cutoff = new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10);
+  return { text, recent: check.newestAt >= cutoff };
+}
+
 function AuditRow({ check }: { check: AuditCheck }) {
   const [open, setOpen] = useState(false);
+  const span = spanMeta(check);
   const countCls = check.ok
     ? 'bg-primary/10 text-primary border-primary/30'
     : check.severity === 'high'
@@ -198,10 +210,24 @@ function AuditRow({ check }: { check: AuditCheck }) {
         <span className={`rounded-sm border px-1.5 py-0.5 text-[11px] uppercase tracking-wider ${SEVERITY_STYLE[check.severity]}`}>
           {check.severity}
         </span>
+        {span && (
+          <span
+            className={`rounded-sm border px-1.5 py-0.5 text-[11px] tabular-nums ${span.recent ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-muted text-muted-foreground'}`}
+            title={span.recent ? 'Newest violation is recent — the live pipeline may still be producing these' : 'All violations are older — likely pre-fix sediment, safe to backfill/clean'}
+          >
+            {span.recent ? '⚠ ' : ''}{span.text}
+          </span>
+        )}
       </button>
       {open && (
         <div className="mt-2 space-y-1.5 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
           <p className="text-muted-foreground">{check.note}</p>
+          {span && (
+            <p className="text-[11px] text-muted-foreground">
+              Age span: <span className="tabular-nums text-foreground">{span.text}</span>
+              {span.recent ? ' · newest is recent — may be a live regression' : ' · all older — likely pre-fix sediment'}
+            </p>
+          )}
           {check.samples.length > 0 && (
             <div className="space-y-1 border-t border-border pt-1.5">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Samples</div>

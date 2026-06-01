@@ -27,7 +27,14 @@ type CheckDef = {
   severity: AuditSeverity;
   note: string;
   query: (ownerId: string) => SQL;
+  /** Optional uncapped aggregate returning a single `{ oldest, newest }` row
+   *  (`YYYY-MM-DD` text) over the SAME predicate — the true age span of the
+   *  violations, used to flag sediment vs. a live regression. Omit for checks
+   *  with no natural timestamp (e.g. dimension drift across three tables). */
+  spanQuery?: (ownerId: string) => SQL;
 };
+
+type SpanRow = { oldest: string | null; newest: string | null };
 
 const CHECKS: CheckDef[] = [
   {
@@ -46,6 +53,16 @@ const CHECKS: CheckDef[] = [
       WHERE n.owner_id = ${o} AND lt.status = 'success'
         AND nullif(n.data->>'summary', '') IS NULL
       LIMIT ${CAP}`,
+    spanQuery: (o) => sql`
+      SELECT min(n.created_at)::date::text AS oldest, max(n.created_at)::date::text AS newest
+      FROM nodes n
+      JOIN LATERAL (
+        SELECT t.status FROM traces t
+        WHERE t.subject_id = n.id AND t.owner_id = ${o} AND t.kind = 'extractor_run'
+        ORDER BY t.started_at DESC LIMIT 1
+      ) lt ON true
+      WHERE n.owner_id = ${o} AND lt.status = 'success'
+        AND nullif(n.data->>'summary', '') IS NULL`,
   },
   {
     key: 'emb_dim_drift',
@@ -67,14 +84,38 @@ const CHECKS: CheckDef[] = [
     key: 'half_indexed',
     label: 'Half-indexed nodes',
     severity: 'medium',
-    note: 'summary present but no embedding, or vice-versa — a successful extraction writes both. Exactly one means the index write was interrupted.',
+    note: 'summary present but no embedding (an interrupted index write), or embedding present but no summary. Excludes types that opt out of embedding by design (telegram_message, conversation-digest notes) and the no-summary direction for files (an image/binary with no text layer legitimately has no summary — silent_miss covers the real extractor-success-without-summary case).',
     query: (o) => sql`
       SELECT n.id, n.type::text AS kind,
              CASE WHEN n.embedding IS NULL THEN 'summary, no embedding' ELSE 'embedding, no summary' END AS detail
       FROM nodes n
       WHERE n.owner_id = ${o}
-        AND (nullif(n.data->>'summary', '') IS NOT NULL) <> (n.embedding IS NOT NULL)
+        -- Types deliberately NOT vector-embedded, so the summary↔embedding
+        -- co-presence invariant doesn't apply: telegram messages (arch §16) and
+        -- conversation-digest notes (retrieved by recency, not similarity).
+        AND n.type <> 'telegram_message'
+        AND NOT (n.type = 'note' AND n.tags @> ARRAY['conversation-digest'])
+        AND (
+          -- summary written but embedding missing: a real interrupted index write.
+          (nullif(n.data->>'summary', '') IS NOT NULL AND n.embedding IS NULL)
+          OR
+          -- embedding written but summary missing: a real gap — except files,
+          -- where an image/binary with no extractable text correctly has no
+          -- summary (silent_miss flags the extractor-succeeded-but-empty case).
+          (n.embedding IS NOT NULL AND nullif(n.data->>'summary', '') IS NULL AND n.type <> 'file')
+        )
       LIMIT ${CAP}`,
+    spanQuery: (o) => sql`
+      SELECT min(n.created_at)::date::text AS oldest, max(n.created_at)::date::text AS newest
+      FROM nodes n
+      WHERE n.owner_id = ${o}
+        AND n.type <> 'telegram_message'
+        AND NOT (n.type = 'note' AND n.tags @> ARRAY['conversation-digest'])
+        AND (
+          (nullif(n.data->>'summary', '') IS NOT NULL AND n.embedding IS NULL)
+          OR
+          (n.embedding IS NOT NULL AND nullif(n.data->>'summary', '') IS NULL AND n.type <> 'file')
+        )`,
   },
   {
     key: 'unembedded_facts',
@@ -84,6 +125,9 @@ const CHECKS: CheckDef[] = [
     query: (o) => sql`
       SELECT id, kind::text AS kind, left(content, 60) AS detail
       FROM facts WHERE owner_id = ${o} AND embedding IS NULL LIMIT ${CAP}`,
+    spanQuery: (o) => sql`
+      SELECT min(created_at)::date::text AS oldest, max(created_at)::date::text AS newest
+      FROM facts WHERE owner_id = ${o} AND embedding IS NULL`,
   },
   {
     key: 'reaper_miss_facts',
@@ -95,6 +139,10 @@ const CHECKS: CheckDef[] = [
       FROM facts
       WHERE owner_id = ${o} AND source_node_id IS NULL AND kind IN ('episodic', 'factual')
       LIMIT ${CAP}`,
+    spanQuery: (o) => sql`
+      SELECT min(created_at)::date::text AS oldest, max(created_at)::date::text AS newest
+      FROM facts
+      WHERE owner_id = ${o} AND source_node_id IS NULL AND kind IN ('episodic', 'factual')`,
   },
   {
     key: 'duplicate_edges',
@@ -108,6 +156,16 @@ const CHECKS: CheckDef[] = [
       GROUP BY source_id, target_id, relation
       HAVING count(*) > 1
       LIMIT ${CAP}`,
+    spanQuery: (o) => sql`
+      SELECT min(created_at)::date::text AS oldest, max(created_at)::date::text AS newest
+      FROM entity_edges e
+      WHERE owner_id = ${o} AND relation = 'mentioned_in'
+        AND EXISTS (
+          SELECT 1 FROM entity_edges d
+          WHERE d.owner_id = e.owner_id AND d.relation = 'mentioned_in'
+            AND d.source_id = e.source_id AND d.target_id = e.target_id
+          GROUP BY d.source_id, d.target_id HAVING count(*) > 1
+        )`,
   },
   {
     key: 'orphan_entities',
@@ -121,6 +179,12 @@ const CHECKS: CheckDef[] = [
         AND NOT EXISTS (SELECT 1 FROM entity_edges ed WHERE ed.source_id = e.id OR ed.target_id = e.id)
         AND NOT EXISTS (SELECT 1 FROM facts f WHERE f.entity_id = e.id)
       LIMIT ${CAP}`,
+    spanQuery: (o) => sql`
+      SELECT min(e.created_at)::date::text AS oldest, max(e.created_at)::date::text AS newest
+      FROM entities e
+      WHERE e.owner_id = ${o}
+        AND NOT EXISTS (SELECT 1 FROM entity_edges ed WHERE ed.source_id = e.id OR ed.target_id = e.id)
+        AND NOT EXISTS (SELECT 1 FROM facts f WHERE f.entity_id = e.id)`,
   },
   {
     key: 'over_merged_entities',
@@ -131,6 +195,9 @@ const CHECKS: CheckDef[] = [
       SELECT id, 'entity' AS kind, (name || ' — ' || coalesce(array_length(aliases, 1), 0) || ' aliases') AS detail
       FROM entities WHERE owner_id = ${o} AND coalesce(array_length(aliases, 1), 0) > 8
       LIMIT ${CAP}`,
+    spanQuery: (o) => sql`
+      SELECT min(created_at)::date::text AS oldest, max(created_at)::date::text AS newest
+      FROM entities WHERE owner_id = ${o} AND coalesce(array_length(aliases, 1), 0) > 8`,
   },
   {
     key: 'abandoned_traces',
@@ -142,6 +209,10 @@ const CHECKS: CheckDef[] = [
       FROM traces
       WHERE owner_id = ${o} AND status = 'running' AND started_at < now() - interval '10 minutes'
       LIMIT ${CAP}`,
+    spanQuery: (o) => sql`
+      SELECT min(started_at)::date::text AS oldest, max(started_at)::date::text AS newest
+      FROM traces
+      WHERE owner_id = ${o} AND status = 'running' AND started_at < now() - interval '10 minutes'`,
   },
 ];
 
@@ -150,6 +221,15 @@ export async function runCorpusAudit(ownerId: string): Promise<AuditReport> {
   for (const def of CHECKS) {
     const rows = rowsOf<Row>(await db.execute<Row>(def.query(ownerId)));
     const capped = rows.length >= CAP;
+    // Resolve the true age span only when there's something to date — an
+    // uncapped aggregate, so the range is accurate even when `count` is floored.
+    let oldestAt: string | null = null;
+    let newestAt: string | null = null;
+    if (rows.length > 0 && def.spanQuery) {
+      const span = rowsOf<SpanRow>(await db.execute<SpanRow>(def.spanQuery(ownerId)))[0];
+      oldestAt = span?.oldest ?? null;
+      newestAt = span?.newest ?? null;
+    }
     checks.push({
       key: def.key,
       label: def.label,
@@ -159,6 +239,8 @@ export async function runCorpusAudit(ownerId: string): Promise<AuditReport> {
       capped,
       ok: rows.length === 0,
       samples: rows.slice(0, 5),
+      oldestAt,
+      newestAt,
     });
   }
   return {

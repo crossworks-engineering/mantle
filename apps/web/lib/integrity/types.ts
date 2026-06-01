@@ -155,6 +155,12 @@ export type AuditCheck = {
   capped: boolean;
   ok: boolean;
   samples: AuditSample[];
+  /** Age span (oldest/newest, `YYYY-MM-DD`) of the offending rows — uncapped,
+   *  so it reflects the true range even when `count` is floored. Lets the UI
+   *  tell pre-fix *sediment* (all old) apart from a *live* regression (recent).
+   *  null when the check has no natural timestamp or zero violations. */
+  oldestAt: string | null;
+  newestAt: string | null;
 };
 
 export type AuditReport = {
