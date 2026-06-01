@@ -1,6 +1,7 @@
 import { requireOwner } from '@/lib/auth';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { getTailnetStatus } from '@/lib/tailscale';
+import { getTailscaleConfig } from '@/lib/tailscale-config';
 import { NetworkClient } from './network-client';
 
 /**
@@ -12,12 +13,12 @@ import { NetworkClient } from './network-client';
  * names you drop into a route's Base URL on the Agents / AI workers pages).
  */
 export default async function NetworkPage() {
-  await requireOwner();
-  const status = await getTailnetStatus();
+  const owner = await requireOwner();
+  const [status, config] = await Promise.all([getTailnetStatus(), getTailscaleConfig(owner.id)]);
   return (
     <>
       <SetPageTitle title="Local network" />
-      <NetworkClient status={status} />
+      <NetworkClient status={status} config={config} />
     </>
   );
 }
