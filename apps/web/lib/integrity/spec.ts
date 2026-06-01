@@ -24,7 +24,19 @@ import {
   buildPdfText,
   buildPdfScanned,
   buildDocx,
+  buildXlsx,
+  buildCsv,
+  buildJson,
+  buildMd,
+  buildPptx,
+  buildOdt,
+  buildEpub,
+  buildRtf,
   buildImage,
+  buildPhoto,
+  buildSvg,
+  buildXml,
+  buildAudio,
 } from './fixtures';
 
 export type FixtureSpec = {
@@ -56,6 +68,31 @@ const INDEXED_SOFT: Exp = {
   summary: 'present',
   embedding: 'present',
   tsv: 'present',
+  facts: 'optional',
+  graph: 'optional',
+};
+
+/** Optional-service tiers (Tika, vision): index IF the service is up, else the
+ *  correct outcome is a `no_text_layer` skip. Either passes; the disposition
+ *  pill shows which path actually ran. Phase 2 will gate this on the live
+ *  service config to make it a hard assertion. */
+const OPTIONAL_SERVICE: Exp = {
+  trace: { status: 'either', skipDisposition: 'no_text_layer' },
+  summary: 'optional',
+  embedding: 'optional',
+  tsv: 'optional',
+  facts: 'optional',
+  graph: 'optional',
+};
+
+/** No parser routes this type (svg/xml/audio): a skip is the correct outcome.
+ *  Observational for now — accepts any terminal status, surfaces the
+ *  disposition. Phase 2 will pin the exact expected disposition. */
+const SKIP_EXPECTED: Exp = {
+  trace: { status: 'either' },
+  summary: 'optional',
+  embedding: 'optional',
+  tsv: 'optional',
   facts: 'optional',
   graph: 'optional',
 };
@@ -98,27 +135,28 @@ export const SPECS: FixtureSpec[] = [
     // are indexed. So: indexed, but facts/graph are not expected.
     expect: { trace: { status: 'success' }, summary: 'present', embedding: 'present', tsv: 'present', facts: 'optional', graph: 'optional' },
   },
+  // In-process parsers — must index regardless of external services.
   { key: 'file_text', label: 'File · text', nodeType: 'file', pipeline: 'file', build: buildTextFile, expect: INDEXED_SOFT },
+  { key: 'file_md', label: 'File · Markdown', nodeType: 'file', pipeline: 'file', build: buildMd, expect: INDEXED_SOFT },
+  { key: 'file_csv', label: 'File · CSV', nodeType: 'file', pipeline: 'file', build: buildCsv, expect: INDEXED_SOFT },
+  { key: 'file_json', label: 'File · JSON', nodeType: 'file', pipeline: 'file', build: buildJson, expect: INDEXED_SOFT },
   { key: 'file_pdf_text', label: 'File · PDF (text)', nodeType: 'file', pipeline: 'file', build: buildPdfText, expect: INDEXED_SOFT },
-  {
-    key: 'file_pdf_scanned',
-    label: 'File · PDF (scanned)',
-    nodeType: 'file',
-    pipeline: 'file',
-    build: buildPdfScanned,
-    // No text layer + no wired vision worker → the *correct* outcome is a skip.
-    expect: { trace: { status: 'either', skipDisposition: 'no_text_layer' }, summary: 'optional', embedding: 'optional', tsv: 'optional', facts: 'optional', graph: 'optional' },
-  },
   { key: 'file_docx', label: 'File · DOCX', nodeType: 'file', pipeline: 'file', build: buildDocx, expect: INDEXED_SOFT },
-  {
-    key: 'file_image',
-    label: 'File · image',
-    nodeType: 'file',
-    pipeline: 'file',
-    build: buildImage,
-    // Image needs the vision worker; if unwired it correctly skips.
-    expect: { trace: { status: 'either', skipDisposition: 'no_text_layer' }, summary: 'optional', embedding: 'optional', tsv: 'optional', facts: 'optional', graph: 'optional' },
-  },
+  { key: 'file_xlsx', label: 'File · XLSX', nodeType: 'file', pipeline: 'file', build: buildXlsx, expect: INDEXED_SOFT },
+  // PDF with no text layer — pdf-parse yields nothing; correct outcome is a skip.
+  { key: 'file_pdf_scanned', label: 'File · PDF (scanned)', nodeType: 'file', pipeline: 'file', build: buildPdfScanned, expect: OPTIONAL_SERVICE },
+  // Tika fallback — indexes only if the Tika service is up.
+  { key: 'file_pptx', label: 'File · PPTX (Tika)', nodeType: 'file', pipeline: 'file', build: buildPptx, expect: OPTIONAL_SERVICE },
+  { key: 'file_odt', label: 'File · ODT (Tika)', nodeType: 'file', pipeline: 'file', build: buildOdt, expect: OPTIONAL_SERVICE },
+  { key: 'file_epub', label: 'File · EPUB (Tika)', nodeType: 'file', pipeline: 'file', build: buildEpub, expect: OPTIONAL_SERVICE },
+  { key: 'file_rtf', label: 'File · RTF (Tika)', nodeType: 'file', pipeline: 'file', build: buildRtf, expect: OPTIONAL_SERVICE },
+  // Vision path — indexes only if the vision worker is wired.
+  { key: 'file_image', label: 'File · image (PNG)', nodeType: 'file', pipeline: 'file', build: buildImage, expect: OPTIONAL_SERVICE },
+  { key: 'file_photo', label: 'File · photo (JPG)', nodeType: 'file', pipeline: 'file', build: buildPhoto, expect: OPTIONAL_SERVICE },
+  // No parser routes these — a skip is the correct outcome.
+  { key: 'file_svg', label: 'File · SVG', nodeType: 'file', pipeline: 'file', build: buildSvg, expect: SKIP_EXPECTED },
+  { key: 'file_xml', label: 'File · XML', nodeType: 'file', pipeline: 'file', build: buildXml, expect: SKIP_EXPECTED },
+  { key: 'file_audio', label: 'File · audio (MP3)', nodeType: 'file', pipeline: 'file', build: buildAudio, expect: SKIP_EXPECTED },
 ];
 
 export const SPEC_BY_KEY = new Map(SPECS.map((s) => [s.key, s]));

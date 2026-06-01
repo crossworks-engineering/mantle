@@ -185,10 +185,29 @@ export const buildTextFile: FixtureBuilder = async ({ ownerId, tags, runId }) =>
   return { nodeId: row.id };
 };
 
-export const buildPdfText: FixtureBuilder = fileFixture('sample-text.pdf');
-export const buildPdfScanned: FixtureBuilder = fileFixture('sample-scanned.pdf');
-export const buildDocx: FixtureBuilder = fileFixture('sample.docx');
+// In-process parsers (always available, no external service):
+export const buildPdfText: FixtureBuilder = fileFixture('sample-text.pdf'); // pdf-parse
+export const buildPdfScanned: FixtureBuilder = fileFixture('sample-scanned.pdf'); // pdf-parse → no text layer
+export const buildDocx: FixtureBuilder = fileFixture('sample.docx'); // mammoth
+export const buildXlsx: FixtureBuilder = fileFixture('sample.xlsx'); // sheetjs
+export const buildCsv: FixtureBuilder = fileFixture('sample.csv'); // utf8
+export const buildJson: FixtureBuilder = fileFixture('sample.json'); // utf8
+export const buildMd: FixtureBuilder = fileFixture('sample.md'); // utf8
+
+// Tika fallback (only indexes if the Tika docker service is up, else skips):
+export const buildPptx: FixtureBuilder = fileFixture('sample.pptx');
+export const buildOdt: FixtureBuilder = fileFixture('sample.odt');
+export const buildEpub: FixtureBuilder = fileFixture('sample.epub');
+export const buildRtf: FixtureBuilder = fileFixture('sample.rtf');
+
+// Vision path (only indexes if the vision worker is wired, else skips):
 export const buildImage: FixtureBuilder = fileFixture('sample-image.png');
+export const buildPhoto: FixtureBuilder = fileFixture('sample-photo.jpg');
+
+// No parser at all → the correct outcome is a skip:
+export const buildSvg: FixtureBuilder = fileFixture('sample.svg');
+export const buildXml: FixtureBuilder = fileFixture('sample.xml');
+export const buildAudio: FixtureBuilder = fileFixture('sample-audio.mp3');
 
 // ─── helper ────────────────────────────────────────────────────────────────
 

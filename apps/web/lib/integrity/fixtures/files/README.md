@@ -1,22 +1,36 @@
 # Integrity-probe sample files
 
-Drop real sample files here. Each file-type fixture loads bytes from this
-directory by an exact filename; a fixture whose file is missing reports
-**MISSING** (not a failure), so the suite runs before these are in place.
+Real sample files for the file-type fixtures. Each file-type fixture loads
+bytes from this directory by an exact filename; a fixture whose file is missing
+reports **MISSING** (not a failure), so the suite still runs if one is removed.
 
-| Filename | Fixture | What it should be | Expected outcome |
-|---|---|---|---|
-| `sample-text.pdf` | File · PDF (text) | A 1-page PDF **with a real text layer** (selectable text). Make the content meaningful + unique. | Indexed: summary + 768 embedding + tsv |
-| `sample-scanned.pdf` | File · PDF (scanned) | An **image-only** PDF (no text layer) — a scan/photo exported to PDF. | Correct skip: `no_text_layer` (unless a vision worker is wired) |
-| `sample.docx` | File · DOCX | A small Word doc with a few paragraphs of unique prose. | Indexed: summary + 768 embedding + tsv |
-| `sample-image.png` | File · image | A small PNG. | Skips `no_text_layer` until the vision worker is wired |
+Expectations follow the extractor's parser routing
+(`packages/files/src/slug.ts` + `parse.ts`):
+
+| Filename | Route | Expected outcome |
+|---|---|---|
+| `sample-text.pdf` | pdf-parse | Indexed (summary + 768 emb + tsv) |
+| `sample.docx` | mammoth | Indexed |
+| `sample.xlsx` | sheetjs | Indexed |
+| `sample.csv` | utf8 | Indexed |
+| `sample.json` | utf8 | Indexed |
+| `sample.md` | utf8 | Indexed |
+| `sample-scanned.pdf` | pdf-parse → no text | Skip `no_text_layer` (or vision-OCR if wired) |
+| `sample.pptx` | **Tika** | Indexed *if Tika up*, else skip |
+| `sample.odt` | **Tika** | Indexed *if Tika up*, else skip |
+| `sample.epub` | **Tika** | Indexed *if Tika up*, else skip |
+| `sample.rtf` | **Tika** | Indexed *if Tika up*, else skip |
+| `sample-image.png` | **vision** | Indexed *if vision wired*, else skip |
+| `sample-photo.jpg` | **vision** | Indexed *if vision wired*, else skip |
+| `sample.svg` | none | Skip (no parser) |
+| `sample.xml` | none | Skip (xml is **not** a text ext) |
+| `sample-audio.mp3` | none | Skip (no file-drop STT — voice→STT is the Telegram path) |
+
+The plain-text `File · text` row needs no file here — it's generated inline.
 
 Notes:
-- Keep them small (a few KB–tens of KB) — they're checked into the repo.
+- Keep samples small (the heavy 1 MB+ variants were dropped on purpose).
 - Make the text **distinctive** (invented names/terms) so probe entities don't
   merge into the real graph; cleanup also sweeps them by name.
-- The plain-text file fixture (`File · text`) needs nothing here — it's
-  generated inline by the harness.
-
-To add more types later (xlsx, pptx, csv, html, md, rtf, …): drop the sample
-here and add a one-line fixture + spec row in `../../fixtures.ts` / `../../spec.ts`.
+- To add a type: drop the sample, add a `fileFixture('sample.<ext>')` builder in
+  `../../fixtures.ts` and a spec row in `../../spec.ts`.
