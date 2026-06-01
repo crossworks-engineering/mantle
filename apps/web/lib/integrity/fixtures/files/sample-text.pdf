@@ -1,0 +1,81 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+2 0 obj
+<< /Length 142 >>
+stream
+BT
+/F1 12 Tf
+72 770 Td
+(SampleFile PDF multi-page fixture) Tj
+0 -18 Td
+(Page 1 summary) Tj
+0 -18 Td
+(Metrics: uploads, scans, manifests) Tj
+ET
+endstream
+endobj
+3 0 obj
+<< /Length 151 >>
+stream
+BT
+/F1 12 Tf
+72 770 Td
+(Page 2 details) Tj
+0 -18 Td
+(Validation checklist) Tj
+0 -18 Td
+(1. Upload) Tj
+0 -18 Td
+(2. Parse) Tj
+0 -18 Td
+(3. Render) Tj
+ET
+endstream
+endobj
+4 0 obj
+<< /Length 89 >>
+stream
+BT
+/F1 12 Tf
+72 770 Td
+(Page 3 appendix) Tj
+0 -18 Td
+(Notes for regression testing) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Pages /Kids [6 0 R 7 0 R 8 0 R] /Count 3 >>
+endobj
+6 0 obj
+<< /Type /Page /Parent 5 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 2 0 R >>
+endobj
+7 0 obj
+<< /Type /Page /Parent 5 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 3 0 R >>
+endobj
+8 0 obj
+<< /Type /Page /Parent 5 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 4 0 R >>
+endobj
+9 0 obj
+<< /Type /Catalog /Pages 5 0 R >>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000015 00000 n 
+0000000085 00000 n 
+0000000278 00000 n 
+0000000480 00000 n 
+0000000619 00000 n 
+0000000688 00000 n 
+0000000814 00000 n 
+0000000940 00000 n 
+0000001066 00000 n 
+trailer
+<< /Size 10 /Root 9 0 R >>
+startxref
+1115
+%%EOF
