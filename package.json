@@ -33,7 +33,13 @@
     "infra:up": "docker compose -f docker-compose.dev.yml up -d --wait",
     "infra:down": "docker compose -f docker-compose.dev.yml down",
     "infra:logs": "docker compose -f docker-compose.dev.yml logs -f",
-    "infra:psql": "docker exec -it mantle_pg psql -U postgres -d postgres"
+    "infra:psql": "docker exec -it mantle_pg psql -U postgres -d postgres",
+    "prod:build-push": "bash scripts/docker-build-push.sh",
+    "prod:up": "docker compose up -d --wait",
+    "prod:down": "docker compose down",
+    "prod:logs": "docker compose logs -f",
+    "db:dump": "bash scripts/db-dump.sh",
+    "db:restore": "bash scripts/db-restore.sh"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

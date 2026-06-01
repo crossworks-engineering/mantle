@@ -5,7 +5,7 @@ name: mantle
 # app in native Node for hot-reload). This file is for prod-shaped deploys
 # where everything runs in containers.
 #
-# Required env (drop in .env next to this file, or export before `docker compose up`):
+# Required env (drop in .env next to this file — see .env.prod.example):
 #   POSTGRES_PASSWORD       (default: postgres)
 #   SESSION_SECRET          (mandatory — used by middleware to verify cookies)
 #   MANTLE_MASTER_KEY       (mandatory — AES-256 key, base64 32 random bytes)
@@ -20,43 +20,42 @@ name: mantle
 #   OLLAMA_KEEP_ALIVE       (default: 5m — set to -1 to keep the embedder always
 #                            resident instead of unloading when idle)
 #
+# Persistent data — bind-mounted on the host so you can see/back up/move it:
+#   MANTLE_DATA_DIR         (default: ./data) — postgres, minio, and files all
+#                            live under here. Back this up (restic/Syncthing) and
+#                            it IS your brain. The DB, though, should be MOVED
+#                            between machines via pg_dump (scripts/db-dump.sh),
+#                            not by copying the raw postgres dir. See docs/deploy.md.
+#
+# Docker Hub — build once, push, pull on the VPS (no build on prod):
+#   MANTLE_IMAGE_NAMESPACE  (default: mantle) — your Docker Hub user/org.
+#   MANTLE_IMAGE_TAG        (default: latest) — image tag (use a version or git sha).
+#   Build & push:  scripts/docker-build-push.sh
+#   Deploy on VPS: docker compose pull && docker compose up -d --wait
+#
 # Optional — reach models on a box you own behind NAT (home GPU / LAN server):
 #   docker compose --profile tailnet up -d   (off by default)
-#   TS_AUTHKEY              (Tailscale auth key — generate in the TS admin
-#                            console; required to bring the tailnet profile up)
-#   TS_HOSTNAME            (default: mantle-vps — this node's name on the tailnet)
-#   MANTLE_TAILNET_PROXY_URL (default: http://tailscale:1055 — the in-compose
-#                            HTTP proxy; only used by routes flagged "via tailnet")
+#   TS_AUTHKEY              (Tailscale auth key — generate in the TS admin console)
+#   TS_HOSTNAME             (default: mantle-vps — this node's name on the tailnet)
 #   See docs/tailscale.md.
-#
-# Build & run:
-#   docker compose build
-#   docker compose up -d --wait
 #
 # First boot pulls the embedder (EmbeddingGemma, ~300MB) once into a named
 # volume via the `ollama_pull` one-shot — local embedding then works with no
 # cloud key. Migrations run automatically — the one-shot `migrate` service
 # applies them before any app service starts (each depends on it completing).
-# No manual step.
 
 volumes:
-  mantle_pg_data:
-  mantle_minio_data:
-  # Host-mirrored filesystem: real folders + files visible to ingestion,
-  # MCP, and the web /files UI. Mount this somewhere on the host you can
-  # back up / sync from (Syncthing, restic, etc.).
-  mantle_files_data:
-  # Ollama model store — the shipped embedder (EmbeddingGemma, ~300MB) is
-  # pulled once into here by the `ollama_pull` one-shot and persists across
-  # restarts/redeploys, so it's never re-downloaded.
+  # Ollama model store — the shipped embedder (EmbeddingGemma, ~300MB) is pulled
+  # once into here and persists across restarts/redeploys. A named volume (not a
+  # host bind) because it's a re-pullable cache, not data you need to migrate.
   mantle_ollama_data:
   # Tailscale node state (identity + keys) — persists across restarts so the
   # node doesn't re-auth every boot. Only used by the optional `tailnet` profile.
+  # Named (not bind): a new host wants a fresh tailnet identity anyway.
   mantle_tailscale_data:
   # Tailscale runtime socket dir (tailscaled.sock) — shared so the app can read
   # the LocalAPI (`status`) for the /settings/network status tile + peer
-  # dropdown. Only the optional `tailnet` profile populates it; the app reads it
-  # read-only and degrades to "tailnet not running" when absent.
+  # dropdown. Inter-container socket, not user data — stays a named volume.
   mantle_tailscale_sock:
 
 # Shared env block for app services — anchor + alias keeps the app
@@ -106,7 +105,10 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: postgres
     volumes:
-      - mantle_pg_data:/var/lib/postgresql/data
+      # Bind-mounted on the host so the DB lives at a path you control.
+      # NOTE: to MOVE the DB to another machine, use pg_dump (scripts/db-dump.sh)
+      # — copying this raw dir only works same-PG-major + clean shutdown.
+      - ${MANTLE_DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
@@ -123,7 +125,7 @@ services:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minio}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minio12345}
     volumes:
-      - mantle_minio_data:/data
+      - ${MANTLE_DATA_DIR:-./data}/minio:/data
     healthcheck:
       test: ["CMD-SHELL", "mc ready local || exit 1"]
       interval: 10s
@@ -141,13 +143,10 @@ services:
       # Cap JVM heap so Tika can't balloon on a malicious or pathological
       # document. JAVA_TOOL_OPTIONS not JAVA_OPTS — Tika's launcher doesn't
       # propagate JAVA_OPTS to the forked TikaServerProcess (verified live).
-      # See docker-compose.dev.yml for the rationale.
       JAVA_TOOL_OPTIONS: "-Xmx512m -Xms128m"
     healthcheck:
       # apache/tika image has only bash (no curl/wget/nc), so probe via
       # bash's built-in /dev/tcp + a minimal HTTP/1.0 GET against /version.
-      # CMD (not CMD-SHELL) so we invoke bash explicitly — /dev/tcp is
-      # bash-specific and not available in /bin/sh.
       test:
         - CMD
         - bash
@@ -159,12 +158,8 @@ services:
       start_period: 30s
 
   # Ollama — serves the bundled local embedder (EmbeddingGemma, 768-dim) over an
-  # OpenAI-compatible API. CPU-only; the embedder is a small encoder (~300MB,
-  # a few hundred MB RAM when loaded) that fits comfortably on the 8GB/6-core
-  # base VPS alongside the rest. Self-hosted — the text the brain embeds never
-  # leaves the box. The app reaches it at http://ollama:11434/v1 (MANTLE_LOCAL_
-  # EMBEDDING_URL). Set OLLAMA_KEEP_ALIVE=-1 to keep the model always resident
-  # (default unloads after ~5min idle to free RAM; next embed reloads in ~1s).
+  # OpenAI-compatible API. CPU-only; a small encoder (~300MB) that fits on the
+  # base VPS. Self-hosted — the text the brain embeds never leaves the box.
   ollama:
     image: ollama/ollama:latest
     container_name: mantle_ollama
@@ -181,10 +176,7 @@ services:
       start_period: 20s
 
   # One-shot: pull the shipped embedder into the model volume, then exit.
-  # Mirrors the `migrate` pattern — app services that embed wait for it to
-  # complete. Idempotent: a no-op once the model is already in the volume, so
-  # it's safe on every `up` / redeploy. Override the model via env if you ship
-  # a different default.
+  # Idempotent — a no-op once the model is already in the volume.
   ollama_pull:
     image: ollama/ollama:latest
     container_name: mantle_ollama_pull
@@ -197,16 +189,9 @@ services:
 
   # ── Tailscale (OPTIONAL — `tailnet` profile) ──────────────────────────────
   # Reaches capable chat/vision models running on a box you own (home GPU, LAN
-  # server) that's behind NAT — without port-forwarding or public IPs. Joins
-  # your tailnet; the app then reaches `http://<magicdns-name>:<port>` for that
-  # box by name. See docs/tailscale.md.
-  #
-  # Off by default. Enable with:  docker compose --profile tailnet up -d
-  # Set TS_AUTHKEY (generate one in the Tailscale admin console) before bringing
-  # it up. Userspace networking → no TUN device / NET_ADMIN cap needed (safe).
-  # Exposes an HTTP forward-proxy on :1055 that the app dispatches tailnet-bound
-  # model calls through (MANTLE_TAILNET_PROXY_URL), keeping compose service-DNS
-  # intact for everything internal.
+  # server) behind NAT — without port-forwarding. Joins your tailnet; the app
+  # then reaches `http://<magicdns-name>:<port>` for that box. See docs/tailscale.md.
+  # Enable with:  docker compose --profile tailnet up -d   (set TS_AUTHKEY first).
   tailscale:
     image: tailscale/tailscale:latest
     container_name: mantle_tailscale
@@ -218,12 +203,8 @@ services:
       TS_HOSTNAME: ${TS_HOSTNAME:-mantle-vps}
       TS_USERSPACE: "true"
       TS_STATE_DIR: /var/lib/tailscale
-      # HTTP forward-proxy for outbound tailnet traffic — undici ProxyAgent
-      # speaks to this. (SOCKS5 is also available via TS_SOCKS5_SERVER if a
-      # client needs it, but the Node fetch path uses the HTTP proxy.)
       TS_OUTBOUND_HTTP_PROXY_LISTEN: 0.0.0.0:1055
       TS_EXTRA_ARGS: ${TS_EXTRA_ARGS:-}
-      # Pin the socket into the shared volume so the app can read LocalAPI.
       TS_SOCKET: /var/run/tailscale/tailscaled.sock
     volumes:
       - mantle_tailscale_data:/var/lib/tailscale
@@ -236,9 +217,9 @@ services:
       start_period: 15s
 
   # One-shot schema migration. App services wait for this to complete
-  # successfully before starting, so the DB schema is never behind the code on
-  # a redeploy — and a single dedicated migrator means no race on the migrator.
+  # successfully before starting, so the DB schema is never behind the code.
   migrate:
+    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle-migrate:${MANTLE_IMAGE_TAG:-latest}
     build:
       context: .
       target: migrate
@@ -250,6 +231,7 @@ services:
       <<: *app-env
 
   web:
+    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle-web:${MANTLE_IMAGE_TAG:-latest}
     build:
       context: .
       target: web
@@ -263,7 +245,7 @@ services:
     environment:
       <<: *app-env
     volumes:
-      - mantle_files_data:/data/files
+      - ${MANTLE_DATA_DIR:-./data}/files:/data/files
       # Read-only view of the tailscaled LocalAPI socket for the
       # /settings/network status tile + peer dropdown. Empty until the
       # `tailnet` profile is up; the reader degrades gracefully when absent.
@@ -272,6 +254,7 @@ services:
       - "3000:3000"
 
   agent:
+    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle-agent:${MANTLE_IMAGE_TAG:-latest}
     build:
       context: .
       target: agent
@@ -284,9 +267,10 @@ services:
     environment:
       <<: *app-env
     volumes:
-      - mantle_files_data:/data/files
+      - ${MANTLE_DATA_DIR:-./data}/files:/data/files
 
   worker_email:
+    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle-worker-email:${MANTLE_IMAGE_TAG:-latest}
     build:
       context: .
       target: worker-email
@@ -300,6 +284,7 @@ services:
       <<: *app-env
 
   worker_telegram:
+    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle-worker-telegram:${MANTLE_IMAGE_TAG:-latest}
     build:
       context: .
       target: worker-telegram
@@ -314,6 +299,7 @@ services:
   # External-edit watcher: chokidar over MANTLE_FILES_ROOT mirrors host file
   # changes (Syncthing / vim / cp) into the brain. Needs the files volume.
   worker_files:
+    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle-worker-files:${MANTLE_IMAGE_TAG:-latest}
     build:
       context: .
       target: worker-files
@@ -325,11 +311,12 @@ services:
     environment:
       <<: *app-env
     volumes:
-      - mantle_files_data:/data/files
+      - ${MANTLE_DATA_DIR:-./data}/files:/data/files
 
   # Event-reminder poller: fires due calendar/event reminders. Without this,
   # reminders silently never fire in prod (they work in `pnpm dev`).
   worker_events:
+    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle-worker-events:${MANTLE_IMAGE_TAG:-latest}
     build:
       context: .
       target: worker-events

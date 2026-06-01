@@ -17,6 +17,8 @@
 **/.DS_Store
 **/*.log
 backups
+# Host bind-mount data root (postgres/minio/files) — never goes in an image.
+data
 docs
 README.md
 *.dump
