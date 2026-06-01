@@ -199,6 +199,14 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
 }
 
+// Backstop: tick() runs inside runOnce's try/catch (single-flight guarded),
+// but a rejection that slips past should log and keep the worker alive rather
+// than crash-loop on a transient PostgresError. Docker would bounce us anyway;
+// staying up is strictly better.
+process.on('unhandledRejection', (reason) => {
+  console.error('[events-reminders] unhandledRejection (kept alive):', reason);
+});
+
 main().catch((err) => {
   console.error(err);
   process.exit(1);

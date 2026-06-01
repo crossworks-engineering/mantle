@@ -133,6 +133,15 @@ async function main() {
   process.on('SIGTERM', shutdown);
 }
 
+// Backstop: DB-touching work runs inside pg-boss handlers (which catch +
+// retry) and boss.on('error') covers the queue's own connection, but a
+// rejection that slips past either should log and keep the worker alive
+// rather than crash-loop on a transient PostgresError. Docker would bounce
+// us anyway; staying up is strictly better.
+process.on('unhandledRejection', (reason) => {
+  console.error('[email-sync] unhandledRejection (kept alive):', reason);
+});
+
 main().catch((err) => {
   console.error(err);
   process.exit(1);

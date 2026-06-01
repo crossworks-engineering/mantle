@@ -154,6 +154,14 @@ async function main() {
   process.on('SIGTERM', shutdown);
 }
 
+// Backstop: the upsert/unlink handlers are fully wrapped and chokidar's
+// 'error' event is handled, but a rejection that slips past should log and
+// keep the watcher alive rather than crash-loop on a transient PostgresError.
+// Docker would bounce us anyway; staying up is strictly better.
+process.on('unhandledRejection', (reason) => {
+  console.error('[files-watch] unhandledRejection (kept alive):', reason);
+});
+
 main().catch((err) => {
   console.error(err);
   process.exit(1);

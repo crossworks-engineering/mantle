@@ -1651,6 +1651,16 @@ async function main() {
   await new Promise<never>(() => {});
 }
 
+// Backstop: every LISTEN handler and setInterval above already routes its
+// errors through .catch() (the reflector + heartbeat ticks even back off),
+// but a rejection that slips past should log and keep the agent alive rather
+// than crash-loop on a transient PostgresError (e.g. Postgres restarted and
+// briefly dropped connections). Docker would bounce us anyway; staying up is
+// strictly better — the listeners auto-resubscribe and the next tick recovers.
+process.on('unhandledRejection', (reason) => {
+  console.error('[agent] unhandledRejection (kept alive):', reason);
+});
+
 main().catch((err) => {
   console.error('[agent] fatal:', err);
   process.exit(1);

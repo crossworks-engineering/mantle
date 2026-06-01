@@ -46,10 +46,22 @@ async function main() {
 }
 
 async function refreshAccounts(): Promise<void> {
-  const accounts = await db
-    .select()
-    .from(telegramAccounts)
-    .where(eq(telegramAccounts.enabled, true));
+  // This runs on a setInterval (see main), which does NOT await the returned
+  // promise — so a PostgresError here (e.g. Postgres restarted for an upgrade
+  // and briefly dropped connections) would otherwise surface as an UNHANDLED
+  // rejection and kill the whole worker. Catch it, log, and skip this pass;
+  // the next tick (ACCOUNT_REFRESH_MS later) retries. That cadence is itself
+  // the backoff — no need to sleep here.
+  let accounts: TelegramAccount[];
+  try {
+    accounts = await db
+      .select()
+      .from(telegramAccounts)
+      .where(eq(telegramAccounts.enabled, true));
+  } catch (err) {
+    console.error('[telegram-poll] account refresh failed (will retry next tick):', err);
+    return;
+  }
   const live = new Set(accounts.map((a) => a.id));
 
   for (const account of accounts) {
@@ -84,11 +96,26 @@ function startLoop(initial: TelegramAccount): { stop: () => void } {
       // effect — the long-poll completes, delivers any updates, then
       // the next iteration sees enabled=false and exits. Mild;
       // tolerating it lets pollOnce stay a simple async call.
-      const [account] = await db
-        .select()
-        .from(telegramAccounts)
-        .where(eq(telegramAccounts.id, initial.id))
-        .limit(1);
+      //
+      // This re-read is its OWN try/catch: a transient PostgresError here
+      // (Postgres restart / dropped connection) must NOT end the loop —
+      // the account row is almost certainly still there. Back off and
+      // retry. (Without this the throw escapes the IIFE as an unhandled
+      // rejection and kills the worker.) A genuine null/disabled result
+      // — i.e. the query SUCCEEDED — still ends the loop, as before.
+      let account: TelegramAccount | undefined;
+      try {
+        [account] = await db
+          .select()
+          .from(telegramAccounts)
+          .where(eq(telegramAccounts.id, initial.id))
+          .limit(1);
+      } catch (err) {
+        console.error(`[telegram-poll] @${initial.botUsername} account re-read failed:`, err);
+        await sleep(backoffMs);
+        backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX_MS);
+        continue;
+      }
       if (!account || !account.enabled) {
         console.log(`[telegram-poll] ${initial.id} disabled or removed, ending loop`);
         return;
@@ -115,6 +142,16 @@ function startLoop(initial: TelegramAccount): { stop: () => void } {
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
+
+// Backstop: every known DB-touching path above is wrapped + backs off, but a
+// rejection that slips past (a new code path, a library internal) should log
+// and keep the long-poll worker alive rather than crash-loop. Docker's
+// restart:unless-stopped would bounce us anyway; staying up is strictly
+// better. We deliberately do NOT exit — there's no truly-fatal class of
+// rejection here that a retry can't recover from.
+process.on('unhandledRejection', (reason) => {
+  console.error('[telegram-poll] unhandledRejection (kept alive):', reason);
+});
 
 main().catch((err) => {
   console.error(err);
