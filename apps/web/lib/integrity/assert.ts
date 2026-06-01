@@ -44,8 +44,8 @@ export function evaluate(expect: FixtureExpectation, fp: ProbeFootprint): CheckR
     traceOk = fp.run.status === 'success';
     if (!traceOk) traceDetail += ' · expected success';
   } else if (exp.status === 'skipped') {
-    traceOk = fp.run.status === 'skipped' && fp.run.disposition === exp.disposition;
-    if (!traceOk) traceDetail += ` · expected skipped:${exp.disposition}`;
+    traceOk = fp.run.status === 'skipped' && (!exp.disposition || fp.run.disposition === exp.disposition);
+    if (!traceOk) traceDetail += ` · expected skipped${exp.disposition ? `:${exp.disposition}` : ''}`;
   } else {
     // 'either' — success, or a skip with the named disposition.
     if (fp.run.status === 'success') traceOk = true;

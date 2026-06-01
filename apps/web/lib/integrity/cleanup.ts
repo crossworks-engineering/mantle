@@ -16,11 +16,12 @@
  * Everything is owner-scoped and tag-scoped; passing no tag cleans ALL probe
  * data for the user.
  */
-import { db, traces } from '@mantle/db';
+import { db, traces, emailAccounts } from '@mantle/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { deleteFileById } from '@mantle/files';
 
 import { PROBE_BASE_TAG } from './types';
+import { PROBE_EMAIL_ADDRESS } from './fixtures';
 
 /** Distinctive tokens the fixtures use — orphan-guarded, so this never touches
  *  a real entity that's still referenced. */
@@ -92,6 +93,15 @@ export async function cleanupProbes(ownerId: string, tag?: string): Promise<Clea
       RETURNING e.id
     `),
   );
+
+  // 5. On a FULL clean (no run tag), drop the reusable probe email account too
+  //    (cascades any stray emails rows). Per-run cleans leave it — it's shared
+  //    scaffolding, recreated on the next email fixture.
+  if (!tag) {
+    await db
+      .delete(emailAccounts)
+      .where(and(eq(emailAccounts.userId, ownerId), eq(emailAccounts.address, PROBE_EMAIL_ADDRESS)));
+  }
 
   return {
     tag: scopeTag,

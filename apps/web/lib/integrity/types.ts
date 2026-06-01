@@ -21,7 +21,9 @@ export type LayerRule = 'present' | 'absent' | 'optional';
 /** The terminal extractor_run we expect for a fixture. */
 export type TraceExpectation =
   | { status: 'success' }
-  | { status: 'skipped'; disposition: string }
+  /** Must be skipped. `disposition` pins the reason; omit to accept any skip
+   *  (a service-down file may skip body_too_short or no_text_layer). */
+  | { status: 'skipped'; disposition?: string }
   /** success OR a named skip are both acceptable (config-dependent types like
    *  task/event whose facts only land if allow-listed in the worker config). */
   | { status: 'either'; skipDisposition?: string };
@@ -103,6 +105,20 @@ export type FixtureResult = {
   error?: string;
 };
 
+/** One optional service/worker's readiness. */
+export type Capability = { available: boolean; detail: string };
+
+/** Brain-readiness snapshot taken at run start. */
+export type Capabilities = {
+  tika: Capability;
+  vision: Capability;
+  extractor: Capability;
+  embedding: Capability;
+  summarizer: Capability;
+  reflector: Capability;
+  stt: Capability;
+};
+
 export type SuiteReport = {
   runId: string;
   runTag: string;
@@ -113,6 +129,7 @@ export type SuiteReport = {
   passed: number;
   total: number;
   results: FixtureResult[];
+  capabilities: Capabilities;
 };
 
 /** Tag applied to every probe node, ever — the broad cleanup key. */

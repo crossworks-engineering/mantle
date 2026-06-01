@@ -16,7 +16,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import type { CheckResult, FixtureResult, FixtureState, SuiteReport } from '@/lib/integrity/types';
+import type { Capabilities, CheckResult, FixtureResult, FixtureState, SuiteReport } from '@/lib/integrity/types';
 
 type SpecMeta = { key: string; label: string; nodeType: string; pipeline: 'content' | 'file' };
 
@@ -66,6 +66,37 @@ function CheckGroup({ title, checks }: { title: string; checks: CheckResult[] })
           {c.detail && <span className="text-muted-foreground">— {c.detail}</span>}
         </div>
       ))}
+    </div>
+  );
+}
+
+const CAP_LABELS: Record<keyof Capabilities, string> = {
+  tika: 'Tika',
+  vision: 'Vision',
+  extractor: 'Extractor',
+  embedding: 'Embedder',
+  summarizer: 'Summarizer',
+  reflector: 'Reflector',
+  stt: 'STT (voice)',
+};
+
+function CapabilitiesPanel({ caps }: { caps: Capabilities }) {
+  const order: (keyof Capabilities)[] = ['extractor', 'embedding', 'tika', 'vision', 'summarizer', 'reflector', 'stt'];
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-card px-4 py-2.5">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Brain readiness</span>
+      {order.map((k) => {
+        const c = caps[k];
+        const cls = c.available
+          ? 'bg-primary/10 text-primary border-primary/30'
+          : 'bg-muted text-muted-foreground border-border';
+        return (
+          <span key={k} title={c.detail} className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[11px] ${cls}`}>
+            <span className="font-mono">{c.available ? '✓' : '—'}</span>
+            {CAP_LABELS[k]}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -240,6 +271,7 @@ export function IntegrityClient({ specs }: { specs: SpecMeta[] }) {
 
       {report && (
         <div className="space-y-3">
+          <CapabilitiesPanel caps={report.capabilities} />
           <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-card px-4 py-3 text-sm">
             <span className="font-semibold">
               {report.passed}/{report.total} passed

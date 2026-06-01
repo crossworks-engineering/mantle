@@ -32,6 +32,8 @@ import {
   commitPage,
 } from '@mantle/content';
 import { ensureFilesRootBranch, upsertFile, FILES_ROOT_LABEL } from '@mantle/files';
+import { db, nodes, emails, emailAccounts } from '@mantle/db';
+import { and, eq } from 'drizzle-orm';
 import { createSecret, updateSecret } from '@/lib/secrets';
 
 export type BuildResult = { nodeId: string } | { missing: true; reason: string };
@@ -145,6 +147,77 @@ export const buildSecret: FixtureBuilder = async ({ ownerId, tags }) => {
     fields: [],
   });
   return { nodeId: row.id };
+};
+
+// ─── email (inbox) builder ──────────────────────────────────────────────────
+//
+// Email body comes from the `emails` table (subject + body_text), which FKs a
+// real `email_accounts` row. We keep one reusable throwaway account, scoped by
+// a distinctive address so cleanup can find it. Inserting node + emails row in
+// one transaction means the node_ingested trigger fires once, on commit, with
+// the body already present.
+
+/** Distinctive address for the reusable probe email account (cleanup key). */
+export const PROBE_EMAIL_ADDRESS = 'integrity-probe@mantle.invalid';
+
+async function ensureProbeEmailAccount(ownerId: string): Promise<string> {
+  const [existing] = await db
+    .select({ id: emailAccounts.id })
+    .from(emailAccounts)
+    .where(and(eq(emailAccounts.userId, ownerId), eq(emailAccounts.address, PROBE_EMAIL_ADDRESS)))
+    .limit(1);
+  if (existing) return existing.id;
+  const [row] = await db
+    .insert(emailAccounts)
+    .values({
+      userId: ownerId,
+      provider: 'imap',
+      address: PROBE_EMAIL_ADDRESS,
+      displayName: 'Integrity Probe',
+      branchPath: 'inbox.integrity',
+    })
+    .returning({ id: emailAccounts.id });
+  if (!row) throw new Error('ensureProbeEmailAccount: insert returned no row');
+  return row.id;
+}
+
+export const buildEmail: FixtureBuilder = async ({ ownerId, tags, runId }) => {
+  const accountId = await ensureProbeEmailAccount(ownerId);
+  const internalDate = new Date();
+  const nodeId = await db.transaction(async (tx) => {
+    const [node] = await tx
+      .insert(nodes)
+      .values({
+        ownerId,
+        type: 'email',
+        title: 'Integrity probe — Vorthelm gantry quote',
+        path: 'inbox.integrity',
+        tags,
+        data: {
+          fromAddr: 'quintus@vorthelm-probe.invalid',
+          fromName: 'Quintus Bramblewick',
+          internalDate: internalDate.toISOString(),
+        },
+      })
+      .returning({ id: nodes.id });
+    if (!node) throw new Error('buildEmail: node insert returned no row');
+    await tx.insert(emails).values({
+      nodeId: node.id,
+      accountId,
+      providerMsgId: `probe-${runId}`,
+      fromAddr: 'quintus@vorthelm-probe.invalid',
+      fromName: 'Quintus Bramblewick',
+      toAddrs: ['jason@schoeman.me'],
+      subject: 'Vorthelm gantry quote',
+      bodyText:
+        'Hi Jason — Quintus Bramblewick here from Vorthelm Dynamics in Thelby. Attaching the ' +
+        'MGN12 rail quote for the gantry rebuild; the Borrowdale heated chamber is a separate ' +
+        'line item. This synthetic email verifies the inbox ingest path. Regards.',
+      internalDate,
+    });
+    return node.id;
+  });
+  return { nodeId };
 };
 
 // ─── file-pipeline builders (real bytes) ────────────────────────────────────
@@ -306,8 +379,6 @@ export const updateTextFileFixture: FixtureUpdater = async ({ ownerId, runId }, 
 /** Stamp tags onto an already-created node (for builders whose create fn
  *  doesn't take tags, e.g. `upsertFile`). Merges, deduped + lowercased. */
 async function tagNode(ownerId: string, nodeId: string, tags: string[]): Promise<void> {
-  const { db, nodes } = await import('@mantle/db');
-  const { and, eq } = await import('drizzle-orm');
   const [row] = await db
     .select({ tags: nodes.tags })
     .from(nodes)

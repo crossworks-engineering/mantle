@@ -10,11 +10,29 @@
  */
 import { randomBytes } from 'node:crypto';
 
-import { SPECS, SPEC_BY_KEY } from './spec';
+import { SPECS, SPEC_BY_KEY, SERVICE_INDEXED, SERVICE_SKIP, type FixtureSpec } from './spec';
 import { waitForExtractor } from './footprint';
 import { evaluate, summarise } from './assert';
 import { runUpdate, runDelete } from './lifecycle';
-import { PROBE_BASE_TAG, probeRunTag, type CheckResult, type FixtureState, type FixtureResult, type SuiteReport } from './types';
+import { resolveCapabilities } from './capabilities';
+import {
+  PROBE_BASE_TAG,
+  probeRunTag,
+  type Capabilities,
+  type CheckResult,
+  type FixtureExpectation,
+  type FixtureState,
+  type FixtureResult,
+  type SuiteReport,
+} from './types';
+
+/** Resolve a spec's concrete expectation — gating optional-service rows on the
+ *  live capability snapshot (Phase 2e). */
+function expectationFor(spec: FixtureSpec, caps: Capabilities): FixtureExpectation {
+  if (!spec.service) return spec.expect;
+  const available = spec.service === 'tika' ? caps.tika.available : caps.vision.available;
+  return available ? SERVICE_INDEXED : SERVICE_SKIP;
+}
 
 export type RunOptions = {
   /** Restrict to these fixture keys; empty/undefined = all. */
@@ -44,6 +62,7 @@ export async function runIntegritySuite(ownerId: string, opts: RunOptions = {}):
   const specs = opts.only?.length ? opts.only.map((k) => SPEC_BY_KEY.get(k)).filter(Boolean) as typeof SPECS : SPECS;
 
   const startedAt = new Date();
+  const capabilities = await resolveCapabilities(ownerId);
   const results: FixtureResult[] = [];
 
   for (const spec of specs) {
@@ -66,7 +85,7 @@ export async function runIntegritySuite(ownerId: string, opts: RunOptions = {}):
       }
 
       const fp = await waitForExtractor(ownerId, built.nodeId, timeoutMs);
-      const checks = evaluate(spec.expect, fp);
+      const checks = evaluate(expectationFor(spec, capabilities), fp);
 
       let updateChecks: CheckResult[] | undefined;
       let deleteChecks: CheckResult[] | undefined;
@@ -129,5 +148,6 @@ export async function runIntegritySuite(ownerId: string, opts: RunOptions = {}):
     passed,
     total,
     results,
+    capabilities,
   };
 }
