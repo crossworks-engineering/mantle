@@ -206,25 +206,27 @@ services:
   # then reaches `http://<magicdns-name>:<port>` for that box. See docs/tailscale.md.
   # Always-up so the app can drive login from the UI (/settings/network). It
   # runs UNAUTHENTICATED until you save an auth key + click Activate — the app
-  # then logs tailscaled in over the shared socket (TS_AUTHKEY stays empty here;
-  # see lib/tailscale.ts tailnetUp/Down). TS_AUTH_ONCE keeps the persisted node
-  # identity across restarts. Image is PINNED: `:latest` has regressed the
-  # "stay up unauthenticated" behaviour (tailscale/tailscale#16108); override
-  # via TS_IMAGE_TAG once a newer tag is verified.
+  # then logs tailscaled in over the shared socket (see lib/tailscale.ts
+  # tailnetUp/Down).
+  #
+  # We run `tailscaled` DIRECTLY, bypassing the image's `containerboot`
+  # entrypoint. containerboot insists on running its own keyless `tailscale up`
+  # in a retry loop, which clobbers the app's auth-key login and forces an
+  # interactive browser-auth URL — fighting UI activation. tailscaled alone just
+  # serves the LocalAPI and waits to be told to log in. The flags here mirror
+  # what the TS_* env vars used to configure (userspace, state dir, socket, the
+  # outbound HTTP proxy on :1055). Image PINNED (tailscale/tailscale#16108);
+  # override via TS_IMAGE_TAG.
   tailscale:
     image: tailscale/tailscale:${TS_IMAGE_TAG:-v1.98.4}
     container_name: mantle_tailscale
     restart: unless-stopped
-    hostname: ${TS_HOSTNAME:-mantle-vps}
-    environment:
-      TS_AUTHKEY: ${TS_AUTHKEY:-}
-      TS_AUTH_ONCE: "true"
-      TS_HOSTNAME: ${TS_HOSTNAME:-mantle-vps}
-      TS_USERSPACE: "true"
-      TS_STATE_DIR: /var/lib/tailscale
-      TS_OUTBOUND_HTTP_PROXY_LISTEN: 0.0.0.0:1055
-      TS_EXTRA_ARGS: ${TS_EXTRA_ARGS:-}
-      TS_SOCKET: /var/run/tailscale/tailscaled.sock
+    entrypoint:
+      - tailscaled
+      - --tun=userspace-networking
+      - --statedir=/var/lib/tailscale
+      - --socket=/var/run/tailscale/tailscaled.sock
+      - --outbound-http-proxy-listen=0.0.0.0:1055
     volumes:
       - mantle_tailscale_data:/var/lib/tailscale
       - mantle_tailscale_sock:/var/run/tailscale

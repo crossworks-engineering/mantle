@@ -236,20 +236,29 @@ function localApiPost(
   });
 }
 
-/** Bring the tailnet up by logging in with an auth key. POSTs ipn.Options to
- *  `/localapi/v0/start` (AuthKey + WantRunning + Hostname; ControlURL omitted
- *  for default Tailscale). ASYNC on tailscaled's side — a 2xx means "login
- *  started", so the caller must poll getTailnetStatus for backendState
- *  'Running'. Never throws. */
+/** Bring the tailnet up by logging in with an auth key. This is the LocalAPI
+ *  equivalent of `tailscale up --authkey=…`: POST `/start` with the AuthKey +
+ *  prefs to STORE the key, then POST `/login-interactive` to TRIGGER the login
+ *  (with a key stored, it's non-interactive — no browser URL). Doing only the
+ *  first half leaves tailscaled at NeedsLogin and the key unused. ASYNC on
+ *  tailscaled's side — a 2xx means "login started", so the caller polls
+ *  getTailnetStatus for backendState 'Running'. Never throws. */
 export async function tailnetUp(authKey: string, hostname: string): Promise<TailnetActionResult> {
   const options = {
     AuthKey: authKey,
     UpdatePrefs: { WantRunning: true, Hostname: hostname },
   };
-  const r = await localApiPost('/localapi/v0/start', JSON.stringify(options), 8000);
-  if ('error' in r) return { ok: false, reason: r.error };
-  if (r.statusCode >= 400) {
-    return { ok: false, reason: `tailscaled /start HTTP ${r.statusCode}${r.body ? ` — ${r.body.slice(0, 300)}` : ''}` };
+  const start = await localApiPost('/localapi/v0/start', JSON.stringify(options), 8000);
+  if ('error' in start) return { ok: false, reason: start.error };
+  if (start.statusCode >= 400) {
+    return { ok: false, reason: `tailscaled /start HTTP ${start.statusCode}${start.body ? ` — ${start.body.slice(0, 300)}` : ''}` };
+  }
+  // Fire the login now that the auth key is stored. Without this, /start just
+  // sits at NeedsLogin and the key is never applied.
+  const login = await localApiPost('/localapi/v0/login-interactive', null, 8000);
+  if ('error' in login) return { ok: false, reason: login.error };
+  if (login.statusCode >= 400) {
+    return { ok: false, reason: `tailscaled /login-interactive HTTP ${login.statusCode}` };
   }
   return { ok: true };
 }
