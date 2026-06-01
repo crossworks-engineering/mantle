@@ -88,7 +88,10 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
     });
     return;
   }
-  if (!worker.apiKeyId) {
+  // Key pre-flight for CLOUD workers only — `local` is keyless. The chat call
+  // resolves its own key via resolveRouteAdapter (incl. local-keyless), so a
+  // local-primary summarizer must not be skipped here. See extractor.ts.
+  if (worker.provider !== 'local' && !worker.apiKeyId) {
     console.error(`[agent] summarizer '${worker.slug}' has no api_key_id — skipping`);
     await recordSkippedTrace({
       kind: 'summarizer_run',
@@ -391,7 +394,9 @@ export async function summarizeWebConversation(ownerId: string): Promise<void> {
     });
     return;
   }
-  if (!worker.apiKeyId) {
+  // Key pre-flight for CLOUD workers only — `local` is keyless (web path; see
+  // the telegram path above + extractor.ts).
+  if (worker.provider !== 'local' && !worker.apiKeyId) {
     await recordSkippedTrace({
       kind: 'summarizer_run',
       ownerId,

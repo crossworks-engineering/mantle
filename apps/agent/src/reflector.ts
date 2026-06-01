@@ -134,7 +134,10 @@ export async function reflect(ownerId: string): Promise<void> {
     });
     return;
   }
-  if (!reflector.apiKeyId) {
+  // Key pre-flight for CLOUD workers only — `local` is keyless (see
+  // extractor.ts). The chat call resolves its own key via resolveRouteAdapter,
+  // so a local-primary reflector must run, not skip here.
+  if (reflector.provider !== 'local' && !reflector.apiKeyId) {
     console.error(`[reflector] worker '${reflector.slug}' has no api_key_id — skipping`);
     await recordSkippedTrace({
       kind: 'reflector_run',
@@ -201,17 +204,19 @@ export async function reflect(ownerId: string): Promise<void> {
     return;
   }
 
-  const apiKey = await getApiKeyById(reflector.apiKeyId);
-  if (!apiKey) {
-    console.error(`[reflector] api_key_id ${reflector.apiKeyId} not found — skipping`);
-    await recordSkippedTrace({
-      kind: 'reflector_run',
-      ownerId,
-      subjectKind: 'agent_tick',
-      disposition: 'api_key_not_decryptable',
-      details: { worker_slug: reflector.slug, api_key_id: reflector.apiKeyId },
-    });
-    return;
+  if (reflector.provider !== 'local' && reflector.apiKeyId) {
+    const apiKey = await getApiKeyById(reflector.apiKeyId);
+    if (!apiKey) {
+      console.error(`[reflector] api_key_id ${reflector.apiKeyId} not found — skipping`);
+      await recordSkippedTrace({
+        kind: 'reflector_run',
+        ownerId,
+        subjectKind: 'agent_tick',
+        disposition: 'api_key_not_decryptable',
+        details: { worker_slug: reflector.slug, api_key_id: reflector.apiKeyId },
+      });
+      return;
+    }
   }
 
   await startTrace(

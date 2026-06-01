@@ -1103,30 +1103,38 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
     return;
   }
 
-  if (!worker.apiKeyId) {
-    console.error(`[extractor] worker '${worker.slug}' has no api_key_id — skipping`);
-    await recordSkippedTrace({
-      kind: 'extractor_run',
-      ownerId,
-      subjectId: node.id,
-      subjectKind: 'node',
-      disposition: 'no_api_key_id',
-      details: { worker_slug: worker.slug, node_type: node.type },
-    });
-    return;
-  }
-  const apiKey = await getApiKeyById(worker.apiKeyId);
-  if (!apiKey) {
-    console.error(`[extractor] api_key_id ${worker.apiKeyId} not found — skipping`);
-    await recordSkippedTrace({
-      kind: 'extractor_run',
-      ownerId,
-      subjectId: node.id,
-      subjectKind: 'node',
-      disposition: 'api_key_not_decryptable',
-      details: { worker_slug: worker.slug, api_key_id: worker.apiKeyId },
-    });
-    return;
+  // Key pre-flight, for CLOUD workers only. The `local` chat provider is keyless
+  // (a self-hosted OpenAI-compatible server needs no credential) — gating this
+  // on non-local lets a local-primary worker run, while still catching a
+  // misconfigured cloud worker early. The actual chat call resolves the key
+  // itself via resolveRouteAdapter (pinned → service → local-keyless), so the
+  // value resolved here is only used for this validation.
+  if (worker.provider !== 'local') {
+    if (!worker.apiKeyId) {
+      console.error(`[extractor] worker '${worker.slug}' has no api_key_id — skipping`);
+      await recordSkippedTrace({
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'no_api_key_id',
+        details: { worker_slug: worker.slug, node_type: node.type },
+      });
+      return;
+    }
+    const apiKey = await getApiKeyById(worker.apiKeyId);
+    if (!apiKey) {
+      console.error(`[extractor] api_key_id ${worker.apiKeyId} not found — skipping`);
+      await recordSkippedTrace({
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'api_key_not_decryptable',
+        details: { worker_slug: worker.slug, api_key_id: worker.apiKeyId },
+      });
+      return;
+    }
   }
 
   // Skip if we've already extracted this node (data.summary present + embedding set).
