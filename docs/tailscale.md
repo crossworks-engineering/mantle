@@ -24,19 +24,54 @@ cloud box reach the model running in my house."
 
 | Piece | Where | Note |
 |---|---|---|
-| `tailscale` compose service | [`docker-compose.yml`](../docker-compose.yml) | userspace, **HTTP** forward-proxy on `:1055`, profile-gated `--profile tailnet` (off by default). Joins via `TS_AUTHKEY` from `.env`. |
+| `tailscale` compose service | [`docker-compose.yml`](../docker-compose.yml) | userspace, **HTTP** forward-proxy on `:1055`. **Always-up, unauthenticated** (no `tailnet` profile anymore) so the app can log it in from the UI. Image pinned `v1.98.4`, `TS_AUTH_ONCE=true`, socket-exists healthcheck. |
+| Auth-key vault + UI activation | migration `0064` `tailscale_config` (singleton, sealed key) · [`lib/tailscale-config.ts`](../apps/web/lib/tailscale-config.ts) · [`/settings/network`](../apps/web/app/\(app\)/settings/network/network-client.tsx) **Activate** card | **Paste the auth key once → Activate/Deactivate from the UI** (see §UI-activation). The app drives tailscaled login over the socket. |
+| Activation transport | [`lib/tailscale.ts`](../apps/web/lib/tailscale.ts) `tailnetUp`/`tailnetDown` | POST `/localapi/v0/start` (ipn.Options `AuthKey`+`WantRunning`+`Hostname`) / `/localapi/v0/logout`. Needs the socket mounted **RW** into web. |
 | `local` chat adapter | [`local-chat.ts`](../packages/voice/src/adapters/local-chat.ts) | OpenAI-compat; honours per-route `baseUrl` + `viaTailnet`. `getChatAdapter('local')`. |
 | Proxy dispatch | [`tailnet.ts`](../packages/voice/src/adapters/tailnet.ts) | `tailnetFetch` via undici `ProxyAgent`; **inert by default** (no proxy → direct fetch). `undici` is lazy-`require`d so the `@mantle/voice` barrel stays browser-safe. |
 | Per-route host columns | migration `0063` | `base_url` + `via_tailnet` (+ backup pair) on `agents` + `ai_workers`, threaded through `resolveChatRoutes` → `ChatOptions`. |
-| Operator UI | [`/settings/network`](../apps/web/app/\(app\)/settings/network/page.tsx) | connection tile + reachable-devices list + setup guide; a `RouteHostFields` base-URL input (with a peer `<datalist>`) + "Reach via Tailscale" switch on the agents/ai-workers route forms. |
-| Status reader | [`lib/tailscale.ts`](../apps/web/lib/tailscale.ts) | reads the tailscaled **LocalAPI** (`/localapi/v0/status`) over a shared unix socket; never throws (degrades to "tailnet not running"). |
+| Operator UI | [`/settings/network`](../apps/web/app/\(app\)/settings/network/page.tsx) | the Activate card (above) + connection tile + reachable-devices list; a `RouteHostFields` base-URL input (peer `<datalist>`) + "Reach via Tailscale" switch on the agents/ai-workers route forms. |
+| Status reader | [`lib/tailscale.ts`](../apps/web/lib/tailscale.ts) | reads the tailscaled **LocalAPI** (`/localapi/v0/status`) over a shared unix socket; never throws (degrades to "tailnet not running"). Also drives the dashboard **Tailnet** vitals pill. |
 | Onboarding | [`/settings/network/connect`](../apps/web/app/\(app\)/settings/network/connect/page.tsx) | platform-tabbed (Linux/macOS/Windows) "Connect a device" guide. |
 
-**Two decisions changed from the design below:**
+**Decisions, updated:**
 1. **HTTP forward-proxy, not SOCKS5** (§8 left this open) — `TS_OUTBOUND_HTTP_PROXY_LISTEN`; the Node `undici` fetch path uses the HTTP proxy. SOCKS5 is still available via `TS_SOCKS5_SERVER` if ever needed.
-2. **Env-based auth key, not a UI secret field** (§3/§5 imagined a paste-in field) — the sidecar reads `TS_AUTHKEY` from its environment at container-start; Mantle (a separate container) can't inject it into a running container, so a UI field would look like it works but wouldn't. The page shows the `.env` snippet + console link instead, and reads the *resulting* connection over the LocalAPI socket. Honest over pretty.
+2. **UI-activated auth key (2026-06-01) — superseded the env-only stance.** The old doc said a UI field "would look like it works but wouldn't," because the sidecar reads `TS_AUTHKEY` at container-start and the app can't inject env into a running container. The unlock: don't restart the container — keep it running *unauthenticated*, mount its LocalAPI socket **read-write** into web, and have the app POST `/localapi/v0/start` with the key. The key is sealed in the vault like an API key. Safe here purely because Mantle is single-user (app-drives-network-daemon has no multi-tenant blast radius). See **§UI-activation**.
 
-**Bring it up:** put `TS_AUTHKEY` (+ optional `TS_HOSTNAME`) in `.env`, then `docker compose --profile tailnet up -d`. The full walkthrough is the in-app **Connect a device** guide.
+**Bring it up (UI):** deploy the stack (the sidecar is now in the default `up` set, running unauthenticated), then `/settings/network` → paste an auth key → **Activate**. No `.env` edit. The env path (`TS_AUTHKEY` in `.env`) still works for headless bring-up.
+
+---
+
+## UI-activation (as built 2026-06-01)
+
+Store the Tailscale auth key in the vault and activate/deactivate the tailnet
+from `/settings/network`, instead of editing the VPS `.env` + `--profile tailnet`.
+
+**Mechanism.** The official `tailscale/tailscale` container stays running
+**unauthenticated** with an empty `TS_AUTHKEY`, and accepts login later. The web
+container mounts tailscaled's LocalAPI socket **read-write** and drives it:
+- `tailnetUp(key, hostname)` → POST `/localapi/v0/start` with `ipn.Options`
+  `{ AuthKey, UpdatePrefs: { WantRunning, Hostname } }` (ControlURL omitted for
+  default Tailscale). **Async** — a 2xx means "login started", so the UI polls
+  `getTailnetStatus` for `backendState: 'Running'`.
+- `tailnetDown()` → POST `/localapi/v0/logout`.
+
+**Storage.** `tailscale_config` (migration 0064) — one row per owner, `auth_key_enc`
+sealed AES-256-GCM with the row id as AAD, exactly like `api_keys`. Re-saving
+re-seals under the existing row id. UI sees `masked` only.
+
+**The security trade.** Mounting the socket RW lets the app control tailnet
+membership — the one privilege bump. Acceptable on a single-user box; do NOT
+copy this pattern into a multi-tenant context.
+
+**The live gate (verify on the VPS).** Whether tailscaled accepts the web
+process's *write* calls over the shared socket can only be proven against a real
+tailnet: save a real key → Activate → status flips to `Running` + the dashboard
+Tailnet pill greens. **If `/start` is rejected** (peer-credential gating), the
+fallback is the `file:` authkey trick (app writes the decrypted key to a shared
+file as `TS_AUTHKEY=file:/…`) — that needs a container restart, so it trades
+live toggling; only the transport in `lib/tailscale.ts` changes, UI/store/schema
+stay put.
 
 ---
 
