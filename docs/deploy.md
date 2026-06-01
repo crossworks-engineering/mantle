@@ -45,7 +45,23 @@ cp .env.prod.example .env
 #   POSTGRES_PASSWORD, S3_SECRET_KEY, MANTLE_PUBLIC_URL
 #   MANTLE_IMAGE_NAMESPACE=<your docker hub user>
 #   MANTLE_DATA_DIR=/opt/mantle/data   (absolute path on the VPS)
+#   MANTLE_SITE_ADDRESS=mantle.example.com   (Caddy serves this with auto-HTTPS)
 ```
+
+### Front door / HTTPS (Caddy)
+
+Caddy is the public entrypoint — it terminates TLS on 80/443 and reverse-proxies
+to the app internally (`web:3000`, which is **not** publicly exposed). For
+automatic HTTPS, before first boot:
+
+1. Point a DNS **A record** (and AAAA if you have IPv6) for your domain at the VPS.
+2. Open ports **80 and 443** on the VPS firewall (`ufw allow 80,443/tcp`; 443/udp
+   too for HTTP/3).
+3. Set `MANTLE_SITE_ADDRESS=your.domain` in `.env`. On `up`, Caddy fetches a
+   Let's Encrypt cert automatically and renews it. (`:80` = plain HTTP for local
+   testing without a domain.)
+
+Certs persist in the `caddy_data` volume — don't wipe it, or you risk LE rate limits.
 
 > `MANTLE_MASTER_KEY` and `ALLOWED_USER_ID` **must match dev** for the imported
 > data to be usable — the master key decrypts the secrets/API-key vault, and the

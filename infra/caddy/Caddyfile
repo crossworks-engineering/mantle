@@ -1,0 +1,23 @@
+# Mantle reverse proxy + automatic HTTPS.
+#
+# The site address comes from the MANTLE_SITE_ADDRESS env var (set in .env):
+#   - a hostname  (e.g. mantle.example.com) → Caddy provisions + renews a
+#                  Let's Encrypt certificate automatically. Point a DNS A/AAAA
+#                  record at the VPS first, and open ports 80 + 443.
+#   - ":80"        (the default) → plain HTTP, for local testing without a domain.
+#
+# Caddy reaches the app over the internal docker network at web:3000 — the web
+# container no longer publishes a public port. ACME state lives in the caddy_data
+# volume (persist it, or you'll hit Let's Encrypt rate limits on redeploys).
+{$MANTLE_SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	# Forward to the Next.js app. Caddy adds X-Forwarded-{For,Proto,Host} so the
+	# app can build correct absolute URLs + set secure cookies behind TLS.
+	reverse_proxy web:3000
+
+	# Generous body limit for file/photo uploads through the proxy.
+	request_body {
+		max_size 100MB
+	}
+}

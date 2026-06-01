@@ -13,6 +13,9 @@ name: mantle
 #   S3_ACCESS_KEY / S3_SECRET_KEY (default: minio/minio12345)
 #   MANTLE_PUBLIC_URL       (recommended — public origin for share/email links,
 #                            e.g. https://mantle.crossworks.network)
+#   MANTLE_SITE_ADDRESS     (the address Caddy serves — a hostname gets automatic
+#                            HTTPS, e.g. mantle.crossworks.network; defaults to
+#                            :80 plain HTTP for local testing. Open 80+443 + DNS.)
 #   MANTLE_LOCAL_EMBEDDING_URL (default: http://ollama:11434/v1 — the bundled
 #                            embedder; no need to set unless pointing elsewhere)
 #   MANTLE_EMBEDDING_PULL_MODEL (default: embeddinggemma — the model the one-shot
@@ -45,6 +48,10 @@ name: mantle
 # applies them before any app service starts (each depends on it completing).
 
 volumes:
+  # Caddy ACME state — Let's Encrypt account + issued certs. PERSIST THIS or
+  # you'll re-request certs on every redeploy and hit LE rate limits.
+  caddy_data:
+  caddy_config:
   # Ollama model store — the shipped embedder (EmbeddingGemma, ~300MB) is pulled
   # once into here and persists across restarts/redeploys. A named volume (not a
   # host bind) because it's a re-pullable cache, not data you need to migrate.
@@ -250,8 +257,33 @@ services:
       # /settings/network status tile + peer dropdown. Empty until the
       # `tailnet` profile is up; the reader degrades gracefully when absent.
       - mantle_tailscale_sock:/var/run/tailscale:ro
+    # No public port: Caddy fronts the app and reaches it at web:3000 on the
+    # internal network. Bound to localhost only for on-host debugging / ssh
+    # tunnels — not reachable from the internet.
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
+
+  # ── Caddy: TLS-terminating reverse proxy — the public front door ───────────
+  # Automatic HTTPS (Let's Encrypt) when MANTLE_SITE_ADDRESS is a hostname;
+  # plain HTTP on :80 otherwise. Proxies public 80/443 → internal web:3000.
+  # Point a DNS A record at the VPS and open 80 + 443 before first boot.
+  caddy:
+    image: caddy:2-alpine
+    container_name: mantle_caddy
+    restart: unless-stopped
+    depends_on:
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3 (QUIC)
+    environment:
+      # Drives the Caddyfile site block. Hostname → auto-TLS; ":80" → HTTP only.
+      MANTLE_SITE_ADDRESS: ${MANTLE_SITE_ADDRESS:-:80}
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
 
   agent:
     image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle-agent:${MANTLE_IMAGE_TAG:-latest}
