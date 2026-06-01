@@ -31,9 +31,13 @@ import {
   type PersonaNote,
   type ReflectorParams,
 } from '@mantle/db';
-import { getApiKeyById } from '@mantle/api-keys';
 import { recordSkippedTrace, startTrace, step } from '@mantle/tracing';
-import { chatWithFailover, recordChatUsage, resolveChatRoutes } from '@mantle/agent-runtime';
+import {
+  chatWithFailover,
+  recordChatUsage,
+  resolveChatKey,
+  resolveChatRoutes,
+} from '@mantle/agent-runtime';
 
 /** How many recent turns the reflector reviews per run. */
 const REFLECTION_WINDOW = 50;
@@ -134,17 +138,17 @@ export async function reflect(ownerId: string): Promise<void> {
     });
     return;
   }
-  // Key pre-flight for CLOUD workers only — `local` is keyless (see
-  // extractor.ts). The chat call resolves its own key via resolveRouteAdapter,
-  // so a local-primary reflector must run, not skip here.
-  if (reflector.provider !== 'local' && !reflector.apiKeyId) {
-    console.error(`[reflector] worker '${reflector.slug}' has no api_key_id — skipping`);
+  // Key pre-flight via the shared resolver — keyless `local` passes; a
+  // misconfigured cloud worker skips with the matching disposition.
+  const keyCheck = await resolveChatKey(ownerId, reflector);
+  if (!keyCheck.ok) {
+    console.error(`[reflector] worker '${reflector.slug}' ${keyCheck.detail} — skipping`);
     await recordSkippedTrace({
       kind: 'reflector_run',
       ownerId,
       subjectKind: 'agent_tick',
-      disposition: 'no_api_key_id',
-      details: { worker_slug: reflector.slug },
+      disposition: keyCheck.disposition,
+      details: { worker_slug: reflector.slug, api_key_id: reflector.apiKeyId },
     });
     return;
   }
@@ -202,21 +206,6 @@ export async function reflect(ownerId: string): Promise<void> {
       },
     });
     return;
-  }
-
-  if (reflector.provider !== 'local' && reflector.apiKeyId) {
-    const apiKey = await getApiKeyById(reflector.apiKeyId);
-    if (!apiKey) {
-      console.error(`[reflector] api_key_id ${reflector.apiKeyId} not found — skipping`);
-      await recordSkippedTrace({
-        kind: 'reflector_run',
-        ownerId,
-        subjectKind: 'agent_tick',
-        disposition: 'api_key_not_decryptable',
-        details: { worker_slug: reflector.slug, api_key_id: reflector.apiKeyId },
-      });
-      return;
-    }
   }
 
   await startTrace(

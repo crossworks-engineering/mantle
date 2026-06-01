@@ -17,6 +17,10 @@ const h = vi.hoisted(() => ({
   // viaTailnet actually reach adapter.chat (migration 0063).
   lastPrimaryOpts: null as Record<string, unknown> | null,
   lastBackupOpts: null as Record<string, unknown> | null,
+  // Controllable api-key lookups for the resolveChatKey tests. Default to a
+  // present key; individual tests set these to null to exercise the miss paths.
+  apiKeyByIdReturn: 'k' as string | null,
+  apiKeyByServiceReturn: 'k' as string | null,
 }));
 
 vi.mock('@mantle/voice', async (importOriginal) => {
@@ -42,10 +46,14 @@ vi.mock('@mantle/voice', async (importOriginal) => {
 
 vi.mock('@mantle/api-keys', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/api-keys')>();
-  return { ...actual, getApiKey: async () => 'k', getApiKeyById: async () => 'k' };
+  return {
+    ...actual,
+    getApiKey: async () => h.apiKeyByServiceReturn,
+    getApiKeyById: async () => h.apiKeyByIdReturn,
+  };
 });
 
-import { chatWithFailover, isChatFailover, resolveChatRoutes } from './chat-failover';
+import { chatWithFailover, isChatFailover, resolveChatKey, resolveChatRoutes } from './chat-failover';
 import type { ChatRoutes } from './chat-failover';
 
 const ROUTES: ChatRoutes = {
@@ -187,5 +195,47 @@ describe('isChatFailover', () => {
     expect(isChatFailover(new TypeError('fetch failed'))).toBe(true);
     expect(isChatFailover(Object.assign(new Error('x'), { status: 400 }))).toBe(false);
     expect(isChatFailover(Object.assign(new Error('x'), { status: 401 }))).toBe(false);
+  });
+});
+
+describe('resolveChatKey — the single source of truth for chat credentials', () => {
+  beforeEach(() => {
+    h.apiKeyByIdReturn = 'k';
+    h.apiKeyByServiceReturn = 'k';
+  });
+
+  it('returns the local-keyless sentinel for provider=local with no key', async () => {
+    h.apiKeyByIdReturn = null;
+    h.apiKeyByServiceReturn = null;
+    const r = await resolveChatKey('o', { provider: 'local', apiKeyId: null });
+    expect(r).toEqual({ ok: true, apiKey: 'local' });
+  });
+
+  it('honours a pinned key even for local (e.g. a token-guarded proxy)', async () => {
+    h.apiKeyByIdReturn = 'pinned';
+    const r = await resolveChatKey('o', { provider: 'local', apiKeyId: 'key-id' });
+    expect(r).toEqual({ ok: true, apiKey: 'pinned' });
+  });
+
+  it('returns the resolved key for a cloud provider that has one', async () => {
+    const r = await resolveChatKey('o', { provider: 'anthropic', apiKeyId: 'key-id' });
+    expect(r).toEqual({ ok: true, apiKey: 'k' });
+  });
+
+  it('misses with no_api_key_id when a cloud provider has NO key configured', async () => {
+    h.apiKeyByIdReturn = null;
+    h.apiKeyByServiceReturn = null;
+    const r = await resolveChatKey('o', { provider: 'openrouter', apiKeyId: null });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.disposition).toBe('no_api_key_id');
+  });
+
+  it('misses with api_key_not_decryptable when a pinned cloud key is gone', async () => {
+    // apiKeyId is set, but neither the pinned lookup nor the service key resolves.
+    h.apiKeyByIdReturn = null;
+    h.apiKeyByServiceReturn = null;
+    const r = await resolveChatKey('o', { provider: 'anthropic', apiKeyId: 'deleted-id' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.disposition).toBe('api_key_not_decryptable');
   });
 });

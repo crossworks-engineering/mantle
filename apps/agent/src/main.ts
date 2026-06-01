@@ -66,6 +66,7 @@ import {
   resolveAgentSkills,
   resolveAgentTools,
   resolveBackupAdapter,
+  resolveChatKey,
   runToolLoop,
   type ContentHit,
   type Digest,
@@ -607,29 +608,17 @@ async function handleMessage(messageId: string): Promise<void> {
     );
     return;
   }
-  // Resolve the responder's chat key. The `local` chat provider is keyless (a
-  // self-hosted OpenAI-compatible server needs no credential), so a local agent
-  // skips the key requirement and runs with the 'local' sentinel — mirroring
-  // resolveRouteAdapter. Cloud agents still require a decryptable key.
-  let apiKey: string;
-  if (agent.provider === 'local') {
-    apiKey = (agent.apiKeyId ? await getApiKeyById(agent.apiKeyId) : null) ?? 'local';
-  } else {
-    if (!agent.apiKeyId) {
-      console.error(
-        `[agent] responder agent '${agent.slug}' has no api_key_id set — skipping. Edit it at /settings/agents.`,
-      );
-      return;
-    }
-    const resolved = await getApiKeyById(agent.apiKeyId);
-    if (!resolved) {
-      console.error(
-        `[agent] api_key_id ${agent.apiKeyId} for agent '${agent.slug}' has no entry — was it deleted?`,
-      );
-      return;
-    }
-    apiKey = resolved;
+  // Resolve the responder's chat key via the shared resolver (keyless `local`
+  // → 'local' sentinel; cloud → pinned/service key, else skip). Same single
+  // source of truth the worker pre-flights + the dispatch path use.
+  const keyCheck = await resolveChatKey(USER_ID!, agent);
+  if (!keyCheck.ok) {
+    console.error(
+      `[agent] responder agent '${agent.slug}' ${keyCheck.detail} — skipping. Edit it at /settings/agents.`,
+    );
+    return;
   }
+  const apiKey = keyCheck.apiKey;
 
   const lockKey = row.telegramChatId;
   const prev = inflight.get(lockKey);

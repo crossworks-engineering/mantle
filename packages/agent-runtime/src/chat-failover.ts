@@ -119,23 +119,74 @@ export async function resolveRouteAdapter(
   if (!adapter) {
     throw new Error(`chat: no adapter registered for provider '${route.provider}'`);
   }
-  let apiKey: string | null = null;
-  if (route.apiKeyId) apiKey = await getApiKeyById(route.apiKeyId);
-  if (!apiKey) apiKey = await getApiKey(ownerId, route.provider);
-  if (!apiKey && route.provider === 'local') apiKey = 'local';
-  if (!apiKey) {
+  const key = await resolveChatKey(ownerId, route);
+  if (!key.ok) {
     throw new Error(
-      `chat: no api key for provider '${route.provider}'. Add one at /settings/keys.`,
+      key.disposition === 'no_api_key_id'
+        ? `chat: no api key for provider '${route.provider}'. Add one at /settings/keys.`
+        : `chat: api key for provider '${route.provider}' could not be resolved (${key.detail}).`,
     );
   }
   return {
     adapter,
-    apiKey,
+    apiKey: key.apiKey,
     model: route.model,
     provider: route.provider,
     baseUrl: route.baseUrl ?? null,
     viaTailnet: route.viaTailnet ?? false,
   };
+}
+
+/** A route's chat credential, or a structured reason it isn't available. */
+export type ChatKeyResult =
+  | { ok: true; apiKey: string }
+  | {
+      ok: false;
+      /** Stable disposition for skipped-trace rows + logs. Mirrors what the
+       *  worker pre-flights have always recorded. */
+      disposition: 'no_api_key_id' | 'api_key_not_decryptable';
+      /** Short human detail for the log line. */
+      detail: string;
+    };
+
+/**
+ * THE single source of truth for "does this chat route have a usable key?" —
+ * shared by the dispatch path ({@link resolveRouteAdapter}) AND every worker /
+ * agent pre-flight, so the two can never drift. Resolution order mirrors the
+ * dispatch exactly: route-pinned key → the provider's canonical service key →
+ * the `local` keyless sentinel (a self-hosted OpenAI-compatible server needs no
+ * credential). Never throws — callers decide whether a miss is fatal (the
+ * dispatch throws, a worker skips with a trace).
+ *
+ * Adding the next keyless provider is a one-line change HERE — not a grep across
+ * five worker pre-flights (which is exactly the drift that silently stopped
+ * ingest when `local` workers were first configured).
+ */
+export async function resolveChatKey(
+  ownerId: string,
+  route: Pick<ChatRoute, 'provider' | 'apiKeyId'>,
+): Promise<ChatKeyResult> {
+  // Keyless providers: `local` needs no credential. Pinned/service keys are
+  // still honoured if present (e.g. a proxy that wants a token), but their
+  // absence is NOT a miss.
+  const keyless = route.provider === 'local';
+
+  let apiKey: string | null = null;
+  if (route.apiKeyId) apiKey = await getApiKeyById(route.apiKeyId);
+  if (!apiKey) apiKey = await getApiKey(ownerId, route.provider);
+  if (apiKey) return { ok: true, apiKey };
+  if (keyless) return { ok: true, apiKey: 'local' };
+
+  // A non-keyless provider with no usable key. Distinguish "never configured"
+  // from "configured but the stored key is gone / undecryptable" so traces stay
+  // as informative as the old per-worker guards were.
+  return route.apiKeyId
+    ? {
+        ok: false,
+        disposition: 'api_key_not_decryptable',
+        detail: `api_key_id ${route.apiKeyId} not found`,
+      }
+    : { ok: false, disposition: 'no_api_key_id', detail: 'no api_key_id set' };
 }
 
 /**

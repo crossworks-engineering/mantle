@@ -34,13 +34,12 @@ import {
   type AgentMemoryConfig,
   type AgentParams,
 } from '@mantle/db';
-import { getApiKeyById } from '@mantle/api-keys';
 import { currentTrace, startTrace } from '@mantle/tracing';
 import type { AgentInvoker, InvokeAgentResult } from '@mantle/tools';
 import { MAX_AGENT_DEPTH } from '@mantle/tools';
 import { getChatAdapter } from '@mantle/voice';
 import { resolveAgentTools, runToolLoop } from './tool-loop';
-import { resolveBackupAdapter } from './chat-failover';
+import { resolveBackupAdapter, resolveChatKey } from './chat-failover';
 import { resolveAgentSkills, composeSystemPromptWithSkills, effectiveToolSlugs } from './skills';
 import type { ChatMessage } from './messages';
 
@@ -81,19 +80,19 @@ export const invokeAgent: AgentInvoker = async ({
     };
   }
 
-  if (!target.apiKeyId) {
+  // Shared key resolver: keyless `local` → 'local' sentinel; cloud → pinned/
+  // service key, else a structured miss.
+  const keyCheck = await resolveChatKey(ownerId, target);
+  if (!keyCheck.ok) {
     return {
       ok: false,
-      error: `agent '${agentSlug}' has no api_key_id configured`,
+      error:
+        keyCheck.disposition === 'no_api_key_id'
+          ? `agent '${agentSlug}' has no api_key_id configured`
+          : `agent '${agentSlug}' api key could not be decrypted`,
     };
   }
-  const apiKey = await getApiKeyById(target.apiKeyId);
-  if (!apiKey) {
-    return {
-      ok: false,
-      error: `agent '${agentSlug}' api key could not be decrypted`,
-    };
-  }
+  const apiKey = keyCheck.apiKey;
 
   // Resolve the chat adapter for the child agent's provider. The
   // agents.provider column drives this; rows without an explicit

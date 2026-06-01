@@ -31,6 +31,7 @@ import {
   chatWithFailover,
   flattenChatMessagesForAdapter,
   recordChatUsage,
+  resolveChatKey,
   resolveChatRoutes,
 } from '@mantle/agent-runtime';
 
@@ -88,17 +89,17 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
     });
     return;
   }
-  // Key pre-flight for CLOUD workers only — `local` is keyless. The chat call
-  // resolves its own key via resolveRouteAdapter (incl. local-keyless), so a
-  // local-primary summarizer must not be skipped here. See extractor.ts.
-  if (worker.provider !== 'local' && !worker.apiKeyId) {
-    console.error(`[agent] summarizer '${worker.slug}' has no api_key_id — skipping`);
+  // Key pre-flight via the shared resolver — keyless `local` passes; a
+  // misconfigured cloud worker skips with the matching disposition.
+  const keyCheck = await resolveChatKey(ownerId, worker);
+  if (!keyCheck.ok) {
+    console.error(`[agent] summarizer '${worker.slug}' ${keyCheck.detail} — skipping`);
     await recordSkippedTrace({
       kind: 'summarizer_run',
       ownerId,
       subjectId: chatPk,
       subjectKind: 'chat',
-      disposition: 'no_api_key_id',
+      disposition: keyCheck.disposition,
       details: { worker_slug: worker.slug },
     });
     return;
@@ -394,15 +395,15 @@ export async function summarizeWebConversation(ownerId: string): Promise<void> {
     });
     return;
   }
-  // Key pre-flight for CLOUD workers only — `local` is keyless (web path; see
-  // the telegram path above + extractor.ts).
-  if (worker.provider !== 'local' && !worker.apiKeyId) {
+  // Key pre-flight via the shared resolver (web path; see telegram path above).
+  const keyCheck = await resolveChatKey(ownerId, worker);
+  if (!keyCheck.ok) {
     await recordSkippedTrace({
       kind: 'summarizer_run',
       ownerId,
       subjectId: ownerId,
       subjectKind: 'web_chat',
-      disposition: 'no_api_key_id',
+      disposition: keyCheck.disposition,
       details: { worker_slug: worker.slug, surface: 'web' },
     });
     return;
