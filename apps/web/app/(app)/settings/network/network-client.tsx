@@ -1,38 +1,12 @@
 'use client';
 
-import { useState } from 'react';
-import { Radio, Copy, Check, CircleDot } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import Link from 'next/link';
+import { Radio, CircleDot, ArrowRight } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useToast } from '@/components/ui/toast';
+import { CopyButton, CopyBlock } from '@/components/ui/copy-button';
 import type { TailnetResult } from '@/lib/tailscale';
-
-/** A tiny copy-to-clipboard button that flips to a check for a moment. */
-function CopyButton({ value, label }: { value: string; label?: string }) {
-  const toast = useToast();
-  const [copied, setCopied] = useState(false);
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="sm"
-      className="h-7 gap-1.5 px-2 text-xs"
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(value);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1200);
-        } catch {
-          toast.error('Could not copy to clipboard');
-        }
-      }}
-    >
-      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-      {label ?? (copied ? 'Copied' : 'Copy')}
-    </Button>
-  );
-}
 
 const SNIPPET = `# .env (next to docker-compose.yml)
 TS_AUTHKEY=tskey-auth-xxxxxxxxxxxx   # generate at https://login.tailscale.com/admin/settings/keys
@@ -166,20 +140,21 @@ export function NetworkClient({ status }: { status: TailnetResult }) {
               This page then shows the connection + your devices.
             </li>
           </ol>
-          <div className="relative">
-            <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-3 pr-20 text-xs leading-relaxed">
-              <code>{SNIPPET}</code>
-            </pre>
-            <div className="absolute right-2 top-2">
-              <CopyButton value={SNIPPET} />
-            </div>
-          </div>
+          <CopyBlock code={SNIPPET} />
           <p className="text-xs text-muted-foreground">
             The <code className="font-mono">tailnet</code> profile is off by default, so a normal{' '}
             <code className="font-mono">docker compose up</code> never starts it — nothing changes
             until you opt in. Device, key, and ACL management all live in the Tailscale console;
             Mantle just reads the connection.
           </p>
+          <div className="pt-1">
+            <Button asChild variant="outline" size="sm">
+              <Link href="/settings/network/connect">
+                Connect a device — step-by-step
+                <ArrowRight className="size-4" />
+              </Link>
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>
