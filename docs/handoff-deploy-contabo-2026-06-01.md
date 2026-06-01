@@ -1,6 +1,61 @@
 # Handover — Deploy Mantle to Contabo (jason.crossworks.network)
 
-**Date:** 2026-06-01 · **Status:** mid-deploy, PAUSED (Jason is reinstalling
+**Date:** 2026-06-01 · **Status:** ✅ **DEPLOYED & LIVE** at
+https://jason.crossworks.network (valid Let's Encrypt cert). All 11 containers
+healthy, brain restored (1948 nodes), connections stable. Three production-only
+bugs surfaced and were fixed on the way up — see "Deploy completed" below.
+
+---
+
+## ✅ Deploy completed (2026-06-01, second session)
+
+Resumed from the paused state below and finished the deploy. Build → restore →
+up all succeeded; then three bugs that **only manifest in a real prod container**
+(never in `next dev` on the Mac) had to be fixed, each requiring an image rebuild:
+
+1. **Web crash-loop — `next start` read `-H` as a directory.** Image CMD was
+   `pnpm -C apps/web start -- -H 0.0.0.0 -p 3000`; under pnpm 10/11 the `--` is
+   forwarded literally to `next start`, which treats `-H` as the project-dir
+   positional → `Invalid project directory: /app/apps/web/-H` → exit 1 → restart
+   loop → Caddy 502. Fixed by switching to the worker `exec` form:
+   `pnpm -C apps/web exec next start -H 0.0.0.0 -p 3000` (commit `e4ae962`).
+
+2. **DB pool leak — the killer.** `packages/db/src/client.ts` exports `db` as a
+   Proxy that calls `getDb()` on **every property access**, but cached the
+   singleton on `globalThis` only when `NODE_ENV !== 'production'`. So in prod
+   **every query minted a fresh `postgres()` pool (max 10)**; the long-lived
+   agent + workers query on boot and on timers, so pools piled up at ~12
+   conns/sec until Postgres hit `max_connections` and the whole stack cascaded
+   (`FATAL 53300`, even `psql` locked out). Dev was immune precisely because the
+   globalThis cache was active there. Fixed by caching unconditionally
+   (commit `7910e2a`). **This is why "the identical dev stack runs fine" — it
+   genuinely does; the bug is prod-only.** Diagnosis: isolate services one at a
+   time and watch `select count(*) from pg_stat_activity` climb — the `agent`
+   was the visible leaker (6→61→178 in 14s), but the root is shared by every
+   prod service once it starts querying.
+
+3. **Postgres `max_connections` 100 → 200** (commit `271367d`) — added as
+   headroom while debugging #2. Now that #2 is fixed, steady state is ~20 and
+   even 100 would be ample; 200 stays as cheap safety margin (11 GB box).
+
+**Still-open follow-up (non-blocking):** `apps/web/workers/telegram-poll.ts`
+can die on an unhandled promise rejection from a `PostgresError` in its poll
+loop (`triggerUncaughtException`). Harmless now that connections don't leak (a
+PG blip → one clean restart, no pileup), but it should catch + back off so a
+real PG restart doesn't bounce the worker. Worth hardening.
+
+**Verify it's still healthy:**
+```bash
+ssh cwe@mcp.crossworks.network 'cd ~/mantle && docker compose ps'
+ssh cwe@mcp.crossworks.network 'docker exec mantle_pg psql -U postgres -d postgres -tA -c "select count(*) from pg_stat_activity"'  # expect ~20, NOT climbing
+curl -sI https://jason.crossworks.network   # 307 → /login, valid cert
+```
+
+---
+
+## Original handoff (paused state — kept for reference)
+
+**Status when paused:** mid-deploy, PAUSED (Jason is reinstalling
 Docker on the VPS; the build was interrupted by that). Everything up to the
 build is staged on the VPS filesystem and survives a Docker reinstall.
 
