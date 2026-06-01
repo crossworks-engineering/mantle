@@ -11,7 +11,7 @@
  * api key. The local-keyless workers (extractor/summarizer/… on local models)
  * don't require a key, so those only check that a worker is configured.
  */
-import { getDefaultWorker, type AiWorkerKind } from '@mantle/db';
+import { db, sql, getDefaultWorker, type AiWorkerKind } from '@mantle/db';
 import { tikaIsUp } from '@mantle/files';
 
 import type { Capability, Capabilities } from './types';
@@ -23,12 +23,46 @@ async function workerCap(ownerId: string, kind: AiWorkerKind, requireKey: boolea
   return { available: true, detail: `${w.slug} · ${w.model}` };
 }
 
+type EmbedCfgRow = { model: string; provider: string; base_url: string | null };
+
+/**
+ * Embedding readiness reads `embedding_config` — NOT an `ai_workers` row. Since
+ * the migration-0061 consolidation the embedder is a singleton config, so the
+ * old `getDefaultWorker(ownerId, 'embedding')` always found nothing and the
+ * panel falsely showed the embedder "off" even while it was happily embedding.
+ * For the `local` provider we additionally probe the server's /models (same
+ * lightweight check as the dashboard vitals pill) so a genuinely-down embedder
+ * shows red — the only state in which the brain truly can't embed.
+ */
+async function embeddingCap(ownerId: string): Promise<Capability> {
+  const res = await db.execute<EmbedCfgRow>(sql`
+    SELECT model, primary_provider AS provider, primary_base_url AS base_url
+    FROM embedding_config WHERE owner_id = ${ownerId} LIMIT 1`);
+  const row = (Array.isArray(res) ? res : (res as { rows?: EmbedCfgRow[] }).rows ?? [])[0];
+  if (!row) return { available: false, detail: 'no embedding_config row' };
+  const { model, provider } = row;
+  if (provider !== 'local') return { available: true, detail: `${model} · ${provider}` };
+  const base = (row.base_url || process.env.MANTLE_LOCAL_EMBEDDING_URL || 'http://localhost:11434/v1').replace(/\/+$/, '');
+  try {
+    const probe = await fetch(`${base}/models`, { signal: AbortSignal.timeout(1_500) });
+    if (!probe.ok) return { available: false, detail: `local embedder unreachable (HTTP ${probe.status})` };
+    const body = (await probe.json()) as { data?: Array<{ id?: string }> };
+    const ids = (body.data ?? []).map((m) => m.id).filter((x): x is string => typeof x === 'string');
+    const norm = (s: string) => s.replace(/:latest$/, '');
+    return ids.some((id) => norm(id) === norm(model))
+      ? { available: true, detail: `${model} · loaded (local)` }
+      : { available: false, detail: `${model} not loaded on local embedder` };
+  } catch {
+    return { available: false, detail: 'local embedder unreachable' };
+  }
+}
+
 export async function resolveCapabilities(ownerId: string): Promise<Capabilities> {
   const [tikaUp, vision, extractor, embedding, summarizer, reflector, stt] = await Promise.all([
     tikaIsUp().catch(() => false),
     workerCap(ownerId, 'vision', true),
     workerCap(ownerId, 'extractor', false),
-    workerCap(ownerId, 'embedding', false),
+    embeddingCap(ownerId),
     workerCap(ownerId, 'summarizer', false),
     workerCap(ownerId, 'reflector', false),
     workerCap(ownerId, 'stt', false),
