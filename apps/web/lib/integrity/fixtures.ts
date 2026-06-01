@@ -58,11 +58,9 @@ export type FixtureBuilder = (ctx: BuildCtx) => Promise<BuildResult>;
  *  exists. */
 const FILES_DIR = (() => {
   const rel = 'lib/integrity/fixtures/files';
-  const candidates = [
-    path.join(process.cwd(), rel), // cwd = apps/web (next dev / next start)
-    path.join(process.cwd(), 'apps/web', rel), // cwd = repo root (scripts)
-  ];
-  return candidates.find((p) => existsSync(p)) ?? candidates[0];
+  const fromAppWeb = path.join(process.cwd(), rel); // cwd = apps/web (next dev / next start)
+  const fromRepoRoot = path.join(process.cwd(), 'apps/web', rel); // cwd = repo root (scripts)
+  return existsSync(fromAppWeb) ? fromAppWeb : existsSync(fromRepoRoot) ? fromRepoRoot : fromAppWeb;
 })();
 
 // ─── content-pipeline builders (no external bytes) ──────────────────────────
@@ -189,6 +187,11 @@ async function ensureProbeEmailAccount(ownerId: string): Promise<string> {
       address: PROBE_EMAIL_ADDRESS,
       displayName: 'Integrity Probe',
       branchPath: 'inbox.integrity',
+      // Synthetic scaffold only — the email fixture inserts the node + emails
+      // row directly, so this account is never meant to IMAP-sync. Keep it
+      // disabled so the email-sync scheduler skips it instead of failing to
+      // connect (no imap_host) on every cycle.
+      enabled: false,
     })
     .returning({ id: emailAccounts.id });
   if (!row) throw new Error('ensureProbeEmailAccount: insert returned no row');
