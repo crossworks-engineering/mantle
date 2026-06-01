@@ -133,16 +133,18 @@ const CHECKS: CheckDef[] = [
     key: 'reaper_miss_facts',
     label: 'Reaper-miss facts',
     severity: 'high',
-    note: 'episodic/factual facts with no source node — these should have been hard-deleted when their source was (reaper 0059). Sourceless semantic/preference facts are correct and excluded.',
+    note: 'RETIRED episodic/factual facts with no source node — superseded history whose source is also gone, which the reaper (0059) should have hard-deleted. CURRENTLY-VALID sourceless facts are deliberately NOT flagged: when a source node is deleted (FK ON DELETE SET NULL), a still-valid fact it produced is real, irreplaceable knowledge — deleting it would lose data, so it is preserved, not reaped. Sourceless semantic/preference facts are correct and excluded entirely.',
     query: (o) => sql`
       SELECT id, kind::text AS kind, left(content, 60) AS detail
       FROM facts
       WHERE owner_id = ${o} AND source_node_id IS NULL AND kind IN ('episodic', 'factual')
+        AND valid_to IS NOT NULL
       LIMIT ${CAP}`,
     spanQuery: (o) => sql`
       SELECT min(created_at)::date::text AS oldest, max(created_at)::date::text AS newest
       FROM facts
-      WHERE owner_id = ${o} AND source_node_id IS NULL AND kind IN ('episodic', 'factual')`,
+      WHERE owner_id = ${o} AND source_node_id IS NULL AND kind IN ('episodic', 'factual')
+        AND valid_to IS NOT NULL`,
   },
   {
     key: 'duplicate_edges',
@@ -171,11 +173,13 @@ const CHECKS: CheckDef[] = [
     key: 'orphan_entities',
     label: 'Orphan entities',
     severity: 'low',
-    note: 'an entity with zero edges and zero facts — reconciliation residue or delete leftovers. Clutter that also skews graph stats.',
+    note: 'a NAMELESS, alias-less entity with zero edges and zero facts — true reconciliation residue (a husk left by a merge), useless even for entity_search. A NAMED but disconnected entity (Alan Kay, a project, a place) is real, searchable data — not residue — so it is deliberately NOT flagged; missing mention edges are a graph-completeness gap, not clutter to delete.',
     query: (o) => sql`
-      SELECT e.id, 'entity' AS kind, e.name AS detail
+      SELECT e.id, 'entity' AS kind, coalesce(nullif(btrim(e.name), ''), '(unnamed)') AS detail
       FROM entities e
       WHERE e.owner_id = ${o}
+        AND (e.name IS NULL OR btrim(e.name) = '')
+        AND coalesce(array_length(e.aliases, 1), 0) = 0
         AND NOT EXISTS (SELECT 1 FROM entity_edges ed WHERE ed.source_id = e.id OR ed.target_id = e.id)
         AND NOT EXISTS (SELECT 1 FROM facts f WHERE f.entity_id = e.id)
       LIMIT ${CAP}`,
@@ -183,6 +187,8 @@ const CHECKS: CheckDef[] = [
       SELECT min(e.created_at)::date::text AS oldest, max(e.created_at)::date::text AS newest
       FROM entities e
       WHERE e.owner_id = ${o}
+        AND (e.name IS NULL OR btrim(e.name) = '')
+        AND coalesce(array_length(e.aliases, 1), 0) = 0
         AND NOT EXISTS (SELECT 1 FROM entity_edges ed WHERE ed.source_id = e.id OR ed.target_id = e.id)
         AND NOT EXISTS (SELECT 1 FROM facts f WHERE f.entity_id = e.id)`,
   },
