@@ -12,15 +12,24 @@ declare global {
 /**
  * Lazy singleton. Initialised on first call so Next.js can build pages that
  * don't actually query the DB without DATABASE_URL set (e.g. /login).
+ *
+ * The pool MUST be cached in every environment. `db` (below) is a Proxy that
+ * calls getDb() on every property access, so without a cache each access would
+ * mint a fresh `postgres()` pool (max: 10) and leak connections without bound.
+ * The cache used to be gated behind `NODE_ENV !== 'production'` (the usual
+ * Next.js survive-HMR-in-dev idiom) — but that inverted the logic: in
+ * production nothing was cached, so every query opened a new pool and the
+ * long-lived workers/agent exhausted Postgres within seconds. Cache always;
+ * globalThis is process-global, so one pool per process is exactly right.
  */
 function getDb(): PostgresJsDatabase<typeof schema> {
   if (globalThis.__mantleDb) return globalThis.__mantleDb;
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL must be set');
   const sql = globalThis.__mantleSql ?? postgres(url, { max: 10, prepare: false });
-  if (process.env.NODE_ENV !== 'production') globalThis.__mantleSql = sql;
+  globalThis.__mantleSql = sql;
   const client = drizzle(sql, { schema });
-  if (process.env.NODE_ENV !== 'production') globalThis.__mantleDb = client;
+  globalThis.__mantleDb = client;
   return client;
 }
 
