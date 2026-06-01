@@ -17,6 +17,7 @@
  * failure — so the suite runs before the sample files are in place.
  */
 import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 import {
@@ -48,8 +49,21 @@ export type BuildCtx = {
 
 export type FixtureBuilder = (ctx: BuildCtx) => Promise<BuildResult>;
 
-/** Directory holding checked-in sample files for the file-type fixtures. */
-const FILES_DIR = path.join(process.cwd(), 'apps/web/lib/integrity/fixtures/files');
+/** Directory holding checked-in sample files for the file-type fixtures.
+ *  Resolved against the runtime cwd, which differs by entry point: the Next web
+ *  app (where the probe API route runs) starts with cwd = `apps/web`, whereas a
+ *  repo-root script has cwd = the repo root. The old single `apps/web/…` form
+ *  doubled to `apps/web/apps/web/…` under the web server and made EVERY
+ *  file-matrix fixture report MISSING. Probe both layouts and pick the one that
+ *  exists. */
+const FILES_DIR = (() => {
+  const rel = 'lib/integrity/fixtures/files';
+  const candidates = [
+    path.join(process.cwd(), rel), // cwd = apps/web (next dev / next start)
+    path.join(process.cwd(), 'apps/web', rel), // cwd = repo root (scripts)
+  ];
+  return candidates.find((p) => existsSync(p)) ?? candidates[0];
+})();
 
 // ─── content-pipeline builders (no external bytes) ──────────────────────────
 
