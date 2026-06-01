@@ -132,6 +132,37 @@ export type SuiteReport = {
   capabilities: Capabilities;
 };
 
+// ─── passive corpus audit ───────────────────────────────────────────────────
+//
+// The read-only twin of the probe: scans the *existing* brain for invariant
+// violations (no writes, no fixtures, no cost). Where the probe asks "can the
+// pipeline digest each type?", the audit asks "is what's already stored
+// consistent?".
+
+export type AuditSeverity = 'high' | 'medium' | 'low';
+
+/** One offending row, with enough to drill in. */
+export type AuditSample = { id: string; kind: string; detail: string };
+
+export type AuditCheck = {
+  key: string;
+  label: string;
+  severity: AuditSeverity;
+  /** One-line explanation of the invariant + why a violation matters. */
+  note: string;
+  count: number;
+  /** True if the violation count hit the query cap (so `count` is a floor). */
+  capped: boolean;
+  ok: boolean;
+  samples: AuditSample[];
+};
+
+export type AuditReport = {
+  generatedAt: string;
+  checks: AuditCheck[];
+  totalViolations: number;
+};
+
 /** Tag applied to every probe node, ever — the broad cleanup key. */
 export const PROBE_BASE_TAG = 'integrity-probe';
 /** Per-run tag: `integrity-probe-<8hex>` (kept ≤ 40 chars for `dedupeTags`). */

@@ -16,7 +16,16 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import type { Capabilities, CheckResult, FixtureResult, FixtureState, SuiteReport } from '@/lib/integrity/types';
+import type {
+  AuditCheck,
+  AuditReport,
+  AuditSeverity,
+  Capabilities,
+  CheckResult,
+  FixtureResult,
+  FixtureState,
+  SuiteReport,
+} from '@/lib/integrity/types';
 
 type SpecMeta = { key: string; label: string; nodeType: string; pipeline: 'content' | 'file' };
 
@@ -166,7 +175,110 @@ function ResultRow({ result }: { result: FixtureResult }) {
   );
 }
 
+const SEVERITY_STYLE: Record<AuditSeverity, string> = {
+  high: 'bg-destructive/10 text-destructive border-destructive/30',
+  medium: 'bg-muted text-foreground border-border',
+  low: 'bg-muted text-muted-foreground border-border',
+};
+
+function AuditRow({ check }: { check: AuditCheck }) {
+  const [open, setOpen] = useState(false);
+  const countCls = check.ok
+    ? 'bg-primary/10 text-primary border-primary/30'
+    : check.severity === 'high'
+      ? 'bg-destructive/10 text-destructive border-destructive/30'
+      : 'bg-muted text-foreground border-border';
+  return (
+    <li className="px-3 py-2.5">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 text-left">
+        <span className={`inline-flex w-[64px] shrink-0 justify-center rounded-sm border px-1.5 py-0.5 text-[11px] font-semibold tracking-wider ${countCls}`}>
+          {check.ok ? 'OK' : `${check.count}${check.capped ? '+' : ''}`}
+        </span>
+        <span className="min-w-[200px] text-sm font-medium text-foreground">{check.label}</span>
+        <span className={`rounded-sm border px-1.5 py-0.5 text-[11px] uppercase tracking-wider ${SEVERITY_STYLE[check.severity]}`}>
+          {check.severity}
+        </span>
+      </button>
+      {open && (
+        <div className="mt-2 space-y-1.5 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
+          <p className="text-muted-foreground">{check.note}</p>
+          {check.samples.length > 0 && (
+            <div className="space-y-1 border-t border-border pt-1.5">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Samples</div>
+              {check.samples.map((s) => (
+                <div key={s.id} className="flex gap-2">
+                  <span className="rounded-sm bg-muted px-1 font-mono text-[11px] text-muted-foreground">{s.kind}</span>
+                  <span className="text-muted-foreground">{s.detail}</span>
+                  <a href={`/nodes/${s.id}/history`} className="font-mono text-[11px] underline">{s.id.slice(0, 8)}</a>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+function AuditView() {
+  const toast = useToast();
+  const [running, setRunning] = useState(false);
+  const [report, setReport] = useState<AuditReport | null>(null);
+
+  async function runAudit() {
+    setRunning(true);
+    try {
+      const res = await fetch('/api/debug/integrity/audit');
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
+      const data = (await res.json()) as AuditReport;
+      setReport(data);
+      toast.success(data.totalViolations === 0 ? 'Corpus clean — no violations' : `${data.totalViolations} violations across ${data.checks.filter((c) => !c.ok).length} checks`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Audit failed');
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Corpus audit</h2>
+          <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
+            Read-only scan of your <strong>existing</strong> brain for invariant violations — silent-miss nodes,
+            embedding-dimension drift, unembedded or reaper-missed facts, duplicate edges, orphan/over-merged
+            entities. No writes, no cost. Complements the probe: the probe proves the pipeline works on synthetic
+            inputs; this proves your real data is consistent.
+          </p>
+        </div>
+        <Button onClick={runAudit} disabled={running}>
+          {running ? 'Scanning…' : 'Run corpus audit'}
+        </Button>
+      </div>
+
+      {report && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-card px-4 py-3 text-sm">
+            <span className="font-semibold">
+              {report.totalViolations === 0 ? 'Clean' : `${report.totalViolations} violations`}
+            </span>
+            <span className="text-muted-foreground">·</span>
+            <span className="text-muted-foreground">{report.checks.filter((c) => c.ok).length}/{report.checks.length} checks passed</span>
+          </div>
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {report.checks.map((c) => (
+              <AuditRow key={c.key} check={c} />
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function IntegrityClient({ specs }: { specs: SpecMeta[] }) {
+  const [mode, setMode] = useState<'probe' | 'audit'>('probe');
   const toast = useToast();
   const [running, setRunning] = useState(false);
   const [cleaning, setCleaning] = useState(false);
@@ -216,6 +328,26 @@ export function IntegrityClient({ specs }: { specs: SpecMeta[] }) {
 
   return (
     <div className="space-y-4">
+      <div className="flex gap-1 border-b border-border">
+        {(['probe', 'audit'] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMode(m)}
+            className={
+              'rounded-t-md px-3 py-1.5 text-sm font-medium transition-colors ' +
+              (mode === m ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground hover:text-foreground')
+            }
+          >
+            {m === 'probe' ? 'Active probe' : 'Corpus audit'}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'audit' && <AuditView />}
+
+      {mode === 'probe' && (
+        <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
@@ -337,6 +469,8 @@ export function IntegrityClient({ specs }: { specs: SpecMeta[] }) {
               Clean ALL probe data
             </Button>
           </div>
+        </div>
+      )}
         </div>
       )}
     </div>

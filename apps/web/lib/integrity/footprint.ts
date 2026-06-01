@@ -10,10 +10,7 @@ import { db, facts } from '@mantle/db';
 import { and, eq, sql } from 'drizzle-orm';
 
 import type { FactRef, ProbeFootprint } from './types';
-
-function rowsOf<T>(result: unknown): T[] {
-  return (Array.isArray(result) ? result : ((result as { rows?: T[] }).rows ?? [])) as T[];
-}
+import { rowsOf } from './sql-util';
 
 type NodeRow = {
   type: string;

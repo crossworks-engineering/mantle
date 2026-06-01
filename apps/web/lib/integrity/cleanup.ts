@@ -22,6 +22,7 @@ import { deleteFileById } from '@mantle/files';
 
 import { PROBE_BASE_TAG } from './types';
 import { PROBE_EMAIL_ADDRESS } from './fixtures';
+import { rowsOf } from './sql-util';
 
 /** Invented, collision-proof names the fixtures use. Deliberately NOT the
  *  generic tokens the probe text also mentions (e.g. "Thelby", "MGN12") — those
@@ -39,10 +40,6 @@ export type CleanupResult = {
   tracesDeleted: number;
   entitiesDeleted: number;
 };
-
-function rowsOf<T>(result: unknown): T[] {
-  return (Array.isArray(result) ? result : ((result as { rows?: T[] }).rows ?? [])) as T[];
-}
 
 export async function cleanupProbes(ownerId: string, tag?: string): Promise<CleanupResult> {
   const scopeTag = tag ?? PROBE_BASE_TAG;
