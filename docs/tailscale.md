@@ -1,18 +1,42 @@
-# Tailscale remote inference — design
+# Tailscale remote inference
 
-> **Status: DESIGN ONLY — not built.** No code, no compose service, no
-> migration exists for this yet. This document is the agreed plan for a future
-> build. Decisions in §6 are locked; everything else is intent.
+> **Status: SHIPPED 2026-06-01.** Compose service, `local` chat adapter,
+> per-route proxy dispatch, the `/settings/network` status page + peer dropdown,
+> and the "Connect a device" guide are all built and on `main`. The one thing
+> only an operator can confirm is the live NAT traversal against a real tailnet
+> (the runtime is unit-tested for route *selection*; the actual proxy hop lights
+> up the first time a tailnet is up — e.g. on a Contabo VPS reaching a home box).
+> §0 below is the as-built reference; §1 onward is the original design narrative,
+> kept for the rationale (a couple of decisions changed in the build — noted in §0).
 
 How a self-hosted Mantle reaches a beefy inference box that lives on your own
 network — so you can run capable chat / vision models locally and let Mantle
 use them — without touching IP addresses or router settings.
 
-It's the **networking layer** under two things already designed/built: the
-[chat primary/backup routes](../chat-failover.md) (which decide *which* model a
-worker uses) and the [bundled local embedder](../embeddings.md) (the first local
-model). Those answer "which model"; this answers "how does the cloud box reach
-the model running in my house."
+It's the **networking layer** under the [chat primary/backup routes](./chat-failover.md)
+(which decide *which* model a worker uses) and the [bundled local embedder](./embeddings.md)
+(the first local model). Those answer "which model"; this answers "how does the
+cloud box reach the model running in my house."
+
+---
+
+## 0. As built (what shipped)
+
+| Piece | Where | Note |
+|---|---|---|
+| `tailscale` compose service | [`docker-compose.yml`](../docker-compose.yml) | userspace, **HTTP** forward-proxy on `:1055`, profile-gated `--profile tailnet` (off by default). Joins via `TS_AUTHKEY` from `.env`. |
+| `local` chat adapter | [`local-chat.ts`](../packages/voice/src/adapters/local-chat.ts) | OpenAI-compat; honours per-route `baseUrl` + `viaTailnet`. `getChatAdapter('local')`. |
+| Proxy dispatch | [`tailnet.ts`](../packages/voice/src/adapters/tailnet.ts) | `tailnetFetch` via undici `ProxyAgent`; **inert by default** (no proxy → direct fetch). `undici` is lazy-`require`d so the `@mantle/voice` barrel stays browser-safe. |
+| Per-route host columns | migration `0063` | `base_url` + `via_tailnet` (+ backup pair) on `agents` + `ai_workers`, threaded through `resolveChatRoutes` → `ChatOptions`. |
+| Operator UI | [`/settings/network`](../apps/web/app/\(app\)/settings/network/page.tsx) | connection tile + reachable-devices list + setup guide; a `RouteHostFields` base-URL input (with a peer `<datalist>`) + "Reach via Tailscale" switch on the agents/ai-workers route forms. |
+| Status reader | [`lib/tailscale.ts`](../apps/web/lib/tailscale.ts) | reads the tailscaled **LocalAPI** (`/localapi/v0/status`) over a shared unix socket; never throws (degrades to "tailnet not running"). |
+| Onboarding | [`/settings/network/connect`](../apps/web/app/\(app\)/settings/network/connect/page.tsx) | platform-tabbed (Linux/macOS/Windows) "Connect a device" guide. |
+
+**Two decisions changed from the design below:**
+1. **HTTP forward-proxy, not SOCKS5** (§8 left this open) — `TS_OUTBOUND_HTTP_PROXY_LISTEN`; the Node `undici` fetch path uses the HTTP proxy. SOCKS5 is still available via `TS_SOCKS5_SERVER` if ever needed.
+2. **Env-based auth key, not a UI secret field** (§3/§5 imagined a paste-in field) — the sidecar reads `TS_AUTHKEY` from its environment at container-start; Mantle (a separate container) can't inject it into a running container, so a UI field would look like it works but wouldn't. The page shows the `.env` snippet + console link instead, and reads the *resulting* connection over the LocalAPI socket. Honest over pretty.
+
+**Bring it up:** put `TS_AUTHKEY` (+ optional `TS_HOSTNAME`) in `.env`, then `docker compose --profile tailnet up -d`. The full walkthrough is the in-app **Connect a device** guide.
 
 ---
 
@@ -192,11 +216,10 @@ a secret field and a status panel, and stop.
 This is the *reach*; it needs a *thing to reach*. To run a local **chat** model
 (the main use case), there also needs to be a **`local` chat adapter** —
 OpenAI-compatible, reusing the `openai-compat` helpers + a per-route base URL,
-the way [`local-embedding`](../../packages/voice/src/adapters/local-embedding.ts)
-already works. The `local` provider id exists (the chat-failover layer already
-treats it as keyless); the chat *dispatcher* doesn't yet. That adapter + this
-networking layer + the [chat primary/backup routes](../chat-failover.md) together
-are the full "run your own models, hosted Mantle just uses them" story:
+the way [`local-embedding`](../packages/voice/src/adapters/local-embedding.ts)
+already works. **(Shipped — see §0; [`local-chat.ts`](../packages/voice/src/adapters/local-chat.ts).)**
+That adapter + this networking layer + the [chat primary/backup routes](./chat-failover.md)
+together are the full "run your own models, hosted Mantle just uses them" story:
 
 - **chat-failover** decides *which* model (local primary, cloud backup).
 - **a local chat adapter** speaks to a self-hosted OpenAI-compatible server.

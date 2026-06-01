@@ -27,7 +27,7 @@ name: mantle
 #   TS_HOSTNAME            (default: mantle-vps — this node's name on the tailnet)
 #   MANTLE_TAILNET_PROXY_URL (default: http://tailscale:1055 — the in-compose
 #                            HTTP proxy; only used by routes flagged "via tailnet")
-#   See docs/future/tailscale-remote-inference.md.
+#   See docs/tailscale.md.
 #
 # Build & run:
 #   docker compose build
@@ -199,7 +199,7 @@ services:
   # Reaches capable chat/vision models running on a box you own (home GPU, LAN
   # server) that's behind NAT — without port-forwarding or public IPs. Joins
   # your tailnet; the app then reaches `http://<magicdns-name>:<port>` for that
-  # box by name. See docs/future/tailscale-remote-inference.md.
+  # box by name. See docs/tailscale.md.
   #
   # Off by default. Enable with:  docker compose --profile tailnet up -d
   # Set TS_AUTHKEY (generate one in the Tailscale admin console) before bringing

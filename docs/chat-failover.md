@@ -1,6 +1,6 @@
 # Chat route failover — primary + backup
 
-**Shipped 2026-05-31** (migration `0062`; commits `9c69595` → `69104af`). The runtime half of "run a local model with a cloud safety net" for agents and chat-shaped workers. This is the canonical implementation reference; the operator-facing summary lives in [`ai-workers.md` §7a](./ai-workers.md#7a-chat-route-failover-primary--backup).
+**Shipped 2026-05-31** (runtime, migration `0062`); **operator UI + per-route host + key consolidation 2026-06-01** (migration `0063`). "Run a local model with a cloud safety net" for agents and chat-shaped workers — now fully wired end to end (config UI included; see §10–§12). This is the canonical implementation reference; the operator-facing summary lives in [`ai-workers.md` §7a](./ai-workers.md#7a-chat-route-failover-primary--backup), and the local-model / tailnet companion in [`tailscale.md`](./tailscale.md).
 
 It is the **chat sibling** of the embedding failover ([`embeddings.md`](./embeddings.md)) — same shape, one critical difference (covered in [§7](#7-why-chat-differs-from-embeddings)).
 
@@ -223,20 +223,30 @@ This is why the two features share a shape but not a constraint, and why the cha
 
 ---
 
-## 10. What's NOT done — Phase 4 (operator UI)
+## 10. Operator UI — Phase 4 (SHIPPED)
 
-The runtime honours whatever the columns say, but **today the backup is only settable via direct SQL.** Remaining:
-- Add the four backup fields to the agents create/update API zod ([`route.ts`](../apps/web/app/api/agents/route.ts) + `[id]/route.ts`) and the ai-workers action parse.
-- agents-client.tsx + worker-form.tsx: a "Backup route" section (provider/model/key + enable switch), a **"Make backup primary"** swap button (exchanges the primary↔backup form values), and per-route test-chat (reuse `testAgentChatAction` / `testChatAction`). Surface which route is active.
+The backup route + per-route host are fully configurable from the UI — no SQL needed.
 
-Pure config ergonomics — no new runtime behaviour.
+- **API zod**: the backup fields (`backupProvider/backupModel/backupApiKeyId/backupEnabled`) and the per-route host fields (`baseUrl/viaTailnet/backupBaseUrl/backupViaTailnet`, migration 0063) are on the agents create/update zod ([`route.ts`](../apps/web/app/api/agents/route.ts) + `[id]/route.ts`) and the ai-workers action parse (`parseBackupFromForm`).
+- **agents-client.tsx + worker-form.tsx**: a "Backup route" section (provider/model/key + enable switch), a **"Make backup primary"** swap (exchanges the primary↔backup form values *including* host + tailnet flag, so a route moves whole), and a `RouteHostFields` control (base-URL input + "Reach via Tailscale" switch) shown only when a route's provider is `local`. The worker form gates the backup section to chat-shaped kinds; the agents form shows it for all conversational agents.
+
+Shipped `5220834` (chat backup UI) + `ba0aa91` (per-route host UI). Pure config ergonomics — no new runtime behaviour.
 
 ## 11. Sharp edges / future
 
-- **No circuit breaker** (see §8.2) — a hanging primary costs one timeout per turn until it recovers.
-- **The `local` chat provider isn't a registered adapter yet.** `resolveRouteAdapter` already handles `local` as keyless, but to actually run a local *chat* model you need a `local` chat adapter (OpenAI-compat, reusing the `openai-compat` helpers + a per-route base URL, the way `local-embedding` works). The provider id exists; the chat dispatcher doesn't. That's the natural companion to the [Tailscale remote-inference work](./embeddings.md) for reaching a NAT'd box.
-- **Per-route base URL for chat** isn't threaded yet (embeddings got it via `EmbedRequest.baseUrl`). A local chat route currently relies on a single env-configured host; per-route URLs (so primary and backup can point at different boxes) is the same small change `local-embedding` already has.
+- **No circuit breaker** (see §8.2) — a hanging primary costs one timeout per turn until it recovers. Still the documented next step *if* the hang case proves real.
+- **The `local` chat adapter shipped** (`4cbbeeb`) — `getChatAdapter('local')` resolves an OpenAI-compatible dispatcher (`packages/voice/src/adapters/local-chat.ts`) that honours a per-route `baseUrl` + `viaTailnet`, reusing the `openai-compat` helpers like `local-embedding`. Running a local chat model as the primary is live (see [`tailscale.md`](./tailscale.md) + [`ai-workers.md` §7a](./ai-workers.md#7a-chat-route-failover-primary--backup)).
+- **Per-route base URL for chat is threaded** (migration 0063, `7e81ae4`): `ChatRoute` carries `baseUrl` + `viaTailnet`, mapped by `resolveChatRoutes` for primary AND backup, so the two can point at different hosts. The matching operator UI is the `RouteHostFields` control above.
+
+## 12. Key resolution — one source of truth (`resolveChatKey`)
+
+`resolveChatKey(ownerId, route)` (in [`chat-failover.ts`](../packages/agent-runtime/src/chat-failover.ts), `e351324`) is the **single** decision for "does this chat route have a usable key?" — shared by the dispatch (`resolveRouteAdapter` calls it) AND every worker / agent pre-flight, so the two can never drift. Resolution order: route-pinned key → the provider's canonical **service key** → the `local` keyless sentinel. Non-throwing — returns `{ ok, apiKey } | { ok: false, disposition, detail }`; the dispatch throws on a miss, a worker skips with a trace.
+
+This replaced **7 copy-pasted `!apiKeyId` guards** (extractor / summarizer ×2 / reflector ×2 / responder / invoke_agent) that had silently drifted: when `local` workers were first configured (keyless), the stale guards skipped them entirely. Two behaviours worth knowing: (1) keyless `local` always resolves; (2) the **service-key fallback** means a worker with no *pinned* key but a saved service key for its provider now runs — the pre-flight finally agrees with the dispatch (the old per-worker guards checked only the pinned `apiKeyId` and could wrongly skip). No key anywhere → still skips. Adding the next keyless provider is a one-line change here.
 
 ## Commit map
 
-`9c69595` schema + primitives · `a5ff1ef` single-shot worker failover · `56be768` tool-loop sticky failover · `69104af` tests + docs. All on `main`.
+**Runtime (Phases 1–5):** `9c69595` schema + primitives · `a5ff1ef` single-shot worker failover · `56be768` tool-loop sticky failover · `69104af` tests + docs.
+**Phase 4 + tailnet:** `5220834` chat backup UI · `7e81ae4` per-route base_url/via_tailnet (migration 0063) threaded end-to-end · `ba0aa91` per-route host UI.
+**Hardening:** `58919f4` don't skip keyless-`local` workers · `e351324` consolidate 7 key guards into `resolveChatKey`.
+All on `main`. Related: [`tailscale.md`](./tailscale.md) (local chat adapter + tailnet).

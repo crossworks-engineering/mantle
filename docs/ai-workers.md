@@ -1061,6 +1061,18 @@ There is **no circuit breaker** (decision: start simple). A primary that
 *refuses fast* (box off) costs ~nothing per turn; a primary that *hangs* costs
 one timeout per turn until it recovers — add a breaker later only if that bites.
 
+**Operator UI + local models (shipped 2026-06-01).** The backup route is
+configured from the worker form — a "Backup route" section (provider/model/key +
+enable switch) with a **"Make backup primary"** swap. For a `local` route, a
+base-URL field + a "Reach via Tailscale" toggle appear (migration `0063`); the
+base URL autocompletes from your tailnet peers. So a chat-shaped worker
+(summarizer / extractor / reflector) can run a **local model** (e.g. gemma via
+Ollama / LM Studio) as its primary with a cloud model as the backup — entirely
+from the UI. The `local` provider is **keyless**: key resolution flows through
+the shared `resolveChatKey` (pinned → service → `local` sentinel), so a local
+worker needs no API key and isn't skipped for the lack of one. Full reference:
+[`chat-failover.md`](./chat-failover.md) (§10–§12) + [`tailscale.md`](./tailscale.md).
+
 ---
 
 ## 8. The configuration surface (operator view)
