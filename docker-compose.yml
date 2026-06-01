@@ -107,6 +107,12 @@ services:
     image: pgvector/pgvector:pg17
     container_name: mantle_pg
     restart: unless-stopped
+    # Headroom above the default 100: the full stack (web + agent + 4 workers,
+    # each a postgres-js pool, plus pg-boss + web SSE LISTEN conns) sits ~50 at
+    # idle and climbs under load. A crash-looping service can briefly double its
+    # connection churn and exhaust 100, wedging the DB (even psql locked out).
+    # 200 is cheap on an 11 GB box (~10 MB/conn worst case) and absorbs spikes.
+    command: ["postgres", "-c", "max_connections=200"]
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
