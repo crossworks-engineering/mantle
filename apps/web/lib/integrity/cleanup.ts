@@ -23,9 +23,14 @@ import { deleteFileById } from '@mantle/files';
 import { PROBE_BASE_TAG } from './types';
 import { PROBE_EMAIL_ADDRESS } from './fixtures';
 
-/** Distinctive tokens the fixtures use — orphan-guarded, so this never touches
- *  a real entity that's still referenced. */
-const PROBE_ENTITY_PATTERNS = ['vorthelm%', 'quintus bramblewick', 'thelby', 'mgn12%'];
+/** Invented, collision-proof names the fixtures use. Deliberately NOT the
+ *  generic tokens the probe text also mentions (e.g. "Thelby", "MGN12") — those
+ *  could match a real entity, and although the orphan guard below protects any
+ *  *referenced* entity, a real but freshly-created (not-yet-extracted) entity
+ *  with that name would have no edges/facts yet and could be wrongly swept. We
+ *  trade a little cleanup completeness (a stray "Thelby" probe entity may
+ *  linger harmlessly) for zero real-data-loss risk. */
+const PROBE_ENTITY_PATTERNS = ['vorthelm%', 'quintus bramblewick'];
 
 export type CleanupResult = {
   tag: string;

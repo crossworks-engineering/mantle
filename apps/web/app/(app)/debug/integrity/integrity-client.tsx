@@ -306,7 +306,10 @@ export function IntegrityClient({ specs }: { specs: SpecMeta[] }) {
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => cleanup(report.runTag)}>
+                    <AlertDialogAction
+                      onClick={() => cleanup(report.runTag)}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
                       Clean up
                     </AlertDialogAction>
                   </AlertDialogFooter>

@@ -74,7 +74,7 @@ export async function loadProbeFootprint(
     SELECT t.id, t.started_at, t.status::text AS status, t.data->>'disposition' AS disposition,
            t.cost_micro_usd
     FROM traces t
-    WHERE t.subject_id = ${nodeId} AND t.kind = 'extractor_run'
+    WHERE t.subject_id = ${nodeId} AND t.owner_id = ${ownerId} AND t.kind = 'extractor_run'
     ORDER BY t.started_at DESC
     LIMIT 1
   `);
