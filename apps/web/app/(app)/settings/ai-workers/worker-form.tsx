@@ -45,7 +45,6 @@ import {
   getProvider,
   isProviderId,
   isProviderWired,
-  WIRED_PROVIDERS,
   providersForCapability,
   voicesForModel,
   type AudioTag,
@@ -309,11 +308,11 @@ export function WorkerForm({
   const supportsDiscovery =
     kind === 'tts' ||
     kind === 'stt' ||
-    (kind === 'vision' && WIRED_PROVIDERS.vision.has(provider)) ||
-    (kind === 'document' && WIRED_PROVIDERS.vision.has(provider)) ||
-    (kind === 'image_gen' && WIRED_PROVIDERS.image_gen.has(provider)) ||
-    (chatShaped && WIRED_PROVIDERS.chat.has(provider)) ||
-    (kind === 'embedding' && WIRED_PROVIDERS.embedding.has(provider));
+    (kind === 'vision' && isProviderWired(provider, 'vision')) ||
+    (kind === 'document' && isProviderWired(provider, 'vision')) ||
+    (kind === 'image_gen' && isProviderWired(provider, 'image_gen')) ||
+    (chatShaped && isProviderWired(provider, 'chat')) ||
+    (kind === 'embedding' && isProviderWired(provider, 'embedding'));
 
   // The initial model list rendered before live discovery returns
   // depends on which provider+kind we're configuring. Picking the
@@ -910,7 +909,7 @@ export function WorkerForm({
           <SttTestButton workerId={worker.id} />
         </section>
       )}
-      {mode === 'edit' && worker && chatShaped && wiredChatProviders.has(provider) && (
+      {mode === 'edit' && worker && chatShaped && isProviderWired(provider, 'chat') && (
         <section className="space-y-2 border-t border-border pt-6">
           <h3 className="text-sm font-semibold">Test chat</h3>
           <p className="text-xs text-muted-foreground">
