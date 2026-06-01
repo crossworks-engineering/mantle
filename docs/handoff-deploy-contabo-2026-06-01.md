@@ -38,11 +38,21 @@ up all succeeded; then three bugs that **only manifest in a real prod container*
    headroom while debugging #2. Now that #2 is fixed, steady state is ~20 and
    even 100 would be ample; 200 stays as cheap safety margin (11 GB box).
 
-**Still-open follow-up (non-blocking):** `apps/web/workers/telegram-poll.ts`
-can die on an unhandled promise rejection from a `PostgresError` in its poll
-loop (`triggerUncaughtException`). Harmless now that connections don't leak (a
-PG blip → one clean restart, no pileup), but it should catch + back off so a
-real PG restart doesn't bounce the worker. Worth hardening.
+**Follow-up — DONE (2026-06-01).** `apps/web/workers/telegram-poll.ts` could
+die on an unhandled promise rejection from a `PostgresError`
+(`triggerUncaughtException`). The two unguarded DB paths were the 60s
+`refreshAccounts` reconciler (fired by `setInterval`, whose returned promise is
+never awaited) and the per-bot loop's account re-read (it sat outside the
+`try/catch` that wraps `pollOnce`). Both now catch + back off, and a
+`process.on('unhandledRejection')` backstop logs + keeps the process alive. The
+same backstop was added to the other three web workers + the agent for
+defense-in-depth (they were already structurally guarded — pg-boss handlers,
+wrapped chokidar handlers, `runOnce` try/catch, `.catch` on every LISTEN handler
+and interval). **Verified live:** `docker compose restart postgres` produced
+`terminating connection due to administrator command` errors that were caught
+gracefully (`[pg-boss] error`, `[extract-queue] pg-boss error`) — all five
+services stayed `running` with `restarts=0` and connections held flat (~18, not
+climbing). Commit `825b663`.
 
 **Verify it's still healthy:**
 ```bash
