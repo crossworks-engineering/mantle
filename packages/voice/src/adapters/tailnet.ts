@@ -20,14 +20,30 @@
  * tailnet is up.
  */
 
-import { fetch as undiciFetch, ProxyAgent } from 'undici';
+// `undici` is a Node-only dependency (it pulls in `node:net`). We must NOT
+// import it at module-evaluation time: this adapter is reached through the
+// `@mantle/voice` barrel, which client components import for pure helpers like
+// `getProvider`. A static `import 'undici'` drags node:net into the browser
+// bundle and Turbopack throws ("Cannot find module 'node:net'"). Load it lazily
+// inside the fetch path instead — that code only ever runs server-side, when a
+// route is actually flagged "via tailnet" and a proxy is configured.
+type UndiciFetch = typeof import('undici').fetch;
+type UndiciProxyAgent = import('undici').ProxyAgent;
 
-let _agent: ProxyAgent | null | undefined; // undefined = unresolved; null = none
+let _agent: UndiciProxyAgent | null | undefined; // undefined = unresolved; null = none
+let _undiciFetch: UndiciFetch | undefined;
 
-function proxyAgent(): ProxyAgent | null {
+function proxyAgent(): UndiciProxyAgent | null {
   if (_agent !== undefined) return _agent;
   const url = process.env.MANTLE_TAILNET_PROXY_URL?.trim();
-  _agent = url ? new ProxyAgent(url) : null;
+  if (!url) {
+    _agent = null;
+    return _agent;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { ProxyAgent, fetch: undiciFetch } = require('undici') as typeof import('undici');
+  _undiciFetch = undiciFetch;
+  _agent = new ProxyAgent(url);
   return _agent;
 }
 
@@ -43,11 +59,12 @@ export function tailnetProxyConfigured(): boolean {
  */
 export async function tailnetFetch(url: string, init?: RequestInit): Promise<Response> {
   const agent = proxyAgent();
-  if (!agent) return fetch(url, init);
+  // No proxy configured (or `undici` unavailable) → plain direct fetch.
+  if (!agent || !_undiciFetch) return fetch(url, init);
   // undici's RequestInit accepts `dispatcher`; the global RequestInit type
   // doesn't, hence the cast at this boundary.
-  const res = await undiciFetch(url, { ...(init as object), dispatcher: agent } as Parameters<
-    typeof undiciFetch
+  const res = await _undiciFetch(url, { ...(init as object), dispatcher: agent } as Parameters<
+    UndiciFetch
   >[1]);
   return res as unknown as Response;
 }
@@ -55,4 +72,5 @@ export async function tailnetFetch(url: string, init?: RequestInit): Promise<Res
 /** Test seam — clears the cached agent so an env change takes effect. */
 export function _resetTailnetProxy(): void {
   _agent = undefined;
+  _undiciFetch = undefined;
 }
