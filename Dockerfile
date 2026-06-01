@@ -16,7 +16,12 @@
 # the image-size cost is fine; the operational simplicity is worth more.
 
 # ── 1. deps: full workspace install ─────────────────────────────────────────
-FROM node:20-slim AS deps
+# Node 24 LTS — long support window (25 is the short-lived "current" line).
+# pnpm 11.1.2 (pinned in packageManager) imports a Node builtin not present in
+# Node 20, so node:20-slim fails install with ERR_UNKNOWN_BUILTIN_MODULE; 24 is
+# safely above that. corepack is unbundled from Node 25+, so we install pnpm via
+# npm directly (works on 24 and forward).
+FROM node:24-slim AS deps
 WORKDIR /app
 
 # Tooling for native modules (postgres-js / pg-boss / sharp / esbuild /
@@ -25,7 +30,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 build-essential ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-RUN corepack enable && corepack prepare pnpm@11.1.2 --activate
+# Node 25 unbundled corepack, so install the pinned pnpm directly via npm.
+RUN npm install -g pnpm@11.1.2
 
 # Copy manifests first so we get a cached install layer when only source changes.
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
@@ -54,9 +60,10 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm -C apps/web build
 
 # ── 3. web runtime ──────────────────────────────────────────────────────────
-FROM node:20-slim AS web
+FROM node:24-slim AS web
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@11.1.2 --activate
+# Node 25 unbundled corepack, so install the pinned pnpm directly via npm.
+RUN npm install -g pnpm@11.1.2
 
 # Bring over the entire workspace including the .next build directory.
 # Simpler than wrestling with Next standalone output + workspace package

@@ -36,6 +36,35 @@ const nextConfig: NextConfig = {
     'pdf-to-png-converter',
     '@napi-rs/canvas',
   ],
+  // Belt-and-braces externalization for the PRODUCTION server build (webpack).
+  // `serverExternalPackages` alone doesn't externalize `@napi-rs/canvas` when
+  // it's reached *through* a transpilePackages workspace package
+  // (@mantle/files rasterize → pdf-to-png-converter → @napi-rs/canvas), so
+  // `next build` tries to parse the native `skia.*.node` binary and fails with
+  // "Module parse failed: Unexpected character". (Only `next dev`/turbopack was
+  // ever run before, which tolerates it — so this was latent.) This forces a
+  // runtime require() of the canvas meta-package, its per-platform binding
+  // (@napi-rs/canvas-<os>-<arch>), and any `.node` file.
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.externals = config.externals || [];
+      config.externals.push((
+        { request }: { request?: string },
+        callback: (err?: null, result?: string) => void,
+      ) => {
+        if (
+          request &&
+          (request === '@napi-rs/canvas' ||
+            request.startsWith('@napi-rs/canvas-') ||
+            request.endsWith('.node'))
+        ) {
+          return callback(null, `commonjs ${request}`);
+        }
+        callback();
+      });
+    }
+    return config;
+  },
   reactStrictMode: true,
 };
 
