@@ -14,6 +14,7 @@ const TABS = [
   { href: '/debug/agents', label: 'Agents', exact: false },
   { href: '/debug/telegram', label: 'Telegram', exact: false },
   { href: '/debug/journey', label: 'Journey', exact: false },
+  { href: '/debug/integrity', label: 'Integrity', exact: false },
 ];
 
 export function DebugTabs() {
