@@ -5,6 +5,7 @@ import { db, sql } from '@mantle/db';
 import { filesRoot, tikaVersion } from '@mantle/files';
 import { bucketReachable } from '@mantle/storage';
 import { attachmentBytes } from './dashboard';
+import { getTailnetStatus } from './tailscale';
 
 /**
  * Live system/infra vitals for the dashboard. Server-only — imported ONLY by
@@ -63,6 +64,14 @@ export type SystemHealth = {
     up: boolean | null;
     provider: string | null;
     model: string | null;
+    detail: string | null;
+  };
+  /** Tailscale / local network — the optional tailnet that lets a cloud VPS
+   *  reach a LAN model box by MagicDNS name. Profile-gated and off by default
+   *  in dev, so `up: null` (a muted/disabled pill) is the normal resting state;
+   *  `up: true` only when tailscaled reports backendState 'Running'. */
+  network: {
+    up: boolean | null;
     detail: string | null;
   };
   degraded: string[];
@@ -148,6 +157,21 @@ async function embedderHealth(userId: string): Promise<SystemHealth['embedder']>
   }
 }
 
+/** Probe the tailnet via tailscaled's LocalAPI (shared socket). `up: true` only
+ *  when connected (backendState 'Running'); anything else — socket absent
+ *  (tailnet profile off, the dev default), NeedsLogin, Stopped — is `up: null`
+ *  so the UI shows a muted/disabled pill rather than a red error for an
+ *  optional, off-by-default feature. getTailnetStatus never throws. */
+async function networkHealth(): Promise<SystemHealth['network']> {
+  const r = await getTailnetStatus(1_200);
+  if (!r.available) return { up: null, detail: r.reason };
+  if (r.backendState !== 'Running') return { up: null, detail: `tailscaled ${r.backendState}` };
+  const online = r.peers.filter((p) => p.online).length;
+  const who = r.self?.hostName || r.self?.dnsName || 'this node';
+  const suffix = r.magicDNSSuffix ? ` · ${r.magicDNSSuffix}` : '';
+  return { up: true, detail: `${who}${suffix} · ${online}/${r.peers.length} peers online` };
+}
+
 /** Disk usage of the volume holding MANTLE_FILES_ROOT, via systeminformation's
  *  per-mount list (best mount-prefix match), falling back to fs.statfs. */
 async function filesDisk(): Promise<DiskInfo> {
@@ -192,7 +216,7 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     }
   }
 
-  const [load, mem, disk, pg, attBytes, minioUp, tikaVer, emb] = await Promise.all([
+  const [load, mem, disk, pg, attBytes, minioUp, tikaVer, emb, net] = await Promise.all([
     probe('host.cpu', () => si.currentLoad()),
     probe('host.mem', () => si.mem()),
     probe('host.disk', () => filesDisk()),
@@ -205,6 +229,8 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     probe('tika', () => tikaVersion(1_500)),
     // embedderHealth is likewise never-throws; the wrapper just bounds it.
     probe('embedder', () => embedderHealth(userId)),
+    // networkHealth (tailnet) also never-throws; the wrapper just bounds it.
+    probe('network', () => networkHealth()),
   ]);
 
   const memInfo = mem
@@ -248,6 +274,7 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
       version: typeof tikaVer === 'string' ? tikaVer : null,
     },
     embedder: emb ?? { up: null, provider: null, model: null, detail: null },
+    network: net ?? { up: null, detail: null },
     degraded,
   };
 }
