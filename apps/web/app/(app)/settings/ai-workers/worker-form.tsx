@@ -56,7 +56,7 @@ import {
   type SttModelInfo,
   type TtsModelInfo,
   type VisionModelInfo,
-} from '@mantle/voice';
+} from '@mantle/voice/client';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';

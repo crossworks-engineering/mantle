@@ -28,7 +28,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
-import { SUPPORTED_PROVIDERS, wiredCapabilitiesFor } from '@mantle/voice';
+import { SUPPORTED_PROVIDERS, wiredCapabilitiesFor } from '@mantle/voice/client';
 
 type KeyRow = {
   id: string;

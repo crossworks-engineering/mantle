@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from 'react';
 import { CheckCircle2, Plus, Trash2 } from 'lucide-react';
 import type { AiWorker, AiWorkerKind } from '@mantle/db';
-import { getProvider } from '@mantle/voice';
+import { getProvider } from '@mantle/voice/client';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {

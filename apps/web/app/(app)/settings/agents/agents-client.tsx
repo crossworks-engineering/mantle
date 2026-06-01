@@ -27,7 +27,7 @@ import {
   getProvider,
   isProviderWired,
   providersForCapability,
-} from '@mantle/voice';
+} from '@mantle/voice/client';
 import type { AgentAvatar, PersonaNote } from '@mantle/db';
 import { AvatarPicker } from '@/components/avatar-picker';
 import { SubmitButton } from '@/components/ui/submit-button';
