@@ -111,6 +111,10 @@ type AgentSummary = {
   backupModel: string | null;
   backupApiKeyId: string | null;
   backupEnabled: boolean;
+  baseUrl: string | null;
+  viaTailnet: boolean;
+  backupBaseUrl: string | null;
+  backupViaTailnet: boolean;
   systemPrompt: string;
   tools: string[];
   toolSlugs: string[];
@@ -275,6 +279,12 @@ type FormState = {
   backupProvider: string;
   backupModel: string;
   backupApiKeyId: string;
+  /** Per-route host + tailnet flag (migration 0063). Empty baseUrl = provider
+   *  default; viaTailnet routes through the Tailscale proxy. */
+  baseUrl: string;
+  viaTailnet: boolean;
+  backupBaseUrl: string;
+  backupViaTailnet: boolean;
   systemPrompt: string;
   priority: string;
   enabled: boolean;
@@ -318,6 +328,10 @@ function emptyForm(role: Role = 'responder'): FormState {
     backupProvider: 'openrouter',
     backupModel: '',
     backupApiKeyId: '',
+    baseUrl: '',
+    viaTailnet: false,
+    backupBaseUrl: '',
+    backupViaTailnet: false,
     systemPrompt: d.systemPrompt,
     priority: '100',
     enabled: true,
@@ -357,6 +371,10 @@ function formFromAgent(a: AgentSummary): FormState {
     backupProvider: a.backupProvider ?? 'openrouter',
     backupModel: a.backupModel ?? '',
     backupApiKeyId: a.backupApiKeyId ?? '',
+    baseUrl: a.baseUrl ?? '',
+    viaTailnet: a.viaTailnet,
+    backupBaseUrl: a.backupBaseUrl ?? '',
+    backupViaTailnet: a.backupViaTailnet,
     systemPrompt: a.systemPrompt,
     priority: String(a.priority),
     enabled: a.enabled,
@@ -568,9 +586,13 @@ export function AgentsClient({
       provider: f.backupProvider || 'openrouter',
       model: f.backupModel,
       apiKeyId: f.backupApiKeyId,
+      baseUrl: f.backupBaseUrl,
+      viaTailnet: f.backupViaTailnet,
       backupProvider: f.provider,
       backupModel: f.model,
       backupApiKeyId: f.apiKeyId,
+      backupBaseUrl: f.baseUrl,
+      backupViaTailnet: f.viaTailnet,
     }));
 
   const openCreate = () => {
@@ -705,6 +727,11 @@ export function AgentsClient({
       backupProvider: form.backupProvider.trim() || null,
       backupModel: form.backupModel.trim() || null,
       backupApiKeyId: form.backupApiKeyId || null,
+      // Per-route host + tailnet flag. Always send so clearing persists.
+      baseUrl: form.baseUrl.trim() || null,
+      viaTailnet: form.viaTailnet,
+      backupBaseUrl: form.backupBaseUrl.trim() || null,
+      backupViaTailnet: form.backupViaTailnet,
       systemPrompt: form.systemPrompt,
       memoryConfig,
       params,
@@ -1135,6 +1162,18 @@ export function AgentsClient({
               </div>
             </div>
 
+            {/* Primary route host + tailnet (migration 0063). Only meaningful
+                for the `local` chat adapter — a self-hosted/LAN/tailnet box. */}
+            {form.provider === 'local' && (
+              <RouteHostFields
+                idPrefix="primary"
+                baseUrl={form.baseUrl}
+                viaTailnet={form.viaTailnet}
+                onBaseUrl={(v) => setForm((f) => ({ ...f, baseUrl: v }))}
+                onViaTailnet={(v) => setForm((f) => ({ ...f, viaTailnet: v }))}
+              />
+            )}
+
             {/* ── Backup chat route (failover) ──────────────────────────────
                 Unlike embeddings, a chat backup may be a DIFFERENT provider +
                 model — there's no vector-space lock. When failover is on and
@@ -1272,6 +1311,15 @@ export function AgentsClient({
                       })()}
                     </div>
                   </div>
+                  {form.backupProvider === 'local' && (
+                    <RouteHostFields
+                      idPrefix="backup"
+                      baseUrl={form.backupBaseUrl}
+                      viaTailnet={form.backupViaTailnet}
+                      onBaseUrl={(v) => setForm((f) => ({ ...f, backupBaseUrl: v }))}
+                      onViaTailnet={(v) => setForm((f) => ({ ...f, backupViaTailnet: v }))}
+                    />
+                  )}
                 </>
               )}
             </fieldset>
@@ -2166,5 +2214,61 @@ function ContextWindowHint({
       <span className="font-medium text-foreground tabular-nums">{pretty}</span> tokens (
       {limit.toLocaleString()})
     </p>
+  );
+}
+
+/** Per-route host + tailnet controls for a `local` chat route (migration 0063).
+ *  `baseUrl` overrides the default localhost host (point it at a LAN/tailnet
+ *  box); `viaTailnet` routes the request through the bundled Tailscale proxy so
+ *  a MagicDNS name reaches a box behind NAT. Rendered only when the route's
+ *  provider is `local` — other providers have fixed endpoints. */
+function RouteHostFields({
+  idPrefix,
+  baseUrl,
+  viaTailnet,
+  onBaseUrl,
+  onViaTailnet,
+}: {
+  idPrefix: string;
+  baseUrl: string;
+  viaTailnet: boolean;
+  onBaseUrl: (v: string) => void;
+  onViaTailnet: (v: boolean) => void;
+}) {
+  return (
+    <div className="space-y-3 rounded-md border border-dashed border-border p-3">
+      <div className="space-y-1.5">
+        <Label htmlFor={`${idPrefix}BaseUrl`}>Base URL</Label>
+        <Input
+          id={`${idPrefix}BaseUrl`}
+          value={baseUrl}
+          onChange={(e) => onBaseUrl(e.target.value)}
+          placeholder="blank = http://localhost:11434/v1 (Ollama default)"
+        />
+        <p className="text-xs text-muted-foreground">
+          Where this <code>local</code> route&apos;s server lives — e.g.{' '}
+          <code>http://gemma-box:11434/v1</code> (Ollama) or{' '}
+          <code>http://192.168.0.50:1234/v1</code> (LM Studio). Blank uses the{' '}
+          <code>MANTLE_LOCAL_CHAT_URL</code> env / localhost default.
+        </p>
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="space-y-0.5">
+          <Label htmlFor={`${idPrefix}ViaTailnet`} className="cursor-pointer">
+            Reach via Tailscale
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            Route this request through the bundled Tailscale proxy so the Base URL
+            (a MagicDNS name) reaches a box behind NAT. Inert unless the{' '}
+            <code>tailnet</code> compose profile is up.
+          </p>
+        </div>
+        <Switch
+          id={`${idPrefix}ViaTailnet`}
+          checked={viaTailnet}
+          onCheckedChange={onViaTailnet}
+        />
+      </div>
+    </div>
   );
 }

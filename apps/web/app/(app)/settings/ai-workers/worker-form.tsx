@@ -246,6 +246,15 @@ export function WorkerForm({
   );
   const [backupModel, setBackupModel] = useState<string>(worker?.backupModel ?? '');
   const [backupApiKeyId, setBackupApiKeyId] = useState<string>(worker?.backupApiKeyId ?? '');
+  // Per-route host + tailnet flag (migration 0063). Shown only for `local`
+  // routes — a self-hosted/LAN/tailnet box. Submitted as base_url/via_tailnet
+  // (primary) + backup_base_url/backup_via_tailnet.
+  const [baseUrl, setBaseUrl] = useState<string>(worker?.baseUrl ?? '');
+  const [viaTailnet, setViaTailnet] = useState<boolean>(worker?.viaTailnet ?? false);
+  const [backupBaseUrl, setBackupBaseUrl] = useState<string>(worker?.backupBaseUrl ?? '');
+  const [backupViaTailnet, setBackupViaTailnet] = useState<boolean>(
+    worker?.backupViaTailnet ?? false,
+  );
 
   // Filtered provider list — only providers that support this worker's
   // kind appear in the dropdown. Adding a new provider is a one-line
@@ -508,6 +517,11 @@ export function WorkerForm({
           fd.set('backup_provider', backupProvider.trim());
           fd.set('backup_model', backupModel.trim());
           fd.set('backup_api_key_id', backupApiKeyId);
+          // Per-route host + tailnet flag (migration 0063).
+          fd.set('base_url', baseUrl.trim());
+          fd.set('via_tailnet', viaTailnet ? 'on' : 'off');
+          fd.set('backup_base_url', backupBaseUrl.trim());
+          fd.set('backup_via_tailnet', backupViaTailnet ? 'on' : 'off');
         }
         startTransition(async () => {
           try {
@@ -702,6 +716,17 @@ export function WorkerForm({
             )}
           </div>
         </div>
+        {/* Primary route host + tailnet (migration 0063) — chat-shaped `local`
+            routes only (a self-hosted/LAN/tailnet box). */}
+        {chatShaped && provider === 'local' && (
+          <RouteHostFields
+            idPrefix="primary"
+            baseUrl={baseUrl}
+            viaTailnet={viaTailnet}
+            onBaseUrl={setBaseUrl}
+            onViaTailnet={setViaTailnet}
+          />
+        )}
       </section>
 
       {/* ── Backup chat route (failover) ─────────────────────────────
@@ -812,6 +837,15 @@ export function WorkerForm({
                     ))}
                 </select>
               </div>
+              {backupProvider === 'local' && (
+                <RouteHostFields
+                  idPrefix="backup"
+                  baseUrl={backupBaseUrl}
+                  viaTailnet={backupViaTailnet}
+                  onBaseUrl={setBackupBaseUrl}
+                  onViaTailnet={setBackupViaTailnet}
+                />
+              )}
             </div>
           )}
         </section>
@@ -985,6 +1019,63 @@ export function WorkerForm({
  *
  * Embedding skips discovery (keyless catalog), so it has its own line.
  */
+
+/** Per-route host + tailnet controls for a `local` chat route (migration 0063).
+ *  `baseUrl` overrides the default localhost host (point it at a LAN/tailnet
+ *  box); `viaTailnet` routes through the bundled Tailscale proxy so a MagicDNS
+ *  name reaches a box behind NAT. Rendered only when the route's provider is
+ *  `local`. Mirrors the agents form's RouteHostFields. */
+function RouteHostFields({
+  idPrefix,
+  baseUrl,
+  viaTailnet,
+  onBaseUrl,
+  onViaTailnet,
+}: {
+  idPrefix: string;
+  baseUrl: string;
+  viaTailnet: boolean;
+  onBaseUrl: (v: string) => void;
+  onViaTailnet: (v: boolean) => void;
+}) {
+  return (
+    <div className="space-y-3 rounded-md border border-dashed border-border p-3">
+      <div className="space-y-1.5">
+        <Label htmlFor={`${idPrefix}_base_url_input`}>Base URL</Label>
+        <Input
+          id={`${idPrefix}_base_url_input`}
+          value={baseUrl}
+          onChange={(e) => onBaseUrl(e.target.value)}
+          placeholder="blank = http://localhost:11434/v1 (Ollama default)"
+        />
+        <p className="text-xs text-muted-foreground">
+          Where this <code>local</code> route&apos;s server lives — e.g.{' '}
+          <code>http://gemma-box:11434/v1</code> (Ollama) or{' '}
+          <code>http://192.168.0.50:1234/v1</code> (LM Studio). Blank uses the{' '}
+          <code>MANTLE_LOCAL_CHAT_URL</code> env / localhost default.
+        </p>
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="space-y-0.5">
+          <Label htmlFor={`${idPrefix}_via_tailnet_switch`} className="cursor-pointer">
+            Reach via Tailscale
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            Route through the bundled Tailscale proxy so the Base URL (a MagicDNS
+            name) reaches a box behind NAT. Inert unless the <code>tailnet</code>{' '}
+            compose profile is up.
+          </p>
+        </div>
+        <Switch
+          id={`${idPrefix}_via_tailnet_switch`}
+          checked={viaTailnet}
+          onCheckedChange={onViaTailnet}
+        />
+      </div>
+    </div>
+  );
+}
+
 function KeyValidityHint({
   kind,
   capability,

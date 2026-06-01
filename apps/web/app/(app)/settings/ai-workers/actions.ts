@@ -48,24 +48,37 @@ import type { AiWorkerKind, AiWorkerParams } from '@mantle/db';
  * chat-shaped kinds (reflector / extractor / summarizer). The form only emits
  * these when chatShaped; for other kinds they're absent and this returns the
  * "no backup" shape (enabled=false, nulls) so a save can't accidentally enable
- * failover on a worker that has no backup section. Always returns all four so
- * the update set-map clears stale values when failover is toggled off.
+ * failover on a worker that has no backup section. Always returns every field
+ * so the update set-map clears stale values when failover is toggled off.
+ *
+ * Includes the per-route host fields (migration 0063): base_url + via_tailnet
+ * for both the primary and backup route.
  */
 function parseBackupFromForm(formData: FormData): {
   backupEnabled: boolean;
   backupProvider: string | null;
   backupModel: string | null;
   backupApiKeyId: string | null;
+  baseUrl: string | null;
+  viaTailnet: boolean;
+  backupBaseUrl: string | null;
+  backupViaTailnet: boolean;
 } {
   const backupEnabled = formData.get('backup_enabled') === 'on';
   const provider = String(formData.get('backup_provider') ?? '').trim();
   const model = String(formData.get('backup_model') ?? '').trim();
   const apiKeyId = (formData.get('backup_api_key_id') as string) || null;
+  const baseUrl = String(formData.get('base_url') ?? '').trim();
+  const backupBaseUrl = String(formData.get('backup_base_url') ?? '').trim();
   return {
     backupEnabled,
     backupProvider: provider || null,
     backupModel: model || null,
     backupApiKeyId: apiKeyId,
+    baseUrl: baseUrl || null,
+    viaTailnet: formData.get('via_tailnet') === 'on',
+    backupBaseUrl: backupBaseUrl || null,
+    backupViaTailnet: formData.get('backup_via_tailnet') === 'on',
   };
 }
 

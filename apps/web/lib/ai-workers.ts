@@ -51,6 +51,11 @@ export type CreateAiWorkerInput = {
   backupModel?: string | null;
   backupApiKeyId?: string | null;
   backupEnabled?: boolean;
+  /** Per-route host + tailnet flag (migration 0063). */
+  baseUrl?: string | null;
+  viaTailnet?: boolean;
+  backupBaseUrl?: string | null;
+  backupViaTailnet?: boolean;
 };
 
 /** Convert a free-form name into a slug-safe string. Lower-cased,
@@ -89,6 +94,10 @@ export async function createAiWorker(input: CreateAiWorkerInput): Promise<AiWork
     backupModel: input.backupModel ?? null,
     backupApiKeyId: input.backupApiKeyId ?? null,
     backupEnabled: input.backupEnabled ?? false,
+    baseUrl: input.baseUrl ?? null,
+    viaTailnet: input.viaTailnet ?? false,
+    backupBaseUrl: input.backupBaseUrl ?? null,
+    backupViaTailnet: input.backupViaTailnet ?? false,
   };
   return await db.transaction(async (tx) => {
     const [inserted] = await tx.insert(aiWorkers).values(row).returning();
@@ -131,6 +140,10 @@ export type UpdateAiWorkerInput = Partial<
     | 'backupModel'
     | 'backupApiKeyId'
     | 'backupEnabled'
+    | 'baseUrl'
+    | 'viaTailnet'
+    | 'backupBaseUrl'
+    | 'backupViaTailnet'
   >
 >;
 

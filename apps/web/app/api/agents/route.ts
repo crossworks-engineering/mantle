@@ -84,6 +84,13 @@ const CreateBody = z.object({
   backupModel: z.string().min(1).max(200).nullish(),
   backupApiKeyId: z.string().uuid().nullish(),
   backupEnabled: z.boolean().optional(),
+  // Per-route host + tailnet flag (migration 0063). baseUrl overrides the
+  // provider default host (a self-hosted/tailnet box); viaTailnet routes
+  // through the Tailscale proxy. Both routes carry their own pair.
+  baseUrl: z.string().max(500).nullish(),
+  viaTailnet: z.boolean().optional(),
+  backupBaseUrl: z.string().max(500).nullish(),
+  backupViaTailnet: z.boolean().optional(),
   systemPrompt: z.string().min(1).max(40_000),
   tools: z.array(z.string()).max(256).optional(),
   toolSlugs: z.array(z.string().min(1).max(120)).max(256).optional(),

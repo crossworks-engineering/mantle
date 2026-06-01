@@ -35,6 +35,13 @@ export type AgentSummary = {
   backupModel: string | null;
   backupApiKeyId: string | null;
   backupEnabled: boolean;
+  /** Per-route host + tailnet flag (migration 0063). `baseUrl` overrides the
+   *  provider default host for this route; `viaTailnet` dispatches through the
+   *  Tailscale proxy. Both routes carry their own pair. */
+  baseUrl: string | null;
+  viaTailnet: boolean;
+  backupBaseUrl: string | null;
+  backupViaTailnet: boolean;
   systemPrompt: string;
   tools: string[];
   toolSlugs: string[];
@@ -68,6 +75,10 @@ function toSummary(a: Agent): AgentSummary {
     backupModel: a.backupModel,
     backupApiKeyId: a.backupApiKeyId,
     backupEnabled: a.backupEnabled,
+    baseUrl: a.baseUrl,
+    viaTailnet: a.viaTailnet,
+    backupBaseUrl: a.backupBaseUrl,
+    backupViaTailnet: a.backupViaTailnet,
     systemPrompt: a.systemPrompt,
     tools: a.tools ?? [],
     toolSlugs: a.toolSlugs ?? [],
@@ -127,6 +138,10 @@ export type CreateAgentInput = {
   backupModel?: string | null;
   backupApiKeyId?: string | null;
   backupEnabled?: boolean;
+  baseUrl?: string | null;
+  viaTailnet?: boolean;
+  backupBaseUrl?: string | null;
+  backupViaTailnet?: boolean;
   systemPrompt: string;
   tools?: string[];
   toolSlugs?: string[];
@@ -157,6 +172,10 @@ export async function createAgent(
       backupModel: input.backupModel ?? null,
       backupApiKeyId: input.backupApiKeyId ?? null,
       backupEnabled: input.backupEnabled ?? false,
+      baseUrl: input.baseUrl ?? null,
+      viaTailnet: input.viaTailnet ?? false,
+      backupBaseUrl: input.backupBaseUrl ?? null,
+      backupViaTailnet: input.backupViaTailnet ?? false,
       systemPrompt: input.systemPrompt,
       tools: input.tools ?? [],
       toolSlugs: input.toolSlugs ?? [],
@@ -190,6 +209,10 @@ export async function updateAgent(
   if (patch.backupModel !== undefined) next.backupModel = patch.backupModel;
   if (patch.backupApiKeyId !== undefined) next.backupApiKeyId = patch.backupApiKeyId;
   if (patch.backupEnabled !== undefined) next.backupEnabled = patch.backupEnabled;
+  if (patch.baseUrl !== undefined) next.baseUrl = patch.baseUrl;
+  if (patch.viaTailnet !== undefined) next.viaTailnet = patch.viaTailnet;
+  if (patch.backupBaseUrl !== undefined) next.backupBaseUrl = patch.backupBaseUrl;
+  if (patch.backupViaTailnet !== undefined) next.backupViaTailnet = patch.backupViaTailnet;
   if (patch.systemPrompt !== undefined) next.systemPrompt = patch.systemPrompt;
   if (patch.tools !== undefined) next.tools = patch.tools;
   if (patch.toolSlugs !== undefined) next.toolSlugs = patch.toolSlugs;

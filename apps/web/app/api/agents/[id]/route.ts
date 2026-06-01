@@ -72,6 +72,11 @@ const PatchBody = z
     backupModel: z.string().min(1).max(200).nullable(),
     backupApiKeyId: z.string().uuid().nullable(),
     backupEnabled: z.boolean(),
+    // Per-route host + tailnet flag (migration 0063).
+    baseUrl: z.string().max(500).nullable(),
+    viaTailnet: z.boolean(),
+    backupBaseUrl: z.string().max(500).nullable(),
+    backupViaTailnet: z.boolean(),
     systemPrompt: z.string().min(1).max(40_000),
     tools: z.array(z.string()).max(256),
     toolSlugs: z.array(z.string().min(1).max(120)).max(256),
