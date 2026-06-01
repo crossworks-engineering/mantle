@@ -25,15 +25,7 @@
 FROM node:24-slim AS deps
 WORKDIR /app
 
-# Tooling for native modules (postgres-js / pg-boss / sharp / esbuild /
-# unrs-resolver). Drop these once everything builds on prebuilt binaries.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3 build-essential ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN npm install -g pnpm@11.1.2
-
-# Copy manifests first so we get a cached install layer when only source changes.
+# Copy manifests first so the install layer is cached when only source changes.
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/agent/package.json apps/agent/package.json
 COPY apps/mcp/package.json apps/mcp/package.json
@@ -49,7 +41,17 @@ COPY packages/storage/package.json packages/storage/package.json
 COPY packages/telegram/package.json packages/telegram/package.json
 COPY packages/tracing/package.json packages/tracing/package.json
 
-RUN pnpm install --frozen-lockfile
+# Install the build toolchain (python3 / build-essential, needed to COMPILE
+# native modules), pnpm, and the workspace — then PURGE the toolchain in the
+# SAME layer so its ~340MB doesn't ship in the image. The compiled `.node`
+# artifacts stay in node_modules; only the compiler is removed. ca-certificates
+# is kept (runtime HTTPS). Caches are cleaned to keep the layer lean.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 build-essential ca-certificates \
+    && npm install -g pnpm@11.1.2 \
+    && pnpm install --frozen-lockfile \
+    && apt-get purge -y python3 build-essential && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/* /root/.npm /root/.local/share/pnpm/store /root/.cache
 
 # Now copy sources.
 COPY . .
@@ -61,6 +63,9 @@ COPY . .
 FROM deps AS app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm -C apps/web build
+# `.next/cache` is the build cache (~1.1GB) — `next start` never reads it, so
+# drop it: it's the layer that changes every build, so this also keeps
+# incremental re-pulls small (the runtime .next is only ~50MB).
+RUN pnpm -C apps/web build && rm -rf apps/web/.next/cache
 EXPOSE 3000
 CMD ["pnpm", "-C", "apps/web", "start", "--", "-H", "0.0.0.0", "-p", "3000"]
