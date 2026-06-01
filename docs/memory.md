@@ -30,6 +30,17 @@ on demand — lossless paging vs. the lossy `conversation_digest`. The
 through digests, `recall_window` pulls the raw turns). See
 [`recall.md`](./recall.md).
 
+> **Embedding dimensions — read before trusting any `1536` below.** As of
+> 2026-05-31 the brain runs on **local EmbeddingGemma-300m (768-dim)** served
+> by Ollama, not cloud `openai/text-embedding-3-small` (1536-dim). Every
+> `vector` column is now `vector(768)` with HNSW indexes. This doc predates
+> that migration in places: where the prose, SQL sketches, or §6.3 still say
+> `1536` / `text-embedding-3-small` as the *current default*, read **768** /
+> **`embeddinggemma:latest`**. The 1536 mentions that remain are either this
+> note's "migrated from" context or native dims of cloud models in the
+> comparison table. [`embeddings.md`](./embeddings.md) is the canonical,
+> up-to-date operator guide.
+
 ---
 
 ## 0. The flow at a glance
@@ -77,7 +88,7 @@ flowchart TD
     TR --> EX["extractor agent<br/>(apps/agent listens → durable pg-boss queue,<br/>concurrency-capped + retry/backoff)"]:::agent
     EX -- "secret type:<br/>title + description only" --> EX
     EX --> SUM["LLM call:<br/>summary + facts + entities JSON<br/>(model from agents row)"]:::agent
-    SUM --> EMB["embed summary →<br/>vector(1536)"]:::agent
+    SUM --> EMB["embed summary →<br/>vector(768)"]:::agent
 
     %% Layer writes
     EMB --> CI["nodes.data.summary<br/>nodes.embedding<br/>nodes.data.entities[]"]:::layer
@@ -256,7 +267,7 @@ agent-settings chip picker. The Postgres enum holds them inert.
 ### Chunked retrieval (`content_chunks`)
 
 Layer 5's per-node embedding is the coarse "spine". For long documents a
-single 1536-dim vector is a weak primitive, so the extractor also writes
+single 768-dim vector is a weak primitive, so the extractor also writes
 **section-level chunks** to `content_chunks` (migration 0040): each chunk is a
 ~1500-char passage with its heading context and its own embedding.
 `chunkDocText` (`packages/content/src/chunk.ts`) does the splitting;
@@ -419,12 +430,12 @@ A **vector database** stores high-dimensional numeric representations
 a fixed-length array of floats:
 
 ```
-"Jason is preaching Romans 8 this Sunday"  →  [0.234, -0.018, 0.091, …, 0.412]   (length 1536)
-"I'm giving the sermon this weekend"        →  [0.221, -0.030, 0.085, …, 0.398]   (length 1536)
+"Jason is preaching Romans 8 this Sunday"  →  [0.234, -0.018, 0.091, …, 0.412]   (length 768)
+"I'm giving the sermon this weekend"        →  [0.221, -0.030, 0.085, …, 0.398]   (length 768)
 ```
 
 Two texts with similar *meaning* produce vectors that are close to each
-other in the 1536-dimensional space, even with zero shared words. The
+other in the 768-dimensional space, even with zero shared words. The
 core query a vector DB answers:
 
 > Given this query vector, return the N stored items whose vectors are
@@ -441,12 +452,11 @@ that matters for us, **pgvector**, a Postgres extension that adds a
 
 **Mantle's situation:** pgvector is already loaded
 ([`infra/postgres/init/01-extensions.sql`](../infra/postgres/init/01-extensions.sql))
-and `nodes.embedding` is declared as `vector(1536)`
+and `nodes.embedding` is declared as `vector(768)`
 ([`packages/db/src/schema/nodes.ts:45`](../packages/db/src/schema/nodes.ts:45)).
-The column is currently always NULL because no ingestion path embeds
-content yet. When the extractor lands, every `content_index` entry and
-every `facts` row gets embedded at write time and similarity-searched at
-read time — same Postgres, no second service.
+The extractor is live: every `content_index` entry and every `facts` row
+gets embedded at write time and similarity-searched at read time — same
+Postgres, no second service.
 
 Typical query shape against `facts`:
 
@@ -459,11 +469,11 @@ LIMIT 10;
 ```
 
 **Which embedding model produces those vectors matters.** The default is
-`openai/text-embedding-3-small` (1536 dims, ~$0.02/1M tokens, solid on
-English). Other choices unlock multilingual recall or better quality
-at higher cost. See [`docs/embeddings.md`](./embeddings.md) for the
-operator-facing decision guide (small vs large vs Gemini vs Cohere
-with benchmark numbers + the 1536-dim constraint that shapes the
+`embeddinggemma:latest` (768 dims, local via Ollama, $0 — no cloud call),
+solid on English. Other choices unlock multilingual recall or better
+quality at higher cost. See [`docs/embeddings.md`](./embeddings.md) for the
+operator-facing decision guide (Gemma-local vs OpenAI-large vs Gemini
+with benchmark numbers + the 768-dim constraint that shapes the
 choice). The runtime mechanics — how the dispatcher resolves the
 worker config, how the cache works, how Rebuild Index re-embeds the
 whole corpus on a model swap — live in
@@ -566,7 +576,7 @@ A glossary so the column above reads cleanly:
   `<@`, `@@`, `plainto_tsquery` operators. Cheap keyword retrieval over
   large text. Used by `content_index` and `conversation_digest` for the
   first pass of any text search.
-- **pgvector** — `vector(1536)` column type plus cosine / L2 similarity
+- **pgvector** — `vector(768)` column type plus cosine / L2 similarity
   operators (`<=>`, `<->`). Indexed by IVFFlat (or HNSW) for fast
   approximate nearest-neighbour search. Used wherever semantic similarity
   matters: `content_index.embedding`, `facts.embedding`,
@@ -598,7 +608,7 @@ CREATE TABLE facts (
   valid_from      timestamptz,             -- when the fact became true
   valid_to        timestamptz,             -- when it stopped (NULL = still current)
   source_node_id  uuid REFERENCES nodes(id) ON DELETE SET NULL,  -- citation
-  embedding       vector(1536),
+  embedding       vector(768),
   superseded_by   uuid REFERENCES facts(id),  -- UPDATE replaces a prior fact
   data            jsonb NOT NULL DEFAULT '{}',
   created_at      timestamptz NOT NULL DEFAULT now(),
@@ -627,7 +637,7 @@ CREATE TABLE entities (
   name        text NOT NULL,        -- 'Sarah', 'kitchen renovation'
   aliases     text[] NOT NULL DEFAULT '{}',
   data        jsonb NOT NULL DEFAULT '{}',
-  embedding   vector(1536),
+  embedding   vector(768),
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now()
 );
@@ -772,36 +782,30 @@ correct. Full design: [architecture.md §9b'](./architecture.md#9b-agent-delegat
 Embedding text into vectors is its own concern, separate from the chat
 agents. Different model type, different endpoint, different scale.
 
-- **What it does.** Given a piece of text, returns a `vector(1536)`
+- **What it does.** Given a piece of text, returns a `vector(768)`
   that can be similarity-searched in pgvector. No reasoning, no system
   prompt, no streaming. Pure transform.
-- **Default model.** `openai/text-embedding-3-small`. 1536 dimensions
-  (matches our column). $0.02 per 1M tokens. Fast and cheap enough that
-  embedding everything we write is unmeasurable on the bill.
-- **API path.** OpenRouter now routes embedding requests — same key, same
-  base URL, just a different endpoint:
-  `POST https://openrouter.ai/api/v1/embeddings` with body
-  `{ model: 'openai/text-embedding-3-small', input: 'text…' }`.
-  This means the **existing `openrouter` API key in `/settings/keys`
-  covers both chat and embeddings** — no separate OpenAI key required.
-- **Alternatives routed via OpenRouter** (live as of 2026-05):
+- **Default model.** `embeddinggemma:latest` (EmbeddingGemma-300m), served
+  **locally by Ollama** on the host. 768 dimensions (matches our column).
+  $0 — the vectors never leave the box, which is the whole point of a
+  self-hosted brain. (Until 2026-05-31 the default was cloud
+  `openai/text-embedding-3-small` at 1536 dims; the migration is recorded in
+  [`handoff-local-embeddings-2026-05-30.md`](./handoff-local-embeddings-2026-05-30.md).)
+- **API path.** The `local` provider calls Ollama's embeddings endpoint
+  directly (`POST /api/embeddings` on the Ollama host) — no OpenRouter, no
+  API key. Cloud models, if selected, still route via OpenRouter's
+  `POST https://openrouter.ai/api/v1/embeddings` using the existing
+  `openrouter` key in `/settings/keys`.
+- **Alternatives** — the full side-by-side (which models fit 768 natively
+  vs. need MRL truncation vs. need a schema migration, with benchmark
+  numbers and prices) lives in [`embeddings.md`](./embeddings.md). Short
+  version: `embeddinggemma:latest` (768, local, default),
+  `openai/text-embedding-3-large` (3072 → MRL 768, cloud), and
+  `google/gemini-embedding-001` (3072 → MRL 768, cloud, top of MTEB) are
+  the wired-and-fit options; anything with a different native dim and no
+  clean MRL to 768 needs another schema migration to adopt.
 
-  | Model | Dims | $/1M tokens | Notes |
-  |---|---|---|---|
-  | `openai/text-embedding-3-small` | 1536 | $0.020 | Default. Matches column. |
-  | `openai/text-embedding-3-large` | 3072 (truncatable) | $0.130 | Slight retrieval gain. |
-  | `google/gemini-embedding-001` | 256/768/1536/3072 (configurable) | $0.150 | Set output dim to 1536 to match our column. |
-  | `google/gemini-embedding-2-preview` | configurable | $0.200 | **Multimodal** — text/image/file/audio/video. Worth keeping in pocket for when content_store ingests PDFs/photos. |
-  | `qwen/qwen3-embedding-8b` | 4096 | $0.010 | Cheap, but schema change. |
-  | `perplexity/pplx-embed-v1-0.6b` | 1024 | $0.004 | Cheapest paid; schema change. |
-  | `nvidia/llama-nemotron-embed-vl-1b-v2` | (varies) | **free** | Multimodal; useful for one-off backfills. |
-  | Local `all-MiniLM-L6-v2` (sentence-transformers in a Docker sidecar) | 384 | $0 (your VPS CPU) | Schema change; another moving part; becomes attractive only at scale. |
-
-  Switching dimensions later is a migration (new column, backfill,
-  cutover) — not impossible, but a deliberate move. `text-embedding-3-small`
-  at 1536 is the safest commitment.
-
-- **Switching models (same 1536 dims).** Vectors from different models
+- **Switching models (same 768 dims).** Vectors from different models
   live in different spaces — comparing across them returns garbage
   distances. To switch cleanly:
   1. Update `MANTLE_EMBEDDING_MODEL` or the per-agent
@@ -835,9 +839,9 @@ agents. Different model type, different endpoint, different scale.
   globally swap the default (e.g. `google/gemini-embedding-2-preview`),
   or pass `opts.model` per call. The package whitelists multimodal
   models via `MULTIMODAL_MODELS` — passing an image/audio/file input
-  to a text-only model throws with a clear message. Gemini's
-  `output_dimensionality` is wired to 1536 so the response always fits
-  the pgvector column without a schema change.
+  to a text-only model throws with a clear message. For cloud models with
+  Matryoshka (MRL) support, the output dimension is wired to **768** so the
+  response always fits the pgvector column without a schema change.
 
 - **One model, configured in N+1 places — keep them equal.** A common
   question: *why is the embedding model set on the agent (Saskia) and not
@@ -857,14 +861,14 @@ agents. Different model type, different endpoint, different scale.
   preference**: the writer and *every* reader (responder, assistant, and
   any future agent that does vector retrieval) must use the **same** model,
   or query vectors and stored vectors fall in incompatible spaces and
-  similarity search silently returns garbage. The 1536-dim `vector` column
+  similarity search silently returns garbage. The 768-dim `vector` column
   additionally locks the dimension.
 
   `MANTLE_EMBEDDING_MODEL` (env) is the single source of truth that keeps
   every side aligned by default; the per-row `embedding_model` fields are
-  *overrides* that all fall back to it. **Today every override is null and
-  the env is unset, so the whole system uses `openai/text-embedding-3-small`
-  uniformly — write and read are aligned.**
+  *overrides* that all fall back to it. **Today the whole system uses
+  `embeddinggemma:latest` (768-dim, local) uniformly — write and read are
+  aligned.**
 
   This is correct but fragile: nothing enforces that the N+1 overrides
   agree. We **deliberately keep** the per-row overrides (reviewed
@@ -916,10 +920,10 @@ Visual map of who writes what, who reads what:
          ▼                           ▼                              │
                   ┌──────────────────────────────────┐              │
                   │   embedding subsystem            │              │
-                  │   (openai/text-embedding-3-small)│              │
+                  │   (embeddinggemma:latest, local) │              │
                   │   utility, not an agent          │              │
                   │   called from anywhere that      │              │
-                  │   needs a vector(1536)           │              │
+                  │   needs a vector(768)            │              │
                   └──────────────────────────────────┘              │
                                                                     │
                                                                     │

@@ -101,8 +101,11 @@ select left(data->>'summary', 120)                       as summary,
 from nodes where id = '$N';
 ```
 
-Healthy: `summary` non-empty, `emb_dims = 1536`, `n_entities ≥ 1`,
-`has_tsv = t`. **Watch the empty-string trap** — `data->>'summary'` can
+Healthy: `summary` non-empty, `emb_dims = 768`, `n_entities ≥ 1`,
+`has_tsv = t`. (**768, not 1536** — the brain migrated to local
+EmbeddingGemma-300m on 2026-05-31; every `vector` column is now
+`vector(768)`. See [`embeddings.md`](./embeddings.md).) **Watch the
+empty-string trap** — `data->>'summary'` can
 be `''` (key present, value blank) which is *not* NULL. Always check the
 text, or wrap in `nullif(data->>'summary','')`.
 
