@@ -170,3 +170,96 @@ export async function getTailnetPeerNames(): Promise<string[]> {
   if (!s.available) return [];
   return s.peers.map((p) => p.dnsName).filter(Boolean);
 }
+
+// ─── write path: drive tailscaled login/logout (PermitWrite endpoints) ───────
+//
+// UI activation. These POST to tailscaled's LocalAPI over the SAME shared
+// socket the status read uses, but to its mutating endpoints — so the socket
+// must be mounted read-WRITE into the app (docker-compose.yml). On a single-user
+// box, letting the app drive its own tailnet membership is an acceptable trade.
+//
+// CAVEAT (verified on the VPS): tailscaled may gate these PermitWrite endpoints
+// by socket peer-credentials. If `/start` is rejected from the web process, the
+// fallback is the `file:` authkey trick — see docs / the plan.
+
+export type TailnetActionResult = { ok: true } | { ok: false; reason: string };
+
+/** Raw POST to a tailscaled LocalAPI path over the unix socket. Resolves to the
+ *  status code + body text, or an error reason; never rejects. */
+function localApiPost(
+  path: string,
+  body: string | null,
+  timeoutMs: number,
+): Promise<{ statusCode: number; body: string } | { error: string }> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (r: { statusCode: number; body: string } | { error: string }) => {
+      if (settled) return;
+      settled = true;
+      resolve(r);
+    };
+    const req = http.request(
+      {
+        socketPath: sockPath(),
+        path,
+        method: 'POST',
+        headers: {
+          // Same CSRF sentinel host the status GET uses.
+          Host: 'local-tailscaled.sock',
+          'Content-Type': 'application/json',
+          ...(body ? { 'Content-Length': Buffer.byteLength(body) } : {}),
+        },
+        timeout: timeoutMs,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () =>
+          done({ statusCode: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }),
+        );
+      },
+    );
+    req.on('timeout', () => {
+      req.destroy();
+      done({ error: 'tailscaled did not respond (timeout)' });
+    });
+    req.on('error', (e: NodeJS.ErrnoException) => {
+      done({
+        error:
+          e.code === 'ENOENT'
+            ? 'tailnet sidecar not running (no tailscaled socket)'
+            : `socket error: ${e.message}`,
+      });
+    });
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+/** Bring the tailnet up by logging in with an auth key. POSTs ipn.Options to
+ *  `/localapi/v0/start` (AuthKey + WantRunning + Hostname; ControlURL omitted
+ *  for default Tailscale). ASYNC on tailscaled's side — a 2xx means "login
+ *  started", so the caller must poll getTailnetStatus for backendState
+ *  'Running'. Never throws. */
+export async function tailnetUp(authKey: string, hostname: string): Promise<TailnetActionResult> {
+  const options = {
+    AuthKey: authKey,
+    UpdatePrefs: { WantRunning: true, Hostname: hostname },
+  };
+  const r = await localApiPost('/localapi/v0/start', JSON.stringify(options), 8000);
+  if ('error' in r) return { ok: false, reason: r.error };
+  if (r.statusCode >= 400) {
+    return { ok: false, reason: `tailscaled /start HTTP ${r.statusCode}${r.body ? ` — ${r.body.slice(0, 300)}` : ''}` };
+  }
+  return { ok: true };
+}
+
+/** Take the tailnet down (log out). POSTs to `/localapi/v0/logout`. Never throws. */
+export async function tailnetDown(): Promise<TailnetActionResult> {
+  const r = await localApiPost('/localapi/v0/logout', null, 8000);
+  if ('error' in r) return { ok: false, reason: r.error };
+  if (r.statusCode >= 400) {
+    return { ok: false, reason: `tailscaled /logout HTTP ${r.statusCode}` };
+  }
+  return { ok: true };
+}

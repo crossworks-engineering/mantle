@@ -15,6 +15,7 @@ export * from './rules';
 export * from './filters';
 export * from './senders';
 export * from './sync-runs';
+export * from './tailscale-config';
 export * from './telegram';
 export * from './agents';
 export * from './ai-workers';

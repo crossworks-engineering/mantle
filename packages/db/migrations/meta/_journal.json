@@ -449,6 +449,13 @@
       "when": 1779662400000,
       "tag": "0063_chat_route_baseurl_tailnet",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1780358400000,
+      "tag": "0064_tailscale_config",
+      "breakpoints": true
     }
   ]
 }
