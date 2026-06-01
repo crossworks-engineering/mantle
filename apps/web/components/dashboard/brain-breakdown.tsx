@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { Label, Pie, PieChart } from 'recharts';
+import { formatCount } from '@/lib/format-bytes';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   ChartContainer,
@@ -61,7 +62,7 @@ function Donut({ title, description, buckets, centerLabel }: {
                       return (
                         <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle" dominantBaseline="middle">
                           <tspan x={viewBox.cx} y={viewBox.cy} className="fill-foreground text-2xl font-bold">
-                            {total.toLocaleString()}
+                            {formatCount(total)}
                           </tspan>
                           <tspan x={viewBox.cx} y={(viewBox.cy ?? 0) + 20} className="fill-muted-foreground text-xs">
                             {centerLabel}

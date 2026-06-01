@@ -26,10 +26,14 @@ export function formatPct(value: number | null | undefined, already = false): st
   return `${pct.toFixed(pct >= 10 || pct === 0 ? 0 : 1)}%`;
 }
 
-/** Compact integer, e.g. 12345 → "12,345". */
+/** Compact integer with thousands separators, e.g. 12345 → "12,345".
+ *  Pins the `en-US` locale so server (Node) and client (browser) render the
+ *  SAME separator — a bare `toLocaleString()` formats per the runtime's locale,
+ *  which differs between Node and the browser (e.g. "1 931" vs "1,931") and
+ *  causes a React hydration mismatch. */
 export function formatCount(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return '—';
-  return n.toLocaleString();
+  return n.toLocaleString('en-US');
 }
 
 /** Seconds → "3d 4h", "5h 12m", "8m", "42s". For uptime display. */

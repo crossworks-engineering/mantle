@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { Bar, BarChart, CartesianGrid, XAxis } from 'recharts';
 import type { IngestDay } from '@/lib/dashboard';
+import { formatCount } from '@/lib/format-bytes';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   ChartContainer,
@@ -56,7 +57,7 @@ export function IngestChart({ data }: { data: IngestDay[] }) {
     <Card className="h-full">
       <CardHeader>
         <CardTitle className="text-base">Ingest activity</CardTitle>
-        <CardDescription>{total.toLocaleString()} nodes added over {data.length} days</CardDescription>
+        <CardDescription>{formatCount(total)} nodes added over {data.length} days</CardDescription>
       </CardHeader>
       <CardContent>
         <ChartContainer config={config} className="aspect-auto h-[220px] w-full">

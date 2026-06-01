@@ -3,6 +3,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { AlertTriangle, Mail, MessageCircle, HeartPulse } from 'lucide-react';
 import type { EmailStats, HeartbeatStats, TelegramStats } from '@/lib/dashboard';
 import type { RecentFailure, TopError } from '@/lib/metrics';
+import { formatCount } from '@/lib/format-bytes';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -50,9 +51,9 @@ export function OpsPanels({
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            <span><b className="text-foreground">{email.total.toLocaleString()}</b> emails</span>
-            <span><b className="text-foreground">{email.unread.toLocaleString()}</b> unread</span>
-            <span><b className="text-foreground">{email.withAttachments.toLocaleString()}</b> with attachments</span>
+            <span><b className="text-foreground">{formatCount(email.total)}</b> emails</span>
+            <span><b className="text-foreground">{formatCount(email.unread)}</b> unread</span>
+            <span><b className="text-foreground">{formatCount(email.withAttachments)}</b> with attachments</span>
           </div>
           {email.latestSync.length === 0 ? (
             <Empty>No syncs yet.</Empty>
@@ -88,8 +89,8 @@ export function OpsPanels({
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            <span><b className="text-foreground">{telegram.messagesTotal.toLocaleString()}</b> messages</span>
-            <span><b className="text-foreground">{telegram.unprocessed.toLocaleString()}</b> unprocessed</span>
+            <span><b className="text-foreground">{formatCount(telegram.messagesTotal)}</b> messages</span>
+            <span><b className="text-foreground">{formatCount(telegram.unprocessed)}</b> unprocessed</span>
           </div>
           {telegram.chatsByStatus.length === 0 ? (
             <Empty>No chats paired.</Empty>
