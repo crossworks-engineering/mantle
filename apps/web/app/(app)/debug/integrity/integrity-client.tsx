@@ -118,15 +118,17 @@ function ResultRow({ result }: { result: FixtureResult }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 text-left"
+        className="grid w-full grid-cols-[4.5rem_minmax(9rem,12rem)_5.5rem_1fr] items-center gap-3 text-left"
       >
         <span
-          className={`inline-flex w-[68px] shrink-0 justify-center rounded-sm border px-1.5 py-0.5 text-[11px] font-semibold tracking-wider ${s.cls}`}
+          className={`inline-flex w-full justify-center rounded-sm border px-1.5 py-0.5 text-[11px] font-semibold tracking-wider ${s.cls}`}
         >
           {s.label}
         </span>
-        <span className="min-w-[150px] text-sm font-medium text-foreground">{result.label}</span>
-        <span className="rounded-sm bg-muted px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+        <span className="truncate text-sm font-medium text-foreground" title={result.label}>
+          {result.label}
+        </span>
+        <span className="justify-self-start rounded-sm bg-muted px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
           {result.nodeType}
         </span>
         <span className="flex flex-wrap gap-1">
@@ -416,12 +418,13 @@ export function IntegrityClient({ specs }: { specs: SpecMeta[] }) {
       {!report && (
         <ul className="divide-y divide-border rounded-md border border-border">
           {specs.map((s) => (
-            <li key={s.key} className="flex items-center gap-3 px-3 py-2 text-sm text-muted-foreground">
-              <span className="min-w-[150px] text-foreground">{s.label}</span>
-              <span className="rounded-sm bg-muted px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-wider">
+            <li key={s.key} className="grid grid-cols-[4.5rem_minmax(9rem,12rem)_5.5rem_1fr] items-center gap-3 px-3 py-2 text-sm text-muted-foreground">
+              <span className="text-center text-muted-foreground/50">·</span>
+              <span className="truncate text-foreground" title={s.label}>{s.label}</span>
+              <span className="justify-self-start rounded-sm bg-muted px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-wider">
                 {s.nodeType}
               </span>
-              <span className="text-xs">{s.pipeline}</span>
+              <span className="truncate text-xs" title={s.pipeline}>{s.pipeline}</span>
             </li>
           ))}
         </ul>
