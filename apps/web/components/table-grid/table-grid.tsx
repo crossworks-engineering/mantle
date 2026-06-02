@@ -8,7 +8,7 @@
  * table's draft. Display follows the house rules: accent-only row selection,
  * neutral hover, theme tokens, no hardcoded colours.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   flexRender,
   getCoreRowModel,
@@ -113,23 +113,37 @@ function displayValue(value: CellValue, col: Column): string {
 export function TableGrid({ doc, onChange }: { doc: TableDoc; onChange: (next: TableDoc) => void }) {
   const [sorting, setSorting] = useState<SortingState>([]);
 
+  // Live doc + onChange via refs so the column defs can stay referentially
+  // STABLE across cell edits. Rebuilding `columns` on every keystroke makes
+  // TanStack churn the body and the focused <input> loses its cursor (the same
+  // re-render jank Pages hit). The defs only need to change when the column
+  // STRUCTURE changes — captured below as `structureKey`.
+  const docRef = useRef(doc);
+  docRef.current = doc;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  const structureKey = doc.columns
+    .map((c) => `${c.id}:${c.type}:${c.name}:${c.formula ?? ''}:${(c.options ?? []).map((o) => o.label).join(',')}:${JSON.stringify(c.format ?? {})}`)
+    .join('|') + `#${JSON.stringify(doc.aggregates ?? {})}`;
+
   const columns = useMemo<ColumnDef<Row>[]>(() => {
-    return doc.columns.map((col) => ({
+    return docRef.current.columns.map((col) => ({
       id: col.id,
-      accessorFn: (row) => resolveCell(doc, row, col),
+      accessorFn: (row) => resolveCell(docRef.current, row, col),
       enableSorting: true,
       header: ({ column }) => (
         <HeaderCell
           col={col}
-          aggregate={doc.aggregates?.[col.id] ?? 'none'}
+          aggregate={docRef.current.aggregates?.[col.id] ?? 'none'}
           sortDir={column.getIsSorted() || null}
           onSort={(dir) => column.toggleSorting(dir === 'desc')}
           onClearSort={() => column.clearSorting()}
-          onRename={(name) => onChange(updateColumn(doc, col.id, { name }))}
-          onType={(type) => onChange(updateColumn(doc, col.id, { type }))}
-          onAggregate={(kind) => onChange(setAggregate(doc, col.id, kind))}
-          onInsertRight={() => onChange(addColumn(doc, { name: 'New column', type: 'text' }, col.id).doc)}
-          onDelete={() => onChange(deleteColumn(doc, col.id))}
+          onRename={(name) => onChangeRef.current(updateColumn(docRef.current, col.id, { name }))}
+          onType={(type) => onChangeRef.current(updateColumn(docRef.current, col.id, { type }))}
+          onAggregate={(kind) => onChangeRef.current(setAggregate(docRef.current, col.id, kind))}
+          onInsertRight={() => onChangeRef.current(addColumn(docRef.current, { name: 'New column', type: 'text' }, col.id).doc)}
+          onDelete={() => onChangeRef.current(deleteColumn(docRef.current, col.id))}
         />
       ),
       cell: (info) => (
@@ -137,11 +151,12 @@ export function TableGrid({ doc, onChange }: { doc: TableDoc; onChange: (next: T
           col={col}
           value={info.getValue() as CellValue}
           rawValue={(info.row.original.cells[col.id] ?? null) as CellValue}
-          onSet={(v) => onChange(setCell(doc, info.row.original.id, col.id, v))}
+          onSet={(v) => onChangeRef.current(setCell(docRef.current, info.row.original.id, col.id, v))}
         />
       ),
     }));
-  }, [doc, onChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [structureKey]);
 
   const table = useReactTable({
     data: doc.rows,
@@ -379,12 +394,45 @@ function EditableCell({
     );
   }
   // text / number / currency / percent / url / multiselect
+  return <TextCell col={col} rawValue={rawValue} onSet={onSet} />;
+}
+
+/**
+ * A text-like cell that keeps its value in LOCAL state and only writes back to
+ * the doc on blur / Enter. Typing therefore never re-renders the grid (no focus
+ * loss) and never fires the per-keystroke draft autosave — the cell commits once
+ * when you leave it. Syncs from the doc only while unfocused (so an external
+ * edit — the agent, a type change — still reflects).
+ */
+function TextCell({ col, rawValue, onSet }: { col: Column; rawValue: CellValue; onSet: (v: CellValue) => void }) {
   const isNumeric = col.type === 'number' || col.type === 'currency' || col.type === 'percent';
+  const external = rawValue == null ? '' : Array.isArray(rawValue) ? rawValue.join(', ') : String(rawValue);
+  const [local, setLocal] = useState(external);
+  const focused = useRef(false);
+
+  // Adopt external changes only when the user isn't editing this cell.
+  useEffect(() => {
+    if (!focused.current) setLocal(external);
+  }, [external]);
+
+  const commit = () => {
+    focused.current = false;
+    const next = coerceCell(local, col.type);
+    const nextStr = next == null ? '' : Array.isArray(next) ? next.join(', ') : String(next);
+    if (nextStr !== external) onSet(next);
+  };
+
   return (
     <input
-      value={rawValue == null ? '' : Array.isArray(rawValue) ? rawValue.join(', ') : String(rawValue)}
+      value={local}
       inputMode={isNumeric ? 'decimal' : undefined}
-      onChange={(e) => onSet(coerceCell(e.target.value, col.type))}
+      onFocus={() => { focused.current = true; }}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        if (e.key === 'Escape') { setLocal(external); focused.current = false; (e.target as HTMLInputElement).blur(); }
+      }}
       placeholder={isNumeric ? '0' : ''}
       className={cn(CELL_INPUT, isNumeric && 'text-right tabular-nums')}
       aria-label={col.name}
