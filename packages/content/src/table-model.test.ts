@@ -152,6 +152,14 @@ describe('formula columns via resolveCell', () => {
     expect(resolveCell(doc, doc.rows[0]!, col)).toBe(19);
     expect(resolveCell(doc, doc.rows[1]!, col)).toBe(12);
   });
+
+  it('aggregates resolve formula columns (sum/avg over computed cells)', () => {
+    let doc = grid();
+    doc = addColumn(doc, { name: 'Total', type: 'formula', formula: '{Qty} * {Price}' }).doc;
+    const colId = findColumnByName(doc, 'Total')!.id;
+    expect(computeAggregate(doc, colId, 'sum')).toBe(31); // 19 + 12
+    expect(computeAggregate(doc, colId, 'avg')).toBe(15.5);
+  });
 });
 
 describe('views (filter + sort)', () => {
