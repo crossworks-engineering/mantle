@@ -32,6 +32,7 @@ export function TableDetailClient({ initial }: { initial: TableDetail }) {
   const published = ensureTableDoc(initial.data);
   const [doc, setDoc] = useState<TableDoc>(ensureTableDoc(initial.draft ?? initial.data));
   const [title, setTitle] = useState(initial.title);
+  const [icon, setIcon] = useState(initial.icon ?? '');
   const [committing, setCommitting] = useState(false);
   const [draftSaving, setDraftSaving] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -42,6 +43,7 @@ export function TableDetailClient({ initial }: { initial: TableDetail }) {
   const committedRef = useRef(JSON.stringify(published));
   const draftSavedRef = useRef(JSON.stringify(initial.draft ?? initial.data));
   const metaSavedRef = useRef(initial.title);
+  const iconSavedRef = useRef(initial.icon ?? '');
   const fileRef = useRef<HTMLInputElement>(null);
 
   const dirty = JSON.stringify(doc) !== committedRef.current;
@@ -88,6 +90,20 @@ export function TableDetailClient({ initial }: { initial: TableDetail }) {
     }, META_DEBOUNCE_MS);
     return () => clearTimeout(h);
   }, [title, initial.id]);
+
+  // Icon (emoji) saves live, same as the title.
+  useEffect(() => {
+    if (icon === iconSavedRef.current) return;
+    const h = setTimeout(async () => {
+      const res = await fetch(`/api/tables/${initial.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ icon: icon.trim() }),
+      });
+      if (res.ok) iconSavedRef.current = icon;
+    }, META_DEBOUNCE_MS);
+    return () => clearTimeout(h);
+  }, [icon, initial.id]);
 
   // ── Commit: publish + index. The only path that touches the brain. ──
   const commit = useCallback(async () => {
@@ -188,12 +204,22 @@ export function TableDetailClient({ initial }: { initial: TableDetail }) {
         <div className="justify-self-start whitespace-nowrap">
           <BackLink href="/tables">All tables</BackLink>
         </div>
-        <Input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="h-8 w-56 max-w-full justify-self-center border-0 bg-transparent px-1 text-center text-base font-semibold shadow-none focus-visible:ring-0"
-          aria-label="Table title"
-        />
+        <div className="flex items-center gap-1 justify-self-center">
+          <input
+            value={icon}
+            onChange={(e) => setIcon(e.target.value.slice(0, 8))}
+            placeholder="📊"
+            className="h-8 w-9 shrink-0 rounded-md text-center text-lg outline-none transition-colors hover:bg-muted/50 focus:bg-muted/50"
+            aria-label="Table icon (emoji)"
+            title="Pick an emoji — on Mac press ⌃⌘Space"
+          />
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="h-8 w-52 max-w-full border-0 bg-transparent px-1 text-center text-base font-semibold shadow-none focus-visible:ring-0"
+            aria-label="Table title"
+          />
+        </div>
         <div className="flex items-center gap-2 justify-self-end">
           <StatusIndicator committing={committing} draftSaving={draftSaving} dirty={dirty} />
           <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={importing}>
