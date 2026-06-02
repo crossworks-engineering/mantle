@@ -1,20 +1,21 @@
 'use client';
 
-import { useEffect, useRef, useState, useTransition } from 'react';
-import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ChevronDown, ChevronLeft, ChevronRight, FileText, Pencil, Plus, Search, Trash2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { SubmitButton } from '@/components/ui/submit-button';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Pencil,
+  Plus,
+  Search,
+  Sparkles,
+  Trash2,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,26 +27,20 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { ShareControl } from '@/components/share/share-control';
-import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { TagPill } from '@/components/tag-pill';
-import { TagInput } from '@/components/tag-input';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
-
-type NoteRow = {
-  id: string;
-  title: string;
-  content: string;
-  tags: string[];
-  summary: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
+import { NoteEditor, type NoteRow } from './note-editor';
 
 type TagCount = { tag: string; count: number };
+
+// Draggable list-pane width (md+). Persisted so it sticks across visits.
+const WIDTH_KEY = 'mantle:notes-list-width';
+const LIST_MIN = 300;
+const LIST_MAX = 760;
+const LIST_DEFAULT = 380;
 
 export function NotesClient({
   notes,
@@ -55,6 +50,9 @@ export function NotesClient({
   tags,
   activeTag,
   query,
+  initialSelectedId,
+  initialSelectedNote,
+  initialEditing,
 }: {
   notes: NoteRow[];
   total: number;
@@ -63,34 +61,33 @@ export function NotesClient({
   tags: TagCount[];
   activeTag: string | null;
   query: string;
+  initialSelectedId?: string | null;
+  initialSelectedNote?: NoteRow | null;
+  initialEditing?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const toast = useToast();
   const [navPending, startNav] = useTransition();
 
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<{ title: string; content: string; tags: string[] }>({
-    title: '',
-    content: '',
-    tags: [],
-  });
-  const [saving, setSaving] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? null);
+  const [editing, setEditing] = useState<boolean>(!!initialEditing);
+  const [creating, setCreating] = useState(false);
+  const [focus, setFocus] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<NoteRow | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** Pending action held back by the unsaved-changes guard. */
+  const [discard, setDiscard] = useState<{ run: () => void } | null>(null);
 
-  // Local search box; debounced into the URL (server filters + paginates).
   const [searchInput, setSearchInput] = useState(query);
 
-  // Tag filter row collapses to a single line; a toggle reveals the rest.
-  // `tagsOverflow` (measured while collapsed) gates the toggle so it only shows
-  // when the tags actually wrap past one row.
+  // Tag filter row collapses to one line; a toggle reveals the rest.
   const tagRowRef = useRef<HTMLDivElement>(null);
   const [tagsExpanded, setTagsExpanded] = useState(false);
   const [tagsOverflow, setTagsOverflow] = useState(false);
 
   useEffect(() => {
-    if (tagsExpanded) return; // keep the toggle visible while expanded
+    if (tagsExpanded) return;
     const el = tagRowRef.current;
     if (!el) return;
     const check = () => setTagsOverflow(el.scrollHeight - el.clientHeight > 4);
@@ -100,13 +97,98 @@ export function NotesClient({
     return () => ro.disconnect();
   }, [tags, tagsExpanded]);
 
-  // The previewed note: explicit selection, falling back to the first row so
-  // the right pane is never blank when notes exist.
-  const selected = notes.find((n) => n.id === selectedId) ?? notes[0] ?? null;
+  // ── Resizable list pane ──────────────────────────────────────────────
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [listWidth, setListWidth] = useState(LIST_DEFAULT);
+  useEffect(() => {
+    try {
+      const v = Number(localStorage.getItem(WIDTH_KEY));
+      if (Number.isFinite(v) && v >= LIST_MIN && v <= LIST_MAX) setListWidth(v);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(WIDTH_KEY, String(Math.round(listWidth)));
+    } catch {
+      /* ignore */
+    }
+  }, [listWidth]);
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const onMove = (ev: PointerEvent) => {
+      const left = gridRef.current?.getBoundingClientRect().left ?? 0;
+      setListWidth(Math.min(LIST_MAX, Math.max(LIST_MIN, ev.clientX - left)));
+    };
+    const onUp = () => {
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  // ── Selection / edit state machine ──────────────────────────────────
+  const selected = useMemo<NoteRow | null>(() => {
+    if (selectedId) {
+      return (
+        notes.find((n) => n.id === selectedId) ??
+        (initialSelectedNote?.id === selectedId ? initialSelectedNote : null)
+      );
+    }
+    return notes[0] ?? null;
+  }, [selectedId, notes, initialSelectedNote]);
+
+  /** Run an action, but if the editor has unsaved changes, confirm first. */
+  const guard = useCallback(
+    (run: () => void) => {
+      if (editing && dirty) setDiscard({ run });
+      else run();
+    },
+    [editing, dirty],
+  );
+
+  const exitEdit = useCallback(() => {
+    setEditing(false);
+    setCreating(false);
+    setFocus(false);
+    setDirty(false);
+  }, []);
+
+  const selectNote = (id: string) =>
+    guard(() => {
+      setSelectedId(id);
+      exitEdit();
+    });
+
+  const startCreate = () =>
+    guard(() => {
+      setCreating(true);
+      setEditing(true);
+      setFocus(false);
+    });
+
+  const startEdit = () => {
+    setCreating(false);
+    setEditing(true);
+  };
+
+  const onSaved = (saved: NoteRow) => {
+    setEditing(false);
+    setCreating(false);
+    setFocus(false);
+    setDirty(false);
+    setSelectedId(saved.id);
+    startNav(() => router.refresh());
+  };
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  /** Build a /notes URL from the current filters with overrides applied. */
   const buildHref = (over: { page?: number; tag?: string | null; q?: string | null }) => {
     const nextTag = over.tag !== undefined ? over.tag : activeTag;
     const nextQ = over.q !== undefined ? over.q : query || null;
@@ -118,11 +200,8 @@ export function NotesClient({
     const s = params.toString();
     return s ? `${pathname}?${s}` : pathname;
   };
+  const go = (over: Parameters<typeof buildHref>[0]) => startNav(() => router.push(buildHref(over)));
 
-  const go = (over: Parameters<typeof buildHref>[0]) =>
-    startNav(() => router.push(buildHref(over)));
-
-  // Debounce the search box → URL (resets to page 1, preserves tag).
   useEffect(() => {
     const handle = setTimeout(() => {
       if (searchInput.trim() === query) return;
@@ -132,39 +211,6 @@ export function NotesClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.title.trim()) {
-      toast.error('Title is required');
-      return;
-    }
-    setSaving(true);
-    try {
-      const res = await fetch('/api/notes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: form.title.trim(), content: form.content, tags: form.tags }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        toast.error(j.error ?? `request failed (${res.status})`);
-        return;
-      }
-      const { note } = (await res.json()) as { note: NoteRow };
-      setForm({ title: '', content: '', tags: [] });
-      setOpen(false);
-      setSelectedId(note.id);
-      toast.success('Note created');
-      setSearchInput('');
-      startNav(() => {
-        router.push('/notes');
-        router.refresh();
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     const res = await fetch(`/api/notes/${deleteTarget.id}`, { method: 'DELETE' });
@@ -173,14 +219,27 @@ export function NotesClient({
       return;
     }
     toast.success('Note deleted');
+    if (selected?.id === deleteTarget.id) exitEdit();
     if (selectedId === deleteTarget.id) setSelectedId(null);
+    setDeleteTarget(null);
     startNav(() => router.refresh());
   };
 
   return (
-    <div className="md:grid md:h-full md:grid-cols-2 md:overflow-hidden">
+    <div
+      ref={gridRef}
+      className="relative md:grid md:h-full md:overflow-hidden"
+      style={{
+        gridTemplateColumns: focus ? '0px minmax(0, 1fr)' : `${listWidth}px minmax(0, 1fr)`,
+      }}
+    >
       {/* ── Left: list ─────────────────────────────────────────────── */}
-      <div className="flex flex-col border-b border-border md:h-full md:min-h-0 md:border-b-0 md:border-r">
+      <div
+        className={cn(
+          'flex flex-col border-b border-border md:h-full md:min-h-0 md:border-b-0 md:border-r',
+          focus && 'hidden',
+        )}
+      >
         <div className="space-y-3 border-b border-border p-4">
           <div className="flex items-center gap-2">
             <div className="relative min-w-0 flex-1">
@@ -192,7 +251,7 @@ export function NotesClient({
                 className="pl-8"
               />
             </div>
-            <Button onClick={() => setOpen(true)}>
+            <Button onClick={startCreate}>
               <Plus /> New
             </Button>
           </div>
@@ -260,10 +319,10 @@ export function NotesClient({
             notes.map((n) => (
               <button
                 key={n.id}
-                onClick={() => setSelectedId(n.id)}
+                onClick={() => selectNote(n.id)}
                 className={cn(
                   'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-3 text-left transition-colors hover:bg-accent/40',
-                  selected?.id === n.id && 'border-l-primary bg-accent/50',
+                  selected?.id === n.id && !creating && 'border-l-primary bg-accent/50',
                 )}
               >
                 <div className="flex items-start gap-2">
@@ -324,63 +383,61 @@ export function NotesClient({
         )}
       </div>
 
-      {/* ── Right: preview ─────────────────────────────────────────── */}
-      <div className="md:h-full md:overflow-y-auto md:scrollbar-thin">
-        {selected ? (
-          <NotePreview note={selected} onDelete={() => setDeleteTarget(selected)} />
+      {/* Drag handle */}
+      {!focus && (
+        <div
+          onPointerDown={startResize}
+          className="absolute inset-y-0 z-20 hidden w-2 -translate-x-1/2 cursor-col-resize transition-colors hover:bg-primary/20 md:block"
+          style={{ left: `${listWidth}px` }}
+          aria-hidden
+        />
+      )}
+
+      {/* ── Right: preview / editor ─────────────────────────────────── */}
+      <div className="md:h-full md:min-h-0 md:overflow-hidden">
+        {editing ? (
+          <NoteEditor
+            note={creating ? null : selected}
+            focus={focus}
+            onToggleFocus={() => setFocus((f) => !f)}
+            onSaved={onSaved}
+            onCancel={() => guard(exitEdit)}
+            onDirtyChange={setDirty}
+          />
+        ) : selected ? (
+          <NotePreview note={selected} onEdit={startEdit} onDelete={() => setDeleteTarget(selected)} />
         ) : (
           <div className="flex h-full items-center justify-center p-10 text-center text-sm text-muted-foreground">
-            Select a note to preview.
+            Select a note, or click <span className="mx-1 font-medium text-foreground">New</span> to start one.
           </div>
         )}
       </div>
 
-      {/* New note dialog */}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>New note</DialogTitle>
-            <DialogDescription>Markdown. Extracted + embedded on save.</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="title">Title</Label>
-              <Input
-                id="title"
-                value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
-                autoFocus
-                required
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="content">Content</Label>
-              <Textarea
-                id="content"
-                value={form.content}
-                onChange={(e) => setForm({ ...form, content: e.target.value })}
-                rows={10}
-                className="font-mono"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="tags">Tags</Label>
-              <TagInput
-                id="tags"
-                value={form.tags}
-                onChange={(tags) => setForm({ ...form, tags })}
-                placeholder="Type and press comma or Enter…"
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                Cancel
-              </Button>
-              <SubmitButton pending={saving}>Save note</SubmitButton>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* Discard-unsaved-changes guard */}
+      <AlertDialog open={discard !== null} onOpenChange={(o) => !o && setDiscard(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This note has edits that haven’t been saved. Leaving now will lose them.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                const run = discard?.run;
+                setDirty(false);
+                setDiscard(null);
+                run?.();
+              }}
+            >
+              Discard
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete confirm */}
       <AlertDialog open={deleteTarget !== null} onOpenChange={(o) => !o && setDeleteTarget(null)}>
@@ -404,18 +461,33 @@ export function NotesClient({
   );
 }
 
-/** Right-pane read-only preview of the selected note. */
-function NotePreview({ note, onDelete }: { note: NoteRow; onDelete: () => void }) {
+/** Right-pane read view — de-boxed: full-width prose, sticky header, own scroll. */
+function NotePreview({
+  note,
+  onEdit,
+  onDelete,
+}: {
+  note: NoteRow;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   return (
-    <div className="space-y-4 p-6">
-      <div className="flex items-start justify-between gap-3">
-        <h2 className="min-w-0 flex-1 text-xl font-semibold">{note.title}</h2>
-        <div className="flex shrink-0 gap-2">
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border bg-background/80 px-6 py-3 backdrop-blur">
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-xl font-semibold">{note.title}</h2>
+          {note.tags.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {note.tags.map((t) => (
+                <TagPill key={t} tag={t} />
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
           <ShareControl nodeId={note.id} />
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/notes/${note.id}`}>
-              <Pencil /> Edit
-            </Link>
+          <Button variant="outline" size="sm" onClick={onEdit}>
+            <Pencil /> Edit
           </Button>
           <Button
             variant="ghost"
@@ -427,26 +499,31 @@ function NotePreview({ note, onDelete }: { note: NoteRow; onDelete: () => void }
             <Trash2 />
           </Button>
         </div>
-      </div>
+      </header>
 
-      {note.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {note.tags.map((t) => (
-            <TagPill key={t} tag={t} />
-          ))}
-        </div>
-      )}
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto scrollbar-thin px-6 py-5">
+        <article className="prose prose-sm dark:prose-invert max-w-none">
+          {note.content ? (
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{note.content}</ReactMarkdown>
+          ) : (
+            <p className="text-sm italic text-muted-foreground">
+              No content yet. Click <span className="font-medium not-italic text-foreground">Edit</span> to add some.
+            </p>
+          )}
+        </article>
 
-      <article className="prose prose-sm dark:prose-invert max-w-none">
-        {note.content ? (
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{note.content}</ReactMarkdown>
-        ) : (
-          <p className="text-sm italic text-muted-foreground">No content yet.</p>
+        {note.summary && (
+          <aside className="rounded-md border border-border bg-muted/40 p-3">
+            <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <Sparkles className="size-3.5" aria-hidden /> Indexed summary
+            </div>
+            <p className="text-sm text-muted-foreground">{note.summary}</p>
+          </aside>
         )}
-      </article>
 
-      <div className="border-t border-border pt-3 text-xs text-muted-foreground">
-        Updated {formatDateTime(note.updatedAt)} · created {formatDateTime(note.createdAt)}
+        <div className="border-t border-border pt-3 text-xs text-muted-foreground">
+          Updated {formatDateTime(note.updatedAt)} · created {formatDateTime(note.createdAt)}
+        </div>
       </div>
     </div>
   );

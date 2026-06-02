@@ -1,8 +1,13 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { requireOwner } from '@/lib/auth';
 import { getNote } from '@/lib/notes';
-import { NoteDetailClient } from './note-detail-client';
 
+/**
+ * Deep link to a single note. Notes now live on one resizable screen with an
+ * in-pane editor, so a direct `/notes/[id]` URL redirects into `/notes` with
+ * that note selected and opened straight in the (full-bleed) editor — no
+ * separate boxed detail page, no preview-then-edit double step.
+ */
 export default async function NoteDetailPage({
   params,
 }: {
@@ -12,9 +17,5 @@ export default async function NoteDetailPage({
   const { id } = await params;
   const row = await getNote(user.id, id);
   if (!row) notFound();
-  return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <NoteDetailClient initial={row} />
-    </div>
-  );
+  redirect(`/notes?selected=${id}&edit=1`);
 }
