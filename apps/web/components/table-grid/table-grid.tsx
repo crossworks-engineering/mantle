@@ -328,6 +328,7 @@ function HeaderCell({
   onDelete: () => void;
 }) {
   const [name, setName] = useState(col.name);
+  const TypeIcon = TYPE_ICON[col.type];
   return (
     <span className="flex w-full items-center gap-1">
       <input
@@ -344,8 +345,14 @@ function HeaderCell({
       {sortDir === 'desc' && <ArrowDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button size="icon" variant="ghost" className="size-6 shrink-0 text-muted-foreground" aria-label="Column options">
-            <ChevronsUpDown className="size-3.5" />
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-6 shrink-0 text-muted-foreground"
+            aria-label={`Column type: ${TYPE_LABEL[col.type]} — open options`}
+            title={`${TYPE_LABEL[col.type]} column — options`}
+          >
+            <TypeIcon className="size-3.5" aria-hidden />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
