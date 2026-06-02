@@ -147,6 +147,34 @@ export function emptyTableDoc(): TableDoc {
   return { columns, rows, aggregates: {}, views: [] };
 }
 
+/** Structural grid input (e.g. from a parsed spreadsheet) — column names +
+ *  coarse types and row values aligned to the columns. `type` is a plain string
+ *  so lower-level producers (like @mantle/files) needn't depend on this module;
+ *  unknown types fall back to 'text'. */
+export type GridInput = {
+  columns: { name: string; type?: string }[];
+  rows: (string | number | boolean | null)[][];
+};
+
+/** Build a TableDoc from a structural grid (the import path). Assigns stable
+ *  ids and coerces every cell to its column type. */
+export function tableDocFromGrid(input: GridInput): TableDoc {
+  const columns: Column[] = input.columns.map((c) => ({
+    id: randomUUID(),
+    name: c.name?.trim() || 'Column',
+    type: COLUMN_TYPES.includes(c.type as ColumnType) ? (c.type as ColumnType) : 'text',
+  }));
+  const rows: Row[] = input.rows.map((values) => {
+    const cells: Record<string, CellValue> = {};
+    columns.forEach((col, i) => {
+      const v = coerceCell(values[i] ?? null, col.type);
+      if (v !== null) cells[col.id] = v;
+    });
+    return { id: randomUUID(), cells };
+  });
+  return { columns, rows, aggregates: {}, views: [] };
+}
+
 /** Coerce an unknown/partial value into a well-formed TableDoc. Tolerant of
  *  legacy / hand-authored shapes — missing arrays become empty, every column
  *  and row gets a stable id, and cells are pruned to known columns. Returns the

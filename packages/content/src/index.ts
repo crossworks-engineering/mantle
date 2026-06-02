@@ -158,6 +158,8 @@ export {
 export {
   emptyTableDoc,
   ensureTableDoc,
+  tableDocFromGrid,
+  type GridInput,
   findColumn,
   findColumnByName,
   findRow,

@@ -3,6 +3,7 @@ import {
   addColumn,
   addRow,
   applyView,
+  tableDocFromGrid,
   cellIsEmpty,
   coerceCell,
   computeAggregate,
@@ -169,6 +170,28 @@ describe('views (filter + sort)', () => {
   it('unknown view id returns all rows in document order', () => {
     const doc = grid();
     expect(applyView(doc, 'nope').map((r) => r.id)).toEqual(['r1', 'r2']);
+  });
+});
+
+describe('tableDocFromGrid (import)', () => {
+  it('builds a typed doc with ids and coerced cells', () => {
+    const doc = tableDocFromGrid({
+      columns: [
+        { name: 'Item', type: 'text' },
+        { name: 'Qty', type: 'number' },
+        { name: 'Bogus', type: 'wat' },
+      ],
+      rows: [
+        ['Widget', 2, 'x'],
+        ['Gadget', '3', null],
+      ],
+    });
+    expect(doc.columns.map((c) => c.type)).toEqual(['text', 'number', 'text']);
+    expect(doc.columns.every((c) => c.id)).toBe(true);
+    const [r0, r1] = doc.rows;
+    expect(r0!.cells[doc.columns[1]!.id]).toBe(2);
+    expect(r1!.cells[doc.columns[1]!.id]).toBe(3); // '3' coerced to number
+    expect(doc.rows.every((r) => r.id)).toBe(true);
   });
 });
 
