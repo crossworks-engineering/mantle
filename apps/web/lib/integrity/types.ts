@@ -1,45 +1,28 @@
 /**
- * Integrity-probe harness — shared types.
+ * Integrity surface — shared types.
  *
- * The harness inserts one synthetic fixture per content node type, waits for
- * the extractor to settle, and asserts the *expected* per-type footprint
- * against what actually landed in the brain (L6 node · L5 summary/embedding/
- * tsv · L4 facts · graph edges · the extractor_run trace).
- *
- * The keystone is the **expectation matrix** (`spec.ts`): integrity is not
- * "every layer must light up" — a secret deliberately keeps its sealed body
- * out of the LLM, a scanned PDF *correctly* skips with `no_text_layer`. Green
- * means "matched the expectation for this type", including expected skips.
+ * Two read-only views, no synthetic fixtures:
+ *   • Live (`landed.ts`) — observes the *real* content you add (notes, pages,
+ *     todos, events, contacts, secrets, files, email) as it lands in the brain,
+ *     and reports its per-type footprint (L6 node · L5 summary/embedding/tsv ·
+ *     L4 facts · graph edges · the extractor_run trace). Honest by design: a
+ *     secret keeps its sealed body out of the LLM, a scanned image with no
+ *     vision worker *correctly* skips — those read neutral, not red.
+ *   • Corpus audit (`audit.ts`) — scans the *existing* corpus for invariant
+ *     violations (no writes, no cost).
  *
  * See docs/data-flow-tracing.md (the signature table) and docs/journey.md
- * (the action→layer map) for the behaviour these expectations encode.
+ * (the action→layer map) for the behaviour these footprints encode.
  */
 
-/** A layer either must be there, must NOT be there, or is reported-not-asserted. */
-export type LayerRule = 'present' | 'absent' | 'optional';
+export type CheckStatus = 'pass' | 'fail' | 'info';
 
-/** The terminal extractor_run we expect for a fixture. */
-export type TraceExpectation =
-  | { status: 'success' }
-  /** Must be skipped. `disposition` pins the reason; omit to accept any skip
-   *  (a service-down file may skip body_too_short or no_text_layer). */
-  | { status: 'skipped'; disposition?: string }
-  /** success OR a named skip are both acceptable (config-dependent types like
-   *  task/event whose facts only land if allow-listed in the worker config). */
-  | { status: 'either'; skipDisposition?: string };
-
-export type FixtureExpectation = {
-  trace: TraceExpectation;
-  /** L5 `data.summary` non-empty (watch the empty-string trap). */
-  summary: LayerRule;
-  /** L5 `embedding` present. When present, dims are separately asserted == 768. */
-  embedding: LayerRule;
-  /** L5 `search_tsv` populated. */
-  tsv: LayerRule;
-  /** L4 — at least one fact with `source_node_id` = this node. */
-  facts: LayerRule;
-  /** Graph — at least one `mentioned_in` edge (entity → node). */
-  graph: LayerRule;
+export type CheckResult = {
+  /** Short column-ish label: "Trace", "L5 summary", "Emb 768", … */
+  label: string;
+  status: CheckStatus;
+  /** Actual-vs-expected detail, shown on hover / in the expanded row. */
+  detail?: string;
 };
 
 /** The structural footprint of one node, read straight from the brain tables. */
@@ -60,7 +43,6 @@ export type ProbeFootprint = {
   /** content_chunks rows for this node. */
   nChunks: number;
   run: {
-    /** Trace id + start — used to detect a *new* run after an update. */
     traceId: string;
     startedAt: string;
     status: string;
@@ -70,45 +52,10 @@ export type ProbeFootprint = {
   } | null;
 };
 
-/** A fact's identity + kind — captured before a delete to verify the kind-aware
- *  reaper (0059): episodic/factual die, semantic/preference are kept sourceless. */
-export type FactRef = { id: string; kind: string };
-
-export type CheckStatus = 'pass' | 'fail' | 'info';
-
-export type CheckResult = {
-  /** Short column-ish label: "Trace", "L6", "L5 summary", "Emb 768", … */
-  label: string;
-  status: CheckStatus;
-  /** Actual-vs-expected detail, shown on hover / in the expanded row. */
-  detail?: string;
-};
-
-export type FixtureState = 'ok' | 'fail' | 'stalled' | 'missing' | 'error';
-
-export type FixtureResult = {
-  key: string;
-  label: string;
-  nodeType: string;
-  state: FixtureState;
-  nodeId: string | null;
-  footprint: ProbeFootprint | null;
-  checks: CheckResult[];
-  /** Re-extraction-after-edit checks (only when the update sub-test ran). */
-  updateChecks?: CheckResult[];
-  /** Kind-aware cleanup checks (only when the delete sub-test ran). */
-  deleteChecks?: CheckResult[];
-  /** True once the delete sub-test removed the node. */
-  deleted?: boolean;
-  costMicroUsd: number;
-  durationMs: number;
-  error?: string;
-};
-
 /** One optional service/worker's readiness. */
 export type Capability = { available: boolean; detail: string };
 
-/** Brain-readiness snapshot taken at run start. */
+/** Brain-readiness snapshot. */
 export type Capabilities = {
   tika: Capability;
   vision: Capability;
@@ -119,25 +66,41 @@ export type Capabilities = {
   stt: Capability;
 };
 
-export type SuiteReport = {
-  runId: string;
-  runTag: string;
-  startedAt: string;
-  finishedAt: string;
-  durationMs: number;
-  totalCostMicroUsd: number;
-  passed: number;
-  total: number;
-  results: FixtureResult[];
+// ─── live landed view ───────────────────────────────────────────────────────
+
+export type LandedState =
+  /** Inserted, extractor hasn't terminated yet — transient; flips on node_indexed. */
+  | 'indexing'
+  /** Success + the expected layers landed (summary · 768-dim embedding · tsv). */
+  | 'ok'
+  /** Correctly skipped (e.g. a scanned image with no vision worker) — shows why. */
+  | 'skipped'
+  /** Success but a layer is missing (silent-miss / dim drift / duplicate edges). */
+  | 'fail'
+  /** No extractor_run after the stall window — is apps/agent + an extractor up? */
+  | 'stalled';
+
+export type LandedItem = {
+  nodeId: string;
+  nodeType: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  footprint: ProbeFootprint;
+  state: LandedState;
+  checks: CheckResult[];
+};
+
+export type LandedReport = {
+  generatedAt: string;
+  items: LandedItem[];
   capabilities: Capabilities;
 };
 
 // ─── passive corpus audit ───────────────────────────────────────────────────
 //
-// The read-only twin of the probe: scans the *existing* brain for invariant
-// violations (no writes, no fixtures, no cost). Where the probe asks "can the
-// pipeline digest each type?", the audit asks "is what's already stored
-// consistent?".
+// The read-only health scan of the *existing* brain for invariant violations
+// (no writes, no fixtures, no cost): "is what's already stored consistent?".
 
 export type AuditSeverity = 'high' | 'medium' | 'low';
 
@@ -168,8 +131,3 @@ export type AuditReport = {
   checks: AuditCheck[];
   totalViolations: number;
 };
-
-/** Tag applied to every probe node, ever — the broad cleanup key. */
-export const PROBE_BASE_TAG = 'integrity-probe';
-/** Per-run tag: `integrity-probe-<8hex>` (kept ≤ 40 chars for `dedupeTags`). */
-export const probeRunTag = (runId: string) => `${PROBE_BASE_TAG}-${runId}`;

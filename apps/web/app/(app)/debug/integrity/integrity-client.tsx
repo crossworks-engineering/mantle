@@ -1,9 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/components/ui/toast';
 import {
   AlertDialog,
@@ -16,26 +15,21 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { useRealtime } from '@/components/realtime/use-realtime';
 import type {
   AuditCheck,
   AuditReport,
   AuditSeverity,
   Capabilities,
   CheckResult,
-  FixtureResult,
-  FixtureState,
-  SuiteReport,
+  LandedItem,
+  LandedReport,
+  LandedState,
 } from '@/lib/integrity/types';
 
-type SpecMeta = { key: string; label: string; nodeType: string; pipeline: 'content' | 'file' };
-
-const STATE_STYLE: Record<FixtureState, { label: string; cls: string }> = {
-  ok: { label: 'OK', cls: 'bg-primary/10 text-primary border-primary/30' },
-  fail: { label: 'FAIL', cls: 'bg-destructive/10 text-destructive border-destructive/30' },
-  stalled: { label: 'STALLED', cls: 'bg-muted text-foreground border-border' },
-  missing: { label: 'MISSING', cls: 'bg-muted text-muted-foreground border-border' },
-  error: { label: 'ERROR', cls: 'bg-destructive/10 text-destructive border-destructive/30' },
-};
+/** The node types the live view tracks — mirrors `LANDED_TYPES` in landed.ts
+ *  (kept as a literal here so the server module never enters the browser bundle). */
+const LIVE_TYPES = ['note', 'page', 'task', 'event', 'contact', 'secret', 'file', 'email'];
 
 function CheckPill({ check }: { check: CheckResult }) {
   const cls =
@@ -53,29 +47,6 @@ function CheckPill({ check }: { check: CheckResult }) {
       <span className="font-mono">{glyph}</span>
       {check.label}
     </span>
-  );
-}
-
-function groupPillStyle(checks: CheckResult[]): string {
-  if (checks.some((c) => c.status === 'fail'))
-    return 'bg-destructive/10 text-destructive border-destructive/30';
-  if (checks.some((c) => c.status === 'pass'))
-    return 'bg-primary/10 text-primary border-primary/30';
-  return 'bg-muted text-muted-foreground border-border';
-}
-
-function CheckGroup({ title, checks }: { title: string; checks: CheckResult[] }) {
-  return (
-    <div className="space-y-1 border-t border-border pt-1.5">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</div>
-      {checks.map((c, i) => (
-        <div key={i} className="flex gap-2">
-          <span className="w-24 shrink-0 text-muted-foreground">{c.label}</span>
-          <span className="font-mono">{c.status}</span>
-          {c.detail && <span className="text-muted-foreground">— {c.detail}</span>}
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -110,72 +81,213 @@ function CapabilitiesPanel({ caps }: { caps: Capabilities }) {
   );
 }
 
-function ResultRow({ result }: { result: FixtureResult }) {
+// ─── live view ──────────────────────────────────────────────────────────────
+
+const LANDED_STATE_STYLE: Record<LandedState, { label: string; cls: string }> = {
+  indexing: { label: 'INDEXING', cls: 'bg-muted text-muted-foreground border-border animate-pulse' },
+  ok: { label: 'OK', cls: 'bg-primary/10 text-primary border-primary/30' },
+  skipped: { label: 'SKIPPED', cls: 'bg-muted text-muted-foreground border-border' },
+  fail: { label: 'FAIL', cls: 'bg-destructive/10 text-destructive border-destructive/30' },
+  stalled: { label: 'STALLED', cls: 'bg-muted text-foreground border-border' },
+};
+
+function relTime(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '';
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
+function LandedRow({ item, onDelete, deleting }: { item: LandedItem; onDelete: (id: string) => void; deleting: boolean }) {
   const [open, setOpen] = useState(false);
-  const s = STATE_STYLE[result.state];
+  const s = LANDED_STATE_STYLE[item.state];
   return (
     <li className="px-3 py-2.5">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="grid w-full grid-cols-[4.5rem_minmax(9rem,12rem)_5.5rem_1fr] items-center gap-3 text-left"
-      >
-        <span
-          className={`inline-flex w-full justify-center rounded-sm border px-1.5 py-0.5 text-[11px] font-semibold tracking-wider ${s.cls}`}
+      <div className="flex items-start gap-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-1.5 text-left"
         >
-          {s.label}
-        </span>
-        <span className="truncate text-sm font-medium text-foreground" title={result.label}>
-          {result.label}
-        </span>
-        <span className="justify-self-start rounded-sm bg-muted px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-          {result.nodeType}
-        </span>
-        <span className="flex flex-wrap gap-1">
-          {result.checks.map((c, i) => (
-            <CheckPill key={i} check={c} />
-          ))}
-          {result.updateChecks && (
-            <span className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[11px] ${groupPillStyle(result.updateChecks)}`}>
-              ↻ update
-            </span>
-          )}
-          {result.deleteChecks && (
-            <span className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[11px] ${groupPillStyle(result.deleteChecks)}`}>
-              ⌫ delete
-            </span>
-          )}
-        </span>
-      </button>
+          <span
+            className={`inline-flex w-[5.25rem] shrink-0 justify-center rounded-sm border px-1.5 py-0.5 text-[11px] font-semibold tracking-wider ${s.cls}`}
+          >
+            {s.label}
+          </span>
+          <span className="min-w-[8rem] max-w-[18rem] truncate text-sm font-medium text-foreground" title={item.title}>
+            {item.title}
+          </span>
+          <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+            {item.nodeType}
+          </span>
+          <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground" title={new Date(item.updatedAt).toLocaleString()}>
+            {relTime(item.updatedAt)}
+          </span>
+          <span className="flex flex-wrap gap-1">
+            {item.checks.map((c, i) => (
+              <CheckPill key={i} check={c} />
+            ))}
+          </span>
+        </button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="ghost" size="sm" disabled={deleting} className="shrink-0 text-muted-foreground hover:text-destructive">
+              {deleting ? '…' : '⌫'}
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete “{item.title}”?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Permanently deletes this <code>{item.nodeType}</code> node and its entire brain footprint —
+                summary, embedding, facts, and graph edges — via the real cascade + reaper path. This is your
+                actual data and cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => onDelete(item.nodeId)}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
 
       {open && (
         <div className="mt-2 space-y-1.5 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
-          {result.checks.map((c, i) => (
+          {item.checks.map((c, i) => (
             <div key={i} className="flex gap-2">
               <span className="w-24 shrink-0 text-muted-foreground">{c.label}</span>
               <span className="font-mono">{c.status}</span>
               {c.detail && <span className="text-muted-foreground">— {c.detail}</span>}
             </div>
           ))}
-          {result.footprint?.run && (
+          {item.footprint.run && (
             <div className="flex gap-2 pt-1 text-muted-foreground">
               <span className="w-24 shrink-0">steps</span>
-              <span className="font-mono">{result.footprint.run.stepNames.join(' → ') || '—'}</span>
+              <span className="font-mono">{item.footprint.run.stepNames.join(' → ') || '—'}</span>
             </div>
           )}
-          {result.updateChecks && <CheckGroup title="Update (re-extraction)" checks={result.updateChecks} />}
-          {result.deleteChecks && <CheckGroup title="Delete (kind-aware reapers)" checks={result.deleteChecks} />}
-          {result.nodeId && !result.deleted && (
-            <a href={`/nodes/${result.nodeId}/history`} className="inline-block pt-1 underline">
-              node biography →
-            </a>
-          )}
-          {result.deleted && <div className="pt-1 text-muted-foreground">node deleted by the delete sub-test</div>}
+          <div className="flex gap-2 pt-1 text-muted-foreground">
+            <span className="w-24 shrink-0">added</span>
+            <span className="tabular-nums text-foreground">{new Date(item.createdAt).toLocaleString()}</span>
+          </div>
+          <a href={`/nodes/${item.nodeId}/history`} className="inline-block pt-1 underline">
+            node biography →
+          </a>
         </div>
       )}
     </li>
   );
 }
+
+function LiveView() {
+  const toast = useToast();
+  const [report, setReport] = useState<LandedReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const load = useCallback(
+    async (quiet = false) => {
+      if (!quiet) setLoading(true);
+      try {
+        const res = await fetch('/api/debug/integrity/landed');
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
+        setReport((await res.json()) as LandedReport);
+      } catch (err) {
+        if (!quiet) toast.error(err instanceof Error ? err.message : 'Load failed');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [toast],
+  );
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Live updates: any insert (node_ingested) or re-index (node_indexed) of a
+  // tracked type schedules a quiet refetch — debounced so a burst coalesces.
+  const scheduleRefetch = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => void load(true), 500);
+  }, [load]);
+  useRealtime(LIVE_TYPES, scheduleRefetch);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  async function remove(nodeId: string) {
+    setDeleting(nodeId);
+    try {
+      const res = await fetch('/api/debug/integrity/landed/delete', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ nodeId }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
+      setReport((r) => (r ? { ...r, items: r.items.filter((i) => i.nodeId !== nodeId) } : r));
+      toast.success('Deleted node + footprint');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      setDeleting(null);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Live brain activity</h2>
+          <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
+            The real content you add — notes, pages, todos, events, contacts, secrets, files, email — as it lands in
+            the brain, newest first. Each row shows whether the extractor indexed it (L5 summary · 768-dim embedding ·
+            tsv · L4 facts · graph). <strong>Green</strong> = fully indexed; <strong>skipped</strong> shows a correct
+            non-index with its reason; <strong>fail</strong> flags a real gap (success but no summary, dimension drift,
+            duplicate edges). Updates appear automatically — no fixtures, nothing to clean up.
+          </p>
+        </div>
+        <Button variant="ghost" size="sm" onClick={() => void load()} disabled={loading}>
+          {loading ? 'Loading…' : 'Refresh'}
+        </Button>
+      </div>
+
+      {report && <CapabilitiesPanel caps={report.capabilities} />}
+
+      {report && report.items.length > 0 && (
+        <ul className="divide-y divide-border rounded-md border border-border">
+          {report.items.map((item) => (
+            <LandedRow key={item.nodeId} item={item} onDelete={remove} deleting={deleting === item.nodeId} />
+          ))}
+        </ul>
+      )}
+
+      {report && report.items.length === 0 && (
+        <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-6 text-center text-xs text-muted-foreground">
+          No content yet. Add a note, upload a file, or create an event and watch it land in the brain here.
+        </p>
+      )}
+
+      {!report && loading && (
+        <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-6 text-center text-xs text-muted-foreground">
+          Loading recent activity…
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── corpus audit (unchanged) ───────────────────────────────────────────────
 
 const SEVERITY_STYLE: Record<AuditSeverity, string> = {
   high: 'bg-destructive/10 text-destructive border-destructive/30',
@@ -184,9 +296,7 @@ const SEVERITY_STYLE: Record<AuditSeverity, string> = {
 };
 
 /** Format an audit check's age span + decide whether it reads as "recent"
- *  (the live pipeline may still be producing these) vs inert pre-fix sediment.
- *  Date-only `YYYY-MM-DD` strings compare lexicographically, so a string ≥ is a
- *  valid date ≥. */
+ *  (the live pipeline may still be producing these) vs inert pre-fix sediment. */
 function spanMeta(check: AuditCheck): { text: string; recent: boolean } | null {
   if (check.ok || !check.oldestAt || !check.newestAt) return null;
   const text = check.oldestAt === check.newestAt ? check.oldestAt : `${check.oldestAt} → ${check.newestAt}`;
@@ -233,11 +343,11 @@ function AuditRow({ check }: { check: AuditCheck }) {
           {check.samples.length > 0 && (
             <div className="space-y-1 border-t border-border pt-1.5">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Samples</div>
-              {check.samples.map((s) => (
-                <div key={s.id} className="flex gap-2">
-                  <span className="rounded-sm bg-muted px-1 font-mono text-[11px] text-muted-foreground">{s.kind}</span>
-                  <span className="text-muted-foreground">{s.detail}</span>
-                  <a href={`/nodes/${s.id}/history`} className="font-mono text-[11px] underline">{s.id.slice(0, 8)}</a>
+              {check.samples.map((sm) => (
+                <div key={sm.id} className="flex gap-2">
+                  <span className="rounded-sm bg-muted px-1 font-mono text-[11px] text-muted-foreground">{sm.kind}</span>
+                  <span className="text-muted-foreground">{sm.detail}</span>
+                  <a href={`/nodes/${sm.id}/history`} className="font-mono text-[11px] underline">{sm.id.slice(0, 8)}</a>
                 </div>
               ))}
             </div>
@@ -276,8 +386,8 @@ function AuditView() {
           <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
             Read-only scan of your <strong>existing</strong> brain for invariant violations — silent-miss nodes,
             embedding-dimension drift, unembedded or reaper-missed facts, duplicate edges, orphan/over-merged
-            entities. No writes, no cost. Complements the probe: the probe proves the pipeline works on synthetic
-            inputs; this proves your real data is consistent.
+            entities. No writes, no cost. Complements the live view: the live view shows new content indexing
+            correctly; this proves the data already stored is consistent.
           </p>
         </div>
         <Button onClick={runAudit} disabled={running}>
@@ -305,59 +415,13 @@ function AuditView() {
   );
 }
 
-export function IntegrityClient({ specs }: { specs: SpecMeta[] }) {
-  const [mode, setMode] = useState<'probe' | 'audit'>('probe');
-  const toast = useToast();
-  const [running, setRunning] = useState(false);
-  const [cleaning, setCleaning] = useState(false);
-  const [includeUpdate, setIncludeUpdate] = useState(false);
-  const [includeDelete, setIncludeDelete] = useState(false);
-  const [report, setReport] = useState<SuiteReport | null>(null);
-
-  async function runSuite() {
-    setRunning(true);
-    try {
-      const res = await fetch('/api/debug/integrity/run', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ includeUpdate, includeDelete }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
-      const data = (await res.json()) as SuiteReport;
-      setReport(data);
-      toast.success(`Integrity run complete — ${data.passed}/${data.total} passed`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Run failed');
-    } finally {
-      setRunning(false);
-    }
-  }
-
-  async function cleanup(tag?: string) {
-    setCleaning(true);
-    try {
-      const res = await fetch('/api/debug/integrity/cleanup', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(tag ? { tag } : {}),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
-      const r = (await res.json()) as { nodesDeleted: number; tracesDeleted: number; entitiesDeleted: number };
-      toast.success(`Cleaned ${r.nodesDeleted} nodes · ${r.tracesDeleted} traces · ${r.entitiesDeleted} entities`);
-      if (tag && report?.runTag === tag) setReport(null);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Cleanup failed');
-    } finally {
-      setCleaning(false);
-    }
-  }
-
-  const allStalled = report && report.results.length > 0 && report.results.every((r) => r.state === 'stalled');
+export function IntegrityClient() {
+  const [mode, setMode] = useState<'live' | 'audit'>('live');
 
   return (
     <div className="space-y-4">
       <div className="flex gap-1 border-b border-border">
-        {(['probe', 'audit'] as const).map((m) => (
+        {(['live', 'audit'] as const).map((m) => (
           <button
             key={m}
             type="button"
@@ -367,141 +431,12 @@ export function IntegrityClient({ specs }: { specs: SpecMeta[] }) {
               (mode === m ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground hover:text-foreground')
             }
           >
-            {m === 'probe' ? 'Active probe' : 'Corpus audit'}
+            {m === 'live' ? 'Live' : 'Corpus audit'}
           </button>
         ))}
       </div>
 
-      {mode === 'audit' && <AuditView />}
-
-      {mode === 'probe' && (
-        <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Active integrity probe
-          </h2>
-          <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
-            Inserts one synthetic fixture per content type, waits for the extractor, and
-            asserts the expected footprint landed (L5 summary · 768-dim embedding · L4 facts ·
-            graph). Green = matched the expectation for that type (including correct skips).
-            Optional <strong>update</strong> tests assert an edit re-extracts (no duplicate
-            edges); <strong>delete</strong> tests assert the kind-aware reapers fire (and
-            self-remove the fixture). Clean up the run afterward to remove fixtures + traces.
-          </p>
-        </div>
-        <div className="flex flex-col items-end gap-2">
-          <Button onClick={runSuite} disabled={running || cleaning}>
-            {running ? 'Running…' : 'Run integrity suite'}
-          </Button>
-          <div className="flex gap-4">
-            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
-              <Checkbox
-                checked={includeUpdate}
-                onCheckedChange={(v) => setIncludeUpdate(v === true)}
-                disabled={running}
-              />
-              Update tests
-            </label>
-            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
-              <Checkbox
-                checked={includeDelete}
-                onCheckedChange={(v) => setIncludeDelete(v === true)}
-                disabled={running}
-              />
-              Delete tests
-            </label>
-          </div>
-        </div>
-      </div>
-
-      {!report && (
-        <ul className="divide-y divide-border rounded-md border border-border">
-          {specs.map((s) => (
-            <li key={s.key} className="grid grid-cols-[4.5rem_minmax(9rem,12rem)_5.5rem_1fr] items-center gap-3 px-3 py-2 text-sm text-muted-foreground">
-              <span className="text-center text-muted-foreground/50">·</span>
-              <span className="truncate text-foreground" title={s.label}>{s.label}</span>
-              <span className="justify-self-start rounded-sm bg-muted px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-wider">
-                {s.nodeType}
-              </span>
-              <span className="truncate text-xs" title={s.pipeline}>{s.pipeline}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {report && (
-        <div className="space-y-3">
-          <CapabilitiesPanel caps={report.capabilities} />
-          <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-card px-4 py-3 text-sm">
-            <span className="font-semibold">
-              {report.passed}/{report.total} passed
-            </span>
-            <span className="text-muted-foreground">·</span>
-            <span className="text-muted-foreground">
-              cost ${(report.totalCostMicroUsd / 1_000_000).toFixed(4)}
-            </span>
-            <span className="text-muted-foreground">·</span>
-            <span className="text-muted-foreground">{(report.durationMs / 1000).toFixed(1)}s</span>
-            <span className="text-muted-foreground">·</span>
-            <span className="font-mono text-xs text-muted-foreground">{report.runTag}</span>
-            <div className="ml-auto flex gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setReport(null)} disabled={cleaning}>
-                Dismiss
-              </Button>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="destructive" size="sm" disabled={cleaning}>
-                    {cleaning ? 'Cleaning…' : 'Clean up this run'}
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Clean up this run?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Deletes the {report.total} probe fixtures tagged{' '}
-                      <code>{report.runTag}</code> (via the real delete path — exercising the
-                      cascade + reaper triggers) and the traces they produced. Synthetic
-                      entities orphaned by the delete are swept too.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={() => cleanup(report.runTag)}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    >
-                      Clean up
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
-          </div>
-
-          {allStalled && (
-            <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
-              Every fixture stalled — no extractor_run terminated. Check that{' '}
-              <code>apps/agent</code> is running and an <code>extractor</code> worker is
-              configured at <a href="/settings/ai-workers" className="underline">/settings/ai-workers</a>.
-            </p>
-          )}
-
-          <ul className="divide-y divide-border rounded-md border border-border">
-            {report.results.map((r) => (
-              <ResultRow key={r.key} result={r} />
-            ))}
-          </ul>
-
-          <div className="flex justify-end">
-            <Button variant="ghost" size="sm" onClick={() => cleanup()} disabled={cleaning}>
-              Clean ALL probe data
-            </Button>
-          </div>
-        </div>
-      )}
-        </div>
-      )}
+      {mode === 'live' ? <LiveView /> : <AuditView />}
     </div>
   );
 }
