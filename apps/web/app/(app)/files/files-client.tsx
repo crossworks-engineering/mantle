@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { FileEditor } from './file-editor';
 import { useRealtime } from '@/components/realtime/use-realtime';
+import { useUploads } from '@/components/uploads/upload-provider';
 import { formatDate } from '@/lib/format-datetime';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { Button } from '@/components/ui/button';
@@ -148,28 +149,15 @@ export function FilesClient({
   };
 
   // ─── Upload ──────────────────────────────────────────────────────
+  // Hands files to the app-wide background uploader (UploadProvider) so they
+  // keep uploading after you navigate away; the realtime layer refreshes this
+  // list as each file lands.
+  const { enqueue } = useUploads();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const triggerUpload = () => fileInputRef.current?.click();
-  const uploadFiles = async (input: FileList | File[]) => {
-    let failed = false;
-    for (const file of Array.from(input)) {
-      const form = new FormData();
-      form.set('parentPath', currentPath);
-      form.set('file', file);
-      const res = await fetch('/api/files/files', { method: 'POST', body: form });
-      if (!res.ok) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string };
-        toast.error(`${file.name}: ${b.error ?? 'upload failed'}`);
-        failed = true;
-        break;
-      }
-    }
-    if (!failed) toast.success('Upload complete');
-    refresh();
-  };
   const onFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
-    void uploadFiles(e.target.files);
+    enqueue(e.target.files, currentPath);
     e.target.value = '';
   };
 
@@ -178,7 +166,7 @@ export function FilesClient({
   const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragOver(false);
-    if (e.dataTransfer.files?.length) void uploadFiles(e.dataTransfer.files);
+    if (e.dataTransfer.files?.length) enqueue(e.dataTransfer.files, currentPath);
   };
 
   // ─── Delete folder ───────────────────────────────────────────────

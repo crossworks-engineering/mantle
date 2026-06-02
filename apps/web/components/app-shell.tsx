@@ -9,6 +9,7 @@ import { LiveColumn } from '@/components/layout/live-column';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { ToastProvider } from '@/components/ui/toast';
 import { PageTitleProvider } from '@/components/layout/page-title';
+import { UploadProvider, UploadDock } from '@/components/uploads/upload-provider';
 
 /**
  * App shell — three fixed regions (header, left sidebar, right live
@@ -116,6 +117,7 @@ export function AppShell({
   return (
     <ToastProvider>
       <PageTitleProvider>
+      <UploadProvider>
       <div
         className="group/shell h-screen bg-background"
         data-nav-collapsed={navCollapsed ? 'true' : 'false'}
@@ -167,7 +169,12 @@ export function AppShell({
         <main className="fixed inset-0 top-16 overflow-y-auto scrollbar-thin transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[var(--activity-w)]">
           {children}
         </main>
+
+        {/* App-wide background-upload progress dock (inside the shell so it
+            inherits --activity-w; persists across route changes). */}
+        <UploadDock />
       </div>
+      </UploadProvider>
       </PageTitleProvider>
     </ToastProvider>
   );
