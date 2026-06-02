@@ -184,17 +184,17 @@ export function TableDetailClient({ initial }: { initial: TableDetail }) {
           e.target.value = '';
         }}
       />
-      <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-background/80 px-4 py-2 backdrop-blur">
-        <div className="flex min-w-0 items-center gap-3">
+      <div className="sticky top-0 z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-border bg-background/80 px-4 py-2 backdrop-blur">
+        <div className="justify-self-start whitespace-nowrap">
           <BackLink href="/tables">All tables</BackLink>
-          <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="h-8 max-w-xs border-0 bg-transparent px-1 text-base font-semibold shadow-none focus-visible:ring-0"
-            aria-label="Table title"
-          />
         </div>
-        <div className="flex items-center gap-2">
+        <Input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="h-8 w-56 max-w-full justify-self-center border-0 bg-transparent px-1 text-center text-base font-semibold shadow-none focus-visible:ring-0"
+          aria-label="Table title"
+        />
+        <div className="flex items-center gap-2 justify-self-end">
           <StatusIndicator committing={committing} draftSaving={draftSaving} dirty={dirty} />
           <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={importing}>
             {importing ? <Loader2 className="animate-spin" /> : <Upload />} Import
