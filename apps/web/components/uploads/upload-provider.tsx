@@ -162,7 +162,7 @@ export function UploadDock() {
       : `Uploaded ${done} file${done === 1 ? '' : 's'}`;
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border bg-card shadow-lg lg:right-[calc(var(--activity-w)+1rem)]">
+    <div className="pointer-events-auto w-full overflow-hidden rounded-lg border border-border bg-card shadow-lg">
       <button
         type="button"
         onClick={() => setCollapsed((v) => !v)}

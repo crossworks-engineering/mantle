@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useAssistantDock } from '@/components/assistant/assistant-dock';
 import {
   CornerDownLeft,
@@ -95,7 +95,7 @@ export function AssistantClient({
   const initials = agentInitials(agentName ?? 'Assistant');
   // Turns run through the app-wide dock provider, so a long turn keeps going
   // (and stays visible in the floating dock) when you navigate away mid-answer.
-  const { runTurn } = useAssistantDock();
+  const { runTurn, busy: dockBusy, agentSlug: dockAgentSlug } = useAssistantDock();
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -165,6 +165,48 @@ export function AssistantClient({
       setLoadingOlder(false);
     }
   }, [hasMore, messages, agentSlug]);
+
+  // Pull any newly-persisted messages into the transcript — used when a turn
+  // that this page didn't start finishes (e.g. you returned to /assistant while
+  // a dock turn was still running). Dedupes by id, so it's a safe no-op when
+  // there's nothing new.
+  const syncLatest = useCallback(async () => {
+    try {
+      const qs = new URLSearchParams({ limit: String(PAGE_SIZE) });
+      if (agentSlug) qs.set('agent', agentSlug);
+      const res = await fetch(`/api/assistant/messages?${qs.toString()}`, { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = (await res.json()) as { messages: Message[] };
+      const latest = data.messages ?? [];
+      setMessages((prev) => {
+        const have = new Set(prev.map((m) => m.id));
+        const additions = latest.filter((m) => !have.has(m.id));
+        if (additions.length === 0) return prev;
+        return [...prev, ...additions].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      });
+    } catch {
+      /* network blip — the next turn or a reload will reconcile */
+    }
+  }, [agentSlug]);
+
+  // A turn for THIS agent is running that this page didn't start (you navigated
+  // back mid-flight, or it's a dock reply). Drives a "working" indicator, and
+  // when it finishes we pull the reply in so the transcript updates without a
+  // manual reload.
+  const foreignBusy = dockBusy && !sending && dockAgentSlug === agentSlug;
+  const prevForeignRef = useRef(false);
+  useEffect(() => {
+    if (prevForeignRef.current && !foreignBusy) void syncLatest();
+    prevForeignRef.current = foreignBusy;
+  }, [foreignBusy, syncLatest]);
+
+  // On (re)mount — including an agent switch, which re-keys this component —
+  // pull the latest persisted messages, so a reply that landed while you were
+  // away shows up even if the router served this view from cache.
+  useEffect(() => {
+    void syncLatest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const onScroll = useCallback(() => {
     const el = scrollerRef.current;
@@ -491,6 +533,12 @@ export function AssistantClient({
                   </li>
                 );
               })}
+              {foreignBusy && (
+                <li className="flex items-center gap-2 px-1 py-2 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                  {agentName ?? 'Assistant'} is working… (started elsewhere)
+                </li>
+              )}
             </ul>
           </>
         )}

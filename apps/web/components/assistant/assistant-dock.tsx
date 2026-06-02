@@ -162,7 +162,7 @@ export function AssistantDock() {
   };
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 flex max-h-[70vh] w-96 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border border-border bg-card shadow-lg lg:right-[calc(var(--activity-w)+1rem)]">
+    <div className="pointer-events-auto flex max-h-[60vh] w-full flex-col overflow-hidden rounded-lg border border-border bg-card shadow-lg">
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         {busy ? (
           <Loader2 className="size-4 shrink-0 animate-spin text-primary" aria-hidden />

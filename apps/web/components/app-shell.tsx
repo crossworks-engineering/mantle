@@ -172,10 +172,15 @@ export function AppShell({
           {children}
         </main>
 
-        {/* App-wide docks (inside the shell so they inherit --activity-w;
-            persist across route changes). */}
-        <UploadDock />
-        <AssistantDock />
+        {/* App-wide docks: a bottom-right stack so uploads + chat never
+            overlap. Inside the shell so it inherits --activity-w (sits left of
+            the activity rail) and persists across route changes.
+            pointer-events-none lets clicks fall through the gaps; each dock
+            re-enables its own. */}
+        <div className="pointer-events-none fixed bottom-4 right-4 z-40 flex w-96 max-w-[calc(100vw-2rem)] flex-col items-stretch gap-3 lg:right-[calc(var(--activity-w)+1rem)]">
+          <UploadDock />
+          <AssistantDock />
+        </div>
       </div>
       </AssistantDockProvider>
       </UploadProvider>
