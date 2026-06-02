@@ -308,7 +308,7 @@ function HeaderCell({
         <DropdownMenuContent align="start">
           <DropdownMenuLabel className="text-xs text-muted-foreground">{TYPE_LABEL[col.type]} column</DropdownMenuLabel>
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger><Type className="mr-2 size-3.5" /> Type</DropdownMenuSubTrigger>
+            <DropdownMenuSubTrigger className={MENU_SUBTRIGGER}><Type className="mr-2 size-3.5" /> Type</DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
               <DropdownMenuRadioGroup value={col.type} onValueChange={(v) => onType(v as ColumnType)}>
                 {COLUMN_TYPES.map((t) => (
@@ -318,7 +318,7 @@ function HeaderCell({
             </DropdownMenuSubContent>
           </DropdownMenuSub>
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger><Sigma className="mr-2 size-3.5" /> Total</DropdownMenuSubTrigger>
+            <DropdownMenuSubTrigger className={MENU_SUBTRIGGER}><Sigma className="mr-2 size-3.5" /> Total</DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
               <DropdownMenuRadioGroup value={aggregate} onValueChange={(v) => onAggregate(v as AggregateKind)}>
                 {AGGREGATE_KINDS.map((k) => (
@@ -349,6 +349,11 @@ const CELL_INPUT = 'w-full border-0 bg-transparent px-2 py-1.5 text-sm outline-n
 // highlight neutral + readable. Theme tokens only.
 const MENU_RADIO_ITEM =
   'focus:bg-muted focus:text-foreground data-[state=checked]:font-semibold data-[state=checked]:text-primary';
+
+// The shared SubTrigger flips its background to accent on hover/open but (unlike
+// a regular Item) never flips the TEXT to accent-foreground, so the label can be
+// unreadable on a saturated accent. Pair them, matching the Sort/Insert items.
+const MENU_SUBTRIGGER = 'focus:text-accent-foreground data-[state=open]:text-accent-foreground';
 
 function EditableCell({
   col,
