@@ -393,6 +393,19 @@ Flow:
    long-poll timeout, exponential backoff on errors, advances
    `last_update_offset` after each batch. It reconciles the enabled-account
    set every 60s, so a newly connected bot starts polling without a restart.
+   The cursor is acked at **`max(received update_id) + 1`** (empty long-poll
+   leaves it untouched), so it tracks the stream in *either* direction — if a
+   bot **token is repointed at a different bot** with a lower update-id range,
+   the cursor self-heals instead of pinning above the new stream forever (the
+   old "advance only" logic wedged into an infinite "N updates, 0 delivered"
+   loop). A redelivered update is deduped on the partial unique index
+   `(account_id, telegram_update_id) WHERE telegram_update_id IS NOT NULL` —
+   the `ON CONFLICT … WHERE …` clause **must repeat that predicate** or Postgres
+   raises `42P10` (a partial index isn't inferred without it).
+   **One poller per token:** Telegram allows a single `getUpdates` consumer per
+   bot token (else `409 Conflict`), so dev and prod each own *different* bots —
+   dev `@saskiadevbot`, prod `@saskianewbot` — never the same token. Ownership
+   is the per-DB `enabled` flag, not stopping the worker.
    Each `telegram_accounts` row holds the bot's AES-sealed token and (since
    migration 0050) an optional `responder_agent_id` binding the bot to the
    responder that owns it — see §9b. Tokens are entered + rotated from the
@@ -687,6 +700,14 @@ One worker per `(owner, kind)` is marked `is_default=true`. The runtime
 calls `getDefaultWorker(ownerId, kind)` from `@mantle/db`; the default
 flag wins, otherwise highest-priority enabled row.
 
+**Per-agent TTS override (migration 0066).** TTS is the one kind an agent
+can pin individually: `agents.tts_worker_id` selects which `tts` worker
+voices that agent (set in `/settings/agents` → Voice (TTS)). The reply
+path resolves it via `getAgentTtsWorker(ownerId, agent.ttsWorkerId)` —
+the pinned worker if owned + enabled, else `getDefaultWorker(_, 'tts')`.
+So you can run several voices and assign them per agent, with unset /
+disabled / deleted all degrading to the default.
+
 **Embedding resolution** is the one kind that's resolved on a *hot path*
 rather than at trigger time, so it has its own per-owner 60s in-process
 cache in `@mantle/embeddings#resolveEmbeddingModel`. The fall-through
@@ -788,8 +809,9 @@ inbound voice msg
     └─→ responder produces reply text
           │
           ├─ if wasVoice OR reply starts with [VOICE] marker:
-          │     ├─ resolve default TTS worker (kind='tts')
-          │     ├─ adapter.synthesize({text, voice, speed, instructions})  ← OpenAI / ElevenLabs
+          │     ├─ resolve TTS worker: getAgentTtsWorker(owner, agent.ttsWorkerId)
+          │     │     → the agent's pinned voice, else the default (kind='tts')
+          │     ├─ adapter.synthesize({text, voice, speed, instructions})  ← OpenAI / ElevenLabs / xAI / Google
           │     └─ sendVoice(account, chatId, audioBytes)
           └─ else sendMessage(...) as text
 ```

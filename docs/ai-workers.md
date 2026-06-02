@@ -72,6 +72,18 @@ index on `is_default = true`. The runtime calls
 `getDefaultWorker(ownerId, kind)` and gets the default (or falls back
 to highest-priority enabled row, or null).
 
+**Per-agent TTS voice (migration 0066).** You may run *many* `tts`
+workers (only the *default* is constrained to one per owner). An agent
+can pin which voice it speaks with via `agents.tts_worker_id`, chosen in
+`/settings/agents` → **Voice (TTS)**. The worker owns provider + voice +
+model + key; the agent only references it. The reply path resolves it
+through **`getAgentTtsWorker(ownerId, agent.ttsWorkerId)`** (`@mantle/db`):
+the pinned worker if it's still owned + enabled, otherwise it falls back
+to `getDefaultWorker(ownerId, 'tts')` — so a deleted/disabled/unset pin
+degrades to the default rather than going silent. `ON DELETE SET NULL`
+means deleting a voice reverts the agents that used it back to the
+default.
+
 **`params` is jsonb** because each kind has its own knobs:
 
 ```ts

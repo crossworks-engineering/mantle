@@ -200,6 +200,9 @@ click, and DMs to that bot are answered by that agent. See
 - `system_prompt` — persona
 - `memory_config.history_limit` — turns to replay (default 20)
 - `params` — `temperature`, `max_tokens`, `top_p`
+- `tts_worker_id` — which `kind='tts'` AI worker voices this agent's spoken
+  replies (set in the **Voice (TTS)** picker). Unset → the owner's default TTS
+  worker. See [`docs/ai-workers.md`](./docs/ai-workers.md).
 - `priority` — higher wins when multiple `responder` agents are enabled
 - `enabled` — kill switch
 

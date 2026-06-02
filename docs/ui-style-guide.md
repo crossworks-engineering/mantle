@@ -51,9 +51,18 @@ Rules:
 - **`chart-1..5`** is the categorical palette — use it for things that need
   distinct-but-themed colors (e.g. tag pills). Don't use `primary` for
   categorical sets.
-- **Selected / active state:** `border-primary` (often with `ring-1
-  ring-primary` or `bg-accent/50`). For list selection use a **left accent**:
-  `border-l-[3px] border-l-primary` + `bg-accent/50`.
+- **Selected / active state — mark it with an ACCENT, not a background fill.**
+  For list selection use a **left accent bar only**: `border-l-[3px]
+  border-l-primary` (keep a visible `border-l-border` at rest so radius doesn't
+  break; flip only the colour on select). **Do not add a `bg-accent` fill on the
+  selected or hovered row** — in many themes `accent` is saturated and the row's
+  text is `foreground`/`muted-foreground` (not `accent-foreground`), so the text
+  becomes unreadable. For hover use a neutral `hover:bg-muted/50`. (Swept
+  app-wide 2026-06-02; the borderless Contacts rows use a `border-l-2
+  border-l-transparent` base so the accent bar doesn't shift text.) `bg-accent`
+  is fine where text is paired with `accent-foreground` (e.g. a chip that sets
+  both), and a faint `bg-primary/10` tint is acceptable when contrast is
+  verified — but the default selection idiom is border-only.
 - Light/dark is handled by `next-themes`; the color theme by
   `ColorThemeProvider` (`data-color-theme` on `<html>`, presets in
   `globals.css`, registry in `lib/themes.ts`). Don't fork theme logic.
@@ -230,8 +239,8 @@ Rules:
   rounded corners don't break; only its colour flips on select:
   ```tsx
   <button className={cn(
-    'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-accent/40',
-    selected && 'border-l-primary bg-accent/50',
+    'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
+    selected && 'border-l-primary',   // accent bar only — no bg-accent fill (see §2)
     disabled && 'opacity-70',
   )} />
   ```
