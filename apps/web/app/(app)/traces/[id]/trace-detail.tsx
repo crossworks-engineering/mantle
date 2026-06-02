@@ -108,8 +108,13 @@ function buildGraph(steps: TraceStepSummary[]): { nodes: Node[]; edges: Edge[] }
         width: NODE_W,
         height: NODE_H,
         borderRadius: 8,
+        // Status is conveyed by the BORDER colour. The fill is the theme card
+        // surface (with explicit card-foreground text) so the title is readable
+        // in every theme — the old hardcoded pastel fills (emerald-50, etc.)
+        // stayed light in dark themes, giving white-on-white titles.
         border: `1px solid ${borderForStatus(s.status)}`,
-        background: bgForStatus(s.status),
+        background: 'var(--card)',
+        color: 'var(--card-foreground)',
         padding: 0,
       },
     };
@@ -191,21 +196,6 @@ function borderForStatus(status: string): string {
       return 'rgb(148 163 184)'; // slate
     default:
       return 'rgb(148 163 184)';
-  }
-}
-
-function bgForStatus(status: string): string {
-  switch (status) {
-    case 'success':
-      return 'rgb(236 253 245)'; // emerald-50
-    case 'error':
-      return 'rgb(254 226 226)'; // red-100
-    case 'running':
-      return 'rgb(254 243 199)'; // amber-100
-    case 'skipped':
-      return 'rgb(241 245 249)'; // slate-100
-    default:
-      return 'rgb(255 255 255)';
   }
 }
 
