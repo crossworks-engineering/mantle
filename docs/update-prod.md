@@ -81,7 +81,41 @@ checks), `/settings/network` (the new **Activate Tailscale** card).
   `next build` but reuses node_modules. First build after a `pnpm-lock` change is
   slower.
 
+## Alternative — compile on the Mac, pull on the VPS (registry)
+
+The conceptually cleaner "build here → push → pull there" flow. **Catch:** the
+Mac builds **arm64**, the VPS runs **amd64**, so a normal Mac build pushed to
+Docker Hub won't run on the VPS (`exec format error`). You must **cross-build
+for amd64** under QEMU emulation — correct, but slower than building natively on
+the VPS (which is why `build-on-VPS` above is the default).
+
+```bash
+# ── (Mac) cross-build for amd64 + push to Docker Hub ─────────────────────────
+docker login
+docker buildx build --platform linux/amd64 \
+  -t titanwest/mantle:latest --push .
+#   scripts/docker-build-push.sh wraps build+push (set MANTLE_IMAGE_NAMESPACE/
+#   _TAG); it builds the host arch today, so add --platform linux/amd64 for
+#   this arm64-Mac → amd64-VPS hop.
+
+# ── (VPS) pull the new image + roll the stack ────────────────────────────────
+ssh cwe@mcp.crossworks.network 'cd ~/mantle &&
+  bash scripts/db-dump.sh &&                 # backup before any migration
+  docker compose pull &&                     # ← the "pull there" step
+  docker compose up -d --wait &&             # migrate gate → app recreate
+  docker compose stop worker_telegram'       # dev owns the bots
+```
+
+The VPS needs no source tree here — `docker compose pull` replaces the rsync +
+`build web`. The compose `image:` already points at
+`titanwest/mantle:${MANTLE_IMAGE_TAG:-latest}`, so a pull just fetches new
+layers. Recap: **build-on-VPS** = no emulation, no registry login, but the VPS
+keeps the source; **compile-here/pull-there** = a source-free VPS, but every
+build is an emulated amd64 cross-compile. deploy.md §2/§5 cover this model fully.
+
 ## Rollback
 
-Code: re-rsync the previous sha + rebuild + `up -d`. **Schema is forward-only** —
-to undo a migration, restore the pre-update dump into a fresh DB (deploy.md §3b–c).
+Code: re-rsync the previous sha + rebuild + `up -d` (build-on-VPS), or set
+`MANTLE_IMAGE_TAG` back to the prior tag + `docker compose pull && up -d`
+(registry). **Schema is forward-only** — to undo a migration, restore the
+pre-update dump into a fresh DB (deploy.md §3b–c).
