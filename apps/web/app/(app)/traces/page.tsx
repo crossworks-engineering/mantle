@@ -194,7 +194,7 @@ export default async function TracesPage(props: { searchParams?: Promise<SearchP
                     key={r.id}
                     href={href({ selected: r.id })}
                     className={cn(
-                      'block rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 transition-colors hover:bg-accent/40',
+                      'block rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 transition-colors hover:bg-muted/50',
                       // Selection = left accent bar only; a bg-accent fill is
                       // unreadable in themes where `accent` is saturated.
                       selectedId === r.id && 'border-l-primary',
