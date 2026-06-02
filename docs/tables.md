@@ -105,6 +105,11 @@ shapes; the caller (tool / API) builds the doc. **One table per sheet:** a
 multi-sheet workbook yields several tables. (CSV has no real types, so its
 `true`/`false` infer as text — retype in the UI; xlsx booleans infer as checkbox.)
 
+`parseTextToGrid(text)` is the same path for **pasted tabular text** (no file):
+it detects a markdown pipe table, TSV, or CSV (quote-aware) and returns a
+`ParsedSheet`. This powers the `table_from_text` tool — "build a table from these
+results" in one call, instead of the agent adding rows one at a time.
+
 ---
 
 ## 4. Tools + the Tables agent
@@ -115,8 +120,9 @@ read this *before* editing, so you target rows by id), `table_row_get`.
 Edits (→ `draft_data`, return a review hint): `table_row_add`/`update`/`delete`,
 `table_cell_set`, `table_column_add`/`update`/`delete`, `table_set_aggregate`
 ("add totals"), `table_set_view`. Plus `table_create`, `table_from_file`
-(import), `table_update` (metadata), `table_commit`, `table_delete`
-(`requiresConfirm`). Cells accept column **name or id**. Oversized
+(spreadsheet import), `table_from_text` (build a grid from a pasted CSV/TSV/
+markdown block in one call — the "results → table" path), `table_update`
+(metadata), `table_commit`, `table_delete` (`requiresConfirm`). Cells accept column **name or id**. Oversized
 `table_get`/`table_rows_list` spill to the `read_result` store automatically.
 MCP exposes read-only `table_list`/`table_get`/`table_rows_list`.
 

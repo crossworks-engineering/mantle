@@ -74,12 +74,17 @@ A table is \`{ columns, rows, aggregates, views }\`:
   \`{Qty} * {Price}\`, \`ROUND({Total} * 0.15, 2)\`, \`IF({Paid}, 0, {Due})\`.
   Formulas are same-row only — column-wide math is an aggregate, not a formula.
 
-## Importing spreadsheets
+## Building a table from data
 
-When the user hands you an .xlsx / .xls / .csv, use
-\`table_from_file({ file_id })\` — bytes go server-side, types are inferred, and
-one table is created per sheet (multi-sheet workbooks yield several tables).
-Never \`file_read\` a spreadsheet and retype it.
+- **Data already in the conversation** (a block of results, a CSV/TSV blob, a
+  markdown table the user pasted) → \`table_from_text({ data })\` in ONE call. It
+  parses the whole block server-side (header row → columns, types inferred).
+  **Never create an empty table and add rows one at a time with table_row_add
+  for bulk data** — that's slow and you'll hit your iteration cap; \`table_from_text\`
+  ingests it all at once. Use table_row_add only for a row or two by hand.
+- **A spreadsheet file** (.xlsx / .xls / .csv) → \`table_from_file({ file_id })\`:
+  bytes go server-side, types inferred, one table per sheet. Never \`file_read\` a
+  spreadsheet and retype it.
 
 ## Draft / commit discipline (non-negotiable)
 

@@ -47,7 +47,7 @@ import {
   type TableDetail,
 } from '@mantle/content';
 import { fileById, readFileById } from '@mantle/files';
-import { parseSheetToGrid } from '@mantle/files/sheet-to-grid';
+import { parseSheetToGrid, parseTextToGrid } from '@mantle/files/sheet-to-grid';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 
@@ -228,6 +228,70 @@ const table_from_file: BuiltinToolDef = {
     }
     ctx.step?.setOutput({ tables: created.length, primary: created[0]?.id });
     return { ok: true, output: { tables: created, primary_id: created[0]?.id } };
+  },
+};
+
+const table_from_text: BuiltinToolDef = {
+  slug: 'table_from_text',
+  name: 'Create a table from pasted tabular text',
+  description:
+    "Build a typed grid from a block of tabular text in ONE call — CSV, TSV, or a markdown pipe table. **This is the right tool for \"make a table from these results / this data\" when the rows are in the conversation.** Do NOT create an empty table and add rows one at a time with table_row_add — that's slow and capped at a handful of rows per turn; this ingests the whole block at once. The header row becomes columns and types are inferred (numbers, dates from xlsx, text). The table is created + indexed immediately. `title` is optional.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      title: { type: 'string', description: "table title; defaults to 'Imported table'" },
+      data: {
+        type: 'string',
+        description:
+          'the tabular text. CSV, TSV, or a markdown table (| col | col |\\n|---|---|\\n| … |). The first row is treated as the header.',
+      },
+      tags: { type: 'array', items: { type: 'string' } },
+      icon: { type: 'string', description: 'optional emoji icon' },
+    },
+    required: ['data'],
+  },
+  handler: async (input, ctx) => {
+    const data = str(input.data);
+    if (!data.trim()) return { ok: false, error: 'data is required' };
+    let sheets;
+    try {
+      sheets = parseTextToGrid(data);
+    } catch (err) {
+      return { ok: false, error: `parse failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
+    if (sheets.length === 0 || sheets[0]!.columns.length === 0) {
+      return { ok: false, error: 'no table found in the text — expected CSV, TSV, or a markdown | table |' };
+    }
+    const doc = tableDocFromGrid(sheets[0]!);
+    const title = (str(input.title).trim() || 'Imported table').slice(0, 200);
+    const icon = str(input.icon).trim();
+    try {
+      const table = await createTable(ctx.ownerId, {
+        title,
+        data: doc,
+        tags: strArr(input.tags),
+        ...(icon ? { icon } : {}),
+      });
+      ctx.step?.setOutput({ id: table.id, rows: doc.rows.length, columns: doc.columns.length });
+      void recordIngest({
+        source: 'agent_tool',
+        ownerId: ctx.ownerId,
+        nodeId: table.id,
+        summary: `Table built from pasted text: ${table.title}`,
+        payload: { via: 'table_from_text_tool', rows: doc.rows.length, ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}) },
+      });
+      return {
+        ok: true,
+        output: {
+          id: table.id,
+          title: table.title,
+          columns: doc.columns.map((c) => ({ id: c.id, name: c.name, type: c.type })),
+          rows: doc.rows.length,
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   },
 };
 
@@ -747,6 +811,7 @@ const table_set_view: BuiltinToolDef = {
 export const TABLE_TOOLS: BuiltinToolDef[] = [
   table_create,
   table_from_file,
+  table_from_text,
   table_update,
   table_delete,
   table_commit,

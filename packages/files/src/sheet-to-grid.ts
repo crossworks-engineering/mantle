@@ -120,3 +120,60 @@ export function parseSheetToGrid(buf: Buffer): ParsedSheet[] {
   }
   return out;
 }
+
+// ── Pasted tabular TEXT → grid ───────────────────────────────────────────────
+// For "build a table from these results" where the data is a blob in the
+// conversation (not a file): CSV, TSV, or a markdown pipe table.
+
+function splitMarkdownCells(line: string): string[] {
+  let cells = line.split('|');
+  if (cells.length && cells[0]!.trim() === '') cells = cells.slice(1);
+  if (cells.length && cells[cells.length - 1]!.trim() === '') cells = cells.slice(0, -1);
+  return cells.map((c) => c.trim());
+}
+
+/** A markdown table separator row: every cell is dashes with optional colons. */
+function isSeparatorRow(cells: string[]): boolean {
+  return cells.length > 0 && cells.every((c) => /^:?-{1,}:?$/.test(c));
+}
+
+function looksLikeMarkdownTable(text: string): boolean {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length < 2 || !lines[0]!.includes('|')) return false;
+  return lines.some((l) => l.includes('-') && isSeparatorRow(splitMarkdownCells(l)));
+}
+
+function markdownTableToAoa(text: string): string[][] {
+  const out: string[][] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const cells = splitMarkdownCells(line);
+    if (isSeparatorRow(cells)) continue; // drop the |---|---| row
+    out.push(cells);
+  }
+  return out;
+}
+
+/**
+ * Parse a block of pasted tabular text into a grid (one ParsedSheet). Detects:
+ *   - a markdown pipe table (`| a | b |` with a `|---|` separator)
+ *   - TSV (tab-separated)
+ *   - CSV (comma-separated, quote-aware via SheetJS)
+ * Returns [] if no table is found. Type inference is the same as file import.
+ */
+export function parseTextToGrid(text: string): ParsedSheet[] {
+  const t = (text ?? '').trim();
+  if (!t) return [];
+  if (looksLikeMarkdownTable(t)) {
+    const sheet = parseSheet('Pasted', markdownTableToAoa(t));
+    return sheet ? [sheet] : [];
+  }
+  if (t.includes('\t')) {
+    const aoa = t.split(/\r?\n/).filter((l) => l.length > 0).map((l) => l.split('\t'));
+    const sheet = parseSheet('Pasted', aoa);
+    return sheet ? [sheet] : [];
+  }
+  // Default: CSV — SheetJS handles quoting/escapes from a buffer.
+  return parseSheetToGrid(Buffer.from(t, 'utf-8'));
+}

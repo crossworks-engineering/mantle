@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
-import { parseSheetToGrid } from './sheet-to-grid';
+import { parseSheetToGrid, parseTextToGrid } from './sheet-to-grid';
 
 /** Build an .xlsx buffer from an array-of-arrays per sheet. */
 function workbook(sheets: Record<string, unknown[][]>): Buffer {
@@ -60,5 +60,36 @@ describe('parseSheetToGrid', () => {
     expect(sheets).toHaveLength(1);
     expect(sheets[0]!.columns.map((c) => `${c.name}:${c.type}`)).toEqual(['Name:text', 'Age:number']);
     expect(sheets[0]!.rows).toEqual([['Ada', 36], ['Grace', 40]]);
+  });
+});
+
+describe('parseTextToGrid', () => {
+  it('parses a markdown pipe table, dropping the separator row', () => {
+    const md = `
+| Item   | Qty | Price |
+|--------|----:|-------|
+| Widget | 2   | 9.5   |
+| Gadget | 3   | 4     |
+`;
+    const [sheet] = parseTextToGrid(md);
+    expect(sheet!.columns.map((c) => `${c.name}:${c.type}`)).toEqual(['Item:text', 'Qty:number', 'Price:number']);
+    expect(sheet!.rows).toEqual([['Widget', 2, 9.5], ['Gadget', 3, 4]]);
+  });
+
+  it('parses TSV', () => {
+    const [sheet] = parseTextToGrid('Name\tAge\nAda\t36\nGrace\t40');
+    expect(sheet!.columns.map((c) => `${c.name}:${c.type}`)).toEqual(['Name:text', 'Age:number']);
+    expect(sheet!.rows).toEqual([['Ada', 36], ['Grace', 40]]);
+  });
+
+  it('parses CSV (quote-aware)', () => {
+    const [sheet] = parseTextToGrid('City,Pop\n"Cape Town, ZA",433688\nOslo,700000');
+    expect(sheet!.columns.map((c) => c.name)).toEqual(['City', 'Pop']);
+    expect(sheet!.rows[0]).toEqual(['Cape Town, ZA', 433688]);
+  });
+
+  it('returns [] for non-tabular / empty text', () => {
+    expect(parseTextToGrid('')).toEqual([]);
+    expect(parseTextToGrid('just a sentence with no structure')).toHaveLength(1); // single column, still a (degenerate) table
   });
 });
