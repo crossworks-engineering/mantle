@@ -329,6 +329,7 @@ function HeaderCell({
 }) {
   const [name, setName] = useState(col.name);
   const TypeIcon = TYPE_ICON[col.type];
+  const AggIcon = aggregate !== 'none' ? AGG_ICON[aggregate] : null;
   return (
     <span className="flex w-full items-center gap-1">
       <input
@@ -343,6 +344,11 @@ function HeaderCell({
       />
       {sortDir === 'asc' && <ArrowUp className="size-3 shrink-0 text-muted-foreground" aria-hidden />}
       {sortDir === 'desc' && <ArrowDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />}
+      {AggIcon && (
+        <span className="shrink-0" title={`Total: ${AGG_LABEL[aggregate]}`}>
+          <AggIcon className="size-3 text-muted-foreground" aria-label={`Total: ${AGG_LABEL[aggregate]}`} />
+        </span>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
