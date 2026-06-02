@@ -1354,6 +1354,47 @@ async function drainUnextractedNodes(): Promise<void> {
 }
 
 /**
+ * Periodic safety net for the fire-and-forget gap. `pg_notify('node_ingested')`
+ * is delivered only if the agent's LISTEN is alive at that instant — a dropped
+ * listener (Postgres blip) or a wedged extraction silently loses the event, and
+ * the node is then never extracted with no retry until a *restart's* boot-drain.
+ * This closes that gap on a timer, with no restart needed.
+ *
+ * Predicate is a strict SUBSET of the boot-drain (`embedding IS NULL`) PLUS
+ * "has NO extractor_run at all" — i.e. genuinely never processed (the missed-
+ * event signature). That extra clause makes it **loop-safe**: a node that was
+ * processed-and-skipped (an SVG, a telegram message, a conversation digest) HAS
+ * a terminal run, so it's excluded; the boot-drain's bare `embedding IS NULL`
+ * would re-churn those every sweep. Once a swept node is processed it gains a
+ * run and drops out for good. Capped so a large miss catches up over a few
+ * sweeps rather than a burst. Quiet unless it actually re-queues something.
+ */
+async function sweepMissedExtractions(): Promise<void> {
+  const windowHours = Number(process.env.MANTLE_EXTRACT_DRAIN_WINDOW_HOURS) || 168;
+  const limit = Number(process.env.MANTLE_EXTRACT_SWEEP_LIMIT) || 200;
+  const since = new Date(Date.now() - windowHours * 60 * 60 * 1000);
+  const rows = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, USER_ID!),
+        ne(nodes.type, 'branch'),
+        gte(nodes.createdAt, since),
+        isNull(nodes.embedding),
+        sql`NOT EXISTS (SELECT 1 FROM public.traces t WHERE t.subject_id = ${nodes.id} AND t.kind = 'extractor_run')`,
+      ),
+    )
+    .orderBy(asc(nodes.createdAt))
+    .limit(limit);
+  if (rows.length === 0) return;
+  console.log(
+    `[agent] extract sweep: re-queueing ${rows.length} node(s) with no extractor_run (missed node_ingested)`,
+  );
+  for (const r of rows) await enqueueExtract(r.id);
+}
+
+/**
  * Boot-time log of the active embedder. Since migration 0061 there is exactly
  * ONE embedder (the `embedding_config` row) — no per-agent or per-worker
  * override exists any more, so the write-side and query-side models can't
@@ -1633,6 +1674,18 @@ async function main() {
       });
   }, HEARTBEAT_TICK_MS);
   console.log(`[agent] heartbeat tick every ${HEARTBEAT_TICK_MS / 1000}s (with failure backoff up to 30min)`);
+
+  // Extract sweep: periodically re-queue any node that never got an
+  // extractor_run (a node_ingested notify lost to a dropped listener / wedged
+  // extraction), so a missed file self-heals in minutes instead of waiting for
+  // a restart's boot-drain. Loop-safe + bounded (see sweepMissedExtractions).
+  const SWEEP_INTERVAL_MS = Number(process.env.MANTLE_EXTRACT_SWEEP_MS) || 120 * 1000;
+  setInterval(() => {
+    sweepMissedExtractions().catch((err) =>
+      console.error('[agent] extract sweep error (will retry next tick):', err instanceof Error ? err.message : err),
+    );
+  }, SWEEP_INTERVAL_MS);
+  console.log(`[agent] extract sweep every ${SWEEP_INTERVAL_MS / 1000}s (missed-event safety net)`);
 
   // Stop the extractor queue gracefully on shutdown so in-flight jobs finish
   // (and aren't left `active` in pgboss until the maintenance reaper expires
