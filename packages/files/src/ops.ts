@@ -404,16 +404,8 @@ export async function upsertFile(args: {
     throw new Error(`upsertFile: parent folder '${args.parentPath}' not found`);
   }
 
-  // Disk write first; if it fails, we never insert orphan DB rows.
-  const written = await writeFileOnDisk(args.parentPath, filename, args.bytes, {
-    overwrite: args.overwrite,
-  });
-
-  const content = isText && args.bytes.byteLength <= TEXT_BYTE_CAP
-    ? args.bytes.toString('utf8')
-    : null;
-
-  // Look for an existing row (case where overwrite=true).
+  // Look up any existing DB row for this (folder, filename) BEFORE touching
+  // disk, so we can tell a real duplicate from an orphaned disk file.
   const [existing] = await db
     .select()
     .from(nodes)
@@ -426,6 +418,20 @@ export async function upsertFile(args: {
       ),
     )
     .limit(1);
+
+  // Disk write. The "already exists" collision is only meaningful when a real
+  // DB node owns the name. A disk file with NO node is orphan residue from an
+  // interrupted upload (the disk write landed but the node insert never ran) —
+  // adopt it by overwriting, so a re-upload self-heals instead of being stuck
+  // forever on "already exists" with nothing in the UI to delete.
+  const effectiveOverwrite = args.overwrite || !existing;
+  const written = await writeFileOnDisk(args.parentPath, filename, args.bytes, {
+    overwrite: effectiveOverwrite,
+  });
+
+  const content = isText && args.bytes.byteLength <= TEXT_BYTE_CAP
+    ? args.bytes.toString('utf8')
+    : null;
 
   const newData: Record<string, unknown> = {
     filename,
