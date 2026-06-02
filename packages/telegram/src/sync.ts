@@ -1,6 +1,6 @@
 import { GrammyError } from 'grammy';
 import type { Update } from 'grammy/types';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   db,
   nodes,
@@ -242,7 +242,15 @@ async function persist(account: TelegramAccount, inbound: InboundMessage): Promi
         sentAt: inbound.sentAt,
         attachments: inbound.attachments,
       })
-      .onConflictDoNothing({ target: [telegramMessages.accountId, telegramMessages.telegramUpdateId] })
+      // The arbiter is a PARTIAL unique index (`… where telegram_update_id is
+      // not null`, migration 0012 — outbound rows have a null update_id). Postgres
+      // only infers a partial index when the ON CONFLICT clause repeats its
+      // predicate; without this `where` it raises 42P10 "no unique or exclusion
+      // constraint matching the ON CONFLICT specification".
+      .onConflictDoNothing({
+        target: [telegramMessages.accountId, telegramMessages.telegramUpdateId],
+        where: sql`${telegramMessages.telegramUpdateId} is not null`,
+      })
       .returning({ id: telegramMessages.id });
 
     if (ins.length === 0) {
