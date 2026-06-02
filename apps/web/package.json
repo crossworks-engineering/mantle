@@ -19,6 +19,8 @@
     "seed:remy": "tsx --env-file-if-exists=./.env.local scripts/seed-remy.ts",
     "seed:researcher": "tsx --env-file-if-exists=./.env.local scripts/seed-researcher.ts",
     "seed:pages": "tsx --env-file-if-exists=./.env.local scripts/seed-pages-agent.ts",
+    "seed:tables": "tsx --env-file-if-exists=./.env.local scripts/seed-tables-agent.ts",
+    "seed:tables-skill": "tsx --env-file-if-exists=./.env.local scripts/seed-tables-skill.ts",
     "seed:rich-writing": "tsx --env-file-if-exists=./.env.local scripts/seed-rich-writing-skill.ts",
     "seed:shared-skills": "tsx --env-file-if-exists=./.env.local scripts/seed-shared-skills.ts",
     "test:fire-heartbeat": "tsx --env-file-if-exists=./.env.local scripts/test-fire-heartbeat.ts",

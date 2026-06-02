@@ -40,6 +40,7 @@ import { RESEARCH_TOOLS } from './builtins-research';
 import { NOTE_TOOLS } from './builtins-notes';
 import { EMAIL_TOOLS } from './builtins-email';
 import { PAGE_TOOLS } from './builtins-pages';
+import { TABLE_TOOLS } from './builtins-tables';
 import { TOOL_RESULT_TOOLS } from './builtins-tool-results';
 import { CONTACT_TOOLS } from './builtins-contacts';
 import { PEER_TOOLS } from './builtins-peers';
@@ -972,6 +973,10 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // dialect; markdownToDoc converts it to the ProseMirror JSON pages store.
   // page_delete is requires_confirm (irreversible).
   ...PAGE_TOOLS,
+  // Tables — author + operate typed database grids (CRUD + row/column/cell
+  // edits + totals + saved views). Stable row/column ids make "do row X" /
+  // "total column Y" addressable; structural edits write to draft_data.
+  ...TABLE_TOOLS,
   // read_result — dereference a spilled (oversized) tool result by handle:
   // page / grep / semantic query. The tool-loop always offers this so a
   // stored handle is never a dead end. Read-only.

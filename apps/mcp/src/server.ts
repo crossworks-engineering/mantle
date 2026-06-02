@@ -80,10 +80,14 @@ import {
   getEvent,
   getNote,
   getPage,
+  getTable,
   getTodo,
   listEvents,
   listNotes,
   listPages,
+  listTables,
+  listRows,
+  ensureTableDoc,
   listTodos,
   listPeers,
   queryPeer,
@@ -907,6 +911,61 @@ server.tool(
     const row = await getPage(OWNER_ID!, id);
     if (!row) return { content: [{ type: 'text', text: 'not found' }] };
     return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+  },
+);
+
+// ─── Tables (read-only) ────────────────────────────────────────────────────
+//
+// Typed database grids (type='table'). Read-only over MCP — tables are authored
+// in the web grid editor + by the Tables agent. table_list omits the grid;
+// table_get returns columns + a row window; table_rows_list is the addressable
+// row snapshot.
+
+server.tool(
+  'table_list',
+  "List the owner's tables. Optional `query` substring-matches title/body/summary; `tag` filters. Grids are summarised (column + row counts) — use table_get for content.",
+  {
+    query: z.string().optional(),
+    tag: z.string().optional(),
+  },
+  async ({ query, tag }) => {
+    const rows = await listTables(OWNER_ID!, { query, tag });
+    return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+  },
+);
+
+server.tool(
+  'table_get',
+  'Get a single table by id: its columns and a window of rows (formula columns resolved). `offset`/`limit` page large grids.',
+  { id: z.string(), offset: z.number().optional(), limit: z.number().optional() },
+  async ({ id, offset, limit }) => {
+    const row = await getTable(OWNER_ID!, id);
+    if (!row) return { content: [{ type: 'text', text: 'not found' }] };
+    const doc = ensureTableDoc(row.data);
+    const listed = listRows(doc, { offset: offset ?? 0, limit: limit ?? 100 });
+    const out = {
+      id: row.id,
+      title: row.title,
+      tags: row.tags,
+      summary: row.summary,
+      columns: doc.columns.map((c) => ({ id: c.id, name: c.name, type: c.type })),
+      rows: listed.rows,
+      total_rows: listed.total,
+      aggregates: doc.aggregates ?? {},
+    };
+    return { content: [{ type: 'text', text: JSON.stringify(out, null, 2) }] };
+  },
+);
+
+server.tool(
+  'table_rows_list',
+  'Windowed snapshot of a table\'s rows — each a stable id + short per-cell text. Page via offset/limit.',
+  { table_id: z.string(), offset: z.number().optional(), limit: z.number().optional() },
+  async ({ table_id, offset, limit }) => {
+    const row = await getTable(OWNER_ID!, table_id);
+    if (!row) return { content: [{ type: 'text', text: 'not found' }] };
+    const listed = listRows(ensureTableDoc(row.data), { offset: offset ?? 0, limit: limit ?? 50 });
+    return { content: [{ type: 'text', text: JSON.stringify(listed, null, 2) }] };
   },
 );
 
