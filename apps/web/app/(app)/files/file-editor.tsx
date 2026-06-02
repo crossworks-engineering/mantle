@@ -268,16 +268,69 @@ export function FileEditor({
           )}
         </div>
       ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
-          <p>Binary file — preview not available.</p>
-          <Button asChild size="sm">
-            <a href={`/api/files/files/${file.id}?raw=1`} download={file.filename}>
-              <Download /> Download {file.filename}
-            </a>
-          </Button>
-          {file.summary && <p className="max-w-md text-center text-xs italic">{file.summary}</p>}
-        </div>
+        <FilePreviewBody file={file} />
       )}
+    </div>
+  );
+}
+
+/**
+ * Inline preview for non-text files. Images (incl. SVG logos), PDFs, video, and
+ * audio render from the raw asset route (served `content-disposition: inline`);
+ * everything else falls back to a download card. SVG renders via `<img>`, which
+ * never executes embedded scripts, so it's safe to show.
+ */
+function FilePreviewBody({ file }: { file: FileRow }) {
+  const src = `/api/files/files/${file.id}?raw=1`;
+  const mime = file.mimeType || '';
+  const isImage = mime.startsWith('image/');
+  const isPdf = mime === 'application/pdf';
+  const isVideo = mime.startsWith('video/');
+  const isAudio = mime.startsWith('audio/');
+
+  if (isImage) {
+    return (
+      // Muted backdrop so transparent logos (PNG/SVG) read clearly.
+      <div className="flex flex-1 items-center justify-center overflow-auto bg-muted/20 p-6">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={file.filename}
+          className="max-h-full max-w-full rounded-md border border-border object-contain"
+        />
+      </div>
+    );
+  }
+  if (isPdf) {
+    return <iframe src={src} title={file.filename} className="w-full flex-1 border-0" />;
+  }
+  if (isVideo) {
+    return (
+      <div className="flex flex-1 items-center justify-center bg-black p-6">
+        <video src={src} controls className="max-h-full max-w-full" />
+      </div>
+    );
+  }
+  if (isAudio) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6">
+        <audio src={src} controls className="w-full max-w-xl" />
+        {file.summary && (
+          <p className="max-w-md text-center text-xs italic text-muted-foreground">{file.summary}</p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
+      <p>Preview not available for this file type.</p>
+      <Button asChild size="sm">
+        <a href={src} download={file.filename}>
+          <Download /> Download {file.filename}
+        </a>
+      </Button>
+      {file.summary && <p className="max-w-md text-center text-xs italic">{file.summary}</p>}
     </div>
   );
 }
