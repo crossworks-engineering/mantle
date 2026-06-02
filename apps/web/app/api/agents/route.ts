@@ -91,6 +91,9 @@ const CreateBody = z.object({
   viaTailnet: z.boolean().optional(),
   backupBaseUrl: z.string().max(500).nullish(),
   backupViaTailnet: z.boolean().optional(),
+  // Per-agent voice (migration 0066): pin a kind='tts' ai_worker; null/omitted
+  // = use the owner's default TTS worker.
+  ttsWorkerId: z.string().uuid().nullish(),
   systemPrompt: z.string().min(1).max(40_000),
   tools: z.array(z.string()).max(256).optional(),
   toolSlugs: z.array(z.string().min(1).max(120)).max(256).optional(),

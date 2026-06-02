@@ -4,13 +4,14 @@ import { requireOwner } from '@/lib/auth';
 import { listAgents } from '@/lib/agents';
 import { listApiKeys } from '@/lib/api-keys';
 import { listSkills } from '@/lib/skills';
+import { listAiWorkersByKind } from '@/lib/ai-workers';
 import { getTailnetPeerNames } from '@/lib/tailscale';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { AgentsClient } from './agents-client';
 
 export default async function AgentsSettingsPage() {
   const user = await requireOwner();
-  const [agents, keys, toolRows, skillRows, tailnetPeers] = await Promise.all([
+  const [agents, keys, toolRows, skillRows, tailnetPeers, ttsWorkers] = await Promise.all([
     listAgents(user.id),
     listApiKeys(user.id),
     db
@@ -26,6 +27,7 @@ export default async function AgentsSettingsPage() {
       .orderBy(tools.slug),
     listSkills(user.id),
     getTailnetPeerNames(),
+    listAiWorkersByKind(user.id, 'tts'),
   ]);
 
   return (
@@ -34,6 +36,15 @@ export default async function AgentsSettingsPage() {
       <AgentsClient
         initialAgents={agents}
         tailnetPeers={tailnetPeers}
+        ttsWorkers={ttsWorkers.map((w) => ({
+          id: w.id,
+          slug: w.slug,
+          name: w.name,
+          provider: w.provider,
+          model: w.model,
+          enabled: w.enabled,
+          isDefault: w.isDefault,
+        }))}
         apiKeys={keys.map((k) => ({
           id: k.id,
           service: k.service,

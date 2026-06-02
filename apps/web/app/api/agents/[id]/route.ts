@@ -77,6 +77,8 @@ const PatchBody = z
     viaTailnet: z.boolean(),
     backupBaseUrl: z.string().max(500).nullable(),
     backupViaTailnet: z.boolean(),
+    // Per-agent voice (migration 0066): pin a kind='tts' ai_worker; null = default.
+    ttsWorkerId: z.string().uuid().nullable(),
     systemPrompt: z.string().min(1).max(40_000),
     tools: z.array(z.string()).max(256),
     toolSlugs: z.array(z.string().min(1).max(120)).max(256),

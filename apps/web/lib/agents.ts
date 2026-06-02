@@ -42,6 +42,9 @@ export type AgentSummary = {
   viaTailnet: boolean;
   backupBaseUrl: string | null;
   backupViaTailnet: boolean;
+  /** Per-agent voice: the `kind='tts'` ai_worker this agent speaks with.
+   *  null = fall back to the owner's default TTS worker (migration 0066). */
+  ttsWorkerId: string | null;
   systemPrompt: string;
   tools: string[];
   toolSlugs: string[];
@@ -79,6 +82,7 @@ function toSummary(a: Agent): AgentSummary {
     viaTailnet: a.viaTailnet,
     backupBaseUrl: a.backupBaseUrl,
     backupViaTailnet: a.backupViaTailnet,
+    ttsWorkerId: a.ttsWorkerId ?? null,
     systemPrompt: a.systemPrompt,
     tools: a.tools ?? [],
     toolSlugs: a.toolSlugs ?? [],
@@ -142,6 +146,8 @@ export type CreateAgentInput = {
   viaTailnet?: boolean;
   backupBaseUrl?: string | null;
   backupViaTailnet?: boolean;
+  /** Pinned TTS worker (migration 0066). null = use the default TTS worker. */
+  ttsWorkerId?: string | null;
   systemPrompt: string;
   tools?: string[];
   toolSlugs?: string[];
@@ -176,6 +182,7 @@ export async function createAgent(
       viaTailnet: input.viaTailnet ?? false,
       backupBaseUrl: input.backupBaseUrl ?? null,
       backupViaTailnet: input.backupViaTailnet ?? false,
+      ttsWorkerId: input.ttsWorkerId ?? null,
       systemPrompt: input.systemPrompt,
       tools: input.tools ?? [],
       toolSlugs: input.toolSlugs ?? [],
@@ -213,6 +220,7 @@ export async function updateAgent(
   if (patch.viaTailnet !== undefined) next.viaTailnet = patch.viaTailnet;
   if (patch.backupBaseUrl !== undefined) next.backupBaseUrl = patch.backupBaseUrl;
   if (patch.backupViaTailnet !== undefined) next.backupViaTailnet = patch.backupViaTailnet;
+  if (patch.ttsWorkerId !== undefined) next.ttsWorkerId = patch.ttsWorkerId;
   if (patch.systemPrompt !== undefined) next.systemPrompt = patch.systemPrompt;
   if (patch.tools !== undefined) next.tools = patch.tools;
   if (patch.toolSlugs !== undefined) next.toolSlugs = patch.toolSlugs;

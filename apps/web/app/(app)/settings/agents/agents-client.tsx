@@ -115,6 +115,8 @@ type AgentSummary = {
   viaTailnet: boolean;
   backupBaseUrl: string | null;
   backupViaTailnet: boolean;
+  /** Pinned TTS worker (migration 0066); null = default TTS worker. */
+  ttsWorkerId: string | null;
   systemPrompt: string;
   tools: string[];
   toolSlugs: string[];
@@ -132,6 +134,17 @@ type AgentSummary = {
 };
 
 type ApiKeyOption = { id: string; service: string; label: string; masked: string };
+
+/** A `kind='tts'` ai_worker, for the per-agent voice picker. */
+type TtsWorkerOption = {
+  id: string;
+  slug: string;
+  name: string;
+  provider: string;
+  model: string;
+  enabled: boolean;
+  isDefault: boolean;
+};
 
 export type SkillOption = {
   slug: string;
@@ -285,6 +298,8 @@ type FormState = {
   viaTailnet: boolean;
   backupBaseUrl: string;
   backupViaTailnet: boolean;
+  /** Pinned TTS worker id; '' = use the owner's default TTS worker. */
+  ttsWorkerId: string;
   systemPrompt: string;
   priority: string;
   enabled: boolean;
@@ -332,6 +347,7 @@ function emptyForm(role: Role = 'responder'): FormState {
     viaTailnet: false,
     backupBaseUrl: '',
     backupViaTailnet: false,
+    ttsWorkerId: '',
     systemPrompt: d.systemPrompt,
     priority: '100',
     enabled: true,
@@ -375,6 +391,7 @@ function formFromAgent(a: AgentSummary): FormState {
     viaTailnet: a.viaTailnet,
     backupBaseUrl: a.backupBaseUrl ?? '',
     backupViaTailnet: a.backupViaTailnet,
+    ttsWorkerId: a.ttsWorkerId ?? '',
     systemPrompt: a.systemPrompt,
     priority: String(a.priority),
     enabled: a.enabled,
@@ -447,6 +464,7 @@ export function AgentsClient({
   availableTools,
   availableSkills,
   tailnetPeers = [],
+  ttsWorkers = [],
 }: {
   initialAgents: AgentSummary[];
   apiKeys: ApiKeyOption[];
@@ -455,6 +473,9 @@ export function AgentsClient({
   /** MagicDNS names of online tailnet peers — backs the base-URL datalist when
    *  a tailnet is up. Empty otherwise (input stays free-text). */
   tailnetPeers?: string[];
+  /** The owner's `kind='tts'` ai_workers — options for the per-agent voice
+   *  picker. Empty = none created yet (picker shows just "Default"). */
+  ttsWorkers?: TtsWorkerOption[];
 }) {
   const router = useRouter();
   const [agents, setAgents] = useState<AgentSummary[]>(initialAgents);
@@ -736,6 +757,8 @@ export function AgentsClient({
       viaTailnet: form.viaTailnet,
       backupBaseUrl: form.backupBaseUrl.trim() || null,
       backupViaTailnet: form.backupViaTailnet,
+      // Per-agent voice: pinned TTS worker, or null to use the default.
+      ttsWorkerId: form.ttsWorkerId || null,
       systemPrompt: form.systemPrompt,
       memoryConfig,
       params,
@@ -1167,6 +1190,59 @@ export function AgentsClient({
                   );
                 })()}
               </div>
+            </div>
+
+            {/* Per-agent voice (migration 0066). The chosen TTS worker owns
+                provider + voice + model + key; the agent only references it.
+                "Default" = the owner's default TTS worker, resolved at speak
+                time (so it tracks whatever you mark default in AI workers). */}
+            <div className="space-y-1.5">
+              <Label htmlFor="ttsWorker">Voice (TTS)</Label>
+              <select
+                id="ttsWorker"
+                value={form.ttsWorkerId}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, ttsWorkerId: e.target.value }))
+                }
+                className={SELECT_CLASS}
+              >
+                {(() => {
+                  const def =
+                    ttsWorkers.find((w) => w.enabled && w.isDefault) ??
+                    ttsWorkers.find((w) => w.enabled);
+                  return (
+                    <option value="">
+                      {def ? `Default voice (${def.name})` : 'Default voice'}
+                    </option>
+                  );
+                })()}
+                {ttsWorkers.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name} — {w.provider}/{w.model}
+                    {w.enabled ? '' : ' (disabled)'}
+                  </option>
+                ))}
+              </select>
+              {ttsWorkers.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No voice (TTS) workers yet — replies use the default voice. Add
+                  one at{' '}
+                  <a href="/settings/ai-workers" className="underline">
+                    /settings/ai-workers
+                  </a>
+                  .
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Which voice this agent speaks with. Leave on{' '}
+                  <em>Default</em> to track the default TTS worker; manage voices
+                  at{' '}
+                  <a href="/settings/ai-workers" className="underline">
+                    /settings/ai-workers
+                  </a>
+                  .
+                </p>
+              )}
             </div>
 
             {/* Primary route host + tailnet (migration 0063). Only meaningful

@@ -206,6 +206,11 @@ export const agents = pgTable(
     viaTailnet: boolean('via_tailnet').default(false).notNull(),
     backupBaseUrl: text('backup_base_url'),
     backupViaTailnet: boolean('backup_via_tailnet').default(false).notNull(),
+    /** Per-agent VOICE: which `kind='tts'` ai_worker synthesises this agent's
+     *  spoken replies. NULL = fall back to the owner's default TTS worker. The
+     *  worker owns provider/voice/model/key; the agent just points at it. FK +
+     *  ON DELETE SET NULL live in migration 0066. */
+    ttsWorkerId: uuid('tts_worker_id'),
     systemPrompt: text('system_prompt').notNull(),
     /** Legacy free-form MCP tool name array. Superseded by `tool_slugs` /
      *  `skill_slugs` below; kept for back-compat with existing rows. */

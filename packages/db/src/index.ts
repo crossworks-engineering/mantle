@@ -1,6 +1,6 @@
 export * from './schema/index';
 export { db, type Db } from './client';
-export { getDefaultWorker, bumpWorkerUsage } from './ai-workers-resolve';
+export { getDefaultWorker, getAgentTtsWorker, bumpWorkerUsage } from './ai-workers-resolve';
 export { bumpAgentUsage } from './agents-resolve';
 export { notifyNodeIngested, notifyNodeIndexed } from './notify';
 export {

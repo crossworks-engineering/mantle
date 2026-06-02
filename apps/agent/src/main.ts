@@ -49,6 +49,7 @@ import {
 import {
   bumpWorkerUsage as bumpAiWorkerUsage,
   getDefaultWorker,
+  getAgentTtsWorker,
   type AgentParams,
   type SttParams,
   type TelegramAttachment,
@@ -863,7 +864,7 @@ async function handleMessage(messageId: string): Promise<void> {
         // worker, no tags-capable model, or no adapter — concat is a no-op.
         let audioTagInstructions = '';
         try {
-          const ttsWorkerForTags = await getDefaultWorker(USER_ID!, 'tts');
+          const ttsWorkerForTags = await getAgentTtsWorker(USER_ID!, agent.ttsWorkerId);
           if (ttsWorkerForTags) {
             const ttsAdapterForTags = getTtsAdapter(ttsWorkerForTags.provider);
             const tags =
@@ -1068,8 +1069,11 @@ async function handleMessage(messageId: string): Promise<void> {
         // per-agent `params.voice.enabled` toggle — enable/disable
         // happens by enabling/disabling the TTS worker row.
         const replyAsVoice = wasVoice || requestedVoice;
+        // Per-agent voice: use the TTS worker this agent pins (agent.ttsWorkerId),
+        // else the owner's default TTS worker. getAgentTtsWorker handles the
+        // unset / disabled / deleted cases by falling back to the default.
         const ttsWorker = replyAsVoice
-          ? await getDefaultWorker(USER_ID!, 'tts')
+          ? await getAgentTtsWorker(USER_ID!, agent.ttsWorkerId)
           : null;
 
         // Generate-then-send, but never lose the reply: if the send throws, the

@@ -51,6 +51,35 @@ export async function getDefaultWorker(
   return fallback ?? null;
 }
 
+/**
+ * Resolve the TTS worker an AGENT should speak with. An agent may pin a
+ * `kind='tts'` worker (agents.tts_worker_id); if it does and that worker is
+ * still owned + enabled, use it. Otherwise — unset, deleted, disabled, or wrong
+ * kind — fall back to the owner's default TTS worker, exactly as before. So a
+ * pinned-but-disabled worker degrades gracefully rather than going silent.
+ */
+export async function getAgentTtsWorker(
+  ownerId: string,
+  ttsWorkerId: string | null | undefined,
+): Promise<AiWorker | null> {
+  if (ttsWorkerId) {
+    const [pinned] = await db
+      .select()
+      .from(aiWorkers)
+      .where(
+        and(
+          eq(aiWorkers.id, ttsWorkerId),
+          eq(aiWorkers.ownerId, ownerId),
+          eq(aiWorkers.kind, 'tts'),
+          eq(aiWorkers.enabled, true),
+        ),
+      )
+      .limit(1);
+    if (pinned) return pinned;
+  }
+  return getDefaultWorker(ownerId, 'tts');
+}
+
 /** Best-effort usage telemetry bump. Never throws — workers should
  *  succeed even if the bump fails. */
 export async function bumpWorkerUsage(id: string): Promise<void> {
