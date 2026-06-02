@@ -263,6 +263,9 @@ export function PagesClient({
       setForm({ title: '', tags: [] });
       setOpen(false);
       toast.success('Page created');
+      // Invalidate the SSR list cache so the new page is present when the user
+      // navigates back here (without this it only appears on a fresh visit).
+      router.refresh();
       // New pages open straight into the editor.
       router.push(`/pages/${created.id}`);
     } finally {
@@ -282,6 +285,7 @@ export function PagesClient({
       return;
     }
     const { page: created } = (await res.json()) as { page: PageRow };
+    router.refresh(); // keep the SSR list fresh after navigating into the editor
     router.push(`/pages/${created.id}`);
   };
 
