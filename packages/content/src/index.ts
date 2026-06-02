@@ -135,6 +135,77 @@ export {
 
 export { docToText } from './doc-to-text';
 
+export {
+  TABLES_ROOT_LABEL,
+  listTables,
+  countTables,
+  listTableTags,
+  getTable,
+  createTable,
+  updateTable,
+  saveTableDraft,
+  discardTableDraft,
+  commitTable,
+  deleteTable,
+  type TableRow,
+  type TableDetail,
+  type TableVisibility,
+  type TableSort,
+  type CreateTableInput,
+  type UpdateTableInput,
+} from './tables';
+
+export {
+  emptyTableDoc,
+  ensureTableDoc,
+  findColumn,
+  findColumnByName,
+  findRow,
+  rowIndex,
+  coerceCell,
+  resolveCell,
+  cellNumber,
+  cellIsEmpty,
+  addRow,
+  updateRow,
+  deleteRow,
+  setCell,
+  addColumn,
+  updateColumn,
+  deleteColumn,
+  setAggregate,
+  computeAggregate,
+  applyView,
+  setView,
+  COLUMN_TYPES,
+  AGGREGATE_KINDS,
+  FILTER_OPS,
+  type TableDoc,
+  type Column,
+  type ColumnType,
+  type ColumnFormat,
+  type SelectOption,
+  type Row,
+  type CellValue,
+  type AggregateKind,
+  type View,
+  type SortSpec,
+  type Filter,
+  type FilterOp,
+} from './table-model';
+
+export { evalFormula } from './table-formula';
+
+export { tableToText, formatCellText } from './table-to-text';
+
+export {
+  listRows,
+  type RowListResult,
+  type RowListEntry,
+  type RowListColumn,
+  type ListRowsOptions,
+} from './table-list';
+
 export { markdownToDoc } from './markdown-to-doc';
 
 export { ensureBlockIds, allBlocksHaveIds, BLOCK_NODE_TYPES } from './block-ids';

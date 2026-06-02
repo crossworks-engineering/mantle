@@ -30,6 +30,7 @@ export const nodeType = pgEnum('node_type', [
   'printer_project',
   'telegram_message',
   'page',
+  'table',
   'mantle_peer',
 ]);
 

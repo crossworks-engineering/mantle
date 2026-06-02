@@ -470,6 +470,20 @@
       "when": 1780531200000,
       "tag": "0066_agent_tts_worker",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1780617600000,
+      "tag": "0067_node_type_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1780704000000,
+      "tag": "0068_tables",
+      "breakpoints": true
     }
   ]
 }

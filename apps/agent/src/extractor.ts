@@ -43,6 +43,7 @@ import {
   notifyNodeIndexed,
   emails,
   pages,
+  tables,
   contentChunks,
   type Agent,
   type AgentMemoryConfig,
@@ -92,7 +93,7 @@ const HARD_SKIP_TYPES = new Set(['branch']);
  *  `task` and `event` are first-class content: title + body + metadata
  *  (status, due_at, starts_at, location, …) all become part of the body
  *  the extractor summarises and embeds. */
-const DEFAULT_EXTRACT_TYPES = ['note', 'page', 'file', 'email', 'email_thread', 'secret', 'task', 'event', 'contact'];
+const DEFAULT_EXTRACT_TYPES = ['note', 'page', 'table', 'file', 'email', 'email_thread', 'secret', 'task', 'event', 'contact'];
 
 /** Max characters of body text we feed the summarizer in one shot.
  *  Long emails / PDFs get truncated to keep the prompt bounded and the
@@ -393,6 +394,17 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
       .where(eq(pages.nodeId, node.id))
       .limit(1);
     return row?.docText?.trim() ? row.docText : node.title;
+  }
+  // ─── Tables — derived markdown from the typed-grid sidecar ────────────
+  // The TableDoc lives in `tables.data`; `tables.data_text` is its markdown
+  // rendering (pipe table + totals row), computed on commit in @mantle/content.
+  if (node.type === 'table') {
+    const [row] = await db
+      .select({ dataText: tables.dataText })
+      .from(tables)
+      .where(eq(tables.nodeId, node.id))
+      .limit(1);
+    return row?.dataText?.trim() ? row.dataText : node.title;
   }
   // For note/file/sermon, body lives in data.content (or data.text/body).
   const data = (node.data ?? {}) as Record<string, unknown>;

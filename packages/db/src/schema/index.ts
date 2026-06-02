@@ -5,6 +5,7 @@ export * from './nodes';
 export * from './emails';
 export * from './secrets';
 export * from './pages';
+export * from './tables';
 export * from './shares';
 export * from './mantle-peers';
 export * from './peer-shares';

@@ -13,6 +13,8 @@
     "./peers": "./src/peers.ts",
     "./peers-crypto": "./src/peers-crypto.ts",
     "./pages": "./src/pages.ts",
+    "./tables": "./src/tables.ts",
+    "./table-model": "./src/table-model.ts",
     "./markdown": "./src/markdown-to-doc.ts",
     "./contacts-format": "./src/contacts-format.ts",
     "./block-ids": "./src/block-ids.ts",
