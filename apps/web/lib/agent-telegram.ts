@@ -107,6 +107,11 @@ export async function connectAgentTelegram(
   let accountId: string;
   if (target) {
     accountId = target.id;
+    // Pointing this row at a *different* bot? Telegram update-ids are per-bot,
+    // so the old bot's offset is meaningless for the new one — carrying it over
+    // can skip past the new bot's early messages. Reset so its stream is read
+    // from the start. (Same-bot token rotation keeps the offset.)
+    const botChanged = target.botUsername !== me.username;
     await db
       .update(telegramAccounts)
       .set({
@@ -116,6 +121,7 @@ export async function connectAgentTelegram(
         enabled: true,
         botTokenEnc: seal(trimmed, accountId).ciphertext,
         lastPollError: null,
+        ...(botChanged ? { lastUpdateOffset: 0 } : {}),
         updatedAt: new Date(),
       })
       .where(eq(telegramAccounts.id, accountId));

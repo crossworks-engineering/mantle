@@ -219,8 +219,17 @@ async function persist(account: TelegramAccount, inbound: InboundMessage): Promi
       })
       .returning();
 
-    try {
-      await tx.insert(telegramMessages).values({
+    // Idempotent on (account_id, telegram_update_id). A re-delivered update —
+    // common when two pollers briefly overlap on restart, or any Telegram
+    // at-least-once redelivery — must be SKIPPED, not raised. Raising 23505
+    // inside the transaction aborts it (so a catch's node-cleanup can never
+    // run — Postgres rejects every command until rollback) AND escapes pollOnce
+    // before it advances last_update_offset, wedging the account into a
+    // re-fetch/throw loop on that update. onConflictDoNothing avoids the error
+    // entirely; an empty `returning` is the "was a duplicate" signal.
+    const ins = await tx
+      .insert(telegramMessages)
+      .values({
         nodeId: node!.id,
         accountId: account.id,
         chatId: chat.id,
@@ -232,14 +241,14 @@ async function persist(account: TelegramAccount, inbound: InboundMessage): Promi
         text: inbound.text,
         sentAt: inbound.sentAt,
         attachments: inbound.attachments,
-      });
-    } catch (err: any) {
-      // Unique constraint on (account_id, telegram_update_id) — dup, swallow.
-      if (err?.code === '23505') {
-        await tx.delete(nodes).where(eq(nodes.id, node!.id));
-        return false;
-      }
-      throw err;
+      })
+      .onConflictDoNothing({ target: [telegramMessages.accountId, telegramMessages.telegramUpdateId] })
+      .returning({ id: telegramMessages.id });
+
+    if (ins.length === 0) {
+      // Duplicate — undo the node we optimistically inserted, report not-delivered.
+      await tx.delete(nodes).where(eq(nodes.id, node!.id));
+      return false;
     }
 
     await tx
