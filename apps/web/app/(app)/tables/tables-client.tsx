@@ -155,7 +155,7 @@ export function TablesClient(props: Props) {
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium">{t.title}</div>
                   <div className="mt-0.5 text-xs text-muted-foreground">
-                    {t.columnCount} {t.columnCount === 1 ? 'column' : 'columns'} · {t.rowCount} {t.rowCount === 1 ? 'row' : 'rows'} · updated {new Date(t.updatedAt).toLocaleDateString()}
+                    Updated {new Date(t.updatedAt).toLocaleDateString()} · {t.columnCount} {t.columnCount === 1 ? 'column' : 'columns'} · {t.rowCount} {t.rowCount === 1 ? 'row' : 'rows'}
                   </div>
                   {t.tags.length > 0 && (
                     <div className="mt-1.5 flex flex-wrap gap-1">
