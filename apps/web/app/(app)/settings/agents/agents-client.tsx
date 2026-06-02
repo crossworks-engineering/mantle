@@ -1822,6 +1822,20 @@ function NodeTypePicker({
 
   const wildcardOn = selected.has('*');
 
+  // Chip styling: selection is marked by an ACCENT (primary border + a faint
+  // accent tint), never a solid background fill. A saturated fill (the old
+  // bg-primary / bg-emerald / bg-amber) drowns the chip label and any muted
+  // text in many of the ~40 themes — the readability bug we're fixing. All
+  // token-based (no hardcoded emerald/amber) so it tracks the active theme.
+  const chipBase = 'rounded-full border px-2.5 py-0.5 text-xs transition';
+  const chipOff =
+    'border-input bg-background text-muted-foreground hover:bg-accent/40 hover:text-foreground';
+  const chipOn = 'border-primary bg-accent/50 text-foreground';
+  // Implicitly on because the wildcard covers it — same accent family, but
+  // de-emphasized (dashed border, muted label) so an explicit pick still reads
+  // distinctly from "covered by all types".
+  const chipCovered = 'border-dashed border-primary/40 bg-accent/30 text-muted-foreground';
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-1.5">
@@ -1831,12 +1845,7 @@ function NodeTypePicker({
         <button
           type="button"
           onClick={() => toggle('*')}
-          className={
-            'rounded-full border px-2.5 py-0.5 text-xs font-medium transition ' +
-            (wildcardOn
-              ? 'border-emerald-500 bg-emerald-500 text-white'
-              : 'border-input bg-background text-muted-foreground hover:border-muted-foreground/50')
-          }
+          className={cn(chipBase, 'font-medium', wildcardOn ? chipOn : chipOff)}
           title="Wildcard — match every non-secret, non-branch node type"
         >
           all types
@@ -1848,14 +1857,11 @@ function NodeTypePicker({
               key={t}
               type="button"
               onClick={() => toggle(t)}
-              className={
-                'rounded-full border px-2.5 py-0.5 text-xs font-mono transition ' +
-                (wildcardOn
-                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                  : on
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-input bg-background text-muted-foreground hover:border-muted-foreground/50')
-              }
+              className={cn(
+                chipBase,
+                'font-mono',
+                wildcardOn ? chipCovered : on ? chipOn : chipOff,
+              )}
               title={wildcardOn ? 'covered by "all types"' : undefined}
             >
               {t}
@@ -1867,7 +1873,7 @@ function NodeTypePicker({
             key={t}
             type="button"
             onClick={() => toggle(t)}
-            className="rounded-full border border-amber-500/60 bg-amber-50 px-2.5 py-0.5 text-xs font-mono text-amber-900 transition dark:bg-amber-900/30 dark:text-amber-100"
+            className={cn(chipBase, 'font-mono', chipOn)}
             title="Custom type — click to remove"
           >
             {t} ✕
