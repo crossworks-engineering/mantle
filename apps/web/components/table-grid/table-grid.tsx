@@ -312,7 +312,7 @@ function HeaderCell({
             <DropdownMenuSubContent>
               <DropdownMenuRadioGroup value={col.type} onValueChange={(v) => onType(v as ColumnType)}>
                 {COLUMN_TYPES.map((t) => (
-                  <DropdownMenuRadioItem key={t} value={t}>{TYPE_LABEL[t]}</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem key={t} value={t} className={MENU_RADIO_ITEM}>{TYPE_LABEL[t]}</DropdownMenuRadioItem>
                 ))}
               </DropdownMenuRadioGroup>
             </DropdownMenuSubContent>
@@ -322,7 +322,7 @@ function HeaderCell({
             <DropdownMenuSubContent>
               <DropdownMenuRadioGroup value={aggregate} onValueChange={(v) => onAggregate(v as AggregateKind)}>
                 {AGGREGATE_KINDS.map((k) => (
-                  <DropdownMenuRadioItem key={k} value={k}>{AGG_LABEL[k]}</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem key={k} value={k} className={MENU_RADIO_ITEM}>{AGG_LABEL[k]}</DropdownMenuRadioItem>
                 ))}
               </DropdownMenuRadioGroup>
             </DropdownMenuSubContent>
@@ -343,6 +343,12 @@ function HeaderCell({
 }
 
 const CELL_INPUT = 'w-full border-0 bg-transparent px-2 py-1.5 text-sm outline-none focus:bg-muted/50 focus:ring-0';
+
+// Type/Total menu items: mark the current choice in the theme's primary (not a
+// saturated accent fill that hides the label), and keep the keyboard/hover
+// highlight neutral + readable. Theme tokens only.
+const MENU_RADIO_ITEM =
+  'focus:bg-muted focus:text-foreground data-[state=checked]:font-semibold data-[state=checked]:text-primary';
 
 function EditableCell({
   col,
