@@ -81,8 +81,8 @@ export default async function AccountsSettingsPage({
                     key={r.id}
                     href={`/settings/accounts?selected=${r.id}`}
                     className={cn(
-                      'block rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 transition-colors hover:bg-accent/40',
-                      isSelected && 'border-l-primary bg-accent/50',
+                      'block rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 transition-colors hover:bg-muted/50',
+                      isSelected && 'border-l-primary',
                       !r.enabled && 'opacity-70',
                     )}
                   >

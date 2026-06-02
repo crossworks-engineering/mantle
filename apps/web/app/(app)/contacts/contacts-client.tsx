@@ -96,10 +96,10 @@ export function ContactsClient({
                   onClick={() => go({ id: c.id })}
                   disabled={pending}
                   className={cn(
-                    'block w-full rounded-md px-3 py-2 text-left text-sm transition-colors',
+                    'block w-full rounded-md border-l-2 border-l-transparent px-3 py-2 text-left text-sm transition-colors',
                     selected?.id === c.id
-                      ? 'bg-accent text-accent-foreground'
-                      : 'hover:bg-accent/50',
+                      ? 'border-l-primary text-foreground'
+                      : 'hover:bg-muted/50',
                   )}
                 >
                   <div className="truncate font-medium">{c.title}</div>

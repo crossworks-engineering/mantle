@@ -206,7 +206,7 @@ export function TodosClient({
                   key={t.id}
                   className={cn(
                     'flex items-start gap-2.5 rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 transition-colors',
-                    isSel ? 'border-l-primary bg-accent/50' : 'hover:bg-accent/40',
+                    isSel ? 'border-l-primary' : 'hover:bg-muted/50',
                     t.priority === 'high' && !isSel && 'border-l-destructive',
                   )}
                 >

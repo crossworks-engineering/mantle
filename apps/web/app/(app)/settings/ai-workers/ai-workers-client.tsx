@@ -187,8 +187,8 @@ export function AiWorkersClient({
                         type="button"
                         onClick={() => setSel({ mode: 'edit', id: w.id })}
                         className={cn(
-                          'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-accent/40',
-                          selected && 'border-l-primary bg-accent/50',
+                          'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
+                          selected && 'border-l-primary',
                           !w.enabled && 'opacity-60',
                         )}
                       >

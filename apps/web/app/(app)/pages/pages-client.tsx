@@ -466,8 +466,8 @@ export function PagesClient({
                     key={p.id}
                     onClick={() => setSelectedId(p.id)}
                     className={cn(
-                      'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-3 text-left transition-colors hover:bg-accent/40',
-                      selected?.id === p.id && 'border-l-primary bg-accent/50',
+                      'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-3 text-left transition-colors hover:bg-muted/50',
+                      selected?.id === p.id && 'border-l-primary',
                     )}
                   >
                     <div className="flex items-start gap-2">
@@ -637,7 +637,7 @@ function TreeRow({
   return (
     <div
       className={cn(
-        'group flex items-center gap-1 rounded-md pr-1 transition-colors hover:bg-accent/40',
+        'group flex items-center gap-1 rounded-md pr-1 transition-colors hover:bg-muted/50',
         selected && 'bg-accent/60',
       )}
       style={{ paddingLeft: depth * 16 }}

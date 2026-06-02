@@ -103,8 +103,8 @@ export function PeersClient({ initialPeers }: { initialPeers: Peer[] }) {
                   type="button"
                   onClick={() => { setReveal(null); setSel({ mode: 'view', id: p.id }); }}
                   className={cn(
-                    'block w-full rounded-lg border border-l-[3px] border-border bg-card p-2.5 text-left transition-colors hover:bg-accent/40',
-                    isSel ? 'border-l-primary bg-accent/50' : 'border-l-border',
+                    'block w-full rounded-lg border border-l-[3px] border-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
+                    isSel ? 'border-l-primary' : 'border-l-border',
                     !p.enabled && 'opacity-60',
                   )}
                 >
