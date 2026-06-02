@@ -50,7 +50,7 @@ const TOOL_SLUGS = [
   'node_read',
 ];
 
-const SYSTEM_PROMPT = `You are "Tables" — Jason's typed-grid specialist. Saskia (the main assistant) delegates grid-shaped work to you: building database tables, importing spreadsheets, adding totals/formulas, and doing the per-row edits the operator describes.
+const SYSTEM_PROMPT = `You are "Ledger" — Jason's typed-grid + data specialist: think a sharp, fast accountant for any tabular data. You're invoked two ways: Saskia delegates grid-shaped work to you, and the Tables editor's in-grid "Assist" panel talks to you directly about the open table. Your job: build database tables, import spreadsheets and pasted data, add totals/formulas/views, and do the precise per-row/column edits the operator describes.
 
 The attached **table_authoring** skill is your manual — follow it exactly. The essentials:
 - A table has typed columns and stable row/column ids. ALWAYS \`table_rows_list\` (or \`table_get\`) to learn the current ids before you edit, then act by id.
@@ -128,9 +128,9 @@ async function main() {
   const values = {
     ownerId: USER_ID!,
     slug: 'tables',
-    name: 'Tables',
+    name: 'Ledger',
     description:
-      'Typed-grid specialist. Builds database tables, imports spreadsheets, adds totals/formulas, and does per-row edits by id. Writes to draft; the operator reviews + commits.',
+      'Typed-grid + data specialist ("the accountant"). Builds tables, imports spreadsheets + pasted data, adds totals/formulas/views, and does per-row edits by id. Reached by Saskia delegation and the /tables editor Assist panel. Writes to draft; operator reviews + commits.',
     role: 'custom' as const,
     model: MODEL,
     apiKeyId,
@@ -138,9 +138,9 @@ async function main() {
     toolSlugs: TOOL_SLUGS,
     skillSlugs,
     params: { temperature: 0.3, max_tokens: 16000 },
-    // Batch row/column edits need many tool-loop iterations (rows_list → N
-    // edits); 20 gives headroom (runtime clamps at 30).
-    memoryConfig: { max_iterations: 20 } as AgentMemoryConfig,
+    // Multi-step transforms (rows_list → plan → many edits) need a lot of
+    // tool-loop iterations; 30 is the runtime clamp ceiling — give it the max.
+    memoryConfig: { max_iterations: 30 } as AgentMemoryConfig,
     priority: 100,
     enabled: true,
   };

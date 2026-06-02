@@ -126,12 +126,21 @@ markdown block in one call — the "results → table" path), `table_update`
 `table_get`/`table_rows_list` spill to the `read_result` store automatically.
 MCP exposes read-only `table_list`/`table_get`/`table_rows_list`.
 
-**Tables agent** (`seed:tables`) + **`table_authoring` skill** (`seed:tables-skill`):
-the typed-grid analog of Pages + rich_writing. Granted the safe authoring subset
-(no `table_delete`) plus file/search tools; wired into every entry agent's
-`delegate_to`. Discipline (in the skill): always `table_rows_list` before editing;
-edits write to draft; report the table id + `/tables/<id>` review URL; only
-`table_commit` when the user says save/publish.
+**"Ledger" — the Tables agent** (`seed:tables`, slug stays `tables`) +
+**`table_authoring` skill** (`seed:tables-skill`): the typed-grid analog of Pages
++ rich_writing. Granted the safe authoring subset (no `table_delete`) plus
+file/search tools; wired into every entry agent's `delegate_to`. The skill's
+"powerful moves" section teaches formulas, totals, views, re-typing,
+categorising, cleanup, and column splits. Discipline: always `table_rows_list`
+before editing; edits write to draft; report the table id + `/tables/<id>` review
+URL; only `table_commit` when the user says save/publish.
+
+**In-editor Assist panel.** The `/tables/<id>` editor has an **Assist** toggle
+that opens a side panel talking to Ledger directly about the open grid
+(`POST /api/tables/[id]/ai-assist` → `invokeAgent('tables', …)` with the grid's
+structure preloaded). Ledger edits the draft via the table tools; the panel
+reloads the draft so changes appear live, and the header Commit/Discard publish
+or revert — exactly the Pages editor's AI-assist pattern.
 
 ```bash
 ALLOWED_USER_ID=<uuid> pnpm -C apps/web seed:tables-skill
@@ -159,6 +168,4 @@ ops. API routes under `app/api/tables/` mirror `/pages`
 
 ## 6. Deliberately deferred (not v1)
 Public sharing of tables (`/s/[token]` + a `renderTableDoc`), row drag-reorder,
-cross-table relations/rollups, real-time multi-cell collab, and an in-editor
-AI-assist side panel (Saskia delegation to the Tables agent already covers the
-capability from `/assistant`).
+cross-table relations/rollups, and real-time multi-cell collab.

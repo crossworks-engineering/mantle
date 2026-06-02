@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, GitCommitHorizontal, Loader2, Trash2, Undo2, Upload } from 'lucide-react';
+import { Check, GitCommitHorizontal, Loader2, Sparkles, Trash2, Undo2, Upload } from 'lucide-react';
 import { BackLink } from '@/components/layout/back-link';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { Button } from '@/components/ui/button';
@@ -19,8 +19,12 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { TableGrid } from '@/components/table-grid/table-grid';
+import { TableAssistPanel } from '@/components/table-grid/table-assist-panel';
 import { ensureTableDoc, type TableDoc } from '@mantle/content/table-model';
 import type { TableDetail } from '@/lib/tables';
+
+/** Display name of the table specialist (agent slug stays `tables`). */
+const ASSIST_AGENT_NAME = 'Ledger';
 
 const DRAFT_DEBOUNCE_MS = 1200;
 const META_DEBOUNCE_MS = 800;
@@ -37,6 +41,7 @@ export function TableDetailClient({ initial }: { initial: TableDetail }) {
   const [draftSaving, setDraftSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [assistOpen, setAssistOpen] = useState(false);
 
   const docRef = useRef(doc);
   docRef.current = doc;
@@ -222,6 +227,14 @@ export function TableDetailClient({ initial }: { initial: TableDetail }) {
         </div>
         <div className="flex items-center gap-2 justify-self-end">
           <StatusIndicator committing={committing} draftSaving={draftSaving} dirty={dirty} />
+          <Button
+            size="sm"
+            variant={assistOpen ? 'secondary' : 'outline'}
+            onClick={() => setAssistOpen((o) => !o)}
+            aria-pressed={assistOpen}
+          >
+            <Sparkles /> Assist
+          </Button>
           <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={importing}>
             {importing ? <Loader2 className="animate-spin" /> : <Upload />} Import
           </Button>
@@ -239,8 +252,23 @@ export function TableDetailClient({ initial }: { initial: TableDetail }) {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto scrollbar-thin">
-        <TableGrid doc={doc} onChange={setDoc} />
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-auto scrollbar-thin">
+          <TableGrid doc={doc} onChange={setDoc} />
+        </div>
+        {assistOpen && (
+          <TableAssistPanel
+            tableId={initial.id}
+            agentName={ASSIST_AGENT_NAME}
+            onApplied={(d) => {
+              setDoc(d);
+              // The agent already persisted this to the draft server-side; mark
+              // it saved so the autosave effect doesn't re-PUT the same doc.
+              draftSavedRef.current = JSON.stringify(d);
+            }}
+            onClose={() => setAssistOpen(false)}
+          />
+        )}
       </div>
 
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
