@@ -48,9 +48,11 @@ ssh cwe@mcp.crossworks.network 'cd ~/mantle && docker compose build web'
 
 # ── 4. (VPS) roll the stack — migrate runs first, then app services recreate ─
 ssh cwe@mcp.crossworks.network 'cd ~/mantle && docker compose up -d --wait'
-
-# ── 5. (VPS) re-stop the telegram poller — `up -d` restarts it; dev owns bots ─
-ssh cwe@mcp.crossworks.network 'cd ~/mantle && docker compose stop worker_telegram'
+#   NOTE: do NOT stop worker_telegram. As of 2026-06-02 the dev/prod bot split
+#   is done — prod owns `saskianewbot`, dev owns `saskiadevbot` (disjoint tokens,
+#   no 409). The poller must stay UP or production Telegram goes silent. Only the
+#   dev-owned bots (apostle_paulus_bot, brianthecoder_bot, miaschoemanbot) are
+#   disabled on prod; keep them disabled rather than stopping the whole worker.
 ```
 
 ## Verify
@@ -69,8 +71,11 @@ checks), `/settings/network` (the new **Activate Tailscale** card).
 
 ## Gotchas
 
-- **telegram poller**: `up -d` restarts `worker_telegram`; re-`stop` it (step 5)
-  while dev owns the bots, or you'll get the 409 conflict again.
+- **telegram poller**: leave `worker_telegram` RUNNING (`restart: unless-stopped`).
+  The dev/prod bot split (2026-06-02) means prod polls only `saskianewbot` and dev
+  only `saskiadevbot` — disjoint tokens, no 409. If you ever re-share a token across
+  dev+prod you'll get 409s again; the fix is separate bots, not stopping the worker.
+  Keep apostle_paulus_bot / brianthecoder_bot / miaschoemanbot **disabled** on prod.
 - **tailscale sidecar now always-up**: this update's compose drops the `tailnet`
   profile, so `up -d` starts `mantle_tailscale` (pulls `v1.98.4`) — that's
   intended (powers the new UI activation). It runs unauthenticated until you
