@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useAssistantDock } from '@/components/assistant/assistant-dock';
 import {
   CornerDownLeft,
   FileText,
@@ -92,6 +93,9 @@ export function AssistantClient({
   // which agent you're talking to when you switch.
   const accent = agentAccent(agentSlug ?? 'assistant');
   const initials = agentInitials(agentName ?? 'Assistant');
+  // Turns run through the app-wide dock provider, so a long turn keeps going
+  // (and stays visible in the floating dock) when you navigate away mid-answer.
+  const { runTurn } = useAssistantDock();
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -227,32 +231,31 @@ export function AssistantClient({
     setSending(true);
 
     try {
-      let res: Response;
+      // Build the body, then run the turn through the app-wide dock provider so
+      // the fetch lives in the persistent shell (survives navigation) and drives
+      // the floating mini-chat. Multipart for uploads (streams raw, no base64
+      // bloat); JSON for text-only.
+      let body: FormData | string;
+      let isJson: boolean;
       if (hasFile) {
-        // Multipart for uploads — base64-ing a 2MB file into JSON wastes
-        // 33% of the bytes plus the parse cost. FormData streams it raw.
-        // Images go under 'image' (vision); documents under 'file'.
         const formData = new FormData();
         if (text) formData.set('text', text);
         if (agentSlug) formData.set('agentSlug', agentSlug);
         formData.set(isImage ? 'image' : 'file', attachedFile);
-        res = await fetch('/api/assistant/turn', {
-          method: 'POST',
-          headers: { 'idempotency-key': idempotencyKey },
-          body: formData,
-        });
+        body = formData;
+        isJson = false;
       } else {
-        res = await fetch('/api/assistant/turn', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'idempotency-key': idempotencyKey },
-          body: JSON.stringify({ text, agentSlug }),
-        });
+        body = JSON.stringify({ text, agentSlug });
+        isJson = true;
       }
-      if (!res.ok) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(b.error ?? `request failed (${res.status})`);
-      }
-      const data = (await res.json()) as {
+      const data = (await runTurn({
+        agentSlug,
+        agentName: agentName ?? 'Assistant',
+        idempotencyKey,
+        displayText: optimistic.text,
+        body,
+        isJson,
+      })) as {
         inbound: { id: string; text: string; createdAt: string; artifacts?: Artifact[] };
         outbound: { id: string; text: string; model: string | null; createdAt: string };
         artifacts?: Artifact[];

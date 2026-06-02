@@ -10,6 +10,7 @@ import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { ToastProvider } from '@/components/ui/toast';
 import { PageTitleProvider } from '@/components/layout/page-title';
 import { UploadProvider, UploadDock } from '@/components/uploads/upload-provider';
+import { AssistantDockProvider, AssistantDock } from '@/components/assistant/assistant-dock';
 
 /**
  * App shell — three fixed regions (header, left sidebar, right live
@@ -118,6 +119,7 @@ export function AppShell({
     <ToastProvider>
       <PageTitleProvider>
       <UploadProvider>
+      <AssistantDockProvider>
       <div
         className="group/shell h-screen bg-background"
         data-nav-collapsed={navCollapsed ? 'true' : 'false'}
@@ -170,10 +172,12 @@ export function AppShell({
           {children}
         </main>
 
-        {/* App-wide background-upload progress dock (inside the shell so it
-            inherits --activity-w; persists across route changes). */}
+        {/* App-wide docks (inside the shell so they inherit --activity-w;
+            persist across route changes). */}
         <UploadDock />
+        <AssistantDock />
       </div>
+      </AssistantDockProvider>
       </UploadProvider>
       </PageTitleProvider>
     </ToastProvider>
