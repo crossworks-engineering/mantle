@@ -15,9 +15,10 @@
  * reads `doc_text` from the sidecar.
  */
 import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import { db, nodes, pages, notifyNodeIngested, type Node } from '@mantle/db';
 import { docToText } from './doc-to-text';
+import { referencedFileIds } from './doc-assets';
 import { ensureBlockIds } from './block-ids';
 import { childPagePath } from './page-path';
 
@@ -481,6 +482,69 @@ export async function discardDraft(ownerId: string, id: string): Promise<boolean
   return true;
 }
 
+/** Max chars of a single embedded file's extracted text folded into a page. */
+export const EMBED_TEXT_PER_FILE = 4000;
+/** Max total chars of embedded-asset text appended to a page's doc_text. */
+export const EMBED_TEXT_TOTAL = 16000;
+
+/**
+ * Fold an ordered list of embedded files' extracted text into one bounded
+ * plaintext block. Pure (no DB) so the bounds/format are unit-testable: each
+ * file is capped at `perFile`, the whole block at `total`, empty/whitespace
+ * text is skipped, and order is preserved (diff-friendly).
+ */
+export function foldEmbeddedText(
+  items: { title: string; text: string | null | undefined }[],
+  perFile = EMBED_TEXT_PER_FILE,
+  total = EMBED_TEXT_TOTAL,
+): string {
+  const parts: string[] = [];
+  let budget = total;
+  for (const it of items) {
+    const text = it.text?.trim();
+    if (!text) continue;
+    const slice = text.slice(0, Math.min(perFile, budget));
+    if (!slice) break;
+    parts.push(`[Embedded file: ${it.title}]\n${slice}`);
+    budget -= slice.length;
+    if (budget <= 0) break;
+  }
+  return parts.join('\n\n');
+}
+
+/**
+ * Plaintext of the files a page embeds — images (vision describe + OCR) and
+ * document chips (parsed text). `docToText` only surfaces an embed's filename,
+ * so without this the page is blind to what's *inside* its own images/docs.
+ *
+ * Each referenced `file` node's durable `data.text` (written once by the
+ * universal file extractor — see extractor.ts §image/document ingest) is folded
+ * into the page's `doc_text`, which both the extractor (summary/embedding/facts)
+ * and FTS read. A referenced file whose own extraction hasn't landed yet is
+ * simply skipped — the next commit picks it up; we deliberately do NOT add a
+ * reactive re-extract trigger (keeps cost bounded, per the no-runaway rule).
+ */
+async function embeddedAssetText(ownerId: string, doc: unknown): Promise<string> {
+  const ids = referencedFileIds(doc);
+  if (ids.length === 0) return '';
+
+  const rows = await db
+    .select({ id: nodes.id, title: nodes.title, data: nodes.data })
+    .from(nodes)
+    .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, ids), eq(nodes.type, 'file')));
+  const byId = new Map(rows.map((r) => [r.id, r]));
+
+  // Map doc embed-order → {title, text}, preserving order; skip unresolved ids.
+  const items = ids
+    .map((id) => byId.get(id))
+    .filter((r): r is NonNullable<typeof r> => !!r)
+    .map((r) => ({
+      title: r.title,
+      text: (r.data as Record<string, unknown> | null)?.text as string | undefined,
+    }));
+  return foldEmbeddedText(items);
+}
+
 export async function commitPage(
   ownerId: string,
   id: string,
@@ -502,7 +566,12 @@ export async function commitPage(
   delete newData.summary_model;
   delete newData.summary_at;
   delete newData.entities;
-  const docText = docToText(enriched);
+  // Fold the text *inside* embedded images (vision/OCR) + doc chips into the
+  // indexed plaintext, so the page is searchable by — and its summary reflects —
+  // its own assets, not just their filenames.
+  const baseText = docToText(enriched);
+  const assetText = await embeddedAssetText(ownerId, enriched);
+  const docText = assetText ? `${baseText}\n\n${assetText}` : baseText;
 
   const result = await db.transaction(async (tx) => {
     const [row] = await tx

@@ -87,6 +87,15 @@ durable; commits make indexing deliberate. A 30-minute editing session is now
 - The editor loads `draft ?? doc`, so you resume unsaved work; status shows
   Saving → Draft·uncommitted → Committed.
 - Title/tags/width save *live* (cheap metadata; never index).
+- **Embedded assets are folded into the index.** A page references its images
+  and file chips by `nodeId` (they're real `file` nodes from the files
+  pipeline, so each is vision/OCR'd or parsed once on its own ingest). On
+  **commit**, `commitPage()` appends those referenced files' extracted
+  `data.text` to the page's `doc_text` (`foldEmbeddedText`, bounded
+  4 KB/file · 16 KB total, doc order preserved). So the page is searchable by —
+  and its summary reflects — what's *inside* its images/docs, not just their
+  filenames. A referenced file whose own extraction hasn't landed yet is
+  skipped and picked up on the next commit (no reactive re-extract).
 
 ---
 
