@@ -54,9 +54,18 @@ export async function pollOnce(account: TelegramAccount, timeoutSec = 25): Promi
   }
 
   let delivered = 0;
-  let highestUpdateId = offset > 0 ? offset - 1 : 0;
+  // Track the highest update_id actually RECEIVED this batch. We deliberately do
+  // NOT seed this from the prior offset: if the bot's update-id stream resets
+  // (the token is repointed at a different bot, whose ids are lower), seeding
+  // from the old offset would pin nextOffset above the new stream forever —
+  // Telegram keeps returning the same low-id update and the cursor never moves
+  // (the infinite "1 update, 0 delivered" wedge). Acking with max(received)+1
+  // lets the cursor follow the real stream in either direction; any redelivered
+  // row is caught by persist()'s onConflictDoNothing, so moving the cursor
+  // "backward" is harmless.
+  let maxReceived = -1;
   for (const update of updates) {
-    if (update.update_id > highestUpdateId) highestUpdateId = update.update_id;
+    if (update.update_id > maxReceived) maxReceived = update.update_id;
     const inbound = normalise(update);
     if (!inbound) continue;
     const result = await gate(account, inbound);
@@ -75,10 +84,13 @@ export async function pollOnce(account: TelegramAccount, timeoutSec = 25): Promi
     }
   }
 
+  // Empty batch (long-poll timeout) → keep the cursor where it is; otherwise ack
+  // through the highest id we actually received this pass.
+  const nextOffset = maxReceived >= 0 ? maxReceived + 1 : offset;
   await db
     .update(telegramAccounts)
     .set({
-      lastUpdateOffset: highestUpdateId + 1,
+      lastUpdateOffset: nextOffset,
       lastPollAt: new Date(),
       lastPollError: null,
       updatedAt: new Date(),
