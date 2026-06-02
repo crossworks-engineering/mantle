@@ -19,13 +19,31 @@ import {
 } from '@tanstack/react-table';
 import {
   ArrowDown,
+  ArrowDownToLine,
   ArrowUp,
+  ArrowUpToLine,
+  Ban,
+  Calendar,
+  CalendarClock,
   ChevronsUpDown,
+  CircleCheck,
+  CircleSlash,
+  DollarSign,
+  Divide,
+  Hash,
+  Link,
+  List,
+  ListOrdered,
   ListPlus,
+  Percent,
   Plus,
   Sigma,
+  SquareCheck,
+  Tags,
   Trash2,
   Type,
+  Variable,
+  type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -83,6 +101,31 @@ const TYPE_LABEL: Record<ColumnType, string> = {
   multiselect: 'Multi-select',
   url: 'URL',
   formula: 'Formula',
+};
+
+const TYPE_ICON: Record<ColumnType, LucideIcon> = {
+  text: Type,
+  number: Hash,
+  currency: DollarSign,
+  percent: Percent,
+  date: Calendar,
+  datetime: CalendarClock,
+  checkbox: SquareCheck,
+  select: List,
+  multiselect: Tags,
+  url: Link,
+  formula: Variable,
+};
+
+const AGG_ICON: Record<AggregateKind, LucideIcon> = {
+  none: Ban,
+  sum: Sigma,
+  avg: Divide,
+  count: ListOrdered,
+  min: ArrowDownToLine,
+  max: ArrowUpToLine,
+  filled: CircleCheck,
+  empty: CircleSlash,
 };
 
 const AGG_LABEL: Record<AggregateKind, string> = {
@@ -311,9 +354,15 @@ function HeaderCell({
             <DropdownMenuSubTrigger className={MENU_SUBTRIGGER}><Type className="mr-2 size-3.5" /> Type</DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
               <DropdownMenuRadioGroup value={col.type} onValueChange={(v) => onType(v as ColumnType)}>
-                {COLUMN_TYPES.map((t) => (
-                  <DropdownMenuRadioItem key={t} value={t} className={MENU_RADIO_ITEM}>{TYPE_LABEL[t]}</DropdownMenuRadioItem>
-                ))}
+                {COLUMN_TYPES.map((t) => {
+                  const Icon = TYPE_ICON[t];
+                  return (
+                    <DropdownMenuRadioItem key={t} value={t} className={MENU_RADIO_ITEM}>
+                      <Icon className="mr-2 size-3.5" aria-hidden />
+                      {TYPE_LABEL[t]}
+                    </DropdownMenuRadioItem>
+                  );
+                })}
               </DropdownMenuRadioGroup>
             </DropdownMenuSubContent>
           </DropdownMenuSub>
@@ -321,9 +370,15 @@ function HeaderCell({
             <DropdownMenuSubTrigger className={MENU_SUBTRIGGER}><Sigma className="mr-2 size-3.5" /> Total</DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
               <DropdownMenuRadioGroup value={aggregate} onValueChange={(v) => onAggregate(v as AggregateKind)}>
-                {AGGREGATE_KINDS.map((k) => (
-                  <DropdownMenuRadioItem key={k} value={k} className={MENU_RADIO_ITEM}>{AGG_LABEL[k]}</DropdownMenuRadioItem>
-                ))}
+                {AGGREGATE_KINDS.map((k) => {
+                  const Icon = AGG_ICON[k];
+                  return (
+                    <DropdownMenuRadioItem key={k} value={k} className={MENU_RADIO_ITEM}>
+                      <Icon className="mr-2 size-3.5" aria-hidden />
+                      {AGG_LABEL[k]}
+                    </DropdownMenuRadioItem>
+                  );
+                })}
               </DropdownMenuRadioGroup>
             </DropdownMenuSubContent>
           </DropdownMenuSub>
