@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronLeft, ChevronRight, Pencil, Plus, Search, Table2, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Search, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useListNav } from '@/lib/use-list-nav';
 import { useRealtime } from '@/components/realtime/use-realtime';
@@ -49,14 +49,12 @@ export function TablesClient(props: Props) {
   const { pending: navPending, go } = useListNav();
 
   const [searchInput, setSearchInput] = useState(query);
-  const [selectedId, setSelectedId] = useState<string | null>(tables[0]?.id ?? null);
   const [createOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [creating, setCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<TableRow | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const selected = useMemo(() => tables.find((t) => t.id === selectedId) ?? tables[0] ?? null, [tables, selectedId]);
 
   // Repaint when a table node changes anywhere (create/commit/delete).
   useRealtime(['table'], () => router.refresh());
@@ -100,144 +98,101 @@ export function TablesClient(props: Props) {
     }
     toast.success('Table deleted');
     setDeleteTarget(null);
-    if (selectedId === deleteTarget.id) setSelectedId(null);
     router.refresh();
   }
 
   return (
-    <div className="md:grid md:h-full md:min-h-0 md:grid-cols-[340px_1fr] md:overflow-hidden">
-      {/* ── Left: list ──────────────────────────────────────────────── */}
-      <div className="flex flex-col border-b border-border md:h-full md:min-h-0 md:border-b-0 md:border-r">
-        <div className="space-y-3 border-b border-border p-3">
-          <div className="flex items-center gap-2">
-            <div className="relative min-w-0 flex-1">
-              <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-              <Input
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Search tables…"
-                className="pl-8"
-              />
-            </div>
-            <Button onClick={() => { setNewTitle(''); setCreateOpen(true); }}>
-              <Plus /> New
-            </Button>
+    <div className="flex h-full min-h-0 flex-col">
+      {/* Header: search + New + tag filters */}
+      <div className="space-y-3 border-b border-border p-3">
+        <div className="mx-auto flex w-full max-w-2xl items-center gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <Input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search tables…"
+              className="pl-8"
+            />
           </div>
-          {tags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {tags.slice(0, 12).map((t) => (
-                <button
-                  key={t.tag}
-                  onClick={() => go({ tag: activeTag === t.tag ? null : t.tag, page: 1 })}
-                  className={cn(
-                    'rounded-md border border-border px-2 py-0.5 text-xs transition-colors hover:bg-muted/50',
-                    activeTag === t.tag && 'border-primary bg-muted',
-                  )}
-                >
-                  {t.tag} <span className="text-muted-foreground">{t.count}</span>
-                </button>
-              ))}
-            </div>
-          )}
+          <Button onClick={() => { setNewTitle(''); setCreateOpen(true); }}>
+            <Plus /> New
+          </Button>
         </div>
-
-        <div className="space-y-2 p-3 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
-          {tables.length === 0 ? (
-            <p className="px-1 py-8 text-center text-sm text-muted-foreground">No tables yet. Create one to get started.</p>
-          ) : (
-            tables.map((t) => (
+        {tags.length > 0 && (
+          <div className="mx-auto flex w-full max-w-2xl flex-wrap gap-1.5">
+            {tags.slice(0, 12).map((t) => (
               <button
-                key={t.id}
-                onClick={() => setSelectedId(t.id)}
+                key={t.tag}
+                onClick={() => go({ tag: activeTag === t.tag ? null : t.tag, page: 1 })}
                 className={cn(
-                  'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
-                  selected?.id === t.id && 'border-l-primary',
+                  'rounded-md border border-border px-2 py-0.5 text-xs transition-colors hover:bg-muted/50',
+                  activeTag === t.tag && 'border-primary bg-muted',
                 )}
               >
-                <div className="flex items-start gap-2">
-                  <span className="mt-0.5 shrink-0 text-base leading-none">{t.icon || '📊'}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{t.title}</div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">
-                      {t.columnCount} {t.columnCount === 1 ? 'column' : 'columns'} · {t.rowCount} {t.rowCount === 1 ? 'row' : 'rows'}
-                    </div>
-                    {t.tags.length > 0 && (
-                      <div className="mt-1.5 flex flex-wrap gap-1">
-                        {t.tags.map((tag) => (
-                          <TagPill key={tag} tag={tag} />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                {t.tag} <span className="text-muted-foreground">{t.count}</span>
               </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Scrollable list — each row opens the editor directly */}
+      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+        <div className="mx-auto max-w-2xl space-y-2 p-3">
+          {tables.length === 0 ? (
+            <p className="px-1 py-12 text-center text-sm text-muted-foreground">
+              No tables yet. Create one to get started.
+            </p>
+          ) : (
+            tables.map((t) => (
+              <Link
+                key={t.id}
+                href={`/tables/${t.id}`}
+                className="group flex items-start gap-2 rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 transition-colors hover:bg-muted/50 hover:border-l-primary"
+              >
+                <span className="mt-0.5 shrink-0 text-base leading-none">{t.icon || '📊'}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium">{t.title}</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    {t.columnCount} {t.columnCount === 1 ? 'column' : 'columns'} · {t.rowCount} {t.rowCount === 1 ? 'row' : 'rows'} · updated {new Date(t.updatedAt).toLocaleDateString()}
+                  </div>
+                  {t.tags.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {t.tags.map((tag) => (
+                        <TagPill key={tag} tag={tag} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteTarget(t); }}
+                  className="shrink-0 self-center p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                  aria-label={`Delete ${t.title}`}
+                  title="Delete table"
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </Link>
             ))
           )}
         </div>
-
-        {total > pageSize && (
-          <div className="flex items-center justify-between gap-2 border-t border-border px-3 py-2 text-xs text-muted-foreground">
-            <span className="tabular-nums">{total} tables</span>
-            <div className="flex items-center gap-1.5">
-              <span className="tabular-nums">{page} / {totalPages}</span>
-              <Button size="icon" variant="outline" className="size-7" disabled={page <= 1 || navPending} onClick={() => go({ page: page - 1 })} aria-label="Previous page">
-                <ChevronLeft />
-              </Button>
-              <Button size="icon" variant="outline" className="size-7" disabled={page >= totalPages || navPending} onClick={() => go({ page: page + 1 })} aria-label="Next page">
-                <ChevronRight />
-              </Button>
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* ── Right: preview ──────────────────────────────────────────── */}
-      <div className="md:h-full md:min-h-0 md:overflow-y-auto md:scrollbar-thin">
-        {selected ? (
-          <div className="mx-auto max-w-2xl space-y-5 p-6">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <span className="text-2xl leading-none">{selected.icon || '📊'}</span>
-                <div>
-                  <h2 className="text-lg font-semibold">{selected.title}</h2>
-                  <p className="text-xs text-muted-foreground">
-                    {selected.columnCount} columns · {selected.rowCount} rows · updated{' '}
-                    {new Date(selected.updatedAt).toLocaleDateString()}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button asChild size="sm">
-                  <Link href={`/tables/${selected.id}`}><Pencil /> Open editor</Link>
-                </Button>
-                <Button size="icon" variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={() => setDeleteTarget(selected)} aria-label="Delete table">
-                  <Trash2 />
-                </Button>
-              </div>
-            </div>
-
-            {selected.summary ? (
-              <p className="text-sm text-muted-foreground">{selected.summary}</p>
-            ) : (
-              <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Table2 className="size-4" aria-hidden /> Open the editor to view and edit the grid.
-              </p>
-            )}
-
-            {selected.tags.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {selected.tags.map((tag) => (
-                  <TagPill key={tag} tag={tag} />
-                ))}
-              </div>
-            )}
+      {total > pageSize && (
+        <div className="mx-auto flex w-full max-w-2xl items-center justify-between gap-2 border-t border-border px-3 py-2 text-xs text-muted-foreground">
+          <span className="tabular-nums">{total} tables</span>
+          <div className="flex items-center gap-1.5">
+            <span className="tabular-nums">{page} / {totalPages}</span>
+            <Button size="icon" variant="outline" className="size-7" disabled={page <= 1 || navPending} onClick={() => go({ page: page - 1 })} aria-label="Previous page">
+              <ChevronLeft />
+            </Button>
+            <Button size="icon" variant="outline" className="size-7" disabled={page >= totalPages || navPending} onClick={() => go({ page: page + 1 })} aria-label="Next page">
+              <ChevronRight />
+            </Button>
           </div>
-        ) : (
-          <div className="flex h-full items-center justify-center p-10 text-center text-sm text-muted-foreground">
-            Select a table to preview.
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Create dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
