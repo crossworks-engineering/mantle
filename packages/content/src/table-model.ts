@@ -17,8 +17,14 @@
  * Formula evaluation lives in table-formula.ts; this module calls into it via
  * `resolveCell` so callers always see computed values for formula columns.
  */
-import { randomUUID } from 'node:crypto';
 import { evalFormula } from './table-formula';
+
+/** Isomorphic UUID — Web Crypto is available on `globalThis` in modern Node
+ *  (18.17+) and every browser, so this module stays a browser-safe leaf the
+ *  client grid can import directly (no `node:crypto`, no DB). */
+function randomUUID(): string {
+  return globalThis.crypto.randomUUID();
+}
 
 export type ColumnType =
   | 'text'

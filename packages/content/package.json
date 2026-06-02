@@ -15,6 +15,7 @@
     "./pages": "./src/pages.ts",
     "./tables": "./src/tables.ts",
     "./table-model": "./src/table-model.ts",
+    "./table-to-text": "./src/table-to-text.ts",
     "./markdown": "./src/markdown-to-doc.ts",
     "./contacts-format": "./src/contacts-format.ts",
     "./block-ids": "./src/block-ids.ts",
