@@ -201,7 +201,7 @@ export function TableGrid({ doc, onChange }: { doc: TableDoc; onChange: (next: T
         </thead>
         <tbody>
           {table.getRowModel().rows.map((row) => (
-            <tr key={row.id} className="group border-b border-border hover:bg-accent/30">
+            <tr key={row.id} className="group border-b border-border hover:bg-muted/40">
               <td className="px-2 py-1 text-center align-middle text-xs text-muted-foreground">
                 <button
                   className="opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
@@ -342,7 +342,7 @@ function HeaderCell({
   );
 }
 
-const CELL_INPUT = 'w-full border-0 bg-transparent px-2 py-1.5 text-sm outline-none focus:bg-accent/30 focus:ring-0';
+const CELL_INPUT = 'w-full border-0 bg-transparent px-2 py-1.5 text-sm outline-none focus:bg-muted/50 focus:ring-0';
 
 function EditableCell({
   col,

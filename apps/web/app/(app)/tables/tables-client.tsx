@@ -130,8 +130,8 @@ export function TablesClient(props: Props) {
                   key={t.tag}
                   onClick={() => go({ tag: activeTag === t.tag ? null : t.tag, page: 1 })}
                   className={cn(
-                    'rounded-md border border-border px-2 py-0.5 text-xs transition-colors hover:bg-accent/40',
-                    activeTag === t.tag && 'border-primary bg-accent/50',
+                    'rounded-md border border-border px-2 py-0.5 text-xs transition-colors hover:bg-muted/50',
+                    activeTag === t.tag && 'border-primary bg-muted',
                   )}
                 >
                   {t.tag} <span className="text-muted-foreground">{t.count}</span>
@@ -150,8 +150,8 @@ export function TablesClient(props: Props) {
                 key={t.id}
                 onClick={() => setSelectedId(t.id)}
                 className={cn(
-                  'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-accent/40',
-                  selected?.id === t.id && 'border-l-primary bg-accent/50',
+                  'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
+                  selected?.id === t.id && 'border-l-primary',
                 )}
               >
                 <div className="flex items-start gap-2">
