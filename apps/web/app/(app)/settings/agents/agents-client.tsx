@@ -861,7 +861,10 @@ export function AgentsClient({
                     onClick={() => openEdit(a)}
                     className={cn(
                       'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-accent/40',
-                      selected && 'border-l-primary bg-accent/50',
+                      // Selection = left accent bar only. A bg-accent fill is
+                      // unreadable in themes where `accent` is saturated (the
+                      // content uses text-foreground, not accent-foreground).
+                      selected && 'border-l-primary',
                       !a.enabled && 'opacity-60',
                     )}
                   >
@@ -1829,12 +1832,14 @@ function NodeTypePicker({
   // token-based (no hardcoded emerald/amber) so it tracks the active theme.
   const chipBase = 'rounded-full border px-2.5 py-0.5 text-xs transition';
   const chipOff =
-    'border-input bg-background text-muted-foreground hover:bg-accent/40 hover:text-foreground';
-  const chipOn = 'border-primary bg-accent/50 text-foreground';
+    'border-input bg-background text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground';
+  // On = a primary BORDER, no background fill — a saturated bg drowns the label
+  // in many themes (content text is foreground, not accent-foreground).
+  const chipOn = 'border-primary bg-background text-foreground';
   // Implicitly on because the wildcard covers it — same accent family, but
   // de-emphasized (dashed border, muted label) so an explicit pick still reads
   // distinctly from "covered by all types".
-  const chipCovered = 'border-dashed border-primary/40 bg-accent/30 text-muted-foreground';
+  const chipCovered = 'border-dashed border-primary/50 bg-background text-muted-foreground';
 
   return (
     <div className="space-y-2">

@@ -154,9 +154,13 @@ export function ToggleList({
                   disabled={it.disabled}
                   aria-pressed={on}
                   className={cn(
-                    'flex w-full items-center gap-3 px-3 py-2 text-left transition-colors',
+                    // Transparent left border on every row so the on-state's
+                    // primary accent bar doesn't shift the text 2px.
+                    'flex w-full items-center gap-3 border-l-2 border-l-transparent px-3 py-2 text-left transition-colors',
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-                    on ? 'bg-accent/50' : 'hover:bg-accent/30',
+                    // On = left accent bar only (the switch already shows state).
+                    // A bg-accent fill is unreadable where `accent` is saturated.
+                    on ? 'border-l-primary' : 'hover:bg-accent/30',
                     it.disabled && 'cursor-not-allowed opacity-60',
                   )}
                 >
