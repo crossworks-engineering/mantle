@@ -14,6 +14,7 @@
   "dependencies": {
     "@mantle/api-keys": "workspace:*",
     "@mantle/db": "workspace:*",
+    "@mantle/embeddings": "workspace:*",
     "@mantle/files": "workspace:*",
     "@mantle/tools": "workspace:*",
     "@mantle/tracing": "workspace:*",

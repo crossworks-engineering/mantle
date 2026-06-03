@@ -51,6 +51,12 @@ export {
 export { invokeAgent } from './invoke-agent';
 
 export {
+  recordTurn,
+  loadConversationContext,
+  type ConversationContext,
+} from './conversation';
+
+export {
   runVisionWorker,
   runDocumentWorker,
   documentWorkerPrefersNative,
