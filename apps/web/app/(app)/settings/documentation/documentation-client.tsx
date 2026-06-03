@@ -27,7 +27,15 @@ import { NewCollectionDialog } from './new-collection-dialog';
 /** A pending disable that needs confirmation (single collection or "all"). */
 type DisableTarget = { kind: 'one'; id: string; label: string } | { kind: 'all' };
 
-export function DocumentationClient({ initial }: { initial: DocCollectionView[] }) {
+export function DocumentationClient({
+  initial,
+  formattedReconciled,
+}: {
+  initial: DocCollectionView[];
+  /** Server-formatted "last synced" strings keyed by collection id (tz/locale
+   *  stable — avoids the toLocaleString hydration mismatch). */
+  formattedReconciled: Record<string, string | null>;
+}) {
   const router = useRouter();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
@@ -111,8 +119,8 @@ export function DocumentationClient({ initial }: { initial: DocCollectionView[] 
                 </div>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   {c.enabled
-                    ? c.lastReconciledAt
-                      ? `Indexed · last synced ${new Date(c.lastReconciledAt).toLocaleString()}`
+                    ? formattedReconciled[c.id]
+                      ? `Indexed · last synced ${formattedReconciled[c.id]}`
                       : 'Enabled'
                     : 'Not indexed'}
                 </p>
