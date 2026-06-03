@@ -11,6 +11,8 @@ export {
   imap,
   probeImapConnection,
   unsealImapPassword,
+  reclassifyByRefs,
+  decodeMsgId,
   type ImapProbeResult,
 } from './providers/imap';
 export {

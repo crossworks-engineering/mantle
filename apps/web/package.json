@@ -37,6 +37,7 @@
     "eval:recall": "tsx --env-file-if-exists=./.env.local scripts/eval-recall.ts",
     "widen:content-hits": "tsx --env-file-if-exists=./.env.local scripts/widen-content-hits.ts",
     "backfill:email-salience": "tsx --env-file-if-exists=./.env.local scripts/backfill-email-salience.ts",
+    "classify:backfill": "tsx --env-file-if-exists=./.env.local scripts/classify-backfill.ts",
     "rotate:master-key": "tsx --env-file-if-exists=./.env.local scripts/rotate-master-key.ts"
   },
   "dependencies": {

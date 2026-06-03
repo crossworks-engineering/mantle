@@ -142,4 +142,20 @@ Measured effect (`MANTLE_SALIENCE_LAMBDA=0` vs `0.15`, 13 cases incl. a noisy pr
                                     firearm-licence email promoted the real vehicle page)
 ```
 
-**Honest limit — coverage, not mechanism.** The `pollution` metric stays 1/1 on the printer case: the mechanism works (real supplier files rank #1–3, ahead of newsletters; demoted nodes verifiably fall), but two sale emails in that window are still salience 1.0 because the body veto that protects invoices ("delivery", "order") also spares marketing that uses those words. That's the precision/recall ceiling of body heuristics — the reason the header classifier exists. **Full coverage needs header re-classification** (a `classify-backfill` that re-fetches headers over IMAP — the schema anticipates it; unbuilt). Going forward, every newly-synced email is classified at ingest, so `unknown` shrinks on its own.
+**Coverage limit (body fallback):** the body heuristic can't tell a sale email ("free delivery", "order now") from a receipt, so the invoice-protecting veto also spares some marketing — they stay salience 1.0. That's the precision/recall ceiling of body heuristics, and the reason the next step exists.
+
+## After step (e): precise header re-classification (2026-06-03)
+
+[`classify:backfill`](../apps/web/scripts/classify-backfill.ts) closes the coverage gap properly: it re-fetches the classification headers for legacy `unknown` emails over IMAP (`reclassifyByRefs` in [@mantle/email](../packages/email/src/providers/imap.ts) — BODY.PEEK, one round trip per folder, never marks read), runs the **same** `classifyDelivery`, writes the true `delivery_kind`, and re-derives `nodes.salience` (clearing the fuzzy `body_bulk_heuristic` marker). Read-only against the mailbox; dry-run by default; idempotent (only touches `unknown` rows).
+
+Real run reclassified **1,162 / 1,227** legacy emails (65 moved/deleted/stale-uidvalidity): **667 marketing, 279 direct, 210 automated, 6 list**. The header classifier does what the body heuristic can't — it separates the 279 *direct* (real personal mail, restored to salience 1.0) from the 667 *marketing* (correctly demoted to 0.25), and fixes both directions of the body heuristic's mistakes.
+
+Result on the noisy printer case:
+
+```
+                 prod pollution   search pollution   rrf MRR
+body heuristic       1/1               1/1            0.79
+header reclassify    0/1               0/1            0.86
+```
+
+The newsletters (Earth Day Sale, Prusameters, PiShop) leave the prompt entirely; the window fills with real supplier files, quotes, and the directory page. Going forward every newly-synced email is classified at ingest, so `unknown` only shrinks. `classify:backfill` is the canonical tool; `backfill:email-salience` remains the offline fallback for mail IMAP can't reach.

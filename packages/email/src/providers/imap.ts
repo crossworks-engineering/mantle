@@ -3,7 +3,7 @@ import { simpleParser } from 'mailparser';
 import { open } from '@mantle/crypto';
 import type { EmailAccount } from '@mantle/db';
 import { parseAddress, parseAddressList } from '../addresses';
-import { classifyDelivery } from '../classify';
+import { classifyDelivery, type DeliveryKind } from '../classify';
 import type {
   EmailProvider,
   FullMessage,
@@ -591,4 +591,79 @@ export async function probeImapConnection(opts: {
       /* ignore */
     }
   }
+}
+
+/**
+ * Re-fetch the classification headers for a set of already-synced messages and
+ * re-run `classifyDelivery` on them. This is the precise fix for legacy emails
+ * stuck at `delivery_kind='unknown'` (synced before the classifier, and we never
+ * stored raw headers, so they can't be reclassified offline). One IMAP round
+ * trip per folder, BODY.PEEK only — never marks anything read, never touches
+ * bodies.
+ *
+ * `refs` come from `decodeMsgId(providerMsgId)`. A folder whose live
+ * `uidValidity` no longer matches the stored one is skipped (the UIDs are stale
+ * — the message moved or the mailbox was recreated). Messages that no longer
+ * exist simply don't come back. Returns a map keyed `folder:uid` → DeliveryKind;
+ * absent keys mean "couldn't fetch" (caller leaves them as-is).
+ */
+export async function reclassifyByRefs(
+  account: EmailAccount,
+  refs: Array<{ folder: string; uidvalidity: number; uid: number }>,
+): Promise<Map<string, DeliveryKind>> {
+  const out = new Map<string, DeliveryKind>();
+  if (refs.length === 0) return out;
+
+  const byFolder = new Map<string, Array<{ uidvalidity: number; uid: number }>>();
+  for (const r of refs) {
+    const arr = byFolder.get(r.folder) ?? [];
+    arr.push({ uidvalidity: r.uidvalidity, uid: r.uid });
+    byFolder.set(r.folder, arr);
+  }
+
+  const client = await connect(account);
+  try {
+    for (const [folder, items] of byFolder) {
+      let lock;
+      try {
+        lock = await client.getMailboxLock(folder);
+      } catch (err) {
+        console.warn('[imap] reclassify: skip folder', folder, (err as Error).message);
+        continue;
+      }
+      try {
+        const mbox = client.mailbox;
+        if (!mbox || typeof mbox === 'boolean') continue;
+        const liveValidity = Number(mbox.uidValidity);
+        const uids = items.filter((i) => i.uidvalidity === liveValidity).map((i) => i.uid);
+        if (uids.length === 0) continue; // all stale for this folder
+        for await (const msg of client.fetch(
+          uids,
+          { envelope: true, flags: true, labels: true, headers: CLASSIFY_HEADERS as unknown as string[] },
+          { uid: true },
+        )) {
+          const env = msg.envelope;
+          const fromAddr = env?.from?.[0]?.address?.toLowerCase();
+          if (!fromAddr) continue;
+          const flagLabels = msg.flags ? Array.from(msg.flags) : [];
+          const gmailLabels = msg.labels ? Array.from(msg.labels) : [];
+          const labels =
+            gmailLabels.length > 0 ? Array.from(new Set([...flagLabels, ...gmailLabels])) : flagLabels;
+          const headerMap = parseHeaderBlock(
+            (msg as FetchMessageObject & { headers?: Buffer | string }).headers,
+          );
+          out.set(`${folder}:${msg.uid}`, classifyDelivery({ headers: headerMap, fromAddr, labels }));
+        }
+      } finally {
+        lock.release();
+      }
+    }
+  } finally {
+    try {
+      await client.logout();
+    } catch {
+      /* ignore */
+    }
+  }
+  return out;
 }

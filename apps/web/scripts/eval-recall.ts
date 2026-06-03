@@ -231,8 +231,11 @@ async function runCase(
   let prodJunk: boolean | null = null;
   let searchJunk: boolean | null = null;
   if (gc.avoidTitleIncludes?.length) {
+    // Measure both in the window that actually reaches the model: prod's content
+    // hits, and the search tool's top-5 (down-weight ≠ exclude, so junk can still
+    // sit deep in a top-20 list — that's fine, it just shouldn't be near the top).
     prodJunk = prod.some((c) => isJunk(c, gc));
-    searchJunk = search.slice(0, rankK).some((c) => isJunk(c, gc));
+    searchJunk = search.slice(0, 5).some((c) => isJunk(c, gc));
   }
 
   return { id: gc.id, query: gc.query, ranks, factHit, prodJunk, searchJunk };
