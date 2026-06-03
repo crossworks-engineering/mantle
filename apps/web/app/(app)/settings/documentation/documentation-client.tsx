@@ -22,6 +22,7 @@ import {
   toggleDocCollectionAction,
   type DocCollectionView,
 } from './actions';
+import { NewCollectionDialog } from './new-collection-dialog';
 
 /** A pending disable that needs confirmation (single collection or "all"). */
 type DisableTarget = { kind: 'one'; id: string; label: string } | { kind: 'all' };
@@ -70,6 +71,7 @@ export function DocumentationClient({ initial }: { initial: DocCollectionView[] 
           and keeps tracking edits; disabling removes its indexed docs.
         </p>
         <div className="flex shrink-0 gap-2">
+          <NewCollectionDialog />
           <Button
             variant="outline"
             size="sm"

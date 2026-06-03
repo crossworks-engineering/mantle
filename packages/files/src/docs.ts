@@ -62,10 +62,26 @@ export function effectiveBrainDepth(nodeType: string, rawDepth: unknown): DocBra
   return 'full';
 }
 
-/** The disk root for a collection: its own `root_path` if set, else the global
- *  docs root (for the `system` collection). */
+/**
+ * The disk root for a collection. Three cases, chosen for dev→prod portability
+ * (the `doc_collections` row travels via `pg_dump`, so a machine-specific
+ * absolute path would resolve wrong on the other box):
+ *   - null `root_path`     → the global docs root (`MANTLE_DOCS_ROOT`). The
+ *                            `system` collection. Per-env via the env var.
+ *   - relative `root_path` → resolved against the docs root, e.g. `'guide'` →
+ *                            `<docsRoot>/guide`. PORTABLE — the right shape for
+ *                            repo-shipped content baked into the image. (Note:
+ *                            do NOT resolve relative paths against cwd — every
+ *                            Mantle process runs with cwd `apps/web`, so a bare
+ *                            relative path would land under apps/web, not docs.)
+ *   - absolute `root_path` → used as-is, for an external dir (e.g. an Obsidian
+ *                            vault). Machine-specific by definition; not portable.
+ */
 export function collectionRoot(collection: Pick<DocCollection, 'rootPath'>): string {
-  return collection.rootPath ? path.resolve(collection.rootPath) : docsRoot();
+  const rp = collection.rootPath;
+  if (!rp) return docsRoot();
+  if (path.isAbsolute(rp)) return path.resolve(rp);
+  return path.resolve(docsRoot(), rp);
 }
 
 /**
@@ -433,4 +449,43 @@ export async function setCollectionEnabled(
   }
   const purged = await purgeCollection(ownerId, updated.key);
   return { collection: updated, purged };
+}
+
+/**
+ * Create a new collection and (when enabled) run its first reconcile — the
+ * write half of the /settings/documentation "New collection" form. Mirrors the
+ * enable branch of `setCollectionEnabled`. Uniqueness on (owner,key) is enforced
+ * by the DB index; the caller (server action) catches the violation and maps it
+ * to a friendly message. Validation + the nested-root overlap guard also live in
+ * the caller, so the engine stays dumb.
+ */
+export async function createDocCollection(
+  ownerId: string,
+  input: {
+    key: string;
+    label: string;
+    rootPath: string | null;
+    brainDepth: DocBrainDepth;
+    origin: string;
+    enabled?: boolean;
+  },
+): Promise<{ collection: DocCollection; reconciled?: ReconcileResult }> {
+  const [row] = await db
+    .insert(docCollections)
+    .values({
+      ownerId,
+      key: input.key,
+      label: input.label,
+      origin: input.origin,
+      rootPath: input.rootPath,
+      brainDepth: input.brainDepth,
+      enabled: input.enabled ?? true,
+    })
+    .returning();
+  if (!row) throw new Error('createDocCollection: insert returned no row');
+  if (row.enabled) {
+    const reconciled = await reconcileCollection(ownerId, row);
+    return { collection: row, reconciled };
+  }
+  return { collection: row };
 }

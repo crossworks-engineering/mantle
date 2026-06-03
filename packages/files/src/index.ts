@@ -57,6 +57,7 @@ export {
   ensureDefaultCollections,
   listDocCollections,
   setCollectionEnabled,
+  createDocCollection,
   type DiskDoc,
   type ReconcileResult,
 } from './docs';

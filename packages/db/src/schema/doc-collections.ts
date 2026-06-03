@@ -27,7 +27,10 @@ export const docCollections = pgTable(
     label: text('label').notNull(),
     /** 'system' (repo docs) | 'user' (user-authored docs). */
     origin: text('origin').notNull().default('system'),
-    /** Absolute (or repo-relative) disk root; null ⇒ MANTLE_DOCS_ROOT for 'system'. */
+    /** Disk root, resolved by `collectionRoot()`: null ⇒ MANTLE_DOCS_ROOT (the
+     *  `system` collection); relative ⇒ resolved against the docs root (portable,
+     *  repo-shipped, e.g. 'guide'); absolute ⇒ used as-is (external dirs, not
+     *  portable across machines). */
     rootPath: text('root_path'),
     /** 'retrieval' (L5 only) | 'full' (full extractor pipeline). */
     brainDepth: text('brain_depth').notNull().default('retrieval'),

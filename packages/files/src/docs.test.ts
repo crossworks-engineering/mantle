@@ -12,7 +12,7 @@
 
 import { describe, expect, it } from 'vitest';
 import path from 'node:path';
-import { diffDocSets, effectiveBrainDepth, ltreeForDocPath } from './docs';
+import { collectionRoot, diffDocSets, docsRoot, effectiveBrainDepth, ltreeForDocPath } from './docs';
 
 const ROOT = path.resolve('/tmp/mantle-docs-test-root');
 
@@ -68,6 +68,22 @@ describe('diffDocSets', () => {
     const { toUpsert, toDelete } = diffDocSets({}, db);
     expect(toUpsert).toEqual([]);
     expect(toDelete).toEqual([]); // the guard: a blank root must not wipe the collection
+  });
+});
+
+describe('collectionRoot', () => {
+  it('falls back to the docs root when root_path is null (system collection)', () => {
+    expect(collectionRoot({ rootPath: null })).toBe(docsRoot());
+  });
+
+  it('resolves a relative root_path against the docs root (portable, repo-shipped)', () => {
+    expect(collectionRoot({ rootPath: 'guide' })).toBe(path.join(docsRoot(), 'guide'));
+    expect(collectionRoot({ rootPath: 'a/b' })).toBe(path.join(docsRoot(), 'a', 'b'));
+  });
+
+  it('uses an absolute root_path as-is (external dir)', () => {
+    const abs = path.resolve('/srv/vault');
+    expect(collectionRoot({ rootPath: abs })).toBe(abs);
   });
 });
 
