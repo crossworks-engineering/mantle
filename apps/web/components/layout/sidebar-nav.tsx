@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Activity,
+  BookOpen,
   BookText,
   Bot,
   Boxes,
@@ -70,6 +71,7 @@ export function SidebarNav({
         { name: 'Files', href: '/files', icon: FolderTree },
         { name: 'Notes', href: '/notes', icon: FileText },
         { name: 'Pages', href: '/pages', icon: BookText },
+        { name: 'Docs', href: '/docs', icon: BookOpen },
         { name: 'Tables', href: '/tables', icon: Table2 },
         { name: 'Todos', href: '/todos', icon: CheckSquare },
         { name: 'Events', href: '/events', icon: CalendarDays },
@@ -95,6 +97,7 @@ export function SidebarNav({
         { name: 'Agents', href: '/settings/agents', icon: Bot },
         { name: 'AI workers', href: '/settings/ai-workers', icon: Cpu },
         { name: 'Embedding', href: '/settings/embedding', icon: Combine },
+        { name: 'Documentation', href: '/settings/documentation', icon: BookOpen },
         { name: 'Local network', href: '/settings/network', icon: Radio },
         { name: 'Tools', href: '/settings/tools', icon: Hammer },
         { name: 'Skills', href: '/settings/skills', icon: Sparkles },
