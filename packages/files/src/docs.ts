@@ -452,30 +452,44 @@ export async function purgeCollection(ownerId: string, collectionKey: string): P
 
 // ── Collection registry ──────────────────────────────────────────────────────
 
-/** The built-in `system` collection (the repo's own docs/). Ships disabled. */
-const SYSTEM_COLLECTION: { key: string; label: string; origin: string; brainDepth: DocBrainDepth } = {
-  key: 'system',
-  label: 'System docs',
-  origin: 'system',
-  brainDepth: 'retrieval',
-};
+/**
+ * Built-in collections that ship with every install (disabled by default — the
+ * block is always present to toggle, but nothing indexes until the operator opts
+ * in). `rootPath: null` ⇒ the global docs root (MANTLE_DOCS_ROOT); a relative
+ * rootPath resolves under it (see `collectionRoot`).
+ *   - `system` — the repo's own deep developer docs (all of docs/).
+ *   - `guide`  — the user-facing **User Guide** (docs/guide/), shipped in the repo.
+ */
+const BUILTIN_COLLECTIONS: ReadonlyArray<{
+  key: string;
+  label: string;
+  origin: string;
+  rootPath: string | null;
+  brainDepth: DocBrainDepth;
+}> = [
+  { key: 'system', label: 'System docs', origin: 'system', rootPath: null, brainDepth: 'retrieval' },
+  { key: 'guide', label: 'User Guide', origin: 'user', rootPath: 'guide', brainDepth: 'retrieval' },
+];
 
 /** Ensure the built-in collections exist (disabled by default). Idempotent —
- *  called by the worker boot and the settings page so the row is always there
- *  to toggle. Never flips `enabled` (preserves the operator's choice). */
+ *  called by the worker boot and the docs page so the rows are always there to
+ *  toggle. `onConflictDoNothing` never flips `enabled` (preserves the operator's
+ *  choice — e.g. a collection already enabled stays enabled). */
 export async function ensureDefaultCollections(ownerId: string): Promise<void> {
-  await db
-    .insert(docCollections)
-    .values({
-      ownerId,
-      key: SYSTEM_COLLECTION.key,
-      label: SYSTEM_COLLECTION.label,
-      origin: SYSTEM_COLLECTION.origin,
-      rootPath: null,
-      brainDepth: SYSTEM_COLLECTION.brainDepth,
-      enabled: false,
-    })
-    .onConflictDoNothing({ target: [docCollections.ownerId, docCollections.key] });
+  for (const c of BUILTIN_COLLECTIONS) {
+    await db
+      .insert(docCollections)
+      .values({
+        ownerId,
+        key: c.key,
+        label: c.label,
+        origin: c.origin,
+        rootPath: c.rootPath,
+        brainDepth: c.brainDepth,
+        enabled: false,
+      })
+      .onConflictDoNothing({ target: [docCollections.ownerId, docCollections.key] });
+  }
 }
 
 /** List all collections for the owner (ensuring defaults exist first). */
