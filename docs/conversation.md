@@ -264,7 +264,7 @@ committing per phase on `main` with `pnpm --filter @mantle/web run typecheck`:
                                    loadConversationContext) + summarizeChat removed
    + trigger swap                 0072_unified_conversation_triggers.sql                ✅
    + recall_window double-count   packages/tools/src/builtins-recall.ts (channel='web') ✅
-5  UI: channel badge + attachments apps/web/.../assistant-client.tsx
+5  UI: channel badge + attachments apps/web/.../assistant-client.tsx + messages API  ✅
 6  backfill + digest re-key       scripts/backfill-conversation.ts (pnpm backfill:conversation)  ✅
 7  docs                           promote this file from DESIGN → as-built; update architecture.md §9b/§9g
 ```

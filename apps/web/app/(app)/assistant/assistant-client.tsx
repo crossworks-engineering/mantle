@@ -5,10 +5,12 @@ import { useAssistantDock } from '@/components/assistant/assistant-dock';
 import {
   CornerDownLeft,
   FileText,
+  Image as ImageIcon,
   Loader2,
   Mic,
   MicOff,
   Paperclip,
+  Send,
   X,
 } from 'lucide-react';
 import { formatDateTime } from '@/lib/format-datetime';
@@ -35,6 +37,20 @@ type Artifact = {
   localPreviewUrl?: string;
 };
 
+/** A persisted media reference on a turn (DB-backed, no bytes), mirroring
+ *  @mantle/db ConversationAttachment. Defined locally so this client component
+ *  doesn't import @mantle/db (keeps postgres out of the browser bundle). Images
+ *  with a nodeId render via the file-bytes route; everything else is a labeled
+ *  chip (its content — e.g. a voice transcript — already lives in the text). */
+type StoredAttachment = {
+  kind: 'image' | 'audio' | 'voice' | 'document' | 'video';
+  mime?: string;
+  caption?: string;
+  nodeId?: string;
+  fileId?: string;
+  url?: string;
+};
+
 /** Page size for the initial load and each scroll-up fetch. */
 const PAGE_SIZE = 100;
 
@@ -44,6 +60,14 @@ type Message = {
   text: string;
   model?: string | null;
   createdAt: string;
+  /** Transport this turn came in on. 'web' (or undefined) renders no badge;
+   *  'telegram' etc. show a small channel chip so the unified stream makes its
+   *  cross-channel origin obvious. */
+  channel?: string;
+  /** Persisted media on the turn (rendered on load). Distinct from `artifacts`,
+   *  which carries live bytes from the just-completed turn (tool output / the
+   *  image the user just uploaded). */
+  attachments?: StoredAttachment[];
   /** Sidecar artifacts produced by worker tools during this turn.
    *  Only ever populated on outbound messages. */
   artifacts?: Artifact[];
@@ -492,13 +516,21 @@ export function AssistantClient({
                     <div className="min-w-0 lg:col-start-1 lg:row-start-1">
                       {turn.response ? (
                         <article>
-                          <div className="mb-2">
+                          <div className="mb-2 flex items-center gap-2">
                             <span className="text-sm font-medium text-muted-foreground">
                               {agentName ?? 'Assistant'}
                             </span>
+                            <ChannelBadge channel={turn.response.channel} />
                           </div>
                           <div>
                             <RichText markdown={turn.response.text} />
+                            {turn.response.attachments && turn.response.attachments.length > 0 && (
+                              <div className="mt-3 flex flex-col gap-2">
+                                {turn.response.attachments.map((a, i) => (
+                                  <StoredAttachmentView key={`${turn.id}-att-${i}`} attachment={a} />
+                                ))}
+                              </div>
+                            )}
                             {turn.response.artifacts && turn.response.artifacts.length > 0 && (
                               <div className="mt-3 flex flex-col gap-2">
                                 {turn.response.artifacts.map((a, i) => (
@@ -690,8 +722,11 @@ function PromptCard({ message }: { message: Message }) {
   return (
     <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm lg:sticky lg:top-2">
       <div className="mb-1 flex items-baseline justify-between gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          You
+        <span className="flex items-center gap-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            You
+          </span>
+          <ChannelBadge channel={message.channel} />
         </span>
         <span
           className="text-[10px] text-muted-foreground"
@@ -702,6 +737,13 @@ function PromptCard({ message }: { message: Message }) {
       </div>
       {message.text && (
         <p className="whitespace-pre-wrap break-words text-foreground">{message.text}</p>
+      )}
+      {message.attachments && message.attachments.length > 0 && (
+        <div className="mt-2 flex flex-col gap-2">
+          {message.attachments.map((a, i) => (
+            <StoredAttachmentView key={`${message.id}-att-${i}`} attachment={a} />
+          ))}
+        </div>
       )}
       {message.artifacts && message.artifacts.length > 0 && (
         <div className="mt-2 flex flex-col gap-2">
@@ -772,5 +814,61 @@ function ArtifactView({ artifact }: { artifact: Artifact }) {
         </p>
       )}
     </div>
+  );
+}
+
+/** Small chip marking which channel a turn came in on. Nothing for native web
+ *  turns; a labeled glyph for Telegram / WhatsApp / future surfaces, so the
+ *  unified stream makes its cross-channel origin obvious at a glance. */
+function ChannelBadge({ channel }: { channel?: string }) {
+  if (!channel || channel === 'web') return null;
+  const label =
+    channel === 'telegram' ? 'Telegram' : channel === 'whatsapp' ? 'WhatsApp' : channel;
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+      <Send className="size-2.5" aria-hidden />
+      {label}
+    </span>
+  );
+}
+
+/** Render a persisted attachment (DB-backed, no inline bytes). Images with a
+ *  file nodeId render inline via the file-bytes route; everything else (voice
+ *  notes, docs, backfilled images without a node, video) is a labeled chip —
+ *  its actual content (e.g. a voice transcript) already lives in the turn text. */
+function StoredAttachmentView({ attachment }: { attachment: StoredAttachment }) {
+  if (attachment.kind === 'image' && attachment.nodeId) {
+    const src = `/api/files/files/${attachment.nodeId}?raw=1`;
+    return (
+      <div className="overflow-hidden rounded-lg border border-border bg-background/60">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={attachment.caption ?? 'image'}
+          className="max-h-96 w-full cursor-zoom-in object-contain"
+          onClick={() => window.open(src, '_blank')}
+        />
+        {attachment.caption && (
+          <p className="px-2 py-1 text-[11px] italic text-muted-foreground">{attachment.caption}</p>
+        )}
+      </div>
+    );
+  }
+  const Icon =
+    attachment.kind === 'voice' || attachment.kind === 'audio'
+      ? Mic
+      : attachment.kind === 'image'
+        ? ImageIcon
+        : FileText;
+  const label =
+    attachment.caption ??
+    (attachment.kind === 'voice'
+      ? 'Voice note'
+      : attachment.kind.charAt(0).toUpperCase() + attachment.kind.slice(1));
+  return (
+    <span className="inline-flex w-fit items-center gap-1.5 rounded-md border border-border bg-muted/30 px-2 py-1 text-xs text-muted-foreground">
+      <Icon className="size-3.5" aria-hidden />
+      {label}
+    </span>
   );
 }

@@ -459,6 +459,13 @@ export type AssistantTimelineRow = {
   direction: 'inbound' | 'outbound';
   text: string;
   model: string | null;
+  /** Transport the turn arrived/left on — drives the channel badge in the UI.
+   *  'web' for native /assistant turns; 'telegram' (etc.) for turns that came
+   *  in on another surface and now show in the unified stream. */
+  channel: string;
+  /** Persisted media (images, voice notes, docs) so the turn renders its
+   *  attachments on load — no bytes, just node/file references. */
+  attachments: ConversationAttachment[];
   createdAt: string;
 };
 
@@ -480,6 +487,8 @@ export async function recentAssistantMessages(
       direction: assistantMessages.direction,
       text: assistantMessages.text,
       model: assistantMessages.model,
+      channel: assistantMessages.channel,
+      attachments: assistantMessages.attachments,
       createdAt: assistantMessages.createdAt,
     })
     .from(assistantMessages)
@@ -495,6 +504,8 @@ export async function recentAssistantMessages(
       direction: r.direction as 'inbound' | 'outbound',
       text: r.text,
       model: r.model,
+      channel: r.channel,
+      attachments: r.attachments ?? [],
       createdAt: r.createdAt.toISOString(),
     }));
 }
@@ -517,6 +528,8 @@ export async function assistantMessagesBefore(
       direction: assistantMessages.direction,
       text: assistantMessages.text,
       model: assistantMessages.model,
+      channel: assistantMessages.channel,
+      attachments: assistantMessages.attachments,
       createdAt: assistantMessages.createdAt,
     })
     .from(assistantMessages)
@@ -536,6 +549,8 @@ export async function assistantMessagesBefore(
       direction: r.direction as 'inbound' | 'outbound',
       text: r.text,
       model: r.model,
+      channel: r.channel,
+      attachments: r.attachments ?? [],
       createdAt: r.createdAt.toISOString(),
     }));
 }
