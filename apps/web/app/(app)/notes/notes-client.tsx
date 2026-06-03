@@ -502,7 +502,7 @@ function NotePreview({
       </header>
 
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto scrollbar-thin px-6 py-5">
-        <article className="prose prose-sm dark:prose-invert max-w-none">
+        <article className="prose prose-sm dark:prose-invert max-w-none prose-accent">
           {note.content ? (
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{note.content}</ReactMarkdown>
           ) : (
