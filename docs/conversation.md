@@ -265,9 +265,16 @@ committing per phase on `main` with `pnpm --filter @mantle/web run typecheck`:
    + trigger swap                 0072_unified_conversation_triggers.sql                ✅
    + recall_window double-count   packages/tools/src/builtins-recall.ts (channel='web') ✅
 5  UI: channel badge + attachments apps/web/.../assistant-client.tsx
-6  backfill + digest re-key       scripts/backfill-conversation.ts   ← run ASAP after 3 (continuity)
+6  backfill + digest re-key       scripts/backfill-conversation.ts (pnpm backfill:conversation)  ✅
 7  docs                           promote this file from DESIGN → as-built; update architecture.md §9b/§9g
 ```
+
+> **Operator note:** the backfill is dry-run by default; `--apply` to write. It's
+> idempotent (skips already-backfilled rows by `external_ref.telegramRowId` /
+> `messageId`) and disables the `summarize_due` trigger for the insert burst.
+> Run it once per environment **with the Phase 3 deploy** (it closes the Telegram
+> short-term-continuity gap). Dev was backfilled 2026-06-03: 177 turns, 17 digests
+> re-keyed (5 orphaned web digests with no referencing rows left as-is).
 
 (Web before Telegram so the shared module is proven on the lower-risk surface first.)
 
