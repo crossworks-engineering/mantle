@@ -156,11 +156,13 @@ export function ToggleList({
                   className={cn(
                     // Transparent left border on every row so the on-state's
                     // primary accent bar doesn't shift the text 2px.
-                    'flex w-full items-center gap-3 border-l-2 border-l-transparent px-3 py-2 text-left transition-colors',
+                    'group flex w-full items-center gap-3 border-l-2 border-l-transparent px-3 py-2 text-left transition-colors',
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
                     // On = left accent bar only (the switch already shows state).
-                    // A bg-accent fill is unreadable where `accent` is saturated.
-                    on ? 'border-l-primary' : 'hover:bg-accent/30',
+                    // Hover (unselected) = full accent fill paired with
+                    // accent-foreground so the whole row stays readable in
+                    // every theme — a clearer hover than a faint accent tint.
+                    on ? 'border-l-primary' : 'hover:bg-accent hover:text-accent-foreground',
                     it.disabled && 'cursor-not-allowed opacity-60',
                   )}
                 >
@@ -170,7 +172,14 @@ export function ToggleList({
                       {it.meta}
                     </div>
                     {it.description && (
-                      <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                      <p
+                        className={cn(
+                          'mt-0.5 line-clamp-2 text-xs text-muted-foreground',
+                          // Match the row's hover text so the description stays
+                          // legible on the accent fill (unselected rows only).
+                          !on && 'group-hover:text-accent-foreground/80',
+                        )}
+                      >
                         {it.description}
                       </p>
                     )}
