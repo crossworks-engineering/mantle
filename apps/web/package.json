@@ -18,6 +18,7 @@
     "seed:coder": "tsx --env-file-if-exists=./.env.local scripts/seed-coder-agent.ts",
     "seed:remy": "tsx --env-file-if-exists=./.env.local scripts/seed-remy.ts",
     "seed:researcher": "tsx --env-file-if-exists=./.env.local scripts/seed-researcher.ts",
+    "seed:docs": "tsx --env-file-if-exists=./.env.local scripts/seed-docs.ts",
     "seed:pages": "tsx --env-file-if-exists=./.env.local scripts/seed-pages-agent.ts",
     "seed:tables": "tsx --env-file-if-exists=./.env.local scripts/seed-tables-agent.ts",
     "seed:tables-skill": "tsx --env-file-if-exists=./.env.local scripts/seed-tables-skill.ts",

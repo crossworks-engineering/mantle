@@ -173,6 +173,7 @@ server.tool(
         'event',
         'printer_project',
         'telegram_message',
+        'documentation',
       ])
       .optional(),
     tags: z.array(z.string()).optional(),

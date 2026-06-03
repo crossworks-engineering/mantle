@@ -13,12 +13,14 @@ import { db, nodes, notifyNodeIngested, secrets, telegramChats } from '@mantle/d
 import { seal } from '@mantle/crypto';
 import {
   searchNodes,
+  searchChunks,
   searchEntities,
   entityNeighbors,
   entityFacts,
   entityMentions,
   graphPath,
 } from '@mantle/search';
+import { embed } from '@mantle/embeddings';
 import {
   fileById,
   folderByPath,
@@ -100,6 +102,7 @@ const search_nodes: BuiltinToolDef = {
           'event',
           'printer_project',
           'telegram_message',
+          'documentation',
         ],
       },
       tags: { type: 'array', items: { type: 'string' } },
@@ -130,6 +133,49 @@ const search_nodes: BuiltinToolDef = {
               ? (r.data as Record<string, unknown>).summary
               : null,
           updatedAt: r.updatedAt.toISOString(),
+        })),
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+const search_chunks: BuiltinToolDef = {
+  slug: 'search_chunks',
+  name: 'Search document passages',
+  description:
+    'Semantic (vector) search over document passages — finds the most relevant *sections* inside long pages, files, emails, and documentation (not just whole-node hits). Use when `search_nodes` is too coarse or you want the specific passage. ' +
+    "`branch` scopes by ltree path (e.g. 'documentation' for the docs). Each hit returns the source node id (use `node_read` to open the whole doc), its heading, and the passage text.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      q: { type: 'string', description: 'free-text query' },
+      branch: { type: 'string', description: "ltree prefix scope, e.g. 'documentation'" },
+      limit: { type: 'integer', minimum: 1, maximum: 50, default: 10 },
+    },
+    required: ['q'],
+  },
+  handler: async (input, ctx) => {
+    try {
+      const q = str(input.q);
+      if (!q) return { ok: false, error: 'q is required' };
+      const embedding = await embed(ctx.ownerId, q);
+      const hits = await searchChunks({
+        ownerId: ctx.ownerId,
+        embedding,
+        branch: strOpt(input.branch),
+        limit: num(input.limit, 10),
+      });
+      ctx.step?.setOutput({ count: hits.length });
+      return {
+        ok: true,
+        output: hits.map((h) => ({
+          nodeId: h.nodeId,
+          nodeTitle: h.nodeTitle,
+          nodeType: h.nodeType,
+          heading: h.headingPath,
+          text: h.text,
         })),
       };
     } catch (err) {
@@ -917,6 +963,7 @@ const invoke_agent: BuiltinToolDef = {
 
 export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   search_nodes,
+  search_chunks,
   tree_list,
   entity_search,
   entity_neighbors,
