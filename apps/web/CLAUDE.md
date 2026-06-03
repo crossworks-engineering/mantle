@@ -15,6 +15,11 @@ Non-negotiables (full detail in the guide):
 - **Theme tokens only** — `bg-background`, `text-foreground`, `text-muted-foreground`,
   `bg-card`, `border-border`, `bg-primary`, `bg-accent`, `bg-destructive`, `chart-1..5`.
   **Never hardcode colors**; opacity via `/NN`. Hardcoded colors break the ~40 themes.
+  **Pair every fill with its OWN `-foreground`** (`bg-accent`+`text-accent-foreground`,
+  `bg-primary`+`text-primary-foreground`, …) — never mix pairs like `bg-accent text-foreground`
+  (no contrast guarantee; breaks on light-accent themes). Same for hover/active fills. On a
+  `bg-sidebar` surface use `hover:bg-foreground/[0.06]` (muted == sidebar in some themes). See
+  style guide §2. Themed markdown: add `prose-accent` beside `prose` (§10).
 - **No `window.prompt/confirm/alert`** — create/edit → `Dialog`; destructive confirm →
   `AlertDialog` (red action); feedback → `useToast()` (not inline error banners).
 - **Bare icons inside `<Button>`** — no `mr-*`/`h-*/w-*` (base gives `gap-2` + `size-4`).

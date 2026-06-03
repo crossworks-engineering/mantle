@@ -6,9 +6,10 @@ the settings screens (Agents, Tools, API keys, …) are the reference
 **master-detail** implementations (§8); Appearance is the reference for theme
 widgets.
 
-> TL;DR — shadcn primitives, semantic theme tokens only, never native
-> `prompt/confirm/alert`, bare icons inside buttons, toasts for feedback,
-> and reuse the shared patterns below instead of reinventing them.
+> TL;DR — shadcn primitives, semantic theme tokens only (pair every fill with
+> its OWN `-foreground`, never mix pairs), never native `prompt/confirm/alert`,
+> bare icons inside buttons, toasts for feedback, and reuse the shared patterns
+> below instead of reinventing them.
 
 ---
 
@@ -46,6 +47,21 @@ in a component.
 | Categorical data | `chart-1` … `chart-5` |
 
 Rules:
+- **Pair a fill with its OWN foreground — never mix pairs.** Each surface token
+  has a guaranteed-contrast partner; use them together:
+  `bg-primary`+`text-primary-foreground`, `bg-secondary`+`text-secondary-foreground`,
+  `bg-accent`+`text-accent-foreground`, `bg-destructive`+`text-destructive-foreground`,
+  `bg-muted`+`text-muted-foreground`, `bg-card`+`text-card-foreground`,
+  `bg-background`+`text-foreground`. Mixing pairs (e.g. `bg-accent text-foreground`)
+  has **no contrast guarantee** and silently breaks in themes whose `accent` is a
+  light tint (candyland/soft-pop/neo-brutalism in dark mode → white-on-light).
+  This applies to **hover and active fills too**: a coloured fill must bring its
+  matching `-foreground` (e.g. `hover:bg-accent hover:text-accent-foreground`; for
+  a fill on a row whose meta text is `text-muted-foreground`, flip it with
+  `group-hover:text-accent-foreground`). Swept app-wide 2026-06-03.
+- **Semantic action colours come from tokens, not literal green/red.** Affirmative
+  = `primary`, dangerous/removing = `destructive` (e.g. the sender approve/deny
+  Button variants). A hardcoded `bg-green-600`/`bg-red-600` ignores the theme.
 - **Opacity via the `/NN` modifier** (`bg-primary/10`, `border-chart-2/30`) —
   works through `color-mix`, fully theme-aware.
 - **`chart-1..5`** is the categorical palette — use it for things that need
@@ -63,6 +79,11 @@ Rules:
   is fine where text is paired with `accent-foreground` (e.g. a chip that sets
   both), and a faint `bg-primary/10` tint is acceptable when contrast is
   verified — but the default selection idiom is border-only.
+- **Hover on a `bg-sidebar` surface (Activity column, nav):** `--sidebar` equals
+  `--muted` in some themes, so `hover:bg-muted` is invisible there. Use a neutral
+  overlay `hover:bg-foreground/[0.06]` — it differs from any sidebar value in
+  light + dark and, being neutral, keeps grey `muted-foreground` text legible
+  (a coloured `accent` tint muddies it).
 - Light/dark is handled by `next-themes`; the color theme by
   `ColorThemeProvider` (`data-color-theme` on `<html>`, presets in
   `globals.css`, registry in `lib/themes.ts`). Don't fork theme logic.
@@ -151,12 +172,15 @@ Shared app-level patterns (`components/`):
   - For create/edit dialogs, switch the label on mode:
     `{mode === 'create' ? 'Create agent' : 'Save agent'}`.
 - **Multi-select → `<ToggleList>`** (`components/toggle-list.tsx`), not a wall of
-  pills. Rows of name + description + a `Switch`, selected rows highlighted;
-  optional `group` clusters rows under sub-headers. It flows inline in the page
-  (no inner scroll); pass `collapsible` to fold a long catalog behind a header
-  that shows the `N of M selected` count, and `searchable` for a filter bar
-  (text search + an All / On / Off selection filter, shown once a list exceeds
-  ~6 items). Used by the agents Tools/Skills/Delegates pickers.
+  pills. Each row is a non-interactive container (name + description + a real
+  shadcn `<Switch>`); **the Switch is the only control — clicking the row body
+  does nothing** (explicit toggle, no whole-row click) and there is **no hover
+  fill** (on-state shows a `border-l-primary` bar). Optional `group` clusters rows
+  under sub-headers. It flows inline in the page (no inner scroll); pass
+  `collapsible` to fold a long catalog behind a header that shows the
+  `N of M selected` count, and `searchable` for a filter bar (text search + an
+  All / On / Off selection filter, shown once a list exceeds ~6 items). Used by
+  the agents Tools/Skills/Delegates pickers and AI workers.
 
 ---
 
@@ -302,6 +326,18 @@ as deep links** even after a master-detail supersedes the in-app navigation
 - **Editing:** `<MarkdownEditor>` (toolbar + Edit/Split/Preview + live preview).
 - **Rendering:** `ReactMarkdown` + `remarkGfm` inside
   `prose prose-sm dark:prose-invert max-w-none`.
+- **Theme-accented prose — add `prose-accent`** next to `prose` to brighten the
+  flat black-and-white markdown with theme tokens: gradient h1
+  (`primary`→`chart-3`), `primary` h2 + divider, h3/h4 accents, primary links,
+  tinted inline-code chips, accent-bar blockquote, coloured list markers, gradient
+  hr. Defined in `globals.css` (one block, all CSS-var driven, recolours with
+  every theme × light/dark). It's **opt-in**: docs reader, Notes (read + public
+  share), and Pages (editor + read + public) add it; the Pages editor surface is
+  `prose` **and** `ProseMirror`, so it also picks up Pages-only `.ProseMirror`
+  polish — code-block cards (`--muted` panel + 3px `primary` spine), a `primary`
+  caret (which keeps the *transparent* gradient h1 editable), and a themed text
+  selection. Selectors are class+element so they outrank Typography's `:where()`
+  rules without `!important`. Don't hand-style headings per-surface — add the class.
 
 ---
 
@@ -342,7 +378,13 @@ as deep links** even after a master-detail supersedes the in-app navigation
 
 ## 14. Anti-patterns (don't do these)
 
-- ❌ Hardcoded colors (`#fff`, `text-[oklch(...)]`, `bg-gray-200`).
+- ❌ Hardcoded colors (`#fff`, `text-[oklch(...)]`, `bg-gray-200`), including
+  literal `bg-green-600`/`bg-red-600` for approve/deny — use `primary`/`destructive` (§2).
+- ❌ Mixing a fill with a foreign foreground — `bg-accent text-foreground`,
+  `hover:bg-accent hover:text-foreground` — pair each fill with its own
+  `-foreground` (§2). Breaks on light-accent themes.
+- ❌ A coloured-`accent` hover on a `bg-sidebar` surface (muddies grey text) —
+  use a neutral `hover:bg-foreground/[0.06]` (§2).
 - ❌ `window.prompt/confirm/alert`.
 - ❌ A bare `<Button type="submit">` in a form, a bare "Save"/"Create" label,
   or a "Saving…" text-swap — use `<SubmitButton pending={…}>Save <noun></SubmitButton>` (§6).
