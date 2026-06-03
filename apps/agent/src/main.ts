@@ -24,6 +24,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, sql } from 'drizzle-o
 import {
   db,
   agents,
+  assistantMessages,
   entities,
   facts,
   nodes,
@@ -104,7 +105,7 @@ registerAgentInvoker(invokeAgent);
 // on tools). Must run BEFORE seedBuiltinTools() — the seed reads
 // from the in-memory registry. Idempotent.
 registerHeartbeatTools();
-import { summarizeChat, summarizeWebConversation } from './summarizer.js';
+import { summarizeChat, summarizeAgentConversation } from './summarizer.js';
 import { enqueueExtract, startExtractQueue, stopExtractQueue } from './extract-queue.js';
 import { reflect } from './reflector.js';
 
@@ -1446,8 +1447,15 @@ function scheduleSummarize(chatPk: string): void {
   }, SUMMARIZE_DEBOUNCE_MS);
 }
 
-/** Web-surface twin of scheduleSummarize — debounced per-owner rollup of the
- *  /assistant conversation (summarize_web_due payload is the owner id). */
+/** Web-surface twin of scheduleSummarize — debounced rollup of the unified
+ *  conversation stream (summarize_web_due payload is the owner id). Fans out to
+ *  the unified per-agent summarizer for each agent with undigested turns.
+ *
+ *  NOTE: at cutover (migration 0072) `summarize_due` will fire directly with an
+ *  agent_id on every assistant_messages insert (all channels), at which point
+ *  this fan-out collapses to a single summarizeAgentConversation call and the
+ *  separate summarize_web_due channel is retired. Until then the web trigger
+ *  still fires the owner id, so we resolve the affected agents here. */
 const summarizeWebPending = new Set<string>();
 let summarizeWebTimer: NodeJS.Timeout | null = null;
 
@@ -1459,11 +1467,27 @@ function scheduleSummarizeWeb(ownerId: string): void {
     const batch = [...summarizeWebPending];
     summarizeWebPending.clear();
     for (const id of batch) {
-      summarizeWebConversation(id).catch((err) =>
+      summarizeOwnerAgentStreams(id).catch((err) =>
         console.error('[agent] web summarize error:', err instanceof Error ? err.message : err),
       );
     }
   }, SUMMARIZE_DEBOUNCE_MS);
+}
+
+/** Resolve the owner's agents that currently have undigested conversation turns
+ *  and run the unified per-agent summarizer on each (it self-gates on the
+ *  threshold, so under-threshold streams are a cheap no-op). One DISTINCT query
+ *  picks only streams with pending turns, so this doesn't fan out across idle
+ *  agents. */
+async function summarizeOwnerAgentStreams(ownerId: string): Promise<void> {
+  const rows = await db
+    .selectDistinct({ agentId: assistantMessages.agentId })
+    .from(assistantMessages)
+    .where(and(eq(assistantMessages.ownerId, ownerId), isNull(assistantMessages.digestNodeId)));
+  for (const r of rows) {
+    if (!r.agentId) continue;
+    await summarizeAgentConversation(ownerId, r.agentId);
+  }
 }
 
 /** Core builtins every conversational agent should have without manual

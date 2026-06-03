@@ -369,42 +369,44 @@ export async function summarizeChat(chatPk: string, ownerId: string): Promise<vo
   );
 }
 
-/** ltree path web-conversation digests hang under. There's no per-account
- *  branch for the web /assistant (one stream per owner), so they live under a
- *  fixed label. Path is cosmetic for digests — find_window/responder match by
- *  the `conversation-digest` tag + embedding, not by path. */
-const WEB_DIGEST_PATH = 'assistant';
+/** ltree path conversation digests hang under. The unified per-(owner, agent)
+ *  stream isn't chat-scoped, so digests live under a fixed cosmetic label —
+ *  find_window/responder match by the `conversation-digest` tag + the digest
+ *  note's data.agent_id + embedding, not by path. */
+const CONVERSATION_DIGEST_PATH = 'assistant';
 
 /**
- * Web twin of `summarizeChat` — rolls the oldest undigested `assistant_messages`
- * (the web /assistant surface) into `conversation-digest` notes, so find_window
- * and the responder's Tier-2 memory index web conversation too, not just
- * Telegram. Keyed per-owner (the web surface is one continuous stream, no chat
- * id). Driven from a debounced LISTEN on `summarize_web_due` in main.ts.
+ * Unified summarizer — rolls the oldest undigested turns of ONE per-(owner,
+ * agent) conversation stream (assistant_messages, ALL channels) into
+ * `conversation-digest` notes keyed by the note's data.agent_id, so
+ * find_window + the responder's Tier-2 memory index every channel's turns in
+ * one place. Replaces the old per-chat (summarizeChat) + per-owner-web
+ * (summarizeWebConversation) split. Driven from the debounced summarize handler
+ * in main.ts.
  */
-export async function summarizeWebConversation(ownerId: string): Promise<void> {
+export async function summarizeAgentConversation(ownerId: string, agentId: string): Promise<void> {
   const worker = await resolveSummarizer(ownerId);
   if (!worker) {
     await recordSkippedTrace({
       kind: 'summarizer_run',
       ownerId,
-      subjectId: ownerId,
-      subjectKind: 'web_chat',
+      subjectId: agentId,
+      subjectKind: 'agent_conversation',
       disposition: 'no_summarizer_worker',
-      details: { surface: 'web', hint: 'Set a default summarizer at /settings/ai-workers.' },
+      details: { agent_id: agentId, hint: 'Set a default summarizer at /settings/ai-workers.' },
     });
     return;
   }
-  // Key pre-flight via the shared resolver (web path; see telegram path above).
+  // Key pre-flight via the shared resolver (keyless `local` passes).
   const keyCheck = await resolveChatKey(ownerId, worker);
   if (!keyCheck.ok) {
     await recordSkippedTrace({
       kind: 'summarizer_run',
       ownerId,
-      subjectId: ownerId,
-      subjectKind: 'web_chat',
+      subjectId: agentId,
+      subjectKind: 'agent_conversation',
       disposition: keyCheck.disposition,
-      details: { worker_slug: worker.slug, surface: 'web' },
+      details: { worker_slug: worker.slug, agent_id: agentId },
     });
     return;
   }
@@ -413,24 +415,46 @@ export async function summarizeWebConversation(ownerId: string): Promise<void> {
   const threshold = params.summarize_threshold ?? 30;
   const batchSize = params.summarize_batch ?? params.window_size ?? 20;
 
+  // Count undigested turns for THIS agent's stream only.
   const countRows = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(assistantMessages)
-    .where(and(eq(assistantMessages.ownerId, ownerId), isNull(assistantMessages.digestNodeId)));
+    .where(
+      and(
+        eq(assistantMessages.ownerId, ownerId),
+        eq(assistantMessages.agentId, agentId),
+        isNull(assistantMessages.digestNodeId),
+      ),
+    );
   const undigested = countRows[0]?.n ?? 0;
   if (undigested < threshold) return;
+
+  // Resolve the conversational agent's slug for digest provenance + tags.
+  const [agentRow] = await db
+    .select({ slug: agents.slug })
+    .from(agents)
+    .where(eq(agents.id, agentId))
+    .limit(1);
+  const agentSlug = agentRow?.slug ?? agentId;
 
   await startTrace(
     {
       kind: 'summarizer_run',
       ownerId,
-      subjectId: ownerId,
-      subjectKind: 'web_chat',
-      data: { worker_slug: worker.slug, surface: 'web', threshold, batchSize, undigestedAtStart: undigested },
+      subjectId: agentId,
+      subjectKind: 'agent_conversation',
+      data: {
+        worker_slug: worker.slug,
+        agent_id: agentId,
+        agent_slug: agentSlug,
+        threshold,
+        batchSize,
+        undigestedAtStart: undigested,
+      },
     },
     async () => {
       const batch = await step(
-        { name: 'load_batch', kind: 'db_read', input: { batchSize, surface: 'web' } },
+        { name: 'load_batch', kind: 'db_read', input: { batchSize } },
         async (h) => {
           const rows = await db
             .select({
@@ -440,7 +464,13 @@ export async function summarizeWebConversation(ownerId: string): Promise<void> {
               createdAt: assistantMessages.createdAt,
             })
             .from(assistantMessages)
-            .where(and(eq(assistantMessages.ownerId, ownerId), isNull(assistantMessages.digestNodeId)))
+            .where(
+              and(
+                eq(assistantMessages.ownerId, ownerId),
+                eq(assistantMessages.agentId, agentId),
+                isNull(assistantMessages.digestNodeId),
+              ),
+            )
             .orderBy(asc(assistantMessages.createdAt))
             .limit(batchSize);
           h.setOutput({ count: rows.length });
@@ -470,7 +500,7 @@ export async function summarizeWebConversation(ownerId: string): Promise<void> {
 
       const routes = resolveChatRoutes(worker);
       console.log(
-        `[agent] summarizing web conversation (${batch.length} turns, ${routes.primary.provider}:${routes.primary.model}` +
+        `[agent] summarizing ${agentSlug} conversation (${batch.length} turns, ${routes.primary.provider}:${routes.primary.model}` +
           (routes.backup ? ` · backup ${routes.backup.provider}:${routes.backup.model}` : '') +
           ')',
       );
@@ -529,21 +559,29 @@ export async function summarizeWebConversation(ownerId: string): Promise<void> {
                 ownerId,
                 type: 'note',
                 title,
-                path: WEB_DIGEST_PATH,
+                path: CONVERSATION_DIGEST_PATH,
                 data: {
                   kind: 'conversation_digest',
-                  source: 'web',
+                  // The conversational agent this digest belongs to — the key
+                  // loadConversationContext filters digests by (per agent,
+                  // cross-channel). NOT the summarizer worker.
+                  agent_id: agentId,
+                  agent_slug: agentSlug,
                   period_start: periodStart,
                   period_end: periodEnd,
                   source_turn_count: turns.length,
                   model: worker.model,
-                  agent: worker.slug,
+                  summarizer_worker: worker.slug,
                   content: topic.summary,
                   summary: topic.summary,
                   topic: topic.label,
                   topic_slug: slugifyTopic(topic.label),
                 },
-                tags: ['conversation-digest', 'web', `topic:${slugifyTopic(topic.label)}`],
+                tags: [
+                  'conversation-digest',
+                  `agent:${slugifyTopic(agentSlug)}`,
+                  `topic:${slugifyTopic(topic.label)}`,
+                ],
               })
               .returning({ id: nodes.id });
             if (!n) throw new Error('summarizer: failed to insert digest node');
@@ -579,7 +617,7 @@ export async function summarizeWebConversation(ownerId: string): Promise<void> {
 
       void bumpWorkerUsage(worker.id);
       console.log(
-        `[agent] ✓ ${inserted.length} web digest(s): ` +
+        `[agent] ✓ ${inserted.length} digest(s) for ${agentSlug}: ` +
           inserted.map((d) => `"${d.topic}" (${d.turnCount}t)`).join(', '),
       );
     },
