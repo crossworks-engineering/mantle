@@ -114,11 +114,20 @@ CREATE INDEX assistant_messages_owner_agent_channel_created_idx
 - **`external_ref`** — lets the Telegram sender thread replies and lets us
   dedup/back-link to the transport row without a join table.
 
-### Trigger swap
+### Trigger swap — deferred to cutover, NOT Phase 0
 
-A single trigger on the unified table replaces both existing ones. Because *every*
-channel now writes `assistant_messages`, one trigger covers all of them, keyed on the
-stream identity (`agent_id`):
+The column adds above are **additive and non-breaking** (defaults/nullable, so existing
+rows and INSERTs are untouched) — they ship in `0071` immediately.
+
+The trigger swap below is the **one breaking step** and must NOT land before the code
+is ready: the moment it applies, Telegram's `summarize_due` trigger and the
+`summarize_web_due` trigger are gone and `summarize_due` starts carrying an `agent_id`
+payload — which the current `main.ts` LISTEN handlers don't understand. So it ships in
+a **separate cutover migration** (`0072_unified_conversation_triggers.sql`) landed
+together with Phases 3 + 4 (Telegram writing `assistant_messages` + the unified
+summarizer). A single trigger on the unified table then replaces both existing ones;
+because *every* channel now writes `assistant_messages`, one trigger covers them all,
+keyed on the stream identity (`agent_id`):
 
 ```sql
 CREATE OR REPLACE FUNCTION notify_summarize_due() RETURNS trigger AS $$
@@ -236,11 +245,12 @@ Phases 0–5 are the core shippable arc; 6–7 are migration + cleanup. Suggeste
 committing per phase on `main` with `pnpm --filter @mantle/web run typecheck`:
 
 ```
-0  schema + trigger swap          0071_unified_conversation.sql
+0  schema (ADDITIVE only)         0071_unified_conversation.sql  ✅ columns + index, no trigger change
 1  shared module                  packages/agent-runtime/src/conversation.ts
 2  web onto shared module         apps/web/lib/assistant.ts            (web works end-to-end)
 4  one summarizer                 apps/agent/src/summarizer.ts + main.ts LISTEN
 3  Telegram cutover               apps/agent/src/main.ts + telegram-poll.ts
+   + trigger swap                 0072_unified_conversation_triggers.sql  (breaking; lands with 3+4)
 5  UI: channel badge + attachments apps/web/.../assistant-client.tsx
 6  backfill + digest re-key       scripts/backfill-conversation.ts
 7  docs                           promote this file from DESIGN → as-built; update architecture.md §9b/§9g
