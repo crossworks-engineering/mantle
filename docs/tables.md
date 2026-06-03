@@ -114,7 +114,7 @@ results" in one call, instead of the agent adding rows one at a time.
 
 ## 4. Tools + the Tables agent
 
-`packages/tools/src/builtins-tables.ts` — 18 `table_*` builtins. Reads:
+`packages/tools/src/builtins-tables.ts` — the `table_*` builtins. Reads:
 `table_list`, `table_get`, `table_rows_list` (windowed id+preview snapshot —
 read this *before* editing, so you target rows by id), `table_row_get`.
 Edits (→ `draft_data`, return a review hint): `table_row_add`/`update`/`delete`,
