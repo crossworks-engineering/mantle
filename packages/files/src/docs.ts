@@ -261,9 +261,15 @@ export function diffDocSets(
   return { toUpsert, toDelete };
 }
 
-/** Recursively collect `*.md` files under a root (skipping dotfiles/dirs). */
-async function walkMarkdown(root: string): Promise<DiskDoc[]> {
-  const out: DiskDoc[] = [];
+/** Markdown filename matcher — shared by the walker, listing, and read guard. */
+const MARKDOWN_RE = /\.(md|markdown)$/i;
+
+/** Recursively collect collection-relative `*.md` paths under a root (skipping
+ *  dotfiles/dirs). Returns `[]` when the root is missing (ENOENT). The shared
+ *  traversal behind `walkMarkdown` and `listMarkdownRelPaths`. */
+async function walkMarkdownRelPaths(root: string): Promise<string[]> {
+  const out: string[] = [];
+  const resolvedRoot = path.resolve(root);
   async function walk(dir: string): Promise<void> {
     let entries: Dirent[];
     try {
@@ -277,16 +283,55 @@ async function walkMarkdown(root: string): Promise<DiskDoc[]> {
       const abs = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         await walk(abs);
-      } else if (entry.isFile() && /\.(md|markdown)$/i.test(entry.name)) {
-        const bytes = await fs.readFile(abs);
-        const sha256 = createHash('sha256').update(bytes).digest('hex');
-        const rel = path.relative(root, abs).split(path.sep).join('/');
-        out.push({ relPath: rel, bytes, sha256 });
+      } else if (entry.isFile() && MARKDOWN_RE.test(entry.name)) {
+        out.push(path.relative(resolvedRoot, abs).split(path.sep).join('/'));
       }
     }
   }
-  await walk(path.resolve(root));
+  await walk(resolvedRoot);
   return out;
+}
+
+/** Recursively collect `*.md` files under a root (skipping dotfiles/dirs),
+ *  reading bytes + sha for each. Used by the indexer (reconcileCollection). */
+async function walkMarkdown(root: string): Promise<DiskDoc[]> {
+  const resolvedRoot = path.resolve(root);
+  const relPaths = await walkMarkdownRelPaths(resolvedRoot);
+  const out: DiskDoc[] = [];
+  for (const relPath of relPaths) {
+    const bytes = await fs.readFile(path.join(resolvedRoot, relPath));
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    out.push({ relPath, bytes, sha256 });
+  }
+  return out;
+}
+
+/**
+ * List a collection's markdown files (collection-relative paths), sorted. DB-free
+ * — the disk-backed `/docs` reader's nav source, so docs are browsable whether or
+ * not the collection is indexed. `[]` if the root is missing.
+ */
+export async function listMarkdownRelPaths(root: string): Promise<string[]> {
+  return (await walkMarkdownRelPaths(root)).sort();
+}
+
+/**
+ * Read one markdown file by collection-relative path, DB-free. Validates the path
+ * with `ltreeForDocPath` (rejects `..` traversal escapes) AND the `.md` extension,
+ * so a crafted relPath can't read outside the root or a non-markdown file. Returns
+ * the UTF-8 content, or `null` when missing / invalid (the reader 404s on null).
+ */
+export async function readMarkdownFile(root: string, relPath: string): Promise<string | null> {
+  const resolvedRoot = path.resolve(root);
+  const abs = path.join(resolvedRoot, relPath);
+  if (!ltreeForDocPath(abs, resolvedRoot)) return null; // escapes the root
+  if (!MARKDOWN_RE.test(abs)) return null; // non-markdown
+  try {
+    return await fs.readFile(abs, 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw err;
+  }
 }
 
 export type ReconcileResult = {

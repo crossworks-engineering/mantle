@@ -48,6 +48,8 @@ export {
   effectiveBrainDepth,
   collectionRoot,
   ltreeForDocPath,
+  listMarkdownRelPaths,
+  readMarkdownFile,
   upsertDocFromDisk,
   deleteDocByRelPath,
   diffDocSets,
