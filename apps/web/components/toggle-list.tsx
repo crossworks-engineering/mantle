@@ -119,7 +119,7 @@ export function ToggleList({
             className={cn(
               'rounded px-2 py-1 font-medium transition-colors',
               stateFilter === f
-                ? 'bg-accent text-foreground'
+                ? 'bg-accent text-accent-foreground'
                 : 'text-muted-foreground hover:text-foreground',
             )}
           >

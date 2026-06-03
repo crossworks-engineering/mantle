@@ -53,7 +53,7 @@ export function TableControls({ editor }: { editor: Editor }) {
   if (!rect) return null;
 
   const btn =
-    'fixed z-30 flex size-7 items-center justify-center rounded-md border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-foreground';
+    'fixed z-30 flex size-7 items-center justify-center rounded-md border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground';
 
   return (
     <>

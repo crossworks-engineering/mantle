@@ -62,7 +62,7 @@ export function PageOutline({
         aria-label="Show outline"
         title="Show outline"
         className={cn(
-          'inline-flex size-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
+          'inline-flex size-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground',
           className,
         )}
       >
@@ -92,7 +92,7 @@ export function PageOutline({
           onClick={toggle}
           aria-label="Hide outline"
           title="Hide outline"
-          className="flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className="flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
         >
           <ChevronLeft className="size-4" aria-hidden />
         </button>
@@ -106,7 +106,7 @@ export function PageOutline({
               style={{ paddingLeft: 8 + e.depth * 12 }}
               title={e.label}
               className={cn(
-                'flex w-full items-center gap-1.5 rounded-sm py-1 pr-2 text-left leading-snug transition-colors hover:bg-accent hover:text-foreground',
+                'flex w-full items-center gap-1.5 rounded-sm py-1 pr-2 text-left leading-snug transition-colors hover:bg-accent hover:text-accent-foreground',
                 e.kind === 'page'
                   ? 'text-muted-foreground'
                   : e.level === 1

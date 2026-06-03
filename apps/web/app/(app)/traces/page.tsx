@@ -332,7 +332,7 @@ function FilterChip({
         'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
         active
           ? 'border-primary bg-primary text-primary-foreground'
-          : 'border-input bg-background text-muted-foreground hover:bg-accent hover:text-foreground',
+          : 'border-input bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground',
       )}
     >
       {children}

@@ -90,7 +90,7 @@ export function MailClient({
                 href="/settings/senders"
                 title="Review pending senders"
                 className={cn(
-                  'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground',
+                  'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground',
                   isCollapsed && 'justify-center px-0',
                 )}
               >
@@ -117,7 +117,7 @@ export function MailClient({
                     href={tabAllHref}
                     className={cn(
                       'rounded px-2 py-1',
-                      tab === 'all' ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground',
+                      tab === 'all' ? 'bg-accent font-medium text-accent-foreground' : 'text-muted-foreground',
                     )}
                   >
                     All mail
@@ -127,7 +127,7 @@ export function MailClient({
                     className={cn(
                       'rounded px-2 py-1',
                       tab === 'unread'
-                        ? 'bg-accent font-medium text-foreground'
+                        ? 'bg-accent font-medium text-accent-foreground'
                         : 'text-muted-foreground',
                     )}
                   >

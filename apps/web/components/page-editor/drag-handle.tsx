@@ -144,7 +144,7 @@ export function EditorDragHandle({ editor }: { editor: Editor }) {
           // mr-1.5 keeps a small gap from the text; the grip still lands inside
           // the editor's left padding (see globals.css) so reaching for it never
           // leaves the editor and triggers the library's hide-on-mouseleave.
-          className="mr-1.5 flex h-9 w-7 cursor-grab items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-accent hover:text-foreground active:cursor-grabbing"
+          className="mr-1.5 flex h-9 w-7 cursor-grab items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-accent hover:text-accent-foreground active:cursor-grabbing"
         >
           <GripVertical className="size-6" aria-hidden />
         </div>
@@ -171,7 +171,7 @@ export function EditorDragHandle({ editor }: { editor: Editor }) {
                 type="button"
                 onClick={() => setTurnOpen((v) => !v)}
                 aria-expanded={turnOpen}
-                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-accent"
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
               >
                 <Replace className="size-4" aria-hidden />
                 Turn into
@@ -227,7 +227,7 @@ function MenuItem({
         'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors',
         destructive
           ? 'text-destructive hover:bg-destructive/10'
-          : 'text-foreground hover:bg-accent',
+          : 'text-foreground hover:bg-accent hover:text-accent-foreground',
       )}
     >
       <Icon className="size-4" aria-hidden />

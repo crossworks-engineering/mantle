@@ -66,7 +66,7 @@ export function SearchBox({ initial }: { initial: string }) {
           type="button"
           onClick={() => onChange('')}
           aria-label="Clear search"
-          className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
         >
           <X className="size-3.5" aria-hidden />
         </button>

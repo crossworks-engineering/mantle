@@ -35,7 +35,7 @@ export function UsageCardPills({ current }: { current: SpendRange }) {
             className={
               'flex-1 rounded px-1 py-0.5 text-[10px] font-semibold tabular-nums transition-colors ' +
               (active
-                ? 'bg-accent text-foreground'
+                ? 'bg-accent text-accent-foreground'
                 : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground')
             }
             aria-pressed={active}

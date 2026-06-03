@@ -38,7 +38,7 @@ export function ReadingPane({
                 type="submit"
                 title={email.isStarred ? 'Unstar' : 'Star'}
                 aria-label={email.isStarred ? 'Unstar' : 'Star'}
-                className="inline-flex items-center rounded-md border border-input bg-background p-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="inline-flex items-center rounded-md border border-input bg-background p-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground"
               >
                 <Star
                   className={cn('size-3.5', email.isStarred && 'fill-amber-400 text-amber-400')}
@@ -53,7 +53,7 @@ export function ReadingPane({
                 type="submit"
                 title={email.isRead ? 'Mark unread' : 'Mark read'}
                 aria-label={email.isRead ? 'Mark unread' : 'Mark read'}
-                className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground"
               >
                 {email.isRead ? (
                   <>
