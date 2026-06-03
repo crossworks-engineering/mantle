@@ -1184,7 +1184,29 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
   let rawBody: string;
   if (isImageNeedingVision) {
     const visionText = await visionIngestImageNode(node, ownerId);
-    if (!visionText) return; // worker unavailable / empty — nothing to index
+    if (!visionText) {
+      // Vision produced no text — an SVG/vector the model can't read, a blank
+      // image, or an unwired/erroring vision worker. Record a TERMINAL skip so
+      // the node counts as processed. Without this it has only a `photo_ingest`
+      // trace and no `extractor_run`, so the periodic extract sweep — whose
+      // loop-safety keys on the presence of an extractor_run — re-queues it
+      // every cycle forever (the icon.svg "indexed every minute" bug).
+      await recordSkippedTrace({
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'no_vision_text',
+        details: {
+          node_type: node.type,
+          title: node.title,
+          filename: existingData.filename,
+          mime: fileMime,
+          hint: 'Image produced no describable text (a vector/blank image, or the vision worker is unwired/failing). Nothing to index; the node is marked processed so the sweep stops re-queuing it.',
+        },
+      });
+      return;
+    }
     rawBody = visionText;
   } else {
     rawBody = await readNodeBodyRaw(node);
