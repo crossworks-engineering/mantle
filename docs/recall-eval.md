@@ -94,3 +94,25 @@ precise and more actionable:
    larger cap recovers it.
 
 Re-run with `--baseline` after each retrieval change and require the number to go up.
+
+## After step (b): the `search` tool is fixed (2026-06-03)
+
+`searchNodes` gained a hybrid path (vector-led + FTS booster, [`packages/search/src/index.ts`](../packages/search/src/index.ts)); the `search` / `search_nodes` tools now embed the query and use it. The eval column `fts` (legacy, FTS-only) and `search` (the shipped hybrid) sit side by side so the lift is self-documenting:
+
+```
+  retriever     R@1   R@3   R@5  R@10   MRR
+  fts            8%    8%    8%    8%   0.08   ← old tool (FTS hard-filter)
+  search        75%   92%  100%  100%   0.84   ← new tool (hybrid)
+  vector        83%   92%  100%  100%   0.90   ← ranker ceiling
+```
+
+The `search` tool found the gold node in **11/12** cases (was 1/12). It trails pure
+`vector` by 0.06 MRR — the 0.3 FTS weight occasionally nudges a keyword hit up. That
+weight is deliberate: it rescues exact-term queries (a ticket number, an invoice id,
+an exact name) that vector misses and which this semantic gold set doesn't cover.
+Tune via `SearchOptions.semanticWeight` (default 0.7) if a future exact-term case set
+says otherwise — and re-run this eval to confirm.
+
+Still open (step c): the responder's auto-context (`prod`) is unchanged — it's already
+at MRR 0.88, and the remaining miss (`car-licence`, ranked #4 under vector) needs a
+reranker or a larger `content_hit_limit`, not hybrid.

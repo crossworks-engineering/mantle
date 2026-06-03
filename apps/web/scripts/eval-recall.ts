@@ -43,7 +43,10 @@ import { searchNodes, searchChunks } from '@mantle/search';
 import { loadConversationContext } from '@mantle/agent-runtime';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const RETRIEVERS = ['prod', 'vector', 'fts', 'chunks', 'rrf'] as const;
+// `fts` = legacy FTS-only searchNodes (the pre-(b) baseline, kept as a reference
+// for why we changed it). `search` = the shipped hybrid searchNodes the `search`
+// / `search_nodes` tools now use (vector-led + FTS booster).
+const RETRIEVERS = ['prod', 'vector', 'fts', 'search', 'chunks', 'rrf'] as const;
 type Retriever = (typeof RETRIEVERS)[number];
 const K_VALUES = [1, 3, 5, 10] as const;
 
@@ -183,16 +186,23 @@ async function runCase(
   const ctx = await loadConversationContext({ ownerId, agent, inboundText: gc.query });
   const prod: Candidate[] = ctx.contentHits.map((h) => ({ id: h.nodeId, title: h.title }));
 
-  // vector / fts / chunks at RANK_K.
+  // vector / fts / search / chunks at RANK_K.
   const vector = await vectorNodes(ownerId, queryVec, rankK);
-  const ftsRows = await searchNodes({ ownerId, q: gc.query, limit: rankK });
+  const ftsRows = await searchNodes({ ownerId, q: gc.query, limit: rankK }); // legacy FTS-only
   const fts: Candidate[] = ftsRows.map((r) => ({ id: r.id, title: r.title }));
+  const searchRows = await searchNodes({
+    ownerId,
+    q: gc.query,
+    limit: rankK,
+    queryEmbedding: queryVec, // the shipped hybrid path
+  });
+  const search: Candidate[] = searchRows.map((r) => ({ id: r.id, title: r.title }));
   const chunkRows = await searchChunks({ ownerId, embedding: queryVec, limit: rankK });
   const chunks = dedup(chunkRows.map((r) => ({ id: r.nodeId, title: r.nodeTitle })));
 
   const rrf = fuseRRF([vector, fts, chunks]);
 
-  const lists: Record<Retriever, Candidate[]> = { prod, vector, fts, chunks, rrf };
+  const lists: Record<Retriever, Candidate[]> = { prod, vector, fts, search, chunks, rrf };
   const ranks = {} as Record<Retriever, number>;
   for (const r of RETRIEVERS) ranks[r] = goldRank(lists[r], gc);
 

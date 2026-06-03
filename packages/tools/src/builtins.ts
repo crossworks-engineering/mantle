@@ -111,13 +111,26 @@ const search_nodes: BuiltinToolDef = {
   },
   handler: async (input, ctx) => {
     try {
+      const q = strOpt(input.q);
+      // Embed the query so searchNodes runs its hybrid (vector-led) ranker —
+      // the legacy FTS-only path recalls ~8% on natural-language queries
+      // (docs/recall-eval.md). A failed embed degrades to FTS, not an error.
+      let queryEmbedding: number[] | undefined;
+      if (q && q.trim()) {
+        try {
+          queryEmbedding = await embed(ctx.ownerId, q);
+        } catch (err) {
+          console.error('[search_nodes] query embed failed, falling back to FTS:', err);
+        }
+      }
       const rows = await searchNodes({
         ownerId: ctx.ownerId,
-        q: strOpt(input.q),
+        q,
         branch: strOpt(input.branch),
         type: strOpt(input.type) as Parameters<typeof searchNodes>[0]['type'],
         tags: Array.isArray(input.tags) ? (input.tags as string[]) : undefined,
         limit: num(input.limit, 20),
+        queryEmbedding,
       });
       ctx.step?.setOutput({ count: rows.length });
       return {

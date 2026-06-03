@@ -136,6 +136,58 @@ if (!UUID_RE.test(OWNER_ID)) {
 
 const server = new McpServer({ name: 'mantle', version: '0.0.1' });
 
+// ─── response hygiene ───────────────────────────────────────────────────────
+// MCP tool results are serialised straight into the model's context, so they
+// must NOT leak raw DB internals. A `select()` row carries `embedding` (768
+// floats ≈ 9 KB) and `searchTsv` (the full tsvector ≈ 50 KB on a big doc) —
+// pure noise to a reader that blows the context budget (a single `search` hit
+// measured 125 KB, an `entity_search` for one name 76 KB, ~98% vectors). Strip
+// those keys from every row before it goes out. See docs/recall-eval.md and the
+// audit that motivated this.
+const STRIP_KEYS = new Set(['embedding', 'searchTsv', 'search_tsv']);
+function stripVectors<T>(value: T): T {
+  if (Array.isArray(value)) return value.map((v) => stripVectors(v)) as unknown as T;
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (STRIP_KEYS.has(k)) continue;
+      out[k] = stripVectors(v);
+    }
+    return out as T;
+  }
+  return value;
+}
+
+/** Standard JSON tool reply, with vectors/tsvector stripped. */
+function jsonReply(value: unknown) {
+  return { content: [{ type: 'text' as const, text: JSON.stringify(stripVectors(value), null, 2) }] };
+}
+
+/** Lean projection of a node for list/search results: the "spine" (title, tags,
+ *  summary), never the full body (`data.content`) or the index internals. Use
+ *  node_read / file_read to fetch a body on demand. Mirrors the in-process
+ *  `search_nodes` builtin so the two tool surfaces don't drift. */
+function leanNode(n: {
+  id: string;
+  type: string;
+  title: string;
+  path: string | null;
+  tags: string[] | null;
+  data: unknown;
+  updatedAt: Date;
+}) {
+  const data = (n.data ?? {}) as Record<string, unknown>;
+  return {
+    id: n.id,
+    type: n.type,
+    title: n.title,
+    path: n.path,
+    tags: n.tags,
+    summary: typeof data.summary === 'string' ? data.summary : null,
+    updatedAt: n.updatedAt instanceof Date ? n.updatedAt.toISOString() : n.updatedAt,
+  };
+}
+
 server.tool(
   'tree_list',
   'List children of a branch in the Mantle tree. Pass no path for top-level branches.',
@@ -148,13 +200,13 @@ server.tool(
         and(eq(nodes.ownerId, OWNER_ID!), path ? (eq as any)(nodes.path, path) : eq(nodes.type, 'branch')),
       )
       .limit(200);
-    return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+    return jsonReply(rows);
   },
 );
 
 server.tool(
   'search',
-  "Hybrid full-text + tree search over Jason's Mantle. Use `branch` (ltree path) to scope, `type` to filter.",
+  "Hybrid semantic + full-text search over Jason's Mantle — ranks by meaning (vector) with keyword as a booster, so vague/natural queries work, not just exact words. Use `branch` (ltree path) to scope, `type` to filter. Returns the spine (title, tags, summary) — use node_read / file_read / email_get for a full body.",
   {
     q: z.string().optional(),
     branch: z.string().optional(),
@@ -181,6 +233,17 @@ server.tool(
     limit: z.number().int().min(1).max(200).optional(),
   },
   async ({ q, branch, type, tags, since, limit }) => {
+    // Embed the query so searchNodes runs its hybrid (vector-led) ranker. The
+    // legacy FTS-only path recalled ~8% on natural-language queries
+    // (docs/recall-eval.md); a failed embed degrades to FTS, not an error.
+    let queryEmbedding: number[] | undefined;
+    if (q && q.trim()) {
+      try {
+        queryEmbedding = await embed(OWNER_ID!, q);
+      } catch (err) {
+        console.error('[search] query embed failed, falling back to FTS:', err);
+      }
+    }
     const results = await searchNodes({
       ownerId: OWNER_ID!,
       q,
@@ -189,8 +252,9 @@ server.tool(
       tags,
       since: since ? new Date(since) : undefined,
       limit,
+      queryEmbedding,
     });
-    return { content: [{ type: 'text', text: JSON.stringify(results, null, 2) }] };
+    return jsonReply(results.map(leanNode));
   },
 );
 
@@ -205,7 +269,7 @@ server.tool(
   async ({ q, branch, limit }) => {
     const embedding = await embed(OWNER_ID!, q);
     const hits = await searchChunks({ ownerId: OWNER_ID!, embedding, branch, limit: limit ?? 10 });
-    return { content: [{ type: 'text', text: JSON.stringify(hits, null, 2) }] };
+    return jsonReply(hits);
   },
 );
 
@@ -216,7 +280,7 @@ server.tool(
   async ({ id }) => {
     const [row] = await db.select().from(emails).where(eq(emails.id, id)).limit(1);
     if (!row) return { content: [{ type: 'text', text: 'not found' }], isError: true };
-    return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+    return jsonReply(row);
   },
 );
 
@@ -238,7 +302,7 @@ server.tool(
       .where(conds.length ? and(...conds) : undefined)
       .orderBy(desc(emails.internalDate))
       .limit(limit ?? 50);
-    return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+    return jsonReply(rows);
   },
 );
 
@@ -255,10 +319,10 @@ server.tool(
     await ensureFilesRootBranch(OWNER_ID!);
     if (tree) {
       const all = await listAllFolders(OWNER_ID!);
-      return { content: [{ type: 'text', text: JSON.stringify(all, null, 2) }] };
+      return jsonReply(all);
     }
     const rows = await listFolders({ ownerId: OWNER_ID!, parentPath: parent ?? 'files' });
-    return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+    return jsonReply(rows);
   },
 );
 
@@ -279,7 +343,7 @@ server.tool(
         slug,
         description,
       });
-      return { content: [{ type: 'text', text: JSON.stringify(folder, null, 2) }] };
+      return jsonReply(folder);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { content: [{ type: 'text', text: `folder_create failed: ${msg}` }], isError: true };
@@ -312,7 +376,7 @@ server.tool(
     if (!updated) {
       return { content: [{ type: 'text', text: 'folder not found' }], isError: true };
     }
-    return { content: [{ type: 'text', text: JSON.stringify(updated, null, 2) }] };
+    return jsonReply(updated);
   },
 );
 
@@ -337,7 +401,7 @@ server.tool(
   },
   async ({ parent_path }) => {
     const rows = await listFiles({ ownerId: OWNER_ID!, parentPath: parent_path });
-    return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+    return jsonReply(rows);
   },
 );
 
@@ -380,7 +444,7 @@ server.tool(
         bytes,
         overwrite,
       });
-      return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+      return jsonReply(row);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { content: [{ type: 'text', text: `file_upload failed: ${msg}` }], isError: true };
@@ -404,7 +468,7 @@ server.tool(
         ? { content_text: res.bytes.toString('utf8') }
         : { content_base64: res.bytes.toString('base64') }),
     };
-    return { content: [{ type: 'text', text: JSON.stringify(out, null, 2) }] };
+    return jsonReply(out);
   },
 );
 
@@ -417,7 +481,7 @@ server.tool(
     if (!row) {
       return { content: [{ type: 'text', text: 'file not found' }], isError: true };
     }
-    return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+    return jsonReply(row);
   },
 );
 
@@ -449,7 +513,7 @@ server.tool(
   },
   async ({ status, limit }) => {
     const rows = await listPendingCalls(OWNER_ID!, { status: status ?? 'pending', limit });
-    return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+    return jsonReply(rows);
   },
 );
 
@@ -462,7 +526,7 @@ server.tool(
     if (!row) {
       return { content: [{ type: 'text', text: 'not found or already decided' }], isError: true };
     }
-    return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+    return jsonReply(row);
   },
 );
 
@@ -475,7 +539,7 @@ server.tool(
     if (!row) {
       return { content: [{ type: 'text', text: 'not found or already decided' }], isError: true };
     }
-    return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+    return jsonReply(row);
   },
 );
 
@@ -488,7 +552,7 @@ server.tool(
     if (!row) {
       return { content: [{ type: 'text', text: 'not found' }], isError: true };
     }
-    return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+    return jsonReply(row);
   },
 );
 
@@ -504,7 +568,7 @@ server.tool(
   },
   async ({ q, kind, limit }) => {
     const hits = await searchEntities({ ownerId: OWNER_ID!, q, kind, limit });
-    return { content: [{ type: 'text', text: JSON.stringify(hits, null, 2) }] };
+    return jsonReply(hits);
   },
 );
 
@@ -527,7 +591,7 @@ server.tool(
       currentOnly: current_only,
       limit,
     });
-    return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+    return jsonReply(rows);
   },
 );
 
@@ -552,7 +616,7 @@ server.tool(
       directed,
       limit,
     });
-    return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+    return jsonReply(rows);
   },
 );
 
@@ -571,7 +635,7 @@ server.tool(
       includeRetired: include_retired,
       limit,
     });
-    return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+    return jsonReply(rows);
   },
 );
 
@@ -584,7 +648,7 @@ server.tool(
   },
   async ({ entity_id, limit }) => {
     const rows = await entityMentions({ ownerId: OWNER_ID!, entityId: entity_id, limit });
-    return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+    return jsonReply(rows);
   },
 );
 
@@ -626,7 +690,7 @@ server.tool(
       .where(and(...conds))
       .orderBy(asc(telegramMessages.sentAt))
       .limit(limit ?? 20);
-    return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+    return jsonReply(rows);
   },
 );
 
@@ -826,7 +890,7 @@ server.tool(
   },
   async ({ query, tag }) => {
     const rows = await listNotes(OWNER_ID!, { query, tag });
-    return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+    return jsonReply(rows);
   },
 );
 
@@ -837,7 +901,7 @@ server.tool(
   async ({ id }) => {
     const row = await getNote(OWNER_ID!, id);
     if (!row) return { content: [{ type: 'text', text: 'not found' }] };
-    return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+    return jsonReply(row);
   },
 );
 
@@ -855,7 +919,7 @@ server.tool(
       content: content ?? '',
       tags: tags ?? [],
     });
-    return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+    return jsonReply(row);
   },
 );
 
@@ -871,7 +935,7 @@ server.tool(
   async ({ id, title, content, tags }) => {
     const row = await updateNote(OWNER_ID!, id, { title, content, tags });
     if (!row) return { content: [{ type: 'text', text: 'not found' }] };
-    return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+    return jsonReply(row);
   },
 );
 
@@ -900,7 +964,7 @@ server.tool(
   },
   async ({ query, tag }) => {
     const rows = await listPages(OWNER_ID!, { query, tag });
-    return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+    return jsonReply(rows);
   },
 );
 
@@ -911,7 +975,7 @@ server.tool(
   async ({ id }) => {
     const row = await getPage(OWNER_ID!, id);
     if (!row) return { content: [{ type: 'text', text: 'not found' }] };
-    return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+    return jsonReply(row);
   },
 );
 
@@ -931,7 +995,7 @@ server.tool(
   },
   async ({ query, tag }) => {
     const rows = await listTables(OWNER_ID!, { query, tag });
-    return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+    return jsonReply(rows);
   },
 );
 
@@ -954,7 +1018,7 @@ server.tool(
       total_rows: listed.total,
       aggregates: doc.aggregates ?? {},
     };
-    return { content: [{ type: 'text', text: JSON.stringify(out, null, 2) }] };
+    return jsonReply(out);
   },
 );
 
@@ -966,7 +1030,7 @@ server.tool(
     const row = await getTable(OWNER_ID!, table_id);
     if (!row) return { content: [{ type: 'text', text: 'not found' }] };
     const listed = listRows(ensureTableDoc(row.data), { offset: offset ?? 0, limit: limit ?? 50 });
-    return { content: [{ type: 'text', text: JSON.stringify(listed, null, 2) }] };
+    return jsonReply(listed);
   },
 );
 
@@ -986,7 +1050,7 @@ server.tool(
       priority: priority ?? 'all',
       tag,
     });
-    return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+    return jsonReply(rows);
   },
 );
 
@@ -997,7 +1061,7 @@ server.tool(
   async ({ id }) => {
     const row = await getTodo(OWNER_ID!, id);
     if (!row) return { content: [{ type: 'text', text: 'not found' }] };
-    return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+    return jsonReply(row);
   },
 );
 
@@ -1021,7 +1085,7 @@ server.tool(
       dueAt,
       tags,
     });
-    return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+    return jsonReply(row);
   },
 );
 
@@ -1040,7 +1104,7 @@ server.tool(
   async ({ id, ...rest }) => {
     const row = await updateTodo(OWNER_ID!, id, rest);
     if (!row) return { content: [{ type: 'text', text: 'not found' }] };
-    return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+    return jsonReply(row);
   },
 );
 
@@ -1064,7 +1128,7 @@ server.tool(
   },
   async ({ query, window, tag }) => {
     const rows = await listEvents(OWNER_ID!, { query, window, tag });
-    return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] };
+    return jsonReply(rows);
   },
 );
 
@@ -1075,7 +1139,7 @@ server.tool(
   async ({ id }) => {
     const row = await getEvent(OWNER_ID!, id);
     if (!row) return { content: [{ type: 'text', text: 'not found' }] };
-    return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+    return jsonReply(row);
   },
 );
 
@@ -1096,7 +1160,7 @@ server.tool(
   },
   async (args) => {
     const row = await createEvent(OWNER_ID!, args);
-    return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+    return jsonReply(row);
   },
 );
 
@@ -1119,7 +1183,7 @@ server.tool(
   async ({ id, ...rest }) => {
     const row = await updateEvent(OWNER_ID!, id, rest);
     if (!row) return { content: [{ type: 'text', text: 'not found' }] };
-    return { content: [{ type: 'text', text: JSON.stringify(row, null, 2) }] };
+    return jsonReply(row);
   },
 );
 
@@ -1140,7 +1204,7 @@ server.tool(
   {},
   async () => {
     const peers = await listPeers(OWNER_ID!);
-    return { content: [{ type: 'text', text: JSON.stringify(peers, null, 2) }] };
+    return jsonReply(peers);
   },
 );
 
@@ -1157,7 +1221,7 @@ server.tool(
     const res = await queryPeer(OWNER_ID!, peer, opts);
     return {
       content: [
-        { type: 'text', text: res.ok ? JSON.stringify(res.data, null, 2) : `Error: ${res.error}` },
+        { type: 'text', text: res.ok ? JSON.stringify(stripVectors(res.data), null, 2) : `Error: ${res.error}` },
       ],
     };
   },
@@ -1171,7 +1235,7 @@ server.tool(
     const res = await getPeerNode(OWNER_ID!, peer, nodeId);
     return {
       content: [
-        { type: 'text', text: res.ok ? JSON.stringify(res.data, null, 2) : `Error: ${res.error}` },
+        { type: 'text', text: res.ok ? JSON.stringify(stripVectors(res.data), null, 2) : `Error: ${res.error}` },
       ],
     };
   },

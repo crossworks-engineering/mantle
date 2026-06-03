@@ -1944,6 +1944,13 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
               )
               .returning({ id: facts.id });
             retired = retiredRows.length;
+            // A complete pass clears any stale incomplete-marker from a prior
+            // capped run (guarded by `?` so it's a no-op when absent — no write
+            // amplification on the normal path).
+            await db
+              .update(nodes)
+              .set({ data: sql`${nodes.data} - 'extract_incomplete'` })
+              .where(and(eq(nodes.id, node.id), sql`jsonb_exists(${nodes.data}, 'extract_incomplete')`));
           } else {
             await db
               .update(facts)
@@ -1956,6 +1963,22 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
                   eq(facts.dirty, true),
                 ),
               );
+            // Durable, queryable proof that this node has facts the extractor
+            // never persisted (the cost cap cut the run short). Logs + the amber
+            // trace step get pruned; this marker survives so the loss is
+            // recoverable: raise extract_cost_cap_micro_usd for the worker, then
+            // re-fire pg_notify('node_ingested') on these nodes. Cleared on the
+            // next complete pass (above).
+            const incomplete = {
+              reason: 'fact_cost_cap',
+              dropped: parsed.facts.length - capExceededAt,
+              processed: capExceededAt,
+              at: new Date().toISOString(),
+            };
+            await db
+              .update(nodes)
+              .set({ data: sql`${nodes.data} || ${JSON.stringify({ extract_incomplete: incomplete })}::jsonb` })
+              .where(eq(nodes.id, node.id));
           }
           const output: Record<string, unknown> = { ...t, retired };
           if (capExceededAt != null) {
