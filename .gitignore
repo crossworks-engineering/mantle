@@ -66,3 +66,8 @@ logs/
 # manager from skills-lock.json); not needed to build or run the app.
 .agents/
 skills-lock.json
+
+# Recall-eval run snapshots — regenerated per run, contain personal queries.
+# The gold cases (recall-cases.json) and the runner ARE committed.
+apps/web/scripts/eval/last-run.json
+apps/web/scripts/eval/*.run.json

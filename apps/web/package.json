@@ -34,6 +34,7 @@
     "dedupe:edges": "tsx --env-file-if-exists=./.env.local scripts/dedupe-edges.ts",
     "regenerate:digests": "tsx --env-file-if-exists=./.env.local scripts/regenerate-digests.ts",
     "re-embed": "tsx --env-file-if-exists=./.env.local scripts/re-embed.ts",
+    "eval:recall": "tsx --env-file-if-exists=./.env.local scripts/eval-recall.ts",
     "rotate:master-key": "tsx --env-file-if-exists=./.env.local scripts/rotate-master-key.ts"
   },
   "dependencies": {

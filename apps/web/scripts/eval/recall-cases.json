@@ -1,0 +1,86 @@
+[
+  {
+    "id": "fibre-internet",
+    "query": "my home internet keeps dropping out, what did I record about the problem",
+    "expectNodeIds": ["b6954ca7-ae6e-49c4-b0f3-22210811aa33"],
+    "expectNodeTitleIncludes": ["Fibre"],
+    "note": "page: Afrihost/OpenServe PPPoE drops. Query avoids 'fibre'/'Afrihost' to test semantic recall."
+  },
+  {
+    "id": "sermon-potter-clay",
+    "query": "the message I preached about God shaping us the way a potter shapes clay",
+    "expectNodeIds": ["2aa89804-e538-4e1e-a4b6-4887ed618a2f"],
+    "expectNodeTitleIncludes": ["Potter"],
+    "note": "page/sermon: Jeremiah 18-21, Potter & Clay."
+  },
+  {
+    "id": "car-licence",
+    "query": "when does the licence disc on my SUV need renewing",
+    "expectNodeIds": ["f63a74fb-29df-48ba-a701-62c52d00dec8"],
+    "expectNodeTitleIncludes": ["Santa Fe"],
+    "note": "page: Hyundai Santa Fe ZPC114W, licence expiry. Query avoids 'Hyundai'/'Santa Fe'."
+  },
+  {
+    "id": "bank-account",
+    "query": "the details of my personal bank account",
+    "expectNodeIds": ["698f1ba8-1bba-4796-af08-49ebd99d13be"],
+    "expectNodeTitleIncludes": ["Nedbank Personal"],
+    "note": "page: Jason Schoeman Nedbank personal account."
+  },
+  {
+    "id": "cwe-monthly-expenses",
+    "query": "roughly how much does my company pay out in costs each month",
+    "expectNodeIds": ["d9122aaa-f470-47df-a7ae-a43bd209d9d9"],
+    "expectNodeTitleIncludes": ["Monthly Recurring Expenses"],
+    "note": "page: CWE monthly recurring expenses ~R196k. Competes with other CWE pages."
+  },
+  {
+    "id": "cwe-salaries",
+    "query": "what everyone on the team gets paid",
+    "expectNodeIds": ["0eb886bf-c5b8-4421-bd08-70adf54a6b35"],
+    "expectNodeTitleIncludes": ["Salary Table"],
+    "note": "page: CWE salary table. Query avoids 'salary'."
+  },
+  {
+    "id": "cwe-founded",
+    "query": "when did I start my engineering company and what does it specialise in",
+    "expectNodeIds": ["6ae20770-ff21-42d6-8a8d-88e4ba71ec3c"],
+    "expectNodeTitleIncludes": ["Internal Info"],
+    "note": "page: CWE internal info — founded 2016, robotics/3D printing/oil refineries."
+  },
+  {
+    "id": "mantle-competitors",
+    "query": "the research I saved comparing my system to similar tools out there",
+    "expectNodeIds": ["619cff76-e505-4acf-a8d7-ce3f60cc7b54"],
+    "expectNodeTitleIncludes": ["Another System Like Mantle"],
+    "note": "page: competitor comparison research."
+  },
+  {
+    "id": "nintendo-history",
+    "query": "that note about how the video game company got its start over a century ago",
+    "expectNodeIds": ["b245750c-62fa-40cb-938b-5ad5d5eb7a3e"],
+    "expectNodeTitleIncludes": ["Nintendo"],
+    "note": "page: How Nintendo Was Founded (1889 hanafuda). Query avoids 'Nintendo'."
+  },
+  {
+    "id": "supplier-directory",
+    "query": "where's the list of businesses we buy parts and materials from",
+    "expectNodeIds": ["03b02d1b-8457-45cd-a81f-c71fa2fb741b"],
+    "expectNodeTitleIncludes": ["Supplier Directory"],
+    "note": "page: CWE supplier directory. Query avoids 'supplier'."
+  },
+  {
+    "id": "prayer-hour",
+    "query": "when is the midweek church prayer gathering",
+    "expectNodeIds": ["8109d137-84b4-4705-89e7-d0bec12095dd"],
+    "expectNodeTitleIncludes": ["Open Door Prayer Hour"],
+    "note": "event: weekly Wednesday 7pm prayer hour at Barrydale Christian Fellowship."
+  },
+  {
+    "id": "dance-mia",
+    "query": "the dancing class I arranged to do with my wife",
+    "expectNodeIds": ["c5bf8c6d-4599-46dd-8b59-c31aede891a2"],
+    "expectNodeTitleIncludes": ["Dance Lesson"],
+    "note": "event: Dance Lesson with Mia (wife)."
+  }
+]
