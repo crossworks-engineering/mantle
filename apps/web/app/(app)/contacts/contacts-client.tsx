@@ -83,7 +83,7 @@ export function ContactsClient({
           </div>
           <NewContactButton />
         </div>
-        <ul className="min-h-0 flex-1 overflow-y-auto p-2">
+        <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto scrollbar-thin p-3">
           {contacts.length === 0 ? (
             <li className="px-2 py-8 text-center text-sm text-muted-foreground">
               {query ? `No contacts match "${query}".` : 'No contacts yet. Click + to add one.'}
@@ -96,10 +96,8 @@ export function ContactsClient({
                   onClick={() => go({ id: c.id })}
                   disabled={pending}
                   className={cn(
-                    'block w-full rounded-md border-l-2 border-l-transparent px-3 py-2 text-left text-sm transition-colors',
-                    selected?.id === c.id
-                      ? 'border-l-primary text-foreground'
-                      : 'hover:bg-muted/50',
+                    'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left text-sm transition-colors hover:bg-muted/50',
+                    selected?.id === c.id && 'border-l-primary',
                   )}
                 >
                   <div className="truncate font-medium">{c.title}</div>

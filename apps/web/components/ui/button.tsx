@@ -14,12 +14,12 @@ const buttonVariants = cva(
         ghost: 'hover:bg-accent hover:text-accent-foreground',
         destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
         link: 'text-primary underline-offset-4 hover:underline',
-        // Semantic approve/deny — used by sender curation buttons. Same
-        // saturated colours in light and dark mode; the white text reads
-        // fine on both.
-        approve:
-          'bg-green-600 text-white hover:bg-green-700 focus-visible:ring-green-500 disabled:bg-green-600/40',
-        deny: 'bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500 disabled:bg-red-600/40',
+        // Semantic approve/deny aliases — used by sender curation buttons.
+        // Theme-aware: approve uses the primary action colour, deny the
+        // destructive colour, so they recolour with the active theme instead
+        // of forcing green/red.
+        approve: 'bg-primary text-primary-foreground hover:bg-primary/90',
+        deny: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
       },
       size: {
         default: 'h-10 px-4 py-2',
