@@ -790,7 +790,7 @@ agents. Different model type, different endpoint, different scale.
   $0 — the vectors never leave the box, which is the whole point of a
   self-hosted brain. (Until 2026-05-31 the default was cloud
   `openai/text-embedding-3-small` at 1536 dims; the migration is recorded in
-  [`handoff-local-embeddings-2026-05-30.md`](./handoff-local-embeddings-2026-05-30.md).)
+  [`handoff-local-embeddings-2026-05-30.md`](./_archive/handoff-local-embeddings-2026-05-30.md).)
 - **API path.** The `local` provider calls Ollama's embeddings endpoint
   directly (`POST /api/embeddings` on the Ollama host) — no OpenRouter, no
   API key. Cloud models, if selected, still route via OpenRouter's

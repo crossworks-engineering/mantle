@@ -50,6 +50,7 @@ export {
   ltreeForDocPath,
   listMarkdownRelPaths,
   readMarkdownFile,
+  isHiddenDocRelPath,
   upsertDocFromDisk,
   deleteDocByRelPath,
   diffDocSets,

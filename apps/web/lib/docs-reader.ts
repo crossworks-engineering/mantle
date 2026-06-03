@@ -3,6 +3,7 @@ import 'server-only';
 import path from 'node:path';
 import {
   collectionRoot,
+  isHiddenDocRelPath,
   listDocCollections,
   listMarkdownRelPaths,
   readMarkdownFile,
@@ -95,6 +96,8 @@ export async function getReaderDoc(
   collectionKey: string,
   relPath: string,
 ): Promise<ReaderDoc | null> {
+  if (isHiddenDocRelPath(relPath)) return null; // hidden (_archive/…) — not browsable
+
   const cols = await listDocCollections(ownerId);
   const col = cols.find((c) => c.key === collectionKey);
   if (!col) return null;

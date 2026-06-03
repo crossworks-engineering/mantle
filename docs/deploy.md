@@ -78,7 +78,7 @@ Certs persist in the `caddy_data` volume — don't wipe it, or you risk LE rate 
 >   updates — no emulation, no registry pull): `rsync` the source to the VPS and
 >   run `docker compose build web` there. The image is local, so no `docker login`
 >   / pull needed. This is how the Contabo deploy was done — see
->   [`handoff-deploy-contabo-2026-06-01.md`](./handoff-deploy-contabo-2026-06-01.md).
+>   [`handoff-deploy-contabo-2026-06-01.md`](./_archive/handoff-deploy-contabo-2026-06-01.md).
 > - **Cross-build for amd64 on the Mac**: `docker buildx build --platform
 >   linux/amd64 -t <ns>/mantle:<tag> --push .` (runs amd64 under QEMU — slow).
 > - **Multi-arch**: `--platform linux/amd64,linux/arm64` (slowest; one tag runs

@@ -264,9 +264,24 @@ export function diffDocSets(
 /** Markdown filename matcher — shared by the walker, listing, and read guard. */
 const MARKDOWN_RE = /\.(md|markdown)$/i;
 
-/** Recursively collect collection-relative `*.md` paths under a root (skipping
- *  dotfiles/dirs). Returns `[]` when the root is missing (ENOENT). The shared
- *  traversal behind `walkMarkdown` and `listMarkdownRelPaths`. */
+/** A path segment is "hidden" when it starts with `.` (dotfiles, as always) or
+ *  `_` — the convention for docs kept on disk but excluded from BOTH the reader
+ *  and brain indexing (e.g. `docs/_archive/` for stale handoffs/retrospectives). */
+function isHiddenSegment(name: string): boolean {
+  return name.startsWith('.') || name.startsWith('_');
+}
+
+/** True when any segment of a collection-relative path is hidden (`.`/`_`-prefixed).
+ *  The walker already drops these from listings; this guards direct deep-link reads
+ *  so a crafted `/docs/<col>/_archive/x.md` URL can't render a hidden doc. */
+export function isHiddenDocRelPath(relPath: string): boolean {
+  return relPath.split('/').some(isHiddenSegment);
+}
+
+/** Recursively collect collection-relative `*.md` paths under a root, skipping
+ *  hidden (`.`/`_`-prefixed) files and dirs. Returns `[]` when the root is missing
+ *  (ENOENT). The shared traversal behind `walkMarkdown` and `listMarkdownRelPaths`,
+ *  so `_`-folders drop out of nav, listing, and indexing at once. */
 async function walkMarkdownRelPaths(root: string): Promise<string[]> {
   const out: string[] = [];
   const resolvedRoot = path.resolve(root);
@@ -279,7 +294,7 @@ async function walkMarkdownRelPaths(root: string): Promise<string[]> {
       throw err;
     }
     for (const entry of entries) {
-      if (entry.name.startsWith('.')) continue; // dotfiles + dotdirs
+      if (isHiddenSegment(entry.name)) continue; // .dotfiles + _archive et al.
       const abs = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         await walk(abs);

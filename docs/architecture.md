@@ -1048,7 +1048,7 @@ Two corollaries:
   **Memory-index** card shows a live duplicate count (`graphIntegrity()` in
   `apps/web/lib/dashboard.ts`): green when clean, amber with the one-shot
   `pnpm dedupe:edges --apply` remedy if a regression ever surfaces. A monitor,
-  not a fixer — see [`agent-overhaul-2026-05.md` §2e](./agent-overhaul-2026-05.md).
+  not a fixer — see [`agent-overhaul-2026-05.md` §2e](./_archive/agent-overhaul-2026-05.md).
 
 ## 9l. Model catalog — live context, capabilities, pricing
 
@@ -1592,7 +1592,7 @@ stack. `pg_restore --data-only` loads the latest backup. Insert your
 In rough priority order. Items the audit completed have been removed
 from this list; what's here is genuinely still open. The May 2026
 hardening pass closed a batch of these — see
-[`hardening-audit-2026-05.md`](./hardening-audit-2026-05.md) for what
+[`hardening-audit-2026-05.md`](./_archive/hardening-audit-2026-05.md) for what
 was fixed, accepted, or deliberately left (and why).
 
 **Deployment & operations**
@@ -1702,7 +1702,7 @@ was fixed, accepted, or deliberately left (and why).
   with commit shas. The architecture deep-dive + engineering
   retrospective (call-site inventory, message-grammar walkthrough,
   audit findings, cost math, known sharp edges) lives in
-  [`docs/phase-3-retrospective.md`](./phase-3-retrospective.md).
+  [`docs/phase-3-retrospective.md`](./_archive/phase-3-retrospective.md).
 - **Embedding is fully adapter-routed** as of the Stage 1 push
   (5dc3984). `@mantle/embeddings` dispatches through
   `getEmbeddingAdapter(provider)` — five adapters (openrouter, openai,

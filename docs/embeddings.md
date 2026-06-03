@@ -11,7 +11,7 @@ For the wider memory architecture, [`memory.md`](./memory.md) is the spine; embe
 > therefore **768 dims, not 1536** — and the implications invert: the local
 > Gemma model is the one that fits, and the old cloud 1536 models are the ones
 > that now need a schema migration to use. The migration history lives in
-> [`handoff-local-embeddings-2026-05-30.md`](./handoff-local-embeddings-2026-05-30.md).
+> [`handoff-local-embeddings-2026-05-30.md`](./_archive/handoff-local-embeddings-2026-05-30.md).
 
 ---
 

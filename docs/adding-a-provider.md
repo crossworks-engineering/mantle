@@ -2,7 +2,7 @@
 
 Cookbook for adding a new provider (or a new capability to an existing one) to Mantle's adapter framework. Written for AI agents — every step is "edit this exact file" with a copy-from-this-existing-adapter pointer.
 
-For the conceptual deep-dive on how dispatch works, read [`docs/phase-3-retrospective.md` Part 1](./phase-3-retrospective.md) first (15 minutes — it'll save you from grepping). For the per-capability routing table, [`docs/ai-workers.md` §8.1](./ai-workers.md#81-provider-routing-today--what-goes-through-what).
+For the conceptual deep-dive on how dispatch works, read [`docs/phase-3-retrospective.md` Part 1](./_archive/phase-3-retrospective.md) first (15 minutes — it'll save you from grepping). For the per-capability routing table, [`docs/ai-workers.md` §8.1](./ai-workers.md#81-provider-routing-today--what-goes-through-what).
 
 ---
 
@@ -130,7 +130,7 @@ If you're adding a CHAT adapter, your `chat()` function must handle all four mes
 
 4. **`role: 'tool'` messages**: tool results from the runtime. Anthropic models these as USER messages with `tool_result` blocks (coalesce consecutive tool messages into one user message). Google models them as user messages with `functionResponse` parts. OpenAI-compat keeps the dedicated `tool` role with `tool_call_id`.
 
-If you skip any of these four, ONE of: (a) the runtime sends an unsupported shape and the provider 400s with a cryptic error, OR (b) the field gets silently dropped and you get a hard-to-debug behaviour bug. Both bug classes were caught in the [Phase 3 audit](./phase-3-retrospective.md#the-audit-story--bugs-caught-before-shipping).
+If you skip any of these four, ONE of: (a) the runtime sends an unsupported shape and the provider 400s with a cryptic error, OR (b) the field gets silently dropped and you get a hard-to-debug behaviour bug. Both bug classes were caught in the [Phase 3 audit](./_archive/phase-3-retrospective.md#the-audit-story--bugs-caught-before-shipping).
 
 ### Chat-specific: cache markers
 
@@ -170,7 +170,7 @@ export {
 
 After save: the `findAdapterCatalogDrift` check at the bottom of the same file fires on next import. If your catalogue entry in `providers.ts` (step 1) doesn't list the right capability, you'll get a warning at module load + a CI test failure in [`catalog-consistency.test.ts`](../packages/voice/src/adapters/catalog-consistency.test.ts).
 
-**Also update the static wired table** — `WIRED_PROVIDERS` in [`registry.ts`](../packages/voice/src/adapters/registry.ts). Add your provider id under the capability you just registered (e.g. `chat`). This is the source of truth `isProviderWired` reads — and the **only** thing the settings UI can see, because the browser imports the adapter-free `@mantle/voice/client` leaf (no `register*` calls run there). Miss this and your provider works at runtime but shows **"not wired yet"** with an empty model dropdown in the worker/agent forms. [`registry-wired.test.ts`](../packages/voice/src/adapters/registry-wired.test.ts) asserts `WIRED_PROVIDERS` exactly matches the live registrations, so forgetting it fails CI rather than shipping silently. (This is the regression that hit when the client/server bundle split moved the UI off the live registry — see `handoff-session-2026-06-01.md` §5.)
+**Also update the static wired table** — `WIRED_PROVIDERS` in [`registry.ts`](../packages/voice/src/adapters/registry.ts). Add your provider id under the capability you just registered (e.g. `chat`). This is the source of truth `isProviderWired` reads — and the **only** thing the settings UI can see, because the browser imports the adapter-free `@mantle/voice/client` leaf (no `register*` calls run there). Miss this and your provider works at runtime but shows **"not wired yet"** with an empty model dropdown in the worker/agent forms. [`registry-wired.test.ts`](../packages/voice/src/adapters/registry-wired.test.ts) asserts `WIRED_PROVIDERS` exactly matches the live registrations, so forgetting it fails CI rather than shipping silently. (This is the regression that hit when the client/server bundle split moved the UI off the live registry — see `_archive/handoff-session-2026-06-01.md` §5.)
 
 ---
 

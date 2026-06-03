@@ -1190,7 +1190,7 @@ If you're reading the code, the canonical files to start with are:
 §7 has the final stage list with commit shas. For the post-Phase-3
 architecture deep-dive + engineering retrospective (audit findings,
 cost math, known sharp edges, reusable patterns), see
-[`docs/phase-3-retrospective.md`](./phase-3-retrospective.md).**
+[`docs/phase-3-retrospective.md`](./_archive/phase-3-retrospective.md).**
 
 **What's outstanding.** The chat-shaped workers (reflector / extractor /
 summarizer) and all agents (responder / assistant / custom) still

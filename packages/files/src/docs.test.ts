@@ -10,9 +10,19 @@
  * DATABASE_URL.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { collectionRoot, diffDocSets, docsRoot, effectiveBrainDepth, ltreeForDocPath } from './docs';
+import {
+  collectionRoot,
+  diffDocSets,
+  docsRoot,
+  effectiveBrainDepth,
+  isHiddenDocRelPath,
+  listMarkdownRelPaths,
+  ltreeForDocPath,
+} from './docs';
 
 const ROOT = path.resolve('/tmp/mantle-docs-test-root');
 
@@ -68,6 +78,48 @@ describe('diffDocSets', () => {
     const { toUpsert, toDelete } = diffDocSets({}, db);
     expect(toUpsert).toEqual([]);
     expect(toDelete).toEqual([]); // the guard: a blank root must not wipe the collection
+  });
+});
+
+describe('isHiddenDocRelPath', () => {
+  it('flags `_`-prefixed segments (the archive convention)', () => {
+    expect(isHiddenDocRelPath('_archive/handoff.md')).toBe(true);
+    expect(isHiddenDocRelPath('a/_drafts/x.md')).toBe(true);
+  });
+
+  it('flags dot-prefixed segments', () => {
+    expect(isHiddenDocRelPath('.hidden/x.md')).toBe(true);
+  });
+
+  it('allows normal paths', () => {
+    expect(isHiddenDocRelPath('guide/00-index.md')).toBe(false);
+    expect(isHiddenDocRelPath('architecture.md')).toBe(false);
+  });
+});
+
+describe('listMarkdownRelPaths', () => {
+  let tmp: string;
+  beforeAll(async () => {
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mantle-docs-walk-'));
+    await fs.mkdir(path.join(tmp, '_archive'), { recursive: true });
+    await fs.mkdir(path.join(tmp, '.hidden'), { recursive: true });
+    await fs.mkdir(path.join(tmp, 'sub'), { recursive: true });
+    await fs.writeFile(path.join(tmp, 'top.md'), '# top');
+    await fs.writeFile(path.join(tmp, 'sub', 'nested.md'), '# nested');
+    await fs.writeFile(path.join(tmp, '_archive', 'old.md'), '# old');
+    await fs.writeFile(path.join(tmp, '.hidden', 'secret.md'), '# secret');
+    await fs.writeFile(path.join(tmp, 'notes.txt'), 'not markdown');
+  });
+  afterAll(async () => {
+    await fs.rm(tmp, { recursive: true, force: true });
+  });
+
+  it('lists markdown, sorted, excluding `_`/dot dirs and non-md files', async () => {
+    expect(await listMarkdownRelPaths(tmp)).toEqual(['sub/nested.md', 'top.md']);
+  });
+
+  it('returns [] for a missing root', async () => {
+    expect(await listMarkdownRelPaths(path.join(tmp, 'does-not-exist'))).toEqual([]);
   });
 });
 
