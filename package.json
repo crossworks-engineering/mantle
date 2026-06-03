@@ -5,7 +5,7 @@
   "description": "Mantle — Jason's AI-queryable life tree.",
   "packageManager": "pnpm@11.1.2",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
     "dev": "concurrently -n web,mcp,worker,tg,files,docs,events,agent -c blue,magenta,green,yellow,gray,blue,white,cyan \"pnpm -C apps/web dev\" \"pnpm -C apps/mcp dev\" \"pnpm -C apps/web worker:dev\" \"pnpm -C apps/web worker:telegram:dev\" \"pnpm -C apps/web worker:files:dev\" \"pnpm -C apps/web worker:docs:dev\" \"pnpm -C apps/web worker:events:dev\" \"pnpm -C apps/agent dev\"",
