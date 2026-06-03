@@ -202,7 +202,7 @@ One Postgres 17 cluster, one database (`postgres`), three schemas:
 | `pg_trgm`      | Trigram indexes for fuzzy/full-text fallbacks                   |
 | `pgcrypto`     | `gen_random_uuid()` for default PKs                             |
 | `"uuid-ossp"`  | Legacy uuid helpers (a few migrations still reference them)     |
-| `vector`       | pgvector — `nodes.embedding` (1536-dim, OpenAI ada/3-small)     |
+| `vector`       | pgvector — `nodes.embedding` (768-dim, local EmbeddingGemma)    |
 
 **Bootstrap order** matters and is enforced by the filesystem:
 
@@ -270,7 +270,7 @@ nodes (
   data        jsonb NOT NULL,       -- type-specific bag
   path        ltree NOT NULL,       -- materialised: 'inbox.email_jason.2026.may'
   tags        text[] NOT NULL,
-  embedding   vector(1536),         -- pgvector, OpenAI dim
+  embedding   vector(768),          -- pgvector, local EmbeddingGemma dim (was 1536; migration 0060)
   search_tsv  tsvector,             -- GENERATED ALWAYS column over title/data
   created_at  timestamptz,
   updated_at  timestamptz
@@ -287,7 +287,7 @@ tables (`emails`, `email_attachments`, `telegram_messages`, …) with a
 Why one table:
 
 - **Unified search.** `searchNodes()` (`packages/search/`) hits a single
-  table; the tsvector + GIN(tags) + IVFFlat(embedding) indexes mean
+  table; the tsvector + GIN(tags) + HNSW(embedding) indexes mean
   "find anything about X" is one query.
 - **Tree operations are O(depth).** ltree's `<@` operator lets you
   ask "everything under `inbox.email_jason`" without recursion.
@@ -296,7 +296,7 @@ Why one table:
   but unused today.
 
 Indexes that Drizzle can't express (GiST on ltree, GIN on tsvector/tags,
-IVFFlat on embedding) live in the raw SQL migrations under
+HNSW on embedding) live in the raw SQL migrations under
 `packages/db/migrations/`. The comment in `nodes.ts:64-66` flags this.
 
 ---
@@ -724,9 +724,9 @@ endpoint).
 The form's `EmbeddingFields` block handles the two cliffs a model swap
 can hit. A **Test dimensions** button embeds a probe string and reports
 the actual output dim — replaces the hand-maintained allow-list as the
-authoritative dim source. When the dim is known and ≠ 1536, the Save
-button is **hard-blocked** — switching to a non-1536 model needs a
-schema migration on every `vector(1536)` column (nodes, entities, facts,
+authoritative dim source. When the dim is known and ≠ 768, the Save
+button is **hard-blocked** — switching to a non-768 model needs a
+schema migration on every `vector(768)` column (nodes, entities, facts,
 content_chunks), not just a re-embed. When the dim matches but the
 *model* changed, a **Rebuild Index** button re-embeds every stored
 vector against the saved model — same code path as the `pnpm re-embed`
@@ -1537,7 +1537,7 @@ commit between 0008 and 0009.
 1. Edit the Drizzle schema in `packages/db/src/schema/`.
 2. `pnpm -C packages/db exec drizzle-kit generate` — emits a migration.
 3. Inspect the generated SQL, hand-edit if needed (Drizzle can't emit
-   GiST/GIN/IVFFlat operator classes — drop those in by hand).
+   GiST/GIN/HNSW operator classes — drop those in by hand).
 4. `pnpm db:migrate` to apply.
 
 **Adding a new node type?**
