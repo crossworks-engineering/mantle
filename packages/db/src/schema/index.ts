@@ -6,6 +6,7 @@ export * from './emails';
 export * from './secrets';
 export * from './pages';
 export * from './tables';
+export * from './doc-collections';
 export * from './shares';
 export * from './mantle-peers';
 export * from './peer-shares';

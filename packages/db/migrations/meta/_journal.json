@@ -484,6 +484,20 @@
       "when": 1780704000000,
       "tag": "0068_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1780790400000,
+      "tag": "0069_node_type_documentation",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1780876800000,
+      "tag": "0070_doc_collections",
+      "breakpoints": true
     }
   ]
 }
