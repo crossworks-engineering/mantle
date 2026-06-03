@@ -94,6 +94,10 @@ x-app-env: &app-env
   # Absent socket → the reader reports "tailnet not running" (never throws).
   MANTLE_TAILSCALE_SOCK: ${MANTLE_TAILSCALE_SOCK:-/var/run/tailscale/tailscaled.sock}
   MANTLE_FILES_ROOT: /data/files
+  # Documentation root: where the docs-sync worker reads markdown for the
+  # `documentation` node type. Baked into the image at /app/docs (the repo's
+  # docs/). Read-only in prod (one-way disk → DB; reconcile-on-boot indexes it).
+  MANTLE_DOCS_ROOT: /app/docs
   # Public origin for absolute links built outside an HTTP request — e.g. the
   # agent's page_share / email_page tools. Falls back to localhost in code if
   # unset, so set it to the real host (https://mantle.crossworks.network).
@@ -355,6 +359,22 @@ services:
       <<: *app-env
     volumes:
       - ${MANTLE_DATA_DIR:-./data}/files:/data/files
+
+  # Documentation sync: reconciles + watches the docs/ baked into the image and
+  # indexes ENABLED collections into the brain (the `documentation` node type).
+  # No volume — docs are read-only in the image; reconcile-on-boot is the prod
+  # indexing path. Disabled collections are inert, so this is cheap until the
+  # operator opts in at /settings/documentation.
+  worker_docs:
+    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/docs-sync.ts"]
+    container_name: mantle_worker_docs
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate:  { condition: service_completed_successfully }
+    environment:
+      <<: *app-env
 
   # Event-reminder poller: fires due calendar/event reminders. Without this,
   # reminders silently never fire in prod (they work in `pnpm dev`).

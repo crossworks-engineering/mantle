@@ -19,6 +19,8 @@
 backups
 # Host bind-mount data root (postgres/minio/files) — never goes in an image.
 data
-docs
+# NOTE: docs/ IS baked into the image on purpose — it's the source for the
+# `documentation` node type (MANTLE_DOCS_ROOT=/app/docs), reconciled into the
+# brain by worker_docs. Do not re-add `docs` here.
 README.md
 *.dump

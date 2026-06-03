@@ -12,6 +12,7 @@
     "worker:dev": "tsx --watch --env-file-if-exists=./.env.local workers/email-sync.ts",
     "worker:telegram:dev": "tsx --watch --env-file-if-exists=./.env.local workers/telegram-poll.ts",
     "worker:files:dev": "tsx --watch --env-file-if-exists=./.env.local workers/files-watch.ts",
+    "worker:docs:dev": "tsx --watch --env-file-if-exists=./.env.local workers/docs-sync.ts",
     "worker:events:dev": "tsx --watch --env-file-if-exists=./.env.local workers/events-reminders.ts",
     "seed:telegram": "tsx --env-file-if-exists=./.env.local scripts/seed-telegram.ts",
     "seed:heartbeat-demo": "tsx --env-file-if-exists=./.env.local scripts/seed-get-to-know-user.ts",
