@@ -1,54 +1,48 @@
 /**
- * Web assistant — Sarah-on-the-web. One continuous conversation per owner
- * (no user-visible sessions). Shares the responder's memory model:
- * persona + facts + content_index + recent assistant turns. Digests are
- * deferred until web volume warrants them.
+ * Web assistant — Sarah-on-the-web, the web doorway onto the unified
+ * per-(owner, agent) conversation stream (docs/conversation.md). Shares the
+ * responder's memory model AND its conversation store: every turn — web,
+ * Telegram, future channels — lands in assistant_messages and is read back
+ * here through the shared @mantle/agent-runtime conversation module.
  *
  * Owns the read+write+LLM path end-to-end:
  *
  *   1. resolveAssistantAgent — highest-priority enabled `assistant` row;
  *      falls back to a `responder` if none configured (so a single agent
  *      can serve both surfaces).
- *   2. loadContext — facts + content_hits via vector search, persona_notes
- *      off the agent row, last N recent_turns from assistant_messages.
- *   3. INSERT the inbound row.
- *   4. buildChatMessages + OpenRouter chat → reply.
- *   5. INSERT the outbound row + bump agent usage.
+ *   2. loadConversationContext — persona + facts + content_hits + digests +
+ *      last-N recent turns (all channels), via the shared module.
+ *   3. recordTurn — persist the inbound row (channel='web').
+ *   4. buildChatMessages + tool-loop chat → reply.
+ *   5. recordTurn — persist the outbound row + bump agent usage.
  *
- * No tracing wired here yet — the existing tracing model is shaped around
- * the agent-runner process, not the Next request handler. Add a
- * 'assistant_turn' trace kind in a follow-up if cost/visibility matters.
+ * The turn runs inside a 'responder_turn' trace (startTrace below), so every
+ * LLM call + tool dispatch is visible in /traces.
  */
 
-import { and, desc, eq, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt } from 'drizzle-orm';
 import {
   db,
   agents,
   assistantMessages,
-  entities,
-  facts,
-  nodes,
   type Agent,
-  type AgentMemoryConfig,
   type AgentParams,
   type AssistantMessage,
-  type PersonaNote,
+  type ConversationAttachment,
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
-import { embed } from '@mantle/embeddings';
 import {
   buildChatMessages,
   buildAttachmentContextText,
   composeSystemPromptWithSkills,
   effectiveToolSlugs,
   invokeAgent,
+  loadConversationContext,
+  recordTurn,
   resolveAgentSkills,
   resolveAgentTools,
   resolveBackupAdapter,
   runToolLoop,
-  type ContentHit,
-  type FactSnippet,
-  type HistoryTurn,
   type UserImage,
 } from '@mantle/agent-runtime';
 import { registerAgentInvoker, type ToolArtifact } from '@mantle/tools';
@@ -125,120 +119,6 @@ export async function resolveAssistantAgent(
   return fallback ?? null;
 }
 
-async function loadContext(
-  ownerId: string,
-  agent: Agent,
-  inboundText: string,
-): Promise<{
-  personaNotes: PersonaNote[];
-  facts: FactSnippet[];
-  contentHits: ContentHit[];
-  history: HistoryTurn[];
-}> {
-  const memoryConfig = (agent.memoryConfig ?? {}) as AgentMemoryConfig;
-  const historyLimit = memoryConfig.history_limit ?? 20;
-  const factLimit = memoryConfig.fact_limit ?? 10;
-  const contentHitLimit = memoryConfig.content_hit_limit ?? 3;
-
-  const personaNotes: PersonaNote[] = (agent.personaNotes ?? []) as PersonaNote[];
-
-  // Embed the inbound once for both fact + content_index lookups. The embedder
-  // is resolved centrally from embedding_config — no per-agent override.
-  let queryVec: number[] | null = null;
-  if ((factLimit > 0 || contentHitLimit > 0) && inboundText.trim().length > 0) {
-    try {
-      queryVec = await embed(ownerId, inboundText.slice(0, 2000));
-    } catch (err) {
-      console.error(
-        '[assistant] query embed failed:',
-        err instanceof Error ? err.message : err,
-      );
-    }
-  }
-
-  // Facts: top-K by vector distance, currently-valid only.
-  let factRows: FactSnippet[] = [];
-  if (queryVec && factLimit > 0) {
-    const rows = await db
-      .select({
-        content: facts.content,
-        kind: facts.kind,
-        entityName: entities.name,
-      })
-      .from(facts)
-      .leftJoin(entities, eq(facts.entityId, entities.id))
-      .where(
-        and(
-          eq(facts.ownerId, ownerId),
-          isNull(facts.validTo),
-          sql`${facts.embedding} is not null`,
-        ),
-      )
-      .orderBy(sql`${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector`)
-      .limit(factLimit);
-    factRows = rows.map((r) => ({
-      content: r.content,
-      kind: r.kind as string,
-      entityName: r.entityName,
-    }));
-  }
-
-  // content_index hits, same as the Telegram responder.
-  let contentHits: ContentHit[] = [];
-  if (queryVec && contentHitLimit > 0) {
-    const rows = await db
-      .select({
-        nodeId: nodes.id,
-        title: nodes.title,
-        type: nodes.type,
-        data: nodes.data,
-      })
-      .from(nodes)
-      .where(
-        and(
-          eq(nodes.ownerId, ownerId),
-          sql`${nodes.embedding} is not null`,
-          sql`not (${nodes.tags} @> ARRAY['conversation-digest']::text[])`,
-          sql`${nodes.type} <> 'telegram_message'`,
-        ),
-      )
-      .orderBy(sql`${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector`)
-      .limit(contentHitLimit);
-    contentHits = rows.map((r) => {
-      const data = (r.data ?? {}) as Record<string, unknown>;
-      return {
-        title: r.title,
-        type: r.type,
-        summary: typeof data.summary === 'string' ? data.summary : null,
-        nodeId: r.nodeId,
-      };
-    });
-  }
-
-  // Recent assistant turns.
-  const historyRows = await db
-    .select({
-      direction: assistantMessages.direction,
-      text: assistantMessages.text,
-      createdAt: assistantMessages.createdAt,
-    })
-    .from(assistantMessages)
-    .where(
-      and(
-        eq(assistantMessages.ownerId, ownerId),
-        eq(assistantMessages.agentId, agent.id),
-      ),
-    )
-    .orderBy(desc(assistantMessages.createdAt))
-    .limit(historyLimit);
-
-  const history: HistoryTurn[] = historyRows
-    .reverse()
-    .map((r) => ({ role: r.direction === 'outbound' ? 'assistant' : 'user', text: r.text }));
-
-  return { personaNotes, facts: factRows, contentHits, history };
-}
-
 /**
  * Run one user turn end-to-end. Persists inbound, calls the model,
  * persists outbound, returns both rows + the reply text.
@@ -310,7 +190,7 @@ export async function runAssistantTurn(
   //    sent to the LLM as `newUserText` in buildChatMessages, and
   //    duplicating it makes the model think the user said the same
   //    thing twice ("you sent that twice — testing the double-tap?").
-  const ctx = await loadContext(ownerId, agent, trimmed);
+  const ctx = await loadConversationContext({ ownerId, agent, inboundText: trimmed });
   const filteredHistory = ctx.history;
 
   // 2. Persist inbound BEFORE the LLM call so the row survives a
@@ -318,16 +198,27 @@ export async function runAssistantTurn(
   //    USER-VISIBLE text (displayText) — not the LLM-augmented
   //    version — so the chat history stays clean. See the
   //    runAssistantTurn header for the rationale.
-  const [inbound] = await db
-    .insert(assistantMessages)
-    .values({
-      ownerId,
-      direction: 'inbound',
-      text: displayText,
-      agentId: agent.id,
-    })
-    .returning();
-  if (!inbound) throw new Error('failed to insert inbound row');
+  // Attachment provenance, persisted on the turn (no bytes — the image/doc is
+  // already saved as a file node; the nodeId lets a future /assistant render
+  // re-fetch it). channel='web' since this surface is the web doorway.
+  const inboundAttachments: ConversationAttachment[] =
+    options?.image || options?.imageNodeId
+      ? [
+          {
+            kind: (options?.attachmentKind ?? 'image') === 'file' ? 'document' : 'image',
+            ...(options?.image?.mimeType ? { mime: options.image.mimeType } : {}),
+            ...(options?.imageNodeId ? { nodeId: options.imageNodeId } : {}),
+          },
+        ]
+      : [];
+  const inbound = await recordTurn({
+    ownerId,
+    agentId: agent.id,
+    direction: 'inbound',
+    text: displayText,
+    channel: 'web',
+    attachments: inboundAttachments,
+  });
 
   const attachedSkills = await resolveAgentSkills(ownerId, agent.skillSlugs ?? []);
   // Prepend the current-time / timezone / locale context so the
@@ -415,7 +306,7 @@ export async function runAssistantTurn(
       systemPrompt: effectiveSystemPrompt,
       personaNotes: ctx.personaNotes,
       facts: ctx.facts,
-      digests: [],
+      digests: ctx.digests,
       contentHits: ctx.contentHits,
       history: filteredHistory,
       newUserText: userText,
@@ -541,17 +432,14 @@ export async function runAssistantTurn(
   // branch point where voice-mode reply would skip the strip.
   const reply = stripAudioTags(rawReply).text;
 
-  const [outbound] = await db
-    .insert(assistantMessages)
-    .values({
-      ownerId,
-      direction: 'outbound',
-      text: reply,
-      agentId: agent.id,
-      model: agent.model,
-    })
-    .returning();
-  if (!outbound) throw new Error('failed to insert outbound row');
+  const outbound = await recordTurn({
+    ownerId,
+    agentId: agent.id,
+    direction: 'outbound',
+    text: reply,
+    channel: 'web',
+    model: agent.model,
+  });
 
   void db
     .update(agents)
@@ -691,7 +579,3 @@ export async function listAssistantAgents(ownerId: string): Promise<AssistantAge
     .orderBy(desc(agents.priority));
   return rows.map((r) => ({ id: r.id, slug: r.slug, name: r.name, role: r.role as string, model: r.model }));
 }
-
-// Marks below silence "unused import" lint warnings when the runtime
-// helpers are referenced indirectly.
-void ne;
