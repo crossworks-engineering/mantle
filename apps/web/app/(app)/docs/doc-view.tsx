@@ -91,7 +91,7 @@ export function DocView({ doc }: { doc: ReaderDoc }) {
           <span key={i}> · {prettifyDocLabel(s)}</span>
         ))}
       </p>
-      <div className="prose dark:prose-invert max-w-none">
+      <div className="prose dark:prose-invert max-w-none doc-prose">
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
           {doc.content}
         </ReactMarkdown>
