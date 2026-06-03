@@ -1,5 +1,14 @@
 import type { NextConfig } from 'next';
 
+// `next dev --turbo` (dev) runs Turbopack; `next build` (prod Docker) runs
+// webpack. Turbopack IGNORES any `webpack()` config and prints
+// "Webpack is configured while Turbopack is not" when one is present. The only
+// webpack config we have is the @napi-rs/canvas externalization below, which is
+// needed ONLY for the webpack build — so we attach it solely for that path and
+// keep dev (Turbopack) warning-free. Next sets `process.env.TURBOPACK` when
+// Turbopack is active; `next build` leaves it unset.
+const usingTurbopack = !!process.env.TURBOPACK;
+
 const nextConfig: NextConfig = {
   // Workspace packages ship raw TypeScript — Next compiles them in-tree.
   transpilePackages: [
@@ -44,27 +53,32 @@ const nextConfig: NextConfig = {
   // `serverExternalPackages` alone doesn't externalize it when it's reached
   // *through* a transpilePackages workspace package (@mantle/files rasterize →
   // pdf-to-png-converter → @napi-rs/canvas), so `next build` tries to parse the
-  // native `skia.*.node` binary and fails ("Module parse failed"). (Only
-  // `next dev`/turbopack was ever run before, which tolerates it.) We match the
-  // meta-package + its per-platform binding (@napi-rs/canvas-<os>-<arch>) by
-  // NAME — deliberately NOT a blanket `.node` rule, which would also catch
-  // packages' *optional* relative bindings (e.g. `./platform.node`) and turn a
-  // benign "optional dep absent" warning into a fatal runtime require failure.
-  webpack: (config, { isServer }) => {
-    if (isServer) {
-      config.externals = config.externals || [];
-      config.externals.push((
-        { request }: { request?: string },
-        callback: (err?: null, result?: string) => void,
-      ) => {
-        if (request && (request === '@napi-rs/canvas' || request.startsWith('@napi-rs/canvas-'))) {
-          return callback(null, `commonjs ${request}`);
-        }
-        callback();
-      });
-    }
-    return config;
-  },
+  // native `skia.*.node` binary and fails ("Module parse failed"). Turbopack
+  // (dev) tolerates it via serverExternalPackages, so this hook is attached ONLY
+  // for the webpack build (see `usingTurbopack` above). We match the meta-package
+  // + its per-platform binding (@napi-rs/canvas-<os>-<arch>) by NAME —
+  // deliberately NOT a blanket `.node` rule, which would also catch packages'
+  // *optional* relative bindings (e.g. `./platform.node`) and turn a benign
+  // "optional dep absent" warning into a fatal runtime require failure.
+  ...(usingTurbopack
+    ? {}
+    : {
+        webpack: (config, { isServer }: { isServer: boolean }) => {
+          if (isServer) {
+            config.externals = config.externals || [];
+            config.externals.push((
+              { request }: { request?: string },
+              callback: (err?: null, result?: string) => void,
+            ) => {
+              if (request && (request === '@napi-rs/canvas' || request.startsWith('@napi-rs/canvas-'))) {
+                return callback(null, `commonjs ${request}`);
+              }
+              callback();
+            });
+          }
+          return config;
+        },
+      }),
   reactStrictMode: true,
 };
 
