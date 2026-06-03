@@ -273,7 +273,9 @@ function defaultsForRole(role: Role): {
     summarizeBatch: '20',
     extractTypes: '',
     factLimit: '10',
-    contentHitLimit: '3',
+    // 5, not 3 — a 3-hit window dropped genuinely relevant near-misses below the
+    // prompt (see docs/recall-eval.md). Five short summaries cost little.
+    contentHitLimit: '5',
   };
 }
 

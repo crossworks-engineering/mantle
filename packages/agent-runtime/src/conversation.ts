@@ -57,6 +57,12 @@ export type ConversationContext = {
   history: HistoryTurn[];
 };
 
+/** Preferences are tiny + high-signal ("Jason prefers terse replies"); the
+ *  design always-injects the most recent few rather than waiting on a vector
+ *  match. 8 keeps the prefix cheap while covering a real person's standing
+ *  preferences. */
+const PREFERENCE_INJECT_LIMIT = 8;
+
 /**
  * Append one turn to the unified stream. Defaults `channel` to 'web' and
  * `attachments` to []. Pass `tx` to run inside an existing transaction.
@@ -112,7 +118,12 @@ export async function loadConversationContext(args: {
   const windowHours = memoryConfig.history_window_hours ?? null;
   const digestLimit = memoryConfig.digest_limit ?? 3;
   const factLimit = memoryConfig.fact_limit ?? 10;
-  const contentHitLimit = memoryConfig.content_hit_limit ?? 3;
+  // Widened 3→5 (audit/recall-eval): 3 was stingy enough to drop genuinely
+  // relevant near-misses below the prompt. For "when does my licence disc
+  // renew", the user's vehicle page ranked #4 — outside a 3-cap — alongside the
+  // actual licence PDF (#3) and a related note (#1). Five short summaries cost
+  // little and recover that whole cluster.
+  const contentHitLimit = memoryConfig.content_hit_limit ?? 5;
 
   const personaNotes: PersonaNote[] = (agent.personaNotes ?? []) as PersonaNote[];
 
@@ -162,6 +173,29 @@ export async function loadConversationContext(args: {
       .map((r) => ({ content: r.content, kind: r.kind as string, entityName: r.entityName }));
   }
 
+  // ─── Preferences: always-injected, not left to a vector match ───────────
+  // The kind taxonomy (memory.md §2) says preferences are small + high-signal
+  // and should ride in the prefix every turn — you want "prefers terse replies"
+  // present even when the turn isn't about preferences. Vector top-K alone never
+  // surfaced them unless the message happened to be similar. Prepend the most
+  // recent, deduped against whatever the vector search already returned.
+  if (factLimit > 0) {
+    const prefRows = await db
+      .select({ content: facts.content, kind: facts.kind, entityName: entities.name })
+      .from(facts)
+      .leftJoin(entities, eq(facts.entityId, entities.id))
+      .where(
+        and(eq(facts.ownerId, ownerId), isNull(facts.validTo), eq(facts.kind, 'preference')),
+      )
+      .orderBy(desc(facts.updatedAt))
+      .limit(PREFERENCE_INJECT_LIMIT);
+    const seen = new Set(factRows.map((f) => f.content));
+    const prefs = prefRows
+      .filter((p) => !seen.has(p.content))
+      .map((p) => ({ content: p.content, kind: p.kind as string, entityName: p.entityName }));
+    if (prefs.length) factRows = [...prefs, ...factRows];
+  }
+
   // ─── Content-index hits (excludes digests + raw telegram messages) ──────
   let contentHits: ContentHit[] = [];
   if (queryVec && contentHitLimit > 0) {
@@ -182,6 +216,11 @@ export async function loadConversationContext(args: {
           // the conversation itself — neither should surface as a "content hit".
           sql`not (${nodes.tags} @> ARRAY['conversation-digest']::text[])`,
           sql`${nodes.type} <> 'telegram_message'`,
+          // System-seeded documentation (Mantle's own docs, origin='system') is a
+          // reference corpus, not personal memory — keep it out of the responder's
+          // content hits so it can't outrank the user's own notes. The audit caught
+          // memory.md winning "3D printer gantry"; there are ~57 such system nodes.
+          sql`(${nodes.data}->>'origin') is distinct from 'system'`,
         ),
       )
       .orderBy(sql`${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector`)

@@ -312,7 +312,7 @@ async function main() {
   const prodHit = results.filter((r) => r.ranks.prod > 0).length;
   console.log(
     `\n  prod reality: gold node reached the prompt in ${prodHit}/${results.length} cases ` +
-      `(content_hit_limit=${(agent.memoryConfig as { content_hit_limit?: number })?.content_hit_limit ?? 3}).`,
+      `(content_hit_limit=${(agent.memoryConfig as { content_hit_limit?: number })?.content_hit_limit ?? 5}).`,
   );
 
   // ── Baseline delta ──────────────────────────────────────────────────────
