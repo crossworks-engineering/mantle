@@ -4,6 +4,7 @@ import * as React from 'react';
 import { useState } from 'react';
 import { ChevronRight, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Switch } from '@/components/ui/switch';
 
 export type ToggleListItem = {
   /** Stable value stored in the selection (e.g. a slug). */
@@ -147,23 +148,16 @@ export function ToggleList({
             {groupRows.map((it) => {
               const on = set.has(it.value);
               return (
-                <button
+                <div
                   key={it.value}
-                  type="button"
-                  onClick={() => toggle(it.value)}
-                  disabled={it.disabled}
-                  aria-pressed={on}
                   className={cn(
                     // Transparent left border on every row so the on-state's
                     // primary accent bar doesn't shift the text 2px.
-                    'group flex w-full items-center gap-3 border-l-2 border-l-transparent px-3 py-2 text-left transition-colors',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-                    // On = left accent bar only (the switch already shows state).
-                    // Hover (unselected) = full accent fill paired with
-                    // accent-foreground so the whole row stays readable in
-                    // every theme — a clearer hover than a faint accent tint.
-                    on ? 'border-l-primary' : 'hover:bg-accent hover:text-accent-foreground',
-                    it.disabled && 'cursor-not-allowed opacity-60',
+                    'flex w-full items-center gap-3 border-l-2 border-l-transparent px-3 py-2 transition-colors',
+                    // On = primary accent bar only. No row hover/fill — the
+                    // switch is the sole control (clicking the body does nothing).
+                    on && 'border-l-primary',
+                    it.disabled && 'opacity-60',
                   )}
                 >
                   <div className="min-w-0 flex-1">
@@ -172,36 +166,20 @@ export function ToggleList({
                       {it.meta}
                     </div>
                     {it.description && (
-                      <p
-                        className={cn(
-                          'mt-0.5 line-clamp-2 text-xs text-muted-foreground',
-                          // Match the row's hover text so the description stays
-                          // legible on the accent fill (unselected rows only).
-                          !on && 'group-hover:text-accent-foreground/80',
-                        )}
-                      >
+                      <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                         {it.description}
                       </p>
                     )}
                   </div>
-                  {/* Presentational switch — a real <Switch> is a <button>,
-                      which can't nest inside this row's <button>. The row is
-                      the single interactive control (aria-pressed above). */}
-                  <span
-                    aria-hidden
-                    className={cn(
-                      'inline-flex h-5 w-9 shrink-0 items-center rounded-full border-2 border-transparent transition-colors',
-                      on ? 'bg-primary' : 'bg-input',
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        'block size-4 rounded-full bg-background shadow-lg transition-transform',
-                        on ? 'translate-x-4' : 'translate-x-0',
-                      )}
-                    />
-                  </span>
-                </button>
+                  {/* The switch is the only interactive control — you must
+                      click it explicitly to toggle; the row body is inert. */}
+                  <Switch
+                    checked={on}
+                    onCheckedChange={() => toggle(it.value)}
+                    disabled={it.disabled}
+                    aria-label={`Toggle ${it.label}`}
+                  />
+                </div>
               );
             })}
           </div>
