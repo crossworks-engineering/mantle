@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, BookText } from 'lucide-react';
+import { ArrowRight, BookText, Info } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -76,34 +76,7 @@ export function DocumentationClient({
   }
 
   return (
-    <div className="mx-auto max-w-3xl p-4 md:p-6">
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <p className="text-sm text-muted-foreground">
-          Index markdown documentation into the brain so the assistant can answer questions about
-          how the system works. Indexing is opt-in per collection — enabling one reconciles it now
-          and keeps tracking edits; disabling removes its indexed docs.
-        </p>
-        <div className="flex shrink-0 gap-2">
-          <NewCollectionDialog />
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={pending || allEnabled || initial.length === 0}
-            onClick={() => run(() => setAllDocCollectionsAction(true))}
-          >
-            Enable all
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={pending || !anyEnabled}
-            onClick={() => setConfirm({ kind: 'all' })}
-          >
-            Disable all
-          </Button>
-        </div>
-      </div>
-
+    <div className="space-y-4">
       <div className="space-y-2">
         {initial.map((c) => (
           <div
@@ -149,6 +122,37 @@ export function DocumentationClient({
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Actions — left-aligned, above the info box. */}
+      <div className="flex flex-wrap gap-2">
+        <NewCollectionDialog />
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={pending || allEnabled || initial.length === 0}
+          onClick={() => run(() => setAllDocCollectionsAction(true))}
+        >
+          Enable all
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={pending || !anyEnabled}
+          onClick={() => setConfirm({ kind: 'all' })}
+        >
+          Disable all
+        </Button>
+      </div>
+
+      {/* Info box — what indexing does. */}
+      <div className="flex gap-2.5 rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
+        <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+        <p>
+          Index markdown documentation into the brain so the assistant can answer questions about
+          how the system works. Indexing is opt-in per collection — enabling one reconciles it now
+          and keeps tracking edits; disabling removes its indexed docs.
+        </p>
       </div>
 
       <AlertDialog open={confirm != null} onOpenChange={(o) => !o && setConfirm(null)}>
