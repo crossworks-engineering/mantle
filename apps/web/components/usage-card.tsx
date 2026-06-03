@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { recentAgentContext, spendInRange, type AgentContext, type SpendRange } from '@/lib/metrics';
 import { formatMicroUsd } from '@/lib/traces-format';
 import { UsageCardPills } from '@/components/usage-card-pills';
+import { VitalsBar, vitalsLevel, type VitalsLevel } from '@/components/dashboard/vitals-bar';
 
 const SPEND_RANGE_COOKIE = 'mantle_spend_range';
 const VALID_RANGES: SpendRange[] = ['day', 'week', 'month'];
@@ -80,8 +81,18 @@ export async function UsageCard({ ownerId }: { ownerId: string }) {
   );
 }
 
+/** Stroke colours mirroring the vitals fill scheme, for the collapsed-rail
+ *  donut (literal classes so the Tailwind scanner keeps them). */
+const RING_STROKE: Record<VitalsLevel, string> = {
+  unknown: 'stroke-muted-foreground/40',
+  ok: 'stroke-primary',
+  warn: 'stroke-amber-500',
+  crit: 'stroke-destructive',
+};
+
 /** A small donut showing how full an agent's context window is — the
- *  collapsed-rail stand-in for the full per-agent progress bars. */
+ *  collapsed-rail stand-in for the full per-agent progress bars. Colour
+ *  escalates with fill, matching the VitalsBar scheme. */
 function ContextRing({ pct, title }: { pct: number; title?: string }) {
   const r = 10;
   const circ = 2 * Math.PI * r;
@@ -89,7 +100,7 @@ function ContextRing({ pct, title }: { pct: number; title?: string }) {
   return (
     <div className="relative grid size-7 place-items-center" title={title}>
       <svg viewBox="0 0 28 28" className="size-7 -rotate-90" aria-hidden>
-        <circle cx="14" cy="14" r={r} fill="none" strokeWidth="3" className="stroke-accent" />
+        <circle cx="14" cy="14" r={r} fill="none" strokeWidth="3" className="stroke-muted" />
         <circle
           cx="14"
           cy="14"
@@ -97,7 +108,7 @@ function ContextRing({ pct, title }: { pct: number; title?: string }) {
           fill="none"
           strokeWidth="3"
           strokeLinecap="round"
-          className="stroke-emerald-500"
+          className={RING_STROKE[vitalsLevel(clamped * 100)]}
           strokeDasharray={circ}
           strokeDashoffset={circ * (1 - clamped)}
         />
@@ -125,14 +136,7 @@ function AgentContextRow({ ctx }: { ctx: AgentContext }) {
   return (
     <li className="flex items-center gap-2 text-[11px]" title={title}>
       <span className="min-w-0 flex-1 truncate text-muted-foreground">{label}</span>
-      <div className="relative h-1.5 w-12 overflow-hidden rounded-full bg-accent/60">
-        {ctx.pct != null && (
-          <div
-            className="absolute inset-y-0 left-0 bg-emerald-500"
-            style={{ width: `${Math.max(2, ctx.pct * 100)}%` }}
-          />
-        )}
-      </div>
+      <VitalsBar className="w-12" pct={ctx.pct != null ? ctx.pct * 100 : null} />
       <span className="w-8 text-right tabular-nums text-muted-foreground">{pctLabel}</span>
     </li>
   );
