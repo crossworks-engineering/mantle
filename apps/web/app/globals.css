@@ -3647,3 +3647,42 @@
     transparent
   );
 }
+
+/* ============================================================================
+   Pages (TipTap) — extra flourishes on top of `.prose-accent`.
+   The editor, read view, and public render all carry `.ProseMirror` +
+   `.prose-accent`, so the heading / link / code / quote accents come from the
+   shared block above. These add Pages-only polish the flat markdown surfaces
+   don't need. All theme-token driven.
+   ========================================================================== */
+
+/* Brand-coloured caret + selection. The caret also keeps the gradient h1
+   editable — its text is transparent, so without this the cursor would vanish
+   while typing a heading. */
+.ProseMirror {
+  caret-color: var(--primary);
+}
+.ProseMirror ::selection {
+  background-color: color-mix(in oklab, var(--primary) 25%, transparent);
+}
+
+/* Code blocks — a themed card with a primary accent spine instead of prose's
+   flat slab. The .hljs-* syntax tokens (chart palette, above) sit on top. The
+   class+element selector outranks Typography's `:where(pre)` without
+   `!important`; inline code keeps its own `.prose-accent` chip. */
+.ProseMirror pre {
+  background-color: var(--muted);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+}
+.ProseMirror pre code {
+  background: none;
+  color: inherit;
+  padding: 0;
+  font-weight: inherit;
+  font-size: 0.875em;
+}

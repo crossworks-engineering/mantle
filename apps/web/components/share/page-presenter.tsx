@@ -36,7 +36,7 @@ export function PagePresenter({
       <div className="min-w-0 flex-1">
         <article className={`mx-auto w-full ${widthClass}`}>
           <div
-            className="ProseMirror prose dark:prose-invert max-w-none"
+            className="ProseMirror prose dark:prose-invert prose-accent max-w-none"
             dangerouslySetInnerHTML={{ __html: html }}
           />
         </article>
