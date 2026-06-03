@@ -85,6 +85,10 @@ export async function getReaderNav(ownerId: string): Promise<ReaderNav> {
       files: await filesForCollection(c, roots),
     });
   }
+  // User-authored collections (the User Guide) first; the built-in `system`
+  // dev docs last. Alphabetical within each group.
+  const rank = (origin: string) => (origin === 'system' ? 1 : 0);
+  out.sort((a, b) => rank(a.origin) - rank(b.origin) || a.label.localeCompare(b.label));
   return out;
 }
 

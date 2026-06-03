@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { ChevronRight, Settings2 } from 'lucide-react';
@@ -42,38 +42,65 @@ function buildTree(files: string[]): TreeNode[] {
   return root.children;
 }
 
+/** Disclosure chevron that rotates when open. */
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <ChevronRight
+      className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')}
+      aria-hidden
+    />
+  );
+}
+
 function TreeItems({
   nodes,
   collectionKey,
+  parentPath,
   activePath,
   depth,
+  isOpen,
+  toggle,
 }: {
   nodes: TreeNode[];
   collectionKey: string;
+  parentPath: string;
   activePath: string;
   depth: number;
+  isOpen: (id: string) => boolean;
+  toggle: (id: string) => void;
 }) {
   return (
     <ul className="space-y-0.5">
       {nodes.map((node) => {
-        const pad = { paddingLeft: `${depth * 0.75 + 0.25}rem` };
+        const padLeft = `${depth * 0.75 + 0.25}rem`;
         if (node.relPath === undefined) {
-          // folder
+          // folder — collapsible
+          const folderPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+          const id = `${collectionKey}::${folderPath}`;
+          const open = isOpen(id);
           return (
             <li key={`d:${node.name}`}>
-              <div
-                className="flex items-center gap-1 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
-                style={pad}
+              <button
+                type="button"
+                onClick={() => toggle(id)}
+                aria-expanded={open}
+                style={{ paddingLeft: padLeft }}
+                className="flex w-full items-center gap-1 py-1 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground"
               >
-                <ChevronRight className="size-3 shrink-0" aria-hidden />
+                <Chevron open={open} />
                 {prettifyDocLabel(node.name)}
-              </div>
-              <TreeItems
-                nodes={node.children}
-                collectionKey={collectionKey}
-                activePath={activePath}
-                depth={depth + 1}
-              />
+              </button>
+              {open && (
+                <TreeItems
+                  nodes={node.children}
+                  collectionKey={collectionKey}
+                  parentPath={folderPath}
+                  activePath={activePath}
+                  depth={depth + 1}
+                  isOpen={isOpen}
+                  toggle={toggle}
+                />
+              )}
             </li>
           );
         }
@@ -83,7 +110,7 @@ function TreeItems({
           <li key={`f:${node.relPath}`}>
             <Link
               href={href}
-              style={pad}
+              style={{ paddingLeft: padLeft }}
               className={cn(
                 'block truncate rounded-md border-l-[3px] py-1.5 pr-2 text-sm transition-colors',
                 active
@@ -107,9 +134,37 @@ export function DocsNav({ nav }: { nav: ReaderNav }) {
   // Content itself is read from disk per navigation, so this isn't load-bearing.
   useRealtime(['documentation'], () => router.refresh());
 
-  const decodedPath = useMemo(() => {
-    // pathname is URL-encoded; our hrefs are too, so compare encoded forms.
-    return pathname;
+  // Collapsed section/folder ids. Empty = all expanded. Persists while the nav
+  // stays mounted (across in-/docs navigation, since it lives in the layout).
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const isOpen = (id: string) => !collapsed.has(id);
+  const toggle = (id: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  // Auto-open the active doc's collection + ancestor folders so navigating
+  // always reveals the current page, even if its section was collapsed.
+  useEffect(() => {
+    const m = pathname.match(/^\/docs\/([^/]+)\/(.+)$/);
+    if (!m) return;
+    const collKey = decodeURIComponent(m[1]);
+    const segs = m[2].split('/').map(decodeURIComponent);
+    const ancestors = new Set<string>([collKey]);
+    let acc = '';
+    for (let i = 0; i < segs.length - 1; i++) {
+      acc = acc ? `${acc}/${segs[i]}` : segs[i];
+      ancestors.add(`${collKey}::${acc}`);
+    }
+    setCollapsed((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const a of ancestors) if (next.delete(a)) changed = true;
+      return changed ? next : prev;
+    });
   }, [pathname]);
 
   return (
@@ -127,35 +182,50 @@ export function DocsNav({ nav }: { nav: ReaderNav }) {
           <Settings2 className="size-4" />
         </Link>
       </div>
-      <nav className="space-y-4 p-3 pt-0 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
-        {nav.map((col) => (
-          <div key={col.key} className="space-y-1">
-            <div className="flex items-center justify-between gap-2 px-1">
-              <span className="truncate text-xs font-semibold text-foreground">{col.label}</span>
-              <Badge
-                variant={col.enabled ? 'default' : 'outline'}
-                className="shrink-0 text-[10px]"
-                title={
-                  col.enabled
-                    ? 'Indexed — the assistant can search these docs'
-                    : 'Not indexed — readable here, but the assistant can’t search them'
-                }
-              >
-                {col.enabled ? 'Indexed' : 'Not indexed'}
-              </Badge>
+      <nav className="space-y-3 p-3 pt-0 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
+        {nav.map((col) => {
+          const open = isOpen(col.key);
+          return (
+            <div key={col.key} className="space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => toggle(col.key)}
+                  aria-expanded={open}
+                  className="flex min-w-0 flex-1 items-center gap-1 py-0.5 text-left"
+                >
+                  <Chevron open={open} />
+                  <span className="truncate text-xs font-semibold text-foreground">{col.label}</span>
+                </button>
+                <Badge
+                  variant={col.enabled ? 'default' : 'outline'}
+                  className="shrink-0 text-[10px]"
+                  title={
+                    col.enabled
+                      ? 'Indexed — the assistant can search these docs'
+                      : 'Not indexed — readable here, but the assistant can’t search them'
+                  }
+                >
+                  {col.enabled ? 'Indexed' : 'Not indexed'}
+                </Badge>
+              </div>
+              {open &&
+                (col.files.length === 0 ? (
+                  <p className="px-2 py-1 text-xs text-muted-foreground">No documents.</p>
+                ) : (
+                  <TreeItems
+                    nodes={buildTree(col.files)}
+                    collectionKey={col.key}
+                    parentPath=""
+                    activePath={pathname}
+                    depth={0}
+                    isOpen={isOpen}
+                    toggle={toggle}
+                  />
+                ))}
             </div>
-            {col.files.length === 0 ? (
-              <p className="px-2 py-1 text-xs text-muted-foreground">No documents.</p>
-            ) : (
-              <TreeItems
-                nodes={buildTree(col.files)}
-                collectionKey={col.key}
-                activePath={decodedPath}
-                depth={0}
-              />
-            )}
-          </div>
-        ))}
+          );
+        })}
       </nav>
     </div>
   );
