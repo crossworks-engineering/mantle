@@ -26,7 +26,7 @@ The authoritative, command-by-command operator runbooks live in the developer do
   the document parser, and (optionally) the local embedding model as containers —
   you don't install those individually.
 - **Git** — to get the code.
-- **Node.js 20+ and pnpm** — to run the dev stack locally, and to build the image
+- **Node.js 24+ and pnpm** — to run the dev stack locally, and to build the image
   on a server.
 - **A model provider API key** — an **OpenRouter** key covers the whole text +
   vision brain (the assistant, extraction, search). Add it in-app later under
