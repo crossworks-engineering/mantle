@@ -56,6 +56,9 @@ type GoldCase = {
   expectNodeIds?: string[];
   expectNodeTitleIncludes?: string[];
   expectFactIncludes?: string[];
+  /** Titles that should NOT appear in the prompt window — bulk/marketing the
+   *  salience down-weight is meant to keep out. Drives the pollution metric. */
+  avoidTitleIncludes?: string[];
   note?: string;
 };
 
@@ -115,6 +118,13 @@ function goldRank(list: Candidate[], gc: GoldCase): number {
   return 0;
 }
 
+/** A candidate is "junk" if its title matches an avoid substring (bulk/marketing
+ *  the salience down-weight should keep out of the prompt). */
+function isJunk(c: Candidate, gc: GoldCase): boolean {
+  const title = c.title.toLowerCase();
+  return (gc.avoidTitleIncludes ?? []).some((s) => title.includes(s.toLowerCase()));
+}
+
 /** Reciprocal-Rank Fusion. Standard k=60. Higher score = better. */
 function fuseRRF(lists: Candidate[][], k = 60): Candidate[] {
   const score = new Map<string, number>();
@@ -172,6 +182,10 @@ type CaseResult = {
   ranks: Record<Retriever, number>;
   /** prod-only: did an expected fact substring appear in the facts Saskia saw? */
   factHit: boolean | null;
+  /** For avoid-cases: did bulk/marketing junk reach the prompt window? null when
+   *  the case has no avoid list. Measured on prod (the actual prompt) + search. */
+  prodJunk: boolean | null;
+  searchJunk: boolean | null;
 };
 
 async function runCase(
@@ -212,7 +226,16 @@ async function runCase(
     factHit = gc.expectFactIncludes.some((s) => blob.includes(s.toLowerCase()));
   }
 
-  return { id: gc.id, query: gc.query, ranks, factHit };
+  // Pollution: for avoid-cases, did junk reach the actual prompt (prod content
+  // hits) or the search tool's top window?
+  let prodJunk: boolean | null = null;
+  let searchJunk: boolean | null = null;
+  if (gc.avoidTitleIncludes?.length) {
+    prodJunk = prod.some((c) => isJunk(c, gc));
+    searchJunk = search.slice(0, rankK).some((c) => isJunk(c, gc));
+  }
+
+  return { id: gc.id, query: gc.query, ranks, factHit, prodJunk, searchJunk };
 }
 
 type Metrics = { recall: Record<string, number>; mrr: number; n: number };
@@ -314,6 +337,18 @@ async function main() {
     `\n  prod reality: gold node reached the prompt in ${prodHit}/${results.length} cases ` +
       `(content_hit_limit=${(agent.memoryConfig as { content_hit_limit?: number })?.content_hit_limit ?? 5}).`,
   );
+
+  // pollution call-out (avoid-cases only)
+  const avoidCases = results.filter((r) => r.prodJunk !== null);
+  if (avoidCases.length) {
+    const prodPolluted = avoidCases.filter((r) => r.prodJunk).length;
+    const searchPolluted = avoidCases.filter((r) => r.searchJunk).length;
+    const lam = process.env.MANTLE_SALIENCE_LAMBDA ?? '0.15';
+    console.log(
+      `  pollution (λ=${lam}): bulk/marketing reached the prompt in ${prodPolluted}/${avoidCases.length} avoid-cases (prod), ` +
+        `${searchPolluted}/${avoidCases.length} (search). Lower is better.`,
+    );
+  }
 
   // ── Baseline delta ──────────────────────────────────────────────────────
   if (args.baselinePath) {

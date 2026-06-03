@@ -82,5 +82,12 @@
     "expectNodeIds": ["c5bf8c6d-4599-46dd-8b59-c31aede891a2"],
     "expectNodeTitleIncludes": ["Dance Lesson"],
     "note": "event: Dance Lesson with Mia (wife)."
+  },
+  {
+    "id": "printer-supplies-noise",
+    "query": "the suppliers and parts I use for my 3d printer",
+    "expectNodeTitleIncludes": ["suppliers-website-database"],
+    "avoidTitleIncludes": ["PiShop", "Filament Feed", "Printables", "Earth Day", "Bambu Lab", "Prusa Spring", "Awards Are Here"],
+    "note": "printer domain is newsletter-heavy — exercises salience: the real supplier file should win, vendor newsletters should stay out of the prompt."
   }
 ]

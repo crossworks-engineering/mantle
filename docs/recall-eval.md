@@ -123,4 +123,23 @@ Three changes to `loadConversationContext` ([conversation.ts](../packages/agent-
 
 3. **Preferences always-injected.** The kind taxonomy's promise, finally wired: up to 8 most-recent `preference` facts ride in every turn's prefix, deduped against the vector hits (verified 9 surfacing on a neutral query). Tunable via `PREFERENCE_INJECT_LIMIT`. Improves relationship feel, not node-recall — so it's invisible to this eval but real.
 
-Deliberately **not** built: an LLM/cross-encoder reranker. The data says no — `prod` is now at the 0.90 vector ceiling, so a per-turn rerank would add latency + cost for ~nothing. Revisit only if a noisier gold set (bulk email, cross-domain false-positives like the firearm-licence email that shares "licence expiry") shows headroom. Down-weighting bulk/marketing email also stays open — it needs an ingest-side salience signal that doesn't exist yet.
+Deliberately **not** built: an LLM/cross-encoder reranker. The data says no — `prod` is now at the 0.90 vector ceiling, so a per-turn rerank would add latency + cost for ~nothing. Revisit only if a noisier gold set shows headroom.
+
+## After step (d): bulk-email salience down-weight (2026-06-03)
+
+Marketing/newsletters were embedded at full weight and crowded out real content (a "3d printer" query returned PiShop/Prusa newsletters). The fix wires a **node-level `salience`** (0..1) into ranking: effective distance = `cosine + λ·(1 − salience)`, `λ=0.15` (env `MANTLE_SALIENCE_LAMBDA`), applied in all three retrieval sites (content hits, `searchNodes`, `searchChunks`). A down-weight, never a filter — the email stays fully findable by explicit `search`.
+
+Salience source, in order of trust:
+1. **Header classifier** (`emails.delivery_kind`, already built — precise): `salienceForDeliveryKind` maps `marketing→0.25, list→0.5, automated→0.75, direct/unknown→1.0`. Set at ingest ([sync.ts](../packages/email/src/sync.ts)) + migration `0073` backfill. Covers new mail + 156 legacy.
+2. **Body fallback** ([`backfill-email-salience.ts`](../apps/web/scripts/backfill-email-salience.ts)) for the ~1,227 legacy `unknown` emails (synced before the classifier; raw headers aren't stored, so they can't be re-classified offline). Scores the stored body for unambiguous bulk tells (tracking-link density + unsubscribe) with a **transactional veto** (invoice/order/receipt/OTP → never demote). Tagged 568.
+
+Measured effect (`MANTLE_SALIENCE_LAMBDA=0` vs `0.15`, 13 cases incl. a noisy printer case):
+
+```
+            prod R@3   prod MRR
+λ=0 (off)      92%       0.90
+λ=0.15 (on)   100%       0.91     ← no regression; +1 case (demoting a cross-domain
+                                    firearm-licence email promoted the real vehicle page)
+```
+
+**Honest limit — coverage, not mechanism.** The `pollution` metric stays 1/1 on the printer case: the mechanism works (real supplier files rank #1–3, ahead of newsletters; demoted nodes verifiably fall), but two sale emails in that window are still salience 1.0 because the body veto that protects invoices ("delivery", "order") also spares marketing that uses those words. That's the precision/recall ceiling of body heuristics — the reason the header classifier exists. **Full coverage needs header re-classification** (a `classify-backfill` that re-fetches headers over IMAP — the schema anticipates it; unbuilt). Going forward, every newly-synced email is classified at ingest, so `unknown` shrinks on its own.

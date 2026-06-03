@@ -15,6 +15,7 @@ import { runRules } from '@mantle/rules';
 import { hashBuffer, putContent } from '@mantle/storage';
 import { and, eq, or, sql } from 'drizzle-orm';
 import { SenderResolver, upsertSenders } from './decisions';
+import { salienceForDeliveryKind } from './classify';
 import type { EmailProvider, RawMessage } from './types';
 
 const PAGE_SIZE = 50;
@@ -357,6 +358,9 @@ async function insertEmailNode(
       title: args.title,
       path: args.path,
       tags: args.tags,
+      // Down-weight bulk/marketing mail at retrieval (a newsletter shouldn't
+      // outrank a real note). Mapped from the header-derived delivery_kind.
+      salience: salienceForDeliveryKind(args.message.deliveryKind ?? 'unknown'),
       data: {
         fromAddr: args.message.fromAddr,
         fromName: args.message.fromName,

@@ -36,6 +36,7 @@
     "re-embed": "tsx --env-file-if-exists=./.env.local scripts/re-embed.ts",
     "eval:recall": "tsx --env-file-if-exists=./.env.local scripts/eval-recall.ts",
     "widen:content-hits": "tsx --env-file-if-exists=./.env.local scripts/widen-content-hits.ts",
+    "backfill:email-salience": "tsx --env-file-if-exists=./.env.local scripts/backfill-email-salience.ts",
     "rotate:master-key": "tsx --env-file-if-exists=./.env.local scripts/rotate-master-key.ts"
   },
   "dependencies": {

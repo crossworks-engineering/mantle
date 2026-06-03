@@ -50,6 +50,11 @@ export interface SearchOptions {
 
 const RRF_K = 60;
 
+/** Salience down-weight strength: effective distance = cosine + λ·(1 − salience),
+ *  so bulk/marketing mail can't crowd out real content. Non-email nodes are 1.0
+ *  (no change). Keep in sync with @mantle/agent-runtime; tunable via env. */
+const SALIENCE_LAMBDA = Number(process.env.MANTLE_SALIENCE_LAMBDA ?? 0.15);
+
 /**
  * Node search. Two modes:
  *  - **hybrid** (when `queryEmbedding` is set): weighted Reciprocal-Rank Fusion
@@ -87,7 +92,9 @@ export async function searchNodes(opts: SearchOptions): Promise<Node[]> {
     .select({ id: nodes.id })
     .from(nodes)
     .where(and(...filters, sql`${nodes.embedding} is not null`))
-    .orderBy(sql`${nodes.embedding} <=> ${vec}::vector`)
+    // Salience-adjusted: demote bulk/marketing mail in the vector arm (the
+    // dominant RRF contributor) so it falls in rank.
+    .orderBy(sql`(${nodes.embedding} <=> ${vec}::vector) + ${SALIENCE_LAMBDA} * (1 - ${nodes.salience})`)
     .limit(pool);
 
   let ftsRows: { id: string }[] = [];

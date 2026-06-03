@@ -63,6 +63,13 @@ export type ConversationContext = {
  *  preferences. */
 const PREFERENCE_INJECT_LIMIT = 8;
 
+/** How hard salience demotes a content hit: effective distance = cosine +
+ *  λ·(1 − salience). A marketing email (salience 0.25) gets +0.75λ added to its
+ *  distance, sliding it below real content / under the 0.6 cutoff. Tunable via
+ *  env for the recall eval; 0.15 chosen against the noisy gold cases. Keep in
+ *  sync with the same constant in @mantle/search. */
+const SALIENCE_LAMBDA = Number(process.env.MANTLE_SALIENCE_LAMBDA ?? 0.15);
+
 /**
  * Append one turn to the unified stream. Defaults `channel` to 'web' and
  * `attachments` to []. Pass `tx` to run inside an existing transaction.
@@ -205,7 +212,10 @@ export async function loadConversationContext(args: {
         title: nodes.title,
         type: nodes.type,
         data: nodes.data,
-        dist: sql<number>`${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector`,
+        // Salience-adjusted distance: bulk/marketing mail (low salience) is
+        // pushed back so it can't crowd out real content. Non-email nodes have
+        // salience 1.0 → no change.
+        dist: sql<number>`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA} * (1 - ${nodes.salience})`,
       })
       .from(nodes)
       .where(
@@ -223,10 +233,12 @@ export async function loadConversationContext(args: {
           sql`(${nodes.data}->>'origin') is distinct from 'system'`,
         ),
       )
-      .orderBy(sql`${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector`)
+      .orderBy(
+        sql`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA} * (1 - ${nodes.salience})`,
+      )
       .limit(contentHitLimit);
     contentHits = rows
-      .filter((r) => (r.dist ?? 1) < 0.6) // cosine cutoff — drop obvious non-matches
+      .filter((r) => (r.dist ?? 1) < 0.6) // salience-adjusted cutoff — drop non-matches + demoted bulk
       .map((r) => {
         const data = (r.data ?? {}) as Record<string, unknown>;
         return {

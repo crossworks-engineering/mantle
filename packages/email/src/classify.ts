@@ -207,3 +207,30 @@ export function classifyDelivery(input: ClassifyInput): DeliveryKind {
   // ── 4. direct ──────────────────────────────────────────────────────────
   return 'direct';
 }
+
+/**
+ * Retrieval salience for a delivery kind, 0..1 (1 = full personal value). The
+ * brain blends this into ranking so bulk/marketing mail can't crowd out real
+ * content — a down-weight, never a filter (the email stays fully searchable).
+ *
+ * Fail open: `direct`/`unknown` = 1.0. `automated` (receipts, OTPs, statements)
+ * is only mildly demoted — you DO search those. `list` is medium; `marketing`
+ * (newsletters, promos) is strongly demoted.
+ *
+ * **Keep in sync with the CASE in migration 0073** (the one-time backfill) — this
+ * is the going-forward ingest path; that was the historical one.
+ */
+export function salienceForDeliveryKind(kind: DeliveryKind | 'unknown'): number {
+  switch (kind) {
+    case 'marketing':
+      return 0.25;
+    case 'list':
+      return 0.5;
+    case 'automated':
+      return 0.75;
+    case 'direct':
+    case 'unknown':
+    default:
+      return 1.0;
+  }
+}

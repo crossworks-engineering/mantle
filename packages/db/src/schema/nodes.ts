@@ -4,6 +4,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  real,
   text,
   timestamp,
   uniqueIndex,
@@ -52,6 +53,12 @@ export const nodes = pgTable(
     // tsvector so SELECTs can read it; the actual `GENERATED` clause is in
     // the SQL migration since Drizzle doesn't model that yet.
     searchTsv: tsvector('search_tsv'),
+    // Retrieval weight, 0..1 (1 = full personal value). Default 1.0 leaves every
+    // node untouched; the email pipeline lowers it for bulk/marketing mail
+    // (mapped from emails.delivery_kind) so newsletters can't crowd out real
+    // content at retrieval. A down-weight, never a filter. See migration 0073
+    // + docs/recall-eval.md. Applied as ORDER BY (dist + λ·(1-salience)).
+    salience: real('salience').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

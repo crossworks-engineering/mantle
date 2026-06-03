@@ -8,6 +8,9 @@
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { contentChunks, db, nodes } from '@mantle/db';
 
+/** Salience down-weight strength (see @mantle/search index). Tunable via env. */
+const SALIENCE_LAMBDA = Number(process.env.MANTLE_SALIENCE_LAMBDA ?? 0.15);
+
 export type ChunkHit = {
   nodeId: string;
   nodeTitle: string;
@@ -45,6 +48,8 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
     .from(contentChunks)
     .innerJoin(nodes, eq(nodes.id, contentChunks.nodeId))
     .where(and(...conds))
-    .orderBy(sql`${contentChunks.embedding} <=> ${vec}::vector`)
+    // Rank by salience-adjusted distance so a bulk/marketing email's passages
+    // can't outrank real content; the returned `distance` stays raw cosine.
+    .orderBy(sql`(${contentChunks.embedding} <=> ${vec}::vector) + ${SALIENCE_LAMBDA} * (1 - ${nodes.salience})`)
     .limit(opts.limit ?? 10);
 }
