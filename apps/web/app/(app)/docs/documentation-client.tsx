@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { BookText } from 'lucide-react';
+import { ArrowRight, BookText } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -30,11 +31,15 @@ type DisableTarget = { kind: 'one'; id: string; label: string } | { kind: 'all' 
 export function DocumentationClient({
   initial,
   formattedReconciled,
+  firstDocHref,
 }: {
   initial: DocCollectionView[];
   /** Server-formatted "last synced" strings keyed by collection id (tz/locale
    *  stable — avoids the toLocaleString hydration mismatch). */
   formattedReconciled: Record<string, string | null>;
+  /** Per-collection link (key → /docs URL of its first doc) for the "Open" link.
+   *  Reading works regardless of indexing, so this is always available. */
+  firstDocHref?: Record<string, string | null>;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -126,12 +131,22 @@ export function DocumentationClient({
                 </p>
               </div>
             </div>
-            <Switch
-              checked={c.enabled}
-              disabled={pending}
-              onCheckedChange={(next) => onToggle(c, next)}
-              aria-label={`Toggle ${c.label}`}
-            />
+            <div className="flex shrink-0 items-center gap-3">
+              {firstDocHref?.[c.key] ? (
+                <Link
+                  href={firstDocHref[c.key]!}
+                  className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Open <ArrowRight className="size-3.5" aria-hidden />
+                </Link>
+              ) : null}
+              <Switch
+                checked={c.enabled}
+                disabled={pending}
+                onCheckedChange={(next) => onToggle(c, next)}
+                aria-label={`Toggle ${c.label}`}
+              />
+            </div>
           </div>
         ))}
       </div>

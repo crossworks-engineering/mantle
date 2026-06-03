@@ -110,7 +110,7 @@ function rootsOverlap(a: string, b: string): boolean {
 }
 
 /**
- * Create a new doc collection from the /settings/documentation "New collection"
+ * Create a new doc collection from the /docs "New collection"
  * form. Validates, guards against overlapping roots (so a new collection can't
  * silently double-index against another), then inserts + runs the first
  * reconcile. The built-in `system` collection (root = the whole docs/ tree, and

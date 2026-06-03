@@ -73,6 +73,6 @@ references behind everything above. The headline ones:
 These make up the built-in **System docs** collection, which ships **disabled**
 (it's infrastructure-level material). If you want the assistant to be able to answer
 deep "how is this implemented?" questions too, enable it at
-[Settings → Documentation](../04-configuring/05-documentation-collections.md) — but
+[the Docs page](../04-configuring/05-documentation-collections.md) — but
 heads-up, it covers the whole `docs/` folder, so don't enable it alongside this
 User Guide collection (which lives inside it).

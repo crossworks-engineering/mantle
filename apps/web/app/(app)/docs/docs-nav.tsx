@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { ChevronRight, Settings2 } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { useRealtime } from '@/components/realtime/use-realtime';
@@ -175,14 +175,6 @@ export function DocsNav({ nav }: { nav: ReaderNav }) {
       <div className="flex items-center justify-between p-3">
         <Link href="/docs" className="text-sm font-semibold hover:underline">
           Documentation
-        </Link>
-        <Link
-          href="/settings/documentation"
-          className="text-muted-foreground hover:text-foreground"
-          title="Manage indexing"
-          aria-label="Manage documentation indexing"
-        >
-          <Settings2 className="size-4" />
         </Link>
       </div>
       <nav className="space-y-3 p-3 pt-0 md:flex-1 md:overflow-y-auto md:scrollbar-thin">

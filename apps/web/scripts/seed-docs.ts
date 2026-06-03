@@ -13,7 +13,7 @@
  *
  * Idempotent: upserts the agent by (owner, slug='docs') and appends 'docs' to
  * each entry-point agent's delegate_to — only when missing. (Indexing itself is
- * opt-in: enable the System docs collection at /settings/documentation.)
+ * opt-in: enable the System docs collection at /docs.)
  */
 
 import { and, desc, eq } from 'drizzle-orm';
@@ -131,7 +131,7 @@ async function main() {
   await grantToEntryAgent('assistant');
 
   console.log(
-    '[docs] done. Enable the System docs collection at /settings/documentation, ' +
+    '[docs] done. Enable the System docs collection at /docs, ' +
       'then restart apps/agent so the delegate is live.',
   );
   process.exit(0);

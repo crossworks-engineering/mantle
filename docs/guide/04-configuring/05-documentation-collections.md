@@ -3,7 +3,7 @@
 Mantle can index folders of **markdown documentation** into the brain, so the
 assistant can answer "how does this work?" by citing real docs — and so you can read
 them in-app under **Docs**. This very User Guide is one such collection. You manage
-them under **Settings → Documentation**.
+indexing on the **Docs** page itself (the panel on the `/docs` index).
 
 ## What a collection is
 
@@ -35,7 +35,7 @@ When you enable a collection you choose how deep it goes into memory:
 
 ## Adding your own collection
 
-Click **New collection** on the Documentation page and fill in:
+Click **New collection** on the **Docs** page and fill in:
 
 - **Label** — the display name (e.g. "Work Handbook").
 - **Key** — a short unique slug.

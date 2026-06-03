@@ -35,7 +35,7 @@ function slugify(s: string): string {
 }
 
 /**
- * "New collection" form (Dialog) for /settings/documentation. Registers a new
+ * "New collection" form (Dialog) for the /docs index. Registers a new
  * doc collection pointing at a folder of markdown on disk; on success it's
  * created enabled and reconciled, so its docs appear at /docs immediately.
  */

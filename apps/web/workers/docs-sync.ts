@@ -11,7 +11,7 @@
  *     the same sha-gated `upsertDocFromDisk` so it can't conflict with reconcile.
  *
  * Opt-in: DISABLED collections are never walked or watched. The worker refreshes
- * the enabled set every 60s, so toggling a collection at /settings/documentation
+ * the enabled set every 60s, so toggling a collection at /docs
  * starts/stops sync without a restart.
  */
 import path from 'node:path';

@@ -47,5 +47,5 @@ For the actual commands and checklists, see these developer docs in the repo:
 
 These are infrastructure-level and intended for whoever operates the box (likely
 you). They're part of the built-in **System docs** collection — disabled by default,
-enable-able at [Settings → Documentation](../04-configuring/05-documentation-collections.md)
+enable-able at [the Docs page](../04-configuring/05-documentation-collections.md)
 if you want the assistant to answer deployment questions too.

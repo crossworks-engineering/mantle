@@ -14,7 +14,7 @@ not a click-by-click tour.
 | **Files** | A real folder tree of your files, mirrored to disk. Upload, browse, edit text files; everything is read into memory. See [Files](03-files.md). |
 | **Notes** | Quick markdown notes. The fastest way to drop knowledge into the brain. |
 | **Pages** | Rich, Notion-style documents (headings, callouts, tables, columns, to-dos). For real writing. See [Pages, Tables, Notes & Docs](04-pages-tables-notes-docs.md). |
-| **Docs** | A read-only viewer for documentation indexed into the brain — including this User Guide. |
+| **Docs** | Read and navigate all documentation straight from disk (works even without indexing), and manage which collections are indexed for the assistant. Includes this User Guide. |
 | **Tables** | Typed data grids (like a lightweight Airtable): columns, formulas, totals, import from spreadsheets. |
 | **Todos** | Tasks with status, priority, and due dates. |
 | **Events** | Calendar events with reminders that ping you on Telegram. Supports recurring events. |
@@ -40,7 +40,6 @@ not a click-by-click tour.
 | **Agents** | Configure the conversational assistants — persona, model, primary/backup routes, voice, tools, skills. See [Agents & workers](../04-configuring/01-agents-and-workers.md). |
 | **AI workers** | Configure the background jobs — extractor, summarizer, reflector, text-to-speech, speech-to-text, vision, image generation. |
 | **Embedding** | The model that powers meaning-based search. Runs locally and free by default. |
-| **Documentation** | Turn documentation collections on/off for indexing, and **create new ones** (e.g. point at your own folder of markdown). See [Documentation collections](../04-configuring/05-documentation-collections.md). |
 | **Local network** | Connect Mantle to model machines on your own network (via Tailscale) so a cloud server can reach a model box at home. |
 | **Tools** | The catalogue of actions agents can take, and which ones require your approval. See [Skills & tools](../04-configuring/02-skills-and-tools.md). |
 | **Skills** | Reusable know-how you can attach to agents. |
