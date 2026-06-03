@@ -427,6 +427,22 @@ export function deleteColumn(doc: TableDoc, columnId: string): TableDoc {
   return { ...doc, columns, rows, aggregates };
 }
 
+/** Append a select/multiselect option to a column (deduped by label,
+ *  case-insensitive). No-op if the label already exists or the column is
+ *  missing. Used by the grid's combobox cell when the user creates a value
+ *  inline. */
+export function addSelectOption(doc: TableDoc, columnId: string, label: string): TableDoc {
+  const col = findColumn(doc, columnId);
+  if (!col) return doc;
+  const trimmed = label.trim();
+  if (!trimmed) return doc;
+  const options = col.options ?? [];
+  if (options.some((o) => o.label.toLowerCase() === trimmed.toLowerCase())) return doc;
+  const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const id = slug && !options.some((o) => o.id === slug) ? slug : randomUUID();
+  return updateColumn(doc, columnId, { options: [...options, { id, label: trimmed }] });
+}
+
 // ---------------------------------------------------------------------------
 // Aggregates (footer totals)
 // ---------------------------------------------------------------------------

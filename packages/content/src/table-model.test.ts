@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addColumn,
   addRow,
+  addSelectOption,
   applyView,
   tableDocFromGrid,
   cellIsEmpty,
@@ -122,6 +123,33 @@ describe('column ops', () => {
     const { doc, column } = addColumn(grid(), { name: 'Tag', type: 'text' });
     expect(column.id).toBeTruthy();
     expect(doc.columns.at(-1)!.name).toBe('Tag');
+  });
+});
+
+describe('addSelectOption', () => {
+  function selDoc() {
+    return {
+      columns: [{ id: 'c_s', name: 'Status', type: 'select' as const, options: [{ id: 'open', label: 'Open' }] }],
+      rows: [{ id: 'r1', cells: {} }],
+      aggregates: {},
+      views: [],
+    };
+  }
+  it('appends a new option with a slug id', () => {
+    const doc = addSelectOption(selDoc(), 'c_s', 'In Progress');
+    expect(doc.columns[0]!.options).toEqual([
+      { id: 'open', label: 'Open' },
+      { id: 'in_progress', label: 'In Progress' },
+    ]);
+  });
+  it('is a case-insensitive no-op when the label already exists', () => {
+    const base = selDoc();
+    expect(addSelectOption(base, 'c_s', 'open')).toBe(base);
+  });
+  it('ignores blanks and unknown columns', () => {
+    const base = selDoc();
+    expect(addSelectOption(base, 'c_s', '   ')).toBe(base);
+    expect(addSelectOption(base, 'nope', 'X')).toBe(base);
   });
 });
 

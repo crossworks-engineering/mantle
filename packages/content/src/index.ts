@@ -177,6 +177,7 @@ export {
   deleteColumn,
   setAggregate,
   computeAggregate,
+  addSelectOption,
   applyView,
   setView,
   COLUMN_TYPES,

@@ -25,6 +25,7 @@ import {
   Ban,
   Calendar,
   CalendarClock,
+  Check,
   ChevronsUpDown,
   CircleCheck,
   CircleSlash,
@@ -43,18 +44,24 @@ import {
   Trash2,
   Type,
   Variable,
+  X,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
+import { Calendar as CalendarPicker } from '@/components/ui/calendar';
+import { DateTimePicker } from '@/components/ui/date-time-picker';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -71,6 +78,7 @@ import {
 import {
   addColumn,
   addRow,
+  addSelectOption,
   AGGREGATE_KINDS,
   COLUMN_TYPES,
   coerceCell,
@@ -195,6 +203,11 @@ export function TableGrid({ doc, onChange }: { doc: TableDoc; onChange: (next: T
           value={info.getValue() as CellValue}
           rawValue={(info.row.original.cells[col.id] ?? null) as CellValue}
           onSet={(v) => onChangeRef.current(setCell(docRef.current, info.row.original.id, col.id, v))}
+          onApplyOption={({ value, newOption }) => {
+            let d = docRef.current;
+            if (newOption) d = addSelectOption(d, col.id, newOption);
+            onChangeRef.current(setCell(d, info.row.original.id, col.id, value));
+          }}
         />
       ),
     }));
@@ -428,11 +441,14 @@ function EditableCell({
   value,
   rawValue,
   onSet,
+  onApplyOption,
 }: {
   col: Column;
   value: CellValue; // resolved (formula columns computed)
   rawValue: CellValue; // stored
   onSet: (v: CellValue) => void;
+  /** Set the cell, optionally creating a new select/multiselect option first. */
+  onApplyOption: (p: { value: CellValue; newOption?: string }) => void;
 }) {
   if (col.type === 'formula') {
     return <span className="block px-2 py-1.5 text-sm text-muted-foreground">{displayValue(value, col)}</span>;
@@ -444,36 +460,165 @@ function EditableCell({
       </span>
     );
   }
-  if (col.type === 'select') {
-    const options = col.options ?? [];
-    return (
-      <Select value={(rawValue as string) ?? ''} onValueChange={(v) => onSet(v || null)}>
-        <SelectTrigger className="h-auto border-0 bg-transparent px-2 py-1.5 text-sm shadow-none focus:ring-0">
-          <SelectValue placeholder="—" />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((o) => (
-            <SelectItem key={o.id} value={o.label}>{o.label}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    );
+  if (col.type === 'select' || col.type === 'multiselect') {
+    return <OptionCell col={col} rawValue={rawValue} multi={col.type === 'multiselect'} apply={onApplyOption} />;
   }
-  if (col.type === 'date' || col.type === 'datetime') {
-    const iso = typeof rawValue === 'string' ? rawValue : '';
-    const v = col.type === 'date' ? iso.slice(0, 10) : iso.slice(0, 16);
-    return (
-      <input
-        type={col.type === 'date' ? 'date' : 'datetime-local'}
-        value={v}
-        onChange={(e) => onSet(e.target.value || null)}
-        className={CELL_INPUT}
-        aria-label={col.name}
-      />
-    );
+  if (col.type === 'date') {
+    return <DateCell col={col} rawValue={rawValue} onSet={onSet} />;
   }
-  // text / number / currency / percent / url / multiselect
+  if (col.type === 'datetime') {
+    return <DateTimeCell col={col} rawValue={rawValue} onSet={onSet} />;
+  }
+  // text / number / currency / percent / url
   return <TextCell col={col} rawValue={rawValue} onSet={onSet} />;
+}
+
+// ── date helpers ──────────────────────────────────────────────────────────
+const pad2 = (n: number) => String(n).padStart(2, '0');
+function parseDateValue(v: CellValue): Date | null {
+  if (typeof v !== 'string' || !v.trim()) return null;
+  // date-only 'YYYY-MM-DD' → local midnight; a full ISO string → as stored.
+  const d = new Date(v.length <= 10 ? `${v}T00:00:00` : v);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+const formatDateOnly = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+/** Date-only cell — the shadcn Calendar in a Popover (no native input). */
+function DateCell({ col, rawValue, onSet }: { col: Column; rawValue: CellValue; onSet: (v: CellValue) => void }) {
+  const [open, setOpen] = useState(false);
+  const date = parseDateValue(rawValue);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button type="button" className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm outline-none hover:bg-muted/40" aria-label={col.name}>
+          <Calendar className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+          {date ? (
+            <span className="truncate">{date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+          {date && (
+            <span
+              role="button"
+              tabIndex={-1}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSet(null); }}
+              className="ml-auto text-muted-foreground hover:text-foreground"
+              aria-label="Clear date"
+            >
+              <X className="size-3.5" />
+            </span>
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-auto p-0">
+        <CalendarPicker
+          mode="single"
+          selected={date ?? undefined}
+          onSelect={(d) => { onSet(d ? formatDateOnly(d) : null); setOpen(false); }}
+          autoFocus
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** Date + time cell — the shared DateTimePicker (Calendar + time field). */
+function DateTimeCell({ col, rawValue, onSet }: { col: Column; rawValue: CellValue; onSet: (v: CellValue) => void }) {
+  const date = parseDateValue(rawValue);
+  return (
+    <div className="px-1.5 py-1" aria-label={col.name}>
+      <DateTimePicker value={date} onChange={(d) => onSet(d ? d.toISOString() : null)} placeholder="—" clearable />
+    </div>
+  );
+}
+
+/** Select / multi-select cell — a Command combobox over the column's options,
+ *  with inline "Create '<value>'" (which appends the option to the column AND
+ *  selects it via `apply`). Single picks one label; multi toggles a string[]. */
+function OptionCell({
+  col,
+  rawValue,
+  multi,
+  apply,
+}: {
+  col: Column;
+  rawValue: CellValue;
+  multi: boolean;
+  apply: (p: { value: CellValue; newOption?: string }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const options = col.options ?? [];
+  const selected: string[] = multi
+    ? Array.isArray(rawValue) ? rawValue.map(String) : []
+    : typeof rawValue === 'string' && rawValue ? [rawValue] : [];
+
+  const q = query.trim();
+  const ql = q.toLowerCase();
+  const filtered = ql ? options.filter((o) => o.label.toLowerCase().includes(ql)) : options;
+  const canCreate = q.length > 0 && !options.some((o) => o.label.toLowerCase() === ql);
+
+  const choose = (label: string) => {
+    if (multi) {
+      const next = selected.includes(label) ? selected.filter((s) => s !== label) : [...selected, label];
+      apply({ value: next });
+      setQuery('');
+    } else {
+      apply({ value: label });
+      setQuery('');
+      setOpen(false);
+    }
+  };
+  const create = () => {
+    if (!q) return;
+    if (multi) {
+      apply({ value: [...selected, q], newOption: q });
+      setQuery('');
+    } else {
+      apply({ value: q, newOption: q });
+      setQuery('');
+      setOpen(false);
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setQuery(''); }}>
+      <PopoverTrigger asChild>
+        <button type="button" className="flex min-h-[2.1rem] w-full items-center gap-1 px-2 py-1 text-left text-sm outline-none hover:bg-muted/40" aria-label={col.name}>
+          {selected.length === 0 ? (
+            <span className="text-muted-foreground">—</span>
+          ) : multi ? (
+            <span className="flex flex-wrap gap-1">
+              {selected.map((s) => <Badge key={s} variant="secondary" className="font-normal">{s}</Badge>)}
+            </span>
+          ) : (
+            <span className="truncate">{selected[0]}</span>
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-56 p-0">
+        <Command shouldFilter={false}>
+          <CommandInput value={query} onValueChange={setQuery} placeholder={multi ? 'Search or add…' : 'Select or add…'} />
+          <CommandList>
+            {filtered.length === 0 && !canCreate && <CommandEmpty>Type to add an option.</CommandEmpty>}
+            <CommandGroup>
+              {filtered.map((o) => (
+                <CommandItem key={o.id} value={o.label} onSelect={() => choose(o.label)}>
+                  <Check className={cn('mr-2 size-3.5', selected.includes(o.label) ? 'opacity-100' : 'opacity-0')} aria-hidden />
+                  {o.label}
+                </CommandItem>
+              ))}
+              {canCreate && (
+                <CommandItem value={`__create__${q}`} onSelect={create}>
+                  <Plus className="mr-2 size-3.5" aria-hidden /> Create “{q}”
+                </CommandItem>
+              )}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 /**

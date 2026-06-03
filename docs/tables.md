@@ -161,8 +161,11 @@ so the grid is never blank); the list has URL-driven search/tag/pager,
 hover delete. `/tables/[id]` is a permanent **redirect** into `?selected=<id>`
 (deep links + the editor's own delete nav). The editor (`[id]/table-detail-client.tsx`
 rendered with `embedded`, drops the back-link) + `components/table-grid/` is a
-**TanStack-backed** typed grid: editable cells per type (number, currency-/
-percent-formatted, date input, `Checkbox`, `Select`, read-only formula), a column
+**TanStack-backed** typed grid: editable cells per type — number, currency-/
+percent-formatted, **date/datetime via the shadcn Calendar/`DateTimePicker`**,
+`Checkbox`, **select/multi-select as a `Command` combobox with inline "Create
+'<value>'"** (appends the option to the column via `addSelectOption` + selects
+it), and read-only formula — a column
 header menu (rename · retype · set total · sort · insert · delete) whose trigger
 shows the column's type icon, add/delete rows, a totals footer, the Pages-style
 draft autosave → **Commit**/Discard status machine, **Import** (xlsx/csv → draft;
