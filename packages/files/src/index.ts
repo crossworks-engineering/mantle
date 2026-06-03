@@ -43,6 +43,24 @@ export {
 } from './disk';
 
 export {
+  DOCS_ROOT_LABEL,
+  docsRoot,
+  collectionRoot,
+  ltreeForDocPath,
+  upsertDocFromDisk,
+  deleteDocByRelPath,
+  diffDocSets,
+  reconcileCollection,
+  reconcileEnabledCollections,
+  purgeCollection,
+  ensureDefaultCollections,
+  listDocCollections,
+  setCollectionEnabled,
+  type DiskDoc,
+  type ReconcileResult,
+} from './docs';
+
+export {
   ensureFilesRootBranch,
   createFolder,
   ensureDatedUploadFolder,
