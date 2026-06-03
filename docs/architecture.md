@@ -31,6 +31,12 @@ Companion docs:
   Also covers the **"Pages" delegate agent** + Phase 2b block-addressed
   editing (stable per-block ids, `page_blocks_list`, `page_block_*` tools)
   + the Phase 3a editor AI-assist side panel.
+- [`conversation.md`](./conversation.md) — the **unified conversation stream**:
+  every channel (web `/assistant`, Telegram, future WhatsApp) writes one
+  per-(owner, agent) store (`assistant_messages` + `channel`), one summarizer
+  rolls it up, and `/assistant` renders all of it. Channels are transports
+  (`recordTurn` / `loadConversationContext` in `@mantle/agent-runtime`); read
+  this before touching how a surface persists or loads conversation turns.
 - [`recall.md`](./recall.md) — "Remy", the memory-recall agent: time-windowed
   replay of past conversations (`find_window` → `recall_window`) via the
   `invoke_agent` delegation path. Lossless paging vs. lossy digests.
@@ -438,6 +444,20 @@ outbound is gated to allowlisted chats only.
 
 ## 9b. The agent — auto-replies to Telegram
 
+> **Unified conversation stream (2026-06-03) — read [`conversation.md`](./conversation.md).**
+> Telegram is now a **transport** onto one per-(owner, agent) conversation store
+> (`assistant_messages`), shared with the web `/assistant`. The agent still owns
+> the Telegram-specific I/O below (poll, gate, send, the `telegram_messages`
+> transport/brain record), but **conversation history + summarization no longer
+> live in `telegram_messages`**: `handleMessage` calls `recordTurn(channel='telegram')`
+> for each turn and loads context via `loadConversationContext` (per-agent, ALL
+> channels) — both from `@mantle/agent-runtime`. The two changes vs. the description
+> below: (1) "load conversation history" reads the unified stream per-agent, not
+> `telegram_messages` per-chat; (2) digests are produced by the single
+> `summarizeAgentConversation` keyed on `agent_id` (see §9b'-digests + `conversation.md`),
+> not the old per-chat `summarizeChat`. `telegram_messages` stays for dedup,
+> delivery, file_ids, and the `type=telegram_message` brain node.
+
 `apps/agent/src/main.ts` is the event-driven reply loop. As of migration
 0011/0012 (May 2026) the agent is **DB-driven, multi-turn, and emits
 prompt-caching markers.**
@@ -448,11 +468,12 @@ inbound DM
   → trigger pg_notify('telegram_message_inserted', new.id::text)   (inbound only)
   → apps/agent's LISTEN connection wakes up
   → resolve responder agent  (per-chat override → bot's owning responder → global priority)
-  → load conversation history  (last N inbound+outbound turns, chronological)
+  → recordTurn(channel='telegram', inbound) into the unified stream   ← unified
+  → loadConversationContext(per-agent, all channels)   ← unified (was telegram_messages per-chat)
   → buildChatMessages(...)  (cache_control on system block for anthropic/*)
-  → @openrouter/sdk call
+  → chat-adapter call (provider-routed; see §9d / chat-failover.md)
   → @mantle/telegram sendMessage  (on the inbound message's own bot)
-  → INSERT outbound row + matching node
+  → recordTurn(channel='telegram', outbound) + INSERT telegram_messages row + node
   → mark inbound processed
 ```
 
@@ -866,6 +887,18 @@ providers (OpenAI, xAI, Google, Hugging Face). See
 [`ai-workers.md`](./ai-workers.md) for the full matrix.
 
 ## 9g. Web /assistant — full multimedia parity with Telegram
+
+> **Unified conversation stream (2026-06-03) — read [`conversation.md`](./conversation.md).**
+> `/assistant` is the **web doorway onto the same per-(owner, agent) store every
+> channel writes**, not a web-only surface. Two consequences: (1)
+> `apps/web/lib/assistant.ts` persists/loads via the shared `recordTurn` /
+> `loadConversationContext` (`@mantle/agent-runtime`) — so the responder here reads
+> facts + digests + last-N turns **across all channels** (it gained per-agent
+> digests + the 0.85/0.6 retrieval cutoffs in the migration); (2) the window
+> **renders turns from other channels too** — Telegram turns appear inline with a
+> channel badge, and persisted `attachments` (voice-note chips, images via the
+> file-bytes route) render on load. The capabilities below are the web surface's
+> own native I/O; they sit on top of the shared store.
 
 The `/assistant` chat (web) reaches Telegram-equivalent capability:
 

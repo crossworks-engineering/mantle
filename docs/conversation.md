@@ -1,23 +1,30 @@
 # Unified conversation stream
 
-**Status: DESIGN (not yet built).** This doc is the plan-on-paper for collapsing
-every chat channel — web `/assistant`, Telegram, future WhatsApp — into a single
-per-agent conversation store. It's meant to be refined before any code lands.
+**Status: SHIPPED (2026-06-03).** Every chat channel — web `/assistant`, Telegram,
+and any future surface (WhatsApp, …) — now writes ONE per-(owner, agent)
+conversation store (`assistant_messages`), one summarizer rolls it up, and the
+`/assistant` window renders all of it. This doc began as the plan-on-paper and is
+now the as-built reference; the phase checklist in §8 maps each step to its commit.
+The migration arc: schema `0071` (additive) → shared `conversation.ts` module → web
+adopts it → unified summarizer → Telegram cutover + trigger swap `0072` → backfill →
+UI.
 
 Companion docs:
 - [`architecture.md`](./architecture.md) §9b (Telegram responder), §9g (web
-  `/assistant`), §9b' (digests) — the *current*, pre-unification shape.
-- [`recall.md`](./recall.md) — "Remy" reads `conversation-digest` notes; the
-  digest re-keying below must not break her `find_window`.
-- [`ai-workers.md`](./ai-workers.md) §5 — the `summarizer` worker that this plan
-  reduces from two entry points to one.
+  `/assistant`), §9b' (digests) — the per-surface detail, now pointing here for the
+  unified model.
+- [`recall.md`](./recall.md) — "Remy" reads `conversation-digest` notes; her
+  `find_window` matches by tag (re-key-safe) and `recall_window` reads web from
+  `assistant_messages` (channel='web') + Telegram from `telegram_messages`.
+- [`ai-workers.md`](./ai-workers.md) §5 — the `summarizer` worker, now driven from
+  a single per-agent entry point (`summarizeAgentConversation`).
 
 ---
 
-## 0. The problem
+## 0. The problem (what this replaced)
 
-Today every chat channel forks the entire stack. Two channels exist and they
-duplicate four things each:
+Before unification, every chat channel forked the entire stack. The two channels
+duplicated four things each:
 
 | Concern | Telegram | Web `/assistant` |
 |---|---|---|
@@ -175,19 +182,26 @@ The "per-agent, cross-channel" semantics live here. The digest filter changes fr
 - Inbound/outbound inserts → `recordTurn(channel='web', attachments=[image artifact])`.
 - Pass real `digests` into `buildChatMessages`. Lowest-risk surface (same table).
 
-### 5b. Telegram (`apps/agent/src/main.ts` + `workers/telegram-poll.ts`)
-- **Keep** the `telegram_messages` insert (node, dedup, file_ids, delivery).
-- **Add** `recordTurn(channel='telegram', externalRef={chatId,messageId,updateId},
-  attachments=[…])` for both inbound and outbound, in the *same transaction* as the
-  telegram_messages write.
-- `loadContext` → `loadConversationContext` (per-agent, cross-channel). Digests by
-  agent, not chat.
-- Outbound reply still sends via the bot (`sendMessage`/`sendVoice`), threading off
-  `external_ref.messageId`. Voice/photo out are also recorded as `attachments` so they
-  appear on `/assistant`.
-- *Open question to confirm in build:* exact inbound `recordTurn` site — the poll
-  worker (row exists even before the agent processes it) vs. `handleMessage`. Leaning
-  poll worker.
+### 5b. Telegram (`apps/agent/src/main.ts`) — as built
+- **Keep** the `telegram_messages` insert (node, dedup, file_ids, delivery) — the
+  transport/brain record.
+- **Add** `recordTurn(channel='telegram', externalRef={accountId,chatId,messageId},
+  attachments=[…])` for both inbound and outbound.
+- **Where inbound is recorded:** in `handleMessage`, NOT the poll worker — the
+  responder agent is only resolved at handle time (`resolveResponderAgent`), and the
+  stream is per-agent. It runs right after the agent is resolved + voice is
+  transcribed, before `loadConversationContext`; the atomic `processed`-claim earlier
+  in `handleMessage` guarantees exactly-once. (This resolved the original "poll worker
+  vs handleMessage" open question — poll time has no agent.) The inbound row is then
+  excluded from its own context load via `excludeMessageId` + `before`.
+- **Outbound** is recorded once per reply (full text) inside `persist_outbound`,
+  alongside the per-chunk `telegram_messages` rows.
+- `loadContext` → `loadConversationContext` (per-agent, cross-channel); the old
+  per-chat `loadContext` is removed. Digests filter by `data.agent_id`, not chat.
+- Outbound reply still sends via the bot (`sendMessage`/`sendVoice`), threading off the
+  inbound message id. Telegram attachments (photos/voice/docs) are mapped onto the
+  conversation row (`toConversationAttachments`) so they render in `/assistant` — no
+  bytes stored, just `file_id` + (for ingested photos/docs) the file node id.
 
 ### 5c. Summarizer (`apps/agent/src/summarizer.ts`)
 - Collapse `summarizeChat(chatPk)` + `summarizeWebConversation(ownerId)` into one
