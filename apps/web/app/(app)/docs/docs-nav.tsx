@@ -150,13 +150,16 @@ export function DocsNav({ nav }: { nav: ReaderNav }) {
   // always reveals the current page, even if its section was collapsed.
   useEffect(() => {
     const m = pathname.match(/^\/docs\/([^/]+)\/(.+)$/);
-    if (!m) return;
-    const collKey = decodeURIComponent(m[1]);
-    const segs = m[2].split('/').map(decodeURIComponent);
+    const collEnc = m?.[1];
+    const relEnc = m?.[2];
+    if (!collEnc || !relEnc) return;
+    const collKey = decodeURIComponent(collEnc);
+    const segs = relEnc.split('/').map(decodeURIComponent);
     const ancestors = new Set<string>([collKey]);
     let acc = '';
     for (let i = 0; i < segs.length - 1; i++) {
-      acc = acc ? `${acc}/${segs[i]}` : segs[i];
+      const seg = segs[i]!;
+      acc = acc ? `${acc}/${seg}` : seg;
       ancestors.add(`${collKey}::${acc}`);
     }
     setCollapsed((prev) => {
