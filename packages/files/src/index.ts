@@ -45,6 +45,7 @@ export {
 export {
   DOCS_ROOT_LABEL,
   docsRoot,
+  effectiveBrainDepth,
   collectionRoot,
   ltreeForDocPath,
   upsertDocFromDisk,

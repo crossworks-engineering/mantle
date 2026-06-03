@@ -53,7 +53,7 @@ import {
   type Fact,
 } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
-import { diskPathForFile, extOf, mimeForExt, parseDocumentBytes, INGESTABLE_EXTS, parserRouteForExt, extractPdfTextWithPassword } from '@mantle/files';
+import { diskPathForFile, extOf, mimeForExt, parseDocumentBytes, INGESTABLE_EXTS, parserRouteForExt, extractPdfTextWithPassword, effectiveBrainDepth } from '@mantle/files';
 import { contentKey, getContent } from '@mantle/storage';
 import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import {
@@ -1113,11 +1113,10 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
   // relations, facts) so system-meta ("Mantle uses HNSW") never lands in the
   // personal profile + graph. Every other type is always 'full'. The depth is
   // stamped on the node from doc_collections.brain_depth at sync time.
-  const brainDepth =
-    node.type === 'documentation' &&
-    (node.data as Record<string, unknown> | null)?.brain_depth !== 'full'
-      ? 'retrieval'
-      : 'full';
+  const brainDepth = effectiveBrainDepth(
+    node.type,
+    (node.data as Record<string, unknown> | null)?.brain_depth,
+  );
   const retrievalOnly = brainDepth === 'retrieval';
   // `*` is a wildcard meaning "any non-HARD_SKIP type" — already enforced above.
   if (!extractTypes.includes('*') && !extractTypes.includes(node.type)) {

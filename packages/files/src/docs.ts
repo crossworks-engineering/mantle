@@ -51,6 +51,17 @@ export function docsRoot(): string {
   return path.resolve(env || DEFAULT_DOCS_ROOT);
 }
 
+/**
+ * The effective brain depth for a node. Documentation defaults to
+ * retrieval-only (L5 index, no L4 facts/entities/graph) unless its collection
+ * is explicitly 'full'; every other node type is always 'full'. Pure — the
+ * extractor calls this to decide whether to run the L4 passes.
+ */
+export function effectiveBrainDepth(nodeType: string, rawDepth: unknown): DocBrainDepth {
+  if (nodeType === 'documentation' && rawDepth !== 'full') return 'retrieval';
+  return 'full';
+}
+
 /** The disk root for a collection: its own `root_path` if set, else the global
  *  docs root (for the `system` collection). */
 export function collectionRoot(collection: Pick<DocCollection, 'rootPath'>): string {
