@@ -77,6 +77,27 @@ export function DocumentationClient({
 
   return (
     <div className="space-y-4">
+      {/* Actions — left-aligned, above the enable/disable switch blocks. */}
+      <div className="flex flex-wrap gap-2">
+        <NewCollectionDialog />
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={pending || allEnabled || initial.length === 0}
+          onClick={() => run(() => setAllDocCollectionsAction(true))}
+        >
+          Enable all
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={pending || !anyEnabled}
+          onClick={() => setConfirm({ kind: 'all' })}
+        >
+          Disable all
+        </Button>
+      </div>
+
       <div className="space-y-2">
         {initial.map((c) => (
           <div
@@ -122,27 +143,6 @@ export function DocumentationClient({
             </div>
           </div>
         ))}
-      </div>
-
-      {/* Actions — left-aligned, above the info box. */}
-      <div className="flex flex-wrap gap-2">
-        <NewCollectionDialog />
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={pending || allEnabled || initial.length === 0}
-          onClick={() => run(() => setAllDocCollectionsAction(true))}
-        >
-          Enable all
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={pending || !anyEnabled}
-          onClick={() => setConfirm({ kind: 'all' })}
-        >
-          Disable all
-        </Button>
       </div>
 
       {/* Info box — what indexing does. */}
