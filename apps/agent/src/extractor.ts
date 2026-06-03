@@ -93,7 +93,7 @@ const HARD_SKIP_TYPES = new Set(['branch']);
  *  `task` and `event` are first-class content: title + body + metadata
  *  (status, due_at, starts_at, location, …) all become part of the body
  *  the extractor summarises and embeds. */
-const DEFAULT_EXTRACT_TYPES = ['note', 'page', 'table', 'file', 'email', 'email_thread', 'secret', 'task', 'event', 'contact'];
+const DEFAULT_EXTRACT_TYPES = ['note', 'page', 'table', 'file', 'email', 'email_thread', 'secret', 'task', 'event', 'contact', 'documentation'];
 
 /** Max characters of body text we feed the summarizer in one shot.
  *  Long emails / PDFs get truncated to keep the prompt bounded and the
@@ -405,6 +405,16 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
       .where(eq(tables.nodeId, node.id))
       .limit(1);
     return row?.dataText?.trim() ? row.dataText : node.title;
+  }
+  // ─── Documentation — the markdown body, cached in data.content ────────
+  // Docs are synced from disk (one node per .md file). The full markdown is
+  // the chunk source; the title is the collection-relative path, so the
+  // hollow-title guard below would also pass — this case is explicit for
+  // clarity and to keep docs off the file-bytes fallback path.
+  if (node.type === 'documentation') {
+    const d = (node.data ?? {}) as Record<string, unknown>;
+    const content = typeof d.content === 'string' ? d.content : '';
+    return content.trim() ? cleanText(content) : node.title;
   }
   // For note/file/sermon, body lives in data.content (or data.text/body).
   const data = (node.data ?? {}) as Record<string, unknown>;
@@ -1097,6 +1107,18 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
   const params = (worker.params ?? {}) as ExtractorParams;
   const extractTypes =
     params.target_types ?? params.extract_types ?? DEFAULT_EXTRACT_TYPES;
+
+  // Brain depth: documentation collections default to 'retrieval' — index to
+  // L5 (summary + embedding + chunks) but SKIP L4 (entity reconciliation,
+  // relations, facts) so system-meta ("Mantle uses HNSW") never lands in the
+  // personal profile + graph. Every other type is always 'full'. The depth is
+  // stamped on the node from doc_collections.brain_depth at sync time.
+  const brainDepth =
+    node.type === 'documentation' &&
+    (node.data as Record<string, unknown> | null)?.brain_depth !== 'full'
+      ? 'retrieval'
+      : 'full';
+  const retrievalOnly = brainDepth === 'retrieval';
   // `*` is a wildcard meaning "any non-HARD_SKIP type" — already enforced above.
   if (!extractTypes.includes('*') && !extractTypes.includes(node.type)) {
     await recordSkippedTrace({
@@ -1560,7 +1582,11 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       );
 
       // ─── entity reconciliation ───────────────────────────────────────
-      const entityIdByName = await step(
+      // Retrieval-only docs skip this entirely: no entity rows, no
+      // `mentioned_in` edges — L4 stays empty for them.
+      const entityIdByName = retrievalOnly
+        ? new Map<string, string>()
+        : await step(
         {
           name: 'reconcile_entities',
           kind: 'compute',
@@ -1722,7 +1748,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       // (the only edges that carry source_node_id) then re-insert, so a
       // re-extract REPLACES rather than appends — and a doc that no longer
       // yields a relation has its stale edge cleared.
-      if (params.extract_facts !== false) {
+      if (params.extract_facts !== false && !retrievalOnly) {
         await step(
           {
             name: 'process_relations',
@@ -1793,7 +1819,8 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       }
 
       // ─── fact extraction pass ────────────────────────────────────────
-      if (params.extract_facts === false || parsed.facts.length === 0) {
+      // Retrieval-only docs never persist facts (L4 skip).
+      if (params.extract_facts === false || retrievalOnly || parsed.facts.length === 0) {
         void bumpWorkerUsage(worker.id);
         return;
       }
