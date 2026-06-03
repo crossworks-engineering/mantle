@@ -74,6 +74,7 @@ server (or even a spare box at home), you can own your own brain.
 
 ## Where to go next
 
+- **Setting it up?** See [Installation](01-installation.md) — run it locally or on a server.
 - **New here?** Start with [Getting started](01-getting-started.md).
 - **Want to understand the magic?** Read [The brain](02-concepts/01-the-brain.md).
 - **Configuring the assistant?** See [Agents, skills & tools](02-concepts/02-agents-skills-tools.md).

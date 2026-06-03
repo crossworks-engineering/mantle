@@ -4,6 +4,8 @@ This is the five-minute tour: sign in, meet the assistant, add your first piece 
 knowledge, and watch the brain react. You don't need to understand the internals
 to use Mantle — just talk to it and feed it things.
 
+> Don't have Mantle running yet? Set it up first — see [Installation](01-installation.md).
+
 ## 1. Sign in
 
 Mantle is single-user. Open the app and log in with your account. There's no
