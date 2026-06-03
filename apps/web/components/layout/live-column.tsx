@@ -316,7 +316,12 @@ function Row({ it, children }: { it: ActivityItem; children: React.ReactNode }) 
     <li>
       <Link
         href={`/debug/journey/${it.traceId}`}
-        className="flex flex-col gap-0.5 px-4 py-2.5 transition-colors hover:bg-accent/50"
+        // Neutral foreground-overlay hover (not a colour tint): the column is
+        // bg-sidebar (== muted in some themes, so bg-muted would be invisible),
+        // and a coloured accent tint blends with the grey muted-foreground meta
+        // text. A faint neutral overlay stays visible over any sidebar value in
+        // light + dark while keeping the grey text legible.
+        className="flex flex-col gap-0.5 px-4 py-2.5 transition-colors hover:bg-foreground/[0.06]"
       >
         {children}
       </Link>
