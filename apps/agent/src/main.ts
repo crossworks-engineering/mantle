@@ -20,20 +20,17 @@
  */
 
 import postgres from 'postgres';
-import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm';
 import {
   db,
   agents,
   assistantMessages,
-  entities,
-  facts,
   nodes,
   telegramMessages,
   telegramChats,
   telegramAccounts,
   type Agent,
-  type AgentMemoryConfig,
-  type PersonaNote,
+  type ConversationAttachment,
   type TelegramAccount,
 } from '@mantle/db';
 import { accountById, downloadTelegramFile, sendChatAction, sendMessage, sendVoice } from '@mantle/telegram';
@@ -56,7 +53,7 @@ import {
   type TelegramAttachment,
   type TtsParams,
 } from '@mantle/db';
-import { embed, resolveEmbeddingConfig } from '@mantle/embeddings';
+import { resolveEmbeddingConfig } from '@mantle/embeddings';
 import { maxImageBytesFor, modelSupportsVision, recordIngest, refreshModelCatalog, startTrace, step } from '@mantle/tracing';
 import {
   buildChatMessages,
@@ -65,15 +62,13 @@ import {
   effectiveToolSlugs,
   extractAttachmentForTurn,
   invokeAgent,
+  loadConversationContext,
+  recordTurn,
   resolveAgentSkills,
   resolveAgentTools,
   resolveBackupAdapter,
   resolveChatKey,
   runToolLoop,
-  type ContentHit,
-  type Digest,
-  type FactSnippet,
-  type HistoryTurn,
   type UserImage,
 } from '@mantle/agent-runtime';
 import {
@@ -105,7 +100,7 @@ registerAgentInvoker(invokeAgent);
 // on tools). Must run BEFORE seedBuiltinTools() — the seed reads
 // from the in-memory registry. Idempotent.
 registerHeartbeatTools();
-import { summarizeChat, summarizeAgentConversation } from './summarizer.js';
+import { summarizeAgentConversation } from './summarizer.js';
 import { enqueueExtract, startExtractQueue, stopExtractQueue } from './extract-queue.js';
 import { reflect } from './reflector.js';
 
@@ -176,179 +171,6 @@ async function resolveResponderAgent(
   return row ?? null;
 }
 
-/** Load everything the responder needs for its prompt:
- *    persona_notes + facts + digests + content_index hits + raw turns.
- *  Facts and content hits are vector-keyed off the incoming message, so we
- *  embed the user's text once and reuse it. */
-async function loadContext(
-  chatPk: string,
-  excludeInboundId: string,
-  inboundSentAt: Date,
-  inboundText: string,
-  agent: Agent,
-  ownerId: string,
-): Promise<{
-  personaNotes: PersonaNote[];
-  facts: FactSnippet[];
-  digests: Digest[];
-  contentHits: ContentHit[];
-  turns: HistoryTurn[];
-}> {
-  const memoryConfig = (agent.memoryConfig ?? {}) as AgentMemoryConfig;
-  const historyLimit = memoryConfig.history_limit ?? 20;
-  const windowHours = memoryConfig.history_window_hours ?? null;
-  const digestLimit = memoryConfig.digest_limit ?? 3;
-  const factLimit = memoryConfig.fact_limit ?? 10;
-  const contentHitLimit = memoryConfig.content_hit_limit ?? 3;
-
-  const personaNotes: PersonaNote[] = (agent.personaNotes ?? []) as PersonaNote[];
-
-  // Embed once for both fact + content_index lookups. Skip if either limit is 0.
-  // The embedder is resolved centrally from embedding_config — no per-agent
-  // override (the query must share the corpus's vector space).
-  let queryVec: number[] | null = null;
-  if ((factLimit > 0 || contentHitLimit > 0) && inboundText.trim().length > 0) {
-    try {
-      queryVec = await embed(ownerId, inboundText.slice(0, 2000));
-    } catch (err) {
-      console.error(
-        '[agent] loadContext: query embed failed:',
-        err instanceof Error ? err.message : err,
-      );
-    }
-  }
-
-  // ─── Profile facts ──────────────────────────────────────────────────
-  let factRows: FactSnippet[] = [];
-  if (queryVec && factLimit > 0) {
-    const rows = await db
-      .select({
-        content: facts.content,
-        kind: facts.kind,
-        entityName: entities.name,
-        dist: sql<number>`${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector`,
-      })
-      .from(facts)
-      .leftJoin(entities, eq(facts.entityId, entities.id))
-      .where(
-        and(
-          eq(facts.ownerId, ownerId),
-          isNull(facts.validTo),
-          sql`${facts.embedding} is not null`,
-        ),
-      )
-      .orderBy(sql`${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector`)
-      .limit(factLimit);
-    factRows = rows
-      // Mismatch guard: if the query vector and stored fact vectors are in
-      // different embedding-model spaces (the per-agent override / write-side
-      // can drift), cosine distances cluster near 1.0. Drop those so a mismatch
-      // degrades to "no facts" (visible) rather than surfacing garbage-space
-      // rows as real profile facts. Loose by design (0.85) — legitimate facts
-      // still pass even when only loosely related to the message; this only
-      // catches the mismatch, unlike the content-hit cutoff (0.6) which also
-      // filters for query relevance.
-      .filter((r) => (r.dist ?? 1) < 0.85)
-      .map((r) => ({
-        content: r.content,
-        kind: r.kind as string,
-        entityName: r.entityName,
-      }));
-  }
-
-  // ─── Content index hits ────────────────────────────────────────────
-  let contentHits: ContentHit[] = [];
-  if (queryVec && contentHitLimit > 0) {
-    const rows = await db
-      .select({
-        nodeId: nodes.id,
-        title: nodes.title,
-        type: nodes.type,
-        data: nodes.data,
-        dist: sql<number>`${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector`,
-      })
-      .from(nodes)
-      .where(
-        and(
-          eq(nodes.ownerId, ownerId),
-          sql`${nodes.embedding} is not null`,
-          // Exclude conversation-digest notes (already covered by digest layer)
-          // and telegram_message rows (those are the conversation itself).
-          sql`not (${nodes.tags} @> ARRAY['conversation-digest']::text[])`,
-          sql`${nodes.type} <> 'telegram_message'`,
-        ),
-      )
-      .orderBy(sql`${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector`)
-      .limit(contentHitLimit);
-    contentHits = rows
-      .filter((r) => (r.dist ?? 1) < 0.6) // cosine distance — exclude obvious non-matches
-      .map((r) => {
-        const data = (r.data ?? {}) as Record<string, unknown>;
-        return {
-          nodeId: r.nodeId,
-          title: r.title,
-          type: r.type as string,
-          summary: typeof data.summary === 'string' ? data.summary : null,
-        };
-      });
-  }
-
-  // ─── Conversation digests for this chat ────────────────────────────
-  const digestRows =
-    digestLimit > 0
-      ? await db
-          .select({ data: nodes.data, createdAt: nodes.createdAt })
-          .from(nodes)
-          .where(
-            and(
-              eq(nodes.ownerId, ownerId),
-              eq(nodes.type, 'note'),
-              sql`${nodes.tags} @> ARRAY['conversation-digest']::text[]`,
-              sql`${nodes.data}->>'chat_id' = ${chatPk}`,
-            ),
-          )
-          .orderBy(desc(nodes.createdAt))
-          .limit(digestLimit)
-      : [];
-
-  const digests: Digest[] = digestRows
-    .reverse()
-    .map((d) => {
-      const data = d.data as Record<string, unknown>;
-      const topic = typeof data.topic === 'string' && data.topic.trim() ? data.topic.trim() : null;
-      return {
-        summary: String(data.summary ?? ''),
-        periodStart: String(data.period_start ?? ''),
-        periodEnd: String(data.period_end ?? ''),
-        topic,
-      };
-    })
-    .filter((d) => d.summary.length > 0);
-
-  // ─── Raw recent turns ──────────────────────────────────────────────
-  const conds = [eq(telegramMessages.chatId, chatPk), ne(telegramMessages.id, excludeInboundId)];
-  conds.push(lt(telegramMessages.sentAt, inboundSentAt));
-  if (windowHours != null && windowHours > 0) {
-    const cutoff = new Date(inboundSentAt.getTime() - windowHours * 3600_000);
-    conds.push(gte(telegramMessages.sentAt, cutoff));
-  }
-  const rows = await db
-    .select({
-      direction: telegramMessages.direction,
-      text: telegramMessages.text,
-      sentAt: telegramMessages.sentAt,
-    })
-    .from(telegramMessages)
-    .where(and(...conds))
-    .orderBy(desc(telegramMessages.sentAt))
-    .limit(historyLimit);
-  const turns: HistoryTurn[] = rows
-    .reverse()
-    .map((r) => ({ role: r.direction === 'outbound' ? 'assistant' : 'user', text: r.text }));
-
-  return { personaNotes, facts: factRows, digests, contentHits, turns };
-}
-
 /** Telegram fills a media message's text with a placeholder like "(photo)" or
  *  "(document: report.pdf)" when there's no real caption. Treat those as empty
  *  so they don't become the user's "question". */
@@ -356,6 +178,39 @@ function telegramCaption(text: string | null | undefined): string {
   const t = (text ?? '').trim();
   if (!t || /^\((photo|document|voice message|audio|video|video_note|sticker)\b/i.test(t)) return '';
   return t;
+}
+
+/** Map a Telegram message's attachments to the unified conversation-stream
+ *  shape so a turn renders its media in /assistant (Phase 5). `fileNodeId` is
+ *  the ingested file node (photos/documents get one), surfaced so a future
+ *  render can re-fetch the original. Stickers are dropped (no conversational
+ *  value). Bytes are never stored — only the transport file_id + node id. */
+function toConversationAttachments(
+  atts: TelegramAttachment[] | null | undefined,
+  fileNodeId?: string | null,
+): ConversationAttachment[] {
+  const KIND: Record<string, ConversationAttachment['kind'] | undefined> = {
+    photo: 'image',
+    document: 'document',
+    voice: 'voice',
+    audio: 'audio',
+    video: 'video',
+    video_note: 'video',
+    sticker: undefined,
+  };
+  const out: ConversationAttachment[] = [];
+  for (const a of atts ?? []) {
+    const kind = KIND[a.kind];
+    if (!kind) continue;
+    out.push({
+      kind,
+      ...(a.mime ? { mime: a.mime } : {}),
+      ...(a.name ? { caption: a.name } : {}),
+      ...(a.file_id ? { fileId: a.file_id } : {}),
+      ...(fileNodeId && (a.kind === 'photo' || a.kind === 'document') ? { nodeId: fileNodeId } : {}),
+    });
+  }
+  return out;
 }
 
 async function handleMessage(messageId: string): Promise<void> {
@@ -774,20 +629,41 @@ async function handleMessage(messageId: string): Promise<void> {
             .where(eq(telegramMessages.id, row.id));
         }
 
-        const { personaNotes, facts: relevantFacts, digests, contentHits, turns: history } =
+        // Record the inbound turn into the unified per-(owner, agent)
+        // conversation stream (assistant_messages, channel='telegram') — the
+        // single source of truth the responder reads history from and the
+        // summarizer rolls up. telegram_messages stays the transport/brain
+        // record. Done HERE (not at poll time) because the responder agent is
+        // only resolved now; the atomic processed-claim above guarantees this
+        // runs exactly once per inbound. See docs/conversation.md.
+        const convInbound = await recordTurn({
+          ownerId: USER_ID!,
+          agentId: agent.id,
+          direction: 'inbound',
+          text: row.text,
+          channel: 'telegram',
+          attachments: toConversationAttachments(row.attachments, attachmentContext?.nodeId ?? null),
+          externalRef: {
+            accountId: row.accountId,
+            chatId: row.telegramChatId,
+            ...(row.telegramMessageId ? { messageId: row.telegramMessageId } : {}),
+          },
+        });
+
+        const { personaNotes, facts: relevantFacts, digests, contentHits, history } =
           await step(
-            { name: 'load_context', kind: 'compute', input: { chatId: row.chatPk } },
+            { name: 'load_context', kind: 'compute', input: { agentId: agent.id } },
             async (h) => {
-              const ctx = await loadContext(
-                row.chatPk,
-                row.id,
-                row.sentAt,
-                row.text,
+              const ctx = await loadConversationContext({
+                ownerId: USER_ID!,
                 agent,
-                USER_ID!,
-              );
+                inboundText: row.text,
+                // Exclude the inbound we just recorded; only look before it.
+                excludeMessageId: convInbound.id,
+                before: convInbound.createdAt,
+              });
               h.setOutput({
-                turnCount: ctx.turns.length,
+                turnCount: ctx.history.length,
                 digestCount: ctx.digests.length,
                 factCount: ctx.facts.length,
                 contentHitCount: ctx.contentHits.length,
@@ -1228,6 +1104,26 @@ async function handleMessage(messageId: string): Promise<void> {
               processedAt: now,
             });
           }
+
+          // Mirror the outbound into the unified per-agent stream ONCE (the
+          // full reply text — the per-chunk telegram_messages rows above are
+          // the transport record). channel='telegram'; external_ref points at
+          // the first sent chunk for reply threading. See docs/conversation.md.
+          await recordTurn({
+            ownerId: USER_ID!,
+            agentId: agent.id,
+            direction: 'outbound',
+            text: reply,
+            channel: 'telegram',
+            model: agent.model,
+            externalRef: {
+              accountId: row.accountId,
+              chatId: row.telegramChatId,
+              ...(delivered && telegramMessageIds[0] != null
+                ? { messageId: String(telegramMessageIds[0]) }
+                : {}),
+            },
+          });
           h.setMeta({ rows: targets.length, delivered, ...(sendError ? { sendError } : {}) });
         });
 
@@ -1425,69 +1321,29 @@ async function assertEmbeddingModelConsistency(): Promise<void> {
   }
 }
 
-/** Debounce window for summarize_due — collapses a burst of inserts in the
- *  same chat (e.g. user message + agent reply within the same second) into
- *  one summarization check. The check itself is cheap (one indexed COUNT). */
+/** Debounce window for summarize_due — collapses a burst of inserts for the
+ *  same agent (a user turn + the reply within the same second) into one
+ *  summarization check. Since migration 0072, summarize_due fires with an
+ *  AGENT id (AFTER INSERT on assistant_messages, ALL channels), so one
+ *  debounced pass covers web + Telegram + any future channel for that agent.
+ *  The check itself is cheap (one indexed COUNT). */
 const SUMMARIZE_DEBOUNCE_MS = 2000;
-const summarizePending = new Set<string>();
+const summarizePending = new Set<string>(); // agent ids
 let summarizeTimer: NodeJS.Timeout | null = null;
 
-function scheduleSummarize(chatPk: string): void {
-  summarizePending.add(chatPk);
+function scheduleSummarize(agentId: string): void {
+  summarizePending.add(agentId);
   if (summarizeTimer) return;
   summarizeTimer = setTimeout(() => {
     summarizeTimer = null;
     const batch = [...summarizePending];
     summarizePending.clear();
     for (const id of batch) {
-      summarizeChat(id, USER_ID!).catch((err) =>
+      summarizeAgentConversation(USER_ID!, id).catch((err) =>
         console.error('[agent] summarize error:', err instanceof Error ? err.message : err),
       );
     }
   }, SUMMARIZE_DEBOUNCE_MS);
-}
-
-/** Web-surface twin of scheduleSummarize — debounced rollup of the unified
- *  conversation stream (summarize_web_due payload is the owner id). Fans out to
- *  the unified per-agent summarizer for each agent with undigested turns.
- *
- *  NOTE: at cutover (migration 0072) `summarize_due` will fire directly with an
- *  agent_id on every assistant_messages insert (all channels), at which point
- *  this fan-out collapses to a single summarizeAgentConversation call and the
- *  separate summarize_web_due channel is retired. Until then the web trigger
- *  still fires the owner id, so we resolve the affected agents here. */
-const summarizeWebPending = new Set<string>();
-let summarizeWebTimer: NodeJS.Timeout | null = null;
-
-function scheduleSummarizeWeb(ownerId: string): void {
-  summarizeWebPending.add(ownerId);
-  if (summarizeWebTimer) return;
-  summarizeWebTimer = setTimeout(() => {
-    summarizeWebTimer = null;
-    const batch = [...summarizeWebPending];
-    summarizeWebPending.clear();
-    for (const id of batch) {
-      summarizeOwnerAgentStreams(id).catch((err) =>
-        console.error('[agent] web summarize error:', err instanceof Error ? err.message : err),
-      );
-    }
-  }, SUMMARIZE_DEBOUNCE_MS);
-}
-
-/** Resolve the owner's agents that currently have undigested conversation turns
- *  and run the unified per-agent summarizer on each (it self-gates on the
- *  threshold, so under-threshold streams are a cheap no-op). One DISTINCT query
- *  picks only streams with pending turns, so this doesn't fan out across idle
- *  agents. */
-async function summarizeOwnerAgentStreams(ownerId: string): Promise<void> {
-  const rows = await db
-    .selectDistinct({ agentId: assistantMessages.agentId })
-    .from(assistantMessages)
-    .where(and(eq(assistantMessages.ownerId, ownerId), isNull(assistantMessages.digestNodeId)));
-  for (const r of rows) {
-    if (!r.agentId) continue;
-    await summarizeAgentConversation(ownerId, r.agentId);
-  }
 }
 
 /** Core builtins every conversational agent should have without manual
@@ -1586,17 +1442,15 @@ async function main() {
   });
   console.log('[agent] LISTENing on telegram_message_inserted');
 
+  // summarize_due now carries an AGENT id (migration 0072: AFTER INSERT on
+  // assistant_messages, every channel), so one handler drives summarization
+  // for web + Telegram + any future channel. The retired summarize_web_due
+  // channel is no longer listened on.
   await pg.listen('summarize_due', (payload: string) => {
     if (!payload) return;
     scheduleSummarize(payload);
   });
-  console.log('[agent] LISTENing on summarize_due');
-
-  await pg.listen('summarize_web_due', (payload: string) => {
-    if (!payload || payload !== USER_ID) return;
-    scheduleSummarizeWeb(payload);
-  });
-  console.log('[agent] LISTENing on summarize_web_due');
+  console.log('[agent] LISTENing on summarize_due (per-agent)');
 
   // Durable, concurrency-capped extractor queue. Must start BEFORE the
   // node_ingested listener (so enqueues land) and before the boot drain below.

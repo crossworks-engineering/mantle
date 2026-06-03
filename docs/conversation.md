@@ -233,9 +233,20 @@ The "per-agent, cross-channel" semantics live here. The digest filter changes fr
 - **Dual-write transactionality** — Telegram writes both `telegram_messages` and
   `assistant_messages`; wrap in one transaction so a crash can't half-record a turn.
 - **Digest re-keying** — see §6; old digests must gain `agent_id` or be migrated.
-- **Recall / `find_window`** — Remy reads `conversation-digest` notes
-  ([recall.md](./recall.md)). The tag stays (`conversation-digest`), so matching should
-  hold, but verify her queries don't rely on `data.chat_id` / `source` before cutover.
+- **Recall / `find_window`** — VERIFIED: Remy's `find_window` matches digests purely by
+  the `conversation-digest` tag + period + embedding (it only reads `data.source` as a
+  display label), so the re-key to `data.agent_id` is safe. `recall_window`, however,
+  replayed raw turns from BOTH `telegram_messages` AND `assistant_messages` — after
+  cutover a Telegram turn lives in both, so `surface='all'` would double-count it. Fixed
+  in Phase 3: the `assistant_messages` branch is now filtered to `channel='web'` (Telegram
+  still replays from `telegram_messages`, which stays authoritative).
+- **Telegram short-term continuity at cutover** — the responder reads raw history from
+  `assistant_messages` (per agent). Pre-cutover Telegram turns live only in
+  `telegram_messages` until the Phase 6 backfill, and pre-cutover digests carry
+  `data.chat_id` (not `data.agent_id`). So immediately after cutover a Telegram thread's
+  short-term history + digests look empty until new turns accumulate. **Run Phase 6
+  (backfill + digest re-key) promptly after Phase 3 to close this gap.** Replies keep
+  working throughout — only recalled context is affected.
 - **`flattenChatMessagesForAdapter`** rejects multimodal/tool messages; the summarizer
   path stays single-turn text, so unaffected — but worth a regression check.
 
@@ -246,13 +257,15 @@ committing per phase on `main` with `pnpm --filter @mantle/web run typecheck`:
 
 ```
 0  schema (ADDITIVE only)         0071_unified_conversation.sql  ✅ columns + index, no trigger change
-1  shared module                  packages/agent-runtime/src/conversation.ts
-2  web onto shared module         apps/web/lib/assistant.ts            (web works end-to-end)
-4  one summarizer                 apps/agent/src/summarizer.ts + main.ts LISTEN
-3  Telegram cutover               apps/agent/src/main.ts + telegram-poll.ts
-   + trigger swap                 0072_unified_conversation_triggers.sql  (breaking; lands with 3+4)
+1  shared module                  packages/agent-runtime/src/conversation.ts            ✅
+2  web onto shared module         apps/web/lib/assistant.ts                             ✅
+4  one summarizer                 apps/agent/src/summarizer.ts + main.ts                ✅
+3  Telegram cutover               apps/agent/src/main.ts (inbound+outbound recordTurn,  ✅
+                                   loadConversationContext) + summarizeChat removed
+   + trigger swap                 0072_unified_conversation_triggers.sql                ✅
+   + recall_window double-count   packages/tools/src/builtins-recall.ts (channel='web') ✅
 5  UI: channel badge + attachments apps/web/.../assistant-client.tsx
-6  backfill + digest re-key       scripts/backfill-conversation.ts
+6  backfill + digest re-key       scripts/backfill-conversation.ts   ← run ASAP after 3 (continuity)
 7  docs                           promote this file from DESIGN → as-built; update architecture.md §9b/§9g
 ```
 

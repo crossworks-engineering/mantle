@@ -339,6 +339,10 @@ const recall_window: BuiltinToolDef = {
     }
 
     if (surface === 'all' || surface === 'web') {
+      // channel='web' ONLY. Post-unification (docs/conversation.md) Telegram
+      // turns ALSO live in assistant_messages (channel='telegram'); those are
+      // replayed from telegram_messages above, so excluding them here is what
+      // keeps surface='all' from double-counting every Telegram turn.
       const web = await db
         .select({
           text: assistantMessages.text,
@@ -349,6 +353,7 @@ const recall_window: BuiltinToolDef = {
         .where(
           and(
             eq(assistantMessages.ownerId, ctx.ownerId),
+            eq(assistantMessages.channel, 'web'),
             gte(assistantMessages.createdAt, from),
             lte(assistantMessages.createdAt, to),
           ),

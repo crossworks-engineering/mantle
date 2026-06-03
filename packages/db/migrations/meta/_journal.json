@@ -505,6 +505,13 @@
       "when": 1780963200000,
       "tag": "0071_unified_conversation",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1781049600000,
+      "tag": "0072_unified_conversation_triggers",
+      "breakpoints": true
     }
   ]
 }
