@@ -1,12 +1,11 @@
-import { notFound } from 'next/navigation';
-import { requireOwner } from '@/lib/auth';
-import { getTable } from '@/lib/tables';
-import { TableDetailClient } from './table-detail-client';
+import { redirect } from 'next/navigation';
 
-export default async function TableEditorRoute({ params }: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+/**
+ * The table editor now lives in the master-detail shell at /tables (resizable,
+ * collapsible list on the left, grid on the right). Keep this route as a
+ * permanent deep-link → it just selects the table in the shell.
+ */
+export default async function TableByIdRedirect({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const row = await getTable(user.id, id);
-  if (!row) notFound();
-  return <TableDetailClient initial={row} />;
+  redirect(`/tables?selected=${encodeURIComponent(id)}`);
 }

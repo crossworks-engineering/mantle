@@ -152,17 +152,24 @@ ALLOWED_USER_ID=<uuid> pnpm -C apps/web seed:tables
 
 ## 5. UI — `/tables`
 
-Master-detail list (`tables/page.tsx` + `tables-client.tsx`): URL-driven
-search/tag/pager, `useRealtime(['table'])`, a create dialog, accent-only
-selection (house rule). The grid editor (`tables/[id]/` + `components/table-grid/`)
-is a **TanStack-backed** typed grid: editable cells per type (number, currency-/
+**Master-detail shell** (`tables/page.tsx` + `tables-shell.tsx`): a **resizable +
+collapsible** left list (width + collapse persisted to localStorage; a hand-rolled
+drag-edge, not react-resizable-panels) and the selected table's editor on the
+right. Selection is URL-driven (`?selected=<id>`, auto-selecting the first table
+so the grid is never blank); the list has URL-driven search/tag/pager,
+`useRealtime(['table'])`, a create dialog, accent-only selection, and per-row
+hover delete. `/tables/[id]` is a permanent **redirect** into `?selected=<id>`
+(deep links + the editor's own delete nav). The editor (`[id]/table-detail-client.tsx`
+rendered with `embedded`, drops the back-link) + `components/table-grid/` is a
+**TanStack-backed** typed grid: editable cells per type (number, currency-/
 percent-formatted, date input, `Checkbox`, `Select`, read-only formula), a column
-header menu (rename · retype · set total · sort · insert · delete), add/delete
-rows, a totals footer, and the Pages-style draft autosave → **Commit**/Discard
-status machine. **Import** (xlsx/csv → draft; extra sheets become sibling tables).
-`table-model` is imported as a browser-safe leaf so the client reuses the shared
+header menu (rename · retype · set total · sort · insert · delete) whose trigger
+shows the column's type icon, add/delete rows, a totals footer, the Pages-style
+draft autosave → **Commit**/Discard status machine, **Import** (xlsx/csv → draft;
+extra sheets become sibling tables), an editable per-table emoji, and the **Assist**
+panel (§4). `table-model` is a browser-safe leaf so the client reuses the shared
 ops. API routes under `app/api/tables/` mirror `/pages`
-(`route` · `[id]` · `[id]/draft` · `[id]/commit` · `[id]/discard-draft` · `[id]/import`).
+(`route` · `[id]` · `[id]/draft` · `[id]/commit` · `[id]/discard-draft` · `[id]/import` · `[id]/ai-assist`).
 
 ---
 

@@ -29,7 +29,7 @@ const ASSIST_AGENT_NAME = 'Ledger';
 const DRAFT_DEBOUNCE_MS = 1200;
 const META_DEBOUNCE_MS = 800;
 
-export function TableDetailClient({ initial }: { initial: TableDetail }) {
+export function TableDetailClient({ initial, embedded = false }: { initial: TableDetail; embedded?: boolean }) {
   const router = useRouter();
   const toast = useToast();
 
@@ -206,9 +206,13 @@ export function TableDetailClient({ initial }: { initial: TableDetail }) {
         }}
       />
       <div className="sticky top-0 z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-border bg-background/80 px-4 py-2 backdrop-blur">
-        <div className="justify-self-start whitespace-nowrap">
-          <BackLink href="/tables">All tables</BackLink>
-        </div>
+        {embedded ? (
+          <div className="justify-self-start" aria-hidden />
+        ) : (
+          <div className="justify-self-start whitespace-nowrap">
+            <BackLink href="/tables">All tables</BackLink>
+          </div>
+        )}
         <div className="flex items-center gap-1 justify-self-center">
           <input
             value={icon}
