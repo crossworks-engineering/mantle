@@ -126,17 +126,23 @@ externalizes the binding. Safe in the prod direction — `next build` never sets
 
 ---
 
-## State at session end
-- **Tables is live on dev** (web HMR has all of it). The **Ledger** agent +
-  `table_authoring` skill were (re)seeded on the dev DB through the session, so
-  delegation + the assist panel work now. Migrations through **0068** applied.
-- **Restarts:** `apps/agent` needs a restart to pick up the extractor sweep fix
-  (`7570e44`) and to have the latest `table_*` builtins for the *Saskia-delegation*
-  path (the in-editor panel runs in `web`, already current). `next dev` needs a
-  restart for the `next.config` change (`3ad1f03`).
-- **Not pushed / not deployed:** all 20 commits are on local `main` only — not
-  pushed to origin, not on the Contabo VPS. Prod deploy of Tables (incl. migrations
-  0067/0068) is a future step via `update-prod.md`.
+## State at session end — SHIPPED TO PROD (2026-06-03)
+- **Pushed** to origin (`9f9615f…2a70a17`, 23 commits incl. earlier session work).
+- **Deployed live** on the Contabo VPS via `update-prod.md` (build-on-VPS): DB
+  dump first (`mantle-20260603-084434.dump`), rsync, native `docker compose build
+  web`, `up -d --wait`. The one-shot **migrate** applied **0067/0068** — verified:
+  `node_type` enum has `table`, `public.tables` exists, node count 2029→2030 (no
+  loss), pg connections flat (~17), HTTPS 307→/login. All services healthy;
+  `worker_telegram` left running per the runbook.
+- **Docker Hub** image updated: `titanwest/mantle:latest` (amd64, digest
+  `sha256:2e13bd6…`) pushed **from the VPS** (right arch + already authenticated —
+  no Mac QEMU cross-build needed).
+- **Prod Tables agent seeded:** `seed:tables-skill` + `seed:tables` run inside the
+  web container → **Ledger** agent + `table_authoring` skill created, `delegate_to`
+  wired into the entry responders; `apps/agent` restarted so it registers. So the
+  full feature (grid UI + import + Assist panel + Saskia delegation) works on prod.
+- The extractor sweep fix (`7570e44`) and `next.config` change (`3ad1f03`) shipped
+  with the image; dev picks up `next.config` on its next `next dev` restart.
 
 ## Still open / next
 - **Tables deferred (not v1):** public sharing (`/s/[token]` + `renderTableDoc`),
