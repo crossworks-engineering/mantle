@@ -65,11 +65,11 @@ export function SidebarNav({
       label: 'Workspace',
       items: [
         { name: 'Dashboard', href: '/', icon: LayoutDashboard, exact: true },
-        { name: 'Inbox', href: '/inbox', icon: Inbox },
+        { name: 'Life Logs', href: '/lifelog', icon: NotebookPen },
+        { name: 'Email', href: '/inbox', icon: Inbox },
         { name: 'Assistant', href: '/assistant', icon: MessageCircle },
         { name: 'Files', href: '/files', icon: FolderTree },
         { name: 'Notes', href: '/notes', icon: FileText },
-        { name: 'Life Logs', href: '/lifelog', icon: NotebookPen },
         { name: 'Pages', href: '/pages', icon: BookText },
         { name: 'Tables', href: '/tables', icon: Table2 },
         { name: 'Todos', href: '/todos', icon: CheckSquare },
