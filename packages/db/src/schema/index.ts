@@ -15,7 +15,6 @@ export * from './entity-merge-dismissals';
 export * from './content-chunks';
 export * from './rules';
 export * from './filters';
-export * from './senders';
 export * from './sync-runs';
 export * from './tailscale-config';
 export * from './telegram';

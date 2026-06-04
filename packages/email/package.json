@@ -15,6 +15,7 @@
     "backfill:rfc-msg-id": "tsx --env-file-if-exists=../../apps/web/.env.local src/backfill-rfc-message-id.ts"
   },
   "dependencies": {
+    "@mantle/content": "workspace:*",
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/rules": "workspace:*",
@@ -23,6 +24,7 @@
     "imapflow": "^1.0.171",
     "mailparser": "^3.7.2",
     "nodemailer": "^6.9.16",
+    "pg-boss": "^10.1.6",
     "sanitize-html": "^2.13.1"
   },
   "devDependencies": {

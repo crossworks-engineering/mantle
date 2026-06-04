@@ -53,6 +53,10 @@ function flatRecipients(...raws: (string | undefined)[]): string[] {
  *  recipient must be the user's own account address, or have a matching
  *  `contact` node by email. The contact list IS the allowlist. */
 async function blockedRecipients(ownerId: string, addrs: string[]): Promise<string[]> {
+  // Concrete contact addresses only — `contactEmails` excludes `@domain`
+  // wildcards by design. Domains are an INBOUND-only notion ("trust mail FROM
+  // this domain"); you can't send to a whole domain. The inbound ContactGate
+  // (@mantle/content) is the side that honours domains.
   const contacts = await contactEmails(ownerId); // already lower-cased + deduped
   if (contacts.length === 0) return []; // gate off until the user adds a first contact
   const accounts = await db

@@ -13,8 +13,9 @@ import {
 } from '@mantle/db';
 import { runRules } from '@mantle/rules';
 import { hashBuffer, putContent } from '@mantle/storage';
+import { loadContactGate } from '@mantle/content';
 import { and, eq, or, sql } from 'drizzle-orm';
-import { SenderResolver, upsertSenders } from './decisions';
+import { domainOf } from './addresses';
 import { salienceForDeliveryKind } from './classify';
 import type { EmailProvider, RawMessage } from './types';
 
@@ -36,23 +37,25 @@ class DuplicateRaceError extends Error {
 }
 
 /**
- * The two-phase pipeline. For each batch from the provider:
+ * The pipeline. For each batch from the provider:
  *
- *   1. Upsert every From address into `email_senders` so the UI knows
- *      who's writing — even denied/pending senders are visible.
- *   2. Resolve the effective decision (address > domain > policy default).
- *   3. For approved senders only: call provider.fetchFull, run ingest
- *      rules, persist `nodes` + `emails` + `email_attachments`, upload
- *      attachment bytes to object storage via @mantle/storage.
- *   4. Bump the account's sync cursor after the batch.
+ *   1. Gate every message on the contacts list (the SOLE inbound allowlist —
+ *      see `loadContactGate` in @mantle/content). A message is ingested iff its
+ *      From matches a contact (exact address or `@domain` wildcard) or one of
+ *      the user's own account addresses. Everything else is silently skipped —
+ *      never fetched, never stored.
+ *   2. For allowed messages: call provider.fetchFull, run ingest rules, persist
+ *      `nodes` + `emails` + `email_attachments`, upload attachment bytes to
+ *      object storage via @mantle/storage.
+ *   3. Bump the account's sync cursor after the batch.
  *
- * Pending / denied messages contribute to `email_senders.message_count`
- * but never touch your inbox or your disk beyond that one row.
+ * Mail from a non-contact sender leaves no trace at all (no row, no disk). To
+ * pull a new sender in, add them as a contact (which also backfills their
+ * recent history — see `backfillMatch`).
  */
 export async function syncAccount(account: EmailAccount, provider: EmailProvider): Promise<{
   scanned: number;
   ingested: number;
-  newSenders: number;
 }> {
   // Open the run record up-front so "is sync alive right now?" is
   // answerable by `select * from sync_runs where status='running'`.
@@ -62,7 +65,7 @@ export async function syncAccount(account: EmailAccount, provider: EmailProvider
     .returning({ id: syncRuns.id });
   if (!run) throw new Error('failed to open sync_runs row');
 
-  const resolver = await SenderResolver.load(account.userId, account.ingestPolicy);
+  const gate = await loadContactGate(account.userId);
   const rules = await db
     .select()
     .from(ingestRules)
@@ -70,7 +73,6 @@ export async function syncAccount(account: EmailAccount, provider: EmailProvider
 
   let scanned = 0;
   let ingested = 0;
-  let newSenders = 0;
 
   let buffer: RawMessage[] = [];
   let lastCursor: { raw: Record<string, unknown> } | undefined;
@@ -80,34 +82,16 @@ export async function syncAccount(account: EmailAccount, provider: EmailProvider
     const batch = buffer;
     buffer = [];
 
-    // 1. upsert senders for everyone we just saw. The resolver decides the
-    //    initial status for first-time senders, so a domain you've already
-    //    denied keeps new addresses out of Pending automatically.
-    const seen = batch.map((m) => ({
-      address: m.fromAddr,
-      displayName: m.fromName,
-      internalDate: m.internalDate,
-      // 'unknown' on the rare provider that doesn't classify — the
-      // counters stay flat for that message, messageCount still bumps.
-      deliveryKind: m.deliveryKind ?? ('unknown' as const),
-    }));
-    for (const m of batch) if (!resolver.has(m.fromAddr)) newSenders += 1;
-    await upsertSenders(account.userId, account.id, seen, resolver);
-
-    // After upsert the resolver's address index is stale for never-seen-
-    // before senders. Mirror them so subsequent decide() calls within this
-    // sync run see them as known (status defaults to 'pending').
-    for (const m of batch) resolver.noteSeen(m.fromAddr);
-
-    // 2-3. Ingest approved messages.
+    // Ingest only messages whose sender is in the contacts allowlist. Everyone
+    // else is skipped with no side effect — no sender row, no fetch, no disk.
     for (const message of batch) {
       scanned += 1;
-      if (resolver.decide(message.fromAddr) !== 'approved') continue;
+      if (!gate.allows(message.fromAddr)) continue;
       const ok = await ingestOne(account, provider, message, rules);
       if (ok) ingested += 1;
     }
 
-    // 4. Persist cursor after each flush.
+    // Persist cursor after each flush.
     if (lastCursor) {
       await db
         .update(emailAccounts)
@@ -144,7 +128,6 @@ export async function syncAccount(account: EmailAccount, provider: EmailProvider
           finishedAt: new Date(),
           scanned,
           ingested,
-          newSenders,
           error: message,
         })
         .where(eq(syncRuns.id, run.id)),
@@ -154,13 +137,13 @@ export async function syncAccount(account: EmailAccount, provider: EmailProvider
 
   await db
     .update(syncRuns)
-    .set({ status: 'ok', finishedAt: new Date(), scanned, ingested, newSenders })
+    .set({ status: 'ok', finishedAt: new Date(), scanned, ingested })
     .where(eq(syncRuns.id, run.id));
 
-  return { scanned, ingested, newSenders };
+  return { scanned, ingested };
 }
 
-/** Insert one approved message. Idempotent on (account_id, provider_msg_id). */
+/** Insert one allowed message. Idempotent on (account_id, provider_msg_id). */
 async function ingestOne(
   account: EmailAccount,
   provider: EmailProvider,
@@ -417,26 +400,40 @@ async function getOrCreateFileNode(
 }
 
 /**
- * Backfill the last 90 days from a just-approved sender. Runs the same
- * ingest path as `syncAccount` but uses the provider's per-sender search
+ * Backfill the last 90 days for a just-added contact entry. Runs the same
+ * ingest path as `syncAccount` but uses the provider's per-sender IMAP search
  * so we don't re-scan the whole mailbox.
+ *
+ * `target` is either a full address (`jason@x.com`) or a bare domain
+ * (`x.com` — the `@` of an `@domain` wildcard stripped by the enqueuer). IMAP
+ * `search({from})` is a substring match, so:
+ *   - address target → search the address, keep `fromAddr === target`.
+ *   - domain target  → search the bare domain, keep `domainOf(fromAddr) === target`
+ *     (rejects substring false-positives like `x.com.evil.com`).
+ *
+ * No gate re-check: the caller only enqueues this for an entry it just added,
+ * so the target is allowed by construction.
  */
 const BACKFILL_DAYS = 90;
 
-export async function backfillSender(
+export async function backfillMatch(
   account: EmailAccount,
   provider: EmailProvider,
-  senderAddress: string,
+  target: string,
 ): Promise<{ ingested: number }> {
   const rules = await loadRules(account.userId);
   const since = new Date();
   since.setDate(since.getDate() - BACKFILL_DAYS);
 
+  const wanted = target.trim().toLowerCase().replace(/^@/, '');
+  if (!wanted) return { ingested: 0 };
+  const isDomain = !wanted.includes('@');
+
   let ingested = 0;
-  for await (const message of provider.listFromSender(account, senderAddress, since)) {
-    // Skip anything where the From doesn't actually match (some IMAP
-    // servers loosely match `from:` against the whole envelope).
-    if (message.fromAddr.toLowerCase() !== senderAddress.toLowerCase()) continue;
+  for await (const message of provider.listFromSender(account, wanted, since)) {
+    const from = message.fromAddr.toLowerCase();
+    const match = isDomain ? domainOf(from) === wanted : from === wanted;
+    if (!match) continue;
     const ok = await ingestOne(account, provider, message, rules);
     if (ok) ingested += 1;
   }

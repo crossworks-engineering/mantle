@@ -9,7 +9,6 @@ import {
   emailAccounts,
   emailAttachments,
   emails,
-  emailSenders,
   embeddingCache,
   entities,
   entityEdges,
@@ -239,7 +238,6 @@ export type EmailStats = {
     scanned: number;
     error: string | null;
   }[];
-  pendingSenders: number;
 };
 
 type SyncRow = {
@@ -253,7 +251,7 @@ type SyncRow = {
 };
 
 export async function emailStats(userId: string): Promise<EmailStats> {
-  const [totals, byAccount, pending, syncResult] = await Promise.all([
+  const [totals, byAccount, syncResult] = await Promise.all([
     db
       .select({
         total: COUNT,
@@ -275,10 +273,6 @@ export async function emailStats(userId: string): Promise<EmailStats> {
       .where(eq(emailAccounts.userId, userId))
       .groupBy(emails.accountId, emailAccounts.address)
       .orderBy(desc(COUNT)),
-    db
-      .select({ count: COUNT })
-      .from(emailSenders)
-      .where(and(eq(emailSenders.userId, userId), eq(emailSenders.status, 'pending'))),
     db.execute<SyncRow>(sql`
       SELECT DISTINCT ON (sr.account_id)
         sr.account_id, ea.address, sr.status::text AS status,
@@ -308,7 +302,6 @@ export async function emailStats(userId: string): Promise<EmailStats> {
       scanned: Number(r.scanned),
       error: r.error,
     })),
-    pendingSenders: pending[0]?.count ?? 0,
   };
 }
 

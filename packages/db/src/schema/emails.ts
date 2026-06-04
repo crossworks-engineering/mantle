@@ -41,11 +41,11 @@ export const deliveryKind = pgEnum('delivery_kind', [
 ]);
 
 /**
- * `approve_list` — only ingest from senders the user has approved. New
- *   senders surface in `email_senders` as `pending` for curation. Used by
- *   IMAP by default (cheaper, opt-in).
- * `block_list` — ingest everything except `denied` senders. Suited to
- *   Gmail/M365 where the API does the heavy lifting.
+ * @deprecated Vestigial since the contacts list became the SOLE inbound gate
+ *   (see `@mantle/content` ContactGate / docs/email-ingest.md). Sender curation
+ *   was retired in migration 0074; nothing reads this policy anymore. The
+ *   column + enum remain to avoid a needless schema churn — every account is
+ *   effectively contacts-gated regardless of this value.
  */
 export const ingestPolicy = pgEnum('ingest_policy', ['approve_list', 'block_list']);
 

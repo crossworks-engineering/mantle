@@ -174,9 +174,9 @@ export default async function AccountsSettingsPage({
                 <BackLink href={`/settings/accounts?selected=${selected.id}`}>Back</BackLink>
                 <h2 className="text-lg font-semibold">Folders to scan — {selected.address}</h2>
                 <p className="text-sm text-muted-foreground">
-                  Which IMAP folders Mantle scans. Mail is still only ingested from{' '}
-                  <Link href="/settings/senders" className="text-primary underline-offset-2 hover:underline">
-                    approved senders
+                  Which IMAP folders Mantle scans. Mail is still only ingested from people in your{' '}
+                  <Link href="/contacts" className="text-primary underline-offset-2 hover:underline">
+                    contacts
                   </Link>
                   .
                 </p>
@@ -263,8 +263,7 @@ function AccountDetail({ account: r, latest }: { account: AccountRow; latest: Sy
             Last run: <span className="text-foreground">{latest.status}</span>
             {latest.durationMs != null && ` in ${(latest.durationMs / 1000).toFixed(1)}s`} · scanned{' '}
             <span className="text-foreground">{latest.scanned}</span> · ingested{' '}
-            <span className="text-foreground">{latest.ingested}</span> · new senders{' '}
-            <span className="text-foreground">{latest.newSenders}</span>
+            <span className="text-foreground">{latest.ingested}</span>
           </span>
         </div>
       )}

@@ -24,9 +24,9 @@ async function main() {
     console.log(`\n→ syncing ${a.address} …`);
     const t0 = Date.now();
     try {
-      const { scanned, ingested, newSenders } = await syncAccount(a, imap);
+      const { scanned, ingested } = await syncAccount(a, imap);
       console.log(
-        `   done in ${((Date.now() - t0) / 1000).toFixed(1)}s — scanned=${scanned} ingested=${ingested} newSenders=${newSenders}`,
+        `   done in ${((Date.now() - t0) / 1000).toFixed(1)}s — scanned=${scanned} ingested=${ingested}`,
       );
     } catch (err) {
       console.error('   FAILED:', (err as Error).message);

@@ -519,6 +519,13 @@
       "when": 1781136000000,
       "tag": "0073_node_salience",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1781222400000,
+      "tag": "0074_contacts_email_allowlist",
+      "breakpoints": true
     }
   ]
 }

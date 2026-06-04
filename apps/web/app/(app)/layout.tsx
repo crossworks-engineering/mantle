@@ -1,6 +1,4 @@
 import { cookies } from 'next/headers';
-import { and, eq, sql } from 'drizzle-orm';
-import { db, emailSenders } from '@mantle/db';
 import { countPending } from '@mantle/tools';
 import { loadProfilePreferences } from '@mantle/content';
 import { requireOwner } from '@/lib/auth';
@@ -15,11 +13,6 @@ import { UsageCard } from '@/components/usage-card';
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireOwner();
 
-  const [pending] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(emailSenders)
-    .where(and(eq(emailSenders.userId, user.id), eq(emailSenders.status, 'pending')));
-  const pendingCount = pending?.n ?? 0;
   const pendingApprovals = await countPending(user.id);
 
   const prefs = await loadProfilePreferences(user.id);
@@ -38,7 +31,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <AppShell
       email={user.email ?? null}
       userAvatar={userAvatar}
-      pendingSenders={pendingCount}
       pendingApprovals={pendingApprovals}
       contextCard={<UsageCard ownerId={user.id} />}
       initialNavCollapsed={navCollapsed}

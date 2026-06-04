@@ -2,11 +2,14 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireOwner } from '@/lib/auth';
 import { deleteContact, getContact, updateContact } from '@/lib/contacts';
+import { enqueueBackfills } from '@mantle/email';
 
 const PatchBody = z.object({
   first_name: z.string().max(200).optional(),
   last_name: z.string().max(200).optional(),
   company: z.string().max(200).optional(),
+  emails: z.array(z.string().max(200)).max(50).optional(),
+  /** @deprecated single-email shorthand; prefer `emails`. */
   email: z.string().max(200).optional(),
   country_code: z.string().max(8).optional(),
   cell: z.string().max(32).optional(),
@@ -34,18 +37,20 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     );
   }
   try {
-    const row = await updateContact(user.id, id, {
+    const result = await updateContact(user.id, id, {
       firstName: parsed.data.first_name,
       lastName: parsed.data.last_name,
       company: parsed.data.company,
+      emails: parsed.data.emails,
       email: parsed.data.email,
       countryCode: parsed.data.country_code,
       cell: parsed.data.cell,
       description: parsed.data.description,
       tags: parsed.data.tags,
     });
-    if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
-    return NextResponse.json({ contact: row });
+    if (!result) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    await enqueueBackfills(user.id, result.addedEmails);
+    return NextResponse.json({ contact: result.contact });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'update failed' },

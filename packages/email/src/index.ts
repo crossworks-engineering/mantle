@@ -1,11 +1,10 @@
 export * from './types';
 export * from './addresses';
-export { SenderResolver, upsertSenders } from './decisions';
-export type { Decision } from './decisions';
 export { classifyDelivery, salienceForDeliveryKind } from './classify';
 export type { ClassifyInput, DeliveryKind } from './classify';
-export { syncAccount, backfillSender } from './sync';
-export { peekLatestFromSender, type SenderPreview } from './peek';
+export { syncAccount, backfillMatch } from './sync';
+export { enqueueBackfill, enqueueBackfills, BACKFILL_QUEUE } from './backfill-queue';
+export { peekLatestFromSender, peekRecentSenders, type SenderPreview, type RecentSender } from './peek';
 export { sanitizeEmailHtml } from './render';
 export {
   imap,

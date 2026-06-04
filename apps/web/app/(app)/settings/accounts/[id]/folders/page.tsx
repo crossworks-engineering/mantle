@@ -27,9 +27,10 @@ export default async function AccountFoldersPage({
       </header>
 
       <p className="text-sm text-muted-foreground">
-        Choose which IMAP folders Mantle scans for this account. Mail is still only ingested from{' '}
-        <Link href="/settings/senders" className="text-primary underline-offset-2 hover:underline">
-          approved senders
+        Choose which IMAP folders Mantle scans for this account. Mail is still only ingested from
+        people in your{' '}
+        <Link href="/contacts" className="text-primary underline-offset-2 hover:underline">
+          contacts
         </Link>{' '}
         — this just controls which mailboxes get looked at.
       </p>

@@ -13,7 +13,7 @@ const SYNC_QUEUE = 'mantle.email.sync';
 /** Lazy pg-boss publisher — one instance per web process. The actual sync
  *  worker runs in its own process; this just lets "save folder selection"
  *  enqueue an immediate rescan instead of waiting for the 2-minute scheduler.
- *  Mirrors the pattern in settings/senders/actions.ts. */
+ *  Mirrors the lazy-publisher pattern in `@mantle/email`'s backfill-queue.ts. */
 let _boss: PgBoss | undefined;
 async function boss(): Promise<PgBoss> {
   if (_boss) return _boss;

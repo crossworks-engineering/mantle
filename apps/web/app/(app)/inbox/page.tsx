@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { Mail, Plug, UserCheck } from 'lucide-react';
-import { db, emailAccounts, emails, emailAttachments, emailSenders } from '@mantle/db';
+import { db, emailAccounts, emails, emailAttachments } from '@mantle/db';
+import { loadContactGate } from '@mantle/content';
 import { requireOwner } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { EmailRow } from '@/components/email-row';
@@ -59,33 +60,29 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
     );
   }
 
-  // Gate: account connected but no approved senders → curation nudge.
-  const [approvedCount] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(emailSenders)
-    .where(and(eq(emailSenders.userId, user.id), eq(emailSenders.status, 'approved')));
-  const [pendingRow] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(emailSenders)
-    .where(and(eq(emailSenders.userId, user.id), eq(emailSenders.status, 'pending')));
-  const pendingCount = pendingRow?.n ?? 0;
-  if ((approvedCount?.n ?? 0) === 0) {
+  // Gate: account connected but the contacts allowlist is empty → nudge.
+  // Contacts are the SOLE inbound gate now: mail is ingested only from a
+  // contact's address or `@domain` wildcard, so with no contacts nothing lands.
+  const gate = await loadContactGate(user.id);
+  if (gate.isEmpty) {
     return (
       <div className="mx-auto max-w-xl space-y-4 px-6 py-16 text-center">
         <UserCheck className="mx-auto size-8 text-muted-foreground" aria-hidden />
-        <h2 className="text-xl font-semibold">
-          {pendingCount > 0 ? `${pendingCount} senders waiting for review.` : 'Scanning your mailbox…'}
-        </h2>
+        <h2 className="text-xl font-semibold">No contacts yet — so nothing&apos;s being ingested.</h2>
         <p className="text-sm text-muted-foreground">
-          {pendingCount > 0
-            ? "Approve the senders worth keeping. Mantle only stores bodies and attachments for senders you've green-lit — newsletters never touch your disk."
-            : 'The first sync is running. Senders will appear here as Mantle scans the last 12 months of headers.'}
+          Mantle only pulls mail from people in your contacts — an address like{' '}
+          <code className="rounded bg-muted px-1">jason@schoeman.me</code> or a whole domain like{' '}
+          <code className="rounded bg-muted px-1">@schoeman.me</code>. Add a contact to start, or
+          discover who&apos;s recently emailed you.
         </p>
-        {pendingCount > 0 && (
+        <div className="flex justify-center gap-2">
           <Button asChild>
-            <Link href="/settings/senders">Review senders</Link>
+            <Link href="/contacts">Add a contact</Link>
           </Button>
-        )}
+          <Button asChild variant="outline">
+            <Link href="/settings/discover">Discover senders</Link>
+          </Button>
+        </div>
       </div>
     );
   }
@@ -221,7 +218,6 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
         tab: 'unread',
         email: selectedId,
       })}
-      pendingCount={pendingCount}
       defaultCollapsed={defaultCollapsed}
       listSlot={listSlot}
       readerSlot={<ReadingPane email={selectedEmail} attachments={attachments} />}

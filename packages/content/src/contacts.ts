@@ -22,9 +22,12 @@ import {
   digitsOnly,
   formatCell,
   hasIdentity,
-  isPlausibleEmail,
+  isPlausibleEmailOrDomain,
   normalizeCountryCode,
   normalizeEmail,
+  normalizeEmailEntries,
+  normalizeEmailEntry,
+  partitionEmailEntries,
   toE164,
   type ContactCounts,
   type ContactLastAt,
@@ -41,19 +44,25 @@ export const CONTACTS_ROOT_LABEL = 'contacts';
 // avoid pulling in @mantle/db should import from `@mantle/content/contacts-format`
 // directly — that's the leaf path with no DB transitively.
 export {
+  classifyEntry,
   deriveContactTitle,
   digitsOnly,
   formatCell,
   hasIdentity,
   isPlausibleEmail,
+  isPlausibleEmailOrDomain,
   normalizeCountryCode,
   normalizeEmail,
+  normalizeEmailEntries,
+  normalizeEmailEntry,
+  partitionEmailEntries,
   toE164,
   type ContactCounts,
   type ContactLastAt,
   type ContactMethod,
   type ContactRow,
   type CreateContactInput,
+  type EmailEntryKind,
   type UpdateContactInput,
 } from './contacts-format';
 
@@ -81,7 +90,18 @@ function rowOf(n: Node): ContactRow {
   const firstName = typeof d.first_name === 'string' ? d.first_name : '';
   const lastName = typeof d.last_name === 'string' ? d.last_name : '';
   const company = typeof d.company === 'string' ? d.company : '';
-  const email = typeof d.email === 'string' ? d.email : '';
+  // New shape is `data.emails` (string[]); fall back to the legacy single
+  // `data.email` for any row created between deploy and the 0074 data move.
+  const emailsRaw = Array.isArray(d.emails)
+    ? (d.emails as unknown[]).filter((x): x is string => typeof x === 'string' && x.length > 0)
+    : [];
+  const emails =
+    emailsRaw.length > 0
+      ? emailsRaw
+      : typeof d.email === 'string' && d.email
+        ? [d.email]
+        : [];
+  const email = emails[0] ?? '';
   const countryCode = typeof d.country_code === 'string' ? d.country_code : '';
   const cell = typeof d.cell === 'string' ? d.cell : '';
   const description = typeof d.description === 'string' ? d.description : '';
@@ -91,6 +111,7 @@ function rowOf(n: Node): ContactRow {
     firstName,
     lastName,
     company,
+    emails,
     email,
     countryCode,
     cell,
@@ -137,7 +158,9 @@ function contactConds(ownerId: string, opts: ListContactsOpts) {
       sql`${nodes.data}->>'first_name' ilike ${q}`,
       sql`${nodes.data}->>'last_name' ilike ${q}`,
       sql`${nodes.data}->>'company' ilike ${q}`,
-      sql`${nodes.data}->>'email' ilike ${q}`,
+      // Match any entry in the emails array (addresses or @domain wildcards),
+      // with a legacy fallback to the single `email` field.
+      sql`(exists (select 1 from jsonb_array_elements_text(coalesce(${nodes.data}->'emails', '[]'::jsonb)) e where e ilike ${q}) or ${nodes.data}->>'email' ilike ${q})`,
       sql`${nodes.data}->>'description' ilike ${q}`,
     );
     if (c) conds.push(c);
@@ -180,25 +203,36 @@ export async function getContact(ownerId: string, id: string): Promise<ContactRo
   return row ? rowOf(row) : null;
 }
 
-/** Every distinct non-empty contact email for the owner, lower-cased. Drives
- *  the email_send / email_page allowlist gate. Cheap — one indexed scan. */
+/**
+ * Every distinct **concrete** contact address for the owner, lower-cased. Drives
+ * the OUTBOUND email_send / email_page allowlist gate.
+ *
+ * `@domain` wildcard entries are deliberately excluded — they mean "trust mail
+ * FROM this domain" (inbound), not "I may send to anyone here". The inbound
+ * `ContactGate` (contact-gate.ts) is the one that honours domains. Keep this
+ * asymmetry in mind when touching either side.
+ */
 export async function contactEmails(ownerId: string): Promise<string[]> {
   const rows = await db
-    .select({ email: sql<string>`${nodes.data}->>'email'` })
+    .select({ data: nodes.data })
     .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, ownerId),
-        eq(nodes.type, 'contact'),
-        sql`${nodes.data}->>'email' is not null and ${nodes.data}->>'email' <> ''`,
-      ),
-    );
+    .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'contact')));
   const set = new Set<string>();
   for (const r of rows) {
-    const e = normalizeEmail(r.email ?? '');
-    if (e) set.add(e);
+    const { addresses } = partitionEmailEntries(contactEmailEntries(r.data));
+    for (const a of addresses) set.add(a);
   }
   return [...set];
+}
+
+/** Raw email entries off a contact's `data` jsonb, with the legacy single
+ *  `email` fallback. Internal helper for the address/domain partitioners. */
+function contactEmailEntries(data: unknown): string[] {
+  const d = (data ?? {}) as Record<string, unknown>;
+  if (Array.isArray(d.emails)) {
+    return (d.emails as unknown[]).filter((x): x is string => typeof x === 'string' && x.length > 0);
+  }
+  return typeof d.email === 'string' && d.email ? [d.email] : [];
 }
 
 /**
@@ -213,20 +247,23 @@ export async function findContactsByEmails(
 ): Promise<Map<string, string>> {
   const wanted = new Set(emails.map((e) => normalizeEmail(e)).filter(Boolean));
   if (wanted.size === 0) return new Map();
+  // Match a wanted address against any concrete entry in the contact's emails
+  // array (or the legacy single `email`). Domain wildcards never match here —
+  // counters track concrete sends only.
   const rows = await db
-    .select({ id: nodes.id, email: sql<string>`${nodes.data}->>'email'` })
+    .select({ id: nodes.id, data: nodes.data })
     .from(nodes)
     .where(
       and(
         eq(nodes.ownerId, ownerId),
         eq(nodes.type, 'contact'),
-        sql`lower(${nodes.data}->>'email') = ANY(${[...wanted]}::text[])`,
+        sql`(exists (select 1 from jsonb_array_elements_text(coalesce(${nodes.data}->'emails', '[]'::jsonb)) e where lower(e) = ANY(${[...wanted]}::text[])) or lower(${nodes.data}->>'email') = ANY(${[...wanted]}::text[]))`,
       ),
     );
   const out = new Map<string, string>();
   for (const r of rows) {
-    const e = normalizeEmail(r.email ?? '');
-    if (e && wanted.has(e)) out.set(e, r.id);
+    const { addresses } = partitionEmailEntries(contactEmailEntries(r.data));
+    for (const a of addresses) if (wanted.has(a) && !out.has(a)) out.set(a, r.id);
   }
   return out;
 }
@@ -305,27 +342,53 @@ function normalizeContactInput(input: CreateContactInput) {
   const firstName = (input.firstName ?? '').trim();
   const lastName = (input.lastName ?? '').trim();
   const company = (input.company ?? '').trim();
-  const email = normalizeEmail(input.email ?? '');
   const description = (input.description ?? '').slice(0, 4000);
   const countryCode = input.countryCode ? normalizeCountryCode(input.countryCode) : '';
   const cell = input.cell ? digitsOnly(input.cell) : '';
 
-  if (email && !isPlausibleEmail(email)) {
-    throw new Error(`'${email}' doesn't look like a valid email address.`);
+  // Email entries: prefer the `emails` array; fold the deprecated single
+  // `email`. Each entry is a full address or a `@domain` wildcard. Normalise +
+  // dedupe; reject anything that's neither.
+  const rawEntries = input.emails ?? (input.email != null ? [input.email] : []);
+  const emails: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of rawEntries) {
+    const trimmed = (raw ?? '').trim();
+    if (!trimmed) continue;
+    if (!isPlausibleEmailOrDomain(trimmed)) {
+      throw new Error(
+        `'${trimmed}' isn't a valid email address or @domain (use @example.com to allow a whole domain).`,
+      );
+    }
+    const norm = normalizeEmailEntry(trimmed);
+    if (norm && !seen.has(norm)) {
+      seen.add(norm);
+      emails.push(norm);
+    }
   }
+
   if (input.countryCode && !countryCode) {
     throw new Error(`'${input.countryCode}' is not a recognised country code (e.g. +27).`);
   }
   if (cell && !countryCode) {
     throw new Error('Country code is required when a cell number is set.');
   }
-  return { firstName, lastName, company, email, countryCode, cell, description };
+  return { firstName, lastName, company, emails, countryCode, cell, description };
 }
+
+/**
+ * Result of a contact write. `addedEmails` are the normalised entries that are
+ * newly present (every entry on create; only the new ones on update) — the
+ * caller enqueues a backfill for each so the brain pulls that
+ * sender's/domain's recent history. Domain entries keep their `@` prefix; the
+ * backfill enqueuer strips it to a bare-domain target.
+ */
+export type ContactWriteResult = { contact: ContactRow; addedEmails: string[] };
 
 export async function createContact(
   ownerId: string,
   input: CreateContactInput,
-): Promise<ContactRow> {
+): Promise<ContactWriteResult> {
   const fields = normalizeContactInput(input);
   await ensureRoot(ownerId);
   const [row] = await db
@@ -337,7 +400,7 @@ export async function createContact(
         firstName: fields.firstName,
         lastName: fields.lastName,
         company: fields.company,
-        email: fields.email,
+        emails: fields.emails,
         countryCode: fields.countryCode,
         cell: fields.cell,
       }),
@@ -346,7 +409,7 @@ export async function createContact(
         first_name: fields.firstName,
         last_name: fields.lastName,
         company: fields.company,
-        email: fields.email,
+        emails: fields.emails,
         country_code: fields.countryCode,
         cell: fields.cell,
         description: fields.description,
@@ -355,14 +418,14 @@ export async function createContact(
     })
     .returning();
   if (!row) throw new Error('createContact: insert returned no row');
-  return rowOf(row);
+  return { contact: rowOf(row), addedEmails: fields.emails };
 }
 
 export async function updateContact(
   ownerId: string,
   id: string,
   input: UpdateContactInput,
-): Promise<ContactRow | null> {
+): Promise<ContactWriteResult | null> {
   const [node] = await db
     .select()
     .from(nodes)
@@ -371,13 +434,17 @@ export async function updateContact(
   if (!node) return null;
 
   const oldData = (node.data ?? {}) as Record<string, unknown>;
+  const oldEntries = contactEmailEntries(oldData);
+  const oldEmailsNorm = normalizeEmailEntries(oldEntries);
   // Merge in patch: any field the caller didn't set falls back to the stored
   // value so a single-field edit (e.g. update cell only) doesn't blank the rest.
+  // Emails: prefer the array; the deprecated single `email` (when explicitly
+  // passed) replaces the list; otherwise keep the stored entries.
   const merged: CreateContactInput = {
     firstName: input.firstName ?? (typeof oldData.first_name === 'string' ? oldData.first_name : ''),
     lastName: input.lastName ?? (typeof oldData.last_name === 'string' ? oldData.last_name : ''),
     company: input.company ?? (typeof oldData.company === 'string' ? oldData.company : ''),
-    email: input.email ?? (typeof oldData.email === 'string' ? oldData.email : ''),
+    emails: input.emails ?? (input.email !== undefined ? [input.email] : oldEntries),
     countryCode:
       input.countryCode ?? (typeof oldData.country_code === 'string' ? oldData.country_code : ''),
     cell: input.cell ?? (typeof oldData.cell === 'string' ? oldData.cell : ''),
@@ -385,6 +452,7 @@ export async function updateContact(
       input.description ?? (typeof oldData.description === 'string' ? oldData.description : ''),
   };
   const fields = normalizeContactInput(merged);
+  const addedEmails = fields.emails.filter((e) => !oldEmailsNorm.includes(e));
 
   // Save-time validation: a real contact needs at least one identifying field.
   // Email/cell alone aren't enough — they're channels, not identities. (The
@@ -397,11 +465,13 @@ export async function updateContact(
   // Did any extractor-visible field change? If so the prior summary/embedding
   // is stale — clear them so the re-extract on UPDATE writes a fresh pass.
   // The INSERT trigger doesn't fire on UPDATE, so we explicitly re-notify below.
+  const emailsChanged =
+    addedEmails.length > 0 || fields.emails.length !== oldEmailsNorm.length;
   const visibleChanged =
     fields.firstName !== (typeof oldData.first_name === 'string' ? oldData.first_name : '') ||
     fields.lastName !== (typeof oldData.last_name === 'string' ? oldData.last_name : '') ||
     fields.company !== (typeof oldData.company === 'string' ? oldData.company : '') ||
-    fields.email !== (typeof oldData.email === 'string' ? oldData.email : '') ||
+    emailsChanged ||
     fields.description !== (typeof oldData.description === 'string' ? oldData.description : '');
 
   const newData: Record<string, unknown> = {
@@ -409,11 +479,13 @@ export async function updateContact(
     first_name: fields.firstName,
     last_name: fields.lastName,
     company: fields.company,
-    email: fields.email,
+    emails: fields.emails,
     country_code: fields.countryCode,
     cell: fields.cell,
     description: fields.description,
   };
+  // Drop the legacy single-email field so it can't diverge from `emails`.
+  delete newData.email;
   if (visibleChanged) {
     delete newData.summary;
     delete newData.summary_model;
@@ -428,7 +500,7 @@ export async function updateContact(
         firstName: fields.firstName,
         lastName: fields.lastName,
         company: fields.company,
-        email: fields.email,
+        emails: fields.emails,
         countryCode: fields.countryCode,
         cell: fields.cell,
       }),
@@ -446,7 +518,7 @@ export async function updateContact(
     const { notifyNodeIngested } = await import('@mantle/db');
     await notifyNodeIngested(id);
   }
-  return rowOf(updated);
+  return { contact: rowOf(updated), addedEmails };
 }
 
 export async function deleteContact(ownerId: string, id: string): Promise<boolean> {

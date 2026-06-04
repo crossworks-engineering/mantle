@@ -4,7 +4,6 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Search, UserCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Separator } from '@/components/ui/separator';
@@ -29,7 +28,6 @@ export function MailClient({
   tab,
   tabAllHref,
   tabUnreadHref,
-  pendingCount,
   listSlot,
   readerSlot,
   defaultCollapsed = false,
@@ -41,7 +39,6 @@ export function MailClient({
   tab: 'all' | 'unread';
   tabAllHref: string;
   tabUnreadHref: string;
-  pendingCount: number;
   listSlot: React.ReactNode;
   readerSlot: React.ReactNode;
   defaultCollapsed?: boolean;
@@ -87,20 +84,15 @@ export function MailClient({
             <Separator />
             <div className={cn('p-2', isCollapsed && 'flex justify-center p-1')}>
               <Link
-                href="/settings/senders"
-                title="Review pending senders"
+                href="/settings/discover"
+                title="Discover senders not yet in your contacts"
                 className={cn(
                   'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground',
                   isCollapsed && 'justify-center px-0',
                 )}
               >
                 <UserCheck className="size-4 shrink-0" aria-hidden />
-                {!isCollapsed && <span>Approvals</span>}
-                {pendingCount > 0 && (
-                  <Badge variant="secondary" className={cn('ml-auto', isCollapsed && 'ml-0')}>
-                    {pendingCount}
-                  </Badge>
-                )}
+                {!isCollapsed && <span>Discover</span>}
               </Link>
             </div>
           </ResizablePanel>

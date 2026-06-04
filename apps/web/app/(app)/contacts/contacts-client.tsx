@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
-import { Mail, Phone, Plus, Search, Trash2 } from 'lucide-react';
+import { Mail, Phone, Plus, Search, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -34,6 +34,7 @@ import { useListNav } from '@/lib/use-list-nav';
 import {
   formatCell,
   hasIdentity,
+  isPlausibleEmailOrDomain,
   normalizeCountryCode,
   type ContactRow,
 } from '@mantle/content/contacts-format';
@@ -184,7 +185,7 @@ function ContactForm({ contact }: { contact: ContactRow }) {
   const [firstName, setFirstName] = useState(contact.firstName);
   const [lastName, setLastName] = useState(contact.lastName);
   const [company, setCompany] = useState(contact.company);
-  const [email, setEmail] = useState(contact.email);
+  const [emails, setEmails] = useState<string[]>(contact.emails.length ? contact.emails : ['']);
   const [countryCode, setCountryCode] = useState(contact.countryCode || '+27');
   const [cell, setCell] = useState(contact.cell);
   const [description, setDescription] = useState(contact.description);
@@ -200,7 +201,7 @@ function ContactForm({ contact }: { contact: ContactRow }) {
     setFirstName(contact.firstName);
     setLastName(contact.lastName);
     setCompany(contact.company);
-    setEmail(contact.email);
+    setEmails(contact.emails.length ? contact.emails : ['']);
     setCountryCode(contact.countryCode || '+27');
     setCell(contact.cell);
     setDescription(contact.description);
@@ -226,7 +227,7 @@ function ContactForm({ contact }: { contact: ContactRow }) {
           first_name: firstName,
           last_name: lastName,
           company,
-          email,
+          emails: emails.map((e) => e.trim()).filter(Boolean),
           country_code: normalizeCountryCode(countryCode) || countryCode,
           cell,
           description,
@@ -325,15 +326,52 @@ function ContactForm({ contact }: { contact: ContactRow }) {
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="email">Email address</Label>
-        <Input
-          id="email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="orders@modular.co.za"
-          autoComplete="off"
-        />
+        <Label>Email addresses</Label>
+        <div className="space-y-2">
+          {emails.map((entry, i) => {
+            const invalid = entry.trim() !== '' && !isPlausibleEmailOrDomain(entry);
+            return (
+              <div key={i} className="flex items-center gap-2">
+                <Input
+                  type="text"
+                  value={entry}
+                  onChange={(e) =>
+                    setEmails((prev) => prev.map((v, j) => (j === i ? e.target.value : v)))
+                  }
+                  placeholder={i === 0 ? 'orders@modular.co.za' : '@modular.co.za'}
+                  autoComplete="off"
+                  aria-invalid={invalid}
+                  className={cn(invalid && 'border-destructive')}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Remove email"
+                  onClick={() =>
+                    setEmails((prev) => (prev.length === 1 ? [''] : prev.filter((_, j) => j !== i)))
+                  }
+                >
+                  <X aria-hidden />
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setEmails((prev) => [...prev, ''])}
+        >
+          <Plus aria-hidden /> Add email
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          Each line is a full address (<code>orders@modular.co.za</code>) or a whole-domain wildcard
+          (<code>@modular.co.za</code>, trusting all mail from that domain). Mantle ingests mail from
+          these into the brain; Saskia can email the plain addresses. Adding one backfills the last
+          90 days.
+        </p>
       </div>
 
       <div className="space-y-1.5">

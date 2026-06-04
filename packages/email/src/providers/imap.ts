@@ -118,6 +118,10 @@ export function parseHeaderBlock(buf: Buffer | string | undefined): Record<strin
 /** Fallback first-scan window when an account predates the column / has null. */
 const DEFAULT_FIRST_SCAN_DAYS = 365;
 
+/** Hard cap on messages scanned by `listRecent` (the interactive
+ *  discover-unknown-senders view) so a busy mailbox can't make it unbounded. */
+const RECENT_SCAN_CAP = 800;
+
 interface ImapCursor {
   folders: Record<string, { uidvalidity: number; lastUid: number }>;
 }
@@ -477,6 +481,66 @@ export const imap: EmailProvider = {
           )) {
             const normalized = normalizeHeader(msg, folder, uidvalidity);
             if (normalized) yield normalized;
+          }
+        } finally {
+          lock.release();
+        }
+      }
+    } finally {
+      try {
+        await client.logout();
+      } catch {
+        /* ignore */
+      }
+    }
+  },
+
+  async *listRecent(account, since): AsyncIterable<RawMessage> {
+    const client = await connect(account);
+    let remaining = RECENT_SCAN_CAP;
+    try {
+      const folders = await discoverFolders(
+        client,
+        account.imapExcludedFolders,
+        account.imapIncludedFolders,
+      );
+      for (const folder of folders) {
+        if (remaining <= 0) break;
+        let lock;
+        try {
+          lock = await client.getMailboxLock(folder);
+        } catch {
+          continue;
+        }
+        try {
+          const mbox = client.mailbox;
+          if (!mbox || typeof mbox === 'boolean') continue;
+          const uidvalidity = Number(mbox.uidValidity);
+          const searchRes = await client.search({ since }, { uid: true });
+          let uids: number[] = Array.isArray(searchRes) ? searchRes : [];
+          if (uids.length === 0) continue;
+          // Highest UIDs are the most recent; cap per the remaining budget so a
+          // busy mailbox can't make this interactive scan unbounded.
+          uids = uids.slice(-remaining);
+          for await (const msg of client.fetch(
+            uids,
+            {
+              envelope: true,
+              internalDate: true,
+              flags: true,
+              labels: true,
+              bodyStructure: true,
+              size: true,
+              headers: CLASSIFY_HEADERS as unknown as string[],
+            },
+            { uid: true },
+          )) {
+            const normalized = normalizeHeader(msg, folder, uidvalidity);
+            if (normalized) {
+              remaining -= 1;
+              yield normalized;
+            }
+            if (remaining <= 0) break;
           }
         } finally {
           lock.release();

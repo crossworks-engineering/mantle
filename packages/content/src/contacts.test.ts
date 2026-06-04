@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  classifyEntry,
   deriveContactTitle,
   digitsOnly,
   formatCell,
   hasIdentity,
   isPlausibleEmail,
+  isPlausibleEmailOrDomain,
   normalizeCountryCode,
   normalizeEmail,
+  normalizeEmailEntries,
+  normalizeEmailEntry,
+  partitionEmailEntries,
   toE164,
 } from './contacts';
 
@@ -124,5 +129,69 @@ describe('deriveContactTitle', () => {
   });
   it('returns "Untitled contact" when nothing fits (e.g. a freshly created draft)', () => {
     expect(deriveContactTitle({})).toBe('Untitled contact');
+  });
+  it('falls back to the first email entry', () => {
+    expect(deriveContactTitle({ emails: ['jason@schoeman.me', '@x.com'] })).toBe('jason@schoeman.me');
+  });
+});
+
+describe('classifyEntry', () => {
+  it.each(['jason@schoeman.me', 'a@b.co', 'orders+sales@modular.co.za', '  Jason@Schoeman.ME  '])(
+    'classifies %p as address',
+    (e) => expect(classifyEntry(e)).toBe('address'),
+  );
+  it.each(['@schoeman.me', '@x.co.za', ' @Schoeman.ME '])('classifies %p as domain', (e) =>
+    expect(classifyEntry(e)).toBe('domain'),
+  );
+  it.each(['', 'schoeman.me', '@', '@nodot', 'no-at', 'spaces in@x.com', '@-bad.com'])(
+    'classifies %p as invalid',
+    (e) => expect(classifyEntry(e)).toBe('invalid'),
+  );
+});
+
+describe('normalizeEmailEntry', () => {
+  it('lower-cases + trims an address', () => {
+    expect(normalizeEmailEntry('  Jason@Schoeman.ME ')).toBe('jason@schoeman.me');
+  });
+  it('canonicalises a domain wildcard with leading @', () => {
+    expect(normalizeEmailEntry(' @Schoeman.ME ')).toBe('@schoeman.me');
+  });
+  it('returns "" for invalid input (incl. bare domain)', () => {
+    expect(normalizeEmailEntry('schoeman.me')).toBe('');
+    expect(normalizeEmailEntry('garbage')).toBe('');
+  });
+});
+
+describe('isPlausibleEmailOrDomain', () => {
+  it.each(['jason@schoeman.me', '@schoeman.me'])('accepts %p', (e) =>
+    expect(isPlausibleEmailOrDomain(e)).toBe(true),
+  );
+  it.each(['', 'schoeman.me', '@', 'nope'])('rejects %p', (e) =>
+    expect(isPlausibleEmailOrDomain(e)).toBe(false),
+  );
+});
+
+describe('normalizeEmailEntries', () => {
+  it('normalises, de-dupes, and drops invalid entries', () => {
+    expect(
+      normalizeEmailEntries(['Jason@Schoeman.me', 'jason@schoeman.me', '@X.com', 'garbage', '']),
+    ).toEqual(['jason@schoeman.me', '@x.com']);
+  });
+});
+
+describe('partitionEmailEntries', () => {
+  it('splits concrete addresses from @domain wildcards (bare domain returned)', () => {
+    const { addresses, domains } = partitionEmailEntries([
+      'jason@schoeman.me',
+      '@schoeman.me',
+      'BOB@x.com',
+      '@x.com',
+      'garbage',
+    ]);
+    expect(addresses).toEqual(['jason@schoeman.me', 'bob@x.com']);
+    expect(domains).toEqual(['schoeman.me', 'x.com']);
+  });
+  it('handles empty / undefined', () => {
+    expect(partitionEmailEntries(undefined)).toEqual({ addresses: [], domains: [] });
   });
 });

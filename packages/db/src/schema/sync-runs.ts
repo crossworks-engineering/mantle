@@ -23,7 +23,6 @@ export const syncRuns = pgTable(
     status: syncStatus('status').default('running').notNull(),
     scanned: integer('scanned').default(0).notNull(),
     ingested: integer('ingested').default(0).notNull(),
-    newSenders: integer('new_senders').default(0).notNull(),
     error: text('error'),
   },
   (t) => [

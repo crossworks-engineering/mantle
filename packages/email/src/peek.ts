@@ -23,6 +23,62 @@ export interface SenderPreview {
   attachments: Array<{ filename: string; mimeType?: string; sizeBytes?: number }>;
 }
 
+/**
+ * A distinct sender seen in the recent-mail scan, with how many messages and
+ * the latest one's date/subject. Powers the "discover unknown senders" view —
+ * the caller filters these through the contact gate to show only the ones not
+ * already allowed.
+ */
+export interface RecentSender {
+  fromAddr: string;
+  fromName?: string;
+  count: number;
+  lastDate: Date;
+  subject?: string;
+}
+
+/**
+ * Aggregate distinct senders from a bounded recent-mail scan. Read-through to
+ * IMAP (via `provider.listRecent`); nothing is persisted. Returns the senders
+ * sorted newest-first, capped at `limit`.
+ */
+export async function peekRecentSenders(
+  account: EmailAccount,
+  provider: EmailProvider,
+  opts: { sinceDays?: number; limit?: number } = {},
+): Promise<RecentSender[]> {
+  const sinceDays = opts.sinceDays ?? 30;
+  const limit = opts.limit ?? 50;
+  const since = new Date();
+  since.setDate(since.getDate() - sinceDays);
+
+  const byAddr = new Map<string, RecentSender>();
+  for await (const m of provider.listRecent(account, since)) {
+    const addr = m.fromAddr.toLowerCase();
+    if (!addr) continue;
+    const prev = byAddr.get(addr);
+    if (prev) {
+      prev.count += 1;
+      if (m.internalDate > prev.lastDate) {
+        prev.lastDate = m.internalDate;
+        prev.subject = m.subject;
+        prev.fromName = m.fromName ?? prev.fromName;
+      }
+    } else {
+      byAddr.set(addr, {
+        fromAddr: addr,
+        fromName: m.fromName,
+        count: 1,
+        lastDate: m.internalDate,
+        subject: m.subject,
+      });
+    }
+  }
+  return [...byAddr.values()]
+    .sort((a, b) => b.lastDate.getTime() - a.lastDate.getTime())
+    .slice(0, limit);
+}
+
 export async function peekLatestFromSender(
   account: EmailAccount,
   provider: EmailProvider,

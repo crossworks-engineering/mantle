@@ -70,13 +70,6 @@ export function OpsPanels({
               ))}
             </ul>
           )}
-          {email.pendingSenders > 0 && (
-            <Link href="/settings/senders" className="inline-block">
-              <Badge variant="outline" className="text-amber-600 dark:text-amber-400">
-                {email.pendingSenders} senders to review →
-              </Badge>
-            </Link>
-          )}
         </CardContent>
       </Card>
 

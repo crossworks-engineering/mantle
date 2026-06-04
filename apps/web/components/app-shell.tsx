@@ -39,7 +39,6 @@ function writeCookie(name: string, on: boolean) {
 export function AppShell({
   email,
   userAvatar,
-  pendingSenders,
   pendingApprovals,
   contextCard,
   initialNavCollapsed = false,
@@ -48,7 +47,6 @@ export function AppShell({
 }: {
   email: string | null;
   userAvatar?: { style: string; seed: string } | null;
-  pendingSenders: number;
   pendingApprovals: number;
   contextCard: React.ReactNode;
   initialNavCollapsed?: boolean;
@@ -108,7 +106,6 @@ export function AppShell({
     <>
       {contextCard}
       <SidebarNav
-        pendingSenders={pendingSenders}
         pendingApprovals={pendingApprovals}
         onNavigate={onNavigate}
       />

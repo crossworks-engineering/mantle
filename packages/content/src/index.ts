@@ -277,19 +277,28 @@ export {
   contactEmails,
   findContactsByEmails,
   recordContactSent,
+  type ContactWriteResult,
   // Pure helpers (unit-tested) — exposed for callers + form validation
+  classifyEntry,
   digitsOnly,
   deriveContactTitle,
   formatCell,
   hasIdentity,
   isPlausibleEmail,
+  isPlausibleEmailOrDomain,
   normalizeCountryCode,
   normalizeEmail,
+  normalizeEmailEntries,
+  normalizeEmailEntry,
+  partitionEmailEntries,
   toE164,
   type ContactCounts,
   type ContactLastAt,
   type ContactMethod,
   type ContactRow,
   type CreateContactInput,
+  type EmailEntryKind,
   type UpdateContactInput,
 } from './contacts';
+
+export { loadContactGate, type ContactGate } from './contact-gate';

@@ -14,11 +14,10 @@
  */
 import PgBoss from 'pg-boss';
 import { eq } from 'drizzle-orm';
-import { backfillSender, imap, syncAccount } from '@mantle/email';
+import { BACKFILL_QUEUE, backfillMatch, imap, syncAccount } from '@mantle/email';
 import { db, emailAccounts } from '@mantle/db';
 
 const SYNC_QUEUE = 'mantle.email.sync';
-const BACKFILL_QUEUE = 'mantle.email.backfill';
 const SCHEDULER_QUEUE = 'mantle.email.scheduler';
 
 import { maskEmail } from './mask-email';
@@ -29,7 +28,9 @@ interface SyncJob {
 
 interface BackfillJob {
   accountId: string;
-  senderAddress: string;
+  /** A contact email entry to backfill from: a full address (`jason@x.com`)
+   *  or a bare domain (`x.com`, from an `@domain` wildcard). */
+  target: string;
 }
 
 function pickProvider(provider: 'imap' | 'gmail' | 'microsoft') {
@@ -88,9 +89,9 @@ async function main() {
       const provider = pickProvider(account.provider);
       try {
         const t0 = Date.now();
-        const { scanned, ingested, newSenders } = await syncAccount(account, provider);
+        const { scanned, ingested } = await syncAccount(account, provider);
         console.log(
-          `[sync] ${maskEmail(account.address)} done in ${Date.now() - t0}ms — scanned=${scanned} ingested=${ingested} newSenders=${newSenders}`,
+          `[sync] ${maskEmail(account.address)} done in ${Date.now() - t0}ms — scanned=${scanned} ingested=${ingested}`,
         );
       } catch (err) {
         console.error('[sync] error on', maskEmail(account.address), err);
@@ -111,9 +112,9 @@ async function main() {
       const provider = pickProvider(account.provider);
       try {
         const t0 = Date.now();
-        const { ingested } = await backfillSender(account, provider, job.data.senderAddress);
+        const { ingested } = await backfillMatch(account, provider, job.data.target);
         console.log(
-          `[backfill] ${maskEmail(account.address)} ← ${maskEmail(job.data.senderAddress)}: ingested ${ingested} in ${Date.now() - t0}ms`,
+          `[backfill] ${maskEmail(account.address)} ← ${maskEmail(job.data.target)}: ingested ${ingested} in ${Date.now() - t0}ms`,
         );
       } catch (err) {
         console.error('[backfill] error', err);

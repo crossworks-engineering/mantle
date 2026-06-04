@@ -81,6 +81,14 @@ export interface EmailProvider {
   fetchFull(account: EmailAccount, providerMsgId: string): Promise<FullMessage>;
 
   /**
+   * Stream recent message headers across all scannable folders since a date,
+   * WITHOUT touching the sync cursor. Bounded (capped message count) — powers
+   * the interactive "discover unknown senders" view. Header-only, never marks
+   * anything read, persists nothing.
+   */
+  listRecent(account: EmailAccount, since: Date): AsyncIterable<RawMessage>;
+
+  /**
    * Stream every header from a specific sender since a given date. Used by
    * the approve-sender backfill path. No cursor — backfills are bounded
    * and one-shot.

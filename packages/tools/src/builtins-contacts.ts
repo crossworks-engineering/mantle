@@ -28,6 +28,7 @@ import {
   type ContactRow,
   type CreateContactInput,
 } from '@mantle/content';
+import { enqueueBackfills } from '@mantle/email';
 import type { BuiltinToolDef } from './types';
 
 function str(v: unknown): string {
@@ -38,6 +39,14 @@ function strOpt(v: unknown): string | undefined {
 }
 function num(v: unknown, dflt: number): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : dflt;
+}
+/** Coerce an `emails` input to a clean string[] (or undefined to leave alone). */
+function strArr(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v
+    .filter((e): e is string => typeof e === 'string' && e.trim().length > 0)
+    .map((e) => e.trim());
+  return out.length ? out : undefined;
 }
 
 /** Compact projection for tool output — keeps the LLM context light, returns
@@ -50,6 +59,7 @@ function compact(c: ContactRow) {
     first_name: c.firstName,
     last_name: c.lastName,
     company: c.company,
+    emails: c.emails,
     email: c.email,
     cell_e164: c.cellE164,
     cell_formatted: c.cellFormatted,
@@ -141,7 +151,7 @@ const contact_create: BuiltinToolDef = {
   slug: 'contact_create',
   name: 'Add a contact',
   description:
-    "Save someone or some organisation as a contact in the user's Mantle. At least one of `first_name`/`last_name`/`email`/`cell` is required. The `description` is the natural-language note the AI reads — say who this person is, the relationship, what they do; it's indexed into the brain (summary, embedding, facts) so future searches like 'who supplies aluminium profiles?' find this contact. Adding a contact **enables Saskia to email them** (contacts are the email allowlist)." +
+    "Save someone or some organisation as a contact in the user's Mantle. At least one of `first_name`/`last_name`/`emails`/`cell` is required. `emails` is a list — each entry is a full address (`jason@schoeman.me`) OR a `@domain` wildcard (`@schoeman.me`, which trusts ALL mail from that domain inbound). The `description` is the natural-language note the AI reads — say who this person is, the relationship, what they do; it's indexed into the brain (summary, embedding, facts) so future searches like 'who supplies aluminium profiles?' find this contact. **Contacts are the email allowlist in BOTH directions:** adding one enables Saskia to email those addresses AND lets their mail be ingested into the brain (a 90-day history backfill kicks off automatically)." +
     ONLY_WHEN_ASKED,
   inputSchema: {
     type: 'object',
@@ -153,7 +163,13 @@ const contact_create: BuiltinToolDef = {
         description:
           'Organisation name. Set this for a supplier/org contact (e.g. "Modular"); can also be paired with a person name.',
       },
-      email: { type: 'string' },
+      emails: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'Email addresses and/or `@domain` wildcards. e.g. ["jason@schoeman.me", "@schoeman.me"].',
+      },
+      email: { type: 'string', description: 'Deprecated single-email shorthand; prefer `emails`.' },
       country_code: { type: 'string', description: 'E.g. "+27"; required if cell is set' },
       cell: { type: 'string', description: 'Digits only or any format; non-digits are stripped' },
       description: {
@@ -168,6 +184,7 @@ const contact_create: BuiltinToolDef = {
       firstName: strOpt(input.first_name),
       lastName: strOpt(input.last_name),
       company: strOpt(input.company),
+      emails: strArr(input.emails),
       email: strOpt(input.email),
       countryCode: strOpt(input.country_code),
       cell: strOpt(input.cell),
@@ -177,9 +194,12 @@ const contact_create: BuiltinToolDef = {
         : [],
     };
     try {
-      const row = await createContact(ctx.ownerId, fields);
-      ctx.step?.setOutput({ id: row.id, title: row.title });
-      return { ok: true, output: compact(row) };
+      const { contact, addedEmails } = await createContact(ctx.ownerId, fields);
+      // Pull each newly-added sender's/domain's recent history into the brain
+      // (best-effort; never fails the create).
+      await enqueueBackfills(ctx.ownerId, addedEmails);
+      ctx.step?.setOutput({ id: contact.id, title: contact.title });
+      return { ok: true, output: compact(contact) };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -190,7 +210,7 @@ const contact_update: BuiltinToolDef = {
   slug: 'contact_update',
   name: 'Update a contact',
   description:
-    "Patch a contact — only the fields you pass change (omit a field to keep its stored value). Useful when the user says 'their email actually changed to X' or 'tag Modular as a supplier'." +
+    "Patch a contact — only the fields you pass change (omit a field to keep its stored value). Pass `emails` to REPLACE the whole email list (addresses and/or `@domain` wildcards); newly-added entries trigger a 90-day history backfill. Useful when the user says 'their email actually changed to X', 'also accept anything from @acme.com', or 'tag Modular as a supplier'." +
     ONLY_WHEN_ASKED,
   inputSchema: {
     type: 'object',
@@ -199,7 +219,13 @@ const contact_update: BuiltinToolDef = {
       first_name: { type: 'string' },
       last_name: { type: 'string' },
       company: { type: 'string' },
-      email: { type: 'string' },
+      emails: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'Replaces the email list. Each entry is an address or a `@domain` wildcard.',
+      },
+      email: { type: 'string', description: 'Deprecated single-email shorthand; prefer `emails`.' },
       country_code: { type: 'string' },
       cell: { type: 'string' },
       description: { type: 'string' },
@@ -214,6 +240,7 @@ const contact_update: BuiltinToolDef = {
       firstName: typeof input.first_name === 'string' ? input.first_name : undefined,
       lastName: typeof input.last_name === 'string' ? input.last_name : undefined,
       company: typeof input.company === 'string' ? input.company : undefined,
+      emails: strArr(input.emails),
       email: typeof input.email === 'string' ? input.email : undefined,
       countryCode: typeof input.country_code === 'string' ? input.country_code : undefined,
       cell: typeof input.cell === 'string' ? input.cell : undefined,
@@ -223,10 +250,11 @@ const contact_update: BuiltinToolDef = {
         : undefined,
     };
     try {
-      const row = await updateContact(ctx.ownerId, id, patch);
-      if (!row) return { ok: false, error: 'contact not found' };
-      ctx.step?.setOutput({ id: row.id, title: row.title });
-      return { ok: true, output: compact(row) };
+      const result = await updateContact(ctx.ownerId, id, patch);
+      if (!result) return { ok: false, error: 'contact not found' };
+      await enqueueBackfills(ctx.ownerId, result.addedEmails);
+      ctx.step?.setOutput({ id: result.contact.id, title: result.contact.title });
+      return { ok: true, output: compact(result.contact) };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }

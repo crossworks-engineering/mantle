@@ -51,11 +51,9 @@ type NavItem = {
 type NavGroup = { label: string; items: NavItem[] };
 
 export function SidebarNav({
-  pendingSenders,
   pendingApprovals,
   onNavigate,
 }: {
-  pendingSenders: number;
   pendingApprovals: number;
   onNavigate?: () => void;
 }) {
@@ -83,7 +81,7 @@ export function SidebarNav({
       label: 'Review',
       items: [
         { name: 'Models', href: '/models', icon: Boxes },
-        { name: 'Senders', href: '/settings/senders', icon: UserCheck, badge: pendingSenders },
+        { name: 'Discover', href: '/settings/discover', icon: UserCheck },
         { name: 'Pending', href: '/pending', icon: ClipboardCheck, badge: pendingApprovals },
       ],
     },

@@ -26,6 +26,13 @@ export type ContactRow = {
    *  "John Smith" (no company), "Modular" (company-only, e.g. a supplier),
    *  and "John Smith @ Modular" (both). */
   company: string;
+  /** Every email entry on the contact. Each is either a full address
+   *  (`jason@schoeman.me`) or a `@domain` wildcard (`@schoeman.me` = all mail
+   *  from that domain). The inbound gate matches against both; the outbound
+   *  send allowlist uses concrete addresses only (see `partitionEmailEntries`). */
+  emails: string[];
+  /** Derived convenience = `emails[0] ?? ''`. Kept so existing list rows /
+   *  tool projections that read a single `email` keep working unchanged. */
   email: string;
   countryCode: string;
   cell: string;
@@ -49,6 +56,10 @@ export type CreateContactInput = {
   firstName?: string;
   lastName?: string;
   company?: string;
+  /** Email entries — addresses and/or `@domain` wildcards. Preferred input. */
+  emails?: string[];
+  /** @deprecated single-email back-compat. Folded into `emails` if `emails`
+   *  is absent. New callers should pass `emails`. */
   email?: string;
   countryCode?: string;
   cell?: string;
@@ -121,6 +132,84 @@ export function isPlausibleEmail(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 }
 
+/** Domain shape for `@domain` wildcard entries (lower-cased, no leading `@`).
+ *  Mirrors the validator the retired senders UI used. */
+const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
+
+export type EmailEntryKind = 'address' | 'domain' | 'invalid';
+
+/**
+ * Classify one contact email-list entry. A leading `@` marks a **domain
+ * wildcard** (`@schoeman.me` = all mail from that domain); anything else must
+ * be a plausible full address. A bare domain without `@` (`schoeman.me`) is
+ * rejected so the wildcard intent is always explicit and never confused with a
+ * malformed address.
+ */
+export function classifyEntry(raw: string): EmailEntryKind {
+  const s = (raw ?? '').trim().toLowerCase();
+  if (!s) return 'invalid';
+  if (s.startsWith('@')) return DOMAIN_RE.test(s.slice(1)) ? 'domain' : 'invalid';
+  return isPlausibleEmail(s) ? 'address' : 'invalid';
+}
+
+/** Canonicalise an entry: lower-cased address, or `@domain` for a wildcard.
+ *  Returns '' for invalid input (caller decides whether to reject). */
+export function normalizeEmailEntry(raw: string): string {
+  const s = (raw ?? '').trim().toLowerCase();
+  switch (classifyEntry(s)) {
+    case 'address':
+      return s;
+    case 'domain':
+      return '@' + s.replace(/^@/, '');
+    default:
+      return '';
+  }
+}
+
+/** True when the entry is a usable address OR a `@domain` wildcard. */
+export function isPlausibleEmailOrDomain(raw: string): boolean {
+  return classifyEntry(raw) !== 'invalid';
+}
+
+/** Normalise + de-dupe a list of entries, dropping anything invalid. Lenient —
+ *  used for diffing/comparison where bad legacy values shouldn't throw. */
+export function normalizeEmailEntries(entries: string[] | undefined): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of entries ?? []) {
+    const norm = normalizeEmailEntry((raw ?? '').trim());
+    if (norm && !seen.has(norm)) {
+      seen.add(norm);
+      out.push(norm);
+    }
+  }
+  return out;
+}
+
+/**
+ * Split a contact's email entries into concrete `addresses` and bare `domains`
+ * (the `@` stripped). Entries are normalised + de-duped; invalid ones dropped.
+ *
+ * The **inbound** gate matches a From address against both sets. The
+ * **outbound** send allowlist uses `addresses` only — you can't send to a whole
+ * domain. This asymmetry is deliberate (a domain wildcard means "trust mail
+ * FROM here", not "I may send anywhere here").
+ */
+export function partitionEmailEntries(entries: string[] | undefined): {
+  addresses: string[];
+  domains: string[];
+} {
+  const addresses = new Set<string>();
+  const domains = new Set<string>();
+  for (const raw of entries ?? []) {
+    const norm = normalizeEmailEntry(raw);
+    if (!norm) continue;
+    if (norm.startsWith('@')) domains.add(norm.slice(1));
+    else addresses.add(norm);
+  }
+  return { addresses: [...addresses], domains: [...domains] };
+}
+
 /**
  * A contact has a usable identity when at least one of name, last name, or
  * company is set. Email/cell alone aren't enough — they're contact channels,
@@ -152,6 +241,7 @@ export function deriveContactTitle(input: {
   firstName?: string;
   lastName?: string;
   company?: string;
+  emails?: string[];
   email?: string;
   countryCode?: string;
   cell?: string;
@@ -160,7 +250,7 @@ export function deriveContactTitle(input: {
   if (name) return name.slice(0, 200);
   const company = (input.company ?? '').trim();
   if (company) return company.slice(0, 200);
-  const email = normalizeEmail(input.email ?? '');
+  const email = normalizeEmail(input.emails?.[0] ?? input.email ?? '');
   if (email) return email.slice(0, 200);
   const fmt = formatCell(input.countryCode ?? '', input.cell ?? '');
   if (fmt) return fmt.slice(0, 200);

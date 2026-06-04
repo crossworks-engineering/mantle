@@ -61,7 +61,7 @@ export default async function DashboardPage() {
         })()
       : undefined;
 
-  const pendingTotal = email.pendingSenders + pendingTools;
+  const pendingTotal = pendingTools;
 
   const kpis: Kpi[] = [
     {
@@ -87,10 +87,10 @@ export default async function DashboardPage() {
     {
       label: 'Pending review',
       value: formatCount(pendingTotal),
-      hint: `${email.pendingSenders} senders · ${pendingTools} tool approvals`,
+      hint: `${pendingTools} tool approvals`,
       icon: UserCheck,
       accent: pendingTotal > 0,
-      href: email.pendingSenders > 0 ? '/settings/senders' : '/pending',
+      href: '/pending',
     },
   ];
 
