@@ -29,6 +29,17 @@ describe('chunkDocText', () => {
   it('hard-splits a single overlong line', () => {
     const out = chunkDocText('x'.repeat(500), { maxChars: 200 });
     expect(out.length).toBe(3);
-    expect(out.every((c) => c.text.length <= 200)).toBe(true);
+    // Chunks may exceed maxChars by up to the overlap (min(150, maxChars/2)=100)
+    // plus the joining newline.
+    expect(out.every((c) => c.text.length <= 200 + 100 + 1)).toBe(true);
+  });
+
+  it('overlaps consecutive chunks so boundary text is duplicated', () => {
+    const text = Array.from({ length: 30 }, (_, i) => `line ${i} word word word`).join('\n');
+    const noOverlap = chunkDocText(text, { maxChars: 100, overlapChars: 0 });
+    const withOverlap = chunkDocText(text, { maxChars: 100, overlapChars: 40 });
+    expect(withOverlap.length).toBe(noOverlap.length); // same chunk count
+    const sum = (cs: { text: string }[]) => cs.reduce((n, c) => n + c.text.length, 0);
+    expect(sum(withOverlap)).toBeGreaterThan(sum(noOverlap)); // overlap re-includes the boundary
   });
 });

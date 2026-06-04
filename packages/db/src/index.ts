@@ -8,6 +8,7 @@ export {
   activeNotes,
   applyPersonaUpdate,
   capNotes,
+  dedupeNewNotes,
   MAX_PERSONA_NOTES,
   type PersonaUpdate,
   type PersonaUpdateResult,

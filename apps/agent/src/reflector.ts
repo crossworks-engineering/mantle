@@ -23,6 +23,7 @@ import {
   assistantMessages,
   bumpWorkerUsage,
   capNotes,
+  dedupeNewNotes,
   getDefaultWorker,
   MAX_PERSONA_NOTES,
   telegramMessages,
@@ -339,15 +340,23 @@ export async function reflect(ownerId: string): Promise<void> {
 
       const parsed = parseReflectorOutput(result.text);
 
-      if (parsed.new_notes.length === 0) {
-        console.log('[reflector]   → nothing new');
+      // Backstop dedup: the prompt asks for only-new signals, but the reflector
+      // still re-learns the same trait worded differently across runs. Drop notes
+      // that substantially duplicate an existing active note before they bloat
+      // persona_notes (and push capNotes into evicting a distinct one).
+      const freshNotes = dedupeNewNotes(existingNotes, parsed.new_notes);
+
+      if (freshNotes.length === 0) {
+        console.log(
+          `[reflector]   → nothing new (${parsed.new_notes.length} candidate(s) were duplicates)`,
+        );
         // Still bump last_used_at so we don't reprocess the same turns next tick.
         void bumpWorkerUsage(reflector.id);
         return;
       }
 
       const now = new Date().toISOString();
-      const appended: PersonaNote[] = parsed.new_notes.map((n) => ({
+      const appended: PersonaNote[] = freshNotes.map((n) => ({
         // Stamp an id so the note is addressable by update_persona later
         // (e.g. the user asks to drop a preference the reflector learned).
         id: randomUUID(),

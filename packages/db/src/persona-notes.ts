@@ -29,6 +29,47 @@ export function activeNotes(notes: PersonaNote[]): PersonaNote[] {
   return notes.filter((n) => !n.retiredAt);
 }
 
+function dedupTokens(s: string): Set<string> {
+  return new Set(
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 2),
+  );
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let inter = 0;
+  for (const x of a) if (b.has(x)) inter++;
+  return inter / (a.size + b.size - inter);
+}
+
+/**
+ * Drop incoming notes that substantially duplicate an existing ACTIVE note (or
+ * an earlier kept one in the same batch). Token-Jaccard ≥ threshold = duplicate.
+ * The reflector re-reads existing notes each run and is told to only surface NEW
+ * signals, but it still re-learns the same trait worded differently; this is the
+ * backstop so persona_notes doesn't bloat with near-duplicates (and capNotes
+ * doesn't then evict a genuinely distinct note to make room). Pure + testable.
+ */
+export function dedupeNewNotes<T extends { content: string }>(
+  existing: PersonaNote[],
+  incoming: T[],
+  threshold = 0.6,
+): T[] {
+  const known = activeNotes(existing).map((n) => dedupTokens(n.content));
+  const out: T[] = [];
+  for (const note of incoming) {
+    const set = dedupTokens(note.content);
+    if (known.some((s) => jaccard(set, s) >= threshold)) continue;
+    known.push(set);
+    out.push(note);
+  }
+  return out;
+}
+
 export type PersonaUpdate = {
   add?: { kind: PersonaNote['kind']; content: string };
   /** Refs of active notes the new note replaces (retired as superseded). */
