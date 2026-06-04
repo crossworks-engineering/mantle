@@ -9,6 +9,9 @@
 > For richer, structured documents (callouts, columns, tables, embeds) see
 > the heavier [`pages.md`](./pages.md) surface — a TipTap editor with a
 > draft/commit model. Notes remain the lightweight markdown quick-capture.
+> For first-person self-knowledge (who you are, how you feel) that also feeds
+> the assistant's always-on identity context, see [`lifelog.md`](./lifelog.md)
+> — a fourth `nodes.data` sibling that rides this same shape.
 >
 > Any of the three can be shared read-only via a public link (`/s/[token]`) —
 > see [`sharing.md`](./sharing.md).

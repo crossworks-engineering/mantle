@@ -1,7 +1,8 @@
 # Notes, Pages, Tables & Docs
 
-Four surfaces for writing and structured content. They range from "scribble a
-thought" to "build a typed database," and all of them feed the brain.
+Five surfaces for writing and structured content. They range from "scribble a
+thought" to "build a typed database," and all of them feed the brain — plus
+**Life Logs**, the first-person channel for teaching the assistant who you are.
 
 ## Notes — fast capture
 
@@ -10,6 +11,24 @@ knowledge into Mantle: open Notes, type, done. A note is summarised, embedded, a
 mined for facts the moment you save it. Use it for ideas, snippets, meeting scraps —
 anything you want findable later. (The assistant can create notes for you too:
 "make a note that…")
+
+## Life Logs — who you are
+
+**Life Logs** are short, first-person notes about *you* — what you do, who's in
+your life, what you're working towards, and how you're feeling — each tagged with
+a **mood** and a **life area** (work, family, faith, health, …). Keep them small
+and honest: a sentence or two per entry.
+
+They're different from Notes in one important way: alongside being searchable like
+everything else, your Life Logs are distilled into an **always-on identity
+context** the assistant carries into *every* conversation. So once you've logged
+"I run CrossWorks and I'm building Mantle" or "I'm a father of three," you never
+have to re-explain — the assistant already knows who it's talking to. The more you
+log, the better it understands you.
+
+The assistant can add entries for you, too: "log that I started a new job today,"
+"remember that I've been feeling stretched this week." Open **Life Logs**, click
+**New**, write a line, pick a mood and area, save.
 
 ## Pages — rich documents
 
@@ -67,6 +86,7 @@ them — that's how Saskia can explain Mantle itself.
 | Use | Surface |
 |---|---|
 | Jot a quick thought | **Notes** |
+| Record something about yourself so the assistant knows you | **Life Logs** |
 | Write a structured document, report, or plan | **Pages** |
 | Track rows of data, do sums/formulas, import a spreadsheet | **Tables** |
 | Read reference docs the assistant can cite | **Docs** |

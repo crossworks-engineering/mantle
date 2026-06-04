@@ -1010,6 +1010,15 @@ Three Anthropic cache breakpoints (of four). Knobs: `memory_config.{fact_limit,
 content_hit_limit, chunk_limit, digest_limit}`; env `MANTLE_{SALIENCE_LAMBDA,
 RECENCY_*,QUERY_ENRICH}`.
 
+- **Identity (always-on "who you are")** — alongside the always-injected
+  preferences, `buildIdentityContext` distils the user's **Life Logs** (the
+  `lifelog` node type — see [`lifelog.md`](./lifelog.md)) into a compact
+  `# About the user` block prepended to the cached system prompt on every turn.
+  Deterministic (no LLM), bounded + category-grouped, empty when there are no
+  life logs, and opt-out per agent via `memory_config.inject_lifelog`. This is
+  the user telling the brain who they are in the first person, rather than the
+  extractor inferring it — the strongest, most durable signal in Tier-1.
+
 ### 7a. Salience — down-weighting bulk content
 
 `nodes.salience` (0..1, default 1.0; migration 0073) is a retrieval weight, blended

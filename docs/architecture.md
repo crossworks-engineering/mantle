@@ -114,7 +114,7 @@ flowchart LR
     CC[/"Claude Desktop<br/>/ Claude Code"/]:::ext
 
     %% Web
-    Web["apps/web<br/>Next.js 15 (Turbopack)<br/>middleware (HMAC cookie gate)<br/>/inbox /assistant /files<br/>/notes /todos /events<br/>/secrets /traces /debug /pending"]:::proc
+    Web["apps/web<br/>Next.js 15 (Turbopack)<br/>middleware (HMAC cookie gate)<br/>/inbox /assistant /files<br/>/notes /lifelog /pages /tables<br/>/todos /events /contacts<br/>/secrets /traces /debug /pending"]:::proc
     Browser -- HTTPS --> Web
 
     %% MCP
@@ -288,12 +288,15 @@ nodes (
 )
 ```
 
-A row is one of 13 types: `branch`, `email`, `email_thread`, `file`, `note`,
-`page` (see [`pages.md`](./pages.md)),
+A row is one of 17 types: `branch`, `email`, `email_thread`, `file`, `note`,
+`page` (see [`pages.md`](./pages.md)), `table` (see [`tables.md`](./tables.md)),
+`documentation`, `lifelog` (see [`lifelog.md`](./lifelog.md)),
 `sermon`, `contact`, `secret`, `task`, `event`, `printer_project`,
-`telegram_message`. The polymorphic specialisations live in dedicated
-tables (`emails`, `email_attachments`, `telegram_messages`, …) with a
-`node_id` FK back to `nodes`.
+`telegram_message`, `mantle_peer`. The polymorphic specialisations that need
+extra columns live in dedicated tables (`emails`, `email_attachments`,
+`telegram_messages`, `pages`, `tables`, …) with a `node_id` FK back to `nodes`;
+the lighter types (`note`, `task`, `event`, `contact`, `lifelog`) keep their
+payload entirely in the `nodes.data` jsonb with no sidecar.
 
 Why one table:
 
