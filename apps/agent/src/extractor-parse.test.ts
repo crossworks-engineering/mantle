@@ -21,6 +21,7 @@ import {
   isValidFact,
   isValidRelation,
   parseExtractorOutput,
+  parseOccurredAt,
   sanitiseFactEntities,
   sanitiseRelation,
   type ExtractedFact,
@@ -398,3 +399,36 @@ describe('parseExtractorOutput — relations (basic)', () => {
     expect(out.relations).toEqual([]);
   });
 });
+
+describe('parseOccurredAt + episodic occurred_at', () => {
+  it('accepts a valid YYYY-MM-DD (and trims a time suffix)', () => {
+    expect(parseOccurredAt('2026-03-04')).toBe('2026-03-04');
+    expect(parseOccurredAt('2026-03-04T09:00:00Z')).toBe('2026-03-04');
+  });
+
+  it('rejects relative / garbage / out-of-range dates', () => {
+    expect(parseOccurredAt('yesterday')).toBeUndefined();
+    expect(parseOccurredAt('last Tuesday')).toBeUndefined();
+    expect(parseOccurredAt('2026-13-40')).toBeUndefined();
+    expect(parseOccurredAt('1850-01-01')).toBeUndefined();
+    expect(parseOccurredAt(undefined)).toBeUndefined();
+  });
+
+  it('normalises occurred_at → occurredAt for episodic facts only', () => {
+    const epi = sanitiseFactEntities({
+      content: 'Jason preached on Romans 8',
+      kind: 'episodic',
+      confidence: 1,
+      occurred_at: '2026-05-17',
+    } as unknown as ExtractedFact);
+    expect(epi.occurredAt).toBe('2026-05-17');
+
+    const fact = sanitiseFactEntities({
+      content: 'Jason owns a Lister printer',
+      kind: 'factual',
+      confidence: 1,
+      occurred_at: '2026-05-17',
+    } as unknown as ExtractedFact);
+    expect(fact.occurredAt).toBeUndefined(); // non-episodic → no event date
+  });
+})

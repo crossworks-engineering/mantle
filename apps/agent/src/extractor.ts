@@ -135,6 +135,7 @@ Output STRICT JSON, no markdown, no commentary outside the JSON:
       "content": "<the fact as a sentence>",
       "kind": "factual" | "episodic" | "semantic" | "preference",
       "confidence": 0.0-1.0,
+      "occurred_at": "<YYYY-MM-DD — episodic only, when a specific date is stated; else omit>",
       "entities": [{ "name": "<entity>", "kind": "person" | "project" | "place" | "org" | "event" }]
     }
   ],
@@ -158,7 +159,7 @@ Relations:
 
 Fact kinds:
 - "factual" = a verifiable claim with a value ("Jason's birthday is March 4").
-- "episodic" = a record of something that happened, anchored to a date ("On 2026-03-04 Jason completed a workout").
+- "episodic" = a record of something that happened, anchored to a date ("On 2026-03-04 Jason completed a workout"). Set "occurred_at" to that date (YYYY-MM-DD) when the content states or clearly implies one; omit it if no specific date is knowable. Resolve relative dates ("yesterday", "last Tuesday") against the document's own date if present, otherwise omit.
 - "semantic" = a STABLE identity, and ONLY when the content clearly establishes it or there's strong repeated evidence ("Jason is a pastor"). Do NOT infer an identity from a single mundane action.
 - "preference" = how the user wants to be helped, and ONLY when they EXPLICITLY state it ("Jason prefers concise replies"). Never infer a preference from one action.
 
@@ -921,6 +922,13 @@ async function classifyAndApplyFact(
   primaryEntityId: string | null,
   worker: AiWorker,
 ): Promise<'ADD' | 'UPDATE' | 'DELETE' | 'NOOP'> {
+  // valid_from = when the fact became true. For an episodic fact with a parsed
+  // event date, that's the EVENT date (so recency decays by when it happened,
+  // not when we ingested it); otherwise now.
+  const validFrom = candidate.occurredAt
+    ? new Date(`${candidate.occurredAt}T00:00:00Z`)
+    : new Date();
+
   // Find near-neighbour facts among currently-valid rows.
   const neighbours = await db
     .select({
@@ -949,7 +957,7 @@ async function classifyAndApplyFact(
       kind: candidate.kind,
       entityId: primaryEntityId,
       confidence: candidate.confidence,
-      validFrom: new Date(),
+      validFrom,
       sourceNodeId,
       embedding: candidateEmbedding,
     });
@@ -994,7 +1002,7 @@ async function classifyAndApplyFact(
         kind: candidate.kind,
         entityId: primaryEntityId,
         confidence: candidate.confidence,
-        validFrom: now,
+        validFrom,
         sourceNodeId,
         embedding: candidateEmbedding,
         supersededBy: null,
@@ -1014,7 +1022,7 @@ async function classifyAndApplyFact(
     kind: candidate.kind,
     entityId: primaryEntityId,
     confidence: candidate.confidence,
-    validFrom: new Date(),
+    validFrom,
     sourceNodeId,
     embedding: candidateEmbedding,
   });

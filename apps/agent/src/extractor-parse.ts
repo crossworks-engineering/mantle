@@ -13,7 +13,24 @@ export type ExtractedFact = {
   kind: 'factual' | 'episodic' | 'semantic' | 'preference';
   confidence: number;
   entities?: { name: string; kind: string }[];
+  /** ISO date (YYYY-MM-DD) the event happened — episodic facts only, when the
+   *  content states a specific date. Drives `valid_from` (and thus recency), so
+   *  an episode from 2 years ago decays by when it HAPPENED, not when ingested. */
+  occurredAt?: string;
 };
+
+/** Accept a strict YYYY-MM-DD (optionally with a time suffix we ignore) within a
+ *  sane year range; reject relative/garbage dates. Returns the date string or
+ *  undefined. */
+export function parseOccurredAt(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const m = raw.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return undefined;
+  const [iso, y, mo, d] = [m[0], +m[1]!, +m[2]!, +m[3]!];
+  if (y < 1970 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31) return undefined;
+  const dt = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00Z`);
+  return Number.isNaN(dt.getTime()) ? undefined : iso.slice(0, 10);
+}
 
 /**
  * A directed relationship between two entities the model found in the same
@@ -43,9 +60,12 @@ const FACT_KINDS = new Set(['factual', 'episodic', 'semantic', 'preference']);
  *  occasionally emit `{name: undefined, kind: 'person'}` or empty
  *  strings, which would crash reconcileEntity downstream on .trim(). */
 export function sanitiseFactEntities(f: ExtractedFact): ExtractedFact {
-  if (!Array.isArray(f.entities)) return f;
+  // Normalise occurred_at (snake_case from the model) → occurredAt, episodic only.
+  const rawDate = (f as Record<string, unknown>).occurred_at ?? f.occurredAt;
+  const occurredAt = f.kind === 'episodic' ? parseOccurredAt(rawDate) : undefined;
+  if (!Array.isArray(f.entities)) return { ...f, occurredAt };
   const clean = f.entities.filter(isValidEntity);
-  return { ...f, entities: clean };
+  return { ...f, entities: clean, occurredAt };
 }
 
 export function isValidFact(f: unknown): f is ExtractedFact {
