@@ -45,8 +45,12 @@ function orderedPair(a: string, b: string): [low: string, high: string] {
 const ORG_LEGAL_SUFFIXES = [
   'pty ltd', '(pty) ltd', 'pty limited', 'proprietary limited',
   'ltd', 'limited', 'inc', 'inc.', 'incorporated', 'llc', 'l.l.c.',
-  'cc', 'gmbh', 'co', 'co.', 'corp', 'corp.', 'corporation', 'sa', 's.a.',
+  'cc', 'gmbh', 'co', 'co.', 'corp', 'corp.', 'corporation',
   'ltda', 'bv', 'b.v.', 'ag', 'plc',
+  // NOT 'sa'/'s.a.': in this (South African) corpus "SA" overwhelmingly means
+  // South Africa, not the French/Spanish legal form — stripping it merged
+  // "3D Printing SA" into generic "3D printing". The cost of missing a real SA
+  // legal suffix is lower than that false merge.
 ];
 
 /** Normalise an org name for matching: lowercase, strip punctuation, drop a
@@ -62,6 +66,15 @@ export function normaliseOrgName(name: string): string {
     }
   }
   return s;
+}
+
+/** The most aggressive org key: legal-suffix-stripped AND alphanumeric-only, so
+ *  spacing / hyphen / punctuation variants of the same name collapse together —
+ *  "Cross-Works Engineering" = "CrossWorksEngineering" = "Cross Works Eng. (Pty)
+ *  Ltd". Distinct orgs almost never share an identical alphanumeric sequence, so
+ *  this is safe for the auto tier (and the dedupe script dry-runs first). */
+export function orgCompactKey(name: string): string {
+  return normaliseOrgName(name).replace(/[^a-z0-9]/g, '');
 }
 
 export function isEmailName(name: string): boolean {
@@ -200,11 +213,18 @@ export async function findDuplicateCandidates(ownerId: string): Promise<MergeCan
     }
   }
 
-  // AUTO 2 — org legal-suffix collapse (group orgs by normalised name).
+  // AUTO 2 — org collapse: group org-LIKE entities by the compact key
+  // (legal-suffix stripped + alphanumeric-only), so spacing/hyphen/punctuation
+  // variants of the same name merge ("Cross-Works Engineering" =
+  // "CrossWorksEngineering"). Spans org/project/company because the extractor
+  // labels the same company inconsistently across documents — and an IDENTICAL
+  // compact name across those kinds is the same real thing mislabeled, not two
+  // different things (genuinely distinct names produce different keys).
+  const ORG_LIKE_KINDS = new Set(['org', 'project', 'company', 'organization', 'organisation']);
   const orgGroups = new Map<string, EntRow[]>();
   for (const e of ents) {
-    if (e.kind !== 'org' || claimedDup.has(e.id)) continue;
-    const key = normaliseOrgName(e.name);
+    if (!ORG_LIKE_KINDS.has(e.kind) || claimedDup.has(e.id)) continue;
+    const key = orgCompactKey(e.name);
     if (!key) continue;
     let g = orgGroups.get(key);
     if (!g) { g = []; orgGroups.set(key, g); }
@@ -215,7 +235,7 @@ export async function findDuplicateCandidates(ownerId: string): Promise<MergeCan
     // canonical = the strongest in the group
     let canon = group[0]!;
     for (const e of group) [canon] = pickCanonical(canon, e);
-    for (const e of group) if (e.id !== canon.id) add(canon, e, 'auto', `same org after legal-suffix strip ("${normaliseOrgName(e.name)}")`);
+    for (const e of group) if (e.id !== canon.id) add(canon, e, 'auto', `same org ignoring spacing/punctuation/legal-suffix ("${orgCompactKey(e.name)}")`);
   }
 
   // REVIEW 1 — person name token-subset ("Jason" ⊂ "Jason Schoeman").
