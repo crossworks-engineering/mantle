@@ -73,6 +73,25 @@ export type ConversationContext = {
 const RELATION_ANCHOR_LIMIT = 5;
 const RELATION_LIMIT = 12;
 
+// ─── Conversational query enrichment (zero-LLM query understanding) ─────────
+// A short anaphoric follow-up ("tell me more about that") embeds to nothing
+// useful — the referent lives in the previous turns. The prompt already carries
+// history so the MODEL can reason, but the RETRIEVAL embedding saw only "tell me
+// more about that" and fetched junk. Grounding that embedding in recent turn
+// text fixes recall at zero cost (no extra LLM call). Guarded to short +
+// referential queries so a clear standalone query ("my bank balance") is never
+// diluted. Env kill-switch; full LLM HyDE is deliberately NOT the default — a
+// per-turn model call isn't justified when retrieval is already strong.
+const QUERY_ENRICH = process.env.MANTLE_QUERY_ENRICH !== '0';
+const ANAPHORA =
+  /\b(that|those|this|these|it|its|they|them|one|ones|there|then|the same|more|again|continue|go on|elaborate|what about|how about)\b/i;
+
+/** A short message that leans on the previous turn for its referent. */
+export function looksAnaphoricFollowup(text: string): boolean {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  return words.length > 0 && words.length <= 8 && ANAPHORA.test(text);
+}
+
 /** How many section-level passages to auto-pull into context (the fine-grained
  *  complement to the node-level content hits). Default kept small — these carry
  *  real passage text (~1.5k chars each), so they're the priciest context slice. */
@@ -176,8 +195,33 @@ export async function loadConversationContext(args: {
   // must share the corpus's vector space).
   let queryVec: number[] | null = null;
   if ((factLimit > 0 || contentHitLimit > 0) && inboundText.trim().length > 0) {
+    // For a short anaphoric follow-up, prepend recent turn text so the retrieval
+    // embedding resolves the referent instead of embedding "tell me more" alone.
+    let embedInput = inboundText;
+    if (QUERY_ENRICH && looksAnaphoricFollowup(inboundText) && historyLimit > 0) {
+      const conds = [
+        eq(assistantMessages.ownerId, ownerId),
+        eq(assistantMessages.agentId, agent.id),
+      ];
+      if (args.excludeMessageId) conds.push(ne(assistantMessages.id, args.excludeMessageId));
+      if (args.before) conds.push(lt(assistantMessages.createdAt, args.before));
+      const recent = await db
+        .select({ text: assistantMessages.text })
+        .from(assistantMessages)
+        .where(and(...conds))
+        .orderBy(desc(assistantMessages.createdAt))
+        .limit(2);
+      const ctx = recent
+        .map((r) => r.text)
+        .reverse()
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 400);
+      if (ctx) embedInput = `${ctx}\n${inboundText}`;
+    }
     try {
-      queryVec = await embed(ownerId, inboundText.slice(0, 2000));
+      queryVec = await embed(ownerId, embedInput.slice(0, 2000));
     } catch (err) {
       console.error(
         '[conversation] query embed failed:',
