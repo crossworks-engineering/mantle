@@ -67,7 +67,7 @@ import {
   listPendingCalls,
   rejectPendingCall,
 } from '@mantle/tools';
-import { authUsers } from '@mantle/db';
+import { authUsers, resolveSingleOwnerId } from '@mantle/db';
 import {
   TODO_PRIORITIES,
   TODO_STATUSES,
@@ -103,27 +103,23 @@ import {
 } from '@mantle/content';
 import { and, asc, desc, eq } from 'drizzle-orm';
 
-const OWNER_ID = process.env.ALLOWED_USER_ID;
+// Resolve the owner: ALLOWED_USER_ID when set (validated as a UUID inside
+// resolveSingleOwnerId), else the sole auth.users row — so a self-hosted setup
+// needs no env var. The MCP server is started on demand by Claude Desktop /
+// Code, normally after the web-app account already exists; if it truly doesn't
+// yet, exit with a clear message rather than scope every query to nothing.
+const OWNER_ID = await resolveSingleOwnerId();
 if (!OWNER_ID) {
-  console.error('[mantle-mcp] ALLOWED_USER_ID must be set so the MCP server knows whose tree to expose.');
-  process.exit(1);
-}
-
-// Lightweight UUID syntax guard. Catches typos like trailing whitespace
-// or extra characters in .env that would otherwise sneak past Drizzle's
-// stringly-typed eq() and silently match nothing.
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-if (!UUID_RE.test(OWNER_ID)) {
   console.error(
-    `[mantle-mcp] ALLOWED_USER_ID '${OWNER_ID}' is not a valid UUID. Refusing to start.`,
+    '[mantle-mcp] No account yet — create your account in the web app (signup), then reconnect the MCP server.',
   );
   process.exit(1);
 }
 
-// Verify the user actually exists. Without this, a typo in
-// ALLOWED_USER_ID would not error — it'd just scope every query to
-// "user not found", returning empty results and accepting writes that
-// no longer belong to any real owner. Cheap to check once at boot.
+// Verify the user actually exists. Without this, a stale ALLOWED_USER_ID would
+// not error — it'd just scope every query to "user not found", returning empty
+// results and accepting writes that no longer belong to any real owner. Cheap
+// to check once at boot.
 {
   const [existing] = await db
     .select({ id: authUsers.id })

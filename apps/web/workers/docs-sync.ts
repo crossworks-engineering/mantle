@@ -17,7 +17,7 @@
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import chokidar, { type FSWatcher } from 'chokidar';
-import type { DocCollection } from '@mantle/db';
+import { waitForOwner, type DocCollection } from '@mantle/db';
 import {
   collectionRoot,
   deleteDocByRelPath,
@@ -28,11 +28,10 @@ import {
   upsertDocFromDisk,
 } from '@mantle/files';
 
-const USER_ID = process.env.ALLOWED_USER_ID;
-if (!USER_ID) {
-  console.error('[docs-sync] ALLOWED_USER_ID must be set');
-  process.exit(1);
-}
+// Resolved in main() via waitForOwner — ALLOWED_USER_ID when set, else the sole
+// auth.users row. Left undefined until then so a fresh install boots and idles
+// until the first signup instead of exiting.
+let USER_ID: string | undefined = process.env.ALLOWED_USER_ID;
 
 const REFRESH_MS = 60_000;
 
@@ -146,6 +145,7 @@ async function refresh(): Promise<void> {
 }
 
 async function main() {
+  USER_ID = await waitForOwner({ label: 'docs-sync' });
   await ensureDefaultCollections(USER_ID!);
   await refresh(); // boot reconcile + initial watcher
   const timer = setInterval(() => {

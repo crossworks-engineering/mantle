@@ -330,3 +330,19 @@ export {
 } from './lifelog';
 
 export { buildIdentityContext } from './identity-context';
+
+export {
+  ONBOARDING_QUESTIONS,
+  composeBody,
+  deriveDisplayName,
+  type OnboardingQuestion,
+} from './onboarding-questions';
+
+export {
+  PERSONA_PRESETS,
+  DEFAULT_PERSONA_NAMES,
+  buildPersonaPrompt,
+  type PersonaGender,
+  type PersonaPresetKey,
+  type PersonaPreset,
+} from './persona-bank';

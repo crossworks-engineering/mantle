@@ -37,12 +37,12 @@ import {
   ltreeForDiskPath,
   syncFileFromDisk,
 } from '@mantle/files';
+import { waitForOwner } from '@mantle/db';
 
-const USER_ID = process.env.ALLOWED_USER_ID;
-if (!USER_ID) {
-  console.error('[files-watch] ALLOWED_USER_ID must be set');
-  process.exit(1);
-}
+// Resolved in main() via waitForOwner — ALLOWED_USER_ID when set, else the sole
+// auth.users row. Left undefined until then so a fresh install boots and idles
+// until the first signup instead of exiting.
+let USER_ID: string | undefined = process.env.ALLOWED_USER_ID;
 
 /** Extensions the watcher cares about. Keep in sync with the UI's
  *  uploader. Everything else is ignored to avoid noise from editor
@@ -113,6 +113,7 @@ async function handleUnlink(absPath: string): Promise<void> {
 }
 
 async function main() {
+  USER_ID = await waitForOwner({ label: 'files-watch' });
   const root = filesRoot();
   await ensureRoot(); // mkdir -p
   console.log(`[files-watch] watching ${root}`);

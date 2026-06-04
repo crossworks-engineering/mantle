@@ -29,6 +29,7 @@ import {
   telegramMessages,
   telegramChats,
   telegramAccounts,
+  waitForOwner,
   type Agent,
   type ConversationAttachment,
   type TelegramAccount,
@@ -109,13 +110,13 @@ import { summarizeAgentConversation } from './summarizer.js';
 import { enqueueExtract, startExtractQueue, stopExtractQueue } from './extract-queue.js';
 import { reflect } from './reflector.js';
 
-const USER_ID = process.env.ALLOWED_USER_ID;
+// Resolved at the top of main() via waitForOwner() — either ALLOWED_USER_ID (when
+// set) or the sole auth.users row. Left `undefined` until then so a fresh install
+// can boot with an empty DB and the worker idles until the first signup, instead
+// of exiting. Every consumer below runs after main() has resolved it.
+let USER_ID: string | undefined = process.env.ALLOWED_USER_ID;
 const DATABASE_URL = process.env.DATABASE_URL;
 
-if (!USER_ID) {
-  console.error('[agent] ALLOWED_USER_ID must be set');
-  process.exit(1);
-}
 if (!DATABASE_URL) {
   console.error('[agent] DATABASE_URL must be set');
   process.exit(1);
@@ -1433,6 +1434,11 @@ async function ensureCoreToolsOnConversationalAgents(ownerId: string): Promise<s
 async function main() {
   const pg = postgres(DATABASE_URL!, { max: 2 });
   console.log('[agent] starting — config from agents table');
+
+  // Resolve the owner before any owner-scoped work. On a fresh install this
+  // blocks until the first account is created in the web app (signup), then
+  // proceeds — no ALLOWED_USER_ID env edit, no restart.
+  USER_ID = await waitForOwner({ label: 'agent' });
 
   // Seed / refresh built-in tool definitions for this owner. Idempotent —
   // updates name/description/schema on each boot so registry edits in

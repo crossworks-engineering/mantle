@@ -4,6 +4,12 @@ export { getDefaultWorker, getAgentTtsWorker, bumpWorkerUsage } from './ai-worke
 export { bumpAgentUsage } from './agents-resolve';
 export { notifyNodeIngested, notifyNodeIndexed } from './notify';
 export {
+  countUsers,
+  resolveSingleOwnerId,
+  waitForOwner,
+  type WaitForOwnerOpts,
+} from './resolve-owner';
+export {
   noteRef,
   activeNotes,
   applyPersonaUpdate,
