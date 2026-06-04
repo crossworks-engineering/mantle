@@ -184,3 +184,28 @@ not sufficient — some wins (passage text, preference injection, relationship
 feel) are real and invisible to it. Verify those with a direct context probe, not
 the recall number. Cost: ~3 passages (~4.5k chars) added per turn — tune via
 `memory_config.chunk_limit`.
+
+## After step (g): recency / time-decay (2026-06-04)
+
+Retrieval ranked purely by similarity — a 2-year-old fact tied a fresh one. Now a
+saturating age penalty rides on the ranking distance: `λ·(1 − e^(−age/τ))`
+(τ=180d, env-tunable), 0 at age 0 → λ as age → ∞. It's a tiebreaker, not a
+sledgehammer: among similarly-relevant items the recent one wins, but a
+much-more-relevant old item still beats a marginal recent one.
+
+**Kind-aware on facts** — the design's call (memory.md §2): episodic memories
+("on the 4th Jason said…") are recency-driven (λ=0.15); **semantic/preference
+don't decay at all** (stable identity — "Jason is a pastor" doesn't get staler);
+factual sits between (0.05). Anchor: `coalesce(valid_from, created_at)`.
+
+**Mild on content** (λ=0.06), and the date anchor is the content's *own* date when
+it has one — an email's `internalDate`, not `created_at` — so an old email synced
+last month reads as old, not fresh. Recency only reorders content; the 0.6 cutoff
+stays on the salience distance, so a relevant-but-old doc is never dropped for age.
+
+Verified by direct probe (the eval doesn't rank facts): episodic facts take the
+penalty (17d → +0.013, 1d → +0.001), semantic take **+0.0000**, factual mild.
+Content eval: no regression (prod MRR 0.91, Δ 0). **Impact scales with corpus
+age** — on today's young corpus (0–17 days) penalties are ≤0.013 by design;
+they grow toward λ as memories age, which is exactly when recency matters. Tune
+via `MANTLE_RECENCY_{EPISODIC,CONTENT,TAU_DAYS}`.

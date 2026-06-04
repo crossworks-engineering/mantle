@@ -80,6 +80,18 @@ const PREFERENCE_INJECT_LIMIT = 8;
  *  sync with the same constant in @mantle/search. */
 const SALIENCE_LAMBDA = Number(process.env.MANTLE_SALIENCE_LAMBDA ?? 0.15);
 
+// ─── Recency / time-decay ────────────────────────────────────────────────
+// A saturating age penalty added to the ranking distance: λ·(1 − e^(−age/τ)),
+// 0 at age 0 → λ as age → ∞. So among similarly-relevant items the recent one
+// wins, but a much-more-relevant old item still beats a marginal recent one
+// (a tiebreaker, not a sledgehammer). KIND-AWARE for facts: episodic memories
+// ("on the 4th Jason said…") are recency-driven; semantic/preference facts are
+// stable identity and must NOT decay; factual sits in between. Mild on content.
+const RECENCY_TAU_SEC = Number(process.env.MANTLE_RECENCY_TAU_DAYS ?? 180) * 86_400;
+const RECENCY_EPISODIC = Number(process.env.MANTLE_RECENCY_EPISODIC ?? 0.15);
+const RECENCY_FACTUAL = 0.05;
+const RECENCY_CONTENT = Number(process.env.MANTLE_RECENCY_CONTENT ?? 0.06);
+
 /**
  * Append one turn to the unified stream. Defaults `channel` to 'web' and
  * `attachments` to []. Pass `tx` to run inside an existing transaction.
@@ -179,7 +191,14 @@ export async function loadConversationContext(args: {
           sql`${facts.embedding} is not null`,
         ),
       )
-      .orderBy(sql`${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector`)
+      // Rank by cosine + a kind-aware age penalty: episodic memories decay
+      // (recent ones win), factual mildly, semantic/preference not at all (stable
+      // identity). Anchor on valid_from (when the fact became true) → created_at.
+      // The mismatch guard below still filters on raw cosine, so recency reorders
+      // but never surfaces a garbage-space row.
+      .orderBy(
+        sql`(${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector) + (case ${facts.kind} when 'episodic' then ${RECENCY_EPISODIC}::float8 when 'factual' then ${RECENCY_FACTUAL}::float8 else 0::float8 end) * (1 - exp(- extract(epoch from (now() - coalesce(${facts.validFrom}, ${facts.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`,
+      )
       .limit(factLimit);
     factRows = rows
       // Mismatch guard: if the query vector and stored fact vectors live in
@@ -244,8 +263,13 @@ export async function loadConversationContext(args: {
           sql`(${nodes.data}->>'origin') is distinct from 'system'`,
         ),
       )
+      // Order by salience-adjusted distance + a MILD recency penalty. The date
+      // anchor is the content's own date when it has one (an email's send date —
+      // so an old email synced last month reads as old, not fresh), else
+      // created_at. Recency only reorders here; the 0.6 cutoff below stays on the
+      // salience distance, so a relevant-but-old doc is never dropped for age.
       .orderBy(
-        sql`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA} * (1 - ${nodes.salience})`,
+        sql`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA}::float8 * (1 - ${nodes.salience}) + ${RECENCY_CONTENT}::float8 * (1 - exp(- extract(epoch from (now() - coalesce((${nodes.data}->>'internalDate')::timestamptz, ${nodes.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`,
       )
       .limit(contentHitLimit);
     contentHits = rows
