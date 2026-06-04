@@ -36,6 +36,22 @@ const DEFAULT_VOICE = 'ara';
 const MAX_TEXT_CHARS = 4000;
 const SPEECH_MODELS_URL = `${OPENROUTER_BASE_URL}/models?output_modalities=speech`;
 
+/**
+ * OpenRouter lists many "speech output" models, but its OpenAI-compatible
+ * `/audio/speech` endpoint is only fully implemented for a subset. Most of the
+ * others are chat-style audio models meant to be driven via /chat/completions
+ * with an audio output modality (different params, model-specific voice formats),
+ * so calling /audio/speech with them returns 400 (e.g. microsoft/mai-voice-2,
+ * which doesn't even accept response_format) or 500 (the open models).
+ *
+ * Rather than offer routes that fail, discovery is filtered to this verified
+ * allowlist. Add ids here once confirmed working through /audio/speech (or, if
+ * we ever add the chat-modality path, broaden it). If OpenRouter drops every
+ * allowlisted id, discovery falls back to the full speech list so the dropdown
+ * is never empty.
+ */
+const WORKING_AUDIO_SPEECH_MODELS = new Set<string>(['x-ai/grok-voice-tts-1.0']);
+
 /** OpenRouter's /audio/speech only emits mp3 or pcm. Map anything else → mp3. */
 function clampFormat(format: string | undefined): 'mp3' | 'pcm' {
   return format === 'pcm' ? 'pcm' : 'mp3';
@@ -107,7 +123,12 @@ export const openrouterTtsAdapter: TtsDispatcher = {
 
   async discoverModels(_apiKey: string): Promise<DiscoveryResult<TtsModelInfo>> {
     try {
-      const models = await fetchSpeechModels();
+      const all = await fetchSpeechModels();
+      // Only surface routes that actually work via /audio/speech (see allowlist
+      // note above). Fall back to the full list if none match, so the dropdown
+      // is never empty if OpenRouter re-ids the working model.
+      const filtered = all.filter((m) => WORKING_AUDIO_SPEECH_MODELS.has(m.id ?? ''));
+      const models = filtered.length > 0 ? filtered : all;
       const available: TtsModelInfo[] = models.map((m) => ({
         id: m.id!,
         label: m.name ?? m.id!,
