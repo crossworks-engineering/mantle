@@ -233,3 +233,28 @@ change): the same company appears as both `Cross-Works Engineering` and
 `CrossWorksEngineering` — entity fragmentation. The feature makes graph hygiene
 *consequential*: running `entities:dedupe` / the `/settings/entities` review
 (audit item #10) is now a retrieval-quality lever, not just tidiness.
+
+## After step (i): the backlog sweep (2026-06-04)
+
+Six smaller audit items, committed individually:
+
+- **Chunk overlap** (`0ce4e90`) — `chunkDocText` overlaps consecutive chunks ~150
+  chars (word-boundary trimmed) so a fact straddling a boundary is embedded whole.
+- **Persona-note dedup** (`0ce4e90`) — `dedupeNewNotes` (token-Jaccard ≥ 0.6) stops
+  the reflector re-learning the same trait worded differently each run.
+- **Entity dedup** (`d08537c`) — `orgCompactKey` (legal-suffix + alphanumeric-only)
+  across org-like kinds collapses "CrossWorksEngineering" = "Cross-Works
+  Engineering"; dropped 'sa' from legal suffixes (SA = South Africa here). 4 auto
+  merges applied on dev. Run `entities:dedupe --go` per env.
+- **Telegram embeddings** (`1283cf2`) — embed-only branch in extractNode makes
+  turns semantically searchable (no per-message summary). Backfill existing:
+  `extract:backfill --types=telegram_message` after the agent restarts.
+- **Event dates → valid_from** (`684b25c`) — extractor parses `occurred_at` for
+  episodic facts so recency decays by when the event HAPPENED, not when ingested.
+- **Query enrichment** (`90277a9`) — short anaphoric follow-ups ("tell me more
+  about that") ground their retrieval embedding in recent turns (zero LLM cost).
+  Full LLM HyDE intentionally left opt-in.
+
+Verified: full content/db/agent/agent-runtime suites green; eval no regression
+(0.91 — none of these touch the clean-page gold cases; they target email/graph/
+follow-up/long-doc paths the gold set doesn't exercise).
