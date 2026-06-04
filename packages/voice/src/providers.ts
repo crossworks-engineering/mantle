@@ -85,8 +85,8 @@ export const SUPPORTED_PROVIDERS: readonly Provider[] = [
     id: 'openrouter',
     label: 'OpenRouter',
     description:
-      'Aggregator covering OpenAI, Anthropic, Google, Mistral, DeepSeek, and most open models behind one key. Default for chat agents.',
-    capabilities: ['chat', 'embedding', 'vision'],
+      'Aggregator covering OpenAI, Anthropic, Google, Mistral, DeepSeek, and most open models behind one key — plus audio (TTS/STT) and image generation. One key powers chat, memory, voice, and images.',
+    capabilities: ['chat', 'embedding', 'vision', 'tts', 'stt', 'image_gen'],
     signupUrl: 'https://openrouter.ai/keys',
     docsUrl: 'https://openrouter.ai/docs',
     isAggregator: true,

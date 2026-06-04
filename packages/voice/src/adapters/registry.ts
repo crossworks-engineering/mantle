@@ -47,10 +47,10 @@ export type WiredCapability = 'chat' | 'tts' | 'stt' | 'vision' | 'image_gen' | 
  */
 export const WIRED_PROVIDERS: Record<WiredCapability, ReadonlySet<ProviderId>> = {
   chat: new Set<ProviderId>(['openrouter', 'anthropic', 'google', 'xai', 'huggingface', 'deepseek', 'local']),
-  tts: new Set<ProviderId>(['openai', 'elevenlabs', 'xai', 'google']),
-  stt: new Set<ProviderId>(['openai', 'xai', 'elevenlabs', 'deepgram', 'assemblyai', 'google']),
+  tts: new Set<ProviderId>(['openrouter', 'openai', 'elevenlabs', 'xai', 'google']),
+  stt: new Set<ProviderId>(['openrouter', 'openai', 'xai', 'elevenlabs', 'deepgram', 'assemblyai', 'google']),
   vision: new Set<ProviderId>(['openai', 'anthropic', 'google', 'xai', 'openrouter']),
-  image_gen: new Set<ProviderId>(['openai', 'xai', 'google', 'huggingface']),
+  image_gen: new Set<ProviderId>(['openrouter', 'openai', 'xai', 'google', 'huggingface']),
   embedding: new Set<ProviderId>(['openrouter', 'openai', 'google', 'mistral', 'cohere', 'local']),
 };
 

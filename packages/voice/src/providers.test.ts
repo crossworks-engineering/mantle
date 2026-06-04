@@ -67,28 +67,30 @@ describe('SUPPORTED_PROVIDERS catalog', () => {
     expect(providersForCapability('stt').some((p) => p.id === 'openai')).toBe(true);
   });
 
-  it('openrouter is in chat but NOT in tts/stt (it does not proxy audio)', () => {
-    // Documenting the actual constraint: OpenRouter aggregates chat
-    // and embeddings but not the audio APIs. UI filter relies on
-    // this — saving an OpenRouter key against a TTS worker would
-    // produce silent failures.
+  it('openrouter covers chat + audio (tts/stt) + image_gen via its multimodal APIs', () => {
+    // OpenRouter now proxies audio (/audio/speech, /audio/transcriptions) and
+    // image generation (chat modalities) in addition to chat/embedding/vision —
+    // so one OpenRouter key powers every capability. The adapters
+    // (openrouter-tts/stt/image) back these.
     const or = getProvider('openrouter')!;
     expect(or.capabilities).toContain('chat');
-    expect(or.capabilities).not.toContain('tts');
-    expect(or.capabilities).not.toContain('stt');
+    expect(or.capabilities).toContain('tts');
+    expect(or.capabilities).toContain('stt');
+    expect(or.capabilities).toContain('image_gen');
   });
 });
 
 describe('providersForCapability', () => {
   it('returns providers in catalog order', () => {
-    // The dropdown reads in this order. We want openrouter at the top
-    // for chat, openai at the top for tts/stt.
+    // The dropdown reads in this order. OpenRouter is listed first in the
+    // catalog and now covers chat + tts + stt + image_gen + vision, so it sits
+    // at the top for each — the "one key powers everything" default.
     const chat = providersForCapability('chat');
     expect(chat[0]?.id).toBe('openrouter');
     const tts = providersForCapability('tts');
-    expect(tts[0]?.id).toBe('openai');
+    expect(tts[0]?.id).toBe('openrouter');
     const stt = providersForCapability('stt');
-    expect(stt[0]?.id).toBe('openai');
+    expect(stt[0]?.id).toBe('openrouter');
   });
 
   it('returns ONLY providers that declared the capability', () => {
