@@ -60,7 +60,7 @@ stepper is `onboarding-client.tsx`.
 |---|------|--------------|
 | 1 | **Welcome** | timezone + locale (prefilled from the browser) → `updateProfilePreferences` |
 | 2 | **OpenRouter key** (required) | the one required key — `setApiKey` + `testApiKeyAction` probe + link |
-| 3 | **Voice** (optional) | an optional **xAI** key — adds spoken replies + voice-note transcription (grok voices ara/rex) |
+| 3 | **Voice** | works by default on the OpenRouter key (grok voice ara); optionally add a dedicated **xAI** key for a smoother voice route |
 | 4 | **Set up** | `provisionDefaults(ownerId)` — creates the assistant + AI workers from the keys present |
 | 5 | **Check** | `runSanityChecks()` — green/red list (OpenRouter probe, xAI probe if added, embeddings, agent, voice/images) |
 | 6 | **About you** | ~9 questions → one Life Log each (`createLifelog`); feeds the always-on identity block |
@@ -68,14 +68,15 @@ stepper is `onboarding-client.tsx`.
 | 8 | **Telegram** | optional — BotFather instructions + token (`connectAgentTelegram`); skippable |
 
 **Hybrid routing — why.** OpenRouter covers chat, memory indexing, image reading
-(vision), and image generation rock-solid, so it's the one required key. Voice
-(TTS/STT) is the one capability the aggregator handles poorly — limited speech
-routes, and STT models aren't even enumerable — so onboarding puts **voice on a
-dedicated xAI key** (grok voices ara/rex, the proven path the production personas
-use). OpenRouter TTS/STT adapters still exist (`openrouter-{tts,stt}` in
-`@mantle/voice`) for anyone who wants pure one-key in `/settings`; onboarding just
-doesn't default to them. The "Test" button reuses `testApiKeyAction`. The wizard
-is a guided front-end over the same surfaces the settings pages use.
+(vision), image generation, AND voice (via the `openrouter-{tts,stt}` adapters,
+default `x-ai/grok-voice-tts-1.0` voice `ara`) — so a **single OpenRouter key is
+all you need**. Voice is the one capability where the aggregator is thinner
+(limited speech routes; STT models aren't enumerable), so onboarding offers an
+**optional dedicated xAI key** as a smoother voice route (grok voices ara/rex,
+the proven path the production personas use). If the user adds it, voice runs on
+xAI; if they skip it, voice falls back to OpenRouter — either way voice works.
+The "Test" button reuses `testApiKeyAction`. The wizard is a guided front-end
+over the same surfaces the settings pages use.
 
 ---
 
@@ -90,8 +91,8 @@ kind/slug that already exists is left alone):
 | Document/PDF reading | `document` | OpenRouter · `x-ai/grok-4.3` | OpenRouter key |
 | Image / scan reading | `vision` | OpenRouter · `openai/gpt-4o-mini` | OpenRouter key |
 | Image generation | `image_gen` | OpenRouter · `google/gemini-3.1-flash-image-preview` | OpenRouter key |
-| Spoken replies | `tts` | xAI · `grok-voice-latest` (voice per gender: ara/rex) | xAI key |
-| Voice notes → text | `stt` | xAI · `grok-stt` | xAI key |
+| Spoken replies | `tts` | xAI · `grok-voice-latest` (ara/rex) **or** OpenRouter · `x-ai/grok-voice-tts-1.0` (ara) | xAI key if added, else OpenRouter |
+| Voice notes → text | `stt` | xAI · `grok-stt` **or** OpenRouter · `openai/whisper-large-v3` | xAI key if added, else OpenRouter |
 | Memory search | embeddings | local EmbeddingGemma (no key, 768-dim) | always |
 
 The **assistant** is one `agents` row (slug `assistant`, role `responder` — serves

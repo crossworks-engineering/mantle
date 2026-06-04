@@ -297,7 +297,7 @@ function Wizard({
         {step === 'openrouter' && (
           <KeyStep
             title="Add your OpenRouter key"
-            blurb="OpenRouter powers the assistant's thinking, the background indexing of everything you add, and reading + generating images. This one is required. (Spoken voice is an optional add-on in the next step.)"
+            blurb="OpenRouter powers the assistant's thinking, the background indexing of everything you add, reading + generating images, and even voice. This one key is all you need — a dedicated xAI voice key is an optional upgrade in the next step."
             service="openrouter"
             label="OpenRouter API key"
             link="https://openrouter.ai/keys"
@@ -313,8 +313,8 @@ function Wizard({
 
         {step === 'voice' && (
           <StepShell
-            title="Voice (optional)"
-            blurb="Your assistant already reads images & PDFs and can generate images on your OpenRouter key. To also let it SPEAK its replies and TRANSCRIBE voice notes, add an xAI key — it's the most reliable voice provider (the grok voices ara/rex). Skip to set this up later in Settings."
+            title="Voice"
+            blurb="Your assistant speaks its replies and transcribes voice notes out of the box on your OpenRouter key (grok voice “ara”). Optionally add a dedicated xAI key for a smoother, dedicated voice route — same grok voices (ara/rex). Skip to keep voice on OpenRouter; you can add xAI later in Settings."
           >
             <KeyFields
               service="xai"

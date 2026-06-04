@@ -42,6 +42,8 @@ const VISION_MODEL = 'openai/gpt-4o-mini'; // image-reading (OpenRouter)
 const IMAGE_GEN_MODEL = 'google/gemini-3.1-flash-image-preview'; // image generation (OpenRouter)
 const XAI_TTS_MODEL = 'grok-voice-latest'; // spoken replies (dedicated xAI key)
 const XAI_STT_MODEL = 'grok-stt'; // voice-note transcription (dedicated xAI key)
+const OR_TTS_MODEL = 'x-ai/grok-voice-tts-1.0'; // voice fallback on the OpenRouter key
+const OR_STT_MODEL = 'openai/whisper-large-v3'; // transcription fallback on the OpenRouter key
 
 /** Voice id per persona gender — xAI grok voices (the dedicated TTS route, and
  *  the same voices the production personas use): female `ara`, male `rex`. */
@@ -129,9 +131,10 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
     });
   }
 
-  // Voice (spoken replies + voice-note transcription) — the one capability the
-  // aggregator handles poorly, so it runs on a dedicated xAI key (grok voices
-  // ara/rex) when the user added one. Skipped otherwise; enable later in Settings.
+  // Voice (spoken replies + voice-note transcription). Prefer a dedicated xAI
+  // key when the user added one (the smoother, proven path, grok voices ara/rex).
+  // Otherwise fall back to the OpenRouter key (grok-voice-tts-1.0 / whisper) so
+  // voice still works out of the box on a single key.
   if (xai) {
     const tts = await ensureWorker({
       ownerId, kind: 'tts', name: 'Assistant voice', provider: 'xai',
@@ -143,8 +146,17 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
       ownerId, kind: 'stt', name: 'Transcribe voice', provider: 'xai',
       model: XAI_STT_MODEL, apiKeyId: xai, params: { language: 'en' },
     });
-  } else {
-    skipped.push('spoken voice (add an xAI key to enable speak + transcribe)');
+  } else if (openrouter) {
+    const tts = await ensureWorker({
+      ownerId, kind: 'tts', name: 'Assistant voice', provider: 'openrouter',
+      model: OR_TTS_MODEL, apiKeyId: openrouter,
+      params: { voice: voiceForGender('female'), format: 'mp3' },
+    });
+    if (tts) ttsWorkerId = tts.id;
+    await ensureWorker({
+      ownerId, kind: 'stt', name: 'Transcribe voice', provider: 'openrouter',
+      model: OR_STT_MODEL, apiKeyId: openrouter, params: { language: 'en' },
+    });
   }
 
   // The persona agent — created with the Warm/Saskia default; the personality
