@@ -36,7 +36,7 @@ data = {
   body: string,          // the entry — a short first-person paragraph
   mood?: string,         // happy·grateful·calm·excited·hopeful·reflective·tired·anxious·sad·angry
   category?: string,     // identity·work·family·relationships·faith·health·emotion·goal·reflection
-  entry_date?: string,   // optional ISO date the entry is "about" (defaults to created_at)
+  entry_date?: string,   // optional ISO date the entry is "about" (validated; defaults to created_at)
   // extractor adds: summary, summary_model, summary_at, entities
 }
 ```
@@ -53,9 +53,19 @@ client editor/filters import them without dragging `postgres` into the bundle
 
 The CRUD module is `packages/content/src/lifelog.ts`:
 `listLifelogs`/`countLifelogs`/`listLifelogTags`/`getLifelog`/`createLifelog`/
-`updateLifelog`/`deleteLifelog`. List sort is newest-first by
-`coalesce(entry_date, updated_at)` so backdated entries sort by when they
-happened.
+`updateLifelog`/`deleteLifelog`. List sort is newest-first by the entry's
+"about" date, else its update time — via the shared `lifelogSortSql()` helper.
+
+**`entry_date` is validated, and the sort is crash-proof.** Because the sort
+casts `data->>'entry_date'` to `timestamptz`, an unparseable value would
+otherwise throw and break the *entire* list (and the identity block). Two
+guards prevent that: (1) `normalizeEntryDate` (in the browser-safe
+`lifelog-options` leaf) coerces any create/update input to canonical ISO or
+**rejects** it — `createLifelog`/`updateLifelog` throw, and the REST routes
+return `400` — so non-dates (`"next Tuesday"`) never reach the DB; (2)
+`lifelogSortSql()` only casts values matching `^\d{4}-\d{2}-\d{2}`, otherwise
+falling back to `updated_at`, so even a legacy or directly-written bad row
+can't crash the query.
 
 ---
 
@@ -80,7 +90,9 @@ carries the semantic payload). One extraction per meaningful edit.
 `packages/content/src/identity-context.ts` → `buildIdentityContext(ownerId)`
 distils the user's life logs into a compact `# About the user (Life Log)`
 block, grouped by category (`## Work`, `## Faith`, …), newest-first, with each
-entry as one bullet and its mood inline.
+entry as one bullet and its mood inline. It's a thin DB wrapper over a **pure,
+DB-free `renderIdentityBlock(entries)`** — the grouping/capping/formatting
+logic lives there so it's deterministic and unit-tested (see §9).
 
 - **Deterministic, no LLM.** It's a bounded, category-grouped *selection* of
   the user's real entries (≤6 per category, ≤30 total, ≤280 chars each), not an
@@ -142,13 +154,59 @@ self-knowledge** — not transient task/calendar items (`todo_create` /
 
 ## 7. Storage / migration
 
-Migration `0074_node_type_lifelog.sql` adds the `lifelog` enum value (its own
+Migration `0075_node_type_lifelog.sql` adds the `lifelog` enum value (its own
 file, like every other `ALTER TYPE … ADD VALUE`). No sidecar table. Production
-just needs the migration on deploy; nothing to backfill.
+just needs the migration on deploy; nothing to backfill. (It landed as `0075`
+rather than `0074` because a parallel email-allowlist migration took the `0074`
+slot — a reminder to check the latest number *and* rebase before assuming a
+free one.)
 
 ---
 
-## 8. Deliberately deferred (not v1)
+## 8. Verification — it works
+
+Verified end-to-end on the dev stack (2026-06-04):
+
+- **HTTP CRUD.** Through the real `/api/lifelog` routes: create (`201`,
+  persisted with mood + category + auto-derived title), `?category=` filter,
+  `PATCH` (mood update), and `DELETE` all green; the `lifelog` enum insert
+  succeeds.
+- **Identity distillation.** `buildIdentityContext` grouped a real entry under
+  `## Work` with its mood inline — the exact text destined for the system
+  prompt.
+- **Live injection.** Exercised the actual seam end-to-end
+  (`buildIdentityContext` → `composeSystemPromptWithSkills` →
+  `buildChatMessages`): the `# About the user (Life Log)` block lands in the
+  rendered **system message**, ahead of the persona, carrying the real
+  life-log content — i.e. what the model receives every turn.
+- **`entry_date` guard.** Confirmed against the DB: an invalid date is
+  rejected on create/update, a valid one normalises to ISO, and a
+  deliberately-poisoned row no longer crashes `listLifelogs` /
+  `buildIdentityContext`.
+
+---
+
+## 9. Tests
+
+Pure-logic unit tests live beside the source (`packages/content/src/*.test.ts`,
+run with `pnpm vitest run packages/content`):
+
+- `lifelog-options.test.ts` — `normalizeEntryDate` (valid ISO / bare date /
+  free-text rejection / empty / non-string), `moodDisplay`, `categoryLabel`.
+- `lifelog.test.ts` — `deriveTitle` (first-sentence, whitespace collapse,
+  empty fallback, >60-char truncation).
+- `identity-context.test.ts` — `renderIdentityBlock`: empty input, header +
+  heading + inline mood, canonical category ordering, the trailing "Other"
+  bucket, the per-category cap (6), the total cap (30), and long-body
+  truncation.
+
+24 cases; the full content suite (276) stays green. The DB wrapper and the UI
+interactions aren't unit-tested (no jsdom) — they're covered by the live
+verification above.
+
+---
+
+## 10. Deliberately deferred (not v1)
 
 - **LLM-distilled identity profile** — v1's identity block is a deterministic
   selection of raw entries; an LLM could compress many entries into tighter
