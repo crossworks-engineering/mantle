@@ -16,8 +16,9 @@
  * identity block injected into every agent turn — see ./identity-context.ts.
  * That's the whole point: a life log teaches agents who the user is.
  */
-import { and, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
 import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
+import { normalizeEntryDate } from './lifelog-options';
 
 export const LIFELOG_ROOT_LABEL = 'lifelog';
 
@@ -31,9 +32,28 @@ export {
   CATEGORY_KEYS,
   moodDisplay,
   categoryLabel,
+  normalizeEntryDate,
   type MoodKey,
   type CategoryKey,
 } from './lifelog-options';
+
+/**
+ * Sort key for life logs: the "about" date when set, else the row's update
+ * time, newest first. The cast is **crash-proof** — only values that look
+ * date-like (`YYYY-MM-DD…`) are cast to `timestamptz`; anything else falls
+ * through to `updated_at`. Input validation (`normalizeEntryDate`) already
+ * guarantees stored `entry_date` is canonical ISO, so this guard only ever
+ * matters for legacy / direct-DB-written rows — but without it a single bad
+ * value would throw and break the ENTIRE list + identity block. Shared by
+ * `listLifelogs` and `buildIdentityContext` so the two never drift.
+ */
+export function lifelogSortSql(): SQL {
+  return sql`coalesce(
+    case when ${nodes.data}->>'entry_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+      then (${nodes.data}->>'entry_date')::timestamptz end,
+    ${nodes.updatedAt}
+  ) desc`;
+}
 
 export type LifelogRow = {
   id: string;
@@ -90,8 +110,9 @@ async function ensureRoot(ownerId: string): Promise<void> {
 }
 
 /** Derive a compact title from the entry body (first sentence / ~60 chars).
- *  Keeps the left-list readable when the user just types a paragraph. */
-function deriveTitle(body: string): string {
+ *  Keeps the left-list readable when the user just types a paragraph.
+ *  Exported for unit tests. */
+export function deriveTitle(body: string): string {
   const flat = body.replace(/\s+/g, ' ').trim();
   if (!flat) return 'Life log';
   const firstSentence = flat.split(/(?<=[.!?])\s/)[0] ?? flat;
@@ -132,9 +153,8 @@ export async function listLifelogs(
     .select()
     .from(nodes)
     .where(and(...lifelogConds(ownerId, opts)))
-    // Newest first by the "about" date when set, else by update time. The
-    // COALESCE keeps backdated entries sorting by when they happened.
-    .orderBy(sql`coalesce((${nodes.data}->>'entry_date')::timestamptz, ${nodes.updatedAt}) desc`)
+    // Newest first by the "about" date when set, else by update time.
+    .orderBy(lifelogSortSql())
     .limit(opts.limit ?? 500)
     .offset(opts.offset ?? 0);
   return rows.map(rowOf);
@@ -196,10 +216,14 @@ export async function createLifelog(
   const data: Record<string, unknown> = { body };
   const mood = input.mood?.trim();
   const category = input.category?.trim();
-  const entryDate = input.entryDate?.trim();
   if (mood) data.mood = mood;
   if (category) data.category = category;
-  if (entryDate) data.entry_date = entryDate;
+  if (input.entryDate?.trim()) {
+    // Validate before storing — a non-date string would poison the sort cast.
+    const iso = normalizeEntryDate(input.entryDate);
+    if (!iso) throw new Error('entry_date must be a valid date (ISO 8601)');
+    data.entry_date = iso;
+  }
   const title = input.title?.trim() || deriveTitle(body);
   const [row] = await db
     .insert(nodes)
@@ -246,8 +270,13 @@ export async function updateLifelog(
   }
   if (input.entryDate !== undefined) {
     const e = input.entryDate.trim();
-    if (e) newData.entry_date = e;
-    else delete newData.entry_date;
+    if (e) {
+      const iso = normalizeEntryDate(e);
+      if (!iso) throw new Error('entry_date must be a valid date (ISO 8601)');
+      newData.entry_date = iso;
+    } else {
+      delete newData.entry_date;
+    }
   }
   // A body change invalidates the extractor's prior summary/embedding. Mood /
   // category / date are metadata only — they don't trigger re-extraction (the

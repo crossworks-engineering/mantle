@@ -310,6 +310,7 @@ export {
   CATEGORY_KEYS,
   moodDisplay,
   categoryLabel,
+  normalizeEntryDate,
   type MoodKey,
   type CategoryKey,
 } from './lifelog-options';

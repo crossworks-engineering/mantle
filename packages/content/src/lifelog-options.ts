@@ -59,3 +59,19 @@ export function categoryLabel(key: string | null): string | null {
   if (found) return found.label;
   return key.charAt(0).toUpperCase() + key.slice(1);
 }
+
+/**
+ * Normalise a user/agent-supplied entry date to a canonical ISO-8601 string,
+ * or return null if it isn't a real date. Stored `entry_date` is later cast to
+ * `timestamptz` in the list/identity sort, so an unparseable value (e.g. the
+ * agent passing "next Tuesday") MUST be rejected here — otherwise it poisons
+ * the ORDER BY and breaks the whole list. `''`/whitespace → null (no date).
+ */
+export function normalizeEntryDate(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const ms = Date.parse(trimmed);
+  if (Number.isNaN(ms)) return null;
+  return new Date(ms).toISOString();
+}

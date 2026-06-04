@@ -38,7 +38,15 @@ export async function POST(req: Request) {
   if (!parsed.data.body.trim()) {
     return NextResponse.json({ error: 'body is required' }, { status: 400 });
   }
-  const row = await createLifelog(user.id, parsed.data);
+  let row;
+  try {
+    row = await createLifelog(user.id, parsed.data);
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'invalid input' },
+      { status: 400 },
+    );
+  }
   void recordIngest({
     source: 'lifelog_create',
     ownerId: user.id,

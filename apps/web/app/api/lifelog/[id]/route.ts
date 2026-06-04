@@ -32,7 +32,15 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       { status: 400 },
     );
   }
-  const row = await updateLifelog(user.id, id, parsed.data);
+  let row;
+  try {
+    row = await updateLifelog(user.id, id, parsed.data);
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'invalid input' },
+      { status: 400 },
+    );
+  }
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ lifelog: row });
 }

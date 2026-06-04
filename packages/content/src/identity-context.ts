@@ -14,50 +14,47 @@
  * beyond the tokens themselves. An LLM-summarised profile is a possible
  * Phase 2; this is the zero-risk v1.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { CATEGORIES, categoryLabel } from './lifelog-options';
+import { lifelogSortSql } from './lifelog';
 
 /** Hard caps so the block can never balloon, however many entries exist. */
 const MAX_PER_CATEGORY = 6;
 const MAX_TOTAL = 30;
 const MAX_ENTRY_CHARS = 280;
 
-type Entry = { body: string; mood: string | null; category: string | null };
+/** One life log, reduced to what the identity block needs. Entries should be
+ *  passed newest-first (the DB query orders them); within a category that order
+ *  is preserved. */
+export type IdentityEntry = { body: string; mood: string | null; category: string | null };
 
 /**
- * Build the identity context block for an owner. Returns '' when the user has
- * no life logs (so the caller's concat is a clean no-op and the prompt is
- * unchanged). The block is plain text with `##` category headings; entries are
- * one bullet each, newest-first within a category.
+ * Pure renderer: turn life-log entries into the `# About the user` block.
+ * Deterministic and DB-free (unit-tested). Returns '' when nothing renders.
+ *
+ * Rules: bodies are whitespace-collapsed + truncated to MAX_ENTRY_CHARS;
+ * grouped by category in the canonical CATEGORIES order (unknown/blank →
+ * trailing "Other"); ≤ MAX_PER_CATEGORY entries per group and ≤ MAX_TOTAL
+ * overall; empty-body entries are skipped; mood renders inline.
  */
-export async function buildIdentityContext(ownerId: string): Promise<string> {
-  const rows = await db
-    .select({ data: nodes.data })
-    .from(nodes)
-    .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'lifelog')))
-    .orderBy(
-      sql`coalesce((${nodes.data}->>'entry_date')::timestamptz, ${nodes.updatedAt}) desc`,
-    )
-    .limit(200);
-
-  if (rows.length === 0) return '';
-
-  const entries: Entry[] = rows.map((r) => {
-    const d = (r.data ?? {}) as Record<string, unknown>;
-    const body = typeof d.body === 'string' ? d.body.replace(/\s+/g, ' ').trim() : '';
+export function renderIdentityBlock(entries: IdentityEntry[]): string {
+  const cleaned = entries.map((e) => {
+    const body = (e.body ?? '').replace(/\s+/g, ' ').trim();
     return {
-      body: body.length > MAX_ENTRY_CHARS ? `${body.slice(0, MAX_ENTRY_CHARS - 1).trimEnd()}…` : body,
-      mood: typeof d.mood === 'string' && d.mood.trim() ? d.mood.trim() : null,
-      category: typeof d.category === 'string' && d.category.trim() ? d.category.trim() : null,
+      body:
+        body.length > MAX_ENTRY_CHARS ? `${body.slice(0, MAX_ENTRY_CHARS - 1).trimEnd()}…` : body,
+      mood: typeof e.mood === 'string' && e.mood.trim() ? e.mood.trim() : null,
+      category:
+        typeof e.category === 'string' && e.category.trim() ? e.category.trim() : null,
     };
   });
 
-  // Group by category (preserving the canonical CATEGORIES order; unknown /
-  // null categories fall into a trailing "Other" bucket).
+  // Group by category (canonical CATEGORIES order; unknown/null → trailing
+  // "Other" bucket). Cap per category as we go.
   const UNCAT = '__other__';
-  const byCat = new Map<string, Entry[]>();
-  for (const e of entries) {
+  const byCat = new Map<string, IdentityEntry[]>();
+  for (const e of cleaned) {
     if (!e.body) continue;
     const key = e.category && CATEGORIES.some((c) => c.key === e.category) ? e.category : UNCAT;
     const list = byCat.get(key) ?? [];
@@ -90,5 +87,35 @@ export async function buildIdentityContext(ownerId: string): Promise<string> {
     }
   }
 
+  // No category produced a bullet (e.g. all bodies empty) → no block.
+  if (total === 0) return '';
+
   return `# About the user (Life Log)\n\n${lines.join('\n')}`;
+}
+
+/**
+ * Build the identity context block for an owner. Returns '' when the user has
+ * no life logs (so the caller's concat is a clean no-op and the prompt is
+ * unchanged). Thin DB wrapper over the pure `renderIdentityBlock`.
+ */
+export async function buildIdentityContext(ownerId: string): Promise<string> {
+  const rows = await db
+    .select({ data: nodes.data })
+    .from(nodes)
+    .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'lifelog')))
+    .orderBy(lifelogSortSql())
+    .limit(200);
+
+  if (rows.length === 0) return '';
+
+  const entries: IdentityEntry[] = rows.map((r) => {
+    const d = (r.data ?? {}) as Record<string, unknown>;
+    return {
+      body: typeof d.body === 'string' ? d.body : '',
+      mood: typeof d.mood === 'string' ? d.mood : null,
+      category: typeof d.category === 'string' ? d.category : null,
+    };
+  });
+
+  return renderIdentityBlock(entries);
 }
