@@ -59,39 +59,39 @@ stepper is `onboarding-client.tsx`.
 | # | Step | What it does |
 |---|------|--------------|
 | 1 | **Welcome** | timezone + locale (prefilled from the browser) → `updateProfilePreferences` |
-| 2 | **Your key** (required) | a single OpenRouter key — `setApiKey` + `testApiKeyAction` probe + link to get one |
-| 3 | **Voice & images** | keyless opt-in toggle — turns on tts/stt/vision/image_gen on the SAME OpenRouter key |
-| 4 | **Set up** | `provisionDefaults({enableVoiceImage})` — creates the assistant + AI workers |
-| 5 | **Check** | `runSanityChecks()` — a green/red list (the key probes, embeddings, the agent, voice/images) |
+| 2 | **OpenRouter key** (required) | the one required key — `setApiKey` + `testApiKeyAction` probe + link |
+| 3 | **Voice** (optional) | an optional **xAI** key — adds spoken replies + voice-note transcription (grok voices ara/rex) |
+| 4 | **Set up** | `provisionDefaults(ownerId)` — creates the assistant + AI workers from the keys present |
+| 5 | **Check** | `runSanityChecks()` — green/red list (OpenRouter probe, xAI probe if added, embeddings, agent, voice/images) |
 | 6 | **About you** | ~9 questions → one Life Log each (`createLifelog`); feeds the always-on identity block |
 | 7 | **Personality** | preset bank × gender (voice) + name + creativity slider → `savePersonaAgent` |
 | 8 | **Telegram** | optional — BotFather instructions + token (`connectAgentTelegram`); skippable |
 
-**One key for everything.** OpenRouter now exposes audio (`/audio/speech`,
-`/audio/transcriptions`) and image generation (chat `modalities`), and Mantle
-routes chat/vision/embeddings through it already — so a single OpenRouter key
-powers chat, memory, voice in/out, image reading, and image generation (the
-`openrouter-{tts,stt,image}` adapters in `@mantle/voice`). The "Test" button
-reuses `testApiKeyAction` (a no-cost `/v1/models` probe). Nothing here is bespoke
-storage — the wizard is a guided front-end over the same surfaces the settings
-pages use, where power users can still add xAI/OpenAI/etc. providers directly.
+**Hybrid routing — why.** OpenRouter covers chat, memory indexing, image reading
+(vision), and image generation rock-solid, so it's the one required key. Voice
+(TTS/STT) is the one capability the aggregator handles poorly — limited speech
+routes, and STT models aren't even enumerable — so onboarding puts **voice on a
+dedicated xAI key** (grok voices ara/rex, the proven path the production personas
+use). OpenRouter TTS/STT adapters still exist (`openrouter-{tts,stt}` in
+`@mantle/voice`) for anyone who wants pure one-key in `/settings`; onboarding just
+doesn't default to them. The "Test" button reuses `testApiKeyAction`. The wizard
+is a guided front-end over the same surfaces the settings pages use.
 
 ---
 
 ## 4. What gets provisioned (`apps/web/lib/onboarding-provision.ts`)
 
-`provisionDefaults(ownerId, {enableVoiceImage})` creates everything on the single
-OpenRouter key, idempotently (a kind/slug that already exists is left alone). The
-voice/image kinds are created only when the toggle is on:
+`provisionDefaults(ownerId)` is driven by which keys exist (idempotent — a
+kind/slug that already exists is left alone):
 
 | Capability | Worker kind | Provider · model | Gated by |
 |---|---|---|---|
-| Fact/summary/persona extraction | `extractor`, `summarizer`, `reflector` | OpenRouter · `google/gemini-3.1-flash-lite` | always |
-| Document/PDF reading | `document` | OpenRouter · `x-ai/grok-4.3` | always |
-| Voice notes → text | `stt` | OpenRouter · `openai/whisper-large-v3` | voice/image toggle |
-| Image / scan reading | `vision` | OpenRouter · `openai/gpt-4o-mini` | voice/image toggle |
-| Spoken replies | `tts` | OpenRouter · `x-ai/grok-voice-tts-1.0` (voice per gender: ara/rex) | voice/image toggle |
-| Image generation | `image_gen` | OpenRouter · `google/gemini-3.1-flash-image-preview` | voice/image toggle |
+| Fact/summary/persona extraction | `extractor`, `summarizer`, `reflector` | OpenRouter · `google/gemini-3.1-flash-lite` | OpenRouter key |
+| Document/PDF reading | `document` | OpenRouter · `x-ai/grok-4.3` | OpenRouter key |
+| Image / scan reading | `vision` | OpenRouter · `openai/gpt-4o-mini` | OpenRouter key |
+| Image generation | `image_gen` | OpenRouter · `google/gemini-3.1-flash-image-preview` | OpenRouter key |
+| Spoken replies | `tts` | xAI · `grok-voice-latest` (voice per gender: ara/rex) | xAI key |
+| Voice notes → text | `stt` | xAI · `grok-stt` | xAI key |
 | Memory search | embeddings | local EmbeddingGemma (no key, 768-dim) | always |
 
 The **assistant** is one `agents` row (slug `assistant`, role `responder` — serves

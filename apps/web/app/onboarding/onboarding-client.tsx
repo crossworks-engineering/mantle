@@ -25,7 +25,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { ToastProvider, useToast } from '@/components/ui/toast';
@@ -59,7 +58,7 @@ type StepKey =
 const STEPS: { key: StepKey; title: string }[] = [
   { key: 'profile', title: 'Welcome' },
   { key: 'openrouter', title: 'Your key' },
-  { key: 'voice', title: 'Voice & images' },
+  { key: 'voice', title: 'Voice' },
   { key: 'provision', title: 'Set up' },
   { key: 'sanity', title: 'Check' },
   { key: 'interview', title: 'About you' },
@@ -127,10 +126,10 @@ function Wizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // The one key + the keyless voice/image opt-in.
+  // OpenRouter (required) + an optional dedicated xAI key for voice.
   const [saved, setSaved] = useState<Set<string>>(new Set(savedServices));
   const [orKey, setOrKey] = useState('');
-  const [wantVoice, setWantVoice] = useState(true);
+  const [xaiKey, setXaiKey] = useState('');
   const [results, setResults] = useState<Record<string, TestApiKeyResult>>({});
 
   // Step 5 — provision
@@ -186,7 +185,7 @@ function Wizard({
   async function onProvision() {
     setBusy(true);
     try {
-      const res = await provisionStep({ enableVoiceImage: wantVoice });
+      const res = await provisionStep();
       setProvision(res);
       toast.success('Your assistant and workers are set up.');
     } catch (err) {
@@ -297,8 +296,8 @@ function Wizard({
 
         {step === 'openrouter' && (
           <KeyStep
-            title="Add your one key"
-            blurb="A single OpenRouter key powers everything — the assistant's thinking, background indexing of all you add, and (optionally) voice and images. It's the only key you need."
+            title="Add your OpenRouter key"
+            blurb="OpenRouter powers the assistant's thinking, the background indexing of everything you add, and reading + generating images. This one is required. (Spoken voice is an optional add-on in the next step.)"
             service="openrouter"
             label="OpenRouter API key"
             link="https://openrouter.ai/keys"
@@ -314,18 +313,24 @@ function Wizard({
 
         {step === 'voice' && (
           <StepShell
-            title="Voice & images"
-            blurb="Your one OpenRouter key can also let your assistant speak its replies, transcribe voice notes, read images and PDFs, and generate images — no extra keys. Turn it on now or later in Settings."
+            title="Voice (optional)"
+            blurb="Your assistant already reads images & PDFs and can generate images on your OpenRouter key. To also let it SPEAK its replies and TRANSCRIBE voice notes, add an xAI key — it's the most reliable voice provider (the grok voices ara/rex). Skip to set this up later in Settings."
           >
-            <label className="flex items-center gap-3">
-              <Switch checked={wantVoice} onCheckedChange={setWantVoice} />
-              <span className="text-sm">Enable voice &amp; images</span>
-            </label>
+            <KeyFields
+              service="xai"
+              label="xAI (Grok) API key — for voice"
+              link="https://console.x.ai"
+              value={xaiKey}
+              onChange={setXaiKey}
+              saved={saved.has('xai')}
+              result={results['xai']}
+              onSave={() => onSaveKey('xai', xaiKey)}
+              onRetest={() => onRetest('xai')}
+              busy={busy}
+            />
             <ul className="mt-3 space-y-1 pl-1 text-xs text-muted-foreground">
               <li>🗣️ Spoken replies (text-to-speech)</li>
               <li>🎙️ Transcribe voice notes (speech-to-text)</li>
-              <li>🖼️ Read images &amp; scanned documents (vision)</li>
-              <li>🎨 Generate images on request</li>
             </ul>
           </StepShell>
         )}
@@ -333,7 +338,7 @@ function Wizard({
         {step === 'provision' && (
           <StepShell
             title="Set up your assistant"
-            blurb="We’ll create your assistant and the background workers that read, summarise, and remember everything you add — all on your OpenRouter key."
+            blurb="We’ll create your assistant and the background workers that read, summarise, and remember everything you add — using the keys you provided (voice on xAI if you added it)."
           >
             {!provision ? (
               <Button onClick={onProvision} disabled={busy}>

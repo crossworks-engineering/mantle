@@ -30,19 +30,21 @@ import { createAgent, updateAgent } from '@/lib/agents';
  * by the personality step via `savePersonaAgent`.
  */
 
-// Models — everything routes through OpenRouter (one key powers it all). The
-// chat/worker slugs mirror the production box; the audio/image/vision slugs are
-// OpenRouter routes (see packages/voice/src/adapters/openrouter-*.ts).
-const WORKER_MODEL = 'google/gemini-3.1-flash-lite'; // extractor / summarizer / reflector
-const DOCUMENT_MODEL = 'x-ai/grok-4.3'; // PDF/document reader
-const ASSISTANT_MODEL = 'anthropic/claude-sonnet-4.6'; // the persona responder
-const TTS_MODEL = 'x-ai/grok-voice-tts-1.0'; // OpenRouter has no OpenAI TTS; grok-voice is on it
-const STT_MODEL = 'openai/whisper-large-v3';
-const VISION_MODEL = 'openai/gpt-4o-mini';
-const IMAGE_GEN_MODEL = 'google/gemini-3.1-flash-image-preview';
+// Hybrid routing: OpenRouter is the one required key and covers chat, the
+// indexing workers, image-reading (vision), and image generation — all solid on
+// it. VOICE (tts/stt) is the one place the aggregator is weak, so it runs on a
+// dedicated xAI key when the user adds one (grok voices ara/rex — the proven
+// path the production personas use). Embeddings stay local.
+const WORKER_MODEL = 'google/gemini-3.1-flash-lite'; // extractor / summarizer / reflector (OpenRouter)
+const DOCUMENT_MODEL = 'x-ai/grok-4.3'; // PDF/document reader (OpenRouter)
+const ASSISTANT_MODEL = 'anthropic/claude-sonnet-4.6'; // the persona responder (OpenRouter)
+const VISION_MODEL = 'openai/gpt-4o-mini'; // image-reading (OpenRouter)
+const IMAGE_GEN_MODEL = 'google/gemini-3.1-flash-image-preview'; // image generation (OpenRouter)
+const XAI_TTS_MODEL = 'grok-voice-latest'; // spoken replies (dedicated xAI key)
+const XAI_STT_MODEL = 'grok-stt'; // voice-note transcription (dedicated xAI key)
 
-/** Voice id per persona gender — xAI grok voices (the default TTS route, and the
- *  same voices the production personas use): female `ara`, male `rex`. */
+/** Voice id per persona gender — xAI grok voices (the dedicated TTS route, and
+ *  the same voices the production personas use): female `ara`, male `rex`. */
 export function voiceForGender(gender: PersonaGender): string {
   return gender === 'female' ? 'ara' : 'rex';
 }
@@ -66,12 +68,10 @@ async function keyIdByService(ownerId: string): Promise<Record<string, string>> 
   return map;
 }
 
-export async function provisionDefaults(
-  ownerId: string,
-  opts: { enableVoiceImage?: boolean } = {},
-): Promise<ProvisionResult> {
+export async function provisionDefaults(ownerId: string): Promise<ProvisionResult> {
   const keys = await keyIdByService(ownerId);
   const openrouter = keys['openrouter'] ?? null;
+  const xai = keys['xai'] ?? null;
 
   const existing = await listAiWorkers(ownerId);
   const haveKind = new Set(existing.map((w) => w.kind));
@@ -117,32 +117,34 @@ export async function provisionDefaults(
       ownerId, kind: 'document', name: 'Document reader', provider: 'openrouter',
       model: DOCUMENT_MODEL, apiKeyId: openrouter,
     });
-  }
-
-  // Voice + images — opt-in, all on the SAME OpenRouter key. tts (spoken
-  // replies), stt (transcribe voice notes), vision (read images/PDFs), and
-  // image generation. Off ⇒ chat + memory only; the user can enable later.
-  if (openrouter && opts.enableVoiceImage) {
-    await ensureWorker({
-      ownerId, kind: 'stt', name: 'Transcribe voice', provider: 'openrouter',
-      model: STT_MODEL, apiKeyId: openrouter, params: { language: 'en' },
-    });
+    // Image reading (vision) + image generation also ride the OpenRouter key —
+    // both work well on it, and cost nothing until actually used.
     await ensureWorker({
       ownerId, kind: 'vision', name: 'Read images', provider: 'openrouter',
       model: VISION_MODEL, apiKeyId: openrouter,
     });
-    const tts = await ensureWorker({
-      ownerId, kind: 'tts', name: 'Assistant voice', provider: 'openrouter',
-      model: TTS_MODEL, apiKeyId: openrouter,
-      params: { voice: voiceForGender('female'), format: 'mp3' },
-    });
-    if (tts) ttsWorkerId = tts.id;
     await ensureWorker({
       ownerId, kind: 'image_gen', name: 'Image generation', provider: 'openrouter',
       model: IMAGE_GEN_MODEL, apiKeyId: openrouter,
     });
-  } else if (!opts.enableVoiceImage) {
-    skipped.push('voice & images (you can switch these on later in Settings)');
+  }
+
+  // Voice (spoken replies + voice-note transcription) — the one capability the
+  // aggregator handles poorly, so it runs on a dedicated xAI key (grok voices
+  // ara/rex) when the user added one. Skipped otherwise; enable later in Settings.
+  if (xai) {
+    const tts = await ensureWorker({
+      ownerId, kind: 'tts', name: 'Assistant voice', provider: 'xai',
+      model: XAI_TTS_MODEL, apiKeyId: xai,
+      params: { voice: voiceForGender('female'), format: 'mp3' },
+    });
+    if (tts) ttsWorkerId = tts.id;
+    await ensureWorker({
+      ownerId, kind: 'stt', name: 'Transcribe voice', provider: 'xai',
+      model: XAI_STT_MODEL, apiKeyId: xai, params: { language: 'en' },
+    });
+  } else {
+    skipped.push('spoken voice (add an xAI key to enable speak + transcribe)');
   }
 
   // The persona agent — created with the Warm/Saskia default; the personality

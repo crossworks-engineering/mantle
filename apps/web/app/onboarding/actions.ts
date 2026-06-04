@@ -96,15 +96,12 @@ export async function savedKeyServices(): Promise<string[]> {
   return [...new Set(keys.map((k) => k.service))];
 }
 
-/** Step — provision the agent + AI-worker set on the OpenRouter key.
- *  `enableVoiceImage` adds tts/stt/vision/image_gen (all on the same key). */
-export async function provisionStep(
-  input: { enableVoiceImage?: boolean } = {},
-): Promise<ProvisionResult> {
+/** Step — provision the agent + AI-worker set. OpenRouter covers chat, indexing,
+ *  vision, and image generation; voice (tts/stt) is added on a dedicated xAI key
+ *  when one was provided. Driven entirely by which keys exist. */
+export async function provisionStep(): Promise<ProvisionResult> {
   const user = await requireOwner();
-  const result = await provisionDefaults(user.id, {
-    enableVoiceImage: input.enableVoiceImage,
-  });
+  const result = await provisionDefaults(user.id);
   await updateProfilePreferences(user.id, { onboardingStep: 'sanity' });
   return result;
 }
@@ -119,11 +116,17 @@ export async function runSanityChecks(): Promise<SanityCheck[]> {
   const keys = await listApiKeys(user.id);
   const byService = new Map(keys.map((k) => [k.service, k] as const));
 
-  // The one key — powers chat, memory, voice, and images.
+  // OpenRouter — chat, memory indexing, image reading + generation.
   const orKey = byService.get('openrouter');
   if (orKey) {
     const t = await testApiKeyAction(orKey.id, 'openrouter');
-    checks.push({ label: 'OpenRouter (chat, voice, images)', ok: t.ok, detail: t.message });
+    checks.push({ label: 'OpenRouter (chat, images)', ok: t.ok, detail: t.message });
+  }
+  // xAI — voice (only present if the user added it).
+  const xaiKey = byService.get('xai');
+  if (xaiKey) {
+    const t = await testApiKeyAction(xaiKey.id, 'xai');
+    checks.push({ label: 'xAI (voice: speak + transcribe)', ok: t.ok, detail: t.message });
   }
 
   // Embeddings — local by default; probe the resolved primary route.
