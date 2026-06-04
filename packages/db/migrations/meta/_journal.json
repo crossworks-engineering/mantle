@@ -526,6 +526,13 @@
       "when": 1781222400000,
       "tag": "0074_contacts_email_allowlist",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1781308800000,
+      "tag": "0075_node_type_lifelog",
+      "breakpoints": true
     }
   ]
 }

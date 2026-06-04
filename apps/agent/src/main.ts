@@ -34,7 +34,11 @@ import {
   type TelegramAccount,
 } from '@mantle/db';
 import { accountById, downloadTelegramFile, sendChatAction, sendMessage, sendVoice } from '@mantle/telegram';
-import { buildTimeContextLine, loadProfilePreferences } from '@mantle/content';
+import {
+  buildIdentityContext,
+  buildTimeContextLine,
+  loadProfilePreferences,
+} from '@mantle/content';
 import { ensureDatedUploadFolder, upsertFile } from '@mantle/files';
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
 import {
@@ -73,6 +77,7 @@ import {
 } from '@mantle/agent-runtime';
 import {
   CONTACT_AUTO_GRANT_SLUGS,
+  LIFELOG_AUTO_GRANT_SLUGS,
   PERSONA_TOOL_SLUGS,
   TODO_TOOL_SLUGS,
   registerAgentInvoker,
@@ -760,8 +765,27 @@ async function handleMessage(messageId: string): Promise<void> {
             err instanceof Error ? err.message : err,
           );
         }
+        // Always-on identity context — the "who you are" block distilled from
+        // the user's Life Logs (deterministic, no LLM; empty when there are
+        // none). Opt out per-agent with memory_config.inject_lifelog=false.
+        // Prepended so it reads as durable user-truth at the top of the
+        // (cached) system block. Mirrors the web /assistant path exactly.
+        let identityBlock = '';
+        if (
+          (agent.memoryConfig as { inject_lifelog?: boolean } | null)?.inject_lifelog !== false
+        ) {
+          try {
+            const block = await buildIdentityContext(USER_ID!);
+            if (block) identityBlock = `${block}\n\n`;
+          } catch (err) {
+            console.error(
+              '[agent] identity context skipped:',
+              err instanceof Error ? err.message : err,
+            );
+          }
+        }
         const effectiveSystemPrompt =
-          promptWithSkills + openHeartbeatBlock + audioTagInstructions;
+          identityBlock + promptWithSkills + openHeartbeatBlock + audioTagInstructions;
 
         // Attachment → responder input (transcript-default, mirroring web).
         // Prefer the inline-extracted text folded into the turn; for an IMAGE
@@ -1363,6 +1387,9 @@ const CORE_AUTO_GRANT_SLUGS: readonly string[] = [
   // the email send path, so Saskia needs read+add to extend her own reach
   // when the user asks ("add this business card as a contact").
   ...CONTACT_AUTO_GRANT_SLUGS,
+  // Life Logs read + add/update (delete excluded). Lets the user say "remember
+  // that I…" and have it become durable self-knowledge in the identity context.
+  ...LIFELOG_AUTO_GRANT_SLUGS,
   'note_create',
   'email_send',
   'email_page',

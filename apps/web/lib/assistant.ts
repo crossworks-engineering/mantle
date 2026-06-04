@@ -47,7 +47,11 @@ import {
 } from '@mantle/agent-runtime';
 import { registerAgentInvoker, type ToolArtifact } from '@mantle/tools';
 import { getChatAdapter, stripAudioTags } from '@mantle/voice';
-import { buildTimeContextLine, loadProfilePreferences } from '@mantle/content';
+import {
+  buildIdentityContext,
+  buildTimeContextLine,
+  loadProfilePreferences,
+} from '@mantle/content';
 import {
   buildOpenHeartbeatContext,
   HEARTBEAT_RESPONDER_TOOLS,
@@ -253,7 +257,23 @@ export async function runAssistantTurn(
       err instanceof Error ? err.message : err,
     );
   }
-  const effectiveSystemPrompt = promptWithSkills + openHeartbeatBlock;
+  // Always-on identity context — the "who you are" block distilled from the
+  // user's Life Logs (deterministic, no LLM; empty when there are none). Opt
+  // out per-agent with memory_config.inject_lifelog=false. Prepended so it
+  // reads as durable user-truth at the top of the (cached) system block.
+  let identityBlock = '';
+  if ((agent.memoryConfig as { inject_lifelog?: boolean } | null)?.inject_lifelog !== false) {
+    try {
+      const block = await buildIdentityContext(ownerId);
+      if (block) identityBlock = `${block}\n\n`;
+    } catch (err) {
+      console.error(
+        '[assistant] identity context skipped:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  const effectiveSystemPrompt = identityBlock + promptWithSkills + openHeartbeatBlock;
   // Heartbeat continuity tools are sourced from agent.tool_slugs
   // (not auto-injected here). Add them at /settings/agents on the
   // agent that should respond to heartbeat-asked questions.

@@ -54,6 +54,13 @@ export type AgentMemoryConfig = {
   /** Responder-only: how many section-level passages (content_chunks) to inject.
    *  Default 3. These carry real passage text, so they're the priciest slice. */
   chunk_limit?: number;
+  /** Responder/assistant-only: inject the always-on "who you are" identity
+   *  block distilled from the user's Life Logs (see
+   *  @mantle/content buildIdentityContext) into the cached system prompt.
+   *  Default true for conversational agents (the whole point of Life Logs);
+   *  set false on a utility/persona-light agent that shouldn't carry it.
+   *  Deterministic, no LLM — a no-op when the user has no life logs. */
+  inject_lifelog?: boolean;
   /** Summarizer-only: undigested-turn count that triggers a summarization.
    *  Default 30. */
   summarize_threshold?: number;

@@ -302,3 +302,30 @@ export {
 } from './contacts';
 
 export { loadContactGate, type ContactGate } from './contact-gate';
+
+export {
+  MOODS,
+  MOOD_KEYS,
+  CATEGORIES,
+  CATEGORY_KEYS,
+  moodDisplay,
+  categoryLabel,
+  type MoodKey,
+  type CategoryKey,
+} from './lifelog-options';
+
+export {
+  LIFELOG_ROOT_LABEL,
+  listLifelogs,
+  countLifelogs,
+  listLifelogTags,
+  getLifelog,
+  createLifelog,
+  updateLifelog,
+  deleteLifelog,
+  type LifelogRow,
+  type CreateLifelogInput,
+  type UpdateLifelogInput,
+} from './lifelog';
+
+export { buildIdentityContext } from './identity-context';

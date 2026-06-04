@@ -45,6 +45,7 @@ import { PAGE_TOOLS } from './builtins-pages';
 import { TABLE_TOOLS } from './builtins-tables';
 import { TOOL_RESULT_TOOLS } from './builtins-tool-results';
 import { CONTACT_TOOLS } from './builtins-contacts';
+import { LIFELOG_TOOLS } from './builtins-lifelog';
 import { PEER_TOOLS } from './builtins-peers';
 
 function str(v: unknown): string {
@@ -103,6 +104,7 @@ const search_nodes: BuiltinToolDef = {
           'printer_project',
           'telegram_message',
           'documentation',
+          'lifelog',
         ],
       },
       tags: { type: 'array', items: { type: 'string' } },
@@ -1045,6 +1047,10 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Contacts list IS the email allowlist; adding a contact extends reach.
   // Saskia adds/edits only when explicitly asked (tool descriptions emphasise).
   ...CONTACT_TOOLS,
+  // Life Logs — the user's first-person self-knowledge (who they are, work,
+  // family, feelings). Source of the always-on identity context. Saskia can
+  // add/refine entries when the user shares something durable about themselves.
+  ...LIFELOG_TOOLS,
   // Federation — query other people's Mantles for data they've shared with
   // you. Outbound half of docs/federation.md; reads only what a peer granted.
   ...PEER_TOOLS,

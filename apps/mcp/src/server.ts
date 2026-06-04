@@ -77,12 +77,16 @@ import {
   deleteEvent,
   deleteNote,
   deleteTodo,
+  createLifelog,
+  deleteLifelog,
   getEvent,
+  getLifelog,
   getNote,
   getPage,
   getTable,
   getTodo,
   listEvents,
+  listLifelogs,
   listNotes,
   listPages,
   listTables,
@@ -93,6 +97,7 @@ import {
   queryPeer,
   getPeerNode,
   updateEvent,
+  updateLifelog,
   updateNote,
   updateTodo,
 } from '@mantle/content';
@@ -945,6 +950,99 @@ server.tool(
   { id: z.string() },
   async ({ id }) => {
     const ok = await deleteNote(OWNER_ID!, id);
+    return { content: [{ type: 'text', text: ok ? 'deleted' : 'not found' }] };
+  },
+);
+
+// ─── Life Logs ─────────────────────────────────────────────────────────────
+//
+// The owner's first-person self-knowledge (type='lifelog'): short entries with
+// an optional mood + life-area category. These feed the always-on "who you are"
+// identity context injected into every agent turn — so logging from Claude
+// Desktop teaches the in-app assistant who the user is. Full CRUD, mirroring
+// notes (the upstream-ingest surface is where self-facts naturally get added).
+
+server.tool(
+  'lifelog_list',
+  "List the owner's Life Log — their notes about who they are, their work, family, faith, health, goals, and feelings, newest first. Optional `query` substring-matches title/body/summary; `mood` / `category` filter.",
+  {
+    query: z.string().optional(),
+    mood: z.string().optional(),
+    category: z.string().optional(),
+  },
+  async ({ query, mood, category }) => {
+    const rows = await listLifelogs(OWNER_ID!, { query, mood, category });
+    return jsonReply(rows);
+  },
+);
+
+server.tool(
+  'lifelog_get',
+  'Get a single life log entry by id.',
+  { id: z.string() },
+  async ({ id }) => {
+    const row = await getLifelog(OWNER_ID!, id);
+    if (!row) return { content: [{ type: 'text', text: 'not found' }] };
+    return jsonReply(row);
+  },
+);
+
+server.tool(
+  'lifelog_create',
+  "Record a short first-person Life Log entry — something durable about who the user is, what they're doing, or how they feel. `body` is a short paragraph; `mood` and `category` are optional. Becomes part of the assistant's always-on understanding of the user.",
+  {
+    body: z.string().min(1).max(20_000),
+    title: z.string().max(200).optional(),
+    mood: z.string().max(40).optional(),
+    category: z.string().max(40).optional(),
+    entryDate: z.string().max(40).optional(),
+    tags: z.array(z.string()).optional(),
+  },
+  async ({ body, title, mood, category, entryDate, tags }) => {
+    const row = await createLifelog(OWNER_ID!, {
+      body,
+      title,
+      mood,
+      category,
+      entryDate,
+      tags: tags ?? [],
+    });
+    return jsonReply(row);
+  },
+);
+
+server.tool(
+  'lifelog_update',
+  'Update a life log entry. Pass only the fields you want changed; an empty string clears mood/category/entryDate.',
+  {
+    id: z.string(),
+    body: z.string().max(20_000).optional(),
+    title: z.string().max(200).optional(),
+    mood: z.string().max(40).optional(),
+    category: z.string().max(40).optional(),
+    entryDate: z.string().max(40).optional(),
+    tags: z.array(z.string()).optional(),
+  },
+  async ({ id, body, title, mood, category, entryDate, tags }) => {
+    const row = await updateLifelog(OWNER_ID!, id, {
+      body,
+      title,
+      mood,
+      category,
+      entryDate,
+      tags,
+    });
+    if (!row) return { content: [{ type: 'text', text: 'not found' }] };
+    return jsonReply(row);
+  },
+);
+
+server.tool(
+  'lifelog_delete',
+  'Delete a life log entry by id.',
+  { id: z.string() },
+  async ({ id }) => {
+    const ok = await deleteLifelog(OWNER_ID!, id);
     return { content: [{ type: 'text', text: ok ? 'deleted' : 'not found' }] };
   },
 );

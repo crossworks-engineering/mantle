@@ -1,0 +1,20 @@
+/** Re-export from the shared workspace package. See @mantle/content. */
+export {
+  LIFELOG_ROOT_LABEL,
+  MOODS,
+  MOOD_KEYS,
+  CATEGORIES,
+  CATEGORY_KEYS,
+  listLifelogs,
+  countLifelogs,
+  listLifelogTags,
+  getLifelog,
+  createLifelog,
+  updateLifelog,
+  deleteLifelog,
+  type LifelogRow,
+  type MoodKey,
+  type CategoryKey,
+  type CreateLifelogInput,
+  type UpdateLifelogInput,
+} from '@mantle/content/lifelog';

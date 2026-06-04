@@ -93,7 +93,7 @@ const HARD_SKIP_TYPES = new Set(['branch']);
  *  `task` and `event` are first-class content: title + body + metadata
  *  (status, due_at, starts_at, location, …) all become part of the body
  *  the extractor summarises and embeds. */
-const DEFAULT_EXTRACT_TYPES = ['note', 'page', 'table', 'file', 'email', 'email_thread', 'secret', 'task', 'event', 'contact', 'documentation'];
+const DEFAULT_EXTRACT_TYPES = ['note', 'page', 'table', 'file', 'email', 'email_thread', 'secret', 'task', 'event', 'contact', 'documentation', 'lifelog'];
 
 /** Max characters of body text we feed the summarizer in one shot.
  *  Long emails / PDFs get truncated to keep the prompt bounded and the
@@ -381,6 +381,22 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
       ...(typeof d.starts_at === 'string' ? [`Starts: ${d.starts_at}`] : []),
       ...(typeof d.ends_at === 'string' ? [`Ends: ${d.ends_at}`] : []),
       ...(typeof d.location === 'string' && d.location ? [`Location: ${d.location}`] : []),
+      ...(body ? ['', body] : []),
+    ];
+    return lines.join('\n');
+  }
+  // ─── Life logs — first-person identity statement + mood/category ─────
+  // A life log is the user describing who they are / what they do / how they
+  // feel. The body carries the semantic payload; mood + category give the
+  // extractor framing so the summary + facts read as durable self-knowledge
+  // ("works as …", "values …", "felt anxious about …") rather than an event.
+  if (node.type === 'lifelog') {
+    const d = (node.data ?? {}) as Record<string, unknown>;
+    const body = typeof d.body === 'string' ? d.body : '';
+    const lines = [
+      node.title,
+      ...(typeof d.category === 'string' && d.category ? [`Area: ${d.category}`] : []),
+      ...(typeof d.mood === 'string' && d.mood ? [`Mood: ${d.mood}`] : []),
       ...(body ? ['', body] : []),
     ];
     return lines.join('\n');

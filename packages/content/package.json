@@ -10,6 +10,8 @@
     "./notes": "./src/notes.ts",
     "./todos": "./src/todos.ts",
     "./events": "./src/events.ts",
+    "./lifelog": "./src/lifelog.ts",
+    "./lifelog-options": "./src/lifelog-options.ts",
     "./peers": "./src/peers.ts",
     "./peers-crypto": "./src/peers-crypto.ts",
     "./pages": "./src/pages.ts",

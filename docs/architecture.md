@@ -37,6 +37,11 @@ Companion docs:
   rolls it up, and `/assistant` renders all of it. Channels are transports
   (`recordTurn` / `loadConversationContext` in `@mantle/agent-runtime`); read
   this before touching how a surface persists or loads conversation turns.
+- [`lifelog.md`](./lifelog.md) — "Life Logs": the note-like `lifelog` content
+  type — short first-person entries (mood + life-area category) that teach
+  agents who the user is. Indexed like notes **and** distilled into an
+  always-on identity block (`buildIdentityContext`) injected into every agent
+  turn (opt-out via `AgentMemoryConfig.inject_lifelog`). Deterministic, no LLM.
 - [`recall.md`](./recall.md) — "Remy", the memory-recall agent: time-windowed
   replay of past conversations (`find_window` → `recall_window`) via the
   `invoke_agent` delegation path. Lossless paging vs. lossy digests.
