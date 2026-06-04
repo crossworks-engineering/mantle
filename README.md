@@ -57,15 +57,18 @@ pnpm up
 3. Runs Drizzle migrations against the fresh DB
 4. Starts the dev servers (web + mcp + email worker + telegram worker + agent)
 
-On a fresh DB you'll also need one row in `auth.users` — there's no signup UI:
+That's it — **no SQL, no `ALLOWED_USER_ID` to fill in.** Open
+http://localhost:3000 and you'll land on **Create your account** (the first-run
+signup, available only while `auth.users` is empty). After signup, the
+**onboarding wizard** walks you through everything the brain needs to run: a
+model key (OpenRouter), optional voice/image (xAI) and transcription/vision
+(OpenAI) keys, then it provisions your assistant + the background AI workers,
+runs a sanity check, captures who you are as Life Logs, and lets you shape the
+assistant's personality. See [`docs/onboarding.md`](./docs/onboarding.md).
 
-```bash
-# Insert your user (replace email; generate a bcrypt hash externally with cost 10+)
-pnpm infra:psql
-> INSERT INTO auth.users (id, email, password_hash)
-  VALUES (gen_random_uuid(), 'you@example.com', '$2a$10$...');
-> SELECT id FROM auth.users;   # paste this into ALLOWED_USER_ID
-```
+> `ALLOWED_USER_ID` is now **optional** — left blank, the workers and MCP server
+> auto-resolve the single `auth.users` row, so a fresh install is zero-config.
+> Set it only for scripts or a multi-DB setup.
 
 Other handy scripts:
 

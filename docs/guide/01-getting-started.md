@@ -6,11 +6,19 @@ to use Mantle — just talk to it and feed it things.
 
 > Don't have Mantle running yet? Set it up first — see [Installation](01-installation.md).
 
-## 1. Sign in
+## 1. Create your account
 
-Mantle is single-user. Open the app and log in with your account. There's no
-signup flow — your one account is set up when the system is installed. Sessions
-last a long time, so you rarely log in again.
+Mantle is single-user. The first time you open the app you'll see **Create your
+account** — pick an email and password. (This first-run signup is only available
+while no account exists; after that it becomes the normal sign-in. Sessions last
+a long time, so you rarely log in again.)
+
+Signing up drops you straight into the **onboarding wizard**, which gets the
+brain ready: it collects a model key (and optional voice/vision keys), sets up
+your assistant and its background workers, runs a quick health check, asks a few
+questions so the assistant knows who you are, and lets you choose its
+personality and voice. See [Onboarding](../onboarding.md) for the full tour.
+You can change anything it sets up later under **Settings**.
 
 ## 2. Meet the assistant
 
