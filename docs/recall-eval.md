@@ -159,3 +159,28 @@ header reclassify    0/1               0/1            0.86
 ```
 
 The newsletters (Earth Day Sale, Prusameters, PiShop) leave the prompt entirely; the window fills with real supplier files, quotes, and the directory page. Going forward every newly-synced email is classified at ingest, so `unknown` only shrinks. `classify:backfill` is the canonical tool; `backfill:email-salience` remains the offline fallback for mail IMAP can't reach.
+
+## After step (f): auto-chunk retrieval (2026-06-04)
+
+The responder's context used only the coarse per-node summary; the section-level
+`content_chunks` index (~1.5k-char passages, own embeddings) was reachable only
+via the explicit `search_chunks` tool. Now `loadConversationContext` also pulls
+the top passages (`chunk_limit`, default 3; cutoff 0.65; salience-aware,
+system-docs + telegram excluded) and `buildChatMessages` renders them as a
+"Relevant passages" block. Both surfaces inherit it.
+
+**Why the node-recall eval is flat here (0.91, no Δ) and that's correct.** These
+gold cases already find their node via content hits, so chunks don't change node
+*discovery* — they change what the model can *say*. The value is putting the
+actual answer text in the prompt. Demonstrated: for "what does the company pay
+for rent and vehicle finance each month", the content hit gives only the summary
+("This document details the monthly recurring expenses…"); the chunk hits deliver
+the line items — `Ashley Schoeman Salary R 59,960.00…` and the financial
+statement's `STATEMENT OF FINANCIAL POSITION` figures. Without chunks the model
+knows the doc exists; with them it can answer from it.
+
+This is the same lesson as preferences (step c): node-recall is necessary but
+not sufficient — some wins (passage text, preference injection, relationship
+feel) are real and invisible to it. Verify those with a direct context probe, not
+the recall number. Cost: ~3 passages (~4.5k chars) added per turn — tune via
+`memory_config.chunk_limit`.

@@ -449,6 +449,9 @@ importers:
       '@mantle/files':
         specifier: workspace:*
         version: link:../files
+      '@mantle/search':
+        specifier: workspace:*
+        version: link:../search
       '@mantle/tools':
         specifier: workspace:*
         version: link:../tools

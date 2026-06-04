@@ -198,7 +198,14 @@ async function runCase(
 
   // prod: exactly what Saskia assembles (content hits capped + cutoff applied).
   const ctx = await loadConversationContext({ ownerId, agent, inboundText: gc.query });
-  const prod: Candidate[] = ctx.contentHits.map((h) => ({ id: h.nodeId, title: h.title }));
+  // prod = everything that actually reaches the prompt as a content reference:
+  // node-level content hits first, then any node a chunk passage surfaced (the
+  // auto-chunk retrieval can recover a node whose whole-node embedding ranked
+  // low but a section matched).
+  const prod: Candidate[] = dedup([
+    ...ctx.contentHits.map((h) => ({ id: h.nodeId, title: h.title })),
+    ...ctx.chunkHits.map((h) => ({ id: h.nodeId, title: h.title })),
+  ]);
 
   // vector / fts / search / chunks at RANK_K.
   const vector = await vectorNodes(ownerId, queryVec, rankK);

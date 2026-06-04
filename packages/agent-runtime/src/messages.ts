@@ -48,6 +48,16 @@ export type ContentHit = {
   nodeId: string;
 };
 
+/** A section-level passage pulled into context — the fine-grained complement to
+ *  ContentHit (which is only the node's 1-2 sentence summary). Gives the model
+ *  the actual relevant text, not just "you have a doc about X". */
+export type ChunkContextHit = {
+  nodeId: string;
+  title: string;
+  heading: string | null;
+  text: string;
+};
+
 /** Tool call request emitted by the assistant. Matches the OpenRouter
  *  ChatToolCall shape — id + function name + JSON-stringified arguments. */
 export type ToolCallRequest = {
@@ -183,6 +193,9 @@ export function buildChatMessages(args: {
   facts: FactSnippet[];
   digests: Digest[];
   contentHits: ContentHit[];
+  /** Section-level passages (auto-retrieved from content_chunks). The fine
+   *  complement to contentHits. Optional so older callers still compile. */
+  chunkHits?: ChunkContextHit[];
   history: HistoryTurn[];
   newUserText: string;
   /** When set + the model is vision-capable, the new user turn becomes a
@@ -196,6 +209,7 @@ export function buildChatMessages(args: {
     facts,
     digests,
     contentHits,
+    chunkHits = [],
     history,
     newUserText,
     userImage,
@@ -253,6 +267,21 @@ export function buildChatMessages(args: {
       })
       .join('\n');
     const text = `Possibly relevant items the user may be referencing (refer to them by title if helpful):\n${lines}`;
+    messages.push({ role: 'system', content: text });
+  }
+
+  // ─── Block 3b: relevant passages (chunk hits; no cache) ───────────────
+  // The actual text of the most relevant sections, not just the node summary.
+  // This is what lets the model answer from the document instead of only
+  // knowing it exists.
+  if (chunkHits.length > 0) {
+    const blocks = chunkHits
+      .map((c) => {
+        const head = c.heading ? `${c.title} › ${c.heading}` : c.title;
+        return `— from "${head}":\n${c.text.trim()}`;
+      })
+      .join('\n\n');
+    const text = `Relevant passages from the user's own content (quote or cite by title; don't go beyond what they say):\n\n${blocks}`;
     messages.push({ role: 'system', content: text });
   }
 

@@ -28,12 +28,17 @@ export type ChunkSearchOptions = {
   /** Restrict to an ltree branch prefix (e.g. "pages"). */
   branch?: string;
   limit?: number;
+  /** Drop chunks from system-seeded docs (origin='system'). The responder's
+   *  auto-context sets this so Mantle's own documentation isn't injected as "your
+   *  content"; the explicit search_chunks tool leaves it off (docs are findable). */
+  excludeSystemOrigin?: boolean;
 };
 
 export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]> {
   const vec = JSON.stringify(opts.embedding);
   const conds = [eq(contentChunks.ownerId, opts.ownerId), isNotNull(contentChunks.embedding)];
   if (opts.branch) conds.push(sql`${nodes.path} <@ ${opts.branch}::ltree`);
+  if (opts.excludeSystemOrigin) conds.push(sql`(${nodes.data}->>'origin') is distinct from 'system'`);
 
   return db
     .select({

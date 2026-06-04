@@ -40,7 +40,8 @@ import {
   type PersonaNote,
 } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
-import type { ContentHit, Digest, FactSnippet, HistoryTurn } from './messages';
+import { searchChunks } from '@mantle/search';
+import type { ChunkContextHit, ContentHit, Digest, FactSnippet, HistoryTurn } from './messages';
 
 void agents; // referenced for the Agent type's provenance; silence unused-import lint.
 
@@ -53,9 +54,18 @@ export type ConversationContext = {
   personaNotes: PersonaNote[];
   facts: FactSnippet[];
   contentHits: ContentHit[];
+  chunkHits: ChunkContextHit[];
   digests: Digest[];
   history: HistoryTurn[];
 };
+
+/** How many section-level passages to auto-pull into context (the fine-grained
+ *  complement to the node-level content hits). Default kept small — these carry
+ *  real passage text (~1.5k chars each), so they're the priciest context slice. */
+const CHUNK_LIMIT_DEFAULT = 3;
+/** Cosine cutoff for a chunk to be worth injecting. Looser than the node cutoff
+ *  (0.6): a passage can match tightly on a sub-topic the node summary misses. */
+const CHUNK_CUTOFF = 0.65;
 
 /** Preferences are tiny + high-signal ("Jason prefers terse replies"); the
  *  design always-injects the most recent few rather than waiting on a vector
@@ -131,6 +141,7 @@ export async function loadConversationContext(args: {
   // actual licence PDF (#3) and a related note (#1). Five short summaries cost
   // little and recover that whole cluster.
   const contentHitLimit = memoryConfig.content_hit_limit ?? 5;
+  const chunkLimit = memoryConfig.chunk_limit ?? CHUNK_LIMIT_DEFAULT;
 
   const personaNotes: PersonaNote[] = (agent.personaNotes ?? []) as PersonaNote[];
 
@@ -250,6 +261,33 @@ export async function loadConversationContext(args: {
       });
   }
 
+  // ─── Section-level passages (the fine-grained complement to content hits) ──
+  // The coarse per-node embedding is a weak primitive for a long doc; the
+  // chunk index holds ~1.5k-char passages with their own embeddings. Pull the
+  // closest few so the model gets the actual relevant TEXT, not just the node
+  // summary. Salience-aware + system-docs excluded (same hygiene as above);
+  // shares the one query embedding.
+  let chunkHits: ChunkContextHit[] = [];
+  if (queryVec && chunkLimit > 0) {
+    const hits = await searchChunks({
+      ownerId,
+      embedding: queryVec,
+      limit: chunkLimit + 4, // small pool so the cutoff can trim without starving
+      excludeSystemOrigin: true,
+    });
+    chunkHits = hits
+      // Same exclusions as content hits: a raw telegram turn isn't a "passage"
+      // (it's the conversation), and a weak match isn't worth the tokens.
+      .filter((h) => h.distance < CHUNK_CUTOFF && h.nodeType !== 'telegram_message')
+      .slice(0, chunkLimit)
+      .map((h) => ({
+        nodeId: h.nodeId,
+        title: h.nodeTitle,
+        heading: h.headingPath,
+        text: h.text,
+      }));
+  }
+
   // ─── Conversation digests for THIS agent (per-agent, cross-channel) ─────
   // Filtered by the digest note's data.agent_id. Until the unified summarizer
   // (Phase 4) and the digest re-key (Phase 6) land, no digest note carries
@@ -311,5 +349,5 @@ export async function loadConversationContext(args: {
     .reverse()
     .map((r) => ({ role: r.direction === 'outbound' ? 'assistant' : 'user', text: r.text }));
 
-  return { personaNotes, facts: factRows, contentHits, digests, history };
+  return { personaNotes, facts: factRows, contentHits, chunkHits, digests, history };
 }

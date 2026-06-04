@@ -650,7 +650,7 @@ async function handleMessage(messageId: string): Promise<void> {
           },
         });
 
-        const { personaNotes, facts: relevantFacts, digests, contentHits, history } =
+        const { personaNotes, facts: relevantFacts, digests, contentHits, chunkHits, history } =
           await step(
             { name: 'load_context', kind: 'compute', input: { agentId: agent.id } },
             async (h) => {
@@ -667,6 +667,7 @@ async function handleMessage(messageId: string): Promise<void> {
                 digestCount: ctx.digests.length,
                 factCount: ctx.facts.length,
                 contentHitCount: ctx.contentHits.length,
+                chunkHitCount: ctx.chunkHits.length,
                 personaNoteCount: ctx.personaNotes.length,
               });
               return ctx;
@@ -815,6 +816,7 @@ async function handleMessage(messageId: string): Promise<void> {
               facts: relevantFacts,
               digests,
               contentHits,
+              chunkHits,
               history,
               newUserText: responderUserText,
               userImage,

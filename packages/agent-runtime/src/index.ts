@@ -6,6 +6,7 @@ export {
   type Digest,
   type FactSnippet,
   type ContentHit,
+  type ChunkContextHit,
   type ChatMessage,
   type ToolCallRequest,
   type UserImage,

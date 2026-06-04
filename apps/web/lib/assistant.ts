@@ -308,6 +308,7 @@ export async function runAssistantTurn(
       facts: ctx.facts,
       digests: ctx.digests,
       contentHits: ctx.contentHits,
+      chunkHits: ctx.chunkHits,
       history: filteredHistory,
       newUserText: userText,
       userImage: image,

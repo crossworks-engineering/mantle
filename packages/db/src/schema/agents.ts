@@ -49,8 +49,11 @@ export type AgentMemoryConfig = {
   digest_limit?: number;
   /** Responder-only: how many top-K facts to inject. Default 10. */
   fact_limit?: number;
-  /** Responder-only: how many content_index hits to inject. Default 3. */
+  /** Responder-only: how many content_index hits to inject. Default 5. */
   content_hit_limit?: number;
+  /** Responder-only: how many section-level passages (content_chunks) to inject.
+   *  Default 3. These carry real passage text, so they're the priciest slice. */
+  chunk_limit?: number;
   /** Summarizer-only: undigested-turn count that triggers a summarization.
    *  Default 30. */
   summarize_threshold?: number;
