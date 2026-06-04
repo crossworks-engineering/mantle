@@ -1101,6 +1101,43 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
     return;
   }
 
+  // Telegram turns: EMBED-ONLY. Short conversational lines are worth making
+  // semantically searchable (search_nodes, Remy recall) but not worth an LLM
+  // summary/fact pass each — which is why they're deliberately absent from
+  // extract_types. Embeddings are local + cached, so this is ~free. Closes the
+  // architecture §16 "telegram messages aren't embedded" gap.
+  if (node.type === 'telegram_message') {
+    const tgData = (node.data ?? {}) as Record<string, unknown>;
+    const tgText = typeof tgData.text === 'string' ? tgData.text.trim() : '';
+    let embedded = false;
+    if (tgText.length >= 2 && !node.embedding) {
+      try {
+        const vec = await embed(ownerId, tgText.slice(0, 2000));
+        await db.update(nodes).set({ embedding: vec }).where(eq(nodes.id, node.id));
+        embedded = true;
+      } catch (err) {
+        console.error(
+          '[extractor] telegram embed failed:',
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+    await recordSkippedTrace({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      disposition: 'telegram_embed_only',
+      details: {
+        node_type: node.type,
+        worker_slug: worker.slug,
+        embedded,
+        hint: 'Telegram turns get an embedding for search but no summary/fact extraction.',
+      },
+    });
+    return;
+  }
+
   // target_types is the new home for the type allowlist. We still
   // accept extract_types for legacy backfilled rows in the same
   // params blob — extractTypes prefers the new name.
