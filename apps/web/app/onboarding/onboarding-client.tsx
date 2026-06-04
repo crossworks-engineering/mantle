@@ -49,7 +49,6 @@ type StepKey =
   | 'profile'
   | 'openrouter'
   | 'voice'
-  | 'openai'
   | 'provision'
   | 'sanity'
   | 'interview'
@@ -59,9 +58,8 @@ type StepKey =
 
 const STEPS: { key: StepKey; title: string }[] = [
   { key: 'profile', title: 'Welcome' },
-  { key: 'openrouter', title: 'Models' },
+  { key: 'openrouter', title: 'Your key' },
   { key: 'voice', title: 'Voice & images' },
-  { key: 'openai', title: 'Transcription & vision' },
   { key: 'provision', title: 'Set up' },
   { key: 'sanity', title: 'Check' },
   { key: 'interview', title: 'About you' },
@@ -129,12 +127,10 @@ function Wizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Steps 2–4 — keys
+  // The one key + the keyless voice/image opt-in.
   const [saved, setSaved] = useState<Set<string>>(new Set(savedServices));
   const [orKey, setOrKey] = useState('');
-  const [xaiKey, setXaiKey] = useState('');
-  const [openaiKey, setOpenaiKey] = useState('');
-  const [wantVoice, setWantVoice] = useState(savedServices.includes('xai'));
+  const [wantVoice, setWantVoice] = useState(true);
   const [results, setResults] = useState<Record<string, TestApiKeyResult>>({});
 
   // Step 5 — provision
@@ -190,7 +186,7 @@ function Wizard({
   async function onProvision() {
     setBusy(true);
     try {
-      const res = await provisionStep();
+      const res = await provisionStep({ enableVoiceImage: wantVoice });
       setProvision(res);
       toast.success('Your assistant and workers are set up.');
     } catch (err) {
@@ -301,8 +297,8 @@ function Wizard({
 
         {step === 'openrouter' && (
           <KeyStep
-            title="Add your model key"
-            blurb="OpenRouter powers the assistant’s thinking and the background indexing of everything you add. This one is required."
+            title="Add your one key"
+            blurb="A single OpenRouter key powers everything — the assistant's thinking, background indexing of all you add, and (optionally) voice and images. It's the only key you need."
             service="openrouter"
             label="OpenRouter API key"
             link="https://openrouter.ai/keys"
@@ -319,52 +315,25 @@ function Wizard({
         {step === 'voice' && (
           <StepShell
             title="Voice & images"
-            blurb="Optional. Let your assistant speak its replies aloud and generate images. This uses an xAI (Grok) key."
+            blurb="Your one OpenRouter key can also let your assistant speak its replies, transcribe voice notes, read images and PDFs, and generate images — no extra keys. Turn it on now or later in Settings."
           >
             <label className="flex items-center gap-3">
               <Switch checked={wantVoice} onCheckedChange={setWantVoice} />
-              <span className="text-sm">Enable spoken replies & image generation</span>
+              <span className="text-sm">Enable voice &amp; images</span>
             </label>
-            {wantVoice && (
-              <div className="mt-4">
-                <KeyFields
-                  service="xai"
-                  label="xAI (Grok) API key"
-                  link="https://console.x.ai"
-                  value={xaiKey}
-                  onChange={setXaiKey}
-                  saved={saved.has('xai')}
-                  result={results['xai']}
-                  onSave={() => onSaveKey('xai', xaiKey)}
-                  onRetest={() => onRetest('xai')}
-                  busy={busy}
-                />
-              </div>
-            )}
+            <ul className="mt-3 space-y-1 pl-1 text-xs text-muted-foreground">
+              <li>🗣️ Spoken replies (text-to-speech)</li>
+              <li>🎙️ Transcribe voice notes (speech-to-text)</li>
+              <li>🖼️ Read images &amp; scanned documents (vision)</li>
+              <li>🎨 Generate images on request</li>
+            </ul>
           </StepShell>
-        )}
-
-        {step === 'openai' && (
-          <KeyStep
-            title="Transcription & vision"
-            blurb="Optional but recommended. OpenAI’s whisper-1 transcribes voice notes and gpt-4o-mini reads images and scanned documents."
-            service="openai"
-            label="OpenAI API key"
-            link="https://platform.openai.com/api-keys"
-            value={openaiKey}
-            onChange={setOpenaiKey}
-            saved={saved.has('openai')}
-            result={results['openai']}
-            onSave={() => onSaveKey('openai', openaiKey)}
-            onRetest={() => onRetest('openai')}
-            busy={busy}
-          />
         )}
 
         {step === 'provision' && (
           <StepShell
             title="Set up your assistant"
-            blurb="We’ll create your assistant and the background workers that read, summarise, and remember everything you add — using exactly the keys you provided."
+            blurb="We’ll create your assistant and the background workers that read, summarise, and remember everything you add — all on your OpenRouter key."
           >
             {!provision ? (
               <Button onClick={onProvision} disabled={busy}>
@@ -619,7 +588,6 @@ function Wizard({
               };
             }
             case 'voice':
-            case 'openai':
               return { label: 'Continue', onClick: () => go(index + 1) };
             case 'provision':
               return { label: 'Continue', disabled: !provision, onClick: () => go(index + 1) };

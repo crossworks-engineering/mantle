@@ -33,6 +33,7 @@ import {
   type SavePersonaInput,
 } from '@/lib/onboarding-provision';
 import { markOnboarded } from '@/lib/onboarding';
+import { listAiWorkers } from '@/lib/ai-workers';
 import { connectAgentTelegram, TelegramTokenError } from '@/lib/agent-telegram';
 
 /** Persist the furthest step the user has reached (resume marker). */
@@ -95,10 +96,15 @@ export async function savedKeyServices(): Promise<string[]> {
   return [...new Set(keys.map((k) => k.service))];
 }
 
-/** Step 5 — provision the agent + AI-worker set from the keys present. */
-export async function provisionStep(): Promise<ProvisionResult> {
+/** Step — provision the agent + AI-worker set on the OpenRouter key.
+ *  `enableVoiceImage` adds tts/stt/vision/image_gen (all on the same key). */
+export async function provisionStep(
+  input: { enableVoiceImage?: boolean } = {},
+): Promise<ProvisionResult> {
   const user = await requireOwner();
-  const result = await provisionDefaults(user.id);
+  const result = await provisionDefaults(user.id, {
+    enableVoiceImage: input.enableVoiceImage,
+  });
   await updateProfilePreferences(user.id, { onboardingStep: 'sanity' });
   return result;
 }
@@ -113,16 +119,11 @@ export async function runSanityChecks(): Promise<SanityCheck[]> {
   const keys = await listApiKeys(user.id);
   const byService = new Map(keys.map((k) => [k.service, k] as const));
 
-  // Provider keys — probe each that's present.
-  for (const [service, label] of [
-    ['openrouter', 'OpenRouter (chat + indexing)'],
-    ['openai', 'OpenAI (voice + image reading)'],
-    ['xai', 'xAI/Grok (spoken replies + images)'],
-  ] as const) {
-    const key = byService.get(service);
-    if (!key) continue;
-    const t = await testApiKeyAction(key.id, service);
-    checks.push({ label, ok: t.ok, detail: t.message });
+  // The one key — powers chat, memory, voice, and images.
+  const orKey = byService.get('openrouter');
+  if (orKey) {
+    const t = await testApiKeyAction(orKey.id, 'openrouter');
+    checks.push({ label: 'OpenRouter (chat, voice, images)', ok: t.ok, detail: t.message });
   }
 
   // Embeddings — local by default; probe the resolved primary route.
@@ -160,6 +161,17 @@ export async function runSanityChecks(): Promise<SanityCheck[]> {
     ok: Boolean(agent?.enabled),
     detail: agent ? `${agent.name} is ready` : 'no assistant agent — add an OpenRouter key',
   });
+
+  // Voice & images — only reported when they were enabled (a tts worker exists).
+  const workers = await listAiWorkers(user.id);
+  const av = workers.filter((w) => ['tts', 'stt', 'vision', 'image_gen'].includes(w.kind));
+  if (av.length > 0) {
+    checks.push({
+      label: 'Voice & images',
+      ok: true,
+      detail: `${av.length} capabilities on OpenRouter (speak, transcribe, read, generate)`,
+    });
+  }
 
   return checks;
 }

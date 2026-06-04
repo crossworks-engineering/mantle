@@ -30,20 +30,21 @@ import { createAgent, updateAgent } from '@/lib/agents';
  * by the personality step via `savePersonaAgent`.
  */
 
-// Models — mirror the production box (verified live).
+// Models — everything routes through OpenRouter (one key powers it all). The
+// chat/worker slugs mirror the production box; the audio/image/vision slugs are
+// OpenRouter routes (see packages/voice/src/adapters/openrouter-*.ts).
 const WORKER_MODEL = 'google/gemini-3.1-flash-lite'; // extractor / summarizer / reflector
-const DOCUMENT_MODEL = 'x-ai/grok-4.3'; // PDF/document reader (via OpenRouter)
+const DOCUMENT_MODEL = 'x-ai/grok-4.3'; // PDF/document reader
 const ASSISTANT_MODEL = 'anthropic/claude-sonnet-4.6'; // the persona responder
+const TTS_MODEL = 'openai/gpt-4o-mini-tts';
+const STT_MODEL = 'openai/whisper-large-v3';
+const VISION_MODEL = 'openai/gpt-4o-mini';
+const IMAGE_GEN_MODEL = 'google/gemini-3.1-flash-image-preview';
 
-const TTS_PROVIDER = 'xai';
-const TTS_MODEL = 'grok-voice-latest';
-const IMAGE_GEN_MODEL = 'grok-imagine-image';
-const STT_MODEL = 'whisper-1';
-const VISION_MODEL = 'gpt-4o-mini';
-
-/** Voice id per persona gender (matches prod: Saskia=ara, Paul=rex). */
+/** Voice id per persona gender — OpenAI voices (the gpt-4o-mini-tts route):
+ *  female `nova` (warm), male `onyx` (deeper). */
 export function voiceForGender(gender: PersonaGender): string {
-  return gender === 'female' ? 'ara' : 'rex';
+  return gender === 'female' ? 'nova' : 'onyx';
 }
 
 export const PERSONA_AGENT_SLUG = 'assistant';
@@ -65,11 +66,12 @@ async function keyIdByService(ownerId: string): Promise<Record<string, string>> 
   return map;
 }
 
-export async function provisionDefaults(ownerId: string): Promise<ProvisionResult> {
+export async function provisionDefaults(
+  ownerId: string,
+  opts: { enableVoiceImage?: boolean } = {},
+): Promise<ProvisionResult> {
   const keys = await keyIdByService(ownerId);
   const openrouter = keys['openrouter'] ?? null;
-  const xai = keys['xai'] ?? null;
-  const openai = keys['openai'] ?? null;
 
   const existing = await listAiWorkers(ownerId);
   const haveKind = new Set(existing.map((w) => w.kind));
@@ -117,32 +119,30 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
     });
   }
 
-  if (openai) {
+  // Voice + images — opt-in, all on the SAME OpenRouter key. tts (spoken
+  // replies), stt (transcribe voice notes), vision (read images/PDFs), and
+  // image generation. Off ⇒ chat + memory only; the user can enable later.
+  if (openrouter && opts.enableVoiceImage) {
     await ensureWorker({
-      ownerId, kind: 'stt', name: 'Transcribe voice', provider: 'openai',
-      model: STT_MODEL, apiKeyId: openai, params: { language: 'en' },
+      ownerId, kind: 'stt', name: 'Transcribe voice', provider: 'openrouter',
+      model: STT_MODEL, apiKeyId: openrouter, params: { language: 'en' },
     });
     await ensureWorker({
-      ownerId, kind: 'vision', name: 'Read images', provider: 'openai',
-      model: VISION_MODEL, apiKeyId: openai,
+      ownerId, kind: 'vision', name: 'Read images', provider: 'openrouter',
+      model: VISION_MODEL, apiKeyId: openrouter,
     });
-  } else {
-    skipped.push('voice transcription + image reading (no OpenAI key)');
-  }
-
-  if (xai) {
     const tts = await ensureWorker({
-      ownerId, kind: 'tts', name: 'Assistant voice', provider: TTS_PROVIDER,
-      model: TTS_MODEL, apiKeyId: xai,
+      ownerId, kind: 'tts', name: 'Assistant voice', provider: 'openrouter',
+      model: TTS_MODEL, apiKeyId: openrouter,
       params: { voice: voiceForGender('female'), format: 'mp3' },
     });
     if (tts) ttsWorkerId = tts.id;
     await ensureWorker({
-      ownerId, kind: 'image_gen', name: 'Image generation', provider: TTS_PROVIDER,
-      model: IMAGE_GEN_MODEL, apiKeyId: xai,
+      ownerId, kind: 'image_gen', name: 'Image generation', provider: 'openrouter',
+      model: IMAGE_GEN_MODEL, apiKeyId: openrouter,
     });
-  } else {
-    skipped.push('spoken replies + image generation (no xAI key)');
+  } else if (!opts.enableVoiceImage) {
+    skipped.push('voice & images (you can switch these on later in Settings)');
   }
 
   // The persona agent — created with the Warm/Saskia default; the personality
