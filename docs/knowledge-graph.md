@@ -180,6 +180,41 @@ builtin tools (Saskia) and MCP tools (Claude Desktop/Code):
 > resolving ids back to names uses drizzle's `inArray()`, not
 > `sql\`= any(${jsArray})\`` (which drizzle mis-binds).
 
+### 6a. The graph in retrieval — auto-expansion (June 2026)
+
+Until June 2026 the graph was only reachable when an agent *explicitly* called
+`entity_neighbors` / `graph_path`. Now it rides into every responder turn
+automatically — the read-path realisation of the "filter by graph, rank by
+vector" pattern ([`memory.md` §4.3](./memory.md#43-why-both-together)).
+
+`entityRelationsFor(ownerId, entityIds)` (`packages/search/src/entities.ts`) is a
+batched, name-resolved fetch of the 1-hop relation triples touching a set of
+entities (excludes `mentioned_in` + retired edges, capped). In
+[`loadConversationContext`](../packages/agent-runtime/src/conversation.ts) the
+entities of the **top matching facts** become anchors, and their relations are
+rendered into the prompt as a "Known relationships" block:
+
+```
+who does Cross-Works work with and bank with
+→ Cross-Works banks_with ABSA
+  Nedbank banks_with South African Reserve Bank
+  ACM Technology supplier_of Cross-Works
+```
+
+This is knowledge vector search structurally cannot return — a relation is an
+*edge*, not a similar fact. It also makes graph hygiene **consequential**: clean
+entities ⇒ clean relations in the prompt (which is what surfaced the
+fragmentation that motivated the §5 dedup improvements below).
+
+### 5a. Smarter dedup (June 2026)
+
+The auto tier gained `orgCompactKey` (legal-suffix-stripped **and**
+alphanumeric-only), grouped across org-LIKE kinds (org/project/company) — so
+spacing/hyphen/punctuation variants *and* mislabelled kinds collapse:
+`CrossWorksEngineering` = `Cross-Works Engineering`. `'sa'`/`'s.a.'` were dropped
+from the legal-suffix list (in a South African corpus "SA" means South Africa,
+not the legal form — it had merged "3D Printing SA" into generic "3D printing").
+
 ---
 
 ## 7. Backfilling history
@@ -210,7 +245,8 @@ and the detail page lists the relations drawn (`subject → verb → object`).
 | Relation extraction + entity reconcile | `apps/agent/src/extractor.ts` (`process_relations`, `reconcileEntity`) |
 | Edge / entity schema | `packages/db/src/schema/{entities,entity-edges}.ts` |
 | Traversal (`entity_neighbors`, `graph_path`) | `packages/search/src/entities.ts` |
-| Near-dup consolidation | `packages/content/src/entity-dedup.ts` |
+| **Read-path expansion (`entityRelationsFor`)** | `packages/search/src/entities.ts` → `packages/agent-runtime/src/conversation.ts` |
+| Near-dup consolidation (`orgCompactKey`) | `packages/content/src/entity-dedup.ts` |
 | Review UI | `apps/web/app/(app)/settings/entities/*` |
 | Backfill / dedupe scripts | `apps/web/scripts/{relations-backfill,entities-dedupe}.ts` |
 | Migrations | 0055 (exact-dup merge + unique index), 0056 (dismissals) |

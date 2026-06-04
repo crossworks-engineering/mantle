@@ -381,12 +381,26 @@ Knobs in one place at the top of `dominant-kind.ts`:
 classifies fresh messages and bumps the counters. Existing pending senders
 get pills as new mail arrives.
 
-**One-shot** (`scripts/classify-backfill.ts`, **not yet shipped** — see
-known sharp edges §10). For an account-by-account replay that classifies
-historical mail without re-ingesting bodies: walks each account's folders
-via `client.fetch(uids, { headers: [...] })`, recomputes per-sender counters
-in a `GROUP BY delivery_kind` pass over `emails`. ~30s on a 6-month
-~3K-message mailbox. Idempotent.
+**One-shot** (`pnpm -C apps/web classify:backfill`, **SHIPPED June 2026**). For an
+account-by-account replay that classifies legacy `unknown` mail without
+re-ingesting bodies: `reclassifyByRefs` (`packages/email/src/providers/imap.ts`)
+decodes each email's `providerMsgId` → folder+uid, re-fetches `CLASSIFY_HEADERS`
+via `BODY.PEEK` (one round trip per folder, never marks read), re-runs the SAME
+`classifyDelivery`, writes the true `delivery_kind`, and re-derives `nodes.salience`.
+Read-only against the mailbox, dry-run by default, idempotent (only touches
+`unknown`). Real run: 1,162/1,227 legacy emails reclassified.
+
+### 9f. Retrieval salience — `delivery_kind` down-weights bulk at query time
+
+`delivery_kind` isn't just a UI pill — since June 2026 it drives `nodes.salience`
+(`marketing→0.25, list→0.5, automated→0.75, direct/unknown→1.0`,
+`salienceForDeliveryKind`), set at ingest and blended into retrieval ranking so a
+newsletter can't crowd out a real note. A down-weight, never a filter (explicit
+`search` still finds it). For legacy `unknown` mail that `classify:backfill` can't
+reach (moved/deleted), `pnpm -C apps/web backfill:email-salience` is a conservative
+body-tell fallback (tracking-links + unsubscribe, with a transactional veto). Full
+detail: [`memory.md` §7a](./memory.md#7a-salience--down-weighting-bulk-content) +
+[`recall-eval.md`](./recall-eval.md).
 
 ---
 
@@ -402,7 +416,7 @@ in a `GROUP BY delivery_kind` pass over `emails`. ~30s on a 6-month
 | E6 | 🟡 | Gmail's All Mail UID churn → high "ingested" trace counts on a sync after an idle gap, even though row count stays correct | Accepted — visible in `/debug` but no real waste (extractor `already_extracted`-skips on each race-rejected dup). Excluding `[Gmail]/All Mail` from `imap_included_folders` *now that X-GM-LABELS populates* is the operational move when the operator's ready. |
 | E7 | 🟡 | `bodyHtml` is stored but the extractor ignores it (uses `body_text` only). HTML-only mail with no text alternative gets a thin body | Accepted — most real mail has a text/plain part; rare edge. |
 | E8 | 🟡 | No web UI for sender curation beyond the basic `/settings/senders` list | Partial — pagination + broader search (`address \| domain \| display_name`) shipped; bulk-deny-marketing button on the pending tab shipped (§9d). Bulk-approve and per-sender history view still open. |
-| E9 | 🟡 | Historical `emails` rows (ingested before migration 0046) sit at `delivery_kind = 'unknown'` until re-classified. Their senders' four `*_count` columns can be flat 0s with a non-zero `messageCount` — pill won't appear despite the sender being a clear newsletter | Open — passive forward-fill works for senders still receiving mail; long-tail needs a one-shot `scripts/classify-backfill.ts` (sketched in §9e, ~30s per account, header-only walk). Not yet shipped. |
+| E9 | 🟡 | Historical `emails` rows (ingested before migration 0046) sit at `delivery_kind = 'unknown'` until re-classified. Their senders' four `*_count` columns can be flat 0s with a non-zero `messageCount` — pill won't appear despite the sender being a clear newsletter | ✅ **Fixed June 2026** — `pnpm -C apps/web classify:backfill` (`reclassifyByRefs`, §9e) re-fetches headers over IMAP and reclassifies legacy `unknown` mail + re-derives salience. Ran 1,162/1,227. Per env; the ~65 it can't reach (moved/deleted) fall to the `backfill:email-salience` body fallback. |
 
 ---
 

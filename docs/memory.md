@@ -4,6 +4,16 @@ How Mantle holds and retrieves what it knows. This file is the durable
 reference for the memory layer; companion to
 [`architecture.md`](./architecture.md) which covers the system as a whole.
 
+> **June 2026 — retrieval overhaul.** The six layers (below) were always live,
+> but the *read path* that assembles them was simpler than this doc implied
+> (raw-cosine top-K, no kind-weighting, no graph, no chunks). It's now been
+> rebuilt: hybrid ranking, bulk-email salience, kind-aware recency, auto-chunk
+> passages, entity-graph expansion, always-injected preferences, and zero-LLM
+> query enrichment — all in the shared
+> [`loadConversationContext`](../packages/agent-runtime/src/conversation.ts). See
+> [§7](#7-the-retrieval-order-in-the-prompt) for the as-built assembly and
+> [`recall-eval.md`](./recall-eval.md) for the measured before/after of each step.
+
 Status (2026-05-19): **all six layers live end-to-end.** Every memory
 tier in [§2](#2-the-six-layers) has its writer wired, its reader
 wired, and tests for the load-bearing pure helpers. Specifically:
@@ -952,25 +962,63 @@ Visual map of who writes what, who reads what:
 
 ## 7. The retrieval order in the prompt
 
-Once the full memory stack is built, the responder's prompt assembly is:
+> **As-built, June 2026.** This assembly lives in one place —
+> [`loadConversationContext`](../packages/agent-runtime/src/conversation.ts), shared
+> by Telegram + web. The June-2026 retrieval overhaul (the full chronology + the
+> measured before/after is in [`recall-eval.md`](./recall-eval.md)) added the
+> ranking factors below. The old version of this section ranked everything by raw
+> cosine and assembled only persona / facts / content / turns.
 
 ```
-[persona]                                     ← cache_control (stable for days)
-[profile — top-K facts]                       ← cache_control (stable for minutes)
+[persona + persona_notes + facts]             ← cache_control (stable for days)
+   facts = top-K by (cosine + KIND-AWARE RECENCY) … PLUS preferences always-injected
 [conversation_digest — last N digests]        ← cache_control (changes every ~20 turns)
-[content_index hits — if user mentioned content]  ← changes per turn
+[content_index hits — top 5]                  ← ranked by SALIENCE- + RECENCY-adjusted
+   distance; system-docs (origin='system') excluded; bulk/marketing demoted
+[knowledge-graph relationships]               ← entity-anchored: relations of the
+   entities whose facts matched ("Cross-Works banks_with Nedbank")
+[relevant passages — auto-chunks]             ← the actual section text, not just
+   the node summary
 [recent_turns — last N raw]                   ← drifts each turn
-[new user message]                            ← always fresh
+[new user message]                            ← retrieval embedding ENRICHED with
+   recent turns when it's a short anaphoric follow-up ("tell me more about that")
 ```
 
-Persona first, then world-knowledge facts (load-bearing identity context),
-then dialog memory, then per-query content references, then raw recent
-turns. The model treats the early blocks as durable and the late blocks
-as live conversation.
+**The ranking factors (all in the one effective-distance expression):**
 
-Three Anthropic cache breakpoints used (of four allowed). One slot stays
-free for a future "stable history prefix" breakpoint if the raw-turn
-section starts dominating the bill.
+- **Hybrid** — the `search` tool / `searchNodes` fuse vector (spine) + FTS
+  (booster) via weighted RRF (`semanticWeight` default 0.7). The responder's own
+  content hits are vector-led.
+- **Salience** — `effective = cosine + λ·(1 − nodes.salience)`. Bulk/marketing
+  email (mapped from `emails.delivery_kind`) is demoted so it can't crowd out real
+  content. A down-weight, never a filter. See [§7a](#7a-salience--down-weighting-bulk-content) below.
+- **Recency** — `+ λ(kind)·(1 − e^(−age/τ))`. **Kind-aware**: episodic facts decay,
+  semantic/preference don't, factual mildly; content mildly (anchored on the
+  content's own date — an email's send date, not its sync time).
+- **Kind-weighting is real now** — preferences are *always-injected* (not left to a
+  vector match); episodic/semantic/factual rank differently via recency. (Earlier
+  this doc described kind-weighting that wasn't yet implemented; it is now.)
+- **Graph axis** — `entityRelationsFor` injects the 1-hop relations of the turn's
+  entities. The "filter by graph, rank by vector" pattern of [§4.3](#43-why-both-together),
+  finally in the read path. See [`knowledge-graph.md` §6a](./knowledge-graph.md).
+- **Chunks** — `searchChunks` pulls the closest *passages* into context, so the
+  model answers *from* a document, not just knowing it exists.
+
+Persona first (durable identity), then dialog memory, then per-query content +
+graph + passages, then raw recent turns. Early blocks durable, late blocks live.
+Three Anthropic cache breakpoints (of four). Knobs: `memory_config.{fact_limit,
+content_hit_limit, chunk_limit, digest_limit}`; env `MANTLE_{SALIENCE_LAMBDA,
+RECENCY_*,QUERY_ENRICH}`.
+
+### 7a. Salience — down-weighting bulk content
+
+`nodes.salience` (0..1, default 1.0; migration 0073) is a retrieval weight, blended
+into every ranker. For email it's derived from the header classifier
+(`emails.delivery_kind`: `marketing→0.25, list→0.5, automated→0.75, direct→1.0` —
+see [`email-ingest.md`](./email-ingest.md)). It is **never** a filter: a marketing
+email is still found by an explicit `search`. Set at ingest; legacy mail
+reclassified by `pnpm -C apps/web classify:backfill`. The audit caught newsletters
+crowding out personal notes; this fixes it without losing anything.
 
 ---
 

@@ -1656,10 +1656,12 @@ was fixed, accepted, or deliberately left (and why).
 **Telegram surface**
 - **Web UI for Telegram is missing.** Allowlist management, pairing-
   code approval, conversation view — all happen via MCP tools today.
-- **Embeddings for Telegram messages** aren't generated. The
-  `nodes.embedding` column exists but is unused for
-  `type='telegram_message'`. Means search_nodes can't find a turn
-  semantically; only digests are indexed.
+- ~~**Embeddings for Telegram messages** aren't generated.~~ **CLOSED
+  (June 2026).** `extractNode` has an embed-only branch for
+  `type='telegram_message'` — turns get a `nodes.embedding` (local, ~free) for
+  semantic search, with no per-message summary/fact pass. Backfill existing turns
+  with `extract:backfill --types=telegram_message`. Part of the June retrieval
+  overhaul ([`recall-eval.md`](./recall-eval.md)).
 - **Long-poll, not webhook.** Once Mantle has a public URL with TLS,
   switching the bot to webhook mode cuts the constant `getUpdates`
   background traffic. Worth doing before the VPS deploy.

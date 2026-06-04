@@ -208,7 +208,7 @@ A short list of reasons to leave the local default alone:
 2. **It's free.** Local embedding has no per-token cost. Cloud does.
 3. **Retrieval already feels solid.** Don't fix what isn't broken — EmbeddingGemma is competitive, and the upgrade headroom on a personal English/German corpus is small.
 4. **Your corpus is small (< 1000 vectors).** At this scale every model finds everything.
-5. **You haven't tried tuning the retrieval params first.** `top_k`, the similarity threshold, the chunk size — these often matter more than the embedding model. The responder's `memory_config.{fact_limit, content_hit_limit, digest_limit}` knobs at `/settings/agents` are where to look first.
+5. **You haven't tried tuning the retrieval params first.** `top_k`, the similarity threshold, the chunk size — these often matter more than the embedding model. The responder's `memory_config.{fact_limit, content_hit_limit, chunk_limit, digest_limit}` knobs at `/settings/agents`, plus the June-2026 ranking factors (`MANTLE_{SALIENCE_LAMBDA, RECENCY_EPISODIC, RECENCY_CONTENT, RECENCY_TAU_DAYS, QUERY_ENRICH}` env) are where to look first. Ranking is no longer raw cosine — see [`memory.md` §7](./memory.md#7-the-retrieval-order-in-the-prompt) and measure changes with `pnpm -C apps/web eval:recall`.
 
 ---
 
