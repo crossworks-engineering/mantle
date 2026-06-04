@@ -118,9 +118,16 @@ SELECT
   -- stored window/cap fields there too. Merge memory_config into params
   -- so the new code can read everything from one place. memory_config
   -- wins on key clash since that's where the live values live.
+  -- Add `target_types` only when the old worker carried `extract_types`.
+  -- (Was `jsonb_build_object(...) FILTER (WHERE ...)`, which is invalid —
+  -- FILTER only applies to aggregates, so a from-scratch replay errored
+  -- 42809. Existing DBs already applied 0027 and the timestamp-gated migrator
+  -- never re-runs it, so this fix is a no-op for them and unblocks fresh
+  -- installs / CI / disaster-recovery replays.)
   coalesce(a.params, '{}'::jsonb) || coalesce(a.memory_config, '{}'::jsonb)
-    || jsonb_build_object('target_types', a.memory_config->'extract_types')
-       FILTER (WHERE a.memory_config ? 'extract_types'),
+    || (CASE WHEN a.memory_config ? 'extract_types'
+              THEN jsonb_build_object('target_types', a.memory_config->'extract_types')
+              ELSE '{}'::jsonb END),
   a.enabled,
   a.priority,
   -- DISTINCT ON picks the winner per (owner, kind) by priority.
