@@ -12,6 +12,8 @@
     "./events": "./src/events.ts",
     "./lifelog": "./src/lifelog.ts",
     "./lifelog-options": "./src/lifelog-options.ts",
+    "./persona-bank": "./src/persona-bank.ts",
+    "./onboarding-questions": "./src/onboarding-questions.ts",
     "./peers": "./src/peers.ts",
     "./peers-crypto": "./src/peers-crypto.ts",
     "./pages": "./src/pages.ts",

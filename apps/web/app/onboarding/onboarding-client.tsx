@@ -11,13 +11,16 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
+// Import the browser-safe LEAVES directly, NOT the @mantle/content barrel —
+// the barrel pulls identity-context → @mantle/db (postgres) into the client
+// bundle. Same discipline as contacts-format / lifelog-options.
+import { ONBOARDING_QUESTIONS } from '@mantle/content/onboarding-questions';
 import {
-  ONBOARDING_QUESTIONS,
   PERSONA_PRESETS,
   DEFAULT_PERSONA_NAMES,
   type PersonaGender,
   type PersonaPresetKey,
-} from '@mantle/content';
+} from '@mantle/content/persona-bank';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
