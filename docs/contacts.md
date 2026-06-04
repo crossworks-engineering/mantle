@@ -1,16 +1,22 @@
 # Contacts — the index of who Saskia may reach
 
-A `contact` node is a person or organisation Saskia's send tools are allowed
-to use. It does **two** jobs at once:
+A `contact` node is a person or organisation Saskia may reach — and now, the
+people whose mail Mantle will ingest. It does **two** jobs at once:
 
-1. **Identity** — fields the human form expects (name + company + email + cell).
-2. **Allowlist** — the **set of contact emails IS the email_send gate.** With
-   zero contacts, sending is open (bootstrap state). With one contact, the
-   gate engages and Saskia can only mail those people (+ the user's own
-   account addresses).
+1. **Identity** — fields the human form expects (name + company + emails + cell).
+2. **Allowlist — both directions.** The set of contact emails IS the gate for
+   *outbound* `email_send` *and* (since 2026-06-04) *inbound* ingestion. Each
+   contact carries a list of entries (`data.emails`), each a full address
+   (`jason@schoeman.me`) or a `@domain` wildcard (`@schoeman.me` = all mail from
+   that domain). With zero contacts, *sending* is open (bootstrap) but *inbound*
+   ingests nothing. Adding a contact unlocks mailing them AND lets their mail
+   into the brain (with a 90-day backfill). See §2 for the deliberate
+   send-vs-ingest asymmetry.
 
 Companion docs:
 - [`email-send.md`](./email-send.md) — the send half; its gate reads from here.
+- [`email-ingest.md`](./email-ingest.md) — the inbound half; its `ContactGate`
+  reads from here (`§3a`, `§6`).
 - [`memory.md`](./memory.md) — the brain layers a contact node's `description`
   feeds into (summary / embedding / facts / entities).
 - [`architecture.md` §6](./architecture.md#6-the-nodes-table--mantles-central-abstraction)
@@ -30,7 +36,7 @@ nodes
 ├ tags     = string[]                          (nodes already has tags)
 └ data     = {
     first_name, last_name, company,
-    email,
+    emails,             // string[] — addresses and/or `@domain` wildcards
     country_code,       // "+27" — E.164-style prefix
     cell,               // digits only; pure helpers normalise/format
     description,        // "who is this for AI" — fed to the extractor
@@ -38,6 +44,14 @@ nodes
     last_contacted_at,  // { email: ISO, sms: ISO, … }
   }
 ```
+
+> **`emails` (was `email`).** Pre-2026-06-04 contacts stored a single
+> `data.email` string; migration 0074 moved each into a one-element
+> `data.emails` array, and the reader falls back to the legacy key for any row
+> the migration missed. `ContactRow` still exposes a derived `email`
+> (`= emails[0]`) so older single-email call sites keep working. Pure helpers
+> for entries (`classifyEntry`, `normalizeEmailEntry`, `partitionEmailEntries`,
+> `isPlausibleEmailOrDomain`) live in `contacts-format.ts`.
 
 **No specialized table.** Fields are small/textual and fit `data` cleanly,
 matching notes/todos/events. The brain auto-indexes (the `nodes` INSERT
@@ -74,25 +88,38 @@ All unit-tested in [`contacts.test.ts`](../packages/content/src/contacts.test.ts
 
 ---
 
-## 2. The email gate — contacts ARE the allowlist
+## 2. The email gate — contacts ARE the allowlist (both directions)
 
-Defined in [`builtins-email.ts`](../packages/tools/src/builtins-email.ts)
+**Outbound** — defined in [`builtins-email.ts`](../packages/tools/src/builtins-email.ts)
 `blockedRecipients` / `allowlistError`, called from both `email_send` and
 `email_page`:
 
-| Contacts list | Gate | Allowed recipients |
+| Contacts list | Send gate | Allowed recipients |
 |---|---|---|
 | **Empty** | OFF (bootstrap) | anyone |
-| **Non-empty** | ON | the user's own account addresses **∪** contacts' emails |
+| **Non-empty** | ON | the user's own account addresses **∪** contacts' **concrete** addresses |
 
 Refusal returns a clear message: *"these recipients aren't in the user's
 contact list: …  Ask the user to confirm and add them as contacts at /contacts."*
 No tool-loop side effects, no surprise sends.
 
-The contacts list is the **single source of truth** for this gate. There used
-to be a `profiles.preferences.emailAllowlist` field for the same purpose — it
-was removed when contacts shipped. Adding a contact unlocks emailing them;
-deleting one revokes that reach.
+**Inbound** — defined in [`contact-gate.ts`](../packages/content/src/contact-gate.ts)
+`loadContactGate(ownerId) → allows(fromAddr)`, called per message in
+`syncAccount`. Mail is ingested iff `From` matches a contact address, a contact
+`@domain` wildcard, or one of the user's own account addresses. Empty contacts ⇒
+nothing inbound (an empty allowlist is an empty inbox). Full detail in
+[`email-ingest.md` §3a](./email-ingest.md#3a-the-gate--loadcontactgate).
+
+**The deliberate asymmetry:** domains are **inbound-only**. A `@domain` wildcard
+means "trust mail *from* this domain" — it does **not** let Saskia send to an
+arbitrary address there (you can't mail a whole domain). So the send gate reads
+concrete addresses only (`partitionEmailEntries(...).addresses`); the inbound
+gate uses both addresses and domains.
+
+The contacts list is the **single source of truth** for both gates. A
+`profiles.preferences.emailAllowlist` field (send) and the `email_senders`
+curation layer (inbound) both predated this and were removed. Adding a contact
+unlocks emailing them + ingesting their mail; deleting one revokes both.
 
 ---
 

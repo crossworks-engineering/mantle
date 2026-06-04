@@ -347,13 +347,20 @@ considered) is a half-day swap when the time comes.
 Full reference: [`email-ingest.md`](./email-ingest.md) (inbound) and
 [`email-send.md`](./email-send.md) (outbound).
 
-The big idea: **never ingest mail you didn't ask for.** Sender curation
-(`email_senders` with `pending`/`allowed`/`denied`) is the security gate;
-once a sender is `allowed`, the message lands as a `nodes` row of type
-`email` and the `node_ingested` pg_notify trigger fires the extractor —
-same path as notes and files. `packages/email/` is ~1.5K LOC; the worker
+The big idea: **never ingest mail you didn't ask for.** The **contacts list
+is the security gate** — the same list that authorises outbound send. A
+message is ingested only if its `From` matches a contact (an exact address
+**or** a `@domain` wildcard in `data.emails`) or one of the user's own
+account addresses; everyone else is silently rejected. Once it passes,
+the message lands as a `nodes` row of type `email` and the `node_ingested`
+pg_notify trigger fires the extractor — same path as notes and files. The
+gate is computed live per sync by `loadContactGate`
+(`packages/content/src/contact-gate.ts`); the worker
 (`apps/web/workers/email-sync.ts`) runs three pg-boss queues (scheduler
-every 2 min, per-account sync, per-sender backfill).
+every 2 min, per-account sync, per-contact-entry 90-day backfill on add).
+*(The old per-sender curation layer — `email_senders`/`/settings/senders` —
+was retired in migration 0074; discovery of new senders now lives in the
+live-peek `/settings/discover` view.)*
 
 **Cross-folder dedup** is two-tier: `emails_account_msg_uq` on
 `(account_id, provider_msg_id)` catches same-UID-same-folder races
@@ -373,17 +380,15 @@ IMAP system flags into `emails.labels`; safe on non-Gmail servers
 
 **Delivery-kind classification.** Every message is tagged
 `direct | list | automated | marketing | unknown` at sync time from
-headers + envelope + Gmail labels — no body required, so it works on
-mail from pending senders too. Per-sender rollup counters on
-`email_senders` drive a soft-hint pill on `/settings/senders`
-("📣 marketing" / "📋 list" / "🤖 automated") when ≥3 messages and ≥70%
-agree on one kind, plus a `?kind=` filter chip and a conditional
-"Deny N marketing senders" bulk action on the pending tab. Rules are
-RFC-based (`List-Unsubscribe-Post: One-Click`, `Precedence: bulk`,
+headers + envelope + Gmail labels — no body required. It drives
+`nodes.salience` (`marketing→0.25, list→0.5, automated→0.75,
+direct→1.0`), blended into retrieval ranking so a contact's newsletter
+can't crowd out real correspondence — a down-weight, never a filter.
+Rules are RFC-based (`List-Unsubscribe-Post: One-Click`, `Precedence: bulk`,
 `Feedback-ID`, ESP fingerprints) with `Auto-Submitted` as the
 marketing→automated downgrader, so transactional sends via ESPs (Stripe
 via SendGrid, GitHub via SES) classify correctly. Full detail in
-[`email-ingest.md` §9](./email-ingest.md#9-delivery-kind-classification-direct--list--automated--marketing).
+[`email-ingest.md` §10](./email-ingest.md#10-delivery-kind-classification--salience-directlistautomatedmarketing).
 
 ---
 
