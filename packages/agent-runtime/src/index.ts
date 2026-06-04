@@ -7,6 +7,7 @@ export {
   type FactSnippet,
   type ContentHit,
   type ChunkContextHit,
+  type RelationLine,
   type ChatMessage,
   type ToolCallRequest,
   type UserImage,

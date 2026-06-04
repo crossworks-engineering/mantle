@@ -209,3 +209,27 @@ Content eval: no regression (prod MRR 0.91, Δ 0). **Impact scales with corpus
 age** — on today's young corpus (0–17 days) penalties are ≤0.013 by design;
 they grow toward λ as memories age, which is exactly when recency matters. Tune
 via `MANTLE_RECENCY_{EPISODIC,CONTENT,TAU_DAYS}`.
+
+## After step (h): entity-anchored expansion (2026-06-04)
+
+The knowledge graph (2,472 relation edges) was invisible to retrieval — reachable
+only when the LLM explicitly called a graph tool. This wires the design's marquee
+pattern (memory.md §4.3, "expand each result's entity neighbourhood"): vector
+search finds the relevant facts, then `entityRelationsFor` pulls the 1-hop
+relationships of THEIR entities into the prompt — structured knowledge no vector
+query can produce.
+
+Mechanism: the top matching facts' entities (rank order, distinct, cap 5) become
+anchors; one batched query returns their relation triples (excluding
+`mentioned_in`/retired, cap 12), rendered as a "Known relationships" block.
+Verified by probe — for "who does Cross-Works work with and bank with", the
+context gains `Cross-Works banks_with ABSA`, `Nedbank banks_with South African
+Reserve Bank`, `ACM Technology supplier_of Cross-Works`, etc. Node-recall flat
+(0.91, expected — relations aren't nodes); the win is relational knowledge,
+verified by probe not the recall number.
+
+**It also surfaced a real graph-quality issue** (pre-existing, not from this
+change): the same company appears as both `Cross-Works Engineering` and
+`CrossWorksEngineering` — entity fragmentation. The feature makes graph hygiene
+*consequential*: running `entities:dedupe` / the `/settings/entities` review
+(audit item #10) is now a retrieval-quality lever, not just tidiness.

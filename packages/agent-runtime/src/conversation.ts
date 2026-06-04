@@ -40,8 +40,15 @@ import {
   type PersonaNote,
 } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
-import { searchChunks } from '@mantle/search';
-import type { ChunkContextHit, ContentHit, Digest, FactSnippet, HistoryTurn } from './messages';
+import { searchChunks, entityRelationsFor } from '@mantle/search';
+import type {
+  ChunkContextHit,
+  ContentHit,
+  Digest,
+  FactSnippet,
+  HistoryTurn,
+  RelationLine,
+} from './messages';
 
 void agents; // referenced for the Agent type's provenance; silence unused-import lint.
 
@@ -55,9 +62,16 @@ export type ConversationContext = {
   facts: FactSnippet[];
   contentHits: ContentHit[];
   chunkHits: ChunkContextHit[];
+  relations: RelationLine[];
   digests: Digest[];
   history: HistoryTurn[];
 };
+
+/** Entity-anchored expansion: how many of the top facts' entities to expand, and
+ *  the cap on relationship triples injected. The graph axis of retrieval —
+ *  vector finds the facts, this surfaces how their entities relate. */
+const RELATION_ANCHOR_LIMIT = 5;
+const RELATION_LIMIT = 12;
 
 /** How many section-level passages to auto-pull into context (the fine-grained
  *  complement to the node-level content hits). Default kept small — these carry
@@ -174,11 +188,14 @@ export async function loadConversationContext(args: {
 
   // ─── Profile facts (top-K by vector distance, currently-valid) ──────────
   let factRows: FactSnippet[] = [];
+  // The entities whose facts matched this turn — anchors for graph expansion.
+  let anchorEntityIds: string[] = [];
   if (queryVec && factLimit > 0) {
     const rows = await db
       .select({
         content: facts.content,
         kind: facts.kind,
+        entityId: facts.entityId,
         entityName: entities.name,
         dist: sql<number>`${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector`,
       })
@@ -208,6 +225,15 @@ export async function loadConversationContext(args: {
       // still pass even when only loosely related.
       .filter((r) => (r.dist ?? 1) < 0.85)
       .map((r) => ({ content: r.content, kind: r.kind as string, entityName: r.entityName }));
+    // Anchor entities = the entities of the top matching facts (rank order,
+    // distinct), the seeds for graph expansion below.
+    const ranked: string[] = [];
+    for (const r of rows) {
+      if ((r.dist ?? 1) >= 0.85 || !r.entityId) continue;
+      if (!ranked.includes(r.entityId)) ranked.push(r.entityId);
+      if (ranked.length >= RELATION_ANCHOR_LIMIT) break;
+    }
+    anchorEntityIds = ranked;
   }
 
   // ─── Preferences: always-injected, not left to a vector match ───────────
@@ -312,6 +338,16 @@ export async function loadConversationContext(args: {
       }));
   }
 
+  // ─── Entity-anchored expansion: the graph axis ──────────────────────────
+  // Vector search found the relevant facts; now surface how THEIR entities
+  // relate ("Cross Works banks_with Nedbank") — structured knowledge no vector
+  // query can return (memory.md §4.3, "expand each result's neighbourhood").
+  let relations: RelationLine[] = [];
+  if (anchorEntityIds.length > 0) {
+    const triples = await entityRelationsFor(ownerId, anchorEntityIds, { limit: RELATION_LIMIT });
+    relations = triples.map((t) => ({ subject: t.subject, relation: t.relation, object: t.object }));
+  }
+
   // ─── Conversation digests for THIS agent (per-agent, cross-channel) ─────
   // Filtered by the digest note's data.agent_id. Until the unified summarizer
   // (Phase 4) and the digest re-key (Phase 6) land, no digest note carries
@@ -373,5 +409,5 @@ export async function loadConversationContext(args: {
     .reverse()
     .map((r) => ({ role: r.direction === 'outbound' ? 'assistant' : 'user', text: r.text }));
 
-  return { personaNotes, facts: factRows, contentHits, chunkHits, digests, history };
+  return { personaNotes, facts: factRows, contentHits, chunkHits, relations, digests, history };
 }

@@ -19,7 +19,7 @@
  * hops of Lister?". Both read the same entity_edges table.
  */
 
-import { and, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import {
   db,
   entities,
@@ -428,4 +428,72 @@ export async function graphPath(opts: GraphPathOptions): Promise<GraphPathResult
   // Shortest paths first.
   results.sort((a, b) => a.depth - b.depth);
   return results;
+}
+
+/** A relationship triple, names resolved — "Cross Works Engineering banks_with
+ *  Nedbank". The graph axis as a readable line for the prompt. */
+export type RelationTriple = {
+  subjectId: string;
+  subject: string;
+  relation: string;
+  objectId: string;
+  object: string;
+};
+
+/**
+ * Relation edges touching ANY of `entityIds` — the 1-hop graph neighbourhood of
+ * the turn's entities, batched into one query. This is the read-path use of the
+ * knowledge graph the design always promised ("expand each result's entity
+ * neighbourhood for context", memory.md §4.3): vector search finds the relevant
+ * facts, this surfaces how their entities relate — which vectors structurally
+ * cannot. Excludes `mentioned_in` (co-occurrence, not a real relationship) and
+ * retired edges. Deduped, capped.
+ */
+export async function entityRelationsFor(
+  ownerId: string,
+  entityIds: string[],
+  opts?: { limit?: number },
+): Promise<RelationTriple[]> {
+  if (entityIds.length === 0) return [];
+  const limit = opts?.limit ?? 12;
+  const edges = await db
+    .select({
+      sourceId: entityEdges.sourceId,
+      targetId: entityEdges.targetId,
+      relation: entityEdges.relation,
+    })
+    .from(entityEdges)
+    .where(
+      and(
+        eq(entityEdges.ownerId, ownerId),
+        eq(entityEdges.sourceKind, 'entity'),
+        eq(entityEdges.targetKind, 'entity'),
+        ne(entityEdges.relation, 'mentioned_in'),
+        isNull(entityEdges.validTo),
+        or(inArray(entityEdges.sourceId, entityIds), inArray(entityEdges.targetId, entityIds)),
+      ),
+    )
+    .limit(limit * 3); // pool — deduped below to `limit`
+  if (edges.length === 0) return [];
+
+  const ids = Array.from(new Set(edges.flatMap((e) => [e.sourceId, e.targetId])));
+  const ents = await db
+    .select({ id: entities.id, name: entities.name })
+    .from(entities)
+    .where(and(eq(entities.ownerId, ownerId), inArray(entities.id, ids)));
+  const nameById = new Map(ents.map((e) => [e.id, e.name]));
+
+  const seen = new Set<string>();
+  const out: RelationTriple[] = [];
+  for (const e of edges) {
+    const subject = nameById.get(e.sourceId);
+    const object = nameById.get(e.targetId);
+    if (!subject || !object) continue;
+    const key = `${e.sourceId}|${e.relation}|${e.targetId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ subjectId: e.sourceId, subject, relation: e.relation, objectId: e.targetId, object });
+    if (out.length >= limit) break;
+  }
+  return out;
 }

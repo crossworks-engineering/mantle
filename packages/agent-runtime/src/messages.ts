@@ -58,6 +58,11 @@ export type ChunkContextHit = {
   text: string;
 };
 
+/** A knowledge-graph relationship as a readable triple — the graph axis in the
+ *  prompt. Vector search finds relevant facts; this surfaces how their entities
+ *  relate ("Cross Works Engineering banks_with Nedbank"), which vectors can't. */
+export type RelationLine = { subject: string; relation: string; object: string };
+
 /** Tool call request emitted by the assistant. Matches the OpenRouter
  *  ChatToolCall shape — id + function name + JSON-stringified arguments. */
 export type ToolCallRequest = {
@@ -196,6 +201,8 @@ export function buildChatMessages(args: {
   /** Section-level passages (auto-retrieved from content_chunks). The fine
    *  complement to contentHits. Optional so older callers still compile. */
   chunkHits?: ChunkContextHit[];
+  /** Knowledge-graph relationships for the turn's entities. Optional. */
+  relations?: RelationLine[];
   history: HistoryTurn[];
   newUserText: string;
   /** When set + the model is vision-capable, the new user turn becomes a
@@ -210,6 +217,7 @@ export function buildChatMessages(args: {
     digests,
     contentHits,
     chunkHits = [],
+    relations = [],
     history,
     newUserText,
     userImage,
@@ -267,6 +275,17 @@ export function buildChatMessages(args: {
       })
       .join('\n');
     const text = `Possibly relevant items the user may be referencing (refer to them by title if helpful):\n${lines}`;
+    messages.push({ role: 'system', content: text });
+  }
+
+  // ─── Block 3a: knowledge-graph relationships (no cache) ───────────────
+  // The graph axis: how the entities in this turn relate. Vector search returns
+  // similar facts; only the graph says "Cross Works banks_with Nedbank".
+  if (relations.length > 0) {
+    const lines = relations
+      .map((r) => `• ${r.subject} ${r.relation.replace(/_/g, ' ')} ${r.object}`)
+      .join('\n');
+    const text = `Known relationships involving entities in this conversation (from the user's knowledge graph):\n${lines}`;
     messages.push({ role: 'system', content: text });
   }
 
