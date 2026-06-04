@@ -28,7 +28,6 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { SubmitButton } from '@/components/ui/submit-button';
 import { ToastProvider, useToast } from '@/components/ui/toast';
 import {
   saveProfileStep,
@@ -395,6 +394,10 @@ function Wizard({
                     ))}
                   </ul>
                 )}
+                {/* Re-run is safe (idempotent) — picks up any keys you added since. */}
+                <Button variant="ghost" size="sm" onClick={onProvision} disabled={busy}>
+                  Run setup again
+                </Button>
               </div>
             )}
           </StepShell>
@@ -495,7 +498,14 @@ function Wizard({
                     }}
                   />
                 </Field>
-                <Field label="Voice" hint="Used for spoken replies (if voice is enabled).">
+                <Field
+                  label="Gender"
+                  hint={
+                    saved.has('xai')
+                      ? 'Shapes the persona and picks the spoken voice.'
+                      : 'Shapes the persona (and the voice, once you add voice).'
+                  }
+                >
                   <RadioGroup
                     value={gender}
                     onValueChange={(v) => onGender(v as PersonaGender)}
@@ -571,9 +581,9 @@ function Wizard({
             title="You’re all set 🌿"
             blurb="Your assistant knows who you are and is ready to remember everything you give it. Say hello."
           >
-            <SubmitButton pending={busy} onClick={onFinish}>
-              Talk to your assistant
-            </SubmitButton>
+            <Button onClick={onFinish} disabled={busy}>
+              {busy ? <Loader2 className="animate-spin" /> : <Sparkles />} Talk to your assistant
+            </Button>
           </StepShell>
         )}
       </div>
@@ -597,8 +607,17 @@ function Wizard({
                   go(index + 1);
                 },
               };
-            case 'openrouter':
-              return { label: 'Continue', disabled: !orSaved, onClick: () => go(index + 1) };
+            case 'openrouter': {
+              // Require a saved key, and if it's been tested, require a PASS —
+              // so a saved-but-invalid key can't slip through. (An untested but
+              // saved key still proceeds; the sanity step will catch a dud.)
+              const t = results['openrouter'];
+              return {
+                label: 'Continue',
+                disabled: !orSaved || (t !== undefined && !t.ok),
+                onClick: () => go(index + 1),
+              };
+            }
             case 'voice':
             case 'openai':
               return { label: 'Continue', onClick: () => go(index + 1) };

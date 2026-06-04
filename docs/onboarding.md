@@ -95,6 +95,16 @@ both web `/assistant` and Telegram), model `anthropic/claude-sonnet-4.6`, with
 the personality step (`savePersonaAgent`: rebuilds the system prompt from the
 chosen preset, sets the name + temperature, points the TTS voice at the gender).
 
+> **Embeddings need a local embedder.** Memory search (vector recall) uses local
+> EmbeddingGemma — no key, but it needs an Ollama serving it. The **prod**
+> compose (`docker-compose.yml`) bundles `ollama` + a one-shot model pull, so a
+> containerized deploy is covered. For **local dev**, `docker-compose.dev.yml`
+> does NOT bundle Ollama — run one (`ollama serve` + `ollama pull embeddinggemma`,
+> or point `MANTLE_LOCAL_EMBEDDING_URL` at an existing instance). The onboarding
+> **sanity check** flags this clearly if the embedder is unreachable. The
+> assistant and the always-on identity block work without it — only semantic
+> search degrades until the embedder is up.
+
 ---
 
 ## 5. The personality bank (`packages/content/src/persona-bank.ts`)

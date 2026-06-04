@@ -15,12 +15,13 @@ import { UsageCard } from '@/components/usage-card';
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireOwner();
 
+  // Load prefs once (used for the avatar below) and reuse it for the gate.
+  const prefs = await loadProfilePreferences(user.id);
   // First-run gate: a logged-in but not-yet-onboarded user is sent to the wizard
   // (which lives outside this (app) group, so no redirect loop). isOnboarded also
   // treats an existing install (already has an agent) as onboarded. See lib/onboarding.ts.
-  if (!(await isOnboarded(user.id))) redirect('/onboarding');
+  if (!(await isOnboarded(user.id, prefs))) redirect('/onboarding');
 
-  const prefs = await loadProfilePreferences(user.id);
   const pendingApprovals = await countPending(user.id);
 
   const userAvatar = prefs.avatarStyle

@@ -73,14 +73,18 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
 
   const existing = await listAiWorkers(ownerId);
   const haveKind = new Set(existing.map((w) => w.kind));
+  // Track the tts worker id (pre-existing or created this run) so the agent can
+  // wire its voice without a second listAiWorkers round-trip.
+  let ttsWorkerId: string | null = existing.find((w) => w.kind === 'tts')?.id ?? null;
 
   const created: ProvisionResult['createdWorkers'] = [];
   const skipped: string[] = [];
 
   // Helper: create one default worker for a kind, unless one already exists.
-  async function ensureWorker(input: CreateAiWorkerInput): Promise<void> {
-    if (haveKind.has(input.kind)) return;
-    await createAiWorker({ ...input, enabled: true, isDefault: true });
+  // Returns the created worker, or null if a worker of that kind already existed.
+  async function ensureWorker(input: CreateAiWorkerInput) {
+    if (haveKind.has(input.kind)) return null;
+    const worker = await createAiWorker({ ...input, enabled: true, isDefault: true });
     created.push({
       kind: input.kind,
       name: input.name,
@@ -88,6 +92,7 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
       model: input.model,
     });
     haveKind.add(input.kind);
+    return worker;
   }
 
   if (!openrouter) {
@@ -126,11 +131,12 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
   }
 
   if (xai) {
-    await ensureWorker({
+    const tts = await ensureWorker({
       ownerId, kind: 'tts', name: 'Assistant voice', provider: TTS_PROVIDER,
       model: TTS_MODEL, apiKeyId: xai,
       params: { voice: voiceForGender('female'), format: 'mp3' },
     });
+    if (tts) ttsWorkerId = tts.id;
     await ensureWorker({
       ownerId, kind: 'image_gen', name: 'Image generation', provider: TTS_PROVIDER,
       model: IMAGE_GEN_MODEL, apiKeyId: xai,
@@ -150,7 +156,6 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
       .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, PERSONA_AGENT_SLUG)))
       .limit(1);
     if (!existingAgent) {
-      const ttsWorker = (await listAiWorkers(ownerId)).find((w) => w.kind === 'tts');
       const name = DEFAULT_PERSONA_NAMES.female;
       await createAgent(ownerId, {
         slug: PERSONA_AGENT_SLUG,
@@ -160,7 +165,7 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
         provider: 'openrouter',
         model: ASSISTANT_MODEL,
         apiKeyId: openrouter,
-        ttsWorkerId: ttsWorker?.id ?? null,
+        ttsWorkerId,
         systemPrompt: buildPersonaPrompt('warm', { assistantName: name, gender: 'female' }),
         memoryConfig: {
           history_limit: 20,

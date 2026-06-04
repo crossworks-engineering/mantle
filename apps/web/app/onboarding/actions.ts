@@ -12,6 +12,8 @@ import {
   loadProfilePreferences,
   updateProfilePreferences,
   createLifelog,
+  listLifelogs,
+  deleteLifelog,
   composeBody,
   deriveDisplayName,
   ONBOARDING_QUESTIONS,
@@ -162,17 +164,29 @@ export async function runSanityChecks(): Promise<SanityCheck[]> {
   return checks;
 }
 
+const ONBOARDING_LIFELOG_TAG = 'onboarding';
+
 /** Step 7 — the get-to-know-you interview → one Life Log per answer. */
 export async function saveInterview(
   answers: Record<string, string>,
 ): Promise<{ ok: boolean; created: number; error?: string }> {
   const user = await requireOwner();
+  // Server-side guard for the two required questions (the client gates too).
+  if (!(answers['full_name'] ?? '').trim() || !(answers['nickname'] ?? '').trim()) {
+    return { ok: false, created: 0, error: 'Your name and what to call you are required.' };
+  }
   try {
+    // Idempotent: re-running the interview (Back → forward) must not pile up
+    // duplicate life logs. Clear the ones a previous run created (tagged
+    // `onboarding`) before recreating — never touches the user's own entries.
+    const prior = await listLifelogs(user.id, { tag: ONBOARDING_LIFELOG_TAG });
+    for (const p of prior) await deleteLifelog(user.id, p.id);
+
     let created = 0;
     for (const q of ONBOARDING_QUESTIONS) {
       const body = composeBody(q, answers[q.key] ?? '');
       if (!body) continue;
-      await createLifelog(user.id, { body, category: q.category });
+      await createLifelog(user.id, { body, category: q.category, tags: [ONBOARDING_LIFELOG_TAG] });
       created++;
     }
     // Prefer the nickname as the display name; fall back to the first name.

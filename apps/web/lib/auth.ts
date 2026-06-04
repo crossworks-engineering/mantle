@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { db, authUsers } from '@mantle/db';
 import { SESSION_COOKIE_NAME } from './auth-constants';
@@ -96,10 +96,13 @@ export async function requireOwner(): Promise<SessionUser> {
  * null otherwise. Pure DB-driven — no external auth service.
  */
 export async function loginWithPassword(email: string, password: string): Promise<string | null> {
+  // Case-insensitive match — emails are case-insensitive in practice, and a
+  // user who signed up "Jay@X.com" must be able to log in as "jay@x.com".
+  // Handles any casing already stored (incl. legacy manually-inserted rows).
   const [row] = await db
     .select({ id: authUsers.id, hash: authUsers.passwordHash })
     .from(authUsers)
-    .where(eq(authUsers.email, email))
+    .where(sql`lower(${authUsers.email}) = lower(${email})`)
     .limit(1);
   if (!row || !row.hash) return null;
   const ok = await bcrypt.compare(password, row.hash);

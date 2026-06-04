@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
+import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
-import { db, authUsers, countUsers } from '@mantle/db';
+import { db, countUsers } from '@mantle/db';
 import { buildSessionCookie, SESSION_COOKIE_NAME } from '@/lib/auth';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 
@@ -47,14 +48,29 @@ export async function POST(req: Request) {
     );
   }
 
-  const email = parsed.data.email.trim();
+  // Store the email lowercased so it matches the case-insensitive login lookup.
+  const email = parsed.data.email.trim().toLowerCase();
   const passwordHash = await bcrypt.hash(parsed.data.password, 12);
   const id = randomUUID();
 
+  // Insert ONLY if auth.users is still empty — closes the TOCTOU window between
+  // the countUsers() gate above and this insert (two concurrent first-run
+  // signups with different emails could otherwise both land, breaking the
+  // single-user invariant). The conditional INSERT…SELECT is atomic.
   try {
-    await db.insert(authUsers).values({ id, email, passwordHash });
+    const inserted = await db.execute(sql`
+      INSERT INTO auth.users (id, email, password_hash)
+      SELECT ${id}, ${email}, ${passwordHash}
+      WHERE NOT EXISTS (SELECT 1 FROM auth.users)
+      RETURNING id
+    `);
+    if (inserted.length === 0) {
+      return NextResponse.json(
+        { error: 'An account already exists. Sign in instead.' },
+        { status: 403 },
+      );
+    }
   } catch {
-    // Unique-email collision or a second signup racing through the count gate.
     return NextResponse.json(
       { error: 'An account already exists. Sign in instead.' },
       { status: 403 },
