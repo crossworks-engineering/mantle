@@ -154,8 +154,8 @@ better than missed ones.
 
 **No target chat?** If no allowed private Telegram chat exists for
 the owner (you haven't paired one yet), the worker logs a warning
-and leaves the row untouched. Pair a chat via `/settings/senders`
-and the next tick will drain the backlog.
+and leaves the row untouched. Pair a chat via the responder's Telegram
+section under `/settings/agents` and the next tick will drain the backlog.
 
 ---
 

@@ -9,7 +9,7 @@ not a click-by-click tour.
 | Item | What it's for |
 |---|---|
 | **Dashboard** | The home overview — recent activity, system health, spend, and memory-index stats at a glance. |
-| **Inbox** | Your ingested email, organised by account/folder. See [Email & inbox](02-email-inbox-and-senders.md). |
+| **Inbox** | Your ingested email, organised by account/folder. See [Email & inbox](02-email-inbox-and-contacts.md). |
 | **Assistant** | Chat with the assistant on the web — text, voice dictation, image & document uploads, richly formatted replies. See [Assistant & Telegram](01-assistant-and-telegram.md). |
 | **Files** | A real folder tree of your files, mirrored to disk. Upload, browse, edit text files; everything is read into memory. See [Files](03-files.md). |
 | **Notes** | Quick markdown notes. The fastest way to drop knowledge into the brain. |
@@ -19,7 +19,7 @@ not a click-by-click tour.
 | **Tables** | Typed data grids (like a lightweight Airtable): columns, formulas, totals, import from spreadsheets. |
 | **Todos** | Tasks with status, priority, and due dates. |
 | **Events** | Calendar events with reminders that ping you on Telegram. Supports recurring events. |
-| **Contacts** | People you know — name, company, email, phone, and an AI-facing description. Doubles as the assistant's allowlist for who it may email. See [Contacts](05-todos-events-contacts-secrets.md). |
+| **Contacts** | People you know — name, company, one or more emails (or `@domain` wildcards), phone, and an AI-facing description. The allowlist for email in **both** directions: whose mail is ingested *and* who the assistant may email. See [Contacts](05-todos-events-contacts-secrets.md). |
 | **Secrets** | An encrypted vault for passwords, codes, and credentials. The assistant can search descriptions but never sees the sealed values. |
 
 ## Review
@@ -27,7 +27,7 @@ not a click-by-click tour.
 | Item | What it's for |
 |---|---|
 | **Models** | A read-only explorer of every AI provider's catalogue — models, pricing, context windows, capabilities. |
-| **Senders** | Approve or deny which email senders are allowed into your brain. The security gate for email ingestion. |
+| **Discover** | A live scan of your mailbox for recent senders who *aren't* in your contacts yet — one click adds any as a contact (which starts ingesting their mail). The way you find new people worth keeping now that contacts are the gate. See [Email & inbox](02-email-inbox-and-contacts.md). |
 | **Pending** | Actions the assistant queued that need *your* approval before they run (for tools you've marked as requiring confirmation). |
 
 ## Settings

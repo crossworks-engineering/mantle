@@ -220,9 +220,19 @@ One Postgres 17 cluster, one database (`postgres`), three schemas:
 1. Postgres image initialises an empty cluster.
 2. `/docker-entrypoint-initdb.d/01-extensions.sql` runs → extensions loaded.
 3. `/docker-entrypoint-initdb.d/02-auth-schema.sql` runs → `auth.users` exists.
-4. `scripts/up.sh` then runs `pnpm db:migrate` → Drizzle creates `public.*`,
-   which FK into `auth.users`. The order matters because every Drizzle
-   migration after 0000 references `auth.users(id)`.
+4. `scripts/up.sh` then runs `pnpm db:migrate` → creates `public.*`, which FK
+   into `auth.users`. The order matters because every migration after 0000
+   references `auth.users(id)`.
+
+`db:migrate` uses a **custom runner** (`packages/db/src/migrate.ts`), not
+drizzle's `migrate()`: drizzle wraps the whole pending batch in one transaction,
+which makes a from-scratch replay fail wherever one migration adds an enum value
+(`ALTER TYPE … ADD VALUE`) and a later one uses it (Postgres error `55P04`). Our
+runner applies **each migration in its own transaction** (committing between),
+ledger-compatible with drizzle's `__drizzle_migrations`, so a fresh DB replays
+`0001 → latest` in one pass. Implication for authors: keep an `ADD VALUE` in its
+own migration file and use it only in a *later* one. See
+[`packages/db/README.md`](../packages/db/README.md).
 
 A fresh setup needs one extra step the bootstrap can't do: inserting your own
 row into `auth.users`. There's no signup UI — you `psql` it in directly with a

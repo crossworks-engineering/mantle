@@ -136,5 +136,5 @@ that directory**. Updating later is "pull the code, rebuild, restart" — see th
 ## After it's running
 
 Head to [Getting started](01-getting-started.md) to meet the assistant and add your
-first knowledge — then connect [email](03-using/02-email-inbox-and-senders.md) and
+first knowledge — then connect [email](03-using/02-email-inbox-and-contacts.md) and
 Telegram so the brain starts filling up.

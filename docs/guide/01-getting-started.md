@@ -58,8 +58,9 @@ not by remembering where you filed them.
 To make Mantle genuinely useful, connect a few sources:
 
 - **Email** — add an account under **Settings → Accounts**. Mantle never ingests
-  mail you didn't ask for: you approve which senders count, and approved messages
-  flow into memory. See [Email & inbox](03-using/02-email-inbox-and-senders.md).
+  mail you didn't ask for: your **Contacts** are the gate, so only mail from
+  people you've added flows into memory (and **Discover** helps you find senders
+  worth adding). See [Email & inbox](03-using/02-email-inbox-and-contacts.md).
 - **Telegram** — pair your phone so the assistant reaches you anywhere.
 - **API keys** — add at least one model provider key under **Settings → API keys**
   so the assistant and the background indexing can run. (Embeddings run locally and

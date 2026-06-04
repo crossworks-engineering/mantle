@@ -52,7 +52,7 @@ Because she has memory **and** tools, you can ask her to *act*, not just answer:
 - **Schedule** — "remind me to call Don Friday at 3pm" → creates an event and pings you.
 - **Write** — "turn this into a polished page", "summarise this thread."
 - **Email** — "draft a reply and send it" (from your own mailbox; see
-  [Email & inbox](02-email-inbox-and-senders.md)).
+  [Email & inbox](02-email-inbox-and-contacts.md)).
 - **Look things up** — she can search the live web and come back with cited sources.
 - **Work with images & docs** — read a photo, extract a scanned invoice, generate an image.
 

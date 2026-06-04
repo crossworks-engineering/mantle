@@ -25,14 +25,23 @@ so "tomorrow at 3pm" resolves correctly. Shared events offer an "add to calendar
 
 ## Contacts
 
-People you know — **name, company, email, phone**, and an **AI-facing description**
-("my electrician; prefers WhatsApp"). The description is read into the brain, so the
-assistant understands who each person is.
+People you know — **name, company, one or more emails, phone**, and an
+**AI-facing description** ("my electrician; prefers WhatsApp"). The description is
+read into the brain, so the assistant understands who each person is. A contact can
+hold **several email entries**, each either a full address (`jane@modular.co`) or a
+**whole-domain wildcard** (`@modular.co` = anyone at that domain).
 
-Contacts do double duty: **they are the assistant's allowlist for sending email.**
-With no contacts, the assistant can email anyone (bootstrap); once you have
-contacts, it may only email people on the list (plus your own addresses) — adding a
-contact unlocks emailing them, removing one revokes it. Mantle also tracks light
+Contacts are the **email allowlist in both directions:**
+
+- **Inbound** — Mantle only ingests mail *from* people in your contacts (an
+  address or a `@domain` match), plus your own account addresses. With no
+  contacts, nothing new comes in; adding a contact also backfills their last 90
+  days. (See [Email & inbox](02-email-inbox-and-contacts.md).)
+- **Outbound** — the assistant may only *email* people in your contacts (plus your
+  own addresses); here only concrete addresses count, since you can't send to a
+  whole domain. With no contacts, sending is open (bootstrap).
+
+Adding a contact unlocks both; removing one revokes both. Mantle also tracks light
 activity (how many times, last contacted) per person.
 
 Tell the assistant "save Jane at Modular, jane@modular.co" and it creates the

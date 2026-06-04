@@ -26,9 +26,35 @@ migration in `migrations/*.sql` is hand-written with full intent, and the
 TS schema in `src/schema/` is updated alongside to keep application-side
 types in sync. The two are kept consistent by review, not tooling.
 
-The `meta/_journal.json` file exists because `drizzle-orm`'s migrator
-reads it to know which migrations to apply. The corresponding empty
-`meta/0000_snapshot.json` is intentional: nothing diffs against it.
+The `meta/_journal.json` file exists because the migrator reads it to know
+which migrations to apply. The corresponding empty `meta/0000_snapshot.json`
+is intentional: nothing diffs against it.
+
+## How migrations are applied (custom runner)
+
+`src/migrate.ts` is a **custom runner**, not drizzle's `migrate()`. drizzle's
+postgres-js migrator wraps the *entire* pending batch in **one** transaction,
+which makes a from-scratch replay impossible whenever one migration does
+`ALTER TYPE … ADD VALUE` and a *later* migration uses that value — Postgres
+forbids using a new enum value in the same transaction it was added (error
+`55P04`). With ~12 enum-adding migrations, only the incremental path ever worked
+under drizzle's migrator.
+
+Our runner applies **each migration in its own transaction**, committing between
+them — the same granularity the incremental path always had. It stays
+byte-compatible with drizzle's ledger: same `drizzle.__drizzle_migrations` table,
+same `created_at` (journal `when`) gating, same `readMigrationFiles` parsing and
+hash. Trade-off: no whole-batch atomicity (a mid-batch failure leaves earlier
+migrations applied) — standard for migration tools and better for resumability.
+**A fresh DB now replays `0001 → latest` in one pass.**
+
+Constraints this implies for new migrations:
+
+- **Never add an enum value and use it in the *same* migration file** (still one
+  transaction → still `55P04`). Put `ALTER TYPE … ADD VALUE` in its own file and
+  use it in a later one (see `0017`, `0075`).
+- **No non-transactional statements** (`CREATE INDEX CONCURRENTLY`, `VACUUM`) —
+  none exist today; adding one would need a different approach.
 
 ## Adding a migration
 
@@ -39,7 +65,11 @@ reads it to know which migrations to apply. The corresponding empty
    ```json
    { "idx": N, "version": "7", "when": <epoch_ms>, "tag": "NNNN_<description>", "breakpoints": false }
    ```
-4. `pnpm db:migrate` — verify it applies cleanly against a fresh schema.
+4. `pnpm db:migrate` — applies pending migrations (each in its own transaction;
+   idempotent). For a structural change, also verify a **from-scratch replay**:
+   create a throwaway DB, run the extension + auth init SQL, then `migrate`
+   against it and confirm it reaches your new migration. (If you added an enum
+   value, keep the `ADD VALUE` in its own file — see "How migrations are applied".)
 5. Spot-check both sides against the live DB (`docker exec ... psql ...`).
 
 ## Source-of-truth contract
