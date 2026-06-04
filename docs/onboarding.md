@@ -88,11 +88,15 @@ kind/slug that already exists is left alone):
 | Capability | Worker kind | Provider · model | Gated by |
 |---|---|---|---|
 | Fact/summary/persona extraction | `extractor`, `summarizer`, `reflector` | OpenRouter · `google/gemini-3.1-flash-lite` | OpenRouter key |
-| Document/PDF reading | `document` | OpenRouter · `x-ai/grok-4.3` | OpenRouter key |
-| Image / scan reading | `vision` | OpenRouter · `openai/gpt-4o-mini` | OpenRouter key |
+| Document/PDF reading | `document` | OpenRouter · `google/gemini-3.1-flash-lite` | OpenRouter key |
+| Image / scan reading | `vision` | OpenRouter · `google/gemini-3.1-flash-lite` | OpenRouter key |
 | Image generation | `image_gen` | OpenRouter · `google/gemini-3.1-flash-image-preview` | OpenRouter key |
 | Spoken replies | `tts` | xAI · `grok-voice-latest` (ara/rex) **or** OpenRouter · `x-ai/grok-voice-tts-1.0` (ara) | xAI key if added, else OpenRouter |
-| Voice notes → text | `stt` | xAI · `grok-stt` **or** OpenRouter · `openai/whisper-large-v3` | xAI key if added, else OpenRouter |
+| Voice notes → text | `stt` | xAI · `grok-stt` **or** OpenRouter · `openai/gpt-4o-mini-transcribe` | xAI key if added, else OpenRouter |
+
+All OpenRouter model picks above are operator-verified as working + affordable on
+a single OpenRouter key. `gemini-3.1-flash-lite` is multimodal, so it backs the
+indexing workers, document reading, and vision alike.
 | Memory search | embeddings | local EmbeddingGemma (no key, 768-dim) | always |
 
 The **assistant** is one `agents` row (slug `assistant`, role `responder` — serves

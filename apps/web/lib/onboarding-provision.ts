@@ -35,15 +35,19 @@ import { createAgent, updateAgent } from '@/lib/agents';
 // it. VOICE (tts/stt) is the one place the aggregator is weak, so it runs on a
 // dedicated xAI key when the user adds one (grok voices ara/rex — the proven
 // path the production personas use). Embeddings stay local.
+// All OpenRouter-routed defaults below are the exact models verified working +
+// affordable on a single OpenRouter key (operator-tested 2026-06). gemini-3.1-
+// flash-lite is multimodal, so it backs extractor/summarizer/reflector AND
+// document + vision — one cheap model for most of the brain.
 const WORKER_MODEL = 'google/gemini-3.1-flash-lite'; // extractor / summarizer / reflector (OpenRouter)
-const DOCUMENT_MODEL = 'x-ai/grok-4.3'; // PDF/document reader (OpenRouter)
+const DOCUMENT_MODEL = 'google/gemini-3.1-flash-lite'; // PDF/document reader (OpenRouter)
+const VISION_MODEL = 'google/gemini-3.1-flash-lite'; // image-reading (OpenRouter)
 const ASSISTANT_MODEL = 'anthropic/claude-sonnet-4.6'; // the persona responder (OpenRouter)
-const VISION_MODEL = 'openai/gpt-4o-mini'; // image-reading (OpenRouter)
 const IMAGE_GEN_MODEL = 'google/gemini-3.1-flash-image-preview'; // image generation (OpenRouter)
 const XAI_TTS_MODEL = 'grok-voice-latest'; // spoken replies (dedicated xAI key)
 const XAI_STT_MODEL = 'grok-stt'; // voice-note transcription (dedicated xAI key)
-const OR_TTS_MODEL = 'x-ai/grok-voice-tts-1.0'; // voice fallback on the OpenRouter key
-const OR_STT_MODEL = 'openai/whisper-large-v3'; // transcription fallback on the OpenRouter key
+const OR_TTS_MODEL = 'x-ai/grok-voice-tts-1.0'; // voice on the OpenRouter key
+const OR_STT_MODEL = 'openai/gpt-4o-mini-transcribe'; // transcription on the OpenRouter key
 
 /** Voice id per persona gender — xAI grok voices (the dedicated TTS route, and
  *  the same voices the production personas use): female `ara`, male `rex`. */

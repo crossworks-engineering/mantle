@@ -15,8 +15,9 @@ import type { SttModelInfo } from '../catalog';
 import type { DiscoveryResult } from '../discover';
 import { OPENROUTER_BASE_URL } from '../catalogs/openrouter';
 
-/** Default OpenRouter STT route — OpenAI Whisper large v3. */
-export const OPENROUTER_STT_DEFAULT_MODEL = 'openai/whisper-large-v3';
+/** Default OpenRouter STT route — GPT-4o mini Transcribe (cheap + accurate;
+ *  operator-verified on a single OpenRouter key). */
+export const OPENROUTER_STT_DEFAULT_MODEL = 'openai/gpt-4o-mini-transcribe';
 
 /** Curated STT routes. OpenRouter's transcription models are reachable only via
  *  the dedicated /audio/transcriptions endpoint — they are NOT listed in
@@ -25,9 +26,9 @@ export const OPENROUTER_STT_DEFAULT_MODEL = 'openai/whisper-large-v3';
  *  free-text slug for routes added later. */
 const OPENROUTER_STT_MODELS: readonly SttModelInfo[] = [
   {
-    id: 'openai/whisper-large-v3',
-    label: 'Whisper large v3 (OpenAI)',
-    description: 'Robust multilingual transcription. Solid default.',
+    id: 'openai/gpt-4o-mini-transcribe',
+    label: 'GPT-4o mini Transcribe (OpenAI)',
+    description: 'Cheap, fast, accurate. The default.',
     supportsLanguageHint: true,
     supportsTimestamps: false,
   },
@@ -39,9 +40,9 @@ const OPENROUTER_STT_MODELS: readonly SttModelInfo[] = [
     supportsTimestamps: false,
   },
   {
-    id: 'openai/gpt-4o-mini-transcribe',
-    label: 'GPT-4o mini Transcribe (OpenAI)',
-    description: 'Cheaper/faster GPT-4o transcription.',
+    id: 'openai/whisper-large-v3',
+    label: 'Whisper large v3 (OpenAI)',
+    description: 'Robust multilingual Whisper.',
     supportsLanguageHint: true,
     supportsTimestamps: false,
   },

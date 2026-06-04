@@ -78,7 +78,7 @@ describe('openrouter-stt', () => {
     expect(url).toBe('https://openrouter.ai/api/v1/audio/transcriptions');
     expect(body.input_audio.format).toBe('ogg');
     expect(body.input_audio.data).toBe(Buffer.from('audiobytes').toString('base64'));
-    expect(body.model).toBe('openai/whisper-large-v3');
+    expect(body.model).toBe('openai/gpt-4o-mini-transcribe');
     expect(out.text).toBe('hi there');
   });
 });
