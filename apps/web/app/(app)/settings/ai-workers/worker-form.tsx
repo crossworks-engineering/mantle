@@ -1196,7 +1196,8 @@ function TtsFields({
   const providerWithLiveVoices =
     provider === 'elevenlabs' ||
     provider === 'xai' ||
-    provider === 'google';
+    provider === 'google' ||
+    provider === 'openrouter';
   const [liveVoices, setLiveVoices] = useState<
     Array<{ id: string; description: string }> | null
   >(null);
@@ -1229,7 +1230,8 @@ function TtsFields({
   // voice ids alongside premades. Other providers (OpenAI, Google)
   // have closed rosters and reject arbitrary ids. We surface an extra
   // "Custom voice ID" input on the two that accept it.
-  const supportsCustomVoiceId = provider === 'xai' || provider === 'elevenlabs';
+  const supportsCustomVoiceId =
+    provider === 'xai' || provider === 'elevenlabs' || provider === 'openrouter';
 
   // Pick a sensible default voice. Logic per provider:
   //   - If the stored voice matches a preset, use it.
