@@ -3,14 +3,20 @@
  *
  * OpenRouter exposes an OpenAI-compatible speech endpoint
  * (`POST /api/v1/audio/speech`) that routes to OpenAI / Google / Mistral /
- * Microsoft voices behind one key. Body shape is identical to OpenAI's
+ * Microsoft / xAI voices behind one key. Body shape mirrors OpenAI's
  * (`{model, input, voice, response_format, speed}`) and the response is a raw
- * audio byte stream — so this mirrors `synthesize.ts`, just pointed at the
- * OpenRouter base URL with `provider/model` slugs.
+ * audio byte stream.
  *
- * One wire difference: OpenRouter's speech endpoint emits **mp3 or pcm only**
- * (no opus/aac/flac/wav), so we clamp the requested format to mp3 (the safe,
- * widely-playable default) when it's anything other than pcm.
+ * Model + voice discovery is live + keyless via the Models API filtered to
+ * speech output (`/api/v1/models?output_modalities=speech`), which also carries
+ * each model's `supported_voices` — so the worker form shows the real model
+ * list and the right voices per model (OpenAI's alloy/nova…, xAI's, Azure's
+ * `en-US-Harper:MAI-Voice-2`, etc.).
+ *
+ * One wire note: OpenRouter's speech endpoint emits **mp3 or pcm only**, so we
+ * clamp the requested format to mp3 when it's anything other than pcm. And
+ * because voices vary by route, the configured voice is passed through verbatim
+ * (NOT restricted to OpenAI's named set).
  *
  * Docs: https://openrouter.ai/docs/guides/overview/multimodal/tts
  */
@@ -18,18 +24,39 @@
 import type { TtsDispatcher } from './types';
 import type { SynthesizeOptions, SynthesizeResult, TtsVoice } from '../types';
 import { TTS_VOICES } from '../types';
-import { mimeForFormat, isTtsVoice } from '../synthesize';
+import { mimeForFormat } from '../synthesize';
+import type { TtsModelInfo } from '../catalog';
+import type { DiscoveryResult } from '../discover';
 import { OPENROUTER_BASE_URL } from '../catalogs/openrouter';
 
-/** Default OpenRouter TTS route — OpenAI's gpt-4o-mini-tts (the cheapest
- *  broad-voice model). The worker form / provisioner can override. */
-export const OPENROUTER_TTS_DEFAULT_MODEL = 'openai/gpt-4o-mini-tts';
-const DEFAULT_VOICE: TtsVoice = 'nova';
+/** Default OpenRouter TTS route — xAI Grok voice (voices ara/rex…). OpenRouter
+ *  does not proxy OpenAI TTS, so we default to a real speech route on it. */
+export const OPENROUTER_TTS_DEFAULT_MODEL = 'x-ai/grok-voice-tts-1.0';
+const DEFAULT_VOICE = 'ara';
 const MAX_TEXT_CHARS = 4000;
+const SPEECH_MODELS_URL = `${OPENROUTER_BASE_URL}/models?output_modalities=speech`;
 
 /** OpenRouter's /audio/speech only emits mp3 or pcm. Map anything else → mp3. */
 function clampFormat(format: string | undefined): 'mp3' | 'pcm' {
   return format === 'pcm' ? 'pcm' : 'mp3';
+}
+
+type OrSpeechModel = {
+  id?: string;
+  name?: string;
+  description?: string;
+  supported_voices?: string[];
+};
+
+/** Keyless fetch of the speech-capable models (id, name, supported_voices). */
+async function fetchSpeechModels(): Promise<OrSpeechModel[]> {
+  const res = await fetch(SPEECH_MODELS_URL, {
+    headers: { accept: 'application/json' },
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!res.ok) throw new Error(`openrouter /models?output_modalities=speech: HTTP ${res.status}`);
+  const body = (await res.json()) as { data?: OrSpeechModel[] };
+  return (body.data ?? []).filter((m) => typeof m.id === 'string' && m.id.length > 0);
 }
 
 export const openrouterTtsAdapter: TtsDispatcher = {
@@ -44,7 +71,10 @@ export const openrouterTtsAdapter: TtsDispatcher = {
         ? raw.slice(0, raw.lastIndexOf(' ', MAX_TEXT_CHARS) || MAX_TEXT_CHARS)
         : raw;
 
-    const voice: TtsVoice = isTtsVoice(opts.voice) ? opts.voice : DEFAULT_VOICE;
+    // Voices vary by route (OpenAI / xAI / Azure / Google), so pass the
+    // configured voice through verbatim rather than clamping to OpenAI's set.
+    const voice =
+      typeof opts.voice === 'string' && opts.voice.trim() ? opts.voice.trim() : DEFAULT_VOICE;
     const model = opts.model ?? OPENROUTER_TTS_DEFAULT_MODEL;
     const format = clampFormat(opts.format);
     const speed = Math.min(Math.max(opts.speed ?? 1.0, 0.25), 4.0);
@@ -72,14 +102,44 @@ export const openrouterTtsAdapter: TtsDispatcher = {
     }
     const buffer = Buffer.from(await res.arrayBuffer());
     if (buffer.length === 0) throw new Error('openrouter-tts: empty response');
-    return { bytes: buffer, mimeType: mimeForFormat(format), voice, model };
+    return { bytes: buffer, mimeType: mimeForFormat(format), voice: voice as TtsVoice, model };
   },
-  async voicesForModel() {
-    // OpenRouter TTS voices vary by route; the default gpt-4o-mini-tts route
-    // uses the OpenAI voice set. Surface that closed list (the form can still
-    // accept a free-text voice for other routes like Azure's MAI voices).
+
+  async discoverModels(_apiKey: string): Promise<DiscoveryResult<TtsModelInfo>> {
+    try {
+      const models = await fetchSpeechModels();
+      const available: TtsModelInfo[] = models.map((m) => ({
+        id: m.id!,
+        label: m.name ?? m.id!,
+        description: m.description ?? '',
+        voices: Array.isArray(m.supported_voices) ? m.supported_voices : [],
+        supportsInstructions: (m.id ?? '').includes('gpt-4o-mini-tts'),
+        tier: 'high-quality',
+      }));
+      return { available, filtered: true, error: null };
+    } catch (err) {
+      return {
+        available: [],
+        filtered: false,
+        error: err instanceof Error ? err.message : 'discovery failed',
+      };
+    }
+  },
+
+  async voicesForModel(modelId: string) {
+    try {
+      const models = await fetchSpeechModels();
+      const found = models.find((m) => m.id === modelId);
+      const voices = found?.supported_voices ?? [];
+      if (voices.length > 0) return voices.map((id) => ({ id, description: '' }));
+    } catch {
+      /* fall through to the static OpenAI set */
+    }
+    // Fallback — the OpenAI voice set (correct for openai/* routes; a sensible
+    // default otherwise). The form still accepts a free-text voice.
     return TTS_VOICES.map((id) => ({ id, description: '' }));
   },
+
   supportedAudioTags() {
     return [];
   },

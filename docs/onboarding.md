@@ -90,7 +90,7 @@ voice/image kinds are created only when the toggle is on:
 | Document/PDF reading | `document` | OpenRouter · `x-ai/grok-4.3` | always |
 | Voice notes → text | `stt` | OpenRouter · `openai/whisper-large-v3` | voice/image toggle |
 | Image / scan reading | `vision` | OpenRouter · `openai/gpt-4o-mini` | voice/image toggle |
-| Spoken replies | `tts` | OpenRouter · `openai/gpt-4o-mini-tts` (voice per gender: nova/onyx) | voice/image toggle |
+| Spoken replies | `tts` | OpenRouter · `x-ai/grok-voice-tts-1.0` (voice per gender: ara/rex) | voice/image toggle |
 | Image generation | `image_gen` | OpenRouter · `google/gemini-3.1-flash-image-preview` | voice/image toggle |
 | Memory search | embeddings | local EmbeddingGemma (no key, 768-dim) | always |
 

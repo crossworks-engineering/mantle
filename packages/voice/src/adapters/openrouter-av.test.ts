@@ -43,14 +43,14 @@ describe('openrouter-tts', () => {
     const out = await getTtsAdapter('openrouter')!.synthesize({
       apiKey: 'k',
       text: 'hello there',
-      voice: 'nova',
       format: 'opus', // unsupported by OR → must clamp to mp3
     });
     const { url, body } = read();
     expect(url).toBe('https://openrouter.ai/api/v1/audio/speech');
     expect(body.response_format).toBe('mp3');
-    expect(body.model).toBe('openai/gpt-4o-mini-tts');
-    expect(body.voice).toBe('nova');
+    // OpenRouter has no OpenAI TTS — default to a real speech route on it.
+    expect(body.model).toBe('x-ai/grok-voice-tts-1.0');
+    expect(body.voice).toBe('ara'); // default grok voice (passed through verbatim)
     expect(out.mimeType).toBe('audio/mpeg');
     expect(out.bytes.length).toBe(3);
   });

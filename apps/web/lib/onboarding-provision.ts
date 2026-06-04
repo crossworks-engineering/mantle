@@ -36,15 +36,15 @@ import { createAgent, updateAgent } from '@/lib/agents';
 const WORKER_MODEL = 'google/gemini-3.1-flash-lite'; // extractor / summarizer / reflector
 const DOCUMENT_MODEL = 'x-ai/grok-4.3'; // PDF/document reader
 const ASSISTANT_MODEL = 'anthropic/claude-sonnet-4.6'; // the persona responder
-const TTS_MODEL = 'openai/gpt-4o-mini-tts';
+const TTS_MODEL = 'x-ai/grok-voice-tts-1.0'; // OpenRouter has no OpenAI TTS; grok-voice is on it
 const STT_MODEL = 'openai/whisper-large-v3';
 const VISION_MODEL = 'openai/gpt-4o-mini';
 const IMAGE_GEN_MODEL = 'google/gemini-3.1-flash-image-preview';
 
-/** Voice id per persona gender — OpenAI voices (the gpt-4o-mini-tts route):
- *  female `nova` (warm), male `onyx` (deeper). */
+/** Voice id per persona gender — xAI grok voices (the default TTS route, and the
+ *  same voices the production personas use): female `ara`, male `rex`. */
 export function voiceForGender(gender: PersonaGender): string {
-  return gender === 'female' ? 'nova' : 'onyx';
+  return gender === 'female' ? 'ara' : 'rex';
 }
 
 export const PERSONA_AGENT_SLUG = 'assistant';

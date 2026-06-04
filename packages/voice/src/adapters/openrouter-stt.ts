@@ -11,10 +11,41 @@
 
 import type { SttDispatcher } from './types';
 import type { TranscribeOptions, TranscribeResult } from '../types';
+import type { SttModelInfo } from '../catalog';
+import type { DiscoveryResult } from '../discover';
 import { OPENROUTER_BASE_URL } from '../catalogs/openrouter';
 
 /** Default OpenRouter STT route — OpenAI Whisper large v3. */
 export const OPENROUTER_STT_DEFAULT_MODEL = 'openai/whisper-large-v3';
+
+/** Curated STT routes. OpenRouter's transcription models are reachable only via
+ *  the dedicated /audio/transcriptions endpoint — they are NOT listed in
+ *  /v1/models (same as embedding models), so there's no live filter to query.
+ *  This documented set drives the worker-form dropdown; the field also accepts a
+ *  free-text slug for routes added later. */
+const OPENROUTER_STT_MODELS: readonly SttModelInfo[] = [
+  {
+    id: 'openai/whisper-large-v3',
+    label: 'Whisper large v3 (OpenAI)',
+    description: 'Robust multilingual transcription. Solid default.',
+    supportsLanguageHint: true,
+    supportsTimestamps: false,
+  },
+  {
+    id: 'openai/gpt-4o-transcribe',
+    label: 'GPT-4o Transcribe (OpenAI)',
+    description: 'Higher-accuracy transcription on the GPT-4o stack.',
+    supportsLanguageHint: true,
+    supportsTimestamps: false,
+  },
+  {
+    id: 'openai/gpt-4o-mini-transcribe',
+    label: 'GPT-4o mini Transcribe (OpenAI)',
+    description: 'Cheaper/faster GPT-4o transcription.',
+    supportsLanguageHint: true,
+    supportsTimestamps: false,
+  },
+];
 
 /** Map an audio MIME type to the bare container hint OpenRouter expects in
  *  `input_audio.format` (wav/mp3/flac/m4a/ogg/webm/aac). Falls back to the
@@ -68,5 +99,10 @@ export const openrouterSttAdapter: SttDispatcher = {
       durationSeconds: null,
       model,
     };
+  },
+
+  async discoverModels(_apiKey: string): Promise<DiscoveryResult<SttModelInfo>> {
+    // Curated — OpenRouter STT models aren't enumerable via /v1/models.
+    return { available: [...OPENROUTER_STT_MODELS], filtered: true, error: null };
   },
 };
