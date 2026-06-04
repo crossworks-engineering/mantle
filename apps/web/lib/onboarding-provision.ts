@@ -16,13 +16,14 @@ import { createAgent, updateAgent } from '@/lib/agents';
 
 /**
  * Onboarding provisioner — turns the API keys the user just entered into a
- * fully-working agent + AI-worker set, mirroring the production configuration:
+ * fully-working agent + AI-worker set. A single OpenRouter key powers everything:
  *
- *   OpenRouter → chat (the persona responder) + extractor/summarizer/reflector
- *                /document workers (cheap gemini-flash-lite, grok for docs)
- *   xAI/Grok   → tts (voice) + image_gen          (only if a key was added)
- *   OpenAI     → stt (whisper-1) + vision (gpt-4o-mini)  (only if a key was added)
- *   Embeddings → local EmbeddingGemma (no row, no key — resolved by default)
+ *   OpenRouter (one required key) → the persona responder + extractor /
+ *     summarizer / reflector / document / vision / image_gen, and — when no xAI
+ *     key was added — voice too (tts + stt). `gemini-3.1-flash-lite` is the cheap
+ *     multimodal workhorse behind most of it (verified affordable on one key).
+ *   xAI (optional) → upgrades voice (tts + stt) to the dedicated grok route.
+ *   Embeddings → local EmbeddingGemma (no row, no key — resolved by default).
  *
  * Idempotent: a kind that already has a worker, or an agent slug that already
  * exists, is left alone — so re-running (back/forward in the wizard) never
