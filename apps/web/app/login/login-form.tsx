@@ -6,8 +6,17 @@ import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-export function LoginForm({ next, error: initialError }: { next?: string; error?: string }) {
+export function LoginForm({
+  mode = 'login',
+  next,
+  error: initialError,
+}: {
+  mode?: 'login' | 'signup';
+  next?: string;
+  error?: string;
+}) {
   const router = useRouter();
+  const isSignup = mode === 'signup';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | undefined>(initialError);
@@ -17,7 +26,7 @@ export function LoginForm({ next, error: initialError }: { next?: string; error?
     e.preventDefault();
     setBusy(true);
     setError(undefined);
-    const res = await fetch('/api/auth/login', {
+    const res = await fetch(isSignup ? '/api/auth/signup' : '/api/auth/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -25,10 +34,12 @@ export function LoginForm({ next, error: initialError }: { next?: string; error?
     setBusy(false);
     if (!res.ok) {
       const data = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(data.error ?? 'Sign-in failed.');
+      setError(data.error ?? (isSignup ? 'Could not create your account.' : 'Sign-in failed.'));
       return;
     }
-    router.push(next ?? '/');
+    // New accounts go straight into onboarding; returning users to where they
+    // were headed (the (app) shell sends them to /onboarding if not yet done).
+    router.push(isSignup ? '/onboarding' : (next ?? '/'));
     router.refresh();
   }
 
@@ -44,13 +55,17 @@ export function LoginForm({ next, error: initialError }: { next?: string; error?
           id="password"
           type="password"
           required
+          autoComplete={isSignup ? 'new-password' : 'current-password'}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
+        {isSignup && (
+          <p className="text-xs text-muted-foreground">At least 8 characters.</p>
+        )}
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
       <SubmitButton pending={busy} className="w-full">
-        Sign in
+        {isSignup ? 'Create account' : 'Sign in'}
       </SubmitButton>
     </form>
   );

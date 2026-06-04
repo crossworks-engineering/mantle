@@ -40,6 +40,16 @@ export type ProfilePreferences = {
    *  persona, e.g. 'telegram-default' (Saskia), so they don't come from
    *  whichever bot happened to be most recent. */
   reminderAgentSlug?: string;
+  /** What the user likes to be called (captured during onboarding). Cosmetic —
+   *  the assistant's real knowledge of the user comes from the Life Log identity
+   *  block; this is for greetings/UI. */
+  displayName?: string;
+  /** ISO instant onboarding was completed. Unset ⇒ the onboarding wizard runs
+   *  on next login; the (app) shell redirects there. Set ⇒ shell renders normally. */
+  onboardedAt?: string;
+  /** Resume marker for the onboarding wizard — the key of the furthest step the
+   *  user has reached. Lets a refreshed/re-entered wizard pick up where it left off. */
+  onboardingStep?: string;
 };
 
 export const DEFAULT_PREFERENCES: ProfilePreferences = {
@@ -93,6 +103,18 @@ export async function loadProfilePreferences(
     reminderAgentSlug:
       typeof prefs.reminderAgentSlug === 'string' && prefs.reminderAgentSlug.length > 0
         ? prefs.reminderAgentSlug
+        : undefined,
+    displayName:
+      typeof prefs.displayName === 'string' && prefs.displayName.length > 0
+        ? prefs.displayName
+        : undefined,
+    onboardedAt:
+      typeof prefs.onboardedAt === 'string' && prefs.onboardedAt.length > 0
+        ? prefs.onboardedAt
+        : undefined,
+    onboardingStep:
+      typeof prefs.onboardingStep === 'string' && prefs.onboardingStep.length > 0
+        ? prefs.onboardingStep
         : undefined,
   };
 }
@@ -164,6 +186,9 @@ export async function updateProfilePreferences(
     avatarStyle: merged.avatarStyle || undefined,
     avatarSeed: merged.avatarSeed || undefined,
     reminderAgentSlug: merged.reminderAgentSlug || undefined,
+    displayName: merged.displayName || undefined,
+    onboardedAt: merged.onboardedAt || undefined,
+    onboardingStep: merged.onboardingStep || undefined,
   };
 }
 

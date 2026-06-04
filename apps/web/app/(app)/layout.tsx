@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { countPending } from '@mantle/tools';
 import { loadProfilePreferences } from '@mantle/content';
 import { requireOwner } from '@/lib/auth';
@@ -13,9 +14,13 @@ import { UsageCard } from '@/components/usage-card';
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireOwner();
 
+  const prefs = await loadProfilePreferences(user.id);
+  // First-run gate: a logged-in but not-yet-onboarded user is sent to the wizard
+  // (which lives outside this (app) group, so no redirect loop). See lib/onboarding.ts.
+  if (!prefs.onboardedAt) redirect('/onboarding');
+
   const pendingApprovals = await countPending(user.id);
 
-  const prefs = await loadProfilePreferences(user.id);
   const userAvatar = prefs.avatarStyle
     ? { style: prefs.avatarStyle, seed: prefs.avatarSeed || user.id }
     : null;
