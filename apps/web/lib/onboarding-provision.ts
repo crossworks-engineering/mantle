@@ -226,7 +226,10 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
         apiKeyId: openrouter,
         ttsWorkerId,
         systemPrompt: buildPersonaPrompt('warm', { assistantName: name, gender: 'female' }),
-        toolSlugs: [...DEFAULT_ASSISTANT_TOOL_SLUGS],
+        // page_delete preserved as an explicit grant (docs/tools-and-skills.md
+        // decision 1) — it previously rode in via the rich_writing skill, which
+        // is now pure teaching. The deny-set keeps it out of DEFAULT_ASSISTANT.
+        toolSlugs: [...DEFAULT_ASSISTANT_TOOL_SLUGS, 'page_delete'],
         memoryConfig: {
           history_limit: 20,
           digest_limit: 3,

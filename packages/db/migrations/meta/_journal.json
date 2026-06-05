@@ -568,6 +568,13 @@
       "when": 1781740800000,
       "tag": "0080_tool_groups",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1781827200000,
+      "tag": "0081_collapse_skill_tools",
+      "breakpoints": true
     }
   ]
 }

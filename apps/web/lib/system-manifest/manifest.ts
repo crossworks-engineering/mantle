@@ -38,8 +38,11 @@ export type ManifestSkill = {
   slug: string;
   name: string;
   description: string;
-  /** Builtin tool slugs this skill bundles (unioned into an agent's allowlist
-   *  when attached). Empty for behaviour-only skills. */
+  /** DEPRECATED as of P1 (docs/tools-and-skills.md): manifest skills are pure
+   *  teaching and carry NO tools — capability is granted to agents directly
+   *  (and, from P3, via tool groups). Always `[]` here; the `skills.tool_slugs`
+   *  column is retired in P4. (NB: heartbeat skills, which are not in this
+   *  manifest, may still carry tools — a separate mechanism.) */
   toolSlugs: string[];
   /** The skill body rendered into the system prompt (verbatim, from ./prompts). */
   instructions: string;
@@ -70,6 +73,11 @@ export type ManifestAgent = {
   /** Tool grant. The sentinel resolves to DEFAULT_ASSISTANT_TOOL_SLUGS so the
    *  persona tracks the registry rather than a frozen copy. */
   toolSlugs: string[] | 'DEFAULT_ASSISTANT';
+  /** Extra direct tool grants unioned on top of `toolSlugs` — the escape hatch
+   *  (decision 2, docs/tools-and-skills.md) for one-off grants that don't belong
+   *  in the base set or a group. Used to preserve `page_delete` on the persona
+   *  (decision 1) now that it no longer rides in via the `rich_writing` skill. */
+  extraToolSlugs?: string[];
   /** Skills that SHOULD be attached to this agent. */
   skillSlugs: string[];
   /** Tool groups granted to this agent (named bundles). Phase 0: dormant —
@@ -129,21 +137,21 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     slug: 'page_editing',
     name: 'Page editing',
     description: 'Safe, scalable page authoring/editing; preserve words verbatim, prefer block tools.',
-    toolSlugs: PAGE_AUTHORING_TOOL_SLUGS,
+    toolSlugs: [], // P1: pure teaching — page tools granted to agents directly.
     instructions: SKILL_INSTRUCTIONS['page_editing']!,
   },
   {
     slug: 'rich_writing',
     name: 'Rich writing',
     description: 'The rich Mantle dialect: callouts, columns, tables, task lists, KaTeX.',
-    toolSlugs: [...PAGE_TOOL_SLUGS],
+    toolSlugs: [], // P1: pure teaching — page tools granted to agents directly.
     instructions: SKILL_INSTRUCTIONS['rich_writing']!,
   },
   {
     slug: 'table_authoring',
     name: 'Table authoring',
     description: 'Build typed grids: columns, totals, formulas, views; edit by stable row/col id.',
-    toolSlugs: TABLE_AUTHORING_TOOL_SLUGS,
+    toolSlugs: [], // P1: pure teaching — table tools granted to agents directly.
     instructions: SKILL_INSTRUCTIONS['table_authoring']!,
   },
   {
@@ -305,6 +313,10 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: 'anthropic/claude-sonnet-4.6',
     isPersona: true,
     toolSlugs: 'DEFAULT_ASSISTANT',
+    // P1: page_delete used to ride in via the rich_writing skill (now tool-less).
+    // Preserved as an explicit direct grant (decision 1) — the deny-set keeps it
+    // out of DEFAULT_ASSISTANT, so this is the one deliberate exception.
+    extraToolSlugs: ['page_delete'],
     skillSlugs: ['tool_grounding', 'voice_reply', 'rich_writing'],
     params: { temperature: 0.7, max_tokens: 16000 },
     priority: 100,
@@ -317,7 +329,9 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: 'anthropic/claude-sonnet-4.6',
     envModelVar: 'PAGES_MODEL',
     systemPrompt: AGENT_PROMPTS['pages']!,
-    toolSlugs: [...PAGE_AUTHORING_TOOL_SLUGS, ...SOURCE_FILE_TOOLS, ...CROSS_CONTEXT_TOOLS],
+    // P1: full page set (incl. page_delete/page_update) — previously granted via
+    // the rich_writing skill, now direct. Skills are pure teaching.
+    toolSlugs: [...PAGE_TOOL_SLUGS, ...SOURCE_FILE_TOOLS, ...CROSS_CONTEXT_TOOLS],
     skillSlugs: ['rich_writing', 'page_editing'],
     isDelegate: true,
     assistSurface: 'pages',
@@ -446,9 +460,14 @@ export const KNOWN_TOOL_SLUGS: ReadonlySet<string> = new Set<string>([
 
 /** Resolve an agent's tool grant (expanding the DEFAULT_ASSISTANT sentinel). */
 export function resolveManifestToolSlugs(agent: ManifestAgent): string[] {
-  return agent.toolSlugs === 'DEFAULT_ASSISTANT'
-    ? [...DEFAULT_ASSISTANT_TOOL_SLUGS]
-    : agent.toolSlugs;
+  const base =
+    agent.toolSlugs === 'DEFAULT_ASSISTANT'
+      ? [...DEFAULT_ASSISTANT_TOOL_SLUGS]
+      : [...agent.toolSlugs];
+  if (agent.extraToolSlugs) {
+    for (const s of agent.extraToolSlugs) if (!base.includes(s)) base.push(s);
+  }
+  return base;
 }
 
 /** Slugs of every manifest tool group (the set an agent may reference). */

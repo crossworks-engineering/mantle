@@ -1,8 +1,9 @@
 # Tools & Skills — capability vs. teaching, as one source of truth
 
-> **Status: P0 SHIPPED** (2026-06-05). Phase 0 (dormant substrate) is live;
-> Phases 1–4 remain DESIGN. Companion to [docs/agent-studio.md](agent-studio.md)
-> and [docs/system-integrity.md](system-integrity.md).
+> **Status: P0 + P1 SHIPPED** (2026-06-05). Substrate (P0) and the
+> behavior-identical skill-arm collapse (P1) are live; Phases 2–4 remain DESIGN.
+> Companion to [docs/agent-studio.md](agent-studio.md) and
+> [docs/system-integrity.md](system-integrity.md).
 
 ## The problem
 
@@ -70,8 +71,9 @@ Studio graph read model.
 - Manifest: `MANIFEST_TOOL_GROUPS` (seeded defaults); skills drop `toolSlugs`;
   agents gain `toolGroupSlugs`.
 
-**Removed (end state):** `skills.tool_slugs` column; the skill arm of the
-`effectiveToolSlugs` union.
+**Removed (end state):** `skills.tool_slugs` column — once heartbeat skills (the
+last users of skill-borne tools) are migrated off it. The `effectiveToolSlugs`
+union is kept meanwhile; agent skills simply carry nothing.
 
 ### New effective-tools resolution
 
@@ -81,10 +83,14 @@ effectiveToolSlugs(agent) =
   ∪ expand(agent.tool_group_slugs → group.tool_slugs)   // bundles
 ```
 
-The skill arm is gone. `agent.tool_slugs` is retained deliberately as (a) the
-migration cushion — Saskia keeps her flat 68 here on day one — and (b) the
-escape hatch for one-off grants that don't justify a group (e.g. a specialist's
-lone `web_search`).
+For *agents*, the skill arm contributes nothing (agent/manifest skills carry no
+tools as of P1). The `effectiveToolSlugs` union itself is **kept** — heartbeats
+reuse it to confer a heartbeat's bound-skill tools — but agent skills are drained,
+so an agent's effective set is just its direct grants (+ tool groups, from P3).
+`agent.tool_slugs` is retained deliberately as (a) the migration cushion — Saskia
+keeps her flat grant on day one — and (b) the escape hatch for one-off grants that
+don't justify a group (e.g. a specialist's lone `web_search`, the persona's
+`page_delete`).
 
 ### Default groups already exist in code
 
@@ -137,17 +143,27 @@ makes the cutover a no-op.
 - The runtime `effectiveToolSlugs` is **untouched** — expanding groups into the
   effective set is the Phase 1 flip.
 
-### Phase 1 — Collapse the skill arm (behavior-identical)
-- For each tool-bearing skill (`page_editing`, `rich_writing`, `table_authoring`),
-  push its `tool_slugs` onto every attached agent's `tool_slugs` (data migration),
-  then set `skill.tool_slugs = []`.
-- Flip `effectiveToolSlugs` (both twins) to drop the skill arm.
-- Manifest: skills lose `toolSlugs`; the agents that relied on them get those
-  tools listed directly.
-- **Net effect: identical effective sets.** The persona's `page_delete` — today an
-  implicit grant via `rich_writing` — is *preserved* as an explicit direct
-  `tool_slugs` entry (decision 1): same capability, now visible instead of hidden.
-  Skills are now pure prose.
+### Phase 1 — Collapse the skill arm (behavior-identical) — ✅ SHIPPED
+- ✅ Migration `0081_collapse_skill_tools`: for the three agent-capability skills
+  (`page_editing`, `rich_writing`, `table_authoring`), UNION each one's tools onto
+  every attached agent's `tool_slugs`, then empty those skills' `tool_slugs`.
+  Scoped to those three slugs only.
+- ✅ Manifest: those skills now carry `toolSlugs: []` (drift-test enforces *every*
+  manifest skill is tool-free); the agents that relied on them list the tools
+  directly — the `pages` agent gains the full page set, and the persona keeps
+  `page_delete` via a new `extraToolSlugs` escape hatch (decision 1). Onboarding
+  grants the fresh persona `page_delete` too, so new installs match.
+- **`effectiveToolSlugs` is deliberately UNCHANGED.** The original plan said
+  "drop the skill arm," but the same union is used by heartbeats
+  ([`heartbeats/fire.ts`](../packages/heartbeats/src/fire.ts)) to confer a
+  heartbeat's bound-skill tools (e.g. `profile_interview`). Ripping it out would
+  break those. Instead the *agent* skills are drained (so they add nothing to the
+  union) while *heartbeat* skills keep theirs — a separate mechanism. The
+  invariant "agent/manifest skills are pure teaching" is enforced at the manifest
+  (drift-test), not by deleting the union.
+- **Net effect: identical effective sets** — verified on dev by diffing every
+  agent's `agent.tool_slugs ∪ attached-skill tools` before vs. after (zero diff).
+  Skills are now pure teaching prose.
 
 ### Phase 2 — Tools manager + Studio nodes ("no hidden tool grants")
 - `/settings/tools`: add tool-group CRUD (create bundle, pick member tools,
