@@ -34,6 +34,7 @@ import {
   Table2,
   User,
   UserCheck,
+  Waypoints,
   Workflow,
   type LucideIcon,
 } from 'lucide-react';
@@ -110,6 +111,7 @@ export function SidebarNav({
     {
       label: 'System',
       items: [
+        { name: 'Studio', href: '/studio', icon: Waypoints },
         { name: 'Traces', href: '/traces', icon: Workflow },
         { name: 'Debug', href: '/debug', icon: Activity },
       ],

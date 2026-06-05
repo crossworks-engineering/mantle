@@ -1,0 +1,246 @@
+/**
+ * Agent Studio — the graph read model.
+ *
+ * `buildStudioGraph(ownerId)` assembles the whole agent/skill/worker graph into
+ * `{ nodes, edges }` for the canvas, plus per-entity detail (incl. the
+ * runtime-true composed prompt) for the inspector, plus the live
+ * `checkSystemIntegrity` report for the health panel. One batched read; the
+ * backbone every Studio phase renders from.
+ *
+ * Read-only. Owner-scoped. The composed-prompt preview runs the SAME
+ * `resolveAgentSkills` + `composeSystemPromptWithSkills` a real turn uses
+ * (apps/web/lib/assistant.ts), so what you see is what the model is sent —
+ * minus the per-turn time/locale line, which is noted, not faked.
+ *
+ * See docs/agent-studio.md.
+ */
+
+import { db, tools, eq, and, type AgentMemoryConfig } from '@mantle/db';
+import { resolveAgentSkills, composeSystemPromptWithSkills } from '@mantle/agent-runtime';
+import { listAgents } from '@/lib/agents';
+import { listSkills } from '@/lib/skills';
+import { listAiWorkers } from '@/lib/ai-workers';
+import { checkSystemIntegrity, PERSONA_SLUG } from '@/lib/system-manifest';
+import type { SystemReport } from '@/lib/integrity/types';
+
+// ── Canvas primitives ────────────────────────────────────────────────────────
+
+export type StudioNodeKind = 'agent' | 'skill';
+
+export type StudioNode = {
+  /** Stable canvas id, namespaced by kind: `agent:<slug>` / `skill:<slug>`. */
+  id: string;
+  kind: StudioNodeKind;
+  slug: string;
+  label: string;
+  /** Secondary line — model for agents, tool-count for skills. */
+  sublabel: string;
+  enabled: boolean;
+  isPersona: boolean;
+  /** Node-local referential problems (dangling tool/skill/delegate, disabled). */
+  issues: string[];
+};
+
+export type StudioEdge = {
+  id: string;
+  source: string;
+  target: string;
+  kind: 'skill' | 'delegate';
+};
+
+// ── Inspector detail ─────────────────────────────────────────────────────────
+
+export type ComposedSkillBlock = { slug: string; name: string; instructions: string };
+
+export type StudioAgentDetail = {
+  slug: string;
+  name: string;
+  model: string;
+  role: string;
+  enabled: boolean;
+  isPersona: boolean;
+  skillSlugs: string[];
+  /** Skills attached but NOT resolved (missing or disabled) — surfaced honestly. */
+  missingSkillSlugs: string[];
+  delegateSlugs: string[];
+  toolCount: number;
+  /** The base system prompt (editable prose in Phase 2). */
+  systemPrompt: string;
+  /** The enabled, attached skills in composition order. */
+  skillBlocks: ComposedSkillBlock[];
+  /** The full assembled system prompt the model receives (base + skill blocks),
+   *  exactly as `composeSystemPromptWithSkills` builds it on a real turn. */
+  composedPrompt: string;
+};
+
+export type StudioSkillDetail = {
+  slug: string;
+  name: string;
+  enabled: boolean;
+  instructions: string;
+  toolSlugs: string[];
+  /** Fan-out: every agent that attaches this skill (the many-to-many). */
+  usedByAgentSlugs: string[];
+};
+
+export type StudioWorkerDetail = {
+  kind: string;
+  name: string;
+  model: string;
+  enabled: boolean;
+  isDefault: boolean;
+  /** Worker prose (registry): the chat-worker system prompt + the vision/document
+   *  extraction prompt, when present. */
+  systemPrompt: string | null;
+  extractionPrompt: string | null;
+  issues: string[];
+};
+
+export type StudioGraph = {
+  generatedAt: string;
+  nodes: StudioNode[];
+  edges: StudioEdge[];
+  agents: StudioAgentDetail[];
+  skills: StudioSkillDetail[];
+  workers: StudioWorkerDetail[];
+  /** Live config-integrity report (the same checker behind /debug/integrity). */
+  report: SystemReport;
+};
+
+const agentNodeId = (slug: string) => `agent:${slug}`;
+const skillNodeId = (slug: string) => `skill:${slug}`;
+
+function delegateTo(memoryConfig: AgentMemoryConfig | null | undefined): string[] {
+  const dt = memoryConfig?.delegate_to;
+  return Array.isArray(dt) ? (dt as string[]) : [];
+}
+
+export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
+  const [agents, skills, workers, toolRows, report] = await Promise.all([
+    listAgents(ownerId),
+    listSkills(ownerId),
+    listAiWorkers(ownerId),
+    db
+      .select({ slug: tools.slug })
+      .from(tools)
+      .where(and(eq(tools.ownerId, ownerId), eq(tools.enabled, true))),
+    checkSystemIntegrity(ownerId),
+  ]);
+
+  const enabledToolSlugs = new Set(toolRows.map((t) => t.slug));
+  const enabledSkillSlugs = new Set(skills.filter((s) => s.enabled).map((s) => s.slug));
+  const skillSlugs = new Set(skills.map((s) => s.slug));
+  const agentSlugs = new Set(agents.map((a) => a.slug));
+  const enabledAgentSlugs = new Set(agents.filter((a) => a.enabled).map((a) => a.slug));
+
+  const nodes: StudioNode[] = [];
+  const edges: StudioEdge[] = [];
+
+  // Agent nodes + agent→skill (uses) and agent→agent (delegates) edges.
+  for (const a of agents) {
+    const delegates = delegateTo(a.memoryConfig);
+    const issues: string[] = [];
+    if (!a.enabled) issues.push('agent disabled');
+    for (const t of a.toolSlugs) if (!enabledToolSlugs.has(t)) issues.push(`tool '${t}' has no enabled row`);
+    for (const s of a.skillSlugs) if (!enabledSkillSlugs.has(s)) issues.push(`skill '${s}' missing or disabled`);
+    for (const d of delegates) if (!enabledAgentSlugs.has(d)) issues.push(`delegate '${d}' missing or disabled`);
+
+    nodes.push({
+      id: agentNodeId(a.slug),
+      kind: 'agent',
+      slug: a.slug,
+      label: a.name,
+      sublabel: a.model,
+      enabled: a.enabled,
+      isPersona: a.slug === PERSONA_SLUG,
+      issues,
+    });
+
+    for (const s of a.skillSlugs) {
+      if (skillSlugs.has(s)) {
+        edges.push({ id: `${agentNodeId(a.slug)}__skill:${s}`, source: agentNodeId(a.slug), target: skillNodeId(s), kind: 'skill' });
+      }
+    }
+    for (const d of delegates) {
+      if (agentSlugs.has(d)) {
+        edges.push({ id: `${agentNodeId(a.slug)}__deleg:${d}`, source: agentNodeId(a.slug), target: agentNodeId(d), kind: 'delegate' });
+      }
+    }
+  }
+
+  // Skill nodes.
+  for (const s of skills) {
+    const issues: string[] = [];
+    if (!s.enabled) issues.push('skill disabled');
+    for (const t of s.toolSlugs) if (!enabledToolSlugs.has(t)) issues.push(`bundled tool '${t}' has no enabled row`);
+    nodes.push({
+      id: skillNodeId(s.slug),
+      kind: 'skill',
+      slug: s.slug,
+      label: s.name,
+      sublabel: `${s.toolSlugs.length} tool${s.toolSlugs.length === 1 ? '' : 's'}`,
+      enabled: s.enabled,
+      isPersona: false,
+      issues,
+    });
+  }
+
+  // Per-agent detail incl. the runtime-true composed prompt. Sequential — there
+  // are only a handful of agents and each is one cached skill query.
+  const agentDetails: StudioAgentDetail[] = [];
+  for (const a of agents) {
+    const attached = await resolveAgentSkills(ownerId, a.skillSlugs ?? []);
+    const attachedSet = new Set(attached.map((s) => s.slug));
+    agentDetails.push({
+      slug: a.slug,
+      name: a.name,
+      model: a.model,
+      role: a.role,
+      enabled: a.enabled,
+      isPersona: a.slug === PERSONA_SLUG,
+      skillSlugs: a.skillSlugs ?? [],
+      missingSkillSlugs: (a.skillSlugs ?? []).filter((s) => !attachedSet.has(s)),
+      delegateSlugs: delegateTo(a.memoryConfig),
+      toolCount: a.toolSlugs.length,
+      systemPrompt: a.systemPrompt,
+      skillBlocks: attached.map((s) => ({ slug: s.slug, name: s.name, instructions: s.instructions })),
+      composedPrompt: composeSystemPromptWithSkills(a.systemPrompt, attached),
+    });
+  }
+
+  const skillDetails: StudioSkillDetail[] = skills.map((s) => ({
+    slug: s.slug,
+    name: s.name,
+    enabled: s.enabled,
+    instructions: s.instructions,
+    toolSlugs: s.toolSlugs,
+    usedByAgentSlugs: agents.filter((a) => (a.skillSlugs ?? []).includes(s.slug)).map((a) => a.slug),
+  }));
+
+  const workerDetails: StudioWorkerDetail[] = workers.map((w) => {
+    const params = (w.params ?? {}) as unknown as Record<string, unknown>;
+    const extraction = typeof params.extraction_prompt === 'string' ? params.extraction_prompt : null;
+    const issues: string[] = [];
+    if (!w.enabled) issues.push('worker disabled');
+    return {
+      kind: w.kind,
+      name: w.name,
+      model: w.model,
+      enabled: w.enabled,
+      isDefault: w.isDefault,
+      systemPrompt: w.systemPrompt ?? null,
+      extractionPrompt: extraction,
+      issues,
+    };
+  });
+
+  return {
+    generatedAt: report.generatedAt,
+    nodes,
+    edges,
+    agents: agentDetails,
+    skills: skillDetails,
+    workers: workerDetails,
+    report,
+  };
+}
