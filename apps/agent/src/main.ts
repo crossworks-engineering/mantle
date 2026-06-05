@@ -71,6 +71,7 @@ import {
   loadConversationContext,
   recordTurn,
   resolveAgentSkills,
+  resolveAgentToolGroups,
   resolveAgentTools,
   resolveBackupAdapter,
   resolveChatKey,
@@ -896,9 +897,11 @@ async function handleMessage(messageId: string): Promise<void> {
         // act on. The grant in tool_slugs is unchanged; only the
         // per-turn affordance is scoped to context. See
         // docs/heartbeats.md §4 "Permission model & runtime hygiene".
+        const groupTools = await resolveAgentToolGroups(USER_ID!, agent.toolGroupSlugs ?? []);
         let allowedToolSlugs = effectiveToolSlugs(
           agent.toolSlugs ?? [],
           attachedSkills,
+          groupTools,
         );
         const hasHeartbeats = await hasActiveHeartbeatsOnSurface(USER_ID!, {
           kind: 'telegram',

@@ -34,4 +34,14 @@ describe('effectiveToolSlugs', () => {
     expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
   });
+
+  it('unions granted tool-group tools (P3) and dedupes across all arms', () => {
+    const out = effectiveToolSlugs(['a'], [skill('s', ['b'])], ['b', 'c', 'd']);
+    expect([...out].sort()).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('defaults the group arm to empty (back-compat with 2-arg callers)', () => {
+    const out = effectiveToolSlugs(['a', 'b'], []);
+    expect([...out].sort()).toEqual(['a', 'b']);
+  });
 });

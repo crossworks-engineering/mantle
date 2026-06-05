@@ -37,6 +37,7 @@ import {
   composeSystemPromptWithSkills,
   effectiveToolSlugs,
   resolveAgentSkills,
+  resolveAgentToolGroups,
   resolveAgentTools,
   resolveBackupAdapter,
   runToolLoop,
@@ -185,8 +186,9 @@ async function fireInner(
 
   // Resolve tool allowlist = agent's own + persistent skills' + heartbeat
   // control tools. The heartbeat skill's tools also get unioned in.
+  const agentGroupTools = await resolveAgentToolGroups(hb.ownerId, agent.toolGroupSlugs ?? []);
   const allSlugs = new Set<string>([
-    ...effectiveToolSlugs(agent.toolSlugs ?? [], persistentSkills),
+    ...effectiveToolSlugs(agent.toolSlugs ?? [], persistentSkills, agentGroupTools),
     ...(skill.toolSlugs ?? []),
     ...HEARTBEAT_CONTROL_TOOLS,
   ]);

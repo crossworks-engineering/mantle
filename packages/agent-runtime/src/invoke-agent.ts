@@ -40,7 +40,7 @@ import { MAX_AGENT_DEPTH } from '@mantle/tools';
 import { getChatAdapter } from '@mantle/voice';
 import { resolveAgentTools, runToolLoop } from './tool-loop';
 import { resolveBackupAdapter, resolveChatKey } from './chat-failover';
-import { resolveAgentSkills, composeSystemPromptWithSkills, effectiveToolSlugs } from './skills';
+import { resolveAgentSkills, resolveAgentToolGroups, composeSystemPromptWithSkills, effectiveToolSlugs } from './skills';
 import type { ChatMessage } from './messages';
 
 export const invokeAgent: AgentInvoker = async ({
@@ -114,7 +114,8 @@ export const invokeAgent: AgentInvoker = async ({
     { role: 'system', content: systemPrompt },
     { role: 'user', content: prompt },
   ];
-  const allowedToolSlugs = effectiveToolSlugs(target.toolSlugs ?? [], skills);
+  const groupTools = await resolveAgentToolGroups(ownerId, (target as Agent).toolGroupSlugs ?? []);
+  const allowedToolSlugs = effectiveToolSlugs(target.toolSlugs ?? [], skills, groupTools);
   const allowedTools = await resolveAgentTools(ownerId, allowedToolSlugs);
 
   // Open the child's trace inside a startTrace block so the child's

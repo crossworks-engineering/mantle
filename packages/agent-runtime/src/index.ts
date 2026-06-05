@@ -45,6 +45,7 @@ export {
 
 export {
   resolveAgentSkills,
+  resolveAgentToolGroups,
   composeSystemPromptWithSkills,
   effectiveToolSlugs,
   type SkillForRuntime,

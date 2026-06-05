@@ -6,7 +6,7 @@
  */
 
 import { and, eq, inArray } from 'drizzle-orm';
-import { db, skills, type Skill } from '@mantle/db';
+import { db, skills, toolGroups, type Skill } from '@mantle/db';
 
 export type SkillForRuntime = {
   id: string;
@@ -46,6 +46,31 @@ export async function resolveAgentSkills(
 }
 
 /**
+ * Resolve granted tool-group slugs → the flat, deduped union of their member
+ * tool slugs (ENABLED groups only, matching the runtime's resolve-or-omit rule).
+ * Empty in ⇒ empty out (no DB hit). See docs/tools-and-skills.md (Phase 3).
+ */
+export async function resolveAgentToolGroups(
+  ownerId: string,
+  slugs: string[],
+): Promise<string[]> {
+  if (slugs.length === 0) return [];
+  const rows = await db
+    .select({ toolSlugs: toolGroups.toolSlugs })
+    .from(toolGroups)
+    .where(
+      and(
+        eq(toolGroups.ownerId, ownerId),
+        eq(toolGroups.enabled, true),
+        inArray(toolGroups.slug, slugs),
+      ),
+    );
+  const set = new Set<string>();
+  for (const r of rows) for (const t of r.toolSlugs ?? []) set.add(t);
+  return Array.from(set);
+}
+
+/**
  * Append every skill's instructions to a base system prompt as
  * `## Skill: <name>` blocks. Keeps each skill's voice fenced so the
  * model can tell which guidance belongs to which skill.
@@ -69,13 +94,20 @@ export function composeSystemPromptWithSkills(
  *  a provider limit. Generous enough that no legitimate config hits it. */
 const MAX_EFFECTIVE_TOOL_SLUGS = 512;
 
-/** Union of an agent's own toolSlugs and every attached skill's toolSlugs. */
+/**
+ * Union of an agent's own toolSlugs, every attached skill's toolSlugs, and the
+ * tools conferred by its granted tool groups (pre-resolved via
+ * resolveAgentToolGroups). Skills carry no tools post-P1 for agents, but the
+ * skill arm is kept for heartbeat skills; the group arm is the P3 addition.
+ */
 export function effectiveToolSlugs(
   agentToolSlugs: string[],
   skillsList: SkillForRuntime[],
+  groupToolSlugs: string[] = [],
 ): string[] {
   const set = new Set<string>(agentToolSlugs);
   for (const s of skillsList) for (const slug of s.toolSlugs) set.add(slug);
+  for (const slug of groupToolSlugs) set.add(slug);
   const all = Array.from(set);
   if (all.length > MAX_EFFECTIVE_TOOL_SLUGS) {
     const dropped = all.slice(MAX_EFFECTIVE_TOOL_SLUGS);
