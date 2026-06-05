@@ -10,6 +10,7 @@ import {
   PERSONA_SLUG,
   ASSIST_SURFACE_DEFAULTS,
   resolveManifestToolSlugs,
+  deriveGroupGrants,
 } from './manifest';
 import { DEFAULT_ASSISTANT_TOOL_SLUGS } from '@mantle/tools';
 
@@ -87,6 +88,23 @@ describe('system manifest integrity', () => {
   it('every manifest skill is pure teaching — carries no tools (P1)', () => {
     for (const skill of MANIFEST_SKILLS) {
       expect(skill.toolSlugs, `skill '${skill.slug}' must carry no tools (skills are teaching)`).toEqual([]);
+    }
+  });
+
+  it('deriveGroupGrants re-expresses every agent losslessly (residual ∪ groups === full)', () => {
+    const groupTools = new Map(MANIFEST_TOOL_GROUPS.map((g) => [g.slug, g.toolSlugs]));
+    for (const agent of MANIFEST_AGENTS) {
+      const full = resolveManifestToolSlugs(agent);
+      const { toolSlugs, toolGroupSlugs } = deriveGroupGrants(full);
+      // every granted group is a real manifest group
+      for (const g of toolGroupSlugs) expect(groupTools.has(g), `agent '${agent.slug}' → unknown group '${g}'`).toBe(true);
+      // residual ∪ granted-group tools reassembles the full set exactly
+      const reassembled = new Set(toolSlugs);
+      for (const g of toolGroupSlugs) for (const t of groupTools.get(g)!) reassembled.add(t);
+      expect([...reassembled].sort(), `agent '${agent.slug}' re-expression is lossy`).toEqual([...new Set(full)].sort());
+      // residual carries no tool already covered by a granted group (no double-grant)
+      const covered = new Set(toolGroupSlugs.flatMap((g) => groupTools.get(g)!));
+      expect(toolSlugs.filter((t) => covered.has(t)), `agent '${agent.slug}' residual overlaps a group`).toEqual([]);
     }
   });
 

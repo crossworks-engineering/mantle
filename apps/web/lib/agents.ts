@@ -154,6 +154,7 @@ export type CreateAgentInput = {
   tools?: string[];
   toolSlugs?: string[];
   skillSlugs?: string[];
+  toolGroupSlugs?: string[];
   memoryConfig?: AgentMemoryConfig;
   params?: AgentParams;
   avatar?: AgentAvatar | null;
@@ -189,6 +190,7 @@ export async function createAgent(
       tools: input.tools ?? [],
       toolSlugs: input.toolSlugs ?? [],
       skillSlugs: input.skillSlugs ?? [],
+      toolGroupSlugs: input.toolGroupSlugs ?? [],
       memoryConfig: input.memoryConfig ?? {},
       params: input.params ?? {},
       avatar: input.avatar ?? null,

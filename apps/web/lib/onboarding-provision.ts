@@ -17,7 +17,7 @@ import { createAgent, updateAgent } from '@/lib/agents';
 // The specialist stack (skills + Pages/Ledger/Remy/Researcher/Coder + their
 // delegation wiring) is seeded from the declarative manifest — the single source
 // of truth shared with the CLI `pnpm seed:*` scripts and the integrity checker.
-import { applyManifest } from '@/lib/system-manifest';
+import { applyManifest, deriveGroupGrants } from '@/lib/system-manifest';
 
 /**
  * Onboarding provisioner — turns the API keys the user just entered into a
@@ -216,6 +216,11 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
       .limit(1);
     if (!existingAgent) {
       const name = DEFAULT_PERSONA_NAMES.female;
+      // The generalist grant: DEFAULT_ASSISTANT + page_delete (preserved per
+      // docs/tools-and-skills.md decision 1 — it used to ride in via rich_writing).
+      // P3: seed it DECOMPOSED into tool groups + a residual, so a fresh persona is
+      // already "broken up". The runtime re-assembles the identical effective set.
+      const personaGrant = deriveGroupGrants([...DEFAULT_ASSISTANT_TOOL_SLUGS, 'page_delete']);
       await createAgent(ownerId, {
         slug: PERSONA_AGENT_SLUG,
         name,
@@ -226,10 +231,8 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
         apiKeyId: openrouter,
         ttsWorkerId,
         systemPrompt: buildPersonaPrompt('warm', { assistantName: name, gender: 'female' }),
-        // page_delete preserved as an explicit grant (docs/tools-and-skills.md
-        // decision 1) — it previously rode in via the rich_writing skill, which
-        // is now pure teaching. The deny-set keeps it out of DEFAULT_ASSISTANT.
-        toolSlugs: [...DEFAULT_ASSISTANT_TOOL_SLUGS, 'page_delete'],
+        toolSlugs: personaGrant.toolSlugs,
+        toolGroupSlugs: personaGrant.toolGroupSlugs,
         memoryConfig: {
           history_limit: 20,
           digest_limit: 3,

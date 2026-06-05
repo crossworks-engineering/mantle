@@ -1,8 +1,9 @@
 # Tools & Skills — capability vs. teaching, as one source of truth
 
-> **Status: P0–P2 SHIPPED** (2026-06-05). Substrate (P0), the behavior-identical
-> skill-arm collapse (P1), and the Tools-manager + Studio group nodes (P2) are
-> live; Phases 3–4 remain DESIGN. Companion to
+> **Status: P0–P3 SHIPPED** (2026-06-05). Substrate (P0), the behavior-identical
+> skill-arm collapse (P1), the Tools-manager + Studio group nodes (P2), and the
+> god-grant break-up (P3 — runtime group expansion + re-expression) are live; only
+> Phase 4 (drop the dead column) remains. Companion to
 > [docs/agent-studio.md](agent-studio.md) and
 > [docs/system-integrity.md](system-integrity.md).
 
@@ -186,13 +187,24 @@ makes the cutover a no-op.
   the agent's tool count; groups are the visible unit. The agent inspector already
   lists the count.
 
-### Phase 3 — Break up the god-grant
-- Re-express the persona's flat 68 as group grants (`memory-core`, `notes`,
-  `events`, `todos`, `pages`, `contacts`, `lifelog`, `email`, `persona`,
-  `media-workers`, `delegation`, …), draining `tool_slugs` toward empty.
-- Specialists likewise move to groups; `tool_slugs` keeps only true one-offs.
-- This is the "slowly break up" the design is built to enable — incremental,
-  one agent at a time, each diffable against the manifest in Studio.
+### Phase 3 — Break up the god-grant — ✅ SHIPPED
+- ✅ **Runtime (P3a):** `effectiveToolSlugs` gained a third arm — granted-group
+  tools — resolved via `resolveAgentToolGroups` at all four call sites (web
+  assistant, agent process, heartbeats, delegation). Dormant until grants exist.
+- ✅ **Re-expression (P3b):** the shared `deriveGroupGrants(full)` helper greedily
+  grants every fully-covered tool group and keeps the residual as direct
+  `tool_slugs`. Invariant (drift-tested): `residual ∪ ⋃(group tools) === full`, so
+  the effective set is unchanged. Wired into the **seeder** (`applyManifest` seeds
+  agents decomposed) and **onboarding** (fresh persona seeded decomposed), so a
+  fresh install is already broken up and a `seed:*` overwrite preserves it.
+- ✅ **Existing brains:** `seed:reexpress-tools` (idempotent) retrofits a
+  pre-P3 brain. Applied to dev — Saskia went **70 flat tools → 26 direct + 11
+  groups**; every agent verified behavior-identical by diffing its full effective
+  set (direct ∪ skill ∪ group tools) before vs. after (zero diff).
+- *Residuals are legitimate:* a group is granted only when the agent holds **all**
+  its tools, so an incomplete cluster stays direct, alongside true one-offs
+  (`page_delete`, `secret_create`, …). Operators refine further in the Studio /
+  Tools-manager UIs (P2).
 
 ### Phase 4 — Drop the dead column
 - Once no skill carries tools and the column is unread, drop `skills.tool_slugs`.

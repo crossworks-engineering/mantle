@@ -470,6 +470,36 @@ export function resolveManifestToolSlugs(agent: ManifestAgent): string[] {
   return base;
 }
 
+/**
+ * Decompose a flat tool grant into group grants + a residual (Phase 3, the
+ * "break up the god-grant" transform). Greedy: grant every tool group whose
+ * member tools are ALL present in `full`; the residual is everything not covered
+ * by a granted group (true one-offs that ride the direct escape hatch).
+ *
+ * INVARIANT (behavior-identical): `residual ∪ ⋃(granted group tools) === full`
+ * (as sets). The runtime's effectiveToolSlugs reassembles exactly this, so an
+ * agent's effective tools are unchanged by re-expression. Deterministic — order
+ * follows MANIFEST_TOOL_GROUPS. Used by the seeder, onboarding, and the dev
+ * re-expression script so all three agree.
+ */
+export function deriveGroupGrants(full: string[]): {
+  toolSlugs: string[];
+  toolGroupSlugs: string[];
+} {
+  const have = new Set(full);
+  const granted: string[] = [];
+  const covered = new Set<string>();
+  for (const g of MANIFEST_TOOL_GROUPS) {
+    if (g.toolSlugs.length === 0) continue;
+    if (g.toolSlugs.every((t) => have.has(t))) {
+      granted.push(g.slug);
+      for (const t of g.toolSlugs) covered.add(t);
+    }
+  }
+  const residual = full.filter((t) => !covered.has(t));
+  return { toolSlugs: residual, toolGroupSlugs: granted };
+}
+
 /** Slugs of every manifest tool group (the set an agent may reference). */
 export const KNOWN_TOOL_GROUP_SLUGS: ReadonlySet<string> = new Set<string>(
   MANIFEST_TOOL_GROUPS.map((g) => g.slug),
