@@ -1,13 +1,18 @@
 # Comms channels — decouple transport from agent `role`
 
-> **Status: BUILDING.** Phases 1–2 shipped (v0.19.4-alpha+): the generic
-> `channels` table, token re-seal backfill + dual-write (Phase 1), and the
+> **Status: BUILDING.** Phases 1–3 shipped (v0.19.4-alpha+): the generic
+> `channels` table, token re-seal backfill + dual-write (Phase 1); the
 > channel-driven poller registry + channel-based inbound dispatch with the
-> `role='responder'` fallback removed (Phase 2). Phases 3–6 (reflector +
-> web-default decouple, cleanup migration, Studio surface, Discord/Slack) per
-> §10 below. The current-state map (§2) describes the pre-refactor baseline; the
-> §12 decisions are resolved inline as each phase lands (1: extension, not fold;
-> 2: unlinked bots left channel-less).
+> `role='responder'` fallback removed (Phase 2); and the reflector + web-default
+> role-decouple (Phase 3). Phases 4–6 (cleanup migration, Studio surface,
+> Discord/Slack) per §10 below. The current-state map (§2) describes the
+> pre-refactor baseline; the §12 decisions are resolved inline as each phase
+> lands: **1** keep `telegram_accounts` as a 1:1 extension (not folded); **2**
+> unlinked/legacy bots left channel-less; **3** `role` demoted to a hint
+> (option A — no enum migration); **4** reflector gate = enabled conversational
+> agent with ≥1 new outbound turn since the last run, capped at 5 agents/tick;
+> **5** web default = priority-based among chat-capable agents with a soft
+> assistant→responder→custom tiebreak, explicit `?agent=` still wins.
 
 ## 0. TL;DR for the builder
 

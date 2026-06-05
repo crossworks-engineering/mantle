@@ -86,9 +86,16 @@ export type AssistantTurnResult = {
   artifacts: ToolArtifact[];
 };
 
-/** Pick the best agent to handle a web turn. Prefers `assistant`-role rows;
- *  if none enabled, falls back to a `responder` so one persona can serve
- *  both surfaces with minimal setup. */
+/** Soft role tiebreak for the web default — applied only when priorities are
+ *  equal (decision 5, docs/comms-channels.md §12). `role` no longer GATES the
+ *  web surface (transport is decoupled); it's just a deterministic tiebreaker
+ *  that keeps the historical "assistant first" feel without privileging it. */
+const ROLE_TIEBREAK: Record<string, number> = { assistant: 0, responder: 1, custom: 2 };
+
+/** Pick the best agent to handle a web turn. Priority-based among enabled
+ *  chat-capable agents (role decoupled — docs/comms-channels.md §6): highest
+ *  `priority` wins, then a soft assistant→responder→custom tiebreak, then slug
+ *  for determinism. An explicit `?agent=` slug still wins outright. */
 export async function resolveAssistantAgent(
   ownerId: string,
   slug?: string,
@@ -103,24 +110,24 @@ export async function resolveAssistantAgent(
       .limit(1);
     if (picked) return picked;
   }
-  const [primary] = await db
+  const candidates = await db
     .select()
     .from(agents)
     .where(
-      and(eq(agents.ownerId, ownerId), eq(agents.role, 'assistant'), eq(agents.enabled, true)),
-    )
-    .orderBy(desc(agents.priority))
-    .limit(1);
-  if (primary) return primary;
-  const [fallback] = await db
-    .select()
-    .from(agents)
-    .where(
-      and(eq(agents.ownerId, ownerId), eq(agents.role, 'responder'), eq(agents.enabled, true)),
-    )
-    .orderBy(desc(agents.priority))
-    .limit(1);
-  return fallback ?? null;
+      and(
+        eq(agents.ownerId, ownerId),
+        eq(agents.enabled, true),
+        inArray(agents.role, CHATTABLE_ROLES),
+      ),
+    );
+  if (candidates.length === 0) return null;
+  candidates.sort(
+    (a, b) =>
+      (b.priority ?? 0) - (a.priority ?? 0) ||
+      (ROLE_TIEBREAK[a.role] ?? 9) - (ROLE_TIEBREAK[b.role] ?? 9) ||
+      a.slug.localeCompare(b.slug),
+  );
+  return candidates[0] ?? null;
 }
 
 /**

@@ -1,7 +1,7 @@
 /**
  * Reflector — Stage-E agent. Slow background pass that watches recent
  * dialog for relationship signals (style preferences, corrections, in-
- * jokes) and appends them to the responder's `persona_notes`.
+ * jokes) and appends them to a conversational agent's `persona_notes`.
  *
  * Not triggered per-turn — runs on a timer (default every 10 minutes) and
  * short-circuits if there's been no new outbound activity since the last
@@ -9,13 +9,17 @@
  * possibly-expensive read across many turns, and we don't want it on the
  * critical path for the user's next message.
  *
- * Operates on the SAME responder agent's persona_notes column — the
- * reflector doesn't have its own notes. Resolves the highest-priority
- * enabled responder for the owner and appends to that row.
+ * Role-decoupled (docs/comms-channels.md §6): reflection no longer targets
+ * "the responder". It runs on EVERY enabled conversational agent the user has
+ * actually been talking to — gated on real conversation activity (≥1 new
+ * outbound turn in the unified `assistant_messages` stream since the last run),
+ * NOT on all agents (cost-safety: only agents with genuine activity get an LLM
+ * call). Bounded by `MAX_AGENTS_PER_RUN` per tick. Each agent's notes are
+ * learned from its own per-(owner, agent) transcript.
  */
 
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, gt, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import {
   db,
   agents,
@@ -26,7 +30,6 @@ import {
   dedupeNewNotes,
   getDefaultWorker,
   MAX_PERSONA_NOTES,
-  telegramMessages,
   type Agent,
   type AiWorker,
   type PersonaNote,
@@ -40,8 +43,24 @@ import {
   resolveChatRoutes,
 } from '@mantle/agent-runtime';
 
-/** How many recent turns the reflector reviews per run. */
+/** How many recent turns the reflector reviews per agent per run. */
 const REFLECTION_WINDOW = 50;
+
+/** Cost-safety cap: at most this many agents get an LLM reflection per tick.
+ *  Only agents with NEW activity since the last run qualify, so this only bites
+ *  in the rare case of many simultaneously-active conversational agents — the
+ *  rest are picked up on the next tick. Most-active-first. */
+const MAX_AGENTS_PER_RUN = 5;
+
+/** Conversational roles eligible for persona-learning. NOT a transport gate —
+ *  just excludes the background pipeline workers (extractor/summarizer/
+ *  reflector) that have no chat surface. `role` is a loose hint post-decoupling
+ *  (docs/comms-channels.md §7, decision A). */
+const CONVERSATIONAL_ROLES: ('assistant' | 'responder' | 'custom')[] = [
+  'assistant',
+  'responder',
+  'custom',
+];
 
 export const DEFAULT_REFLECTOR_PROMPT = `You are a reflector for a personal AI assistant. You will be given a transcript of recent exchanges between the user and the assistant, plus the assistant's current persona_notes (preferences, relationship notes, corrections already learned).
 
@@ -76,20 +95,46 @@ async function resolveReflector(ownerId: string): Promise<AiWorker | null> {
   return await getDefaultWorker(ownerId, 'reflector');
 }
 
-async function resolveResponderAgent(ownerId: string): Promise<Agent | null> {
-  const [row] = await db
+/**
+ * Enabled conversational agents with NEW outbound activity since `since`, in
+ * the unified `assistant_messages` stream (which carries web + Telegram + any
+ * future channel — docs/conversation.md). Most-active-first. This is the
+ * cost-safety gate: an agent only earns an LLM reflection if the user actually
+ * conversed with it since the last run.
+ */
+async function qualifyingAgents(ownerId: string, since: Date): Promise<Agent[]> {
+  const candidates = await db
     .select()
     .from(agents)
     .where(
       and(
         eq(agents.ownerId, ownerId),
-        eq(agents.role, 'responder'),
         eq(agents.enabled, true),
+        inArray(agents.role, CONVERSATIONAL_ROLES),
+      ),
+    );
+  if (candidates.length === 0) return [];
+
+  const counts = await db
+    .select({ agentId: assistantMessages.agentId, n: sql<number>`count(*)::int` })
+    .from(assistantMessages)
+    .where(
+      and(
+        eq(assistantMessages.ownerId, ownerId),
+        eq(assistantMessages.direction, 'outbound'),
+        gt(assistantMessages.createdAt, since),
+        inArray(
+          assistantMessages.agentId,
+          candidates.map((c) => c.id),
+        ),
       ),
     )
-    .orderBy(desc(agents.priority))
-    .limit(1);
-  return row ?? null;
+    .groupBy(assistantMessages.agentId);
+
+  const activity = new Map(counts.map((c) => [c.agentId, c.n]));
+  return candidates
+    .filter((c) => (activity.get(c.id) ?? 0) > 0)
+    .sort((a, b) => (activity.get(b.id) ?? 0) - (activity.get(a.id) ?? 0));
 }
 
 type ReflectorOutput = {
@@ -154,129 +199,109 @@ export async function reflect(ownerId: string): Promise<void> {
     return;
   }
 
-  const responder = await resolveResponderAgent(ownerId);
-  if (!responder) {
-    console.error('[reflector] no enabled responder agent — nowhere to append notes');
-    await recordSkippedTrace({
-      kind: 'reflector_run',
-      ownerId,
-      subjectKind: 'agent_tick',
-      disposition: 'no_responder_agent',
-      details: {
-        worker_slug: reflector.slug,
-        hint: 'Reflector edits persona_notes on the responder; create an enabled responder agent first.',
-      },
-    });
-    return;
-  }
-
-  // Short-circuit if nothing new since the last reflector run. Cheap
-  // COUNT across BOTH surfaces — Telegram and web /assistant. Persona
-  // is one column on the responder; both surfaces should contribute.
+  // Which conversational agents have new activity since the last run? This is
+  // the role-decoupled replacement for "the single responder": any agent the
+  // user actually conversed with, bounded by activity (cost-safety §2).
   const since = reflector.lastUsedAt ?? new Date(0);
-  const [tgCount, webCount] = await Promise.all([
-    db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(telegramMessages)
-      .where(
-        and(eq(telegramMessages.direction, 'outbound'), gt(telegramMessages.sentAt, since)),
-      ),
-    db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(assistantMessages)
-      .where(
-        and(
-          eq(assistantMessages.ownerId, ownerId),
-          eq(assistantMessages.direction, 'outbound'),
-          gt(assistantMessages.createdAt, since),
-        ),
-      ),
-  ]);
-  const newCount = (tgCount[0]?.n ?? 0) + (webCount[0]?.n ?? 0);
-  if (newCount === 0) {
+  const qualifying = await qualifyingAgents(ownerId, since);
+  if (qualifying.length === 0) {
     await recordSkippedTrace({
       kind: 'reflector_run',
       ownerId,
       subjectKind: 'agent_tick',
       disposition: 'no_new_activity',
-      details: {
-        worker_slug: reflector.slug,
-        since: since.toISOString(),
-        telegram_outbound: tgCount[0]?.n ?? 0,
-        web_outbound: webCount[0]?.n ?? 0,
-      },
+      details: { worker_slug: reflector.slug, since: since.toISOString() },
     });
     return;
   }
 
+  const batch = qualifying.slice(0, MAX_AGENTS_PER_RUN);
+  if (qualifying.length > batch.length) {
+    console.warn(
+      `[reflector] ${qualifying.length} agents with new activity; reflecting the ${batch.length} most active this tick (cap MAX_AGENTS_PER_RUN=${MAX_AGENTS_PER_RUN}) — the rest catch up next tick.`,
+    );
+  }
+
+  for (const agent of batch) {
+    try {
+      await reflectOnAgent(ownerId, reflector, agent, since);
+    } catch (err) {
+      console.error(
+        `[reflector] agent '${agent.slug}' failed:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  // Advance the watermark ONCE after the batch so the next run only sees turns
+  // newer than this pass — even agents that yielded no fresh notes are covered
+  // (their activity was reviewed). A per-agent bump would let an erroring agent
+  // re-pull the same turns forever.
+  await bumpWorkerUsage(reflector.id);
+}
+
+/** Reflect over a single agent's recent transcript and append any fresh
+ *  persona notes to ITS `persona_notes`. One trace per agent. */
+async function reflectOnAgent(
+  ownerId: string,
+  reflector: AiWorker,
+  agent: Agent,
+  since: Date,
+): Promise<void> {
   await startTrace(
     {
       kind: 'reflector_run',
       ownerId,
       subjectKind: 'agent_tick',
-      // The trace's agentId historically pointed at the responder
-      // (whose persona_notes we're editing). Keep that — the reflector
-      // worker's own id is referenced via subject below.
-      agentId: responder.id,
+      // The trace's agentId is the agent whose persona_notes we're editing.
+      agentId: agent.id,
       data: {
         worker_slug: reflector.slug,
         worker_id: reflector.id,
-        responderAgentId: responder.id,
+        targetAgentId: agent.id,
+        targetAgentSlug: agent.slug,
         newOutboundSince: since.toISOString(),
       },
     },
     async () => {
-      // Union Telegram + web /assistant turns so persona learning sees
-      // every surface the user converses on. Each query independently
-      // pulls REFLECTION_WINDOW rows; we merge by timestamp and keep
-      // the most recent REFLECTION_WINDOW overall.
+      // The agent's own per-(owner, agent) transcript — every surface it
+      // converses on (web + Telegram + future channels) lands in
+      // assistant_messages, so one query covers them all.
       const turns = await step(
         { name: 'load_recent_turns', kind: 'db_read', input: { limit: REFLECTION_WINDOW } },
         async (h) => {
-          const [tgRows, webRows] = await Promise.all([
-            db
-              .select({
-                direction: telegramMessages.direction,
-                text: telegramMessages.text,
-                sentAt: telegramMessages.sentAt,
-                fromName: telegramMessages.fromName,
-              })
-              .from(telegramMessages)
-              .orderBy(desc(telegramMessages.sentAt))
-              .limit(REFLECTION_WINDOW),
-            db
-              .select({
-                direction: assistantMessages.direction,
-                text: assistantMessages.text,
-                sentAt: assistantMessages.createdAt,
-                fromName: sql<string | null>`null`.as('fromName'),
-              })
-              .from(assistantMessages)
-              .where(eq(assistantMessages.ownerId, ownerId))
-              .orderBy(desc(assistantMessages.createdAt))
-              .limit(REFLECTION_WINDOW),
-          ]);
-          const merged = [...tgRows, ...webRows]
-            .sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime())
-            .slice(0, REFLECTION_WINDOW);
-          h.setOutput({ count: merged.length, telegram: tgRows.length, web: webRows.length });
-          return merged;
+          const rows = await db
+            .select({
+              direction: assistantMessages.direction,
+              text: assistantMessages.text,
+              sentAt: assistantMessages.createdAt,
+            })
+            .from(assistantMessages)
+            .where(
+              and(
+                eq(assistantMessages.ownerId, ownerId),
+                eq(assistantMessages.agentId, agent.id),
+              ),
+            )
+            .orderBy(desc(assistantMessages.createdAt))
+            .limit(REFLECTION_WINDOW);
+          h.setOutput({ count: rows.length });
+          return rows;
         },
       );
       if (turns.length === 0) return;
 
-      // Render chronologically (oldest first). `fromName` is Telegram-only;
-      // web turns use a generic 'user' label.
+      // Render chronologically (oldest first).
       const transcript = turns
         .slice()
         .reverse()
         .map((t) => {
-          const who = t.direction === 'outbound' ? 'assistant' : (t.fromName ?? 'user');
+          const who = t.direction === 'outbound' ? 'assistant' : 'user';
           return `[${t.sentAt.toISOString()}] ${who}: ${t.text}`;
         })
         .join('\n');
 
-      const existingNotes = (responder.personaNotes ?? []) as PersonaNote[];
+      const existingNotes = (agent.personaNotes ?? []) as PersonaNote[];
       // Dedup against ACTIVE notes only — a note the user explicitly
       // retired via update_persona shouldn't read as "already covered"
       // (which would stop the reflector re-learning) nor be shown back
@@ -293,7 +318,7 @@ export async function reflect(ownerId: string): Promise<void> {
       const routes = resolveChatRoutes(reflector);
 
       console.log(
-        `[reflector] reviewing ${turns.length} turns (since ${since.toISOString()}) via ${routes.primary.provider}:${routes.primary.model}` +
+        `[reflector] ${agent.slug}: reviewing ${turns.length} turns (since ${since.toISOString()}) via ${routes.primary.provider}:${routes.primary.model}` +
           (routes.backup ? ` (backup ${routes.backup.provider}:${routes.backup.model})` : ''),
       );
 
@@ -348,10 +373,8 @@ export async function reflect(ownerId: string): Promise<void> {
 
       if (freshNotes.length === 0) {
         console.log(
-          `[reflector]   → nothing new (${parsed.new_notes.length} candidate(s) were duplicates)`,
+          `[reflector]   → ${agent.slug}: nothing new (${parsed.new_notes.length} candidate(s) were duplicates)`,
         );
-        // Still bump last_used_at so we don't reprocess the same turns next tick.
-        void bumpWorkerUsage(reflector.id);
         return;
       }
 
@@ -375,15 +398,13 @@ export async function reflect(ownerId: string): Promise<void> {
           await db
             .update(agents)
             .set({ personaNotes: merged, updatedAt: new Date() })
-            .where(eq(agents.id, responder.id));
+            .where(eq(agents.id, agent.id));
           h.setMeta({ totalNotesAfter: merged.length });
         },
       );
 
-      await bumpWorkerUsage(reflector.id);
-
       console.log(
-        `[reflector]   → appended ${appended.length} note(s): ${appended.map((n) => `${n.kind}`).join(', ')}`,
+        `[reflector]   → ${agent.slug}: appended ${appended.length} note(s): ${appended.map((n) => n.kind).join(', ')}`,
       );
     },
   );
