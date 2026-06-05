@@ -1,7 +1,12 @@
 # Agent Studio — the overview editor for the agent/skill/worker graph
 
-> **Status: PLANNED** (design doc, not yet built). This is the phased plan; it
-> will become the canonical reference as phases land.
+> **Status: SHIPPED — all four phases** (2026-06, v0.19.11-alpha). Top-level
+> `/studio`: P1 read-only overview (per-agent wiring DAG + integrity health +
+> composed-prompt preview), P2 prose versioning (git-style history/diff/revert,
+> migration 0079 `prompt_versions`), P3 structure editing (model/params/skills/
+> delegates inline + reset-to-default), P4 no-persist sandbox. Code in
+> `apps/web/lib/studio/` + `apps/web/app/(app)/studio/` + `app/api/studio/`. The
+> phased plan below is retained as the design record.
 
 ## What it is
 
