@@ -68,7 +68,7 @@ export function SandboxPanel({ agentId, agentName }: { agentId: string; agentNam
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+        className="flex items-center gap-1 text-[13px] font-medium text-muted-foreground hover:text-foreground"
       >
         <ChevronRight className="size-3.5" aria-hidden /> Sandbox — chat with this prompt (nothing saved)
       </button>
@@ -81,18 +81,18 @@ export function SandboxPanel({ agentId, agentName }: { agentId: string; agentNam
         <button
           type="button"
           onClick={() => setOpen(false)}
-          className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground"
+          className="flex items-center gap-1 text-[13px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground"
         >
           <ChevronDown className="size-3.5" aria-hidden /> Sandbox
         </button>
         {messages.length > 0 && (
-          <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={reset} disabled={busy}>
+          <Button size="sm" variant="ghost" className="h-6 px-2 text-[13px]" onClick={reset} disabled={busy}>
             <RotateCcw className="size-3" /> Reset
           </Button>
         )}
       </div>
 
-      <p className="text-[10px] text-muted-foreground/70">
+      <p className="text-[12px] text-muted-foreground/70">
         Ephemeral test of {agentName}’s current composed prompt — no tools, no memory, nothing is saved.
       </p>
 
@@ -102,7 +102,7 @@ export function SandboxPanel({ agentId, agentName }: { agentId: string; agentNam
             <div
               key={i}
               className={
-                'max-w-[85%] whitespace-pre-wrap break-words rounded-md px-2.5 py-1.5 text-[11px] leading-relaxed ' +
+                'max-w-[85%] whitespace-pre-wrap break-words rounded-md px-2.5 py-1.5 text-[13px] leading-relaxed ' +
                 (m.role === 'user'
                   ? 'self-end bg-accent text-accent-foreground'
                   : 'self-start bg-card text-card-foreground')
@@ -112,7 +112,7 @@ export function SandboxPanel({ agentId, agentName }: { agentId: string; agentNam
             </div>
           ))}
           {busy && (
-            <div className="self-start flex items-center gap-1.5 rounded-md bg-card px-2.5 py-1.5 text-[11px] text-muted-foreground">
+            <div className="self-start flex items-center gap-1.5 rounded-md bg-card px-2.5 py-1.5 text-[13px] text-muted-foreground">
               <Loader2 className="size-3 animate-spin" aria-hidden /> thinking…
             </div>
           )}
@@ -120,7 +120,7 @@ export function SandboxPanel({ agentId, agentName }: { agentId: string; agentNam
         </div>
       )}
 
-      {error && <p className="text-[11px] text-destructive">{error}</p>}
+      {error && <p className="text-[13px] text-destructive">{error}</p>}
 
       <div className="flex items-end gap-2">
         <Textarea
@@ -135,7 +135,7 @@ export function SandboxPanel({ agentId, agentName }: { agentId: string; agentNam
           placeholder={`Message ${agentName}…  (Enter to send, Shift+Enter for newline)`}
           rows={2}
           disabled={busy}
-          className="text-xs"
+          className="text-sm"
         />
         <Button size="sm" onClick={() => void send()} disabled={busy || !input.trim()}>
           {busy ? <Loader2 className="animate-spin" /> : <Send />}
@@ -143,7 +143,7 @@ export function SandboxPanel({ agentId, agentName }: { agentId: string; agentNam
       </div>
 
       {meta && (
-        <p className="text-[10px] text-muted-foreground/70">
+        <p className="text-[12px] text-muted-foreground/70">
           {meta.model}
           {meta.tokensIn != null && ` · ${meta.tokensIn}→${meta.tokensOut ?? '?'} tok`}
         </p>

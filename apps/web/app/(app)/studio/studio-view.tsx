@@ -39,7 +39,7 @@ import type {
 
 function Prose({ text }: { text: string }) {
   return (
-    <pre className="whitespace-pre-wrap break-words rounded-md border border-border bg-muted/40 p-3 font-mono text-[11px] leading-relaxed text-foreground">
+    <pre className="whitespace-pre-wrap break-words rounded-md border border-border bg-muted/40 p-3 font-mono text-[13px] leading-relaxed text-foreground">
       {text}
     </pre>
   );
@@ -48,7 +48,7 @@ function Prose({ text }: { text: string }) {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</p>
+      <p className="text-[13px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</p>
       {children}
     </div>
   );
@@ -59,7 +59,7 @@ function Issues({ issues }: { issues: string[] }) {
   return (
     <div className="flex flex-col gap-1 rounded-md border border-destructive/40 bg-destructive/5 p-2.5">
       {issues.map((i) => (
-        <div key={i} className="flex items-start gap-1.5 text-[11px] text-destructive">
+        <div key={i} className="flex items-start gap-1.5 text-[13px] text-destructive">
           <AlertTriangle className="mt-0.5 size-3 shrink-0" aria-hidden />
           <span>{i}</span>
         </div>
@@ -83,12 +83,12 @@ function AgentInspector({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
-        <h2 className="text-sm font-semibold">{agent.name}</h2>
+        <h2 className="text-base font-semibold">{agent.name}</h2>
         {agent.isPersona && <Star className="size-3.5 text-amber-500" aria-hidden />}
         {!agent.enabled && <Badge variant="secondary">disabled</Badge>}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 text-[11px]">
+      <div className="grid grid-cols-2 gap-2 text-[13px]">
         <div><span className="text-muted-foreground">Model</span><div className="truncate font-medium">{agent.model}</div></div>
         <div><span className="text-muted-foreground">Role</span><div className="font-medium">{agent.role}</div></div>
         <div><span className="text-muted-foreground">Tools</span><div className="font-medium">{agent.toolCount}</div></div>
@@ -108,14 +108,14 @@ function AgentInspector({
       )}
 
       <Section title="Composed prompt — what the model receives">
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[13px] text-muted-foreground">
           A per-turn time / locale line is prepended at runtime (not shown). Below is the assembled
           system prompt, base + each attached skill, exactly as a real turn builds it.
         </p>
         <button
           type="button"
           onClick={() => setRaw((v) => !v)}
-          className="self-start text-[11px] font-medium text-primary hover:underline"
+          className="self-start text-[13px] font-medium text-primary hover:underline"
         >
           {raw ? '← labeled view' : 'view raw assembled →'}
         </button>
@@ -124,7 +124,7 @@ function AgentInspector({
         ) : (
           <div className="flex flex-col gap-2">
             <div className="flex flex-col gap-1">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">System prompt</p>
+              <p className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/80">System prompt</p>
               <ProseEditor
                 key={`${agent.id}:system_prompt`}
                 entityType="agent"
@@ -136,7 +136,7 @@ function AgentInspector({
             </div>
             {agent.skillBlocks.map((b) => (
               <div key={b.slug} className="flex flex-col gap-1">
-                <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                <p className="flex items-center gap-1 text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/80">
                   <Sparkles className="size-3" aria-hidden /> Skill: {b.name}
                   <span className="ml-1 normal-case tracking-normal text-muted-foreground/60">(edit on the skill)</span>
                 </p>
@@ -144,7 +144,7 @@ function AgentInspector({
               </div>
             ))}
             {agent.skillBlocks.length === 0 && (
-              <p className="text-[11px] text-muted-foreground">No skills attached.</p>
+              <p className="text-[13px] text-muted-foreground">No skills attached.</p>
             )}
           </div>
         )}
@@ -160,7 +160,7 @@ function SkillInspector({ skill, onSaved }: { skill: StudioSkillDetail; onSaved:
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
         <Sparkles className="size-4 text-muted-foreground" aria-hidden />
-        <h2 className="text-sm font-semibold">{skill.name}</h2>
+        <h2 className="text-base font-semibold">{skill.name}</h2>
         {!skill.enabled && <Badge variant="secondary">disabled</Badge>}
       </div>
       <Section title={`Used by ${skill.usedByAgentSlugs.length} agent${skill.usedByAgentSlugs.length === 1 ? '' : 's'}`}>
@@ -171,14 +171,14 @@ function SkillInspector({ skill, onSaved }: { skill: StudioSkillDetail; onSaved:
             ))}
           </div>
         ) : (
-          <p className="text-[11px] text-muted-foreground">Not attached to any agent.</p>
+          <p className="text-[13px] text-muted-foreground">Not attached to any agent.</p>
         )}
       </Section>
       {skill.toolSlugs.length > 0 && (
         <Section title="Bundles tools">
           <div className="flex flex-wrap gap-1.5">
             {skill.toolSlugs.map((t) => (
-              <Badge key={t} variant="secondary" className="font-mono text-[10px]">{t}</Badge>
+              <Badge key={t} variant="secondary" className="font-mono text-[12px]">{t}</Badge>
             ))}
           </div>
         </Section>
@@ -202,11 +202,11 @@ function WorkerInspector({ worker, onSaved }: { worker: StudioWorkerDetail; onSa
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
         <Cpu className="size-4 text-muted-foreground" aria-hidden />
-        <h2 className="text-sm font-semibold">{worker.name}</h2>
+        <h2 className="text-base font-semibold">{worker.name}</h2>
         {worker.isDefault && <Badge variant="outline">default</Badge>}
         {!worker.enabled && <Badge variant="secondary">disabled</Badge>}
       </div>
-      <div className="grid grid-cols-2 gap-2 text-[11px]">
+      <div className="grid grid-cols-2 gap-2 text-[13px]">
         <div><span className="text-muted-foreground">Kind</span><div className="font-medium">{worker.kind}</div></div>
         <div><span className="text-muted-foreground">Model</span><div className="truncate font-medium">{worker.model}</div></div>
       </div>
@@ -236,7 +236,7 @@ function WorkerInspector({ worker, onSaved }: { worker: StudioWorkerDetail; onSa
         </Section>
       )}
       {worker.systemPrompt == null && worker.extractionPrompt == null && (
-        <p className="text-[11px] text-muted-foreground">This worker carries no editable prose.</p>
+        <p className="text-[13px] text-muted-foreground">This worker carries no editable prose.</p>
       )}
     </div>
   );
@@ -245,11 +245,11 @@ function WorkerInspector({ worker, onSaved }: { worker: StudioWorkerDetail; onSa
 function HealthReport({ graph }: { graph: StudioGraph }) {
   return (
     <div className="mx-auto flex max-w-xl flex-col gap-1.5 p-6">
-      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <p className="mb-1 text-[13px] font-semibold uppercase tracking-wider text-muted-foreground">
         System health — the config-integrity checks
       </p>
       {graph.report.checks.map((c) => (
-        <div key={c.key} className="flex items-start gap-2 rounded-md border border-border p-2.5 text-[11px]">
+        <div key={c.key} className="flex items-start gap-2 rounded-md border border-border p-2.5 text-[13px]">
           {c.ok ? (
             <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-500" aria-hidden />
           ) : (
@@ -331,7 +331,7 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
                 {graph.agents.map((a) => (
                   <SelectItem key={a.slug} value={`agent:${a.slug}`}>
                     <span className="font-medium">{a.name}</span>
-                    {a.isPersona && <span className="ml-2 text-[10px] uppercase tracking-wider text-amber-500">persona</span>}
+                    {a.isPersona && <span className="ml-2 text-[12px] uppercase tracking-wider text-amber-500">persona</span>}
                   </SelectItem>
                 ))}
               </SelectGroup>
@@ -343,19 +343,19 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
               </SelectGroup>
             </SelectContent>
           </Select>
-          <span className="hidden text-[11px] text-muted-foreground sm:inline">
+          <span className="hidden text-[13px] text-muted-foreground sm:inline">
             {graph.agents.length} agents · {graph.skills.length} skills · {graph.workers.length} workers
           </span>
         </div>
         {graph.report.problems === 0 ? (
-          <span className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+          <span className="flex items-center gap-1.5 text-[13px] font-medium text-emerald-600 dark:text-emerald-400">
             <CheckCircle2 className="size-3.5" aria-hidden /> all healthy
           </span>
         ) : (
           <button
             type="button"
             onClick={() => changeSelection('view:health')}
-            className="flex items-center gap-1.5 text-[11px] font-medium text-destructive hover:underline"
+            className="flex items-center gap-1.5 text-[13px] font-medium text-destructive hover:underline"
           >
             <AlertTriangle className="size-3.5" aria-hidden /> {graph.report.problems} issue{graph.report.problems === 1 ? '' : 's'}
           </button>
@@ -377,7 +377,7 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
                   onClick={() => setWorkerIndex(i)}
                   aria-current={workerIndex === i ? 'true' : undefined}
                   className={
-                    'flex items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-left text-[11px] ' +
+                    'flex items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-left text-[13px] ' +
                     (workerIndex === i ? 'border-primary bg-accent/60' : 'border-border hover:bg-accent/60')
                   }
                 >
@@ -386,7 +386,7 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
                     <span className="font-medium">{w.name}</span>
                     <span className="text-muted-foreground">· {w.kind}</span>
                   </span>
-                  {w.isDefault && <Badge variant="outline" className="text-[9px]">default</Badge>}
+                  {w.isDefault && <Badge variant="outline" className="text-[11px]">default</Badge>}
                 </button>
               ))}
             </div>
@@ -395,7 +395,7 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
             {selectedWorker ? (
               <WorkerInspector worker={selectedWorker} onSaved={onSaved} />
             ) : (
-              <p className="text-[11px] text-muted-foreground">Select a worker to see its model + prose.</p>
+              <p className="text-[13px] text-muted-foreground">Select a worker to see its model + prose.</p>
             )}
           </aside>
         </div>
@@ -415,7 +415,7 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
                 <button
                   type="button"
                   onClick={() => setInspectedSkill(null)}
-                  className="mb-3 flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                  className="mb-3 flex items-center gap-1 text-[13px] font-medium text-muted-foreground hover:text-foreground"
                 >
                   <ChevronLeft className="size-3.5" aria-hidden /> {focusedAgent?.name ?? 'agent'}
                 </button>
@@ -429,7 +429,7 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
                 onSaved={onSaved}
               />
             ) : (
-              <p className="text-[11px] text-muted-foreground">No agent selected.</p>
+              <p className="text-[13px] text-muted-foreground">No agent selected.</p>
             )}
           </aside>
         </div>

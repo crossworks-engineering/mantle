@@ -59,7 +59,7 @@ function ToggleRow({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-left text-[11px] hover:bg-accent/60 disabled:opacity-50"
+      className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-left text-[13px] hover:bg-accent/60 disabled:opacity-50"
     >
       <span className="flex items-center gap-1.5">
         <span
@@ -177,7 +177,7 @@ export function StructureEditor({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+        className="flex items-center gap-1 text-[13px] font-medium text-muted-foreground hover:text-foreground"
       >
         <ChevronRight className="size-3.5" aria-hidden /> Edit structure — model · params · skills · delegates
       </button>
@@ -193,44 +193,44 @@ export function StructureEditor({
       <button
         type="button"
         onClick={() => setOpen(false)}
-        className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground"
+        className="flex items-center gap-1 text-[13px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground"
       >
         <ChevronDown className="size-3.5" aria-hidden /> Structure
         {busy && <Loader2 className="size-3 animate-spin" aria-hidden />}
       </button>
-      {error && <p className="text-[11px] text-destructive">{error}</p>}
+      {error && <p className="text-[13px] text-destructive">{error}</p>}
 
       <div className="flex flex-col gap-1">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">Model</p>
+        <p className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/80">Model</p>
         <ModelSelect
           value={agent.model}
           models={catalog}
           loading={catalogLoading}
           onValueChange={(m) => void patch({ model: m })}
         />
-        <p className="text-[10px] text-muted-foreground/70">Provider + API key stay as configured — change those in Settings → Agents.</p>
+        <p className="text-[12px] text-muted-foreground/70">Provider + API key stay as configured — change those in Settings → Agents.</p>
       </div>
 
       <div className="flex flex-col gap-1">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">Params</p>
+        <p className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/80">Params</p>
         <div className="grid grid-cols-3 gap-2">
-          <label className="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
+          <label className="flex flex-col gap-0.5 text-[12px] text-muted-foreground">
             temperature
-            <Input type="number" step="0.1" min="0" max="2" value={temp} disabled={busy} onChange={(e) => setTemp(e.target.value)} onBlur={saveParams} className="h-7 text-xs" />
+            <Input type="number" step="0.1" min="0" max="2" value={temp} disabled={busy} onChange={(e) => setTemp(e.target.value)} onBlur={saveParams} className="h-7 text-sm" />
           </label>
-          <label className="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
+          <label className="flex flex-col gap-0.5 text-[12px] text-muted-foreground">
             max tokens
-            <Input type="number" min="1" value={maxTokens} disabled={busy} onChange={(e) => setMaxTokens(e.target.value)} onBlur={saveParams} className="h-7 text-xs" />
+            <Input type="number" min="1" value={maxTokens} disabled={busy} onChange={(e) => setMaxTokens(e.target.value)} onBlur={saveParams} className="h-7 text-sm" />
           </label>
-          <label className="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
+          <label className="flex flex-col gap-0.5 text-[12px] text-muted-foreground">
             max iters
-            <Input type="number" min="1" max="100" value={maxIter} disabled={busy} onChange={(e) => setMaxIter(e.target.value)} onBlur={saveParams} className="h-7 text-xs" />
+            <Input type="number" min="1" max="100" value={maxIter} disabled={busy} onChange={(e) => setMaxIter(e.target.value)} onBlur={saveParams} className="h-7 text-sm" />
           </label>
         </div>
       </div>
 
       <div className="flex flex-col gap-1">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">Skills</p>
+        <p className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/80">Skills</p>
         <div className="flex flex-col gap-0.5">
           {allSkills.map((s) => (
             <ToggleRow
@@ -246,7 +246,7 @@ export function StructureEditor({
       </div>
 
       <div className="flex flex-col gap-1">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">Delegates to</p>
+        <p className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/80">Delegates to</p>
         <div className="flex flex-col gap-0.5">
           {delegateCandidates.map((a) => (
             <ToggleRow
@@ -258,7 +258,7 @@ export function StructureEditor({
             />
           ))}
           {delegateCandidates.length === 0 && (
-            <p className="px-1.5 text-[11px] text-muted-foreground">No other enabled agents to delegate to.</p>
+            <p className="px-1.5 text-[13px] text-muted-foreground">No other enabled agents to delegate to.</p>
           )}
         </div>
       </div>
@@ -266,7 +266,7 @@ export function StructureEditor({
       {agent.resettable && (
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button size="sm" variant="ghost" className="self-start text-[11px] text-destructive hover:text-destructive" disabled={busy}>
+            <Button size="sm" variant="ghost" className="self-start text-[13px] text-destructive hover:text-destructive" disabled={busy}>
               <RotateCcw className="size-3" /> Reset to default
             </Button>
           </AlertDialogTrigger>
