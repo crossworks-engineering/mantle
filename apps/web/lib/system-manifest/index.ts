@@ -5,6 +5,7 @@
  */
 export * from './manifest';
 export { checkSystemIntegrity } from './integrity';
+export { resolveEffectivePersona, type PersonaCandidate } from './persona';
 export {
   applyManifest,
   type ApplyManifestOpts,

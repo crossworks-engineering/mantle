@@ -114,7 +114,7 @@ integrity — catching the silent-drop cases. Returns severity-tagged
 
 | check | what it asserts |
 |---|---|
-| Persona agent | slug `assistant` exists + enabled + has tools + `invoke_agent` + the grounding skills |
+| Persona agent | the persona exists + enabled + has tools + `invoke_agent` + the grounding skills. **Slug-flexible** (`persona.ts` `resolveEffectivePersona`): anchors on slug `assistant`, but on a brain with no `assistant` slug falls back to the highest-priority enabled responder (role `assistant` before `responder`, mirroring `resolveAssistantAgent`), so a hand-built/operator persona is measured against the persona it actually has. The label shows the resolved slug. |
 | Specialist agents | each manifest specialist exists + enabled |
 | Delegation wiring | the persona's `delegate_to` includes every available specialist |
 | Agent ↔ skill links | each agent carries its manifest `skillSlugs` |
@@ -152,12 +152,15 @@ Surfaced two ways:
 Green = every vital link resolves. A red row's badge is the **sample count**;
 expand it for specifics.
 
-The checker keys off the manifest's canonical persona slug `assistant`. A brain
-that was **hand-built before onboarding existed** (e.g. the dev brain, whose
-persona is `telegram-default`/Saskia) will honestly show **Persona agent** + 
-**Delegation wiring** red — not because anything is broken, but because the
-canonical slug isn't present. A freshly **onboarded** brain has slug `assistant`
-and reads green. This is the checker measuring against the canonical, not a bug.
+The **Persona agent** + **Delegation wiring** checks are **slug-flexible**: they
+anchor on the canonical slug `assistant`, but a brain hand-built before
+onboarding existed (e.g. the dev brain, whose persona is `telegram-default`/
+Saskia) has no `assistant` slug, so the checker falls back to the
+highest-priority enabled responder and measures *that* persona — the label shows
+the resolved slug. Such a brain now reads green when its real persona is wired
+correctly (tools + `invoke_agent` + grounding skills + delegation), instead of
+showing two reds for a slug it never had. A genuinely missing/broken persona
+(no enabled responder at all, no tools, no grounding skills) still reads red.
 
 ---
 

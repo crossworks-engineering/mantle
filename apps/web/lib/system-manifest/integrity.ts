@@ -20,6 +20,7 @@ import {
   DELEGATE_SLUGS,
   PERSONA_SLUG,
 } from './manifest';
+import { resolveEffectivePersona } from './persona';
 
 function delegateTo(memoryConfig: unknown): string[] {
   const dt = (memoryConfig as AgentMemoryConfig | null)?.delegate_to;
@@ -32,6 +33,8 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
       .select({
         slug: agents.slug,
         enabled: agents.enabled,
+        role: agents.role,
+        priority: agents.priority,
         toolSlugs: agents.toolSlugs,
         skillSlugs: agents.skillSlugs,
         memoryConfig: agents.memoryConfig,
@@ -57,21 +60,26 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
   const checks: SystemCheck[] = [];
 
   // 1. Persona — exists, enabled, can act, can delegate, carries grounding skills.
-  const persona = agentBySlug.get(PERSONA_SLUG);
+  //    Slug-flexible: anchor on the canonical slug `assistant`, but on a brain
+  //    hand-built before onboarding (persona = an operator slug like
+  //    telegram-default/Saskia) fall back to the real responder so it's measured
+  //    against the persona it actually has. See ./persona.ts.
+  const persona = resolveEffectivePersona(agentRows);
+  const personaSlug = persona?.slug ?? PERSONA_SLUG;
   {
     const samples: SystemSample[] = [];
     let ok = true;
     if (!persona || !persona.enabled) {
       ok = false;
-      samples.push({ id: PERSONA_SLUG, detail: persona ? 'disabled' : 'no agent with this slug' });
+      samples.push({ id: personaSlug, detail: persona ? 'disabled' : 'no persona agent (no slug `assistant`, no enabled responder)' });
     } else {
       const nTools = persona.toolSlugs?.length ?? 0;
       if (nTools === 0) {
         ok = false;
-        samples.push({ id: PERSONA_SLUG, detail: 'no tools attached — cannot act' });
+        samples.push({ id: personaSlug, detail: 'no tools attached — cannot act' });
       } else if (!(persona.toolSlugs ?? []).includes('invoke_agent')) {
         ok = false;
-        samples.push({ id: PERSONA_SLUG, detail: 'missing invoke_agent — cannot delegate' });
+        samples.push({ id: personaSlug, detail: 'missing invoke_agent — cannot delegate' });
       }
       const skillSet = new Set(persona.skillSlugs ?? []);
       for (const s of ['tool_grounding', 'voice_reply']) {
@@ -83,7 +91,7 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
     }
     checks.push({
       key: 'persona',
-      label: `Persona agent (${PERSONA_SLUG})`,
+      label: `Persona agent (${personaSlug})`,
       severity: 'high',
       ok,
       detail: ok
