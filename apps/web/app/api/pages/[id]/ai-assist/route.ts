@@ -18,6 +18,7 @@ import { getPage } from '@/lib/pages';
 import { buildFocusDirective } from '@/lib/focus-directive';
 import { diffBlocks } from '@mantle/content';
 import { invokeAgent } from '@mantle/agent-runtime';
+import { resolveAssistAgentSlug } from '@/lib/assist-agent';
 
 const Body = z.object({
   prompt: z.string().min(1).max(8000),
@@ -59,9 +60,23 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     `\n` +
     `User request:\n${parsed.data.prompt}`;
 
+  // Which agent handles page-assist is configurable on the /pages surface
+  // (the Assist panel picker → profiles.preferences.pagesAssistAgentSlug);
+  // falls back to the default `pages` specialist seeded during onboarding.
+  const agentSlug = await resolveAssistAgentSlug(user.id, 'pages');
+  if (!agentSlug) {
+    return NextResponse.json(
+      {
+        error:
+          'No Pages assistant is set up yet. Pick one in the Assist panel, or finish onboarding to provision the default Pages specialist.',
+      },
+      { status: 409 },
+    );
+  }
+
   const result = await invokeAgent({
     ownerId: user.id,
-    agentSlug: 'pages',
+    agentSlug,
     prompt: delegationPrompt,
     // The endpoint is the entry point — depth=1, no parent trace.
     depth: 1,

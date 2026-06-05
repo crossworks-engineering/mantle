@@ -26,15 +26,10 @@
  * to each entry-point agent's delegate_to — only when missing.
  */
 
+import { fileURLToPath } from 'node:url';
 import { and, eq, inArray } from 'drizzle-orm';
 import { db, agents, apiKeys, skills, type AgentMemoryConfig } from '@mantle/db';
 import { seedBuiltinTools, PAGE_TOOL_SLUGS } from '@mantle/tools';
-
-const USER_ID = process.env.ALLOWED_USER_ID;
-if (!USER_ID) {
-  console.error('ALLOWED_USER_ID env var required');
-  process.exit(1);
-}
 
 const MODEL = process.env.PAGES_MODEL || 'anthropic/claude-sonnet-4.6';
 
@@ -74,11 +69,11 @@ Your role:
 - Don't decide what to remember — the brain re-indexes every page on commit automatically (summary, embedding, entities, facts).
 - Deletes aren't yours: if one's needed, tell Saskia to confirm it with the user.`;
 
-async function resolveOpenRouterKeyId(): Promise<string> {
+async function resolveOpenRouterKeyId(ownerId: string): Promise<string> {
   const rows = await db
     .select({ id: apiKeys.id, label: apiKeys.label })
     .from(apiKeys)
-    .where(and(eq(apiKeys.userId, USER_ID!), eq(apiKeys.service, 'openrouter')));
+    .where(and(eq(apiKeys.userId, ownerId), eq(apiKeys.service, 'openrouter')));
   if (rows.length === 0) {
     throw new Error("No 'openrouter' API key found. Add one at /settings/keys first.");
   }
@@ -90,12 +85,12 @@ async function resolveOpenRouterKeyId(): Promise<string> {
  *  page_editing (safe block-level editing). Both are seeded elsewhere
  *  (seed:rich-writing and seed:shared-skills). Look up whichever are present so
  *  we attach them by slug; missing = warn but don't fail. */
-async function present_skill_slugs(): Promise<string[]> {
+async function present_skill_slugs(ownerId: string): Promise<string[]> {
   const wanted = ['rich_writing', 'page_editing'];
   const rows = await db
     .select({ slug: skills.slug })
     .from(skills)
-    .where(and(eq(skills.ownerId, USER_ID!), inArray(skills.slug, wanted)));
+    .where(and(eq(skills.ownerId, ownerId), inArray(skills.slug, wanted)));
   // Preserve the intended order (rich_writing first).
   return wanted.filter((w) => rows.some((r) => r.slug === w));
 }
@@ -107,7 +102,7 @@ async function present_skill_slugs(): Promise<string[]> {
  * two responders share priority=100 and the tiebreaker is undefined. For
  * a delegation grant, "all eligible entry points" is the right scope.
  */
-async function grantToEntryAgents(): Promise<void> {
+async function grantToEntryAgents(ownerId: string): Promise<void> {
   const rows = await db
     .select({
       id: agents.id,
@@ -116,7 +111,7 @@ async function grantToEntryAgents(): Promise<void> {
       memoryConfig: agents.memoryConfig,
     })
     .from(agents)
-    .where(and(eq(agents.ownerId, USER_ID!), eq(agents.enabled, true)));
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.enabled, true)));
 
   const eligible = rows.filter((r) => r.role === 'responder' || r.role === 'assistant');
   if (eligible.length === 0) {
@@ -142,12 +137,12 @@ async function grantToEntryAgents(): Promise<void> {
   }
 }
 
-async function main() {
-  const seeded = await seedBuiltinTools(USER_ID!);
+export async function seedPagesAgent(ownerId: string): Promise<void> {
+  const seeded = await seedBuiltinTools(ownerId);
   console.log(`[pages] tools seeded: +${seeded.inserted} / ~${seeded.updated}`);
 
-  const apiKeyId = await resolveOpenRouterKeyId();
-  const skillSlugs = await present_skill_slugs();
+  const apiKeyId = await resolveOpenRouterKeyId(ownerId);
+  const skillSlugs = await present_skill_slugs(ownerId);
   if (!skillSlugs.includes('rich_writing')) {
     console.warn(
       "[pages] WARNING: rich_writing skill not found. Run `pnpm seed:rich-writing` first.",
@@ -161,7 +156,7 @@ async function main() {
   }
 
   const values = {
-    ownerId: USER_ID!,
+    ownerId,
     slug: 'pages',
     name: 'Pages',
     description:
@@ -214,16 +209,24 @@ async function main() {
       `${values.skillSlugs.length} skill${values.skillSlugs.length === 1 ? '' : 's'})`,
   );
 
-  await grantToEntryAgents();
+  await grantToEntryAgents(ownerId);
 
   console.log(
     "[pages] done. Restart apps/agent so the new agent + skill grants register. " +
       "Test from /assistant: \"Pages, import /files/notion-import/foo.md as a page\".",
   );
-  process.exit(0);
 }
 
-main().catch((err) => {
-  console.error('[pages] failed:', err);
-  process.exit(1);
-});
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const ownerId = process.env.ALLOWED_USER_ID;
+  if (!ownerId) {
+    console.error('ALLOWED_USER_ID env var required');
+    process.exit(1);
+  }
+  seedPagesAgent(ownerId)
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error('[seed] failed:', err);
+      process.exit(1);
+    });
+}

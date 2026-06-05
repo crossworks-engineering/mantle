@@ -16,6 +16,7 @@ import { requireOwner } from '@/lib/auth';
 import { getTable } from '@/lib/tables';
 import { listRows, type TableDoc } from '@mantle/content';
 import { invokeAgent } from '@mantle/agent-runtime';
+import { resolveAssistAgentSlug } from '@/lib/assist-agent';
 
 const Body = z.object({ prompt: z.string().min(1).max(8000) });
 
@@ -65,9 +66,23 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     `\n` +
     `User request:\n${parsed.data.prompt}`;
 
+  // Which agent handles table-assist is configurable on the /tables surface
+  // (the Assist panel picker → profiles.preferences.tablesAssistAgentSlug);
+  // falls back to the default `tables` (Ledger) specialist seeded at onboarding.
+  const agentSlug = await resolveAssistAgentSlug(user.id, 'tables');
+  if (!agentSlug) {
+    return NextResponse.json(
+      {
+        error:
+          'No Tables assistant is set up yet. Pick one in the Assist panel, or finish onboarding to provision the default Ledger specialist.',
+      },
+      { status: 409 },
+    );
+  }
+
   const result = await invokeAgent({
     ownerId: user.id,
-    agentSlug: 'tables',
+    agentSlug,
     prompt: delegationPrompt,
     depth: 1,
     parentTraceId: null,

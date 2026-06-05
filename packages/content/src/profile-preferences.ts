@@ -50,6 +50,14 @@ export type ProfilePreferences = {
   /** Resume marker for the onboarding wizard — the key of the furthest step the
    *  user has reached. Lets a refreshed/re-entered wizard pick up where it left off. */
   onboardingStep?: string;
+  /** Slug of the agent the `/pages` editor "Assist" panel delegates to. Unset →
+   *  the route falls back to the default `pages` specialist. Configured on the
+   *  /pages surface itself (the Assist panel agent picker), not a global setting. */
+  pagesAssistAgentSlug?: string;
+  /** Slug of the agent the `/tables` editor "Assist" panel delegates to. Unset →
+   *  the route falls back to the default `tables` (Ledger) specialist. Configured
+   *  on the /tables surface itself (the Assist panel agent picker). */
+  tablesAssistAgentSlug?: string;
 };
 
 export const DEFAULT_PREFERENCES: ProfilePreferences = {
@@ -115,6 +123,14 @@ export async function loadProfilePreferences(
     onboardingStep:
       typeof prefs.onboardingStep === 'string' && prefs.onboardingStep.length > 0
         ? prefs.onboardingStep
+        : undefined,
+    pagesAssistAgentSlug:
+      typeof prefs.pagesAssistAgentSlug === 'string' && prefs.pagesAssistAgentSlug.length > 0
+        ? prefs.pagesAssistAgentSlug
+        : undefined,
+    tablesAssistAgentSlug:
+      typeof prefs.tablesAssistAgentSlug === 'string' && prefs.tablesAssistAgentSlug.length > 0
+        ? prefs.tablesAssistAgentSlug
         : undefined,
   };
 }
@@ -189,6 +205,8 @@ export async function updateProfilePreferences(
     displayName: merged.displayName || undefined,
     onboardedAt: merged.onboardedAt || undefined,
     onboardingStep: merged.onboardingStep || undefined,
+    pagesAssistAgentSlug: merged.pagesAssistAgentSlug || undefined,
+    tablesAssistAgentSlug: merged.tablesAssistAgentSlug || undefined,
   };
 }
 

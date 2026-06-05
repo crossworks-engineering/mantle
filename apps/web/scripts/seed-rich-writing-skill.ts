@@ -17,17 +17,10 @@
  * skill_slugs only if missing.
  */
 
+import { fileURLToPath } from 'node:url';
 import { and, desc, eq } from 'drizzle-orm';
 import { db, agents, skills } from '@mantle/db';
 import { seedBuiltinTools, PAGE_TOOL_SLUGS } from '@mantle/tools';
-
-const USER_ID = process.env.ALLOWED_USER_ID;
-const AGENT_SLUG_OVERRIDE = process.env.AGENT_SLUG;
-
-if (!USER_ID) {
-  console.error('ALLOWED_USER_ID env var required');
-  process.exit(1);
-}
 
 const SKILL_SLUG = 'rich_writing';
 
@@ -189,12 +182,13 @@ Exceptions (DO it yourself, don't delegate):
 const SKILL_DESCRIPTION =
   'Write replies as rich Notion-style documents — callouts, columns, tables, to-do lists, highlights — rendered live in the web assistant, and save/update them as pages.';
 
-async function resolveAgentSlug(): Promise<string> {
+async function resolveAgentSlug(ownerId: string): Promise<string> {
+  const AGENT_SLUG_OVERRIDE = process.env.AGENT_SLUG;
   if (AGENT_SLUG_OVERRIDE) {
     const [row] = await db
       .select({ slug: agents.slug, enabled: agents.enabled })
       .from(agents)
-      .where(and(eq(agents.ownerId, USER_ID!), eq(agents.slug, AGENT_SLUG_OVERRIDE)))
+      .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, AGENT_SLUG_OVERRIDE)))
       .limit(1);
     if (!row) {
       throw new Error(
@@ -208,7 +202,7 @@ async function resolveAgentSlug(): Promise<string> {
   const [assistant] = await db
     .select({ slug: agents.slug, name: agents.name })
     .from(agents)
-    .where(and(eq(agents.ownerId, USER_ID!), eq(agents.role, 'assistant'), eq(agents.enabled, true)))
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.role, 'assistant'), eq(agents.enabled, true)))
     .orderBy(desc(agents.priority))
     .limit(1);
   if (assistant) {
@@ -218,7 +212,7 @@ async function resolveAgentSlug(): Promise<string> {
   const [responder] = await db
     .select({ slug: agents.slug, name: agents.name })
     .from(agents)
-    .where(and(eq(agents.ownerId, USER_ID!), eq(agents.role, 'responder'), eq(agents.enabled, true)))
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.role, 'responder'), eq(agents.enabled, true)))
     .orderBy(desc(agents.priority))
     .limit(1);
   if (!responder) {
@@ -230,11 +224,11 @@ async function resolveAgentSlug(): Promise<string> {
   return responder.slug;
 }
 
-async function upsertSkill(): Promise<void> {
+async function upsertSkill(ownerId: string): Promise<void> {
   const [existing] = await db
     .select({ id: skills.id })
     .from(skills)
-    .where(and(eq(skills.ownerId, USER_ID!), eq(skills.slug, SKILL_SLUG)))
+    .where(and(eq(skills.ownerId, ownerId), eq(skills.slug, SKILL_SLUG)))
     .limit(1);
 
   if (existing) {
@@ -252,7 +246,7 @@ async function upsertSkill(): Promise<void> {
     console.log(`[seed] updated skill ${SKILL_SLUG}`);
   } else {
     await db.insert(skills).values({
-      ownerId: USER_ID!,
+      ownerId,
       slug: SKILL_SLUG,
       name: 'Rich writing',
       description: SKILL_DESCRIPTION,
@@ -265,11 +259,11 @@ async function upsertSkill(): Promise<void> {
   }
 }
 
-async function attachToAgent(agentSlug: string): Promise<void> {
+async function attachToAgent(ownerId: string, agentSlug: string): Promise<void> {
   const [row] = await db
     .select({ id: agents.id, skillSlugs: agents.skillSlugs })
     .from(agents)
-    .where(and(eq(agents.ownerId, USER_ID!), eq(agents.slug, agentSlug)))
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, agentSlug)))
     .limit(1);
   if (!row) return; // resolveAgentSlug already validated; defensive
   const current = row.skillSlugs ?? [];
@@ -284,21 +278,29 @@ async function attachToAgent(agentSlug: string): Promise<void> {
   console.log(`[seed] attached skill ${SKILL_SLUG} to agent ${agentSlug}`);
 }
 
-async function main() {
-  const agentSlug = await resolveAgentSlug();
+export async function seedRichWritingSkill(ownerId: string): Promise<void> {
+  const agentSlug = await resolveAgentSlug(ownerId);
   // Ensure the builtin tool rows exist (incl. the page_* tools) so the skill's
   // tool_slugs resolve to real, enabled tools in the agent's allowlist.
-  const seeded = await seedBuiltinTools(USER_ID!);
+  const seeded = await seedBuiltinTools(ownerId);
   console.log(`[seed] builtin tools: ${seeded.inserted} inserted, ${seeded.updated} updated`);
-  await upsertSkill();
-  await attachToAgent(agentSlug);
+  await upsertSkill(ownerId);
+  await attachToAgent(ownerId, agentSlug);
   console.log('[seed] done — Saskia can now write rich documents AND save them as pages.');
   console.log(`[seed] page tools granted via the skill: ${PAGE_TOOL_SLUGS.join(', ')}`);
   console.log('[seed] toggle/edit at /settings/skills; restart not required (read per turn).');
-  process.exit(0);
 }
 
-main().catch((err) => {
-  console.error('[seed] error:', err);
-  process.exit(1);
-});
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const ownerId = process.env.ALLOWED_USER_ID;
+  if (!ownerId) {
+    console.error('ALLOWED_USER_ID env var required');
+    process.exit(1);
+  }
+  seedRichWritingSkill(ownerId)
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error('[seed] failed:', err);
+      process.exit(1);
+    });
+}

@@ -61,7 +61,7 @@ stepper is `onboarding-client.tsx`.
 | 1 | **Welcome** | timezone + locale (prefilled from the browser) → `updateProfilePreferences` |
 | 2 | **OpenRouter key** (required) | the one required key — `setApiKey` + `testApiKeyAction` probe + link |
 | 3 | **Voice** | works by default on the OpenRouter key (grok voice ara); optionally add a dedicated **xAI** key for a smoother voice route |
-| 4 | **Set up** | `provisionDefaults(ownerId)` — creates the assistant + AI workers from the keys present |
+| 4 | **Set up** | `provisionDefaults(ownerId)` — creates the assistant + AI workers + the specialist stack (Pages/Ledger/Remy/Researcher/Coder, wired into Saskia's `delegate_to`) from the keys present |
 | 5 | **Check** | `runSanityChecks()` — green/red list (OpenRouter probe, xAI probe if added, embeddings, agent, voice/images) |
 | 6 | **About you** | ~9 questions → one Life Log each (`createLifelog`); feeds the always-on identity block |
 | 7 | **Personality** | preset bank × gender (voice) + name + creativity slider → `savePersonaAgent` |
@@ -104,6 +104,41 @@ both web `/assistant` and Telegram), model `anthropic/claude-sonnet-4.6`, with
 `inject_lifelog: true`. It's created with the Warm/Saskia default and refined by
 the personality step (`savePersonaAgent`: rebuilds the system prompt from the
 chosen preset, sets the name + temperature, points the TTS voice at the gender).
+
+### Specialist stack (seeded alongside the persona)
+
+A lone assistant isn't enough — Saskia delegates to specialists, and the `/pages`
+and `/tables` editor **Assist** panels invoke them directly. So when an OpenRouter
+key is present, `provisionDefaults` runs `seedSpecialistStack(ownerId)`, which
+seeds the shared skills first (`page_editing`/`tool_grounding`/`voice_reply`,
+`rich_writing`, `table_authoring`) then the specialist agents:
+
+| Agent (slug) | Role | Why |
+|---|---|---|
+| **Pages** (`pages`) | document authoring/editing | backs the `/pages` Assist panel; Saskia delegate |
+| **Ledger** (`tables`) | typed-grid/data | backs the `/tables` Assist panel; Saskia delegate |
+| **Remy** (`remy`) | memory recall | Saskia delegate (`find_window` → `recall_window`) |
+| **Researcher** (`researcher`) | web search | Saskia delegate (Perplexity Sonar) |
+| **Coder** (`coder`) | code specialist | responder; delegates to pages/tables |
+
+These are the **same** routines as the `pnpm -C apps/web seed:*` CLIs — those
+scripts were refactored to export `seed*(ownerId)` functions (thin CLI wrapper
+retained), so onboarding and the CLI share one source of truth. Each agent seeder
+also appends its own slug to every enabled responder/assistant's
+`memory_config.delegate_to`, so the just-created `assistant` gains the full
+delegate set with no extra wiring. Per-seed failures are logged and skipped (the
+persona is what matters); successes are listed back in the wizard's Set-up step
+(`ProvisionResult.seededSpecialists`). All idempotent — re-running is safe.
+
+> **Configurable Assist binding.** Which agent a surface's Assist panel invokes
+> is **not** a hardcoded slug. The `/pages` and `/tables` editors each carry an
+> agent picker in the Assist panel header (`components/assist-agent-picker.tsx`)
+> that writes `profiles.preferences.{pagesAssistAgentSlug,tablesAssistAgentSlug}`
+> via `POST /api/profile/assist-agent`. The ai-assist routes resolve the agent
+> through `resolveAssistAgentSlug(ownerId, surface)` (`lib/assist-agent.ts`):
+> saved preference → the default `pages`/`tables` specialist → a friendly 409 if
+> neither exists (instead of a raw `invokeAgent` 500). So the operator can point
+> Assist at any of their agents, and the panels degrade gracefully pre-seed.
 
 > **Embeddings need a local embedder.** Memory search (vector recall) uses local
 > EmbeddingGemma — no key, but it needs an Ollama serving it. The **prod**

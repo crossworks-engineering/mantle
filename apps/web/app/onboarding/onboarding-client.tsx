@@ -358,6 +358,14 @@ function Wizard({
                       <span className="text-muted-foreground">({w.provider} · {w.model})</span>
                     </li>
                   ))}
+                  {provision.seededSpecialists.length > 0 && (
+                    <li className="flex items-center gap-2">
+                      <Check className="size-4 text-primary" /> Specialists wired up:{' '}
+                      <span className="text-muted-foreground">
+                        {provision.seededSpecialists.join(' · ')}
+                      </span>
+                    </li>
+                  )}
                 </ul>
                 {provision.skipped.length > 0 && (
                   <ul className="space-y-1 text-muted-foreground">

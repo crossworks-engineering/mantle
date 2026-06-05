@@ -22,15 +22,10 @@
  * it iterates over sub-ranges itself instead. Hence no `delegate_to` for Remy.
  */
 
+import { fileURLToPath } from 'node:url';
 import { and, desc, eq } from 'drizzle-orm';
 import { db, agents, apiKeys, type AgentMemoryConfig } from '@mantle/db';
 import { seedBuiltinTools } from '@mantle/tools';
-
-const USER_ID = process.env.ALLOWED_USER_ID;
-if (!USER_ID) {
-  console.error('ALLOWED_USER_ID env var required');
-  process.exit(1);
-}
 
 const MODEL = process.env.REMY_MODEL || 'anthropic/claude-sonnet-4.6';
 
@@ -60,11 +55,11 @@ How you answer:
 - You recall the DIALOGUE that was exchanged, not anyone's private reasoning. Don't fabricate intent that wasn't said.
 - Hand back a tight, self-contained synthesis: Saskia will relay it to the user, so write it as the recalled answer, not as a tool report.`;
 
-async function resolveOpenRouterKeyId(): Promise<string> {
+async function resolveOpenRouterKeyId(ownerId: string): Promise<string> {
   const rows = await db
     .select({ id: apiKeys.id, label: apiKeys.label })
     .from(apiKeys)
-    .where(and(eq(apiKeys.userId, USER_ID!), eq(apiKeys.service, 'openrouter')));
+    .where(and(eq(apiKeys.userId, ownerId), eq(apiKeys.service, 'openrouter')));
   if (rows.length === 0) {
     throw new Error("No 'openrouter' API key found. Add one at /settings/keys first.");
   }
@@ -73,11 +68,11 @@ async function resolveOpenRouterKeyId(): Promise<string> {
 }
 
 /** Append `remy` to one entry-point agent's delegate_to if missing. */
-async function wireDelegation(role: 'responder' | 'assistant'): Promise<void> {
+async function wireDelegation(ownerId: string, role: 'responder' | 'assistant'): Promise<void> {
   const [agent] = await db
     .select({ id: agents.id, slug: agents.slug, memoryConfig: agents.memoryConfig })
     .from(agents)
-    .where(and(eq(agents.ownerId, USER_ID!), eq(agents.role, role), eq(agents.enabled, true)))
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.role, role), eq(agents.enabled, true)))
     .orderBy(desc(agents.priority))
     .limit(1);
   if (!agent) {
@@ -97,16 +92,16 @@ async function wireDelegation(role: 'responder' | 'assistant'): Promise<void> {
   console.log(`[remy] added 'remy' to ${agent.slug} (${role}).delegate_to → delegation enabled`);
 }
 
-async function main() {
+export async function seedRemy(ownerId: string): Promise<void> {
   // Ensure the builtin tool rows (incl. find_window / recall_window) exist for
   // this owner so the grant resolves even before the next agent boot.
-  const seeded = await seedBuiltinTools(USER_ID!);
+  const seeded = await seedBuiltinTools(ownerId);
   console.log(`[remy] tools seeded: +${seeded.inserted} / ~${seeded.updated}`);
 
-  const apiKeyId = await resolveOpenRouterKeyId();
+  const apiKeyId = await resolveOpenRouterKeyId(ownerId);
 
   const values = {
-    ownerId: USER_ID!,
+    ownerId,
     slug: 'remy',
     name: 'Remy',
     description: 'Memory-recall agent — replays past conversations from the archive on demand.',
@@ -144,14 +139,22 @@ async function main() {
 
   // Wire delegation from both entry-point surfaces so "recall …" works on
   // Telegram (responder) and on the web /assistant.
-  await wireDelegation('responder');
-  await wireDelegation('assistant');
+  await wireDelegation(ownerId, 'responder');
+  await wireDelegation(ownerId, 'assistant');
 
   console.log('[remy] done. Restart apps/agent so find_window / recall_window are registered in the running process.');
-  process.exit(0);
 }
 
-main().catch((err) => {
-  console.error('[remy] failed:', err);
-  process.exit(1);
-});
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const ownerId = process.env.ALLOWED_USER_ID;
+  if (!ownerId) {
+    console.error('ALLOWED_USER_ID env var required');
+    process.exit(1);
+  }
+  seedRemy(ownerId)
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error('[seed] failed:', err);
+      process.exit(1);
+    });
+}

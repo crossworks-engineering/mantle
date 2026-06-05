@@ -15,17 +15,10 @@
  * Idempotent: upserts the skill by slug; optionally attaches to ATTACH_AGENT.
  */
 
+import { fileURLToPath } from 'node:url';
 import { and, eq } from 'drizzle-orm';
 import { db, agents, skills } from '@mantle/db';
 import { seedBuiltinTools, TABLE_TOOL_SLUGS } from '@mantle/tools';
-
-const USER_ID = process.env.ALLOWED_USER_ID;
-const ATTACH_AGENT = process.env.ATTACH_AGENT;
-
-if (!USER_ID) {
-  console.error('ALLOWED_USER_ID env var required');
-  process.exit(1);
-}
 
 export const SKILL_SLUG = 'table_authoring';
 
@@ -129,11 +122,11 @@ The published table and its brain index are untouched until a commit.
 Don't echo the whole grid back — the user is one click from seeing it. Give the
 table id, what changed, and the review URL.`;
 
-async function upsertSkill(): Promise<void> {
+async function upsertSkill(ownerId: string): Promise<void> {
   const [existing] = await db
     .select({ id: skills.id })
     .from(skills)
-    .where(and(eq(skills.ownerId, USER_ID!), eq(skills.slug, SKILL_SLUG)))
+    .where(and(eq(skills.ownerId, ownerId), eq(skills.slug, SKILL_SLUG)))
     .limit(1);
 
   const values = {
@@ -148,16 +141,16 @@ async function upsertSkill(): Promise<void> {
     await db.update(skills).set({ ...values, updatedAt: new Date() }).where(eq(skills.id, existing.id));
     console.log(`[seed] updated skill ${SKILL_SLUG}`);
   } else {
-    await db.insert(skills).values({ ownerId: USER_ID!, slug: SKILL_SLUG, defaultState: {}, ...values });
+    await db.insert(skills).values({ ownerId, slug: SKILL_SLUG, defaultState: {}, ...values });
     console.log(`[seed] inserted skill ${SKILL_SLUG}`);
   }
 }
 
-async function attachToAgent(agentSlug: string): Promise<void> {
+async function attachToAgent(ownerId: string, agentSlug: string): Promise<void> {
   const [row] = await db
     .select({ id: agents.id, skillSlugs: agents.skillSlugs })
     .from(agents)
-    .where(and(eq(agents.ownerId, USER_ID!), eq(agents.slug, agentSlug)))
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, agentSlug)))
     .limit(1);
   if (!row) {
     console.warn(`[seed] ATTACH_AGENT='${agentSlug}' not found — skipped`);
@@ -172,17 +165,26 @@ async function attachToAgent(agentSlug: string): Promise<void> {
   console.log(`[seed] attached skill ${SKILL_SLUG} to agent ${agentSlug}`);
 }
 
-async function main() {
-  const seeded = await seedBuiltinTools(USER_ID!);
+export async function seedTablesSkill(ownerId: string): Promise<void> {
+  const seeded = await seedBuiltinTools(ownerId);
   console.log(`[seed] builtin tools: ${seeded.inserted} inserted, ${seeded.updated} updated`);
-  await upsertSkill();
-  if (ATTACH_AGENT) await attachToAgent(ATTACH_AGENT);
+  await upsertSkill(ownerId);
+  const ATTACH_AGENT = process.env.ATTACH_AGENT;
+  if (ATTACH_AGENT) await attachToAgent(ownerId, ATTACH_AGENT);
   console.log(`[seed] done. Table tools in the skill: ${TABLE_AUTHORING_TOOL_SLUGS.join(', ')}`);
   console.log('[seed] toggle/edit at /settings/skills; read per turn (no restart needed).');
-  process.exit(0);
 }
 
-main().catch((err) => {
-  console.error('[seed] error:', err);
-  process.exit(1);
-});
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const ownerId = process.env.ALLOWED_USER_ID;
+  if (!ownerId) {
+    console.error('ALLOWED_USER_ID env var required');
+    process.exit(1);
+  }
+  seedTablesSkill(ownerId)
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error('[seed] failed:', err);
+      process.exit(1);
+    });
+}

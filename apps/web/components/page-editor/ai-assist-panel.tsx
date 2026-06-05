@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
+import { AssistAgentPicker } from '@/components/assist-agent-picker';
 
 type ChangeKind = 'added' | 'removed' | 'changed';
 type SampleChange =
@@ -168,9 +169,11 @@ export function AiAssistPanel({
     <aside className="flex h-full min-h-0 w-full flex-col border-l border-border bg-card">
       {/* ── Header ──────────────────────────────────────────────────── */}
       <header className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-        <div className="flex items-center gap-2">
-          <Sparkles className="size-4 text-primary" />
-          <span className="text-sm font-semibold">AI assist</span>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Sparkles className="size-4 shrink-0 text-primary" />
+          {/* Which agent handles page-assist is configurable here, on the
+              surface itself; defaults to the Pages specialist. */}
+          <AssistAgentPicker surface="pages" defaultLabel="Pages (default)" />
         </div>
         <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label="Close panel">
           <X />

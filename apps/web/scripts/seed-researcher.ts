@@ -20,15 +20,10 @@
  * note_create — only when missing.
  */
 
+import { fileURLToPath } from 'node:url';
 import { and, desc, eq } from 'drizzle-orm';
 import { db, agents, apiKeys, type AgentMemoryConfig } from '@mantle/db';
 import { seedBuiltinTools } from '@mantle/tools';
-
-const USER_ID = process.env.ALLOWED_USER_ID;
-if (!USER_ID) {
-  console.error('ALLOWED_USER_ID env var required');
-  process.exit(1);
-}
 
 const MODEL = process.env.RESEARCHER_MODEL || 'anthropic/claude-sonnet-4.6';
 
@@ -54,11 +49,11 @@ How you answer:
 - Don't fabricate URLs, quotes, or figures. If the web didn't give you something, say what's missing.
 - You don't save anything yourself — Saskia decides whether your findings are worth keeping. Just return the best answer you can with its sources.`;
 
-async function resolveOpenRouterKeyId(): Promise<string> {
+async function resolveOpenRouterKeyId(ownerId: string): Promise<string> {
   const rows = await db
     .select({ id: apiKeys.id, label: apiKeys.label })
     .from(apiKeys)
-    .where(and(eq(apiKeys.userId, USER_ID!), eq(apiKeys.service, 'openrouter')));
+    .where(and(eq(apiKeys.userId, ownerId), eq(apiKeys.service, 'openrouter')));
   if (rows.length === 0) {
     throw new Error("No 'openrouter' API key found. Add one at /settings/keys first.");
   }
@@ -72,7 +67,7 @@ async function resolveOpenRouterKeyId(): Promise<string> {
  * note_create grant is what lets Saskia persist a research finding she's
  * decided to keep.
  */
-async function grantToEntryAgent(role: 'responder' | 'assistant'): Promise<void> {
+async function grantToEntryAgent(ownerId: string, role: 'responder' | 'assistant'): Promise<void> {
   const [agent] = await db
     .select({
       id: agents.id,
@@ -81,7 +76,7 @@ async function grantToEntryAgent(role: 'responder' | 'assistant'): Promise<void>
       toolSlugs: agents.toolSlugs,
     })
     .from(agents)
-    .where(and(eq(agents.ownerId, USER_ID!), eq(agents.role, role), eq(agents.enabled, true)))
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.role, role), eq(agents.enabled, true)))
     .orderBy(desc(agents.priority))
     .limit(1);
   if (!agent) {
@@ -119,14 +114,14 @@ async function grantToEntryAgent(role: 'responder' | 'assistant'): Promise<void>
   );
 }
 
-async function main() {
-  const seeded = await seedBuiltinTools(USER_ID!);
+export async function seedResearcher(ownerId: string): Promise<void> {
+  const seeded = await seedBuiltinTools(ownerId);
   console.log(`[researcher] tools seeded: +${seeded.inserted} / ~${seeded.updated}`);
 
-  const apiKeyId = await resolveOpenRouterKeyId();
+  const apiKeyId = await resolveOpenRouterKeyId(ownerId);
 
   const values = {
-    ownerId: USER_ID!,
+    ownerId,
     slug: 'researcher',
     name: 'Researcher',
     description: 'Outward-facing research agent — searches the live web (Sonar) and synthesises cited answers.',
@@ -161,14 +156,22 @@ async function main() {
     });
   console.log(`[researcher] agent upserted (model=${MODEL}, ${TOOL_SLUGS.length} tools incl. web_search)`);
 
-  await grantToEntryAgent('responder');
-  await grantToEntryAgent('assistant');
+  await grantToEntryAgent(ownerId, 'responder');
+  await grantToEntryAgent(ownerId, 'assistant');
 
   console.log('[researcher] done. Restart apps/agent so web_search / note_create register in the running process.');
-  process.exit(0);
 }
 
-main().catch((err) => {
-  console.error('[researcher] failed:', err);
-  process.exit(1);
-});
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const ownerId = process.env.ALLOWED_USER_ID;
+  if (!ownerId) {
+    console.error('ALLOWED_USER_ID env var required');
+    process.exit(1);
+  }
+  seedResearcher(ownerId)
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error('[seed] failed:', err);
+      process.exit(1);
+    });
+}

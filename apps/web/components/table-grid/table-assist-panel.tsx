@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { ensureTableDoc, type TableDoc } from '@mantle/content/table-model';
+import { AssistAgentPicker } from '@/components/assist-agent-picker';
 
 type Msg = { role: 'user' | 'assistant'; text: string };
 
@@ -37,6 +38,10 @@ export function TableAssistPanel({
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // The picker can repoint Assist at a different agent; reflect its name in the
+  // copy below. null (the default option) falls back to the passed agentName.
+  const [pickedName, setPickedName] = useState<string | null>(null);
+  const displayName = pickedName ?? agentName;
 
   async function send(prompt: string) {
     const text = prompt.trim();
@@ -74,8 +79,14 @@ export function TableAssistPanel({
   return (
     <div className="flex h-full min-h-0 w-80 shrink-0 flex-col border-l border-border bg-card">
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <div className="flex items-center gap-1.5 text-sm font-medium">
-          <Sparkles className="size-4 text-primary" aria-hidden /> {agentName}
+        <div className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
+          <Sparkles className="size-4 shrink-0 text-primary" aria-hidden />
+          {/* Configurable on the surface itself; defaults to the Ledger specialist. */}
+          <AssistAgentPicker
+            surface="tables"
+            defaultLabel={`${agentName} (default)`}
+            onAgentNameChange={setPickedName}
+          />
         </div>
         <Button size="icon" variant="ghost" className="size-7 text-muted-foreground" onClick={onClose} aria-label="Close assistant">
           <X />
@@ -86,7 +97,7 @@ export function TableAssistPanel({
         {messages.length === 0 ? (
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">
-              Ask {agentName} to work on this table — add totals or formula columns, sort &amp; filter, clean up values,
+              Ask {displayName} to work on this table — add totals or formula columns, sort &amp; filter, clean up values,
               add rows from data you paste. Edits go to the draft; review and Commit when ready.
             </p>
             <div className="flex flex-col gap-1.5">
@@ -112,7 +123,7 @@ export function TableAssistPanel({
               )}
             >
               {m.role === 'assistant' && (
-                <div className="mb-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{agentName}</div>
+                <div className="mb-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{displayName}</div>
               )}
               <p className="whitespace-pre-wrap leading-relaxed">{m.text}</p>
             </div>
@@ -120,7 +131,7 @@ export function TableAssistPanel({
         )}
         {busy && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" aria-hidden /> {agentName} is working…
+            <Loader2 className="size-3.5 animate-spin" aria-hidden /> {displayName} is working…
           </div>
         )}
       </div>
@@ -132,7 +143,7 @@ export function TableAssistPanel({
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder={`Ask ${agentName}…`}
+          placeholder={`Ask ${displayName}…`}
           disabled={busy}
           className="min-w-0 flex-1 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
           aria-label="Message the table assistant"

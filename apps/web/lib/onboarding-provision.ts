@@ -13,6 +13,20 @@ import {
   type CreateAiWorkerInput,
 } from '@/lib/ai-workers';
 import { createAgent, updateAgent } from '@/lib/agents';
+// Specialist seeders — the same logic the `pnpm -C apps/web seed:*` CLIs run,
+// refactored to importable functions so onboarding provisions the full stack
+// (Saskia's delegation targets + the /pages and /tables Assist specialists)
+// instead of leaving a fresh brain with a lone assistant. Skills first (the
+// agents attach them by slug), then the agents (each wires its own slug into
+// the entry agents' delegate_to).
+import { seedSharedSkills } from '@/scripts/seed-shared-skills';
+import { seedRichWritingSkill } from '@/scripts/seed-rich-writing-skill';
+import { seedTablesSkill } from '@/scripts/seed-tables-skill';
+import { seedPagesAgent } from '@/scripts/seed-pages-agent';
+import { seedTablesAgent } from '@/scripts/seed-tables-agent';
+import { seedRemy } from '@/scripts/seed-remy';
+import { seedResearcher } from '@/scripts/seed-researcher';
+import { seedCoderAgent } from '@/scripts/seed-coder-agent';
 
 /**
  * Onboarding provisioner — turns the API keys the user just entered into a
@@ -63,7 +77,56 @@ export type ProvisionResult = {
   createdAgent: { slug: string; name: string } | null;
   /** Capabilities skipped because the optional key wasn't provided. */
   skipped: string[];
+  /** Specialist agents seeded alongside the persona (Pages, Ledger, Remy,
+   *  Researcher, Coder) and wired into the assistant's delegate_to. Names of the
+   *  ones that seeded successfully; a seed that throws is logged + omitted (it
+   *  never aborts onboarding — the persona is what matters). */
+  seededSpecialists: string[];
 };
+
+/**
+ * Seed the specialist stack a fresh brain needs for delegation + the editor
+ * Assist panels to work. Skills are seeded before the agents that attach them.
+ * Each agent seeder also appends its own slug to the entry agents' delegate_to,
+ * so the just-created `assistant` responder gains the full delegate set with no
+ * extra wiring here. Per-seed failures are swallowed (logged) so one bad seed
+ * can't block the rest or the onboarding completion.
+ */
+async function seedSpecialistStack(ownerId: string): Promise<string[]> {
+  // Skills first — the Pages/Tables agents look them up by slug at seed time.
+  const skillSteps: { label: string; run: () => Promise<void> }[] = [
+    { label: 'shared-skills', run: () => seedSharedSkills(ownerId) },
+    { label: 'rich-writing', run: () => seedRichWritingSkill(ownerId) },
+    { label: 'table-authoring', run: () => seedTablesSkill(ownerId) },
+  ];
+  for (const step of skillSteps) {
+    try {
+      await step.run();
+    } catch (err) {
+      console.error(`[onboarding] skill seed '${step.label}' failed:`, err);
+    }
+  }
+
+  // Then the specialist agents. Order: the two Assist-panel specialists first
+  // (so /pages and /tables work immediately), then the delegation-only agents.
+  const agentSteps: { name: string; run: () => Promise<void> }[] = [
+    { name: 'Pages', run: () => seedPagesAgent(ownerId) },
+    { name: 'Ledger', run: () => seedTablesAgent(ownerId) },
+    { name: 'Remy', run: () => seedRemy(ownerId) },
+    { name: 'Researcher', run: () => seedResearcher(ownerId) },
+    { name: 'Coder', run: () => seedCoderAgent(ownerId) },
+  ];
+  const seeded: string[] = [];
+  for (const step of agentSteps) {
+    try {
+      await step.run();
+      seeded.push(step.name);
+    } catch (err) {
+      console.error(`[onboarding] specialist seed '${step.name}' failed:`, err);
+    }
+  }
+  return seeded;
+}
 
 async function keyIdByService(ownerId: string): Promise<Record<string, string>> {
   const keys = await listApiKeys(ownerId);
@@ -202,7 +265,16 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
     }
   }
 
-  return { createdWorkers: created, createdAgent, skipped };
+  // Seed the specialist stack (Pages, Ledger, Remy, Researcher, Coder) + their
+  // skills, and wire them into the assistant's delegate_to. Needs the OpenRouter
+  // key (the seeders resolve it) and is only meaningful once the persona exists
+  // as a delegation entry point. Idempotent, so re-running the wizard is safe.
+  let seededSpecialists: string[] = [];
+  if (openrouter) {
+    seededSpecialists = await seedSpecialistStack(ownerId);
+  }
+
+  return { createdWorkers: created, createdAgent, skipped, seededSpecialists };
 }
 
 export type SavePersonaInput = {

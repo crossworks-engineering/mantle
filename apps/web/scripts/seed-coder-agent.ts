@@ -18,15 +18,10 @@
  * email/Telegram — keep it that way (prompt-injection footgun otherwise).
  */
 
+import { fileURLToPath } from 'node:url';
 import { and, desc, eq } from 'drizzle-orm';
 import { db, agents, apiKeys, skills, type AgentMemoryConfig } from '@mantle/db';
 import { seedBuiltinTools } from '@mantle/tools';
-
-const USER_ID = process.env.ALLOWED_USER_ID;
-if (!USER_ID) {
-  console.error('ALLOWED_USER_ID env var required');
-  process.exit(1);
-}
 
 const MODEL = process.env.CODER_MODEL || 'anthropic/claude-opus-4.7';
 
@@ -86,11 +81,11 @@ e.g. \`cat docs/architecture.md\`, \`ls docs\`, \`git -C . log --oneline -20\`.
 State the command and why, run it, read stdout/stderr/exit code, then react. Verify your work.
 This is a live single-user server — be precise; narrate destructive actions, then do what the operator asked.`;
 
-async function resolveOpenRouterKeyId(): Promise<string> {
+async function resolveOpenRouterKeyId(ownerId: string): Promise<string> {
   const rows = await db
     .select({ id: apiKeys.id, label: apiKeys.label })
     .from(apiKeys)
-    .where(and(eq(apiKeys.userId, USER_ID!), eq(apiKeys.service, 'openrouter')));
+    .where(and(eq(apiKeys.userId, ownerId), eq(apiKeys.service, 'openrouter')));
   if (rows.length === 0) {
     throw new Error("No 'openrouter' API key found. Add one at /settings/keys first.");
   }
@@ -98,20 +93,20 @@ async function resolveOpenRouterKeyId(): Promise<string> {
   return preferred.id;
 }
 
-async function main() {
+export async function seedCoderAgent(ownerId: string): Promise<void> {
   // Make sure the builtin tool rows (incl. run_terminal) exist for this owner
   // so the grant resolves even before the next agent boot.
-  const seeded = await seedBuiltinTools(USER_ID!);
+  const seeded = await seedBuiltinTools(ownerId);
   console.log(`[coder] tools seeded: +${seeded.inserted} / ~${seeded.updated}`);
 
-  const apiKeyId = await resolveOpenRouterKeyId();
+  const apiKeyId = await resolveOpenRouterKeyId(ownerId);
 
   // Upsert the ops skill (knowledge) — kept separate from the agent's persona.
   const skillDesc = 'How the Mantle system works + the operating workflow for the coder agent.';
   await db
     .insert(skills)
     .values({
-      ownerId: USER_ID!,
+      ownerId,
       slug: SKILL_SLUG,
       name: 'Mantle ops',
       description: skillDesc,
@@ -126,7 +121,7 @@ async function main() {
   console.log(`[coder] skill upserted: ${SKILL_SLUG}`);
 
   const values = {
-    ownerId: USER_ID!,
+    ownerId,
     slug: 'coder',
     name: 'Coder',
     description: 'Power-user engineer/operator with full terminal + file access.',
@@ -165,7 +160,7 @@ async function main() {
   const [responder] = await db
     .select({ id: agents.id, slug: agents.slug, memoryConfig: agents.memoryConfig })
     .from(agents)
-    .where(and(eq(agents.ownerId, USER_ID!), eq(agents.role, 'responder'), eq(agents.enabled, true)))
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.role, 'responder'), eq(agents.enabled, true)))
     .orderBy(desc(agents.priority))
     .limit(1);
   if (responder) {
@@ -185,10 +180,18 @@ async function main() {
   }
 
   console.log('[coder] done. Restart apps/agent so run_terminal is registered in the running process.');
-  process.exit(0);
 }
 
-main().catch((err) => {
-  console.error('[coder] failed:', err);
-  process.exit(1);
-});
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const ownerId = process.env.ALLOWED_USER_ID;
+  if (!ownerId) {
+    console.error('ALLOWED_USER_ID env var required');
+    process.exit(1);
+  }
+  seedCoderAgent(ownerId)
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error('[seed] failed:', err);
+      process.exit(1);
+    });
+}

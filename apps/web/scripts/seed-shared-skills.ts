@@ -34,15 +34,10 @@
  * skill_slugs only when missing. Skills are read per-turn, so no restart.
  */
 
+import { fileURLToPath } from 'node:url';
 import { and, eq } from 'drizzle-orm';
 import { db, agents, skills } from '@mantle/db';
 import { seedBuiltinTools, PAGE_TOOL_SLUGS } from '@mantle/tools';
-
-const USER_ID = process.env.ALLOWED_USER_ID;
-if (!USER_ID) {
-  console.error('ALLOWED_USER_ID env var required');
-  process.exit(1);
-}
 
 // ── Skill definitions ──────────────────────────────────────────────────────
 
@@ -184,11 +179,11 @@ You are not a chatbot. You are Saskia — the assistant Jason actually wants in 
 
 // ── Upsert + attach helpers ──────────────────────────────────────────────────
 
-async function upsertSkill(def: SkillDef): Promise<void> {
+async function upsertSkill(def: SkillDef, ownerId: string): Promise<void> {
   const [existing] = await db
     .select({ id: skills.id })
     .from(skills)
-    .where(and(eq(skills.ownerId, USER_ID!), eq(skills.slug, def.slug)))
+    .where(and(eq(skills.ownerId, ownerId), eq(skills.slug, def.slug)))
     .limit(1);
   if (existing) {
     await db
@@ -205,7 +200,7 @@ async function upsertSkill(def: SkillDef): Promise<void> {
     console.log(`[skills] updated ${def.slug} (${def.instructions.length}c, ${def.toolSlugs.length} tools)`);
   } else {
     await db.insert(skills).values({
-      ownerId: USER_ID!,
+      ownerId,
       slug: def.slug,
       name: def.name,
       description: def.description,
@@ -221,6 +216,7 @@ async function upsertSkill(def: SkillDef): Promise<void> {
 /** Add skill slugs to an agent's skill_slugs (only the missing ones), and
  *  optionally rewrite its system prompt. No-op per slug if already present. */
 async function wireAgent(
+  ownerId: string,
   agentSlug: string,
   addSkills: string[],
   newPrompt?: string,
@@ -228,7 +224,7 @@ async function wireAgent(
   const [row] = await db
     .select({ id: agents.id, skillSlugs: agents.skillSlugs })
     .from(agents)
-    .where(and(eq(agents.ownerId, USER_ID!), eq(agents.slug, agentSlug)))
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, agentSlug)))
     .limit(1);
   if (!row) {
     console.warn(`[skills] agent '${agentSlug}' not found — skipping`);
@@ -253,25 +249,33 @@ async function wireAgent(
   );
 }
 
-async function main() {
+export async function seedSharedSkills(ownerId: string): Promise<void> {
   // page_editing's tool_slugs must resolve to real builtin tool rows.
-  const seeded = await seedBuiltinTools(USER_ID!);
+  const seeded = await seedBuiltinTools(ownerId);
   console.log(`[skills] builtin tools: ${seeded.inserted} inserted, ${seeded.updated} updated`);
 
-  for (const def of SKILLS) await upsertSkill(def);
+  for (const def of SKILLS) await upsertSkill(def, ownerId);
 
   // Saskia: persona-only prompt + the two shared behaviour skills.
-  await wireAgent('telegram-default', ['tool_grounding', 'voice_reply'], SASKIA_PROMPT);
+  await wireAgent(ownerId, 'telegram-default', ['tool_grounding', 'voice_reply'], SASKIA_PROMPT);
   // Apostle Paul: keep his persona/theology prompt; gain the shared behaviour
   // he was previously missing.
-  await wireAgent('apostle-paul', ['tool_grounding', 'voice_reply']);
+  await wireAgent(ownerId, 'apostle-paul', ['tool_grounding', 'voice_reply']);
 
   console.log('[skills] done. page_editing is created — now run `pnpm seed:pages` to trim the Pages prompt and attach it.');
   console.log('[skills] skills are read per-turn; no restart needed for the new behaviour.');
-  process.exit(0);
 }
 
-main().catch((err) => {
-  console.error('[skills] failed:', err);
-  process.exit(1);
-});
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const ownerId = process.env.ALLOWED_USER_ID;
+  if (!ownerId) {
+    console.error('ALLOWED_USER_ID env var required');
+    process.exit(1);
+  }
+  seedSharedSkills(ownerId)
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error('[seed] failed:', err);
+      process.exit(1);
+    });
+}
