@@ -60,8 +60,12 @@ export const COLOR_THEMES: ColorTheme[] = [
 
 export const DEFAULT_COLOR_THEME = 'clean-slate';
 export const COLOR_THEME_STORAGE_KEY = 'mantle-color-theme';
-/** Whether "random theme" mode (reshuffle on every navigation) is on. */
+/** Whether "random theme" mode (reshuffle on a timer) is on. */
 export const RANDOM_THEME_STORAGE_KEY = 'mantle-random-theme';
+/** Epoch-ms of the last random reshuffle, so the timer survives reloads. */
+export const RANDOM_THEME_AT_STORAGE_KEY = 'mantle-random-theme-at';
+/** How often random-theme mode reshuffles: every 12 hours. */
+export const RANDOM_THEME_INTERVAL_MS = 12 * 60 * 60 * 1000;
 
 /**
  * Pick a random color-theme id, avoiding `exclude` (the current one) so a

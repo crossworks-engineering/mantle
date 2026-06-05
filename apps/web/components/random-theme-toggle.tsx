@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 
 /**
  * A fun sibling to the light/dark toggle: when on, the color theme reshuffles
- * to a random one on every navigation. The state is remembered; turning it off
+ * to a random one every 12 hours. The state is remembered; turning it off
  * leaves the current (last random) theme in place. See ColorThemeProvider.
  */
 export function RandomThemeToggle() {
@@ -22,7 +22,7 @@ export function RandomThemeToggle() {
       aria-pressed={randomTheme}
       title={
         randomTheme
-          ? 'Random theme: on — shuffles on every page'
+          ? 'Random theme: on — shuffles every 12 hours'
           : 'Random theme: off'
       }
       onClick={() => setRandomTheme(!randomTheme)}

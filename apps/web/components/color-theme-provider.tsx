@@ -1,10 +1,11 @@
 'use client';
 
 import * as React from 'react';
-import { usePathname } from 'next/navigation';
 import {
   COLOR_THEME_STORAGE_KEY,
   RANDOM_THEME_STORAGE_KEY,
+  RANDOM_THEME_AT_STORAGE_KEY,
+  RANDOM_THEME_INTERVAL_MS,
   DEFAULT_COLOR_THEME,
   pickRandomColorTheme,
 } from '@/lib/themes';
@@ -12,7 +13,7 @@ import {
 type Ctx = {
   colorTheme: string;
   setColorTheme: (id: string) => void;
-  /** When on, the color theme reshuffles to a random one on every navigation. */
+  /** When on, the color theme reshuffles to a random one every 12 hours. */
   randomTheme: boolean;
   setRandomTheme: (on: boolean) => void;
 };
@@ -28,18 +29,32 @@ function apply(id: string) {
   }
 }
 
+function readShuffledAt(): number | null {
+  try {
+    const raw = window.localStorage.getItem(RANDOM_THEME_AT_STORAGE_KEY);
+    const n = raw ? Number(raw) : NaN;
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeShuffledAt(ms: number) {
+  try {
+    window.localStorage.setItem(RANDOM_THEME_AT_STORAGE_KEY, String(ms));
+  } catch {
+    // storage blocked — timer won't survive reloads, no-op
+  }
+}
+
 export function ColorThemeProvider({ children }: { children: React.ReactNode }) {
   const [colorTheme, setColorThemeState] = React.useState(DEFAULT_COLOR_THEME);
   const [randomTheme, setRandomThemeState] = React.useState(false);
-  const pathname = usePathname();
 
-  // Live refs so the navigation effect can read current values without
-  // re-subscribing (it must fire on *pathname* change only — not whenever the
-  // theme or the toggle changes, or it would double-shuffle).
+  // Live ref so the timer can reshuffle relative to the current theme without
+  // re-subscribing every time the theme changes.
   const colorThemeRef = React.useRef(colorTheme);
   colorThemeRef.current = colorTheme;
-  const randomRef = React.useRef(randomTheme);
-  randomRef.current = randomTheme;
 
   React.useEffect(() => {
     let stored = DEFAULT_COLOR_THEME;
@@ -73,25 +88,35 @@ export function ColorThemeProvider({ children }: { children: React.ReactNode }) 
       } catch {
         // storage blocked — preference won't persist, no-op
       }
-      // Enabling jumps to a fresh theme right away (immediate feedback that it's
-      // on); disabling does nothing, so it sticks to the last theme.
-      if (on) setColorTheme(pickRandomColorTheme(colorThemeRef.current));
+      // Enabling jumps to a fresh theme right away (immediate feedback) and
+      // starts the 12h clock; disabling does nothing, so it sticks to the last
+      // theme.
+      if (on) {
+        setColorTheme(pickRandomColorTheme(colorThemeRef.current));
+        writeShuffledAt(Date.now());
+      }
     },
     [setColorTheme],
   );
 
-  // Reshuffle on every navigation ("menu click") while enabled. The first run
-  // is the initial mount — skip it so a reload keeps the last theme until you
-  // actually navigate.
-  const firstNav = React.useRef(true);
+  // While enabled, reshuffle every 12h. The timestamp is persisted, so the
+  // schedule survives reloads and closed periods: on load we catch up if the
+  // interval already lapsed, otherwise we wait out the remainder. A reload that
+  // isn't yet due keeps the last theme.
   React.useEffect(() => {
-    if (firstNav.current) {
-      firstNav.current = false;
-      return;
-    }
-    if (!randomRef.current) return;
-    setColorTheme(pickRandomColorTheme(colorThemeRef.current));
-  }, [pathname, setColorTheme]);
+    if (!randomTheme) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      setColorTheme(pickRandomColorTheme(colorThemeRef.current));
+      writeShuffledAt(Date.now());
+      timer = setTimeout(tick, RANDOM_THEME_INTERVAL_MS);
+    };
+    const last = readShuffledAt() ?? Date.now();
+    const remaining = last + RANDOM_THEME_INTERVAL_MS - Date.now();
+    if (remaining <= 0) tick();
+    else timer = setTimeout(tick, remaining);
+    return () => clearTimeout(timer);
+  }, [randomTheme, setColorTheme]);
 
   return (
     <ColorThemeContext.Provider
