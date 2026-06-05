@@ -60,3 +60,17 @@ export const COLOR_THEMES: ColorTheme[] = [
 
 export const DEFAULT_COLOR_THEME = 'clean-slate';
 export const COLOR_THEME_STORAGE_KEY = 'mantle-color-theme';
+/** Whether "random theme" mode (reshuffle on every navigation) is on. */
+export const RANDOM_THEME_STORAGE_KEY = 'mantle-random-theme';
+
+/**
+ * Pick a random color-theme id, avoiding `exclude` (the current one) so a
+ * reshuffle always visibly changes something. Falls back to the full list if
+ * excluding leaves nothing.
+ */
+export function pickRandomColorTheme(exclude?: string): string {
+  const pool = COLOR_THEMES.filter((t) => t.id !== exclude);
+  const list = pool.length > 0 ? pool : COLOR_THEMES;
+  const picked = list[Math.floor(Math.random() * list.length)] ?? list[0]!;
+  return picked.id;
+}

@@ -16,6 +16,7 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { RandomThemeToggle } from '@/components/random-theme-toggle';
 import { usePageTitle } from '@/components/layout/page-title';
 import { VERSION_LABEL, versionDetail } from '@/lib/version';
 
@@ -72,6 +73,7 @@ export function Header({
       )}
 
       <div className="ml-auto flex items-center gap-1">
+        <RandomThemeToggle />
         <ThemeToggle />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
