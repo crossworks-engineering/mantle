@@ -15,8 +15,9 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { HEARTBEAT_TOOLS, HEARTBEAT_RESPONDER_TOOLS } from './tools';
+import { HEARTBEAT_TOOLS, HEARTBEAT_RESPONDER_TOOLS, registerHeartbeatTools } from './tools';
 import { withHeartbeatContext } from './context';
+import { getBuiltinHandler } from '@mantle/tools';
 import type {
   BuiltinToolDef,
   ToolHandlerContext,
@@ -52,6 +53,37 @@ async function callInsideContext(
     findTool(slug).handler(input, mkCtx()),
   );
 }
+
+describe('registerHeartbeatTools — dispatch registration', () => {
+  // The heartbeat builtins live in @mantle/heartbeats and DO NOT ship in
+  // @mantle/tools' BUILTIN_TOOLS — they enter the in-process registry only via
+  // registerHeartbeatTools(). Any process that runs the tool loop and offers the
+  // continuity tools (apps/agent AND apps/web's /assistant responder) must call
+  // it, or dispatch fails with "builtin handler '…' not registered in this
+  // process" even though the tool rows are seeded. This pins that contract so the
+  // web bootstrap (apps/web/lib/assistant.ts) can't silently regress.
+  it('makes every responder-continuity tool dispatchable', () => {
+    registerHeartbeatTools();
+    for (const slug of HEARTBEAT_RESPONDER_TOOLS) {
+      expect(typeof getBuiltinHandler(slug), `${slug} handler must resolve`).toBe('function');
+    }
+  });
+
+  it('registers all five heartbeat builtins, not just the responder subset', () => {
+    registerHeartbeatTools();
+    for (const def of HEARTBEAT_TOOLS) {
+      expect(typeof getBuiltinHandler(def.slug), `${def.slug} handler must resolve`).toBe('function');
+    }
+  });
+
+  it('keeps HEARTBEAT_RESPONDER_TOOLS a strict subset of HEARTBEAT_TOOLS', () => {
+    const all = new Set(HEARTBEAT_TOOLS.map((t) => t.slug));
+    for (const slug of HEARTBEAT_RESPONDER_TOOLS) expect(all.has(slug)).toBe(true);
+    // The operator-only tools are intentionally NOT in the responder affordance.
+    expect(HEARTBEAT_RESPONDER_TOOLS).not.toContain('heartbeat_fire');
+    expect(HEARTBEAT_RESPONDER_TOOLS).not.toContain('heartbeat_list');
+  });
+});
 
 describe('heartbeat_complete — addressing guard', () => {
   it('refuses cleanly when called with no slug and no fire context', async () => {

@@ -321,5 +321,31 @@ Shipped in two commits (approach A — coarse groups, specialists expand):
   `resolveManifestToolSlugs` / `DEFAULT_ASSISTANT_TOOL_SLUGS` / `ASSISTANT_TOOL_DENY`
   + the reexpress CLI are removed.
 
+- ✅ **P6c** (audit follow-up — [docs/audit-brief-tools-skills.md](audit-brief-tools-skills.md)):
+  three fixes from the independent audit.
+  - **Floor sufficiency (R5).** `CORE_AUTO_GRANT_GROUP_SLUGS` gained `memory-core`
+    + `delegation`. The old 7-group floor conferred neither `search_*` nor
+    `invoke_agent`, so a self-healed-only persona (a *new* operator persona, since
+    operator personas aren't manifest-seeded) couldn't ground answers and failed
+    the integrity persona check ("missing invoke_agent — cannot delegate"). The
+    floor is now the functional minimum; the richer generalist groups stay opt-in
+    / manifest-seeded so a locked-down responder isn't over-granted. The decision
+    logic moved to `apps/agent/src/core-tools.ts` (`computeFloorGroupAdditions`)
+    and is unit-tested (`core-tools.test.ts`).
+  - **Web heartbeat dispatch (R8).** `apps/web/lib/assistant.ts` now calls
+    `registerHeartbeatTools()` at module load (beside `registerAgentInvoker`). The
+    web responder runs its tool loop in-process and injects the continuity tools
+    when a **web-surface** heartbeat is active, but the handlers live in
+    `@mantle/heartbeats` and only enter the registry via that call — without it,
+    the model was offered seeded tool rows whose dispatch failed with "builtin
+    handler '…' not registered in this process". `tools.test.ts` pins the
+    register→dispatchable contract.
+  - **Established-brain backfill (R6).** Migration `0084` re-grants the 6 manifest
+    agents their group lists **by slug** when `tool_group_slugs` is still `'{}'`
+    (post-`0083`, the old `tool_slugs` is gone, so the re-grant can't derive from
+    it). No-op on a fresh install (no rows yet) and on dev (already granted);
+    restores a brain that ran `0080..0083` without the deleted re-expression
+    script. Operator personas (non-manifest) are floored by the boot self-heal.
+
 The original design brief is preserved at
 **[docs/handover-tools-skills-p6.md](handover-tools-skills-p6.md)** (historical).

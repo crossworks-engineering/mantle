@@ -58,6 +58,7 @@ import {
   HEARTBEAT_RESPONDER_TOOLS,
   hasActiveHeartbeatsOnSurface,
   openHeartbeatsForSurface,
+  registerHeartbeatTools,
 } from '@mantle/heartbeats';
 import { startTrace, modelSupportsVision, maxImageBytesFor, refreshModelCatalog } from '@mantle/tracing';
 import { pickWebDefaultAgent } from './assistant-select';
@@ -77,6 +78,18 @@ function base64Bytes(b64: string): number {
 // First module load (the first /assistant request after boot) wires
 // it up. Idempotent — last call wins.
 registerAgentInvoker(invokeAgent);
+
+// Register the heartbeat-control builtins in THIS (web/Next) process.
+// The web responder runs its tool loop in-process and injects the
+// heartbeat continuity tools (heartbeat_update_state/complete/snooze)
+// as a per-turn affordance whenever a web-surface heartbeat is active
+// (see hasActiveHeartbeatsOnSurface below). Those handlers live in
+// @mantle/heartbeats and only enter the builtin registry via this call
+// — apps/agent does the same at boot. Without it, the model would be
+// offered the tools (their rows are seeded) but dispatch would fail
+// with "builtin handler 'heartbeat_update_state' not registered in
+// this process", silently breaking the web continuity flow. Idempotent.
+registerHeartbeatTools();
 
 export type AssistantTurnResult = {
   inbound: AssistantMessage;

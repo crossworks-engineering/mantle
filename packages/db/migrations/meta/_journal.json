@@ -589,6 +589,13 @@
       "when": 1782000000000,
       "tag": "0083_drop_agents_tool_slugs",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1782086400000,
+      "tag": "0084_backfill_agent_tool_groups",
+      "breakpoints": true
     }
   ]
 }

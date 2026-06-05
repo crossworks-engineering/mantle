@@ -109,6 +109,7 @@ import { summarizeAgentConversation } from './summarizer.js';
 import { enqueueExtract, startExtractQueue, stopExtractQueue } from './extract-queue.js';
 import { reflect } from './reflector.js';
 import { CONVERSATIONAL_ROLES, pickFallbackResponder } from './agent-select.js';
+import { computeFloorGroupAdditions } from './core-tools.js';
 
 // Resolved at the top of main() via waitForOwner() — either ALLOWED_USER_ID (when
 // set) or the sole auth.users row. Left `undefined` until then so a fresh install
@@ -1375,24 +1376,6 @@ function scheduleSummarize(agentId: string): void {
   }, SUMMARIZE_DEBOUNCE_MS);
 }
 
-/** The capability FLOOR every conversational agent gets without manual setup,
- *  expressed as tool GROUPS (P6 — groups are the sole grant). Covers persona
- *  self-edit, todo CRUD, contacts read/add, life-log read/add, note capture,
- *  email send/page, and public page sharing. Granted idempotently at boot —
- *  this is what keeps OPERATOR-owned personas (telegram-default, apostle-paul,
- *  which aren't manifest slugs and so aren't seeded from the manifest) able to
- *  act from message one. `email`/`page-share` ship their tools ungated
- *  (requiresConfirm:false) — flip per-row at /settings/tools to gate them. */
-const CORE_AUTO_GRANT_GROUP_SLUGS: readonly string[] = [
-  'persona',
-  'todos',
-  'contacts',
-  'lifelog',
-  'notes',
-  'email',
-  'page-share',
-];
-
 /**
  * Ensure every enabled conversational agent (responder + assistant) holds the
  * core capability floor, granted as tool GROUPS. Returns the slugs of agents
@@ -1423,16 +1406,9 @@ async function ensureCoreToolsOnConversationalAgents(ownerId: string): Promise<s
   const updated: string[] = [];
   for (const row of rows) {
     const have = new Set<string>(row.toolGroupSlugs ?? []);
-    // Tools already conferred by the agent's GRANTED groups.
-    const covered = new Set<string>();
-    for (const g of have) for (const t of groupTools.get(g) ?? []) covered.add(t);
-    // Add a floor group unless the agent already holds it, or another granted
-    // group already confers all of its tools.
-    const toAdd = CORE_AUTO_GRANT_GROUP_SLUGS.filter((g) => {
-      if (have.has(g)) return false;
-      const tools = groupTools.get(g) ?? [];
-      return tools.length > 0 && !tools.every((t) => covered.has(t));
-    });
+    // Add any floor group the agent neither already holds nor has fully covered
+    // by its other granted groups (pure logic in core-tools.ts so it's tested).
+    const toAdd = computeFloorGroupAdditions(have, groupTools);
     if (toAdd.length === 0) continue;
     await db
       .update(agents)
