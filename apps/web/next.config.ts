@@ -1,4 +1,36 @@
 import type { NextConfig } from 'next';
+import { readFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+// ── Build identity ───────────────────────────────────────────────────────────
+// Single source of truth for the app version is the ROOT package.json `version`.
+// We resolve it (plus the git SHA + build time) HERE, at build/dev-start, and
+// inline the result as NEXT_PUBLIC_* so the wordmark + /api/version can show it
+// with zero runtime cost. `.git` is NOT in the Docker build context (see
+// .dockerignore), so inside the image we can't run git — the build script passes
+// MANTLE_GIT_SHA / MANTLE_BUILD_TIME as build args instead (see Dockerfile).
+const configDir = dirname(fileURLToPath(import.meta.url));
+const appVersion = (
+  JSON.parse(readFileSync(join(configDir, '../../package.json'), 'utf8')) as { version?: string }
+).version ?? '0.0.0';
+
+function resolveGitSha(): string {
+  if (process.env.MANTLE_GIT_SHA) return process.env.MANTLE_GIT_SHA;
+  try {
+    return execSync('git rev-parse --short HEAD', {
+      cwd: configDir,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .toString()
+      .trim();
+  } catch {
+    return ''; // no git in the build context — fine; the SHA is just omitted.
+  }
+}
+const gitSha = resolveGitSha();
+const buildTime = process.env.MANTLE_BUILD_TIME || new Date().toISOString();
 
 // `next dev --turbo` (dev) runs Turbopack; `next build` (prod Docker) runs
 // webpack. Turbopack IGNORES any `webpack()` config and prints
@@ -28,6 +60,13 @@ const nextConfig: NextConfig = {
   ],
   experimental: {
     serverActions: { bodySizeLimit: '4mb' },
+  },
+  // Build identity, inlined at compile time. Read via lib/version.ts (client +
+  // server safe) — drives the version next to the wordmark and /api/version.
+  env: {
+    NEXT_PUBLIC_APP_VERSION: appVersion,
+    NEXT_PUBLIC_GIT_SHA: gitSha,
+    NEXT_PUBLIC_BUILD_TIME: buildTime,
   },
   // pg-boss + postgres-js use node-only modules; keep them server-only.
   // heic-convert bundles a libheif WASM binary — leave it external so the

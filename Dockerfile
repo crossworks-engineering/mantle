@@ -63,6 +63,14 @@ COPY . .
 FROM deps AS app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# Build identity — surfaced next to the wordmark + at /api/version. `.git` is
+# excluded from the build context (.dockerignore), so next.config.ts can't read
+# the SHA inside the image; the build script (scripts/docker-build-push.sh)
+# passes it in. Empty defaults keep a bare `docker build .` working.
+ARG MANTLE_GIT_SHA=""
+ARG MANTLE_BUILD_TIME=""
+ENV MANTLE_GIT_SHA=$MANTLE_GIT_SHA
+ENV MANTLE_BUILD_TIME=$MANTLE_BUILD_TIME
 # `.next/cache` is the build cache (~1.1GB) — `next start` never reads it, so
 # drop it: it's the layer that changes every build, so this also keeps
 # incremental re-pulls small (the runtime .next is only ~50MB).

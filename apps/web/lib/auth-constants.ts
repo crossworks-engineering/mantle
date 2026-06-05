@@ -13,4 +13,6 @@ export const SESSION_COOKIE_NAME = 'mantle_session';
 // `/api/federation` is the inbound federation surface for peer Mantles. It
 // authorizes by a per-peer bearer token (verifyInboundToken), not the owner
 // cookie — so it must bypass the session gate. See docs/federation.md.
-export const PUBLIC_PATHS = ['/login', '/api/auth', '/s', '/api/federation'];
+// `/api/version` exposes only the build identity (version/SHA/build time) — no
+// sensitive data — so it stays open for uptime/ops probes. See docs/versioning.md.
+export const PUBLIC_PATHS = ['/login', '/api/auth', '/s', '/api/federation', '/api/version'];

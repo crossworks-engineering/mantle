@@ -263,6 +263,10 @@ services:
     build:
       context: .
       target: app
+      args:
+        # Stamped by scripts/docker-build-push.sh (git SHA + UTC build time).
+        MANTLE_GIT_SHA: ${MANTLE_GIT_SHA:-}
+        MANTLE_BUILD_TIME: ${MANTLE_BUILD_TIME:-}
     container_name: mantle_web
     restart: unless-stopped
     depends_on:

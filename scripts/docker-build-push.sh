@@ -25,7 +25,13 @@ export MANTLE_MASTER_KEY="${MANTLE_MASTER_KEY:-build}"
 export ALLOWED_USER_ID="${ALLOWED_USER_ID:-00000000-0000-0000-0000-000000000000}"
 export MANTLE_IMAGE_TAG="$TAG"
 
-echo "▶ Building ${MANTLE_IMAGE_NAMESPACE}/mantle:${TAG}"
+# Build identity — baked into the image (next.config.ts → NEXT_PUBLIC_*) and
+# shown next to the wordmark + at /api/version. `.git` isn't in the build
+# context, so we resolve the SHA here and hand it to the build as an arg.
+export MANTLE_GIT_SHA="${MANTLE_GIT_SHA:-$(git rev-parse --short HEAD 2>/dev/null || echo '')}"
+export MANTLE_BUILD_TIME="${MANTLE_BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+
+echo "▶ Building ${MANTLE_IMAGE_NAMESPACE}/mantle:${TAG}  (sha ${MANTLE_GIT_SHA:-none}, ${MANTLE_BUILD_TIME})"
 docker compose build web
 
 echo "▶ Pushing to Docker Hub"
