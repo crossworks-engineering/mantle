@@ -24,6 +24,7 @@ import { and, asc, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm';
 import {
   db,
   agents,
+  toolGroups,
   assistantMessages,
   channels,
   nodes,
@@ -1407,16 +1408,23 @@ const CORE_AUTO_GRANT_SLUGS: readonly string[] = [
 ];
 
 /**
- * Add the core builtins (persona + todo tools) to every enabled
- * conversational agent (responder + assistant) that doesn't already have
- * them. Returns the slugs of agents that were updated. Idempotent —
- * already-present tools are a no-op. Mirrors the heartbeat-tool grant
- * pattern: tool_slugs stays the single source of truth; this just spares
- * the operator a manual /settings/tools step for core capabilities.
+ * Add the core builtins (persona + todo tools etc.) to every enabled
+ * conversational agent (responder + assistant) that doesn't already have them.
+ * Returns the slugs of agents that were updated. Idempotent.
+ *
+ * P5 — group-aware: a core tool already conferred by a GRANTED tool group is NOT
+ * re-appended to tool_slugs. This stops the self-heal from re-flattening the P3
+ * decomposition on every boot (it used to duplicate group tools into tool_slugs).
+ * The capability floor is unchanged — only the redundant flat copies are skipped.
  */
 async function ensureCoreToolsOnConversationalAgents(ownerId: string): Promise<string[]> {
+  const groupRows = await db
+    .select({ slug: toolGroups.slug, toolSlugs: toolGroups.toolSlugs })
+    .from(toolGroups)
+    .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.enabled, true)));
+  const groupTools = new Map(groupRows.map((g) => [g.slug, g.toolSlugs ?? []]));
   const rows = await db
-    .select({ id: agents.id, slug: agents.slug, toolSlugs: agents.toolSlugs })
+    .select({ id: agents.id, slug: agents.slug, toolSlugs: agents.toolSlugs, toolGroupSlugs: agents.toolGroupSlugs })
     .from(agents)
     .where(
       and(
@@ -1427,12 +1435,14 @@ async function ensureCoreToolsOnConversationalAgents(ownerId: string): Promise<s
     );
   const updated: string[] = [];
   for (const row of rows) {
-    const current = row.toolSlugs ?? [];
-    const missing = CORE_AUTO_GRANT_SLUGS.filter((s) => !current.includes(s));
+    // "Covered" = held directly OR via a granted group.
+    const covered = new Set<string>(row.toolSlugs ?? []);
+    for (const g of row.toolGroupSlugs ?? []) for (const t of groupTools.get(g) ?? []) covered.add(t);
+    const missing = CORE_AUTO_GRANT_SLUGS.filter((s) => !covered.has(s));
     if (missing.length === 0) continue;
     await db
       .update(agents)
-      .set({ toolSlugs: [...current, ...missing], updatedAt: new Date() })
+      .set({ toolSlugs: [...(row.toolSlugs ?? []), ...missing], updatedAt: new Date() })
       .where(eq(agents.id, row.id));
     updated.push(row.slug);
   }

@@ -28,6 +28,8 @@ import {
   DEFAULT_ASSISTANT_TOOL_SLUGS,
   PAGE_TOOL_SLUGS,
   TABLE_TOOL_SLUGS,
+  CONTACT_AUTO_GRANT_SLUGS,
+  LIFELOG_AUTO_GRANT_SLUGS,
 } from '@mantle/tools';
 import type { AiWorkerKind } from '@mantle/db';
 import { SKILL_INSTRUCTIONS, AGENT_PROMPTS } from './prompts';
@@ -221,14 +223,19 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'contacts',
     name: 'Contacts',
-    description: 'The people/org index — also the email allowlist (docs/contacts.md).',
-    toolSlugs: ['contact_find', 'contact_list', 'contact_get', 'contact_create', 'contact_update', 'contact_delete'],
+    description: 'The people/org index — also the email allowlist (docs/contacts.md). No delete (escape hatch).',
+    // No-delete subset (mirrors pages/tables, decision 3); contact_delete is a
+    // direct escape-hatch grant where intended. Matches CORE_AUTO_GRANT exactly,
+    // so an auto-granted conversational agent qualifies for the whole group.
+    toolSlugs: [...CONTACT_AUTO_GRANT_SLUGS],
   },
   {
     slug: 'lifelog',
     name: 'Life logs',
-    description: "First-person self-knowledge — the identity context's source.",
-    toolSlugs: ['lifelog_create', 'lifelog_list', 'lifelog_get', 'lifelog_update', 'lifelog_delete'],
+    description: "First-person self-knowledge — the identity context's source. No delete (escape hatch).",
+    // No-delete subset (decision 3 pattern); lifelog_delete via the escape hatch.
+    // Matches CORE_AUTO_GRANT exactly so auto-granted agents qualify for the group.
+    toolSlugs: [...LIFELOG_AUTO_GRANT_SLUGS],
   },
   {
     slug: 'recall',

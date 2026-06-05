@@ -23,12 +23,15 @@ import { applyManifest } from '../lib/system-manifest/seed';
 import { MANIFEST_TOOL_GROUPS } from '../lib/system-manifest/manifest';
 
 export async function seedToolGroups(ownerId: string): Promise<void> {
-  await applyManifest(ownerId, { only: [], onlySkills: [], mode: 'gap-fill' });
+  // Overwrite: sync the group ROWS to the canonical manifest membership (so an
+  // existing brain picks up redefinitions, e.g. the P5 no-delete contacts/lifelog
+  // groups). Empty agent/skill filters mean this touches ONLY tool groups (+
+  // idempotent builtin tools) — never an agent or skill.
+  await applyManifest(ownerId, { only: [], onlySkills: [], mode: 'overwrite' });
   console.log(
-    `[tool-groups] seeded ${MANIFEST_TOOL_GROUPS.length} groups (gap-fill): ` +
+    `[tool-groups] synced ${MANIFEST_TOOL_GROUPS.length} groups to manifest: ` +
       MANIFEST_TOOL_GROUPS.map((g) => g.slug).join(', '),
   );
-  console.log('[tool-groups] dormant — no agent grants them yet (Phase 0).');
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
