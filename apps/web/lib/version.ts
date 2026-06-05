@@ -8,11 +8,12 @@ export const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? '0.0.0';
 export const GIT_SHA = process.env.NEXT_PUBLIC_GIT_SHA ?? '';
 export const BUILD_TIME = process.env.NEXT_PUBLIC_BUILD_TIME ?? '';
 
-/** Short label shown next to the wordmark, e.g. "v0.1.0". */
+/** Short label shown next to the wordmark, e.g. "v0.19.0-alpha". */
 export const VERSION_LABEL = `v${APP_VERSION}`;
 
 /**
- * Full build identity for tooltips / ops, e.g. "v0.1.0 · 5a96bcd · 2026-06-05".
+ * Full build identity for tooltips / ops, e.g.
+ * "v0.19.0-alpha · 5a96bcd · 2026-06-05".
  * SHA and date are omitted when not available (e.g. a local `next dev` with no
  * git, or a build that didn't stamp the time).
  */

@@ -4,6 +4,20 @@ Mantle uses [semantic versioning](https://semver.org/). The version is shown in
 small text next to the **mantle** wordmark in the top bar, and served at
 `/api/version` for ops/uptime probes.
 
+## Scheme
+
+Pre-1.0, the parts mean:
+
+- **minor** (`0.19`) tracks **major feature milestones shipped** (ingest + tiered
+  memory, knowledge graph, embeddings, pages, tables, contacts, email in/out,
+  recall, researcher, federation, telegram, lifelogs, heartbeats, chat failover,
+  tailscale inference, documentation, unified conversation, onboarding, …).
+- **patch** (`.0`) — fixes/iterations within a milestone; resets each minor.
+- **`-alpha`** — the system runs in production and is used daily, but it's
+  single-user, makes no stability guarantees, and the schema is still churning
+  (breaking migrations still land). That's alpha, honestly — not beta. The tag
+  drops when those guarantees firm up.
+
 ## Single source of truth
 
 The root [`package.json`](../package.json) `version` field. `apps/web/package.json`
@@ -12,11 +26,14 @@ is kept in lockstep so the two never drift.
 Bump it with the helper (never hand-edit both files):
 
 ```bash
-pnpm version:bump patch   # 0.1.0 -> 0.1.1  (fixes)
-pnpm version:bump minor   # 0.1.0 -> 0.2.0  (features)
-pnpm version:bump major   # 0.1.0 -> 1.0.0  (breaking)
-pnpm version:bump 1.4.2   # set explicitly
+pnpm version:bump patch          # 0.19.0-alpha -> 0.19.1  (fixes)
+pnpm version:bump minor          # 0.19.0-alpha -> 0.20.0  (new milestone)
+pnpm version:bump major          # 0.19.0-alpha -> 1.0.0   (stable)
+pnpm version:bump 0.19.3-alpha   # set explicitly (pre-release tag allowed)
 ```
+
+`patch`/`minor`/`major` operate on the numeric core and drop any `-alpha` tag —
+pass it back explicitly (`0.20.0-alpha`) to keep carrying it while pre-1.0.
 
 Then commit and tag:
 
@@ -38,8 +55,8 @@ Build identity is resolved once, at build/dev-start, in
 | `NEXT_PUBLIC_BUILD_TIME` | `MANTLE_BUILD_TIME` env, else build wall-clock (UTC ISO) |
 
 [`apps/web/lib/version.ts`](../apps/web/lib/version.ts) reads them (client +
-server safe) and exposes `VERSION_LABEL` (`v0.1.0`) for the wordmark and
-`versionDetail()` (`v0.1.0 · 5a96bcd · 2026-06-05`) for the hover tooltip.
+server safe) and exposes `VERSION_LABEL` (`v0.19.0-alpha`) for the wordmark and
+`versionDetail()` (`v0.19.0-alpha · 5a96bcd · 2026-06-05`) for the hover tooltip.
 
 ## Docker builds
 
