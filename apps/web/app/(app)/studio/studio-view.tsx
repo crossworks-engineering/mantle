@@ -18,6 +18,7 @@ import { AlertTriangle, CheckCircle2, ChevronLeft, Cpu, Sparkles, Star } from 'l
 import { Badge } from '@/components/ui/badge';
 import { ProseEditor } from './prose-editor';
 import { StructureEditor } from './structure-editor';
+import { SandboxPanel } from './sandbox-panel';
 import {
   Select,
   SelectContent,
@@ -148,6 +149,8 @@ function AgentInspector({
           </div>
         )}
       </Section>
+
+      <SandboxPanel key={agent.id} agentId={agent.id} agentName={agent.name} />
     </div>
   );
 }
