@@ -16,6 +16,11 @@ Companion docs:
 - [`observability.md`](./observability.md) — the tracing layer: how every
   agent run becomes a `traces` row + `trace_steps` tree, the reactflow
   visual, the dashboard widgets, and how to add a new trace kind.
+- [`system-integrity.md`](./system-integrity.md) — the declarative **manifest**
+  that is the single source of truth for the default agent/skill/tool/worker
+  graph: the CI drift-test, the `applyManifest` seeder (gap-fill vs overwrite),
+  and the standing `checkSystemIntegrity` checker (`/debug/integrity` → System
+  config + onboarding's Check step). Read before adding a specialist/skill/tool.
 - [`files.md`](./files.md) — the host-mirrored filesystem layer:
   folders + files on disk under `MANTLE_FILES_ROOT`, the editor, the
   ingestion handoff, and the MCP tools.
