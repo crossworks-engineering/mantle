@@ -1,4 +1,4 @@
-import { db, agents, skills, eq, and, inArray } from '@mantle/db';
+import { db, agents, eq, and } from '@mantle/db';
 import { listApiKeys } from '@mantle/api-keys';
 import { seedBuiltinTools, DEFAULT_ASSISTANT_TOOL_SLUGS } from '@mantle/tools';
 import {
@@ -14,20 +14,10 @@ import {
   type CreateAiWorkerInput,
 } from '@/lib/ai-workers';
 import { createAgent, updateAgent } from '@/lib/agents';
-// Specialist seeders — the same logic the `pnpm -C apps/web seed:*` CLIs run,
-// refactored to importable functions so onboarding provisions the full stack
-// (Saskia's delegation targets + the /pages and /tables Assist specialists)
-// instead of leaving a fresh brain with a lone assistant. Skills first (the
-// agents attach them by slug), then the agents (each wires its own slug into
-// the entry agents' delegate_to).
-import { seedSharedSkills } from '@/scripts/seed-shared-skills';
-import { seedRichWritingSkill } from '@/scripts/seed-rich-writing-skill';
-import { seedTablesSkill } from '@/scripts/seed-tables-skill';
-import { seedPagesAgent } from '@/scripts/seed-pages-agent';
-import { seedTablesAgent } from '@/scripts/seed-tables-agent';
-import { seedRemy } from '@/scripts/seed-remy';
-import { seedResearcher } from '@/scripts/seed-researcher';
-import { seedCoderAgent } from '@/scripts/seed-coder-agent';
+// The specialist stack (skills + Pages/Ledger/Remy/Researcher/Coder + their
+// delegation wiring) is seeded from the declarative manifest — the single source
+// of truth shared with the CLI `pnpm seed:*` scripts and the integrity checker.
+import { applyManifest } from '@/lib/system-manifest';
 
 /**
  * Onboarding provisioner — turns the API keys the user just entered into a
@@ -87,46 +77,21 @@ export type ProvisionResult = {
 
 /**
  * Seed the specialist stack a fresh brain needs for delegation + the editor
- * Assist panels to work. Skills are seeded before the agents that attach them.
- * Each agent seeder also appends its own slug to the entry agents' delegate_to,
- * so the just-created `assistant` responder gains the full delegate set with no
- * extra wiring here. Per-seed failures are swallowed (logged) so one bad seed
- * can't block the rest or the onboarding completion.
+ * Assist panels — skills, the Pages/Ledger/Remy/Researcher/Coder agents, their
+ * delegation wiring, and the persona's behaviour skills. All from the declarative
+ * manifest (the single source of truth) via `applyManifest`. Idempotent +
+ * gap-fill (re-running the wizard never clobbers operator customisations).
+ * Returns the seeded specialist names; never throws out — a failure is logged so
+ * the persona (what matters) still completes onboarding.
  */
 async function seedSpecialistStack(ownerId: string): Promise<string[]> {
-  // Skills first — the Pages/Tables agents look them up by slug at seed time.
-  const skillSteps: { label: string; run: () => Promise<void> }[] = [
-    { label: 'shared-skills', run: () => seedSharedSkills(ownerId) },
-    { label: 'rich-writing', run: () => seedRichWritingSkill(ownerId) },
-    { label: 'table-authoring', run: () => seedTablesSkill(ownerId) },
-  ];
-  for (const step of skillSteps) {
-    try {
-      await step.run();
-    } catch (err) {
-      console.error(`[onboarding] skill seed '${step.label}' failed:`, err);
-    }
+  try {
+    const { seededAgents } = await applyManifest(ownerId);
+    return seededAgents;
+  } catch (err) {
+    console.error('[onboarding] applyManifest failed:', err);
+    return [];
   }
-
-  // Then the specialist agents. Order: the two Assist-panel specialists first
-  // (so /pages and /tables work immediately), then the delegation-only agents.
-  const agentSteps: { name: string; run: () => Promise<void> }[] = [
-    { name: 'Pages', run: () => seedPagesAgent(ownerId) },
-    { name: 'Ledger', run: () => seedTablesAgent(ownerId) },
-    { name: 'Remy', run: () => seedRemy(ownerId) },
-    { name: 'Researcher', run: () => seedResearcher(ownerId) },
-    { name: 'Coder', run: () => seedCoderAgent(ownerId) },
-  ];
-  const seeded: string[] = [];
-  for (const step of agentSteps) {
-    try {
-      await step.run();
-      seeded.push(step.name);
-    } catch (err) {
-      console.error(`[onboarding] specialist seed '${step.name}' failed:`, err);
-    }
-  }
-  return seeded;
 }
 
 async function keyIdByService(ownerId: string): Promise<Record<string, string>> {
@@ -284,55 +249,16 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
     }
   }
 
-  // Seed the specialist stack (Pages, Ledger, Remy, Researcher, Coder) + their
-  // skills, and wire them into the assistant's delegate_to. Needs the OpenRouter
-  // key (the seeders resolve it) and is only meaningful once the persona exists
-  // as a delegation entry point. Idempotent, so re-running the wizard is safe.
+  // Seed the specialist stack (skills + Pages/Ledger/Remy/Researcher/Coder +
+  // delegation wiring + the persona's behaviour skills) from the manifest. Needs
+  // the OpenRouter key and the persona to already exist as the delegation entry
+  // point. Idempotent + gap-fill, so re-running the wizard is safe.
   let seededSpecialists: string[] = [];
   if (openrouter) {
     seededSpecialists = await seedSpecialistStack(ownerId);
-    // The shared behaviour skills (tool_grounding, voice_reply, rich_writing)
-    // are seeded above but only auto-wired to Jason's named personas
-    // (telegram-default / apostle-paul). Explicitly attach them to the onboarding
-    // assistant so a fresh brain's persona actually grounds answers in data and
-    // writes for voice — otherwise it's a capable-looking but un-grounded shell.
-    await linkAssistantSkills(ownerId);
   }
 
   return { createdWorkers: created, createdAgent, skipped, seededSpecialists };
-}
-
-/**
- * Attach the shared behaviour skills to the persona agent (idempotent merge),
- * but only the ones whose skill row actually exists + is enabled — so a skill
- * seed that failed doesn't leave a dangling slug on the agent.
- */
-async function linkAssistantSkills(ownerId: string): Promise<void> {
-  const want = ['tool_grounding', 'voice_reply', 'rich_writing'];
-  const present = await db
-    .select({ slug: skills.slug })
-    .from(skills)
-    .where(
-      and(eq(skills.ownerId, ownerId), eq(skills.enabled, true), inArray(skills.slug, want)),
-    );
-  const presentSlugs = present.map((r) => r.slug);
-  if (presentSlugs.length === 0) return;
-
-  const [row] = await db
-    .select({ id: agents.id, skillSlugs: agents.skillSlugs })
-    .from(agents)
-    .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, PERSONA_AGENT_SLUG)))
-    .limit(1);
-  if (!row) return;
-
-  const current = row.skillSlugs ?? [];
-  const merged = [...current];
-  for (const s of presentSlugs) if (!merged.includes(s)) merged.push(s);
-  if (merged.length === current.length) return; // nothing new
-  await db
-    .update(agents)
-    .set({ skillSlugs: merged, updatedAt: new Date() })
-    .where(eq(agents.id, row.id));
 }
 
 export type SavePersonaInput = {

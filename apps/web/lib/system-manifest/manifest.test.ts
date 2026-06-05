@@ -78,6 +78,22 @@ describe('system manifest integrity', () => {
     expect(grant.has('invoke_agent')).toBe(true);
   });
 
+  it('every skill has a non-empty instruction body', () => {
+    for (const skill of MANIFEST_SKILLS) {
+      expect(skill.instructions?.trim().length, `skill '${skill.slug}' has no instructions`).toBeGreaterThan(0);
+    }
+  });
+
+  it('every specialist agent has a system prompt; the persona has none (persona-bank)', () => {
+    for (const agent of MANIFEST_AGENTS) {
+      if (agent.isPersona) {
+        expect(agent.systemPrompt, `persona '${agent.slug}' should not carry a manifest prompt`).toBeUndefined();
+      } else {
+        expect(agent.systemPrompt?.trim().length, `agent '${agent.slug}' has no system prompt`).toBeGreaterThan(0);
+      }
+    }
+  });
+
   it('has the required always-on memory workers', () => {
     const required = MANIFEST_WORKERS.filter((w) => w.required).map((w) => w.kind);
     for (const kind of ['extractor', 'summarizer', 'reflector', 'document']) {

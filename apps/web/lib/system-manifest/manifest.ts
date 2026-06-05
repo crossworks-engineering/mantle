@@ -30,6 +30,7 @@ import {
   TABLE_TOOL_SLUGS,
 } from '@mantle/tools';
 import type { AiWorkerKind } from '@mantle/db';
+import { SKILL_INSTRUCTIONS, AGENT_PROMPTS } from './prompts';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,8 +41,8 @@ export type ManifestSkill = {
   /** Builtin tool slugs this skill bundles (unioned into an agent's allowlist
    *  when attached). Empty for behaviour-only skills. */
   toolSlugs: string[];
-  /** Phase 2 fills these from the seed scripts; omitted in Phase 1. */
-  instructions?: string;
+  /** The skill body rendered into the system prompt (verbatim, from ./prompts). */
+  instructions: string;
 };
 
 export type ManifestAgent = {
@@ -55,6 +56,9 @@ export type ManifestAgent = {
   /** The onboarding persona ('assistant'); its prompt comes from the persona
    *  bank + the personality step, not this manifest. */
   isPersona?: boolean;
+  /** Verbatim system prompt (from ./prompts) — specialists only; the persona
+   *  carries none (its prompt is built from the persona bank). */
+  systemPrompt?: string;
   /** Tool grant. The sentinel resolves to DEFAULT_ASSISTANT_TOOL_SLUGS so the
    *  persona tracks the registry rather than a frozen copy. */
   toolSlugs: string[] | 'DEFAULT_ASSISTANT';
@@ -100,36 +104,42 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     name: 'Tool grounding',
     description: 'Search/verify before answering — never answer from memory alone.',
     toolSlugs: [],
+    instructions: SKILL_INSTRUCTIONS['tool_grounding']!,
   },
   {
     slug: 'voice_reply',
     name: 'Voice reply',
     description: 'How to write replies that will be spoken aloud (TTS).',
     toolSlugs: [],
+    instructions: SKILL_INSTRUCTIONS['voice_reply']!,
   },
   {
     slug: 'page_editing',
     name: 'Page editing',
     description: 'Safe, scalable page authoring/editing; preserve words verbatim, prefer block tools.',
     toolSlugs: PAGE_AUTHORING_TOOL_SLUGS,
+    instructions: SKILL_INSTRUCTIONS['page_editing']!,
   },
   {
     slug: 'rich_writing',
     name: 'Rich writing',
     description: 'The rich Mantle dialect: callouts, columns, tables, task lists, KaTeX.',
     toolSlugs: [...PAGE_TOOL_SLUGS],
+    instructions: SKILL_INSTRUCTIONS['rich_writing']!,
   },
   {
     slug: 'table_authoring',
     name: 'Table authoring',
     description: 'Build typed grids: columns, totals, formulas, views; edit by stable row/col id.',
     toolSlugs: TABLE_AUTHORING_TOOL_SLUGS,
+    instructions: SKILL_INSTRUCTIONS['table_authoring']!,
   },
   {
     slug: 'mantle-ops',
     name: 'Mantle ops',
     description: 'How Mantle works + the operating workflow (for the coder agent).',
     toolSlugs: [],
+    instructions: SKILL_INSTRUCTIONS['mantle-ops']!,
   },
 ];
 
@@ -155,6 +165,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     role: 'custom',
     model: 'anthropic/claude-sonnet-4.6',
     envModelVar: 'PAGES_MODEL',
+    systemPrompt: AGENT_PROMPTS['pages']!,
     toolSlugs: [...PAGE_AUTHORING_TOOL_SLUGS, ...SOURCE_FILE_TOOLS, ...CROSS_CONTEXT_TOOLS],
     skillSlugs: ['rich_writing', 'page_editing'],
     isDelegate: true,
@@ -170,6 +181,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     role: 'custom',
     model: 'anthropic/claude-sonnet-4.6',
     envModelVar: 'TABLES_MODEL',
+    systemPrompt: AGENT_PROMPTS['tables']!,
     toolSlugs: [...TABLE_AUTHORING_TOOL_SLUGS, ...SOURCE_FILE_TOOLS, ...CROSS_CONTEXT_TOOLS],
     skillSlugs: ['table_authoring'],
     isDelegate: true,
@@ -185,6 +197,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     role: 'custom',
     model: 'anthropic/claude-sonnet-4.6',
     envModelVar: 'REMY_MODEL',
+    systemPrompt: AGENT_PROMPTS['remy']!,
     toolSlugs: ['find_window', 'recall_window', 'search_nodes', 'node_read'],
     skillSlugs: [],
     isDelegate: true,
@@ -198,6 +211,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     role: 'custom',
     model: 'anthropic/claude-sonnet-4.6',
     envModelVar: 'RESEARCHER_MODEL',
+    systemPrompt: AGENT_PROMPTS['researcher']!,
     toolSlugs: ['web_search', 'search_nodes', 'node_read'],
     skillSlugs: [],
     isDelegate: true,
@@ -211,6 +225,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     role: 'custom',
     model: 'anthropic/claude-opus-4.7',
     envModelVar: 'CODER_MODEL',
+    systemPrompt: AGENT_PROMPTS['coder']!,
     toolSlugs: [
       'run_terminal',
       'file_create',

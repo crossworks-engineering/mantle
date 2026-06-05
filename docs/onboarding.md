@@ -116,9 +116,10 @@ chosen preset, sets the name + temperature, points the TTS voice at the gender).
 >   delegate to Ledger, `web_search`/`find_window` → delegate to Researcher/Remy,
 >   federation). Re-running the wizard **repairs** a toolless assistant.
 > - attaches the shared behaviour skills (`tool_grounding`, `voice_reply`,
->   `rich_writing`) to the assistant via `linkAssistantSkills`. (`seedSharedSkills`
->   only auto-wires Jason's named personas `telegram-default`/`apostle-paul`, which
->   don't exist on a fresh brain — hence the explicit attach.)
+>   `rich_writing`) to the assistant — done by `applyManifest`'s persona-skill
+>   attach (the manifest persona's `skillSlugs`). The CLI `seed:shared-skills`
+>   additionally wires Jason's named personas `telegram-default`/`apostle-paul`,
+>   which don't exist on a fresh brain.
 >
 > Skills attach to **agents only** — `ai_workers` have no skill column; their
 > behaviour is the model + an optional `system_prompt`.
@@ -139,14 +140,18 @@ seeds the shared skills first (`page_editing`/`tool_grounding`/`voice_reply`,
 | **Researcher** (`researcher`) | web search | Saskia delegate (Perplexity Sonar) |
 | **Coder** (`coder`) | code specialist | responder; delegates to pages/tables |
 
-These are the **same** routines as the `pnpm -C apps/web seed:*` CLIs — those
-scripts were refactored to export `seed*(ownerId)` functions (thin CLI wrapper
-retained), so onboarding and the CLI share one source of truth. Each agent seeder
-also appends its own slug to every enabled responder/assistant's
-`memory_config.delegate_to`, so the just-created `assistant` gains the full
-delegate set with no extra wiring. Per-seed failures are logged and skipped (the
-persona is what matters); successes are listed back in the wizard's Set-up step
-(`ProvisionResult.seededSpecialists`). All idempotent — re-running is safe.
+These are seeded from the **system manifest** (`apps/web/lib/system-manifest/`) —
+the single declarative source of truth for the agent/skill/tool/worker graph, with
+a CI drift-test (`manifest.test.ts`) and a standing live checker
+(`checkSystemIntegrity`, surfaced at `/debug/integrity` → System config).
+`seedSpecialistStack` calls `applyManifest(ownerId)`, which seeds the skills, upserts the specialist
+agents, wires each delegate specialist into every enabled responder/assistant's
+`memory_config.delegate_to`, and attaches the persona's behaviour skills — all
+idempotent + **gap-fill** (re-running the wizard never clobbers an operator's
+customised prompt/model/params). The `pnpm -C apps/web seed:*` CLIs are thin
+wrappers over the same `applyManifest` (with `mode: 'overwrite'`), so the wizard,
+the CLI, and the integrity checker can't drift. Successes are listed back in the
+wizard's Set-up step (`ProvisionResult.seededSpecialists`).
 
 > **Configurable Assist binding.** Which agent a surface's Assist panel invokes
 > is **not** a hardcoded slug. The `/pages` and `/tables` editors each carry an

@@ -5,3 +5,9 @@
  */
 export * from './manifest';
 export { checkSystemIntegrity } from './integrity';
+export {
+  applyManifest,
+  type ApplyManifestOpts,
+  type ApplyManifestResult,
+  type ApplyMode,
+} from './seed';
