@@ -1,10 +1,11 @@
 # Tools & Skills — capability vs. teaching, as one source of truth
 
-> **Status: COMPLETE — P0–P4 SHIPPED** (2026-06-05). The full reshape is live:
+> **Status: COMPLETE — P0–P5 SHIPPED** (2026-06-05). The full reshape is live:
 > substrate (P0), the behavior-identical skill-arm collapse (P1), the Tools-manager
 > + Studio group nodes (P2), the god-grant break-up (P3 — runtime group expansion +
-> re-expression), and the dead-column drop (P4). Tools are capability (direct +
-> groups); skills are pure teaching; every grant is a visible edge. Companion to
+> re-expression), the dead-column drop (P4), and the durability + agent-editor pass
+> (P5 — group-native self-heal + groups-first editor). Tools are capability (direct
+> + groups); skills are pure teaching; every grant is a visible edge. Companion to
 > [docs/agent-studio.md](agent-studio.md) and
 > [docs/system-integrity.md](system-integrity.md).
 
@@ -218,12 +219,35 @@ makes the cutover a no-op.
 - Verified on dev: column dropped, agent effective sets unchanged (zero diff),
   skills still load. 105 tests green.
 
+### Phase 5 — Make it durable + the editor — ✅ SHIPPED
+Two surfaces still spoke the pre-group language, so the decomposition didn't
+*stick* and the agent editor told the old story.
+- ✅ **Group/auto-grant alignment:** the `contacts` and `lifelog` groups are now
+  the no-delete subsets (= `CONTACT`/`LIFELOG_AUTO_GRANT_SLUGS`), matching the
+  pages/tables authoring-subset pattern (decision 3). `*_delete` rides the escape
+  hatch. This lets an auto-granted conversational agent qualify for the *whole*
+  group instead of carrying ~9 tools flat forever.
+- ✅ **Group-native self-heal:** `ensureCoreToolsOnConversationalAgents` (runs at
+  agent boot) is now coverage-aware — it skips any core tool already conferred by
+  a granted group, so it stops re-flattening the decomposition on every restart.
+  `seed:tool-groups` now syncs group rows to the manifest (overwrite) so existing
+  brains pick up the redefinitions.
+- ✅ **Agent editor (`/settings/agents`):** a **Tool groups** picker is now the
+  primary capability control; the individual-tool list is demoted to a **Direct
+  tools · advanced** escape hatch; and a read-only **Effective tools** readout
+  shows `direct ∪ group tools` so the operator sees the agent's true capability,
+  not just the residual. The editor + API + `updateAgent` round-trip
+  `tool_group_slugs`.
+- Verified on dev (reexpress → group-sync ordering keeps `*_delete` as residual):
+  effective sets identical (zero diff); Saskia's residual **37 → 17** (all
+  legitimate). 10 drift tests green.
+
 ---
 
 **The end state.** A tool reaches an agent exactly one way that's always visible:
 `agent.tool_slugs` (direct/escape-hatch) ∪ the tools of its granted `tool_groups`.
-Skills are pure teaching prose. "Why can this agent do X?" has one answer, and the
-Studio graph draws it.
+Skills are pure teaching prose. "Why can this agent do X?" has one answer — and the
+agent editor, the Tools manager, and the Studio graph all draw it the same way.
 
 ## Integrity / manifest impact
 

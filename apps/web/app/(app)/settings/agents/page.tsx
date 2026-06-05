@@ -4,6 +4,7 @@ import { requireOwner } from '@/lib/auth';
 import { listAgents } from '@/lib/agents';
 import { listApiKeys } from '@/lib/api-keys';
 import { listSkills } from '@/lib/skills';
+import { listToolGroups } from '@/lib/tool-groups';
 import { listAiWorkersByKind } from '@/lib/ai-workers';
 import { getTailnetPeerNames } from '@/lib/tailscale';
 import { SetPageTitle } from '@/components/layout/page-title';
@@ -11,7 +12,7 @@ import { AgentsClient } from './agents-client';
 
 export default async function AgentsSettingsPage() {
   const user = await requireOwner();
-  const [agents, keys, toolRows, skillRows, tailnetPeers, ttsWorkers] = await Promise.all([
+  const [agents, keys, toolRows, skillRows, toolGroupRows, tailnetPeers, ttsWorkers] = await Promise.all([
     listAgents(user.id),
     listApiKeys(user.id),
     db
@@ -26,6 +27,7 @@ export default async function AgentsSettingsPage() {
       .where(eq(tools.ownerId, user.id))
       .orderBy(tools.slug),
     listSkills(user.id),
+    listToolGroups(user.id),
     getTailnetPeerNames(),
     listAiWorkersByKind(user.id, 'tts'),
   ]);
@@ -64,6 +66,14 @@ export default async function AgentsSettingsPage() {
             slug: s.slug,
             name: s.name,
             description: s.description,
+          }))}
+        availableToolGroups={toolGroupRows
+          .filter((g) => g.enabled)
+          .map((g) => ({
+            slug: g.slug,
+            name: g.name,
+            description: g.description,
+            toolSlugs: g.toolSlugs,
           }))}
       />
     </>

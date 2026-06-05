@@ -121,6 +121,7 @@ type AgentSummary = {
   tools: string[];
   toolSlugs: string[];
   skillSlugs: string[];
+  toolGroupSlugs: string[];
   memoryConfig: MemoryConfig;
   params: { temperature?: number; max_tokens?: number; top_p?: number };
   avatar: AgentAvatar | null;
@@ -150,6 +151,14 @@ export type SkillOption = {
   slug: string;
   name: string;
   description: string;
+};
+
+export type ToolGroupOption = {
+  slug: string;
+  name: string;
+  description: string;
+  /** Member tool slugs — used to compute the agent's effective tool set. */
+  toolSlugs: string[];
 };
 
 const DEFAULT_SYSTEM_PROMPT = `You are an assistant helping the user via Telegram. You have memory of the recent conversation in this chat. Be concise and conversational — short paragraphs, no headers, no bullet lists unless explicitly useful. Match the tone of the incoming message. Skip pleasantries unless they fit naturally. If you don't know something or can't help, say so plainly.`;
@@ -315,9 +324,11 @@ type FormState = {
   extractFacts: boolean;
   /** Cap in cents (UI-friendlier than micro-USD; converted on save). Empty = no cap. */
   extractCostCapCents: string;
-  /** Slugs this agent may call during a turn. */
+  /** Direct tool grants — the escape hatch for one-offs not in a group. */
   toolSlugs: string[];
   skillSlugs: string[];
+  /** Tool groups granted to this agent (the primary capability control). */
+  toolGroupSlugs: string[];
   /** Agent slugs this agent may delegate to via invoke_agent. */
   delegateTo: string[];
   /** Tool-result spill thresholds (KB, as strings). Empty = global default. */
@@ -364,6 +375,7 @@ function emptyForm(role: Role = 'responder'): FormState {
     extractCostCapCents: '',
     toolSlugs: [],
     skillSlugs: [],
+    toolGroupSlugs: [],
     delegateTo: [],
     resultInlineMaxKb: '',
     resultEmbedMinKb: '',
@@ -411,6 +423,7 @@ function formFromAgent(a: AgentSummary): FormState {
         : '',
     toolSlugs: a.toolSlugs ?? [],
     skillSlugs: a.skillSlugs ?? [],
+    toolGroupSlugs: a.toolGroupSlugs ?? [],
     delegateTo: a.memoryConfig.delegate_to ?? [],
     resultInlineMaxKb: a.memoryConfig.result_handling?.inline_max_kb?.toString() ?? '',
     resultEmbedMinKb: a.memoryConfig.result_handling?.embed_min_kb?.toString() ?? '',
@@ -464,6 +477,7 @@ export function AgentsClient({
   apiKeys,
   availableTools,
   availableSkills,
+  availableToolGroups,
   tailnetPeers = [],
   ttsWorkers = [],
 }: {
@@ -471,6 +485,7 @@ export function AgentsClient({
   apiKeys: ApiKeyOption[];
   availableTools: ToolOption[];
   availableSkills: SkillOption[];
+  availableToolGroups: ToolGroupOption[];
   /** MagicDNS names of online tailnet peers — backs the base-URL datalist when
    *  a tailnet is up. Empty otherwise (input stays free-text). */
   tailnetPeers?: string[];
@@ -494,6 +509,16 @@ export function AgentsClient({
   const [editing, setEditing] = useState<{ mode: 'create' } | { mode: 'edit'; agent: AgentSummary }>();
   const [form, setForm] = useState<FormState>(emptyForm());
   const [slugTouched, setSlugTouched] = useState(false);
+
+  // The agent's effective tool set = direct grants ∪ every granted group's tools
+  // (exactly what the runtime resolves). Surfaced read-only so the operator sees
+  // the agent's TRUE capability, not just the direct-grant residual.
+  const effectiveTools = useMemo(() => {
+    const byGroup = new Map(availableToolGroups.map((g) => [g.slug, g.toolSlugs]));
+    const set = new Set<string>(form.toolSlugs);
+    for (const g of form.toolGroupSlugs) for (const t of byGroup.get(g) ?? []) set.add(t);
+    return [...set].sort();
+  }, [form.toolSlugs, form.toolGroupSlugs, availableToolGroups]);
 
   // Live model → context-window map (OpenRouter catalog, cached server-side),
   // fetched once so the Model field can show the real window for the typed
@@ -767,6 +792,7 @@ export function AgentsClient({
       enabled: form.enabled,
       toolSlugs: form.toolSlugs,
       skillSlugs: form.skillSlugs,
+      toolGroupSlugs: form.toolGroupSlugs,
       avatar: form.avatar,
       ...(editing.mode === 'create' ? { slug: form.slug.trim() } : {}),
     };
@@ -1625,7 +1651,45 @@ export function AgentsClient({
 
             <fieldset className="space-y-3 rounded-md border border-border p-3">
               <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Tools
+                Tool groups
+              </legend>
+              {availableToolGroups.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No tool groups yet. Create capability bundles at{' '}
+                  <a href="/settings/tool-groups" className="underline">/settings/tool-groups</a>.
+                </p>
+              ) : (
+                <ToolGroupPicker
+                  available={availableToolGroups}
+                  selected={form.toolGroupSlugs}
+                  onChange={(next) => setForm((f) => ({ ...f, toolGroupSlugs: next }))}
+                />
+              )}
+              <p className="text-xs text-muted-foreground">
+                The primary way to grant capability — each group joins all its tools into
+                the agent&apos;s effective set. Curate bundles at{' '}
+                <a href="/settings/tool-groups" className="underline">/settings/tool-groups</a>.
+              </p>
+              {/* Effective set — what the runtime actually resolves (groups + direct). */}
+              <div className="rounded-md bg-muted/40 p-2">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Effective tools · {effectiveTools.length}
+                </p>
+                {effectiveTools.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    None — the agent never sees a <code>tools</code> parameter.
+                  </p>
+                ) : (
+                  <p className="font-mono text-[11px] leading-relaxed text-muted-foreground">
+                    {effectiveTools.join(', ')}
+                  </p>
+                )}
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-3 rounded-md border border-border p-3">
+              <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Direct tools · advanced
               </legend>
               {availableTools.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
@@ -1640,11 +1704,10 @@ export function AgentsClient({
                 />
               )}
               <p className="text-xs text-muted-foreground">
-                The agent may call these mid-turn. Empty selection = the agent never sees a
-                <code> tools</code> parameter (behaves like before). Tools marked{' '}
-                <em>requires confirm</em> get queued at{' '}
-                <a href="/pending" className="underline">/pending</a> instead of
-                auto-running.
+                The <strong>escape hatch</strong> — individual tool grants for one-offs that
+                don&apos;t belong in a group (e.g. a destructive <code>*_delete</code>). Prefer
+                tool groups above. Tools marked <em>requires confirm</em> get queued at{' '}
+                <a href="/pending" className="underline">/pending</a> instead of auto-running.
               </p>
             </fieldset>
 
@@ -1666,8 +1729,8 @@ export function AgentsClient({
               )}
               <p className="text-xs text-muted-foreground">
                 Each attached skill appends its instructions to the agent&apos;s system
-                prompt and joins its suggested tools into the agent&apos;s allowlist
-                (always-loaded mode).
+                prompt (always-loaded). Skills are pure teaching — capability comes from
+                tool groups + direct grants above.
               </p>
             </fieldset>
 
@@ -1692,10 +1755,10 @@ export function AgentsClient({
               <p className="text-xs text-muted-foreground">
                 Agents this one may hand a sub-task to via the <code>invoke_agent</code>{' '}
                 tool. Empty = delegation disabled (the runtime fails closed).
-                {form.delegateTo.length > 0 && !form.toolSlugs.includes('invoke_agent') && (
+                {form.delegateTo.length > 0 && !effectiveTools.includes('invoke_agent') && (
                   <span className="mt-1 block text-amber-600 dark:text-amber-400">
-                    Add the <code>invoke_agent</code> tool above, or these delegates
-                    can&apos;t actually be reached.
+                    Grant the <code>delegation</code> group (or <code>invoke_agent</code>{' '}
+                    directly), or these delegates can&apos;t actually be reached.
                   </span>
                 )}
               </p>
@@ -2019,6 +2082,35 @@ function SkillPicker({
     value: s.slug,
     label: s.name,
     description: s.description,
+  }));
+  return (
+    <ToggleList items={items} selected={selected} onChange={onChange} collapsible searchable />
+  );
+}
+
+/**
+ * Tool-group multi-select — the PRIMARY capability control. One row per group
+ * (name + description + member-tool count). Granting a group joins all its tools
+ * into the agent's effective set at runtime.
+ */
+function ToolGroupPicker({
+  available,
+  selected,
+  onChange,
+}: {
+  available: ToolGroupOption[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const items: ToggleListItem[] = available.map((g) => ({
+    value: g.slug,
+    label: g.name,
+    description: g.description,
+    meta: (
+      <span className="shrink-0 text-[10px] text-muted-foreground">
+        {g.toolSlugs.length} tool{g.toolSlugs.length === 1 ? '' : 's'}
+      </span>
+    ),
   }));
   return (
     <ToggleList items={items} selected={selected} onChange={onChange} collapsible searchable />

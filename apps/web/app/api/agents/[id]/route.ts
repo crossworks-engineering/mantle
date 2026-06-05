@@ -86,6 +86,7 @@ const PatchBody = z
     tools: z.array(z.string()).max(256),
     toolSlugs: z.array(z.string().min(1).max(120)).max(256),
     skillSlugs: z.array(z.string().min(1).max(120)).max(32),
+    toolGroupSlugs: z.array(z.string().min(1).max(120)).max(64),
     memoryConfig: MemoryConfig,
     params: Params,
     avatar: Avatar,

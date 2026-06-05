@@ -229,6 +229,7 @@ export async function updateAgent(
   if (patch.tools !== undefined) next.tools = patch.tools;
   if (patch.toolSlugs !== undefined) next.toolSlugs = patch.toolSlugs;
   if (patch.skillSlugs !== undefined) next.skillSlugs = patch.skillSlugs;
+  if (patch.toolGroupSlugs !== undefined) next.toolGroupSlugs = patch.toolGroupSlugs;
   // Shallow-merge memory_config instead of overwriting it. The agents form
   // only round-trips the keys it renders, so a wholesale replace silently
   // drops any key the form doesn't send — most importantly `delegate_to`
