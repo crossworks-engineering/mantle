@@ -63,6 +63,20 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
   const enabledToolGroupSlugs = new Set(toolGroupRows.filter((g) => g.enabled).map((g) => g.slug));
   const toolGroupBySlug = new Map(toolGroupRows.map((g) => [g.slug, g] as const));
 
+  /** P6: an agent's effective tool set = direct tool_slugs (vestigial, dropped
+   *  in P6b) ∪ the tools conferred by its ENABLED granted groups. */
+  const effectiveAgentTools = (a: {
+    toolSlugs?: string[] | null;
+    toolGroupSlugs?: string[] | null;
+  }): Set<string> => {
+    const set = new Set<string>(a.toolSlugs ?? []);
+    for (const g of a.toolGroupSlugs ?? []) {
+      const grp = toolGroupBySlug.get(g);
+      if (grp?.enabled) for (const t of grp.toolSlugs ?? []) set.add(t);
+    }
+    return set;
+  };
+
   const checks: SystemCheck[] = [];
 
   // 1. Persona — exists, enabled, can act, can delegate, carries grounding skills.
@@ -79,11 +93,11 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
       ok = false;
       samples.push({ id: personaSlug, detail: persona ? 'disabled' : 'no persona agent (no slug `assistant`, no enabled responder)' });
     } else {
-      const nTools = persona.toolSlugs?.length ?? 0;
-      if (nTools === 0) {
+      const eff = effectiveAgentTools(persona);
+      if (eff.size === 0) {
         ok = false;
-        samples.push({ id: personaSlug, detail: 'no tools attached — cannot act' });
-      } else if (!(persona.toolSlugs ?? []).includes('invoke_agent')) {
+        samples.push({ id: personaSlug, detail: 'no tools attached (no groups granted) — cannot act' });
+      } else if (!eff.has('invoke_agent')) {
         ok = false;
         samples.push({ id: personaSlug, detail: 'missing invoke_agent — cannot delegate' });
       }
@@ -101,7 +115,7 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
       severity: 'high',
       ok,
       detail: ok
-        ? `${persona!.toolSlugs?.length} tools · can delegate · grounded`
+        ? `${effectiveAgentTools(persona!).size} tools · can delegate · grounded`
         : 'the persona is missing or can’t act — fix before relying on the assistant',
       samples,
     });

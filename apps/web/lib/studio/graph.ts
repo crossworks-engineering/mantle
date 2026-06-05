@@ -159,6 +159,14 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
   const skillSlugs = new Set(skills.map((s) => s.slug));
   const toolGroupSlugs = new Set(toolGroups.map((g) => g.slug));
   const enabledToolGroupSlugs = new Set(toolGroups.filter((g) => g.enabled).map((g) => g.slug));
+  const groupToolsBySlug = new Map(toolGroups.map((g) => [g.slug, g.toolSlugs] as const));
+  /** P6: an agent's effective tool count = direct tool_slugs (vestigial) ∪ the
+   *  tools its granted groups confer. */
+  const effectiveToolCount = (a: { toolSlugs?: string[] | null; toolGroupSlugs?: string[] | null }): number => {
+    const set = new Set<string>(a.toolSlugs ?? []);
+    for (const g of a.toolGroupSlugs ?? []) for (const t of groupToolsBySlug.get(g) ?? []) set.add(t);
+    return set.size;
+  };
   const agentSlugs = new Set(agents.map((a) => a.slug));
   const enabledAgentSlugs = new Set(agents.filter((a) => a.enabled).map((a) => a.slug));
 
@@ -258,7 +266,7 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
       delegateSlugs: delegateTo(a.memoryConfig),
       toolGroupSlugs: a.toolGroupSlugs ?? [],
       missingToolGroupSlugs: (a.toolGroupSlugs ?? []).filter((g) => !enabledToolGroupSlugs.has(g)),
-      toolCount: a.toolSlugs.length,
+      toolCount: effectiveToolCount(a),
       params: { temperature: a.params?.temperature, max_tokens: a.params?.max_tokens },
       maxIterations: a.memoryConfig?.max_iterations,
       resettable: MANIFEST_AGENT_SLUGS.has(a.slug),

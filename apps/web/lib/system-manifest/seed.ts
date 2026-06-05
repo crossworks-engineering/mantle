@@ -27,8 +27,6 @@ import {
   MANIFEST_SKILLS,
   MANIFEST_TOOL_GROUPS,
   PERSONA_SLUG,
-  resolveManifestToolSlugs,
-  deriveGroupGrants,
   type ManifestAgent,
   type ManifestSkill,
   type ManifestToolGroup,
@@ -135,13 +133,11 @@ async function upsertAgent(
   mode: ApplyMode,
 ): Promise<void> {
   const model = (def.envModelVar ? process.env[def.envModelVar] : undefined) || def.model;
-  // P3: seed the agent in DECOMPOSED form — grant every fully-covered tool group
-  // and keep only the residual as direct tool_slugs. The runtime re-assembles the
-  // identical effective set (residual ∪ group tools), so this is behavior-safe.
-  const full = resolveManifestToolSlugs(def);
-  const derived = deriveGroupGrants(full);
-  const toolSlugs = derived.toolSlugs;
-  const groupSlugs = union(derived.toolGroupSlugs, def.toolGroupSlugs ?? []);
+  // P6: manifest agents are authored as pure tool GROUPS — grant exactly those
+  // and keep tool_slugs empty (the runtime's effective set is the union of the
+  // groups' tools). The `agents.tool_slugs` column is dropped in P6b.
+  const toolSlugs: string[] = Array.isArray(def.toolSlugs) ? def.toolSlugs : [];
+  const groupSlugs = def.toolGroupSlugs ?? [];
   const [existing] = await db
     .select({
       id: agents.id,

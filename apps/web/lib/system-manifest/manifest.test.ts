@@ -9,10 +9,9 @@ import {
   DELEGATE_SLUGS,
   PERSONA_SLUG,
   ASSIST_SURFACE_DEFAULTS,
-  resolveManifestToolSlugs,
-  deriveGroupGrants,
+  type ManifestAgent,
 } from './manifest';
-import { DEFAULT_ASSISTANT_TOOL_SLUGS } from '@mantle/tools';
+import { BUILTIN_TOOLS } from '@mantle/tools';
 
 /**
  * Manifest drift guard (modeled on packages/voice/.../catalog-consistency.test.ts).
@@ -24,6 +23,15 @@ import { DEFAULT_ASSISTANT_TOOL_SLUGS } from '@mantle/tools';
 describe('system manifest integrity', () => {
   const skillSlugs = new Set(MANIFEST_SKILLS.map((s) => s.slug));
   const agentSlugs = new Set(MANIFEST_AGENTS.map((a) => a.slug));
+  const groupTools = new Map(MANIFEST_TOOL_GROUPS.map((g) => [g.slug, g.toolSlugs]));
+
+  /** P6: an agent's effective tool set is exactly the union of its granted
+   *  groups' tools — the sole grant mechanism. */
+  const effectiveTools = (agent: ManifestAgent): Set<string> => {
+    const set = new Set<string>();
+    for (const g of agent.toolGroupSlugs ?? []) for (const t of groupTools.get(g) ?? []) set.add(t);
+    return set;
+  };
 
   it('has no duplicate slugs', () => {
     expect(MANIFEST_SKILLS.length).toBe(skillSlugs.size);
@@ -42,17 +50,21 @@ describe('system manifest integrity', () => {
     }
   });
 
-  it('every agent grants only known tools/groups and references only manifest skills', () => {
+  it('every agent is authored as pure tool groups (P6) and references only known groups/skills', () => {
     for (const agent of MANIFEST_AGENTS) {
-      const tools = resolveManifestToolSlugs(agent);
-      const unknownTools = tools.filter((t) => !KNOWN_TOOL_SLUGS.has(t));
-      expect(unknownTools, `agent '${agent.slug}' references unknown tools`).toEqual([]);
-
-      const unknownSkills = agent.skillSlugs.filter((s) => !skillSlugs.has(s));
-      expect(unknownSkills, `agent '${agent.slug}' references unknown skills`).toEqual([]);
+      // P6: grants are GROUPS only — no direct tool_slugs on any manifest agent.
+      const direct = Array.isArray(agent.toolSlugs) ? agent.toolSlugs : [];
+      expect(direct, `agent '${agent.slug}' must carry no direct tool_slugs (groups only)`).toEqual([]);
 
       const unknownGroups = (agent.toolGroupSlugs ?? []).filter((g) => !KNOWN_TOOL_GROUP_SLUGS.has(g));
       expect(unknownGroups, `agent '${agent.slug}' references unknown tool groups`).toEqual([]);
+
+      // Effective set (the group union) resolves to known builtins only.
+      const unknownTools = [...effectiveTools(agent)].filter((t) => !KNOWN_TOOL_SLUGS.has(t));
+      expect(unknownTools, `agent '${agent.slug}' effective set has unknown tools`).toEqual([]);
+
+      const unknownSkills = agent.skillSlugs.filter((s) => !skillSlugs.has(s));
+      expect(unknownSkills, `agent '${agent.slug}' references unknown skills`).toEqual([]);
     }
   });
 
@@ -71,41 +83,36 @@ describe('system manifest integrity', () => {
     expect(new Set(surfaces).size).toBe(surfaces.length);
     expect(ASSIST_SURFACE_DEFAULTS.pages).toBeTruthy();
     expect(ASSIST_SURFACE_DEFAULTS.tables).toBeTruthy();
-    // the surface's agent must hold its surface tools
+    // the surface's agent must hold its surface tools (via its groups)
     const pagesAgent = MANIFEST_AGENTS.find((a) => a.slug === ASSIST_SURFACE_DEFAULTS.pages)!;
-    expect(resolveManifestToolSlugs(pagesAgent)).toContain('page_create');
+    expect(effectiveTools(pagesAgent).has('page_create')).toBe(true);
     const tablesAgent = MANIFEST_AGENTS.find((a) => a.slug === ASSIST_SURFACE_DEFAULTS.tables)!;
-    expect(resolveManifestToolSlugs(tablesAgent)).toContain('table_from_text');
+    expect(effectiveTools(tablesAgent).has('table_from_text')).toBe(true);
   });
 
-  it('deriveGroupGrants re-expresses every agent losslessly (residual ∪ groups === full)', () => {
-    const groupTools = new Map(MANIFEST_TOOL_GROUPS.map((g) => [g.slug, g.toolSlugs]));
-    for (const agent of MANIFEST_AGENTS) {
-      const full = resolveManifestToolSlugs(agent);
-      const { toolSlugs, toolGroupSlugs } = deriveGroupGrants(full);
-      // every granted group is a real manifest group
-      for (const g of toolGroupSlugs) expect(groupTools.has(g), `agent '${agent.slug}' → unknown group '${g}'`).toBe(true);
-      // residual ∪ granted-group tools reassembles the full set exactly
-      const reassembled = new Set(toolSlugs);
-      for (const g of toolGroupSlugs) for (const t of groupTools.get(g)!) reassembled.add(t);
-      expect([...reassembled].sort(), `agent '${agent.slug}' re-expression is lossy`).toEqual([...new Set(full)].sort());
-      // residual carries no tool already covered by a granted group (no double-grant)
-      const covered = new Set(toolGroupSlugs.flatMap((g) => groupTools.get(g)!));
-      expect(toolSlugs.filter((t) => covered.has(t)), `agent '${agent.slug}' residual overlaps a group`).toEqual([]);
-    }
+  it('every grantable builtin lives in at least one tool group (P6 — groups are total)', () => {
+    const inAGroup = new Set(MANIFEST_TOOL_GROUPS.flatMap((g) => g.toolSlugs));
+    // Every static builtin must be grantable via some group. (Runtime-only
+    // affordances like heartbeat_* are registered outside BUILTIN_TOOLS and are
+    // injected per-turn, never granted — so they're correctly absent here.)
+    const orphans = BUILTIN_TOOLS.map((t) => t.slug).filter((s) => !inAGroup.has(s));
+    expect(orphans, 'these builtins are grantable but belong to no group').toEqual([]);
   });
 
-  it('the persona delegates page/table work — holds no page_*/table_* tools, but can delegate (P5)', () => {
+  it('the persona delegates page/table work — holds no page_*/table_* authoring, but can delegate (P5/P6)', () => {
     const persona = MANIFEST_AGENTS.find((a) => a.isPersona)!;
-    const grant = new Set(resolveManifestToolSlugs(persona));
+    const grant = effectiveTools(persona);
     expect(grant.has('run_terminal'), 'run_terminal stays out').toBe(false);
     expect(grant.has('page_create'), 'page authoring is delegated to the Pages specialist').toBe(false);
     expect(grant.has('page_delete'), 'page delete is delegated to the Pages specialist').toBe(false);
     expect(grant.has('table_from_text'), 'grid work is delegated to the Ledger specialist').toBe(false);
+    expect(grant.has('contact_delete'), 'destructive contact delete is deliberate-only').toBe(false);
+    expect(grant.has('lifelog_delete'), 'destructive lifelog delete is deliberate-only').toBe(false);
     expect(grant.has('invoke_agent'), 'persona must be able to delegate').toBe(true);
+    expect(grant.has('page_share'), 'persona keeps page sharing').toBe(true);
     // …and the Pages specialist DOES own page authoring (so delegation has a target).
     const pages = MANIFEST_AGENTS.find((a) => a.slug === 'pages')!;
-    expect(new Set(resolveManifestToolSlugs(pages)).has('page_create'), 'Pages agent authors pages').toBe(true);
+    expect(effectiveTools(pages).has('page_create'), 'Pages agent authors pages').toBe(true);
   });
 
   it('every skill has a non-empty instruction body', () => {

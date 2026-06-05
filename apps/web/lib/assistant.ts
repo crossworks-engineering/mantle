@@ -348,14 +348,16 @@ export async function runAssistantTurn(
   // and the loop reduces to one LLM call (same as before).
   const groupTools = await resolveAgentToolGroups(ownerId, agent.toolGroupSlugs ?? []);
   let allowedToolSlugs = effectiveToolSlugs(agent.toolSlugs ?? [], groupTools);
-  // Per-turn affordance hygiene: drop the heartbeat continuity tools
-  // from the model's tool list when there are no active heartbeats
-  // on this surface. The grant in agents.tool_slugs is unchanged —
-  // this is purely runtime scoping, mirroring apps/agent/main.ts.
-  // See docs/heartbeats.md §4 "Permission model & runtime hygiene".
+  // Heartbeat continuity tools are a per-turn AFFORDANCE (P6), not a stored
+  // grant: inject them only when there's an active heartbeat on this surface
+  // for the model to act on. Mirrors apps/agent/main.ts. See docs/heartbeats.md
+  // §4 "Permission model & runtime hygiene".
   const hasHeartbeats = await hasActiveHeartbeatsOnSurface(ownerId, { kind: 'web' }).catch(() => false);
-  if (!hasHeartbeats) {
-    allowedToolSlugs = allowedToolSlugs.filter((s) => !HEARTBEAT_RESPONDER_TOOLS.includes(s));
+  if (hasHeartbeats) {
+    allowedToolSlugs = [
+      ...allowedToolSlugs,
+      ...HEARTBEAT_RESPONDER_TOOLS.filter((s) => !allowedToolSlugs.includes(s)),
+    ];
   }
   const allowedTools = await resolveAgentTools(ownerId, allowedToolSlugs);
 

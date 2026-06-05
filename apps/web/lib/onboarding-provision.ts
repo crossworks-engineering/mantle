@@ -1,6 +1,6 @@
 import { db, agents, eq, and } from '@mantle/db';
 import { listApiKeys } from '@mantle/api-keys';
-import { seedBuiltinTools, DEFAULT_ASSISTANT_TOOL_SLUGS } from '@mantle/tools';
+import { seedBuiltinTools } from '@mantle/tools';
 import {
   buildPersonaPrompt,
   DEFAULT_PERSONA_NAMES,
@@ -17,7 +17,7 @@ import { createAgent, updateAgent } from '@/lib/agents';
 // The specialist stack (skills + Pages/Ledger/Remy/Researcher/Coder + their
 // delegation wiring) is seeded from the declarative manifest — the single source
 // of truth shared with the CLI `pnpm seed:*` scripts and the integrity checker.
-import { applyManifest, deriveGroupGrants } from '@/lib/system-manifest';
+import { applyManifest, PERSONA_TOOL_GROUP_SLUGS } from '@/lib/system-manifest';
 
 /**
  * Onboarding provisioner — turns the API keys the user just entered into a
@@ -210,17 +210,16 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
   let createdAgent: ProvisionResult['createdAgent'] = null;
   if (openrouter) {
     const [existingAgent] = await db
-      .select({ id: agents.id, toolSlugs: agents.toolSlugs })
+      .select({ id: agents.id, toolGroupSlugs: agents.toolGroupSlugs })
       .from(agents)
       .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, PERSONA_AGENT_SLUG)))
       .limit(1);
     if (!existingAgent) {
       const name = DEFAULT_PERSONA_NAMES.female;
-      // The generalist grant, seeded DECOMPOSED into tool groups + a residual (P3)
-      // so a fresh persona is already "broken up". Page/table authoring is excluded
-      // by the deny-set (DEFAULT_ASSISTANT) — that work is delegated to the Pages /
-      // Ledger specialists (P5); the persona reaches them via invoke_agent.
-      const personaGrant = deriveGroupGrants([...DEFAULT_ASSISTANT_TOOL_SLUGS]);
+      // The generalist grant is pure tool GROUPS (P6) — the manifest persona's
+      // bundle set. Page/table AUTHORING is delegated to the Pages / Ledger
+      // specialists (P5; the persona reaches them via invoke_agent); the persona
+      // keeps `page-share`. The runtime expands these into the effective set.
       await createAgent(ownerId, {
         slug: PERSONA_AGENT_SLUG,
         name,
@@ -231,8 +230,8 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
         apiKeyId: openrouter,
         ttsWorkerId,
         systemPrompt: buildPersonaPrompt('warm', { assistantName: name, gender: 'female' }),
-        toolSlugs: personaGrant.toolSlugs,
-        toolGroupSlugs: personaGrant.toolGroupSlugs,
+        toolSlugs: [],
+        toolGroupSlugs: [...PERSONA_TOOL_GROUP_SLUGS],
         memoryConfig: {
           history_limit: 20,
           digest_limit: 3,
@@ -246,11 +245,13 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
         enabled: true,
       });
       createdAgent = { slug: PERSONA_AGENT_SLUG, name };
-    } else if (!existingAgent.toolSlugs || existingAgent.toolSlugs.length === 0) {
-      // Repair an assistant that was provisioned before tools were granted (or
-      // hand-created empty) — re-running the wizard fixes a toolless assistant.
+    } else if (!existingAgent.toolGroupSlugs || existingAgent.toolGroupSlugs.length === 0) {
+      // Repair an assistant that was provisioned before grants existed (or
+      // hand-created empty) — re-running the wizard restores the generalist
+      // group grant. (P6: capability is groups, so an empty toolGroupSlugs is the
+      // "toolless" signal, not empty tool_slugs.)
       await updateAgent(ownerId, existingAgent.id, {
-        toolSlugs: [...DEFAULT_ASSISTANT_TOOL_SLUGS],
+        toolGroupSlugs: [...PERSONA_TOOL_GROUP_SLUGS],
       });
     }
   }

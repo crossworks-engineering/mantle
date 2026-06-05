@@ -68,19 +68,21 @@ export type ManifestAgent = {
   /** Verbatim system prompt (from ./prompts) — specialists only; the persona
    *  carries none (its prompt is built from the persona bank). */
   systemPrompt?: string;
-  /** Tool grant. The sentinel resolves to DEFAULT_ASSISTANT_TOOL_SLUGS so the
-   *  persona tracks the registry rather than a frozen copy. */
+  /** Direct tool grant. P6: every manifest agent is authored as pure tool
+   *  GROUPS (`toolGroupSlugs` below), so this is `[]` for all of them. The field
+   *  + the `DEFAULT_ASSISTANT` sentinel survive only for the legacy
+   *  `resolveManifestToolSlugs`/`deriveGroupGrants` helpers and are removed in
+   *  P6b alongside the `agents.tool_slugs` column. */
   toolSlugs: string[] | 'DEFAULT_ASSISTANT';
-  /** Extra direct tool grants unioned on top of `toolSlugs` — the escape hatch
-   *  (decision 2, docs/tools-and-skills.md) for one-off grants that don't belong
-   *  in the base set or a group. Used to preserve `page_delete` on the persona
-   *  (decision 1) now that it no longer rides in via the `rich_writing` skill. */
+  /** Legacy escape-hatch for one-off direct grants. Unused post-P6 (grants are
+   *  groups); kept for the type until the P6b column drop. */
   extraToolSlugs?: string[];
   /** Skills that SHOULD be attached to this agent. */
   skillSlugs: string[];
-  /** Tool groups granted to this agent (named bundles). Phase 0: dormant —
-   *  seeded onto the agent but NOT yet expanded into its effective tool set.
-   *  Omitted ⇒ none. See docs/tools-and-skills.md. */
+  /** Tool groups granted to this agent (named bundles). P6: the SOLE grant
+   *  mechanism — the agent's effective tool set is exactly the union of these
+   *  groups' tools (resolved + capped at runtime). Omitted ⇒ none.
+   *  See docs/tools-and-skills.md. */
   toolGroupSlugs?: string[];
   /** Does the persona delegate TO this agent (invoke_agent allowlist)? */
   isDelegate?: boolean;
@@ -103,16 +105,16 @@ export type ManifestWorker = {
 
 // ── Derived tool lists (match the seed scripts exactly) ──────────────────────
 
-/** Page authoring set: every page tool except the destructive delete and the
- *  live-overwrite path (edits go through page_update_draft). */
+/** Page authoring set for the `pages` group: every page tool except the
+ *  destructive delete + live-overwrite (those ride the `page-admin` group) and
+ *  the sharing toggles (which ride the standalone `page-share` group so the
+ *  persona can share without holding the authoring toolkit). No overlap between
+ *  the `pages`, `page-admin`, and `page-share` groups. */
 const PAGE_AUTHORING_TOOL_SLUGS = PAGE_TOOL_SLUGS.filter(
-  (s) => s !== 'page_delete' && s !== 'page_update',
+  (s) => !['page_delete', 'page_update', 'page_share', 'page_unshare'].includes(s),
 );
 /** Table authoring set: every table tool except the irreversible delete. */
 const TABLE_AUTHORING_TOOL_SLUGS = TABLE_TOOL_SLUGS.filter((s) => s !== 'table_delete');
-
-const SOURCE_FILE_TOOLS = ['file_read', 'file_list', 'file_get', 'folder_list'];
-const CROSS_CONTEXT_TOOLS = ['search_nodes', 'node_read'];
 
 // ── Skills ───────────────────────────────────────────────────────────────────
 
@@ -157,15 +159,16 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
 
 // ── Tool groups ──────────────────────────────────────────────────────────────
 //
-// Named, capability-only bundles (docs/tools-and-skills.md). The membership
-// mirrors the `*_TOOLS` clusters that already exist in @mantle/tools — these
-// ARE the seed bundles. Phase 0 seeds them; nothing grants them yet (every
-// agent's toolGroupSlugs is empty), so the system is unchanged at runtime. The
-// drift-test validates every slug here against KNOWN_TOOL_SLUGS.
+// Named, capability-only bundles (docs/tools-and-skills.md). P6: these are the
+// SOLE grant mechanism — every MANIFEST_AGENTS entry is authored as a list of
+// these slugs, and an agent's effective tool set is exactly the union of its
+// groups' tools. The drift-test validates every slug here against
+// KNOWN_TOOL_SLUGS and that every grantable builtin lives in ≥1 group.
 //
-// Per decision 3 (docs/tools-and-skills.md): the `pages`/`tables` groups carry
-// the AUTHORING subsets — destructive `page_delete`/`table_delete` are granted
-// only where intended via the direct-grant escape hatch, never via the group.
+// Destructive ops live in dedicated `*-admin` groups (`page-admin`,
+// `table-admin`, `contacts-admin`, `lifelog-admin`) so they're granted only by
+// deliberate group membership, never as a side effect of an authoring grant.
+// The `pages`/`tables` groups carry the AUTHORING subsets only.
 
 export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
@@ -211,8 +214,20 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'pages',
     name: 'Pages toolkit',
-    description: 'Author + edit rich pages (authoring subset; no destructive delete).',
+    description: 'Author + edit rich pages (authoring subset; no delete/overwrite/share).',
     toolSlugs: [...PAGE_AUTHORING_TOOL_SLUGS],
+  },
+  {
+    slug: 'page-admin',
+    name: 'Page admin',
+    description: 'Destructive + live-overwrite page ops — the Pages specialist only.',
+    toolSlugs: ['page_delete', 'page_update'],
+  },
+  {
+    slug: 'page-share',
+    name: 'Page sharing',
+    description: 'Toggle a page public/private — lets the persona share without the authoring toolkit.',
+    toolSlugs: ['page_share', 'page_unshare'],
   },
   {
     slug: 'tables',
@@ -221,27 +236,55 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: [...TABLE_AUTHORING_TOOL_SLUGS],
   },
   {
+    slug: 'table-admin',
+    name: 'Table admin',
+    description: 'Destructive table delete — deliberate-only, not granted by default.',
+    toolSlugs: ['table_delete'],
+  },
+  {
     slug: 'contacts',
     name: 'Contacts',
     description: 'The people/org index — also the email allowlist (docs/contacts.md). No delete (escape hatch).',
-    // No-delete subset (mirrors pages/tables, decision 3); contact_delete is a
-    // direct escape-hatch grant where intended. Matches CORE_AUTO_GRANT exactly,
-    // so an auto-granted conversational agent qualifies for the whole group.
+    // No-delete subset (mirrors pages/tables, decision 3); contact_delete rides
+    // the `contacts-admin` group. Matches CORE_AUTO_GRANT exactly, so an
+    // auto-granted conversational agent qualifies for the whole group.
     toolSlugs: [...CONTACT_AUTO_GRANT_SLUGS],
+  },
+  {
+    slug: 'contacts-admin',
+    name: 'Contacts admin',
+    description: 'Delete a contact — deliberate-only; not on the persona.',
+    toolSlugs: ['contact_delete'],
   },
   {
     slug: 'lifelog',
     name: 'Life logs',
     description: "First-person self-knowledge — the identity context's source. No delete (escape hatch).",
-    // No-delete subset (decision 3 pattern); lifelog_delete via the escape hatch.
-    // Matches CORE_AUTO_GRANT exactly so auto-granted agents qualify for the group.
+    // No-delete subset (decision 3 pattern); lifelog_delete rides the
+    // `lifelog-admin` group. Matches CORE_AUTO_GRANT exactly so auto-granted
+    // agents qualify for the group.
     toolSlugs: [...LIFELOG_AUTO_GRANT_SLUGS],
+  },
+  {
+    slug: 'lifelog-admin',
+    name: 'Life-log admin',
+    description: 'Delete a life-log entry — deliberate-only; not on the persona.',
+    toolSlugs: ['lifelog_delete'],
   },
   {
     slug: 'recall',
     name: 'Recall',
-    description: 'Time-windowed replay of past conversations.',
-    toolSlugs: ['find_window', 'recall_window'],
+    description: 'Replay a past conversation window (the responder-facing half of recall).',
+    // Just the replay tool — the persona holds this so it can quote past
+    // conversations. Finding the window (find_window) is Remy's specialist job
+    // and rides the separate `recall-search` group (it's denied to the persona).
+    toolSlugs: ['recall_window'],
+  },
+  {
+    slug: 'recall-search',
+    name: 'Recall search',
+    description: 'Locate the right past-conversation window to replay (Remy only).',
+    toolSlugs: ['find_window'],
   },
   {
     slug: 'research',
@@ -260,6 +303,18 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     name: 'Persona',
     description: 'Record durable style/relationship calibrations.',
     toolSlugs: ['update_persona'],
+  },
+  {
+    slug: 'secrets',
+    name: 'Secrets',
+    description: 'Store a secret/credential the user shares in conversation.',
+    toolSlugs: ['secret_create'],
+  },
+  {
+    slug: 'ingest',
+    name: 'Ingest',
+    description: 'Kick off content extraction on an uploaded/referenced source.',
+    toolSlugs: ['process_extraction'],
   },
   {
     slug: 'media-workers',
@@ -309,11 +364,33 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     role: 'responder',
     model: 'anthropic/claude-sonnet-4.6',
     isPersona: true,
-    toolSlugs: 'DEFAULT_ASSISTANT',
-    // P5: page authoring (incl. page_delete) is delegated to the Pages specialist
-    // — the deny-set keeps all page_* tools out of DEFAULT_ASSISTANT, and the
-    // persona reaches Pages via invoke_agent. (Supersedes the P1 decision to keep
-    // page_delete on the persona.) Sharing returns via the core auto-grant.
+    toolSlugs: [],
+    // P6: grants are pure tool groups — the generalist's effective set is the
+    // union of these bundles. Page/table AUTHORING is delegated to the Pages /
+    // Ledger specialists (no `pages`/`tables`/`page-admin`); the persona keeps
+    // `page-share` so it can publish. NOT granted: the `*-admin` deletes
+    // (deliberate-only), `recall-search`/`research`/`terminal`/`federation`
+    // (specialist). Versus the pre-P6 set this drops `contact_delete` +
+    // `lifelog_delete` (now deliberate-only) — the one intentional removal.
+    toolGroupSlugs: [
+      'memory-core',
+      'files',
+      'notes',
+      'events',
+      'todos',
+      'contacts',
+      'lifelog',
+      'recall',
+      'email',
+      'persona',
+      'media-workers',
+      'delegation',
+      'messaging',
+      'secrets',
+      'ingest',
+      'tool-results',
+      'page-share',
+    ],
     skillSlugs: ['tool_grounding', 'voice_reply', 'rich_writing'],
     params: { temperature: 0.7, max_tokens: 16000 },
     priority: 100,
@@ -326,9 +403,12 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: 'anthropic/claude-sonnet-4.6',
     envModelVar: 'PAGES_MODEL',
     systemPrompt: AGENT_PROMPTS['pages']!,
-    // P1: full page set (incl. page_delete/page_update) — previously granted via
-    // the rich_writing skill, now direct. Skills are pure teaching.
-    toolSlugs: [...PAGE_TOOL_SLUGS, ...SOURCE_FILE_TOOLS, ...CROSS_CONTEXT_TOOLS],
+    // P6: full page capability via groups — `pages` (authoring) + `page-admin`
+    // (delete/overwrite) + `page-share` reassemble the complete PAGE_TOOL_SLUGS
+    // set; `files`/`memory-core` cover source reads + cross-context lookups.
+    // (Approach A: this coarsens to full `files`/`memory-core`, a benign gain.)
+    toolSlugs: [],
+    toolGroupSlugs: ['pages', 'page-admin', 'page-share', 'files', 'memory-core'],
     skillSlugs: ['rich_writing', 'page_editing'],
     isDelegate: true,
     assistSurface: 'pages',
@@ -344,7 +424,10 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: 'anthropic/claude-sonnet-4.6',
     envModelVar: 'TABLES_MODEL',
     systemPrompt: AGENT_PROMPTS['tables']!,
-    toolSlugs: [...TABLE_AUTHORING_TOOL_SLUGS, ...SOURCE_FILE_TOOLS, ...CROSS_CONTEXT_TOOLS],
+    // P6: `tables` is the authoring subset (no `table-admin`/table_delete);
+    // `files`/`memory-core` cover source reads + cross-context lookups.
+    toolSlugs: [],
+    toolGroupSlugs: ['tables', 'files', 'memory-core'],
     skillSlugs: ['table_authoring'],
     isDelegate: true,
     assistSurface: 'tables',
@@ -360,7 +443,10 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: 'anthropic/claude-sonnet-4.6',
     envModelVar: 'REMY_MODEL',
     systemPrompt: AGENT_PROMPTS['remy']!,
-    toolSlugs: ['find_window', 'recall_window', 'search_nodes', 'node_read'],
+    // P6: `recall` (replay) + `recall-search` (find_window, Remy's specialty) +
+    // `memory-core` for the node lookups it cites.
+    toolSlugs: [],
+    toolGroupSlugs: ['recall', 'recall-search', 'memory-core'],
     skillSlugs: [],
     isDelegate: true,
     params: { temperature: 0.2 },
@@ -374,7 +460,9 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: 'anthropic/claude-sonnet-4.6',
     envModelVar: 'RESEARCHER_MODEL',
     systemPrompt: AGENT_PROMPTS['researcher']!,
-    toolSlugs: ['web_search', 'search_nodes', 'node_read'],
+    // P6: `research` (web_search) + `memory-core` for the node lookups it cites.
+    toolSlugs: [],
+    toolGroupSlugs: ['research', 'memory-core'],
     skillSlugs: [],
     isDelegate: true,
     params: { temperature: 0.3 },
@@ -388,18 +476,9 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: 'anthropic/claude-opus-4.7',
     envModelVar: 'CODER_MODEL',
     systemPrompt: AGENT_PROMPTS['coder']!,
-    toolSlugs: [
-      'run_terminal',
-      'file_create',
-      'file_read',
-      'file_get',
-      'file_list',
-      'folder_list',
-      'folder_get_by_path',
-      'search_nodes',
-      'node_read',
-      'tree_list',
-    ],
+    // P6: `terminal` (unrestricted shell) + `files` + `memory-core`.
+    toolSlugs: [],
+    toolGroupSlugs: ['terminal', 'files', 'memory-core'],
     skillSlugs: ['mantle-ops'],
     isDelegate: true,
     params: { temperature: 0.2 },
@@ -424,6 +503,11 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
 
 /** Slug of the persona agent (the delegation entry point). */
 export const PERSONA_SLUG = MANIFEST_AGENTS.find((a) => a.isPersona)!.slug;
+
+/** The persona's default tool grant (P6: pure tool GROUPS — the generalist's
+ *  whole capability). Onboarding seeds a fresh persona with exactly these. */
+export const PERSONA_TOOL_GROUP_SLUGS: readonly string[] =
+  MANIFEST_AGENTS.find((a) => a.isPersona)!.toolGroupSlugs ?? [];
 
 /** The agents the persona delegates to (memory_config.delegate_to). */
 export const DELEGATE_SLUGS: readonly string[] = MANIFEST_AGENTS.filter((a) => a.isDelegate).map(

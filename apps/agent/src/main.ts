@@ -80,10 +80,6 @@ import {
   type UserImage,
 } from '@mantle/agent-runtime';
 import {
-  CONTACT_AUTO_GRANT_SLUGS,
-  LIFELOG_AUTO_GRANT_SLUGS,
-  PERSONA_TOOL_SLUGS,
-  TODO_TOOL_SLUGS,
   registerAgentInvoker,
   seedBuiltinTools,
 } from '@mantle/tools';
@@ -887,16 +883,11 @@ async function handleMessage(messageId: string): Promise<void> {
         // skill's tool_slugs. Empty result → tool-loop sends no `tools`
         // and behaves identically to the old single-call path.
         //
-        // Heartbeat continuity tools (update_state / complete / snooze)
-        // live in `agents.tool_slugs` as the canonical operator grant —
-        // visible at /settings/agents, no runtime magic adds them. But
-        // we DO apply per-turn affordance hygiene: when there are zero
-        // active heartbeats on this surface, drop the 3 continuity tools
-        // from the model's tool list for this turn. This stops the
-        // model from seeing (and occasionally confusedly calling)
-        // heartbeat_* tools on turns where there's nothing for them to
-        // act on. The grant in tool_slugs is unchanged; only the
-        // per-turn affordance is scoped to context. See
+        // Heartbeat continuity tools (update_state / complete / snooze) are a
+        // per-turn AFFORDANCE (P6), not a stored grant: inject them only when
+        // there's an active heartbeat on this surface for the model to act on.
+        // No runtime magic the rest of the time — the model never sees (or
+        // confusedly calls) heartbeat_* on turns with nothing to act on. See
         // docs/heartbeats.md §4 "Permission model & runtime hygiene".
         const groupTools = await resolveAgentToolGroups(USER_ID!, agent.toolGroupSlugs ?? []);
         let allowedToolSlugs = effectiveToolSlugs(agent.toolSlugs ?? [], groupTools);
@@ -904,10 +895,11 @@ async function handleMessage(messageId: string): Promise<void> {
           kind: 'telegram',
           chatId: row.telegramChatId,
         }).catch(() => false);
-        if (!hasHeartbeats) {
-          allowedToolSlugs = allowedToolSlugs.filter(
-            (s) => !HEARTBEAT_RESPONDER_TOOLS.includes(s),
-          );
+        if (hasHeartbeats) {
+          allowedToolSlugs = [
+            ...allowedToolSlugs,
+            ...HEARTBEAT_RESPONDER_TOOLS.filter((s) => !allowedToolSlugs.includes(s)),
+          ];
         }
         const allowedTools = await resolveAgentTools(USER_ID!, allowedToolSlugs);
 
@@ -1384,38 +1376,34 @@ function scheduleSummarize(agentId: string): void {
   }, SUMMARIZE_DEBOUNCE_MS);
 }
 
-/** Core builtins every conversational agent should have without manual
- *  setup: persona self-edit + todo CRUD + note capture + email send +
- *  public page sharing + emailing a page. Granted idempotently at boot.
- *  `email_send`/`email_page` ship ungated (requiresConfirm:false) — flip
- *  per-row at /settings/tools to gate them. */
-const CORE_AUTO_GRANT_SLUGS: readonly string[] = [
-  ...PERSONA_TOOL_SLUGS,
-  ...TODO_TOOL_SLUGS,
-  // Contacts read + add/update (delete left off the auto-grant — destructive
-  // ops require an explicit per-agent grant in /settings/tools). Contacts gate
-  // the email send path, so Saskia needs read+add to extend her own reach
-  // when the user asks ("add this business card as a contact").
-  ...CONTACT_AUTO_GRANT_SLUGS,
-  // Life Logs read + add/update (delete excluded). Lets the user say "remember
-  // that I…" and have it become durable self-knowledge in the identity context.
-  ...LIFELOG_AUTO_GRANT_SLUGS,
-  'note_create',
-  'email_send',
-  'email_page',
-  'page_share',
-  'page_unshare',
+/** The capability FLOOR every conversational agent gets without manual setup,
+ *  expressed as tool GROUPS (P6 — groups are the sole grant). Covers persona
+ *  self-edit, todo CRUD, contacts read/add, life-log read/add, note capture,
+ *  email send/page, and public page sharing. Granted idempotently at boot —
+ *  this is what keeps OPERATOR-owned personas (telegram-default, apostle-paul,
+ *  which aren't manifest slugs and so aren't seeded from the manifest) able to
+ *  act from message one. `email`/`page-share` ship their tools ungated
+ *  (requiresConfirm:false) — flip per-row at /settings/tools to gate them. */
+const CORE_AUTO_GRANT_GROUP_SLUGS: readonly string[] = [
+  'persona',
+  'todos',
+  'contacts',
+  'lifelog',
+  'notes',
+  'email',
+  'page-share',
 ];
 
 /**
- * Add the core builtins (persona + todo tools etc.) to every enabled
- * conversational agent (responder + assistant) that doesn't already have them.
- * Returns the slugs of agents that were updated. Idempotent.
+ * Ensure every enabled conversational agent (responder + assistant) holds the
+ * core capability floor, granted as tool GROUPS. Returns the slugs of agents
+ * that were updated. Idempotent.
  *
- * P5 — group-aware: a core tool already conferred by a GRANTED tool group is NOT
- * re-appended to tool_slugs. This stops the self-heal from re-flattening the P3
- * decomposition on every boot (it used to duplicate group tools into tool_slugs).
- * The capability floor is unchanged — only the redundant flat copies are skipped.
+ * P6 — groups are the sole grant: the floor is a set of GROUP slugs, and we add
+ * any floor group the agent neither already holds nor has fully covered by its
+ * other granted groups. Direct `tool_slugs` are deliberately NOT counted as
+ * coverage (they're being removed in P6b) — so an operator persona that still
+ * holds floor tools flat is migrated onto the equivalent groups here.
  */
 async function ensureCoreToolsOnConversationalAgents(ownerId: string): Promise<string[]> {
   const groupRows = await db
@@ -1424,7 +1412,7 @@ async function ensureCoreToolsOnConversationalAgents(ownerId: string): Promise<s
     .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.enabled, true)));
   const groupTools = new Map(groupRows.map((g) => [g.slug, g.toolSlugs ?? []]));
   const rows = await db
-    .select({ id: agents.id, slug: agents.slug, toolSlugs: agents.toolSlugs, toolGroupSlugs: agents.toolGroupSlugs })
+    .select({ id: agents.id, slug: agents.slug, toolGroupSlugs: agents.toolGroupSlugs })
     .from(agents)
     .where(
       and(
@@ -1435,14 +1423,21 @@ async function ensureCoreToolsOnConversationalAgents(ownerId: string): Promise<s
     );
   const updated: string[] = [];
   for (const row of rows) {
-    // "Covered" = held directly OR via a granted group.
-    const covered = new Set<string>(row.toolSlugs ?? []);
-    for (const g of row.toolGroupSlugs ?? []) for (const t of groupTools.get(g) ?? []) covered.add(t);
-    const missing = CORE_AUTO_GRANT_SLUGS.filter((s) => !covered.has(s));
-    if (missing.length === 0) continue;
+    const have = new Set<string>(row.toolGroupSlugs ?? []);
+    // Tools already conferred by the agent's GRANTED groups.
+    const covered = new Set<string>();
+    for (const g of have) for (const t of groupTools.get(g) ?? []) covered.add(t);
+    // Add a floor group unless the agent already holds it, or another granted
+    // group already confers all of its tools.
+    const toAdd = CORE_AUTO_GRANT_GROUP_SLUGS.filter((g) => {
+      if (have.has(g)) return false;
+      const tools = groupTools.get(g) ?? [];
+      return tools.length > 0 && !tools.every((t) => covered.has(t));
+    });
+    if (toAdd.length === 0) continue;
     await db
       .update(agents)
-      .set({ toolSlugs: [...(row.toolSlugs ?? []), ...missing], updatedAt: new Date() })
+      .set({ toolGroupSlugs: [...(row.toolGroupSlugs ?? []), ...toAdd], updatedAt: new Date() })
       .where(eq(agents.id, row.id));
     updated.push(row.slug);
   }
