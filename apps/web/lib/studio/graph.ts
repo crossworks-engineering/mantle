@@ -20,7 +20,7 @@ import { resolveAgentSkills, composeSystemPromptWithSkills } from '@mantle/agent
 import { listAgents } from '@/lib/agents';
 import { listSkills } from '@/lib/skills';
 import { listAiWorkers } from '@/lib/ai-workers';
-import { checkSystemIntegrity, PERSONA_SLUG } from '@/lib/system-manifest';
+import { checkSystemIntegrity, PERSONA_SLUG, MANIFEST_AGENTS } from '@/lib/system-manifest';
 import type { SystemReport } from '@/lib/integrity/types';
 
 // ── Canvas primitives ────────────────────────────────────────────────────────
@@ -65,6 +65,10 @@ export type StudioAgentDetail = {
   missingSkillSlugs: string[];
   delegateSlugs: string[];
   toolCount: number;
+  params: { temperature?: number; max_tokens?: number };
+  maxIterations?: number;
+  /** Whether this is a manifest agent that can be reset to its canonical default. */
+  resettable: boolean;
   /** The base system prompt (editable prose in Phase 2). */
   systemPrompt: string;
   /** The enabled, attached skills in composition order. */
@@ -112,6 +116,9 @@ export type StudioGraph = {
 
 const agentNodeId = (slug: string) => `agent:${slug}`;
 const skillNodeId = (slug: string) => `skill:${slug}`;
+
+/** Manifest agent slugs — only these can be reset to a canonical default. */
+const MANIFEST_AGENT_SLUGS = new Set(MANIFEST_AGENTS.map((m) => m.slug));
 
 function delegateTo(memoryConfig: AgentMemoryConfig | null | undefined): string[] {
   const dt = memoryConfig?.delegate_to;
@@ -206,6 +213,9 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
       missingSkillSlugs: (a.skillSlugs ?? []).filter((s) => !attachedSet.has(s)),
       delegateSlugs: delegateTo(a.memoryConfig),
       toolCount: a.toolSlugs.length,
+      params: { temperature: a.params?.temperature, max_tokens: a.params?.max_tokens },
+      maxIterations: a.memoryConfig?.max_iterations,
+      resettable: MANIFEST_AGENT_SLUGS.has(a.slug),
       systemPrompt: a.systemPrompt,
       skillBlocks: attached.map((s) => ({ slug: s.slug, name: s.name, instructions: s.instructions })),
       composedPrompt: composeSystemPromptWithSkills(a.systemPrompt, attached),

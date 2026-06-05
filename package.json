@@ -1,6 +1,6 @@
 {
   "name": "mantle",
-  "version": "0.19.9-alpha",
+  "version": "0.19.10-alpha",
   "private": true,
   "description": "Mantle — Jason's AI-queryable life tree.",
   "packageManager": "pnpm@11.1.2",

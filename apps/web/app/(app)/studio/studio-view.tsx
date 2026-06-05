@@ -17,6 +17,7 @@ import { useRouter } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, ChevronLeft, Cpu, Sparkles, Star } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { ProseEditor } from './prose-editor';
+import { StructureEditor } from './structure-editor';
 import {
   Select,
   SelectContent,
@@ -66,7 +67,17 @@ function Issues({ issues }: { issues: string[] }) {
   );
 }
 
-function AgentInspector({ agent, onSaved }: { agent: StudioAgentDetail; onSaved: () => void }) {
+function AgentInspector({
+  agent,
+  allSkills,
+  allAgents,
+  onSaved,
+}: {
+  agent: StudioAgentDetail;
+  allSkills: StudioSkillDetail[];
+  allAgents: StudioAgentDetail[];
+  onSaved: () => void;
+}) {
   const [raw, setRaw] = useState(false);
   return (
     <div className="flex flex-col gap-4">
@@ -82,6 +93,14 @@ function AgentInspector({ agent, onSaved }: { agent: StudioAgentDetail; onSaved:
         <div><span className="text-muted-foreground">Tools</span><div className="font-medium">{agent.toolCount}</div></div>
         <div><span className="text-muted-foreground">Delegates</span><div className="font-medium">{agent.delegateSlugs.length ? agent.delegateSlugs.join(', ') : '—'}</div></div>
       </div>
+
+      <StructureEditor
+        key={agent.id}
+        agent={agent}
+        allSkills={allSkills}
+        allAgents={allAgents}
+        onSaved={onSaved}
+      />
 
       {agent.missingSkillSlugs.length > 0 && (
         <Issues issues={agent.missingSkillSlugs.map((s) => `attached skill '${s}' is missing or disabled — silently dropped at runtime`)} />
@@ -106,6 +125,7 @@ function AgentInspector({ agent, onSaved }: { agent: StudioAgentDetail; onSaved:
             <div className="flex flex-col gap-1">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">System prompt</p>
               <ProseEditor
+                key={`${agent.id}:system_prompt`}
                 entityType="agent"
                 entityId={agent.id}
                 field="system_prompt"
@@ -162,6 +182,7 @@ function SkillInspector({ skill, onSaved }: { skill: StudioSkillDetail; onSaved:
       )}
       <Section title="Instructions">
         <ProseEditor
+          key={`${skill.id}:instructions`}
           entityType="skill"
           entityId={skill.id}
           field="instructions"
@@ -190,6 +211,7 @@ function WorkerInspector({ worker, onSaved }: { worker: StudioWorkerDetail; onSa
       {worker.systemPrompt != null && (
         <Section title="System prompt">
           <ProseEditor
+            key={`${worker.id}:system_prompt`}
             entityType="worker"
             entityId={worker.id}
             field="system_prompt"
@@ -201,6 +223,7 @@ function WorkerInspector({ worker, onSaved }: { worker: StudioWorkerDetail; onSa
       {worker.extractionPrompt != null && (
         <Section title="Extraction prompt">
           <ProseEditor
+            key={`${worker.id}:extraction_prompt`}
             entityType="worker"
             entityId={worker.id}
             field="extraction_prompt"
@@ -396,7 +419,12 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
                 <SkillInspector skill={inspectedSkillDetail} onSaved={onSaved} />
               </>
             ) : focusedAgent ? (
-              <AgentInspector agent={focusedAgent} onSaved={onSaved} />
+              <AgentInspector
+                agent={focusedAgent}
+                allSkills={graph.skills}
+                allAgents={graph.agents}
+                onSaved={onSaved}
+              />
             ) : (
               <p className="text-[11px] text-muted-foreground">No agent selected.</p>
             )}
