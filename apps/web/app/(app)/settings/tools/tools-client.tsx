@@ -235,7 +235,9 @@ export function ToolsClient({ initialTools }: { initialTools: ToolSummary[] }) {
       </div>
 
       {/* ── Right: editor ────────────────────────────────────────── */}
-      <div className="md:h-full md:min-h-0 md:overflow-y-auto md:scrollbar-thin">
+      {/* `relative` keeps the tall scrolling content from leaking into <main>'s
+          own scroll area (a second, outer scrollbar). See agents-client. */}
+      <div className="relative md:h-full md:min-h-0 md:overflow-y-auto md:scrollbar-thin">
         {!editing ? (
           <div className="flex h-full items-center justify-center p-10 text-center text-sm text-muted-foreground">
             Select a tool to view or edit, or create a new one.

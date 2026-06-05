@@ -248,7 +248,9 @@ export function SkillsClient({
       </div>
 
       {/* ── Right: editor ────────────────────────────────────────── */}
-      <div className="md:h-full md:min-h-0 md:overflow-y-auto md:scrollbar-thin">
+      {/* `relative` keeps the tall scrolling content from leaking into <main>'s
+          own scroll area (a second, outer scrollbar). See agents-client. */}
+      <div className="relative md:h-full md:min-h-0 md:overflow-y-auto md:scrollbar-thin">
         {editing ? (
           <div className="space-y-4 p-6">
             <div className="flex items-start justify-between gap-3">
