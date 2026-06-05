@@ -13,7 +13,6 @@ export type SkillForRuntime = {
   slug: string;
   name: string;
   instructions: string;
-  toolSlugs: string[];
 };
 
 function toRuntime(s: Skill): SkillForRuntime {
@@ -22,7 +21,6 @@ function toRuntime(s: Skill): SkillForRuntime {
     slug: s.slug,
     name: s.name,
     instructions: s.instructions,
-    toolSlugs: s.toolSlugs ?? [],
   };
 }
 
@@ -95,18 +93,16 @@ export function composeSystemPromptWithSkills(
 const MAX_EFFECTIVE_TOOL_SLUGS = 512;
 
 /**
- * Union of an agent's own toolSlugs, every attached skill's toolSlugs, and the
- * tools conferred by its granted tool groups (pre-resolved via
- * resolveAgentToolGroups). Skills carry no tools post-P1 for agents, but the
- * skill arm is kept for heartbeat skills; the group arm is the P3 addition.
+ * An agent's effective tool allowlist: its own direct `tool_slugs` unioned with
+ * the tools conferred by its granted tool groups (pre-resolved via
+ * resolveAgentToolGroups). Skills contribute NOTHING — they're pure teaching as
+ * of Phase 4 (the skills.tool_slugs column is gone). Deduped + capped.
  */
 export function effectiveToolSlugs(
   agentToolSlugs: string[],
-  skillsList: SkillForRuntime[],
   groupToolSlugs: string[] = [],
 ): string[] {
   const set = new Set<string>(agentToolSlugs);
-  for (const s of skillsList) for (const slug of s.toolSlugs) set.add(slug);
   for (const slug of groupToolSlugs) set.add(slug);
   const all = Array.from(set);
   if (all.length > MAX_EFFECTIVE_TOOL_SLUGS) {

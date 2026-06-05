@@ -89,7 +89,6 @@ export type StudioSkillDetail = {
   name: string;
   enabled: boolean;
   instructions: string;
-  toolSlugs: string[];
   /** Fan-out: every agent that attaches this skill (the many-to-many). */
   usedByAgentSlugs: string[];
 };
@@ -275,7 +274,6 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
     name: s.name,
     enabled: s.enabled,
     instructions: s.instructions,
-    toolSlugs: s.toolSlugs,
     usedByAgentSlugs: agents.filter((a) => (a.skillSlugs ?? []).includes(s.slug)).map((a) => a.slug),
   }));
 

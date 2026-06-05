@@ -173,15 +173,6 @@ function SkillInspector({ skill, onSaved }: { skill: StudioSkillDetail; onSaved:
           <p className="text-[13px] text-muted-foreground">Not attached to any agent.</p>
         )}
       </Section>
-      {skill.toolSlugs.length > 0 && (
-        <Section title="Bundles tools">
-          <div className="flex flex-wrap gap-1.5">
-            {skill.toolSlugs.map((t) => (
-              <Badge key={t} variant="secondary" className="font-mono text-[12px]">{t}</Badge>
-            ))}
-          </div>
-        </Section>
-      )}
       <Section title="Instructions">
         <ProseEditor
           entityType="skill"

@@ -150,7 +150,6 @@ export type SkillOption = {
   slug: string;
   name: string;
   description: string;
-  toolSlugs: string[];
 };
 
 const DEFAULT_SYSTEM_PROMPT = `You are an assistant helping the user via Telegram. You have memory of the recent conversation in this chat. Be concise and conversational — short paragraphs, no headers, no bullet lists unless explicitly useful. Match the tone of the incoming message. Skip pleasantries unless they fit naturally. If you don't know something or can't help, say so plainly.`;
@@ -2020,12 +2019,6 @@ function SkillPicker({
     value: s.slug,
     label: s.name,
     description: s.description,
-    meta:
-      s.toolSlugs.length > 0 ? (
-        <span className="shrink-0 text-[10px] text-muted-foreground">
-          +{s.toolSlugs.length} tool{s.toolSlugs.length === 1 ? '' : 's'}
-        </span>
-      ) : undefined,
   }));
   return (
     <ToggleList items={items} selected={selected} onChange={onChange} collapsible searchable />

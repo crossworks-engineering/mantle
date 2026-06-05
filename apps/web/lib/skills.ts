@@ -1,10 +1,10 @@
 /**
  * Server-side CRUD + composition helpers for skills.
  *
- * A `skill` is { slug, name, description, instructions, tool_slugs }.
- * It gets attached to agents via `agents.skill_slugs[]`. When the
- * tool-loop runs, the caller composes the agent's effective system
- * prompt + tool set by unioning every attached skill's bits.
+ * A `skill` is { slug, name, description, instructions } — pure teaching.
+ * It attaches to agents via `agents.skill_slugs[]`; its instructions are
+ * composed into the agent's system prompt. Skills carry no tools (Phase 4,
+ * docs/tools-and-skills.md) — capability lives on tool groups + direct grants.
  */
 
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
@@ -16,7 +16,6 @@ export type SkillSummary = {
   name: string;
   description: string;
   instructions: string;
-  toolSlugs: string[];
   /** Template state shape a heartbeat inherits on create. Empty {}
    *  unless the skill author has filled it in (e.g.
    *  {answered:[], expecting_reply:false} for interview skills). */
@@ -33,7 +32,6 @@ function toSummary(s: Skill): SkillSummary {
     name: s.name,
     description: s.description,
     instructions: s.instructions,
-    toolSlugs: s.toolSlugs ?? [],
     defaultState: (s.defaultState ?? {}) as Record<string, unknown>,
     enabled: s.enabled,
     createdAt: s.createdAt.toISOString(),
@@ -104,7 +102,6 @@ export type CreateSkillInput = {
   name: string;
   description: string;
   instructions?: string;
-  toolSlugs?: string[];
   defaultState?: Record<string, unknown>;
   enabled?: boolean;
 };
@@ -121,7 +118,6 @@ export async function createSkill(
       name: input.name,
       description: input.description,
       instructions: input.instructions ?? '',
-      toolSlugs: input.toolSlugs ?? [],
       defaultState: input.defaultState ?? {},
       enabled: input.enabled ?? true,
     })
@@ -141,7 +137,6 @@ export async function updateSkill(
   if (patch.name !== undefined) next.name = patch.name;
   if (patch.description !== undefined) next.description = patch.description;
   if (patch.instructions !== undefined) next.instructions = patch.instructions;
-  if (patch.toolSlugs !== undefined) next.toolSlugs = patch.toolSlugs;
   if (patch.defaultState !== undefined) next.defaultState = patch.defaultState;
   if (patch.enabled !== undefined) next.enabled = patch.enabled;
   const [row] = await db
@@ -198,20 +193,4 @@ export function composeSystemPromptWithSkills(
     .join('\n\n');
   if (!blocks) return basePrompt;
   return `${basePrompt.trim()}\n\n${blocks}`;
-}
-
-/**
- * Compute the union of an agent's own tool_slugs and every attached
- * skill's tool_slugs. Deduped. Skills declare *suggested* tools; the
- * union is the agent's effective allowlist for the tool-loop.
- */
-export function effectiveToolSlugs(
-  agentToolSlugs: string[],
-  skillRows: SkillSummary[],
-): string[] {
-  const set = new Set<string>(agentToolSlugs);
-  for (const s of skillRows) {
-    for (const slug of s.toolSlugs) set.add(slug);
-  }
-  return Array.from(set);
 }

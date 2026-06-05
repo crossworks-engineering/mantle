@@ -64,7 +64,6 @@ export default async function AgentsSettingsPage() {
             slug: s.slug,
             name: s.name,
             description: s.description,
-            toolSlugs: s.toolSlugs,
           }))}
       />
     </>

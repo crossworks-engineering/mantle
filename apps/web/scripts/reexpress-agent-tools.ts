@@ -19,18 +19,12 @@
  */
 
 import { fileURLToPath } from 'node:url';
-import { db, agents, skills, toolGroups, eq } from '@mantle/db';
+import { db, agents, toolGroups, eq } from '@mantle/db';
 // Import the helper from the manifest MODULE directly (not the index) to avoid
 // pulling integrity.ts's '@/'-aliased imports into a plain tsx run.
 import { deriveGroupGrants } from '../lib/system-manifest/manifest';
 
 export async function reexpressAgentTools(ownerId: string): Promise<void> {
-  const skillRows = await db
-    .select({ slug: skills.slug, enabled: skills.enabled, toolSlugs: skills.toolSlugs })
-    .from(skills)
-    .where(eq(skills.ownerId, ownerId));
-  const skillTools = new Map(skillRows.filter((s) => s.enabled).map((s) => [s.slug, s.toolSlugs ?? []]));
-
   const groupRows = await db
     .select({ slug: toolGroups.slug, enabled: toolGroups.enabled, toolSlugs: toolGroups.toolSlugs })
     .from(toolGroups)
@@ -38,13 +32,12 @@ export async function reexpressAgentTools(ownerId: string): Promise<void> {
   const groupTools = new Map(groupRows.filter((g) => g.enabled).map((g) => [g.slug, g.toolSlugs ?? []]));
 
   const ags = await db
-    .select({ id: agents.id, slug: agents.slug, toolSlugs: agents.toolSlugs, skillSlugs: agents.skillSlugs, toolGroupSlugs: agents.toolGroupSlugs })
+    .select({ id: agents.id, slug: agents.slug, toolSlugs: agents.toolSlugs, toolGroupSlugs: agents.toolGroupSlugs })
     .from(agents)
     .where(eq(agents.ownerId, ownerId));
 
   for (const a of ags) {
     const full = new Set<string>(a.toolSlugs ?? []);
-    for (const s of a.skillSlugs ?? []) for (const t of skillTools.get(s) ?? []) full.add(t);
     for (const g of a.toolGroupSlugs ?? []) for (const t of groupTools.get(g) ?? []) full.add(t);
     const { toolSlugs, toolGroupSlugs } = deriveGroupGrants([...full]);
     await db

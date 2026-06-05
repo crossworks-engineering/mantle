@@ -155,7 +155,6 @@ async function upsertSkill(): Promise<void> {
         description:
           "Ask one topical question at a time to build a profile of the user. Self-terminates when all topics are answered.",
         instructions: SKILL_INSTRUCTIONS,
-        toolSlugs: ['heartbeat_update_state', 'heartbeat_complete'],
         defaultState: SKILL_DEFAULT_STATE,
         enabled: true,
         updatedAt: new Date(),
@@ -170,7 +169,6 @@ async function upsertSkill(): Promise<void> {
       description:
         "Ask one topical question at a time to build a profile of the user. Self-terminates when all topics are answered.",
       instructions: SKILL_INSTRUCTIONS,
-      toolSlugs: ['heartbeat_update_state', 'heartbeat_complete'],
       defaultState: SKILL_DEFAULT_STATE,
       enabled: true,
     });

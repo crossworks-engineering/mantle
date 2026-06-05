@@ -15,7 +15,6 @@ import { resolveAssistAgentSlug } from '@/lib/assist-agent';
 import type { SystemCheck, SystemReport, SystemSample } from '@/lib/integrity/types';
 import {
   MANIFEST_AGENTS,
-  MANIFEST_SKILLS,
   MANIFEST_TOOL_GROUPS,
   MANIFEST_WORKERS,
   DELEGATE_SLUGS,
@@ -44,7 +43,7 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
       .from(agents)
       .where(eq(agents.ownerId, ownerId)),
     db
-      .select({ slug: skills.slug, enabled: skills.enabled, toolSlugs: skills.toolSlugs })
+      .select({ slug: skills.slug, enabled: skills.enabled })
       .from(skills)
       .where(eq(skills.ownerId, ownerId)),
     db
@@ -61,7 +60,6 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
   const agentBySlug = new Map(agentRows.map((a) => [a.slug, a] as const));
   const enabledToolSlugs = new Set(toolRows.map((t) => t.slug));
   const enabledSkillSlugs = new Set(skillRows.filter((s) => s.enabled).map((s) => s.slug));
-  const skillBySlug = new Map(skillRows.map((s) => [s.slug, s] as const));
   const enabledToolGroupSlugs = new Set(toolGroupRows.filter((g) => g.enabled).map((g) => g.slug));
   const toolGroupBySlug = new Map(toolGroupRows.map((g) => [g.slug, g] as const));
 
@@ -213,27 +211,8 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
     });
   }
 
-  // 7. Skill → tool links — manifest skills' bundled tools must resolve.
-  {
-    const samples: SystemSample[] = [];
-    for (const sk of MANIFEST_SKILLS) {
-      const row = skillBySlug.get(sk.slug);
-      if (!row) continue; // missing skill row covered by dangling-skills via agents
-      for (const t of row.toolSlugs ?? []) {
-        if (!enabledToolSlugs.has(t)) samples.push({ id: `${sk.slug}:${t}`, detail: `skill '${sk.slug}' → tool '${t}' has no enabled row` });
-      }
-    }
-    checks.push({
-      key: 'skill-tools',
-      label: 'Skill ↔ tool links',
-      severity: 'medium',
-      ok: samples.length === 0,
-      detail: samples.length === 0 ? 'every skill’s bundled tools resolve' : `${samples.length} skill tool(s) unresolved`,
-      samples,
-    });
-  }
-
-  // 7b. Tool group → tool links — manifest groups' bundled tools must resolve.
+  // 7. Tool group → tool links — manifest groups' bundled tools must resolve.
+  //    (Skills carry no tools as of P4 — there is no skill→tool check anymore.)
   {
     const samples: SystemSample[] = [];
     for (const g of MANIFEST_TOOL_GROUPS) {

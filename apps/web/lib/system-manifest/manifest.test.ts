@@ -32,13 +32,6 @@ describe('system manifest integrity', () => {
     expect(new Set(workerKinds).size).toBe(workerKinds.length);
   });
 
-  it('every skill bundles only known builtin tools', () => {
-    for (const skill of MANIFEST_SKILLS) {
-      const unknown = skill.toolSlugs.filter((t) => !KNOWN_TOOL_SLUGS.has(t));
-      expect(unknown, `skill '${skill.slug}' references unknown tools`).toEqual([]);
-    }
-  });
-
   it('every tool group bundles only known builtin tools, with unique slugs', () => {
     const groupSlugs = MANIFEST_TOOL_GROUPS.map((g) => g.slug);
     expect(new Set(groupSlugs).size, 'duplicate tool-group slug').toBe(groupSlugs.length);
@@ -83,12 +76,6 @@ describe('system manifest integrity', () => {
     expect(resolveManifestToolSlugs(pagesAgent)).toContain('page_create');
     const tablesAgent = MANIFEST_AGENTS.find((a) => a.slug === ASSIST_SURFACE_DEFAULTS.tables)!;
     expect(resolveManifestToolSlugs(tablesAgent)).toContain('table_from_text');
-  });
-
-  it('every manifest skill is pure teaching — carries no tools (P1)', () => {
-    for (const skill of MANIFEST_SKILLS) {
-      expect(skill.toolSlugs, `skill '${skill.slug}' must carry no tools (skills are teaching)`).toEqual([]);
-    }
   });
 
   it('deriveGroupGrants re-expresses every agent losslessly (residual ∪ groups === full)', () => {

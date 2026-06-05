@@ -38,13 +38,9 @@ export type ManifestSkill = {
   slug: string;
   name: string;
   description: string;
-  /** DEPRECATED as of P1 (docs/tools-and-skills.md): manifest skills are pure
-   *  teaching and carry NO tools — capability is granted to agents directly
-   *  (and, from P3, via tool groups). Always `[]` here; the `skills.tool_slugs`
-   *  column is retired in P4. (NB: heartbeat skills, which are not in this
-   *  manifest, may still carry tools — a separate mechanism.) */
-  toolSlugs: string[];
-  /** The skill body rendered into the system prompt (verbatim, from ./prompts). */
+  /** The skill body rendered into the system prompt (verbatim, from ./prompts).
+   *  Skills are PURE TEACHING — they carry no tools (the skills.tool_slugs column
+   *  was dropped in P4; capability lives on agents + tool groups). */
   instructions: string;
 };
 
@@ -123,42 +119,36 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     slug: 'tool_grounding',
     name: 'Tool grounding',
     description: 'Search/verify before answering — never answer from memory alone.',
-    toolSlugs: [],
     instructions: SKILL_INSTRUCTIONS['tool_grounding']!,
   },
   {
     slug: 'voice_reply',
     name: 'Voice reply',
     description: 'How to write replies that will be spoken aloud (TTS).',
-    toolSlugs: [],
     instructions: SKILL_INSTRUCTIONS['voice_reply']!,
   },
   {
     slug: 'page_editing',
     name: 'Page editing',
     description: 'Safe, scalable page authoring/editing; preserve words verbatim, prefer block tools.',
-    toolSlugs: [], // P1: pure teaching — page tools granted to agents directly.
     instructions: SKILL_INSTRUCTIONS['page_editing']!,
   },
   {
     slug: 'rich_writing',
     name: 'Rich writing',
     description: 'The rich Mantle dialect: callouts, columns, tables, task lists, KaTeX.',
-    toolSlugs: [], // P1: pure teaching — page tools granted to agents directly.
     instructions: SKILL_INSTRUCTIONS['rich_writing']!,
   },
   {
     slug: 'table_authoring',
     name: 'Table authoring',
     description: 'Build typed grids: columns, totals, formulas, views; edit by stable row/col id.',
-    toolSlugs: [], // P1: pure teaching — table tools granted to agents directly.
     instructions: SKILL_INSTRUCTIONS['table_authoring']!,
   },
   {
     slug: 'mantle-ops',
     name: 'Mantle ops',
     description: 'How Mantle works + the operating workflow (for the coder agent).',
-    toolSlugs: [],
     instructions: SKILL_INSTRUCTIONS['mantle-ops']!,
   },
 ];

@@ -347,7 +347,7 @@ export async function runAssistantTurn(
   // skill's tool_slugs. Empty result → tool-loop sends no `tools`
   // and the loop reduces to one LLM call (same as before).
   const groupTools = await resolveAgentToolGroups(ownerId, agent.toolGroupSlugs ?? []);
-  let allowedToolSlugs = effectiveToolSlugs(agent.toolSlugs ?? [], attachedSkills, groupTools);
+  let allowedToolSlugs = effectiveToolSlugs(agent.toolSlugs ?? [], groupTools);
   // Per-turn affordance hygiene: drop the heartbeat continuity tools
   // from the model's tool list when there are no active heartbeats
   // on this surface. The grant in agents.tool_slugs is unchanged —

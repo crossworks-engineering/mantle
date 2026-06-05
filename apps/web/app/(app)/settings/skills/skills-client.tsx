@@ -19,7 +19,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
-import { ToolPicker, type ToolOption } from '@/components/tool-picker';
 import { cn } from '@/lib/utils';
 
 type SkillSummary = {
@@ -28,7 +27,6 @@ type SkillSummary = {
   name: string;
   description: string;
   instructions: string;
-  toolSlugs: string[];
   /** Template state shape heartbeats inherit. Empty {} by default. */
   defaultState: Record<string, unknown>;
   enabled: boolean;
@@ -41,7 +39,6 @@ type FormState = {
   name: string;
   description: string;
   instructions: string;
-  toolSlugs: string[];
   /** Free-form JSON the skill author types. Validated on submit;
    *  parsed value stored on the row. Empty string = default to `{}`. */
   defaultStateText: string;
@@ -53,7 +50,6 @@ const emptyForm = (): FormState => ({
   name: '',
   description: '',
   instructions: '',
-  toolSlugs: [],
   defaultStateText: '{}',
   enabled: true,
 });
@@ -64,7 +60,6 @@ function fromSkill(s: SkillSummary): FormState {
     name: s.name,
     description: s.description,
     instructions: s.instructions,
-    toolSlugs: s.toolSlugs,
     defaultStateText: JSON.stringify(s.defaultState ?? {}, null, 2),
     enabled: s.enabled,
   };
@@ -87,11 +82,9 @@ type HeartbeatBackrefs = Record<
 
 export function SkillsClient({
   initialSkills,
-  availableTools,
   heartbeatBackrefs,
 }: {
   initialSkills: SkillSummary[];
-  availableTools: ToolOption[];
   heartbeatBackrefs: HeartbeatBackrefs;
 }) {
   const router = useRouter();
@@ -151,7 +144,6 @@ export function SkillsClient({
       name: form.name.trim(),
       description: form.description.trim(),
       instructions: form.instructions,
-      toolSlugs: form.toolSlugs,
       defaultState,
       enabled: form.enabled,
       ...(editing.mode === 'create' ? { slug: form.slug.trim() } : {}),
@@ -345,21 +337,6 @@ export function SkillsClient({
                 attached to. Reference tools by their slug; the agent will see them
                 in its tool list.
               </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Suggested tools (joined into the agent&apos;s allowlist)</Label>
-              {availableTools.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  No tools registered yet. Start <code>pnpm dev</code> to seed built-ins.
-                </p>
-              ) : (
-                <ToolPicker
-                  available={availableTools}
-                  selected={form.toolSlugs}
-                  onChange={(next) => setForm((f) => ({ ...f, toolSlugs: next }))}
-                />
-              )}
             </div>
 
             <div className="space-y-1.5">

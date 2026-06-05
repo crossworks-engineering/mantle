@@ -76,7 +76,6 @@ async function upsertSkill(ownerId: string, def: ManifestSkill, mode: ApplyMode)
           name: def.name,
           description: def.description,
           instructions: def.instructions,
-          toolSlugs: def.toolSlugs,
           enabled: true,
           updatedAt: new Date(),
         })
@@ -90,7 +89,6 @@ async function upsertSkill(ownerId: string, def: ManifestSkill, mode: ApplyMode)
     name: def.name,
     description: def.description,
     instructions: def.instructions,
-    toolSlugs: def.toolSlugs,
     defaultState: {},
     enabled: true,
   });

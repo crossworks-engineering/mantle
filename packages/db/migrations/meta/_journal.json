@@ -575,6 +575,13 @@
       "when": 1781827200000,
       "tag": "0081_collapse_skill_tools",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1781913600000,
+      "tag": "0082_drop_skills_tool_slugs",
+      "breakpoints": true
     }
   ]
 }

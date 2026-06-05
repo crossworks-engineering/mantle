@@ -1,9 +1,10 @@
 # Tools & Skills — capability vs. teaching, as one source of truth
 
-> **Status: P0–P3 SHIPPED** (2026-06-05). Substrate (P0), the behavior-identical
-> skill-arm collapse (P1), the Tools-manager + Studio group nodes (P2), and the
-> god-grant break-up (P3 — runtime group expansion + re-expression) are live; only
-> Phase 4 (drop the dead column) remains. Companion to
+> **Status: COMPLETE — P0–P4 SHIPPED** (2026-06-05). The full reshape is live:
+> substrate (P0), the behavior-identical skill-arm collapse (P1), the Tools-manager
+> + Studio group nodes (P2), the god-grant break-up (P3 — runtime group expansion +
+> re-expression), and the dead-column drop (P4). Tools are capability (direct +
+> groups); skills are pure teaching; every grant is a visible edge. Companion to
 > [docs/agent-studio.md](agent-studio.md) and
 > [docs/system-integrity.md](system-integrity.md).
 
@@ -73,9 +74,9 @@ Studio graph read model.
 - Manifest: `MANIFEST_TOOL_GROUPS` (seeded defaults); skills drop `toolSlugs`;
   agents gain `toolGroupSlugs`.
 
-**Removed (end state):** `skills.tool_slugs` column — once heartbeat skills (the
-last users of skill-borne tools) are migrated off it. The `effectiveToolSlugs`
-union is kept meanwhile; agent skills simply carry nothing.
+**Removed (P4):** the `skills.tool_slugs` column and the skill arm of
+`effectiveToolSlugs` — skills carry no tools anywhere. (Heartbeat control tools are
+granted directly by the fire path, so nothing was lost.)
 
 ### New effective-tools resolution
 
@@ -85,12 +86,9 @@ effectiveToolSlugs(agent) =
   ∪ expand(agent.tool_group_slugs → group.tool_slugs)   // bundles
 ```
 
-For *agents*, the skill arm contributes nothing (agent/manifest skills carry no
-tools as of P1). The `effectiveToolSlugs` union itself is **kept** — heartbeats
-reuse it to confer a heartbeat's bound-skill tools — but agent skills are drained,
-so an agent's effective set is just its direct grants (+ tool groups, from P3).
+There is no skill arm (removed in P4 — skills are pure teaching).
 `agent.tool_slugs` is retained deliberately as (a) the migration cushion — Saskia
-keeps her flat grant on day one — and (b) the escape hatch for one-off grants that
+kept her flat grant on day one — and (b) the escape hatch for one-off grants that
 don't justify a group (e.g. a specialist's lone `web_search`, the persona's
 `page_delete`).
 
@@ -206,8 +204,26 @@ makes the cutover a no-op.
   (`page_delete`, `secret_create`, …). Operators refine further in the Studio /
   Tools-manager UIs (P2).
 
-### Phase 4 — Drop the dead column
-- Once no skill carries tools and the column is unread, drop `skills.tool_slugs`.
+### Phase 4 — Drop the dead column — ✅ SHIPPED
+- ✅ Migration `0082_drop_skills_tool_slugs`: `ALTER TABLE skills DROP COLUMN
+  tool_slugs`. The gate was clear — the only remaining user was the heartbeat fire
+  path, and the sole heartbeat skill (`profile_interview`) carried only
+  `heartbeat_update_state` / `heartbeat_complete`, which `fire.ts` already grants
+  unconditionally via `HEARTBEAT_CONTROL_TOOLS`. So the column conferred nothing.
+- ✅ Cleanup: `effectiveToolSlugs` is now `(agentToolSlugs, groupToolSlugs)` — the
+  skill arm is gone entirely; all four callers updated. `toolSlugs` removed from
+  the skills schema, both runtime/web skill types, the CRUD lib + API + settings
+  UI (no more ToolPicker on skills), the manifest + seeder, integrity (the
+  `skill-tools` check is gone), the Studio skill inspector, and the heartbeat seed.
+- Verified on dev: column dropped, agent effective sets unchanged (zero diff),
+  skills still load. 105 tests green.
+
+---
+
+**The end state.** A tool reaches an agent exactly one way that's always visible:
+`agent.tool_slugs` (direct/escape-hatch) ∪ the tools of its granted `tool_groups`.
+Skills are pure teaching prose. "Why can this agent do X?" has one answer, and the
+Studio graph draws it.
 
 ## Integrity / manifest impact
 

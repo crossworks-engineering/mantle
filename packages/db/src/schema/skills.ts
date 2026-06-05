@@ -11,10 +11,11 @@ import {
 } from 'drizzle-orm/pg-core';
 
 /**
- * Behaviour packs an agent can be attached to. v1 model: always-loaded —
- * when a skill is in an agent's skill_slugs, its instructions get
- * injected into the system prompt and its tool_slugs are added to the
- * agent's available tools.
+ * Behaviour packs an agent can be attached to — PURE TEACHING. When a skill is
+ * in an agent's skill_slugs its instructions get injected into the system prompt.
+ * Skills carry NO tools (Phase 4, docs/tools-and-skills.md): capability is granted
+ * to agents directly + via tool groups. The old `tool_slugs` column was dropped in
+ * migration 0082.
  */
 export const skills = pgTable(
   'skills',
@@ -26,8 +27,6 @@ export const skills = pgTable(
     description: text('description').notNull(),
     /** Markdown body; rendered verbatim into the system block. */
     instructions: text('instructions').default('').notNull(),
-    /** Tools this skill expects the agent to have access to. */
-    toolSlugs: text('tool_slugs').array().default(sql`'{}'::text[]`).notNull(),
     /** Initial state shape a heartbeat inherits when bound to this
      *  skill — e.g. {answered: [], expecting_reply: false} for the
      *  profile_interview skill. The heartbeat creation form pre-fills

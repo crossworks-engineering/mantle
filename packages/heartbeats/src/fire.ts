@@ -187,9 +187,11 @@ async function fireInner(
   // Resolve tool allowlist = agent's own + persistent skills' + heartbeat
   // control tools. The heartbeat skill's tools also get unioned in.
   const agentGroupTools = await resolveAgentToolGroups(hb.ownerId, agent.toolGroupSlugs ?? []);
+  // Heartbeat turn tools = the agent's effective set + the heartbeat control
+  // tools (always granted). The bound heartbeat skill is pure teaching (P4) — it
+  // contributes instructions via the synthetic prompt, never tools.
   const allSlugs = new Set<string>([
-    ...effectiveToolSlugs(agent.toolSlugs ?? [], persistentSkills, agentGroupTools),
-    ...(skill.toolSlugs ?? []),
+    ...effectiveToolSlugs(agent.toolSlugs ?? [], agentGroupTools),
     ...HEARTBEAT_CONTROL_TOOLS,
   ]);
   const tools = await resolveAgentTools(hb.ownerId, [...allSlugs]);
