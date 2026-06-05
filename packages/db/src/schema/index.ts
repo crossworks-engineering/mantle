@@ -18,6 +18,7 @@ export * from './filters';
 export * from './sync-runs';
 export * from './tailscale-config';
 export * from './telegram';
+export * from './channels';
 export * from './agents';
 export * from './ai-workers';
 export * from './embedding-cache';

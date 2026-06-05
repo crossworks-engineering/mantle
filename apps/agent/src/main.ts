@@ -34,7 +34,7 @@ import {
   type ConversationAttachment,
   type TelegramAccount,
 } from '@mantle/db';
-import { accountById, downloadTelegramFile, sendChatAction, sendMessage, sendVoice } from '@mantle/telegram';
+import { accountById, backfillTelegramChannels, downloadTelegramFile, sendChatAction, sendMessage, sendVoice } from '@mantle/telegram';
 import {
   buildIdentityContext,
   buildTimeContextLine,
@@ -1467,6 +1467,20 @@ async function main() {
   } catch (err) {
     console.error(
       '[agent] core tool grant failed:',
+      err instanceof Error ? err.message : err,
+    );
+  }
+
+  // Reconcile telegram_accounts → channels (docs/comms-channels.md, Phase 1).
+  // Re-seals each linked bot's token into a generic `channels` row (AAD bound to
+  // the channel id). Idempotent + owner-scoped; runs here (not in the SQL
+  // migrate gate) because the AES-GCM re-seal needs MANTLE_MASTER_KEY in app
+  // code. Best-effort — a failure leaves the legacy account path working.
+  try {
+    await backfillTelegramChannels(USER_ID!);
+  } catch (err) {
+    console.error(
+      '[agent] telegram channel backfill failed:',
       err instanceof Error ? err.message : err,
     );
   }

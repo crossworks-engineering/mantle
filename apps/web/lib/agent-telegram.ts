@@ -11,7 +11,11 @@
 import { and, eq } from 'drizzle-orm';
 import { agents, db, telegramAccounts, telegramChats } from '@mantle/db';
 import { seal } from '@mantle/crypto';
-import { sendMessage } from '@mantle/telegram';
+import {
+  disableTelegramChannel,
+  sendMessage,
+  upsertTelegramChannel,
+} from '@mantle/telegram';
 
 export type AgentTelegramBinding = {
   accountId: string;
@@ -146,6 +150,28 @@ export async function connectAgentTelegram(
       .where(eq(telegramAccounts.id, accountId));
   }
 
+  // Dual-write the generic channel binding (docs/comms-channels.md, Phase 1).
+  // The token is re-sealed under the channel id; the account row is linked via
+  // channel_id. Best-effort: a failure here must not undo the account bind,
+  // which is still the source of truth during the dual-read transition (the
+  // agent-boot backfill reconciles any miss).
+  try {
+    await upsertTelegramChannel({
+      ownerId,
+      agentId,
+      accountId,
+      botUsername: me.username,
+      branchPath,
+      token: trimmed,
+      enabled: true,
+    });
+  } catch (err) {
+    console.error(
+      '[agent-telegram] channel dual-write failed (account bind still applied):',
+      err instanceof Error ? err.message : err,
+    );
+  }
+
   const binding = await getAgentTelegram(ownerId, agentId);
   if (!binding) throw new Error('failed to read back telegram binding');
   return binding;
@@ -162,6 +188,13 @@ export async function disconnectAgentTelegram(ownerId: string, agentId: string):
     .where(
       and(eq(telegramAccounts.userId, ownerId), eq(telegramAccounts.responderAgentId, agentId)),
     );
+  // Mirror on the channel side — disable, keep the row + history.
+  await disableTelegramChannel(ownerId, agentId).catch((err) =>
+    console.error(
+      '[agent-telegram] channel disable failed:',
+      err instanceof Error ? err.message : err,
+    ),
+  );
 }
 
 export type AgentTelegramChat = {

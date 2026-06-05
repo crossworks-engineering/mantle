@@ -15,6 +15,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { nodes } from './nodes';
 import { agents } from './agents';
+import { channels } from './channels';
 
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   dataType() {
@@ -52,9 +53,20 @@ export const telegramAccounts = pgTable(
     botTokenEnc: bytea('bot_token_enc').notNull(),
     /** ltree branch under which telegram messages get hung. */
     branchPath: text('branch_path').notNull(),
+    /** 1:1 link to the generic `channels` binding (docs/comms-channels.md). The
+     *  channel carries the agent binding (`channels.agent_id`) + the sealed
+     *  token; this row stays the transport-specific poll-state extension.
+     *  Nullable during the additive rollout (backfilled by the agent boot
+     *  re-seal pass); SET NULL on channel delete keeps the row + message
+     *  history (a disconnect disables, it doesn't wipe history). */
+    channelId: uuid('channel_id').references(() => channels.id, {
+      onDelete: 'set null',
+    }),
     /** Responder agent that owns this bot. Set when the token is entered from
      *  the agent's /settings/agents form; NULL = unlinked (legacy/CLI-seeded).
-     *  Inbound messages on this bot resolve to this responder first. */
+     *  Inbound messages on this bot resolve to this responder first.
+     *  @deprecated superseded by `channel_id` → `channels.agent_id`; kept
+     *  through the dual-read transition, dropped in the cleanup migration. */
     responderAgentId: uuid('responder_agent_id').references(() => agents.id, {
       onDelete: 'set null',
     }),
@@ -68,6 +80,7 @@ export const telegramAccounts = pgTable(
   },
   (t) => [
     index('telegram_accounts_user_idx').on(t.userId),
+    index('telegram_accounts_channel_idx').on(t.channelId),
     uniqueIndex('telegram_accounts_user_bot_uq').on(t.userId, t.botUsername),
     // A responder owns at most one bot (partial — many NULLs allowed).
     uniqueIndex('telegram_accounts_responder_uq')
