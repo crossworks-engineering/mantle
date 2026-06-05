@@ -227,7 +227,11 @@ region. For full-height screens the **page wrapper returns the client directly**
 height. **Every flex/grid scroll pane must carry `min-h-0`** — grid items and
 flex children default to `min-height:auto`, so without it the pane grows to its
 content and `<main>` scrolls *behind* it (the dreaded double scrollbar / bottom
-gap / cut-off). Use `scrollbar-thin` on scroll areas (`scrollbar-hidden` also
+gap / cut-off). `min-h-0` is necessary but **not sufficient**: a correctly-sized
+but `position:static` `overflow-y-auto` pane still leaks its scrollable overflow
+into `<main>` when its content is far taller than the viewport — so the actual
+scroll container (the detail pane) must also be `relative` (see the master-detail
+rules below). Use `scrollbar-thin` on scroll areas (`scrollbar-hidden` also
 exists; both are utilities in `globals.css`).
 
 ### Master-detail — THE pattern for list+editor screens
@@ -249,8 +253,8 @@ item. Proven scaffold (double-scrollbar-free):
     </div>
     {/* optional fixed footer, e.g. pager */}
   </div>
-  {/* RIGHT: editor / detail */}
-  <div className="md:h-full md:min-h-0 md:overflow-y-auto md:scrollbar-thin">
+  {/* RIGHT: editor / detail — `relative` is load-bearing, see rule below */}
+  <div className="relative md:h-full md:min-h-0 md:overflow-y-auto md:scrollbar-thin">
     {selected ? /* editor */ : /* empty state */}
   </div>
 </div>
@@ -259,6 +263,16 @@ item. Proven scaffold (double-scrollbar-free):
 Rules:
 - **Both panes need `md:min-h-0`** (see double-scrollbar note above). Left is a
   flex column; only its list div scrolls (`md:flex-1 md:overflow-y-auto`).
+- **The scrolling detail pane needs `relative`** (`position` only — no other
+  effect). `min-h-0` correctly sizes the pane to the grid track, but a
+  `position:static` `overflow-y-auto` pane still lets its *scrollable overflow*
+  propagate up to `<main>` when its content is much taller than the viewport —
+  producing a **second, outer scrollbar** that overlaps and clips the editor.
+  Making the pane a positioned element (`relative`) closes that boundary so only
+  the pane scrolls. Symptom: two stacked scrollbars on the right pane, the outer
+  one cutting off text. This bit tool-groups/skills/tools (whose tall tool-picker
+  lists pushed content to ~8000px) — agents never had it because its pane was
+  already `relative`. Always include `relative` on the detail pane.
 - **Accent card** (selectable list item) — keep the left border *visible* so
   rounded corners don't break; only its colour flips on select:
   ```tsx
@@ -394,8 +408,8 @@ as deep links** even after a master-detail supersedes the in-app navigation
 - ❌ A big on-page `<h1>` duplicating the top-bar page title.
 - ❌ Per-theme or decorative fonts beyond Inter + the Bukhari logo.
 - ❌ Dynamically built Tailwind class names.
-- ❌ A flex/grid scroll pane without `min-h-0` (causes a second, outer
-  scrollbar — see §8).
+- ❌ A flex/grid scroll pane without `min-h-0`, or a master-detail detail pane
+  without `relative` (either causes a second, outer scrollbar — see §8).
 - ❌ `text-[10px]`/`text-[11px]` for normal list/table text (use `text-xs`+).
 - ❌ The Enabled toggle buried in the form body on a master-detail editor — it
   goes top-right in the header as a `Switch`.
