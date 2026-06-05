@@ -7,6 +7,11 @@
 > delegates inline + reset-to-default), P4 no-persist sandbox. Code in
 > `apps/web/lib/studio/` + `apps/web/app/(app)/studio/` + `app/api/studio/`. The
 > phased plan below is retained as the design record.
+>
+> **Update (2026-06, tools/skills reshape — see [docs/tools-and-skills.md](tools-and-skills.md)):**
+> the canvas gained **tool-group nodes** + `agent→group` grant edges and a
+> read-only group inspector; skill nodes read as "teaching" (skills carry no
+> tools). The composed-prompt preview is unchanged — skills are still prose.
 
 ## What it is
 

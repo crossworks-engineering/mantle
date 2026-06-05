@@ -256,28 +256,45 @@ Two surfaces still spoke the pre-group language, so the decomposition didn't
 Skills are pure teaching prose. "Why can this agent do X?" has one answer — and the
 agent editor, the Tools manager, and the Studio graph all draw it the same way.
 
-## Integrity / manifest impact
+## Integrity / manifest impact (implemented through P5)
 
-- `integrity.ts`: drop the "bundled tool has no enabled row" skill check; add a
-  group-resolution check (every `agent.tool_group_slugs` resolves to an enabled
-  group; every group member resolves to an enabled tool). `dangling-tools` stays.
-- `manifest.test.ts`: extend `KNOWN_TOOL_SLUGS` validation to group membership;
-  assert every agent's referenced groups exist in `MANIFEST_TOOL_GROUPS`.
-- Studio `graph.ts`: skill `toolSlugs` → removed from `StudioSkillDetail`; new
-  `StudioToolGroupDetail` + node/edge emission.
+- `integrity.ts`: the old "skill bundles a tool with no enabled row" check is gone
+  (skills carry no tools). Added `group-tools` (every manifest group is seeded and
+  its member tools resolve) + `dangling-groups` (every agent's granted groups
+  resolve to an enabled group). `dangling-tools` + `dangling-skills` stay.
+- `manifest.test.ts`: validates every group's tools ∈ `KNOWN_TOOL_SLUGS` (unique,
+  non-empty), every agent's groups ∈ `KNOWN_TOOL_GROUP_SLUGS`, and the
+  `deriveGroupGrants` round-trip (`residual ∪ group-tools === full`) for every
+  manifest agent. The persona-grant test asserts page/table authoring +
+  `run_terminal` stay out while `invoke_agent` stays in.
+- Studio `graph.ts`: `StudioSkillDetail` no longer carries tools; added
+  `StudioToolGroupDetail` + group nodes + `agent→group` edges.
 
-## Resolved decisions (2026-06-05)
+## Decision log
 
-1. **`page_delete` on the persona — preserved.** Saskia keeps it; Phase 1 makes
-   the grant explicit (a direct `tool_slugs` entry) rather than dropping it. The
-   capability is unchanged — it just stops being a hidden side-effect of
-   `rich_writing` and becomes a visible grant.
-2. **`agent.tool_slugs` is kept long-term** as the one-off escape hatch. Grants
-   that don't justify a whole group (a specialist's lone `web_search`, the
-   persona's preserved `page_delete`) live here. Groups never shrink to a single
-   tool just for purity's sake.
-3. **One `pages` group**, scoped to the authoring subset (no `page_delete`). Where
-   delete is intended — the persona, per decision 1 — it's a direct `tool_slugs`
-   grant via the escape hatch, *not* a member of the group. This keeps the group
-   clean and reusable: granting `pages` to the Pages specialist does **not**
-   silently confer delete (preserving its current behavior).
+1. ~~`page_delete` preserved on the persona (P1).~~ **SUPERSEDED (P5):** the persona
+   delegates page work to the Pages specialist and holds **no** `page_*` authoring
+   tools — `ASSISTANT_TOOL_DENY` excludes all `page_*`/`table_*` from
+   `DEFAULT_ASSISTANT`. Sharing (`page_share`/`page_unshare`) stays via the core
+   auto-grant; page content is read through the brain.
+2. ~~`agent.tool_slugs` kept long-term as the escape hatch (P1 decision 2).~~
+   **SUPERSEDED (P6, planned):** an editable direct-tool grant alongside groups
+   divides the source of truth. P6 makes tool groups the SOLE grant and drops
+   `agent.tool_slugs` + the editor's "Direct tools" section. See the handover.
+3. **Authoring-subset groups** (confirmed + extended): `pages`/`tables` — and, in
+   P6, `contacts`/`lifelog` — groups exclude the destructive `*_delete`; deletes
+   live in deliberate `*-admin` groups, granted on purpose, never auto.
+
+## Phase 6 — groups as the sole tool-grant (PLANNED — not started)
+
+**Goal:** tool groups become the *only* way to grant a tool. `agent.tool_slugs`
+and the agent editor's "Direct tools · advanced" section are removed; skills are
+teaching, groups are capability — one source of truth, end to end.
+
+**Status:** fully designed, **not implemented**. The partial taxonomy groundwork
+was reverted so `main` stays clean at P0–P5. The complete design — the final group
+taxonomy, the agent→group mapping (approach A: coarse groups, specialists expand),
+every edge discovered (page-share / recall splits, `*-admin` delete groups,
+heartbeat + `read_result` as runtime affordances), the file-by-file change plan,
+and the verification approach — is in
+**[docs/handover-tools-skills-p6.md](handover-tools-skills-p6.md)**.

@@ -10,6 +10,14 @@
 
 Shipped 2026-06. Code lives in `apps/web/lib/system-manifest/`.
 
+> **Update (2026-06, tools/skills reshape — see [docs/tools-and-skills.md](tools-and-skills.md)):**
+> the graph is now **agents → {skills (teaching), tool groups (capability)} → tools**.
+> Skills carry no tools (`skills.tool_slugs` dropped). The manifest gained
+> `MANIFEST_TOOL_GROUPS`; the checker gained `group-tools` + `dangling-groups`
+> checks (and the old `skill-tools` check is gone). An agent's capability =
+> `agent.tool_slugs` (direct) ∪ its granted `tool_group_slugs`. **Phase 6 (planned)**
+> will make tool groups the sole grant and drop `agent.tool_slugs`.
+
 ---
 
 ## 1. Why this exists
