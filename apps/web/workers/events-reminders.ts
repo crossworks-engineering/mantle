@@ -20,6 +20,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import {
   db,
   agents,
+  channels,
   telegramAccounts,
   telegramChats,
   type TelegramAccount,
@@ -40,13 +41,14 @@ const TICK_MS = 30_000;
 type ReminderTarget = { account: TelegramAccount; telegramChatId: string };
 
 /** The owner's allowed private DM, ordered most-recent-first. When
- *  `preferredAgentSlug` is set, restrict to the bot whose responder is that
- *  agent (so reminders come from a chosen persona, e.g. Saskia). */
+ *  `preferredAgentSlug` is set, restrict to the bot whose channel is attached to
+ *  that agent (so reminders come from a chosen persona, e.g. Saskia). Gated on
+ *  the channel being enabled (docs/comms-channels.md). */
 async function findReminderChat(
   ownerId: string,
   preferredAgentSlug?: string,
 ): Promise<ReminderTarget | null> {
-  const query = (responderAgentId?: string) =>
+  const query = (channelAgentId?: string) =>
     db
       .select({
         telegramChatId: telegramChats.telegramChatId,
@@ -54,15 +56,15 @@ async function findReminderChat(
       })
       .from(telegramChats)
       .innerJoin(telegramAccounts, eq(telegramAccounts.id, telegramChats.accountId))
+      .innerJoin(channels, eq(channels.id, telegramAccounts.channelId))
       .where(
         and(
           eq(telegramChats.userId, ownerId),
           eq(telegramChats.chatType, 'private'),
           eq(telegramChats.allowlistStatus, 'allowed'),
-          eq(telegramAccounts.enabled, true),
-          ...(responderAgentId
-            ? [eq(telegramAccounts.responderAgentId, responderAgentId)]
-            : []),
+          eq(channels.type, 'telegram'),
+          eq(channels.enabled, true),
+          ...(channelAgentId ? [eq(channels.agentId, channelAgentId)] : []),
         ),
       )
       .orderBy(desc(telegramChats.lastMessageAt))

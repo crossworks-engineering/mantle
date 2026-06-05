@@ -16,7 +16,7 @@ export async function sendMessage(
   text: string,
   options?: { replyTo?: string; markdown?: boolean },
 ): Promise<number[]> {
-  const bot = botFor(account);
+  const bot = await botFor(account);
   const chunks = chunkText(text, MAX_CHUNK);
   const replyTo = options?.replyTo != null ? Number(options.replyTo) : undefined;
   const parseMode = options?.markdown ? ('MarkdownV2' as const) : undefined;
@@ -72,7 +72,7 @@ export async function sendPhoto(
     filename?: string;
   },
 ): Promise<number> {
-  const bot = botFor(account);
+  const bot = await botFor(account);
   const replyTo = options?.replyTo != null ? Number(options.replyTo) : undefined;
   const filename = options?.filename ?? 'image.png';
   const sent = await bot.api.sendPhoto(chatId, new InputFile(image, filename), {
@@ -95,7 +95,7 @@ export async function sendVoice(
     filename?: string;
   },
 ): Promise<number> {
-  const bot = botFor(account);
+  const bot = await botFor(account);
   const replyTo = options?.replyTo != null ? Number(options.replyTo) : undefined;
   const filename = options?.filename ?? 'voice.ogg';
   const sent = await bot.api.sendVoice(chatId, new InputFile(audio, filename), {
@@ -126,7 +126,7 @@ export async function downloadTelegramFile(
   account: TelegramAccount,
   fileId: string,
 ): Promise<{ bytes: Buffer; mimeType: string; filename: string }> {
-  const bot = botFor(account);
+  const bot = await botFor(account);
   const file = await bot.api.getFile(fileId);
   if (!file.file_path) {
     throw new Error(`telegram getFile: no file_path returned for ${fileId}`);
@@ -203,7 +203,7 @@ export async function sendChatAction(
   chatId: string,
   action: 'typing' | 'upload_photo' | 'record_voice' | 'upload_voice' | 'upload_document' = 'typing',
 ): Promise<void> {
-  const bot = botFor(account);
+  const bot = await botFor(account);
   await bot.api.sendChatAction(chatId, action);
 }
 
@@ -213,7 +213,7 @@ export async function reactToMessage(
   messageId: string,
   emoji: string,
 ): Promise<void> {
-  const bot = botFor(account);
+  const bot = await botFor(account);
   await bot.api.setMessageReaction(chatId, Number(messageId), [
     { type: 'emoji', emoji: emoji as ReactionTypeEmoji['emoji'] },
   ]);
@@ -226,7 +226,7 @@ export async function editMessage(
   text: string,
   options?: { markdown?: boolean },
 ): Promise<void> {
-  const bot = botFor(account);
+  const bot = await botFor(account);
   const parseMode = options?.markdown ? ('MarkdownV2' as const) : undefined;
   await bot.api.editMessageText(
     chatId,

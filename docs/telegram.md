@@ -3,15 +3,21 @@
 This doc captures what was built, what's running, and what's still open so
 the next Claude Code session can pick up without re-deriving context.
 
-> **Update (2026-05-28): per-responder bots + in-app pairing.** Bot tokens are
-> now entered + rotated from the responder's `/settings/agents` **Telegram bot**
-> section (no longer CLI-only), bound via `telegram_accounts.responder_agent_id`
-> (migration 0050). Pairing requests are approved with one click there
-> (`telegram_pair` MCP tool remains the fallback). Reply routing answers on the
-> inbound message's own bot and resolution prefers the bot's owning responder.
-> The durable design now lives in
-> [`architecture.md` §9 / §9b](./architecture.md#9-telegram-pipeline); this
-> handoff stays as the original build diary.
+> **Update (2026-06: comms-channels.** Transport is decoupled from `agents.role`.
+> A bot is attached to **any** agent through the generic `channels` table — the
+> binding (`channels.agent_id`) + the sealed token (`channels.credentials_enc`)
+> live there; `telegram_accounts` is now just the poll-state extension, linked
+> 1:1 via `channel_id`. The old `telegram_accounts.responder_agent_id` +
+> `bot_token_enc` columns are gone. The poller polls per enabled channel; inbound
+> dispatch resolves the channel's agent (per-chat override still wins). Tokens are
+> still entered/rotated from `/settings/agents` (same connect+pair UI, now writing
+> a channel). See [`comms-channels.md`](./comms-channels.md) for the full design.
+>
+> **Update (2026-05-28): per-responder bots + in-app pairing.** *(superseded by
+> comms-channels above)* Bot tokens were entered from the responder's
+> `/settings/agents` **Telegram bot** section, bound via
+> `telegram_accounts.responder_agent_id` (migration 0050). Pairing requests are
+> approved with one click there (`telegram_pair` MCP tool remains the fallback).
 
 ## TL;DR
 

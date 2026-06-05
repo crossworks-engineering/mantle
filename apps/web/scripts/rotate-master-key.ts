@@ -18,21 +18,21 @@
  * Tables touched:
  *   - api_keys.key_enc
  *   - email_accounts.imap_config_enc  (nullable — accounts without IMAP creds are skipped)
- *   - telegram_accounts.bot_token_enc
+ *   - channels.credentials_enc        (telegram bot token; see docs/comms-channels.md)
  *   - secrets.ciphertext
  *
  * AAD bindings (must match where the rows were originally sealed):
  *   - api_keys           → row id
  *   - email_accounts     → account id
- *   - telegram_accounts  → account id
+ *   - channels           → channel id
  *   - secrets            → `secret:<node_id>`
  */
 import {
   db,
   apiKeys,
+  channels,
   emailAccounts,
   secrets,
-  telegramAccounts,
 } from '@mantle/db';
 import { currentSealVersion, open, seal, sealedKeyVersion } from '@mantle/crypto';
 import { eq } from 'drizzle-orm';
@@ -141,16 +141,18 @@ async function main() {
   }
 
   all.push(
+    // The telegram bot token lives on `channels.credentials_enc` now
+    // (docs/comms-channels.md), AAD-bound to the channel id.
     await rotateTable(
-      'telegram_accounts',
-      () => db.select().from(telegramAccounts),
-      (r) => r.botTokenEnc as Buffer,
+      'channels',
+      () => db.select().from(channels),
+      (r) => r.credentialsEnc as Buffer,
       (r) => r.id,
       async (id, ct, _kv) => {
         await db
-          .update(telegramAccounts)
-          .set({ botTokenEnc: ct, updatedAt: new Date() })
-          .where(eq(telegramAccounts.id, id));
+          .update(channels)
+          .set({ credentialsEnc: ct, updatedAt: new Date() })
+          .where(eq(channels.id, id));
       },
     ),
   );

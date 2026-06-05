@@ -228,9 +228,11 @@ The "per-agent, cross-channel" semantics live here. The digest filter changes fr
 `scripts/backfill-conversation.ts`, dry-run by default (same convention as
 `dedupe:edges`):
 - For each `telegram_messages` row, insert a matching `assistant_messages` row
-  (`channel='telegram'`, `agent_id` resolved from `chat.responder_agent_id` → account
-  → priority; map direction/text/attachments/`external_ref`; preserve `sent_at` →
-  `created_at`).
+  (`channel='telegram'`, `agent_id` resolved from `chat.responder_agent_id` → the
+  inbound channel's `agent_id` → highest-priority conversational agent (the
+  channels model, docs/comms-channels.md; pre-refactor this was the account's
+  `responder_agent_id`); map direction/text/attachments/`external_ref`; preserve
+  `sent_at` → `created_at`).
 - **Idempotent**: skip rows whose `external_ref.messageId` already exists.
 - **Don't storm the trigger**: insert with the summarize trigger disabled (or a
   `backfill` short-circuit) so the backfill doesn't fire thousands of `summarize_due`

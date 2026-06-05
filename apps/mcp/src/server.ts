@@ -24,6 +24,7 @@ import { z } from 'zod';
 import {
   db,
   agents,
+  channels,
   emails,
   nodes,
   telegramAccounts,
@@ -852,11 +853,12 @@ server.tool(
       .limit(1);
     if (account) {
       let name = 'your assistant';
-      if (account.responderAgentId) {
+      if (account.channelId) {
         const [agentRow] = await db
           .select({ name: agents.name })
           .from(agents)
-          .where(eq(agents.id, account.responderAgentId))
+          .innerJoin(channels, eq(channels.agentId, agents.id))
+          .where(eq(channels.id, account.channelId))
           .limit(1);
         if (agentRow?.name) name = agentRow.name;
       }

@@ -2,7 +2,6 @@ import { sql } from 'drizzle-orm';
 import {
   bigint,
   boolean,
-  customType,
   index,
   integer,
   jsonb,
@@ -16,12 +15,6 @@ import {
 import { nodes } from './nodes';
 import { agents } from './agents';
 import { channels } from './channels';
-
-const bytea = customType<{ data: Buffer; driverData: Buffer }>({
-  dataType() {
-    return 'bytea';
-  },
-});
 
 export const telegramChatType = pgEnum('telegram_chat_type', ['private', 'group', 'supergroup']);
 
@@ -49,25 +42,14 @@ export const telegramAccounts = pgTable(
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     userId: uuid('user_id').notNull(),
     botUsername: text('bot_username').notNull(),
-    /** Bot token, AES-GCM-encrypted with MANTLE_MASTER_KEY. */
-    botTokenEnc: bytea('bot_token_enc').notNull(),
     /** ltree branch under which telegram messages get hung. */
     branchPath: text('branch_path').notNull(),
     /** 1:1 link to the generic `channels` binding (docs/comms-channels.md). The
-     *  channel carries the agent binding (`channels.agent_id`) + the sealed
-     *  token; this row stays the transport-specific poll-state extension.
-     *  Nullable during the additive rollout (backfilled by the agent boot
-     *  re-seal pass); SET NULL on channel delete keeps the row + message
+     *  channel carries the agent binding (`channels.agent_id`) + the sealed bot
+     *  token (`channels.credentials_enc`); this row is the transport-specific
+     *  poll-state extension. SET NULL on channel delete keeps the row + message
      *  history (a disconnect disables, it doesn't wipe history). */
     channelId: uuid('channel_id').references(() => channels.id, {
-      onDelete: 'set null',
-    }),
-    /** Responder agent that owns this bot. Set when the token is entered from
-     *  the agent's /settings/agents form; NULL = unlinked (legacy/CLI-seeded).
-     *  Inbound messages on this bot resolve to this responder first.
-     *  @deprecated superseded by `channel_id` → `channels.agent_id`; kept
-     *  through the dual-read transition, dropped in the cleanup migration. */
-    responderAgentId: uuid('responder_agent_id').references(() => agents.id, {
       onDelete: 'set null',
     }),
     /** Next getUpdates offset. Telegram caps at int32 but we use bigint for safety. */
@@ -82,10 +64,6 @@ export const telegramAccounts = pgTable(
     index('telegram_accounts_user_idx').on(t.userId),
     index('telegram_accounts_channel_idx').on(t.channelId),
     uniqueIndex('telegram_accounts_user_bot_uq').on(t.userId, t.botUsername),
-    // A responder owns at most one bot (partial — many NULLs allowed).
-    uniqueIndex('telegram_accounts_responder_uq')
-      .on(t.responderAgentId)
-      .where(sql`${t.responderAgentId} is not null`),
   ],
 );
 
@@ -107,9 +85,10 @@ export const telegramChats = pgTable(
     pairingCode: text('pairing_code'),
     pairingExpiresAt: timestamp('pairing_expires_at', { withTimezone: true }),
     pairingReplies: integer('pairing_replies').default(0).notNull(),
-    /** Per-chat override of which responder agent handles this chat. NULL =
-     *  fall back to global priority resolution (highest-priority enabled
-     *  responder). Cleared automatically if the referenced agent is deleted. */
+    /** Per-chat override of which agent handles this chat. NULL = fall back to
+     *  the inbound channel's agent, then global priority resolution (highest-
+     *  priority enabled conversational agent — docs/comms-channels.md §6).
+     *  Cleared automatically if the referenced agent is deleted. */
     responderAgentId: uuid('responder_agent_id').references(() => agents.id, {
       onDelete: 'set null',
     }),

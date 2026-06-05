@@ -25,7 +25,7 @@ export async function pollOnce(account: TelegramAccount, timeoutSec = 25): Promi
   updatesReceived: number;
   delivered: number;
 }> {
-  const bot = botFor(account);
+  const bot = await botFor(account);
   const offset = account.lastUpdateOffset || 0;
 
   let updates: Update[];

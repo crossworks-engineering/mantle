@@ -5,7 +5,7 @@ import {
   loadProfilePreferences,
   formatInProfile,
 } from '@mantle/content';
-import { db, agents, telegramAccounts } from '@mantle/db';
+import { db, agents, channels } from '@mantle/db';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { ProfileClient } from './profile-client';
 import { updatePreferencesAction } from './actions';
@@ -25,17 +25,19 @@ import { updatePreferencesAction } from './actions';
 export default async function ProfilePage() {
   const user = await requireOwner();
   const prefs = await loadProfilePreferences(user.id);
-  // Responders that can actually deliver a reminder — an enabled bot paired to
-  // an enabled responder agent. The user picks one as the event-reminder sender.
+  // Agents that can actually deliver a reminder — an enabled agent with an
+  // enabled Telegram channel (docs/comms-channels.md). The user picks one as the
+  // event-reminder sender.
   const reminderAgents = await db
     .selectDistinct({ slug: agents.slug, name: agents.name })
     .from(agents)
-    .innerJoin(telegramAccounts, eq(telegramAccounts.responderAgentId, agents.id))
+    .innerJoin(channels, eq(channels.agentId, agents.id))
     .where(
       and(
         eq(agents.ownerId, user.id),
         eq(agents.enabled, true),
-        eq(telegramAccounts.enabled, true),
+        eq(channels.type, 'telegram'),
+        eq(channels.enabled, true),
       ),
     )
     .orderBy(agents.name);

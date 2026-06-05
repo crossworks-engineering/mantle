@@ -1,21 +1,17 @@
 /**
- * Per-responder Telegram bot binding. Lets a responder agent's bot token be
- * entered + managed from the /settings/agents form instead of the CLI seed
- * script. The token still lives in `telegram_accounts.bot_token_enc` (AES-GCM
- * sealed, AAD-bound to the account row id); we just add the
- * `responder_agent_id` link and a UI on top.
+ * Per-agent Telegram bot binding for the /settings/agents form. The binding
+ * (which agent) + the sealed bot token live in the generic `channels` table
+ * (docs/comms-channels.md); `telegram_accounts` is the transport-specific
+ * poll-state extension, linked 1:1 via `channel_id`. Any agent can attach a
+ * bot — `role` no longer gates transport.
  *
- * Connect flow mirrors scripts/seed-telegram.ts: validate the token via
- * Telegram's getMe (also yields the bot username + branch path), then seal.
+ * Connect flow: validate the token via Telegram's getMe (also yields the bot
+ * username + branch path), upsert the account's poll-state row, then write the
+ * channel (token + binding) via `upsertTelegramChannel`.
  */
 import { and, eq } from 'drizzle-orm';
-import { agents, db, telegramAccounts, telegramChats } from '@mantle/db';
-import { seal } from '@mantle/crypto';
-import {
-  disableTelegramChannel,
-  sendMessage,
-  upsertTelegramChannel,
-} from '@mantle/telegram';
+import { agents, channels, db, telegramAccounts, telegramChats } from '@mantle/db';
+import { disableTelegramChannel, sendMessage, upsertTelegramChannel } from '@mantle/telegram';
 
 export type AgentTelegramBinding = {
   accountId: string;
@@ -47,35 +43,65 @@ async function getMe(token: string): Promise<{ id: number; username: string }> {
   return { id: body.result.id, username: body.result.username };
 }
 
-function toBinding(row: typeof telegramAccounts.$inferSelect): AgentTelegramBinding {
+type AccountRow = typeof telegramAccounts.$inferSelect;
+
+function toBinding(account: AccountRow, channelEnabled: boolean): AgentTelegramBinding {
   return {
-    accountId: row.id,
-    botUsername: row.botUsername,
-    enabled: row.enabled,
-    lastPollAt: row.lastPollAt?.toISOString() ?? null,
-    lastPollError: row.lastPollError,
+    accountId: account.id,
+    botUsername: account.botUsername,
+    // The channel is the source of truth for enabled/disabled now.
+    enabled: channelEnabled,
+    lastPollAt: account.lastPollAt?.toISOString() ?? null,
+    lastPollError: account.lastPollError,
   };
 }
 
-/** The bot currently bound to this responder agent, or null. */
+/** The account row + its channel.enabled for the agent's telegram channel. */
+async function accountForAgent(
+  ownerId: string,
+  agentId: string,
+): Promise<{ account: AccountRow; channelEnabled: boolean } | null> {
+  const [row] = await db
+    .select({ account: telegramAccounts, channelEnabled: channels.enabled })
+    .from(telegramAccounts)
+    .innerJoin(channels, eq(telegramAccounts.channelId, channels.id))
+    .where(
+      and(
+        eq(channels.ownerId, ownerId),
+        eq(channels.agentId, agentId),
+        eq(channels.type, 'telegram'),
+      ),
+    )
+    .limit(1);
+  return row ? { account: row.account, channelEnabled: row.channelEnabled } : null;
+}
+
+/** The agent that owns the channel linked to an account, if any. */
+async function channelAgentForAccount(accountId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ agentId: channels.agentId })
+    .from(channels)
+    .innerJoin(telegramAccounts, eq(telegramAccounts.channelId, channels.id))
+    .where(eq(telegramAccounts.id, accountId))
+    .limit(1);
+  return row?.agentId ?? null;
+}
+
+/** The bot currently bound to this agent, or null. */
 export async function getAgentTelegram(
   ownerId: string,
   agentId: string,
 ): Promise<AgentTelegramBinding | null> {
-  const [row] = await db
-    .select()
-    .from(telegramAccounts)
-    .where(
-      and(eq(telegramAccounts.userId, ownerId), eq(telegramAccounts.responderAgentId, agentId)),
-    )
-    .limit(1);
-  return row ? toBinding(row) : null;
+  const found = await accountForAgent(ownerId, agentId);
+  return found ? toBinding(found.account, found.channelEnabled) : null;
 }
 
 /**
  * Validate `token`, then bind its bot to `agentId` — updating the agent's
- * existing bound row, adopting an existing same-username row (e.g. a
- * CLI-seeded bot), or inserting a new one. Re-enables polling.
+ * existing bound bot, adopting an existing same-username account (e.g. a
+ * CLI-seeded bot), or inserting a new account. The token + agent binding land
+ * on the `channels` row (`upsertTelegramChannel`); the account row holds only
+ * poll state. Re-enables the channel.
  */
 export async function connectAgentTelegram(
   ownerId: string,
@@ -87,13 +113,7 @@ export async function connectAgentTelegram(
   const me = await getMe(trimmed);
   const branchPath = `inbox.telegram_${me.username.toLowerCase()}`;
 
-  const [byAgent] = await db
-    .select()
-    .from(telegramAccounts)
-    .where(
-      and(eq(telegramAccounts.userId, ownerId), eq(telegramAccounts.responderAgentId, agentId)),
-    )
-    .limit(1);
+  const byAgent = (await accountForAgent(ownerId, agentId))?.account;
   const [byUsername] = await db
     .select()
     .from(telegramAccounts)
@@ -102,9 +122,12 @@ export async function connectAgentTelegram(
     )
     .limit(1);
 
-  // The bot is already owned by a different responder — refuse to steal it.
-  if (byUsername && byUsername.responderAgentId && byUsername.responderAgentId !== agentId) {
-    throw new TelegramTokenError(`@${me.username} is already linked to another agent.`);
+  // The bot is already owned by a different agent's channel — refuse to steal it.
+  if (byUsername) {
+    const owner = await channelAgentForAccount(byUsername.id);
+    if (owner && owner !== agentId) {
+      throw new TelegramTokenError(`@${me.username} is already linked to another agent.`);
+    }
   }
 
   const target = byAgent ?? byUsername;
@@ -121,56 +144,36 @@ export async function connectAgentTelegram(
       .set({
         botUsername: me.username,
         branchPath,
-        responderAgentId: agentId,
         enabled: true,
-        botTokenEnc: seal(trimmed, accountId).ciphertext,
         lastPollError: null,
         ...(botChanged ? { lastUpdateOffset: 0 } : {}),
         updatedAt: new Date(),
       })
       .where(eq(telegramAccounts.id, accountId));
   } else {
-    // Insert disabled first so the poll worker can't read a non-AAD-bound
-    // token in the window before we re-seal it against the new row id.
     const [inserted] = await db
       .insert(telegramAccounts)
       .values({
         userId: ownerId,
         botUsername: me.username,
         branchPath,
-        responderAgentId: agentId,
-        enabled: false,
-        botTokenEnc: seal(trimmed).ciphertext,
+        enabled: true,
       })
       .returning({ id: telegramAccounts.id });
     accountId = inserted!.id;
-    await db
-      .update(telegramAccounts)
-      .set({ botTokenEnc: seal(trimmed, accountId).ciphertext, enabled: true })
-      .where(eq(telegramAccounts.id, accountId));
   }
 
-  // Dual-write the generic channel binding (docs/comms-channels.md, Phase 1).
-  // The token is re-sealed under the channel id; the account row is linked via
-  // channel_id. Best-effort: a failure here must not undo the account bind,
-  // which is still the source of truth during the dual-read transition (the
-  // agent-boot backfill reconciles any miss).
-  try {
-    await upsertTelegramChannel({
-      ownerId,
-      agentId,
-      accountId,
-      botUsername: me.username,
-      branchPath,
-      token: trimmed,
-      enabled: true,
-    });
-  } catch (err) {
-    console.error(
-      '[agent-telegram] channel dual-write failed (account bind still applied):',
-      err instanceof Error ? err.message : err,
-    );
-  }
+  // The channel holds the token (sealed under the channel id) + the agent
+  // binding, and links the account via channel_id. This is the source of truth.
+  await upsertTelegramChannel({
+    ownerId,
+    agentId,
+    accountId,
+    botUsername: me.username,
+    branchPath,
+    token: trimmed,
+    enabled: true,
+  });
 
   const binding = await getAgentTelegram(ownerId, agentId);
   if (!binding) throw new Error('failed to read back telegram binding');
@@ -178,23 +181,22 @@ export async function connectAgentTelegram(
 }
 
 /**
- * Unlink the bot from the agent and stop polling. Keeps the row + its message
- * history (a hard delete would cascade telegram_chats + telegram_messages).
+ * Unlink the bot from the agent and stop polling. Disables the channel (the
+ * poll gate) and the account; keeps both rows + message history (a hard delete
+ * would cascade telegram_chats + telegram_messages).
  */
 export async function disconnectAgentTelegram(ownerId: string, agentId: string): Promise<void> {
-  await db
-    .update(telegramAccounts)
-    .set({ responderAgentId: null, enabled: false, updatedAt: new Date() })
-    .where(
-      and(eq(telegramAccounts.userId, ownerId), eq(telegramAccounts.responderAgentId, agentId)),
-    );
-  // Mirror on the channel side — disable, keep the row + history.
-  await disableTelegramChannel(ownerId, agentId).catch((err) =>
-    console.error(
-      '[agent-telegram] channel disable failed:',
-      err instanceof Error ? err.message : err,
-    ),
-  );
+  // Disable the channel — the poll gate. Keeps the row + history.
+  await disableTelegramChannel(ownerId, agentId);
+  // Also flip the account's own enabled flag for consistency (vestigial poll
+  // state now that the channel gates polling).
+  const found = await accountForAgent(ownerId, agentId);
+  if (found) {
+    await db
+      .update(telegramAccounts)
+      .set({ enabled: false, updatedAt: new Date() })
+      .where(eq(telegramAccounts.id, found.account.id));
+  }
 }
 
 export type AgentTelegramChat = {

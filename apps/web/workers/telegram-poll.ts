@@ -21,7 +21,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { channels, db, telegramAccounts, type Channel, type TelegramAccount } from '@mantle/db';
-import { backfillTelegramChannels, pollOnce, evictBot } from '@mantle/telegram';
+import { pollOnce, evictBot } from '@mantle/telegram';
 
 const CHANNEL_REFRESH_MS = 60_000;
 const BACKOFF_BASE_MS = 1_000;
@@ -53,17 +53,6 @@ async function main() {
   if (!process.env.MANTLE_MASTER_KEY) throw new Error('MANTLE_MASTER_KEY must be set');
 
   console.log('[channel-poll] worker up');
-
-  // Reconcile telegram_accounts → channels before the first refresh so the
-  // channel-gated poll set is populated on a fresh deploy (closes the race
-  // where this worker would otherwise poll nothing until the agent's backfill
-  // lands). Owner-agnostic; idempotent; best-effort.
-  try {
-    await backfillTelegramChannels();
-  } catch (err) {
-    console.error('[channel-poll] channel backfill failed (will rely on agent boot):', err);
-  }
-
   await refreshChannels();
   const interval = setInterval(refreshChannels, CHANNEL_REFRESH_MS);
 

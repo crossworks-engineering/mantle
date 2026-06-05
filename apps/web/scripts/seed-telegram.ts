@@ -14,9 +14,9 @@
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { eq } from 'drizzle-orm';
-import { seal } from '@mantle/crypto';
-import { db, telegramAccounts, telegramChats } from '@mantle/db';
+import { and, desc, eq, inArray } from 'drizzle-orm';
+import { agents, db, telegramAccounts, telegramChats } from '@mantle/db';
+import { upsertTelegramChannel } from '@mantle/telegram';
 
 if (!process.env.ALLOWED_USER_ID) {
   console.error('ALLOWED_USER_ID must be set.');
@@ -38,7 +38,27 @@ async function main() {
   const me = await getMe(token);
   console.log(`Discovered bot @${me.username} (id ${me.id})`);
 
-  // Upsert telegram_accounts.
+  // A channel must carry an agent (docs/comms-channels.md), so attach the bot
+  // to the highest-priority enabled conversational agent.
+  const [target] = await db
+    .select({ id: agents.id, slug: agents.slug })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.ownerId, ownerId),
+        eq(agents.enabled, true),
+        inArray(agents.role, ['assistant', 'responder', 'custom']),
+      ),
+    )
+    .orderBy(desc(agents.priority))
+    .limit(1);
+  if (!target) {
+    throw new Error(
+      'No enabled conversational agent to attach the bot to — create one at /settings/agents first.',
+    );
+  }
+
+  // Upsert telegram_accounts (poll-state extension; the token lives on the channel).
   const existing = await db
     .select()
     .from(telegramAccounts)
@@ -46,19 +66,12 @@ async function main() {
     .limit(1);
 
   const branchPath = `inbox.telegram_${me.username.toLowerCase()}`;
-  const sealed = seal(token);
 
   let accountId: string;
   if (existing[0]) {
-    // Re-seal token (preserves encryption hygiene) but keep offset.
     await db
       .update(telegramAccounts)
-      .set({
-        botTokenEnc: sealed.ciphertext,
-        branchPath,
-        enabled: true,
-        updatedAt: new Date(),
-      })
+      .set({ branchPath, enabled: true, updatedAt: new Date() })
       .where(eq(telegramAccounts.id, existing[0].id));
     accountId = existing[0].id;
     console.log(`  updated existing account ${accountId}`);
@@ -68,7 +81,6 @@ async function main() {
       .values({
         userId: ownerId,
         botUsername: me.username,
-        botTokenEnc: sealed.ciphertext,
         branchPath,
         enabled: true,
       })
@@ -77,13 +89,17 @@ async function main() {
     console.log(`  created account ${accountId}`);
   }
 
-  // Seal token AAD-bound to the row id (the encryption layer uses aad for
-  // authenticated binding). We have to re-seal once we know the id.
-  const aadSealed = seal(token, accountId);
-  await db
-    .update(telegramAccounts)
-    .set({ botTokenEnc: aadSealed.ciphertext })
-    .where(eq(telegramAccounts.id, accountId));
+  // The token + agent binding live on the channel (sealed under the channel id).
+  await upsertTelegramChannel({
+    ownerId,
+    agentId: target.id,
+    accountId,
+    botUsername: me.username,
+    branchPath,
+    token,
+    enabled: true,
+  });
+  console.log(`  attached @${me.username} to agent '${target.slug}'`);
 
   // Upsert allowlisted chats. For DMs, chat_id == user_id.
   for (const userId of allowFrom) {

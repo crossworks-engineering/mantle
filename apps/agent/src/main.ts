@@ -35,7 +35,7 @@ import {
   type ConversationAttachment,
   type TelegramAccount,
 } from '@mantle/db';
-import { accountById, backfillTelegramChannels, downloadTelegramFile, sendChatAction, sendMessage, sendVoice } from '@mantle/telegram';
+import { accountById, downloadTelegramFile, sendChatAction, sendMessage, sendVoice } from '@mantle/telegram';
 import {
   buildIdentityContext,
   buildTimeContextLine,
@@ -159,11 +159,8 @@ const CONVERSATIONAL_ROLES: ('assistant' | 'responder' | 'custom')[] = [
  *  Resolution order (channel-based, role-decoupled — docs/comms-channels.md §6):
  *    1. Per-chat override (`telegram_chats.responder_agent_id`) — most specific.
  *    2. The inbound **channel's** `agent_id` — the agent this transport is
- *       attached to. This is the normal path: an enabled channel always carries
- *       an agent.
- *    3. Transition fallback: the account's legacy `responder_agent_id` (set for
- *       linked-but-not-yet-channelled bots during the dual-read window).
- *    4. Last resort: highest-priority enabled conversational agent — covers a
+ *       attached to. The normal path: an enabled channel always carries an agent.
+ *    3. Last resort: highest-priority enabled conversational agent — covers a
  *       channel-less/legacy account so an inbound is never silently dropped.
  *       No `role='responder'` privileging (that gate is gone).
  */
@@ -171,9 +168,8 @@ async function resolveResponderAgent(
   ownerId: string,
   overrideAgentId: string | null,
   channelAgentId?: string | null,
-  accountResponderId?: string | null,
 ): Promise<Agent | null> {
-  for (const pinnedId of [overrideAgentId, channelAgentId, accountResponderId]) {
+  for (const pinnedId of [overrideAgentId, channelAgentId]) {
     if (!pinnedId) continue;
     const [pinned] = await db
       .select()
@@ -255,7 +251,6 @@ async function handleMessage(messageId: string): Promise<void> {
       accountId: telegramMessages.accountId,
       responderAgentId: telegramChats.responderAgentId,
       channelAgentId: channels.agentId,
-      accountResponderId: telegramAccounts.responderAgentId,
       attachments: telegramMessages.attachments,
     })
     .from(telegramMessages)
@@ -489,12 +484,7 @@ async function handleMessage(messageId: string): Promise<void> {
   // Resolve the responder + key BEFORE opening a trace. Failure modes here
   // (no agent, no key) don't generate traces — there's nothing useful to
   // record about "the system was misconfigured."
-  const agent = await resolveResponderAgent(
-    USER_ID!,
-    row.responderAgentId,
-    row.channelAgentId,
-    row.accountResponderId,
-  );
+  const agent = await resolveResponderAgent(USER_ID!, row.responderAgentId, row.channelAgentId);
   if (!agent) {
     console.error(
       `[agent] no enabled responder agent — skipping ${messageId}. Create one at /settings/agents.`,
@@ -1497,20 +1487,6 @@ async function main() {
   } catch (err) {
     console.error(
       '[agent] core tool grant failed:',
-      err instanceof Error ? err.message : err,
-    );
-  }
-
-  // Reconcile telegram_accounts → channels (docs/comms-channels.md, Phase 1).
-  // Re-seals each linked bot's token into a generic `channels` row (AAD bound to
-  // the channel id). Idempotent + owner-scoped; runs here (not in the SQL
-  // migrate gate) because the AES-GCM re-seal needs MANTLE_MASTER_KEY in app
-  // code. Best-effort — a failure leaves the legacy account path working.
-  try {
-    await backfillTelegramChannels(USER_ID!);
-  } catch (err) {
-    console.error(
-      '[agent] telegram channel backfill failed:',
       err instanceof Error ? err.message : err,
     );
   }

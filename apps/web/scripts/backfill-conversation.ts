@@ -33,11 +33,12 @@
  *   pnpm -C apps/web backfill:conversation --apply    # write
  */
 
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   db,
   agents,
   assistantMessages,
+  channels,
   nodes,
   telegramMessages,
   telegramChats,
@@ -53,13 +54,14 @@ const SUMMARIZE_TRIGGER = 'assistant_messages_summarize_due_trg';
 type AgentRef = { id: string; slug: string };
 
 /** Mirror of resolveResponderAgent (apps/agent/src/main.ts): per-chat override
- *  → bot's owning responder → global highest-priority enabled responder. */
+ *  → the channel's agent → global highest-priority enabled conversational
+ *  agent (role-decoupled, docs/comms-channels.md). */
 async function resolveChatAgent(
   ownerId: string,
   overrideAgentId: string | null,
-  accountResponderId: string | null,
+  channelAgentId: string | null,
 ): Promise<AgentRef | null> {
-  for (const pinnedId of [overrideAgentId, accountResponderId]) {
+  for (const pinnedId of [overrideAgentId, channelAgentId]) {
     if (!pinnedId) continue;
     const [pinned] = await db
       .select({ id: agents.id, slug: agents.slug })
@@ -71,7 +73,13 @@ async function resolveChatAgent(
   const [row] = await db
     .select({ id: agents.id, slug: agents.slug })
     .from(agents)
-    .where(and(eq(agents.ownerId, ownerId), eq(agents.role, 'responder'), eq(agents.enabled, true)))
+    .where(
+      and(
+        eq(agents.ownerId, ownerId),
+        eq(agents.enabled, true),
+        inArray(agents.role, ['assistant', 'responder', 'custom']),
+      ),
+    )
     .orderBy(desc(agents.priority))
     .limit(1);
   return row ?? null;
@@ -115,14 +123,15 @@ async function main() {
       chatPk: telegramChats.id,
       telegramChatId: telegramChats.telegramChatId,
       overrideAgentId: telegramChats.responderAgentId,
-      accountResponderId: telegramAccounts.responderAgentId,
+      channelAgentId: channels.agentId,
     })
     .from(telegramChats)
     .innerJoin(telegramAccounts, eq(telegramChats.accountId, telegramAccounts.id))
+    .leftJoin(channels, eq(telegramAccounts.channelId, channels.id))
     .where(eq(telegramChats.userId, OWNER_ID));
   const chatAgent = new Map<string, AgentRef>();
   for (const c of chats) {
-    const a = await resolveChatAgent(OWNER_ID, c.overrideAgentId, c.accountResponderId);
+    const a = await resolveChatAgent(OWNER_ID, c.overrideAgentId, c.channelAgentId);
     if (a) chatAgent.set(c.chatPk, a);
   }
 

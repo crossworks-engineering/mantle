@@ -1,18 +1,30 @@
 # Comms channels — decouple transport from agent `role`
 
-> **Status: BUILDING.** Phases 1–3 shipped (v0.19.4-alpha+): the generic
+> **Status: BUILDING.** Phases 1–4 shipped (v0.19.4-alpha+): the generic
 > `channels` table, token re-seal backfill + dual-write (Phase 1); the
 > channel-driven poller registry + channel-based inbound dispatch with the
-> `role='responder'` fallback removed (Phase 2); and the reflector + web-default
-> role-decouple (Phase 3). Phases 4–6 (cleanup migration, Studio surface,
-> Discord/Slack) per §10 below. The current-state map (§2) describes the
-> pre-refactor baseline; the §12 decisions are resolved inline as each phase
-> lands: **1** keep `telegram_accounts` as a 1:1 extension (not folded); **2**
-> unlinked/legacy bots left channel-less; **3** `role` demoted to a hint
-> (option A — no enum migration); **4** reflector gate = enabled conversational
-> agent with ≥1 new outbound turn since the last run, capped at 5 agents/tick;
-> **5** web default = priority-based among chat-capable agents with a soft
-> assistant→responder→custom tiebreak, explicit `?agent=` still wins.
+> `role='responder'` fallback removed (Phase 2); the reflector + web-default
+> role-decouple (Phase 3); and the cleanup migration (Phase 4) — token now lives
+> only on `channels.credentials_enc`, `telegram_accounts.responder_agent_id` +
+> `bot_token_enc` dropped. Phases 5–6 (Studio surface, Discord/Slack) per §10.
+> The current-state map (§2) describes the pre-refactor baseline; the §12
+> decisions are resolved inline as each phase lands: **1** keep
+> `telegram_accounts` as a 1:1 extension (not folded); **2** unlinked/legacy bots
+> left channel-less; **3** `role` demoted to a hint (option A — no enum
+> migration); **4** reflector gate = enabled conversational agent with ≥1 new
+> outbound turn since the last run, capped at 5 agents/tick; **5** web default =
+> priority-based among chat-capable agents with a soft assistant→responder→custom
+> tiebreak, explicit `?agent=` still wins.
+>
+> ⚠️ **Phase 4 deploy ordering (token-safety).** The Phase-4 cleanup migration
+> (`0078_channels_cleanup`) drops `bot_token_enc`, but the token re-seal into
+> `channels.credentials_enc` runs in **app code** (AES-GCM needs the master key),
+> which starts *after* the SQL migrate gate. So Phase 4 must NOT deploy in the
+> same release that first creates `channels` — deploy the additive phases (1–3)
+> first, let the startup backfill populate `channels`, verify, then deploy
+> Phase 4. The migration **self-guards**: it aborts the deploy if any *enabled*
+> `telegram_accounts` row still lacks a `channel_id`, so a premature deploy fails
+> safely instead of losing a token.
 
 ## 0. TL;DR for the builder
 

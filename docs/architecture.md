@@ -420,6 +420,17 @@ via SendGrid, GitHub via SES) classify correctly. Full detail in
 `packages/telegram/` is ~500 LOC. The full handoff doc is
 [`telegram.md`](./telegram.md); this is the abridged version.
 
+> **Decoupled from `agents.role` (2026-06, comms-channels).** A bot now attaches
+> to **any** agent through the generic `channels` table: `channels.agent_id` is
+> the binding and `channels.credentials_enc` holds the sealed token.
+> `telegram_accounts` is the poll-state extension (1:1 via `channel_id`); its old
+> `responder_agent_id` + `bot_token_enc` columns were dropped. The poller loops
+> per **enabled channel**; inbound dispatch resolves the channel's agent (per-chat
+> `telegram_chats.responder_agent_id` override still wins; then highest-priority
+> enabled conversational agent). References to `responder_agent_id` /
+> `bot_token_enc` below describe the pre-refactor model — see
+> [`comms-channels.md`](./comms-channels.md).
+
 Flow:
 
 1. **Long-poll worker.** `apps/web/workers/telegram-poll.ts` spawns one
