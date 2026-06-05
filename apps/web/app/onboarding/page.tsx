@@ -1,8 +1,10 @@
 import { redirect } from 'next/navigation';
+import { and, db, agents, eq } from '@mantle/db';
 import { loadProfilePreferences } from '@mantle/content';
 import { listApiKeys } from '@mantle/api-keys';
 import { requireOwner } from '@/lib/auth';
 import { isOnboarded } from '@/lib/onboarding';
+import { PERSONA_AGENT_SLUG } from '@/lib/onboarding-provision';
 import { OnboardingClient } from './onboarding-client';
 
 /**
@@ -28,12 +30,21 @@ export default async function OnboardingPage({
   const keys = await listApiKeys(user.id);
   const savedServices = [...new Set(keys.map((k) => k.service))];
 
+  // The persona agent's id (once provisioned) — the Telegram step binds a bot to
+  // it via the same `/api/agents/[id]/telegram` flow the settings page uses.
+  const [assistantAgent] = await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(and(eq(agents.ownerId, user.id), eq(agents.slug, PERSONA_AGENT_SLUG)))
+    .limit(1);
+
   return (
     <OnboardingClient
       initialStep={prefs.onboardingStep ?? 'profile'}
       initialTimezone={prefs.timezone}
       initialLocale={prefs.locale}
       savedServices={savedServices}
+      assistantAgentId={assistantAgent?.id ?? null}
     />
   );
 }

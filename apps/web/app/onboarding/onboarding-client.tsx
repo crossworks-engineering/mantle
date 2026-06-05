@@ -36,13 +36,13 @@ import {
   runSanityChecks,
   saveInterview,
   savePersonaStep,
-  saveTelegramStep,
   finishOnboarding,
   setOnboardingStep,
   type SanityCheck,
 } from './actions';
 import type { TestApiKeyResult } from '@/app/(app)/settings/keys/actions';
 import type { ProvisionResult } from '@/lib/onboarding-provision';
+import { TelegramBotSection } from '@/components/telegram/telegram-bot-section';
 
 type StepKey =
   | 'profile'
@@ -79,6 +79,7 @@ export function OnboardingClient(props: {
   initialTimezone: string;
   initialLocale: string;
   savedServices: string[];
+  assistantAgentId: string | null;
 }) {
   return (
     <ToastProvider>
@@ -92,11 +93,13 @@ function Wizard({
   initialTimezone,
   initialLocale,
   savedServices,
+  assistantAgentId,
 }: {
   initialStep: string;
   initialTimezone: string;
   initialLocale: string;
   savedServices: string[];
+  assistantAgentId: string | null;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -148,9 +151,8 @@ function Wizard({
   const [nameEdited, setNameEdited] = useState(false);
   const [temperature, setTemperature] = useState(0.7);
 
-  // Step 9 — telegram
-  const [tgToken, setTgToken] = useState('');
-  const [tgUsername, setTgUsername] = useState<string | null>(null);
+  // Step 9 — telegram: the bot binding + pairing is handled by the shared
+  // <TelegramBotSection> against the assistant agent; no local token state.
 
   function go(toIndex: number) {
     const next = Math.min(STEPS.length - 1, Math.max(0, toIndex));
@@ -228,21 +230,6 @@ function Wizard({
       const res = await savePersonaStep({ presetKey, assistantName, gender, temperature });
       if (!res.ok) return toast.error(res.error ?? 'Could not save.');
       toast.success(`${assistantName} is ready.`);
-      go(index + 1);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onSaveTelegram(skip: boolean) {
-    setBusy(true);
-    try {
-      if (!skip && tgToken.trim()) {
-        const res = await saveTelegramStep(tgToken);
-        if (!res.ok) return toast.error(res.error ?? 'Could not connect the bot.');
-        setTgUsername(res.username ?? null);
-        toast.success(res.username ? `Connected @${res.username}.` : 'Connected.');
-      }
       go(index + 1);
     } finally {
       setBusy(false);
@@ -541,18 +528,18 @@ function Wizard({
                 and send <code>/newbot</code>.
               </li>
               <li>Pick a name and username, then copy the token it gives you.</li>
-              <li>Paste the token below — then DM your new bot to pair.</li>
+              <li>Paste the token below and connect — then DM your new bot and approve the pairing request that appears here.</li>
             </ol>
-            <Field label="Bot token" hint="Leave blank to skip — you can add it later.">
-              <Input
-                value={tgToken}
-                onChange={(e) => setTgToken(e.target.value)}
-                placeholder="123456:ABC-DEF…"
-              />
-            </Field>
-            {tgUsername && (
-              <p className="mt-2 flex items-center gap-2 text-sm text-primary">
-                <Check className="size-4" /> Connected @{tgUsername}
+            {assistantAgentId ? (
+              // Same connect → pair → manage flow as /settings/agents, bound to
+              // the assistant. The bot starts polling on connect, so a DM shows
+              // up as a pending pairing request (this section polls every 10s).
+              <TelegramBotSection agentId={assistantAgentId} />
+            ) : (
+              <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+                Finish the setup step first — your assistant needs to exist before a
+                bot can be linked to it. You can always add Telegram later in
+                Settings → Agents.
               </p>
             )}
           </StepShell>
@@ -611,10 +598,9 @@ function Wizard({
             case 'personality':
               return { label: 'Save & continue', onClick: onSavePersona };
             case 'telegram':
-              return {
-                label: tgToken.trim() ? 'Connect & continue' : 'Skip',
-                onClick: () => onSaveTelegram(!tgToken.trim()),
-              };
+              // Connecting + pairing happen inline in <TelegramBotSection>; this
+              // step is optional, so the footer just advances.
+              return { label: 'Continue', onClick: () => go(index + 1) };
             case 'done':
               return null;
           }

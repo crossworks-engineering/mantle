@@ -34,7 +34,6 @@ import {
 } from '@/lib/onboarding-provision';
 import { markOnboarded } from '@/lib/onboarding';
 import { listAiWorkers } from '@/lib/ai-workers';
-import { connectAgentTelegram, TelegramTokenError } from '@/lib/agent-telegram';
 
 /** Persist the furthest step the user has reached (resume marker). */
 export async function setOnboardingStep(step: string): Promise<void> {
@@ -230,27 +229,9 @@ export async function savePersonaStep(
   return { ok: true };
 }
 
-/** Step 9 — optionally bind a Telegram bot to the assistant. */
-export async function saveTelegramStep(
-  token: string,
-): Promise<{ ok: boolean; username?: string; error?: string }> {
-  const user = await requireOwner();
-  const trimmed = token.trim();
-  if (!trimmed) return { ok: true }; // skipped — nothing to do
-  const [agent] = await db
-    .select({ id: agents.id })
-    .from(agents)
-    .where(and(eq(agents.ownerId, user.id), eq(agents.slug, PERSONA_AGENT_SLUG)))
-    .limit(1);
-  if (!agent) return { ok: false, error: 'No assistant agent to connect the bot to.' };
-  try {
-    const binding = await connectAgentTelegram(user.id, agent.id, trimmed);
-    return { ok: true, username: binding.botUsername };
-  } catch (err) {
-    if (err instanceof TelegramTokenError) return { ok: false, error: err.message };
-    return { ok: false, error: err instanceof Error ? err.message : 'Could not connect the bot.' };
-  }
-}
+// Step 9 (Telegram) no longer has a server action: the wizard reuses the shared
+// <TelegramBotSection> + the `/api/agents/[id]/telegram` routes (the same flow
+// as /settings/agents) to connect the bot and approve pairing inline.
 
 /** Final — mark onboarding complete. */
 export async function finishOnboarding(): Promise<void> {

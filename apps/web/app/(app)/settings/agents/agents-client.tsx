@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeftRight, Loader2, Plus, Send, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, Loader2, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -33,7 +33,7 @@ import { AvatarPicker } from '@/components/avatar-picker';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { ToggleList, type ToggleListItem } from '@/components/toggle-list';
 import { ToolPicker, type ToolOption } from '@/components/tool-picker';
-import type { AgentTelegramBinding, AgentTelegramChat } from '@/lib/agent-telegram';
+import { TelegramBotSection } from '@/components/telegram/telegram-bot-section';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { PersonaNotesEditor } from './persona-notes-editor';
@@ -2067,215 +2067,6 @@ function DelegatePicker({
   }));
   return (
     <ToggleList items={items} selected={selected} onChange={onChange} collapsible searchable />
-  );
-}
-
-/**
- * Telegram bot binding for a responder. Loads the agent's currently-linked bot
- * (if any) and lets the operator paste a token to connect / rotate, or
- * disconnect. The token is validated (getMe) + sealed server-side; only the
- * bot @username + poll status come back here.
- */
-function TelegramBotSection({ agentId }: { agentId: string }) {
-  const toast = useToast();
-  const router = useRouter();
-  const [, startRefresh] = useTransition();
-  // undefined = loading, null = not linked.
-  const [binding, setBinding] = useState<AgentTelegramBinding | null | undefined>(undefined);
-  const [chats, setChats] = useState<AgentTelegramChat[]>([]);
-  const [token, setToken] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [busyChat, setBusyChat] = useState<string | null>(null);
-
-  // `initial` shows the loading state + flips to null on failure; polled
-  // refreshes update in place without flashing.
-  const load = useCallback(
-    async (initial = false) => {
-      if (initial) setBinding(undefined);
-      try {
-        const res = await fetch(`/api/agents/${agentId}/telegram`);
-        const b = (await res.json()) as {
-          binding?: AgentTelegramBinding | null;
-          chats?: AgentTelegramChat[];
-        };
-        setBinding(b.binding ?? null);
-        setChats(b.chats ?? []);
-      } catch {
-        if (initial) setBinding(null);
-      }
-    },
-    [agentId],
-  );
-
-  useEffect(() => {
-    setToken('');
-    void load(true);
-    // Poll so a fresh DM's pairing request shows up without a manual refresh.
-    const timer = setInterval(() => void load(), 10_000);
-    return () => clearInterval(timer);
-  }, [load]);
-
-  const connect = async () => {
-    if (!token.trim()) return;
-    setBusy(true);
-    const res = await fetch(`/api/agents/${agentId}/telegram`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token: token.trim() }),
-    });
-    setBusy(false);
-    const b = (await res.json().catch(() => ({}))) as {
-      binding?: AgentTelegramBinding;
-      error?: string;
-    };
-    if (!res.ok || !b.binding) {
-      toast.error(b.error ?? 'Could not link the bot.');
-      return;
-    }
-    setToken('');
-    toast.success(`Linked @${b.binding.botUsername}`);
-    void load();
-    startRefresh(() => router.refresh());
-  };
-
-  const disconnect = async () => {
-    setBusy(true);
-    const res = await fetch(`/api/agents/${agentId}/telegram`, { method: 'DELETE' });
-    setBusy(false);
-    if (!res.ok) {
-      toast.error('Could not unlink the bot.');
-      return;
-    }
-    setBinding(null);
-    setChats([]);
-    setToken('');
-    toast.success('Bot unlinked');
-    startRefresh(() => router.refresh());
-  };
-
-  const setChatStatus = async (chatId: string, status: 'allowed' | 'denied') => {
-    setBusyChat(chatId);
-    const res = await fetch(`/api/agents/${agentId}/telegram/chats`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chatId, status }),
-    });
-    setBusyChat(null);
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(b.error ?? 'Could not update the chat.');
-      return;
-    }
-    toast.success(status === 'allowed' ? 'Paired' : 'Blocked');
-    void load();
-  };
-
-  if (binding === undefined) {
-    return (
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Loader2 className="size-3.5 animate-spin" aria-hidden /> Loading…
-      </div>
-    );
-  }
-
-  const pending = chats.filter((c) => c.status === 'pending');
-  const allowedCount = chats.filter((c) => c.status === 'allowed').length;
-
-  return (
-    <div className="space-y-2">
-      {binding && (
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted px-2 py-1 font-mono text-xs">
-            <Send className="size-3.5" aria-hidden />@{binding.botUsername}
-          </span>
-          {binding.enabled ? (
-            <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
-              <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden /> polling
-            </span>
-          ) : (
-            <span className="text-xs text-muted-foreground">disabled</span>
-          )}
-          {allowedCount > 0 && (
-            <span className="text-xs text-muted-foreground">
-              {allowedCount} paired chat{allowedCount === 1 ? '' : 's'}
-            </span>
-          )}
-          {binding.lastPollError && (
-            <span className="truncate text-xs text-destructive" title={binding.lastPollError}>
-              {binding.lastPollError}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Pending pairing requests — approve a DM without copying a code. */}
-      {pending.length > 0 && (
-        <div className="space-y-1.5 rounded-md border border-amber-500/40 bg-amber-500/5 p-2">
-          <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
-            Pairing request{pending.length === 1 ? '' : 's'} — someone DM&apos;d this bot
-          </p>
-          {pending.map((c) => (
-            <div key={c.id} className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-sm">
-                {c.label}{' '}
-                <code className="text-[11px] text-muted-foreground">{c.telegramChatId}</code>
-              </span>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => setChatStatus(c.id, 'allowed')}
-                disabled={busyChat === c.id}
-              >
-                {busyChat === c.id && <Loader2 className="animate-spin" aria-hidden />}
-                Approve
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => setChatStatus(c.id, 'denied')}
-                disabled={busyChat === c.id}
-              >
-                Block
-              </Button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <input
-        type="password"
-        autoComplete="off"
-        value={token}
-        onChange={(e) => setToken(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            void connect();
-          }
-        }}
-        placeholder={binding ? 'Paste a new token to rotate…' : 'Paste your bot token…'}
-        className="h-9 w-full rounded-md border border-input bg-background px-3 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-      />
-
-      <div className="flex gap-2">
-        <Button type="button" size="sm" onClick={connect} disabled={busy || !token.trim()}>
-          {busy && <Loader2 className="animate-spin" aria-hidden />}
-          {binding ? 'Update token' : 'Connect bot'}
-        </Button>
-        {binding && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={disconnect}
-            disabled={busy}
-          >
-            Disconnect
-          </Button>
-        )}
-      </div>
-    </div>
   );
 }
 
