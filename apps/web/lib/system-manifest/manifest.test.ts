@@ -52,11 +52,13 @@ describe('system manifest integrity', () => {
 
   it('every agent is authored as pure tool groups (P6) and references only known groups/skills', () => {
     for (const agent of MANIFEST_AGENTS) {
-      // P6: grants are GROUPS only — no direct tool_slugs on any manifest agent.
-      const direct = Array.isArray(agent.toolSlugs) ? agent.toolSlugs : [];
-      expect(direct, `agent '${agent.slug}' must carry no direct tool_slugs (groups only)`).toEqual([]);
+      // P6: grants are GROUPS only — there is no direct tool_slugs field on a
+      // manifest agent anymore (enforced by the type; the column was dropped in
+      // migration 0083). Every agent must grant at least one group to act.
+      const groups = agent.toolGroupSlugs ?? [];
+      expect(groups.length, `agent '${agent.slug}' grants no tool groups — cannot act`).toBeGreaterThan(0);
 
-      const unknownGroups = (agent.toolGroupSlugs ?? []).filter((g) => !KNOWN_TOOL_GROUP_SLUGS.has(g));
+      const unknownGroups = groups.filter((g) => !KNOWN_TOOL_GROUP_SLUGS.has(g));
       expect(unknownGroups, `agent '${agent.slug}' references unknown tool groups`).toEqual([]);
 
       // Effective set (the group union) resolves to known builtins only.

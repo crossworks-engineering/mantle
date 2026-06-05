@@ -582,6 +582,13 @@
       "when": 1781913600000,
       "tag": "0082_drop_skills_tool_slugs",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1782000000000,
+      "tag": "0083_drop_agents_tool_slugs",
+      "breakpoints": true
     }
   ]
 }

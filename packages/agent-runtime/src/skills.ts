@@ -93,18 +93,13 @@ export function composeSystemPromptWithSkills(
 const MAX_EFFECTIVE_TOOL_SLUGS = 512;
 
 /**
- * An agent's effective tool allowlist: its own direct `tool_slugs` unioned with
- * the tools conferred by its granted tool groups (pre-resolved via
- * resolveAgentToolGroups). Skills contribute NOTHING — they're pure teaching as
- * of Phase 4 (the skills.tool_slugs column is gone). Deduped + capped.
+ * An agent's effective tool allowlist: exactly the tools conferred by its
+ * granted tool groups (pre-resolved via resolveAgentToolGroups). P6: tool groups
+ * are the SOLE grant — the `agents.tool_slugs` column is gone, and skills are
+ * pure teaching (P4). Deduped + capped.
  */
-export function effectiveToolSlugs(
-  agentToolSlugs: string[],
-  groupToolSlugs: string[] = [],
-): string[] {
-  const set = new Set<string>(agentToolSlugs);
-  for (const slug of groupToolSlugs) set.add(slug);
-  const all = Array.from(set);
+export function effectiveToolSlugs(groupToolSlugs: string[]): string[] {
+  const all = Array.from(new Set<string>(groupToolSlugs));
   if (all.length > MAX_EFFECTIVE_TOOL_SLUGS) {
     const dropped = all.slice(MAX_EFFECTIVE_TOOL_SLUGS);
     // Not silent — log exactly which slugs were cut so a misconfiguration is

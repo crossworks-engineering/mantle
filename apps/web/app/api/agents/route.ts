@@ -96,7 +96,6 @@ const CreateBody = z.object({
   ttsWorkerId: z.string().uuid().nullish(),
   systemPrompt: z.string().min(1).max(40_000),
   tools: z.array(z.string()).max(256).optional(),
-  toolSlugs: z.array(z.string().min(1).max(120)).max(256).optional(),
   skillSlugs: z.array(z.string().min(1).max(120)).max(32).optional(),
   toolGroupSlugs: z.array(z.string().min(1).max(120)).max(64).optional(),
   memoryConfig: MemoryConfig.optional(),

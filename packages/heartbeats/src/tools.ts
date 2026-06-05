@@ -413,17 +413,14 @@ export const HEARTBEAT_TOOLS: readonly BuiltinToolDef[] = [
 /**
  * The subset of HEARTBEAT_TOOLS that responder turns need access to
  * for the continuity flow (user replying to a heartbeat question
- * outside the fire context). These are the tools auto-excluded from
- * the per-turn allowlist when `hasActiveHeartbeatsOnSurface` returns
- * false — pure runtime affordance hygiene, the operator's grant in
- * `agents.tool_slugs` stays the canonical source of truth.
+ * outside the fire context). P6: these are a per-turn AFFORDANCE —
+ * the responders INJECT them into the model's tool list only when
+ * `hasActiveHeartbeatsOnSurface` returns true, and never grant them as
+ * stored tools (see apps/web/lib/assistant.ts + apps/agent/src/main.ts).
  *
  * Explicitly excludes:
  *  - `heartbeat_list`  — operator/skill tool, useful any time
  *  - `heartbeat_fire`  — operator/skill tool, useful any time
- *
- * The seed script's ensureHeartbeatToolsOnAgent grants exactly these
- * three to the auto-detected responder.
  */
 export const HEARTBEAT_RESPONDER_TOOLS: readonly string[] = [
   'heartbeat_update_state',

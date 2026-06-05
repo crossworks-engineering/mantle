@@ -25,7 +25,6 @@
 
 import {
   BUILTIN_TOOLS,
-  DEFAULT_ASSISTANT_TOOL_SLUGS,
   PAGE_TOOL_SLUGS,
   TABLE_TOOL_SLUGS,
   CONTACT_AUTO_GRANT_SLUGS,
@@ -68,15 +67,6 @@ export type ManifestAgent = {
   /** Verbatim system prompt (from ./prompts) — specialists only; the persona
    *  carries none (its prompt is built from the persona bank). */
   systemPrompt?: string;
-  /** Direct tool grant. P6: every manifest agent is authored as pure tool
-   *  GROUPS (`toolGroupSlugs` below), so this is `[]` for all of them. The field
-   *  + the `DEFAULT_ASSISTANT` sentinel survive only for the legacy
-   *  `resolveManifestToolSlugs`/`deriveGroupGrants` helpers and are removed in
-   *  P6b alongside the `agents.tool_slugs` column. */
-  toolSlugs: string[] | 'DEFAULT_ASSISTANT';
-  /** Legacy escape-hatch for one-off direct grants. Unused post-P6 (grants are
-   *  groups); kept for the type until the P6b column drop. */
-  extraToolSlugs?: string[];
   /** Skills that SHOULD be attached to this agent. */
   skillSlugs: string[];
   /** Tool groups granted to this agent (named bundles). P6: the SOLE grant
@@ -364,7 +354,6 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     role: 'responder',
     model: 'anthropic/claude-sonnet-4.6',
     isPersona: true,
-    toolSlugs: [],
     // P6: grants are pure tool groups — the generalist's effective set is the
     // union of these bundles. Page/table AUTHORING is delegated to the Pages /
     // Ledger specialists (no `pages`/`tables`/`page-admin`); the persona keeps
@@ -407,7 +396,6 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // (delete/overwrite) + `page-share` reassemble the complete PAGE_TOOL_SLUGS
     // set; `files`/`memory-core` cover source reads + cross-context lookups.
     // (Approach A: this coarsens to full `files`/`memory-core`, a benign gain.)
-    toolSlugs: [],
     toolGroupSlugs: ['pages', 'page-admin', 'page-share', 'files', 'memory-core'],
     skillSlugs: ['rich_writing', 'page_editing'],
     isDelegate: true,
@@ -426,7 +414,6 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     systemPrompt: AGENT_PROMPTS['tables']!,
     // P6: `tables` is the authoring subset (no `table-admin`/table_delete);
     // `files`/`memory-core` cover source reads + cross-context lookups.
-    toolSlugs: [],
     toolGroupSlugs: ['tables', 'files', 'memory-core'],
     skillSlugs: ['table_authoring'],
     isDelegate: true,
@@ -445,7 +432,6 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     systemPrompt: AGENT_PROMPTS['remy']!,
     // P6: `recall` (replay) + `recall-search` (find_window, Remy's specialty) +
     // `memory-core` for the node lookups it cites.
-    toolSlugs: [],
     toolGroupSlugs: ['recall', 'recall-search', 'memory-core'],
     skillSlugs: [],
     isDelegate: true,
@@ -461,7 +447,6 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     envModelVar: 'RESEARCHER_MODEL',
     systemPrompt: AGENT_PROMPTS['researcher']!,
     // P6: `research` (web_search) + `memory-core` for the node lookups it cites.
-    toolSlugs: [],
     toolGroupSlugs: ['research', 'memory-core'],
     skillSlugs: [],
     isDelegate: true,
@@ -477,7 +462,6 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     envModelVar: 'CODER_MODEL',
     systemPrompt: AGENT_PROMPTS['coder']!,
     // P6: `terminal` (unrestricted shell) + `files` + `memory-core`.
-    toolSlugs: [],
     toolGroupSlugs: ['terminal', 'files', 'memory-core'],
     skillSlugs: ['mantle-ops'],
     isDelegate: true,
@@ -538,48 +522,6 @@ export const KNOWN_TOOL_SLUGS: ReadonlySet<string> = new Set<string>([
   ...BUILTIN_TOOLS.map((t) => t.slug),
   ...KNOWN_EXTERNAL_TOOL_SLUGS,
 ]);
-
-/** Resolve an agent's tool grant (expanding the DEFAULT_ASSISTANT sentinel). */
-export function resolveManifestToolSlugs(agent: ManifestAgent): string[] {
-  const base =
-    agent.toolSlugs === 'DEFAULT_ASSISTANT'
-      ? [...DEFAULT_ASSISTANT_TOOL_SLUGS]
-      : [...agent.toolSlugs];
-  if (agent.extraToolSlugs) {
-    for (const s of agent.extraToolSlugs) if (!base.includes(s)) base.push(s);
-  }
-  return base;
-}
-
-/**
- * Decompose a flat tool grant into group grants + a residual (Phase 3, the
- * "break up the god-grant" transform). Greedy: grant every tool group whose
- * member tools are ALL present in `full`; the residual is everything not covered
- * by a granted group (true one-offs that ride the direct escape hatch).
- *
- * INVARIANT (behavior-identical): `residual ∪ ⋃(granted group tools) === full`
- * (as sets). The runtime's effectiveToolSlugs reassembles exactly this, so an
- * agent's effective tools are unchanged by re-expression. Deterministic — order
- * follows MANIFEST_TOOL_GROUPS. Used by the seeder, onboarding, and the dev
- * re-expression script so all three agree.
- */
-export function deriveGroupGrants(full: string[]): {
-  toolSlugs: string[];
-  toolGroupSlugs: string[];
-} {
-  const have = new Set(full);
-  const granted: string[] = [];
-  const covered = new Set<string>();
-  for (const g of MANIFEST_TOOL_GROUPS) {
-    if (g.toolSlugs.length === 0) continue;
-    if (g.toolSlugs.every((t) => have.has(t))) {
-      granted.push(g.slug);
-      for (const t of g.toolSlugs) covered.add(t);
-    }
-  }
-  const residual = full.filter((t) => !covered.has(t));
-  return { toolSlugs: residual, toolGroupSlugs: granted };
-}
 
 /** Slugs of every manifest tool group (the set an agent may reference). */
 export const KNOWN_TOOL_GROUP_SLUGS: ReadonlySet<string> = new Set<string>(

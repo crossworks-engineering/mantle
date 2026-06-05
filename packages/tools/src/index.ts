@@ -17,7 +17,7 @@ export {
   redactArgsForLogging,
 } from './registry';
 
-export { BUILTIN_TOOLS, DEFAULT_ASSISTANT_TOOL_SLUGS } from './builtins';
+export { BUILTIN_TOOLS } from './builtins';
 export { PAGE_TOOLS, PAGE_TOOL_SLUGS } from './builtins-pages';
 export { TABLE_TOOLS, TABLE_TOOL_SLUGS } from './builtins-tables';
 export { TOOL_RESULT_TOOLS, TOOL_RESULT_TOOL_SLUGS } from './builtins-tool-results';

@@ -28,7 +28,10 @@ if (!USER_ID) {
 
 const MODEL = process.env.DOCS_MODEL || 'anthropic/claude-sonnet-4.6';
 
-const TOOL_SLUGS = ['search_nodes', 'search_chunks', 'node_read'];
+// P6: capability is granted as tool GROUPS. Docs reads the brain — `memory-core`
+// covers search_nodes / search_chunks / node_read (its needed read tools) plus
+// the rest of the read surface (benign).
+const TOOL_GROUP_SLUGS = ['memory-core'];
 
 const SYSTEM_PROMPT = `You are "Docs" — the documentation expert for this system (Mantle). You answer questions about how the system works, drawing strictly on its indexed documentation.
 
@@ -100,7 +103,7 @@ async function main() {
     model: MODEL,
     apiKeyId,
     systemPrompt: SYSTEM_PROMPT,
-    toolSlugs: TOOL_SLUGS,
+    toolGroupSlugs: TOOL_GROUP_SLUGS,
     skillSlugs: [],
     params: { temperature: 0.2 },
     priority: 100,
@@ -119,13 +122,13 @@ async function main() {
         model: values.model,
         apiKeyId: values.apiKeyId,
         systemPrompt: values.systemPrompt,
-        toolSlugs: values.toolSlugs,
+        toolGroupSlugs: values.toolGroupSlugs,
         params: values.params,
         enabled: true,
         updatedAt: new Date(),
       },
     });
-  console.log(`[docs] agent upserted (model=${MODEL}, ${TOOL_SLUGS.length} read tools)`);
+  console.log(`[docs] agent upserted (model=${MODEL}, groups=${TOOL_GROUP_SLUGS.join(',')})`);
 
   await grantToEntryAgent('responder');
   await grantToEntryAgent('assistant');

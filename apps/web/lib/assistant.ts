@@ -271,9 +271,8 @@ export async function runAssistantTurn(
     }
   }
   const effectiveSystemPrompt = identityBlock + promptWithSkills + openHeartbeatBlock;
-  // Heartbeat continuity tools are sourced from agent.tool_slugs
-  // (not auto-injected here). Add them at /settings/agents on the
-  // agent that should respond to heartbeat-asked questions.
+  // Heartbeat continuity tools are injected below as a per-turn affordance
+  // (P6) when there's an active heartbeat on this surface — not a stored grant.
 
   // Image routing — transcript-default. The vision worker already described
   // (and, when the user asked a question, answered) the image at ingest, so
@@ -343,11 +342,11 @@ export async function runAssistantTurn(
   }
 
   const params = (agent.params ?? {}) as AgentParams;
-  // Resolve the agent's tool allowlist, unioned with every attached
-  // skill's tool_slugs. Empty result → tool-loop sends no `tools`
-  // and the loop reduces to one LLM call (same as before).
+  // Resolve the agent's tool allowlist from its granted tool groups (P6: groups
+  // are the sole grant). Empty result → tool-loop sends no `tools` and the loop
+  // reduces to one LLM call.
   const groupTools = await resolveAgentToolGroups(ownerId, agent.toolGroupSlugs ?? []);
-  let allowedToolSlugs = effectiveToolSlugs(agent.toolSlugs ?? [], groupTools);
+  let allowedToolSlugs = effectiveToolSlugs(groupTools);
   // Heartbeat continuity tools are a per-turn AFFORDANCE (P6), not a stored
   // grant: inject them only when there's an active heartbeat on this surface
   // for the model to act on. Mirrors apps/agent/main.ts. See docs/heartbeats.md

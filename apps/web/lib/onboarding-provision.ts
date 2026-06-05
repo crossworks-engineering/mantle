@@ -230,7 +230,6 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
         apiKeyId: openrouter,
         ttsWorkerId,
         systemPrompt: buildPersonaPrompt('warm', { assistantName: name, gender: 'female' }),
-        toolSlugs: [],
         toolGroupSlugs: [...PERSONA_TOOL_GROUP_SLUGS],
         memoryConfig: {
           history_limit: 20,

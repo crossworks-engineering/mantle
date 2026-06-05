@@ -120,11 +120,10 @@ export async function openHeartbeatsForSurface(
 /**
  * Cheap boolean check: are there any active heartbeats on this surface
  * (regardless of expecting_reply)? Powers the per-turn tool-list
- * exclusion in the responders — when this returns false, the 3
+ * injection in the responders (P6) — when this returns true, the 3
  * responder-continuity tools (HEARTBEAT_RESPONDER_TOOLS in tools.ts)
- * are dropped from the model's tool list for the turn. The operator's
- * grant in agents.tool_slugs stays canonical; this is pure runtime
- * affordance hygiene.
+ * are injected into the model's tool list for the turn; otherwise the
+ * model never sees them. They are an affordance, not a stored grant.
  *
  * Returns true when there's ≥1 active heartbeat on the surface — that
  * covers both expecting_reply=true (the model might need to update

@@ -222,19 +222,16 @@ export const agents = pgTable(
      *  ON DELETE SET NULL live in migration 0066. */
     ttsWorkerId: uuid('tts_worker_id'),
     systemPrompt: text('system_prompt').notNull(),
-    /** Legacy free-form MCP tool name array. Superseded by `tool_slugs` /
+    /** Legacy free-form MCP tool name array. Superseded by `tool_group_slugs` /
      *  `skill_slugs` below; kept for back-compat with existing rows. */
     tools: jsonb('tools').$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
-    /** Slugs of `tools` rows this agent may call during a turn. The runtime
-     *  unions this with the toolSlugs of every attached skill. */
-    toolSlugs: text('tool_slugs').array().default(sql`'{}'::text[]`).notNull(),
     /** Slugs of `skills` rows attached to this agent. Instructions are
      *  always-loaded into the system prompt (v1 activation model). */
     skillSlugs: text('skill_slugs').array().default(sql`'{}'::text[]`).notNull(),
     /** Slugs of `tool_groups` rows granted to this agent — named tool bundles.
-     *  Phase 0: dormant (seeded, not yet expanded into the effective tool set).
-     *  Phase 1 unions the expanded group tools with `tool_slugs`. See
-     *  docs/tools-and-skills.md. */
+     *  P6: the SOLE tool-grant mechanism. The runtime effective tool set is
+     *  exactly the union of these groups' tools (the `tool_slugs` column was
+     *  dropped in migration 0083). See docs/tools-and-skills.md. */
     toolGroupSlugs: text('tool_group_slugs').array().default(sql`'{}'::text[]`).notNull(),
     memoryConfig: jsonb('memory_config').$type<AgentMemoryConfig>().default(sql`'{}'::jsonb`).notNull(),
     params: jsonb('params').$type<AgentParams>().default(sql`'{}'::jsonb`).notNull(),

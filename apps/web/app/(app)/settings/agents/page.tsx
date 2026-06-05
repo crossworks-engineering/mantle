@@ -1,5 +1,3 @@
-import { eq } from 'drizzle-orm';
-import { db, tools } from '@mantle/db';
 import { requireOwner } from '@/lib/auth';
 import { listAgents } from '@/lib/agents';
 import { listApiKeys } from '@/lib/api-keys';
@@ -12,20 +10,9 @@ import { AgentsClient } from './agents-client';
 
 export default async function AgentsSettingsPage() {
   const user = await requireOwner();
-  const [agents, keys, toolRows, skillRows, toolGroupRows, tailnetPeers, ttsWorkers] = await Promise.all([
+  const [agents, keys, skillRows, toolGroupRows, tailnetPeers, ttsWorkers] = await Promise.all([
     listAgents(user.id),
     listApiKeys(user.id),
-    db
-      .select({
-        slug: tools.slug,
-        name: tools.name,
-        description: tools.description,
-        requiresConfirm: tools.requiresConfirm,
-        handler: tools.handler,
-      })
-      .from(tools)
-      .where(eq(tools.ownerId, user.id))
-      .orderBy(tools.slug),
     listSkills(user.id),
     listToolGroups(user.id),
     getTailnetPeerNames(),
@@ -52,13 +39,6 @@ export default async function AgentsSettingsPage() {
           service: k.service,
           label: k.label,
           masked: k.masked,
-        }))}
-        availableTools={toolRows.map((t) => ({
-          slug: t.slug,
-          name: t.name,
-          description: t.description,
-          requiresConfirm: t.requiresConfirm,
-          kind: (t.handler as { kind: string }).kind,
         }))}
         availableSkills={skillRows
           .filter((s) => s.enabled)

@@ -32,7 +32,6 @@ import type { AgentAvatar, PersonaNote } from '@mantle/db';
 import { AvatarPicker } from '@/components/avatar-picker';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { ToggleList, type ToggleListItem } from '@/components/toggle-list';
-import { ToolPicker, type ToolOption } from '@/components/tool-picker';
 import { TelegramBotSection } from '@/components/telegram/telegram-bot-section';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
@@ -119,7 +118,6 @@ type AgentSummary = {
   ttsWorkerId: string | null;
   systemPrompt: string;
   tools: string[];
-  toolSlugs: string[];
   skillSlugs: string[];
   toolGroupSlugs: string[];
   memoryConfig: MemoryConfig;
@@ -324,10 +322,8 @@ type FormState = {
   extractFacts: boolean;
   /** Cap in cents (UI-friendlier than micro-USD; converted on save). Empty = no cap. */
   extractCostCapCents: string;
-  /** Direct tool grants — the escape hatch for one-offs not in a group. */
-  toolSlugs: string[];
   skillSlugs: string[];
-  /** Tool groups granted to this agent (the primary capability control). */
+  /** Tool groups granted to this agent — the sole capability control (P6). */
   toolGroupSlugs: string[];
   /** Agent slugs this agent may delegate to via invoke_agent. */
   delegateTo: string[];
@@ -373,7 +369,6 @@ function emptyForm(role: Role = 'responder'): FormState {
     extractTypes: d.extractTypes,
     extractFacts: true,
     extractCostCapCents: '',
-    toolSlugs: [],
     skillSlugs: [],
     toolGroupSlugs: [],
     delegateTo: [],
@@ -421,7 +416,6 @@ function formFromAgent(a: AgentSummary): FormState {
       a.memoryConfig.extract_cost_cap_micro_usd != null
         ? (a.memoryConfig.extract_cost_cap_micro_usd / 10_000).toString()
         : '',
-    toolSlugs: a.toolSlugs ?? [],
     skillSlugs: a.skillSlugs ?? [],
     toolGroupSlugs: a.toolGroupSlugs ?? [],
     delegateTo: a.memoryConfig.delegate_to ?? [],
@@ -475,7 +469,6 @@ const TEXTAREA_CLASS =
 export function AgentsClient({
   initialAgents,
   apiKeys,
-  availableTools,
   availableSkills,
   availableToolGroups,
   tailnetPeers = [],
@@ -483,7 +476,6 @@ export function AgentsClient({
 }: {
   initialAgents: AgentSummary[];
   apiKeys: ApiKeyOption[];
-  availableTools: ToolOption[];
   availableSkills: SkillOption[];
   availableToolGroups: ToolGroupOption[];
   /** MagicDNS names of online tailnet peers — backs the base-URL datalist when
@@ -510,15 +502,15 @@ export function AgentsClient({
   const [form, setForm] = useState<FormState>(emptyForm());
   const [slugTouched, setSlugTouched] = useState(false);
 
-  // The agent's effective tool set = direct grants ∪ every granted group's tools
-  // (exactly what the runtime resolves). Surfaced read-only so the operator sees
-  // the agent's TRUE capability, not just the direct-grant residual.
+  // The agent's effective tool set = the union of every granted group's tools
+  // (exactly what the runtime resolves; P6 — tool groups are the sole grant).
+  // Surfaced read-only so the operator sees the agent's TRUE capability.
   const effectiveTools = useMemo(() => {
     const byGroup = new Map(availableToolGroups.map((g) => [g.slug, g.toolSlugs]));
-    const set = new Set<string>(form.toolSlugs);
+    const set = new Set<string>();
     for (const g of form.toolGroupSlugs) for (const t of byGroup.get(g) ?? []) set.add(t);
     return [...set].sort();
-  }, [form.toolSlugs, form.toolGroupSlugs, availableToolGroups]);
+  }, [form.toolGroupSlugs, availableToolGroups]);
 
   // Live model → context-window map (OpenRouter catalog, cached server-side),
   // fetched once so the Model field can show the real window for the typed
@@ -790,7 +782,6 @@ export function AgentsClient({
       params,
       priority: Number.isNaN(priority) ? 100 : priority,
       enabled: form.enabled,
-      toolSlugs: form.toolSlugs,
       skillSlugs: form.skillSlugs,
       toolGroupSlugs: form.toolGroupSlugs,
       avatar: form.avatar,
@@ -1670,7 +1661,8 @@ export function AgentsClient({
                 the agent&apos;s effective set. Curate bundles at{' '}
                 <a href="/settings/tool-groups" className="underline">/settings/tool-groups</a>.
               </p>
-              {/* Effective set — what the runtime actually resolves (groups + direct). */}
+              {/* Effective set — what the runtime actually resolves (the union of
+                  the granted groups' tools; P6 — groups are the sole grant). */}
               <div className="rounded-md bg-muted/40 p-2">
                 <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Effective tools · {effectiveTools.length}
@@ -1685,30 +1677,6 @@ export function AgentsClient({
                   </p>
                 )}
               </div>
-            </fieldset>
-
-            <fieldset className="space-y-3 rounded-md border border-border p-3">
-              <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Direct tools · advanced
-              </legend>
-              {availableTools.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  No tools registered yet. The agent runner seeds built-ins on boot — start
-                  <code> pnpm dev</code> and revisit.
-                </p>
-              ) : (
-                <ToolPicker
-                  available={availableTools}
-                  selected={form.toolSlugs}
-                  onChange={(next) => setForm((f) => ({ ...f, toolSlugs: next }))}
-                />
-              )}
-              <p className="text-xs text-muted-foreground">
-                The <strong>escape hatch</strong> — individual tool grants for one-offs that
-                don&apos;t belong in a group (e.g. a destructive <code>*_delete</code>). Prefer
-                tool groups above. Tools marked <em>requires confirm</em> get queued at{' '}
-                <a href="/pending" className="underline">/pending</a> instead of auto-running.
-              </p>
             </fieldset>
 
             <fieldset className="space-y-3 rounded-md border border-border p-3">

@@ -47,7 +47,6 @@ export type AgentSummary = {
   ttsWorkerId: string | null;
   systemPrompt: string;
   tools: string[];
-  toolSlugs: string[];
   skillSlugs: string[];
   toolGroupSlugs: string[];
   memoryConfig: AgentMemoryConfig;
@@ -86,7 +85,6 @@ function toSummary(a: Agent): AgentSummary {
     ttsWorkerId: a.ttsWorkerId ?? null,
     systemPrompt: a.systemPrompt,
     tools: a.tools ?? [],
-    toolSlugs: a.toolSlugs ?? [],
     skillSlugs: a.skillSlugs ?? [],
     toolGroupSlugs: a.toolGroupSlugs ?? [],
     memoryConfig: a.memoryConfig ?? {},
@@ -152,7 +150,6 @@ export type CreateAgentInput = {
   ttsWorkerId?: string | null;
   systemPrompt: string;
   tools?: string[];
-  toolSlugs?: string[];
   skillSlugs?: string[];
   toolGroupSlugs?: string[];
   memoryConfig?: AgentMemoryConfig;
@@ -188,7 +185,6 @@ export async function createAgent(
       ttsWorkerId: input.ttsWorkerId ?? null,
       systemPrompt: input.systemPrompt,
       tools: input.tools ?? [],
-      toolSlugs: input.toolSlugs ?? [],
       skillSlugs: input.skillSlugs ?? [],
       toolGroupSlugs: input.toolGroupSlugs ?? [],
       memoryConfig: input.memoryConfig ?? {},
@@ -227,7 +223,6 @@ export async function updateAgent(
   if (patch.ttsWorkerId !== undefined) next.ttsWorkerId = patch.ttsWorkerId;
   if (patch.systemPrompt !== undefined) next.systemPrompt = patch.systemPrompt;
   if (patch.tools !== undefined) next.tools = patch.tools;
-  if (patch.toolSlugs !== undefined) next.toolSlugs = patch.toolSlugs;
   if (patch.skillSlugs !== undefined) next.skillSlugs = patch.skillSlugs;
   if (patch.toolGroupSlugs !== undefined) next.toolGroupSlugs = patch.toolGroupSlugs;
   // Shallow-merge memory_config instead of overwriting it. The agents form

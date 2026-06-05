@@ -879,9 +879,8 @@ async function handleMessage(messageId: string): Promise<void> {
           `[agent] → ${row.fromName ?? 'unknown'} via ${chatAdapter.adapterName}:${agent.model} (${row.text.length}c, ${history.length} turns, ${digests.length} digests, ${relevantFacts.length} facts, ${contentHits.length} content)`,
         );
 
-        // Resolve the agent's tool allowlist, unioned with every attached
-        // skill's tool_slugs. Empty result → tool-loop sends no `tools`
-        // and behaves identically to the old single-call path.
+        // Resolve the agent's tool allowlist from its granted tool groups (P6:
+        // groups are the sole grant). Empty result → tool-loop sends no `tools`.
         //
         // Heartbeat continuity tools (update_state / complete / snooze) are a
         // per-turn AFFORDANCE (P6), not a stored grant: inject them only when
@@ -890,7 +889,7 @@ async function handleMessage(messageId: string): Promise<void> {
         // confusedly calls) heartbeat_* on turns with nothing to act on. See
         // docs/heartbeats.md §4 "Permission model & runtime hygiene".
         const groupTools = await resolveAgentToolGroups(USER_ID!, agent.toolGroupSlugs ?? []);
-        let allowedToolSlugs = effectiveToolSlugs(agent.toolSlugs ?? [], groupTools);
+        let allowedToolSlugs = effectiveToolSlugs(groupTools);
         const hasHeartbeats = await hasActiveHeartbeatsOnSurface(USER_ID!, {
           kind: 'telegram',
           chatId: row.telegramChatId,
@@ -1468,10 +1467,9 @@ async function main() {
     );
   }
 
-  // Grant core builtins (persona self-edit + todo CRUD) to the
-  // conversational agents so "be more professional" / "add a todo" work
-  // without manual /settings/tools setup. Idempotent; tool_slugs stays
-  // the canonical source of truth.
+  // Grant the core capability FLOOR (persona self-edit + todo CRUD etc., as
+  // tool GROUPS) to the conversational agents so "be more professional" / "add
+  // a todo" work without manual /settings/tools setup. Idempotent (P6).
   try {
     const granted = await ensureCoreToolsOnConversationalAgents(USER_ID!);
     if (granted.length > 0) {

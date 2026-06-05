@@ -181,8 +181,8 @@ export type ToolLoopArgs = {
 
 /**
  * Resolve a set of slugs to enabled tool rows. Convenience for callers
- * that have slugs (from agent.tool_slugs + skill.tool_slugs union) but
- * not the full rows yet.
+ * that have slugs (from the agent's granted tool groups; P6) but not the
+ * full rows yet.
  */
 export async function resolveAgentTools(
   ownerId: string,

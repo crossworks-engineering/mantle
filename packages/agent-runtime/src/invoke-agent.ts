@@ -115,7 +115,7 @@ export const invokeAgent: AgentInvoker = async ({
     { role: 'user', content: prompt },
   ];
   const groupTools = await resolveAgentToolGroups(ownerId, (target as Agent).toolGroupSlugs ?? []);
-  const allowedToolSlugs = effectiveToolSlugs(target.toolSlugs ?? [], groupTools);
+  const allowedToolSlugs = effectiveToolSlugs(groupTools);
   const allowedTools = await resolveAgentTools(ownerId, allowedToolSlugs);
 
   // Open the child's trace inside a startTrace block so the child's

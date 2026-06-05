@@ -184,14 +184,13 @@ async function fireInner(
   const baseSystem = composeSystemPromptWithSkills(agent.systemPrompt, persistentSkills);
   const systemPrompt = `${buildTimeContextLine(prefs, now)}\n\n${baseSystem}`;
 
-  // Resolve tool allowlist = agent's own + persistent skills' + heartbeat
-  // control tools. The heartbeat skill's tools also get unioned in.
+  // Resolve tool allowlist = the agent's effective set (from its granted tool
+  // groups; P6) + the heartbeat control tools (always granted on a heartbeat
+  // turn). The bound heartbeat skill is pure teaching (P4) — it contributes
+  // instructions via the synthetic prompt, never tools.
   const agentGroupTools = await resolveAgentToolGroups(hb.ownerId, agent.toolGroupSlugs ?? []);
-  // Heartbeat turn tools = the agent's effective set + the heartbeat control
-  // tools (always granted). The bound heartbeat skill is pure teaching (P4) — it
-  // contributes instructions via the synthetic prompt, never tools.
   const allSlugs = new Set<string>([
-    ...effectiveToolSlugs(agent.toolSlugs ?? [], agentGroupTools),
+    ...effectiveToolSlugs(agentGroupTools),
     ...HEARTBEAT_CONTROL_TOOLS,
   ]);
   const tools = await resolveAgentTools(hb.ownerId, [...allSlugs]);

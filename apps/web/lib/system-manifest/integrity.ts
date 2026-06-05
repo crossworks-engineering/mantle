@@ -35,7 +35,6 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
         enabled: agents.enabled,
         role: agents.role,
         priority: agents.priority,
-        toolSlugs: agents.toolSlugs,
         skillSlugs: agents.skillSlugs,
         toolGroupSlugs: agents.toolGroupSlugs,
         memoryConfig: agents.memoryConfig,
@@ -63,13 +62,10 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
   const enabledToolGroupSlugs = new Set(toolGroupRows.filter((g) => g.enabled).map((g) => g.slug));
   const toolGroupBySlug = new Map(toolGroupRows.map((g) => [g.slug, g] as const));
 
-  /** P6: an agent's effective tool set = direct tool_slugs (vestigial, dropped
-   *  in P6b) ∪ the tools conferred by its ENABLED granted groups. */
-  const effectiveAgentTools = (a: {
-    toolSlugs?: string[] | null;
-    toolGroupSlugs?: string[] | null;
-  }): Set<string> => {
-    const set = new Set<string>(a.toolSlugs ?? []);
+  /** P6: an agent's effective tool set = the tools conferred by its ENABLED
+   *  granted groups (tool groups are the sole grant mechanism). */
+  const effectiveAgentTools = (a: { toolGroupSlugs?: string[] | null }): Set<string> => {
+    const set = new Set<string>();
     for (const g of a.toolGroupSlugs ?? []) {
       const grp = toolGroupBySlug.get(g);
       if (grp?.enabled) for (const t of grp.toolSlugs ?? []) set.add(t);
@@ -188,24 +184,9 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
     });
   }
 
-  // 5. Dangling tool links — ANY agent (incl. operator personas) referencing a
-  //    tool slug with no enabled row. Silent at runtime; surfaced here.
-  {
-    const samples: SystemSample[] = [];
-    for (const a of agentRows) {
-      for (const t of a.toolSlugs ?? []) {
-        if (!enabledToolSlugs.has(t)) samples.push({ id: `${a.slug}:${t}`, detail: `${a.slug} → tool '${t}' has no enabled row` });
-      }
-    }
-    checks.push({
-      key: 'dangling-tools',
-      label: 'Dangling tool references',
-      severity: 'high',
-      ok: samples.length === 0,
-      detail: samples.length === 0 ? 'every agent tool slug resolves to an enabled tool' : `${samples.length} dangling tool ref(s) — the agent silently can’t call them`,
-      samples: samples.slice(0, 25),
-    });
-  }
+  // 5. (P6: agents reference tools only via tool groups — the per-agent
+  //    dangling-tool check is gone; group→tool resolution + dangling-group refs
+  //    below (checks 7 / 7c) cover it.)
 
   // 6. Dangling skill links — ANY agent referencing a missing/disabled skill.
   {

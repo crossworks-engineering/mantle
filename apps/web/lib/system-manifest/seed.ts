@@ -133,15 +133,13 @@ async function upsertAgent(
   mode: ApplyMode,
 ): Promise<void> {
   const model = (def.envModelVar ? process.env[def.envModelVar] : undefined) || def.model;
-  // P6: manifest agents are authored as pure tool GROUPS — grant exactly those
-  // and keep tool_slugs empty (the runtime's effective set is the union of the
-  // groups' tools). The `agents.tool_slugs` column is dropped in P6b.
-  const toolSlugs: string[] = Array.isArray(def.toolSlugs) ? def.toolSlugs : [];
+  // P6: manifest agents are authored as pure tool GROUPS — the runtime effective
+  // set is the union of the granted groups' tools. (The `agents.tool_slugs`
+  // column was dropped in migration 0083.)
   const groupSlugs = def.toolGroupSlugs ?? [];
   const [existing] = await db
     .select({
       id: agents.id,
-      toolSlugs: agents.toolSlugs,
       skillSlugs: agents.skillSlugs,
       toolGroupSlugs: agents.toolGroupSlugs,
     })
@@ -160,7 +158,6 @@ async function upsertAgent(
       model,
       apiKeyId,
       systemPrompt: def.systemPrompt ?? '',
-      toolSlugs,
       skillSlugs: def.skillSlugs,
       toolGroupSlugs: groupSlugs,
       params: def.params as AgentParams,
@@ -181,7 +178,6 @@ async function upsertAgent(
         model,
         apiKeyId,
         systemPrompt: def.systemPrompt ?? '',
-        toolSlugs,
         skillSlugs: def.skillSlugs,
         toolGroupSlugs: groupSlugs,
         params: def.params as AgentParams,
@@ -199,7 +195,6 @@ async function upsertAgent(
   const set: Record<string, unknown> = { enabled: true, updatedAt: new Date() };
   if (mergedSkills.length !== (existing.skillSlugs ?? []).length) set.skillSlugs = mergedSkills;
   if (mergedGroups.length !== (existing.toolGroupSlugs ?? []).length) set.toolGroupSlugs = mergedGroups;
-  if (!(existing.toolSlugs ?? []).length) set.toolSlugs = toolSlugs;
   await db.update(agents).set(set).where(eq(agents.id, existing.id));
 }
 

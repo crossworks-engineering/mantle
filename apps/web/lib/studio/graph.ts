@@ -160,10 +160,10 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
   const toolGroupSlugs = new Set(toolGroups.map((g) => g.slug));
   const enabledToolGroupSlugs = new Set(toolGroups.filter((g) => g.enabled).map((g) => g.slug));
   const groupToolsBySlug = new Map(toolGroups.map((g) => [g.slug, g.toolSlugs] as const));
-  /** P6: an agent's effective tool count = direct tool_slugs (vestigial) ∪ the
-   *  tools its granted groups confer. */
-  const effectiveToolCount = (a: { toolSlugs?: string[] | null; toolGroupSlugs?: string[] | null }): number => {
-    const set = new Set<string>(a.toolSlugs ?? []);
+  /** P6: an agent's effective tool count = the tools its granted groups confer
+   *  (tool groups are the sole grant mechanism). */
+  const effectiveToolCount = (a: { toolGroupSlugs?: string[] | null }): number => {
+    const set = new Set<string>();
     for (const g of a.toolGroupSlugs ?? []) for (const t of groupToolsBySlug.get(g) ?? []) set.add(t);
     return set.size;
   };
@@ -179,7 +179,6 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
     const issues: string[] = [];
     if (!a.enabled) issues.push('agent disabled');
     const groupGrants = a.toolGroupSlugs ?? [];
-    for (const t of a.toolSlugs) if (!enabledToolSlugs.has(t)) issues.push(`tool '${t}' has no enabled row`);
     for (const s of a.skillSlugs) if (!enabledSkillSlugs.has(s)) issues.push(`skill '${s}' missing or disabled`);
     for (const g of groupGrants) if (!enabledToolGroupSlugs.has(g)) issues.push(`tool group '${g}' missing or disabled`);
     for (const d of delegates) if (!enabledAgentSlugs.has(d)) issues.push(`delegate '${d}' missing or disabled`);
