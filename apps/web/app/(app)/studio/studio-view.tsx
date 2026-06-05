@@ -14,7 +14,7 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, CheckCircle2, ChevronLeft, Cpu, Sparkles, Star } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronLeft, Cpu, Layers, Sparkles, Star } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { ProseEditor } from './prose-editor';
 import { StructureEditor } from './structure-editor';
@@ -34,6 +34,7 @@ import type {
   StudioGraph,
   StudioAgentDetail,
   StudioSkillDetail,
+  StudioToolGroupDetail,
   StudioWorkerDetail,
 } from '@/lib/studio/graph';
 
@@ -194,6 +195,40 @@ function SkillInspector({ skill, onSaved }: { skill: StudioSkillDetail; onSaved:
   );
 }
 
+function GroupInspector({ group }: { group: StudioToolGroupDetail }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-2">
+        <Layers className="size-4 text-muted-foreground" aria-hidden />
+        <h2 className="text-base font-semibold">{group.name}</h2>
+        {!group.enabled && <Badge variant="secondary">disabled</Badge>}
+      </div>
+      <Section title={`Granted to ${group.usedByAgentSlugs.length} agent${group.usedByAgentSlugs.length === 1 ? '' : 's'}`}>
+        {group.usedByAgentSlugs.length ? (
+          <div className="flex flex-wrap gap-1.5">
+            {group.usedByAgentSlugs.map((a) => (
+              <Badge key={a} variant="outline">{a}</Badge>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[13px] text-muted-foreground">Not granted to any agent yet.</p>
+        )}
+      </Section>
+      <Section title={`Bundles ${group.toolSlugs.length} tool${group.toolSlugs.length === 1 ? '' : 's'}`}>
+        <div className="flex flex-wrap gap-1.5">
+          {group.toolSlugs.map((t) => (
+            <Badge key={t} variant="secondary" className="font-mono text-[12px]">{t}</Badge>
+          ))}
+        </div>
+      </Section>
+      <p className="text-[13px] text-muted-foreground">
+        Tool groups are capability bundles — edit their membership in{' '}
+        <a href="/settings/tool-groups" className="text-primary hover:underline">Settings → Tool groups</a>.
+      </p>
+    </div>
+  );
+}
+
 function WorkerInspector({ worker, onSaved }: { worker: StudioWorkerDetail; onSaved: () => void }) {
   return (
     <div className="flex flex-col gap-4">
@@ -271,6 +306,7 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
   const personaSlug = graph.agents.find((a) => a.isPersona)?.slug ?? graph.agents[0]?.slug ?? '';
   const [selection, setSelection] = useState<string>(`agent:${personaSlug}`);
   const [inspectedSkill, setInspectedSkill] = useState<string | null>(null);
+  const [inspectedGroup, setInspectedGroup] = useState<string | null>(null);
   const [workerIndex, setWorkerIndex] = useState<number | null>(null);
 
   const isAgent = selection.startsWith('agent:');
@@ -286,6 +322,7 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
     const keep = new Set<string>([`agent:${focusedAgent.slug}`]);
     for (const s of focusedAgent.skillSlugs) keep.add(`skill:${s}`);
     for (const d of focusedAgent.delegateSlugs) keep.add(`agent:${d}`);
+    for (const g of focusedAgent.toolGroupSlugs) keep.add(`group:${g}`);
     return {
       nodes: graph.nodes.filter((n) => keep.has(n.id)),
       edges: graph.edges.filter((e) => e.source === `agent:${focusedAgent.slug}` && keep.has(e.target)),
@@ -295,21 +332,30 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
   function changeSelection(v: string) {
     setSelection(v);
     setInspectedSkill(null);
+    setInspectedGroup(null);
     setWorkerIndex(null);
   }
 
   function onCanvasSelect(id: string) {
     if (id.startsWith('skill:')) {
+      setInspectedGroup(null);
       setInspectedSkill(id.slice('skill:'.length));
+    } else if (id.startsWith('group:')) {
+      setInspectedSkill(null);
+      setInspectedGroup(id.slice('group:'.length));
     } else if (id.startsWith('agent:')) {
       const slug = id.slice('agent:'.length);
-      if (slug === focusedSlug) setInspectedSkill(null); // clicked the focused agent → show it
-      else changeSelection(`agent:${slug}`); // a delegate → flip focus onto it
+      if (slug === focusedSlug) {
+        setInspectedSkill(null); // clicked the focused agent → show it
+        setInspectedGroup(null);
+      } else changeSelection(`agent:${slug}`); // a delegate → flip focus onto it
     }
   }
 
   const inspectedSkillDetail =
     inspectedSkill != null ? graph.skills.find((s) => s.slug === inspectedSkill) : undefined;
+  const inspectedGroupDetail =
+    inspectedGroup != null ? graph.toolGroups.find((g) => g.slug === inspectedGroup) : undefined;
   const selectedWorker = workerIndex != null ? graph.workers[workerIndex] : undefined;
 
   return (
@@ -339,7 +385,7 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
             </SelectContent>
           </Select>
           <span className="hidden text-[13px] text-muted-foreground sm:inline">
-            {graph.agents.length} agents · {graph.skills.length} skills · {graph.workers.length} workers
+            {graph.agents.length} agents · {graph.skills.length} skills · {graph.toolGroups.length} groups · {graph.workers.length} workers
           </span>
         </div>
         {graph.report.problems === 0 ? (
@@ -400,7 +446,7 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
             <StudioCanvas
               nodes={sub.nodes}
               edges={sub.edges}
-              selectedId={inspectedSkill ? `skill:${inspectedSkill}` : focusedSlug ? `agent:${focusedSlug}` : null}
+              selectedId={inspectedSkill ? `skill:${inspectedSkill}` : inspectedGroup ? `group:${inspectedGroup}` : focusedSlug ? `agent:${focusedSlug}` : null}
               onSelect={onCanvasSelect}
             />
           </div>
@@ -415,6 +461,17 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
                   <ChevronLeft className="size-3.5" aria-hidden /> {focusedAgent?.name ?? 'agent'}
                 </button>
                 <SkillInspector key={inspectedSkillDetail.slug} skill={inspectedSkillDetail} onSaved={onSaved} />
+              </>
+            ) : inspectedGroupDetail ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setInspectedGroup(null)}
+                  className="mb-3 flex items-center gap-1 text-[13px] font-medium text-muted-foreground hover:text-foreground"
+                >
+                  <ChevronLeft className="size-3.5" aria-hidden /> {focusedAgent?.name ?? 'agent'}
+                </button>
+                <GroupInspector key={inspectedGroupDetail.slug} group={inspectedGroupDetail} />
               </>
             ) : focusedAgent ? (
               // Key the whole inspector by agent id: a stable key per agent

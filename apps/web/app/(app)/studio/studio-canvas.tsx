@@ -81,7 +81,7 @@ function buildFlow(
         height: NODE_H,
         borderRadius: 10,
         border: `1px solid ${unhealthy ? 'var(--destructive)' : 'var(--border)'}`,
-        background: n.kind === 'agent' ? 'var(--card)' : 'var(--muted)',
+        background: n.kind === 'agent' ? 'var(--card)' : n.kind === 'group' ? 'var(--accent)' : 'var(--muted)',
         color: 'var(--card-foreground)',
         padding: 0,
         opacity: n.enabled ? 1 : 0.55,
@@ -100,7 +100,9 @@ function buildFlow(
       style:
         e.kind === 'delegate'
           ? { stroke: 'rgb(59 130 246)', strokeWidth: 1.5, strokeDasharray: '4 3' }
-          : { stroke: 'rgb(148 163 184)', strokeWidth: 1.5 },
+          : e.kind === 'group'
+            ? { stroke: 'rgb(139 92 246)', strokeWidth: 1.5 }
+            : { stroke: 'rgb(148 163 184)', strokeWidth: 1.5 },
     }));
 
   return { nodes, edges };

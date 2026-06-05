@@ -19,13 +19,14 @@ import { db, tools, eq, and, type AgentMemoryConfig } from '@mantle/db';
 import { resolveAgentSkills, composeSystemPromptWithSkills } from '@mantle/agent-runtime';
 import { listAgents } from '@/lib/agents';
 import { listSkills } from '@/lib/skills';
+import { listToolGroups } from '@/lib/tool-groups';
 import { listAiWorkers } from '@/lib/ai-workers';
 import { checkSystemIntegrity, PERSONA_SLUG, MANIFEST_AGENTS } from '@/lib/system-manifest';
 import type { SystemReport } from '@/lib/integrity/types';
 
 // ── Canvas primitives ────────────────────────────────────────────────────────
 
-export type StudioNodeKind = 'agent' | 'skill';
+export type StudioNodeKind = 'agent' | 'skill' | 'group';
 
 export type StudioNode = {
   /** Stable canvas id, namespaced by kind: `agent:<slug>` / `skill:<slug>`. */
@@ -45,7 +46,7 @@ export type StudioEdge = {
   id: string;
   source: string;
   target: string;
-  kind: 'skill' | 'delegate';
+  kind: 'skill' | 'delegate' | 'group';
 };
 
 // ── Inspector detail ─────────────────────────────────────────────────────────
@@ -64,6 +65,10 @@ export type StudioAgentDetail = {
   /** Skills attached but NOT resolved (missing or disabled) — surfaced honestly. */
   missingSkillSlugs: string[];
   delegateSlugs: string[];
+  /** Tool groups granted to this agent. */
+  toolGroupSlugs: string[];
+  /** Granted groups that are missing or disabled — surfaced honestly. */
+  missingToolGroupSlugs: string[];
   toolCount: number;
   params: { temperature?: number; max_tokens?: number };
   maxIterations?: number;
@@ -89,6 +94,16 @@ export type StudioSkillDetail = {
   usedByAgentSlugs: string[];
 };
 
+export type StudioToolGroupDetail = {
+  id: string;
+  slug: string;
+  name: string;
+  enabled: boolean;
+  toolSlugs: string[];
+  /** Fan-out: every agent that grants this group. */
+  usedByAgentSlugs: string[];
+};
+
 export type StudioWorkerDetail = {
   id: string;
   kind: string;
@@ -109,6 +124,7 @@ export type StudioGraph = {
   edges: StudioEdge[];
   agents: StudioAgentDetail[];
   skills: StudioSkillDetail[];
+  toolGroups: StudioToolGroupDetail[];
   workers: StudioWorkerDetail[];
   /** Live config-integrity report (the same checker behind /debug/integrity). */
   report: SystemReport;
@@ -116,6 +132,7 @@ export type StudioGraph = {
 
 const agentNodeId = (slug: string) => `agent:${slug}`;
 const skillNodeId = (slug: string) => `skill:${slug}`;
+const groupNodeId = (slug: string) => `group:${slug}`;
 
 /** Manifest agent slugs — only these can be reset to a canonical default. */
 const MANIFEST_AGENT_SLUGS = new Set(MANIFEST_AGENTS.map((m) => m.slug));
@@ -126,9 +143,10 @@ function delegateTo(memoryConfig: AgentMemoryConfig | null | undefined): string[
 }
 
 export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
-  const [agents, skills, workers, toolRows, report] = await Promise.all([
+  const [agents, skills, toolGroups, workers, toolRows, report] = await Promise.all([
     listAgents(ownerId),
     listSkills(ownerId),
+    listToolGroups(ownerId),
     listAiWorkers(ownerId),
     db
       .select({ slug: tools.slug })
@@ -140,6 +158,8 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
   const enabledToolSlugs = new Set(toolRows.map((t) => t.slug));
   const enabledSkillSlugs = new Set(skills.filter((s) => s.enabled).map((s) => s.slug));
   const skillSlugs = new Set(skills.map((s) => s.slug));
+  const toolGroupSlugs = new Set(toolGroups.map((g) => g.slug));
+  const enabledToolGroupSlugs = new Set(toolGroups.filter((g) => g.enabled).map((g) => g.slug));
   const agentSlugs = new Set(agents.map((a) => a.slug));
   const enabledAgentSlugs = new Set(agents.filter((a) => a.enabled).map((a) => a.slug));
 
@@ -151,8 +171,10 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
     const delegates = delegateTo(a.memoryConfig);
     const issues: string[] = [];
     if (!a.enabled) issues.push('agent disabled');
+    const groupGrants = a.toolGroupSlugs ?? [];
     for (const t of a.toolSlugs) if (!enabledToolSlugs.has(t)) issues.push(`tool '${t}' has no enabled row`);
     for (const s of a.skillSlugs) if (!enabledSkillSlugs.has(s)) issues.push(`skill '${s}' missing or disabled`);
+    for (const g of groupGrants) if (!enabledToolGroupSlugs.has(g)) issues.push(`tool group '${g}' missing or disabled`);
     for (const d of delegates) if (!enabledAgentSlugs.has(d)) issues.push(`delegate '${d}' missing or disabled`);
 
     nodes.push({
@@ -176,20 +198,43 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
         edges.push({ id: `${agentNodeId(a.slug)}__deleg:${d}`, source: agentNodeId(a.slug), target: agentNodeId(d), kind: 'delegate' });
       }
     }
+    for (const g of groupGrants) {
+      if (toolGroupSlugs.has(g)) {
+        edges.push({ id: `${agentNodeId(a.slug)}__group:${g}`, source: agentNodeId(a.slug), target: groupNodeId(g), kind: 'group' });
+      }
+    }
   }
 
-  // Skill nodes.
+  // Skill nodes. Skills are pure teaching (P1) — sublabel reflects that, not a
+  // tool count (which is always 0 now).
   for (const s of skills) {
     const issues: string[] = [];
     if (!s.enabled) issues.push('skill disabled');
-    for (const t of s.toolSlugs) if (!enabledToolSlugs.has(t)) issues.push(`bundled tool '${t}' has no enabled row`);
     nodes.push({
       id: skillNodeId(s.slug),
       kind: 'skill',
       slug: s.slug,
       label: s.name,
-      sublabel: `${s.toolSlugs.length} tool${s.toolSlugs.length === 1 ? '' : 's'}`,
+      sublabel: 'teaching',
       enabled: s.enabled,
+      isPersona: false,
+      issues,
+    });
+  }
+
+  // Tool group nodes (capability bundles). Sublabel = member-tool count; flag any
+  // bundled tool that has no enabled row.
+  for (const g of toolGroups) {
+    const issues: string[] = [];
+    if (!g.enabled) issues.push('group disabled');
+    for (const t of g.toolSlugs) if (!enabledToolSlugs.has(t)) issues.push(`tool '${t}' has no enabled row`);
+    nodes.push({
+      id: groupNodeId(g.slug),
+      kind: 'group',
+      slug: g.slug,
+      label: g.name,
+      sublabel: `${g.toolSlugs.length} tool${g.toolSlugs.length === 1 ? '' : 's'}`,
+      enabled: g.enabled,
       isPersona: false,
       issues,
     });
@@ -212,6 +257,8 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
       skillSlugs: a.skillSlugs ?? [],
       missingSkillSlugs: (a.skillSlugs ?? []).filter((s) => !attachedSet.has(s)),
       delegateSlugs: delegateTo(a.memoryConfig),
+      toolGroupSlugs: a.toolGroupSlugs ?? [],
+      missingToolGroupSlugs: (a.toolGroupSlugs ?? []).filter((g) => !enabledToolGroupSlugs.has(g)),
       toolCount: a.toolSlugs.length,
       params: { temperature: a.params?.temperature, max_tokens: a.params?.max_tokens },
       maxIterations: a.memoryConfig?.max_iterations,
@@ -230,6 +277,15 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
     instructions: s.instructions,
     toolSlugs: s.toolSlugs,
     usedByAgentSlugs: agents.filter((a) => (a.skillSlugs ?? []).includes(s.slug)).map((a) => a.slug),
+  }));
+
+  const toolGroupDetails: StudioToolGroupDetail[] = toolGroups.map((g) => ({
+    id: g.id,
+    slug: g.slug,
+    name: g.name,
+    enabled: g.enabled,
+    toolSlugs: g.toolSlugs,
+    usedByAgentSlugs: agents.filter((a) => (a.toolGroupSlugs ?? []).includes(g.slug)).map((a) => a.slug),
   }));
 
   const workerDetails: StudioWorkerDetail[] = workers.map((w) => {
@@ -256,6 +312,7 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
     edges,
     agents: agentDetails,
     skills: skillDetails,
+    toolGroups: toolGroupDetails,
     workers: workerDetails,
     report,
   };

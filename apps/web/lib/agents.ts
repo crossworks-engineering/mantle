@@ -49,6 +49,7 @@ export type AgentSummary = {
   tools: string[];
   toolSlugs: string[];
   skillSlugs: string[];
+  toolGroupSlugs: string[];
   memoryConfig: AgentMemoryConfig;
   params: AgentParams;
   avatar: AgentAvatar | null;
@@ -87,6 +88,7 @@ function toSummary(a: Agent): AgentSummary {
     tools: a.tools ?? [],
     toolSlugs: a.toolSlugs ?? [],
     skillSlugs: a.skillSlugs ?? [],
+    toolGroupSlugs: a.toolGroupSlugs ?? [],
     memoryConfig: a.memoryConfig ?? {},
     params: a.params ?? {},
     avatar: a.avatar ?? null,

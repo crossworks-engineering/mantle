@@ -1,8 +1,9 @@
 # Tools & Skills — capability vs. teaching, as one source of truth
 
-> **Status: P0 + P1 SHIPPED** (2026-06-05). Substrate (P0) and the
-> behavior-identical skill-arm collapse (P1) are live; Phases 2–4 remain DESIGN.
-> Companion to [docs/agent-studio.md](agent-studio.md) and
+> **Status: P0–P2 SHIPPED** (2026-06-05). Substrate (P0), the behavior-identical
+> skill-arm collapse (P1), and the Tools-manager + Studio group nodes (P2) are
+> live; Phases 3–4 remain DESIGN. Companion to
+> [docs/agent-studio.md](agent-studio.md) and
 > [docs/system-integrity.md](system-integrity.md).
 
 ## The problem
@@ -105,7 +106,7 @@ The seed taxonomy is pre-drawn: the `*_TOOLS` arrays in
 | `notes` | `NOTE_TOOLS` | |
 | `events` | `EVENT_TOOLS` | calendar CRUD |
 | `todos` | `TODO_TOOLS` | |
-| `pages` | `PAGE_TOOLS` | authoring subset vs. full (incl. `page_delete`) decided per-grant — see open question |
+| `pages` | `PAGE_TOOLS` | authoring subset (no `page_delete`) — decision 3; delete rides the escape hatch where intended |
 | `tables` | `TABLE_TOOLS` | |
 | `contacts` | `CONTACT_TOOLS` | the email gate ([contacts.md](contacts.md)) |
 | `lifelog` | `LIFELOG_TOOLS` | identity |
@@ -140,8 +141,8 @@ makes the cutover a no-op.
   non-empty; agents reference only known groups. Integrity (`integrity.ts`):
   `group-tools` (every group seeded + tools resolve) + `dangling-groups` (agent
   grants resolve). 20 tests green; no agent uses groups → all checks green.
-- The runtime `effectiveToolSlugs` is **untouched** — expanding groups into the
-  effective set is the Phase 1 flip.
+- The runtime `effectiveToolSlugs` is **untouched** here — expanding granted
+  groups into the effective set is the Phase 3 step.
 
 ### Phase 1 — Collapse the skill arm (behavior-identical) — ✅ SHIPPED
 - ✅ Migration `0081_collapse_skill_tools`: for the three agent-capability skills
@@ -165,13 +166,25 @@ makes the cutover a no-op.
   agent's `agent.tool_slugs ∪ attached-skill tools` before vs. after (zero diff).
   Skills are now pure teaching prose.
 
-### Phase 2 — Tools manager + Studio nodes ("no hidden tool grants")
-- `/settings/tools`: add tool-group CRUD (create bundle, pick member tools,
-  enable/disable). Group fan-out badge ("granted to N agents"), mirroring skills.
-- Studio graph ([`graph.ts`](../apps/web/lib/studio/graph.ts)): add `tool` and
-  `group` node kinds + `agent → group` / `agent → tool` grant edges; skill node
-  sublabel stops showing a tool count (skills are tool-free) and reads as teaching.
-- Now every grant is a visible edge — the principle is realized in the UI.
+### Phase 2 — Tools manager + Studio nodes ("no hidden tool grants") — ✅ SHIPPED
+- ✅ Tool-group CRUD: `lib/tool-groups.ts` + `app/api/tool-groups/[…]` + a
+  dedicated **`/settings/tool-groups`** page (create bundle, pick member tools via
+  the shared `ToolPicker`, enable/disable, slug immutable). Delete strips the slug
+  from every granting agent. Each group shows a "granted to N agents" fan-out
+  badge. (Deviation from the original sketch: a sibling page rather than folding
+  into the 510-line `/settings/tools` client — cleaner + lower-risk, and groups
+  are a distinct concept. A nav entry sits right under Tools.)
+- ✅ Studio graph (`lib/studio/graph.ts` + `studio-view.tsx` + `studio-canvas.tsx`):
+  added a `group` node kind + `agent → group` grant edges (violet), a read-only
+  `GroupInspector` (members + fan-out + link to the manager), dangling-group
+  issues on agent nodes, and the skill node sublabel now reads **"teaching"**
+  instead of a (now-always-zero) tool count. Group nodes appear in an agent's
+  subgraph only when granted — so today (no grants) the canvas is unchanged; it
+  lights up in P3.
+- *Scope note:* individual per-tool nodes (`agent → tool`) were **not** added —
+  68 tool nodes per agent would bury the graph. Direct grants stay summarised as
+  the agent's tool count; groups are the visible unit. The agent inspector already
+  lists the count.
 
 ### Phase 3 — Break up the god-grant
 - Re-express the persona's flat 68 as group grants (`memory-core`, `notes`,
