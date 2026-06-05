@@ -95,18 +95,17 @@ describe('system manifest integrity', () => {
     }
   });
 
-  it('the persona keeps run_terminal out, but deliberately carries page_delete (P1 decision 1)', () => {
-    // page_delete is NOT in the registry-tracked base grant…
-    const base = new Set(DEFAULT_ASSISTANT_TOOL_SLUGS);
-    expect(base.has('run_terminal')).toBe(false);
-    expect(base.has('page_delete')).toBe(false);
-    // …it's added back as an explicit extra so the capability the persona had via
-    // the old rich_writing skill is preserved. run_terminal stays out entirely.
+  it('the persona delegates page/table work — holds no page_*/table_* tools, but can delegate (P5)', () => {
     const persona = MANIFEST_AGENTS.find((a) => a.isPersona)!;
     const grant = new Set(resolveManifestToolSlugs(persona));
-    expect(grant.has('run_terminal'), 'run_terminal must stay out of the persona').toBe(false);
-    expect(grant.has('page_delete'), 'page_delete preserved via extraToolSlugs').toBe(true);
+    expect(grant.has('run_terminal'), 'run_terminal stays out').toBe(false);
+    expect(grant.has('page_create'), 'page authoring is delegated to the Pages specialist').toBe(false);
+    expect(grant.has('page_delete'), 'page delete is delegated to the Pages specialist').toBe(false);
+    expect(grant.has('table_from_text'), 'grid work is delegated to the Ledger specialist').toBe(false);
     expect(grant.has('invoke_agent'), 'persona must be able to delegate').toBe(true);
+    // …and the Pages specialist DOES own page authoring (so delegation has a target).
+    const pages = MANIFEST_AGENTS.find((a) => a.slug === 'pages')!;
+    expect(new Set(resolveManifestToolSlugs(pages)).has('page_create'), 'Pages agent authors pages').toBe(true);
   });
 
   it('every skill has a non-empty instruction body', () => {

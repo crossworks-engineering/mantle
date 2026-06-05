@@ -1060,19 +1060,23 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
  * Tools a freshly-provisioned generalist assistant should NOT hold by default:
  *   - `run_terminal` — unrestricted shell; reserved for a dedicated coder/ops
  *     agent, never the inbound responder (see builtins-terminal.ts).
- *   - `page_delete` — irreversible; the assistant authors/edits, deletes are
- *     confirmed by the user.
+ *   - the page `page_*` tools — document authoring/editing is delegated to the
+ *     Pages specialist (tuned prompt + page skills + bigger budget), reached via
+ *     `invoke_agent` and the editor Assist panel. Holding the tools would bias the
+ *     generalist into doing it inline instead of delegating. The persona reads
+ *     page CONTENT through the brain (node_read/search), and the core auto-grant
+ *     restores `page_share`/`page_unshare` (sharing a link ≠ specialist work).
  *   - the typed-grid `table_*` tools — grid work is delegated to the Ledger
- *     specialist (and reached via the editor Assist panel).
+ *     specialist (same reasoning), reached via the editor Assist panel.
  *   - `web_search` / `find_window` — delegated to the Researcher / Remy
  *     specialists; the assistant keeps `recall_window` for direct pulls.
  *   - federation `peer_*` — opt-in/advanced; not part of a first-run baseline.
  */
 const ASSISTANT_TOOL_DENY: ReadonlySet<string> = new Set<string>([
   'run_terminal',
-  'page_delete',
   'web_search',
   'find_window',
+  ...PAGE_TOOLS.map((t) => t.slug),
   ...TABLE_TOOLS.map((t) => t.slug),
   ...PEER_TOOLS.map((t) => t.slug),
 ]);

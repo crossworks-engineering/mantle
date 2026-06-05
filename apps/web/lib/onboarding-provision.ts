@@ -216,11 +216,11 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
       .limit(1);
     if (!existingAgent) {
       const name = DEFAULT_PERSONA_NAMES.female;
-      // The generalist grant: DEFAULT_ASSISTANT + page_delete (preserved per
-      // docs/tools-and-skills.md decision 1 — it used to ride in via rich_writing).
-      // P3: seed it DECOMPOSED into tool groups + a residual, so a fresh persona is
-      // already "broken up". The runtime re-assembles the identical effective set.
-      const personaGrant = deriveGroupGrants([...DEFAULT_ASSISTANT_TOOL_SLUGS, 'page_delete']);
+      // The generalist grant, seeded DECOMPOSED into tool groups + a residual (P3)
+      // so a fresh persona is already "broken up". Page/table authoring is excluded
+      // by the deny-set (DEFAULT_ASSISTANT) — that work is delegated to the Pages /
+      // Ledger specialists (P5); the persona reaches them via invoke_agent.
+      const personaGrant = deriveGroupGrants([...DEFAULT_ASSISTANT_TOOL_SLUGS]);
       await createAgent(ownerId, {
         slug: PERSONA_AGENT_SLUG,
         name,

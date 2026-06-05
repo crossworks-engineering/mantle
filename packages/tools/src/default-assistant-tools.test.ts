@@ -22,7 +22,6 @@ describe('DEFAULT_ASSISTANT_TOOL_SLUGS', () => {
       'lifelog_create',
       'file_read',
       'file_create',
-      'page_create',
       'synthesize_speech',
       'extract_from_image',
       'generate_image',
@@ -34,7 +33,8 @@ describe('DEFAULT_ASSISTANT_TOOL_SLUGS', () => {
   it('excludes specialist + dangerous tools', () => {
     const mustNot = [
       'run_terminal', // unrestricted shell
-      'page_delete', // destructive
+      'page_create', // page authoring delegated to the Pages specialist
+      'page_delete', // destructive; delegated to Pages
       'web_search', // delegate to researcher
       'find_window', // delegate to remy
       'table_create', // delegate to Ledger

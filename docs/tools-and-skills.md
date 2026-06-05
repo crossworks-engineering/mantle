@@ -241,6 +241,13 @@ Two surfaces still spoke the pre-group language, so the decomposition didn't
 - Verified on dev (reexpress → group-sync ordering keeps `*_delete` as residual):
   effective sets identical (zero diff); Saskia's residual **37 → 17** (all
   legitimate). 10 drift tests green.
+- ✅ **Specialist routing:** the generalist persona no longer holds page (or table)
+  authoring tools — `ASSISTANT_TOOL_DENY` now excludes all `page_*`/`table_*` from
+  `DEFAULT_ASSISTANT`, so document/grid work is **forced to delegate** to the Pages
+  / Ledger specialists (holding the tools biased the model into doing it inline).
+  The persona keeps `page_share`/`page_unshare` (via the core auto-grant), reads
+  page content through the brain, and reaches the specialists via `invoke_agent`.
+  Applied to the manifest (fresh installs) + dev's generalist personas.
 
 ---
 

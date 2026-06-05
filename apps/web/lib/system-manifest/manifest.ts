@@ -310,10 +310,10 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: 'anthropic/claude-sonnet-4.6',
     isPersona: true,
     toolSlugs: 'DEFAULT_ASSISTANT',
-    // P1: page_delete used to ride in via the rich_writing skill (now tool-less).
-    // Preserved as an explicit direct grant (decision 1) — the deny-set keeps it
-    // out of DEFAULT_ASSISTANT, so this is the one deliberate exception.
-    extraToolSlugs: ['page_delete'],
+    // P5: page authoring (incl. page_delete) is delegated to the Pages specialist
+    // — the deny-set keeps all page_* tools out of DEFAULT_ASSISTANT, and the
+    // persona reaches Pages via invoke_agent. (Supersedes the P1 decision to keep
+    // page_delete on the persona.) Sharing returns via the core auto-grant.
     skillSlugs: ['tool_grounding', 'voice_reply', 'rich_writing'],
     params: { temperature: 0.7, max_tokens: 16000 },
     priority: 100,
