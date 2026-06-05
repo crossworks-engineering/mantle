@@ -6,15 +6,27 @@
 
 ## TL;DR
 
-P0–P5 are **shipped, verified, and pushed** (`origin/main` @ `df7a3db`, version
-`0.19.25`). The reshape is real and live: **tools = capability (direct grants +
-tool groups), skills = pure teaching, every grant is a visible edge.**
+P0–P5 shipped. **P6a is now shipped + merged to `main`** (`0.19.27`): every
+manifest agent is authored as a pure **tool-group list** (`toolSlugs: []`), the
+group taxonomy is complete (every grantable builtin lives in ≥1 group), the
+heartbeat-responder tools are a runtime affordance (not a stored grant), and the
+boot self-heal grants the core floor as **groups**. The dev brain was re-granted
+(5 specialists: benign `memory-core`/`files` expansion only; both operator
+personas onto the generalist group list). `agents.tool_slugs` is **kept but
+emptied** — the runtime still reads it, so nothing breaks.
 
-**P6 is the last step and is NOT started in code** (the partial taxonomy
-groundwork was reverted to keep `main` clean). P6 makes **tool groups the SOLE
-way to grant a tool** — it removes `agent.tool_slugs` and the agent editor's
-"Direct tools · advanced" section. This handover contains the complete design so
-you can execute it cleanly.
+**P6b is what remains** (this handover's "P6b" section): drop the
+`agents.tool_slugs` column (mig `0083`), make `effectiveToolSlugs` group-only,
+strip the editor's "Direct tools · advanced" section, and remove the now-dead
+`deriveGroupGrants`/`DEFAULT_ASSISTANT`/`resolveManifestToolSlugs` helpers +
+schema/type fields. Goal unchanged: **tool groups the SOLE grant mechanism.**
+
+> **P6b precondition (dev only):** before the column drop, confirm the dev
+> operator personas (`telegram-default`, `apostle-paul`) hold their full
+> capability via groups — P6a already re-granted them the generalist list, so
+> their flat `tool_slugs` is safe to drop. `apostle-paul` intentionally lost
+> `run_terminal`/`peer_*`/`contact_delete`; re-add the `terminal`/`federation`
+> groups if it needs them.
 
 The user's framing (verbatim intent): *"having 'Direct tools · advanced' in agents
 divides the source of truth for tool configuration — you could just create a new
@@ -145,7 +157,16 @@ Suggested two commits: **P6a** (taxonomy + agents-as-groups + self-heal + verify
 keep `tool_slugs` column present but empty so runtime still works) → **P6b** (drop
 the column + remove the editor "Direct tools" section + dead code).
 
-**P6a**
+**P6a — ✅ DONE** (commit `feat(tools): P6a …`, `0.19.27`). Resolved micro-decisions:
+(1) `page-share`/`page-admin` carry share + delete/overwrite; `pages` group trimmed
+to authoring-only (no overlap). (2) heartbeat tools = **runtime-inject** (purer):
+`assistant.ts`/`main.ts` inject `HEARTBEAT_RESPONDER_TOOLS` when
+`hasActiveHeartbeatsOnSurface`; the seed flat-grant is gone. (3)
+`DEFAULT_ASSISTANT_TOOL_SLUGS`/`ASSISTANT_TOOL_DENY` **kept** (vestigial) — P6b
+cleanup. The self-heal grants `CORE_AUTO_GRANT_GROUP_SLUGS`
+(`persona,todos,contacts,lifelog,notes,email,page-share`), coverage-aware.
+
+Steps that were executed:
 1. `manifest.ts`: add the new groups + redefine `recall`; author all 6 agents with
    explicit `toolGroupSlugs` and `toolSlugs: []`. Decide `pages` group share/unshare
    overlap (recommend remove from `pages`, keep in `page-share`).
