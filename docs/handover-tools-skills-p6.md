@@ -4,34 +4,35 @@
 > [docs/tools-and-skills.md](tools-and-skills.md) (the canonical record).
 > Written 2026-06-05 after P0–P5 shipped + pushed.
 
-## TL;DR
+## TL;DR — ✅ P6 COMPLETE
 
-P0–P5 shipped. **P6a is now shipped + merged to `main`** (`0.19.27`): every
-manifest agent is authored as a pure **tool-group list** (`toolSlugs: []`), the
-group taxonomy is complete (every grantable builtin lives in ≥1 group), the
-heartbeat-responder tools are a runtime affordance (not a stored grant), and the
-boot self-heal grants the core floor as **groups**. The dev brain was re-granted
-(5 specialists: benign `memory-core`/`files` expansion only; both operator
-personas onto the generalist group list). `agents.tool_slugs` is **kept but
-emptied** — the runtime still reads it, so nothing breaks.
+**The whole reshape is shipped.** P6a (`0.19.27`) + P6b (`0.19.31`) are merged to
+`main`; migration `0083` is applied on dev. **Tool groups are now the SOLE
+tool-grant mechanism** — an agent's effective tool set is exactly the union of
+its granted groups' tools (`resolveAgentToolGroups` → `effectiveToolSlugs`).
 
-**P6b is what remains** (this handover's "P6b" section): drop the
-`agents.tool_slugs` column (mig `0083`), make `effectiveToolSlugs` group-only,
-strip the editor's "Direct tools · advanced" section, and remove the now-dead
-`deriveGroupGrants`/`DEFAULT_ASSISTANT`/`resolveManifestToolSlugs` helpers +
-schema/type fields. Goal unchanged: **tool groups the SOLE grant mechanism.**
+What shipped:
+- **P6a** — every manifest agent authored as a pure **tool-group list**; group
+  taxonomy completed (every grantable builtin lives in ≥1 group); heartbeat
+  tools became a per-turn runtime affordance; the boot self-heal grants the core
+  floor as **groups**. Dev brain re-granted (5 specialists + both operator
+  personas).
+- **P6b** — dropped the `agents.tool_slugs` column (mig `0083`);
+  `effectiveToolSlugs(groupToolSlugs)` is group-only; the editor's "Direct tools
+  · advanced" section is gone; removed the dead `deriveGroupGrants` /
+  `resolveManifestToolSlugs` / `DEFAULT_ASSISTANT_TOOL_SLUGS` / `ASSISTANT_TOOL_DENY`
+  helpers + the reexpress CLI; schema/types cleaned. Verified: column gone, all
+  agents resolve via groups (Saskia + apostle-paul at 54 tools, delegating).
 
-> **P6b precondition (dev only):** before the column drop, confirm the dev
-> operator personas (`telegram-default`, `apostle-paul`) hold their full
-> capability via groups — P6a already re-granted them the generalist list, so
-> their flat `tool_slugs` is safe to drop. `apostle-paul` intentionally lost
-> `run_terminal`/`peer_*`/`contact_delete`; re-add the `terminal`/`federation`
-> groups if it needs them.
+> `apostle-paul` intentionally lost `run_terminal`/`peer_*`/`contact_delete` when
+> re-granted the generalist list — re-add the `terminal`/`federation` groups at
+> /settings/agents if it needs them.
 
 The user's framing (verbatim intent): *"having 'Direct tools · advanced' in agents
 divides the source of truth for tool configuration — you could just create a new
-group to satisfy loose ends, or properly divide your tools up."* They are right;
-P6 is the fix.
+group to satisfy loose ends, or properly divide your tools up."* They were right;
+P6 was the fix. This doc is now historical — the canonical record is
+[docs/tools-and-skills.md](tools-and-skills.md).
 
 ## Current architecture (what's already true)
 

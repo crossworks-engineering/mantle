@@ -285,16 +285,41 @@ agent editor, the Tools manager, and the Studio graph all draw it the same way.
    P6, `contacts`/`lifelog` — groups exclude the destructive `*_delete`; deletes
    live in deliberate `*-admin` groups, granted on purpose, never auto.
 
-## Phase 6 — groups as the sole tool-grant (PLANNED — not started)
+## Phase 6 — groups as the sole tool-grant (✅ SHIPPED)
 
-**Goal:** tool groups become the *only* way to grant a tool. `agent.tool_slugs`
-and the agent editor's "Direct tools · advanced" section are removed; skills are
+**Goal (met):** tool groups are the *only* way to grant a tool. `agent.tool_slugs`
+and the agent editor's "Direct tools · advanced" section are gone; skills are
 teaching, groups are capability — one source of truth, end to end.
 
-**Status:** fully designed, **not implemented**. The partial taxonomy groundwork
-was reverted so `main` stays clean at P0–P5. The complete design — the final group
-taxonomy, the agent→group mapping (approach A: coarse groups, specialists expand),
-every edge discovered (page-share / recall splits, `*-admin` delete groups,
-heartbeat + `read_result` as runtime affordances), the file-by-file change plan,
-and the verification approach — is in
-**[docs/handover-tools-skills-p6.md](handover-tools-skills-p6.md)**.
+The effective set is now simply:
+
+```
+effectiveToolSlugs = expand(agent.tool_group_slugs → group.tool_slugs)
+                     (+ heartbeat_* injected per-turn when a heartbeat is active)
+```
+
+Shipped in two commits (approach A — coarse groups, specialists expand):
+
+- ✅ **P6a** (`0.19.27`): every `MANIFEST_AGENTS` entry authored as an explicit
+  `toolGroupSlugs` list (`toolSlugs: []`); taxonomy completed so every grantable
+  builtin lives in ≥1 group — `recall` split into `recall`/`recall-search`,
+  `pages` trimmed, and `page-admin`/`page-share`/`table-admin`/`contacts-admin`/
+  `lifelog-admin`/`secrets`/`ingest` added. Heartbeat-responder tools became a
+  per-turn **affordance** (injected in `assistant.ts`/`main.ts` when
+  `hasActiveHeartbeatsOnSurface`), not a stored grant. The boot self-heal
+  (`ensureCoreToolsOnConversationalAgents`) grants the core floor as **groups**
+  (`CORE_AUTO_GRANT_GROUP_SLUGS`). Onboarding seeds the persona from
+  `PERSONA_TOOL_GROUP_SLUGS`. Dev brain re-granted (5 specialists + both operator
+  personas); the persona loses `contact_delete`/`lifelog_delete` (now
+  deliberate-only `*-admin`).
+- ✅ **P6b** (`0.19.31`): migration `0083` drops `agents.tool_slugs`;
+  `effectiveToolSlugs(groupToolSlugs)` is group-only; the 4 runtime callers pass
+  only resolved group tools; the editor's "Direct tools · advanced" fieldset +
+  the `availableTools` prop are removed (the Tool-groups picker + read-only
+  Effective-tools readout remain); the integrity checker + Studio compute the
+  effective set from groups; and the dead `deriveGroupGrants` /
+  `resolveManifestToolSlugs` / `DEFAULT_ASSISTANT_TOOL_SLUGS` / `ASSISTANT_TOOL_DENY`
+  + the reexpress CLI are removed.
+
+The original design brief is preserved at
+**[docs/handover-tools-skills-p6.md](handover-tools-skills-p6.md)** (historical).
