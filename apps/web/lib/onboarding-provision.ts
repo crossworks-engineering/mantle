@@ -1,5 +1,6 @@
-import { db, agents, eq, and } from '@mantle/db';
+import { db, agents, skills, eq, and, inArray } from '@mantle/db';
 import { listApiKeys } from '@mantle/api-keys';
+import { seedBuiltinTools, DEFAULT_ASSISTANT_TOOL_SLUGS } from '@mantle/tools';
 import {
   buildPersonaPrompt,
   DEFAULT_PERSONA_NAMES,
@@ -227,13 +228,24 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
     });
   }
 
+  // Make sure the builtin tool ROWS exist for this owner before the assistant
+  // (which references them by slug) is created — an agent with tool slugs that
+  // resolve to no row simply can't call those tools. seedSpecialistStack reseeds
+  // too; this guarantees it even if the stack is skipped/fails.
+  if (openrouter) {
+    await seedBuiltinTools(ownerId).catch((err) =>
+      console.error('[onboarding] seedBuiltinTools failed:', err),
+    );
+  }
+
   // The persona agent — created with the Warm/Saskia default; the personality
   // step refines name/voice/preset/temperature. role='responder' serves both
-  // the web /assistant (which falls back responder→) and Telegram.
+  // the web /assistant (which falls back responder→) and Telegram. It's seeded
+  // with the full generalist tool grant so it can actually act from message one.
   let createdAgent: ProvisionResult['createdAgent'] = null;
   if (openrouter) {
     const [existingAgent] = await db
-      .select({ id: agents.id })
+      .select({ id: agents.id, toolSlugs: agents.toolSlugs })
       .from(agents)
       .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, PERSONA_AGENT_SLUG)))
       .limit(1);
@@ -249,6 +261,7 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
         apiKeyId: openrouter,
         ttsWorkerId,
         systemPrompt: buildPersonaPrompt('warm', { assistantName: name, gender: 'female' }),
+        toolSlugs: [...DEFAULT_ASSISTANT_TOOL_SLUGS],
         memoryConfig: {
           history_limit: 20,
           digest_limit: 3,
@@ -262,6 +275,12 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
         enabled: true,
       });
       createdAgent = { slug: PERSONA_AGENT_SLUG, name };
+    } else if (!existingAgent.toolSlugs || existingAgent.toolSlugs.length === 0) {
+      // Repair an assistant that was provisioned before tools were granted (or
+      // hand-created empty) — re-running the wizard fixes a toolless assistant.
+      await updateAgent(ownerId, existingAgent.id, {
+        toolSlugs: [...DEFAULT_ASSISTANT_TOOL_SLUGS],
+      });
     }
   }
 
@@ -272,9 +291,48 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
   let seededSpecialists: string[] = [];
   if (openrouter) {
     seededSpecialists = await seedSpecialistStack(ownerId);
+    // The shared behaviour skills (tool_grounding, voice_reply, rich_writing)
+    // are seeded above but only auto-wired to Jason's named personas
+    // (telegram-default / apostle-paul). Explicitly attach them to the onboarding
+    // assistant so a fresh brain's persona actually grounds answers in data and
+    // writes for voice — otherwise it's a capable-looking but un-grounded shell.
+    await linkAssistantSkills(ownerId);
   }
 
   return { createdWorkers: created, createdAgent, skipped, seededSpecialists };
+}
+
+/**
+ * Attach the shared behaviour skills to the persona agent (idempotent merge),
+ * but only the ones whose skill row actually exists + is enabled — so a skill
+ * seed that failed doesn't leave a dangling slug on the agent.
+ */
+async function linkAssistantSkills(ownerId: string): Promise<void> {
+  const want = ['tool_grounding', 'voice_reply', 'rich_writing'];
+  const present = await db
+    .select({ slug: skills.slug })
+    .from(skills)
+    .where(
+      and(eq(skills.ownerId, ownerId), eq(skills.enabled, true), inArray(skills.slug, want)),
+    );
+  const presentSlugs = present.map((r) => r.slug);
+  if (presentSlugs.length === 0) return;
+
+  const [row] = await db
+    .select({ id: agents.id, skillSlugs: agents.skillSlugs })
+    .from(agents)
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, PERSONA_AGENT_SLUG)))
+    .limit(1);
+  if (!row) return;
+
+  const current = row.skillSlugs ?? [];
+  const merged = [...current];
+  for (const s of presentSlugs) if (!merged.includes(s)) merged.push(s);
+  if (merged.length === current.length) return; // nothing new
+  await db
+    .update(agents)
+    .set({ skillSlugs: merged, updatedAt: new Date() })
+    .where(eq(agents.id, row.id));
 }
 
 export type SavePersonaInput = {

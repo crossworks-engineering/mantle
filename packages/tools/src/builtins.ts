@@ -1055,3 +1055,42 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // you. Outbound half of docs/federation.md; reads only what a peer granted.
   ...PEER_TOOLS,
 ];
+
+/**
+ * Tools a freshly-provisioned generalist assistant should NOT hold by default:
+ *   - `run_terminal` — unrestricted shell; reserved for a dedicated coder/ops
+ *     agent, never the inbound responder (see builtins-terminal.ts).
+ *   - `page_delete` — irreversible; the assistant authors/edits, deletes are
+ *     confirmed by the user.
+ *   - the typed-grid `table_*` tools — grid work is delegated to the Ledger
+ *     specialist (and reached via the editor Assist panel).
+ *   - `web_search` / `find_window` — delegated to the Researcher / Remy
+ *     specialists; the assistant keeps `recall_window` for direct pulls.
+ *   - federation `peer_*` — opt-in/advanced; not part of a first-run baseline.
+ */
+const ASSISTANT_TOOL_DENY: ReadonlySet<string> = new Set<string>([
+  'run_terminal',
+  'page_delete',
+  'web_search',
+  'find_window',
+  ...TABLE_TOOLS.map((t) => t.slug),
+  ...PEER_TOOLS.map((t) => t.slug),
+]);
+
+/**
+ * The default tool grant for a generalist assistant (the persona onboarding
+ * provisions, and a sensible base for any new responder). It's the proven
+ * responder capability set — broad memory/CRUD, files, pages, media, recall,
+ * and `invoke_agent` delegation — minus the specialist/dangerous tools above.
+ *
+ * Derived from the registry so genuinely-new safe tools are granted
+ * automatically; the deny-set is the only thing to maintain. Without this an
+ * agent created with empty `tool_slugs` can't act at all (no search, no notes,
+ * no delegation) — onboarding seeds the assistant with this so it works from
+ * the first message. NB: registry-resident tools registered by other packages
+ * (e.g. heartbeat controls in @mantle/heartbeats) are intentionally NOT here —
+ * keep this dependency-free and static; add those per-agent in the UI.
+ */
+export const DEFAULT_ASSISTANT_TOOL_SLUGS: string[] = BUILTIN_TOOLS.map(
+  (t) => t.slug,
+).filter((s) => !ASSISTANT_TOOL_DENY.has(s));

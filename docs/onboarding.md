@@ -62,7 +62,7 @@ stepper is `onboarding-client.tsx`.
 | 2 | **OpenRouter key** (required) | the one required key — `setApiKey` + `testApiKeyAction` probe + link |
 | 3 | **Voice** | works by default on the OpenRouter key (grok voice ara); optionally add a dedicated **xAI** key for a smoother voice route |
 | 4 | **Set up** | `provisionDefaults(ownerId)` — creates the assistant + AI workers + the specialist stack (Pages/Ledger/Remy/Researcher/Coder, wired into Saskia's `delegate_to`) from the keys present |
-| 5 | **Check** | `runSanityChecks()` — green/red list (OpenRouter probe, xAI probe if added, embeddings, agent, voice/images) |
+| 5 | **Check** | `runSanityChecks()` — green/red list of the **vitals**: OpenRouter probe, xAI probe if added, embeddings, the assistant, **assistant capabilities** (tools + can-delegate + grounding/voice skills), **memory workers** (extractor/summarizer/reflector/document), **specialists & delegation** (Pages/Ledger/Remy/Researcher seeded + wired into `delegate_to` + their skills), **editor assistants** (`resolveAssistAgentSlug` for /pages + /tables), voice/images |
 | 6 | **About you** | ~9 questions → one Life Log each (`createLifelog`); feeds the always-on identity block |
 | 7 | **Personality** | preset bank × gender (voice) + name + creativity slider → `savePersonaAgent` |
 | 8 | **Telegram** | optional — BotFather instructions + token (`connectAgentTelegram`); skippable |
@@ -104,6 +104,24 @@ both web `/assistant` and Telegram), model `anthropic/claude-sonnet-4.6`, with
 `inject_lifelog: true`. It's created with the Warm/Saskia default and refined by
 the personality step (`savePersonaAgent`: rebuilds the system prompt from the
 chosen preset, sets the name + temperature, points the TTS voice at the gender).
+
+> **Vital linkage — tools + skills (not just rows).** A provisioned agent that
+> has no `tool_slugs` can't act (no search, no capture, no delegation), and one
+> without the shared behaviour skills answers from memory instead of the user's
+> data — both look "set up" but are broken. So provisioning also:
+> - seeds the builtin tool **rows** (`seedBuiltinTools`) and grants the assistant
+>   `DEFAULT_ASSISTANT_TOOL_SLUGS` (from `@mantle/tools`) — the proven generalist
+>   set (broad memory/CRUD + media + `invoke_agent`), minus the specialist/
+>   dangerous tools (raw shell, destructive deletes, the `table_*` grid tools →
+>   delegate to Ledger, `web_search`/`find_window` → delegate to Researcher/Remy,
+>   federation). Re-running the wizard **repairs** a toolless assistant.
+> - attaches the shared behaviour skills (`tool_grounding`, `voice_reply`,
+>   `rich_writing`) to the assistant via `linkAssistantSkills`. (`seedSharedSkills`
+>   only auto-wires Jason's named personas `telegram-default`/`apostle-paul`, which
+>   don't exist on a fresh brain — hence the explicit attach.)
+>
+> Skills attach to **agents only** — `ai_workers` have no skill column; their
+> behaviour is the model + an optional `system_prompt`.
 
 ### Specialist stack (seeded alongside the persona)
 
