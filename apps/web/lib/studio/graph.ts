@@ -53,6 +53,7 @@ export type StudioEdge = {
 export type ComposedSkillBlock = { slug: string; name: string; instructions: string };
 
 export type StudioAgentDetail = {
+  id: string;
   slug: string;
   name: string;
   model: string;
@@ -74,6 +75,7 @@ export type StudioAgentDetail = {
 };
 
 export type StudioSkillDetail = {
+  id: string;
   slug: string;
   name: string;
   enabled: boolean;
@@ -84,6 +86,7 @@ export type StudioSkillDetail = {
 };
 
 export type StudioWorkerDetail = {
+  id: string;
   kind: string;
   name: string;
   model: string;
@@ -192,6 +195,7 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
     const attached = await resolveAgentSkills(ownerId, a.skillSlugs ?? []);
     const attachedSet = new Set(attached.map((s) => s.slug));
     agentDetails.push({
+      id: a.id,
       slug: a.slug,
       name: a.name,
       model: a.model,
@@ -209,6 +213,7 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
   }
 
   const skillDetails: StudioSkillDetail[] = skills.map((s) => ({
+    id: s.id,
     slug: s.slug,
     name: s.name,
     enabled: s.enabled,
@@ -223,6 +228,7 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
     const issues: string[] = [];
     if (!w.enabled) issues.push('worker disabled');
     return {
+      id: w.id,
       kind: w.kind,
       name: w.name,
       model: w.model,

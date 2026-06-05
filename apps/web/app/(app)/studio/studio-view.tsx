@@ -13,8 +13,10 @@
  */
 
 import { useMemo, useState, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, ChevronLeft, Cpu, Sparkles, Star } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { ProseEditor } from './prose-editor';
 import {
   Select,
   SelectContent,
@@ -64,7 +66,7 @@ function Issues({ issues }: { issues: string[] }) {
   );
 }
 
-function AgentInspector({ agent }: { agent: StudioAgentDetail }) {
+function AgentInspector({ agent, onSaved }: { agent: StudioAgentDetail; onSaved: () => void }) {
   const [raw, setRaw] = useState(false);
   return (
     <div className="flex flex-col gap-4">
@@ -103,12 +105,19 @@ function AgentInspector({ agent }: { agent: StudioAgentDetail }) {
           <div className="flex flex-col gap-2">
             <div className="flex flex-col gap-1">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">System prompt</p>
-              <Prose text={agent.systemPrompt || '(empty)'} />
+              <ProseEditor
+                entityType="agent"
+                entityId={agent.id}
+                field="system_prompt"
+                value={agent.systemPrompt}
+                onSaved={onSaved}
+              />
             </div>
             {agent.skillBlocks.map((b) => (
               <div key={b.slug} className="flex flex-col gap-1">
                 <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
                   <Sparkles className="size-3" aria-hidden /> Skill: {b.name}
+                  <span className="ml-1 normal-case tracking-normal text-muted-foreground/60">(edit on the skill)</span>
                 </p>
                 <Prose text={b.instructions.trim() || '(no instructions — contributes nothing)'} />
               </div>
@@ -123,7 +132,7 @@ function AgentInspector({ agent }: { agent: StudioAgentDetail }) {
   );
 }
 
-function SkillInspector({ skill }: { skill: StudioSkillDetail }) {
+function SkillInspector({ skill, onSaved }: { skill: StudioSkillDetail; onSaved: () => void }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
@@ -152,13 +161,19 @@ function SkillInspector({ skill }: { skill: StudioSkillDetail }) {
         </Section>
       )}
       <Section title="Instructions">
-        <Prose text={skill.instructions.trim() || '(no instructions)'} />
+        <ProseEditor
+          entityType="skill"
+          entityId={skill.id}
+          field="instructions"
+          value={skill.instructions}
+          onSaved={onSaved}
+        />
       </Section>
     </div>
   );
 }
 
-function WorkerInspector({ worker }: { worker: StudioWorkerDetail }) {
+function WorkerInspector({ worker, onSaved }: { worker: StudioWorkerDetail; onSaved: () => void }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
@@ -174,12 +189,24 @@ function WorkerInspector({ worker }: { worker: StudioWorkerDetail }) {
       <Issues issues={worker.issues} />
       {worker.systemPrompt != null && (
         <Section title="System prompt">
-          <Prose text={worker.systemPrompt.trim() || '(empty)'} />
+          <ProseEditor
+            entityType="worker"
+            entityId={worker.id}
+            field="system_prompt"
+            value={worker.systemPrompt}
+            onSaved={onSaved}
+          />
         </Section>
       )}
       {worker.extractionPrompt != null && (
         <Section title="Extraction prompt">
-          <Prose text={worker.extractionPrompt.trim() || '(empty)'} />
+          <ProseEditor
+            entityType="worker"
+            entityId={worker.id}
+            field="extraction_prompt"
+            value={worker.extractionPrompt}
+            onSaved={onSaved}
+          />
         </Section>
       )}
       {worker.systemPrompt == null && worker.extractionPrompt == null && (
@@ -216,6 +243,10 @@ function HealthReport({ graph }: { graph: StudioGraph }) {
 }
 
 export function StudioView({ graph }: { graph: StudioGraph }) {
+  const router = useRouter();
+  // After a prose edit, re-fetch the server-computed graph so the composed-prompt
+  // preview re-assembles live. Client selection state survives the soft refresh.
+  const onSaved = () => router.refresh();
   const personaSlug = graph.agents.find((a) => a.isPersona)?.slug ?? graph.agents[0]?.slug ?? '';
   const [selection, setSelection] = useState<string>(`agent:${personaSlug}`);
   const [inspectedSkill, setInspectedSkill] = useState<string | null>(null);
@@ -336,7 +367,7 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
           </div>
           <aside className="min-h-0 overflow-y-auto scrollbar-thin p-4">
             {selectedWorker ? (
-              <WorkerInspector worker={selectedWorker} />
+              <WorkerInspector worker={selectedWorker} onSaved={onSaved} />
             ) : (
               <p className="text-[11px] text-muted-foreground">Select a worker to see its model + prose.</p>
             )}
@@ -362,10 +393,10 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
                 >
                   <ChevronLeft className="size-3.5" aria-hidden /> {focusedAgent?.name ?? 'agent'}
                 </button>
-                <SkillInspector skill={inspectedSkillDetail} />
+                <SkillInspector skill={inspectedSkillDetail} onSaved={onSaved} />
               </>
             ) : focusedAgent ? (
-              <AgentInspector agent={focusedAgent} />
+              <AgentInspector agent={focusedAgent} onSaved={onSaved} />
             ) : (
               <p className="text-[11px] text-muted-foreground">No agent selected.</p>
             )}
