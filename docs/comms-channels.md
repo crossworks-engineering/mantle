@@ -16,15 +16,29 @@
 > priority-based among chat-capable agents with a soft assistant→responder→custom
 > tiebreak, explicit `?agent=` still wins.
 >
-> ⚠️ **Phase 4 deploy ordering (token-safety).** The Phase-4 cleanup migration
-> (`0078_channels_cleanup`) drops `bot_token_enc`, but the token re-seal into
-> `channels.credentials_enc` runs in **app code** (AES-GCM needs the master key),
-> which starts *after* the SQL migrate gate. So Phase 4 must NOT deploy in the
-> same release that first creates `channels` — deploy the additive phases (1–3)
-> first, let the startup backfill populate `channels`, verify, then deploy
-> Phase 4. The migration **self-guards**: it aborts the deploy if any *enabled*
-> `telegram_accounts` row still lacks a `channel_id`, so a premature deploy fails
-> safely instead of losing a token.
+> ✅ **Deploying from scratch (the only path).** The product has no production
+> deployment yet — prod will be stood up fresh from an empty DB, and `dev` has
+> already migrated through all four phases. On a fresh DB the migrations replay
+> `0001 → 0078` in order: `telegram_accounts` is empty, so `0078`'s self-guard
+> (abort if any *enabled* account lacks a `channel_id`) finds zero rows and
+> passes trivially. There is no token to re-seal and no backfill to run —
+> channels are created going forward by the connect flow (`upsertTelegramChannel`
+> on `/settings/agents`). A from-scratch deploy is therefore a single clean
+> `migrate`; no phased rollout, no special ordering. Nothing to do beyond the
+> normal deploy (docs/deploy.md).
+>
+> ⚠️ **Historical note (does not apply to a from-scratch deploy).** The
+> Phase-1→3 builds carried an app-code `backfillTelegramChannels` pass (re-seal
+> `bot_token_enc` → `channels.credentials_enc` under the new AAD) for migrating a
+> *pre-existing, populated* `telegram_accounts` across the cutover. That path was
+> only ever needed to migrate a live box without losing its bot token, and it
+> required deploying Phases 1–3 first (let the boot backfill run + verify) before
+> Phase 4 dropped `bot_token_enc`. **Phase 4 removed that backfill** — `main` no
+> longer contains it, because there is no populated box to migrate. The `0078`
+> self-guard remains as a tripwire: if a populated `telegram_accounts` ever did
+> appear without channels (it won't, in the from-scratch model), the cleanup
+> aborts loudly rather than dropping a live token. If that situation ever arises,
+> restore the Phase-3 commit's backfill before re-running `0078`.
 
 ## 0. TL;DR for the builder
 

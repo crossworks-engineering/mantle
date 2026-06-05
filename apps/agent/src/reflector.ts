@@ -42,6 +42,7 @@ import {
   resolveChatKey,
   resolveChatRoutes,
 } from '@mantle/agent-runtime';
+import { CONVERSATIONAL_ROLES, rankActiveAgents } from './agent-select.js';
 
 /** How many recent turns the reflector reviews per agent per run. */
 const REFLECTION_WINDOW = 50;
@@ -51,16 +52,6 @@ const REFLECTION_WINDOW = 50;
  *  in the rare case of many simultaneously-active conversational agents — the
  *  rest are picked up on the next tick. Most-active-first. */
 const MAX_AGENTS_PER_RUN = 5;
-
-/** Conversational roles eligible for persona-learning. NOT a transport gate —
- *  just excludes the background pipeline workers (extractor/summarizer/
- *  reflector) that have no chat surface. `role` is a loose hint post-decoupling
- *  (docs/comms-channels.md §7, decision A). */
-const CONVERSATIONAL_ROLES: ('assistant' | 'responder' | 'custom')[] = [
-  'assistant',
-  'responder',
-  'custom',
-];
 
 export const DEFAULT_REFLECTOR_PROMPT = `You are a reflector for a personal AI assistant. You will be given a transcript of recent exchanges between the user and the assistant, plus the assistant's current persona_notes (preferences, relationship notes, corrections already learned).
 
@@ -110,7 +101,7 @@ async function qualifyingAgents(ownerId: string, since: Date): Promise<Agent[]> 
       and(
         eq(agents.ownerId, ownerId),
         eq(agents.enabled, true),
-        inArray(agents.role, CONVERSATIONAL_ROLES),
+        inArray(agents.role, [...CONVERSATIONAL_ROLES]),
       ),
     );
   if (candidates.length === 0) return [];
@@ -132,9 +123,7 @@ async function qualifyingAgents(ownerId: string, since: Date): Promise<Agent[]> 
     .groupBy(assistantMessages.agentId);
 
   const activity = new Map(counts.map((c) => [c.agentId, c.n]));
-  return candidates
-    .filter((c) => (activity.get(c.id) ?? 0) > 0)
-    .sort((a, b) => (activity.get(b.id) ?? 0) - (activity.get(a.id) ?? 0));
+  return rankActiveAgents(candidates, activity);
 }
 
 type ReflectorOutput = {

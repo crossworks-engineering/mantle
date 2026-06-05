@@ -20,7 +20,7 @@
  */
 
 import postgres from 'postgres';
-import { and, asc, desc, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm';
 import {
   db,
   agents,
@@ -110,6 +110,7 @@ registerHeartbeatTools();
 import { summarizeAgentConversation } from './summarizer.js';
 import { enqueueExtract, startExtractQueue, stopExtractQueue } from './extract-queue.js';
 import { reflect } from './reflector.js';
+import { CONVERSATIONAL_ROLES, pickFallbackResponder } from './agent-select.js';
 
 // Resolved at the top of main() via waitForOwner() — either ALLOWED_USER_ID (when
 // set) or the sole auth.users row. Left `undefined` until then so a fresh install
@@ -143,26 +144,16 @@ function startTyping(account: TelegramAccount, chatId: string): () => void {
   };
 }
 
-/** Conversational roles eligible for the role-agnostic fallback below. NOT a
- *  transport gate (that's the channel now, docs/comms-channels.md) — just the
- *  set of agents that can hold a chat at all (extractor/summarizer/reflector
- *  are background workers, never a chat surface). Phase 3 demotes `role` to a
- *  loose hint; this keeps the fallback from picking a worker agent. */
-const CONVERSATIONAL_ROLES: ('assistant' | 'responder' | 'custom')[] = [
-  'assistant',
-  'responder',
-  'custom',
-];
-
 /** Fetch the active agent for an inbound chat message.
  *
  *  Resolution order (channel-based, role-decoupled — docs/comms-channels.md §6):
  *    1. Per-chat override (`telegram_chats.responder_agent_id`) — most specific.
  *    2. The inbound **channel's** `agent_id` — the agent this transport is
  *       attached to. The normal path: an enabled channel always carries an agent.
- *    3. Last resort: highest-priority enabled conversational agent — covers a
- *       channel-less/legacy account so an inbound is never silently dropped.
- *       No `role='responder'` privileging (that gate is gone).
+ *    3. Last resort (`pickFallbackResponder`, unit-tested): highest-priority
+ *       enabled conversational agent — covers a channel-less/legacy account so
+ *       an inbound is never silently dropped, and never a background worker. No
+ *       `role='responder'` privileging (that gate is gone).
  */
 async function resolveResponderAgent(
   ownerId: string,
@@ -179,19 +170,17 @@ async function resolveResponderAgent(
     if (pinned) return pinned;
     // Pinned/bound agent disabled or missing → fall through to the next candidate.
   }
-  const [row] = await db
+  const candidates = await db
     .select()
     .from(agents)
     .where(
       and(
         eq(agents.ownerId, ownerId),
         eq(agents.enabled, true),
-        inArray(agents.role, CONVERSATIONAL_ROLES),
+        inArray(agents.role, [...CONVERSATIONAL_ROLES]),
       ),
-    )
-    .orderBy(desc(agents.priority))
-    .limit(1);
-  return row ?? null;
+    );
+  return pickFallbackResponder(candidates);
 }
 
 /** Telegram fills a media message's text with a placeholder like "(photo)" or
