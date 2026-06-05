@@ -64,8 +64,30 @@ export const COLOR_THEME_STORAGE_KEY = 'mantle-color-theme';
 export const RANDOM_THEME_STORAGE_KEY = 'mantle-random-theme';
 /** Epoch-ms of the last random reshuffle, so the timer survives reloads. */
 export const RANDOM_THEME_AT_STORAGE_KEY = 'mantle-random-theme-at';
-/** How often random-theme mode reshuffles: every 12 hours. */
-export const RANDOM_THEME_INTERVAL_MS = 12 * 60 * 60 * 1000;
+/** Chosen reshuffle cadence, in ms (one of RANDOM_THEME_INTERVALS). */
+export const RANDOM_THEME_INTERVAL_STORAGE_KEY = 'mantle-random-theme-interval';
+
+const HOUR_MS = 60 * 60 * 1000;
+
+/** Selectable reshuffle cadences for random-theme mode (the dice menu). */
+export const RANDOM_THEME_INTERVALS: ReadonlyArray<{ ms: number; label: string }> = [
+  { ms: HOUR_MS, label: 'Every hour' },
+  { ms: 6 * HOUR_MS, label: 'Every 6 hours' },
+  { ms: 12 * HOUR_MS, label: 'Every 12 hours' },
+  { ms: 24 * HOUR_MS, label: 'Every day' },
+  { ms: 7 * 24 * HOUR_MS, label: 'Every week' },
+];
+
+/** Default cadence (12 hours) — used when nothing valid is stored. */
+export const RANDOM_THEME_INTERVAL_MS = 12 * HOUR_MS;
+
+/** Coerce a stored interval string to a known cadence, else the default. */
+export function coerceRandomInterval(raw: string | null): number {
+  const n = raw ? Number(raw) : NaN;
+  return Number.isFinite(n) && RANDOM_THEME_INTERVALS.some((i) => i.ms === n)
+    ? n
+    : RANDOM_THEME_INTERVAL_MS;
+}
 
 /**
  * Pick a random color-theme id, avoiding `exclude` (the current one) so a
