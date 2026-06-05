@@ -1,10 +1,13 @@
 # Comms channels — decouple transport from agent `role`
 
-> **Status: PLANNED design doc — handover for a build session.** Not yet built.
-> This doc is self-contained: it maps the current coupling (with file refs), the
-> target architecture, a concrete schema + migration, the runtime changes, the
-> Studio surface, and a phased build path. A fresh session should be able to
-> build from this without re-discovering anything.
+> **Status: BUILDING.** Phases 1–2 shipped (v0.19.4-alpha+): the generic
+> `channels` table, token re-seal backfill + dual-write (Phase 1), and the
+> channel-driven poller registry + channel-based inbound dispatch with the
+> `role='responder'` fallback removed (Phase 2). Phases 3–6 (reflector +
+> web-default decouple, cleanup migration, Studio surface, Discord/Slack) per
+> §10 below. The current-state map (§2) describes the pre-refactor baseline; the
+> §12 decisions are resolved inline as each phase lands (1: extension, not fold;
+> 2: unlinked bots left channel-less).
 
 ## 0. TL;DR for the builder
 

@@ -25,6 +25,7 @@ import {
   db,
   agents,
   assistantMessages,
+  channels,
   nodes,
   telegramMessages,
   telegramChats,
@@ -142,23 +143,37 @@ function startTyping(account: TelegramAccount, chatId: string): () => void {
   };
 }
 
-/** Fetch the active responder agent for a chat.
+/** Conversational roles eligible for the role-agnostic fallback below. NOT a
+ *  transport gate (that's the channel now, docs/comms-channels.md) — just the
+ *  set of agents that can hold a chat at all (extractor/summarizer/reflector
+ *  are background workers, never a chat surface). Phase 3 demotes `role` to a
+ *  loose hint; this keeps the fallback from picking a worker agent. */
+const CONVERSATIONAL_ROLES: ('assistant' | 'responder' | 'custom')[] = [
+  'assistant',
+  'responder',
+  'custom',
+];
+
+/** Fetch the active agent for an inbound chat message.
  *
- *  Resolution order:
- *    1. If the chat has `responder_agent_id` set AND that agent is enabled
- *       AND its role is responder/assistant/custom, use it. (Custom because
- *       a user may have pinned a one-off agent to a single chat.)
- *    2. Otherwise fall back to the highest-priority enabled responder
- *       (the global default).
+ *  Resolution order (channel-based, role-decoupled — docs/comms-channels.md §6):
+ *    1. Per-chat override (`telegram_chats.responder_agent_id`) — most specific.
+ *    2. The inbound **channel's** `agent_id` — the agent this transport is
+ *       attached to. This is the normal path: an enabled channel always carries
+ *       an agent.
+ *    3. Transition fallback: the account's legacy `responder_agent_id` (set for
+ *       linked-but-not-yet-channelled bots during the dual-read window).
+ *    4. Last resort: highest-priority enabled conversational agent — covers a
+ *       channel-less/legacy account so an inbound is never silently dropped.
+ *       No `role='responder'` privileging (that gate is gone).
  */
 async function resolveResponderAgent(
   ownerId: string,
   overrideAgentId: string | null,
+  channelAgentId?: string | null,
   accountResponderId?: string | null,
 ): Promise<Agent | null> {
-  // Precedence: per-chat override (most specific) → the bot's owning responder
-  // → global highest-priority enabled responder (legacy / unlinked bots).
-  for (const pinnedId of [overrideAgentId, accountResponderId]) {
+  for (const pinnedId of [overrideAgentId, channelAgentId, accountResponderId]) {
     if (!pinnedId) continue;
     const [pinned] = await db
       .select()
@@ -166,12 +181,18 @@ async function resolveResponderAgent(
       .where(and(eq(agents.id, pinnedId), eq(agents.ownerId, ownerId), eq(agents.enabled, true)))
       .limit(1);
     if (pinned) return pinned;
-    // Pinned agent disabled/missing → fall through to the next candidate.
+    // Pinned/bound agent disabled or missing → fall through to the next candidate.
   }
   const [row] = await db
     .select()
     .from(agents)
-    .where(and(eq(agents.ownerId, ownerId), eq(agents.role, 'responder'), eq(agents.enabled, true)))
+    .where(
+      and(
+        eq(agents.ownerId, ownerId),
+        eq(agents.enabled, true),
+        inArray(agents.role, CONVERSATIONAL_ROLES),
+      ),
+    )
     .orderBy(desc(agents.priority))
     .limit(1);
   return row ?? null;
@@ -233,12 +254,16 @@ async function handleMessage(messageId: string): Promise<void> {
       fromName: telegramMessages.fromName,
       accountId: telegramMessages.accountId,
       responderAgentId: telegramChats.responderAgentId,
+      channelAgentId: channels.agentId,
       accountResponderId: telegramAccounts.responderAgentId,
       attachments: telegramMessages.attachments,
     })
     .from(telegramMessages)
     .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
     .innerJoin(telegramAccounts, eq(telegramMessages.accountId, telegramAccounts.id))
+    // Left join — a legacy account may not have a channel yet during the
+    // dual-read transition; resolveResponderAgent falls back accordingly.
+    .leftJoin(channels, eq(telegramAccounts.channelId, channels.id))
     .where(eq(telegramMessages.id, messageId))
     .limit(1);
 
@@ -464,7 +489,12 @@ async function handleMessage(messageId: string): Promise<void> {
   // Resolve the responder + key BEFORE opening a trace. Failure modes here
   // (no agent, no key) don't generate traces — there's nothing useful to
   // record about "the system was misconfigured."
-  const agent = await resolveResponderAgent(USER_ID!, row.responderAgentId, row.accountResponderId);
+  const agent = await resolveResponderAgent(
+    USER_ID!,
+    row.responderAgentId,
+    row.channelAgentId,
+    row.accountResponderId,
+  );
   if (!agent) {
     console.error(
       `[agent] no enabled responder agent — skipping ${messageId}. Create one at /settings/agents.`,

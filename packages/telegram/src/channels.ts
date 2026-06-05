@@ -121,14 +121,24 @@ export async function disableTelegramChannel(ownerId: string, agentId: string): 
  * token and re-seal it into a fresh channel bound to that agent. Idempotent and
  * cheap — skips accounts already linked. Returns the number of channels created.
  *
- * Runs at agent boot (the process has MANTLE_MASTER_KEY); the SQL migration
- * can't do this because AES-GCM re-seal needs app crypto.
+ * Runs at agent boot AND at poller startup (both processes have
+ * MANTLE_MASTER_KEY); the SQL migration can't do this because AES-GCM re-seal
+ * needs app crypto. Running it at poller startup too closes the deploy race
+ * where the channel-gated poller would otherwise see zero channels until the
+ * agent's backfill lands.
+ *
+ * `ownerId` optional: omit to reconcile every owner's accounts (the poller is
+ * owner-agnostic); pass it to scope to one owner (the agent's single owner).
  */
-export async function backfillTelegramChannels(ownerId: string): Promise<number> {
+export async function backfillTelegramChannels(ownerId?: string): Promise<number> {
   const accounts = await db
     .select()
     .from(telegramAccounts)
-    .where(and(eq(telegramAccounts.userId, ownerId), isNull(telegramAccounts.channelId)));
+    .where(
+      ownerId
+        ? and(eq(telegramAccounts.userId, ownerId), isNull(telegramAccounts.channelId))
+        : isNull(telegramAccounts.channelId),
+    );
 
   let created = 0;
   for (const account of accounts) {
@@ -146,7 +156,7 @@ export async function backfillTelegramChannels(ownerId: string): Promise<number>
       continue;
     }
     await upsertTelegramChannel({
-      ownerId,
+      ownerId: account.userId,
       agentId: account.responderAgentId,
       accountId: account.id,
       botUsername: account.botUsername,
