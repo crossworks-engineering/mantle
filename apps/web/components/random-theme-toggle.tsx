@@ -27,7 +27,7 @@ const OFF = 'off';
  * timer lives in ColorThemeProvider.
  */
 export function RandomThemeToggle() {
-  const { randomTheme, setRandomTheme, intervalMs, setIntervalMs, shuffleNow } =
+  const { colorTheme, randomTheme, setRandomTheme, intervalMs, setIntervalMs, shuffleNow } =
     useColorTheme();
 
   const value = randomTheme ? String(intervalMs) : OFF;
@@ -43,39 +43,47 @@ export function RandomThemeToggle() {
   };
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Random theme"
-          aria-pressed={randomTheme}
-          title={randomTheme ? 'Random theme: on' : 'Random theme: off'}
-          className={cn(
-            'size-8 rounded-full transition-colors',
-            randomTheme
-              ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-              : 'bg-foreground/10 hover:bg-foreground/15',
-          )}
-        >
-          <Dices className={cn('transition-transform', randomTheme && 'rotate-12')} />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
-        <DropdownMenuLabel>Random theme</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={value} onValueChange={onValueChange}>
-          <DropdownMenuRadioItem value={OFF}>Off</DropdownMenuRadioItem>
-          {RANDOM_THEME_INTERVALS.map((opt) => (
-            <DropdownMenuRadioItem key={opt.ms} value={String(opt.ms)}>
-              {opt.label}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={shuffleNow}>
-          <Sparkles className="size-4" /> Surprise me
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <>
+      <span
+        className="hidden select-none font-mono text-xs lowercase text-muted-foreground/60 sm:inline"
+        title="Current theme"
+      >
+        {colorTheme}
+      </span>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Random theme"
+            aria-pressed={randomTheme}
+            title={randomTheme ? 'Random theme: on' : 'Random theme: off'}
+            className={cn(
+              'size-8 rounded-full transition-colors',
+              randomTheme
+                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                : 'bg-foreground/10 hover:bg-foreground/15',
+            )}
+          >
+            <Dices className={cn('transition-transform', randomTheme && 'rotate-12')} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuLabel>Random theme</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={value} onValueChange={onValueChange}>
+            <DropdownMenuRadioItem value={OFF}>Off</DropdownMenuRadioItem>
+            {RANDOM_THEME_INTERVALS.map((opt) => (
+              <DropdownMenuRadioItem key={opt.ms} value={String(opt.ms)}>
+                {opt.label}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={shuffleNow}>
+            <Sparkles className="size-4" /> Surprise me
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </>
   );
 }
