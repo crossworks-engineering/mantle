@@ -561,6 +561,13 @@
       "when": 1781654400000,
       "tag": "0079_prompt_versions",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1781740800000,
+      "tag": "0080_tool_groups",
+      "breakpoints": true
     }
   ]
 }

@@ -231,6 +231,11 @@ export const agents = pgTable(
     /** Slugs of `skills` rows attached to this agent. Instructions are
      *  always-loaded into the system prompt (v1 activation model). */
     skillSlugs: text('skill_slugs').array().default(sql`'{}'::text[]`).notNull(),
+    /** Slugs of `tool_groups` rows granted to this agent — named tool bundles.
+     *  Phase 0: dormant (seeded, not yet expanded into the effective tool set).
+     *  Phase 1 unions the expanded group tools with `tool_slugs`. See
+     *  docs/tools-and-skills.md. */
+    toolGroupSlugs: text('tool_group_slugs').array().default(sql`'{}'::text[]`).notNull(),
     memoryConfig: jsonb('memory_config').$type<AgentMemoryConfig>().default(sql`'{}'::jsonb`).notNull(),
     params: jsonb('params').$type<AgentParams>().default(sql`'{}'::jsonb`).notNull(),
     /** Reflector appends notes here. */

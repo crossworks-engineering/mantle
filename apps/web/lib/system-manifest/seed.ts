@@ -20,15 +20,17 @@
  */
 
 import { and, eq, inArray } from 'drizzle-orm';
-import { db, agents, skills, apiKeys, type AgentMemoryConfig, type AgentParams } from '@mantle/db';
+import { db, agents, skills, toolGroups, apiKeys, type AgentMemoryConfig, type AgentParams } from '@mantle/db';
 import { seedBuiltinTools } from '@mantle/tools';
 import {
   MANIFEST_AGENTS,
   MANIFEST_SKILLS,
+  MANIFEST_TOOL_GROUPS,
   PERSONA_SLUG,
   resolveManifestToolSlugs,
   type ManifestAgent,
   type ManifestSkill,
+  type ManifestToolGroup,
 } from './manifest';
 
 export type ApplyMode = 'gap-fill' | 'overwrite';
@@ -93,6 +95,40 @@ async function upsertSkill(ownerId: string, def: ManifestSkill, mode: ApplyMode)
   });
 }
 
+/** Seed a tool group row. Capability-only bundle (docs/tools-and-skills.md).
+ *  Like skills: gap-fill leaves an existing (operator-edited) group untouched;
+ *  overwrite upserts to the canonical manifest membership. */
+async function upsertToolGroup(ownerId: string, def: ManifestToolGroup, mode: ApplyMode): Promise<void> {
+  const [existing] = await db
+    .select({ id: toolGroups.id })
+    .from(toolGroups)
+    .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, def.slug)))
+    .limit(1);
+  if (existing) {
+    if (mode === 'overwrite') {
+      await db
+        .update(toolGroups)
+        .set({
+          name: def.name,
+          description: def.description,
+          toolSlugs: def.toolSlugs,
+          enabled: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(toolGroups.id, existing.id));
+    }
+    return;
+  }
+  await db.insert(toolGroups).values({
+    ownerId,
+    slug: def.slug,
+    name: def.name,
+    description: def.description,
+    toolSlugs: def.toolSlugs,
+    enabled: true,
+  });
+}
+
 async function upsertAgent(
   ownerId: string,
   def: ManifestAgent,
@@ -101,8 +137,14 @@ async function upsertAgent(
 ): Promise<void> {
   const model = (def.envModelVar ? process.env[def.envModelVar] : undefined) || def.model;
   const toolSlugs = resolveManifestToolSlugs(def);
+  const groupSlugs = def.toolGroupSlugs ?? [];
   const [existing] = await db
-    .select({ id: agents.id, toolSlugs: agents.toolSlugs, skillSlugs: agents.skillSlugs })
+    .select({
+      id: agents.id,
+      toolSlugs: agents.toolSlugs,
+      skillSlugs: agents.skillSlugs,
+      toolGroupSlugs: agents.toolGroupSlugs,
+    })
     .from(agents)
     .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, def.slug)))
     .limit(1);
@@ -120,6 +162,7 @@ async function upsertAgent(
       systemPrompt: def.systemPrompt ?? '',
       toolSlugs,
       skillSlugs: def.skillSlugs,
+      toolGroupSlugs: groupSlugs,
       params: def.params as AgentParams,
       memoryConfig: (def.memoryConfig ?? {}) as AgentMemoryConfig,
       priority: def.priority,
@@ -140,6 +183,7 @@ async function upsertAgent(
         systemPrompt: def.systemPrompt ?? '',
         toolSlugs,
         skillSlugs: def.skillSlugs,
+        toolGroupSlugs: groupSlugs,
         params: def.params as AgentParams,
         memoryConfig: (def.memoryConfig ?? {}) as AgentMemoryConfig,
         enabled: true,
@@ -151,8 +195,10 @@ async function upsertAgent(
 
   // gap-fill: additive only — never touch prompt/model/params.
   const mergedSkills = union(existing.skillSlugs ?? [], def.skillSlugs);
+  const mergedGroups = union(existing.toolGroupSlugs ?? [], groupSlugs);
   const set: Record<string, unknown> = { enabled: true, updatedAt: new Date() };
   if (mergedSkills.length !== (existing.skillSlugs ?? []).length) set.skillSlugs = mergedSkills;
+  if (mergedGroups.length !== (existing.toolGroupSlugs ?? []).length) set.toolGroupSlugs = mergedGroups;
   if (!(existing.toolSlugs ?? []).length) set.toolSlugs = toolSlugs;
   await db.update(agents).set(set).where(eq(agents.id, existing.id));
 }
@@ -212,6 +258,10 @@ export async function applyManifest(
 
   // 1. Builtin tool rows must exist for the slugs the skills/agents reference.
   await seedBuiltinTools(ownerId);
+
+  // 1b. Tool groups (capability bundles). Seeded for every owner; dormant in
+  //     Phase 0 (no agent grants them yet). See docs/tools-and-skills.md.
+  for (const def of MANIFEST_TOOL_GROUPS) await upsertToolGroup(ownerId, def, mode);
 
   // 2. Skills (filtered by onlySkills).
   const skillDefs = opts.onlySkills

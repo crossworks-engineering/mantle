@@ -9,13 +9,14 @@
  * the corpus audit) — green when every vital link resolves.
  */
 
-import { db, agents, skills, tools, eq, and, type AgentMemoryConfig } from '@mantle/db';
+import { db, agents, skills, toolGroups, tools, eq, and, type AgentMemoryConfig } from '@mantle/db';
 import { listAiWorkers } from '@/lib/ai-workers';
 import { resolveAssistAgentSlug } from '@/lib/assist-agent';
 import type { SystemCheck, SystemReport, SystemSample } from '@/lib/integrity/types';
 import {
   MANIFEST_AGENTS,
   MANIFEST_SKILLS,
+  MANIFEST_TOOL_GROUPS,
   MANIFEST_WORKERS,
   DELEGATE_SLUGS,
   PERSONA_SLUG,
@@ -28,7 +29,7 @@ function delegateTo(memoryConfig: unknown): string[] {
 }
 
 export async function checkSystemIntegrity(ownerId: string): Promise<SystemReport> {
-  const [agentRows, skillRows, toolRows, workers] = await Promise.all([
+  const [agentRows, skillRows, toolGroupRows, toolRows, workers] = await Promise.all([
     db
       .select({
         slug: agents.slug,
@@ -37,6 +38,7 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
         priority: agents.priority,
         toolSlugs: agents.toolSlugs,
         skillSlugs: agents.skillSlugs,
+        toolGroupSlugs: agents.toolGroupSlugs,
         memoryConfig: agents.memoryConfig,
       })
       .from(agents)
@@ -45,6 +47,10 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
       .select({ slug: skills.slug, enabled: skills.enabled, toolSlugs: skills.toolSlugs })
       .from(skills)
       .where(eq(skills.ownerId, ownerId)),
+    db
+      .select({ slug: toolGroups.slug, enabled: toolGroups.enabled, toolSlugs: toolGroups.toolSlugs })
+      .from(toolGroups)
+      .where(eq(toolGroups.ownerId, ownerId)),
     db
       .select({ slug: tools.slug })
       .from(tools)
@@ -56,6 +62,8 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
   const enabledToolSlugs = new Set(toolRows.map((t) => t.slug));
   const enabledSkillSlugs = new Set(skillRows.filter((s) => s.enabled).map((s) => s.slug));
   const skillBySlug = new Map(skillRows.map((s) => [s.slug, s] as const));
+  const enabledToolGroupSlugs = new Set(toolGroupRows.filter((g) => g.enabled).map((g) => g.slug));
+  const toolGroupBySlug = new Map(toolGroupRows.map((g) => [g.slug, g] as const));
 
   const checks: SystemCheck[] = [];
 
@@ -222,6 +230,47 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
       ok: samples.length === 0,
       detail: samples.length === 0 ? 'every skill’s bundled tools resolve' : `${samples.length} skill tool(s) unresolved`,
       samples,
+    });
+  }
+
+  // 7b. Tool group → tool links — manifest groups' bundled tools must resolve.
+  {
+    const samples: SystemSample[] = [];
+    for (const g of MANIFEST_TOOL_GROUPS) {
+      const row = toolGroupBySlug.get(g.slug);
+      if (!row) {
+        samples.push({ id: g.slug, detail: `tool group '${g.slug}' is not seeded` });
+        continue;
+      }
+      for (const t of row.toolSlugs ?? []) {
+        if (!enabledToolSlugs.has(t)) samples.push({ id: `${g.slug}:${t}`, detail: `tool group '${g.slug}' → tool '${t}' has no enabled row` });
+      }
+    }
+    checks.push({
+      key: 'group-tools',
+      label: 'Tool group ↔ tool links',
+      severity: 'medium',
+      ok: samples.length === 0,
+      detail: samples.length === 0 ? 'every tool group is seeded and its tools resolve' : `${samples.length} tool-group issue(s)`,
+      samples: samples.slice(0, 25),
+    });
+  }
+
+  // 7c. Dangling tool-group references — ANY agent granting a missing/disabled group.
+  {
+    const samples: SystemSample[] = [];
+    for (const a of agentRows) {
+      for (const g of a.toolGroupSlugs ?? []) {
+        if (!enabledToolGroupSlugs.has(g)) samples.push({ id: `${a.slug}:${g}`, detail: `${a.slug} → tool group '${g}' missing or disabled` });
+      }
+    }
+    checks.push({
+      key: 'dangling-groups',
+      label: 'Dangling tool-group references',
+      severity: 'high',
+      ok: samples.length === 0,
+      detail: samples.length === 0 ? 'every agent tool-group grant resolves to an enabled group' : `${samples.length} dangling tool-group ref(s) — the capability silently drops`,
+      samples: samples.slice(0, 25),
     });
   }
 

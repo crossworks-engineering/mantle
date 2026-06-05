@@ -30,6 +30,7 @@ export * from './traces';
 export * from './trace-steps';
 export * from './assistant-messages';
 export * from './tools';
+export * from './tool-groups';
 export * from './skills';
 export * from './pending-tool-calls';
 export * from './heartbeats';

@@ -45,6 +45,14 @@ export type ManifestSkill = {
   instructions: string;
 };
 
+export type ManifestToolGroup = {
+  slug: string;
+  name: string;
+  description: string;
+  /** Builtin tool slugs this group confers when granted to an agent. */
+  toolSlugs: string[];
+};
+
 export type ManifestAgent = {
   slug: string;
   name: string;
@@ -64,6 +72,10 @@ export type ManifestAgent = {
   toolSlugs: string[] | 'DEFAULT_ASSISTANT';
   /** Skills that SHOULD be attached to this agent. */
   skillSlugs: string[];
+  /** Tool groups granted to this agent (named bundles). Phase 0: dormant —
+   *  seeded onto the agent but NOT yet expanded into its effective tool set.
+   *  Omitted ⇒ none. See docs/tools-and-skills.md. */
+  toolGroupSlugs?: string[];
   /** Does the persona delegate TO this agent (invoke_agent allowlist)? */
   isDelegate?: boolean;
   /** Binds the /pages or /tables editor "Assist" panel to this agent. */
@@ -140,6 +152,145 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     description: 'How Mantle works + the operating workflow (for the coder agent).',
     toolSlugs: [],
     instructions: SKILL_INSTRUCTIONS['mantle-ops']!,
+  },
+];
+
+// ── Tool groups ──────────────────────────────────────────────────────────────
+//
+// Named, capability-only bundles (docs/tools-and-skills.md). The membership
+// mirrors the `*_TOOLS` clusters that already exist in @mantle/tools — these
+// ARE the seed bundles. Phase 0 seeds them; nothing grants them yet (every
+// agent's toolGroupSlugs is empty), so the system is unchanged at runtime. The
+// drift-test validates every slug here against KNOWN_TOOL_SLUGS.
+//
+// Per decision 3 (docs/tools-and-skills.md): the `pages`/`tables` groups carry
+// the AUTHORING subsets — destructive `page_delete`/`table_delete` are granted
+// only where intended via the direct-grant escape hatch, never via the group.
+
+export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
+  {
+    slug: 'memory-core',
+    name: 'Memory core',
+    description: 'Search/read the brain — the baseline every responder needs.',
+    toolSlugs: [
+      'search_nodes',
+      'search_chunks',
+      'tree_list',
+      'node_read',
+      'entity_search',
+      'entity_neighbors',
+      'graph_path',
+      'entity_facts',
+      'entity_mentions',
+    ],
+  },
+  {
+    slug: 'files',
+    name: 'Files',
+    description: 'Read source files + folders, and create files.',
+    toolSlugs: ['folder_list', 'folder_get_by_path', 'file_list', 'file_get', 'file_read', 'file_create'],
+  },
+  {
+    slug: 'notes',
+    name: 'Notes',
+    description: 'Create/list/read notes.',
+    toolSlugs: ['note_create', 'note_list', 'note_get'],
+  },
+  {
+    slug: 'events',
+    name: 'Calendar',
+    description: 'Calendar event CRUD.',
+    toolSlugs: ['event_list', 'event_get', 'event_create', 'event_update', 'event_delete'],
+  },
+  {
+    slug: 'todos',
+    name: 'To-dos',
+    description: 'To-do CRUD.',
+    toolSlugs: ['todo_list', 'todo_get', 'todo_create', 'todo_update', 'todo_delete'],
+  },
+  {
+    slug: 'pages',
+    name: 'Pages toolkit',
+    description: 'Author + edit rich pages (authoring subset; no destructive delete).',
+    toolSlugs: [...PAGE_AUTHORING_TOOL_SLUGS],
+  },
+  {
+    slug: 'tables',
+    name: 'Tables toolkit',
+    description: 'Build + edit typed grids (authoring subset; no destructive delete).',
+    toolSlugs: [...TABLE_AUTHORING_TOOL_SLUGS],
+  },
+  {
+    slug: 'contacts',
+    name: 'Contacts',
+    description: 'The people/org index — also the email allowlist (docs/contacts.md).',
+    toolSlugs: ['contact_find', 'contact_list', 'contact_get', 'contact_create', 'contact_update', 'contact_delete'],
+  },
+  {
+    slug: 'lifelog',
+    name: 'Life logs',
+    description: "First-person self-knowledge — the identity context's source.",
+    toolSlugs: ['lifelog_create', 'lifelog_list', 'lifelog_get', 'lifelog_update', 'lifelog_delete'],
+  },
+  {
+    slug: 'recall',
+    name: 'Recall',
+    description: 'Time-windowed replay of past conversations.',
+    toolSlugs: ['find_window', 'recall_window'],
+  },
+  {
+    slug: 'research',
+    name: 'Web research',
+    description: 'Live web search (Perplexity Sonar via OpenRouter).',
+    toolSlugs: ['web_search'],
+  },
+  {
+    slug: 'email',
+    name: 'Email',
+    description: 'Send + read email (gated by the contacts allowlist).',
+    toolSlugs: ['email_send', 'email_page', 'email_list', 'email_get'],
+  },
+  {
+    slug: 'persona',
+    name: 'Persona',
+    description: 'Record durable style/relationship calibrations.',
+    toolSlugs: ['update_persona'],
+  },
+  {
+    slug: 'media-workers',
+    name: 'Media workers',
+    description: 'Delegate to TTS / vision / summarizer / image workers.',
+    toolSlugs: ['synthesize_speech', 'extract_from_image', 'summarize_text', 'generate_image'],
+  },
+  {
+    slug: 'delegation',
+    name: 'Delegation',
+    description: 'Invoke specialist sub-agents.',
+    toolSlugs: ['invoke_agent'],
+  },
+  {
+    slug: 'messaging',
+    name: 'Messaging',
+    description: 'Send Telegram messages from the responder.',
+    toolSlugs: ['telegram_send'],
+  },
+  {
+    slug: 'tool-results',
+    name: 'Tool results',
+    description: 'Dereference spilled (oversized) tool results — the loop offers this anyway.',
+    toolSlugs: ['read_result'],
+  },
+  {
+    slug: 'terminal',
+    name: 'Terminal',
+    description: 'Unrestricted shell — coder/ops only.',
+    toolSlugs: ['run_terminal'],
+  },
+  {
+    slug: 'federation',
+    name: 'Federation',
+    description: "Query other people's Mantles for data they've shared (docs/federation.md).",
+    toolSlugs: ['peer_list', 'peer_query', 'peer_node_get'],
   },
 ];
 
@@ -300,8 +451,14 @@ export function resolveManifestToolSlugs(agent: ManifestAgent): string[] {
     : agent.toolSlugs;
 }
 
+/** Slugs of every manifest tool group (the set an agent may reference). */
+export const KNOWN_TOOL_GROUP_SLUGS: ReadonlySet<string> = new Set<string>(
+  MANIFEST_TOOL_GROUPS.map((g) => g.slug),
+);
+
 export const SYSTEM_MANIFEST = {
   skills: MANIFEST_SKILLS,
+  toolGroups: MANIFEST_TOOL_GROUPS,
   agents: MANIFEST_AGENTS,
   workers: MANIFEST_WORKERS,
 } as const;

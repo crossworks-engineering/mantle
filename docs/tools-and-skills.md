@@ -1,9 +1,8 @@
 # Tools & Skills — capability vs. teaching, as one source of truth
 
-> **Status: DESIGN** (2026-06-05). Proposed reshape of how agents acquire tools.
-> Pins the model + a behavior-safe migration before any code. Companion to
-> [docs/agent-studio.md](agent-studio.md) and
-> [docs/system-integrity.md](system-integrity.md).
+> **Status: P0 SHIPPED** (2026-06-05). Phase 0 (dormant substrate) is live;
+> Phases 1–4 remain DESIGN. Companion to [docs/agent-studio.md](agent-studio.md)
+> and [docs/system-integrity.md](system-integrity.md).
 
 ## The problem
 
@@ -124,12 +123,19 @@ Each phase keeps `checkSystemIntegrity` green and the effective tool set
 unchanged unless explicitly noted. The runtime already unions, which is what
 makes the cutover a no-op.
 
-### Phase 0 — Introduce the substrate (additive, dormant)
-- Migration: add `tool_groups` table + `agents.tool_group_slugs` (default `{}`).
-- Manifest: add `MANIFEST_TOOL_GROUPS` from the `*_TOOLS` arrays; `applyManifest`
-  seeds group rows (gap-fill, like skills). Nothing references them yet.
-- Drift-test + integrity gain group awareness (dangling group ref; group→tool
-  resolution) but no agent uses groups → all green.
+### Phase 0 — Introduce the substrate (additive, dormant) — ✅ SHIPPED
+- ✅ Migration `0080_tool_groups`: `tool_groups` table + `agents.tool_group_slugs`
+  (default `{}`). Drizzle schema: `packages/db/src/schema/tool-groups.ts`.
+- ✅ Manifest: `MANIFEST_TOOL_GROUPS` (19 groups mirroring the `*_TOOLS` clusters)
+  + `KNOWN_TOOL_GROUP_SLUGS` + `ManifestAgent.toolGroupSlugs?`. `applyManifest`
+  seeds group rows (gap-fill/overwrite, like skills) and wires the agent grant —
+  every agent's grant is `[]` today, so the system is unchanged at runtime.
+- ✅ Drift-test (`manifest.test.ts`): groups bundle only known tools, unique +
+  non-empty; agents reference only known groups. Integrity (`integrity.ts`):
+  `group-tools` (every group seeded + tools resolve) + `dangling-groups` (agent
+  grants resolve). 20 tests green; no agent uses groups → all checks green.
+- The runtime `effectiveToolSlugs` is **untouched** — expanding groups into the
+  effective set is the Phase 1 flip.
 
 ### Phase 1 — Collapse the skill arm (behavior-identical)
 - For each tool-bearing skill (`page_editing`, `rich_writing`, `table_authoring`),

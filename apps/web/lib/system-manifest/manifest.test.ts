@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   MANIFEST_AGENTS,
   MANIFEST_SKILLS,
+  MANIFEST_TOOL_GROUPS,
   MANIFEST_WORKERS,
   KNOWN_TOOL_SLUGS,
+  KNOWN_TOOL_GROUP_SLUGS,
   DELEGATE_SLUGS,
   PERSONA_SLUG,
   ASSIST_SURFACE_DEFAULTS,
@@ -36,7 +38,17 @@ describe('system manifest integrity', () => {
     }
   });
 
-  it('every agent grants only known tools and references only manifest skills', () => {
+  it('every tool group bundles only known builtin tools, with unique slugs', () => {
+    const groupSlugs = MANIFEST_TOOL_GROUPS.map((g) => g.slug);
+    expect(new Set(groupSlugs).size, 'duplicate tool-group slug').toBe(groupSlugs.length);
+    for (const group of MANIFEST_TOOL_GROUPS) {
+      const unknown = group.toolSlugs.filter((t) => !KNOWN_TOOL_SLUGS.has(t));
+      expect(unknown, `tool group '${group.slug}' references unknown tools`).toEqual([]);
+      expect(group.toolSlugs.length, `tool group '${group.slug}' is empty`).toBeGreaterThan(0);
+    }
+  });
+
+  it('every agent grants only known tools/groups and references only manifest skills', () => {
     for (const agent of MANIFEST_AGENTS) {
       const tools = resolveManifestToolSlugs(agent);
       const unknownTools = tools.filter((t) => !KNOWN_TOOL_SLUGS.has(t));
@@ -44,6 +56,9 @@ describe('system manifest integrity', () => {
 
       const unknownSkills = agent.skillSlugs.filter((s) => !skillSlugs.has(s));
       expect(unknownSkills, `agent '${agent.slug}' references unknown skills`).toEqual([]);
+
+      const unknownGroups = (agent.toolGroupSlugs ?? []).filter((g) => !KNOWN_TOOL_GROUP_SLUGS.has(g));
+      expect(unknownGroups, `agent '${agent.slug}' references unknown tool groups`).toEqual([]);
     }
   });
 
