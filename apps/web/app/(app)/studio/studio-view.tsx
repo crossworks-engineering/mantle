@@ -96,7 +96,6 @@ function AgentInspector({
       </div>
 
       <StructureEditor
-        key={agent.id}
         agent={agent}
         allSkills={allSkills}
         allAgents={allAgents}
@@ -126,7 +125,6 @@ function AgentInspector({
             <div className="flex flex-col gap-1">
               <p className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/80">System prompt</p>
               <ProseEditor
-                key={`${agent.id}:system_prompt`}
                 entityType="agent"
                 entityId={agent.id}
                 field="system_prompt"
@@ -150,7 +148,7 @@ function AgentInspector({
         )}
       </Section>
 
-      <SandboxPanel key={agent.id} agentId={agent.id} agentName={agent.name} />
+      <SandboxPanel agentId={agent.id} agentName={agent.name} />
     </div>
   );
 }
@@ -185,7 +183,6 @@ function SkillInspector({ skill, onSaved }: { skill: StudioSkillDetail; onSaved:
       )}
       <Section title="Instructions">
         <ProseEditor
-          key={`${skill.id}:instructions`}
           entityType="skill"
           entityId={skill.id}
           field="instructions"
@@ -214,7 +211,6 @@ function WorkerInspector({ worker, onSaved }: { worker: StudioWorkerDetail; onSa
       {worker.systemPrompt != null && (
         <Section title="System prompt">
           <ProseEditor
-            key={`${worker.id}:system_prompt`}
             entityType="worker"
             entityId={worker.id}
             field="system_prompt"
@@ -226,7 +222,6 @@ function WorkerInspector({ worker, onSaved }: { worker: StudioWorkerDetail; onSa
       {worker.extractionPrompt != null && (
         <Section title="Extraction prompt">
           <ProseEditor
-            key={`${worker.id}:extraction_prompt`}
             entityType="worker"
             entityId={worker.id}
             field="extraction_prompt"
@@ -393,7 +388,7 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
           </div>
           <aside className="min-h-0 overflow-y-auto scrollbar-thin p-4">
             {selectedWorker ? (
-              <WorkerInspector worker={selectedWorker} onSaved={onSaved} />
+              <WorkerInspector key={selectedWorker.id} worker={selectedWorker} onSaved={onSaved} />
             ) : (
               <p className="text-[13px] text-muted-foreground">Select a worker to see its model + prose.</p>
             )}
@@ -419,10 +414,16 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
                 >
                   <ChevronLeft className="size-3.5" aria-hidden /> {focusedAgent?.name ?? 'agent'}
                 </button>
-                <SkillInspector skill={inspectedSkillDetail} onSaved={onSaved} />
+                <SkillInspector key={inspectedSkillDetail.slug} skill={inspectedSkillDetail} onSaved={onSaved} />
               </>
             ) : focusedAgent ? (
+              // Key the whole inspector by agent id: a stable key per agent
+              // remounts it on agent switch (resets edit/sandbox state) but NOT
+              // on router.refresh of the same agent (preserves UI, updates data).
+              // Must be the SOLE keyed node here — keyed children mixed with
+              // unkeyed siblings inside reconcile wrong and duplicate.
               <AgentInspector
+                key={focusedAgent.id}
                 agent={focusedAgent}
                 allSkills={graph.skills}
                 allAgents={graph.agents}
