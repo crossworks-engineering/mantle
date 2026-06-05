@@ -936,7 +936,14 @@ export function AgentsClient({
         </div>
 
         {/* ── Right: editor ────────────────────────────────────────── */}
-        <div className="md:h-full md:min-h-0 md:overflow-y-auto md:scrollbar-thin">
+        {/* `relative` makes this pane the containing block for the form's
+            absolutely-positioned descendants — notably the Radix Switch/Checkbox
+            hidden "bubble inputs" on the many tool/skill toggles. Without it
+            their offsetParent resolves to the fixed `<main>`, so they escape this
+            pane's overflow-y-auto clip and inflate main's scroll area → a second
+            scrollbar alongside this one. Keeping them contained leaves a single
+            scroller (this pane). */}
+        <div className="relative md:h-full md:min-h-0 md:overflow-y-auto md:scrollbar-thin">
           {!editing ? (
             <div className="flex h-full items-center justify-center p-10 text-center text-sm text-muted-foreground">
               Select an agent to edit, or create a new one.
