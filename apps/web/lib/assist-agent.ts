@@ -16,14 +16,14 @@
 
 import { db, agents, and, eq } from '@mantle/db';
 import { loadProfilePreferences } from '@mantle/content';
+import { ASSIST_SURFACE_DEFAULTS } from '@/lib/system-manifest/manifest';
 
 export type AssistSurface = 'pages' | 'tables';
 
-/** The specialist slug each surface defaults to (what onboarding seeds). */
-export const DEFAULT_ASSIST_SLUG: Record<AssistSurface, string> = {
-  pages: 'pages',
-  tables: 'tables',
-};
+/** The specialist slug each surface defaults to — derived from the manifest
+ *  (single source of truth), so adding/renaming an Assist specialist is one
+ *  manifest edit, not a hardcoded list here. */
+export const DEFAULT_ASSIST_SLUG: Record<AssistSurface, string> = ASSIST_SURFACE_DEFAULTS;
 
 /**
  * Returns the slug of the enabled, owned agent the surface's Assist panel should

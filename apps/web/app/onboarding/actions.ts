@@ -20,7 +20,7 @@ import {
   type PersonaGender,
   type PersonaPresetKey,
 } from '@mantle/content';
-import { db, agents, skills, eq, and, inArray, type AgentMemoryConfig } from '@mantle/db';
+import { db, agents, eq, and } from '@mantle/db';
 import { setApiKey, listApiKeys } from '@mantle/api-keys';
 import { resolveEmbeddingConfig, probeEmbeddingRoute } from '@mantle/embeddings';
 import { requireOwner } from '@/lib/auth';
@@ -32,7 +32,7 @@ import {
   type ProvisionResult,
   type SavePersonaInput,
 } from '@/lib/onboarding-provision';
-import { resolveAssistAgentSlug } from '@/lib/assist-agent';
+import { checkSystemIntegrity } from '@/lib/system-manifest';
 import { markOnboarded } from '@/lib/onboarding';
 import { listAiWorkers } from '@/lib/ai-workers';
 
@@ -153,16 +153,9 @@ export async function runSanityChecks(): Promise<SanityCheck[]> {
     });
   }
 
-  // The assistant agent exists + is enabled — plus the linkage that makes it
-  // actually work (tools to act with, the shared behaviour skills).
+  // The assistant agent exists + is enabled (friendly named row).
   const [agent] = await db
-    .select({
-      name: agents.name,
-      enabled: agents.enabled,
-      toolSlugs: agents.toolSlugs,
-      skillSlugs: agents.skillSlugs,
-      memoryConfig: agents.memoryConfig,
-    })
+    .select({ name: agents.name, enabled: agents.enabled })
     .from(agents)
     .where(and(eq(agents.ownerId, user.id), eq(agents.slug, PERSONA_AGENT_SLUG)))
     .limit(1);
@@ -172,96 +165,25 @@ export async function runSanityChecks(): Promise<SanityCheck[]> {
     detail: agent ? `${agent.name} is ready` : 'no assistant agent — add an OpenRouter key',
   });
 
-  // Assistant capability — without tools it can't search/save/delegate; without
-  // the grounding skills it answers from memory instead of the user's data.
-  if (agent) {
-    const nTools = agent.toolSlugs?.length ?? 0;
-    const canDelegate = (agent.toolSlugs ?? []).includes('invoke_agent');
-    const skillSet = new Set(agent.skillSlugs ?? []);
-    const grounded = skillSet.has('tool_grounding') && skillSet.has('voice_reply');
+  // Config integrity — the agent/skill/tool/worker link graph. Reuses the SAME
+  // checker surfaced at /debug/integrity → System, so the wizard and the standing
+  // debug view can never drift (one source of truth). Covers the persona's tools
+  // + grounding skills, the specialists, delegation wiring, agent↔skill/tool
+  // links (dangling refs), the memory workers, and the editor Assist binding.
+  const integrity = await checkSystemIntegrity(user.id);
+  for (const c of integrity.checks) {
     checks.push({
-      label: 'Assistant capabilities',
-      ok: nTools > 0 && canDelegate && grounded,
+      label: c.label,
+      ok: c.ok,
       detail:
-        nTools === 0
-          ? 'NO tools attached — the assistant can’t act yet'
-          : `${nTools} tools · ${canDelegate ? 'can delegate' : 'cannot delegate (no invoke_agent)'} · ${grounded ? 'grounded + voice skills' : 'missing grounding/voice skills'}`,
+        c.ok || !c.samples?.length
+          ? c.detail
+          : `${c.detail} — ${c.samples.map((s) => s.detail).join('; ')}`,
     });
   }
 
-  // Memory workers — the always-on indexing/summarising/reflecting pipeline.
-  const workers = await listAiWorkers(user.id);
-  const enabledKinds = new Set<string>(workers.filter((w) => w.enabled).map((w) => w.kind));
-  const memNeed = ['extractor', 'summarizer', 'reflector', 'document'];
-  const memMissing = memNeed.filter((k) => !enabledKinds.has(k));
-  checks.push({
-    label: 'Memory workers',
-    ok: memMissing.length === 0,
-    detail: memMissing.length
-      ? `missing: ${memMissing.join(', ')}`
-      : 'extractor · summarizer · reflector · document ready',
-  });
-
-  // Specialists + delegation — the agents Saskia hands off to, and whether
-  // they're actually wired into her delegate_to + carry their skills.
-  const SPEC = [
-    { slug: 'pages', label: 'Pages', skill: 'page_editing' },
-    { slug: 'tables', label: 'Ledger', skill: 'table_authoring' },
-    { slug: 'remy', label: 'Remy', skill: null },
-    { slug: 'researcher', label: 'Researcher', skill: null },
-  ] as const;
-  const specRows = await db
-    .select({ slug: agents.slug, enabled: agents.enabled, skillSlugs: agents.skillSlugs })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.ownerId, user.id),
-        inArray(
-          agents.slug,
-          SPEC.map((s) => s.slug),
-        ),
-      ),
-    );
-  const specBySlug = new Map(specRows.map((r) => [r.slug, r] as const));
-  const delegateTo = new Set(
-    ((agent?.memoryConfig as AgentMemoryConfig | null)?.delegate_to ?? []) as string[],
-  );
-  const specProblems: string[] = [];
-  for (const s of SPEC) {
-    const row = specBySlug.get(s.slug);
-    if (!row || !row.enabled) {
-      specProblems.push(`${s.label} missing`);
-      continue;
-    }
-    if (!delegateTo.has(s.slug)) specProblems.push(`${s.label} not delegated`);
-    if (s.skill && !(row.skillSlugs ?? []).includes(s.skill)) {
-      specProblems.push(`${s.label} skill unlinked`);
-    }
-  }
-  checks.push({
-    label: 'Specialists & delegation',
-    ok: specProblems.length === 0,
-    detail: specProblems.length
-      ? specProblems.join(' · ')
-      : 'Pages · Ledger · Remy · Researcher seeded, wired + skilled',
-  });
-
-  // Editor Assist — the /pages and /tables in-editor panels must resolve to an
-  // agent or they 409. Confirms the seed + the configurable binding line up.
-  const [pagesAssist, tablesAssist] = await Promise.all([
-    resolveAssistAgentSlug(user.id, 'pages'),
-    resolveAssistAgentSlug(user.id, 'tables'),
-  ]);
-  checks.push({
-    label: 'Editor assistants (/pages, /tables)',
-    ok: Boolean(pagesAssist) && Boolean(tablesAssist),
-    detail:
-      pagesAssist && tablesAssist
-        ? `pages → ${pagesAssist} · tables → ${tablesAssist}`
-        : `unresolved — ${!pagesAssist ? 'no Pages agent' : ''}${!pagesAssist && !tablesAssist ? ', ' : ''}${!tablesAssist ? 'no Tables agent' : ''}`,
-  });
-
   // Voice & images — only reported when they were enabled (a tts worker exists).
+  const workers = await listAiWorkers(user.id);
   const av = workers.filter((w) => ['tts', 'stt', 'vision', 'image_gen'].includes(w.kind));
   if (av.length > 0) {
     checks.push({

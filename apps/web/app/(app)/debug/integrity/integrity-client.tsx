@@ -25,6 +25,8 @@ import type {
   LandedItem,
   LandedReport,
   LandedState,
+  SystemCheck,
+  SystemReport,
 } from '@/lib/integrity/types';
 
 /** The node types the live view tracks — mirrors `LANDED_TYPES` in landed.ts
@@ -415,13 +417,115 @@ function AuditView() {
   );
 }
 
+// ─── system config integrity ────────────────────────────────────────────────
+
+function SystemRow({ check }: { check: SystemCheck }) {
+  const [open, setOpen] = useState(false);
+  const badgeCls = check.ok
+    ? 'bg-primary/10 text-primary border-primary/30'
+    : check.severity === 'high'
+      ? 'bg-destructive/10 text-destructive border-destructive/30'
+      : 'bg-muted text-foreground border-border';
+  const hasDetail = Boolean(check.detail) || (check.samples?.length ?? 0) > 0;
+  return (
+    <li className="px-3 py-2.5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 text-left"
+        disabled={!hasDetail}
+      >
+        <span className={`inline-flex w-[64px] shrink-0 justify-center rounded-sm border px-1.5 py-0.5 text-[11px] font-semibold tracking-wider ${badgeCls}`}>
+          {check.ok ? 'OK' : `${check.samples?.length ?? '!'}`}
+        </span>
+        <span className="min-w-[200px] text-sm font-medium text-foreground">{check.label}</span>
+        <span className={`rounded-sm border px-1.5 py-0.5 text-[11px] uppercase tracking-wider ${SEVERITY_STYLE[check.severity]}`}>
+          {check.severity}
+        </span>
+        <span className="text-xs text-muted-foreground">— {check.detail}</span>
+      </button>
+      {open && (check.samples?.length ?? 0) > 0 && (
+        <div className="mt-2 space-y-1 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
+          {check.samples!.map((sm) => (
+            <div key={sm.id} className="flex gap-2">
+              <span className="rounded-sm bg-muted px-1 font-mono text-[11px] text-muted-foreground">{sm.id}</span>
+              <span className="text-muted-foreground">{sm.detail}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </li>
+  );
+}
+
+function SystemView() {
+  const toast = useToast();
+  const [running, setRunning] = useState(false);
+  const [report, setReport] = useState<SystemReport | null>(null);
+
+  const run = useCallback(async () => {
+    setRunning(true);
+    try {
+      const res = await fetch('/api/debug/integrity/system');
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
+      const data = (await res.json()) as SystemReport;
+      setReport(data);
+      toast.success(data.problems === 0 ? 'Config clean — every vital link resolves' : `${data.problems} config check(s) failing`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Check failed');
+    } finally {
+      setRunning(false);
+    }
+  }, [toast]);
+
+  // Auto-run on first open — this is a check, not a stream.
+  useEffect(() => {
+    void run();
+  }, [run]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">System config</h2>
+          <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
+            Read-only check of the <strong>agent / skill / tool / worker link graph</strong> against the system
+            manifest. Catches what the runtime hides: an agent referencing a skill or tool with no row (it silently
+            drops), a specialist not wired into the persona&apos;s <code>delegate_to</code>, a missing default worker.
+            <strong> Green</strong> = every vital link resolves.
+          </p>
+        </div>
+        <Button onClick={run} disabled={running}>
+          {running ? 'Checking…' : 'Re-check'}
+        </Button>
+      </div>
+
+      {report && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-card px-4 py-3 text-sm">
+            <span className="font-semibold">{report.problems === 0 ? 'Healthy' : `${report.problems} problem${report.problems === 1 ? '' : 's'}`}</span>
+            <span className="text-muted-foreground">·</span>
+            <span className="text-muted-foreground">{report.checks.filter((c) => c.ok).length}/{report.checks.length} checks passed</span>
+          </div>
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {report.checks.map((c) => (
+              <SystemRow key={c.key} check={c} />
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function IntegrityClient() {
-  const [mode, setMode] = useState<'live' | 'audit'>('live');
+  const [mode, setMode] = useState<'live' | 'audit' | 'system'>('live');
+  const LABELS = { live: 'Live', audit: 'Corpus audit', system: 'System config' } as const;
 
   return (
     <div className="space-y-4">
       <div className="flex gap-1 border-b border-border">
-        {(['live', 'audit'] as const).map((m) => (
+        {(['live', 'audit', 'system'] as const).map((m) => (
           <button
             key={m}
             type="button"
@@ -431,12 +535,12 @@ export function IntegrityClient() {
               (mode === m ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground hover:text-foreground')
             }
           >
-            {m === 'live' ? 'Live' : 'Corpus audit'}
+            {LABELS[m]}
           </button>
         ))}
       </div>
 
-      {mode === 'live' ? <LiveView /> : <AuditView />}
+      {mode === 'live' ? <LiveView /> : mode === 'audit' ? <AuditView /> : <SystemView />}
     </div>
   );
 }

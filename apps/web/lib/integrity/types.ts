@@ -131,3 +131,31 @@ export type AuditReport = {
   checks: AuditCheck[];
   totalViolations: number;
 };
+
+// ─── system config integrity ────────────────────────────────────────────────
+//
+// Read-only check of the agent/skill/tool/worker CONFIG graph against the
+// declarative manifest (apps/web/lib/system-manifest). Catches the silent-drop
+// cases the runtime resolvers hide: an agent referencing a skill/tool that has
+// no row, a specialist not wired into the persona's delegate_to, a default
+// worker missing for a kind. Same severity vocabulary as the corpus audit.
+
+export type SystemSample = { id: string; detail: string };
+
+export type SystemCheck = {
+  key: string;
+  label: string;
+  severity: AuditSeverity;
+  ok: boolean;
+  /** Human-readable state — what's right, or what's broken + why it matters. */
+  detail: string;
+  /** Offending specifics (dangling slugs, unlinked skills, missing agents). */
+  samples?: SystemSample[];
+};
+
+export type SystemReport = {
+  generatedAt: string;
+  checks: SystemCheck[];
+  /** Number of checks that are not ok. */
+  problems: number;
+};

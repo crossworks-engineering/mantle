@@ -1,0 +1,263 @@
+/**
+ * Live config-integrity checker — diffs the real agent/skill/tool/worker rows
+ * against the manifest and validates referential integrity, catching the
+ * silent-drop cases the runtime resolvers hide (resolveAgentSkills /
+ * resolveAgentTools just omit a missing/disabled link with no error).
+ *
+ * Read-only. Surfaced in /debug/integrity (System tab) and reused by the
+ * onboarding Check step. Returns severity-tagged findings (same vocabulary as
+ * the corpus audit) — green when every vital link resolves.
+ */
+
+import { db, agents, skills, tools, eq, and, type AgentMemoryConfig } from '@mantle/db';
+import { listAiWorkers } from '@/lib/ai-workers';
+import { resolveAssistAgentSlug } from '@/lib/assist-agent';
+import type { SystemCheck, SystemReport, SystemSample } from '@/lib/integrity/types';
+import {
+  MANIFEST_AGENTS,
+  MANIFEST_SKILLS,
+  MANIFEST_WORKERS,
+  DELEGATE_SLUGS,
+  PERSONA_SLUG,
+} from './manifest';
+
+function delegateTo(memoryConfig: unknown): string[] {
+  const dt = (memoryConfig as AgentMemoryConfig | null)?.delegate_to;
+  return Array.isArray(dt) ? (dt as string[]) : [];
+}
+
+export async function checkSystemIntegrity(ownerId: string): Promise<SystemReport> {
+  const [agentRows, skillRows, toolRows, workers] = await Promise.all([
+    db
+      .select({
+        slug: agents.slug,
+        enabled: agents.enabled,
+        toolSlugs: agents.toolSlugs,
+        skillSlugs: agents.skillSlugs,
+        memoryConfig: agents.memoryConfig,
+      })
+      .from(agents)
+      .where(eq(agents.ownerId, ownerId)),
+    db
+      .select({ slug: skills.slug, enabled: skills.enabled, toolSlugs: skills.toolSlugs })
+      .from(skills)
+      .where(eq(skills.ownerId, ownerId)),
+    db
+      .select({ slug: tools.slug })
+      .from(tools)
+      .where(and(eq(tools.ownerId, ownerId), eq(tools.enabled, true))),
+    listAiWorkers(ownerId),
+  ]);
+
+  const agentBySlug = new Map(agentRows.map((a) => [a.slug, a] as const));
+  const enabledToolSlugs = new Set(toolRows.map((t) => t.slug));
+  const enabledSkillSlugs = new Set(skillRows.filter((s) => s.enabled).map((s) => s.slug));
+  const skillBySlug = new Map(skillRows.map((s) => [s.slug, s] as const));
+
+  const checks: SystemCheck[] = [];
+
+  // 1. Persona — exists, enabled, can act, can delegate, carries grounding skills.
+  const persona = agentBySlug.get(PERSONA_SLUG);
+  {
+    const samples: SystemSample[] = [];
+    let ok = true;
+    if (!persona || !persona.enabled) {
+      ok = false;
+      samples.push({ id: PERSONA_SLUG, detail: persona ? 'disabled' : 'no agent with this slug' });
+    } else {
+      const nTools = persona.toolSlugs?.length ?? 0;
+      if (nTools === 0) {
+        ok = false;
+        samples.push({ id: PERSONA_SLUG, detail: 'no tools attached — cannot act' });
+      } else if (!(persona.toolSlugs ?? []).includes('invoke_agent')) {
+        ok = false;
+        samples.push({ id: PERSONA_SLUG, detail: 'missing invoke_agent — cannot delegate' });
+      }
+      const skillSet = new Set(persona.skillSlugs ?? []);
+      for (const s of ['tool_grounding', 'voice_reply']) {
+        if (!skillSet.has(s)) {
+          ok = false;
+          samples.push({ id: s, detail: 'behaviour skill not attached to the persona' });
+        }
+      }
+    }
+    checks.push({
+      key: 'persona',
+      label: `Persona agent (${PERSONA_SLUG})`,
+      severity: 'high',
+      ok,
+      detail: ok
+        ? `${persona!.toolSlugs?.length} tools · can delegate · grounded`
+        : 'the persona is missing or can’t act — fix before relying on the assistant',
+      samples,
+    });
+  }
+
+  // 2. Specialist agents present + enabled.
+  {
+    const samples: SystemSample[] = [];
+    for (const a of MANIFEST_AGENTS) {
+      if (a.isPersona) continue;
+      const row = agentBySlug.get(a.slug);
+      if (!row || !row.enabled) {
+        samples.push({ id: a.slug, detail: row ? 'disabled' : 'not seeded' });
+      }
+    }
+    checks.push({
+      key: 'specialists',
+      label: 'Specialist agents',
+      severity: 'high',
+      ok: samples.length === 0,
+      detail:
+        samples.length === 0
+          ? `${MANIFEST_AGENTS.length - 1} specialists seeded + enabled`
+          : `${samples.length} missing/disabled — delegation + editor Assist degrade`,
+      samples,
+    });
+  }
+
+  // 3. Delegation wiring — persona delegates to every specialist that exists.
+  {
+    const dt = new Set(persona ? delegateTo(persona.memoryConfig) : []);
+    const samples: SystemSample[] = [];
+    for (const slug of DELEGATE_SLUGS) {
+      const exists = agentBySlug.get(slug)?.enabled;
+      if (exists && !dt.has(slug)) {
+        samples.push({ id: slug, detail: 'agent exists but is not in the persona’s delegate_to' });
+      }
+    }
+    checks.push({
+      key: 'delegation',
+      label: 'Delegation wiring',
+      severity: 'medium',
+      ok: samples.length === 0,
+      detail:
+        samples.length === 0
+          ? 'the persona delegates to every available specialist'
+          : `${samples.length} specialist(s) not wired into delegate_to`,
+      samples,
+    });
+  }
+
+  // 4. Specialist skills — each manifest agent carries its manifest skillSlugs.
+  {
+    const samples: SystemSample[] = [];
+    for (const a of MANIFEST_AGENTS) {
+      const row = agentBySlug.get(a.slug);
+      if (!row) continue;
+      const have = new Set(row.skillSlugs ?? []);
+      for (const s of a.skillSlugs) {
+        if (!have.has(s)) samples.push({ id: `${a.slug}:${s}`, detail: `${a.slug} is missing skill '${s}'` });
+      }
+    }
+    checks.push({
+      key: 'agent-skills',
+      label: 'Agent ↔ skill links',
+      severity: 'medium',
+      ok: samples.length === 0,
+      detail: samples.length === 0 ? 'every agent carries its expected skills' : `${samples.length} expected skill link(s) missing`,
+      samples,
+    });
+  }
+
+  // 5. Dangling tool links — ANY agent (incl. operator personas) referencing a
+  //    tool slug with no enabled row. Silent at runtime; surfaced here.
+  {
+    const samples: SystemSample[] = [];
+    for (const a of agentRows) {
+      for (const t of a.toolSlugs ?? []) {
+        if (!enabledToolSlugs.has(t)) samples.push({ id: `${a.slug}:${t}`, detail: `${a.slug} → tool '${t}' has no enabled row` });
+      }
+    }
+    checks.push({
+      key: 'dangling-tools',
+      label: 'Dangling tool references',
+      severity: 'high',
+      ok: samples.length === 0,
+      detail: samples.length === 0 ? 'every agent tool slug resolves to an enabled tool' : `${samples.length} dangling tool ref(s) — the agent silently can’t call them`,
+      samples: samples.slice(0, 25),
+    });
+  }
+
+  // 6. Dangling skill links — ANY agent referencing a missing/disabled skill.
+  {
+    const samples: SystemSample[] = [];
+    for (const a of agentRows) {
+      for (const s of a.skillSlugs ?? []) {
+        if (!enabledSkillSlugs.has(s)) samples.push({ id: `${a.slug}:${s}`, detail: `${a.slug} → skill '${s}' missing or disabled` });
+      }
+    }
+    checks.push({
+      key: 'dangling-skills',
+      label: 'Dangling skill references',
+      severity: 'high',
+      ok: samples.length === 0,
+      detail: samples.length === 0 ? 'every agent skill slug resolves to an enabled skill' : `${samples.length} dangling skill ref(s) — the behaviour silently drops`,
+      samples: samples.slice(0, 25),
+    });
+  }
+
+  // 7. Skill → tool links — manifest skills' bundled tools must resolve.
+  {
+    const samples: SystemSample[] = [];
+    for (const sk of MANIFEST_SKILLS) {
+      const row = skillBySlug.get(sk.slug);
+      if (!row) continue; // missing skill row covered by dangling-skills via agents
+      for (const t of row.toolSlugs ?? []) {
+        if (!enabledToolSlugs.has(t)) samples.push({ id: `${sk.slug}:${t}`, detail: `skill '${sk.slug}' → tool '${t}' has no enabled row` });
+      }
+    }
+    checks.push({
+      key: 'skill-tools',
+      label: 'Skill ↔ tool links',
+      severity: 'medium',
+      ok: samples.length === 0,
+      detail: samples.length === 0 ? 'every skill’s bundled tools resolve' : `${samples.length} skill tool(s) unresolved`,
+      samples,
+    });
+  }
+
+  // 8. Memory workers — a default, enabled worker for each required kind.
+  {
+    const defaultEnabledKinds = new Set(workers.filter((w) => w.enabled && w.isDefault).map((w) => w.kind));
+    const samples: SystemSample[] = [];
+    for (const w of MANIFEST_WORKERS) {
+      if (w.required && !defaultEnabledKinds.has(w.kind)) {
+        samples.push({ id: w.kind, detail: `no default+enabled '${w.kind}' worker — the brain won’t ${w.kind === 'extractor' ? 'index' : 'run that step'}` });
+      }
+    }
+    checks.push({
+      key: 'workers',
+      label: 'Memory workers',
+      severity: 'high',
+      ok: samples.length === 0,
+      detail: samples.length === 0 ? 'extractor · summarizer · reflector · document ready' : `${samples.length} required worker(s) missing`,
+      samples,
+    });
+  }
+
+  // 9. Editor Assist binding — /pages + /tables panels must resolve to an agent.
+  {
+    const [pagesAssist, tablesAssist] = await Promise.all([
+      resolveAssistAgentSlug(ownerId, 'pages'),
+      resolveAssistAgentSlug(ownerId, 'tables'),
+    ]);
+    const samples: SystemSample[] = [];
+    if (!pagesAssist) samples.push({ id: 'pages', detail: '/pages Assist resolves to no agent (409s)' });
+    if (!tablesAssist) samples.push({ id: 'tables', detail: '/tables Assist resolves to no agent (409s)' });
+    checks.push({
+      key: 'assist',
+      label: 'Editor Assist binding',
+      severity: 'high',
+      ok: samples.length === 0,
+      detail: samples.length === 0 ? `pages → ${pagesAssist} · tables → ${tablesAssist}` : 'an editor Assist panel has no agent to invoke',
+      samples,
+    });
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    checks,
+    problems: checks.filter((c) => !c.ok).length,
+  };
+}
