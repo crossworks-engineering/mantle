@@ -45,7 +45,7 @@ export function RandomThemeToggle() {
   return (
     <>
       <span
-        className="hidden select-none font-mono text-xs lowercase text-muted-foreground/60 sm:inline"
+        className="hidden select-none pr-2 font-mono text-xs lowercase text-muted-foreground/60 sm:inline"
         title="Current theme"
       >
         {colorTheme}
