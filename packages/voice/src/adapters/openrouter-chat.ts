@@ -29,6 +29,7 @@
  */
 
 import { OpenRouter } from '@openrouter/sdk';
+import { OpenRouterError } from '@openrouter/sdk/models/errors';
 import type {
   ChatCacheControl,
   ChatDispatcher,
@@ -271,6 +272,39 @@ function extractReplyText(message: unknown): string {
   return '';
 }
 
+/** Re-throw an OR SDK error with the upstream provider detail folded into
+ *  the message. The SDK's top-level `.message` is generic ("Provider
+ *  returned error"); the real cause sits in `.error.message` (the OR
+ *  envelope, surfaced from the underlying provider) and `.body` (the raw
+ *  HTTP response). Keep the original error chained via `cause` so callers
+ *  who type-check on `OpenRouterError` still get something useful. */
+function enrichOpenRouterError(err: unknown, model: string): Error {
+  if (!(err instanceof OpenRouterError)) {
+    return err instanceof Error ? err : new Error(String(err));
+  }
+  const envelope = (err as { error?: { message?: string; code?: number; metadata?: unknown } }).error;
+  const upstream = envelope?.message;
+  const meta = envelope?.metadata;
+  const status = err.statusCode;
+  // Body is usually the same JSON the envelope was parsed from; include
+  // a clipped slice when the envelope didn't have a message (some 5xx
+  // routes return text/plain). Cap to keep trace rows readable.
+  const bodyHint =
+    !upstream && err.body
+      ? ` body=${err.body.slice(0, 400)}`
+      : '';
+  const metaHint =
+    meta && typeof meta === 'object'
+      ? ` metadata=${JSON.stringify(meta).slice(0, 400)}`
+      : '';
+  const wrapped = new Error(
+    `openrouter-chat ${status} on ${model}: ${upstream ?? err.message}${metaHint}${bodyHint}`,
+    { cause: err },
+  );
+  wrapped.name = err.name;
+  return wrapped;
+}
+
 async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
   if (!opts.apiKey) throw new Error('openrouter-chat: apiKey required');
   if (!opts.model) throw new Error('openrouter-chat: model required');
@@ -301,11 +335,22 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
   // tool records) aren't nominally assignable to the SDK's zod-generated input
   // types, so we bridge once here rather than scattering `as unknown as` over
   // individual fields. Behaviour is unchanged; the laundering is one line.
-  const result = await client.chat.send({
-    chatRequest: chatRequest as unknown as Parameters<
-      typeof client.chat.send
-    >[0]['chatRequest'],
-  });
+  let result: Awaited<ReturnType<typeof client.chat.send>>;
+  try {
+    result = await client.chat.send({
+      chatRequest: chatRequest as unknown as Parameters<
+        typeof client.chat.send
+      >[0]['chatRequest'],
+    });
+  } catch (err) {
+    // The SDK throws subclasses of OpenRouterError on non-2xx responses.
+    // Its top-level `message` is the generic OR description ("Provider
+    // returned error", "Unauthorized", etc.) — the actionable upstream
+    // detail lives in `.error.message` / `.error.metadata` (the OR
+    // envelope), and the raw HTTP body lives on `.body`. Unpack so the
+    // trace + console show what actually failed.
+    throw enrichOpenRouterError(err, opts.model);
+  }
   if (!('choices' in result)) {
     throw new Error(
       'openrouter-chat: unexpected streaming response (no `choices`)',
