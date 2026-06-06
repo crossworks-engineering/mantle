@@ -150,6 +150,57 @@ describe('parseTikaBytes — never-throws contract', () => {
   });
 });
 
+describe('parseTikaBytes — partial-success 422 salvage', () => {
+  // Tika's SecureContentHandler throws a SAX exception on inputs that
+  // expand past its zip-bomb ratio (~100:1 of input bytes → output chars).
+  // It returns 422 but the body already carries what it streamed. Legit
+  // case observed in the field: a valid EPUB whose 1 MB Lorem-ipsum body
+  // compresses to 8.5 KB tripped the ratio and got silently discarded.
+  it('salvages a non-empty body on status 422 (zip-bomb defense, real content present)', async () => {
+    const salvageBody = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.';
+    mockFetch({ ok: false, status: 422, text: salvageBody });
+    const text = await parseTikaBytes(Buffer.from('x'));
+    expect(text).toBe(salvageBody);
+  });
+
+  it("trims surrounding whitespace from a 422 body too", async () => {
+    mockFetch({ ok: false, status: 422, text: '  partial parse  \n' });
+    const text = await parseTikaBytes(Buffer.from('x'));
+    expect(text).toBe('partial parse');
+  });
+
+  it("returns '' on 422 with an empty body (no useful text to salvage)", async () => {
+    mockFetch({ ok: false, status: 422, text: '' });
+    const text = await parseTikaBytes(Buffer.from('x'));
+    expect(text).toBe('');
+  });
+
+  it("returns '' on 422 with whitespace-only body", async () => {
+    mockFetch({ ok: false, status: 422, text: '   \n\t  ' });
+    const text = await parseTikaBytes(Buffer.from('x'));
+    expect(text).toBe('');
+  });
+
+  it('does NOT salvage on other 4xx (only 422 carries Tika partial output)', async () => {
+    // 415 Unsupported Media Type, 413 Payload Too Large, etc. — those
+    // statuses don't mean "parsed-with-warnings"; whatever body Tika
+    // returns there is an error message, not extracted content.
+    mockFetch({ ok: false, status: 415, text: 'Unsupported Media Type' });
+    const text = await parseTikaBytes(Buffer.from('x'));
+    expect(text).toBe('');
+  });
+
+  it('rejects a 422 body larger than MAX_PARTIAL_BODY_BYTES (zip-bomb shield)', async () => {
+    // A true zip bomb would also trip Tika's defense and return 422. Cap
+    // the salvage at 5 MB so an evil archive can't flood the LLM /
+    // embedder with attacker-controlled text via this path.
+    const oversized = 'x'.repeat(5_000_001);
+    mockFetch({ ok: false, status: 422, text: oversized });
+    const text = await parseTikaBytes(Buffer.from('x'));
+    expect(text).toBe('');
+  });
+});
+
 describe('tikaIsUp', () => {
   it('returns true on /version 2xx', async () => {
     const fetchSpy = mockFetch({ ok: true, text: 'Apache Tika 3.3.0' });
