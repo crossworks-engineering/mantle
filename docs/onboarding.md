@@ -65,7 +65,7 @@ stepper is `onboarding-client.tsx`.
 | 5 | **Check** | `runSanityChecks()` — green/red list of the **vitals**: OpenRouter probe, xAI probe if added, embeddings, the assistant, **assistant capabilities** (tools + can-delegate + grounding/voice skills), **memory workers** (extractor/summarizer/reflector/document), **specialists & delegation** (Pages/Ledger/Remy/Researcher seeded + wired into `delegate_to` + their skills), **editor assistants** (`resolveAssistAgentSlug` for /pages + /tables), voice/images |
 | 6 | **About you** | ~9 questions → one Life Log each (`createLifelog`); feeds the always-on identity block |
 | 7 | **Personality** | preset bank × gender (voice) + name + creativity slider → `savePersonaAgent` |
-| 8 | **Telegram** | optional — BotFather instructions + token (`connectAgentTelegram`); skippable |
+| 8 | **Telegram** | optional/skippable — BotFather instructions + token via the shared `<TelegramBotSection>` (`connectAgentTelegram`) bound to the assistant agent. **Identical to the `/settings/agents` flow** (same component), so it can be done here or any time later in Settings → Agents. Needs the assistant to exist (step 4) first |
 
 **Hybrid routing — why.** OpenRouter covers chat, memory indexing, image reading
 (vision), image generation, AND voice (via the `openrouter-{tts,stt}` adapters,

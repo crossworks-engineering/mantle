@@ -510,6 +510,13 @@ function Wizard({
                   </span>
                 </div>
               </Field>
+
+              <p className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                💬 Channels are set up per-assistant, not here. Next you can reach
+                this assistant on <span className="font-medium">Telegram</span>{' '}
+                (by text or voice note) — it’s optional, and you can always connect
+                or change it later in <span className="font-medium">Settings → Agents</span>.
+              </p>
             </div>
           </StepShell>
         )}

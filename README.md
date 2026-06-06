@@ -151,16 +151,24 @@ The MCP server exposes `telegram_pending` / `telegram_send` /
 `telegram_react` / `telegram_edit` / `telegram_pair` tools so Claude
 can read and reply.
 
+> **Where to do this.** Telegram is **optional** and set up **after** your
+> assistant exists. You can do it in the **last step of the onboarding wizard**
+> ("Reach your assistant on Telegram"), or any time later in
+> [`/settings/agents`](http://localhost:3000/settings/agents) — both run the
+> exact same connect → pair flow (the shared `<TelegramBotSection>`) against
+> your assistant. The steps below are that flow.
+
 1. **Create a bot.** DM [@BotFather](https://t.me/BotFather), `/newbot`,
    write down the token.
-2. **Link it to a responder.** Open [`/settings/agents`](http://localhost:3000/settings/agents),
-   select (or create) a `responder` agent, and paste the token into its
-   **Telegram bot** section. Mantle validates it (`getMe`), seals it
-   AES-256-GCM at rest, and binds the bot to that responder — so DMs to that
-   bot are answered by that agent. The poll worker picks it up within ~60s.
-   (The token lives in `telegram_accounts`, now with a `responder_agent_id`
-   link; CLI bootstrap via `pnpm -C apps/web seed:telegram` from
-   `~/.claude/channels/telegram/.env` still works for migrating a legacy setup.)
+2. **Link it to your assistant.** In `/settings/agents` (or the onboarding
+   Telegram step), select your assistant — **any agent can carry a Telegram
+   channel** — and paste the token into its **Telegram bot** section. Mantle
+   validates it (`getMe`), seals it AES-256-GCM at rest, and binds the bot to
+   that agent — so DMs to that bot are answered by it. The poll worker picks it
+   up within ~60s. (The token is sealed on the agent's `channels` row
+   — `credentials_enc` — via the generic comms-channels binding; the legacy
+   `telegram_accounts.responder_agent_id`/`bot_token_enc` columns were dropped
+   in migration 0078. See [`docs/comms-channels.md`](./docs/comms-channels.md).)
 3. **Pair.** DM your bot from your phone. Within ~25s the worker
    gates the message, generates a 6-char pairing code, and DMs it back.
    In Claude (with the MCP server connected), call
