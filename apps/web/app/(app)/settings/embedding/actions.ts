@@ -26,28 +26,35 @@ function orNull(v: FormDataEntryValue | null): string | null {
   return s.length > 0 ? s : null;
 }
 
-export async function saveEmbeddingConfigAction(formData: FormData): Promise<void> {
+export async function saveEmbeddingConfigAction(
+  formData: FormData,
+): Promise<{ ok: true; model: string } | { ok: false; error: string }> {
   const user = await requireOwner();
   const model = str(formData.get('model'));
-  if (!model) throw new Error('A model is required');
+  if (!model) return { ok: false, error: 'A model is required' };
   const primaryProvider = str(formData.get('primary_provider')) || 'local';
   const backupEnabled = formData.get('backup_enabled') === 'on';
   const backupProvider = orNull(formData.get('backup_provider'));
 
-  await upsertEmbeddingConfig(user.id, {
-    model,
-    primaryProvider,
-    primaryBaseUrl: orNull(formData.get('primary_base_url')),
-    primaryApiKeyId: orNull(formData.get('primary_api_key_id')),
-    primaryLabel: orNull(formData.get('primary_label')),
-    // Backup is the SAME model on a different route — never a different model.
-    backupEnabled: backupEnabled && !!backupProvider,
-    backupProvider: backupEnabled ? backupProvider : null,
-    backupBaseUrl: backupEnabled ? orNull(formData.get('backup_base_url')) : null,
-    backupApiKeyId: backupEnabled ? orNull(formData.get('backup_api_key_id')) : null,
-    backupLabel: backupEnabled ? orNull(formData.get('backup_label')) : null,
-  });
-  revalidatePath('/settings/embedding');
+  try {
+    await upsertEmbeddingConfig(user.id, {
+      model,
+      primaryProvider,
+      primaryBaseUrl: orNull(formData.get('primary_base_url')),
+      primaryApiKeyId: orNull(formData.get('primary_api_key_id')),
+      primaryLabel: orNull(formData.get('primary_label')),
+      // Backup is the SAME model on a different route — never a different model.
+      backupEnabled: backupEnabled && !!backupProvider,
+      backupProvider: backupEnabled ? backupProvider : null,
+      backupBaseUrl: backupEnabled ? orNull(formData.get('backup_base_url')) : null,
+      backupApiKeyId: backupEnabled ? orNull(formData.get('backup_api_key_id')) : null,
+      backupLabel: backupEnabled ? orNull(formData.get('backup_label')) : null,
+    });
+    revalidatePath('/settings/embedding');
+    return { ok: true, model };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 /** Probe one route's live output dimension (bypasses resolver + cache). */

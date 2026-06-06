@@ -53,7 +53,9 @@ export function EmbeddingClient({
   config: ConfigDTO | null;
   columnDims: number;
   keys: KeyOpt[];
-  saveAction: (formData: FormData) => Promise<void>;
+  saveAction: (
+    formData: FormData,
+  ) => Promise<{ ok: true; model: string } | { ok: false; error: string }>;
   testRouteAction: (route: {
     provider: string;
     model: string;
@@ -117,6 +119,19 @@ export function EmbeddingClient({
     });
   }
 
+  function handleSave(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    startTransition(async () => {
+      const res = await saveAction(formData);
+      if (res.ok) {
+        toast.success(`Embedding config saved — ${res.model}`);
+      } else {
+        toast.error(`Save failed: ${res.error}`);
+      }
+    });
+  }
+
   const dimWarn = (r?: ProbeResult) =>
     r && 'dim' in r && r.dim !== columnDims
       ? `Returns ${r.dim} dims — does NOT fit the vector(${columnDims}) column. Pick a model/route that emits ${columnDims}, or migrate the schema.`
@@ -138,7 +153,7 @@ export function EmbeddingClient({
         </p>
       </header>
 
-      <form action={saveAction} className="space-y-6">
+      <form onSubmit={handleSave} className="space-y-6">
         {/* ── Model identity ─────────────────────────────────────────── */}
         <fieldset className="space-y-3 rounded-md border border-border p-4">
           <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
