@@ -1524,8 +1524,8 @@ mantle/
 ├── infra/postgres/init/ # SQL run at first container boot
 ├── scripts/             # up.sh — only script that ships now
 ├── docs/                # this file + memory.md + ai-workers.md + others
-├── docker-compose.dev.yml   # postgres + minio (dev — used by `pnpm up`)
-└── docker-compose.yml       # full stack (prod-shaped — web/workers WIP)
+├── docker-compose.dev.yml   # postgres + minio + tika (dev — used by `pnpm start`)
+└── docker-compose.yml       # full production stack (Linux): built app images + bundled embedder
 ```
 
 Why this split:
@@ -1548,26 +1548,35 @@ package; `pnpm-workspace.yaml` declares them.
 
 ## 13. Dev workflow
 
-`pnpm up` (`scripts/up.sh`) is the one command:
+`pnpm start` (`scripts/up.sh`) is the one command:
 
 1. Verifies Docker is running. Bails with a clear message if not.
 2. Verifies `apps/web/.env.local` exists. Bails with the env vars you need
    to fill in.
 3. `docker compose -f docker-compose.dev.yml up -d --wait` — postgres +
-   minio, health-checked.
+   minio + tika, health-checked.
 4. Reads `S3_ACCESS_KEY` / `S3_SECRET_KEY` from `.env.local`, runs `mc mb`
    to ensure the `mantle` bucket exists. Idempotent.
 5. `pnpm -C packages/db migrate` — applies any new Drizzle migrations.
-6. `exec pnpm dev` — `concurrently` starts web + mcp + email + telegram
-   workers.
+6. `pnpm -C apps/web pgboss:init` — creates the `pgboss` schema deterministically
+   so workers don't race on the first start.
+7. `exec pnpm dev` — `concurrently` starts web + mcp + email + telegram
+   workers. A `predev` preflight hook checks infra is healthy first and refuses
+   politely if not (so `pnpm dev` against down infra never crashes into
+   `ECONNREFUSED`).
+
+> ⚠️ **Not `pnpm up`.** That's pnpm's built-in alias for `pnpm update` (it
+> updates dependencies and exits) — it silently shadows any script with the
+> same name. Use `pnpm start` (or `pnpm run up` if you must).
 
 Granular escape hatches in `package.json`:
 
 | Script             | What                                                       |
 |--------------------|------------------------------------------------------------|
-| `pnpm up`          | Full thing (infra + dev servers)                           |
-| `pnpm dev`         | Dev servers only (assumes infra up)                        |
-| `pnpm down`        | Stop infra                                                 |
+| `pnpm start`       | Full thing (infra + migrations + pg-boss + dev servers)    |
+| `pnpm dev`         | Dev servers only (preflight refuses if infra isn't ready)  |
+| `pnpm stop`        | Stop infra (keeps volumes)                                 |
+| `pnpm reset`       | Wipe the dev brain + rebuild from scratch (asks first)     |
 | `pnpm infra:up`    | Infra only                                                 |
 | `pnpm infra:logs`  | Tail postgres + minio                                      |
 | `pnpm infra:psql`  | `docker exec -it mantle_pg psql`                           |
@@ -1652,10 +1661,11 @@ historical snapshots; safe to delete.
 - `MANTLE_MASTER_KEY`: re-encrypt every `_enc` column with the new key.
   No tooling exists for this yet; write a one-off script via `seal/open`.
 
-**Disaster recovery:** `docker volume rm mantle_mantle_pg_data
-mantle_mantle_minio_data` nukes everything. `pnpm up` brings up a virgin
-stack. `pg_restore --data-only` loads the latest backup. Insert your
-`auth.users` row by hand. Done.
+**Disaster recovery:** `pnpm reset` (asks first, backs up, then wipes the
+volumes + brings everything back up). Or, manually: `docker volume rm
+mantle_mantle_pg_data mantle_mantle_minio_data` nukes the brain; `pnpm start`
+brings up a virgin stack; `pg_restore --data-only` loads the latest backup;
+insert your `auth.users` row by hand. Done.
 
 ---
 

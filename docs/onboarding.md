@@ -1,7 +1,7 @@
 # Onboarding — from a clean brain to a working assistant
 
 > A fresh Mantle clone boots into a working brain with **no SQL and no env
-> editing**: clone → `pnpm up` → open the browser → create an account → walk a
+> editing**: clone → `pnpm start` → open the browser → create an account → walk a
 > nine-step wizard that adds model keys, provisions the assistant + AI workers,
 > runs a sanity check, captures who you are as Life Logs, and shapes the
 > assistant's personality. Everything it sets up is editable later under

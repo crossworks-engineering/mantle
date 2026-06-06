@@ -10,7 +10,7 @@ Companion: [`docker-compose.yml`](../docker-compose.yml) header comments,
 [`scripts/`](../scripts).
 
 > **Golden rule.** Prod is your source-of-truth brain, not a test bench.
-> Develop on the local dev stack (`pnpm up` + host hot-reload), validate, then
+> Develop on the local dev stack (`pnpm start` + host hot-reload), validate, then
 > promote a built image. The integrity **probe** belongs on dev; only the
 > read-only **audit** is safe to run against prod. See the bottom of this file.
 

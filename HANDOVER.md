@@ -6,7 +6,7 @@
 > path. Jason is now running through onboarding **on a freshly-wiped dev brain**
 > as an open-source user would. The dev brain is being rebuilt as Jason's new
 > production. Last interactive moment: I wiped his dev volumes; he's about to
-> run `pnpm up` and onboard. Pick up by verifying his onboarding went clean and
+> run `pnpm start` and onboard. Pick up by verifying his onboarding went clean and
 > running `/debug/integrity`.
 
 ---
@@ -128,11 +128,11 @@ Jason's fresh-install test surfaced two real bugs:
   **Affects every fresh install, dev and prod.**
 - **v0.20.15 — DX preflight + reset.** Jason hit the symptom: ran `pnpm dev`
   against down infra, got 30s of cryptic `ECONNREFUSED 127.0.0.1:54323` Next.js
-  stack traces. Same for anyone who Ctrl-C's `pnpm up` mid-stream. Hardened:
+  stack traces. Same for anyone who Ctrl-C's `pnpm start` mid-stream. Hardened:
   - **`scripts/preflight-dev.sh`** — wired as `predev` / `predev:web` /
     `predev:agent` hooks in root `package.json`. Checks docker, mantle_pg
     health, postgres acceptance, pgboss schema. Silent on success; on failure
-    prints a one-screen message with the exact next command (`pnpm up` /
+    prints a one-screen message with the exact next command (`pnpm start` /
     `pnpm infra:up` / `pnpm reset`).
   - **`scripts/reset.sh`** — one confirmed-wipe-and-rebuild command. Backs up
     the brain best-effort, `down -v`, comments out the stale `ALLOWED_USER_ID`
@@ -143,7 +143,7 @@ Jason's fresh-install test surfaced two real bugs:
 
 ## 2. Where we are RIGHT NOW (interactive)
 
-**Jason just told me to stop all containers + wipe, so he can run `pnpm up`
+**Jason just told me to stop all containers + wipe, so he can run `pnpm start`
 as a true cold-start open-source user.** I did that. State:
 
 | | |
@@ -156,7 +156,7 @@ as a true cold-start open-source user.** I did that. State:
 | **mantlenew, prod** | **untouched** (mantlenew is at `~/Projects/mantle-new`, a separate checkout; prod is on the Contabo VPS) |
 | **Native Ollama** | running on Jason's Mac at `localhost:11434` with `embeddinggemma:latest` (so dev embeddings will work without any extra setup) |
 
-**Jason is about to run `pnpm up`** from `~/Projects/mantle`. He's been given
+**Jason is about to run `pnpm start`** from `~/Projects/mantle`. He's been given
 prepped copy-paste answers for the 10-question onboarding interview (his own,
 pulled from a prior brain backup — see §6 below).
 
