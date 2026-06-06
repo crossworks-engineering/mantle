@@ -22,8 +22,8 @@ mantle/
 │   ├── search/          # full-text + vector search helpers
 │   └── rules/           # ingest rules engine
 ├── scripts/             # dev convenience (just `up.sh`)
-├── docker-compose.dev.yml   # Postgres + MinIO for local dev
-└── docker-compose.yml       # full prod-shaped stack (web + workers WIP)
+├── docker-compose.dev.yml   # Postgres + MinIO + Tika for local dev (embedder = your local Ollama)
+└── docker-compose.yml       # full production stack (Linux): built app images + bundled embedder (Ollama)
 ```
 
 ## First-time setup
@@ -42,13 +42,32 @@ $EDITOR apps/web/.env.local
 #  - SESSION_SECRET     → openssl rand -base64 48
 #  - ALLOWED_USER_ID    → uuid of the user row in auth.users (see below)
 
-# 4. Bring up the stack (Docker must be running)
+# 4. Local embedder (macOS / local dev) — the dev stack does NOT bundle it, so
+#    install Ollama and pull the model. Mantle's apps reach it at
+#    http://localhost:11434 by default. (Production bundles this — see below.)
+brew install ollama
+brew services start ollama    # serves on :11434 (or run the menu-bar app)
+ollama pull embeddinggemma    # the 768-dim local embedder Mantle defaults to
+
+# 5. Bring up the stack (Docker must be running)
 pnpm up
 ```
 
-> **Note:** Only `pnpm up` (which uses `docker-compose.dev.yml`) is fully wired.
-> `docker-compose.yml` is a prod-shaped stub — `web` and `workers` containers
-> still need Dockerfiles.
+> **macOS embedder, why step 4.** The dev stack (`docker-compose.dev.yml`) ships
+> only Postgres + MinIO + Tika — **not** the embedder, because on a dev machine
+> you run Ollama natively (faster, uses the Mac GPU). Without a running Ollama
+> serving `embeddinggemma` on `:11434`, the app still boots and chat works, but
+> **embeddings fail** — uploaded content won't index and semantic search returns
+> nothing. On Linux you can install Ollama the same way (`curl -fsSL
+> https://ollama.com/install.sh | sh`) or just use the production stack below.
+
+> **Dev vs production.** The steps above are the **local dev stack** (`pnpm up`:
+> infra in Docker + the apps hot-reloading on the host + your local Ollama).
+> **Production is meant to run on Linux** via the full `docker-compose.yml`, which
+> builds the app images and **bundles the embedder (Ollama) + a one-shot model
+> pull** — so a fresh deploy needs **no native Ollama** (it works on any Docker
+> host, Linux or macOS, CPU-only where there's no GPU). See
+> [`docs/deploy.md`](./docs/deploy.md).
 
 `pnpm up` runs `scripts/up.sh`, which:
 
