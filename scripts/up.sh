@@ -57,6 +57,14 @@ docker run --rm --network mantle_default \
 echo "→ Running Drizzle migrations…"
 pnpm -C packages/db migrate
 
+# ── 5b. pg-boss schema ------------------------------------------------------
+# Create the `pgboss` schema deterministically BEFORE the dev servers start.
+# Otherwise the email worker + agent extract-queue + backfill queue all call
+# pg-boss `start()` at once on a fresh DB and race to create it — leaving the
+# schema missing (a storm of `relation "pgboss.*" does not exist`). Idempotent.
+echo "→ Ensuring pg-boss schema…"
+pnpm -C apps/web pgboss:init
+
 # ── 6. Dev servers ---------------------------------------------------------
 echo "→ Starting dev servers…"
 exec pnpm dev

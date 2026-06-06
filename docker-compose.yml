@@ -248,7 +248,11 @@ services:
   # successfully before starting, so the DB schema is never behind the code.
   migrate:
     image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "packages/db", "migrate"]
+    # Drizzle migrations, THEN create the pg-boss schema deterministically in the
+    # same one-shot gate — every worker depends_on this completing, so by the time
+    # they call pg-boss start() the schema exists and they can't race to create it
+    # (which on a fresh DB leaves it uncreated). Idempotent on an existing brain.
+    command: ["sh", "-c", "pnpm -C packages/db migrate && pnpm -C apps/web pgboss:init"]
     container_name: mantle_migrate
     restart: "no"
     depends_on:
