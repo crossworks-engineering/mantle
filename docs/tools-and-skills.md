@@ -1,11 +1,17 @@
 # Tools & Skills — capability vs. teaching, as one source of truth
 
-> **Status: COMPLETE — P0–P5 SHIPPED** (2026-06-05). The full reshape is live:
-> substrate (P0), the behavior-identical skill-arm collapse (P1), the Tools-manager
-> + Studio group nodes (P2), the god-grant break-up (P3 — runtime group expansion +
-> re-expression), the dead-column drop (P4), and the durability + agent-editor pass
-> (P5 — group-native self-heal + groups-first editor). Tools are capability (direct
-> + groups); skills are pure teaching; every grant is a visible edge. Companion to
+> **Status: COMPLETE — P0–P6 SHIPPED.** Tool groups are the **sole** tool-grant:
+> an agent's capability is exactly the union of its granted groups' tools.
+> `agents.tool_slugs` was dropped (migration `0083`); skills are pure teaching;
+> every grant is a visible edge. The phased journey — P0 substrate → P1 skill-arm
+> collapse → P2 manager/Studio → P3 god-grant break-up → P4 drop `skills.tool_slugs`
+> → P5 durability/editor → **P6 groups-as-the-sole-grant + audit follow-up** — is
+> recorded below.
+>
+> ⚠️ **Read the P0–P5 sections as history.** They describe the design mid-journey
+> and still reference the direct / `tool_slugs` "escape hatch" that **P6 removed**.
+> The authoritative current model is the **Phase 6** section near the end of this
+> doc; where the early sections and Phase 6 disagree, Phase 6 wins. Companion to
 > [docs/agent-studio.md](agent-studio.md) and
 > [docs/system-integrity.md](system-integrity.md).
 
@@ -62,9 +68,10 @@ Two orthogonal concerns, cleanly separated:
 
 ## What changes vs. what's reused
 
-**Reused as-is:** the `tools` table, `/settings/tools`, `agent.tool_slugs` (now the
-*direct/escape-hatch* grant), the manifest spine, `checkSystemIntegrity`, the
-Studio graph read model.
+**Reused as-is:** the `tools` table, `/settings/tools`, the manifest spine,
+`checkSystemIntegrity`, the Studio graph read model. (`agent.tool_slugs` was
+reused as the direct/escape-hatch grant *through P5*, then **dropped in P6** —
+groups are now the sole grant.)
 
 **New:**
 - `tool_groups` table — `{ id, ownerId, slug, name, description, toolSlugs[],
@@ -79,19 +86,21 @@ Studio graph read model.
 `effectiveToolSlugs` — skills carry no tools anywhere. (Heartbeat control tools are
 granted directly by the fire path, so nothing was lost.)
 
-### New effective-tools resolution
+### Effective-tools resolution
 
-```
-effectiveToolSlugs(agent) =
-    agent.tool_slugs                              // direct grants / escape hatch
-  ∪ expand(agent.tool_group_slugs → group.tool_slugs)   // bundles
-```
+> **Final (P6).** Groups are the sole grant:
+> ```
+> effectiveToolSlugs(agent) = expand(agent.tool_group_slugs → group.tool_slugs)
+>                             (+ heartbeat_* injected per-turn when a heartbeat is active)
+> ```
+> No skill arm (removed P4) and no direct `agent.tool_slugs` arm (the column was
+> dropped in P6, migration `0083`).
 
-There is no skill arm (removed in P4 — skills are pure teaching).
-`agent.tool_slugs` is retained deliberately as (a) the migration cushion — Saskia
-kept her flat grant on day one — and (b) the escape hatch for one-off grants that
-don't justify a group (e.g. a specialist's lone `web_search`, the persona's
-`page_delete`).
+Through P3–P5 the formula *additionally* unioned `agent.tool_slugs` as a migration
+cushion + one-off escape hatch (Saskia kept her flat grant on day one; the persona
+carried `page_delete`). **P6 removed that arm** so the source of truth is
+undivided — the escape-hatch cases became dedicated groups (e.g. `page-admin`,
+`recall-search`, `research`). See the **Phase 6** section below.
 
 ### Default groups already exist in code
 
