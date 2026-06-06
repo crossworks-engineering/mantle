@@ -222,9 +222,6 @@ export const agents = pgTable(
      *  ON DELETE SET NULL live in migration 0066. */
     ttsWorkerId: uuid('tts_worker_id'),
     systemPrompt: text('system_prompt').notNull(),
-    /** Legacy free-form MCP tool name array. Superseded by `tool_group_slugs` /
-     *  `skill_slugs` below; kept for back-compat with existing rows. */
-    tools: jsonb('tools').$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
     /** Slugs of `skills` rows attached to this agent. Instructions are
      *  always-loaded into the system prompt (v1 activation model). */
     skillSlugs: text('skill_slugs').array().default(sql`'{}'::text[]`).notNull(),

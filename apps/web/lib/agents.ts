@@ -46,7 +46,6 @@ export type AgentSummary = {
    *  null = fall back to the owner's default TTS worker (migration 0066). */
   ttsWorkerId: string | null;
   systemPrompt: string;
-  tools: string[];
   skillSlugs: string[];
   toolGroupSlugs: string[];
   memoryConfig: AgentMemoryConfig;
@@ -84,7 +83,6 @@ function toSummary(a: Agent): AgentSummary {
     backupViaTailnet: a.backupViaTailnet,
     ttsWorkerId: a.ttsWorkerId ?? null,
     systemPrompt: a.systemPrompt,
-    tools: a.tools ?? [],
     skillSlugs: a.skillSlugs ?? [],
     toolGroupSlugs: a.toolGroupSlugs ?? [],
     memoryConfig: a.memoryConfig ?? {},
@@ -149,7 +147,6 @@ export type CreateAgentInput = {
   /** Pinned TTS worker (migration 0066). null = use the default TTS worker. */
   ttsWorkerId?: string | null;
   systemPrompt: string;
-  tools?: string[];
   skillSlugs?: string[];
   toolGroupSlugs?: string[];
   memoryConfig?: AgentMemoryConfig;
@@ -184,7 +181,6 @@ export async function createAgent(
       backupViaTailnet: input.backupViaTailnet ?? false,
       ttsWorkerId: input.ttsWorkerId ?? null,
       systemPrompt: input.systemPrompt,
-      tools: input.tools ?? [],
       skillSlugs: input.skillSlugs ?? [],
       toolGroupSlugs: input.toolGroupSlugs ?? [],
       memoryConfig: input.memoryConfig ?? {},
@@ -222,7 +218,6 @@ export async function updateAgent(
   if (patch.backupViaTailnet !== undefined) next.backupViaTailnet = patch.backupViaTailnet;
   if (patch.ttsWorkerId !== undefined) next.ttsWorkerId = patch.ttsWorkerId;
   if (patch.systemPrompt !== undefined) next.systemPrompt = patch.systemPrompt;
-  if (patch.tools !== undefined) next.tools = patch.tools;
   if (patch.skillSlugs !== undefined) next.skillSlugs = patch.skillSlugs;
   if (patch.toolGroupSlugs !== undefined) next.toolGroupSlugs = patch.toolGroupSlugs;
   // Shallow-merge memory_config instead of overwriting it. The agents form

@@ -363,6 +363,12 @@ Shipped in two commits (approach A — coarse groups, specialists expand):
     member tools resolve, not just the manifest ones. A disabled *custom* group is
     left alone (parking is operator discretion; a disabled granted group is caught
     by dangling-groups).
+  - **Housekeeping (N1/N2/N3).** Migration `0085` drops the dead legacy
+    `agents.tools` jsonb column (the pre-P6 free-form MCP name array; its CRUD-lib
+    + API plumbing went with it). Group descriptions for `pages`/`tables` reworded
+    to say block/row/column deletes ARE in the authoring set — only the
+    whole-object delete is isolated to `*-admin`. The stray ungrouped `test-tool`
+    row was removed from dev, so every enabled tool now lives in ≥1 group.
 
 The original design brief is preserved at
 **[docs/handover-tools-skills-p6.md](handover-tools-skills-p6.md)** (historical).

@@ -96,14 +96,16 @@ export type ManifestWorker = {
 // ── Derived tool lists (match the seed scripts exactly) ──────────────────────
 
 /** Page authoring set for the `pages` group: every page tool except the
- *  destructive delete + live-overwrite (those ride the `page-admin` group) and
+ *  whole-page delete + live-overwrite (those ride the `page-admin` group) and
  *  the sharing toggles (which ride the standalone `page-share` group so the
- *  persona can share without holding the authoring toolkit). No overlap between
- *  the `pages`, `page-admin`, and `page-share` groups. */
+ *  persona can share without holding the authoring toolkit). Block-level deletes
+ *  (page_block_delete) stay — they're routine authoring. No overlap between the
+ *  `pages`, `page-admin`, and `page-share` groups. */
 const PAGE_AUTHORING_TOOL_SLUGS = PAGE_TOOL_SLUGS.filter(
   (s) => !['page_delete', 'page_update', 'page_share', 'page_unshare'].includes(s),
 );
-/** Table authoring set: every table tool except the irreversible delete. */
+/** Table authoring set: every table tool except the whole-table delete (that
+ *  rides `table-admin`). Row/column deletes stay — they're routine grid editing. */
 const TABLE_AUTHORING_TOOL_SLUGS = TABLE_TOOL_SLUGS.filter((s) => s !== 'table_delete');
 
 // ── Skills ───────────────────────────────────────────────────────────────────
@@ -204,7 +206,8 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'pages',
     name: 'Pages toolkit',
-    description: 'Author + edit rich pages (authoring subset; no delete/overwrite/share).',
+    description:
+      'Author + edit rich pages, incl. block-level deletes (authoring subset; excludes whole-page delete/overwrite + the share toggles).',
     toolSlugs: [...PAGE_AUTHORING_TOOL_SLUGS],
   },
   {
@@ -222,7 +225,8 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'tables',
     name: 'Tables toolkit',
-    description: 'Build + edit typed grids (authoring subset; no destructive delete).',
+    description:
+      'Build + edit typed grids, incl. row/column deletes (authoring subset; excludes the whole-table delete).',
     toolSlugs: [...TABLE_AUTHORING_TOOL_SLUGS],
   },
   {

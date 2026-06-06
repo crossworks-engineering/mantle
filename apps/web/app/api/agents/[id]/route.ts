@@ -83,7 +83,6 @@ const PatchBody = z
     // Per-agent voice (migration 0066): pin a kind='tts' ai_worker; null = default.
     ttsWorkerId: z.string().uuid().nullable(),
     systemPrompt: z.string().min(1).max(40_000),
-    tools: z.array(z.string()).max(256),
     skillSlugs: z.array(z.string().min(1).max(120)).max(32),
     toolGroupSlugs: z.array(z.string().min(1).max(120)).max(64),
     memoryConfig: MemoryConfig,

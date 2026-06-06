@@ -117,7 +117,6 @@ type AgentSummary = {
   /** Pinned TTS worker (migration 0066); null = default TTS worker. */
   ttsWorkerId: string | null;
   systemPrompt: string;
-  tools: string[];
   skillSlugs: string[];
   toolGroupSlugs: string[];
   memoryConfig: MemoryConfig;
