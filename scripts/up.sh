@@ -21,16 +21,22 @@ EOF
 fi
 
 # ── 2. .env.local check ----------------------------------------------------
-if [[ ! -f .env.local ]]; then
+# Lives at apps/web/.env.local — Next.js, the workers, MCP, agent, and Drizzle
+# all read from there (a single source). The template at the repo root is
+# `.env.example`. Easy mistake: copying to the repo root instead of apps/web/.
+if [[ ! -f apps/web/.env.local ]]; then
   cat <<EOF >&2
-.env.local is missing. Copy .env.example to .env.local and fill it in:
+apps/web/.env.local is missing. Copy the template and fill in the required vars:
 
-  cp .env.example .env.local
-  \$EDITOR .env.local
+  cp .env.example apps/web/.env.local
+  \$EDITOR apps/web/.env.local
 
-Required vars:
-  DATABASE_URL=postgres://postgres:postgres@127.0.0.1:54323/postgres
+Required vars to set (the rest of the file has guidance):
   MANTLE_MASTER_KEY=\$(openssl rand -base64 32)
+  SESSION_SECRET=\$(openssl rand -base64 48)
+
+DATABASE_URL is pre-filled in the template and matches docker-compose.dev.yml,
+so a fresh install usually doesn't need to touch it.
 EOF
   exit 1
 fi
