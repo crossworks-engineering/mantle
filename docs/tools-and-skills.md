@@ -346,6 +346,14 @@ Shipped in two commits (approach A — coarse groups, specialists expand):
     it). No-op on a fresh install (no rows yet) and on dev (already granted);
     restores a brain that ran `0080..0083` without the deleted re-expression
     script. Operator personas (non-manifest) are floored by the boot self-heal.
+  - **Integrity surfacing (M1/M2).** The `group-tools` check (extracted to the
+    pure, unit-tested `group-checks.ts`) now flags a **disabled manifest group**
+    (the runtime + self-heal floor drop it silently — previously the check read
+    the row but never its `enabled` flag, and dangling-groups only fires for a
+    group an agent grants) and validates **custom (operator-created) groups'**
+    member tools resolve, not just the manifest ones. A disabled *custom* group is
+    left alone (parking is operator discretion; a disabled granted group is caught
+    by dangling-groups).
 
 The original design brief is preserved at
 **[docs/handover-tools-skills-p6.md](handover-tools-skills-p6.md)** (historical).

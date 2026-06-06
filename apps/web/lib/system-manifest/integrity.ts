@@ -21,6 +21,7 @@ import {
   PERSONA_SLUG,
 } from './manifest';
 import { resolveEffectivePersona } from './persona';
+import { computeGroupToolFindings } from './group-checks';
 
 function delegateTo(memoryConfig: unknown): string[] {
   const dt = (memoryConfig as AgentMemoryConfig | null)?.delegate_to;
@@ -206,26 +207,24 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
     });
   }
 
-  // 7. Tool group → tool links — manifest groups' bundled tools must resolve.
-  //    (Skills carry no tools as of P4 — there is no skill→tool check anymore.)
+  // 7. Tool group → tool links — manifest groups must be seeded + enabled, and
+  //    every enabled group's (manifest OR custom) bundled tools must resolve.
+  //    Surfaces two silent-loss paths the runtime hides: a DISABLED manifest
+  //    group (M1 — the self-heal floor + grants lose its tools with no error)
+  //    and a CUSTOM group referencing a disabled tool (M2). Pure logic in
+  //    group-checks.ts. (Skills carry no tools as of P4 — no skill→tool check.)
   {
-    const samples: SystemSample[] = [];
-    for (const g of MANIFEST_TOOL_GROUPS) {
-      const row = toolGroupBySlug.get(g.slug);
-      if (!row) {
-        samples.push({ id: g.slug, detail: `tool group '${g.slug}' is not seeded` });
-        continue;
-      }
-      for (const t of row.toolSlugs ?? []) {
-        if (!enabledToolSlugs.has(t)) samples.push({ id: `${g.slug}:${t}`, detail: `tool group '${g.slug}' → tool '${t}' has no enabled row` });
-      }
-    }
+    const samples: SystemSample[] = computeGroupToolFindings(
+      new Set(MANIFEST_TOOL_GROUPS.map((g) => g.slug)),
+      toolGroupRows,
+      enabledToolSlugs,
+    );
     checks.push({
       key: 'group-tools',
       label: 'Tool group ↔ tool links',
       severity: 'medium',
       ok: samples.length === 0,
-      detail: samples.length === 0 ? 'every tool group is seeded and its tools resolve' : `${samples.length} tool-group issue(s)`,
+      detail: samples.length === 0 ? 'every tool group is seeded, enabled, and its tools resolve' : `${samples.length} tool-group issue(s)`,
       samples: samples.slice(0, 25),
     });
   }
