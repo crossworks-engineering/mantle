@@ -59,7 +59,7 @@ Your job: spot NEW signals worth remembering, AND ONLY new ones.
 
 Look for:
   • style hints       — how the user wants to be addressed, response format preferences ("be terse", "skip bullet lists")
-  • relationship notes — facts about how the user and the assistant interact ("Jason calls me 'S' for short", "the user uses dry humour")
+  • relationship notes — facts about how the user and the assistant interact ("the user calls me 'S' for short", "the user uses dry humour")
   • corrections        — when the user told the assistant it got something wrong ("not Sarah-with-an-h; Sarah-without")
 
 Output STRICT JSON, no markdown:
@@ -75,7 +75,7 @@ Output STRICT JSON, no markdown:
 
 Rules:
 - Skip anything already covered by an existing persona_note (read the list before deciding).
-- Be specific — "Jason prefers terse, no-bullet replies" beats "user likes brevity".
+- Be specific — "the user prefers terse, no-bullet replies" beats "user likes brevity".
 - Don't invent — only return notes grounded in the transcript.
 - Return an EMPTY new_notes array if nothing notable surfaces.
 - Don't include trivia about content (those belong in facts, not persona).`;

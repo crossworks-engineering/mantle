@@ -27,7 +27,7 @@ export type ContactRow = {
    *  and "John Smith @ Modular" (both). */
   company: string;
   /** Every email entry on the contact. Each is either a full address
-   *  (`jason@schoeman.me`) or a `@domain` wildcard (`@schoeman.me` = all mail
+   *  (`alex@example.com`) or a `@domain` wildcard (`@example.com` = all mail
    *  from that domain). The inbound gate matches against both; the outbound
    *  send allowlist uses concrete addresses only (see `partitionEmailEntries`). */
   emails: string[];
@@ -140,8 +140,8 @@ export type EmailEntryKind = 'address' | 'domain' | 'invalid';
 
 /**
  * Classify one contact email-list entry. A leading `@` marks a **domain
- * wildcard** (`@schoeman.me` = all mail from that domain); anything else must
- * be a plausible full address. A bare domain without `@` (`schoeman.me`) is
+ * wildcard** (`@example.com` = all mail from that domain); anything else must
+ * be a plausible full address. A bare domain without `@` (`example.com`) is
  * rejected so the wildcard intent is always explicit and never confused with a
  * malformed address.
  */

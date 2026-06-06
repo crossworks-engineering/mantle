@@ -2,8 +2,8 @@
  * Near-duplicate entity consolidation. Migration 0055 killed EXACT dups
  * (same name+kind) and the unique index prevents their recurrence. This is the
  * next frontier: NEAR-dups — the same real thing split across spelling/identifier
- * variants ("Jason" / "Jason Schoeman" / "jason@…"; "Pivotal Accounting" /
- * "Pivotal Accounting Solutions"). Left alone they fragment the graph (a path
+ * variants ("Alex" / "Alex Carter" / "alex@…"; "Globex Accounting" /
+ * "Globex Accounting Solutions"). Left alone they fragment the graph (a path
  * from one variant silently misses edges on the others).
  *
  * Design: CONSERVATIVE + tiered. Detection never merges on its own — it scores
@@ -95,9 +95,9 @@ function nameTokens(name: string): string[] {
 
 /** True if `shorter` is a strict, fewer-token subset of `longer` AND shares
  *  `longer`'s FIRST (given-name) token. The first-token requirement is the
- *  safety rule: it accepts "Jason" ⊂ "Jason Schoeman" but REJECTS the dangerous
- *  surname-only collision "C. Schoeman" → "Jason Schoeman" (different given
- *  name, same surname) and "Ann" → "Ashley Ann Schoeman" (middle name). Used
+ *  safety rule: it accepts "Alex" ⊂ "Alex Carter" but REJECTS the dangerous
+ *  surname-only collision "C. Carter" → "Alex Carter" (different given
+ *  name, same surname) and "Ann" → "Ashley Ann Carter" (middle name). Used
  *  for the person REVIEW tier — surname-only matches are too ambiguous to even
  *  suggest. */
 export function isNameSubset(shorter: string, longer: string): boolean {
@@ -238,7 +238,7 @@ export async function findDuplicateCandidates(ownerId: string): Promise<MergeCan
     for (const e of group) if (e.id !== canon.id) add(canon, e, 'auto', `same org ignoring spacing/punctuation/legal-suffix ("${orgCompactKey(e.name)}")`);
   }
 
-  // REVIEW 1 — person name token-subset ("Jason" ⊂ "Jason Schoeman").
+  // REVIEW 1 — person name token-subset ("Alex" ⊂ "Alex Carter").
   const persons = ents.filter((e) => e.kind === 'person' && !claimedDup.has(e.id));
   for (const a of persons) {
     if (claimedDup.has(a.id)) continue;

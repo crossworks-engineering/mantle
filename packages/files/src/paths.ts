@@ -3,9 +3,9 @@
  * MANTLE_FILES_ROOT. The `files` segment is the marker — anything not
  * descending from it is DB-only and shouldn't be touched on disk.
  *
- * `files.work.lister`           → `${ROOT}/work/lister`
+ * `files.work.acme`             → `${ROOT}/work/acme`
  * `files`                       → `${ROOT}`
- * `inbox.email_jason.…`         → null (not a host-mirrored branch)
+ * `inbox.email_alex.…`          → null (not a host-mirrored branch)
  */
 
 import path from 'node:path';

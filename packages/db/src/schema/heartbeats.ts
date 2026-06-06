@@ -12,8 +12,8 @@ import {
 } from 'drizzle-orm/pg-core';
 
 /**
- * Heartbeats: scheduled, stateful skill→agent triggers. Lets Saskia
- * act proactively — e.g. "ask Jason about his family every other day
+ * Heartbeats: scheduled, stateful skill→agent triggers. Lets the assistant
+ * act proactively — e.g. "ask the user about their family every other day
  * until you've covered all topics, then stop". See docs/heartbeats.md
  * for the full design and migration 0030 for the SQL.
  */

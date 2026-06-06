@@ -100,7 +100,7 @@ const CHUNK_LIMIT_DEFAULT = 3;
  *  (0.6): a passage can match tightly on a sub-topic the node summary misses. */
 const CHUNK_CUTOFF = 0.65;
 
-/** Preferences are tiny + high-signal ("Jason prefers terse replies"); the
+/** Preferences are tiny + high-signal ("the user prefers terse replies"); the
  *  design always-injects the most recent few rather than waiting on a vector
  *  match. 8 keeps the prefix cheap while covering a real person's standing
  *  preferences. */
@@ -118,7 +118,7 @@ const SALIENCE_LAMBDA = Number(process.env.MANTLE_SALIENCE_LAMBDA ?? 0.15);
 // 0 at age 0 → λ as age → ∞. So among similarly-relevant items the recent one
 // wins, but a much-more-relevant old item still beats a marginal recent one
 // (a tiebreaker, not a sledgehammer). KIND-AWARE for facts: episodic memories
-// ("on the 4th Jason said…") are recency-driven; semantic/preference facts are
+// ("on the 4th the user said…") are recency-driven; semantic/preference facts are
 // stable identity and must NOT decay; factual sits in between. Mild on content.
 const RECENCY_TAU_SEC = Number(process.env.MANTLE_RECENCY_TAU_DAYS ?? 180) * 86_400;
 const RECENCY_EPISODIC = Number(process.env.MANTLE_RECENCY_EPISODIC ?? 0.15);

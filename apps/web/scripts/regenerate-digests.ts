@@ -30,7 +30,7 @@ const OWNER_ID = process.env.ALLOWED_USER_ID;
 
 const REGEN_PROMPT = `You are a memory compressor for an ongoing Telegram conversation. You will be given a chronological transcript of a chat between the user and an AI assistant, each line prefixed by its turn number.
 
-Write a single factual summary of the whole transcript in 3-6 sentences (no headers, no bullet lists) capturing decisions, commitments, specific facts about people/places/dates/numbers, and notable shifts in tone. Be specific — use names, dates, and numbers; write "Jason is preaching on Romans 8 this Sunday" not "they discussed church plans". Skip conversational filler.
+Write a single factual summary of the whole transcript in 3-6 sentences (no headers, no bullet lists) capturing decisions, commitments, specific facts about people/places/dates/numbers, and notable shifts in tone. Be specific — use names, dates, and numbers; write "Maria is presenting the Q3 report on Thursday" not "they discussed work plans". Skip conversational filler.
 
 Output ONLY the summary text — no preamble, no JSON, no markdown.`;
 

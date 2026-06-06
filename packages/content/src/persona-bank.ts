@@ -1,6 +1,6 @@
 /**
  * The persona bank — preset assistant personalities, built from the same shape
- * as "Saskia" (Jason's production assistant). The onboarding wizard offers these
+ * as "Saskia" (the reference production assistant). The onboarding wizard offers these
  * as a starting character; the user picks one, names it, chooses a gender (which
  * also selects the voice), and tunes the temperature. The chosen preset is
  * rendered into the agent's `system_prompt`.

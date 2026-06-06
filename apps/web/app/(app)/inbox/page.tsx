@@ -71,8 +71,8 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
         <h2 className="text-xl font-semibold">No contacts yet — so nothing&apos;s being ingested.</h2>
         <p className="text-sm text-muted-foreground">
           Mantle only pulls mail from people in your contacts — an address like{' '}
-          <code className="rounded bg-muted px-1">jason@schoeman.me</code> or a whole domain like{' '}
-          <code className="rounded bg-muted px-1">@schoeman.me</code>. Add a contact to start, or
+          <code className="rounded bg-muted px-1">you@example.com</code> or a whole domain like{' '}
+          <code className="rounded bg-muted px-1">@example.com</code>. Add a contact to start, or
           discover who&apos;s recently emailed you.
         </p>
         <div className="flex justify-center gap-2">

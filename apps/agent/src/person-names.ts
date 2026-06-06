@@ -1,8 +1,8 @@
 /**
  * Person-name heuristics for the entity reconciler.
  *
- * The reconciler's trigram + embedding paths collapse "Don Schoeman" into the
- * existing "Jason Schoeman" entity because surname overlap alone is enough to
+ * The reconciler's trigram + embedding paths collapse "Don Carter" into the
+ * existing "Alex Carter" entity because surname overlap alone is enough to
  * push similarity past the threshold. That's wrong for siblings / family /
  * any same-surname-different-people case.
  *
@@ -28,7 +28,7 @@ function stripTrailingDot(s: string): string {
 
 /**
  * Split a person name into tokens, dropping a leading honorific (Mr / Dr / …).
- * "Mr J Schoeman" → ["J", "Schoeman"]; "Dr. Mary Jones" → ["Mary", "Jones"];
+ * "Mr J Carter" → ["J", "Carter"]; "Dr. Mary Jones" → ["Mary", "Jones"];
  * "Modular" → ["Modular"]. Pure.
  */
 export function tokenizePersonName(name: string): string[] {

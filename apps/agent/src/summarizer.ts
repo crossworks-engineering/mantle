@@ -45,7 +45,7 @@ For each topic, produce:
   - A factual summary (3-6 sentences, no headers, no bullet lists) capturing decisions, commitments, specific facts about people/places/dates/numbers, and notable shifts in tone
   - The turn numbers belonging to this topic (contiguous range; topics don't overlap)
 
-Be specific — write "Jason is preaching on Romans 8 this Sunday" not "they discussed church plans." Use names when known. Skip conversational filler.
+Be specific — write "Maria is presenting the Q3 report on Thursday" not "they discussed work plans." Use names when known. Skip conversational filler.
 
 Output STRICT JSON, no markdown fences, no commentary outside the JSON:
 

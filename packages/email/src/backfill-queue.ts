@@ -29,7 +29,7 @@ async function boss(): Promise<PgBoss> {
 
 /**
  * Enqueue a 90-day backfill of `target` (a contact email entry — a full address
- * `jason@x.com` or a `@domain` wildcard) across every enabled account for the
+ * `alex@x.com` or a `@domain` wildcard) across every enabled account for the
  * owner. `singletonKey` collapses duplicate enqueues for the same target.
  * Best-effort: a queue hiccup must never make a contact write look failed, so
  * callers typically swallow errors.

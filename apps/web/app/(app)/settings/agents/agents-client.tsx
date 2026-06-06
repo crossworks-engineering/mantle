@@ -169,7 +169,7 @@ For each topic, produce:
   - A factual summary (3-6 sentences, no headers, no bullet lists) capturing decisions, commitments, specific facts about people/places/dates/numbers
   - The turn numbers belonging to this topic (contiguous range; topics don't overlap)
 
-Be specific — write "Jason is preaching on Romans 8 this Sunday" not "they discussed church plans."
+Be specific — write "Maria is presenting the Q3 report on Thursday" not "they discussed work plans."
 
 Output STRICT JSON:
 
@@ -183,7 +183,7 @@ const DEFAULT_EXTRACTOR_PROMPT = `You are a memory extractor for a personal AI a
 
 2. A list of facts about the user or their world that this content reveals. Each fact is a single declarative sentence with the entities mentioned (people, projects, places, organisations, events) for cross-referencing.
 
-3. A list of relations: direct relationships BETWEEN two named entities the content establishes (Sarah works_at Lister, Don father_of Jason). These build the user's knowledge graph.
+3. A list of relations: direct relationships BETWEEN two named entities the content establishes (Sarah works_at Acme, Tom father_of Lena). These build the user's knowledge graph.
 
 Output STRICT JSON, no markdown:
 
@@ -213,7 +213,7 @@ Output STRICT JSON, no markdown:
 
 Rules:
 - Skip anything already covered by an existing persona_note.
-- Be specific — "Jason prefers terse, no-bullet replies" beats "user likes brevity".
+- Be specific — "the user prefers terse, no-bullet replies" beats "user likes brevity".
 - Don't invent — only return notes grounded in the transcript.
 - Return an EMPTY new_notes array if nothing notable surfaces.
 - Don't include trivia about content (those belong in facts, not persona).`;

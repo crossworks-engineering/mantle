@@ -196,7 +196,7 @@ const CHECKS: CheckDef[] = [
     key: 'over_merged_entities',
     label: 'Over-merged entities',
     severity: 'low',
-    note: 'an entity carrying many aliases — a smell for the reconciler having collapsed distinct people/things (the Don/Jason Schoeman case). Heuristic, not a hard error.',
+    note: 'an entity carrying many aliases — a smell for the reconciler having collapsed distinct people/things (the Don/Alex Carter case). Heuristic, not a hard error.',
     query: (o) => sql`
       SELECT id, 'entity' AS kind, (name || ' — ' || coalesce(array_length(aliases, 1), 0) || ' aliases') AS detail
       FROM entities WHERE owner_id = ${o} AND coalesce(array_length(aliases, 1), 0) > 8

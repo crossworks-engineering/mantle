@@ -151,7 +151,7 @@ const contact_create: BuiltinToolDef = {
   slug: 'contact_create',
   name: 'Add a contact',
   description:
-    "Save someone or some organisation as a contact in the user's Mantle. At least one of `first_name`/`last_name`/`emails`/`cell` is required. `emails` is a list — each entry is a full address (`jason@schoeman.me`) OR a `@domain` wildcard (`@schoeman.me`, which trusts ALL mail from that domain inbound). The `description` is the natural-language note the AI reads — say who this person is, the relationship, what they do; it's indexed into the brain (summary, embedding, facts) so future searches like 'who supplies aluminium profiles?' find this contact. **Contacts are the email allowlist in BOTH directions:** adding one enables Saskia to email those addresses AND lets their mail be ingested into the brain (a 90-day history backfill kicks off automatically)." +
+    "Save someone or some organisation as a contact in the user's Mantle. At least one of `first_name`/`last_name`/`emails`/`cell` is required. `emails` is a list — each entry is a full address (`alex@example.com`) OR a `@domain` wildcard (`@example.com`, which trusts ALL mail from that domain inbound). The `description` is the natural-language note the AI reads — say who this person is, the relationship, what they do; it's indexed into the brain (summary, embedding, facts) so future searches like 'who supplies aluminium profiles?' find this contact. **Contacts are the email allowlist in BOTH directions:** adding one enables Saskia to email those addresses AND lets their mail be ingested into the brain (a 90-day history backfill kicks off automatically)." +
     ONLY_WHEN_ASKED,
   inputSchema: {
     type: 'object',
@@ -167,7 +167,7 @@ const contact_create: BuiltinToolDef = {
         type: 'array',
         items: { type: 'string' },
         description:
-          'Email addresses and/or `@domain` wildcards. e.g. ["jason@schoeman.me", "@schoeman.me"].',
+          'Email addresses and/or `@domain` wildcards. e.g. ["alex@example.com", "@example.com"].',
       },
       email: { type: 'string', description: 'Deprecated single-email shorthand; prefer `emails`.' },
       country_code: { type: 'string', description: 'E.g. "+27"; required if cell is set' },

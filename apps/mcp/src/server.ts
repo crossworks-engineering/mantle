@@ -208,7 +208,7 @@ server.tool(
 
 server.tool(
   'search',
-  "Hybrid semantic + full-text search over Jason's Mantle — ranks by meaning (vector) with keyword as a booster, so vague/natural queries work, not just exact words. Use `branch` (ltree path) to scope, `type` to filter. Returns the spine (title, tags, summary) — use node_read / file_read / email_get for a full body.",
+  "Hybrid semantic + full-text search over the user's Mantle — ranks by meaning (vector) with keyword as a booster, so vague/natural queries work, not just exact words. Use `branch` (ltree path) to scope, `type` to filter. Returns the spine (title, tags, summary) — use node_read / file_read / email_get for a full body.",
   {
     q: z.string().optional(),
     branch: z.string().optional(),
@@ -312,7 +312,7 @@ server.tool(
 
 server.tool(
   'folder_list',
-  "List folders in Jason's host-mirrored filesystem. Pass `parent` (ltree path, e.g. 'files.work') to list immediate children of that folder; pass `tree: true` to get every folder in the subtree at once. With no args, returns the immediate children of the root.",
+  "List folders in the user's host-mirrored filesystem. Pass `parent` (ltree path, e.g. 'files.work') to list immediate children of that folder; pass `tree: true` to get every folder in the subtree at once. With no args, returns the immediate children of the root.",
   {
     parent: z.string().optional(),
     tree: z.boolean().optional(),
@@ -562,7 +562,7 @@ server.tool(
 
 server.tool(
   'entity_search',
-  "Resolve a name or alias to entities in Jason's memory. Exact name/alias matches return similarity=1; otherwise trigram fuzzy match. Optional `kind` filter (person, project, place, org, event, ...).",
+  "Resolve a name or alias to entities in the user's memory. Exact name/alias matches return similarity=1; otherwise trigram fuzzy match. Optional `kind` filter (person, project, place, org, event, ...).",
   {
     q: z.string().min(1),
     kind: z.string().optional(),

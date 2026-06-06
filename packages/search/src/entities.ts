@@ -51,7 +51,7 @@ export type EntityHit = Entity & {
  *
  * Embedding fallback isn't here — the extractor already uses it during
  * ingest; at query time, a fuzzy text match is plenty for "who does
- * 'jason' mean?"-style lookups. Add later if recall is missing.
+ * 'alex' mean?"-style lookups. Add later if recall is missing.
  */
 export async function searchEntities(opts: EntitySearchOptions): Promise<EntityHit[]> {
   const trimmed = opts.q.trim();

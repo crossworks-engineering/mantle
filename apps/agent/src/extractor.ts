@@ -124,7 +124,7 @@ export const DEFAULT_EXTRACTOR_PROMPT = `You are a memory extractor for a person
 
 2. A list of facts about the user or their world that this content reveals. Each fact is a single declarative sentence. Include the entities mentioned (people, projects, places, organisations, events) so they can be cross-referenced.
 
-3. A list of relations: direct relationships BETWEEN two named entities that this content establishes — e.g. Sarah works at Lister, Don is Jason's father, this invoice is from Pivotal Accounting. These build the user's knowledge graph.
+3. A list of relations: direct relationships BETWEEN two named entities that this content establishes — e.g. Sarah works at Acme, Tom is Lena's father, this invoice is from Globex Accounting. These build the user's knowledge graph.
 
 Output STRICT JSON, no markdown, no commentary outside the JSON:
 
@@ -158,10 +158,10 @@ Relations:
 - Only extract relations the content actually states or strongly implies. Same confidence rule as facts: omit anything below 0.6. If the content establishes no relationships between entities, return an empty relations array.
 
 Fact kinds:
-- "factual" = a verifiable claim with a value ("Jason's birthday is March 4").
-- "episodic" = a record of something that happened, anchored to a date ("On 2026-03-04 Jason completed a workout"). Set "occurred_at" to that date (YYYY-MM-DD) when the content states or clearly implies one; omit it if no specific date is knowable. Resolve relative dates ("yesterday", "last Tuesday") against the document's own date if present, otherwise omit.
-- "semantic" = a STABLE identity, and ONLY when the content clearly establishes it or there's strong repeated evidence ("Jason is a pastor"). Do NOT infer an identity from a single mundane action.
-- "preference" = how the user wants to be helped, and ONLY when they EXPLICITLY state it ("Jason prefers concise replies"). Never infer a preference from one action.
+- "factual" = a verifiable claim with a value ("Alex's birthday is March 4").
+- "episodic" = a record of something that happened, anchored to a date ("On 2026-03-04 Alex completed a workout"). Set "occurred_at" to that date (YYYY-MM-DD) when the content states or clearly implies one; omit it if no specific date is knowable. Resolve relative dates ("yesterday", "last Tuesday") against the document's own date if present, otherwise omit.
+- "semantic" = a STABLE identity, and ONLY when the content clearly establishes it or there's strong repeated evidence ("Alex is a teacher"). Do NOT infer an identity from a single mundane action.
+- "preference" = how the user wants to be helped, and ONLY when they EXPLICITLY state it ("the user prefers concise replies"). Never infer a preference from one action.
 
 Be conservative — quality over quantity:
 - Extract only facts genuinely worth remembering. A single task, event, reminder, or routine action is usually just ONE episodic (or factual) fact — do not also generalise it into a semantic identity or a preference.
@@ -810,7 +810,7 @@ async function reconcileEntity(
   if (trgmHits[0] && trgmHits[0].sim >= 0.7) {
     const existing = trgmHits[0].row;
     // Same-surname-different-given guard: surname alone hits the trigram
-    // threshold, which would alias "Don Schoeman" into "Jason Schoeman". For
+    // threshold, which would alias "Don Carter" into "Alex Carter". For
     // kind='person' we refuse the merge when both names look like full
     // given-name+surname pairs with the same surname but distinct given names.
     // Falls through to the embedding match below, which carries the same guard.
@@ -841,8 +841,8 @@ async function reconcileEntity(
       .limit(1);
     if (vecHits[0] && (vecHits[0].dist ?? 1) < ENTITY_DEDUP_THRESHOLD) {
       const existing = vecHits[0].row;
-      // Same guard as the trigram path: embeddings of "Don Schoeman" and
-      // "Jason Schoeman" are close enough to merge by default, which is wrong
+      // Same guard as the trigram path: embeddings of "Don Carter" and
+      // "Alex Carter" are close enough to merge by default, which is wrong
       // for distinct people sharing a surname.
       if (!isLikelyDifferentPerson(mention, existing)) {
         if (!existing.aliases.includes(trimmed) && existing.name.toLowerCase() !== trimmed.toLowerCase()) {

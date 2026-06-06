@@ -95,8 +95,8 @@ export const emailAccounts = pgTable(
      *  mail for folders not yet scanned. Set on the add/edit account form. */
     firstScanDays: integer('first_scan_days').default(365).notNull(),
     ingestPolicy: ingestPolicy('ingest_policy').default('approve_list').notNull(),
-    /** Stable ltree path this account's mail lands under, e.g. `inbox.jason_sm`.
-     *  Stored (not derived from address) so different `jason@…` accounts can
+    /** Stable ltree path this account's mail lands under, e.g. `inbox.alex_sm`.
+     *  Stored (not derived from address) so different `alex@…` accounts can
      *  coexist without colliding. Set at account-creation time. */
     branchPath: text('branch_path').notNull(),
     // Provider-specific sync cursor (history id, delta link, UID/modseq pair…).

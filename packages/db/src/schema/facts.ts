@@ -16,9 +16,9 @@ import { entities } from './entities';
 
 /**
  * `factual`     — a verifiable claim ("Sarah's passport expires 2030-06-12").
- * `episodic`    — a record of something that happened ("Jason said X on date Y").
- * `semantic`    — a stable abstraction ("Jason is a pastor").
- * `preference`  — a stable interaction preference ("Jason prefers terse replies").
+ * `episodic`    — a record of something that happened ("the user said X on date Y").
+ * `semantic`    — a stable abstraction ("the user is a teacher").
+ * `preference`  — a stable interaction preference ("the user prefers terse replies").
  */
 export const factKind = pgEnum('fact_kind', [
   'factual',

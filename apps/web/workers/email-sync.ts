@@ -28,7 +28,7 @@ interface SyncJob {
 
 interface BackfillJob {
   accountId: string;
-  /** A contact email entry to backfill from: a full address (`jason@x.com`)
+  /** A contact email entry to backfill from: a full address (`alex@x.com`)
    *  or a bare domain (`x.com`, from an `@domain` wildcard). */
   target: string;
 }

@@ -182,8 +182,8 @@ async function ingestOne(
     hasAttachment: message.hasAttachments,
   });
 
-  // Branch path is stored per-account so different `jason@…` accounts can
-  // coexist without colliding under `inbox.jason`. Rules may still override
+  // Branch path is stored per-account so different `alex@…` accounts can
+  // coexist without colliding under `inbox.alex`. Rules may still override
   // for routing into a project sub-branch.
   const path = effects.movePath ?? account.branchPath;
   await ensureBranchPath(account.userId, path);
@@ -404,7 +404,7 @@ async function getOrCreateFileNode(
  * ingest path as `syncAccount` but uses the provider's per-sender IMAP search
  * so we don't re-scan the whole mailbox.
  *
- * `target` is either a full address (`jason@x.com`) or a bare domain
+ * `target` is either a full address (`alex@x.com`) or a bare domain
  * (`x.com` — the `@` of an `@domain` wildcard stripped by the enqueuer). IMAP
  * `search({from})` is a substring match, so:
  *   - address target → search the address, keep `fromAddr === target`.
