@@ -1,17 +1,18 @@
-# Session handover — Mantle fresh-install test in progress
+# Session handover — Mantle fresh-install + prod cutover in progress
 
-> **TL;DR.** Just finished a multi-day arc: independent **audit follow-up** on the
-> tools/skills refactor, then **open-source prep** (genericize hard-coded personal
-> data; clean up legacy scripts), then **DX hardening** for the fresh-install
-> path. Jason is now running through onboarding **on a freshly-wiped dev brain**
-> as an open-source user would. The dev brain is being rebuilt as Jason's new
-> production. Last interactive moment: I wiped his dev volumes; he's about to
-> run `pnpm start` and onboard. Pick up by verifying his onboarding went clean and
+> **TL;DR.** Jason completed onboarding on a freshly-wiped dev brain, hit a
+> chat bug on his first Saskia DM (cache_control marker cap), I fixed it
+> (v0.20.19–0.20.21), then **transferred his prod secrets/contacts/accounts
+> into the dev brain** so it can become his new production. Prod's
+> telegram_worker is stopped; the rest of prod is still running. Last
+> interactive moment: data transfer committed; dev's telegram_worker should
+> pick up the new `saskianewbot` channel within 60s of the next refresh.
+> Pick up by confirming Saskia replies to a Telegram DM on the dev brain, then
 > running `/debug/integrity`.
 
 ---
 
-## 1. What just happened — the arc (v0.20.5 → v0.20.15)
+## 1. What just happened — the arc (v0.20.5 → v0.20.21)
 
 ### Phase A: Audit follow-up — tools/skills refactor (P0–P6c)
 
@@ -139,50 +140,150 @@ Jason's fresh-install test surfaced two real bugs:
     pin (otherwise workers stick to a deleted user), exec's `up.sh`. Wired as
     `pnpm reset`. **This is the "I'm stuck" recovery command.**
 
+### Phase D: Chat error surface + cache_control cap (v0.20.19 – 0.20.21)
+
+Onboarding completed cleanly. Jason's first DM to Saskia returned a bare
+"Provider returned error" with a deep zod/SDK stack trace from
+`@openrouter/sdk`. Two distinct fixes:
+
+- **v0.20.19 — surface upstream provider detail.** OpenRouter's SDK throws
+  `BadRequestResponseError` (and friends) on non-2xx responses with a
+  generic top-level message ("Provider returned error"); the actionable
+  detail lives in `.error.message` / `.error.metadata` and the raw HTTP
+  body in `.body`. The adapter at
+  `packages/voice/src/adapters/openrouter-chat.ts` let the raw SDK error
+  bubble, so the trace + console showed only the generic wrapper.
+  Wrapped `client.chat.send()` in a try/catch (`enrichOpenRouterError()`)
+  that re-throws an Error whose message folds in: status, model,
+  upstream message, metadata (clipped), body slice (when no upstream
+  message was parseable). Original SDK error chained via `cause`.
+  Without this we couldn't see WHY each subsequent attempt failed.
+- **v0.20.20 — the actual chat bug.** Once errors surfaced we saw
+  `A maximum of 4 blocks with cache_control may be provided. Found 5`
+  from Anthropic upstream (via OR's Azure route; OR's Google route had
+  429'd first, but that was just load-balancer rotation, not the
+  blocker). Root cause: the OR adapter's `cacheControl.systemPrompt:
+  true` branch fired an ephemeral marker on **every plain-string system
+  message independently**. `buildChatMessages`
+  (`packages/agent-runtime/src/messages.ts:242,262`) emits up to 5
+  system blocks — persona + digests in array-form with their own
+  per-block markers, then content-hits + relations + chunks as plain
+  strings — and each of the strings got its own marker on top of the
+  per-block ones. Easily 5+ markers.
+  Fix mirrors `anthropic-chat.ts:361-368`: pre-scan messages; if any
+  system block already carries a per-block marker (caller pre-segmented
+  the cacheable prefix), honour those and IGNORE the `systemPrompt`
+  flag. Otherwise add exactly ONE marker on the LAST system message.
+  Cap math is now `≤2 per-block + ≤1 system-tail + 1 lastUser = 4 max`
+  — exactly at the cap, never over. Two new unit tests pin both
+  branches.
+- **v0.20.21 — debug log added then removed.** Mid-debug I added a
+  `console.log` printing the marker count per `anthropic/*` send to
+  prove the fix was on the path. Confirmed `markers=2` for fresh-brain
+  turns; removed the log once Saskia's first DM landed cleanly.
+
+### Phase E: Prod → dev data transfer (2026-06-06 13:45 local)
+
+Jason wanted his prod secrets/contacts/accounts on the dev brain so the
+dev brain can become his new production. Execution:
+
+- **Master key check.** Dev's `MANTLE_MASTER_KEY` was **already identical
+  to prod's** (`G6+cpop08Ms+HxYAf0mJoy6pObYrL6ikuY9zUAK8Sms=`). No key swap
+  needed; all `*_enc` ciphertext from prod decrypts on dev as-is.
+- **Schema gap.** Prod is at migration 74, dev at 86 (12 ahead).
+  Specifically prod still has the pre-0078 single-table Telegram
+  (`telegram_accounts.bot_token_enc`); dev has the split (`channels` +
+  `telegram_accounts.channel_id`). Transfer bridges the gap.
+- **Tables transferred** (id preserved → ciphertext AAD still valid;
+  `user_id`/`owner_id` remapped from prod `61572800-…0f6a` → dev
+  `bc505da9-…43de`):
+  - `api_keys` — 7 rows (openrouter, openai, anthropic, xai, google,
+    deepseek, elevenlabs). Onboarding's dev openrouter row deleted
+    first to dodge the `(user_id, service, label)` unique collision.
+  - `secrets` — 12 rows. Each has a 1:1 FK to a sister `nodes` row
+    with `type='secret'`, so the 12 secret-type nodes are inserted
+    BEFORE the secrets rows.
+  - `email_accounts` — 3 rows (IMAP/SMTP, sealed configs).
+  - `tailscale_config` — 1 row (sealed auth key).
+  - `pdf_passwords` — 2 rows.
+  - `nodes WHERE type='contact'` — 7 rows. Skipped entity_edges + facts
+    per Jason's call — extractor regenerates those.
+  - `telegram_accounts` — 4 rows bridged: `saskianewbot` got a
+    `channels` row attached to dev's `assistant` agent
+    (`909a02b7-…0a42f`); the other 3 (`apostle_paulus_bot`,
+    `brianthecoder_bot`, `miaschoemanbot`) inserted with `channel_id=NULL`
+    because their custom-persona responder agents don't exist on dev yet
+    — wire them up manually when those personas are recreated.
+- **Prod state.** Only the `worker_telegram` container was stopped
+  (avoids 409s once dev polls `saskianewbot`). Rest of prod is still
+  running per Jason's "defer" decision. Falling back to prod is still
+  one `docker compose start` away on the VPS.
+- **Backups** (in `backups/prod-transfer-20260606/`):
+  - `dev-pre-transfer-20260606-134558.dump` (912K)
+  - `prod-snapshot-20260606-134558.dump` (160M)
+  - `apply_full.sql` (the actual transfer script, 79 lines, idempotent
+    if `id`s match)
+- **Refresh semantics.** Dev `telegram_worker` re-reads enabled channels
+  every 60s (`CHANNEL_REFRESH_MS` in `apps/web/workers/telegram-poll.ts`),
+  so `saskianewbot` starts polling without a restart. api_keys, contacts,
+  email_accounts are read on-demand per request — picked up immediately.
+
 ---
 
 ## 2. Where we are RIGHT NOW (interactive)
 
-**Jason just told me to stop all containers + wipe, so he can run `pnpm start`
-as a true cold-start open-source user.** I did that. State:
+**Onboarding ✓. Saskia chat ✓. Prod data transferred ✓.** State:
 
 | | |
 |---|---|
-| **Dev containers** | none (wiped) |
-| **Dev volumes** | `mantle_mantle_pg_data` + `mantle_mantle_minio_data` removed |
-| **Pre-wipe backup** | `backups/mantle-20260606-114037.dump` (172K) |
-| **Owner pin** | `ALLOWED_USER_ID` commented in `apps/web/.env.local` (line 22-24) |
-| **Source tree** | main @ `b70a419`, v0.20.15 — all fixes in |
-| **mantlenew, prod** | **untouched** (mantlenew is at `~/Projects/mantle-new`, a separate checkout; prod is on the Contabo VPS) |
-| **Native Ollama** | running on Jason's Mac at `localhost:11434` with `embeddinggemma:latest` (so dev embeddings will work without any extra setup) |
-
-**Jason is about to run `pnpm start`** from `~/Projects/mantle`. He's been given
-prepped copy-paste answers for the 10-question onboarding interview (his own,
-pulled from a prior brain backup — see §6 below).
+| **Dev user** | `bc505da9-c323-43c7-bafb-6c06a2d443de` (jason@schoeman.me; created by onboarding) |
+| **Prod user** | `61572800-924c-4597-b6f0-facde6640f6a` (jason@schoeman.me; original) |
+| **Master key** | `MANTLE_MASTER_KEY` is the SAME on dev + prod — no rotation needed |
+| **Dev DB content** | 7 api_keys, 12 secrets (+ 12 secret nodes), 3 email_accounts, 1 tailscale_config, 2 pdf_passwords, 7 contact nodes, 1 channel (saskianewbot→assistant), 4 telegram_accounts |
+| **Prod state** | `worker_telegram` STOPPED. All other prod containers still running (web, agent, files/events/docs/email workers, pg). Falls back via `docker compose start worker_telegram` if needed. |
+| **Dev workers** | running via `pnpm dev`; telegram_worker auto-discovers new channels every 60s |
+| **Source tree** | main @ HEAD with v0.20.21 (cache_control fixes in) |
+| **Backups** | `backups/prod-transfer-20260606/dev-pre-transfer-*.dump` (912K) + `prod-snapshot-*.dump` (160M) |
+| **Pre-wipe backup** | `backups/mantle-20260606-114037.dump` (172K) — from before the original wipe |
+| **Owner pin** | `ALLOWED_USER_ID` still commented in `apps/web/.env.local` (lines 22-24) |
+| **Native Ollama** | running on Jason's Mac at `localhost:11434` with `embeddinggemma:latest` |
 
 ---
 
 ## 3. What's next — immediate task
 
-Once Jason finishes onboarding, the verification path is:
-
-1. **Confirm no pg-boss errors in the logs.** That validates the v0.20.14 fix.
-2. **Run `/debug/integrity` → System tab.** Should be all green (persona can
+1. **Confirm Saskia replies to a Telegram DM on dev.** Send `@saskianewbot`
+   a "hi" from your phone. The dev `telegram_worker` log should show
+   `[channel-poll] starting telegram loop for saskianewbot` within 60s of
+   the transfer commit (already triggered). Then the reply should land.
+   If dead silence: check `telegram_accounts.last_poll_error` and the dev
+   worker stdout — the channel may be inheriting prod's sticky offset and
+   need a manual reset, or prod's worker may have spun back up.
+2. **`/debug/integrity` → System tab.** Should be all green (persona can
    act + delegate; specialists seeded; delegation wired; workers ready;
-   tool-groups resolve). The persona will be the manifest `assistant` slug —
-   not `telegram-default` like his old prod brain — so the integrity check
-   resolves it directly (no `resolveEffectivePersona` fallback needed).
-3. **Confirm Saskia replies to her first Telegram DM** (if Jason connected the
-   bot during onboarding; otherwise he'll do it in `/settings/agents`).
+   tool-groups resolve). Manifest `assistant` slug; no
+   `resolveEffectivePersona` fallback needed.
+3. **Confirm no pg-boss errors** in the dev server output (validates v0.20.14).
+4. **Email worker spot-check.** Three accounts were transferred; the email
+   worker (`worker_email_dev`) should connect IMAP within a few minutes.
+   `select last_sync_at, last_sync_error from email_accounts;` is the
+   single-row read.
+5. **Decide prod's fate.** Jason deferred this. Options range from
+   "leave prod running as-is" → "stop all prod workers, web stays up
+   read-only" → "tear down prod entirely". Tied to whether to also
+   transfer his **ingested content** (nodes, emails, facts, edges, pages,
+   tables) — currently NOT transferred. The transfer above is just
+   secrets/contacts/accounts; his actual brain content still lives on
+   prod.
 
-After verification: Jason will start **ingesting his real data** — emails,
-files, sermons — and we'll check every "brain touch" (extractor / summarizer /
-reflector / entity-dedup / search / recall). He's flagged he'll later ask me
-to **copy his email account creds + Telegram bot token from his prod VPS**.
-Prod is `ssh cwe@mcp.crossworks.network` (memory note `reference_prod_box.md`).
+**Custom personas not migrated.** `apostle_paulus_bot` and `brianthecoder_bot`
+came across as `telegram_accounts` rows with `channel_id=NULL`. Their
+responder agents (`78148ac5-…` and `f42037c2-…`) don't exist on dev. To
+re-enable: recreate the personas on dev (via `/settings/agents` or the
+Agent Studio at `/studio`), then create a `channels` row per bot pointing
+at the new agent and update `telegram_accounts.channel_id`.
 
-**This dev brain is becoming his new production.** Treat it as such — but he
-may wipe again if onboarding surfaces another bug. Be ready for that.
+**This dev brain is becoming his new production.** Treat it as such.
 
 ---
 
@@ -272,7 +373,13 @@ Ollama. Both paths are documented in README + `docs/deploy.md`.
 
 **Commits (all on main):**
 ```
-b70a419 v0.20.15  fix(dx): preflight `pnpm dev` + add `pnpm reset` for clean wipes
+NEXT    v0.20.21  chore: remove openrouter-chat debug marker log (no longer needed)
+36749d4 v0.20.20  fix(openrouter-chat): cap cache_control markers at Anthropic's 4-block limit
+d94d2fb v0.20.19  fix(openrouter-chat): surface upstream provider error detail
+74c3cf7 v0.20.18  fix(up.sh): check apps/web/.env.local, not root
+e49aa46 v0.20.17  docs: propagate `pnpm up` → `pnpm start` rename
+924f3c6 v0.20.16  fix(dx): rename `pnpm up` → `pnpm start`
+b70a419 v0.20.15  fix(dx): preflight `pnpm dev` + add `pnpm reset`
 3e238f9 v0.20.14  fix(fresh-install): create pg-boss schema before workers race on it
 6e0406e v0.20.13  docs+onboarding: clarify Telegram setup
 25912b9 v0.20.12  docs(readme): macOS local-embedder setup + clarify Linux production
@@ -345,20 +452,29 @@ default creativity (~0.7).
 
 Don't re-investigate the arc — read this file + the project's MEMORY.md index +
 the canonical docs (`docs/tools-and-skills.md`, `docs/onboarding.md`,
-`docs/deploy.md`) only as needed.
+`docs/deploy.md`, `docs/comms-channels.md`) only as needed.
 
-**Pick up by asking Jason where he's at:** mid-onboarding? Through?
-Hit something? — and from there:
+**Ask Jason where he's at.** Likely options:
 
-- If through onboarding cleanly: run **`/debug/integrity` → System tab**
-  verification first. Confirm zero pg-boss errors in logs. Then help with
-  Telegram bot connect → first DM → Saskia reply test.
-- If hit a snag: diagnose against live state (`docker exec mantle_pg psql …`
-  for DB introspection; `docker logs` / dev-server output for logs). The
-  preflight + reset scripts are there to recover cleanly.
-- If he wants to ingest data: standard brain-touch verification — drop a file
-  / send an email / send a Telegram message; watch extractor → summarizer →
-  reflector pipeline; verify the indexed result via search.
+- **Saskia Telegram smoke-test:** "I just DM'd `@saskianewbot`, did it
+  reply?" → if yes, move to integrity; if no, debug via the dev console
+  output for `[channel-poll] …saskianewbot` line and
+  `select last_poll_error from telegram_accounts where bot_username='saskianewbot'`.
+- **Integrity check:** run `/debug/integrity` → System tab, expect all green.
+- **Email sync verification:** check the three transferred email_accounts
+  pick up IMAP — `select address, last_sync_at, last_sync_error from email_accounts`.
+- **Decide prod's fate** — see §3 item 5. Some content (nodes, emails,
+  facts, pages, tables) is NOT yet transferred; that's a bigger move
+  if Jason wants it.
+- **Ingestion verification:** drop a file / send an email / send a
+  Telegram message; watch extractor → summarizer → reflector → entity
+  resolution; verify the indexed result via search/`/debug/integrity`
+  Live Corpus Audit.
+
+The transfer apply script is at
+`backups/prod-transfer-20260606/apply_full.sql` if anything looks
+off and we need to inspect what was inserted (it's idempotent if you
+preserved row IDs).
 
 Good luck. Jason is sharp, direct, and patient when you're rigorous — and
 quick to flag when you're not.

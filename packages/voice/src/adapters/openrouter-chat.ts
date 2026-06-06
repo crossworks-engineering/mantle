@@ -364,31 +364,6 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
   const messages = buildMessages(opts.messages, opts.cacheControl);
   const tools = buildTools(opts);
 
-  // DEBUG: log cache_control marker count on every send so we can tell whether
-  // the fix is on the path that's actually executing. Will be removed once
-  // Saskia's first DM lands. v0.20.20+ should print "markers=2" or "markers=3".
-  if (opts.model.startsWith('anthropic/')) {
-    let markers = 0;
-    const markerLocations: string[] = [];
-    for (let i = 0; i < messages.length; i += 1) {
-      const m = messages[i]!;
-      const c = (m as { content?: unknown }).content;
-      if (Array.isArray(c)) {
-        c.forEach((b: unknown, j: number) => {
-          const cc = (b as { cacheControl?: unknown; cache_control?: unknown });
-          if (cc.cacheControl || cc.cache_control) {
-            markers += 1;
-            markerLocations.push(`msg[${i}].role=${(m as { role?: string }).role}.block[${j}]`);
-          }
-        });
-      }
-    }
-    console.log(
-      `[openrouter-chat] cache_control markers=${markers} locations=${JSON.stringify(markerLocations)} ` +
-      `cacheControl=${JSON.stringify(opts.cacheControl ?? null)} model=${opts.model}`,
-    );
-  }
-
   const chatRequest = {
     model: opts.model,
     messages,
