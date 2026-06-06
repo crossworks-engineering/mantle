@@ -92,6 +92,32 @@ function lastUserIndex(messages: ChatOptions['messages']): number {
   return -1;
 }
 
+/** Find the index of the final system-role message — the spot the
+ *  `cacheControl.systemPrompt: true` marker attaches to (when the caller
+ *  hasn't already pre-emitted any per-block markers). */
+function lastSystemIndex(messages: ChatOptions['messages']): number {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i]!;
+    if (m.role === 'system') return i;
+  }
+  return -1;
+}
+
+/** Does any system message in the input already carry a per-block
+ *  cache_control marker? When yes, the caller has pre-segmented the
+ *  cacheable prefix — we must NOT add a second marker per the Anthropic
+ *  4-breakpoint cap (mirrors anthropic-chat.ts behaviour). */
+function anySystemHasMarker(messages: ChatOptions['messages']): boolean {
+  for (const m of messages) {
+    if (m.role !== 'system') continue;
+    if (typeof m.content === 'string') continue;
+    for (const block of m.content) {
+      if (block.cacheControl) return true;
+    }
+  }
+  return false;
+}
+
 /** Convert ChatOptions.messages → OR SDK message shape, applying
  *  cache_control markers when the caller asked for them. Handles both
  *  the simple shape (chat-shaped workers, 3a) and the wider tool-loop
@@ -101,17 +127,34 @@ function buildMessages(
   cacheControl?: ChatCacheControl,
 ): OrChatMessage[] {
   const lastUser = cacheControl?.lastUserMessage ? lastUserIndex(messages) : -1;
+  // The `cacheControl.systemPrompt: true` flag means "mark the system
+  // prefix as cacheable" — at most ONE breakpoint, not one per system
+  // message. Anthropic caps cache_control at 4 markers per request; with
+  // multiple system messages (persona + digests + content-hits + relations
+  // + chunks) we used to fire a marker on every plain-string system, which
+  // blew the cap whenever a few optional system blocks coexisted with the
+  // caller's per-block markers on persona/digests.
+  //
+  // Rule (mirrors anthropic-chat.ts:361-368):
+  //  - If the caller already pre-emitted any per-block markers in array-
+  //    form system content → honour those, ignore systemPrompt flag.
+  //  - Else if systemPrompt is set → attach exactly one ephemeral marker
+  //    to the LAST system message (longest cacheable prefix).
+  const callerPreMarked = anySystemHasMarker(messages);
+  const systemPromptTarget =
+    cacheControl?.systemPrompt && !callerPreMarked ? lastSystemIndex(messages) : -1;
   return messages.map((m, idx): OrChatMessage => {
     if (m.role === 'system') {
       // Three shapes:
       //  1. Plain string content + no cache control → passthrough.
-      //  2. Plain string content + cacheControl.systemPrompt → wrap in
-      //     a single text block carrying the ephemeral marker.
+      //  2. Plain string content + cacheControl.systemPrompt (and this is
+      //     the last system message AND no per-block markers exist) →
+      //     wrap in a single text block carrying the ephemeral marker.
       //  3. Array content (caller already pre-segmented + marked) →
       //     translate each block, preserving any per-block
       //     cache_control markers the caller emitted.
       if (typeof m.content === 'string') {
-        if (cacheControl?.systemPrompt) {
+        if (idx === systemPromptTarget) {
           return {
             role: 'system',
             content: [

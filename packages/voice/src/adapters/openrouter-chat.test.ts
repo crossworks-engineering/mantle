@@ -157,6 +157,100 @@ describe('openrouter-chat message translation', () => {
 });
 
 describe('openrouter-chat multi-block + multimodal content', () => {
+  it('applies cacheControl.systemPrompt to ONLY the last system message when multiple strings are present (caps under Anthropic 4-marker limit)', async () => {
+    // Regression: buildChatMessages emits a per-block-marked persona system
+    // (array form) PLUS string-system blocks for content hits / relations /
+    // chunks. The OR adapter used to fire a marker on every plain-string
+    // system, blowing Anthropic's "max 4 cache_control blocks" cap whenever
+    // a few optional system blocks coexisted with caller-pre-marked array
+    // system content. Now: caller-pre-marked → systemPrompt flag is ignored.
+    setMockResult({
+      model: 'anthropic/claude-sonnet-4.6',
+      choices: [{ message: { role: 'assistant', content: 'ok' } }],
+      usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+    });
+    await openrouterChatAdapter.chat({
+      apiKey: 'sk-test',
+      model: 'anthropic/claude-sonnet-4.6',
+      messages: [
+        {
+          role: 'system',
+          content: [
+            { type: 'text', text: 'persona', cacheControl: { type: 'ephemeral' } },
+          ],
+        },
+        {
+          role: 'system',
+          content: [
+            { type: 'text', text: 'digest', cacheControl: { type: 'ephemeral' } },
+          ],
+        },
+        { role: 'system', content: 'content hits' },
+        { role: 'system', content: 'relations' },
+        { role: 'system', content: 'chunks' },
+        { role: 'user', content: 'hi' },
+      ],
+      cacheControl: { systemPrompt: true, lastUserMessage: true },
+    });
+    const messages = sendCalls[0]!.chatRequest.messages as Array<
+      Record<string, unknown>
+    >;
+    // Count cache_control markers across the whole request — must be ≤ 4
+    // (Anthropic's hard cap). Pre-marked persona (1) + digest (1) + lastUser
+    // (1) = 3. The string-system blocks must NOT receive markers because
+    // the caller already pre-marked the cacheable prefix.
+    let markerCount = 0;
+    for (const m of messages) {
+      const content = m.content;
+      if (Array.isArray(content)) {
+        for (const block of content as Array<Record<string, unknown>>) {
+          if (block.cacheControl) markerCount += 1;
+        }
+      }
+    }
+    expect(markerCount).toBe(3);
+    // The string-system blocks should round-trip unchanged.
+    expect(messages[2]).toEqual({ role: 'system', content: 'content hits' });
+    expect(messages[3]).toEqual({ role: 'system', content: 'relations' });
+    expect(messages[4]).toEqual({ role: 'system', content: 'chunks' });
+  });
+
+  it('with all-string system + systemPrompt flag, marks ONLY the LAST system message', async () => {
+    // When no per-block markers exist on any system message, cacheControl.
+    // systemPrompt is satisfied by adding exactly one marker on the LAST
+    // system message (longest cacheable prefix). Previous behaviour put a
+    // marker on every plain-string system — which 5+-system requests blew.
+    setMockResult({
+      model: 'anthropic/claude-sonnet-4.6',
+      choices: [{ message: { role: 'assistant', content: 'ok' } }],
+      usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+    });
+    await openrouterChatAdapter.chat({
+      apiKey: 'sk-test',
+      model: 'anthropic/claude-sonnet-4.6',
+      messages: [
+        { role: 'system', content: 'persona' },
+        { role: 'system', content: 'digests' },
+        { role: 'system', content: 'tail' },
+        { role: 'user', content: 'hi' },
+      ],
+      cacheControl: { systemPrompt: true },
+    });
+    const messages = sendCalls[0]!.chatRequest.messages as Array<
+      Record<string, unknown>
+    >;
+    // First two system messages remain plain strings.
+    expect(messages[0]).toEqual({ role: 'system', content: 'persona' });
+    expect(messages[1]).toEqual({ role: 'system', content: 'digests' });
+    // Last system gets the single ephemeral marker.
+    expect(messages[2]).toEqual({
+      role: 'system',
+      content: [
+        { type: 'text', text: 'tail', cacheControl: { type: 'ephemeral' } },
+      ],
+    });
+  });
+
   it('passes array-shape system through with per-block cacheControl preserved', async () => {
     setMockResult({
       model: 'anthropic/claude-sonnet-4.6',
