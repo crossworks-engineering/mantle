@@ -1,18 +1,18 @@
 /**
- * Seed "Pages" — Jason's page-authoring & editing specialist (Phase 2a).
+ * Seed "Pages" — the user's page-authoring & editing specialist (Phase 2a).
  *
- * Where Saskia is a generalist conversationalist, Pages is a focused
+ * Where the main assistant is a generalist conversationalist, Pages is a focused
  * design-conscious editor: importing markdown files into pages, restyling
  * existing pages with the rich Mantle dialect (callouts / columns / tables /
  * task lists / KaTeX), and producing clean, on-brand documents.
  *
  * Division of labour:
- *   - Saskia  → delegates to Pages whenever the user's intent is page-shaped
- *               ("import this file as a page", "style the Potter sermon",
- *               "make a doc summarising X"). Saskia stays in the
+ *   - main assistant → delegates to Pages whenever the user's intent is
+ *               page-shaped ("import this file as a page", "style the draft",
+ *               "make a doc summarising X"). The main assistant stays in the
  *               conversation; Pages does the document work.
  *   - Pages   → returns a short status (what changed, page id, suggested
- *               next step) — not a full document echo. Saskia relays it.
+ *               next step) — not a full document echo. The main assistant relays it.
  *
  * Thin wrapper: the agent definition (prompt, tools, skills, delegation
  * wiring) now lives in the system manifest. This script just applies it.

@@ -1,14 +1,14 @@
 /**
- * Seed "Tables" — Jason's typed-grid specialist. The Pages-equivalent for
+ * Seed "Tables" — the user's typed-grid specialist. The Pages-equivalent for
  * tabular data: building database grids, importing spreadsheets, adding totals
  * and formulas, and doing per-row edits the operator describes ("set row 3 to
  * paid", "total the price column", "sort by date").
  *
  * Division of labour:
- *   - Saskia  → delegates to Tables whenever the user's intent is grid-shaped
- *               ("make a table of …", "import this xlsx", "add a totals row",
- *               "update the stock count for the bolts"). Saskia stays in the
- *               conversation; Tables does the grid work and reports a status.
+ *   - main assistant → delegates to Tables whenever the user's intent is
+ *               grid-shaped ("make a table of …", "import this xlsx", "add a
+ *               totals row", "update the stock count for the bolts"). The main
+ *               assistant stays in the conversation; Tables does the grid work.
  *   - Tables  → reads rows by id, edits into the DRAFT, returns a short status
  *               (what changed, the table id, the review URL). Never echoes the
  *               whole grid.

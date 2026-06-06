@@ -1,6 +1,6 @@
 {
   "name": "@mantle/web",
-  "version": "0.20.10",
+  "version": "0.20.11",
   "private": true,
   "type": "module",
   "scripts": {
@@ -24,7 +24,6 @@
     "seed:tables": "tsx --env-file-if-exists=./.env.local scripts/seed-tables-agent.ts",
     "seed:tables-skill": "tsx --env-file-if-exists=./.env.local scripts/seed-tables-skill.ts",
     "seed:rich-writing": "tsx --env-file-if-exists=./.env.local scripts/seed-rich-writing-skill.ts",
-    "seed:shared-skills": "tsx --env-file-if-exists=./.env.local scripts/seed-shared-skills.ts",
     "seed:tool-groups": "tsx --env-file-if-exists=./.env.local scripts/seed-tool-groups.ts",
     "test:fire-heartbeat": "tsx --env-file-if-exists=./.env.local scripts/test-fire-heartbeat.ts",
     "extract:backfill": "tsx --env-file-if-exists=./.env.local scripts/extract-backfill.ts",

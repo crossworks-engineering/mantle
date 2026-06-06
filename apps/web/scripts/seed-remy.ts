@@ -1,9 +1,9 @@
 /**
- * Seed "Remy" — Jason's memory-recall agent. Where Saskia lives in the present
- * turn, Remy travels backward: given a vague ask ("last week we discussed some
- * Bible topic, recall the exact conclusion"), Remy locates WHEN via conversation
- * digests (`find_window`), pulls the raw turns (`recall_window`), reasons over
- * them, and hands a faithful synthesis back to Saskia.
+ * Seed "Remy" — the user's memory-recall agent. Where the main assistant lives
+ * in the present turn, Remy travels backward: given a vague ask ("last week we
+ * discussed some topic, recall the exact conclusion"), Remy locates WHEN via
+ * conversation digests (`find_window`), pulls the raw turns (`recall_window`),
+ * reasons over them, and hands a faithful synthesis back to the main assistant.
  *
  * Reached via delegation — the manifest also adds `remy` to the enabled
  * responder's and assistant's `memory_config.delegate_to` so the path works

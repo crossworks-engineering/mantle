@@ -1,16 +1,16 @@
 /**
- * Seed "Researcher" — Jason's outward-facing agent (Remy's twin). Where Remy
+ * Seed "Researcher" — the user's outward-facing agent (Remy's twin). Where Remy
  * goes inward into the conversation archive, Researcher goes out to the live
  * internet: it plans queries, calls `web_search` (Perplexity Sonar via
  * OpenRouter), cross-checks sources, and hands a synthesised, cited answer back
- * to Saskia.
+ * to the main assistant.
  *
- * Division of labour (per the "Saskia decides" capture model):
- *   - researcher  → web_search + search_nodes/node_read; returns a synthesis.
- *                   Does NOT persist — keeps it focused on finding answers.
- *   - Saskia      → gets the synthesis, decides if it's worth keeping, and
- *                   saves it with `note_create` (which the extractor indexes
- *                   into the brain).
+ * Division of labour (per the "main assistant decides" capture model):
+ *   - researcher       → web_search + search_nodes/node_read; returns a synthesis.
+ *                        Does NOT persist — keeps it focused on finding answers.
+ *   - main assistant   → gets the synthesis, decides if it's worth keeping, and
+ *                        saves it with `note_create` (which the extractor indexes
+ *                        into the brain).
  *
  * Thin wrapper: the agent definition (prompt, tools, delegation + note_create
  * wiring) now lives in the system manifest. This script just applies it.
