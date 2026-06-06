@@ -50,8 +50,13 @@ brew services start ollama    # serves on :11434 (or run the menu-bar app)
 ollama pull embeddinggemma    # the 768-dim local embedder Mantle defaults to
 
 # 5. Bring up the stack (Docker must be running)
-pnpm up
+pnpm start
 ```
+
+> **`pnpm start`, not `pnpm up`.** `pnpm up` is a built-in alias for
+> `pnpm update` (deps), so it shadows any script of the same name. Use
+> `pnpm start` to bring the stack up (or `pnpm run up` if you prefer the old
+> name). The collision is documented at <https://pnpm.io/cli/update>.
 
 > **macOS embedder, why step 4.** The dev stack (`docker-compose.dev.yml`) ships
 > only Postgres + MinIO + Tika — **not** the embedder, because on a dev machine
@@ -61,7 +66,7 @@ pnpm up
 > nothing. On Linux you can install Ollama the same way (`curl -fsSL
 > https://ollama.com/install.sh | sh`) or just use the production stack below.
 
-> **Dev vs production.** The steps above are the **local dev stack** (`pnpm up`:
+> **Dev vs production.** The steps above are the **local dev stack** (`pnpm start`:
 > infra in Docker + the apps hot-reloading on the host + your local Ollama).
 > **Production is meant to run on Linux** via the full `docker-compose.yml`, which
 > builds the app images and **bundles the embedder (Ollama) + a one-shot model
@@ -69,12 +74,13 @@ pnpm up
 > host, Linux or macOS, CPU-only where there's no GPU). See
 > [`docs/deploy.md`](./docs/deploy.md).
 
-`pnpm up` runs `scripts/up.sh`, which:
+`pnpm start` runs `scripts/up.sh`, which:
 
-1. Brings up Postgres + MinIO via `docker-compose.dev.yml`
+1. Brings up Postgres + MinIO + Tika via `docker-compose.dev.yml`
 2. Ensures the `mantle` MinIO bucket exists
 3. Runs Drizzle migrations against the fresh DB
-4. Starts the dev servers (web + mcp + email worker + telegram worker + agent)
+4. Ensures the pg-boss schema exists (so the workers don't race to create it)
+5. Starts the dev servers (web + mcp + email worker + telegram worker + agent)
 
 That's it — **no SQL, no `ALLOWED_USER_ID` to fill in.** Open
 http://localhost:3000 and you'll land on **Create your account** (the first-run
@@ -93,9 +99,10 @@ Other handy scripts:
 
 | Command           | What it does |
 |-------------------|--------------|
-| `pnpm up`         | Full stack (infra + dev servers) |
-| `pnpm dev`        | Dev servers only (assumes infra already up) |
-| `pnpm down`       | Stop infra |
+| `pnpm start`      | Full stack (infra + migrations + pg-boss + dev servers). The "from cold" command. |
+| `pnpm dev`        | Dev servers only (assumes infra already up). Preflight refuses politely if it's not. |
+| `pnpm stop`       | Stop infra (keeps volumes) |
+| `pnpm reset`      | Wipe the dev brain + rebuild from scratch (asks for confirmation, backs up first) |
 | `pnpm infra:up`   | Bring infra up without dev servers |
 | `pnpm infra:logs` | Tail postgres + minio logs |
 | `pnpm infra:psql` | Open psql in the postgres container |

@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# Bring up Mantle dev infra (postgres + minio) and then run the dev servers.
-# Idempotent — safe to run on a clean machine or against an already-running stack.
+# Bring up Mantle dev infra (postgres + minio + tika), apply migrations, create
+# the pg-boss schema, then run the dev servers. Idempotent — safe to run on a
+# clean machine or against an already-running stack.
+#
+# Invoke via `pnpm start` (the canonical name). `pnpm up` is pnpm's built-in
+# alias for `update`, so the script `up` is shadowed — `pnpm run up` works if
+# you must, but `pnpm start` is friction-free.
 
 set -euo pipefail
 

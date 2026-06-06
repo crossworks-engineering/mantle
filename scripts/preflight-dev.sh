@@ -2,7 +2,7 @@
 # Preflight before `pnpm dev` — refuse to start with a clear, actionable error
 # when the dev infra isn't ready. Without this, a missing Postgres turns into a
 # cryptic `ECONNREFUSED 127.0.0.1:54323` Next.js stack trace 30s into boot, which
-# is the #1 stumble for a new user (and for anyone who Ctrl-C'd `pnpm up`
+# is the #1 stumble for a new user (and for anyone who Ctrl-C'd `pnpm start`
 # before it finished).
 #
 # Exits 0 silently when everything's ready; non-zero with a friendly message
@@ -31,7 +31,8 @@ if ! docker ps --filter "name=mantle_pg" --filter "health=healthy" --format '{{.
   ✗ Dev infra isn't running (or postgres isn't healthy yet).
 
     First-time setup, or after a wipe:
-      pnpm up        ← brings up infra + migrations + pg-boss + dev servers
+      pnpm start     ← brings up infra + migrations + pg-boss + dev servers
+                   (NOT `pnpm up` — that's pnpm's built-in `update` alias)
 
     Already set up, infra just stopped:
       pnpm infra:up  ← bring infra back up, then `pnpm dev`
@@ -66,7 +67,7 @@ if ! docker exec mantle_pg psql -U postgres -d postgres -tA -c \
     The workers will race to create it on a fresh DB and lose. Run:
       pnpm -C apps/web pgboss:init    ← then `pnpm dev`
 
-    Or just `pnpm up`, which does this for you.
+    Or just `pnpm start`, which does this for you.
 
 EOF
   exit 1

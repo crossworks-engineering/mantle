@@ -21,7 +21,7 @@ This will:
   • Stop + remove the dev containers (mantle_pg, mantle_minio, mantle_tika)
   • DELETE the postgres + minio volumes
     (your dev brain, uploads, embeddings cache — all gone)
-  • Re-run `pnpm up` (infra → bucket → migrate → pg-boss → dev servers)
+  • Re-run `pnpm start` (infra → bucket → migrate → pg-boss → dev servers)
 
 What it KEEPS:
   • apps/web/.env.local (your API keys, master key)
@@ -66,6 +66,6 @@ fi
 
 # ── 4. Bring everything back up via the canonical path ---------------------
 echo
-echo "→ Bringing fresh stack up via pnpm up…"
+echo "→ Bringing fresh stack up via pnpm start…"
 echo
 exec bash scripts/up.sh
