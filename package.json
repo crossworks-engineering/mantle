@@ -1,6 +1,6 @@
 {
   "name": "mantle",
-  "version": "0.20.14",
+  "version": "0.20.15",
   "private": true,
   "description": "Mantle — Jason's AI-queryable life tree.",
   "packageManager": "pnpm@11.1.2",
@@ -8,15 +8,18 @@
     "node": ">=24"
   },
   "scripts": {
+    "predev": "bash scripts/preflight-dev.sh",
     "dev": "concurrently -n web,mcp,worker,tg,files,docs,events,agent -c blue,magenta,green,yellow,gray,blue,white,cyan \"pnpm -C apps/web dev\" \"pnpm -C apps/mcp dev\" \"pnpm -C apps/web worker:dev\" \"pnpm -C apps/web worker:telegram:dev\" \"pnpm -C apps/web worker:files:dev\" \"pnpm -C apps/web worker:docs:dev\" \"pnpm -C apps/web worker:events:dev\" \"pnpm -C apps/agent dev\"",
+    "predev:web": "bash scripts/preflight-dev.sh",
     "dev:web": "pnpm -C apps/web dev",
+    "predev:agent": "bash scripts/preflight-dev.sh",
+    "dev:agent": "pnpm -C apps/agent dev",
     "dev:mcp": "pnpm -C apps/mcp dev",
     "dev:worker": "pnpm -C apps/web worker:dev",
     "dev:telegram": "pnpm -C apps/web worker:telegram:dev",
     "dev:files": "pnpm -C apps/web worker:files:dev",
     "dev:docs": "pnpm -C apps/web worker:docs:dev",
     "dev:events": "pnpm -C apps/web worker:events:dev",
-    "dev:agent": "pnpm -C apps/agent dev",
     "build": "pnpm -r build",
     "version:bump": "node scripts/bump-version.mjs",
     "lint": "pnpm -r lint",
@@ -32,6 +35,7 @@
     "re-embed": "pnpm -C apps/web re-embed",
     "up": "bash scripts/up.sh",
     "down": "docker compose -f docker-compose.dev.yml down",
+    "reset": "bash scripts/reset.sh",
     "infra:up": "docker compose -f docker-compose.dev.yml up -d --wait",
     "infra:down": "docker compose -f docker-compose.dev.yml down",
     "infra:logs": "docker compose -f docker-compose.dev.yml logs -f",
@@ -44,9 +48,9 @@
     "db:restore": "bash scripts/db-restore.sh"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0",
-    "prettier": "^3.4.2",
-    "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "concurrently": "^9.2.1",
+    "prettier": "^3.8.3",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
   }
 }
