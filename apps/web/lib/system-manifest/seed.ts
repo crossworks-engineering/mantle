@@ -245,18 +245,32 @@ async function attachPersonaSkills(ownerId: string): Promise<void> {
   await db.update(agents).set({ skillSlugs: merged, updatedAt: new Date() }).where(eq(agents.id, row.id));
 }
 
+/**
+ * Seed the capability SUBSTRATE that agent tool-grants resolve against: the
+ * builtin tool ROWS + the manifest tool GROUPS (P6: groups are the sole grant).
+ * Idempotent. MUST run before any agent is granted those groups — onboarding
+ * seeds this before the persona so a group grant never dangles (resolves to 0
+ * tools) even if a later step fails. applyManifest runs it as its first step.
+ */
+export async function seedToolCapabilities(
+  ownerId: string,
+  mode: ApplyMode = 'gap-fill',
+): Promise<void> {
+  // Builtin tool rows must exist for the slugs the groups/agents reference.
+  await seedBuiltinTools(ownerId);
+  // Tool groups (capability bundles) — the unit every agent grants.
+  for (const def of MANIFEST_TOOL_GROUPS) await upsertToolGroup(ownerId, def, mode);
+}
+
 export async function applyManifest(
   ownerId: string,
   opts: ApplyManifestOpts = {},
 ): Promise<ApplyManifestResult> {
   const mode: ApplyMode = opts.mode ?? 'gap-fill';
 
-  // 1. Builtin tool rows must exist for the slugs the skills/agents reference.
-  await seedBuiltinTools(ownerId);
-
-  // 1b. Tool groups (capability bundles). Seeded for every owner; dormant in
-  //     Phase 0 (no agent grants them yet). See docs/tools-and-skills.md.
-  for (const def of MANIFEST_TOOL_GROUPS) await upsertToolGroup(ownerId, def, mode);
+  // 1. Capability substrate: builtin tool rows + tool groups, before anything
+  //    that grants them. See docs/tools-and-skills.md.
+  await seedToolCapabilities(ownerId, mode);
 
   // 2. Skills (filtered by onlySkills).
   const skillDefs = opts.onlySkills

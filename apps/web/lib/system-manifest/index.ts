@@ -8,6 +8,7 @@ export { checkSystemIntegrity } from './integrity';
 export { resolveEffectivePersona, type PersonaCandidate } from './persona';
 export {
   applyManifest,
+  seedToolCapabilities,
   type ApplyManifestOpts,
   type ApplyManifestResult,
   type ApplyMode,

@@ -1,6 +1,5 @@
 import { db, agents, eq, and } from '@mantle/db';
 import { listApiKeys } from '@mantle/api-keys';
-import { seedBuiltinTools } from '@mantle/tools';
 import {
   buildPersonaPrompt,
   DEFAULT_PERSONA_NAMES,
@@ -17,7 +16,7 @@ import { createAgent, updateAgent } from '@/lib/agents';
 // The specialist stack (skills + Pages/Ledger/Remy/Researcher/Coder + their
 // delegation wiring) is seeded from the declarative manifest — the single source
 // of truth shared with the CLI `pnpm seed:*` scripts and the integrity checker.
-import { applyManifest, PERSONA_TOOL_GROUP_SLUGS } from '@/lib/system-manifest';
+import { applyManifest, seedToolCapabilities, PERSONA_TOOL_GROUP_SLUGS } from '@/lib/system-manifest';
 
 /**
  * Onboarding provisioner — turns the API keys the user just entered into a
@@ -193,13 +192,15 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
     });
   }
 
-  // Make sure the builtin tool ROWS exist for this owner before the assistant
-  // (which references them by slug) is created — an agent with tool slugs that
-  // resolve to no row simply can't call those tools. seedSpecialistStack reseeds
-  // too; this guarantees it even if the stack is skipped/fails.
+  // Seed the capability SUBSTRATE — the builtin tool ROWS *and* the tool GROUPS —
+  // BEFORE the persona is created and granted its groups. P6 makes groups the
+  // sole grant, so if the groups don't exist yet the persona's grant resolves to
+  // 0 tools and it can't act. Seeding them first means the grant resolves
+  // immediately and never dangles, even if the later specialist-stack seed fails.
+  // applyManifest (in seedSpecialistStack) re-runs this idempotently.
   if (openrouter) {
-    await seedBuiltinTools(ownerId).catch((err) =>
-      console.error('[onboarding] seedBuiltinTools failed:', err),
+    await seedToolCapabilities(ownerId).catch((err) =>
+      console.error('[onboarding] seedToolCapabilities failed:', err),
     );
   }
 
