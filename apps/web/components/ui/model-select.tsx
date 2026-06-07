@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronsUpDown } from 'lucide-react';
 import {
   Command,
@@ -96,6 +96,15 @@ export function ModelSelect({
   const [open, setOpen] = useState(false);
   const [sort, setSort] = useState<ModelSelectSortKey>(defaultSort);
   const [search, setSearch] = useState('');
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // cmdk re-filters in place but never resets the scroll container, so after
+  // scrolling down then typing, the (shorter) filtered list sits scrolled past
+  // its top and looks empty. Snap back to the top whenever the query or sort
+  // changes so the first match is always visible.
+  useEffect(() => {
+    if (listRef.current) listRef.current.scrollTop = 0;
+  }, [search, sort]);
 
   const sorted = useMemo(() => sortModels(models, sort), [models, sort]);
   const selected = models.find((m) => m.id === value);
@@ -163,7 +172,7 @@ export function ModelSelect({
               />
               <SortDropdown value={sort} onChange={setSort} />
             </div>
-            <CommandList className="max-h-80">
+            <CommandList ref={listRef} className="max-h-80">
               {loading && (
                 <div className="px-3 py-6 text-center text-xs text-muted-foreground">
                   Loading models…

@@ -125,7 +125,7 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
         <Input
           id="password"
           name="password"
-          type="password"
+          type="text"
           required={!isEdit}
           autoComplete="off"
           placeholder={isEdit ? 'Leave blank to keep current password' : undefined}

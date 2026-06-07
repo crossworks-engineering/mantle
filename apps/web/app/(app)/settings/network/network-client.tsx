@@ -187,7 +187,7 @@ function ActivateCard({
               <Label htmlFor="ts-authkey">Auth key</Label>
               <Input
                 id="ts-authkey"
-                type="password"
+                type="text"
                 autoComplete="off"
                 placeholder="tskey-auth-xxxxxxxxxxxx"
                 value={authKey}

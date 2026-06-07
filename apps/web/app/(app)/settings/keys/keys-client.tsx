@@ -303,7 +303,7 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
                 <Label htmlFor="plaintext">Key value</Label>
                 <Input
                   id="plaintext"
-                  type="password"
+                  type="text"
                   autoComplete="off"
                   value={plaintext}
                   onChange={(e) => setPlaintext(e.target.value)}
@@ -389,7 +389,7 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
           </DialogHeader>
           <form onSubmit={onRotate} className="space-y-3">
             <Input
-              type="password"
+              type="text"
               autoComplete="off"
               value={rotateValue}
               onChange={(e) => setRotateValue(e.target.value)}

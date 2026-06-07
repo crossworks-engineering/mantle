@@ -710,7 +710,7 @@ function KeyFields({
         hint={undefined}
       >
         <Input
-          type="password"
+          type="text"
           autoComplete="off"
           placeholder={saved ? '•••••••• (saved)' : 'Paste your key'}
           value={value}

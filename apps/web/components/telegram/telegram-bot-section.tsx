@@ -188,7 +188,7 @@ export function TelegramBotSection({ agentId }: { agentId: string }) {
       )}
 
       <input
-        type="password"
+        type="text"
         autoComplete="off"
         value={token}
         onChange={(e) => setToken(e.target.value)}
