@@ -603,6 +603,27 @@
       "when": 1782172800000,
       "tag": "0085_drop_agents_tools_legacy",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1782259200000,
+      "tag": "0086_ai_worker_search_kinds",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1782345600000,
+      "tag": "0087_seed_search_workers",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1782432000000,
+      "tag": "0088_research_group_add_pro",
+      "breakpoints": true
     }
   ]
 }

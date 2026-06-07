@@ -49,6 +49,8 @@ const DOCUMENT_MODEL = 'google/gemini-3.1-flash-lite'; // PDF/document reader (O
 const VISION_MODEL = 'google/gemini-3.1-flash-lite'; // image-reading (OpenRouter)
 const ASSISTANT_MODEL = 'anthropic/claude-sonnet-4.6'; // the persona responder (OpenRouter)
 const IMAGE_GEN_MODEL = 'google/gemini-3.1-flash-image-preview'; // image generation (OpenRouter)
+const SEARCH_MODEL = 'perplexity/sonar'; // standard web search (OpenRouter)
+const SEARCH_ADVANCED_MODEL = 'perplexity/sonar-pro'; // deep web search (OpenRouter)
 const XAI_TTS_MODEL = 'grok-voice-latest'; // spoken replies (dedicated xAI key)
 const XAI_STT_MODEL = 'grok-stt'; // voice-note transcription (dedicated xAI key)
 const OR_TTS_MODEL = 'x-ai/grok-voice-tts-1.0'; // voice on the OpenRouter key
@@ -161,6 +163,16 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
     await ensureWorker({
       ownerId, kind: 'image_gen', name: 'Image generation', provider: 'openrouter',
       model: IMAGE_GEN_MODEL, apiKeyId: openrouter,
+    });
+    // Web search tiers (Perplexity Sonar via the OpenRouter key). Standard =
+    // cheap/fast for everyday lookups; advanced = stronger/slower for hard ones.
+    await ensureWorker({
+      ownerId, kind: 'search', name: 'Web search', provider: 'openrouter',
+      model: SEARCH_MODEL, apiKeyId: openrouter,
+    });
+    await ensureWorker({
+      ownerId, kind: 'search_advanced', name: 'Deep web search', provider: 'openrouter',
+      model: SEARCH_ADVANCED_MODEL, apiKeyId: openrouter,
     });
   }
 

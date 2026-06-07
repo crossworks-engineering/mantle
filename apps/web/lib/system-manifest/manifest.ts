@@ -283,8 +283,8 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'research',
     name: 'Web research',
-    description: 'Live web search (Perplexity Sonar via OpenRouter).',
-    toolSlugs: ['web_search'],
+    description: 'Live web search (Perplexity Sonar via OpenRouter), standard + deep tiers.',
+    toolSlugs: ['web_search', 'web_search_pro'],
   },
   {
     slug: 'email',
@@ -485,6 +485,10 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
   { kind: 'image_gen', name: 'Image generation', model: 'google/gemini-3.1-flash-image-preview', required: false },
   { kind: 'tts', name: 'Assistant voice', model: 'x-ai/grok-voice-tts-1.0', required: false },
   { kind: 'stt', name: 'Transcribe voice', model: 'openai/gpt-4o-mini-transcribe', required: false },
+  // Web search tiers (Perplexity Sonar via OpenRouter). The researcher's
+  // `web_search` uses the cheap/fast tier; `web_search_pro` the stronger one.
+  { kind: 'search', name: 'Web search', model: 'perplexity/sonar', required: false },
+  { kind: 'search_advanced', name: 'Deep web search', model: 'perplexity/sonar-pro', required: false },
 ];
 
 // ── Derived selectors (single computation; kills the duplication) ────────────

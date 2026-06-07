@@ -117,6 +117,9 @@ const PROVIDER_FOR_KIND: Record<AiWorkerKind, string> = {
   // workers is freely selectable, same as for tts / stt / vision.
   // Default to OpenRouter since that's where most operators start.
   embedding: 'openrouter',
+  // Web search is Perplexity Sonar via OpenRouter — provider fixed to openrouter.
+  search: 'openrouter',
+  search_advanced: 'openrouter',
 };
 
 /** Suggested model per kind, used as the placeholder. */
@@ -204,6 +207,8 @@ const MODEL_HINT_FOR_KIND: Record<AiWorkerKind, string> = {
   // brain's current column shape. Anything else either matches 768 or
   // requires a re-embed pass — the form's dim guard will warn.
   embedding: 'embeddinggemma:latest',
+  search: 'perplexity/sonar',
+  search_advanced: 'perplexity/sonar-pro',
 };
 
 export function WorkerForm({

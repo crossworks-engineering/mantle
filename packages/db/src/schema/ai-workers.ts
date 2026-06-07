@@ -47,6 +47,13 @@ export const aiWorkerKind = pgEnum('ai_worker_kind', [
   // misleading "override" field on the extractor only. See migration
   // 0047 and `resolveEmbeddingModel` in `@mantle/embeddings`.
   'embedding',
+  // Live web search via Perplexity Sonar (through OpenRouter). Two tiers so the
+  // operator runs a cheap/fast model for everyday lookups (`search`) and a
+  // stronger/slower one for hard questions (`search_advanced`). The `web_search`
+  // / `web_search_pro` tools resolve their model from these instead of a hidden
+  // env var. See migration 0086/0087.
+  'search',
+  'search_advanced',
 ]);
 
 export type AiWorkerKind = (typeof aiWorkerKind.enumValues)[number];
@@ -205,6 +212,16 @@ export type EmbeddingParams = {
   output_dimensions?: number;
 };
 
+/** Params for `kind='search'` / `kind='search_advanced'` workers (live web
+ *  search via Perplexity Sonar through OpenRouter). The model lives on the row's
+ *  `model` column; these tune the search itself. */
+export type SearchParams = {
+  /** Default recency bias when the caller doesn't pass one. Omitted = no bias. */
+  recency?: 'day' | 'week' | 'month' | 'year';
+  /** Max output tokens for the synthesised answer. */
+  max_tokens?: number;
+};
+
 /** Discriminated union for type-narrowing at call sites. */
 export type AiWorkerParams =
   | TtsParams
@@ -215,7 +232,8 @@ export type AiWorkerParams =
   | ReflectorParams
   | ExtractorParams
   | SummarizerParams
-  | EmbeddingParams;
+  | EmbeddingParams
+  | SearchParams;
 
 export const aiWorkers = pgTable(
   'ai_workers',

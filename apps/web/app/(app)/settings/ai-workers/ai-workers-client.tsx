@@ -63,6 +63,16 @@ const KIND_META: Record<AiWorkerKind, { label: string; description: string }> = 
     description:
       'Text → 768-dim vector. Drives the brain index, semantic memory retrieval, and the recall/MCP/spill-store search paths. One pick applies everywhere.',
   },
+  search: {
+    label: 'Web search',
+    description:
+      'Live web search via Perplexity Sonar (OpenRouter). The standard, fast/cheap tier the Researcher uses for most lookups — backs the web_search tool.',
+  },
+  search_advanced: {
+    label: 'Deep web search',
+    description:
+      'A stronger, slower Sonar model for hard or conflicting questions — backs the web_search_pro tool. The Researcher reaches for it only when needed.',
+  },
 };
 
 // Note: this is a plain string[] (not a Record key set), so TS doesn't
@@ -79,6 +89,8 @@ const KIND_ORDER: AiWorkerKind[] = [
   // 'embedding' is retired as a worker kind — the embedder lives at
   // /settings/embedding (one config row, migration 0061). Hidden here.
   'image_gen',
+  'search',
+  'search_advanced',
 ];
 
 type Selection =

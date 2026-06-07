@@ -235,4 +235,8 @@ export const CAPABILITY_FOR_KIND: Record<string, ProviderCapability> = {
   document: 'vision',
   image_gen: 'image_gen',
   embedding: 'embedding',
+  // Web search runs a chat-completion call against a Perplexity Sonar model on
+  // OpenRouter, so it shares the 'chat' capability (provider eligibility).
+  search: 'chat',
+  search_advanced: 'chat',
 };
