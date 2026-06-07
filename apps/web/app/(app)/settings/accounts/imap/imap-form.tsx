@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState, useState } from 'react';
-import { Check, X } from 'lucide-react';
+import { Check, Eye, EyeOff, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
@@ -44,6 +44,7 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
   const [port, setPort] = useState(account?.imapPort ?? 993);
   const [secure, setSecure] = useState(account?.imapSecure ?? true);
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [smtpHost, setSmtpHost] = useState(account?.smtpHost ?? '');
   const [smtpPort, setSmtpPort] = useState<number | ''>(account?.smtpPort ?? '');
   const [smtpSecure, setSmtpSecure] = useState(account?.smtpSecure ?? true);
@@ -122,16 +123,27 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
       </div>
       <div className="space-y-2">
         <Label htmlFor="password">App password</Label>
-        <Input
-          id="password"
-          name="password"
-          type="text"
-          required={!isEdit}
-          autoComplete="off"
-          placeholder={isEdit ? 'Leave blank to keep current password' : undefined}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+        <div className="relative">
+          <Input
+            id="password"
+            name="password"
+            type={showPassword ? 'text' : 'password'}
+            required={!isEdit}
+            autoComplete="off"
+            placeholder={isEdit ? 'Leave blank to keep current password' : undefined}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="pr-9"
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword((v) => !v)}
+            className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-muted-foreground hover:text-foreground"
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+          >
+            {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+          </button>
+        </div>
         <p className="text-xs text-muted-foreground">
           {isEdit
             ? 'Only enter a password if you want to replace the stored one.'
