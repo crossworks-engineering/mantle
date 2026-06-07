@@ -14,7 +14,29 @@ import { FocusMarks, focusMarksKey } from './focus-marks';
 import { FocusGutter } from './focus-gutter';
 import { DiffReview, diffReviewKey, DIFF_ACTION_EVENT } from './diff-review';
 import { handleDroppedFiles } from './upload';
+import { markdownToDoc } from '@mantle/content/markdown';
 import type { DiffOverlay } from '@mantle/content/page-diff';
+import type { JSONContent as TipTapJSON } from '@tiptap/react';
+
+/**
+ * Should a pasted blob be treated as a markdown DOCUMENT (convert via
+ * markdownToDoc) rather than dropped in as plain text? Only a multi-line blob
+ * with strong block-markdown signals — headings, Notion `<aside>` / `:::`
+ * fences, code fences, tables, images, task lists — qualifies. Casual prose
+ * (even multi-line) is left alone, so normal paste behaviour is untouched.
+ */
+function isMarkdownDocPaste(text: string): boolean {
+  if (!text.trim().includes('\n')) return false; // single line → inline paste
+  return (
+    /<aside\b/i.test(text) ||
+    /^\s*:::/m.test(text) ||
+    /^#{1,6}\s/m.test(text) ||
+    /^\s*```/m.test(text) ||
+    /^\s*[-*]\s+\[[ xX]\]\s/m.test(text) ||
+    /!\[[^\]]*\]\([^)]+\)/.test(text) ||
+    (/^\s*\|.+\|\s*$/m.test(text) && /\|\s*:?-{2,}/.test(text))
+  );
+}
 
 /**
  * The "invisible" editing surface: no border, no card, no fixed toolbar — just
@@ -120,12 +142,30 @@ export function PageEditor({
         if (!editorRef.current) return false;
         return handleDroppedFiles(editorRef.current, files, pos);
       },
-      // Paste an image/file from the clipboard → upload + insert.
       handlePaste: (_view, event) => {
-        const files = Array.from((event as ClipboardEvent).clipboardData?.files ?? []);
-        if (files.length === 0) return false;
-        if (!editorRef.current) return false;
-        return handleDroppedFiles(editorRef.current, files);
+        const cd = (event as ClipboardEvent).clipboardData;
+        // Image/file from the clipboard → upload + insert.
+        const files = Array.from(cd?.files ?? []);
+        if (files.length > 0) {
+          if (!editorRef.current) return false;
+          return handleDroppedFiles(editorRef.current, files);
+        }
+        // Markdown document paste (Notion export, a .md file, …) → convert to
+        // real blocks — callouts, asides, columns, tables — via the SAME
+        // markdownToDoc the file import uses. Gated to plain-text-only pastes
+        // (a rich copy carries text/html, which TipTap's own parser handles)
+        // with strong block-markdown signals, so ordinary text paste is intact.
+        const html = cd?.getData('text/html') ?? '';
+        const text = cd?.getData('text/plain') ?? '';
+        if (!html.trim() && text && isMarkdownDocPaste(text) && editorRef.current) {
+          const parsed = markdownToDoc(text) as { content?: TipTapJSON[] };
+          const content = parsed.content ?? [];
+          if (content.length > 0) {
+            editorRef.current.chain().focus().insertContent(content).run();
+            return true; // handled — don't also paste the raw text
+          }
+        }
+        return false;
       },
       // Click a node-link @-mention (ref:'node') → navigate to that page/note.
       // DOM-based (not handleClickOn): ProseMirror resolves an inline-atom click
