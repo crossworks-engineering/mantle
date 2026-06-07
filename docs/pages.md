@@ -122,7 +122,18 @@ strategy throughout: **reuse libraries, write only what they don't provide.**
 **Agent authoring:** an agent can now create/update pages too — `markdownToDoc`
 ([`packages/content/src/markdown-to-doc.ts`](../packages/content/src/markdown-to-doc.ts))
 converts a rich-markdown dialect into this schema's JSON, and the `page_*` tools
-wrap the CRUD. See [`rich-writing.md`](./rich-writing.md).
+wrap the CRUD. See [`rich-writing.md`](./rich-writing.md). `markdownToDoc` also
+imports Notion's `<aside>…</aside>` callout export as real aside blocks
+(colour/angle cycled for variety).
+
+**Paste-to-convert:** pasting a markdown document straight into the editor
+converts it to real blocks (callouts, asides, columns, tables, headings, …) via
+the same `markdownToDoc` — so a Notion "Copy as Markdown" lands as a perfect
+page, not literal `#`/`<aside>` text. `PageEditor`'s `handlePaste` only does this
+for a **plain-text** paste (a rich copy carries `text/html`, left to TipTap's own
+parser) that's **multi-line with strong block-markdown signals** (heading,
+`<aside>`, `:::` fence, code fence, table, image, task list); ordinary text paste
+is untouched. One ⌘Z reverts to raw text.
 
 Components live in [`apps/web/components/page-editor/`](../apps/web/components/page-editor/):
 

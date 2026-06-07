@@ -36,7 +36,9 @@ The assistant can add entries for you, too: "log that I started a new job today,
 **asides** (gradient note boxes), multi-**column** layouts, tables, to-do lists,
 code blocks, even math and images.
 The editor has a slash menu (`/`) for inserting blocks and a drag handle for moving
-them.
+them. Moving from Notion? **Copy a page as Markdown and paste it straight in** —
+headings, callouts, columns, tables and Notion's `<aside>` callouts all convert
+to real Mantle blocks.
 
 A few things worth knowing:
 
