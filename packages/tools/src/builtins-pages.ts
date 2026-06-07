@@ -21,6 +21,7 @@ import {
   docToText,
   saveDraft,
   splitPage,
+  extractSectionToChild,
   listBlocks,
   findBlock,
   replaceBlock,
@@ -891,6 +892,49 @@ const page_split: BuiltinToolDef = {
   },
 };
 
+const page_extract_section: BuiltinToolDef = {
+  slug: 'page_extract_section',
+  name: 'Promote a section to a sub-page',
+  description:
+    "Lift ONE section out of a page into its own sub-page. Given a heading's block id (from page_blocks_list), moves that heading + everything under it (until the next heading of equal-or-higher level) into a new child page — heading text → child title, the blocks under it → child body — and drops a link card (childPage) where the section was. Byte-faithful (blocks moved, not rewritten). The surgical cousin of `page_split`: use it to peel off ONE oversized or self-contained section (e.g. 'pull the Appendix out into its own page') rather than splitting the whole document. Writes the parent's new body to DRAFT only; the child is created + indexed immediately.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      page_id: { type: 'string', description: 'id of the page to extract from' },
+      heading_block_id: {
+        type: 'string',
+        description:
+          "block id of the section's heading (from page_blocks_list({ kinds:['heading'] })). Must be a top-level heading.",
+      },
+    },
+    required: ['page_id', 'heading_block_id'],
+  },
+  handler: async (input, ctx) => {
+    const pageId = str(input.page_id).trim();
+    const headingId = str(input.heading_block_id).trim();
+    if (!pageId) return { ok: false, error: 'page_id is required' };
+    if (!headingId) return { ok: false, error: 'heading_block_id is required' };
+    try {
+      const res = await extractSectionToChild(ctx.ownerId, pageId, headingId);
+      ctx.step?.setOutput({ child_id: res.childId });
+      return {
+        ok: true,
+        output: {
+          page_id: pageId,
+          child_id: res.childId,
+          title: res.title,
+          hint:
+            `Section "${res.title}" moved into a new sub-page (indexed). This page's ` +
+            `body — now with a link card where the section was — is in DRAFT; tell the ` +
+            `user to open /pages/${pageId} to review, then Commit.`,
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
 const page_share: BuiltinToolDef = {
   slug: 'page_share',
   name: 'Share a page publicly',
@@ -958,6 +1002,7 @@ export const PAGE_TOOLS: BuiltinToolDef[] = [
   page_block_insert_after,
   page_block_delete,
   page_split,
+  page_extract_section,
   page_delete,
   page_list,
   page_get,

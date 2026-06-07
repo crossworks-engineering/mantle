@@ -70,6 +70,8 @@ export {
   deletePage,
   splitPage,
   NoSplitHeadingsError,
+  extractSectionToChild,
+  SectionNotFoundError,
   type PageRow,
   type PageDetail,
   type PageVisibility,
@@ -77,8 +79,16 @@ export {
   type CreatePageInput,
   type UpdatePageInput,
   type SplitPageResult,
+  type ExtractSectionResult,
 } from './pages';
-export { splitDocByHeading, headingText, type SplitLevel, type SplitResult } from './page-split';
+export {
+  splitDocByHeading,
+  extractSection,
+  headingText,
+  type SplitLevel,
+  type SplitResult,
+  type ExtractResult,
+} from './page-split';
 
 export {
   PEERS_ROOT_LABEL,

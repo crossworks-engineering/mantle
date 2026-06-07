@@ -386,8 +386,8 @@ cache + `extract_cost_cap_micro_usd`.
   remember Skills... maybe design a more structured ruleset for the
   models that does tasks like pages."*
 
-- **Hierarchy / sub-pages (Phase 4)** — **4a + 4b shipped**; 4c
-  designed. The architectural lever for documents past ~50 KB. Insight
+- **Hierarchy / sub-pages (Phase 4)** — **4a + 4b + 4c shipped.**
+  The architectural lever for documents past ~50 KB. Insight
   (2026-05-27 audit conversation): no model AND no human reads a 170 KB
   document as one unit. The right answer to "this doc is too long for Pages
   to restyle" is not "make Pages handle bigger docs" — it's structure. Notion
@@ -446,12 +446,21 @@ cache + `extract_cost_cap_micro_usd`.
     about X" returns a child page, not a haystack) — the brain gets
     *better*, not just smaller per-page.
 
-  - **4c — Promote-to-sub-page (~120 LOC).** Quality-of-life. Drag-handle
-    affordance: "convert this heading + its body into a sub-page".
-    Agent equivalent: `page_extract_section({ page_id, heading_block_id })`
-    — lifts everything from the heading until the next equal-or-higher
-    heading into a new child, replaces the section with a `childPage`
-    block in the parent.
+  - **4c — Promote-to-sub-page** — ✅ **built.** The surgical cousin of 4b:
+    lift ONE section into a sub-page. Pure core `extractSection`
+    ([`page-split.ts`](../packages/content/src/page-split.ts)) finds the
+    top-level heading by block id, takes everything from it until the next
+    heading of **equal-or-higher level** (an h2 section ends at the next h2
+    or h1), and returns the section body + the surrounding `before`/`after`
+    blocks. `extractSectionToChild` (pages.ts) wraps it like `splitPage`
+    (child via `createPage` → indexed; parent rewritten to `draft_doc`).
+    Two surfaces: the agent tool `page_extract_section({ page_id,
+    heading_block_id })` (in the `pages` group), and a **drag-handle
+    "Extract to sub-page"** action shown on top-level headings
+    ([`drag-handle.tsx`](../apps/web/components/page-editor/drag-handle.tsx)) —
+    client-side mirror that reuses the same `extractSection`, creates the
+    child via `POST /api/pages` (with its body), and swaps the section for a
+    `childPage` card (autosaved to draft like any edit).
 
   Pages persona update (lands with 4b): when a request like "restyle this
   X-block document" exceeds a threshold, Pages PROPOSES a split first

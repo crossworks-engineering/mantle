@@ -25,7 +25,8 @@
     "./block-ids": "./src/block-ids.ts",
     "./block-list": "./src/block-list.ts",
     "./block-diff": "./src/block-diff.ts",
-    "./page-toc": "./src/page-toc.ts"
+    "./page-toc": "./src/page-toc.ts",
+    "./page-split": "./src/page-split.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

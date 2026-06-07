@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { createPortal } from 'react-dom';
-import type { ChainedCommands, Editor } from '@tiptap/core';
+import type { ChainedCommands, Editor, JSONContent } from '@tiptap/core';
 import { DragHandle } from '@tiptap/extension-drag-handle-react';
 import {
   ChevronDown,
   ChevronRight,
   Code2,
   Copy,
+  FilePlus2,
   GripVertical,
   Heading1,
   Heading2,
@@ -24,6 +25,7 @@ import {
   Type,
   type LucideIcon,
 } from 'lucide-react';
+import { extractSection } from '@mantle/content/page-split';
 import { cn } from '@/lib/utils';
 import { randomAsideAngle, randomAsideColor } from './aside-style';
 
@@ -70,10 +72,17 @@ export function EditorDragHandle({ editor }: { editor: Editor }) {
   const posRef = useRef<number | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [turnOpen, setTurnOpen] = useState(false);
+  // Whether the block under the handle is a top-level heading with a stable id —
+  // gates the "Extract to sub-page" action (Phase 4c).
+  const [canExtract, setCanExtract] = useState(false);
 
   const openMenu = (e: React.MouseEvent<HTMLElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
     setTurnOpen(false);
+    const pos = posRef.current;
+    const node = pos != null && pos >= 0 ? editor.state.doc.nodeAt(pos) : null;
+    const depthOk = pos != null && pos >= 0 ? editor.state.doc.resolve(pos).depth === 0 : false;
+    setCanExtract(!!node && node.type.name === 'heading' && !!node.attrs.id && depthOk);
     setMenu({
       x: Math.min(r.right + 6, window.innerWidth - 232),
       y: Math.min(r.top, window.innerHeight - 96),
@@ -98,6 +107,55 @@ export function EditorDragHandle({ editor }: { editor: Editor }) {
     const node = editor.state.doc.nodeAt(pos);
     if (!node) return;
     editor.chain().focus().insertContentAt(pos + node.nodeSize, node.toJSON()).run();
+  };
+
+  // Promote a heading + its body into a sub-page (Phase 4c). Client-side mirror
+  // of the `page_extract_section` tool: split the section off the live doc (same
+  // pure `extractSection` the server uses), create the child via the pages API
+  // (with its body), then replace the section with a childPage card. The editor
+  // change autosaves to draft like any edit — the published page is untouched.
+  const extractToSubPage = async () => {
+    const pos = posRef.current;
+    close();
+    if (pos == null || pos < 0) return;
+    const node = editor.state.doc.nodeAt(pos);
+    const headingId = node?.attrs.id as string | undefined;
+    if (!node || node.type.name !== 'heading' || !headingId) return;
+    const storage = editor.storage as unknown as Record<string, { pageId?: string | null } | undefined>;
+    const parentId = storage.slashCommand?.pageId ?? null;
+    if (!parentId) return;
+    const section = extractSection(editor.getJSON() as Record<string, unknown>, headingId);
+    if (!section) return;
+    try {
+      const res = await fetch('/api/pages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: section.title || 'Untitled page',
+          parentId,
+          doc: {
+            type: 'doc',
+            content: section.childBlocks.length ? section.childBlocks : [{ type: 'paragraph' }],
+          },
+        }),
+      });
+      if (!res.ok) return;
+      const { page } = (await res.json()) as {
+        page: { id: string; title: string; icon: string | null };
+      };
+      const content = [
+        ...section.before,
+        { type: 'childPage', attrs: { pageId: page.id, title: page.title, icon: page.icon ?? null } },
+        ...section.after,
+      ];
+      editor
+        .chain()
+        .focus()
+        .setContent(({ type: 'doc', content: content.length ? content : [{ type: 'paragraph' }] }) as JSONContent)
+        .run();
+    } catch {
+      // Best-effort; the section is left intact on failure.
+    }
   };
 
   // Convert the target block. Drop the cursor inside it first, then run the
@@ -201,6 +259,17 @@ export function EditorDragHandle({ editor }: { editor: Editor }) {
                     />
                   ))}
                 </div>
+              )}
+
+              {canExtract && (
+                <>
+                  <div className="my-1 h-px bg-border" />
+                  <MenuItem
+                    icon={FilePlus2}
+                    label="Extract to sub-page"
+                    onClick={() => void extractToSubPage()}
+                  />
+                </>
               )}
 
               <div className="my-1 h-px bg-border" />

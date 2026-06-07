@@ -21,7 +21,7 @@ import { docToText } from './doc-to-text';
 import { referencedFileIds } from './doc-assets';
 import { ensureBlockIds } from './block-ids';
 import { childPagePath } from './page-path';
-import { splitDocByHeading, type SplitLevel } from './page-split';
+import { splitDocByHeading, extractSection, type SplitLevel } from './page-split';
 
 export const PAGES_ROOT_LABEL = 'pages';
 
@@ -464,6 +464,60 @@ export async function splitPage(
   await saveDraft(ownerId, pageId, tocDoc);
 
   return { children, introKept: preserveIntro && intro.length > 0 };
+}
+
+/** Thrown by `extractSectionToChild` when the block id isn't a top-level
+ *  heading (only top-level headings are promotable to sub-pages). */
+export class SectionNotFoundError extends Error {
+  constructor(headingBlockId: string) {
+    super(`extractSectionToChild: no top-level heading with id ${headingBlockId}`);
+    this.name = 'SectionNotFoundError';
+  }
+}
+
+export type ExtractSectionResult = { childId: string; title: string };
+
+/**
+ * Promote a single heading + its body into a sub-page (Phase 4c). The section
+ * runs from the heading until the next heading of equal-or-higher level; its
+ * heading text becomes the child title, the blocks under it the child body, and
+ * a `childPage` card replaces the section in the parent. Same safety + indexing
+ * model as `splitPage`: child created via `createPage` (indexed on insert),
+ * parent rewritten to `draft_doc` only. Operates on `draft ?? doc`.
+ */
+export async function extractSectionToChild(
+  ownerId: string,
+  pageId: string,
+  headingBlockId: string,
+): Promise<ExtractSectionResult> {
+  const page = await getPage(ownerId, pageId);
+  if (!page) throw new Error(`extractSectionToChild: page ${pageId} not found`);
+
+  const source = (page.draft ?? page.doc) as Record<string, unknown>;
+  const section = extractSection(source, headingBlockId);
+  if (!section) throw new SectionNotFoundError(headingBlockId);
+
+  const childDoc = ensureBlockIds({
+    type: 'doc',
+    content: section.childBlocks.length ? section.childBlocks : [{ type: 'paragraph' }],
+  });
+  const child = await createPage(ownerId, {
+    title: section.title,
+    doc: childDoc,
+    parentId: pageId,
+  });
+
+  const newParent = ensureBlockIds({
+    type: 'doc',
+    content: [
+      ...section.before,
+      { type: 'childPage', attrs: { pageId: child.id, title: child.title, icon: null } },
+      ...section.after,
+    ],
+  });
+  await saveDraft(ownerId, pageId, newParent);
+
+  return { childId: child.id, title: child.title };
 }
 
 export type UpdatePageInput = Partial<{

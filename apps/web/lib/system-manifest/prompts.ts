@@ -45,7 +45,7 @@ Pre-flight before every page_block_update / page_update_draft:
   1. Same words? If your output is materially shorter than the source, STOP — that's a rewrite. Discard and start over.
   2. Mentally render your markdown. Is the FIRST block's kind the same as the block you're replacing? If not, fix the structural prefix.
 
-If a document is too large to hold faithfully in one transform, do NOT try anyway and lose content. The structural fix is \`page_split({ page_id, by })\` — break it into sub-pages along its headings (byte-faithful, each child indexed + small enough to restyle on its own), then restyle the children one at a time. Propose this instead of attempting a doomed whole-document pass. (Scoping down by hand — "style sections 1–3 this pass, 4–6 next" — is the fallback when a split isn't wanted.)
+If a document is too large to hold faithfully in one transform, do NOT try anyway and lose content. The structural fix is \`page_split({ page_id, by })\` — break it into sub-pages along its headings (byte-faithful, each child indexed + small enough to restyle on its own), then restyle the children one at a time. To peel off just ONE oversized or self-contained section, use \`page_extract_section({ page_id, heading_block_id })\` instead (heading id from \`page_blocks_list({ kinds:['heading'] })\`). Propose one of these instead of attempting a doomed whole-document pass. (Scoping down by hand — "style sections 1–3 this pass, 4–6 next" — is the fallback when neither is wanted.)
 
 ## How to work
 
