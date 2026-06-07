@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useAssistantDock } from '@/components/assistant/assistant-dock';
+import { useTurnStage } from '@/components/assistant/use-turn-stage';
 import {
   CornerDownLeft,
   FileText,
@@ -123,6 +124,9 @@ export function AssistantClient({
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  // Live "what's the agent doing" label, polled from the running trace while a
+  // turn is in flight — shown next to the typing dots.
+  const stageLabel = useTurnStage(sending);
   const [error, setError] = useState<string>();
   // ── Voice-in state ──
   const [recording, setRecording] = useState(false);
@@ -550,15 +554,22 @@ export function AssistantClient({
                         </article>
                       ) : showTyping ? (
                         <div
-                          className="inline-flex rounded-2xl px-3.5 py-3"
+                          className="inline-flex items-center gap-2 rounded-2xl px-3.5 py-3"
                           style={{ backgroundColor: accent.soft }}
                         >
-                          <span className="sr-only">{agentName ?? 'Assistant'} is typing…</span>
+                          <span className="sr-only">
+                            {agentName ?? 'Assistant'} is {stageLabel ?? 'typing'}
+                          </span>
                           <span className="flex items-center gap-1" aria-hidden>
                             <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.3s]" />
                             <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.15s]" />
                             <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60" />
                           </span>
+                          {stageLabel && (
+                            <span className="text-xs text-current opacity-70" aria-hidden>
+                              {stageLabel}
+                            </span>
+                          )}
                         </div>
                       ) : null}
                     </div>

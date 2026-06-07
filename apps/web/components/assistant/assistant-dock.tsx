@@ -9,6 +9,7 @@ import { ChevronDown, Loader2, MessageSquare, Send, Sparkles, X } from 'lucide-r
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { useTurnStage } from './use-turn-stage';
 
 /**
  * App-wide assistant dock. The /assistant turn fetch runs here (in the
@@ -126,6 +127,8 @@ export function useAssistantDock(): AssistantDockApi {
  */
 export function AssistantDock() {
   const { messages, busy, agentSlug, agentName, clear, runTurn } = useAssistantDock();
+  // Live "what's the agent doing" label, polled from the running trace.
+  const stageLabel = useTurnStage(busy);
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [draft, setDraft] = useState('');
@@ -212,7 +215,7 @@ export function AssistantDock() {
                   >
                     {m.pending ? (
                       <span className="flex items-center gap-1.5 text-muted-foreground">
-                        <Loader2 className="size-3 animate-spin" aria-hidden /> thinking…
+                        <Loader2 className="size-3 animate-spin" aria-hidden /> {stageLabel ?? 'thinking…'}
                       </span>
                     ) : (
                       <div className="prose prose-sm dark:prose-invert max-w-none break-words text-xs [&_p]:my-1 [&_pre]:my-1 [&_ul]:my-1">
