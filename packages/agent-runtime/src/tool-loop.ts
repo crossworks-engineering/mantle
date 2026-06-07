@@ -518,7 +518,8 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         },
         async (handle) => {
           if (argParseError) {
-            handle.setMeta({ error: argParseError, argsRaw: call.function.arguments });
+            handle.setMeta({ argsRaw: call.function.arguments });
+            handle.setError(argParseError);
             return {
               ok: false as const,
               error:
@@ -527,7 +528,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
             };
           }
           if (!tool) {
-            handle.setMeta({ error: 'tool not in agent allowlist' });
+            handle.setError(`tool '${slug}' is not in this agent's allowlist`);
             return {
               ok: false as const,
               error: `tool '${slug}' is not in this agent's allowlist`,
@@ -574,7 +575,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
               },
             };
           }
-          return dispatchTool(tool, input, {
+          const result = await dispatchTool(tool, input, {
             ownerId: args.ownerId,
             step: {
               setMeta: (m) => handle.setMeta(m),
@@ -603,6 +604,12 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
             // synthesize_speech & friends refuse cleanly when missing.
             ...(args.surface ? { surface: args.surface } : {}),
           });
+          // Surface a tool's structured failure onto the step so /traces shows
+          // it as an error, not a 'success' with empty output. (A mis-calling
+          // model — e.g. Grok page_share with a bogus id — otherwise looks like
+          // it succeeded N times.)
+          if (!result.ok) handle.setError(result.error);
+          return result;
         },
       );
 

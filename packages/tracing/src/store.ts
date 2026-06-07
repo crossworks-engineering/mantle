@@ -82,6 +82,13 @@ export type StepHandle = {
   addTokens(delta: TokenDelta): void;
   addCost(microUsd: number): void;
   setSkipped(reason?: string): void;
+  /** Mark this step as FAILED without throwing — for operations that report a
+   *  structured failure (a tool returning `{ ok: false, error }`) rather than
+   *  raising. Flips the step's status to 'error' and records the message in the
+   *  `error` column, so /traces shows a failed tool call as a failure instead of
+   *  a 'success' with empty output. The caller still returns/handles the value
+   *  normally (the model usually adapts to an error result). */
+  setError(message: string): void;
 };
 
 type ActiveStep = {
@@ -93,6 +100,7 @@ type ActiveStep = {
   output: Record<string, unknown>;
   meta: Record<string, unknown>;
   skippedReason: string | null;
+  failedReason: string | null;
 };
 
 const traceStore = new AsyncLocalStorage<TraceContext>();
@@ -270,6 +278,7 @@ export async function step<T>(
     output: {},
     meta: {},
     skippedReason: null,
+    failedReason: null,
   };
 
   // INSERT the row and AWAIT it before yielding to `fn`. Same reason
@@ -315,6 +324,9 @@ export async function step<T>(
     setSkipped(reason) {
       stepInfo.skippedReason = reason ?? 'skipped';
     },
+    setError(message) {
+      stepInfo.failedReason = message;
+    },
   };
 
   return stepStore.run(stepInfo, async () => {
@@ -325,6 +337,11 @@ export async function step<T>(
       if (stepInfo.skippedReason) {
         status = 'skipped';
         stepInfo.meta = { ...stepInfo.meta, skipped: stepInfo.skippedReason };
+      } else if (stepInfo.failedReason) {
+        // Soft failure: the operation reported `{ ok: false }` without throwing.
+        // Record it as a real error so traces don't show it as a clean success.
+        status = 'error';
+        errMsg = stepInfo.failedReason;
       }
       return result;
     } catch (err) {
@@ -361,6 +378,7 @@ function noopHandle(): StepHandle {
     addTokens() {},
     addCost() {},
     setSkipped() {},
+    setError() {},
   };
 }
 
