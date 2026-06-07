@@ -20,6 +20,7 @@ import {
   markdownToDoc,
   docToText,
   saveDraft,
+  splitPage,
   listBlocks,
   findBlock,
   replaceBlock,
@@ -836,6 +837,60 @@ const page_block_delete: BuiltinToolDef = {
   },
 };
 
+const page_split: BuiltinToolDef = {
+  slug: 'page_split',
+  name: 'Split a page into sub-pages',
+  description:
+    "Break a long page into sub-pages along its headings — the SCALING LEVER for documents too big to restyle or hold faithfully in one transform. Walks the page and turns every heading of the chosen level into a child page (heading text → child title; the blocks under it → child body), then replaces THIS page's body with a table-of-contents of links to the new children. **Byte-faithful: every word + block is preserved, just redistributed — nothing is rewritten or summarised.** Writes the TOC to DRAFT only (the published page is untouched until the user commits); each child page is created + indexed immediately, so they're independently searchable and each is small enough to restyle with the block tools afterwards. **When a 'restyle/reformat this whole document' request is too large to do faithfully in one pass, PROPOSE this instead of attempting a doomed full-document transform.**",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      page_id: { type: 'string', description: 'id of the page to split' },
+      by: {
+        type: 'string',
+        enum: ['h1', 'h2'],
+        description:
+          "heading level that marks the page boundaries: 'h1' for a few big top-level sections, 'h2' for many subsections. Run page_blocks_list({ kinds:['heading'] }) first if unsure which level gives the right granularity.",
+      },
+      preserve_intro: {
+        type: 'boolean',
+        description:
+          'keep the content BEFORE the first heading at the top of this page (as an intro above the table of contents). Default true.',
+      },
+    },
+    required: ['page_id', 'by'],
+  },
+  handler: async (input, ctx) => {
+    const pageId = str(input.page_id).trim();
+    if (!pageId) return { ok: false, error: 'page_id is required' };
+    const by = str(input.by).trim().toLowerCase();
+    const level = by === 'h1' ? 1 : by === 'h2' ? 2 : null;
+    if (!level) return { ok: false, error: "by must be 'h1' or 'h2'" };
+    const preserveIntro = input.preserve_intro !== false;
+    try {
+      const res = await splitPage(ctx.ownerId, pageId, { by: level, preserveIntro });
+      ctx.step?.setOutput({ split_into: res.children.length });
+      const n = res.children.length;
+      return {
+        ok: true,
+        output: {
+          page_id: pageId,
+          split_into: n,
+          children: res.children,
+          intro_kept: res.introKept,
+          hint:
+            `Created ${n} sub-page${n === 1 ? '' : 's'} (each indexed independently). ` +
+            `This page's new table-of-contents is in DRAFT — tell the user to open ` +
+            `/pages/${pageId} to review, then Commit to publish. Discarding the draft ` +
+            `reverts THIS page only; the created sub-pages would then need manual cleanup.`,
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
 const page_share: BuiltinToolDef = {
   slug: 'page_share',
   name: 'Share a page publicly',
@@ -902,6 +957,7 @@ export const PAGE_TOOLS: BuiltinToolDef[] = [
   page_block_update,
   page_block_insert_after,
   page_block_delete,
+  page_split,
   page_delete,
   page_list,
   page_get,

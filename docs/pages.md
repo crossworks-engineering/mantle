@@ -250,7 +250,9 @@ cache + `extract_cost_cap_micro_usd`.
   (passage-level vector search across all content).
 - **In-app agent (read + write):** the web assistant's builtins include
   `page_create` / `page_update` / `page_delete` / `page_list` / `page_get`
-  ([`packages/tools/src/builtins-pages.ts`](../packages/tools/src/builtins-pages.ts)).
+  ([`packages/tools/src/builtins-pages.ts`](../packages/tools/src/builtins-pages.ts)),
+  block-addressed edits (`page_block_*`), and `page_split` (break a long page
+  into sub-pages along its headings — see §8 Phase 4b).
   Authoring goes through `markdownToDoc` (the LLM writes the rich-markdown
   dialect, not raw ProseMirror JSON) — see [`rich-writing.md`](./rich-writing.md).
   *(The MCP surface above is still read-only; only the in-app agent authors.)*
@@ -384,7 +386,7 @@ cache + `extract_cost_cap_micro_usd`.
   remember Skills... maybe design a more structured ruleset for the
   models that does tasks like pages."*
 
-- **Hierarchy / sub-pages (Phase 4)** — **4a shipped 2026-05-28**; 4b/4c
+- **Hierarchy / sub-pages (Phase 4)** — **4a + 4b shipped**; 4c
   designed. The architectural lever for documents past ~50 KB. Insight
   (2026-05-27 audit conversation): no model AND no human reads a 170 KB
   document as one unit. The right answer to "this doc is too long for Pages
@@ -427,16 +429,22 @@ cache + `extract_cost_cap_micro_usd`.
        The tree is driven by `parent_id` (the reliable FK); the ltree path is
        the materialised mirror. Zero schema cost.
 
-  - **4b — `page_split` tool for Pages (~150 LOC).** The AI-driven
-    scaling lever. Signature: `page_split({ page_id, by: 'h2' | 'h1',
+  - **4b — `page_split` tool for Pages** — ✅ **built.** The AI-driven
+    scaling lever. Signature: `page_split({ page_id, by: 'h1' | 'h2',
     preserve_intro?: boolean })`. Walks the doc, every Hx heading becomes
     a child page's title, content until the next Hx becomes the child's
     body. Original page becomes a TOC of `childPage` blocks. Server-side,
-    deterministic, byte-faithful — same shape as `page_from_file`.
-    Indexing implications: each child extracts independently → its own
-    summary, embedding, facts. Search becomes more granular ("find the
-    section about X" returns a child page, not a haystack). The brain
-    gets *better*, not just smaller per-page.
+    deterministic, byte-faithful (blocks redistributed, never rewritten —
+    same object refs; see [`page-split.ts`](../packages/content/src/page-split.ts)).
+    The pure splitter is `splitDocByHeading`; `splitPage` (pages.ts) wraps
+    it: children via `createPage` (the `nodes` insert fires the extractor →
+    each child indexed independently), parent TOC written to **`draft_doc`
+    only** (reviewable; the agent has no commit tool). Operates on
+    `draft ?? doc`. Lands in the `pages` tool group (so the Pages agent
+    holds it); the persona proposes a split when a whole-doc transform is
+    too large. Indexing win: search becomes granular ("find the section
+    about X" returns a child page, not a haystack) — the brain gets
+    *better*, not just smaller per-page.
 
   - **4c — Promote-to-sub-page (~120 LOC).** Quality-of-life. Drag-handle
     affordance: "convert this heading + its body into a sub-page".

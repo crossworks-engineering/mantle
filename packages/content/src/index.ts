@@ -68,13 +68,17 @@ export {
   discardDraft,
   commitPage,
   deletePage,
+  splitPage,
+  NoSplitHeadingsError,
   type PageRow,
   type PageDetail,
   type PageVisibility,
   type PageWidth,
   type CreatePageInput,
   type UpdatePageInput,
+  type SplitPageResult,
 } from './pages';
+export { splitDocByHeading, headingText, type SplitLevel, type SplitResult } from './page-split';
 
 export {
   PEERS_ROOT_LABEL,

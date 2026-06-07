@@ -21,6 +21,7 @@ import { docToText } from './doc-to-text';
 import { referencedFileIds } from './doc-assets';
 import { ensureBlockIds } from './block-ids';
 import { childPagePath } from './page-path';
+import { splitDocByHeading, type SplitLevel } from './page-split';
 
 export const PAGES_ROOT_LABEL = 'pages';
 
@@ -387,6 +388,82 @@ export async function listBacklinks(ownerId: string, pageId: string): Promise<Ba
     out.push({ id: r.id, title: r.title, type: r.type, icon });
   }
   return out;
+}
+
+/** Thrown by `splitPage` when the page has no heading at the requested level
+ *  to split on. The tool layer maps this to a friendly message. */
+export class NoSplitHeadingsError extends Error {
+  constructor(level: SplitLevel) {
+    super(`splitPage: no h${level} headings to split on`);
+    this.name = 'NoSplitHeadingsError';
+  }
+}
+
+export type SplitPageResult = {
+  /** The created child pages, in document order. */
+  children: { id: string; title: string }[];
+  /** Whether intro content (before the first heading) was kept on the parent. */
+  introKept: boolean;
+};
+
+/**
+ * Split a long page into sub-pages along its headings (Phase 4b). Each heading
+ * of `by` becomes a child page (title = heading text, body = the blocks under
+ * it); the parent's body is replaced with a table-of-contents of `childPage`
+ * cards pointing at those children.
+ *
+ * Safety + indexing model, mirroring the rest of Pages:
+ *  - Children are created via `createPage`, whose `nodes` insert fires the
+ *    extractor — so each child is indexed independently (its own summary /
+ *    embedding / facts), the whole point of splitting.
+ *  - The parent's new TOC is written to `draft_doc` ONLY (via `saveDraft`); the
+ *    published `doc` is untouched until the user commits, so the restructure is
+ *    reviewable. Operates on `draft ?? doc` (the current working content).
+ *
+ * Byte-faithful: blocks are redistributed, never rewritten (see page-split.ts).
+ */
+export async function splitPage(
+  ownerId: string,
+  pageId: string,
+  opts: { by: SplitLevel; preserveIntro?: boolean },
+): Promise<SplitPageResult> {
+  const page = await getPage(ownerId, pageId);
+  if (!page) throw new Error(`splitPage: page ${pageId} not found`);
+
+  const source = (page.draft ?? page.doc) as Record<string, unknown>;
+  const { intro, sections } = splitDocByHeading(source, opts.by);
+  if (sections.length === 0) throw new NoSplitHeadingsError(opts.by);
+
+  const preserveIntro = opts.preserveIntro ?? true;
+  const children: { id: string; title: string }[] = [];
+  const tocBlocks: Record<string, unknown>[] = preserveIntro
+    ? (intro as Record<string, unknown>[])
+    : [];
+
+  for (const sec of sections) {
+    const childDoc = ensureBlockIds({
+      type: 'doc',
+      content: sec.blocks.length ? sec.blocks : [{ type: 'paragraph' }],
+    });
+    const child = await createPage(ownerId, {
+      title: sec.title,
+      doc: childDoc,
+      parentId: pageId,
+    });
+    children.push({ id: child.id, title: child.title });
+    tocBlocks.push({
+      type: 'childPage',
+      attrs: { pageId: child.id, title: child.title, icon: null },
+    });
+  }
+
+  const tocDoc = ensureBlockIds({
+    type: 'doc',
+    content: tocBlocks.length ? tocBlocks : [{ type: 'paragraph' }],
+  });
+  await saveDraft(ownerId, pageId, tocDoc);
+
+  return { children, introKept: preserveIntro && intro.length > 0 };
 }
 
 export type UpdatePageInput = Partial<{
