@@ -16,7 +16,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
-import { db, nodes, pages, notifyNodeIngested, type Node } from '@mantle/db';
+import { db, nodes, pages, entityEdges, notifyNodeIngested, type Node } from '@mantle/db';
 import { docToText } from './doc-to-text';
 import { referencedFileIds } from './doc-assets';
 import { ensureBlockIds } from './block-ids';
@@ -339,6 +339,54 @@ export async function countPageDescendants(ownerId: string, id: string): Promise
     Array.isArray(result) ? result : (result as { rows?: Array<{ count: number }> }).rows ?? []
   ) as Array<{ count: number }>;
   return rows[0]?.count ?? 0;
+}
+
+/** A node that links TO a given page — one inbound `references` edge, resolved
+ *  to its source node. Powers the "Referenced by" panel. */
+export type Backlink = {
+  id: string;
+  title: string;
+  type: Node['type'];
+  icon: string | null;
+};
+
+/**
+ * Nodes that reference this page — the inbound `node --references--> node` edges
+ * the extractor builds from @-mention chips with `ref:'node'` (see docs/pages.md
+ * §5). Joined to `nodes` so dangling edges (source deleted) drop out, deduped by
+ * source, newest-updated first. Read-only; the extractor is the sole edge writer.
+ */
+export async function listBacklinks(ownerId: string, pageId: string): Promise<Backlink[]> {
+  const rows = await db
+    .select({
+      id: nodes.id,
+      title: nodes.title,
+      type: nodes.type,
+      data: nodes.data,
+      updatedAt: nodes.updatedAt,
+    })
+    .from(entityEdges)
+    .innerJoin(nodes, eq(nodes.id, entityEdges.sourceId))
+    .where(
+      and(
+        eq(entityEdges.ownerId, ownerId),
+        eq(entityEdges.relation, 'references'),
+        eq(entityEdges.sourceKind, 'node'),
+        eq(entityEdges.targetKind, 'node'),
+        eq(entityEdges.targetId, pageId),
+      ),
+    )
+    .orderBy(desc(nodes.updatedAt));
+
+  const seen = new Set<string>();
+  const out: Backlink[] = [];
+  for (const r of rows) {
+    if (seen.has(r.id)) continue; // dedupe (idempotent extractor shouldn't dupe, but be safe)
+    seen.add(r.id);
+    const icon = typeof r.data?.icon === 'string' ? (r.data.icon as string) : null;
+    out.push({ id: r.id, title: r.title, type: r.type, icon });
+  }
+  return out;
 }
 
 export type UpdatePageInput = Partial<{

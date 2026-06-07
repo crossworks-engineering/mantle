@@ -3361,6 +3361,11 @@
 .ProseMirror .mention[data-ref='node'] {
   background-color: color-mix(in oklab, var(--chart-2) 16%, transparent);
   color: var(--chart-2);
+  cursor: pointer;
+}
+.ProseMirror .mention[data-ref='node']:hover {
+  background-color: color-mix(in oklab, var(--chart-2) 26%, transparent);
+  text-decoration: underline;
 }
 
 /* Code-block syntax highlighting (CodeBlockLowlight / highlight.js). Token

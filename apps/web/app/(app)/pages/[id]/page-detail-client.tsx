@@ -22,7 +22,9 @@ import { ShareControl } from '@/components/share/share-control';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { PageEditor } from '@/components/page-editor/page-editor';
 import { PageOutline } from '@/components/page-editor/page-outline';
+import { PageBacklinks } from '@/components/page-editor/page-backlinks';
 import { AiAssistPanel } from '@/components/page-editor/ai-assist-panel';
+import type { Backlink } from '@/lib/pages';
 import { buildPageToc, type TocEntry } from '@mantle/content/page-toc';
 import {
   AlertDialog,
@@ -60,7 +62,13 @@ const DRAFT_DEBOUNCE_MS = 1500;
 const DRAFT_MAX_WAIT_MS = 8000;
 const META_DEBOUNCE_MS = 1000;
 
-export function PageDetailClient({ initial }: { initial: PageDetail }) {
+export function PageDetailClient({
+  initial,
+  backlinks,
+}: {
+  initial: PageDetail;
+  backlinks: Backlink[];
+}) {
   const router = useRouter();
   const toast = useToast();
 
@@ -607,6 +615,7 @@ export function PageDetailClient({ initial }: { initial: PageDetail }) {
                     and tell Pages what to do with them.
                   </p>
                 )}
+                <PageBacklinks backlinks={backlinks} />
               </div>
             </div>
           </div>

@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { EditorContent, useEditor, type Editor, type JSONContent } from '@tiptap/react';
 import type { EditorProps } from '@tiptap/pm/view';
 import { pageExtensions } from './extensions';
+import { nodeHref } from '@/lib/node-href';
 import { EditorBubbleMenu } from './bubble-menu';
 import { EditorDragHandle } from './drag-handle';
 import { TableControls } from './table-controls';
@@ -63,6 +65,13 @@ export function PageEditor({
   const onChangeRef = useRef(onChange);
   const onBlurRef = useRef(onBlur);
   const onReadyRef = useRef(onEditorReady);
+  // Router kept in a ref so the once-bound (memoized []) click handler can
+  // navigate without re-creating editorProps (which would churn the view).
+  const router = useRouter();
+  const routerRef = useRef(router);
+  useEffect(() => {
+    routerRef.current = router;
+  }, [router]);
   // Holds the editor for the once-bound drop/paste handlers (they're defined in
   // the useEditor config, before `editor` is assigned).
   const editorRef = useRef<Editor | null>(null);
@@ -104,6 +113,16 @@ export function PageEditor({
         if (files.length === 0) return false;
         if (!editorRef.current) return false;
         return handleDroppedFiles(editorRef.current, files);
+      },
+      // Click a node-link @-mention (ref:'node') → navigate to that page/note.
+      // Entity mentions have no route, so they fall through to normal selection.
+      handleClickOn: (_view, _pos, node, _nodePos, event) => {
+        if (node.type.name !== 'mention' || node.attrs.ref !== 'node') return false;
+        const href = nodeHref(node.attrs.kind as string | null, node.attrs.id as string);
+        if (!href) return false;
+        event.preventDefault();
+        routerRef.current.push(href);
+        return true;
       },
     }),
     [],
