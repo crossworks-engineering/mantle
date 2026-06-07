@@ -692,9 +692,15 @@ function TreeRow({
 }
 
 /** Right-pane read-only preview. Fetches the full document for the selected
- *  page (the list omits the body to stay lean) and renders it read-only. */
+ *  page (the list omits the body to stay lean) and renders it read-only.
+ *  Prefers the uncommitted DRAFT over the published doc so a page you've edited
+ *  but not committed — especially a brand-new page whose published doc is still
+ *  empty — shows its content here instead of looking blank. This is render-only
+ *  (no indexing); the committed doc stays the canonical version everywhere else
+ *  (public share, MCP). A badge flags that the preview is showing a draft. */
 function PagePreview({ row, onDelete }: { row: PageRow; onDelete: () => void }) {
   const [doc, setDoc] = useState<JSONContent | null>(null);
+  const [isDraft, setIsDraft] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -702,9 +708,10 @@ function PagePreview({ row, onDelete }: { row: PageRow; onDelete: () => void }) 
     setLoading(true);
     fetch(`/api/pages/${row.id}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then(({ page }: { page: { doc: JSONContent } }) => {
+      .then(({ page }: { page: { doc: JSONContent; draft: JSONContent | null } }) => {
         if (!cancelled) {
-          setDoc(page.doc);
+          setDoc(page.draft ?? page.doc);
+          setIsDraft(!!page.draft);
           setLoading(false);
         }
       })
@@ -722,6 +729,11 @@ function PagePreview({ row, onDelete }: { row: PageRow; onDelete: () => void }) 
         <h2 className="flex min-w-0 flex-1 items-center gap-2 text-xl font-semibold">
           <span aria-hidden>{row.icon ?? '📄'}</span>
           <span className="min-w-0 truncate">{row.title}</span>
+          {isDraft && (
+            <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+              Draft · uncommitted
+            </span>
+          )}
         </h2>
         <div className="flex shrink-0 gap-2">
           <Button asChild variant="outline" size="sm">
