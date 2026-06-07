@@ -275,13 +275,20 @@ cache + `extract_cost_cap_micro_usd`.
   details/toggle, full table ops) was built then **fully reverted** — only the
   colours + the reliability/polish above survived. Don't re-pitch the reverted
   set without solving their specific issues (see the project memory).
-- **Backlinks are written but not surfaced.** `references` edges exist in the
-  graph (queryable by Saskia/MCP), but there's no "Linked from / Referenced by"
-  panel on a page yet, and node-link chips don't yet click-through to navigate.
-  Both are UI follow-ups on top of the edges that now exist.
-- **Responder/assistant don't use `searchChunks` yet.** Chunk retrieval is
-  available via MCP; wiring it into the live context assembly touches the
-  responder and was deliberately left for an explicit go-ahead.
+- **Backlinks panel + node-chip navigation** — ✅ **built.** `listBacklinks`
+  (pages.ts) resolves inbound `references` edges; `<PageBacklinks>` renders a
+  "Referenced by" section at the foot of the page; node-link `@`-mention chips
+  navigate on click (`nodeHref` + the editor's `handleClick`). See the
+  backlinks commit.
+- **Responder/assistant chunk retrieval** — ✅ **built + eval-covered** (commit
+  `9afbcd0`, "auto-chunk retrieval"). `loadConversationContext`
+  ([`packages/agent-runtime/src/conversation.ts`](../packages/agent-runtime/src/conversation.ts))
+  calls `searchChunks` (default `chunk_limit=3`, 0.65 cosine cutoff, salience-
+  aware, system-docs + telegram excluded) and injects the passages as the
+  prompt's "Relevant passages" block — on **every** surface (web assistant +
+  Telegram responder share this path). The recall eval's `prod` row counts
+  `chunkHits` and a dedicated `chunks` retriever measures it
+  ([`docs/recall-eval.md`](./recall-eval.md)).
 - **Public sharing** — ✅ built (generalised to all content types). Revocable
   share tokens, a public `/s/[token]` route, a server-side sanitized
   JSON→HTML renderer, and scoped serving of embedded private assets. See
