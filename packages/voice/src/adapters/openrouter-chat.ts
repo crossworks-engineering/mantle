@@ -80,14 +80,23 @@ type OrChatMessage =
         function: { name: string; arguments: string };
       }>;
     }
-  | { role: 'tool'; toolCallId: string; content: string };
+  | { role: 'tool'; toolCallId: string; content: string | OrChatTextBlock[] };
 
-/** Find the index of the final user-role message — the spot we attach
- *  the lastUserMessage cache marker to (when requested). */
-function lastUserIndex(messages: ChatOptions['messages']): number {
+/** Find the index of the final message that can carry the moving "tail"
+ *  cache marker. In a tool loop the genuinely-last message is a `tool`
+ *  result: OpenRouter uses the OpenAI shape, so tool results stay as
+ *  `role:'tool'` rather than folding into a user turn (the way
+ *  anthropic-chat.ts coalesces them). Anchoring the marker on the last
+ *  *user* message therefore pins it to the original question, so it never
+ *  advances and the growing tool-result tail is re-sent uncached every
+ *  round (the cost bug in docs/audit-chat-cost-2026-06-07.md). We instead
+ *  mark the last user-OR-tool message so the breakpoint advances with the
+ *  loop; Anthropic's incremental (20-block lookback) cache then reads the
+ *  whole prefix-so-far up to and including the marked tail block. */
+function lastMarkableIndex(messages: ChatOptions['messages']): number {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const m = messages[i]!;
-    if (m.role === 'user') return i;
+    const role = messages[i]!.role;
+    if (role === 'user' || role === 'tool') return i;
   }
   return -1;
 }
@@ -126,7 +135,7 @@ function buildMessages(
   messages: ChatOptions['messages'],
   cacheControl?: ChatCacheControl,
 ): OrChatMessage[] {
-  const lastUser = cacheControl?.lastUserMessage ? lastUserIndex(messages) : -1;
+  const tailIdx = cacheControl?.lastUserMessage ? lastMarkableIndex(messages) : -1;
   // The `cacheControl.systemPrompt: true` flag means "mark the system
   // prefix as cacheable" — at most ONE breakpoint, not one per system
   // message. Anthropic caps cache_control at 4 markers per request; with
@@ -182,7 +191,7 @@ function buildMessages(
       // when cacheControl.lastUserMessage is set on a string-content
       // message we wrap it in a text block to attach the marker.
       if (typeof m.content === 'string') {
-        if (idx === lastUser) {
+        if (idx === tailIdx) {
           return {
             role: 'user',
             content: [
@@ -212,7 +221,7 @@ function buildMessages(
           };
         },
       );
-      if (idx === lastUser) {
+      if (idx === tailIdx) {
         for (let i = parts.length - 1; i >= 0; i -= 1) {
           const p = parts[i]!;
           if (p.type === 'text') {
@@ -235,7 +244,25 @@ function buildMessages(
           : {}),
       };
     }
-    // m.role === 'tool' — only present from the tool-loop path.
+    // m.role === 'tool' — only present from the tool-loop path. When this
+    // is the tail message (the latest tool result in the loop), wrap the
+    // content in a text block carrying the ephemeral marker so the cache
+    // breakpoint advances past the accumulating tool-result tail. OR
+    // forwards cache_control on tool messages to Anthropic, which caches
+    // up to and including this block (see the audit doc's finding b).
+    if (idx === tailIdx) {
+      return {
+        role: 'tool',
+        toolCallId: m.toolCallId,
+        content: [
+          {
+            type: 'text',
+            text: m.content,
+            cacheControl: { type: 'ephemeral' },
+          },
+        ],
+      };
+    }
     return {
       role: 'tool',
       toolCallId: m.toolCallId,

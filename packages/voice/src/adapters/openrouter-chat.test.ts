@@ -135,6 +135,49 @@ describe('openrouter-chat message translation', () => {
     });
   });
 
+  it('moves the tail marker onto the trailing tool result on iter 2+ (not the original question)', async () => {
+    // Tool-loop iter 2+ shape: the genuinely-last message is a `tool`
+    // result, not a user message. The cache breakpoint must advance onto
+    // it so the growing tool-result tail caches — anchoring on the last
+    // user message (the original question) pins the marker near the front
+    // and re-sends the tail uncached every round. Safety net for the
+    // docs/audit-chat-cost-2026-06-07.md finding (b) fix.
+    setMockResult({
+      model: 'anthropic/claude-4.6-sonnet',
+      choices: [{ message: { role: 'assistant', content: 'done' } }],
+      usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+    });
+    await openrouterChatAdapter.chat({
+      apiKey: 'sk-test',
+      model: 'anthropic/claude-4.6-sonnet',
+      messages: [
+        { role: 'user', content: 'the question' },
+        {
+          role: 'assistant',
+          content: null,
+          toolCalls: [
+            { id: 'call_1', type: 'function', function: { name: 'a', arguments: '{}' } },
+          ],
+        },
+        { role: 'tool', toolCallId: 'call_1', content: 'tool output' },
+      ],
+      cacheControl: { systemPrompt: true, lastUserMessage: true },
+    });
+    const messages = sendCalls[0]!.chatRequest.messages as Array<
+      Record<string, unknown>
+    >;
+    // Original question stays an unmarked plain string.
+    expect(messages[0]).toEqual({ role: 'user', content: 'the question' });
+    // The marker lands on the trailing tool result.
+    expect(messages[2]).toEqual({
+      role: 'tool',
+      toolCallId: 'call_1',
+      content: [
+        { type: 'text', text: 'tool output', cacheControl: { type: 'ephemeral' } },
+      ],
+    });
+  });
+
   it('forwards temperature, maxTokens, topP', async () => {
     setMockResult({
       model: 'anthropic/claude-haiku-4.5',

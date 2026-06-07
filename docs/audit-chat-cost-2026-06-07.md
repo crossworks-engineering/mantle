@@ -152,6 +152,74 @@ iteration) — the placement decision likely lives there, not only in the adapte
 - Low sample size on prod (21 responder_turns / 3 delegations in 30d). The
   *pattern* (54% miss-and-rewrite) is consistent across every turn inspected.
 
+## Second-pass verification (2026-06-07, independent re-audit)
+
+A fresh-context pass re-ran every query against prod and read the adapter
+code. **All raw numbers reproduce exactly** (responder_turn avg $0.0893,
+delegation avg $0.4657 / max $1.07, chat total $3.27, model
+`claude-4.6-sonnet-20260217`). But the *diagnosis above is mis-framed* —
+three corrections, and the fix is narrower (and OpenRouter-only) than stated.
+
+**Correction 1 — "54% miss / inverse cache" is misleading.** Of 19
+miss-and-wrote calls, **17 are the legitimate first call of a turn** (the
+first call MUST write the prefix — there is nothing to read yet; not a bug).
+Only **2 of 35 calls** are genuine mid-loop re-writes. And `cache_write >
+cache_read` globally is explained by **11 of 17 turns being single-call**
+one-shot Q&A (no second call ⇒ no read possible), not by a misfire. Split that
+proves it:
+```
+window        | llm_calls | first_call_warming | BUG_midloop_rewrite
+all (post-fix)|    35     |        17          |         2
+```
+Post the 06-06 cap-fix, plain-chat caching is largely **healthy**: in
+multi-call turns later calls read the prefix (avg later call $0.032 vs
+first-call $0.076).
+
+**Correction 2 — the data is 2 days old, not 14–30.** Every analyzed trace
+ran 06-06→06-07, straddling/after the cap-fix (`36749d4`, 06-06 12:47, which
+IS deployed on prod `8fd6ec7`). The `interval '14 days'` framing makes a
+2-day, 21-turn sample read like a month of evidence.
+
+**Correction 3 — "40–60% savings" applies to delegations, not plain Q&A.**
+Two regimes are blended:
+- *Plain Q&A ($0.089)* is dominated by the **irreducible ~20K fixed prefix**
+  (system + ~68 tool defs + retrieval) written once per turn — caching cannot
+  reduce a first write. Breakpoint surgery saves ~5% here. The real lever is
+  shrinking that prefix (the "secondary/optional" levers — should be primary
+  for this regime).
+- *Delegations / long loops ($0.47–1.07)* are where finding (b) bites and
+  where 40–60% is real. **Confirmed empirically** on the $1.07 trace
+  `22433689`: `cache_read` pinned at **11873 across all 11 calls** while
+  `tokens_in` grows 11.9K → 63.6K — the ~52K accumulating tool-result tail is
+  re-sent uncached every round (late calls $0.12–$0.23 each).
+
+**Mechanism (and correction to the proposed fix).** The code ALREADY passes
+`lastUserMessage: true` every iteration (`tool-loop.ts:276`). The bug is NOT a
+missing marker — it is that `lastUserIndex` (`openrouter-chat.ts`) matches only
+`role==='user'`, while OpenRouter keeps tool results as `role:'tool'` (OpenAI
+shape). So the "moving" marker pins to the original question and never advances
+past the tool-result tail. **`anthropic-chat.ts` is already correct** — it
+coalesces `tool` → a synthetic user/tool_result message and marks the trailing
+block (see its audit-#4 safety-net test), so the marker advances there. The
+doc's "mirror in anthropic-chat.ts" is therefore unnecessary.
+
+**Scope — does it affect other providers?** No. Only **openrouter-chat.ts**
+(the prod Anthropic-via-OpenRouter path). `anthropic-chat.ts` (direct) is
+correct; `deepseek-chat.ts` ignores `cacheControl`; `openai-compat.ts`
+(xAI/local) doesn't use Anthropic-style ephemeral breakpoints. Anthropic
+(verified via docs) allows `cache_control` on `tool_result` blocks and on the
+last message, ≤4 breakpoints, with a 20-block-lookback incremental cache — so
+marking the genuine last message each round is both valid and what creates the
+advancing write chain the lookback needs.
+
+**The fix (implemented):** in `openrouter-chat.ts`, target the marker at the
+last **user-or-tool** message (the genuine tail), emitting `cache_control` on
+the tool message's text block when the tail is a tool result. One stable head
+(system) + one moving tail = 2 breakpoints, within the 4-cap. Expect the
+delegation/long-loop turns to drop ~40–60%; plain single-call Q&A is unchanged
+(its cost is the irreducible prefix). Verify with query #4 on the next few
+delegations: `cache_read` should climb with `tokens_in` instead of pinning.
+
 ## Session context (where the tree is)
 - All this session's Pages work is on `origin/main` @ `8fd6ec7` (v0.20.33),
   **deployed to prod**. One later fix — `175d490` (v0.20.34, "show uncommitted
