@@ -14,6 +14,8 @@
  *
  *   Callout:  :::info … :::      (variants info|success|warning|danger)
  *   Aside:    :::aside … :::     (optional themed colour: :::aside chart-3)
+ *             also accepts Notion's `<aside> … </aside>` callout export, which
+ *             imports as an aside block (colour/angle cycled for variety)
  *   Columns:  :::columns … +++ … :::   (2+ parts split by a lone +++)
  *   Highlight: ==text==
  *   Colour:    [text]{color=chart-2}  /  [text]{highlight=chart-3}  (chart-1..5)
@@ -124,10 +126,20 @@ md.use({ extensions: [highlightExtension, colorSpanExtension, inlineMathExtensio
 
 const CALLOUT_VARIANTS = new Set(['info', 'success', 'warning', 'danger']);
 const ASIDE_COLORS = new Set(['chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5']);
+// Imported `<aside>` blocks (Notion callout export) cycle through the themed
+// colours + a spread of angles so a doc full of asides reads varied, not
+// monotone. Deterministic (by occurrence order) → a re-import is stable.
+const ASIDE_COLOR_CYCLE = ['chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5'] as const;
+const ASIDE_ANGLE_CYCLE = [135, 60, 200, 300, 20];
 // Optional trailing token after the kind carries an aside's themed colour
 // (`:::aside chart-3`); ignored for callout/columns. Backward compatible.
 const FENCE_OPEN = /^:::([A-Za-z]+)(?:\s+([A-Za-z0-9-]+))?\s*$/;
 const BLOCK_MATH_INLINE = /^\$\$(.+?)\$\$\s*$/;
+// Notion exports callout blocks as `<aside> … </aside>` (often with a leading
+// emoji). Recognise the open/close tags so they import as real aside blocks
+// instead of falling through to `marked` as literal `<aside>` text.
+const ASIDE_HTML_OPEN = /^<aside\b[^>]*>\s*(.*)$/i;
+const ASIDE_HTML_CLOSE = /<\/aside\s*>/i;
 
 function lex(src: string): Tok[] {
   return md.lexer(src) as unknown as Tok[];
@@ -312,6 +324,14 @@ function blocks(tokens: Tok[] | undefined): PMNode[] {
   return out;
 }
 
+function asideNode(body: string[], color: string, angle: number): PMNode {
+  return {
+    type: 'aside',
+    attrs: { color, angle },
+    content: nonEmpty(blocks(lex(body.join('\n')))),
+  };
+}
+
 function columnsNode(body: string[]): PMNode | null {
   const segs: string[][] = [[]];
   for (const l of body) {
@@ -339,8 +359,45 @@ export function markdownToDoc(source: string): Record<string, unknown> {
   };
 
   let i = 0;
+  let asideSeq = 0; // cycles colour/angle across imported <aside> blocks
   while (i < lines.length) {
     const line = lines[i]!;
+
+    // Notion `<aside> … </aside>` callout export → a real aside block. Handle it
+    // at the line level (before `marked`), like the `:::` fences, so the tags
+    // never reach the lexer as literal text. Body content (incl. any leading
+    // emoji) is parsed as blocks; colour/angle cycle for visual variety.
+    const asideHtml = ASIDE_HTML_OPEN.exec(line.trim());
+    if (asideHtml) {
+      flush();
+      const body: string[] = [];
+      const rest = asideHtml[1] ?? '';
+      if (ASIDE_HTML_CLOSE.test(rest)) {
+        // single line: <aside> … </aside>
+        const inner = rest.replace(/<\/aside\s*>.*$/i, '').trim();
+        if (inner) body.push(inner);
+        i++;
+      } else {
+        if (rest.trim()) body.push(rest);
+        i++;
+        while (i < lines.length) {
+          const l = lines[i]!;
+          if (ASIDE_HTML_CLOSE.test(l)) {
+            const before = l.replace(/<\/aside\s*>.*$/i, '');
+            if (before.trim()) body.push(before);
+            i++; // consume the closing tag line
+            break;
+          }
+          body.push(l);
+          i++;
+        }
+      }
+      const color = ASIDE_COLOR_CYCLE[asideSeq % ASIDE_COLOR_CYCLE.length]!;
+      const angle = ASIDE_ANGLE_CYCLE[asideSeq % ASIDE_ANGLE_CYCLE.length]!;
+      asideSeq++;
+      content.push(asideNode(body, color, angle));
+      continue;
+    }
 
     // Block math: `$$ … $$` on one line, or a `$$` fence over several lines.
     const oneLineMath = BLOCK_MATH_INLINE.exec(line.trim());
@@ -381,11 +438,7 @@ export function markdownToDoc(source: string): Record<string, unknown> {
         else content.push(...blocks(lex(body.join('\n'))));
       } else if (kind === 'aside') {
         const color = arg && ASIDE_COLORS.has(arg) ? arg : 'chart-1';
-        content.push({
-          type: 'aside',
-          attrs: { color, angle: 135 },
-          content: nonEmpty(blocks(lex(body.join('\n')))),
-        });
+        content.push(asideNode(body, color, 135));
       } else {
         const variant = CALLOUT_VARIANTS.has(kind) ? kind : 'info';
         content.push({ type: 'callout', attrs: { variant }, content: nonEmpty(blocks(lex(body.join('\n')))) });

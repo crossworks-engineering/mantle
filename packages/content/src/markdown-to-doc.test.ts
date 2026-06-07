@@ -60,6 +60,34 @@ describe('markdownToDoc', () => {
     expect(find(':::aside chart-9\nx\n:::', 'aside')?.attrs?.color).toBe('chart-1');
   });
 
+  it("imports Notion's <aside> … </aside> callout export as an aside block", () => {
+    const a = find('<aside>\n💡 A Notion callout.\n</aside>', 'aside');
+    expect(a?.attrs?.color).toBe('chart-1');
+    expect(a?.attrs?.angle).toBe(135);
+    expect(a?.content?.[0]?.type).toBe('paragraph');
+    // the leading-emoji text rides along in the body (no literal <aside> text)
+    const text = JSON.stringify(a);
+    expect(text).toContain('A Notion callout.');
+    expect(text).not.toContain('aside>');
+  });
+
+  it('handles a single-line <aside>…</aside> and multi-block bodies', () => {
+    const one = find('<aside>just one line</aside>', 'aside');
+    expect(one?.content?.[0]?.type).toBe('paragraph');
+    const multi = find('<aside>\n# Heading\n\nA paragraph.\n</aside>', 'aside');
+    const kinds = (multi?.content ?? []).map((b) => b.type);
+    expect(kinds).toContain('heading');
+    expect(kinds).toContain('paragraph');
+  });
+
+  it('cycles colour/angle across multiple imported <aside> blocks', () => {
+    const doc = markdownToDoc('<aside>\none\n</aside>\n\n<aside>\ntwo\n</aside>\n\n<aside>\nthree\n</aside>') as { content: N[] };
+    const asides = doc.content.filter((n) => n.type === 'aside');
+    expect(asides.map((a) => a.attrs?.color)).toEqual(['chart-1', 'chart-2', 'chart-3']);
+    expect(asides[0]?.attrs?.angle).toBe(135);
+    expect(asides[1]?.attrs?.angle).toBe(60);
+  });
+
   it('maps a columns block into columnList with 2+ columns', () => {
     const cols = find(':::columns\nleft\n+++\nright\n:::', 'columnList');
     expect(cols?.content?.length).toBe(2);
