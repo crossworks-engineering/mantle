@@ -10,6 +10,7 @@ import { Mathematics } from '@tiptap/extension-mathematics';
 import { common, createLowlight } from 'lowlight';
 import type { Extensions } from '@tiptap/react';
 import { Callout } from './callout';
+import { Aside } from './aside';
 import { Column, ColumnList } from './column';
 import { PageMention } from './mention';
 import { PageImage } from './image';
@@ -77,6 +78,7 @@ export const pageExtensions: Extensions = [
   TaskItem.configure({ nested: true }),
   PageMention,
   Callout,
+  Aside,
   ColumnList,
   Column,
   PageImage,

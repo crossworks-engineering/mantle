@@ -16,7 +16,7 @@ box:
   reads it for the reply *and* files it into your memory so you can ask about it
   later.
 - **Rich replies** — she can answer with proper formatting: headings, callouts,
-  tables, columns, checklists, even diagrams she generates. A reply can be turned
+  asides, tables, columns, checklists, even diagrams she generates. A reply can be turned
   into a saved [Page](04-pages-tables-notes-docs.md).
 - **Voice & images out** — she can reply with a spoken audio clip, or generate an
   image, inline in the conversation.

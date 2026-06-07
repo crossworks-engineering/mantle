@@ -132,7 +132,7 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
   {
     slug: 'rich_writing',
     name: 'Rich writing',
-    description: 'The rich Mantle dialect: callouts, columns, tables, task lists, KaTeX.',
+    description: 'The rich Mantle dialect: callouts, asides, columns, tables, task lists, KaTeX.',
     instructions: SKILL_INSTRUCTIONS['rich_writing']!,
   },
   {

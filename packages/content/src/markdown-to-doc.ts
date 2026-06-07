@@ -13,6 +13,7 @@
  * the rich_writing skill teaches:
  *
  *   Callout:  :::info … :::      (variants info|success|warning|danger)
+ *   Aside:    :::aside … :::     (optional themed colour: :::aside chart-3)
  *   Columns:  :::columns … +++ … :::   (2+ parts split by a lone +++)
  *   Highlight: ==text==
  *   Colour:    [text]{color=chart-2}  /  [text]{highlight=chart-3}  (chart-1..5)
@@ -122,7 +123,10 @@ const md = new Marked({ gfm: true });
 md.use({ extensions: [highlightExtension, colorSpanExtension, inlineMathExtension] });
 
 const CALLOUT_VARIANTS = new Set(['info', 'success', 'warning', 'danger']);
-const FENCE_OPEN = /^:::([A-Za-z]+)\s*$/;
+const ASIDE_COLORS = new Set(['chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5']);
+// Optional trailing token after the kind carries an aside's themed colour
+// (`:::aside chart-3`); ignored for callout/columns. Backward compatible.
+const FENCE_OPEN = /^:::([A-Za-z]+)(?:\s+([A-Za-z0-9-]+))?\s*$/;
 const BLOCK_MATH_INLINE = /^\$\$(.+?)\$\$\s*$/;
 
 function lex(src: string): Tok[] {
@@ -363,6 +367,7 @@ export function markdownToDoc(source: string): Record<string, unknown> {
     if (fence) {
       flush();
       const kind = fence[1]!.toLowerCase();
+      const arg = fence[2]?.toLowerCase();
       const body: string[] = [];
       i++;
       while (i < lines.length && lines[i]!.trim() !== ':::') {
@@ -374,6 +379,13 @@ export function markdownToDoc(source: string): Record<string, unknown> {
         const col = columnsNode(body);
         if (col) content.push(col);
         else content.push(...blocks(lex(body.join('\n'))));
+      } else if (kind === 'aside') {
+        const color = arg && ASIDE_COLORS.has(arg) ? arg : 'chart-1';
+        content.push({
+          type: 'aside',
+          attrs: { color, angle: 135 },
+          content: nonEmpty(blocks(lex(body.join('\n')))),
+        });
       } else {
         const variant = CALLOUT_VARIANTS.has(kind) ? kind : 'info';
         content.push({ type: 'callout', attrs: { variant }, content: nonEmpty(blocks(lex(body.join('\n')))) });

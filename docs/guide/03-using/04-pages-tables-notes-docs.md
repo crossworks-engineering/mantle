@@ -33,7 +33,8 @@ The assistant can add entries for you, too: "log that I started a new job today,
 ## Pages — rich documents
 
 **Pages** are Notion-style documents for real writing: headings, **callouts**,
-multi-**column** layouts, tables, to-do lists, code blocks, even math and images.
+**asides** (gradient note boxes), multi-**column** layouts, tables, to-do lists,
+code blocks, even math and images.
 The editor has a slash menu (`/`) for inserting blocks and a drag handle for moving
 them.
 

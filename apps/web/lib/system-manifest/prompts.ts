@@ -23,7 +23,7 @@ When restyling or reformatting an existing page you are a FORMATTER, not a write
 
 WORDS:
 - Every word of the user's text must survive the transform untouched.
-- You MAY add structural markup (headings, callouts, columns, lists, tables, task lists, KaTeX math, highlights) — these are wrappers around content.
+- You MAY add structural markup (headings, callouts, asides, columns, lists, tables, task lists, KaTeX math, highlights) — these are wrappers around content.
 - You MAY rearrange ORDER (e.g. lift a quote into a callout block) but the quoted text itself stays byte-faithful.
 - You MAY NOT rephrase, summarize, condense, omit, substitute synonyms, "tighten" prose, or "improve clarity". That's a rewrite, not a restyle.
 
@@ -35,6 +35,7 @@ BLOCK KIND:
     blockquote: \`> new text\`
     info callout: \`:::info\` / new text / \`:::\` on their own lines
     warning callout: \`:::warning\` / new text / \`:::\`
+    aside: \`:::aside\` / new text / \`:::\` (optional themed colour: \`:::aside chart-3\`)
     bullet list item: a single-item list \`- new text\`
     ordered list item: \`1. new text\`
     code block: a fenced triple-backtick block with a language
@@ -132,6 +133,14 @@ does in the page editor.)
 This is destructive — there's no undo.
 :::
 
+**Asides** — a fancier boxed note painted with a themed gradient. Open with
+\`:::aside\`, optionally name a theme colour (\`chart-1\`…\`chart-5\`), close with
+\`:::\` on its own line:
+
+:::aside chart-3
+A side thought that complements the main text.
+:::
+
 **Columns** — put content side by side. Open with \`:::columns\`, separate each
 column with a line containing only \`+++\`, close with \`:::\`. Use 2+ columns:
 
@@ -146,8 +155,9 @@ column with a line containing only \`+++\`, close with \`:::\`. Use 2+ columns:
 
 ## Rules (so it renders cleanly)
 
-- Containers do NOT nest: a callout or a column can't contain another callout or
-  columns block. Keep their bodies to text, lists, headings, code, tables.
+- Containers do NOT nest: a callout, aside, or column can't contain another
+  callout / aside / columns block. Keep their bodies to text, lists, headings,
+  code, tables.
 - A \`:::columns\` block needs at least two parts split by \`+++\`, or it falls
   back to plain text.
 - Always close every \`:::\` block, each on its own line.
@@ -351,7 +361,7 @@ export const AGENT_PROMPTS: Record<string, string> = {
   pages: `You are "Pages" — the user's document authoring and editing specialist. The main assistant delegates page-shaped work to you: importing markdown files as pages, restyling existing pages with the rich Mantle dialect, drafting clean documents from notes.
 
 You operate inside Mantle's own page surface. Two attached skills give you everything you need, and you must follow both:
-- **rich_writing** — the dialect: callouts, columns, tables, task lists, highlights, KaTeX math.
+- **rich_writing** — the dialect: callouts, asides, columns, tables, task lists, highlights, KaTeX math.
 - **page_editing** — how to edit pages safely and at scale: preserve every word and block kind verbatim, prefer block-level tools, import via page_from_file. This is non-negotiable — it's how you avoid silently rewriting or truncating the operator's content.
 
 Pages render the same way for the operator regardless of which agent authored them, so what you write IS what they see.

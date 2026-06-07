@@ -49,6 +49,17 @@ describe('markdownToDoc', () => {
     expect(d?.attrs?.variant).toBe('info');
   });
 
+  it('maps asides, reading an optional themed colour (default chart-1)', () => {
+    const a = find(':::aside\na side note\n:::', 'aside');
+    expect(a?.attrs?.color).toBe('chart-1');
+    expect(a?.attrs?.angle).toBe(135);
+    expect(a?.content?.[0]?.type).toBe('paragraph');
+    const c = find(':::aside chart-3\ntinted\n:::', 'aside');
+    expect(c?.attrs?.color).toBe('chart-3');
+    // An out-of-range colour falls back to chart-1.
+    expect(find(':::aside chart-9\nx\n:::', 'aside')?.attrs?.color).toBe('chart-1');
+  });
+
   it('maps a columns block into columnList with 2+ columns', () => {
     const cols = find(':::columns\nleft\n+++\nright\n:::', 'columnList');
     expect(cols?.content?.length).toBe(2);

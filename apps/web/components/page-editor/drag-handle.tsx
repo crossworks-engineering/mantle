@@ -18,12 +18,14 @@ import {
   ListOrdered,
   ListTodo,
   Replace,
+  Sparkles,
   TextQuote,
   Trash2,
   Type,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { randomAsideAngle, randomAsideColor } from './aside-style';
 
 /**
  * "Turn into" conversions offered on the handle menu. Deliberately limited to
@@ -45,6 +47,11 @@ const TURN_OPTIONS: {
   { label: 'To-do list', icon: ListTodo, apply: (c) => c.toggleTaskList() },
   { label: 'Quote', icon: TextQuote, apply: (c) => c.toggleBlockquote() },
   { label: 'Callout', icon: Info, apply: (c) => c.wrapIn('callout', { variant: 'info' }) },
+  {
+    label: 'Aside',
+    icon: Sparkles,
+    apply: (c) => c.wrapIn('aside', { color: randomAsideColor(), angle: randomAsideAngle() }),
+  },
   { label: 'Code', icon: Code2, apply: (c) => c.toggleCodeBlock() },
 ];
 

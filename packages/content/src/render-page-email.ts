@@ -68,6 +68,17 @@ const CALLOUT_STYLES = {
   danger: { border: '#dc2626', bg: '#fef2f2' },
 } as const;
 
+// Aside gradient stops per themed colour. Email clients don't support CSS vars
+// or `color-mix`, so we use static hex tints; the cyclically-next colour is the
+// gradient's second stop, matching the in-app aside-style helper.
+const ASIDE_HEX: Record<string, { from: string; to: string; border: string }> = {
+  'chart-1': { from: '#dbeafe', to: '#dcfce7', border: '#93c5fd' },
+  'chart-2': { from: '#dcfce7', to: '#fef3c7', border: '#86efac' },
+  'chart-3': { from: '#fef3c7', to: '#fce7f3', border: '#fcd34d' },
+  'chart-4': { from: '#fce7f3', to: '#ede9fe', border: '#f9a8d4' },
+  'chart-5': { from: '#ede9fe', to: '#dbeafe', border: '#c4b5fd' },
+};
+
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -179,6 +190,11 @@ function renderBlock(node: PMNode, images: string[]): string {
         : 'info';
       const s = CALLOUT_STYLES[variant];
       return `<div style="margin:0 0 16px;padding:12px 16px;border-left:4px solid ${s.border};background-color:${s.bg};border-radius:6px">${renderBlocks(node.content, images)}</div>`;
+    }
+    case 'aside': {
+      const a = ASIDE_HEX[str(node.attrs?.color)] ?? ASIDE_HEX['chart-1']!;
+      // background-color is the fallback for clients that drop the gradient.
+      return `<div style="margin:0 0 16px;padding:16px 20px;border:1px solid ${a.border};border-radius:12px;background-color:${a.from};background-image:linear-gradient(135deg,${a.from},${a.to})">${renderBlocks(node.content, images)}</div>`;
     }
     case 'columnList': {
       const cols = (node.content ?? []).filter((c) => c.type === 'column');

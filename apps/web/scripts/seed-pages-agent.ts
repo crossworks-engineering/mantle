@@ -3,8 +3,8 @@
  *
  * Where the main assistant is a generalist conversationalist, Pages is a focused
  * design-conscious editor: importing markdown files into pages, restyling
- * existing pages with the rich Mantle dialect (callouts / columns / tables /
- * task lists / KaTeX), and producing clean, on-brand documents.
+ * existing pages with the rich Mantle dialect (callouts / asides / columns /
+ * tables / task lists / KaTeX), and producing clean, on-brand documents.
  *
  * Division of labour:
  *   - main assistant → delegates to Pages whenever the user's intent is

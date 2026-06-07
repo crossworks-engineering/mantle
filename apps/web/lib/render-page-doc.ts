@@ -17,6 +17,12 @@ import { toHtml } from 'hast-util-to-html';
 // Relative (not `@/`) so the vitest unit test, which has no path-alias, resolves it.
 import { highlightColor } from '../components/page-editor/highlight-colors';
 import { textColor } from '../components/page-editor/text-colors';
+import {
+  asideBackground,
+  asideBorderColor,
+  normalizeAsideAngle,
+  normalizeAsideColor,
+} from '../components/page-editor/aside-style';
 
 const lowlight = createLowlight(common);
 
@@ -161,6 +167,12 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
         ? str(node.attrs?.variant)
         : 'info';
       return `<div data-callout data-variant="${escAttr(variant)}">${renderBlocks(node.content, opts)}</div>`;
+    }
+    case 'aside': {
+      const color = normalizeAsideColor(node.attrs?.color);
+      const angle = normalizeAsideAngle(node.attrs?.angle);
+      const style = `background:${asideBackground(color, angle)};border-color:${asideBorderColor(color)}`;
+      return `<div data-aside data-color="${escAttr(color)}" style="${escAttr(style)}">${renderBlocks(node.content, opts)}</div>`;
     }
     case 'columnList':
       return `<div data-column-list class="column-list">${renderBlocks(node.content, opts)}</div>`;

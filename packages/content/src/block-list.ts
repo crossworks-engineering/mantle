@@ -151,6 +151,8 @@ function blockMeta(kind: string, node: AnyNode): Record<string, unknown> | null 
         : null;
     case 'callout':
       return typeof attrs.variant === 'string' ? { variant: attrs.variant } : null;
+    case 'aside':
+      return typeof attrs.color === 'string' ? { color: attrs.color } : null;
     case 'taskItem':
       return typeof attrs.checked === 'boolean' ? { checked: attrs.checked } : null;
     case 'image':

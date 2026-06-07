@@ -3480,6 +3480,25 @@
   background-color: color-mix(in oklab, var(--destructive) 8%, transparent);
 }
 
+/* Asides on the raw/public render. The fancier cousin of the callout: a rounded
+   gradient panel (no icon, no left bar). The gradient `background` + themed
+   `border-color` are emitted INLINE by render-page-doc.ts (and the in-app
+   NodeView) so they track the selected chart colour + angle; these rules only
+   own the box geometry so the two paths look identical. */
+.ProseMirror [data-aside] {
+  margin-block: 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 1px 2px 0 color-mix(in oklab, var(--foreground) 8%, transparent);
+}
+.ProseMirror [data-aside] > :first-child {
+  margin-top: 0;
+}
+.ProseMirror [data-aside] > :last-child {
+  margin-bottom: 0;
+}
+
 /* Embedded file chip on the raw/public render. */
 .ProseMirror a.file-embed {
   display: inline-flex;

@@ -122,9 +122,11 @@ NodeViews), then post-processes:
    `katex.renderToString(latex)` (server-rendered; no client KaTeX).
 2. **Code** — `lowlight`-highlight `<pre><code>` into hljs spans (matches the
    existing `.ProseMirror .hljs-*` theme CSS).
-3. **Callouts** — `renderHTML` emits `<div data-callout data-variant>`, but the
-   icon/panel is a NodeView in-app, so ship **public callout CSS** (columns,
-   tables, task-lists already have CSS in `globals.css`).
+3. **Callouts / asides** — `renderHTML` emits `<div data-callout data-variant>`
+   and `<div data-aside data-color style="background:…">` (the aside carries its
+   themed gradient inline, from the shared `aside-style.ts` helper, so the public
+   render matches the in-app NodeView), so ship **public callout/aside CSS** for
+   the box geometry (columns, tables, task-lists already have CSS in `globals.css`).
 4. **Images** — rewrite `src` → `/s/[token]/a/[fileId]`.
 5. **Sanitize** — escape text/attrs; restrict link protocols.
 

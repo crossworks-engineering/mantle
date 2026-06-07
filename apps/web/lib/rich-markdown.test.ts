@@ -39,6 +39,15 @@ describe('richMarkdownToHtml', () => {
     expect(richMarkdownToHtml(':::bogus\nx\n:::')).toContain('data-variant="info"');
   });
 
+  it('renders asides as data-aside with the themed colour', () => {
+    const html = richMarkdownToHtml(':::aside chart-3\na side note\n:::');
+    expect(html).toContain('data-aside');
+    expect(html).toContain('data-color="chart-3"');
+    expect(html).toContain('a side note');
+    // No colour given → defaults to chart-1.
+    expect(richMarkdownToHtml(':::aside\nx\n:::')).toContain('data-color="chart-1"');
+  });
+
   it('renders a columns block as data-column-list with 2+ columns', () => {
     const html = richMarkdownToHtml(':::columns\nleft\n+++\nright\n:::');
     expect(html).toContain('data-column-list');

@@ -50,6 +50,7 @@ key off `data-*` attributes.
 | Colour | `[text]{color=chart-2}` / `[text]{highlight=chart-3}` (chart-1..5; both keys may combine) | `textColor` mark / themed `highlight` |
 | To-do list | `- [ ]` / `- [x]` | TipTap `taskList` |
 | Callout | `:::info` … `:::` (variants: `info`, `success`, `warning`, `danger`) | `callout` node + NodeView |
+| Aside | `:::aside` … `:::` (optional themed colour: `:::aside chart-3`) | `aside` node + NodeView (themed gradient) |
 | Columns | `:::columns` … `+++` … `:::` (2+ parts) | `columnList` ⊃ `column` |
 | Image | `![alt](url)` | `image` node (block, by URL) |
 | Math | `$inline$` / `$$block$$` | `inlineMath` / `blockMath` (KaTeX) |
@@ -69,7 +70,7 @@ This is destructive — there's no undo.
 ```
 
 **Constraints** (enforced by the parser, taught by the skill):
-- Containers don't nest (no callout-in-callout, no columns-in-columns).
+- Containers don't nest (no callout/aside-in-callout/aside, no columns-in-columns).
 - `:::columns` needs ≥2 parts split by a lone `+++`, else it degrades to plain.
 - Every `:::` block must be closed on its own line.
 - Rich rendering is **web-only**. Telegram/voice surfaces stay plain text — the

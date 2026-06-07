@@ -64,6 +64,31 @@ describe('renderPageDoc', () => {
     expect(html).toContain('data-checked="true"');
   });
 
+  it('renders an aside with an inline themed gradient', () => {
+    const html = renderPageDoc(
+      doc([
+        {
+          type: 'aside',
+          attrs: { color: 'chart-3', angle: 200 },
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'note' }] }],
+        },
+      ]),
+      opts,
+    );
+    expect(html).toContain('data-aside');
+    expect(html).toContain('data-color="chart-3"');
+    expect(html).toContain('var(--chart-3)');
+    expect(html).toContain('linear-gradient(200deg');
+    expect(html).toContain('note');
+    // Out-of-range attrs normalise to the defaults.
+    const bad = renderPageDoc(
+      doc([{ type: 'aside', attrs: { color: 'nope', angle: 999 }, content: [{ type: 'paragraph' }] }]),
+      opts,
+    );
+    expect(bad).toContain('data-color="chart-1"');
+    expect(bad).toContain('linear-gradient(279deg');
+  });
+
   it('pre-renders math (KaTeX) and code (lowlight)', () => {
     const html = renderPageDoc(
       doc([

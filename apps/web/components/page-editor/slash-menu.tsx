@@ -26,6 +26,7 @@ import {
   Minus,
   Paperclip,
   Sigma,
+  Sparkles,
   Table as TableIcon,
   TextQuote,
   Type,
@@ -33,6 +34,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { columnsContent } from './column';
+import { randomAsideAngle, randomAsideColor } from './aside-style';
 import { uploadAndInsert } from './upload';
 
 /** Open a native file picker, upload the chosen file, and insert the matching
@@ -192,6 +194,24 @@ const ITEMS: SlashItem[] = [
         .insertContent({
           type: 'callout',
           attrs: { variant: 'info' },
+          content: [{ type: 'paragraph' }],
+        })
+        .run(),
+  },
+  {
+    group: 'Blocks',
+    title: 'Aside',
+    description: 'A boxed note with a themed gradient.',
+    icon: Sparkles,
+    keywords: ['aside', 'sidebar', 'note', 'panel', 'gradient', 'box'],
+    command: ({ editor, range }) =>
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent({
+          type: 'aside',
+          attrs: { color: randomAsideColor(), angle: randomAsideAngle() },
           content: [{ type: 'paragraph' }],
         })
         .run(),

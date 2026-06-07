@@ -114,6 +114,7 @@ strategy throughout: **reuse libraries, write only what they don't provide.**
 | Drag handle | `@tiptap/extension-drag-handle-react` | grip + click-menu (Duplicate/Delete) |
 | Slash menu, @-mentions | `@tiptap/suggestion` | the popups + commands |
 | Callout, columns | — | custom schema nodes + CSS |
+| Aside | — | custom `aside` node + NodeView; themed gradient (selected `chart-N` + angle) painted from one shared helper (`aside-style.ts`) so editor/public/email match; ✨ swatch reshuffles |
 | Code highlighting | `@tiptap/extension-code-block-lowlight` + `lowlight` | `.hljs-*` mapped to theme tokens (CSS) |
 | Math | `@tiptap/extension-mathematics` + `katex` | `$…$` / `$$…$$`; `latex` surfaced in `docToText` |
 | Image / file embeds | — | custom `image` + `fileEmbed` nodes; upload via the files pipeline; slash + drag/paste |
@@ -136,7 +137,8 @@ Components live in [`apps/web/components/page-editor/`](../apps/web/components/p
   the native dragstart — that was the "grab cursor but won't move" bug).
 - `table-controls.tsx` — floating `+` buttons positioned off the live table
   rect (the TipTap DragHandle only positions the *left* gutter).
-- `callout.ts`/`callout-view.tsx`, `column.ts`, `mention.ts`/`mention-list.tsx`.
+- `callout.ts`/`callout-view.tsx`, `aside.ts`/`aside-view.tsx`/`aside-style.ts`
+  (the gradient cousin of callout), `column.ts`, `mention.ts`/`mention-list.tsx`.
 
 Editor route: [`apps/web/app/(app)/pages/[id]`](../apps/web/app/(app)/pages);
 list (master-detail) at `/pages`. The page body uses base `prose` (16px).

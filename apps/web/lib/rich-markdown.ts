@@ -134,7 +134,9 @@ md.use({ extensions: [highlightExtension, colorSpanExtension, inlineMathExtensio
 const BLOCK_MATH_INLINE = /^\$\$(.+?)\$\$\s*$/;
 
 const TASK_RE = /^\s*[-*]\s+\[([ xX])\]\s+(.*)$/;
-const FENCE_OPEN_RE = /^:::([A-Za-z]+)\s*$/;
+// Optional trailing token carries an aside's themed colour (`:::aside chart-3`).
+const FENCE_OPEN_RE = /^:::([A-Za-z]+)(?:\s+([A-Za-z0-9-]+))?\s*$/;
+const ASIDE_COLORS = new Set(['chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5']);
 
 function escapeAttr(s: string): string {
   return s.replace(/"/g, '&quot;');
@@ -151,6 +153,13 @@ function renderBlocks(text: string): string {
 function renderCallout(variant: CalloutVariant, bodyLines: string[]): string {
   const inner = renderBlocks(bodyLines.join('\n').trim()) || '<p></p>';
   return `<div data-callout data-variant="${escapeAttr(variant)}">${inner}</div>`;
+}
+
+function renderAside(color: string, bodyLines: string[]): string {
+  const inner = renderBlocks(bodyLines.join('\n').trim()) || '<p></p>';
+  // data-color/data-angle round-trip into the Aside NodeView, which paints the
+  // themed gradient from the attrs. Default angle (135) is applied by the node.
+  return `<div data-aside data-color="${escapeAttr(color)}">${inner}</div>`;
 }
 
 function renderColumns(bodyLines: string[]): string {
@@ -228,6 +237,7 @@ export function richMarkdownToHtml(source: string): string {
     if (fence) {
       flush();
       const kind = fence[1]!.toLowerCase();
+      const arg = fence[2]?.toLowerCase();
       const body: string[] = [];
       i++;
       while (i < lines.length && lines[i]!.trim() !== ':::') {
@@ -236,6 +246,8 @@ export function richMarkdownToHtml(source: string): string {
       }
       i++; // consume closing :::
       if (kind === 'columns') out.push(renderColumns(body));
+      else if (kind === 'aside')
+        out.push(renderAside(arg && ASIDE_COLORS.has(arg) ? arg : 'chart-1', body));
       else if ((CALLOUT_VARIANTS as readonly string[]).includes(kind))
         out.push(renderCallout(kind as CalloutVariant, body));
       else out.push(renderCallout('info', body));

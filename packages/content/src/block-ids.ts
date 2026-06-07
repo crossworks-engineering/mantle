@@ -21,7 +21,7 @@
  * so user edits don't strip ids the agent placed.
  *
  * Block coverage — every node type that's editorially meaningful as a unit:
- * paragraph, heading, blockquote, codeBlock, horizontalRule, callout,
+ * paragraph, heading, blockquote, codeBlock, horizontalRule, callout, aside,
  * columnList, column, bulletList, orderedList, taskList, listItem, taskItem,
  * table, tableRow, tableCell, tableHeader, blockMath, image, pageImage,
  * fileEmbed, childPage. Inline text/marks + inlineMath stay un-id'd (they're not
@@ -48,6 +48,7 @@ const BLOCK_TYPES = new Set([
   'tableHeader',
   // Mantle custom blocks
   'callout',
+  'aside',
   'columnList',
   'column',
   // Atoms still worth addressing (the agent might want to swap an image)

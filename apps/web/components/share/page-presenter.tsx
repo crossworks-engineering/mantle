@@ -5,8 +5,8 @@ import { PageOutline } from '@/components/page-editor/page-outline';
 /**
  * Public page render. Server-rendered sanitized HTML (see render-page-doc.ts)
  * dropped into a `.ProseMirror .prose` container so it reuses the editor CSS in
- * globals.css — callouts, columns, tables, task-lists, code highlight, KaTeX,
- * images all render exactly as in the app. Centered reading column; width
+ * globals.css — callouts, asides, columns, tables, task-lists, code highlight,
+ * KaTeX, images all render exactly as in the app. Centered reading column; width
  * respects the page's narrow/wide setting.
  */
 export function PagePresenter({
