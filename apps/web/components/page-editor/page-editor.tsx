@@ -115,10 +115,15 @@ export function PageEditor({
         return handleDroppedFiles(editorRef.current, files);
       },
       // Click a node-link @-mention (ref:'node') → navigate to that page/note.
-      // Entity mentions have no route, so they fall through to normal selection.
-      handleClickOn: (_view, _pos, node, _nodePos, event) => {
-        if (node.type.name !== 'mention' || node.attrs.ref !== 'node') return false;
-        const href = nodeHref(node.attrs.kind as string | null, node.attrs.id as string);
+      // DOM-based (not handleClickOn): ProseMirror resolves an inline-atom click
+      // to the parent paragraph, so we read the chip element off the event. Entity
+      // mentions have no route, so they fall through to normal selection.
+      handleClick: (_view, _pos, event) => {
+        const chip = (event.target as HTMLElement | null)?.closest?.(
+          '.mention[data-ref="node"]',
+        ) as HTMLElement | null;
+        if (!chip) return false;
+        const href = nodeHref(chip.getAttribute('data-kind'), chip.getAttribute('data-id') ?? '');
         if (!href) return false;
         event.preventDefault();
         routerRef.current.push(href);
