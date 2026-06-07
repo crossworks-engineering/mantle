@@ -89,6 +89,11 @@ export {
   type SplitResult,
   type ExtractResult,
 } from './page-split';
+export {
+  computeDiffOverlay,
+  type DiffOverlay,
+  type RemovedGhost,
+} from './page-diff';
 
 export {
   PEERS_ROOT_LABEL,

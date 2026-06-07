@@ -17,12 +17,13 @@
  *     already showing the new draft (it loads draft ?? doc); this
  *     surfaces the controls that promote or revert it.
  *
- * What this panel does NOT do (Pass 2 / Phase 3a.2):
- *   - Per-block inline visual diff inside the TipTap editor (red strike
- *     on removed, green border on added). Requires custom decorations
- *     keyed by block id; bigger lift, deferred.
- *   - Per-block Accept / Discard. Today: whole-draft Commit / Discard
- *     (the existing editor's Commit button + this panel's Discard).
+ * The per-block inline visual diff (red ghosts for removed, green/amber
+ * borders for added/changed) + per-block Discard/Restore now live in the
+ * editor's "Review" mode (Phase 3a Pass 2, auto-enabled after a run; see
+ * diff-review.ts). This panel keeps the whole-draft Revert (reject all);
+ * the editor's Commit accepts all.
+ *
+ * What this panel still does NOT do:
  *   - Streaming token output. The endpoint is request/response.
  */
 
@@ -210,9 +211,11 @@ export function AiAssistPanel({
           <p className="text-muted-foreground">
             Editor is showing the draft. Use the toolbar to <strong>Commit</strong> when ready, or revert below.
           </p>
-          <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">
-            ⚠ Revert wipes the <strong>entire draft</strong> — both Pages&apos; changes AND
-            any unsaved typing of yours. Per-block discard is queued for Phase 3a.2.
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            To accept or reject <strong>individual</strong> changes, use{' '}
+            <strong>Review</strong> in the toolbar (per-block Discard / Restore). Revert
+            below wipes the <strong>entire draft</strong> — Pages&apos; changes AND any
+            unsaved typing of yours.
           </p>
           <Button
             type="button"

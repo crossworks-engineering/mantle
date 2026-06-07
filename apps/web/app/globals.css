@@ -3550,6 +3550,102 @@
   padding-right: 0.4rem;
 }
 
+/* ── Visual diff (review mode, Phase 3a Pass 2) ────────────────────────────
+   Added blocks (green / chart-4) and changed blocks (amber / chart-5) get a
+   left accent bar + faint tint. Each carries a hover-reveal "Discard" pill
+   (placed as a widget at the block's start, absolutely positioned). Removed
+   blocks aren't in the doc — they render as struck "ghost" widget cards. All
+   themed-token only, so they track the active theme + light/dark. */
+.ProseMirror .is-diff-added,
+.ProseMirror .is-diff-changed {
+  position: relative;
+  border-radius: var(--radius);
+  margin-left: -0.75rem;
+  padding-left: 0.75rem;
+  padding-right: 0.4rem;
+}
+.ProseMirror .is-diff-added {
+  background-color: color-mix(in oklab, var(--chart-4) 12%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--chart-4);
+}
+.ProseMirror .is-diff-changed {
+  background-color: color-mix(in oklab, var(--chart-5) 12%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--chart-5);
+}
+
+/* The per-block action pill (Discard / Restore). Lives inside a positioned diff
+   block (added/changed) or a ghost card. Hidden until the block is hovered so
+   it doesn't clutter the read. */
+.ProseMirror .diff-pill {
+  position: absolute;
+  top: 0.15rem;
+  right: 0.2rem;
+  z-index: 2;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background-color: var(--popover);
+  color: var(--popover-foreground);
+  padding: 0.05rem 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  user-select: none;
+}
+.ProseMirror .is-diff-added:hover > .diff-pill,
+.ProseMirror .is-diff-changed:hover > .diff-pill,
+.ProseMirror .diff-pill:focus-visible {
+  opacity: 1;
+}
+.ProseMirror .diff-pill-discard:hover {
+  border-color: var(--destructive);
+  color: var(--destructive);
+}
+
+/* Removed-block ghost — a read-only card showing deleted content where it used
+   to be. Always shows its Restore pill (it's the only handle on a ghost). */
+.ProseMirror .diff-removed-ghost {
+  position: relative;
+  margin: 0.4rem 0;
+  border: 1px dashed color-mix(in oklab, var(--destructive) 45%, transparent);
+  border-radius: var(--radius);
+  background-color: color-mix(in oklab, var(--destructive) 7%, transparent);
+  padding: 0.4rem 0.6rem;
+  user-select: none;
+}
+.ProseMirror .diff-removed-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.ProseMirror .diff-removed-tag {
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--destructive);
+}
+.ProseMirror .diff-removed-ghost .diff-pill {
+  position: static;
+  opacity: 1;
+}
+.ProseMirror .diff-pill-restore:hover {
+  border-color: var(--chart-4);
+  color: var(--chart-4);
+}
+.ProseMirror .diff-removed-body {
+  margin-top: 0.2rem;
+  font-size: 0.9rem;
+  color: color-mix(in oklab, var(--foreground) 65%, transparent);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in oklab, var(--destructive) 55%, transparent);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* Sub-page card on the raw/public render. In-app it's a React NodeView (a
    Link); the public surface emits an inert [data-child-page] div (sub-pages
    aren't part of a shared subtree), styled to match the in-app card. */

@@ -331,13 +331,28 @@ cache + `extract_cost_cap_micro_usd`.
   draft button. Editor remounts on AI changes via prop-keyed effect.
   `/api/pages/[id]/ai-assist` invokes Pages via `invokeAgent`; Pages writes
   to `draft_doc`; user reviews + commits via the existing toolbar.
-- **Editor visual diff (Phase 3a Pass 2)** — designed, not built. Today the
-  AI panel summarises the diff; the editor just shows the new draft as-is.
-  Pass 2 adds per-block decorations INSIDE the TipTap editor: red strike
-  on removed blocks, green border on added/changed. Per-block Accept /
-  Discard (vs today's whole-draft revert). Requires custom ProseMirror
-  decorations keyed by block id. Pass 1 already gives the complete editing
-  loop functionally; Pass 2 is the visual polish on top.
+- **Editor visual diff (Phase 3a Pass 2)** — ✅ **built.** A "Review" mode in
+  the editor paints exactly what Commit will publish vs the live page:
+  - `computeDiffOverlay` ([`page-diff.ts`](../packages/content/src/page-diff.ts))
+    turns (committed `doc`, draft) into the sets to paint — added (top-most),
+    changed (deepest, so a changed inner block borders, not its shell), and
+    TOP-LEVEL removed blocks with the text + anchor to ghost them. Pure +
+    tested; recomputed client-side on every draft change so it always matches
+    "what Commit will publish".
+  - `DiffReview` ([`diff-review.ts`](../apps/web/components/page-editor/diff-review.ts))
+    is the editor overlay (same meta-driven decoration pattern as `focus-marks`):
+    node borders for added (green/chart-4) + changed (amber/chart-5), and
+    **widget "ghost" cards** for removed blocks (red, struck-through) rendered
+    where they used to be — the only way to show a deletion, since removed
+    content isn't in the draft. Never mutates the doc.
+  - **Per-block Discard / Restore**: each added/changed block gets a hover
+    "Discard" pill; each ghost a "Restore" button. They dispatch a bubbling
+    `mantle:diff-action` event; `page-detail-client` does the surgery (revert a
+    changed block to committed, delete an added block, re-insert a removed one)
+    on the live doc, which autosaves + recomputes the overlay. Commit = accept
+    all; the AI panel's Revert = reject all.
+  - Toolbar **Review** toggle (auto-on after an AI run) with a change count;
+    the ‹ › nav cycles the added/changed blocks.
 
   See [architecture.md §9g](./architecture.md#9g-web-assistant--full-multimedia-parity-with-telegram)
   for the surrounding /assistant context.

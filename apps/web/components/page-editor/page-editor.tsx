@@ -12,7 +12,9 @@ import { TableControls } from './table-controls';
 import { SlashCommand } from './slash-command';
 import { FocusMarks, focusMarksKey } from './focus-marks';
 import { FocusGutter } from './focus-gutter';
+import { DiffReview, diffReviewKey, DIFF_ACTION_EVENT } from './diff-review';
 import { handleDroppedFiles } from './upload';
+import type { DiffOverlay } from '@mantle/content/page-diff';
 
 /**
  * The "invisible" editing surface: no border, no card, no fixed toolbar — just
@@ -29,6 +31,8 @@ export function PageEditor({
   markerMode = false,
   marks,
   editedIds,
+  diff,
+  onDiffAction,
   onMarksChange,
   onChange,
   onBlur,
@@ -48,6 +52,13 @@ export function PageEditor({
   /** Block ids Pages changed in the current draft — highlighted green so the
    *  user can see what moved after a run. Cleared on commit. */
   editedIds?: string[];
+  /** Visual-diff overlay for review mode (added/changed/removed). Null = no
+   *  review (normal editing). When set, the editor paints borders + removed
+   *  ghosts + per-block Discard/Restore controls. */
+  diff?: DiffOverlay | null;
+  /** A per-block diff control was pressed (Discard a change / Restore a removed
+   *  block). The host does the doc surgery + recomputes the overlay. */
+  onDiffAction?: (action: 'discard' | 'restore', id: string) => void;
   /** The gutter computed a new marked set (drag range / click toggle). */
   onMarksChange?: (ids: string[]) => void;
   onChange: (doc: JSONContent) => void;
@@ -75,11 +86,13 @@ export function PageEditor({
   // Holds the editor for the once-bound drop/paste handlers (they're defined in
   // the useEditor config, before `editor` is assigned).
   const editorRef = useRef<Editor | null>(null);
+  const onDiffActionRef = useRef(onDiffAction);
   useEffect(() => {
     onChangeRef.current = onChange;
     onBlurRef.current = onBlur;
     onReadyRef.current = onEditorReady;
-  }, [onChange, onBlur, onEditorReady]);
+    onDiffActionRef.current = onDiffAction;
+  }, [onChange, onBlur, onEditorReady, onDiffAction]);
 
   // Stable editorProps. useEditor re-applies editor.setOptions() on every render
   // when its options compare unequal, and a fresh editorProps object each render
@@ -137,7 +150,12 @@ export function PageEditor({
     // SlashCommand + FocusMarks are editor-only (no schema / no doc writes), so
     // PageView stays identical. SlashCommand carries the page id so `/page`
     // parents sub-pages here.
-    extensions: [...pageExtensions, SlashCommand.configure({ pageId: pageId ?? null }), FocusMarks],
+    extensions: [
+      ...pageExtensions,
+      SlashCommand.configure({ pageId: pageId ?? null }),
+      FocusMarks,
+      DiffReview,
+    ],
     content,
     immediatelyRender: false, // required for Next.js SSR (avoids hydration mismatch)
     editorProps,
@@ -169,6 +187,27 @@ export function PageEditor({
       editor.state.tr.setMeta(focusMarksKey, { marked: marks ?? [], edited: editedIds ?? [] }),
     );
   }, [editor, marks, editedIds]);
+
+  // Push the visual-diff overlay into the DiffReview plugin (meta-only). Null
+  // clears review mode. Re-runs on remount (AI changes) and whenever the host
+  // recomputes the overlay (e.g. after a per-block discard/restore).
+  useEffect(() => {
+    if (!editor) return;
+    editor.view.dispatch(editor.state.tr.setMeta(diffReviewKey, diff ?? null));
+  }, [editor, diff]);
+
+  // Per-block diff controls dispatch a bubbling CustomEvent; the host does the
+  // doc surgery. Listen on the editor DOM (the buttons live inside it).
+  useEffect(() => {
+    if (!editor) return;
+    const dom = editor.view.dom;
+    const onAction = (e: Event) => {
+      const detail = (e as CustomEvent<{ action: 'discard' | 'restore'; id: string }>).detail;
+      if (detail?.id) onDiffActionRef.current?.(detail.action, detail.id);
+    };
+    dom.addEventListener(DIFF_ACTION_EVENT, onAction);
+    return () => dom.removeEventListener(DIFF_ACTION_EVENT, onAction);
+  }, [editor]);
 
   if (!editor) return null;
 

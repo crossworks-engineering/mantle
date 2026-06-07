@@ -8,12 +8,14 @@ import {
   ChevronDown,
   ChevronUp,
   GitCommitHorizontal,
+  GitCompareArrows,
   Highlighter,
   Loader2,
   Sparkles,
   StretchHorizontal,
   Trash2,
 } from 'lucide-react';
+import { computeDiffOverlay, type DiffOverlay } from '@mantle/content/page-diff';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TagInput } from '@/components/tag-input';
@@ -105,7 +107,8 @@ export function PageDetailClient({
 
   const docRef = useRef<JSONContent>(initialDoc);
   const editorRef = useRef<Editor | null>(null);
-  const committedRef = useRef(JSON.stringify(initial.doc)); // last published doc
+  const committedRef = useRef(JSON.stringify(initial.doc)); // last published doc (string)
+  const committedDocRef = useRef<JSONContent>(initial.doc as JSONContent); // …as object (diff baseline)
   const draftSavedRef = useRef(JSON.stringify(initial.draft ?? initial.doc)); // last autosaved
   const metaSavedRef = useRef(JSON.stringify({ title: initial.title, tags: initial.tags }));
   const lastDraftAtRef = useRef(Date.now());
@@ -171,9 +174,12 @@ export function PageDetailClient({
         return;
       }
       committedRef.current = docStr;
+      committedDocRef.current = docRef.current; // new diff baseline
       draftSavedRef.current = docStr;
       setDocDirty(false);
-      setEditedIds([]); // changes are now committed — clear the green highlight
+      setEditedIds([]); // changes are now committed — clear nav targets
+      setReviewMode(false); // nothing left to review
+      setDiffOverlay(null);
       toast.success('Committed');
     } finally {
       committingRef.current = false;
@@ -325,10 +331,17 @@ export function PageDetailClient({
   const marksKey = `mantle:page-marks:${initial.id}`;
   const [markerMode, setMarkerMode] = useState(false);
   const [marks, setMarks] = useState<string[]>([]);
-  // Blocks Pages changed in the current (uncommitted) draft — highlighted green
-  // so the user can spot what moved even when the text now reads differently.
-  // Session-only (not persisted); cleared on commit / discard.
+  // Nav targets for the ‹ › highlight cycle — the diff's added+changed block ids
+  // (removed ghosts have no node to scroll to). Derived from the overlay.
   const [editedIds, setEditedIds] = useState<string[]>([]);
+
+  // ── Visual diff / review mode (Phase 3a Pass 2) ──────────────────────────
+  // `reviewMode` paints the committed-vs-draft diff in the editor (added/changed
+  // borders + removed ghosts + per-block Discard/Restore). Auto-enabled after an
+  // AI run; toggleable. `diffOverlay` is recomputed (rAF-throttled) from the
+  // committed baseline vs the live editor doc whenever review mode is on.
+  const [reviewMode, setReviewMode] = useState(false);
+  const [diffOverlay, setDiffOverlay] = useState<DiffOverlay | null>(null);
 
   useEffect(() => {
     try {
@@ -383,6 +396,104 @@ export function PageDetailClient({
     [marks, editedIds],
   );
   const highlightCount = new Set([...marks, ...editedIds]).size;
+  const reviewChangeCount = diffOverlay
+    ? diffOverlay.counts.added + diffOverlay.counts.changed + diffOverlay.counts.removed
+    : 0;
+
+  // Recompute the diff overlay (committed baseline vs live doc) while review
+  // mode is on — rAF-throttled, re-subscribing when the editor remounts. Off →
+  // clear. editedIds (nav targets) tracks the added+changed ids.
+  useEffect(() => {
+    const ed = tocEditor;
+    if (!ed) return;
+    if (!reviewMode) {
+      setDiffOverlay(null);
+      setEditedIds([]);
+      return;
+    }
+    let raf = 0;
+    const recompute = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const overlay = computeDiffOverlay(
+          committedDocRef.current as Record<string, unknown>,
+          ed.getJSON() as Record<string, unknown>,
+        );
+        setDiffOverlay(overlay);
+        setEditedIds([...overlay.addedIds, ...overlay.changedIds]);
+      });
+    };
+    recompute();
+    ed.on('update', recompute);
+    return () => {
+      cancelAnimationFrame(raf);
+      ed.off('update', recompute);
+    };
+  }, [tocEditor, reviewMode]);
+
+  // Per-block diff action from the editor: Discard a change (revert one block to
+  // the committed baseline / delete an added block) or Restore a removed block.
+  // Mutates the live doc → onChange fires → autosave + overlay recompute.
+  const onDiffAction = useCallback(
+    (action: 'discard' | 'restore', id: string) => {
+      const ed = editorRef.current;
+      if (!ed) return;
+      const committedById = new Map<string, JSONContent>();
+      const collect = (n: { attrs?: { id?: unknown }; content?: unknown[] } | undefined) => {
+        if (!n || typeof n !== 'object') return;
+        const bid = n.attrs?.id;
+        if (typeof bid === 'string') committedById.set(bid, n as JSONContent);
+        for (const c of (n.content as typeof n[] | undefined) ?? []) collect(c);
+      };
+      collect(committedDocRef.current as never);
+
+      if (action === 'discard') {
+        let target: { pos: number; size: number } | null = null;
+        ed.state.doc.descendants((node, pos) => {
+          if (target) return false;
+          if (node.attrs?.id === id) {
+            target = { pos, size: node.nodeSize };
+            return false;
+          }
+          return true;
+        });
+        if (!target) return;
+        const t = target as { pos: number; size: number };
+        const committedJson = committedById.get(id);
+        ed.chain()
+          .command(({ tr }) => {
+            if (committedJson) {
+              // changed → revert this block to its committed version
+              tr.replaceWith(t.pos, t.pos + t.size, ed.schema.nodeFromJSON(committedJson));
+            } else {
+              // added → drop it
+              tr.delete(t.pos, t.pos + t.size);
+            }
+            return true;
+          })
+          .run();
+        return;
+      }
+
+      // restore — re-insert a removed top-level block at its old spot
+      const committedJson = committedById.get(id);
+      if (!committedJson) return;
+      const ghost = diffOverlay?.removed.find((r) => r.id === id);
+      let insertPos = 0;
+      if (ghost?.afterId) {
+        ed.state.doc.forEach((node, offset) => {
+          if (node.attrs?.id === ghost.afterId) insertPos = offset + node.nodeSize;
+        });
+      }
+      ed.chain()
+        .command(({ tr }) => {
+          tr.insert(insertPos, ed.schema.nodeFromJSON(committedJson));
+          return true;
+        })
+        .run();
+    },
+    [diffOverlay],
+  );
 
   // Watch the SERVER-PROVIDED draft prop. When router.refresh() (called
   // from onAiChanged after the AI run completes) brings back a NEW draft
@@ -407,6 +518,7 @@ export function PageDetailClient({
       const nextStr = JSON.stringify(next);
       docRef.current = next;
       committedRef.current = JSON.stringify(initial.doc);
+      committedDocRef.current = initial.doc as JSONContent; // diff baseline
       draftSavedRef.current = nextStr;
       setDocDirty(nextStr !== committedRef.current);
       setEditorKey((k) => k + 1);
@@ -414,9 +526,10 @@ export function PageDetailClient({
   }, [initial.draft, initial.doc]);
 
   const onAiChanged = useCallback((changedBlockIds?: string[]) => {
-    // Remember which blocks now differ from the committed doc so the editor
-    // can highlight them green. Empty/undefined (e.g. on discard) clears it.
-    setEditedIds(changedBlockIds ?? []);
+    // An AI run (array arg, even empty) enters review mode so the user sees the
+    // diff; a discard (no arg) leaves it. The overlay itself is recomputed from
+    // committed-vs-draft after the remount — no need to thread block ids here.
+    setReviewMode(changedBlockIds !== undefined);
     // Pull the latest draft from the server. router.refresh re-runs the
     // server component which re-reads getPage; the new initial.draft
     // propagates down. The useEffect above detects the prop change and
@@ -456,6 +569,17 @@ export function PageDetailClient({
           <Button size="sm" onClick={() => void commit()} disabled={!docDirty || committing}>
             <GitCommitHorizontal /> Commit
           </Button>
+          {docDirty && (
+            <Button
+              size="sm"
+              variant={reviewMode ? 'default' : 'outline'}
+              onClick={() => setReviewMode((v) => !v)}
+              aria-pressed={reviewMode}
+              title="Review changes — show what Commit will publish vs the live page"
+            >
+              <GitCompareArrows /> Review{reviewChangeCount > 0 ? ` · ${reviewChangeCount}` : ''}
+            </Button>
+          )}
           <Button
             size="sm"
             variant={markerMode ? 'default' : 'outline'}
@@ -593,7 +717,8 @@ export function PageDetailClient({
                   pageId={initial.id}
                   markerMode={markerMode}
                   marks={marks}
-                  editedIds={editedIds}
+                  diff={reviewMode ? diffOverlay : null}
+                  onDiffAction={onDiffAction}
                   onMarksChange={setMarks}
                   onChange={onDocChange}
                   onBlur={onEditorBlur}
