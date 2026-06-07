@@ -39,16 +39,12 @@ export const PageMention = Mention.extend({
   suggestion: {
     char: '@',
 
-    items: async ({ query }): Promise<MentionItem[]> => {
-      try {
-        const res = await fetch(`/api/mentions/search?q=${encodeURIComponent(query)}`);
-        if (!res.ok) return [];
-        const data = (await res.json()) as { items?: MentionItem[] };
-        return data.items ?? [];
-      } catch {
-        return [];
-      }
-    },
+    // No data fetch here on purpose. The suggestion plugin shares one `props`
+    // object across its async `update()` calls, so awaiting a fetch in `items`
+    // races under fast typing and a stale-empty result can land last. We return
+    // nothing and let `MentionList` fetch from `props.query` with a sequence
+    // guard, so the latest query always wins. See mention-list.tsx.
+    items: () => [],
 
     command: ({ editor, range, props }) => {
       const item = props as unknown as MentionItem;

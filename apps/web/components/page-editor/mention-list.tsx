@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { AtSign, FileText } from 'lucide-react';
+import { AtSign, FileText, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export type MentionItem = {
@@ -20,8 +20,14 @@ export type MentionItem = {
 
 export type MentionListHandle = { onKeyDown: (p: { event: KeyboardEvent }) => boolean };
 
+// Props come straight from TipTap's suggestion plugin. We read `query` (the text
+// after `@`) and fetch results IN THIS COMPONENT rather than from the
+// suggestion's `items()` option — the plugin shares one `props` object across
+// its async `update()` calls, so awaiting a fetch there races under fast typing
+// and a stale-empty result can land last. Fetching here, keyed on `query` with a
+// sequence guard, makes the latest query always win.
 export type MentionListProps = {
-  items: MentionItem[];
+  query: string;
   command: (item: MentionItem) => void;
 };
 
@@ -31,11 +37,41 @@ const GROUP_LABEL: Record<MentionItem['ref'], string> = {
 };
 
 export const MentionList = forwardRef<MentionListHandle, MentionListProps>(function MentionList(
-  { items, command },
+  { query, command },
   ref,
 ) {
+  const [items, setItems] = useState<MentionItem[]>([]);
+  const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Monotonic request id — only the newest fetch may apply its result, so a slow
+  // earlier query can't clobber a faster later one.
+  const seqRef = useRef(0);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
+    const seq = ++seqRef.current;
+    const ctrl = new AbortController();
+    setLoading(true);
+    fetch(`/api/mentions/search?q=${encodeURIComponent(q)}`, { signal: ctrl.signal })
+      .then((res) => (res.ok ? res.json() : { items: [] }))
+      .then((data: { items?: MentionItem[] }) => {
+        if (seq !== seqRef.current) return; // a newer query superseded this one
+        setItems(data.items ?? []);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (seq !== seqRef.current) return;
+        setItems([]);
+        setLoading(false);
+      });
+    return () => ctrl.abort();
+  }, [query]);
 
   useEffect(() => setSelected(0), [items]);
 
@@ -74,9 +110,15 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(funct
   );
 
   if (items.length === 0) {
+    const msg = !query.trim()
+      ? 'Type to search pages, notes, or people'
+      : loading
+        ? 'Searching…'
+        : 'No matching pages, notes, or people';
     return (
-      <div className="w-64 rounded-xl border border-border bg-popover p-3 text-sm text-muted-foreground shadow-lg">
-        No matching pages, notes, or people
+      <div className="flex w-64 items-center gap-2 rounded-xl border border-border bg-popover p-3 text-sm text-muted-foreground shadow-lg">
+        {loading && <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden />}
+        {msg}
       </div>
     );
   }
