@@ -76,23 +76,61 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       ];
     });
 
+    // A research/deep turn can run for minutes; an intermediary (reverse proxy,
+    // gateway, browser) often drops the long-held connection before the server
+    // finishes. But the turn route is idempotent and runAssistantTurn NEVER
+    // rejects — it always resolves to {200|400|500} and caches by
+    // idempotency-key. So a dropped connection means the turn is STILL running,
+    // not failed. We re-POST the SAME key, which re-attaches to the in-flight
+    // turn (or its cached result) WITHOUT re-running the LLM, and keep the
+    // spinner alive. Only a real {400|500} from our route — or exhausting the
+    // deadline — ends the turn. (Proxy 502/503/504/52x means the gateway gave
+    // up but upstream is alive → re-attach, don't surface it.)
+    const headers: Record<string, string> = { 'idempotency-key': input.idempotencyKey };
+    if (input.isJson) headers['content-type'] = 'application/json';
+    const RETRY_DEADLINE_MS = 6 * 60_000;
+    const startedAt = Date.now();
+    let attempt = 0;
+
     try {
-      const res = await fetch('/api/assistant/turn', {
-        method: 'POST',
-        headers: input.isJson
-          ? { 'content-type': 'application/json', 'idempotency-key': input.idempotencyKey }
-          : { 'idempotency-key': input.idempotencyKey },
-        body: input.body,
-      });
-      if (!res.ok) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(b.error ?? `request failed (${res.status})`);
+      for (;;) {
+        attempt += 1;
+        let res: Response | null = null;
+        try {
+          res = await fetch('/api/assistant/turn', { method: 'POST', headers, body: input.body });
+        } catch {
+          // Network drop / connection reset mid-turn — the turn is still
+          // running server-side; fall through to re-attach by key.
+          res = null;
+        }
+
+        if (res) {
+          if (res.ok) {
+            const data = (await res.json()) as TurnResponse;
+            setMessages((prev) =>
+              prev.map((m) => (m.id === botId ? { ...m, text: data.outbound.text, pending: false } : m)),
+            );
+            return data;
+          }
+          // Our route only emits 400/500 as real outcomes — surface those. A
+          // 5xx from a PROXY (gateway timeout) is not our route; re-attach.
+          const proxyTimeout =
+            res.status === 502 || res.status === 503 || res.status === 504 ||
+            res.status === 522 || res.status === 524;
+          if (!proxyTimeout) {
+            const b = (await res.json().catch(() => ({}))) as { error?: string };
+            throw new Error(b.error ?? `request failed (${res.status})`);
+          }
+        }
+
+        if (Date.now() - startedAt > RETRY_DEADLINE_MS) {
+          throw new Error(
+            'Still working — this is taking unusually long. It may finish in the background; reload to check.',
+          );
+        }
+        // Brief backoff, then re-attach to the in-flight turn (no LLM re-run).
+        await new Promise((r) => setTimeout(r, Math.min(3000, 1000 * attempt)));
       }
-      const data = (await res.json()) as TurnResponse;
-      setMessages((prev) =>
-        prev.map((m) => (m.id === botId ? { ...m, text: data.outbound.text, pending: false } : m)),
-      );
-      return data;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Something went wrong';
       setMessages((prev) =>
