@@ -887,3 +887,89 @@ describe('runToolLoop — step naming uses adapter.adapterName', () => {
     expect(true).toBe(true);
   });
 });
+
+describe('runToolLoop — tool-volume guards', () => {
+  // Structural backstop against a model spamming tools (the prod incident:
+  // Grok-4.3 fired page_unshare 1599× in one turn → 286K-token context, $0.73,
+  // then crashed). max_iters caps rounds; the dedup catches byte-identical
+  // repeats. Neither bounds VOLUME — these caps do.
+  it('breaks single-tool fixation: caps same-slug calls per turn (varying args)', async () => {
+    const tool = fakeTool({ slug: 'page_unshare' });
+    const N = 18; // > MAX_CALLS_PER_TOOL_PER_TURN (15)
+    // Distinct args each call → the byte-identical dedup does NOT catch these;
+    // only the per-tool fixation cap does.
+    const toolCalls = Array.from({ length: N }, (_, i) => ({
+      id: `call_${i}`,
+      type: 'function' as const,
+      function: { name: 'page_unshare', arguments: `{"pageId":"p${i}"}` },
+    }));
+    const { adapter } = makeFakeAdapter([
+      { type: 'toolCalls', toolCalls },
+      { type: 'text', text: 'done' },
+    ]);
+    dispatchToolImpl = () => ({ ok: true, output: { ok: 1 } });
+
+    const result = await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'simple question' }],
+      tools: [tool],
+    });
+
+    // Only 15 actually executed; calls 16–18 blocked by the fixation breaker.
+    expect(dispatchToolCalls).toHaveLength(15);
+    expect(result.toolCalls).toHaveLength(N);
+    expect(result.toolCalls.slice(0, 15).every((c) => c.status === 'success')).toBe(true);
+    expect(
+      result.toolCalls.slice(15).every((c) => c.status === 'error' && c.error === 'tool_repeat_limit'),
+    ).toBe(true);
+    // Every call still gets a paired tool message (provider shape requirement).
+    expect(result.messages.filter((m) => m.role === 'tool')).toHaveLength(N);
+    expect(result.reply).toBe('done');
+  });
+
+  it('caps tool calls per single response (drops the overflow)', async () => {
+    // Spread across two tools, 11 each (both under the per-tool cap of 15), so
+    // it's the per-RESPONSE cap (20) being exercised, not the fixation breaker.
+    const toolA = fakeTool({ slug: 'a' });
+    const toolB = fakeTool({ slug: 'b' });
+    const toolCalls = [
+      ...Array.from({ length: 11 }, (_, i) => ({
+        id: `a_${i}`,
+        type: 'function' as const,
+        function: { name: 'a', arguments: `{"i":${i}}` },
+      })),
+      ...Array.from({ length: 11 }, (_, i) => ({
+        id: `b_${i}`,
+        type: 'function' as const,
+        function: { name: 'b', arguments: `{"i":${i}}` },
+      })),
+    ]; // 22 total > MAX_TOOL_CALLS_PER_RESPONSE (20)
+    const { adapter } = makeFakeAdapter([
+      { type: 'toolCalls', toolCalls },
+      { type: 'text', text: 'ok' },
+    ]);
+    dispatchToolImpl = () => ({ ok: true, output: { ok: 1 } });
+
+    const result = await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: [toolA, toolB],
+    });
+
+    // First 20 execute; the last 2 are dropped with a synthetic result.
+    expect(dispatchToolCalls).toHaveLength(20);
+    expect(result.toolCalls).toHaveLength(22);
+    expect(
+      result.toolCalls.slice(20).every((c) => c.error === 'too_many_calls_in_response'),
+    ).toBe(true);
+    expect(result.messages.filter((m) => m.role === 'tool')).toHaveLength(22);
+  });
+});

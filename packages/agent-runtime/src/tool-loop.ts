@@ -52,6 +52,17 @@ import { parseToolArgs } from './tool-args';
 
 const DEFAULT_MAX_ITERATIONS = 6;
 
+// ── Tool-volume guards (structural backstop against tool-spam runaways) ──
+// A misbehaving model (notably Grok-4.x fixating on one tool) can emit hundreds
+// of tool calls, ballooning context + cost — one prod turn fired page_unshare
+// 1599× and burned $0.73 before crashing. max_iters caps ROUNDS, not
+// calls-per-round, and the in-response dedup only catches byte-identical
+// repeats, so volume needs its own caps. Flat globals for now; per-agent
+// overrides can come later.
+const MAX_TOOL_CALLS_PER_RESPONSE = 20; // calls beyond this in ONE response are dropped
+const MAX_TOOL_CALLS_PER_TURN = 40; // cumulative across rounds → then force a final answer
+const MAX_CALLS_PER_TOOL_PER_TURN = 15; // same-tool fixation breaker (counts even when args vary)
+
 /** Process-lifetime cache of the resolved `read_result` tool row, keyed by
  *  owner. It's a stable seeded builtin, so resolving it once per owner avoids
  *  a per-turn DB query on the always-offer path. Misses aren't cached (so it
@@ -248,6 +259,38 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   };
   let failedOver = false;
 
+  // Tool-volume guards (see constants above). Turn-scoped: the budget is
+  // cumulative across rounds; per-tool counts catch single-tool fixation even
+  // when the model varies the args to slip past the in-response dedup.
+  let totalToolCalls = 0;
+  const perToolCounts = new Map<string, number>();
+  let budgetExhausted = false;
+
+  // Skip a tool call WITHOUT executing it, still emitting the synthetic
+  // tool_result the provider protocol requires (every tool_call needs a paired
+  // result) plus a trace step. Used by the volume guards below.
+  const skipToolCall = async (
+    call: { id: string; function: { name: string; arguments: string } },
+    reason: string,
+    note: string,
+  ): Promise<void> => {
+    const slug = call.function.name;
+    const argsRaw = call.function.arguments ?? '{}';
+    await step(
+      { name: `tool: ${slug}`, kind: 'compute', input: { slug, args: '<capped, suppressed>' } },
+      async (handle) => {
+        handle.setSkipped(reason);
+        handle.setMeta({ [reason]: true, call_id: call.id, model: args.model });
+      },
+    );
+    toolCalls.push({ slug, argsJson: argsRaw, durationMs: 0, status: 'error', error: reason });
+    messages.push({
+      role: 'tool',
+      toolCallId: call.id,
+      content: JSON.stringify({ ok: false, error: reason, note }),
+    });
+  };
+
   for (let iter = 0; iter < maxIters; iter++) {
     const result = await step(
       {
@@ -353,6 +396,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     // the Map resets at the top of each iter. Raw-string compare is fine
     // because models emit deterministic JSON within one response.
     const seenSignatures = new Map<string, string>(); // signature → first call.id
+    let responseCallIndex = 0; // non-duplicate calls dispatched THIS response (per-response cap)
     for (const call of calls) {
       const startedAt = Date.now();
       const slug = call.function.name;
@@ -411,6 +455,44 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         continue;
       }
       seenSignatures.set(signature, call.id);
+
+      // ── Volume guards (structural backstop against tool-spam runaways) ──
+      // Each emits a paired synthetic result so the provider protocol stays
+      // valid, then skips execution — bounding cost regardless of how wild the
+      // model gets. These count only non-duplicate calls (dupes already handled).
+      responseCallIndex += 1;
+      if (responseCallIndex > MAX_TOOL_CALLS_PER_RESPONSE) {
+        await skipToolCall(
+          call,
+          'too_many_calls_in_response',
+          `You issued more than ${MAX_TOOL_CALLS_PER_RESPONSE} tool calls in one ` +
+            `response; the rest were not run. Issue fewer, more deliberate calls.`,
+        );
+        continue;
+      }
+      if (totalToolCalls >= MAX_TOOL_CALLS_PER_TURN) {
+        await skipToolCall(
+          call,
+          'turn_tool_budget_reached',
+          `This turn reached its tool-call budget (${MAX_TOOL_CALLS_PER_TURN}). ` +
+            `Stop calling tools and answer with what you already have.`,
+        );
+        budgetExhausted = true;
+        continue;
+      }
+      const priorForTool = perToolCounts.get(slug) ?? 0;
+      if (priorForTool >= MAX_CALLS_PER_TOOL_PER_TURN) {
+        await skipToolCall(
+          call,
+          'tool_repeat_limit',
+          `You've called '${slug}' ${priorForTool} times this turn (limit ` +
+            `${MAX_CALLS_PER_TOOL_PER_TURN}); further '${slug}' calls are blocked. ` +
+            `Stop repeating it — answer, or take a different approach.`,
+        );
+        continue;
+      }
+      perToolCounts.set(slug, priorForTool + 1);
+      totalToolCalls += 1;
 
       const tool = toolsByName.get(slug);
       // Parse the LLM-supplied arguments string into a JSON object,
@@ -591,6 +673,9 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         ...(outcome.ok ? {} : { isError: true as const }),
       });
     }
+    // Per-turn tool budget hit mid-round → stop looping and force a final
+    // answer with what we have (the force-final pass below).
+    if (budgetExhausted) break;
   }
 
   // Loop exhausted without a final text response. Last message is a

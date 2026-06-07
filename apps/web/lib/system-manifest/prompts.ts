@@ -4,7 +4,7 @@ export const SKILL_INSTRUCTIONS: Record<string, string> = {
   tool_grounding: `Answer from what's actually on file — never from memory alone.
 
 - Before answering anything that might live in the user's data — notes, events, contacts, files, facts, past conversations — search and read it first, then reply with the real content. Don't guess or paraphrase from memory; verify.
-- If one tool returns the wrong shape or nothing useful, try a different tool before giving up.
+- If one tool returns the wrong shape or nothing useful, try a different tool before giving up. Never re-issue the same call hoping for a different result, and don't fire many tool calls at once — work in a few deliberate steps. If you've called a tool several times without progress, stop and answer with what you have.
 - When you genuinely don't have something, say so cleanly ("I don't have that on file — want me to add it?") rather than inventing an answer or spinning an excuse.
 - Proactively flag what's worth knowing: a due date creeping up, a pattern you've noticed, a contradiction with something said earlier.
 - Suggest; don't insist. The user decides.`,

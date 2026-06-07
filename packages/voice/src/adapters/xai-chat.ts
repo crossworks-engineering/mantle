@@ -54,7 +54,9 @@ async function xaiChat(opts: ChatOptions): Promise<ChatResult> {
     model: opts.model,
     messages: toOpenAICompatMessages(opts.messages),
     ...(tools ? { tools } : {}),
-    ...(opts.toolChoice ? { tool_choice: opts.toolChoice } : {}),
+    // xAI rejects tool_choice with no tools (400) — e.g. the force-final pass.
+    // Without tools there's nothing to choose, so omit it (still forces text).
+    ...(opts.toolChoice && tools ? { tool_choice: opts.toolChoice } : {}),
     ...(typeof opts.temperature === 'number' ? { temperature: opts.temperature } : {}),
     ...(typeof opts.maxTokens === 'number' ? { max_tokens: opts.maxTokens } : {}),
     ...(typeof opts.topP === 'number' ? { top_p: opts.topP } : {}),

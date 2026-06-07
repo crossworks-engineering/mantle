@@ -395,7 +395,13 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
     model: opts.model,
     messages,
     ...(tools ? { tools } : {}),
-    ...(opts.toolChoice ? { toolChoice: opts.toolChoice } : {}),
+    // Only send tool_choice when tools are actually present. xAI/Grok rejects a
+    // tool_choice with no tools ("A tool_choice was set but no tools were
+    // specified" → 400) — which is exactly the force-final pass (toolChoice
+    // 'none', tools dropped). Without tools there's nothing to choose anyway, so
+    // omitting it forces a text answer on every provider. (Anthropic tolerated
+    // it; xAI didn't — this is the crash that errored a $0.73 turn.)
+    ...(opts.toolChoice && tools ? { toolChoice: opts.toolChoice } : {}),
     ...(typeof opts.temperature === 'number' ? { temperature: opts.temperature } : {}),
     ...(typeof opts.maxTokens === 'number' ? { maxTokens: opts.maxTokens } : {}),
     ...(typeof opts.topP === 'number' ? { topP: opts.topP } : {}),
