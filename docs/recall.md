@@ -181,10 +181,19 @@ into the parent, so `/debug` "spend by agent" stays correct.
   once it crosses the summarizer threshold, so a *very recent* discussion may
   not have a digest yet. `recall_window` doesn't care — call it directly with a
   rough date range when the timing is known.
-- **Both surfaces are digested.** The summarizer runs over Telegram
-  (`summarize_due`) *and* the web /assistant (`summarize_web_due`, migration
-  0044 → `summarizeWebConversation`), so `find_window` indexes web conversation
-  too (digests tagged `web`). `recall_window` already read both surfaces.
+- **All channels are digested by ONE summarizer.** Since the unified
+  conversation stream (migration 0072 — see [`conversation.md`](./conversation.md)),
+  a single `summarize_due` (per-agent, fired on `assistant_messages` INSERT
+  from any channel) drives `summarizeAgentConversation`; the old per-surface
+  split (`summarize_web_due` / `summarizeWebConversation`) is retired. So
+  `find_window` indexes web + Telegram conversation alike.
+- **Digests are embedded at insert (2026-06-10).** `find_window`'s cosine
+  ranking requires `nodes.embedding`; the summarizer now embeds each digest's
+  topic + summary as it writes it (the extractor deliberately skips digests,
+  so insert-time is the only embed point — canonical text is `digestEmbedText`
+  in `@mantle/embeddings`, shared with the re-embed walk). Digests created
+  before the fix have no vector and are invisible to `find_window` — heal
+  with `pnpm -C apps/web backfill:digest-embeddings --apply`.
 - **Truncation is a signal, not silent.** A window past `limit` returns the
   earliest N turns with `truncated: true`; Remy is prompted to narrow and walk
   sub-ranges rather than answer from a partial slice.

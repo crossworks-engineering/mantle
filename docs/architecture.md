@@ -186,7 +186,7 @@ MinIO from docker-compose. That's it.
 | `worker` (email)   | `apps/web/workers/email-sync.ts`. pg-boss queue consumer, runs IMAP syncs.    |
 | `tg`               | `apps/web/workers/telegram-poll.ts`. Long-polls Telegram for new DMs.         |
 | `files`            | `apps/web/workers/files-watch.ts`. chokidar on `MANTLE_FILES_ROOT`; mirrors external edits (vim, Syncthing, host `cp`) back into the DB. Loop-safe via `syncFileFromDisk`, which never re-writes bytes. |
-| `events`           | `apps/web/workers/events-reminders.ts`. Polls every 30s for events whose `remind_at` has passed and `reminder_sent_at` is null; sends a Telegram DM via `@mantle/telegram`. A **recurring** event (`data.recur` = daily/weekly/monthly/yearly, optional `data.recur_until`) rolls its single row forward to the next occurrence and re-arms instead of marking sent — `rollForwardRecurrence` in `@mantle/content/events`. |
+| `events`           | `apps/web/workers/events-reminders.ts`. Polls every 30s for events whose `remind_at` has passed and `reminder_sent_at` is null; sends a Telegram DM via `@mantle/telegram`. A **recurring** event (`data.recur` = daily/weekly/monthly/yearly, optional `data.recur_until`) rolls its single row forward to the next occurrence and re-arms instead of marking sent — `rollForwardRecurrence` in `@mantle/content/events`. The tick also hosts two piggybacked housekeeping jobs: the tool-result spill sweep (`maybeSweep`, §9m) and the **scheduled-backup check** (`maybeRunScheduledBackups` — [`backups.md`](./backups.md), configured at /settings/backups). |
 | `agent`            | `apps/agent/src/main.ts`. LISTENs on `telegram_message_inserted`, replies via OpenRouter. Shares prompt-build + LLM helpers with the web `/assistant` via `@mantle/agent-runtime`. |
 
 The workers live under `apps/web/workers/` (not in their own app) because they
@@ -1093,8 +1093,29 @@ output instead of piling up:
 - **Summary + embedding** — overwritten in place on the `nodes` row.
 - **Entities** — reconciled by name (existing rows reused, never re-created).
 - **Facts** — run through the ADD/UPDATE/DELETE/NOOP dedup classifier.
-- **`content_chunks`** — deleted for the node, then re-inserted.
-- **`mentioned_in` edges** — cleared for the node, then re-inserted.
+- **`content_chunks`** — atomic swap: embedded first, then delete + insert
+  in one transaction (2026-06-10 — the old delete-first order could leave a
+  node permanently chunk-less when the embedder hiccuped).
+- **`mentioned_in`/`references` + relation edges** — same atomic swap:
+  collected in memory during the pass, then delete + insert in one
+  transaction, so a crash mid-rebuild can't destroy the previous
+  extraction's edges.
+
+Three retry-safety mechanics added 2026-06-10 (the brain audit's write-path
+fixes) sit underneath the rebuild rules:
+
+- The **`already_extracted` skip guard** requires the end-of-pass
+  `data.extract_completed_at` marker, not just summary+embedding (which are
+  written *first*) — so a pg-boss retry after a partial failure re-runs
+  instead of skipping forever.
+- **`update_index` is conditional on the row's `xmin`** captured before the
+  LLM call: a user edit mid-extract aborts the stale write (the retry
+  re-reads) instead of overwriting the edit's invalidation.
+- The extract queue runs **`policy: 'short'`** (real per-node dedup of
+  queued jobs — `singletonKey` alone is a no-op on a `standard` queue) plus
+  an in-process per-node chain; the dead-letter queue is re-driven on every
+  agent start and surfaced by the `/debug/integrity` **Dead-lettered
+  extractions** check.
 
 The last two follow the same **delete-then-rebuild per node** rule. The edge
 clear was a fix (Phase 4): the extractor previously *appended* a `mentioned_in`
