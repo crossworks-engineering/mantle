@@ -84,17 +84,17 @@ const CHECKS: CheckDef[] = [
     key: 'half_indexed',
     label: 'Half-indexed nodes',
     severity: 'medium',
-    note: 'summary present but no embedding (an interrupted index write), or embedding present but no summary. Excludes types that opt out of embedding by design (telegram_message, conversation-digest notes) and the no-summary direction for files (an image/binary with no text layer legitimately has no summary — silent_miss covers the real extractor-success-without-summary case).',
+    note: 'summary present but no embedding (an interrupted index write), or embedding present but no summary. Excludes types that opt out of embedding by design (telegram_message) and the no-summary direction for files (an image/binary with no text layer legitimately has no summary — silent_miss covers the real extractor-success-without-summary case). Conversation-digest notes ARE included since 2026-06-10: the summarizer embeds them at insert (find_window cosine-ranks digests), so an un-embedded digest is a real gap — heal with `pnpm -C apps/web backfill:digest-embeddings --apply`.',
     query: (o) => sql`
       SELECT n.id, n.type::text AS kind,
              CASE WHEN n.embedding IS NULL THEN 'summary, no embedding' ELSE 'embedding, no summary' END AS detail
       FROM nodes n
       WHERE n.owner_id = ${o}
         -- Types deliberately NOT vector-embedded, so the summary↔embedding
-        -- co-presence invariant doesn't apply: telegram messages (arch §16) and
-        -- conversation-digest notes (retrieved by recency, not similarity).
+        -- co-presence invariant doesn't apply: telegram messages (arch §16).
+        -- (Digest notes used to be excluded here too — they're embedded at
+        -- insert now, so the invariant applies to them again.)
         AND n.type <> 'telegram_message'
-        AND NOT (n.type = 'note' AND n.tags @> ARRAY['conversation-digest'])
         AND (
           -- summary written but embedding missing: a real interrupted index write.
           (nullif(n.data->>'summary', '') IS NOT NULL AND n.embedding IS NULL)
@@ -110,7 +110,6 @@ const CHECKS: CheckDef[] = [
       FROM nodes n
       WHERE n.owner_id = ${o}
         AND n.type <> 'telegram_message'
-        AND NOT (n.type = 'note' AND n.tags @> ARRAY['conversation-digest'])
         AND (
           (nullif(n.data->>'summary', '') IS NOT NULL AND n.embedding IS NULL)
           OR

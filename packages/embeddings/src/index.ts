@@ -35,7 +35,7 @@ import { currentTrace, step } from '@mantle/tracing';
 import { getEmbeddingAdapter, type EmbedInput } from '@mantle/voice';
 
 export type { EmbedInput };
-export { runReembed, type ReembedOpts, type ReembedResult, type ReembedProgressEvent } from './reembed';
+export { runReembed, digestEmbedText, type ReembedOpts, type ReembedResult, type ReembedProgressEvent } from './reembed';
 
 /** Models that accept non-text inputs. Kept here for callers (the
  *  extractor's attachment path) that need to know in advance which

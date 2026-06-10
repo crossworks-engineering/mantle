@@ -1371,6 +1371,33 @@ const SUMMARIZE_DEBOUNCE_MS = 2000;
 const summarizePending = new Set<string>(); // agent ids
 let summarizeTimer: NodeJS.Timeout | null = null;
 
+// Per-agent in-flight guard. The debounce only collapses a 2s burst, but a
+// summarize run holds a 10-60s LLM call — a notify landing mid-run used to
+// start a SECOND run over the same undigested batch (duplicate digests,
+// orphaned nodes). One run per agent at a time; a notify during a run sets
+// the rerun flag so the fresh state is checked once the run finishes (the
+// threshold count makes that re-check cheap). The summarizer's own
+// transactional batch claim is the DB-level backstop for anything this
+// in-process guard can't see.
+const summarizeInflight = new Set<string>();
+const summarizeRerun = new Set<string>();
+
+function runSummarize(agentId: string): void {
+  if (summarizeInflight.has(agentId)) {
+    summarizeRerun.add(agentId);
+    return;
+  }
+  summarizeInflight.add(agentId);
+  summarizeAgentConversation(USER_ID!, agentId)
+    .catch((err) =>
+      console.error('[agent] summarize error:', err instanceof Error ? err.message : err),
+    )
+    .finally(() => {
+      summarizeInflight.delete(agentId);
+      if (summarizeRerun.delete(agentId)) runSummarize(agentId);
+    });
+}
+
 function scheduleSummarize(agentId: string): void {
   summarizePending.add(agentId);
   if (summarizeTimer) return;
@@ -1378,11 +1405,7 @@ function scheduleSummarize(agentId: string): void {
     summarizeTimer = null;
     const batch = [...summarizePending];
     summarizePending.clear();
-    for (const id of batch) {
-      summarizeAgentConversation(USER_ID!, id).catch((err) =>
-        console.error('[agent] summarize error:', err instanceof Error ? err.message : err),
-      );
-    }
+    for (const id of batch) runSummarize(id);
   }, SUMMARIZE_DEBOUNCE_MS);
 }
 

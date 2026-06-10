@@ -1,6 +1,6 @@
 {
   "name": "@mantle/web",
-  "version": "0.20.45",
+  "version": "0.20.46",
   "private": true,
   "type": "module",
   "scripts": {
@@ -34,6 +34,7 @@
     "backfill:conversation": "tsx --env-file-if-exists=./.env.local scripts/backfill-conversation.ts",
     "dedupe:edges": "tsx --env-file-if-exists=./.env.local scripts/dedupe-edges.ts",
     "regenerate:digests": "tsx --env-file-if-exists=./.env.local scripts/regenerate-digests.ts",
+    "backfill:digest-embeddings": "tsx --env-file-if-exists=./.env.local scripts/backfill-digest-embeddings.ts",
     "re-embed": "tsx --env-file-if-exists=./.env.local scripts/re-embed.ts",
     "eval:recall": "tsx --env-file-if-exists=./.env.local scripts/eval-recall.ts",
     "widen:content-hits": "tsx --env-file-if-exists=./.env.local scripts/widen-content-hits.ts",

@@ -53,8 +53,9 @@ export interface ReembedOpts {
   /** Repopulate mode: also embed rows whose embedding is currently NULL — used
    *  after a dimension migration that nulled the column (a same-model swap
    *  leaves vectors in place, so the default only touches already-embedded
-   *  rows). For the nodes pass this embeds every node EXCEPT the kinds the
-   *  extractor never embeds (branch, telegram_message, conversation-digest). */
+   *  rows). For the nodes pass this embeds every node EXCEPT the kinds that
+   *  never carry a vector (branch, telegram_message). Conversation digests
+   *  ARE included — the summarizer embeds them at insert for find_window. */
   includeUnembedded?: boolean;
   /** Cap rows per table — useful for a smoke test. */
   limit?: number;
@@ -109,11 +110,37 @@ function estimateUsd(totalChars: number, model: string): number {
   return (tokens / 1_000_000) * perMillion;
 }
 
-// Same row→text shape as the extractor's, minus the body fetch (title
-// + summary carry the bulk of the semantic signal; re-embed
-// predictability beats perfect parity).
+/** Canonical text a conversation-digest's embedding is computed from —
+ *  topic label + summary, the exact surface `find_window` cosine-ranks
+ *  against. The single source of truth for every digest embed site: the
+ *  summarizer (insert time), this re-embed walk (model swaps), and the
+ *  backfill script. */
+export function digestEmbedText(label: string, summary: string): string {
+  return `${label}\n${summary}`;
+}
+
+/** Digest-aware row→text for the re-embed walk. Conversation digests use
+ *  the canonical digestEmbedText composition so a model swap keeps their
+ *  vectors consistent with insert-time ones; everything else uses the
+ *  extractor-like shape (title + summary carry the bulk of the semantic
+ *  signal; re-embed predictability beats perfect parity). */
 function textForNode(row: Node): string {
   const data = (row.data ?? {}) as Record<string, unknown>;
+  const isDigest =
+    data.kind === 'conversation_digest' ||
+    ((row.tags ?? []) as string[]).includes('conversation-digest');
+  if (isDigest) {
+    const topic = typeof data.topic === 'string' ? data.topic.trim() : '';
+    const summary =
+      typeof data.summary === 'string' && data.summary.trim()
+        ? data.summary.trim()
+        : typeof data.content === 'string'
+          ? (data.content as string).trim()
+          : '';
+    if (topic && summary) return digestEmbedText(topic, summary);
+    if (summary) return summary;
+    return row.title;
+  }
   const summary = typeof data.summary === 'string' ? data.summary : '';
   const content =
     typeof data.content === 'string' ? (data.content as string).slice(0, 500) : '';
@@ -216,12 +243,11 @@ async function _runReembedInner(
   if (tables.has('nodes')) {
     const conds: SQL[] = [eq(nodes.ownerId, ownerId)];
     if (includeUnembedded) {
-      // Repopulation: embed every node the extractor would embed regardless of
-      // current null state — excluding the kinds it never embeds.
-      conds.push(
-        sql`${nodes.type}::text not in ('branch','telegram_message')`,
-        sql`not (${nodes.tags} @> ARRAY['conversation-digest']::text[])`,
-      );
+      // Repopulation: embed every node that SHOULD carry a vector regardless
+      // of current null state — excluding the kinds that never do. Digests
+      // are included since 2026-06-10 (the summarizer embeds them at insert
+      // for find_window), so a dimension migration repopulates them too.
+      conds.push(sql`${nodes.type}::text not in ('branch','telegram_message')`);
     } else {
       conds.push(isNotNull(nodes.embedding));
     }
