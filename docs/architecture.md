@@ -1639,7 +1639,11 @@ commit between 0008 and 0009.
 
 Everything else is rebuildable from source + those three.
 
-**Backups:** there's no automated backup. `pg_dump` is the manual path:
+**Backups:** automated since 2026-06-10 — see [`backups.md`](./backups.md):
+a nightly `pg_dump` + rotation on the VPS (cron) and a daily Mac-side offsite
+pull (launchd) that also mirrors `data/files` + `data/minio` and verifies the
+newest dump with `pg_restore --list`. The manual `pg_dump` path below remains
+for ad-hoc/pre-deploy snapshots:
 
 ```bash
 # Full safety-net dump (every schema, custom format)
@@ -1686,8 +1690,10 @@ was fixed, accepted, or deliberately left (and why).
   first-deploy runbook + HTTPS-only cookie verification + Caddy reverse
   proxy config. (`apps/mcp` stays out of compose — stdio-only, would
   crash-loop as a daemon until the HTTP transport lands.)
-- **No backup/restore drill.** `pg_dump` + MinIO `mc mirror` would
-  work; nothing's scripted or rehearsed.
+- **Backups are automated** (2026-06-10, [`backups.md`](./backups.md)):
+  VPS nightly dump + rotation, Mac daily offsite pull with
+  `pg_restore --list` verification. Still open: one deliberate
+  end-to-end restore rehearsal onto a scratch stack.
 - **No HSTS, no Content-Security-Policy** on web responses. Acceptable
   on localhost; must land before public exposure.
 - **Attachment proxy** in `apps/web/app/api/attachments/[id]/route.ts`
