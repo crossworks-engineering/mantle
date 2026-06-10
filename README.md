@@ -1,336 +1,183 @@
 # Mantle
 
-An AI-queryable life tree. A single Postgres-backed system that knows about your emails, Telegram messages, files, notes, documents, secrets, and projects — and exposes all of it to Claude over MCP. Replies to Telegram DMs automatically via OpenRouter.
+**A self-hosted brain for everything you know.** Mantle turns your emails,
+files, notes, documents, conversations, contacts, events, and projects into
+one living, AI-queryable memory — owned by you, running on your hardware,
+with agents that genuinely remember.
 
-## Layout
+You talk to it on the web or Telegram (text or voice). You connect Claude to
+it over MCP. You drop a PDF in chat and it's indexed before you've finished
+your sentence. You mention "that gantry note from April" and it knows exactly
+which one — because it read it, summarised it, extracted the facts, linked
+the people and projects, and filed every receipt.
 
-```
-mantle/
-├── infra/
-│   └── postgres/init/   # extensions + auth.users baked in at first container boot
-├── apps/
-│   ├── web/             # Next.js 15 (App Router) + shadcn UI
-│   ├── mcp/             # MCP server (stdio) — Claude's tools
-│   └── agent/           # OpenRouter-powered Telegram responder
-├── packages/
-│   ├── db/              # Drizzle schema + migrations
-│   ├── email/           # Gmail / Graph / IMAP adapters + sync engine
-│   ├── telegram/        # Telegram bot ingest + outbound
-│   ├── storage/         # S3-compatible (MinIO) wrapper
-│   ├── api-keys/        # Encrypted API key vault (OpenRouter, OpenAI, …)
-│   ├── crypto/          # AES-256-GCM helpers for secrets at rest
-│   ├── search/          # full-text + vector search helpers
-│   └── rules/           # ingest rules engine
-├── scripts/             # dev convenience (just `up.sh`)
-├── docker-compose.dev.yml   # Postgres + MinIO + Tika for local dev (embedder = your local Ollama)
-└── docker-compose.yml       # full production stack (Linux): built app images + bundled embedder (Ollama)
-```
+---
 
-## First-time setup
+## The brain is the product
+
+Most AI assistants are a chat window with amnesia. Mantle is built the other
+way around: the **memory system** is the core, and chat is just one doorway
+into it.
+
+Every piece of content that enters — an email, a voice note, a spreadsheet, a
+journal entry — flows through one pipeline into six layers of memory:
+
+| Layer | What it holds |
+|---|---|
+| **Persona** | who your assistant is, and what it has learned about how you want to be helped |
+| **Recent turns** | the live conversation, across every channel |
+| **Digests** | older conversation, compressed by topic and embedded for recall |
+| **Profile facts** | durable, deduplicated truths about you and your world — updated, superseded, never duplicated |
+| **Content index** | a searchable spine over every item: summary, entities, vectors, passage-level chunks |
+| **Content store** | the originals — append-only, citable, yours |
+
+On top of that sits a **knowledge graph** (who works where, what banks with
+whom — extracted automatically, traversable in milliseconds) and **lossless
+recall**: when a summary isn't enough, a specialist agent replays the *actual
+words* of any past conversation window.
+
+The result is an assistant that picks up where you left off — last week or
+last year. No sessions. No "as an AI, I don't have memory of previous
+conversations." One continuous relationship.
+
+## Who it's for
+
+**One person, one life.** Your inbox, your files, your journal, your todo
+list, your contacts, your secrets (sealed — the AI physically cannot read
+them) — finally in one place that answers questions. *"When does Sarah's
+passport expire?" "What did the electrician quote in March?" "What did we
+decide about the kitchen?"* It knows, and it shows the receipt.
+
+**A team's working memory.** Notes, pages (Notion-style documents), typed
+tables, shared files — every artifact indexed and queryable, with public
+share links for anything worth publishing, and Mantle-to-Mantle
+**federation** for exchanging scoped data between sovereign instances.
+
+**A company's knowledge base behind an MCP chatbot.** Point a Mantle instance
+at your documentation, manuals, and internal know-how; it becomes a
+fully-indexed brain — semantic search, passage retrieval, knowledge graph —
+that any MCP client (Claude, or your own chatbot built on the same protocol)
+can query with ~30 tools. Your support bot stops hallucinating answers and
+starts citing your actual docs.
+
+One brain per install. What that brain holds — a life, a team, a product —
+is up to you.
+
+## Why it's different
+
+**It's genuinely yours.** Self-hosted, single binary of Docker services, no
+SaaS in the runtime path. Embeddings are computed **locally** (bundled
+Ollama; the vectors never leave your box, and they cost $0). Secrets and
+credentials are AES-256-GCM sealed; the extractor is structurally unable to
+read a secret's payload. Scheduled backups are built in — point your own
+rsync/restic at one folder and the whole brain is portable.
+
+**One Postgres, no zoo.** Vector search (pgvector), the knowledge graph
+(recursive CTEs), full-text search, job queues, real-time UI updates, auth —
+all one database. No Pinecone, no Neo4j, no Redis, no message broker. The
+lean stack is what's left after deleting every moving part personal-scale
+data doesn't need — which is also why it restores from one `pg_dump`.
+
+**Engineered to be cheap.** Frontier-model quality where it matters (your
+conversations), economy models for background compression, local embeddings
+for everything vector. Prompt prefixes are kept byte-stable for provider
+caching; oversized tool results spill to an addressable store instead of
+re-billing every turn. Measured on the author's production instance: a full
+question-answer turn against the whole brain averages **~$0.09**, and a month
+of real daily use ran **under $5** in total LLM spend.
+
+**Agents with jobs, not just a chatbot.** Your main assistant has a persona
+that evolves, tools to act with (notes, events, email send, image
+generation, page authoring…), and specialists it delegates to: **Remy**
+replays past conversations losslessly, **Researcher** searches the web and
+cites, **Pages**/**Tables** edit documents block-by-block. Proactive
+**heartbeats** let it check in on schedules you define. Voice in, voice out.
+
+**Nothing happens without a trace.** Every ingest, every extraction, every
+tool call, every model invocation becomes a queryable trace with cost
+attribution — rendered as a live "what did the brain just do" journey view.
+A standing integrity audit watches the corpus for drift (half-indexed nodes,
+stale backups, dead-lettered jobs) and says exactly how to heal each one.
+
+**It knows who you are.** Life Logs — short first-person entries about who
+you are, what you do, how you feel — are distilled into an always-on identity
+block every agent reads on every turn. You tell the brain who you are in your
+own words; it doesn't have to guess.
+
+## Quick start
 
 ```bash
-# 1. Install pnpm
-corepack enable && corepack prepare pnpm@10 --activate
-
-# 2. Install deps
+git clone https://github.com/TitanKing/mantle && cd mantle
 pnpm install
-
-# 3. Copy env (single file — Next.js, worker, MCP, agent, and Drizzle all read it)
-cp .env.example apps/web/.env.local
-$EDITOR apps/web/.env.local
-#  - MANTLE_MASTER_KEY  → openssl rand -base64 32
-#  - SESSION_SECRET     → openssl rand -base64 48
-#  - ALLOWED_USER_ID    → uuid of the user row in auth.users (see below)
-
-# 4. Local embedder (macOS / local dev) — the dev stack does NOT bundle it, so
-#    install Ollama and pull the model. Mantle's apps reach it at
-#    http://localhost:11434 by default. (Production bundles this — see below.)
-brew install ollama
-brew services start ollama    # serves on :11434 (or run the menu-bar app)
-ollama pull embeddinggemma    # the 768-dim local embedder Mantle defaults to
-
-# 5. Bring up the stack (Docker must be running)
+cp .env.example apps/web/.env.local   # two generated secrets — see the guide
+ollama pull embeddinggemma            # local dev only; production bundles it
 pnpm start
 ```
 
-> **`pnpm start`, not `pnpm up`.** `pnpm up` is a built-in alias for
-> `pnpm update` (deps), so it shadows any script of the same name. Use
-> `pnpm start` to bring the stack up (or `pnpm run up` if you prefer the old
-> name). The collision is documented at <https://pnpm.io/cli/update>.
+Open http://localhost:3000, create your account, and the onboarding wizard
+takes it from there: model keys, your assistant's personality, who you are.
 
-> **macOS embedder, why step 4.** The dev stack (`docker-compose.dev.yml`) ships
-> only Postgres + MinIO + Tika — **not** the embedder, because on a dev machine
-> you run Ollama natively (faster, uses the Mac GPU). Without a running Ollama
-> serving `embeddinggemma` on `:11434`, the app still boots and chat works, but
-> **embeddings fail** — uploaded content won't index and semantic search returns
-> nothing. On Linux you can install Ollama the same way (`curl -fsSL
-> https://ollama.com/install.sh | sh`) or just use the production stack below.
+Full walkthrough (local dev, email, Telegram, production deploy):
+**[docs/getting-started.md](./docs/getting-started.md)** ·
+**[docs/deploy.md](./docs/deploy.md)**
 
-> **Dev vs production.** The steps above are the **local dev stack** (`pnpm start`:
-> infra in Docker + the apps hot-reloading on the host + your local Ollama).
-> **Production is meant to run on Linux** via the full `docker-compose.yml`, which
-> builds the app images and **bundles the embedder (Ollama) + a one-shot model
-> pull** — so a fresh deploy needs **no native Ollama** (it works on any Docker
-> host, Linux or macOS, CPU-only where there's no GPU). See
-> [`docs/deploy.md`](./docs/deploy.md).
+## The doorways
 
-`pnpm start` runs `scripts/up.sh`, which:
-
-1. Brings up Postgres + MinIO + Tika via `docker-compose.dev.yml`
-2. Ensures the `mantle` MinIO bucket exists
-3. Runs Drizzle migrations against the fresh DB
-4. Ensures the pg-boss schema exists (so the workers don't race to create it)
-5. Starts the dev servers (web + mcp + email worker + telegram worker + agent)
-
-That's it — **no SQL, no `ALLOWED_USER_ID` to fill in.** Open
-http://localhost:3000 and you'll land on **Create your account** (the first-run
-signup, available only while `auth.users` is empty). After signup, the
-**onboarding wizard** walks you through everything the brain needs to run: a
-model key (OpenRouter), optional voice/image (xAI) and transcription/vision
-(OpenAI) keys, then it provisions your assistant + the background AI workers,
-runs a sanity check, captures who you are as Life Logs, and lets you shape the
-assistant's personality. See [`docs/onboarding.md`](./docs/onboarding.md).
-
-> `ALLOWED_USER_ID` is now **optional** — left blank, the workers and MCP server
-> auto-resolve the single `auth.users` row, so a fresh install is zero-config.
-> Set it only for scripts or a multi-DB setup.
-
-Other handy scripts:
-
-| Command           | What it does |
-|-------------------|--------------|
-| `pnpm start`      | Full stack (infra + migrations + pg-boss + dev servers). The "from cold" command. |
-| `pnpm dev`        | Dev servers only (assumes infra already up). Preflight refuses politely if it's not. |
-| `pnpm stop`       | Stop infra (keeps volumes) |
-| `pnpm reset`      | Wipe the dev brain + rebuild from scratch (asks for confirmation, backs up first) |
-| `pnpm infra:up`   | Bring infra up without dev servers |
-| `pnpm infra:logs` | Tail postgres + minio logs |
-| `pnpm infra:psql` | Open psql in the postgres container |
-| `pnpm db:migrate` | Apply Drizzle migrations |
-| `pnpm db:studio`  | Drizzle Studio (browse the DB) |
-| `pnpm dev:web`    | Just the web (helpful when iterating on UI) |
-| `pnpm dev:agent`  | Just the OpenRouter agent |
-
-App: http://localhost:3000
-MinIO console: http://localhost:9001 (user `minio` / pass `minio12345`)
-
-## Connecting an email account
-
-Mantle uses **IMAP for every provider** — Gmail, Outlook, custom
-domains, all of them. No OAuth, no Google Cloud Console setup, no
-refresh tokens to babysit. The cost is one app-password per account.
-
-For each account:
-
-1. **Enable 2FA** on the account if it isn't already (provider requires
-   this before issuing app passwords).
-2. **Generate an app password** in the provider's account-security UI:
-   - Gmail / Workspace: https://myaccount.google.com/apppasswords
-     (also: Gmail Settings → Forwarding and POP/IMAP → IMAP access: Enable)
-   - Outlook / Microsoft personal:
-     https://account.live.com → Security → Advanced → App passwords
-   - Fastmail / iCloud / Zoho / Proton (via Bridge): same idea —
-     account security → app passwords
-3. **Open `/settings/accounts` → Add IMAP account**:
-   - **Host** depends on provider:
-     - Gmail: `imap.gmail.com`
-     - Outlook personal: `outlook.office365.com`
-     - Your own domain: whatever your registrar set up
-   - **Port**: 993, TLS on
-   - **Username**: full email address
-   - **Password**: the app password from step 2
-4. Hit **Test connection** to verify before saving.
-
-The first sync starts within ~2 min and scans 12 months of headers
-without ingesting any bodies — those wait until you approve a sender
-at `/settings/senders`.
-
-**Microsoft 365 corporate caveat**: some tenants have basic-auth IMAP
-disabled by admin policy. If you can't get IMAP working from a paid
-M365 mailbox, the easiest workaround is to ask your admin to enable
-it for your mailbox — Mantle does not implement Microsoft OAuth.
-
-## Connecting a Telegram bot
-
-The bot worker (`apps/web/workers/telegram-poll.ts`) long-polls
-Telegram for DMs and stores them as `nodes` of type `telegram_message`.
-The MCP server exposes `telegram_pending` / `telegram_send` /
-`telegram_react` / `telegram_edit` / `telegram_pair` tools so Claude
-can read and reply.
-
-> **Where to do this.** Telegram is **optional** and set up **after** your
-> assistant exists. You can do it in the **last step of the onboarding wizard**
-> ("Reach your assistant on Telegram"), or any time later in
-> [`/settings/agents`](http://localhost:3000/settings/agents) — both run the
-> exact same connect → pair flow (the shared `<TelegramBotSection>`) against
-> your assistant. The steps below are that flow.
-
-1. **Create a bot.** DM [@BotFather](https://t.me/BotFather), `/newbot`,
-   write down the token.
-2. **Link it to your assistant.** In `/settings/agents` (or the onboarding
-   Telegram step), select your assistant — **any agent can carry a Telegram
-   channel** — and paste the token into its **Telegram bot** section. Mantle
-   validates it (`getMe`), seals it AES-256-GCM at rest, and binds the bot to
-   that agent — so DMs to that bot are answered by it. The poll worker picks it
-   up within ~60s. (The token is sealed on the agent's `channels` row
-   — `credentials_enc` — via the generic comms-channels binding; the legacy
-   `telegram_accounts.responder_agent_id`/`bot_token_enc` columns were dropped
-   in migration 0078. See [`docs/comms-channels.md`](./docs/comms-channels.md).)
-3. **Pair.** DM your bot from your phone. Within ~25s the worker
-   gates the message, generates a 6-char pairing code, and DMs it back.
-   In Claude (with the MCP server connected), call
-   `mcp__mantle__telegram_pair` with the code to allowlist the chat.
-4. **You're paired.** Subsequent DMs land in `telegram_messages` and
-   trigger `pg_notify('telegram_message_inserted')`, which the agent
-   listens for.
-
-See [`docs/telegram.md`](./docs/telegram.md) for the original handoff
-detail.
-
-## Saving API keys
-
-`/settings/keys` is the UI for storing keys for external services
-(OpenRouter, OpenAI, Anthropic, …). Keys are AES-256-GCM encrypted at
-rest using `MANTLE_MASTER_KEY` — your backups contain ciphertext only.
-
-- **Service** is the slug your code looks up by (e.g. `openrouter`).
-- **Label** disambiguates multiple keys for the same service
-  (e.g. `personal`, `agent`).
-- The plaintext is shown **exactly once** at creation time (and again
-  at rotation). After that the list only shows a masked view.
-
-The agent reads its OpenRouter key as `getApiKey(userId, 'openrouter')`.
-Storage is per-user, and the unique constraint is `(user_id, service,
-label)` so you can swap a key without affecting another label.
-
-## Agents & auto-responding to Telegram
-
-`apps/agent` is a tiny Node process that listens on
-`pg_notify('telegram_message_inserted')` and replies via OpenRouter. As of
-2026-05 it's **DB-driven and has memory**:
-
-```
-inbound DM → telegram-poll worker → INSERT inbound telegram_messages row
-          → pg_notify('telegram_message_inserted', new.id::text)   (inbound only)
-          → apps/agent picks up
-          → resolve responder  (per-chat override → the bot's owning responder → global priority)
-          → load conversation history  (last N inbound+outbound turns)
-          → @openrouter/sdk call  (cache_control on system prompt for anthropic/*)
-          → telegram_send via @mantle/telegram  (on the inbound message's own bot)
-          → INSERT outbound telegram_messages row
-          → mark inbound processed
-```
-
-Each `responder` can own its own bot: paste the token into the agent's
-**Telegram bot** section at `/settings/agents` (it binds
-`telegram_accounts.responder_agent_id`), approve pairing requests there with one
-click, and DMs to that bot are answered by that agent. See
-["Connecting a Telegram bot"](#connecting-a-telegram-bot) above.
-
-**Configuration** lives in the `agents` table — manage it at
-[`/settings/agents`](http://localhost:3000/settings/agents). Each row carries:
-
-- `slug`, `name`, `description`
-- `role` — `responder` for Telegram replies (`assistant`, `extractor`, `summarizer`, `custom` are also defined)
-- `model` — any OpenRouter slug (e.g. `anthropic/claude-sonnet-4.6`)
-- `api_key_id` — which entry in `api_keys` to use
-- `system_prompt` — persona
-- `memory_config.history_limit` — turns to replay (default 20)
-- `params` — `temperature`, `max_tokens`, `top_p`
-- `tts_worker_id` — which `kind='tts'` AI worker voices this agent's spoken
-  replies (set in the **Voice (TTS)** picker). Unset → the owner's default TTS
-  worker. See [`docs/ai-workers.md`](./docs/ai-workers.md).
-- `priority` — higher wins when multiple `responder` agents are enabled
-- `enabled` — kill switch
-
-First-time setup: add an OpenRouter key at `/settings/keys`, then create a
-responder at `/settings/agents`. The default seed values in the form
-(`anthropic/claude-sonnet-4.6`, history limit 20) are a good starting point.
-
-**Tier-2 memory: conversation digests.** When the unsummarized turn count in
-a chat crosses a threshold (default 30), a `summarizer` agent rolls the
-oldest 20 turns into a single digest node (`type='note'`,
-`tags: ['conversation-digest','telegram']`) and points those rows at it via
-`telegram_messages.digest_node_id`. The responder loads the most recent N
-digests (default 3) and prepends them to the prompt as a second system
-block. End-to-end:
-
-```
-       raw turns ──┐
-                   ├─ summarizer (Haiku) ──→  digest node (~3 sentences)
-       (oldest 20) ┘                       └→ telegram_messages.digest_node_id set
-
-       responder reply prompt:
-         [system, persona]                ← cache_control (stable forever)
-         [system, recent digests]         ← cache_control (stable for ~20 turns)
-         [last 20 raw turns]              ← drifts
-         [new user message]
-```
-
-Two cache breakpoints (Anthropic allows up to 4), so the digests stay in
-cache turn-to-turn until the next summarization fires. Configure the
-threshold and batch size in the agent row at `/settings/agents`.
-
-**Prompt caching.** For `anthropic/*` models the runner emits
-`cache_control: { type: 'ephemeral' }` on the system block (and on the
-digest block when present). OpenRouter forwards this to Anthropic, which
-caches the prefix for 5 minutes and reuses it on the next turn at ~10% the
-cost. The agent logs cache-read tokens at INFO level so you can confirm
-it's working.
-
-**Memory layer (six tiers).** All shipped: `persona` + `recent_turns` +
-`conversation_digest` + `profile` (dedup'd facts with ADD/UPDATE/DELETE
-classifier) + `content_index` (per-item summary + embedding) +
-`content_store`. Plus the embedding subsystem (`@mantle/embeddings`,
-OpenRouter-routed, hash-cached) and reflector for `persona_notes`
-evolution. Read [`docs/memory.md`](./docs/memory.md) for the full design
-and the layer-to-schema-to-agent map.
-
-To bootstrap memory on existing content:
-
-```bash
-pnpm -C apps/web extract:backfill                  # all eligible nodes
-pnpm -C apps/web extract:backfill --types=note     # restrict
-pnpm -C apps/web extract:backfill --since=2025-01-01
-```
-
-The agent must be running — the script just feeds `pg_notify('node_ingested')`;
-the listener does the work.
-
-Entity-anchored retrieval and the **graph traversal API are now shipped** —
-relations between entities, `graph_path` multi-hop queries, and a clean entity
-layer (see [`docs/knowledge-graph.md`](./docs/knowledge-graph.md)). What's
-deliberately parked: the industrial/RBI fork
-([`docs/future/`](./docs/future/industrial-fork-and-graph.md)), OCR for
-scanned-AND-encrypted PDFs, and federation pairing/rate-limiting. See
-[`docs/architecture.md`](./docs/architecture.md#16-known-sharp-edges--future-work).
+| Surface | What it gives you |
+|---|---|
+| **Web app** | chat with attachments + voice, inbox, files, notes, pages, tables, todos, events, contacts, life logs, secrets, traces, settings |
+| **Telegram** | your assistant in your pocket — text, voice notes (transcribed + spoken replies), photos, documents |
+| **MCP** | ~30 tools exposing the whole brain to Claude or any MCP client — search, graph traversal, files, email, pending-approval flows |
+| **Share links** | revocable read-only links to any page, note, file, or event |
+| **Federation** | two sovereign Mantles exchanging explicitly-granted data — peers, not tenants |
 
 ## Docs
 
-- [`docs/architecture.md`](./docs/architecture.md) — full architecture tour: the five processes, the data plane, the `nodes` abstraction, the ingest pipelines, the MCP tools, the workspace layout. Read this before touching the codebase.
-- [`docs/hardening-audit-2026-05.md`](./docs/hardening-audit-2026-05.md) — **the May 2026 hardening audit:** an independent four-subsystem sweep + the fixes (chat retry/backoff, cache breakpoints, stale-fact retirement, HNSW index, migrate-on-boot, …), what was deliberately *not* done (the cost-unbounded re-extract trigger), and what's still open. Read before re-pitching a "known issue."
-- [`docs/agent-overhaul-2026-05.md`](./docs/agent-overhaul-2026-05.md) — **overview of the May 2026 agent & tool-result overhaul:** the through-line principles + a tour of what changed — wrapping speech tags, delegation made real (`delegate_to` UI + merge), the live model catalog (context + vision), the **tool-result spill store** (`read_result`: page/grep/semantic query — the fix for assistants quitting mid-job on truncated tool output), and the duplicate-edge guard. Start here, then dive into the `architecture.md` §9b'/§9l/§9m sections it links.
-- [`docs/memory.md`](./docs/memory.md) — the memory layer: tier taxonomy (conversation / session / user), vector vs graph retrieval, the `memories` / `entities` / `entity_edges` schema, and the build sequence. **§7 has the as-built June-2026 retrieval assembly.**
-- [`docs/recall-eval.md`](./docs/recall-eval.md) — **the recall eval harness + the June-2026 retrieval overhaul.** `pnpm -C apps/web eval:recall` scores real retrieval as `recall@k`/`MRR`; the doc chronicles each enhancement (hybrid search, bulk-email salience, kind-aware recency, auto-chunks, entity-graph expansion, query enrichment) with measured before/after. The regression gate for any retrieval change.
-- [`docs/knowledge-graph.md`](./docs/knowledge-graph.md) — **the knowledge graph** (shipped 2026-05): relationships *between* the things in your life (`employed_by`, `banks_with`, …) extracted into `entity_edges` in the same LLM pass as facts, the `graph_path` multi-hop traversal (recursive CTE, no graph DB), entity-resolution integrity (unique constraint + race-proof upsert), verb canonicalization, and conservative near-dup consolidation with the `/settings/entities` review UI. Includes why Postgres, not Neo4j.
-- [`docs/federation.md`](./docs/federation.md) — **Mantle-to-Mantle federation:** two sovereign single-user instances exchanging *scoped* data — sealed per-peer tokens, explicit per-node grants, an authenticated `/api/federation` surface (every cross-Mantle read traced), and the `peer_*` tools so Saskia can query a peer in natural language. Federation of separate brains, not multi-tenancy.
-- [`docs/recall.md`](./docs/recall.md) — **Remy**, the memory-recall agent: time-windowed replay of past conversations (`find_window` → `recall_window`) via `invoke_agent` delegation — lossless paging back to what was *actually said*, vs. the lossy conversation digests.
-- [`docs/research.md`](./docs/research.md) — **Researcher**, the web-search agent: the outward twin of Remy. `web_search` (Perplexity Sonar via OpenRouter) + a synthesising agent; Saskia delegates and decides whether to save the cited result as a note.
-- [`docs/contacts.md`](./docs/contacts.md) — the index of people/orgs Saskia may reach: `contact` node type with fields (name + company + email + cell + description), the master-detail `/contacts` UI, the `contact_*` builtins, and the per-method counters bumped on send. **Contacts ARE the email allowlist** — non-empty contacts engages the gate.
-- [`docs/email-send.md`](./docs/email-send.md) — outbound email: the `email_send` tool sends from your own mailbox via provider **SMTP submission** (587/465, reusing the IMAP app password) — never an own MTA/port 25. Pairs with the researcher for "research X and email it to me."
-- [`docs/backups.md`](./docs/backups.md) — **built-in scheduled backups** (/settings/backups): the app dumps Postgres to a local folder on your schedule (verified + rotated); pointing your own rsync/rclone/restic at that folder is the offsite story. Includes the restore drill and the master-key caveat.
-- [`docs/handover-trust-model.md`](./docs/handover-trust-model.md) — **open work brief: the brain trust model.** The June-2026 audit's remaining Critical — untrusted content (email/Telegram) can plant and retire durable facts; no provenance tiers, no review gate, `run_terminal` env leak, ungated `*_delete`s. Evidence, proposed design, and sequencing for whoever picks it up.
-- [`docs/observability.md`](./docs/observability.md) — the tracing layer: how every agent run becomes a queryable `traces` row + `trace_steps` tree, the reactflow visual at `/traces`, and the dashboard widgets on `/debug`.
-- [`docs/data-flow-tracing.md`](./docs/data-flow-tracing.md) — operational guide for verifying ingest by hand: how to connect to the dev Postgres and trace one node through every layer (content_store → index → facts → graph → traces), the success/skip/silent-miss signatures, and how to safely re-run extraction on a single node. Backed by [`scripts/trace-node.sh`](./scripts/trace-node.sh).
-- [`docs/journey.md`](./docs/journey.md) — the **Activity → Reaction** map: every way content enters the brain (chat, attachment, email, note, event, Telegram, agent tool) and which memory layers react, plus the trace kinds and the source-of-truth files to update when the pipeline changes. Rendered live as the **Journey** tab at `/debug/journey`.
-- [`docs/realtime.md`](./docs/realtime.md) — the **live-UI** layer: how `LISTEN/NOTIFY` on the `node_ingested` trigger is bridged to the browser over SSE so server-rendered screens repaint without a refresh, and the one-line `useRealtime()` recipe to opt any screen in. Events screen is the reference consumer.
-- [`docs/handoff-vision-files.md`](./docs/handoff-vision-files.md) — **active handoff (2026-05-20):** the open `/assistant` image-Q&A bug (Bedrock "Could not process image" on large photos), the pending stack restart, other open vision/Telegram-photo threads, and what shipped this session. Read this to resume that work.
-- [`docs/telegram.md`](./docs/telegram.md) — frozen handoff covering the Telegram bridge build (May 2026). Historical project diary; the durable reference is `architecture.md`.
-- [`docs/pages.md`](./docs/pages.md) — **Pages**, the Notion-style rich-document type: the TipTap editor + shared schema (callouts, columns, tables, task lists, code highlighting, KaTeX math, image/file embeds), the draft/commit model, and how a page reaches the brain.
-- [`docs/tables.md`](./docs/tables.md) — **Tables**, the typed database-grid type (Airtable/Notion-database): the `TableDoc` model (typed columns, stable row/column ids, totals, formulas, sort/filter views), xlsx/csv import, the `table_*` tools + the **Tables** delegate agent, and the TanStack `/tables` grid editor. Built as a deliberate mirror of Pages (node + sidecar, draft/commit, brain-indexed).
-- [`docs/lifelog.md`](./docs/lifelog.md) — **Life Logs**, the `lifelog` node type: short first-person entries (mood + life-area category) about who you are, what you do, and how you feel. Indexed like notes **and** distilled into an always-on "who you are" identity block (`buildIdentityContext`) injected into every agent turn (deterministic, no LLM; opt-out via `memory_config.inject_lifelog`). The `/lifelog` master-detail UI + `lifelog_*` tools.
-- [`docs/rich-writing.md`](./docs/rich-writing.md) — **Saskia's rich writing:** the document-canvas `/assistant`, the `rich_writing` skill that teaches a Notion-style markdown dialect, and the `page_*` tools that let her author real Pages (`markdownToDoc`).
-- [`docs/sharing.md`](./docs/sharing.md) — **public sharing:** read-only links (`/s/[token]`) to any page, note, todo, event, or file — revocable tokens, server-rendered page HTML, media-appropriate file viewers, and scoped public asset serving.
+**Start here**
+- [`getting-started.md`](./docs/getting-started.md) — setup: dev stack, first run, email, Telegram, keys, agents.
+- [`architecture.md`](./docs/architecture.md) — the full tour: processes, data plane, the `nodes` abstraction, pipelines, workspace. Read before touching code.
+- [`deploy.md`](./docs/deploy.md) / [`update-prod.md`](./docs/update-prod.md) — production install + the update loop.
+- [`onboarding.md`](./docs/onboarding.md) — the first-run wizard.
+
+**The brain**
+- [`memory.md`](./docs/memory.md) — the six layers, vector vs graph retrieval, and §7's as-built prompt assembly.
+- [`knowledge-graph.md`](./docs/knowledge-graph.md) — entity↔entity relations, multi-hop traversal, why Postgres and not Neo4j.
+- [`recall.md`](./docs/recall.md) — Remy: lossless time-windowed replay of past conversation.
+- [`recall-eval.md`](./docs/recall-eval.md) — the retrieval eval harness; every ranking knob has a measured number behind it.
+- [`conversation.md`](./docs/conversation.md) — one conversation stream across every channel.
+- [`lifelog.md`](./docs/lifelog.md) — Life Logs and the always-on identity block.
+- [`journey.md`](./docs/journey.md) — the Activity → Reaction map: every way content enters, and what reacts.
+
+**Content & surfaces**
+- [`pages.md`](./docs/pages.md) — Notion-style documents (TipTap, draft/commit, block-addressed AI editing).
+- [`tables.md`](./docs/tables.md) — typed database grids (formulas, views, xlsx/csv import).
+- [`files.md`](./docs/files.md) / [`file-ingestion.md`](./docs/file-ingestion.md) — the host-mirrored filesystem + how every file path indexes.
+- [`email-ingest.md`](./docs/email-ingest.md) / [`email-send.md`](./docs/email-send.md) / [`contacts.md`](./docs/contacts.md) — IMAP in, SMTP out, contacts as the allowlist gate.
+- [`telegram.md`](./docs/telegram.md) / [`comms-channels.md`](./docs/comms-channels.md) — the Telegram bridge + generic channel binding.
+- [`sharing.md`](./docs/sharing.md) — public read-only links.
+- [`secrets.md`](./docs/secrets.md) — the sealed secrets surface and its threat model.
+
+**Agents & AI**
+- [`ai-workers.md`](./docs/ai-workers.md) — one-shot workers (extractor, summarizer, reflector, TTS/STT, vision, image-gen, embedding) + the provider adapter framework.
+- [`agent-studio.md`](./docs/agent-studio.md) / [`tools-and-skills.md`](./docs/tools-and-skills.md) — building agents, granting tools, composing skills.
+- [`research.md`](./docs/research.md) — the web-search specialist.
+- [`heartbeats.md`](./docs/heartbeats.md) — the proactive loop.
+- [`chat-failover.md`](./docs/chat-failover.md) / [`models.md`](./docs/models.md) / [`embeddings.md`](./docs/embeddings.md) — routing, model catalog, embedder choices.
+- [`rich-writing.md`](./docs/rich-writing.md) — how the assistant authors real documents.
+
+**Operations & trust**
+- [`backups.md`](./docs/backups.md) — built-in scheduled backups + the restore drill.
+- [`observability.md`](./docs/observability.md) / [`data-flow-tracing.md`](./docs/data-flow-tracing.md) — the trace model + verifying ingest by hand.
+- [`system-integrity.md`](./docs/system-integrity.md) — the declarative manifest + standing integrity checks.
+- [`federation.md`](./docs/federation.md) — Mantle-to-Mantle.
+- [`tailscale.md`](./docs/tailscale.md) — reaching models on your own tailnet.
+- [`handover-trust-model.md`](./docs/handover-trust-model.md) — **open work brief:** provenance tiers for untrusted content.
+
+**Engineering journal** — the audits and overhauls that shaped the system:
+[`hardening-audit-2026-05.md`](./docs/hardening-audit-2026-05.md) ·
+[`agent-overhaul-2026-05.md`](./docs/agent-overhaul-2026-05.md) ·
+[`audit-chat-cost-2026-06-07.md`](./docs/audit-chat-cost-2026-06-07.md) ·
+[`docs/_archive/`](./docs/_archive/) for frozen session handoffs.
 
 ## License
 

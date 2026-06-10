@@ -56,6 +56,7 @@ The six layers (see [`memory.md`](./memory.md) for the full treatment):
 | Upload a file (Files screen) | `file_upload` | `file` | `extractor_run` | **L6 · L5 · L4 · graph** |
 | Create / edit a file via tool | `file_create` / `file_edit` | `file` | `extractor_run` | **L6 · L5 · L4 · graph** |
 | Write a note | `note_create` | `note` | `extractor_run` | **L6 · L5 · L4 · graph** |
+| Write a **Life Log** entry | UI / `lifelog_create` | `lifelog` | `extractor_run` | **L6 · L5 · L4 · graph** — *plus the deterministic identity block (`buildIdentityContext`) rebuilds from all life logs and rides every future agent turn (no LLM, no trace — see [`lifelog.md`](./lifelog.md))* |
 | Create event / task | UI / MCP | `event` / `task` | `extractor_run`¹ | **L6 · L5** (+ **L4** if facts enabled) |
 | **Email arrives** (IMAP) | email worker | `email` / `email_thread` | `extractor_run` | **L6 · L5 · L4 · graph** |
 | Send media via Telegram | `telegram_upload` | `file` | `photo_ingest` + `extractor_run` | **L6 · L5 · L4 · graph** |
