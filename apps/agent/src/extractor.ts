@@ -1215,9 +1215,18 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
     return;
   }
 
-  // Skip if we've already extracted this node (data.summary present + embedding set).
+  // Skip only when a PRIOR RUN FULLY COMPLETED: summary + embedding present
+  // AND the extract_completed_at marker (stamped as the final step of a
+  // successful pass). Guarding on summary+embedding alone was the
+  // retry-idempotency hole: those are written FIRST (update_index), so any
+  // failure in the later steps (chunks, entities, relations, facts) made
+  // every pg-boss retry skip here — the node stayed chunk-less/fact-less
+  // forever, invisibly. Legacy nodes that predate the marker re-extract
+  // once on their next notify (edits clear summary anyway, so in practice
+  // this only costs a stray duplicate notify on an old node) and get
+  // stamped.
   const existingData = (node.data ?? {}) as Record<string, unknown>;
-  if (existingData.summary && node.embedding) {
+  if (existingData.summary && node.embedding && existingData.extract_completed_at) {
     await recordSkippedTrace({
       kind: 'extractor_run',
       ownerId,
@@ -1459,6 +1468,21 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       (routes.backup ? ` (backup ${routes.backup.provider}:${routes.backup.model})` : ''),
   );
 
+  // Optimistic-concurrency token for the edit-during-extract race. xmin
+  // changes on EVERY update of the row, so the conditional update_index
+  // below detects "something wrote to this node while the LLM was
+  // summarizing" — most importantly a user edit, whose summary/embedding
+  // invalidation must not be overwritten with this run's now-stale output
+  // (the edit's own re-extract job would then skip on the already_extracted
+  // guard, leaving stale memory durably). Captured HERE, after the
+  // vision/OCR passes above persisted their own data.text writes, so only
+  // foreign writes during the LLM window trip it.
+  const verRows = await db.execute(
+    sql`select xmin::text as v from ${nodes} where id = ${node.id}`,
+  );
+  const rowVersion =
+    (verRows as unknown as Array<{ v?: string }>)[0]?.v ?? null;
+
   await startTrace(
     {
       kind: 'extractor_run',
@@ -1552,7 +1576,15 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       try {
         embedding = await embed(ownerId, embedText);
       } catch (err) {
-        console.error('[extractor] embed failed:', err instanceof Error ? err.message : err);
+        // Throw, don't half-index: writing the summary without its embedding
+        // left the node invisible to vector search with no sweep that could
+        // see it (the extractor_run trace excluded it from the missed-
+        // extraction sweep). The queue retries with backoff; persistent
+        // embedder outages land in the DLQ, which is re-driven on restart
+        // and surfaced by /debug/integrity.
+        throw new Error(
+          `extractor: embed failed for node ${node.id} — retrying instead of half-indexing: ${err instanceof Error ? err.message : err}`,
+        );
       }
 
       await step(
@@ -1572,14 +1604,31 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
             entities: uniqueMentions.map((m) => m.name),
             ...(persistedText ? { text: persistedText } : {}),
           };
-          await db
+          // Conditional on the xmin captured before the LLM call: if anything
+          // wrote to this node mid-extract (a user edit being the case that
+          // matters — its summary/embedding invalidation must win over our
+          // now-stale output), write nothing and throw. pg-boss retries the
+          // job against the fresh row; the edit's own notify coalesces with
+          // it under the queue's short policy.
+          const updated = await db
             .update(nodes)
             .set({
               data: sql`${nodes.data} || ${JSON.stringify(indexPatch)}::jsonb`,
               ...(embedding ? { embedding } : {}),
               updatedAt: new Date(),
             })
-            .where(eq(nodes.id, node.id));
+            .where(
+              and(
+                eq(nodes.id, node.id),
+                rowVersion ? sql`xmin::text = ${rowVersion}` : sql`true`,
+              ),
+            )
+            .returning({ id: nodes.id });
+          if (updated.length === 0) {
+            throw new Error(
+              `extractor: node ${node.id} changed while extraction was in flight — aborting stale write (retry re-reads)`,
+            );
+          }
           h.setMeta({
             summaryLength: summary.length,
             embedded: !!embedding,
@@ -1606,37 +1655,37 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       await step(
         { name: 'write_chunks', kind: 'compute', input: { bodyChars: rawBody.length } },
         async (h) => {
-          await db.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
+          // Embed BEFORE touching the table, and swap delete+insert in one
+          // transaction. The old order (delete → embed → insert, embed
+          // failure swallowed) left the node permanently chunk-less when the
+          // embedder hiccuped: the delete had already run, the failure
+          // returned "success", and the skip guard kept every retry away.
+          // Now an embed failure throws (queue retries, old chunks intact)
+          // and a crash mid-step can never destroy the previous rebuild.
           const pieces = chunkDocText(rawBody);
           if (pieces.length === 0) {
+            await db.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
             h.setOutput({ chunks: 0 });
             return;
           }
-          let vectors: number[][] = [];
-          try {
-            const { embedBatch } = await import('@mantle/embeddings');
-            vectors = await embedBatch(
-              ownerId,
-              pieces.map((p) => p.text),
-            );
-          } catch (err) {
-            console.error(
-              '[extractor]   chunk embed failed:',
-              err instanceof Error ? err.message : err,
-            );
-            h.setOutput({ chunks: 0, embedFailed: true });
-            return;
-          }
-          await db.insert(contentChunks).values(
-            pieces.map((p, i) => ({
-              ownerId,
-              nodeId: node.id,
-              ordinal: i,
-              headingPath: p.headingPath ?? null,
-              text: p.text,
-              embedding: vectors[i] ?? null,
-            })),
+          const { embedBatch } = await import('@mantle/embeddings');
+          const vectors = await embedBatch(
+            ownerId,
+            pieces.map((p) => p.text),
           );
+          await db.transaction(async (tx) => {
+            await tx.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
+            await tx.insert(contentChunks).values(
+              pieces.map((p, i) => ({
+                ownerId,
+                nodeId: node.id,
+                ordinal: i,
+                headingPath: p.headingPath ?? null,
+                text: p.text,
+                embedding: vectors[i] ?? null,
+              })),
+            );
+          });
           h.setOutput({ chunks: pieces.length });
         },
       );
@@ -1663,28 +1712,16 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
           },
         },
         async (h) => {
-          // Idempotent rebuild: clear this node's prior edges so re-extracts
-          // REPLACE rather than append duplicates — both the inbound mention
-          // edges (entity → this node) and this node's outbound page/note
-          // links (this node → other node).
-          await db
-            .delete(entityEdges)
-            .where(
-              and(
-                eq(entityEdges.targetId, node.id),
-                eq(entityEdges.targetKind, 'node'),
-                eq(entityEdges.relation, 'mentioned_in'),
-              ),
-            );
-          await db
-            .delete(entityEdges)
-            .where(
-              and(
-                eq(entityEdges.sourceId, node.id),
-                eq(entityEdges.sourceKind, 'node'),
-                eq(entityEdges.relation, 'references'),
-              ),
-            );
+          // Idempotent rebuild: this node's prior edges are REPLACED, not
+          // appended to — both the inbound mention edges (entity → this
+          // node) and this node's outbound page/note links (this node →
+          // other node). The delete + re-insert happens in ONE transaction
+          // at the END of this step: entity reconciliation makes network
+          // calls (candidate embeddings), and the old delete-first ordering
+          // meant a crash mid-loop destroyed the previous extraction's
+          // edges with nothing written to replace them. Edges are collected
+          // in memory during the loop instead.
+          const pendingEdges: (typeof entityEdges.$inferInsert)[] = [];
           const map = new Map<string, string>();
           // Entity ids that already have an edge this rebuild — dedupes the
           // NER pass against the explicit @-mention pass below.
@@ -1707,7 +1744,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
               map.set(mention.name.trim().toLowerCase(), ent.id);
               if (before.length > 0) matched++;
               else created++;
-              await db.insert(entityEdges).values({
+              pendingEdges.push({
                 ownerId,
                 sourceId: ent.id,
                 sourceKind: 'entity',
@@ -1750,7 +1787,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
                   .where(and(eq(entities.id, entId), eq(entities.ownerId, ownerId)))
                   .limit(1);
                 if (!ent) continue;
-                await db.insert(entityEdges).values({
+                pendingEdges.push({
                   ownerId,
                   sourceId: ent.id,
                   sourceKind: 'entity',
@@ -1773,7 +1810,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
                   .where(and(eq(nodes.id, refId), eq(nodes.ownerId, ownerId)))
                   .limit(1);
                 if (!target) continue;
-                await db.insert(entityEdges).values({
+                pendingEdges.push({
                   ownerId,
                   sourceId: node.id,
                   sourceKind: 'node',
@@ -1793,6 +1830,31 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
               );
             }
           }
+
+          // Atomic swap: clear this node's prior edges and write the new
+          // set in one transaction (see the rebuild note at the top of this
+          // step). All network work is done by now, so the tx is brief.
+          await db.transaction(async (tx) => {
+            await tx
+              .delete(entityEdges)
+              .where(
+                and(
+                  eq(entityEdges.targetId, node.id),
+                  eq(entityEdges.targetKind, 'node'),
+                  eq(entityEdges.relation, 'mentioned_in'),
+                ),
+              );
+            await tx
+              .delete(entityEdges)
+              .where(
+                and(
+                  eq(entityEdges.sourceId, node.id),
+                  eq(entityEdges.sourceKind, 'node'),
+                  eq(entityEdges.relation, 'references'),
+                ),
+              );
+            if (pendingEdges.length > 0) await tx.insert(entityEdges).values(pendingEdges);
+          });
 
           h.setOutput({ matched, created, explicit, refs });
           return map;
@@ -1823,16 +1885,14 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
             },
           },
           async (h) => {
-            await db
-              .delete(entityEdges)
-              .where(
-                and(
-                  eq(entityEdges.ownerId, ownerId),
-                  sql`${entityEdges.data}->>'source_node_id' = ${node.id}`,
-                ),
-              );
+            // Resolve + dedupe in memory first, then swap delete + insert in
+            // ONE transaction — the old delete-first ordering meant a crash
+            // mid-loop destroyed the previous extraction's relation edges
+            // with nothing written to replace them. No network calls here
+            // (entity ids are already resolved), so the tx is brief.
             const t = { ADD: 0, NOOP: 0, skipped: 0 };
             const seen = new Set<string>();
+            const newEdges: (typeof entityEdges.$inferInsert)[] = [];
             for (const rel of parsed.relations) {
               const subjId = entityIdByName.get(rel.subject.trim().toLowerCase());
               const objId = entityIdByName.get(rel.object.trim().toLowerCase());
@@ -1848,26 +1908,29 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
                 continue;
               }
               seen.add(key);
-              try {
-                await db.insert(entityEdges).values({
-                  ownerId,
-                  sourceId: subjId,
-                  sourceKind: 'entity',
-                  targetId: objId,
-                  targetKind: 'entity',
-                  relation: rel.relation,
-                  validFrom: new Date(),
-                  data: { source_node_id: node.id, confidence: rel.confidence },
-                });
-                t.ADD++;
-              } catch (err) {
-                t.skipped++;
-                console.error(
-                  `[extractor]   relation '${rel.subject} ${rel.relation} ${rel.object}' failed:`,
-                  err instanceof Error ? err.message : err,
-                );
-              }
+              newEdges.push({
+                ownerId,
+                sourceId: subjId,
+                sourceKind: 'entity',
+                targetId: objId,
+                targetKind: 'entity',
+                relation: rel.relation,
+                validFrom: new Date(),
+                data: { source_node_id: node.id, confidence: rel.confidence },
+              });
+              t.ADD++;
             }
+            await db.transaction(async (tx) => {
+              await tx
+                .delete(entityEdges)
+                .where(
+                  and(
+                    eq(entityEdges.ownerId, ownerId),
+                    sql`${entityEdges.data}->>'source_node_id' = ${node.id}`,
+                  ),
+                );
+              if (newEdges.length > 0) await tx.insert(entityEdges).values(newEdges);
+            });
             h.setOutput(t);
             h.setMeta({ added: t.ADD, deduped: t.NOOP, unresolved: t.skipped });
             console.log(
@@ -1881,6 +1944,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       // ─── fact extraction pass ────────────────────────────────────────
       // Retrieval-only docs never persist facts (L4 skip).
       if (params.extract_facts === false || retrievalOnly || parsed.facts.length === 0) {
+        await stampExtractCompleted(node.id);
         void bumpWorkerUsage(worker.id);
         return;
       }
@@ -1891,11 +1955,12 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
         const { embedBatch } = await import('@mantle/embeddings');
         factVectors = await embedBatch(ownerId, factTexts);
       } catch (err) {
-        console.error(
-          '[extractor] fact embed batch failed:',
-          err instanceof Error ? err.message : err,
+        // Throw so the queue retries — a silent return here meant the facts
+        // for this node were never written and (pre-completion-marker)
+        // never would be.
+        throw new Error(
+          `extractor: fact embed batch failed for node ${node.id}: ${err instanceof Error ? err.message : err}`,
         );
-        return;
       }
 
       // Treat 0 / negative / non-numeric as "no cap". `?? null` alone is a
@@ -2074,9 +2139,28 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
         `[extractor]   → facts: ADD=${tally.ADD} UPDATE=${tally.UPDATE} DELETE=${tally.DELETE} NOOP=${tally.NOOP} retired=${tally.retired}`,
       );
 
+      await stampExtractCompleted(node.id);
       void bumpWorkerUsage(worker.id);
     },
   );
+}
+
+/** Final step of a fully-successful extraction pass. The already_extracted
+ *  skip guard requires this marker IN ADDITION to summary+embedding, so a
+ *  pg-boss retry after a partial failure (chunks/entities/relations/facts)
+ *  re-runs instead of skipping. A cost-cap-truncated fact pass still stamps
+ *  (matching the pre-marker skip semantics) — `data.extract_incomplete` is
+ *  the recovery signal for that case. Deliberately a plain jsonb merge with
+ *  no version condition: a user edit clears summary/embedding, and the guard
+ *  is a conjunction, so a stale stamp can never suppress the edit's
+ *  re-extract. */
+async function stampExtractCompleted(nodeId: string): Promise<void> {
+  await db
+    .update(nodes)
+    .set({
+      data: sql`${nodes.data} || ${JSON.stringify({ extract_completed_at: new Date().toISOString() })}::jsonb`,
+    })
+    .where(eq(nodes.id, nodeId));
 }
 
 // bumpAgentUsage was removed when the extractor moved to ai_workers.

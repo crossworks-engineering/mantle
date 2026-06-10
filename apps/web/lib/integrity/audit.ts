@@ -117,6 +117,24 @@ const CHECKS: CheckDef[] = [
         )`,
   },
   {
+    key: 'extract_dead_letter',
+    label: 'Dead-lettered extractions',
+    severity: 'high',
+    note: 'a node whose extraction exhausted all 5 retries (e.g. embedder down for the evening) — it has no summary/embedding/facts and nothing retries it on its own. The agent re-drives the dead-letter queue on every start, so the remedy is: fix the underlying failure (check the node’s extractor_run traces), then restart the agent.',
+    query: (o) => sql`
+      SELECT coalesce(n.id::text, j.id::text) AS id,
+             coalesce(n.type::text, 'unknown') AS kind,
+             left(coalesce(n.title, j.data->>'nodeId', ''), 60) AS detail
+      FROM pgboss.job j
+      LEFT JOIN nodes n ON n.id::text = j.data->>'nodeId' AND n.owner_id = ${o}
+      WHERE j.name = 'mantle.extract.dead' AND j.state = 'created'
+      LIMIT ${CAP}`,
+    spanQuery: () => sql`
+      SELECT min(j.created_on)::date::text AS oldest, max(j.created_on)::date::text AS newest
+      FROM pgboss.job j
+      WHERE j.name = 'mantle.extract.dead' AND j.state = 'created'`,
+  },
+  {
     key: 'unembedded_facts',
     label: 'Unembedded facts',
     severity: 'medium',
