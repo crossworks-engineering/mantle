@@ -36,6 +36,11 @@ import { NoteEditor, type NoteRow } from './note-editor';
 
 type TagCount = { tag: string; count: number };
 
+/** Mirror of @mantle/content's isDigestTag — local copy because that module
+ *  pulls in the server-only db client and can't enter the client bundle. */
+const isDigestTag = (t: string) =>
+  t === 'conversation-digest' || t.startsWith('agent:') || t.startsWith('topic:');
+
 // Draggable list-pane width (md+). Persisted so it sticks across visits.
 const WIDTH_KEY = 'mantle:notes-list-width';
 const LIST_MIN = 300;
@@ -50,6 +55,7 @@ export function NotesClient({
   tags,
   activeTag,
   query,
+  showDigests,
   initialSelectedId,
   initialSelectedNote,
   initialEditing,
@@ -61,6 +67,7 @@ export function NotesClient({
   tags: TagCount[];
   activeTag: string | null;
   query: string;
+  showDigests: boolean;
   initialSelectedId?: string | null;
   initialSelectedNote?: NoteRow | null;
   initialEditing?: boolean;
@@ -189,13 +196,20 @@ export function NotesClient({
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  const buildHref = (over: { page?: number; tag?: string | null; q?: string | null }) => {
+  const buildHref = (over: {
+    page?: number;
+    tag?: string | null;
+    q?: string | null;
+    digests?: boolean;
+  }) => {
     const nextTag = over.tag !== undefined ? over.tag : activeTag;
     const nextQ = over.q !== undefined ? over.q : query || null;
     const nextPage = over.page !== undefined ? over.page : page;
+    const nextDigests = over.digests !== undefined ? over.digests : showDigests;
     const params = new URLSearchParams();
     if (nextTag) params.set('tag', nextTag);
     if (nextQ) params.set('q', nextQ);
+    if (nextDigests) params.set('digests', '1');
     if (nextPage && nextPage > 1) params.set('page', String(nextPage));
     const s = params.toString();
     return s ? `${pathname}?${s}` : pathname;
@@ -256,15 +270,15 @@ export function NotesClient({
             </Button>
           </div>
 
-          {tags.length > 0 && (
-            <div className="flex items-start gap-1.5">
-              <div
-                ref={tagRowRef}
-                className={cn(
-                  'flex flex-1 flex-wrap items-center gap-1.5',
-                  !tagsExpanded && 'max-h-7 overflow-hidden',
-                )}
-              >
+          <div className="flex items-start gap-1.5">
+            <div
+              ref={tagRowRef}
+              className={cn(
+                'flex flex-1 flex-wrap items-center gap-1.5',
+                !tagsExpanded && 'max-h-7 overflow-hidden',
+              )}
+            >
+              {tags.length > 0 && (
                 <Button
                   size="sm"
                   variant={activeTag ? 'outline' : 'default'}
@@ -273,33 +287,50 @@ export function NotesClient({
                 >
                   All
                 </Button>
-                {tags.map((t) => (
-                  <Button
-                    key={t.tag}
-                    size="sm"
-                    variant={activeTag === t.tag ? 'default' : 'outline'}
-                    className="h-7 rounded-full px-3"
-                    onClick={() => go({ tag: activeTag === t.tag ? null : t.tag, page: 1 })}
-                  >
-                    {t.tag}
-                    <span className="ml-1 opacity-60">{t.count}</span>
-                  </Button>
-                ))}
-              </div>
-              {tagsOverflow && (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="size-7 shrink-0"
-                  onClick={() => setTagsExpanded((v) => !v)}
-                  aria-label={tagsExpanded ? 'Show fewer tags' : 'Show all tags'}
-                  title={tagsExpanded ? 'Show fewer tags' : 'Show all tags'}
-                >
-                  <ChevronDown className={cn('transition-transform', tagsExpanded && 'rotate-180')} />
-                </Button>
               )}
+              {tags.map((t) => (
+                <Button
+                  key={t.tag}
+                  size="sm"
+                  variant={activeTag === t.tag ? 'default' : 'outline'}
+                  className="h-7 rounded-full px-3"
+                  onClick={() => go({ tag: activeTag === t.tag ? null : t.tag, page: 1 })}
+                >
+                  {t.tag}
+                  <span className="ml-1 opacity-60">{t.count}</span>
+                </Button>
+              ))}
             </div>
-          )}
+            {tagsOverflow && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-7 shrink-0"
+                onClick={() => setTagsExpanded((v) => !v)}
+                aria-label={tagsExpanded ? 'Show fewer tags' : 'Show all tags'}
+                title={tagsExpanded ? 'Show fewer tags' : 'Show all tags'}
+              >
+                <ChevronDown className={cn('transition-transform', tagsExpanded && 'rotate-180')} />
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant={showDigests ? 'default' : 'outline'}
+              className={cn('h-7 shrink-0 rounded-full px-3', !showDigests && 'text-muted-foreground')}
+              onClick={() =>
+                go({
+                  digests: !showDigests,
+                  page: 1,
+                  // Hiding digests while filtered on a digest tag would show an
+                  // empty list — drop the tag along with them.
+                  ...(showDigests && activeTag && isDigestTag(activeTag) ? { tag: null } : {}),
+                })
+              }
+              title={showDigests ? 'Hide agent conversation digests' : 'Show agent conversation digests'}
+            >
+              <Sparkles /> Digests
+            </Button>
+          </div>
         </div>
 
         {/* Cards */}
@@ -512,7 +543,9 @@ function NotePreview({
           )}
         </article>
 
-        {note.summary && (
+        {/* Digest notes store the same text as content and summary (the note IS
+            a summary) — skip the box rather than render the body twice. */}
+        {note.summary && note.summary.trim() !== note.content.trim() && (
           <aside className="rounded-md border border-border bg-muted/40 p-3">
             <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <Sparkles className="size-3.5" aria-hidden /> Indexed summary

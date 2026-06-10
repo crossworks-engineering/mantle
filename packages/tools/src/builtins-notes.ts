@@ -76,7 +76,8 @@ const note_list: BuiltinToolDef = {
   name: 'List notes',
   description:
     "List the owner's notes, newest first. `query` substring-matches title/body/summary; `tag` " +
-    "narrows to notes carrying that tag. " +
+    "narrows to notes carrying that tag. Agent conversation digests are excluded unless `tag` is " +
+    "one of their tags (`conversation-digest`, `agent:*`, `topic:*`). " +
     "**Use this for 'recent notes', 'notes mentioning X by literal substring', or to browse by tag.** " +
     "For semantic/embedding search across the whole brain (notes alongside emails, files, pages, etc.) " +
     "use `search_nodes` — that's similarity-ranked and cross-type. For a single note's full markdown body " +

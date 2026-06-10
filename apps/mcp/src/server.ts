@@ -886,7 +886,7 @@ server.tool(
 
 server.tool(
   'note_list',
-  'List the owner\'s notes. Optional `query` does a substring match against title/body/summary; `tag` filters to notes carrying that tag.',
+  'List the owner\'s notes. Optional `query` does a substring match against title/body/summary; `tag` filters to notes carrying that tag. Agent conversation digests are excluded unless `tag` is one of their tags (`conversation-digest`, `agent:*`, `topic:*`).',
   {
     query: z.string().optional(),
     tag: z.string().optional(),

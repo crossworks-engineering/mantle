@@ -54,11 +54,26 @@ async function ensureRoot(ownerId: string): Promise<void> {
     });
 }
 
-type ListNotesOpts = { query?: string; tag?: string };
+type ListNotesOpts = { query?: string; tag?: string; includeDigests?: boolean };
+
+/** Agent-minted digest tags (summarizer.ts): the digest marker itself plus its
+ *  `agent:`/`topic:` companions. Used to hide machine notes from the Notes
+ *  surface by default and to detect deep links that should reveal them. */
+export function isDigestTag(tag: string): boolean {
+  return tag === 'conversation-digest' || tag.startsWith('agent:') || tag.startsWith('topic:');
+}
 
 /** Shared WHERE conditions for note list/count queries. */
 function noteConds(ownerId: string, opts: ListNotesOpts) {
   const conds = [eq(nodes.ownerId, ownerId), eq(nodes.type, 'note')];
+  // Agent conversation digests are Layer-3 memory, not user notes — keep them
+  // out of note listings unless explicitly requested, either via the flag or
+  // by filtering on one of the digest tags (which would otherwise match
+  // nothing). The agent runtime reads digests straight from `nodes`
+  // (conversation.ts), so its memory path is unaffected.
+  if (!opts.includeDigests && !(opts.tag && isDigestTag(opts.tag))) {
+    conds.push(sql`not (${nodes.tags} @> array['conversation-digest']::text[])`);
+  }
   if (opts.query?.trim()) {
     const q = `%${opts.query.trim()}%`;
     const c = or(
@@ -96,14 +111,20 @@ export async function countNotes(ownerId: string, opts: ListNotesOpts = {}): Pro
 }
 
 /** All distinct tags across the user's notes with usage counts, ordered by
- *  frequency then name. Drives the notes tag filter. */
+ *  frequency then name. Drives the notes tag filter. Digest notes are excluded
+ *  by default so their unbounded `topic:*` tags don't swamp the filter row. */
 export async function listNoteTags(
   ownerId: string,
+  opts: { includeDigests?: boolean } = {},
 ): Promise<{ tag: string; count: number }[]> {
+  const conds = [eq(nodes.ownerId, ownerId), eq(nodes.type, 'note')];
+  if (!opts.includeDigests) {
+    conds.push(sql`not (${nodes.tags} @> array['conversation-digest']::text[])`);
+  }
   const rows = await db
     .select({ tags: nodes.tags })
     .from(nodes)
-    .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'note')));
+    .where(and(...conds));
   const counts = new Map<string, number>();
   for (const r of rows) {
     for (const t of r.tags ?? []) counts.set(t, (counts.get(t) ?? 0) + 1);
