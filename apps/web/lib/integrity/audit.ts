@@ -117,6 +117,35 @@ const CHECKS: CheckDef[] = [
         )`,
   },
   {
+    key: 'backup_stale',
+    label: 'Stale backups',
+    severity: 'high',
+    note: 'backups are enabled at /settings/backups but the last successful dump is older than twice the configured interval (or has never happened). The brain is irreplaceable — check the error on the settings page, fix it, and Run backup now. Common causes: the events worker (which hosts the scheduler) not running, or the destination folder not writable.',
+    query: (o) => sql`
+      SELECT p.user_id::text AS id, 'backup' AS kind,
+             coalesce(
+               'last success ' || coalesce(
+                 p.preferences->'backupStatus'->>'lastSuccessAt',
+                 CASE WHEN p.preferences->'backupStatus'->>'ok' = 'true'
+                      THEN p.preferences->'backupStatus'->>'lastRunAt' END
+               ),
+               'never succeeded'
+             ) AS detail
+      FROM profiles p
+      WHERE p.user_id = ${o}
+        AND p.preferences->'backup'->>'enabled' = 'true'
+        AND coalesce(
+              p.preferences->'backupStatus'->>'lastSuccessAt',
+              -- pre-lastSuccessAt status objects: an ok latest run counts
+              CASE WHEN p.preferences->'backupStatus'->>'ok' = 'true'
+                   THEN p.preferences->'backupStatus'->>'lastRunAt' END,
+              '1970-01-01'
+            )::timestamptz
+            < now() - (CASE WHEN p.preferences->'backup'->>'frequency' = 'weekly'
+                            THEN interval '14 days' ELSE interval '2 days' END)
+      LIMIT ${CAP}`,
+  },
+  {
     key: 'extract_dead_letter',
     label: 'Dead-lettered extractions',
     severity: 'high',

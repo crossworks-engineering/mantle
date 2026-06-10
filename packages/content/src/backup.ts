@@ -60,6 +60,10 @@ export type BackupStatus = {
   durationMs?: number;
   /** 'schedule' | 'manual' — what triggered the run. */
   trigger: string;
+  /** When the last SUCCESSFUL run finished — preserved across failed runs,
+   *  so the /debug/integrity staleness check can tell "failing for a week"
+   *  from "failed once after last night's good dump". */
+  lastSuccessAt?: string;
 };
 
 export const DEFAULT_BACKUP_CONFIG: BackupConfig = {
@@ -208,12 +212,18 @@ async function runBackupInner(
   trigger: 'schedule' | 'manual',
 ): Promise<BackupStatus> {
   const started = Date.now();
+  // Carried into both outcomes: a failed run must not erase the record of
+  // when the last GOOD dump happened (the staleness check keys on it).
+  const prior = await loadBackupStatus(userId);
+  const priorSuccessAt =
+    prior?.lastSuccessAt ?? (prior?.ok ? prior.lastRunAt : undefined);
   const fail = async (error: string): Promise<BackupStatus> => {
     const status: BackupStatus = {
       lastRunAt: new Date().toISOString(),
       ok: false,
       error,
       trigger,
+      ...(priorSuccessAt ? { lastSuccessAt: priorSuccessAt } : {}),
     };
     console.error(`[backup] ✗ ${error}`);
     await writeBackupStatus(userId, status);
@@ -299,13 +309,15 @@ async function runBackupInner(
     await unlink(path.join(dir, old.name)).catch(() => {});
   }
 
+  const finishedAt = new Date().toISOString();
   const status: BackupStatus = {
-    lastRunAt: new Date().toISOString(),
+    lastRunAt: finishedAt,
     ok: true,
     file: finalPath,
     bytes: size,
     durationMs: Date.now() - started,
     trigger,
+    lastSuccessAt: finishedAt,
   };
   console.log(
     `[backup] ✔ ${path.basename(finalPath)} (${Math.round(size / 1024 / 1024)}MB, ${status.durationMs}ms, ${trigger})`,
