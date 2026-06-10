@@ -34,6 +34,10 @@
 
 ## Next work, in priority order
 
+0. **The marketing website** — [`docs/handover-website.md`](./docs/handover-website.md).
+   Jason is starting this next: Next.js + the same 42-theme system, the
+   Bukhari wordmark, README.md as the canonical copy. Docs links point at
+   https://github.com/crossworks-engineering/mantle.
 1. **The trust model** — [`docs/handover-trust-model.md`](./docs/handover-trust-model.md).
    Self-contained brief: attack surfaces with evidence, 9-point design,
    sequencing (quick defaults first: `run_terminal` env scrub + confirm,
