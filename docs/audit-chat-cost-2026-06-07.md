@@ -220,6 +220,35 @@ delegation/long-loop turns to drop ~40–60%; plain single-call Q&A is unchanged
 (its cost is the irreducible prefix). Verify with query #4 on the next few
 delegations: `cache_read` should climb with `tokens_in` instead of pinning.
 
+## Third pass (2026-06-10) — the cross-turn half, missed above
+
+Correction 1 above said *"the first call of a turn MUST write the prefix —
+there is nothing to read yet; not a bug."* **That was wrong.** Anthropic's
+ephemeral cache has a 5-minute TTL refreshed on use, so in a back-and-forth
+conversation turn N+1's first call *should* read turn N's cached prefix
+(tools + persona block). It never did — `cache_read` was 0 on every first
+call — because two per-turn ingredients sat inside cache breakpoint 1:
+
+1. `buildTimeContextLine` (`packages/content/src/profile-preferences.ts`)
+   prepends `UTC instant: <millisecond ISO>` to the system prompt at both
+   call sites → the prefix is never byte-identical across turns.
+2. The query-ranked top-K facts were rendered inside the persona block
+   (`renderPersonaBlock` in `packages/agent-runtime/src/messages.ts`) →
+   they change with every query.
+
+So the 06-07 fix repaired *within-turn* caching (the moving tail marker);
+the 17 "legitimate" first-call writes were the *cross-turn* symptom of the
+same disease. **Fixed 2026-06-10:** facts moved to their own uncached block;
+`buildChatMessages` gained a `volatileContext` arg (uncached, after both
+breakpoints) carrying the time line + heartbeat-awareness block; both call
+sites (`apps/agent/src/main.ts`, `apps/web/lib/assistant.ts`) updated.
+Regression tests in `messages.test.ts` pin the invariant.
+
+**Verify on prod after deploy:** re-run query #3 — first calls of turns that
+follow a prior turn within ~5 min should now show `cache_read ≈ 20K` instead
+of `cache_write ≈ 20K`. Expect roughly $0.05–0.07 saved per conversational
+follow-up turn.
+
 ## Session context (where the tree is)
 - All this session's Pages work is on `origin/main` @ `8fd6ec7` (v0.20.33),
   **deployed to prod**. One later fix — `175d490` (v0.20.34, "show uncommitted

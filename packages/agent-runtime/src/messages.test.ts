@@ -8,13 +8,19 @@ const DIGEST: Digest = {
   topic: 'Lister',
 };
 
-function build(opts: { model: string; provider?: string }): ChatMessage[] {
+function build(opts: {
+  model: string;
+  provider?: string;
+  volatileContext?: string;
+  facts?: Array<{ content: string; kind: string }>;
+}): ChatMessage[] {
   return buildChatMessages({
     model: opts.model,
     provider: opts.provider,
     systemPrompt: 'You are Saskia.',
+    volatileContext: opts.volatileContext,
     personaNotes: [],
-    facts: [],
+    facts: opts.facts ?? [],
     digests: [DIGEST],
     contentHits: [],
     history: [],
@@ -62,5 +68,67 @@ describe('buildChatMessages — explicit cache breakpoints', () => {
     expect(Array.isArray(slug[0]?.content)).toBe(true);
     const bare = systemMessages(build({ model: 'claude-sonnet-4-6' }));
     expect(typeof bare[0]?.content).toBe('string');
+  });
+});
+
+describe('buildChatMessages — cached prefix stays byte-stable per turn', () => {
+  // The 2026-06 chat-cost regression: per-turn text (time line, query-ranked
+  // facts) inside cache breakpoint 1 made the persona prefix miss on every
+  // turn. These pin the fix: anything per-turn renders AFTER the breakpoints,
+  // uncached.
+
+  it('renders volatileContext as an UNCACHED system block after the digest breakpoint', () => {
+    const sys = systemMessages(
+      build({
+        model: 'anthropic/claude-sonnet-4.6',
+        provider: 'openrouter',
+        volatileContext: 'Current time: Wednesday, 10 June 2026 at 09:00.',
+      }),
+    );
+    const volatile = sys.find(
+      (m) => typeof m.content === 'string' && m.content.includes('Current time:'),
+    );
+    expect(volatile).toBeDefined();
+    // Plain string content = no cacheControl marker on this block.
+    expect(typeof volatile!.content).toBe('string');
+    // And it sits after both cache-marked blocks (persona, digest).
+    const volatileIdx = sys.indexOf(volatile!);
+    const markedIdxs = sys
+      .map((m, i) => (Array.isArray(m.content) ? i : -1))
+      .filter((i) => i >= 0);
+    expect(markedIdxs.length).toBe(2);
+    expect(volatileIdx).toBeGreaterThan(Math.max(...markedIdxs));
+  });
+
+  it('keeps query-ranked facts OUT of cache-marked blocks', () => {
+    const sys = systemMessages(
+      build({
+        model: 'anthropic/claude-sonnet-4.6',
+        provider: 'openrouter',
+        facts: [{ content: 'Jason owns a Lister 3D printer', kind: 'factual' }],
+      }),
+    );
+    const cachedText = sys
+      .filter((m) => Array.isArray(m.content))
+      .flatMap((m) => (m.content as Array<{ text: string }>).map((b) => b.text))
+      .join('\n');
+    expect(cachedText).not.toContain('Lister 3D printer');
+    const factsBlock = sys.find(
+      (m) => typeof m.content === 'string' && m.content.includes('Lister 3D printer'),
+    );
+    expect(factsBlock).toBeDefined();
+  });
+
+  it('omits the volatile block entirely when empty', () => {
+    const withEmpty = build({
+      model: 'anthropic/claude-sonnet-4.6',
+      provider: 'openrouter',
+      volatileContext: '  ',
+    });
+    const without = build({
+      model: 'anthropic/claude-sonnet-4.6',
+      provider: 'openrouter',
+    });
+    expect(withEmpty.length).toBe(without.length);
   });
 });

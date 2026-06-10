@@ -970,9 +970,11 @@ Visual map of who writes what, who reads what:
 > cosine and assembled only persona / facts / content / turns.
 
 ```
-[persona + persona_notes + facts]             ← cache_control (stable for days)
-   facts = top-K by (cosine + KIND-AWARE RECENCY) … PLUS preferences always-injected
+[persona + persona_notes]                     ← cache_control (byte-stable for days)
 [conversation_digest — last N digests]        ← cache_control (changes every ~20 turns)
+[volatile context — time line + heartbeats]   ← UNCACHED by design (changes every turn)
+[profile facts — top-K for this query]        ← UNCACHED (query-ranked, changes every turn)
+   facts = top-K by (cosine + KIND-AWARE RECENCY) … PLUS preferences always-injected
 [content_index hits — top 5]                  ← ranked by SALIENCE- + RECENCY-adjusted
    distance; system-docs (origin='system') excluded; bulk/marketing demoted
 [knowledge-graph relationships]               ← entity-anchored: relations of the
@@ -983,6 +985,15 @@ Visual map of who writes what, who reads what:
 [new user message]                            ← retrieval embedding ENRICHED with
    recent turns when it's a short anaphoric follow-up ("tell me more about that")
 ```
+
+> **Cache hygiene (2026-06-10).** The cached blocks must be **byte-stable
+> between turns** or every turn pays a full prefix re-write. Two per-turn
+> ingredients used to live inside breakpoint 1 and silently broke this: the
+> `Current time: …` line (millisecond ISO timestamp) and the query-ranked
+> top-K facts. Both now render *below* the breakpoints — the time line +
+> heartbeat awareness via `buildChatMessages`'s `volatileContext` arg, facts
+> as their own uncached block. Never fold per-turn text into the agent's
+> system prompt at a call site; pass it through `volatileContext`.
 
 **The ranking factors (all in the one effective-distance expression):**
 
@@ -1006,9 +1017,10 @@ Visual map of who writes what, who reads what:
 
 Persona first (durable identity), then dialog memory, then per-query content +
 graph + passages, then raw recent turns. Early blocks durable, late blocks live.
-Three Anthropic cache breakpoints (of four). Knobs: `memory_config.{fact_limit,
-content_hit_limit, chunk_limit, digest_limit}`; env `MANTLE_{SALIENCE_LAMBDA,
-RECENCY_*,QUERY_ENRICH}`.
+Two Anthropic cache breakpoints emitted here (persona, digests); the tool-loop
+adds a third, moving one on the latest tail message — three of four total.
+Knobs: `memory_config.{fact_limit, content_hit_limit, chunk_limit,
+digest_limit}`; env `MANTLE_{SALIENCE_LAMBDA,RECENCY_*,QUERY_ENRICH}`.
 
 - **Identity (always-on "who you are")** — alongside the always-injected
   preferences, `buildIdentityContext` distils the user's **Life Logs** (the

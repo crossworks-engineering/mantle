@@ -1,21 +1,30 @@
 /**
  * Build the OpenRouter `messages` array for the responder agent.
  *
- * Cache-control strategy for `anthropic/*` models — three of Anthropic's
- * four allowed breakpoints used here:
+ * Cache-control strategy for Anthropic models — two breakpoints emitted
+ * here (the tool-loop adds a third, moving one on the latest tail message,
+ * staying within Anthropic's 4-marker cap):
  *
- *   1. persona + persona_notes + profile facts  — stable for hours/days
+ *   1. persona + persona_notes                  — stable for hours/days
  *   2. conversation_digest block                — stable until next digest
- *   3. content_index hits (if any)              — vary by user query
- *      (no breakpoint here; this block + raw turns just drift)
+ *   …everything after is per-turn volatile and deliberately UNCACHED.
+ *
+ * Cross-turn cache hits depend on blocks 1-2 being BYTE-STABLE between
+ * turns: anything that varies per turn (the current-time line, "asked
+ * Nmin ago" heartbeat context, the query-ranked top-K facts) must go in
+ * `volatileContext` / the facts block below the breakpoints — folding it
+ * into `systemPrompt` silently breaks the prefix match and turns every
+ * turn into a full cache write (the 2026-06 chat-cost audit's first-call
+ * misses).
  *
  * Other providers either auto-cache (openai/*, deepseek/*) or ignore
  * the markers entirely. Sending them is always harmless.
  *
  * Prompt order (top-down, durable to volatile):
  *   [persona + style/relationship notes]      ← cache breakpoint 1
- *   [profile — top-K facts]
  *   [conversation_digest — last N]            ← cache breakpoint 2
+ *   [volatile context — time line, heartbeat awareness]
+ *   [profile — top-K facts for this query]
  *   [content_index hits — when query mentions content]
  *   [recent turns — last N raw]
  *   [new user message]
@@ -194,6 +203,12 @@ export function buildChatMessages(args: {
    *  it — see supportsExplicitCache. Optional: omit ⇒ slug-only behaviour. */
   provider?: string;
   systemPrompt: string;
+  /** Per-turn-varying system context (current-time line, open-heartbeat
+   *  awareness, …). Rendered as its own UNCACHED system block after the
+   *  cache breakpoints so it can change every turn without invalidating
+   *  the persona/digest prefix. Never fold per-turn text into
+   *  `systemPrompt` — that breaks cross-turn prompt caching. */
+  volatileContext?: string;
   personaNotes: PersonaNote[];
   facts: FactSnippet[];
   digests: Digest[];
@@ -212,6 +227,7 @@ export function buildChatMessages(args: {
   const {
     model,
     systemPrompt,
+    volatileContext,
     personaNotes,
     facts,
     digests,
@@ -233,8 +249,8 @@ export function buildChatMessages(args: {
     args.provider === 'anthropic' || model.startsWith('anthropic/');
   const ephemeral = { type: 'ephemeral' as const };
 
-  // ─── Block 1: persona + persona_notes + profile facts ─────────────────
-  const personaBlock = renderPersonaBlock(systemPrompt, personaNotes, facts);
+  // ─── Block 1: persona + persona_notes (byte-stable across turns) ──────
+  const personaBlock = renderPersonaBlock(systemPrompt, personaNotes);
   const messages: ChatMessage[] = [
     supportsExplicitCache
       ? {
@@ -263,6 +279,31 @@ export function buildChatMessages(args: {
           }
         : { role: 'system', content: digestText },
     );
+  }
+
+  // ─── Block 2a: volatile per-turn context (no cache — by design) ───────
+  // Current-time line, heartbeat awareness, anything else that varies
+  // turn-to-turn. Sits AFTER both breakpoints so its churn never busts
+  // the cached persona/digest prefix.
+  if (volatileContext && volatileContext.trim().length > 0) {
+    messages.push({ role: 'system', content: volatileContext.trim() });
+  }
+
+  // ─── Block 2b: profile facts (no cache; ranked per query) ─────────────
+  // Top-K facts are retrieved against THIS turn's query embedding, so the
+  // set changes every turn — caching them inside block 1 made the whole
+  // prefix miss on every turn.
+  if (facts.length > 0) {
+    const factLines = facts
+      .map((f) => {
+        const ent = f.entityName ? ` [about: ${f.entityName}]` : '';
+        return `- (${f.kind}) ${f.content}${ent}`;
+      })
+      .join('\n');
+    messages.push({
+      role: 'system',
+      content: `What you know about the user and their world (durable facts; treat as load-bearing context, not trivia):\n${factLines}`,
+    });
   }
 
   // ─── Block 3: content_index hits (no cache; varies per query) ─────────
@@ -337,11 +378,7 @@ export function buildChatMessages(args: {
   return messages;
 }
 
-function renderPersonaBlock(
-  systemPrompt: string,
-  notes: PersonaNote[],
-  facts: FactSnippet[],
-): string {
+function renderPersonaBlock(systemPrompt: string, notes: PersonaNote[]): string {
   const parts: string[] = [systemPrompt.trim()];
 
   // Only inject active (non-retired) notes. The [ref] tag lets the model
@@ -354,18 +391,6 @@ function renderPersonaBlock(
       .join('\n');
     parts.push(
       `\nWhat you've learned about how this user wants to be helped (each tagged with a [ref] you can pass to update_persona):\n${noteLines}`,
-    );
-  }
-
-  if (facts.length > 0) {
-    const factLines = facts
-      .map((f) => {
-        const ent = f.entityName ? ` [about: ${f.entityName}]` : '';
-        return `- (${f.kind}) ${f.content}${ent}`;
-      })
-      .join('\n');
-    parts.push(
-      `\nWhat you know about the user and their world (durable facts; treat as load-bearing context, not trivia):\n${factLines}`,
     );
   }
 

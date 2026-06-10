@@ -235,12 +235,15 @@ export async function runAssistantTurn(
   });
 
   const attachedSkills = await resolveAgentSkills(ownerId, agent.skillSlugs ?? []);
-  // Prepend the current-time / timezone / locale context so the
-  // assistant can resolve relative time references in event_create
-  // calls. Mirrors the apps/agent (Telegram) flow.
+  // Current-time / timezone / locale context so the assistant can resolve
+  // relative time references in event_create calls. Carries a per-turn
+  // millisecond timestamp, so it rides in the uncached volatile block —
+  // prepending it to the system prompt put it inside cache breakpoint 1
+  // and busted the persona prefix every turn (2026-06 chat-cost audit).
+  // Mirrors the apps/agent (Telegram) flow.
   const prefs = await loadProfilePreferences(ownerId);
-  const promptWithTime = `${buildTimeContextLine(prefs)}\n\n${agent.systemPrompt}`;
-  const promptWithSkills = composeSystemPromptWithSkills(promptWithTime, attachedSkills);
+  const timeContextLine = buildTimeContextLine(prefs);
+  const promptWithSkills = composeSystemPromptWithSkills(agent.systemPrompt, attachedSkills);
 
   // Open-heartbeat awareness: if the user has heartbeats whose
   // surface is the web /assistant and that are currently waiting
@@ -283,7 +286,13 @@ export async function runAssistantTurn(
       );
     }
   }
-  const effectiveSystemPrompt = identityBlock + promptWithSkills + openHeartbeatBlock;
+  // Cached prefix (breakpoint 1): identity + persona + skills — stable
+  // across turns. The time line and the heartbeat block ("asked Nmin
+  // ago" churns) go to the uncached volatile slot instead.
+  const effectiveSystemPrompt = identityBlock + promptWithSkills;
+  const volatileContext = [timeContextLine, openHeartbeatBlock.trim()]
+    .filter(Boolean)
+    .join('\n\n');
   // Heartbeat continuity tools are injected below as a per-turn affordance
   // (P6) when there's an active heartbeat on this surface — not a stored grant.
 
@@ -333,6 +342,7 @@ export async function runAssistantTurn(
       model: agent.model,
       provider: agent.provider,
       systemPrompt: effectiveSystemPrompt,
+      volatileContext,
       personaNotes: ctx.personaNotes,
       facts: ctx.facts,
       digests: ctx.digests,

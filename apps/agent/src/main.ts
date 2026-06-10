@@ -692,15 +692,17 @@ async function handleMessage(messageId: string): Promise<void> {
         // Resolve attached skills early so we can compose the system
         // prompt + extend the agent's effective tool allowlist.
         const attachedSkills = await resolveAgentSkills(USER_ID!, agent.skillSlugs ?? []);
-        // Prepend a one-line "current time + timezone + locale" so
-        // Saskia can resolve relative references like "tomorrow at
-        // 3pm" into a UTC ISO when calling event_create. Pure prompt
-        // overhead is ~30 tokens per turn; the gain is correct
-        // event scheduling without manual UTC math.
+        // One-line "current time + timezone + locale" so Saskia can
+        // resolve relative references like "tomorrow at 3pm" into a
+        // UTC ISO when calling event_create. It carries a per-turn
+        // millisecond timestamp, so it MUST ride in the uncached
+        // volatile block — prepending it to the system prompt put it
+        // inside cache breakpoint 1 and made the persona prefix miss
+        // on every turn (2026-06 chat-cost audit).
         const prefs = await loadProfilePreferences(USER_ID!);
-        const promptWithTime = `${buildTimeContextLine(prefs)}\n\n${agent.systemPrompt}`;
+        const timeContextLine = buildTimeContextLine(prefs);
         const promptWithSkills = composeSystemPromptWithSkills(
-          promptWithTime,
+          agent.systemPrompt,
           attachedSkills,
         );
 
@@ -793,8 +795,15 @@ async function handleMessage(messageId: string): Promise<void> {
             );
           }
         }
+        // Cached prefix (breakpoint 1): identity + persona + skills +
+        // audio tags — all stable across turns. The time line and the
+        // heartbeat block ("asked Nmin ago" churns) go to the uncached
+        // volatile slot instead.
         const effectiveSystemPrompt =
-          identityBlock + promptWithSkills + openHeartbeatBlock + audioTagInstructions;
+          identityBlock + promptWithSkills + audioTagInstructions;
+        const volatileContext = [timeContextLine, openHeartbeatBlock.trim()]
+          .filter(Boolean)
+          .join('\n\n');
 
         // Attachment → responder input (transcript-default, mirroring web).
         // Prefer the inline-extracted text folded into the turn; for an IMAGE
@@ -846,6 +855,7 @@ async function handleMessage(messageId: string): Promise<void> {
               model: agent.model,
               provider: agent.provider,
               systemPrompt: effectiveSystemPrompt,
+              volatileContext,
               personaNotes,
               facts: relevantFacts,
               digests,
