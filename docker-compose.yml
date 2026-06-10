@@ -94,6 +94,12 @@ x-app-env: &app-env
   # Absent socket → the reader reports "tailnet not running" (never throws).
   MANTLE_TAILSCALE_SOCK: ${MANTLE_TAILSCALE_SOCK:-/var/run/tailscale/tailscaled.sock}
   MANTLE_FILES_ROOT: /data/files
+  # Scheduled local backups (/settings/backups) write pg_dump archives here;
+  # bind-mounted to ${MANTLE_DATA_DIR}/backups on the host so the operator's
+  # own offsite sync (rsync/rclone/restic) can pick them up. The web service
+  # mounts it too ("Run backup now" + the on-disk listing); the events worker
+  # hosts the scheduler tick.
+  MANTLE_BACKUP_DIR: /data/backups
   # Documentation root: where the docs-sync worker reads markdown for the
   # `documentation` node type. Baked into the image at /app/docs (the repo's
   # docs/). Read-only in prod (one-way disk → DB; reconcile-on-boot indexes it).
@@ -282,6 +288,7 @@ services:
       <<: *app-env
     volumes:
       - ${MANTLE_DATA_DIR:-./data}/files:/data/files
+      - ${MANTLE_DATA_DIR:-./data}/backups:/data/backups
       # READ-WRITE view of the tailscaled LocalAPI socket. Read drives the
       # /settings/network status tile + peer dropdown; write lets the app log
       # tailscaled in/out from the UI (Activate/Deactivate). RW is the one
@@ -396,3 +403,6 @@ services:
       migrate:  { condition: service_completed_successfully }
     environment:
       <<: *app-env
+    volumes:
+      # Scheduled backups land here (see MANTLE_BACKUP_DIR in x-app-env).
+      - ${MANTLE_DATA_DIR:-./data}/backups:/data/backups

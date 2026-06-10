@@ -284,6 +284,23 @@ export {
 } from './profile-preferences';
 
 export {
+  DEFAULT_BACKUP_CONFIG,
+  isBackupDue,
+  listBackups,
+  loadBackupConfig,
+  loadBackupStatus,
+  maybeRunScheduledBackups,
+  normalizeBackupConfig,
+  resolveBackupDir,
+  runBackup,
+  saveBackupConfig,
+  type BackupConfig,
+  type BackupFile,
+  type BackupFrequency,
+  type BackupStatus,
+} from './backup';
+
+export {
   CONTACTS_ROOT_LABEL,
   // CRUD
   createContact,

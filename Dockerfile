@@ -63,6 +63,21 @@ COPY . .
 FROM deps AS app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# pg_dump for the scheduled-backup feature (/settings/backups). Must be the
+# pgdg v17 client — bookworm's default postgresql-client is 15, and pg_dump
+# refuses servers newer than itself. curl is installed and purged in the same
+# layer; the pgdg keyring + client stay.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+         -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+         > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-17 \
+    && apt-get purge -y curl && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
 # Build identity — surfaced next to the wordmark + at /api/version. `.git` is
 # excluded from the build context (.dockerignore), so next.config.ts can't read
 # the SHA inside the image; the build script (scripts/docker-build-push.sh)

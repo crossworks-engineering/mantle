@@ -1,94 +1,89 @@
 # Backups
 
-The brain is irreplaceable personal memory; everything else in the stack is
-rebuildable from source. This doc covers the automated two-leg backup
-(installed 2026-06-10), what it protects, and the restore drill.
+The brain (Postgres) is the irreplaceable part of a Mantle install — everything
+else is rebuildable from source. Mantle ships a built-in scheduled backup that
+dumps the database to a **local folder you choose**; getting that folder
+**offsite is deliberately your job**, because every operator has a different
+story (rsync cron, rclone, restic, Syncthing, Time Machine) and all of them
+work by pointing at a directory.
 
-## What must survive
+## The feature — /settings/backups
 
-| Data | Where it lives on prod | Backup vehicle |
+Configure at **Settings → Backups**:
+
+| Setting | Meaning | Default |
 |---|---|---|
-| Postgres (nodes, facts, entities, conversations, vault, …) | `mantle_pg` cluster | nightly `pg_dump -Fc` |
-| Host-mirrored files | `~/mantle/data/files/` (bind mount) | rsync mirror |
-| Object bytes (attachments) | `~/mantle/data/minio/` (bind mount, xl backend) | rsync mirror |
-| `MANTLE_MASTER_KEY` + secrets | `~/mantle/.env` | **not** copied by the pull — the same master key already lives in the Mac's `apps/web/.env.local`. If you ever rotate it, update both by hand. |
+| Enabled | master switch | off |
+| Frequency | daily, or weekly (Sundays) | daily |
+| At hour | hour of day **in your profile timezone** | 02:00 |
+| Keep | newest N dumps retained (rotation) | 7 |
+| Folder | destination directory | `MANTLE_BACKUP_DIR` → `/data/backups` in Docker (host: `${MANTLE_DATA_DIR}/backups`) |
 
-Embeddings are derived data: they ride along inside the dump, and even a
-total loss re-embeds locally for ~$0 (`pnpm re-embed`). The source text is
-what matters.
+The page also offers **Run backup now**, shows the last-run status (success or
+the error), and lists the dumps currently on disk.
 
-## Leg 1 — VPS nightly dump (cron)
+## How it works
 
-[`scripts/backup-prod.sh`](../scripts/backup-prod.sh), installed in the `cwe`
-crontab at **02:30 server time**:
+Engine: [`packages/content/src/backup.ts`](../packages/content/src/backup.ts).
 
-```
-30 2 * * * cd $HOME/mantle && bash scripts/backup-prod.sh >> backups/nightly/backup.log 2>&1
-```
+- `pg_dump -Fc --no-owner` against `DATABASE_URL`, streamed to
+  `mantle-<ts>.dump` via a `.part` temp name (a partial dump can never be
+  mistaken for a good one), then verified against the `PGDMP` magic bytes
+  before being promoted.
+- Rotation deletes beyond `keep`, and only files matching Mantle's own
+  `mantle-*.dump` pattern — anything else in the folder is never touched.
+- The scheduler is a cheap tick hosted by the **events worker**: when the
+  wall-clock hour in your timezone matches the configured hour (and the last
+  run is old enough to rule out a double-fire), it runs. Consequence: backups
+  fire **while the stack is up** — if it was down during the window, the next
+  window catches it.
+- Config + status live on `profiles.preferences` (`backup` / `backupStatus`
+  keys), so the UI and the worker share one source of truth.
+- The Docker image ships `postgresql-client-17` (pgdg) so `pg_dump` matches
+  the bundled Postgres 17. On a bare-metal/dev install, the engine looks for
+  `pg_dump` on `PATH` and in the usual homebrew/pgdg locations; set
+  `MANTLE_PG_DUMP` to point at a specific binary.
 
-- `pg_dump -Fc --no-owner` → `backups/nightly/mantle-<ts>.dump`, written via a
-  `.part` temp name so a partial dump is never mistaken for a good one, then
-  checked for the `PGDMP` magic bytes.
-- Rotates `backups/nightly/` to the newest **7** dumps
-  (`MANTLE_BACKUP_KEEP`). Manual dumps in `backups/` (from
-  `scripts/db-dump.sh`, e.g. pre-deploy insurance) are never touched.
-- `data/files` and `data/minio` need no VPS-side step — they're already plain
-  files on disk; the offsite leg mirrors them directly.
+## What to copy offsite
 
-## Leg 2 — Mac offsite pull (launchd)
+Your offsite sync should include, from `${MANTLE_DATA_DIR}` (default
+`./data` next to the compose file):
 
-[`scripts/pull-prod-backup.sh`](../scripts/pull-prod-backup.sh), installed as
-`me.schoeman.mantle-backup-pull` (**daily 08:15**, missed runs fire on wake —
-laptop-friendly). One-time install: `bash scripts/pull-prod-backup.sh
---install-launchd`.
+| Path | What it is |
+|---|---|
+| `backups/` | the rotated DB dumps (this feature's output) |
+| `files/` | your host-mirrored files (`/files` surface) |
+| `minio/` | attachment object bytes |
 
-Pulls over the existing `mantle-prod` SSH alias (read-only on prod) into
-`~/Backups/mantle/prod/`:
+One `rsync -a` of the `data/` directory (minus `postgres/` — the live cluster
+files are useless mid-write; the dumps are the DB backup) covers everything.
 
-- `db/` — dump archive. Mirrors the VPS's rotated window, then **accumulates**
-  (`cp -n`) so local retention (30 days, `MANTLE_BACKUP_RETAIN_DAYS`) outlives
-  the VPS's 7-dump window.
-- `files/`, `minio/` — mirrored **without `--delete`**, deliberately: a
-  deletion on prod (or a compromised prod) can never destroy the offsite copy.
-- **Verification, not just transfer:** the newest dump must pass
-  `pg_restore --list` or the run fails loudly. `last-success` carries the
-  timestamp of the last good run; `pull.log` the history.
-
-Checking health: `cat ~/Backups/mantle/prod/last-success` — if that date is
-ever more than a couple of days old, read `pull.log`.
+**Master key caveat:** a restored database is unreadable in its encrypted
+columns (`secrets`, account passwords, bot tokens) without the
+`MANTLE_MASTER_KEY` from your `.env`. Keep a copy of that key somewhere safe
+and separate. Losing the key loses the vault — nothing else.
 
 ## Restore drill
 
-**Postgres** (onto a fresh stack — same flow as dev replication, see
-`prod-access-and-replication` memory / deploy.md §3):
+Onto a fresh stack:
 
 ```bash
-docker compose down            # keep volumes for files/minio
-docker volume rm <pg volume>   # nuke only the cluster
-docker compose up -d postgres --wait      # init scripts recreate extensions + auth
-bash scripts/db-restore.sh ~/Backups/mantle/prod/db/mantle-<ts>.dump
+docker compose down                      # keep volumes/binds for files/minio
+# wipe ONLY the Postgres state (named volume or ${MANTLE_DATA_DIR}/postgres)
+docker compose up -d postgres --wait     # init scripts recreate extensions + auth
+bash scripts/db-restore.sh <path-to>/mantle-<ts>.dump
 docker compose up -d --wait
 ```
 
-**Files:** rsync `~/Backups/mantle/prod/files/` back to `data/files/`.
+Files and MinIO restore by putting the `files/` and `minio/` directories back
+under `${MANTLE_DATA_DIR}` while the stack is stopped.
 
-**MinIO:** the mirror is the raw xl backend — restoring onto the *same* MinIO
-means putting the directory back at `data/minio/` while the container is
-stopped. For a logical cross-server restore, stand up the backup dir under a
-throwaway MinIO container and `mc mirror` out of it.
+Worth doing once deliberately: a full end-to-end restore rehearsal onto a
+scratch stack, so the first time isn't the bad day.
 
-**Master key:** a restored DB is unreadable in its `_enc` columns without the
-`MANTLE_MASTER_KEY` that sealed it. It lives in prod `.env` and the Mac's
-`apps/web/.env.local` (kept equal). Losing both keys loses the vault +
-secrets — nothing else.
+## Ad-hoc dumps
 
-Drill status: dump-level verification is automated (`pg_restore --list` every
-pull). A full end-to-end restore rehearsal onto a scratch stack has **not**
-been performed yet — worth one deliberate pass.
-
-## Adding a third leg later
-
-The natural hardening step is an independent cloud target (restic → B2/S3
-with encryption), so a single house event can't take both copies. The pull
-script's `DEST` layout is restic-friendly — point `restic backup
-~/Backups/mantle/prod` at a bucket and it inherits the verified dumps.
+`scripts/db-dump.sh` remains the manual path (pre-deploy insurance, pre-
+migration snapshots). It writes to `backups/` at the install root and is
+independent of the scheduled feature — scheduled rotation never touches its
+output.

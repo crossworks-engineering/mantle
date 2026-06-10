@@ -26,7 +26,7 @@ import {
   type TelegramAccount,
 } from '@mantle/db';
 import { sendMessage } from '@mantle/telegram';
-import { loadProfilePreferences } from '@mantle/content';
+import { loadProfilePreferences, maybeRunScheduledBackups } from '@mantle/content';
 import { maybeSweep } from '@mantle/tools';
 import {
   listDueReminders,
@@ -125,6 +125,9 @@ async function tick(): Promise<void> {
   // hourly throttle with the opportunistic spill-path sweep, so this runs even
   // when nothing's spilling; fire-and-forget, never throws.
   maybeSweep();
+  // Scheduled local DB backups (/settings/backups) — same piggyback pattern:
+  // internally throttled to one due-check per minute, never throws.
+  void maybeRunScheduledBackups();
   const owners = await ownersWithEvents();
   for (const ownerId of owners) {
     const due = await listDueReminders(ownerId, 50);
