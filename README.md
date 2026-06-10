@@ -78,6 +78,29 @@ all one database. No Pinecone, no Neo4j, no Redis, no message broker. The
 lean stack is what's left after deleting every moving part personal-scale
 data doesn't need — which is also why it restores from one `pg_dump`.
 
+**It builds a personality around you — and it never forgets.** While you
+talk, a background reflector quietly studies the conversation and appends
+what it learns to your assistant's standing persona: how you like to be
+answered, what you corrected, the running jokes, the names that matter. Tell
+it once that you hate bullet points, and that's simply who it is from then
+on. And nothing falls off the back of the context window: recent turns stay
+raw, older conversation is compressed into topic digests, durable facts are
+distilled and kept current — and when a summary isn't enough, a recall
+specialist replays the *actual words* of any past conversation, from last
+Tuesday or last year. There is no "new chat". There is one relationship that
+compounds.
+
+**Context that targets the question.** Mantle doesn't dump your life into
+the prompt. Each turn, your message is embedded and the brain retrieves
+*just* what this question needs: the top facts, the right documents — down
+to the exact passages — and the graph relationships of the entities
+involved, ranked by relevance, recency, and salience (a newsletter can never
+crowd out a real letter). Short follow-ups like "tell me more about that"
+are enriched with conversational context before retrieval, so they land too.
+The model sees a small, surgical prompt instead of a haystack — which is why
+answers are sharp, and why turns cost cents. Every ranking knob has a
+measured eval number behind it, not a vibe.
+
 **Engineered to be cheap.** Frontier-model quality where it matters (your
 conversations), economy models for background compression, local embeddings
 for everything vector. Prompt prefixes are kept byte-stable for provider
@@ -86,12 +109,12 @@ re-billing every turn. Measured on the author's production instance: a full
 question-answer turn against the whole brain averages **~$0.09**, and a month
 of real daily use ran **under $5** in total LLM spend.
 
-**Agents with jobs, not just a chatbot.** Your main assistant has a persona
-that evolves, tools to act with (notes, events, email send, image
-generation, page authoring…), and specialists it delegates to: **Remy**
-replays past conversations losslessly, **Researcher** searches the web and
-cites, **Pages**/**Tables** edit documents block-by-block. Proactive
-**heartbeats** let it check in on schedules you define. Voice in, voice out.
+**Agents with jobs, not just a chatbot.** Your main assistant has tools to
+act with (notes, events, email send, image generation, page authoring…) and
+specialists it delegates to: **Remy** replays past conversations losslessly,
+**Researcher** searches the web and cites, **Pages**/**Tables** edit
+documents block-by-block. Proactive **heartbeats** let it check in on
+schedules you define. Voice in, voice out.
 
 **Nothing happens without a trace.** Every ingest, every extraction, every
 tool call, every model invocation becomes a queryable trace with cost
@@ -99,10 +122,11 @@ attribution — rendered as a live "what did the brain just do" journey view.
 A standing integrity audit watches the corpus for drift (half-indexed nodes,
 stale backups, dead-lettered jobs) and says exactly how to heal each one.
 
-**It knows who you are.** Life Logs — short first-person entries about who
-you are, what you do, how you feel — are distilled into an always-on identity
-block every agent reads on every turn. You tell the brain who you are in your
-own words; it doesn't have to guess.
+**It knows who you are — because you told it.** The learned personality
+above is one half; **Life Logs** are the other: short first-person entries
+about who you are, what you do, how you feel, distilled into an always-on
+identity block every agent reads on every turn. What it observes, it learns;
+what you declare, it never has to guess.
 
 ## Quick start
 
