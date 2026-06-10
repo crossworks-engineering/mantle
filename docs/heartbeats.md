@@ -338,7 +338,7 @@ T+~6h    The single 'once' fire triggers (gates passing).
          Reply delivered via Telegram. trace_id stamped on
          heartbeat_fires.
 
-T+~7h    Jason replies with what he wants to share (family / role /
+T+~7h    Alex replies with what he wants to share (family / role /
          whatever). The reply hits the NORMAL responder turn —
          openHeartbeatsForSurface returns the get_to_know_user row,
          3-branch awareness block injected, Saskia matches "related
@@ -349,16 +349,16 @@ T+~7h    Jason replies with what he wants to share (family / role /
 
          Meanwhile, in the background:
          - Extractor creates entities (Mia, Benji, Bella, …) +
-           facts ("Jason lives in Barrydale", …) from the message
+           facts ("Alex lives in Barrydale", …) from the message
          - Reflector eventually appends persona_notes summarising
            the relationship
 
          The heartbeat opened the door; everything downstream that
-         actually "knows" Jason was passively absorbed by the
+         actually "knows" Alex was passively absorbed by the
          existing pipelines.
 ```
 
-**If Jason ignores the invitation**: heartbeat stays
+**If Alex ignores the invitation**: heartbeat stays
 `expecting_reply: true` forever, no nagging. If he engages organically
 later (mentions his family in passing), the responder's awareness
 block still fires on that turn, Saskia closes the heartbeat then. If

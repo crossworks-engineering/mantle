@@ -415,7 +415,7 @@ cache + `extract_cost_cap_micro_usd`.
   this shape (text + tool_slugs); the pattern matches `rich_writing`,
   which Pages + Saskia both attach. Don't extract prematurely — premature
   abstraction is its own cost; do it when the duplication actually arises.
-  Origin: 2026-05-27 testing conversation, Jason's prompt: *"we must
+  Origin: 2026-05-27 testing conversation, Alex's prompt: *"we must
   remember Skills... maybe design a more structured ruleset for the
   models that does tasks like pages."*
 

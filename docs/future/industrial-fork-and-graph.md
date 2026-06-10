@@ -7,14 +7,14 @@
 ## The decision
 
 A potential contract would **fork Mantle into a role-specialised industrial
-system** (Jason's wife works mechanical integrity & reliability for refineries):
+system** (Alex's wife works mechanical integrity & reliability for refineries):
 several Mantles, each owning a domain — e.g. a **corrosion specialist** Mantle
 holding all corrosion/RBI data — that **query each other** via the federation
 layer. A "rotating equipment" Mantle asks the corrosion Mantle a question; it
 answers from its scoped, granted data.
 
 **Conclusion: this is a genuine fork, not a feature of the life-tree.** It
-conflicts with the single-user "Jason's life tree" identity:
+conflicts with the single-user "Alex's life tree" identity:
 
 - **Different data**: equipment → circuits → CMLs → damage mechanisms →
   inspection readings over time. A structured *domain* graph, not personal memory.

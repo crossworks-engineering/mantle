@@ -166,13 +166,13 @@ Cell: <country_code> <cell>
 - `facts` rows + the ADD/UPDATE/DELETE classifier.
 - `entities` reconciled (one per person/org) + `mentioned_in` edges.
 
-So after "Don Schoeman is Jason's brother, runs Delphex Technologies…" lands
+So after "Don Carter is Alex's brother, runs Delphex Technologies…" lands
 on a contact, `search_nodes("Modular")` and `entity_facts(<don's entity>)`
 both find the right thing. The `contact` type is in `DEFAULT_EXTRACT_TYPES`
 in [`extractor.ts`](../apps/agent/src/extractor.ts).
 
 **Same-surname-different-given guard.** The reconciler used to collapse
-`Don Schoeman` into an existing `Jason Schoeman` entity because surname
+`Don Carter` into an existing `Alex Carter` entity because surname
 overlap alone passed the trigram + embedding thresholds. The guard
 `isLikelyDifferentPerson` ([`person-names.ts`](../apps/agent/src/person-names.ts))
 refuses that merge when both names look like full given-name + surname pairs

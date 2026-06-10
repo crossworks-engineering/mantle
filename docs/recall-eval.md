@@ -194,8 +194,8 @@ sledgehammer: among similarly-relevant items the recent one wins, but a
 much-more-relevant old item still beats a marginal recent one.
 
 **Kind-aware on facts** — the design's call (memory.md §2): episodic memories
-("on the 4th Jason said…") are recency-driven (λ=0.15); **semantic/preference
-don't decay at all** (stable identity — "Jason is a pastor" doesn't get staler);
+("on the 4th Alex said…") are recency-driven (λ=0.15); **semantic/preference
+don't decay at all** (stable identity — "Alex is a pastor" doesn't get staler);
 factual sits between (0.05). Anchor: `coalesce(valid_from, created_at)`.
 
 **Mild on content** (λ=0.06), and the date anchor is the content's *own* date when

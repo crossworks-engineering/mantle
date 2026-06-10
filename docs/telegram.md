@@ -246,7 +246,7 @@ telegram_accounts
 
 telegram_chats
   id                = e766dc17-3cd8-4839-8361-1d88f418609a
-  telegram_chat_id  = 431132685    (Jason's Telegram user id)
+  telegram_chat_id  = 431132685    (the owner's Telegram user id)
   chat_type         = private
   allowlist_status  = allowed
 

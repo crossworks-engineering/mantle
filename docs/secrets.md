@@ -80,7 +80,7 @@ The result:
 - Summary + embedding indexed on title + description + tags → semantic
   search ("my Linode root password") works.
 - Facts extracted from the description → end up in the `facts` table.
-  ("Jason has a Linode VPS in Frankfurt" is fine — that's not the
+  ("Alex has a Linode VPS in Frankfurt" is fine — that's not the
   password.)
 - The actual values stay in `secrets.ciphertext` and only leave via
   the explicit `revealSecret` API.

@@ -298,13 +298,13 @@ The `profile` layer carries facts of three shapes, distinguished by the
   passport expires 2030-06-12."* Has a value; can be wrong; can be
   updated.
 - **Episodic**: a record of something that happened. *"On 2026-05-17
-  Jason said he was preaching Romans 8."* Anchored in time. Doesn't get
+  Alex said he was preaching Romans 8."* Anchored in time. Doesn't get
   "updated" — superseded by newer episodes.
-- **Semantic**: an abstraction inferred from many episodes. *"Jason is a
+- **Semantic**: an abstraction inferred from many episodes. *"Alex is a
   pastor."* Stable identity; rarely changes; can be contradicted but
   only by weight of evidence.
 - **Preference**: a stable statement about how the user prefers things.
-  *"Jason prefers terse replies, no bullet lists."* Drives style.
+  *"Alex prefers terse replies, no bullet lists."* Drives style.
 
 Each subtype gets different weight at retrieval time. Preferences are
 usually always-injected (small, high signal); episodes are
@@ -367,7 +367,7 @@ User: "I have made a note on how I want to build my Lister 3D printer gantry."
   │ persona │               │ recent_turns │         │ conversation_    │
   │         │               │              │         │   digest         │
   │ "I am   │               │ last 20      │         │ "Last month      │
-  │  Sarah" │               │  chats"      │         │  Jason mentioned │
+  │  Sarah" │               │  chats"      │         │  Alex mentioned  │
   │         │               │              │         │  the 3D printer  │
   │         │               │              │         │  rebuild"        │
   └─────────┘               └──────────────┘         └──────────────────┘
@@ -379,7 +379,7 @@ User: "I have made a note on how I want to build my Lister 3D printer gantry."
                   │  vector + entity search for      │
                   │  facts mentioning "3D printer",  │
                   │  "Lister", "gantry"              │
-                  │  → "Jason owns a Lister 3D       │
+                  │  → "Alex owns a Lister 3D        │
                   │     printer; project: rebuild    │
                   │     gantry"                      │
                   └────────────────┬─────────────────┘
@@ -406,7 +406,7 @@ User: "I have made a note on how I want to build my Lister 3D printer gantry."
                           Apr 12. Want the full plan
                           or just the link?"
                                    │
-                  (only if Jason asks for the body, Sarah
+                  (only if Alex asks for the body, Sarah
                    fetches the content_store row by node.id)
 ```
 
@@ -440,7 +440,7 @@ A **vector database** stores high-dimensional numeric representations
 a fixed-length array of floats:
 
 ```
-"Jason is preaching Romans 8 this Sunday"  →  [0.234, -0.018, 0.091, …, 0.412]   (length 768)
+"Alex is preaching Romans 8 this Sunday"  →  [0.234, -0.018, 0.091, …, 0.412]   (length 768)
 "I'm giving the sermon this weekend"        →  [0.221, -0.030, 0.085, …, 0.398]   (length 768)
 ```
 
@@ -503,7 +503,7 @@ A **graph database** stores **entities** (nodes) and the named
 Visually:
 
 ```
-  (Jason)──MARRIED_TO──▶(Sarah)
+  (Alex)──MARRIED_TO──▶(Sarah)
      │                     │
      │WORKS_AT             │HAS_PASSPORT──▶(Passport: expires 2030-06-12)
      ▼                     │
@@ -513,7 +513,7 @@ Visually:
 ```
 
 **Use cases:** "precise" relational traversal. *"Who is Sarah related
-to?"* — start at Sarah, follow edges. *"What did Jason and Sarah do
+to?"* — start at Sarah, follow edges. *"What did Alex and Sarah do
 together this month?"* — find paths between them, filter by date.
 *"When was Sarah's passport last mentioned?"* — start at Sarah, follow
 `HAS_PASSPORT`, then `MENTIONED_IN`.
@@ -671,15 +671,15 @@ CREATE INDEX entity_edges_target_idx ON entity_edges(target_id, relation);
 
 Temporal edges (`valid_from`, `valid_to`) borrow from Zep's Graphiti
 design and let memory reason about facts that change over time.
-"Jason worked at X from 2023 to 2025, now works at Y" stays queryable
-as "where does Jason work *currently*?" via `WHERE valid_to IS NULL`.
+"Alex worked at X from 2023 to 2025, now works at Y" stays queryable
+as "where does Alex work *currently*?" via `WHERE valid_to IS NULL`.
 
 ### Entity reconciliation refinements
 
 `reconcileEntity` in [`apps/agent/src/extractor.ts`](../apps/agent/src/extractor.ts)
 matches in four steps: (1) exact name/alias, (2) trigram similarity ≥ 0.7,
 (3) embedding cosine < threshold, (4) new entity. Steps 2-3 are the merge
-paths — they collapse "Mr J Schoeman", "Schoeman", "Don Schoeman", "Jonathan
+paths — they collapse "Mr J Schoeman", "Schoeman", "Don Carter", "Jonathan
 Schoeman" into one entity, which is great for spelling variations of the
 *same person* and disastrous for *different people* who share a surname.
 
@@ -693,12 +693,12 @@ normal merge still wins:
 
 | Candidate vs existing | Decision |
 |---|---|
-| `Don Schoeman` vs `Jason Schoeman` | distinct → **new entity** |
-| `Don Schoeman` vs `Donald Schoeman` | prefix overlap → merge (nickname/long-form) |
-| `Don Schoeman` vs `D. Schoeman` | initial → merge (could be the same) |
-| `Don Schoeman` vs `Mr J Schoeman` | title + initial → merge (could be the same) |
-| `Don Schoeman` vs `Don Smith` | different surname → not this rule's concern |
-| `Don Co` (org) vs `Jason Co` (org) | non-person → not this rule's concern |
+| `Don Carter` vs `Alex Carter` | distinct → **new entity** |
+| `Don Carter` vs `Donald Schoeman` | prefix overlap → merge (nickname/long-form) |
+| `Don Carter` vs `D. Schoeman` | initial → merge (could be the same) |
+| `Don Carter` vs `Mr J Schoeman` | title + initial → merge (could be the same) |
+| `Don Carter` vs `Don Smith` | different surname → not this rule's concern |
+| `Don Co` (org) vs `Alex Co` (org) | non-person → not this rule's concern |
 
 Org / place / event reconciliation is untouched. The guard cares about every
 known name on the existing entity (primary + aliases): the merge is refused

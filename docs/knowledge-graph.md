@@ -112,7 +112,7 @@ fragments. Resolution happens in `reconcileEntity` (`extractor.ts`), in order:
 
 1. **Exact** (case-insensitive name or alias).
 2. **Trigram** ≥ 0.7, same kind (with a same-surname-different-given guard so
-   "Don Schoeman" ≠ "Jason Schoeman").
+   "Don Carter" ≠ "Alex Carter").
 3. **Embedding** within `ENTITY_DEDUP_THRESHOLD` (same guard).
 4. **Org legal-suffix match** — "Acme (Pty) Ltd" ↔ existing "Acme" (orgs only;
    `normaliseOrgName` strips legal forms).
@@ -131,8 +131,8 @@ the index now makes recurrence impossible — confirmed: **0 exact dups across
 ## 5. Near-duplicate consolidation
 
 Exact dups are impossible; **near**-dups still happen — the same real thing
-across spelling/identifier variants (`Jason` / `Jason Schoeman` /
-`jason@…`; `Pivotal Accounting` / `Pivotal Accounting Solutions`). These are
+across spelling/identifier variants (`Alex` / `Alex Carter` /
+`alex@…`; `Pivotal Accounting` / `Pivotal Accounting Solutions`). These are
 *judgement calls*, so consolidation is **conservative + tiered** and never
 blind-merges (`packages/content/src/entity-dedup.ts`):
 
@@ -143,9 +143,9 @@ blind-merges (`packages/content/src/entity-dedup.ts`):
   - **`auto`** — evidence-backed, safe: org legal-suffix collapse; an
     email/phone-named entity matched to a person via the **contacts** table.
   - **`review`** — plausible but needs a human eye: person *given-name* subset
-    (`Jason` ⊂ `Jason Schoeman`). The subset rule **requires the first name to
+    (`Alex` ⊂ `Alex Carter`). The subset rule **requires the first name to
     match** — it rejects the dangerous surname-only collision (`C. Schoeman` →
-    `Jason Schoeman`).
+    `Alex Carter`).
 - **`dismissMergeCandidate`** — records "not a duplicate" (migration 0056,
   `entity_merge_dismissals`) so a rejected pair is never suggested again.
 

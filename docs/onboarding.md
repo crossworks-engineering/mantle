@@ -118,7 +118,7 @@ chosen preset, sets the name + temperature, points the TTS voice at the gender).
 > - attaches the shared behaviour skills (`tool_grounding`, `voice_reply`,
 >   `rich_writing`) to the assistant — done by `applyManifest`'s persona-skill
 >   attach (the manifest persona's `skillSlugs`). The CLI `seed:shared-skills`
->   additionally wires Jason's named personas `telegram-default`/`apostle-paul`,
+>   additionally wires Alex's named personas `telegram-default`/`apostle-paul`,
 >   which don't exist on a fresh brain.
 >
 > Skills attach to **agents only** — `ai_workers` have no skill column; their

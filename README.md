@@ -1,6 +1,6 @@
 # Mantle
 
-Jason's AI-queryable life tree. Single Postgres-backed system that knows about emails, Telegram messages, files, notes, sermons, secrets, and printer projects — and exposes all of it to Claude over MCP. Replies to Telegram DMs automatically via OpenRouter.
+An AI-queryable life tree. A single Postgres-backed system that knows about your emails, Telegram messages, files, notes, documents, secrets, and projects — and exposes all of it to Claude over MCP. Replies to Telegram DMs automatically via OpenRouter.
 
 ## Layout
 
@@ -329,3 +329,18 @@ scanned-AND-encrypted PDFs, and federation pairing/rate-limiting. See
 - [`docs/lifelog.md`](./docs/lifelog.md) — **Life Logs**, the `lifelog` node type: short first-person entries (mood + life-area category) about who you are, what you do, and how you feel. Indexed like notes **and** distilled into an always-on "who you are" identity block (`buildIdentityContext`) injected into every agent turn (deterministic, no LLM; opt-out via `memory_config.inject_lifelog`). The `/lifelog` master-detail UI + `lifelog_*` tools.
 - [`docs/rich-writing.md`](./docs/rich-writing.md) — **Saskia's rich writing:** the document-canvas `/assistant`, the `rich_writing` skill that teaches a Notion-style markdown dialect, and the `page_*` tools that let her author real Pages (`markdownToDoc`).
 - [`docs/sharing.md`](./docs/sharing.md) — **public sharing:** read-only links (`/s/[token]`) to any page, note, todo, event, or file — revocable tokens, server-rendered page HTML, media-appropriate file viewers, and scoped public asset serving.
+
+## License
+
+Mantle is **dual-licensed** by Cross Works Engineering (Pty) Ltd:
+
+- **[`LICENSE.md`](./LICENSE.md)** — the public **Functional Source License 1.1
+  (MIT Future)** (`FSL-1.1-MIT`). Free to use, self-host, and modify for any
+  purpose that is not a Competing Use; each release converts to MIT two years
+  after publication.
+- **[`LICENSE-COMMERCIAL.md`](./LICENSE-COMMERCIAL.md)** — a paid commercial
+  license for embedding Mantle in a product or running it as a service during the
+  two-year window. Contact **licensing@crossworks.engineering**.
+- **[`LICENSING.md`](./LICENSING.md)** — plain-language explainer of the model.
+- **[`THIRD-PARTY-NOTICES.md`](./THIRD-PARTY-NOTICES.md)** — attribution for the
+  613 bundled open-source components. Regenerate with `pnpm licenses:notices`.

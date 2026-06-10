@@ -51,7 +51,7 @@ directions; rotating regenerates one side without disturbing the other.
 
 ```
 Her Mantle (asking)                         Your Mantle (answering)
-  Saskia: "ask Jason's Mantle for           POST /api/federation/query
+  Saskia: "ask Alex's Mantle for           POST /api/federation/query
    her passports"                             Authorization: Bearer <inbound token>
   → peer_query tool                           { query: "her passports",
   → POST {peer.base_url}/api/federation/query   types: ["file"] }

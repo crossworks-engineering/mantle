@@ -103,7 +103,7 @@ Put the Mantle VPS and your inference box on the same tailnet and the VPS can
 reach `http://gpu-box:11434/v1` directly, as if they were on the same LAN. No
 port forwarding, no public exposure, encrypted end to end.
 
-The thing Jason liked most: **it's name-based, not IP-based.** That property
+The best part: **it's name-based, not IP-based.** That property
 drives the whole UI design below — you pick a machine by name, never a number.
 
 ---

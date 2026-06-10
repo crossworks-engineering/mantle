@@ -203,7 +203,7 @@ This is why the two features share a shape but not a constraint, and why the cha
 
 ---
 
-## 8. Decisions (locked with Jason)
+## 8. Decisions (locked)
 
 1. **Failover triggers: route-down + 429 + 5xx; never 4xx.** 429 (rate-limit) is explicitly in scope — for a local-primary that's overloaded, or a cloud-primary that's throttling, the backup should pick up. 4xx (bad input, context-length, auth) rethrows because the backup would fail identically.
 

@@ -2,7 +2,8 @@
   "name": "mantle",
   "version": "0.20.48",
   "private": true,
-  "description": "Mantle — Jason's AI-queryable life tree.",
+  "description": "Mantle — an AI-queryable life tree.",
+  "license": "SEE LICENSE IN LICENSE.md",
   "packageManager": "pnpm@11.1.2",
   "engines": {
     "node": ">=24"
@@ -22,6 +23,7 @@
     "dev:events": "pnpm -C apps/web worker:events:dev",
     "build": "pnpm -r build",
     "version:bump": "node scripts/bump-version.mjs",
+    "licenses:notices": "node scripts/generate-notices.mjs",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
