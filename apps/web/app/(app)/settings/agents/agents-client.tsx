@@ -1081,12 +1081,14 @@ export function AgentsClient({
               </div>
             </div>
 
-            {/* Provider + model + key grid. Post-Phase-3 the provider
-                field on the agent row actually controls runtime
-                dispatch — `getChatAdapter(agent.provider)` resolves the
-                adapter the responder / assistant / heartbeat loop runs
-                through, and the API key filter narrows accordingly. */}
-            <div className="grid gap-3 sm:grid-cols-3">
+            {/* Provider + key side by side; the model picker gets its own
+                full-width row below (three dropdowns abreast was too
+                cramped). Post-Phase-3 the provider field on the agent row
+                actually controls runtime dispatch —
+                `getChatAdapter(agent.provider)` resolves the adapter the
+                responder / assistant / heartbeat loop runs through, and
+                the API key filter narrows accordingly. */}
+            <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="provider">Provider</Label>
                 {(() => {
@@ -1121,44 +1123,6 @@ export function AgentsClient({
                         </p>
                       )}
                     </>
-                  );
-                })()}
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="model">Model</Label>
-                <ModelSelect
-                  id="model"
-                  value={form.model}
-                  onValueChange={(next) => setForm((f) => ({ ...f, model: next }))}
-                  models={catalog}
-                  loading={catalogState.loading}
-                  error={catalogState.error}
-                  placeholder="— pick a model —"
-                  emptyMessage="No matching models in the catalog."
-                  required
-                />
-                <ContextWindowHint model={form.model} limits={contextLimits} />
-                {(() => {
-                  // Subtle hint when the typed slug doesn't appear in the
-                  // current provider's catalog AND discovery has settled.
-                  // Catches the "switched provider mid-edit and forgot the
-                  // slug shape differs" case (OR's `anthropic/claude-haiku-
-                  // 4.5` vs direct Anthropic's `claude-haiku-4-5`). Custom
-                  // slugs are still allowed — the save commits whatever's
-                  // typed — so this is informational, not blocking.
-                  if (catalogState.loading) return null;
-                  if (!form.model.trim()) return null;
-                  if (catalog.some((m) => m.id === form.model)) return null;
-                  return (
-                    <p className="text-xs text-amber-600 dark:text-amber-400">
-                      <code>{form.model}</code> isn&apos;t in{' '}
-                      <code>{form.provider}</code>&apos;s catalog. Save will
-                      succeed but the call will fail if the slug is wrong —
-                      direct providers use bare ids (e.g.{' '}
-                      <code>claude-haiku-4-5</code>) where OpenRouter uses
-                      prefixed slugs (e.g.{' '}
-                      <code>anthropic/claude-haiku-4.5</code>).
-                    </p>
                   );
                 })()}
               </div>
@@ -1214,6 +1178,45 @@ export function AgentsClient({
                   );
                 })()}
               </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="model">Model</Label>
+              <ModelSelect
+                id="model"
+                value={form.model}
+                onValueChange={(next) => setForm((f) => ({ ...f, model: next }))}
+                models={catalog}
+                loading={catalogState.loading}
+                error={catalogState.error}
+                placeholder="— pick a model —"
+                emptyMessage="No matching models in the catalog."
+                required
+              />
+              <ContextWindowHint model={form.model} limits={contextLimits} />
+              {(() => {
+                // Subtle hint when the typed slug doesn't appear in the
+                // current provider's catalog AND discovery has settled.
+                // Catches the "switched provider mid-edit and forgot the
+                // slug shape differs" case (OR's `anthropic/claude-haiku-
+                // 4.5` vs direct Anthropic's `claude-haiku-4-5`). Custom
+                // slugs are still allowed — the save commits whatever's
+                // typed — so this is informational, not blocking.
+                if (catalogState.loading) return null;
+                if (!form.model.trim()) return null;
+                if (catalog.some((m) => m.id === form.model)) return null;
+                return (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    <code>{form.model}</code> isn&apos;t in{' '}
+                    <code>{form.provider}</code>&apos;s catalog. Save will
+                    succeed but the call will fail if the slug is wrong —
+                    direct providers use bare ids (e.g.{' '}
+                    <code>claude-haiku-4-5</code>) where OpenRouter uses
+                    prefixed slugs (e.g.{' '}
+                    <code>anthropic/claude-haiku-4.5</code>).
+                  </p>
+                );
+              })()}
             </div>
 
             {/* Per-agent voice (migration 0066). The chosen TTS worker owns
@@ -1328,7 +1331,7 @@ export function AgentsClient({
                       Make backup primary
                     </Button>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-1.5">
                       <Label htmlFor="backupProvider">Provider</Label>
                       {(() => {
@@ -1363,21 +1366,6 @@ export function AgentsClient({
                           </>
                         );
                       })()}
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="backupModel">Model</Label>
-                      <ModelSelect
-                        id="backupModel"
-                        value={form.backupModel}
-                        onValueChange={(next) =>
-                          setForm((f) => ({ ...f, backupModel: next }))
-                        }
-                        models={backupCatalog}
-                        loading={backupCatalogState.loading}
-                        error={backupCatalogState.error}
-                        placeholder="— pick a model —"
-                        emptyMessage="No matching models in the catalog."
-                      />
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="backupApiKey">API key</Label>
@@ -1418,6 +1406,21 @@ export function AgentsClient({
                         );
                       })()}
                     </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="backupModel">Model</Label>
+                    <ModelSelect
+                      id="backupModel"
+                      value={form.backupModel}
+                      onValueChange={(next) =>
+                        setForm((f) => ({ ...f, backupModel: next }))
+                      }
+                      models={backupCatalog}
+                      loading={backupCatalogState.loading}
+                      error={backupCatalogState.error}
+                      placeholder="— pick a model —"
+                      emptyMessage="No matching models in the catalog."
+                    />
                   </div>
                   {form.backupProvider === 'local' && (
                     <RouteHostFields
