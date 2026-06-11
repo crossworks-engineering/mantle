@@ -65,7 +65,58 @@ export type ConversationContext = {
   relations: RelationLine[];
   digests: Digest[];
   history: HistoryTurn[];
+  snapshot: ContextSnapshot;
 };
+
+// ─── Retrieval snapshot (the audit record for /debug/context) ────────────────
+// What was retrieved, with the ranking distance that admitted it — plus the
+// near-misses each cutoff rejected. Retrieval is recomputed fresh every turn
+// against a corpus that keeps changing (new facts, salience/recency drift), so
+// none of this can be reconstructed after the fact; the responder surfaces
+// persist it as the output of their 'load_context' trace step at turn time.
+// Text is snipped and the near-miss lists capped, so a snapshot stays well
+// under the tracing layer's 64KB truncation ceiling.
+
+/** One retrieved (or near-miss) item: capped text + its ranking distance. */
+export type SnapshotItem = {
+  text: string;
+  /** Ranking distance (cosine, salience/recency-adjusted where the section
+   *  ranks that way). Null for always-injected items (preferences) that
+   *  bypass the vector race. */
+  dist: number | null;
+  kind?: string | null;
+  entity?: string | null;
+  nodeId?: string | null;
+  title?: string | null;
+  heading?: string | null;
+};
+
+export type ContextSnapshot = {
+  query: {
+    /** The inbound text as given to retrieval (snipped). */
+    inbound: string;
+    /** The anaphora-enriched text actually embedded, when it differs. */
+    enriched: string | null;
+    /** False when embedding was skipped or failed — retrieval ran blind. */
+    embedded: boolean;
+  };
+  facts: { sent: SnapshotItem[]; dropped: SnapshotItem[]; guard: number };
+  contentHits: { sent: SnapshotItem[]; dropped: SnapshotItem[]; cutoff: number };
+  chunkHits: { sent: SnapshotItem[]; dropped: SnapshotItem[]; cutoff: number };
+  relations: string[];
+  digests: { count: number; topics: string[] };
+  history: { count: number };
+  personaNotes: { count: number };
+};
+
+const SNAP_SNIP = 240;
+const SNAP_DROPPED_CAP = 5;
+const snip = (s: string | null | undefined, n = SNAP_SNIP): string => {
+  const t = (s ?? '').replace(/\s+/g, ' ').trim();
+  return t.length > n ? `${t.slice(0, n)}…` : t;
+};
+const round3 = (n: number | null | undefined): number | null =>
+  typeof n === 'number' && Number.isFinite(n) ? Math.round(n * 1000) / 1000 : null;
 
 /** Entity-anchored expansion: how many of the top facts' entities to expand, and
  *  the cap on relationship triples injected. The graph axis of retrieval —
@@ -194,6 +245,7 @@ export async function loadConversationContext(args: {
   // resolved centrally from embedding_config — no per-agent override (the query
   // must share the corpus's vector space).
   let queryVec: number[] | null = null;
+  let enrichedQuery: string | null = null;
   if ((factLimit > 0 || contentHitLimit > 0) && inboundText.trim().length > 0) {
     // For a short anaphoric follow-up, prepend recent turn text so the retrieval
     // embedding resolves the referent instead of embedding "tell me more" alone.
@@ -218,7 +270,10 @@ export async function loadConversationContext(args: {
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 400);
-      if (ctx) embedInput = `${ctx}\n${inboundText}`;
+      if (ctx) {
+        embedInput = `${ctx}\n${inboundText}`;
+        enrichedQuery = embedInput;
+      }
     }
     try {
       queryVec = await embed(ownerId, embedInput.slice(0, 2000));
@@ -232,6 +287,8 @@ export async function loadConversationContext(args: {
 
   // ─── Profile facts (top-K by vector distance, currently-valid) ──────────
   let factRows: FactSnippet[] = [];
+  let factsSentSnap: SnapshotItem[] = [];
+  let factsDroppedSnap: SnapshotItem[] = [];
   // The entities whose facts matched this turn — anchors for graph expansion.
   let anchorEntityIds: string[] = [];
   if (queryVec && factLimit > 0) {
@@ -269,6 +326,17 @@ export async function loadConversationContext(args: {
       // still pass even when only loosely related.
       .filter((r) => (r.dist ?? 1) < 0.85)
       .map((r) => ({ content: r.content, kind: r.kind as string, entityName: r.entityName }));
+    const toSnapItem = (r: (typeof rows)[number]): SnapshotItem => ({
+      text: snip(r.content),
+      dist: round3(r.dist),
+      kind: r.kind as string,
+      entity: r.entityName,
+    });
+    factsSentSnap = rows.filter((r) => (r.dist ?? 1) < 0.85).map(toSnapItem);
+    factsDroppedSnap = rows
+      .filter((r) => (r.dist ?? 1) >= 0.85)
+      .slice(0, SNAP_DROPPED_CAP)
+      .map(toSnapItem);
     // Anchor entities = the entities of the top matching facts (rank order,
     // distinct), the seeds for graph expansion below.
     const ranked: string[] = [];
@@ -300,11 +368,24 @@ export async function loadConversationContext(args: {
     const prefs = prefRows
       .filter((p) => !seen.has(p.content))
       .map((p) => ({ content: p.content, kind: p.kind as string, entityName: p.entityName }));
-    if (prefs.length) factRows = [...prefs, ...factRows];
+    if (prefs.length) {
+      factRows = [...prefs, ...factRows];
+      factsSentSnap = [
+        ...prefs.map((p) => ({
+          text: snip(p.content),
+          dist: null, // always-injected, not vector-ranked
+          kind: p.kind,
+          entity: p.entityName,
+        })),
+        ...factsSentSnap,
+      ];
+    }
   }
 
   // ─── Content-index hits (excludes digests + raw telegram messages) ──────
   let contentHits: ContentHit[] = [];
+  let contentSentSnap: SnapshotItem[] = [];
+  let contentDroppedSnap: SnapshotItem[] = [];
   if (queryVec && contentHitLimit > 0) {
     const rows = await db
       .select({
@@ -353,6 +434,21 @@ export async function loadConversationContext(args: {
           summary: typeof data.summary === 'string' ? data.summary : null,
         };
       });
+    const toSnapItem = (r: (typeof rows)[number]): SnapshotItem => {
+      const data = (r.data ?? {}) as Record<string, unknown>;
+      return {
+        text: snip(typeof data.summary === 'string' ? data.summary : ''),
+        dist: round3(r.dist),
+        kind: r.type as string,
+        nodeId: r.nodeId,
+        title: r.title,
+      };
+    };
+    contentSentSnap = rows.filter((r) => (r.dist ?? 1) < 0.6).map(toSnapItem);
+    contentDroppedSnap = rows
+      .filter((r) => (r.dist ?? 1) >= 0.6)
+      .slice(0, SNAP_DROPPED_CAP)
+      .map(toSnapItem);
   }
 
   // ─── Section-level passages (the fine-grained complement to content hits) ──
@@ -362,6 +458,8 @@ export async function loadConversationContext(args: {
   // summary. Salience-aware + system-docs excluded (same hygiene as above);
   // shares the one query embedding.
   let chunkHits: ChunkContextHit[] = [];
+  let chunkSentSnap: SnapshotItem[] = [];
+  let chunkDroppedSnap: SnapshotItem[] = [];
   if (queryVec && chunkLimit > 0) {
     const hits = await searchChunks({
       ownerId,
@@ -369,17 +467,29 @@ export async function loadConversationContext(args: {
       limit: chunkLimit + 4, // small pool so the cutoff can trim without starving
       excludeSystemOrigin: true,
     });
-    chunkHits = hits
-      // Same exclusions as content hits: a raw telegram turn isn't a "passage"
-      // (it's the conversation), and a weak match isn't worth the tokens.
+    // Same exclusions as content hits: a raw telegram turn isn't a "passage"
+    // (it's the conversation), and a weak match isn't worth the tokens.
+    const selected = hits
       .filter((h) => h.distance < CHUNK_CUTOFF && h.nodeType !== 'telegram_message')
-      .slice(0, chunkLimit)
-      .map((h) => ({
-        nodeId: h.nodeId,
-        title: h.nodeTitle,
-        heading: h.headingPath,
-        text: h.text,
-      }));
+      .slice(0, chunkLimit);
+    chunkHits = selected.map((h) => ({
+      nodeId: h.nodeId,
+      title: h.nodeTitle,
+      heading: h.headingPath,
+      text: h.text,
+    }));
+    const toSnapItem = (h: (typeof hits)[number]): SnapshotItem => ({
+      text: snip(h.text),
+      dist: round3(h.distance),
+      nodeId: h.nodeId,
+      title: h.nodeTitle,
+      heading: h.headingPath,
+    });
+    chunkSentSnap = selected.map(toSnapItem);
+    chunkDroppedSnap = hits
+      .filter((h) => !selected.includes(h))
+      .slice(0, SNAP_DROPPED_CAP)
+      .map(toSnapItem);
   }
 
   // ─── Entity-anchored expansion: the graph axis ──────────────────────────
@@ -453,5 +563,23 @@ export async function loadConversationContext(args: {
     .reverse()
     .map((r) => ({ role: r.direction === 'outbound' ? 'assistant' : 'user', text: r.text }));
 
-  return { personaNotes, facts: factRows, contentHits, chunkHits, relations, digests, history };
+  const snapshot: ContextSnapshot = {
+    query: {
+      inbound: snip(inboundText, 600),
+      enriched: enrichedQuery ? snip(enrichedQuery, 700) : null,
+      embedded: queryVec != null,
+    },
+    facts: { sent: factsSentSnap, dropped: factsDroppedSnap, guard: 0.85 },
+    contentHits: { sent: contentSentSnap, dropped: contentDroppedSnap, cutoff: 0.6 },
+    chunkHits: { sent: chunkSentSnap, dropped: chunkDroppedSnap, cutoff: CHUNK_CUTOFF },
+    relations: relations.map((r) => `${r.subject} —${r.relation}→ ${r.object}`),
+    digests: {
+      count: digests.length,
+      topics: digests.map((d) => d.topic).filter((t): t is string => !!t),
+    },
+    history: { count: history.length },
+    personaNotes: { count: personaNotes.length },
+  };
+
+  return { personaNotes, facts: factRows, contentHits, chunkHits, relations, digests, history, snapshot };
 }

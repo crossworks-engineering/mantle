@@ -60,7 +60,7 @@ import {
   openHeartbeatsForSurface,
   registerHeartbeatTools,
 } from '@mantle/heartbeats';
-import { startTrace, modelSupportsVision, maxImageBytesFor, refreshModelCatalog } from '@mantle/tracing';
+import { startTrace, step, modelSupportsVision, maxImageBytesFor, refreshModelCatalog } from '@mantle/tracing';
 import { pickWebDefaultAgent } from './assistant-select';
 
 /** Decoded byte size of a base64 string (tolerates a leading data-URL
@@ -416,8 +416,26 @@ export async function runAssistantTurn(
           ...dataExtra,
         },
       },
-      async () =>
-        runToolLoop({
+      async () => {
+        // Persist the retrieval snapshot as a 'load_context' step — the same
+        // shape the Telegram responder records — so /debug/context can show
+        // what this turn's question retrieved (items, distances, near-misses).
+        // Context was loaded BEFORE the trace opened (step 1 above: history
+        // must not contain the new turn), so this step only records it.
+        await step(
+          { name: 'load_context', kind: 'compute', input: { agentId: agent.id } },
+          async (h) => {
+            h.setOutput({
+              turnCount: ctx.history.length,
+              factCount: ctx.facts.length,
+              contentHitCount: ctx.contentHits.length,
+              chunkHitCount: ctx.chunkHits.length,
+              relationCount: ctx.relations.length,
+              snapshot: ctx.snapshot,
+            });
+          },
+        );
+        return runToolLoop({
           adapter: assistantAdapter,
           apiKey,
           model: agent.model,
@@ -437,7 +455,8 @@ export async function runAssistantTurn(
           // itself — tools that want to "send a voice note" or similar
           // refuse here with a clean error so the LLM falls back to text.
           surface: { kind: 'web' },
-        }),
+        });
+      },
     );
 
   // Run the turn. When we attached a raw image and the responder errors —

@@ -684,6 +684,9 @@ async function handleMessage(messageId: string): Promise<void> {
                 chunkHitCount: ctx.chunkHits.length,
                 relationCount: ctx.relations.length,
                 personaNoteCount: ctx.personaNotes.length,
+                // Full retrieval audit record (items + distances + near-misses)
+                // — what /debug/context renders per turn.
+                snapshot: ctx.snapshot,
               });
               return ctx;
             },

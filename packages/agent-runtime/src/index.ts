@@ -58,6 +58,8 @@ export {
   loadConversationContext,
   looksAnaphoricFollowup,
   type ConversationContext,
+  type ContextSnapshot,
+  type SnapshotItem,
 } from './conversation';
 
 export {

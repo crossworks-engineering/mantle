@@ -10,6 +10,7 @@ import {
   telegramMessages,
   type PersonaNote,
 } from '@mantle/db';
+import type { ContextSnapshot } from '@mantle/agent-runtime';
 
 /**
  * Read-only helpers for the /debug page. All owner-scoped — pass the user's
@@ -518,3 +519,130 @@ export async function listPersonaNotes(userId: string): Promise<PersonaNotesRow[
     .filter((r) => r.notes.length > 0);
 }
 
+
+// ─── /debug/context — per-turn retrieval audit ────────────────────────────────
+
+/** One responder turn: the question, the retrieval snapshot the turn's
+ *  'load_context' trace step persisted (null for pre-instrumentation turns),
+ *  and the outbound reply. See ContextSnapshot in @mantle/agent-runtime. */
+export type ContextTurnRow = {
+  traceId: string;
+  startedAt: string;
+  status: string;
+  surface: string | null;
+  agentSlug: string | null;
+  model: string | null;
+  durationMs: number | null;
+  question: string | null;
+  snapshot: ContextSnapshot | null;
+  response: string | null;
+};
+
+/** Shared FROM (joins) for list + count. The question comes from the trace's
+ *  subject row (full text; web = assistant_message, telegram =
+ *  telegram_message) with the snapshot's own capped copy as fallback. */
+function contextTurnFrom() {
+  return sql`
+    from traces t
+    left join agents a on a.id = t.agent_id
+    left join lateral (
+      select s.output
+      from trace_steps s
+      where s.trace_id = t.id and s.name = 'load_context'
+      order by s.started_at asc
+      limit 1
+    ) ls on true
+    left join assistant_messages am_subj
+      on t.subject_kind = 'assistant_message' and am_subj.id = t.subject_id
+    left join telegram_messages tm_subj
+      on t.subject_kind = 'telegram_message' and tm_subj.id = t.subject_id
+  `;
+}
+
+/** Shared WHERE for list + count (owner scope + optional question search). */
+function contextTurnWhere(userId: string, query?: string) {
+  const q = query ? `%${query}%` : null;
+  return sql`
+    where t.owner_id = ${userId}
+      and t.kind = 'responder_turn'
+      and (${q}::text is null
+        or coalesce(am_subj.text, tm_subj.text, ls.output->'snapshot'->'query'->>'inbound') ilike ${q})
+  `;
+}
+
+function executeRows<T>(result: unknown): T[] {
+  return (
+    Array.isArray(result) ? result : ((result as { rows?: T[] }).rows ?? [])
+  ) as T[];
+}
+
+export async function listContextTurns(
+  userId: string,
+  opts: ListOpts = {},
+): Promise<ContextTurnRow[]> {
+  type Raw = {
+    id: string;
+    startedAt: Date;
+    status: string;
+    surface: string | null;
+    agentSlug: string | null;
+    model: string | null;
+    durationMs: number | null;
+    question: string | null;
+    snapshot: ContextSnapshot | null;
+    response: string | null;
+  };
+  const result = await db.execute<Raw>(sql`
+    select
+      t.id,
+      t.started_at as "startedAt",
+      t.status,
+      coalesce(
+        t.data->>'surface',
+        case when t.subject_kind = 'telegram_message' then 'telegram' end
+      ) as surface,
+      a.slug as "agentSlug",
+      t.data->>'model' as model,
+      t.duration_ms as "durationMs",
+      coalesce(am_subj.text, tm_subj.text, ls.output->'snapshot'->'query'->>'inbound') as question,
+      ls.output->'snapshot' as snapshot,
+      resp.text as response
+    ${contextTurnFrom()}
+    left join lateral (
+      select m.text
+      from assistant_messages m
+      where m.owner_id = t.owner_id
+        and m.agent_id = t.agent_id
+        and m.direction = 'outbound'
+        and m.created_at >= t.started_at
+        and m.created_at <= coalesce(t.finished_at, t.started_at) + interval '2 minutes'
+      order by m.created_at asc
+      limit 1
+    ) resp on true
+    ${contextTurnWhere(userId, opts.query)}
+    order by t.started_at desc
+    limit ${opts.limit ?? 25} offset ${opts.offset ?? 0}
+  `);
+  return executeRows<Raw>(result).map((r) => ({
+    traceId: r.id,
+    startedAt: new Date(r.startedAt).toISOString(),
+    status: r.status,
+    surface: r.surface,
+    agentSlug: r.agentSlug,
+    model: r.model,
+    durationMs: r.durationMs,
+    question: r.question,
+    snapshot: r.snapshot,
+    response: r.response,
+  }));
+}
+
+export async function countContextTurns(
+  userId: string,
+  opts: { query?: string } = {},
+): Promise<number> {
+  const result = await db.execute<{ n: number }>(sql`
+    select count(*)::int as n ${contextTurnFrom()} ${contextTurnWhere(userId, opts.query)}
+  `);
+  return executeRows<{ n: number }>(result)[0]?.n ?? 0;
+}

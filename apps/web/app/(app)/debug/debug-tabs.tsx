@@ -11,6 +11,7 @@ const TABS = [
   { href: '/debug/topics', label: 'Topics', exact: false },
   { href: '/debug/digests', label: 'Digests', exact: false },
   { href: '/debug/facts', label: 'Facts', exact: false },
+  { href: '/debug/context', label: 'Context', exact: false },
   { href: '/debug/agents', label: 'Agents', exact: false },
   { href: '/debug/telegram', label: 'Telegram', exact: false },
   { href: '/debug/journey', label: 'Journey', exact: false },
