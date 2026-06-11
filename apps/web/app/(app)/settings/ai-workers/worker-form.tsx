@@ -548,54 +548,8 @@ export function WorkerForm({
           </p>
         </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="apiKeyId">API key</Label>
-          <select
-            id="apiKeyId"
-            name="apiKeyId"
-            value={apiKeyId}
-            onChange={(e) => {
-              const newKeyId = e.target.value;
-              setApiKeyId(newKeyId);
-              // Auto-derive the provider from the picked key's service.
-              // Picking an OpenAI key while provider='anthropic' was the
-              // common cause of "discovery failed, key invalid" errors —
-              // a mismatch the form can fix for the operator. We only
-              // override if the key's service matches a provider that
-              // actually supports this kind's capability (defensive
-              // against a stale or hand-edited DB row).
-              const picked = newKeyId ? keys.find((k) => k.id === newKeyId) : null;
-              if (picked && isProviderId(picked.service)) {
-                const p = getProvider(picked.service);
-                if (p && p.capabilities.includes(capability)) {
-                  setProvider(picked.service);
-                  void refreshDiscovery(newKeyId, picked.service);
-                  return;
-                }
-              }
-              void refreshDiscovery(newKeyId);
-            }}
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-          >
-            <option value="">— none —</option>
-            {eligibleKeys.map((k) => (
-              <option key={k.id} value={k.id}>
-                {k.service}/{k.label} ({k.masked})
-              </option>
-            ))}
-          </select>
-          <KeyValidityHint
-            kind={kind}
-            capability={capability}
-            apiKeyId={apiKeyId}
-            supportsDiscovery={supportsDiscovery}
-            discovery={discovery}
-            keysAvailable={keys.length > 0}
-            eligibleKeysAvailable={eligibleKeys.length > 0}
-            eligibleProviderLabels={eligibleProviders.map((p) => p.label)}
-          />
-        </div>
-
+        {/* Provider + key side by side; the model picker gets its own
+            full-width row below — mirrors the agents form layout. */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label htmlFor="provider">Provider</Label>
@@ -640,66 +594,114 @@ export function WorkerForm({
             )}
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="model">Model</Label>
-            {supportsDiscovery ? (
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
-                    <ModelSelect
-                      id="model"
-                      name="model"
-                      value={model}
-                      onValueChange={setModel}
-                      models={explorerModels}
-                      loading={discovery.loading}
-                      placeholder="— pick a model —"
-                      emptyMessage="No models in this catalogue match."
-                      required
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={!apiKeyId || discovery.loading}
-                    onClick={() => void refreshDiscovery(apiKeyId)}
-                    title="Re-query the provider for the latest model list"
-                  >
-                    <RefreshCw
-                      className={discovery.loading ? 'animate-spin' : ''}
-                    />
-                  </Button>
-                </div>
-                {model && (
-                  <p className="text-xs text-muted-foreground">
-                    {discovery.available.find((m) => m.id === model)?.description ??
-                      'Custom model id — make sure your key has access.'}
-                  </p>
-                )}
-                {!discovery.filtered && discovery.error && apiKeyId && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">
-                    Couldn't verify which models this key can use ({discovery.error}). Showing
-                    the full catalogue.
-                  </p>
-                )}
-                {discovery.filtered && discovery.available.length === 0 && (
-                  <p className="text-xs text-destructive">
-                    This key doesn't have access to any {kind === 'tts' ? 'TTS' : 'transcription'}{' '}
-                    models. Check the key's project at platform.openai.com.
-                  </p>
-                )}
-              </div>
-            ) : (
-              <Input
-                id="model"
-                name="model"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder={MODEL_HINT_FOR_KIND[kind]}
-                required
-              />
-            )}
+            <Label htmlFor="apiKeyId">API key</Label>
+            <select
+              id="apiKeyId"
+              name="apiKeyId"
+              value={apiKeyId}
+              onChange={(e) => {
+                const newKeyId = e.target.value;
+                setApiKeyId(newKeyId);
+                // Auto-derive the provider from the picked key's service.
+                // Picking an OpenAI key while provider='anthropic' was the
+                // common cause of "discovery failed, key invalid" errors —
+                // a mismatch the form can fix for the operator. We only
+                // override if the key's service matches a provider that
+                // actually supports this kind's capability (defensive
+                // against a stale or hand-edited DB row).
+                const picked = newKeyId ? keys.find((k) => k.id === newKeyId) : null;
+                if (picked && isProviderId(picked.service)) {
+                  const p = getProvider(picked.service);
+                  if (p && p.capabilities.includes(capability)) {
+                    setProvider(picked.service);
+                    void refreshDiscovery(newKeyId, picked.service);
+                    return;
+                  }
+                }
+                void refreshDiscovery(newKeyId);
+              }}
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+            >
+              <option value="">— none —</option>
+              {eligibleKeys.map((k) => (
+                <option key={k.id} value={k.id}>
+                  {k.service}/{k.label} ({k.masked})
+                </option>
+              ))}
+            </select>
+            <KeyValidityHint
+              kind={kind}
+              capability={capability}
+              apiKeyId={apiKeyId}
+              supportsDiscovery={supportsDiscovery}
+              discovery={discovery}
+              keysAvailable={keys.length > 0}
+              eligibleKeysAvailable={eligibleKeys.length > 0}
+              eligibleProviderLabels={eligibleProviders.map((p) => p.label)}
+            />
           </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="model">Model</Label>
+          {supportsDiscovery ? (
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <ModelSelect
+                    id="model"
+                    name="model"
+                    value={model}
+                    onValueChange={setModel}
+                    models={explorerModels}
+                    loading={discovery.loading}
+                    placeholder="— pick a model —"
+                    emptyMessage="No models in this catalogue match."
+                    required
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={!apiKeyId || discovery.loading}
+                  onClick={() => void refreshDiscovery(apiKeyId)}
+                  title="Re-query the provider for the latest model list"
+                >
+                  <RefreshCw
+                    className={discovery.loading ? 'animate-spin' : ''}
+                  />
+                </Button>
+              </div>
+              {model && (
+                <p className="text-xs text-muted-foreground">
+                  {discovery.available.find((m) => m.id === model)?.description ??
+                    'Custom model id — make sure your key has access.'}
+                </p>
+              )}
+              {!discovery.filtered && discovery.error && apiKeyId && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  Couldn't verify which models this key can use ({discovery.error}). Showing
+                  the full catalogue.
+                </p>
+              )}
+              {discovery.filtered && discovery.available.length === 0 && (
+                <p className="text-xs text-destructive">
+                  This key doesn't have access to any {kind === 'tts' ? 'TTS' : 'transcription'}{' '}
+                  models. Check the key's project at platform.openai.com.
+                </p>
+              )}
+            </div>
+          ) : (
+            <Input
+              id="model"
+              name="model"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder={MODEL_HINT_FOR_KIND[kind]}
+              required
+            />
+          )}
         </div>
         {/* Primary route host + tailnet (migration 0063) — chat-shaped `local`
             routes only (a self-hosted/LAN/tailnet box). */}
@@ -794,34 +796,34 @@ export function WorkerForm({
                   )}
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="backup_model">Model</Label>
-                  <Input
-                    id="backup_model"
-                    value={backupModel}
-                    onChange={(e) => setBackupModel(e.target.value)}
-                    placeholder={MODEL_HINT_FOR_KIND[kind]}
-                  />
+                  <Label htmlFor="backup_api_key_id">API key</Label>
+                  <select
+                    id="backup_api_key_id"
+                    value={backupApiKeyId}
+                    onChange={(e) => setBackupApiKeyId(e.target.value)}
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                  >
+                    <option value="">
+                      {backupProvider === 'local' ? 'None (keyless / local)' : '— none —'}
+                    </option>
+                    {keys
+                      .filter((k) => k.service === backupProvider)
+                      .map((k) => (
+                        <option key={k.id} value={k.id}>
+                          {k.service}/{k.label} ({k.masked})
+                        </option>
+                      ))}
+                  </select>
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="backup_api_key_id">API key</Label>
-                <select
-                  id="backup_api_key_id"
-                  value={backupApiKeyId}
-                  onChange={(e) => setBackupApiKeyId(e.target.value)}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                >
-                  <option value="">
-                    {backupProvider === 'local' ? 'None (keyless / local)' : '— none —'}
-                  </option>
-                  {keys
-                    .filter((k) => k.service === backupProvider)
-                    .map((k) => (
-                      <option key={k.id} value={k.id}>
-                        {k.service}/{k.label} ({k.masked})
-                      </option>
-                    ))}
-                </select>
+                <Label htmlFor="backup_model">Model</Label>
+                <Input
+                  id="backup_model"
+                  value={backupModel}
+                  onChange={(e) => setBackupModel(e.target.value)}
+                  placeholder={MODEL_HINT_FOR_KIND[kind]}
+                />
               </div>
               {backupProvider === 'local' && (
                 <RouteHostFields
