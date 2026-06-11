@@ -139,9 +139,12 @@ export function TodoForm({
           value={form.body}
           onChange={(e) => setForm({ ...form, body: e.target.value })}
           rows={5}
-          placeholder="Anything to remember about this task."
+          placeholder="Anything to remember about this task. Markdown supported."
           className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
         />
+        <p className="text-xs text-muted-foreground">
+          Plain markdown — lists, links, <code>`code`</code>, **bold** — rendered on the detail view.
+        </p>
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}

@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Check, Flag, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -139,9 +141,9 @@ export function TodoDetail({
       </div>
 
       {todo.body && (
-        <pre className="whitespace-pre-wrap rounded-md border border-border bg-card p-4 font-sans text-sm">
-          {todo.body}
-        </pre>
+        <article className="prose prose-sm dark:prose-invert max-w-none prose-accent rounded-md border border-border bg-card p-4">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{todo.body}</ReactMarkdown>
+        </article>
       )}
       {todo.summary && <p className="text-xs italic text-muted-foreground">Indexed: {todo.summary}</p>}
 
