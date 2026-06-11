@@ -76,7 +76,9 @@ rsync/restic at one folder and the whole brain is portable.
 (recursive CTEs), full-text search, job queues, real-time UI updates, auth —
 all one database. No Pinecone, no Neo4j, no Redis, no message broker. The
 lean stack is what's left after deleting every moving part personal-scale
-data doesn't need — which is also why it restores from one `pg_dump`.
+data doesn't need — which is also why it restores from one `pg_dump`, and
+why the whole running system idles at **~2.5 GB RAM**: a modest 4 GB VPS
+carries your entire brain.
 
 **It builds a personality around you — and it never forgets.** While you
 talk, a background reflector quietly studies the conversation and appends

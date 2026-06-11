@@ -3,8 +3,9 @@
 The operator's setup guide — local dev stack, first run, connecting email and
 Telegram, API keys, and the agent basics. (Moved here from the README, which
 is now the product front door.) Production deployment is
-[`deploy.md`](./deploy.md); updating a running box is
-[`update-prod.md`](./update-prod.md).
+[`deploy.md`](./deploy.md) — its §0a has measured **VPS sizing** (minimum
+2 vCPU / 4 GB; recommended 4 vCPU / 8 GB for build-on-VPS); updating a
+running box is [`update-prod.md`](./update-prod.md).
 
 ## Layout
 

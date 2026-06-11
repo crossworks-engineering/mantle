@@ -28,6 +28,31 @@ Persistent data is **bind-mounted** under `MANTLE_DATA_DIR` (default `./data`):
 `postgres/`, `minio/`, `files/`. The Ollama model cache + Tailscale identity stay
 as named volumes (re-pullable / re-auth on a new host).
 
+## 0a. VPS sizing — measured, not guessed
+
+Numbers from the author's production box (Contabo, **6 vCPU / 12 GB RAM /
+96 GB disk**, 2026-06-11): the full 13-container stack idles at **~2.5 GB
+RAM** total and **<5% CPU**; Ollama loads the embedder on demand (idle
+~40 MB, ~1 GB while embedding); the Mantle image is ~1.7 GB plus the infra
+images (Postgres, MinIO, Ollama, Tika, Caddy). What actually spikes a small
+box is not steady state — it's two specific events:
+
+1. **`next build`** during a **build-on-VPS** deploy (multi-GB RSS for
+   minutes). The registry-pull flow (§5) skips this entirely.
+2. **CPU-only embedding** during ingest bursts (a big document re-index).
+   Correct on any CPU since the sub-batched local adapter (v0.20.58) — just
+   slower on fewer cores. No GPU is needed at personal scale.
+
+| Profile | vCPU | RAM | Disk | Notes |
+|---|---|---|---|---|
+| **Minimum** (registry-pull deploys) | 2 | 4 GB | 40 GB | Steady state fits with room for embedding spikes; add 2 GB swap as insurance. Ingest is slower, never wrong. |
+| **Recommended** (build-on-VPS, the default loop in [`update-prod.md`](./update-prod.md)) | 4 | 8 GB | 80 GB | Headroom for `next build`; each build leaves ~3–6 GB of Docker build cache — run `docker builder prune` after deploy bursts (a 5×-in-a-day burst once accumulated 35 GB). |
+| **Reference** (author's prod) | 6 | 12 GB | 96 GB | Comfortable; ~27 GB disk in use including images, brain data itself is tiny (~170 MB at ~700 nodes). |
+
+Disk grows with: email/attachment volume (MinIO + Postgres), the nightly
+backup rotation (~40 MB × keep-count at a ~700-node brain), and — dominantly
+on build-on-VPS boxes — Docker build cache, which is reclaimable.
+
 ---
 
 ## 1. One-time: secrets + env
