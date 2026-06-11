@@ -723,7 +723,7 @@ the next ingest / recall, not after a TTL.
 `@mantle/embeddings#embed()` was originally hardcoded to OpenRouter's
 endpoint with `getApiKey(ownerId, 'openrouter')` — even though the
 worker schema carried `provider` and `apiKeyId` fields. **The Stage 1
-work landed in [`5dc3984`](https://github.com/TitanKing/mantle/commit/5dc3984)
+work landed in [`5dc3984`](https://github.com/crossworks-engineering/mantle/commit/5dc3984)
 makes embedding genuinely multi-provider**: the runtime dispatches
 through the same adapter registry the TTS/STT/vision/image-gen kinds
 use, and the form unlocks the provider dropdown to match.
@@ -1240,7 +1240,7 @@ coupled to OR's response shape. Migrating means:
   on `parts[]`. Each adapter has to normalise to a single shape that
   `runToolLoop` can iterate.
 - Streaming was previously deferred (see [the streaming feasibility
-  conversation](https://github.com/TitanKing/mantle/commits/main) —
+  conversation](https://github.com/crossworks-engineering/mantle/commits/main) —
   search for "Assistant streaming"); not in scope for Phase 3 either.
   Keep one-shot calls for now.
 

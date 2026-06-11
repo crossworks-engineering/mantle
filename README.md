@@ -131,7 +131,7 @@ what you declare, it never has to guess.
 ## Quick start
 
 ```bash
-git clone https://github.com/TitanKing/mantle && cd mantle
+git clone https://github.com/crossworks-engineering/mantle && cd mantle
 pnpm install
 cp .env.example apps/web/.env.local   # two generated secrets — see the guide
 ollama pull embeddinggemma            # local dev only; production bundles it

@@ -18,8 +18,7 @@ surgically, and it runs for cents on hardware you own.
 
 Documentation links point at the future public repo:
 **https://github.com/crossworks-engineering/mantle**
-(today's working repo is `TitanKing/mantle`; the site must use the
-crossworks-engineering URL everywhere).
+(live since 2026-06-11 — it IS the canonical repo now; use it everywhere).
 
 ## 2. Stack mandate
 
