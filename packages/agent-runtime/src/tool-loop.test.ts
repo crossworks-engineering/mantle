@@ -873,6 +873,116 @@ describe('runToolLoop — max iterations + force_final', () => {
   });
 });
 
+describe('runToolLoop — empty-reply retry', () => {
+  // Some models (observed: gemini-3.5-flash) return zero output tokens on a
+  // text-only call whose transcript ends in tool results. The loop retries
+  // once with an explicit user-role nudge before giving up — without this,
+  // the web /assistant turned the empty string into a 500.
+  it('retries once with a nudge when the final round returns empty text', async () => {
+    const { adapter, calls } = makeFakeAdapter([
+      { type: 'text', text: '' },
+      { type: 'text', text: 'recovered answer' },
+    ]);
+    const result = await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'hi' }],
+      tools: [],
+    });
+    expect(result.reply).toBe('recovered answer');
+    expect(calls).toHaveLength(2);
+    // The retry carries the nudge user message and forces text. (The captured
+    // opts hold a live reference to the loop's messages array, which gains the
+    // final assistant push after the call — so assert relative to that.)
+    const retryMessages = calls[1]!.messages;
+    const nudge = retryMessages[retryMessages.length - 2]!;
+    expect(nudge.role).toBe('user');
+    expect(nudge.content).toContain('previous response was empty');
+    expect(retryMessages[retryMessages.length - 1]).toEqual({
+      role: 'assistant',
+      content: 'recovered answer',
+    });
+    expect(calls[1]!.toolChoice).toBe('none');
+  });
+
+  it('retries an empty force_final response', async () => {
+    const tool = fakeTool({ slug: 'fake_tool' });
+    const { adapter, calls } = makeFakeAdapter([
+      {
+        type: 'toolCalls',
+        toolCalls: [
+          { id: 'c1', type: 'function', function: { name: 'fake_tool', arguments: '{}' } },
+        ],
+      },
+      { type: 'text', text: '' }, // force_final comes back empty
+      { type: 'text', text: 'nudged final' },
+    ]);
+    const result = await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: [tool],
+      maxIterations: 1,
+    });
+    expect(result.reply).toBe('nudged final');
+    expect(calls).toHaveLength(3); // tool round + force_final + empty_retry
+  });
+
+  it('returns the empty string when the retry is ALSO empty (caller degrades)', async () => {
+    const { adapter, calls } = makeFakeAdapter([
+      { type: 'text', text: '' },
+      { type: 'text', text: '   ' }, // whitespace-only still counts as empty upstream
+    ]);
+    const result = await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'hi' }],
+      tools: [],
+    });
+    expect(result.reply.trim()).toBe('');
+    expect(calls).toHaveLength(2); // exactly one retry, no loop
+  });
+
+  it('runs the force_final + retry on the ACTIVE (failed-over) route', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { adapter: primary, calls: pCalls } = makeThrowingAdapter(503);
+    const { adapter: backup, calls: bCalls } = makeFakeAdapter([
+      {
+        type: 'toolCalls',
+        toolCalls: [
+          { id: 'c1', type: 'function', function: { name: 'fake_tool', arguments: '{}' } },
+        ],
+      },
+      { type: 'text', text: 'final on backup' }, // force_final
+    ]);
+    const result = await runToolLoop({
+      adapter: primary,
+      apiKey: 'k',
+      model: 'p-model',
+      backup: { adapter: backup, apiKey: 'k2', model: 'b-model' },
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: [fakeTool()],
+      maxIterations: 1,
+    });
+    expect(result.reply).toBe('final on backup');
+    // Primary died once on iter 0; the force_final must NOT go back to it.
+    expect(pCalls).toHaveLength(1);
+    expect(bCalls).toHaveLength(2);
+    expect(bCalls[1]!.model).toBe('b-model');
+  });
+});
+
 describe('runToolLoop — step naming uses adapter.adapterName', () => {
   // The /traces UI keys off step names; this assertion ensures the
   // chat-step name carries the adapter identity so operators can

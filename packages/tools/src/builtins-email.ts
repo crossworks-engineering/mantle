@@ -393,11 +393,35 @@ const email_list: BuiltinToolDef = {
   },
 };
 
+/** Crude HTML→text for the body_html FALLBACK path only (body_text absent).
+ *  Drops style/script subtrees, turns breaks/blocks into newlines, strips the
+ *  rest of the tags, and decodes the handful of entities that matter in mail.
+ *  Not a sanitizer — output goes to an LLM as plain text, never to a browser.
+ *  Exported for unit tests only. */
+export function htmlToPlainText(html: string): string {
+  return html
+    .replace(/<(style|script|head)[\s\S]*?<\/\1\s*>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|tr|li|h[1-6]|table|blockquote)\s*>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0?39;|&apos;/gi, "'")
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\s*\n\s*/g, '\n')
+    .trim();
+}
+
 const email_get: BuiltinToolDef = {
   slug: 'email_get',
   name: 'Get one email by id',
   description:
-    "Fetch a single email by id — full row including body_text, body_html, headers, and attachment refs. " +
+    "Fetch a single email by id — headers (from/to/cc, subject, date, folder, flags) plus the " +
+    "plain-text body. HTML-only emails are converted to text; raw markup is never returned. " +
     "Use after `email_list` or `search_nodes` returns the id you want to read in full. " +
     "For a date-windowed list of recent emails use `email_list`; for searching emails by topic/content " +
     "use `search_nodes` with `type='email'`.",
@@ -412,10 +436,48 @@ const email_get: BuiltinToolDef = {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     try {
-      const [row] = await db.select().from(emails).where(eq(emails.id, id)).limit(1);
+      // Explicit columns — the full row carries body_html, which for a typical
+      // newsletter/marketing mail is ~50 KB of markup wrapping a few hundred
+      // chars of text. Shipping it blew past the inline tool-result cap, forced
+      // a spill, and sent the model paging through HTML soup (2026-06-11 turn
+      // that 500'd on an empty reply). body_text is canonical (it's what the
+      // extractor indexes); HTML is only a fallback source, converted to text.
+      const [row] = await db
+        .select({
+          id: emails.id,
+          nodeId: emails.nodeId,
+          accountId: emails.accountId,
+          from: emails.fromAddr,
+          fromName: emails.fromName,
+          to: emails.toAddrs,
+          cc: emails.ccAddrs,
+          subject: emails.subject,
+          bodyText: emails.bodyText,
+          bodyHtml: emails.bodyHtml,
+          internalDate: emails.internalDate,
+          labels: emails.labels,
+          folder: emails.folder,
+          isRead: emails.isRead,
+          isStarred: emails.isStarred,
+          hasAttachments: emails.hasAttachments,
+          deliveryKind: emails.deliveryKind,
+        })
+        .from(emails)
+        .where(eq(emails.id, id))
+        .limit(1);
       if (!row) return { ok: false, error: `email '${id}' not found` };
+      const text = row.bodyText?.trim();
+      const body = text || (row.bodyHtml ? htmlToPlainText(row.bodyHtml) : '');
+      const { bodyText: _t, bodyHtml: _h, ...head } = row;
       ctx.step?.setOutput({ id: row.id, subject: row.subject });
-      return { ok: true, output: row };
+      return {
+        ok: true,
+        output: {
+          ...head,
+          body,
+          ...(text ? {} : { body_source: row.bodyHtml ? 'html_converted' : 'empty' }),
+        },
+      };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }

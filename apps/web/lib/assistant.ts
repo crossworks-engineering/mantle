@@ -484,9 +484,21 @@ export async function runAssistantTurn(
       image_attached: false,
     });
   }
-  const rawReply = loopOutcome.reply;
-  if (!rawReply) {
-    throw new Error('assistant: empty reply from model');
+  let rawReply = loopOutcome.reply;
+  if (!rawReply.trim()) {
+    // The tool loop already retried an empty final response once (see
+    // retryEmptyReply in tool-loop.ts). Double-empty is rare enough that
+    // failing the whole turn (a 500 after the inbound row persisted) is
+    // worse than an honest fallback the user can react to.
+    console.error(
+      `[assistant] empty reply from model after retry (agent ${agent.slug}, ` +
+        `${loopOutcome.iterations} iterations, ${loopOutcome.toolCalls.length} tool calls) — ` +
+        'substituting fallback reply',
+    );
+    rawReply =
+      "Sorry — I gathered some information but couldn't compose a final answer " +
+      '(the model returned an empty response twice). Please ask that again, ' +
+      'perhaps more narrowly.';
   }
   // Defensive strip — the web /assistant is text-only today, so any
   // audio tags Saskia emits (because she carried the habit over from

@@ -291,6 +291,45 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     });
   };
 
+  // Empty-reply backstop. Some models return literally zero output tokens on
+  // a text-only call whose transcript ends in tool results — observed on
+  // gemini-3.5-flash in the force-final pass (2026-06-11 web turn that 500'd
+  // with 'assistant: empty reply from model'). One retry with an explicit
+  // user-role nudge gives the model something concrete to respond to; runs on
+  // the ACTIVE route. Still-empty after the retry is returned as-is — the
+  // caller decides how to degrade (the web assistant substitutes a fallback
+  // reply instead of failing the turn).
+  const retryEmptyReply = async (reason: string): Promise<string> => {
+    messages.push({
+      role: 'user',
+      content:
+        '(Your previous response was empty. Reply now with your final answer to ' +
+        'the user, in plain text. Do not call tools.)',
+    });
+    return step(
+      {
+        name: `${active.adapter.adapterName}_chat[empty_retry]`,
+        kind: 'llm_call',
+        input: { model: active.model, provider: active.adapter.providerId, reason },
+      },
+      async (h) => {
+        const r = await active.adapter.chat({
+          apiKey: active.apiKey,
+          model: active.model,
+          ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
+          ...(active.viaTailnet ? { viaTailnet: true } : {}),
+          messages,
+          toolChoice: 'none',
+          cacheControl: { systemPrompt: true },
+          ...(typeof args.params.max_retries === 'number' ? { maxRetries: args.params.max_retries } : {}),
+        });
+        recordChatUsage(h, r, active.model);
+        if (!r.text.trim()) h.setMeta({ still_empty: true });
+        return r.text;
+      },
+    );
+  };
+
   for (let iter = 0; iter < maxIters; iter++) {
     const result = await step(
       {
@@ -367,7 +406,8 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
 
     if (!calls || calls.length === 0) {
       // Final text response. Done.
-      const text = result.text;
+      let text = result.text;
+      if (!text.trim()) text = await retryEmptyReply('final_round_empty');
       messages.push({ role: 'assistant', content: text });
       return { reply: text, messages, iterations: iter + 1, toolCalls, pendingIds, artifacts };
     }
@@ -689,20 +729,27 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // tool result; force one more answer-only call so we don't return
   // nothing. This is a safety net — typical conversations finish well
   // under maxIters.
+  // Runs on the ACTIVE route (not args.*): if the turn failed over mid-loop,
+  // going back to the primary here would re-hit the route that just died —
+  // and the active route's baseUrl/viaTailnet must travel too (a local
+  // adapter without its baseUrl is a dead call).
   const finalResult = await step(
     {
-      name: `${args.adapter.adapterName}_chat[force_final]`,
+      name: `${active.adapter.adapterName}_chat[force_final]`,
       kind: 'llm_call',
       input: {
-        model: args.model,
-        provider: args.adapter.providerId,
+        model: active.model,
+        provider: active.adapter.providerId,
         reason: 'max_iters_reached',
+        ...(failedOver ? { failed_over: true } : {}),
       },
     },
     async (h) => {
-      const r = await args.adapter.chat({
-        apiKey: args.apiKey,
-        model: args.model,
+      const r = await active.adapter.chat({
+        apiKey: active.apiKey,
+        model: active.model,
+        ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
+        ...(active.viaTailnet ? { viaTailnet: true } : {}),
         messages: messages,
         // toolChoice: 'none' explicitly disables tool calling for the
         // final pass — force a text answer. Adapters whose providers
@@ -712,11 +759,12 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         cacheControl: { systemPrompt: true },
         ...(typeof args.params.max_retries === 'number' ? { maxRetries: args.params.max_retries } : {}),
       });
-      recordChatUsage(h, r, args.model);
+      recordChatUsage(h, r, active.model);
       return r;
     },
   );
-  const text = finalResult.text;
+  let text = finalResult.text;
+  if (!text.trim()) text = await retryEmptyReply('force_final_empty');
   messages.push({ role: 'assistant', content: text });
   return { reply: text, messages, iterations: maxIters + 1, toolCalls, pendingIds, artifacts };
 }
