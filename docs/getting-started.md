@@ -190,6 +190,16 @@ can read and reply.
    trigger `pg_notify('telegram_message_inserted')`, which the agent
    listens for.
 
+## Connecting Claude (Desktop / Code)
+
+Claude Desktop and Claude Code can drive your Mantle directly — search,
+mail, todos, the knowledge graph, Telegram — through the bundled stdio MCP
+server (`apps/mcp`). It's a one-time config per client machine: Claude
+spawns the server on demand (locally, or inside the `mantle_web` container
+over SSH for a remote install) and your SSH key is the entire auth layer.
+Full instructions, config snippets for all three deployment shapes, and the
+security model: [`connecting-claude.md`](./connecting-claude.md).
+
 ## Saving API keys
 
 `/settings/keys` is the UI for storing keys for external services
