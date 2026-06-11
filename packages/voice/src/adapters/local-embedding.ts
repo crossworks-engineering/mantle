@@ -51,52 +51,93 @@ function toPlainText(item: EmbedInput): string {
   throw new Error(`local-embedding: non-text input slipped past the guard (${item.type})`);
 }
 
+/** Texts per HTTP request. Sized so a CPU-only server clears each request
+ *  well inside the timeout (~16 chunk-sized texts ≈ seconds on a shared
+ *  vCPU; a GPU box doesn't notice the difference). Override via env for
+ *  unusually slow/fast hardware. */
+const SUB_BATCH = (() => {
+  const n = Number.parseInt(process.env.MANTLE_LOCAL_EMBED_BATCH ?? '', 10);
+  return Number.isFinite(n) && n >= 1 ? n : 16;
+})();
+
+/** Per-request timeout. Generous because the slow case is legitimate work
+ *  (CPU inference), not a hung socket — the sub-batching above is what keeps
+ *  any single request small enough that this rarely matters. */
+const REQUEST_TIMEOUT_MS = 120_000;
+
+async function embedOnce(
+  req: EmbedRequest,
+  texts: string[],
+): Promise<{ vectors: number[][]; model: string; tokensIn?: number }> {
+  const body: Record<string, unknown> = {
+    model: req.model,
+    input: texts,
+    encoding_format: 'float',
+  };
+  // Matryoshka truncation where the server honours it (EmbeddingGemma,
+  // jina-v5, etc.). Harmless when ignored; the resulting dim is what
+  // actually lands in the column, so the caller must size accordingly.
+  if (req.dimensions) body.dimensions = req.dimensions;
+
+  const doFetch = req.viaTailnet ? tailnetFetch : fetch;
+  const res = await doFetch(`${baseUrl(req.baseUrl)}/embeddings`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${req.apiKey || 'local'}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(
+      `local embeddings failed: ${res.status} ${res.statusText} — ${text.slice(0, 500)}`,
+    );
+  }
+  const json = (await res.json()) as {
+    data: Array<{ embedding: number[]; index: number }>;
+    model?: string;
+    usage?: { prompt_tokens?: number; total_tokens?: number };
+  };
+  if (!Array.isArray(json.data)) {
+    throw new Error('local embeddings: malformed response (no data array)');
+  }
+  const sorted = [...json.data].sort((a, b) => a.index - b.index);
+  return {
+    vectors: sorted.map((d) => d.embedding),
+    model: json.model ?? req.model,
+    tokensIn: json.usage?.prompt_tokens,
+  };
+}
+
 export const localEmbedding: EmbeddingDispatcher = {
   providerId: 'local',
   adapterName: 'local-embedding',
 
   async embed(req: EmbedRequest): Promise<EmbedResult> {
     assertTextOnly(req.input);
-    const body: Record<string, unknown> = {
-      model: req.model,
-      input: req.input.map(toPlainText),
-      encoding_format: 'float',
-    };
-    // Matryoshka truncation where the server honours it (EmbeddingGemma,
-    // jina-v5, etc.). Harmless when ignored; the resulting dim is what
-    // actually lands in the column, so the caller must size accordingly.
-    if (req.dimensions) body.dimensions = req.dimensions;
+    const texts = req.input.map(toPlainText);
 
-    const doFetch = req.viaTailnet ? tailnetFetch : fetch;
-    const res = await doFetch(`${baseUrl(req.baseUrl)}/embeddings`, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${req.apiKey || 'local'}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60_000),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(
-        `local embeddings failed: ${res.status} ${res.statusText} — ${text.slice(0, 500)}`,
-      );
+    // Sub-batch sequentially. A CPU-only server (the common prod shape — a
+    // VPS with no GPU) embeds texts serially, so a single large request (the
+    // caller batches up to 100) can exceed any sane timeout: a ~45-chunk
+    // document timed out at 60s on prod and retry-looped, burning CPU
+    // (TimeoutError, 2026-06-11). Smaller sequential requests each fit the
+    // window, and the caller's embedding cache makes a retry RESUME from the
+    // completed sub-batches instead of restarting. Sequential on purpose —
+    // parallel requests just contend for the same cores.
+    const out: number[][] = [];
+    let model = req.model;
+    let tokensIn: number | undefined;
+    for (let start = 0; start < texts.length; start += SUB_BATCH) {
+      const slice = texts.slice(start, start + SUB_BATCH);
+      const r = await embedOnce(req, slice);
+      out.push(...r.vectors);
+      model = r.model;
+      if (r.tokensIn != null) tokensIn = (tokensIn ?? 0) + r.tokensIn;
     }
-    const json = (await res.json()) as {
-      data: Array<{ embedding: number[]; index: number }>;
-      model?: string;
-      usage?: { prompt_tokens?: number; total_tokens?: number };
-    };
-    if (!Array.isArray(json.data)) {
-      throw new Error('local embeddings: malformed response (no data array)');
-    }
-    const sorted = [...json.data].sort((a, b) => a.index - b.index);
-    return {
-      vectors: sorted.map((d) => d.embedding),
-      model: json.model ?? req.model,
-      tokensIn: json.usage?.prompt_tokens,
-    };
+    return { vectors: out, model, tokensIn };
   },
 
   acceptsInput(input: EmbedInput): boolean {
