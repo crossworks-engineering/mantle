@@ -9,6 +9,13 @@ Companion: [`docker-compose.yml`](../docker-compose.yml) header comments,
 [`.env.prod.example`](../.env.prod.example), and the scripts under
 [`scripts/`](../scripts).
 
+> **Just want to run Mantle from the published image?** Most installs don't
+> build anything — see [`self-hosting.md`](./self-hosting.md) for the one-line
+> installer (`install.sh`), updating (`docker compose pull` or the in-app
+> **Settings → Updates** button), and rollback. This file is the **builder /
+> operator** reference: building your own image, the CI release pipeline, and
+> the one-time data migration from a dev brain.
+
 > **Golden rule.** Prod is your source-of-truth brain, not a test bench.
 > Develop on the local dev stack (`pnpm start` + host hot-reload), validate, then
 > promote a built image. The integrity **probe** belongs on dev; only the
@@ -121,6 +128,15 @@ Builds + pushes **one image** — `<youruser>/mantle:v1`. Every service (web,
 agent, the four workers, migrate) runs from that same image, differing only in
 the compose `command:`. Use a real tag (`v1`, a date, or a git sha) — `latest`
 is fine but harder to roll back from.
+
+> **Automated alternative (the official images).** A push of a `v*` tag runs
+> [`.github/workflows/release.yml`](../.github/workflows/release.yml): it builds
+> the image **multi-arch** (amd64 + arm64), pushes `titanwest/mantle:<tag>` +
+> `:latest`, and cuts a GitHub Release with the deploy bundle. So for the
+> published images you never run the script by hand — you
+> `git tag vX.Y.Z && git push --tags`. Needs the `DOCKERHUB_USERNAME` /
+> `DOCKERHUB_TOKEN` repo secrets. See [`self-hosting.md`](./self-hosting.md)
+> § "cutting a release".
 
 ---
 

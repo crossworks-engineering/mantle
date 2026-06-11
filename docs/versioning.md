@@ -40,7 +40,16 @@ Then commit and tag:
 ```bash
 git commit -am "release: v0.2.0"
 git tag v0.2.0
+git push origin main v0.2.0   # the tag push cuts the release (see below)
 ```
+
+> **Pushing a `v*` tag publishes a release.**
+> [`.github/workflows/release.yml`](../.github/workflows/release.yml) builds the
+> multi-arch image, pushes `titanwest/mantle:<tag>` + `:latest` to Docker Hub,
+> and creates a GitHub Release with the deploy bundle. Self-hosters then see the
+> new version in **Settings → Updates** (and the sidebar "Update available"
+> chip). So the version bump isn't just cosmetic — the tag is the release
+> trigger. See [`self-hosting.md`](./self-hosting.md).
 
 ## How it reaches the UI
 
