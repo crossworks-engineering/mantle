@@ -38,6 +38,11 @@
    Jason is starting this next: Next.js + the same 42-theme system, the
    Bukhari wordmark, README.md as the canonical copy. Docs links point at
    https://github.com/crossworks-engineering/mantle.
+1. **Embodied companion / networked MCP** — [`docs/handover-embodied-companion.md`](./docs/handover-embodied-companion.md).
+   The robot-with-an-H200 case: a `robot` conversation channel (personality
+   over the wire — same Saskia, new body), then Streamable-HTTP MCP with
+   bearer auth, then an optional `converse` MCP tool. Includes the
+   fact-check that the claimed HTTP transport never existed in code.
 1. **The trust model** — [`docs/handover-trust-model.md`](./docs/handover-trust-model.md).
    Self-contained brief: attack surfaces with evidence, 9-point design,
    sequencing (quick defaults first: `run_terminal` env scrub + confirm,

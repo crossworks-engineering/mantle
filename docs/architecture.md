@@ -1478,9 +1478,11 @@ Every query is scoped by `OWNER_ID = process.env.ALLOWED_USER_ID` — single-
 user isolation. The server uses the same `@mantle/db` client as the web app
 and workers; no separate connection or auth layer.
 
-Stdio is the only transport in use today. The HTTP+SSE transport
-(`MCP_HTTP_PORT`) is supported by the code path but not wired into a
-container; it's there for future remote MCP clients.
+Stdio is the **only transport, period** — an earlier version of this doc
+claimed an HTTP+SSE code path behind `MCP_HTTP_PORT`, but no such code
+exists in `server.ts` (verified 2026-06-11). Networked MCP (Streamable
+HTTP + bearer auth + a compose profile) is specced as Workstream A of
+[`handover-embodied-companion.md`](./handover-embodied-companion.md).
 
 ---
 
