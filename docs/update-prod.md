@@ -35,12 +35,17 @@ git log --oneline -1                                              # the sha you'
 ssh cwe@mcp.crossworks.network 'cd ~/mantle && bash scripts/db-dump.sh'   # → backups/mantle-<ts>.dump
 
 # ── 2. (Mac) rsync code → VPS (excludes data/.env/secrets/build artifacts) ───
+# ⚠ The data/backups excludes are ROOT-ANCHORED (leading '/'). An unanchored
+#   --exclude 'backups' matches at EVERY depth in rsync and silently dropped
+#   apps/web/app/(app)/settings/backups/ (the Backups settings page) from
+#   every deploy until 2026-06-11. Never exclude a generic noun unanchored.
 rsync -az --delete \
   --exclude '.git' --exclude 'node_modules' --exclude '.next' \
-  --exclude '.claude' --exclude 'data' --exclude 'backups' \
+  --exclude '.claude' --exclude '/data' --exclude '/backups' \
+  --exclude '/apps/web/data' \
   --exclude '.env' --exclude '*/.env.local' --exclude '*.dump' --exclude '*.tgz' \
   ~/Projects/mantle/ cwe@mcp.crossworks.network:~/mantle/
-#   --delete removes files deleted from main; excluded paths (data/, .env, …)
+#   --delete removes files deleted from main; excluded paths (/data, .env, …)
 #   are NEVER touched, so the prod brain + secrets are safe.
 
 # ── 3. (VPS) rebuild the image natively (amd64). ~5–10 min ───────────────────

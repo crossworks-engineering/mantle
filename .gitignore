@@ -33,11 +33,17 @@ pnpm-debug.log*
 # defensive: catch a no-leading-dot env file at the repo root
 /env.local
 
-# database snapshots — multi-GB local-only artefacts
-backups/
+# database snapshots — multi-GB local-only artefacts. ROOT-ANCHORED on
+# purpose: the unanchored `backups/` matched at any depth and silently
+# swallowed apps/web/app/(app)/settings/backups/ (the Backups settings
+# page) — it never reached git or production (caught 2026-06-11).
+/backups/
 
-# MANTLE_FILES_ROOT default — the host-mirrored filesystem
-data/
+# MANTLE_FILES_ROOT default — the host-mirrored filesystem. Root-anchored
+# like /backups/ above; apps/web/data is the dev runtime data dir and gets
+# its own anchored entry.
+/data/
+/apps/web/data/
 
 # vercel
 .vercel
