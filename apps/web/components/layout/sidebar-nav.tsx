@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Activity,
+  ArrowUpCircle,
   BookOpen,
   BookText,
   Bot,
@@ -109,6 +110,7 @@ export function SidebarNav({
         { name: 'Peers', href: '/settings/peers', icon: Network },
         { name: 'PDF passwords', href: '/settings/pdf-passwords', icon: Lock },
         { name: 'Backups', href: '/settings/backups', icon: DatabaseBackup },
+        { name: 'Updates', href: '/settings/updates', icon: ArrowUpCircle },
         { name: 'Security', href: '/settings/security', icon: KeyRound },
       ],
     },

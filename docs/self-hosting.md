@@ -128,13 +128,34 @@ CI builds the multi-arch image, pushes both tags to Docker Hub, and creates
 the GitHub Release with the deploy bundle. Requires the `DOCKERHUB_USERNAME`
 / `DOCKERHUB_TOKEN` repo secrets (one-time setup).
 
-## What's deliberately NOT here (yet)
+## Updating from the interface
 
-- **In-app update button.** The planned shape: the app compares its running
-  version against GitHub releases and shows an "update available" banner; a
-  socket-mounted updater sidecar performs the pull+roll on request. Until
-  then, updating is the two-command pull above (or point
-  [Watchtower](https://containrrr.dev/watchtower/) at the stack for
-  unattended updates).
+**Settings → Updates** shows the running build, checks GitHub for the latest
+release, and updates in one click: the app writes a request onto a private
+volume shared with the bundled **updater sidecar** (`mantle_updater`), which
+performs `docker compose pull && docker compose up -d`, streams its log back
+to the page, and the page reloads itself once the new version answers. The
+chosen version tag is persisted to `.env` (`MANTLE_IMAGE_TAG`) so a later
+manual `up` can't roll you back.
+
+Requirements (the installer sets all of this up):
+
+- `MANTLE_STACK_DIR` in `.env` = the stack directory's **host-absolute**
+  path. Existing installs add one line, e.g. `MANTLE_STACK_DIR=/opt/mantle`,
+  then `docker compose up -d updater`.
+- The sidecar mounts the Docker socket — that is root-equivalent on the
+  host, which is why it exposes **no ports** and executes exactly one
+  hardcoded operation; the only input it accepts from the app is the image
+  tag, validated against a character whitelist
+  ([`infra/updater/updater.sh`](../infra/updater/updater.sh)). If that
+  tradeoff isn't for you: don't start the `updater` service — the Updates
+  page degrades to showing the two CLI commands.
+
+Compose-file changes (a new service/mount in a release) still need the
+release bundle swap described above — the sidecar updates *images*, not the
+compose file itself; release notes call it out when it applies.
+
+## What's deliberately NOT here
+
 - **Multi-user.** Mantle is one brain per install, one account. The second
   user gets their own stack.

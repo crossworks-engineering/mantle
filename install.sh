@@ -112,6 +112,10 @@ MANTLE_DATA_DIR=./data
 
 MANTLE_IMAGE_NAMESPACE=titanwest
 MANTLE_IMAGE_TAG=latest
+
+# Host-absolute path of this directory — the updater sidecar runs
+# docker compose against it for in-app updates (/settings/updates).
+MANTLE_STACK_DIR=$(pwd -P)
 EOF
   chmod 600 .env
   ok ".env written with generated secrets (mode 600)"

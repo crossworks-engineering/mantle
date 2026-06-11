@@ -66,6 +66,11 @@ volumes:
   # the LocalAPI (`status`) for the /settings/network status tile + peer
   # dropdown. Inter-container socket, not user data — stays a named volume.
   mantle_tailscale_sock:
+  # In-app update signalling — shared ONLY between web and the updater sidecar.
+  # web writes request.json (/settings/updates); the updater writes status.json
+  # + update.log. A private named volume, not a port: the trigger surface is
+  # "can mount this volume", i.e. members of this compose project.
+  mantle_update_signal:
 
 # Shared env block for app services — anchor + alias keeps the app
 # services in lockstep.
@@ -301,6 +306,10 @@ services:
       # security-relevant change — the app can control tailnet membership —
       # acceptable on a single-user box. Degrades gracefully when absent.
       - mantle_tailscale_sock:/var/run/tailscale
+      # In-app updates: /settings/updates writes request.json here and reads
+      # the updater sidecar's status.json / update.log back. Absent in dev →
+      # the page degrades to "updater not available".
+      - mantle_update_signal:/signal
     # No public port: Caddy fronts the app and reaches it at web:3000 on the
     # internal network. Bound to localhost only for on-host debugging / ssh
     # tunnels — not reachable from the internet.
@@ -328,6 +337,29 @@ services:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+
+  # ── Updater sidecar — the execution half of in-app updates ────────────────
+  # /settings/updates writes a request file into the shared `mantle_update_signal`
+  # volume; this container performs `docker compose pull && up -d` against the
+  # host stack and reports progress back. It holds the Docker socket
+  # (root-equivalent on the host) — mitigations: no ports, one hardcoded
+  # operation (see infra/updater/updater.sh), trigger only via the private
+  # volume. Needs MANTLE_STACK_DIR in .env = the stack dir's HOST-ABSOLUTE path
+  # (install.sh writes it; for an existing install add it by hand). The stack is
+  # mounted at the SAME path inside the container so relative bind-mount sources
+  # in this file resolve identically for the host daemon.
+  updater:
+    image: docker:28-cli
+    container_name: mantle_updater
+    restart: unless-stopped
+    entrypoint: ["sh", "/updater.sh"]
+    environment:
+      MANTLE_STACK_DIR: ${MANTLE_STACK_DIR:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./infra/updater/updater.sh:/updater.sh:ro
+      - .:${MANTLE_STACK_DIR:-/opt/mantle-stack}
+      - mantle_update_signal:/signal
 
   agent:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
