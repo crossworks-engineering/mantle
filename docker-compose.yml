@@ -9,7 +9,8 @@ name: mantle
 #   POSTGRES_PASSWORD       (default: postgres)
 #   SESSION_SECRET          (mandatory — used by middleware to verify cookies)
 #   MANTLE_MASTER_KEY       (mandatory — AES-256 key, base64 32 random bytes)
-#   ALLOWED_USER_ID         (mandatory — uuid of the single auth.users row)
+#   ALLOWED_USER_ID         (optional — blank on a fresh install; auto-resolves
+#                            to the sole auth.users row after you sign up)
 #   S3_ACCESS_KEY / S3_SECRET_KEY (default: minio/minio12345)
 #   MANTLE_PUBLIC_URL       (recommended — public origin for share/email links,
 #                            e.g. https://mantle.crossworks.network)
@@ -31,7 +32,8 @@ name: mantle
 #                            not by copying the raw postgres dir. See docs/deploy.md.
 #
 # Docker Hub — build once, push, pull on the VPS (no build on prod):
-#   MANTLE_IMAGE_NAMESPACE  (default: mantle) — your Docker Hub user/org.
+#   MANTLE_IMAGE_NAMESPACE  (default: titanwest — the official published image;
+#                            set your own Docker Hub user/org to self-build).
 #   MANTLE_IMAGE_TAG        (default: latest) — image tag (use a version or git sha).
 #   Build & push:  scripts/docker-build-push.sh
 #   Deploy on VPS: docker compose pull && docker compose up -d --wait
@@ -71,7 +73,11 @@ x-app-env: &app-env
   DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/postgres
   SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
   MANTLE_MASTER_KEY: ${MANTLE_MASTER_KEY:?MANTLE_MASTER_KEY is required}
-  ALLOWED_USER_ID: ${ALLOWED_USER_ID:?ALLOWED_USER_ID is required}
+  # Blank on a fresh install — the runtime auto-resolves the sole auth.users
+  # row once you sign up. Only set when importing existing data / multi-DB.
+  # (Was `:?required`, which contradicted .env.prod.example and broke fresh
+  # installs before any user exists.)
+  ALLOWED_USER_ID: ${ALLOWED_USER_ID:-}
   S3_ENDPOINT: http://minio:9000
   S3_REGION: us-east-1
   S3_BUCKET: mantle
@@ -253,7 +259,7 @@ services:
   # One-shot schema migration. App services wait for this to complete
   # successfully before starting, so the DB schema is never behind the code.
   migrate:
-    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
     # Drizzle migrations, THEN create the pg-boss schema deterministically in the
     # same one-shot gate — every worker depends_on this completing, so by the time
     # they call pg-boss start() the schema exists and they can't race to create it
@@ -269,7 +275,7 @@ services:
   # `web` is the one service that BUILDS the shared image (target: app); every
   # other service just references the same image with its own command.
   web:
-    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
     build:
       context: .
       target: app
@@ -324,7 +330,7 @@ services:
       - caddy_config:/config
 
   agent:
-    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
     command: ["pnpm", "-C", "apps/agent", "start"]
     container_name: mantle_agent
     restart: unless-stopped
@@ -338,7 +344,7 @@ services:
       - ${MANTLE_DATA_DIR:-./data}/files:/data/files
 
   worker_email:
-    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/email-sync.ts"]
     container_name: mantle_worker_email
     restart: unless-stopped
@@ -350,7 +356,7 @@ services:
       <<: *app-env
 
   worker_telegram:
-    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/telegram-poll.ts"]
     container_name: mantle_worker_telegram
     restart: unless-stopped
@@ -363,7 +369,7 @@ services:
   # External-edit watcher: chokidar over MANTLE_FILES_ROOT mirrors host file
   # changes (Syncthing / vim / cp) into the brain. Needs the files volume.
   worker_files:
-    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/files-watch.ts"]
     container_name: mantle_worker_files
     restart: unless-stopped
@@ -381,7 +387,7 @@ services:
   # indexing path. Disabled collections are inert, so this is cheap until the
   # operator opts in at /settings/documentation.
   worker_docs:
-    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/docs-sync.ts"]
     container_name: mantle_worker_docs
     restart: unless-stopped
@@ -394,7 +400,7 @@ services:
   # Event-reminder poller: fires due calendar/event reminders. Without this,
   # reminders silently never fire in prod (they work in `pnpm dev`).
   worker_events:
-    image: ${MANTLE_IMAGE_NAMESPACE:-mantle}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/events-reminders.ts"]
     container_name: mantle_worker_events
     restart: unless-stopped

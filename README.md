@@ -132,6 +132,21 @@ what you declare, it never has to guess.
 
 ## Quick start
 
+Run it — published Docker image, secrets generated for you, everything else
+configured in the interface:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/crossworks-engineering/mantle/main/install.sh | bash
+```
+
+Open http://localhost, create your account, and the onboarding wizard takes
+it from there: model keys, your assistant's personality, who you are.
+Updating is `docker compose pull && docker compose up -d --wait`. Full guide
+(domains/HTTPS, pinned versions, backups, rollback):
+**[docs/self-hosting.md](./docs/self-hosting.md)**
+
+Hack on it — dev checkout with hot reload:
+
 ```bash
 git clone https://github.com/crossworks-engineering/mantle && cd mantle
 pnpm install
@@ -139,9 +154,6 @@ cp .env.example apps/web/.env.local   # two generated secrets — see the guide
 ollama pull embeddinggemma            # local dev only; production bundles it
 pnpm start
 ```
-
-Open http://localhost:3000, create your account, and the onboarding wizard
-takes it from there: model keys, your assistant's personality, who you are.
 
 Full walkthrough (local dev, email, Telegram, production deploy):
 **[docs/getting-started.md](./docs/getting-started.md)** ·
@@ -160,6 +172,7 @@ Full walkthrough (local dev, email, Telegram, production deploy):
 ## Docs
 
 **Start here**
+- [`self-hosting.md`](./docs/self-hosting.md) — run Mantle from the published image: one-line install, updating, rollback.
 - [`getting-started.md`](./docs/getting-started.md) — setup: dev stack, first run, email, Telegram, keys, agents.
 - [`architecture.md`](./docs/architecture.md) — the full tour: processes, data plane, the `nodes` abstraction, pipelines, workspace. Read before touching code.
 - [`deploy.md`](./docs/deploy.md) / [`update-prod.md`](./docs/update-prod.md) — production install + the update loop.
