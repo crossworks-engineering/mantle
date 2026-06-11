@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { PanelLeft, PanelLeftClose } from 'lucide-react';
 import { Header } from '@/components/layout/header';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
+import { UpdateBanner } from '@/components/layout/update-banner';
 import { LiveColumn } from '@/components/layout/live-column';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { ToastProvider } from '@/components/ui/toast';
@@ -105,6 +106,7 @@ export function AppShell({
   const body = (onNavigate?: () => void) => (
     <>
       {contextCard}
+      <UpdateBanner onNavigate={onNavigate} />
       <SidebarNav
         pendingApprovals={pendingApprovals}
         onNavigate={onNavigate}
