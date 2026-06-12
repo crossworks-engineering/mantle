@@ -1,11 +1,12 @@
 # Release pipeline — fires on a version tag push:
 #
-#   pnpm version:bump patch && git commit … && git tag v0.20.67
-#   git push origin main v0.20.67
+#   pnpm version:bump patch && git commit … && git tag v0.20.71
+#   git push origin main v0.20.71
 #
-# 1. Builds the single Mantle image for amd64 + arm64 (one image runs web,
-#    agent, workers, migrate — see Dockerfile) and pushes it to Docker Hub as
-#    <namespace>/mantle:<tag> and :latest.
+# 1. Builds the single Mantle image (one image runs web, agent, workers,
+#    migrate — see Dockerfile) for amd64 + arm64, each on its OWN native
+#    GitHub runner in parallel, then merges them into one multi-arch manifest
+#    pushed to Docker Hub as <namespace>/mantle:<tag> and :latest.
 # 2. Cuts a GitHub Release carrying the deploy bundle (docker-compose.yml,
 #    .env.prod.example, infra/, install.sh, db scripts) so compose + image are
 #    versioned TOGETHER — the contract docs/self-hosting.md documents.
@@ -14,9 +15,13 @@
 #   DOCKERHUB_USERNAME   (titanwest)
 #   DOCKERHUB_TOKEN      (a Docker Hub access token with read/write scope)
 #
-# The arm64 half builds under QEMU emulation — expect the job to take a while
-# (the Next build + native-module compiles run emulated). It's CI time, not
-# operator time; the buildx layer cache (type=gha) keeps repeat runs sane.
+# Why the matrix instead of one QEMU job: GitHub's standard runners are
+# amd64-only, so a single multi-arch build emulates arm64 under QEMU (slow —
+# emulated native-module compiles + `next build`). GitHub now offers FREE
+# native arm64 runners for public repos (`ubuntu-24.04-arm`), so we build each
+# arch natively in parallel (push-by-digest), then `imagetools create` stitches
+# the two digests into the tagged manifest. No emulation; wall-clock ≈ the
+# slower single native build, not the sum.
 
 name: release
 
@@ -28,14 +33,26 @@ env:
   IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/mantle
 
 jobs:
-  image:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/setup-qemu-action@v3
+      - name: Platform label
+        run: echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+        env:
+          platform: ${{ matrix.platform }}
+
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
@@ -43,25 +60,71 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build + push (amd64 + arm64)
+      # Build this single arch natively and push it BY DIGEST (no tag yet) —
+      # the merge job assembles the tagged multi-arch manifest from both digests.
+      - id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           target: app
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ env.IMAGE }}:${{ github.ref_name }}
-            ${{ env.IMAGE }}:latest
+          platforms: ${{ matrix.platform }}
           build-args: |
             MANTLE_GIT_SHA=${{ github.sha }}
             MANTLE_BUILD_TIME=${{ github.event.head_commit.timestamp }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          # Per-arch cache scope so the two runners don't clobber each other's cache.
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+
+      # Name the marker file with the BARE hex (strip the sha256: prefix); the
+      # merge job re-adds @sha256: when it assembles the manifest. Keeping the
+      # prefix here would double it (…@sha256:sha256:…) and break the merge.
+      - name: Export digest
+        run: |
+          mkdir -p "${{ runner.temp }}/digests"
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ env.PLATFORM_PAIR }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Create + push the multi-arch manifest
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          docker buildx imagetools create \
+            -t "${IMAGE}:${{ github.ref_name }}" \
+            -t "${IMAGE}:latest" \
+            $(printf "${IMAGE}@sha256:%s " *)
+
+      - name: Inspect
+        run: docker buildx imagetools inspect "${IMAGE}:${{ github.ref_name }}"
 
   release:
-    needs: image
-    runs-on: ubuntu-latest
+    needs: merge
+    runs-on: ubuntu-24.04
     permissions:
       contents: write # create the release + upload assets
     steps:
