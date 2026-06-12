@@ -15,8 +15,21 @@ export type ToolHandler =
   | { kind: 'builtin'; ref: string }
   | {
       kind: 'http';
+      /** Request URL. May contain `{param}` placeholders filled (URL-encoded)
+       *  from the tool-call input, and `{{secret:service/label}}` refs
+       *  resolved from the encrypted api_keys vault at dispatch time. */
       url: string;
       method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+      /** Header map. Values support `{param}` + `{{secret:…}}` templating. */
+      headers?: Record<string, string>;
+      /** Query-string map appended to the URL. Keys are literal; values
+       *  support templating. */
+      query?: Record<string, string>;
+      /** Body template. `{param}` is replaced with the JSON encoding of the
+       *  input value (strings arrive quoted — write `"q": {query}`, not
+       *  `"q": "{query}"`). When absent, non-GET requests send the whole
+       *  input object as JSON (legacy behavior). */
+      body?: string | null;
       headersRef?: string | null;
       authRef?: string | null;
       timeoutMs?: number;

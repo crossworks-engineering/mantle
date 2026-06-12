@@ -1,6 +1,6 @@
 {
   "name": "@mantle/web",
-  "version": "0.20.71",
+  "version": "0.21.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -65,6 +65,7 @@
     "@mantle/tools": "workspace:*",
     "@mantle/tracing": "workspace:*",
     "@mantle/voice": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@napi-rs/canvas": "~0.1.100",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-avatar": "^1.1.11",

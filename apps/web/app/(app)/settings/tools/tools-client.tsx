@@ -26,6 +26,9 @@ type ToolHandlerHttp = {
   kind: 'http';
   url: string;
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  headers?: Record<string, string>;
+  query?: Record<string, string>;
+  body?: string | null;
   headersRef?: string | null;
   authRef?: string | null;
   timeoutMs?: number;
@@ -55,6 +58,9 @@ type FormState = {
   kind: FormKind;
   url: string;
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  headersJson: string; // JSON object — header → value template
+  queryJson: string; // JSON object — query key → value template
+  bodyTemplate: string;
   cmd: string;
   inputSchemaJson: string;
   requiresConfirm: boolean;
@@ -68,6 +74,9 @@ const emptyForm = (): FormState => ({
   kind: 'http',
   url: '',
   method: 'POST',
+  headersJson: '',
+  queryJson: '',
+  bodyTemplate: '',
   cmd: '',
   inputSchemaJson: '{\n  "type": "object",\n  "properties": {}\n}',
   requiresConfirm: false,
@@ -75,18 +84,38 @@ const emptyForm = (): FormState => ({
 });
 
 function fromTool(t: ToolSummary): FormState {
+  const http = t.handler.kind === 'http' ? t.handler : null;
   return {
     slug: t.slug,
     name: t.name,
     description: t.description,
     kind: t.handler.kind === 'shell' ? 'shell' : 'http',
-    url: t.handler.kind === 'http' ? t.handler.url : '',
-    method: t.handler.kind === 'http' ? (t.handler.method ?? 'POST') : 'POST',
+    url: http?.url ?? '',
+    method: http?.method ?? 'POST',
+    headersJson: http?.headers ? JSON.stringify(http.headers, null, 2) : '',
+    queryJson: http?.query ? JSON.stringify(http.query, null, 2) : '',
+    bodyTemplate: http?.body ?? '',
     cmd: t.handler.kind === 'shell' ? t.handler.cmd : '',
     inputSchemaJson: JSON.stringify(t.inputSchema ?? {}, null, 2),
     requiresConfirm: t.requiresConfirm,
     enabled: t.enabled,
   };
+}
+
+/** Parse an optional JSON-object textarea; '' → undefined; throws on junk. */
+function parseRecordField(label: string, raw: string): Record<string, string> | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  const parsed = JSON.parse(trimmed) as unknown;
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${label} must be a JSON object of string values`);
+  }
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof v !== 'string') throw new Error(`${label}.${k} must be a string`);
+    out[k] = v;
+  }
+  return out;
 }
 
 function slugify(s: string): string {
@@ -152,10 +181,28 @@ export function ToolsClient({ initialTools }: { initialTools: ToolSummary[] }) {
         toast.error('Input schema is not valid JSON.');
         return;
       }
-      const handler: ToolHandler =
-        form.kind === 'shell'
-          ? { kind: 'shell', cmd: form.cmd }
-          : { kind: 'http', url: form.url, method: form.method };
+      let handler: ToolHandler;
+      if (form.kind === 'shell') {
+        handler = { kind: 'shell', cmd: form.cmd };
+      } else {
+        let headers: Record<string, string> | undefined;
+        let query: Record<string, string> | undefined;
+        try {
+          headers = parseRecordField('Headers', form.headersJson);
+          query = parseRecordField('Query', form.queryJson);
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : 'Headers/Query must be JSON objects.');
+          return;
+        }
+        handler = {
+          kind: 'http',
+          url: form.url,
+          method: form.method,
+          ...(headers ? { headers } : {}),
+          ...(query ? { query } : {}),
+          ...(form.bodyTemplate.trim() ? { body: form.bodyTemplate } : {}),
+        };
+      }
       body = {
         name: form.name.trim(),
         description: form.description.trim(),
@@ -354,35 +401,79 @@ export function ToolsClient({ initialTools }: { initialTools: ToolSummary[] }) {
                   </div>
 
                   {form.kind === 'http' ? (
-                    <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                    <>
+                      <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="url">URL template</Label>
+                          <Input
+                            id="url"
+                            value={form.url}
+                            onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
+                            placeholder="https://api.example.com/route/{origin}/{destination}"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="method">Method</Label>
+                          <select
+                            id="method"
+                            value={form.method}
+                            onChange={(e) =>
+                              setForm((f) => ({ ...f, method: e.target.value as FormState['method'] }))
+                            }
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          >
+                            <option>GET</option>
+                            <option>POST</option>
+                            <option>PUT</option>
+                            <option>PATCH</option>
+                            <option>DELETE</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="http-headers">Headers (JSON object, optional)</Label>
+                          <textarea
+                            id="http-headers"
+                            value={form.headersJson}
+                            onChange={(e) => setForm((f) => ({ ...f, headersJson: e.target.value }))}
+                            rows={3}
+                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+                            placeholder={'{\n  "authorization": "Bearer {{secret:mapbox/default}}"\n}'}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="http-query">Query params (JSON object, optional)</Label>
+                          <textarea
+                            id="http-query"
+                            value={form.queryJson}
+                            onChange={(e) => setForm((f) => ({ ...f, queryJson: e.target.value }))}
+                            rows={3}
+                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+                            placeholder={'{\n  "access_token": "{{secret:mapbox/default}}"\n}'}
+                          />
+                        </div>
+                      </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor="url">URL</Label>
-                        <Input
-                          id="url"
-                          value={form.url}
-                          onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
-                          placeholder="https://your-api.example.com/path"
-                          required
+                        <Label htmlFor="http-body">Body template (optional)</Label>
+                        <textarea
+                          id="http-body"
+                          value={form.bodyTemplate}
+                          onChange={(e) => setForm((f) => ({ ...f, bodyTemplate: e.target.value }))}
+                          rows={3}
+                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+                          placeholder={'{"query": {q}, "limit": {limit}}'}
                         />
+                        <p className="text-xs text-muted-foreground">
+                          <code>{'{param}'}</code> placeholders fill from the model&apos;s input
+                          (URL-encoded in the URL, JSON-encoded in the body);{' '}
+                          <code>{'{{secret:service/label}}'}</code> pulls from the API-key vault at
+                          call time. No body template → non-GET calls send the whole input as JSON.
+                          Tip: the API Console (System → API Console) builds these visually.
+                        </p>
                       </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="method">Method</Label>
-                        <select
-                          id="method"
-                          value={form.method}
-                          onChange={(e) =>
-                            setForm((f) => ({ ...f, method: e.target.value as FormState['method'] }))
-                          }
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        >
-                          <option>GET</option>
-                          <option>POST</option>
-                          <option>PUT</option>
-                          <option>PATCH</option>
-                          <option>DELETE</option>
-                        </select>
-                      </div>
-                    </div>
+                    </>
                   ) : (
                     <div className="space-y-1.5">
                       <Label htmlFor="cmd">Command template</Label>

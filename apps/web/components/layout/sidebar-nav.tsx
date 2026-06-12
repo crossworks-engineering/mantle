@@ -35,6 +35,7 @@ import {
   Settings,
   Sparkles,
   Table2,
+  TerminalSquare,
   User,
   UserCheck,
   Waypoints,
@@ -118,6 +119,7 @@ export function SidebarNav({
       label: 'System',
       items: [
         { name: 'Studio', href: '/studio', icon: Waypoints },
+        { name: 'API Console', href: '/dev-tools', icon: TerminalSquare },
         { name: 'Traces', href: '/traces', icon: Workflow },
         { name: 'Debug', href: '/debug', icon: Activity },
       ],

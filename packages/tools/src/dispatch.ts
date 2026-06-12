@@ -10,7 +10,14 @@
 
 import { and, eq } from 'drizzle-orm';
 import { db, tools, type Tool, type ToolHandler } from '@mantle/db';
+import { getApiKey } from '@mantle/api-keys';
 import { getBuiltinHandler } from './registry';
+import {
+  buildHttpRequest,
+  collectSecretRefs,
+  refKey,
+  scrubSecrets,
+} from './http-template';
 import type { ToolHandlerContext, ToolHandlerResult } from './types';
 
 /** Look up a tool by slug for a given owner. Returns null if missing/disabled. */
@@ -135,40 +142,63 @@ function renderShellCommand(template: string, input: Record<string, unknown>): s
   );
 }
 
+/** Decrypt every `{{secret:service/label}}` ref the handler's templates
+ *  mention. Missing vault entries fail the call up-front with a clear
+ *  message instead of sending a request with a literal ref in it. */
+async function resolveHandlerSecrets(
+  ownerId: string,
+  h: Extract<ToolHandler, { kind: 'http' }>,
+): Promise<{ secrets: Map<string, string> } | { error: string }> {
+  const secrets = new Map<string, string>();
+  for (const ref of collectSecretRefs(h)) {
+    const plaintext = await getApiKey(ownerId, ref.service, ref.label);
+    if (plaintext === null) {
+      return {
+        error: `secret '${refKey(ref)}' not found in the API-key vault — add it under Settings → API keys (service '${ref.service}', label '${ref.label}')`,
+      };
+    }
+    secrets.set(refKey(ref), plaintext);
+  }
+  return { secrets };
+}
+
 async function dispatchHttp(
   h: Extract<ToolHandler, { kind: 'http' }>,
   input: Record<string, unknown>,
   ctx: ToolHandlerContext,
 ): Promise<ToolHandlerResult> {
-  const method = (h.method ?? 'POST').toUpperCase();
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
-  // Future: h.headersRef / h.authRef → look up secret + inject. For v1
-  // these are placeholders — explicit headers/auth land in phase 5.
-  void h.headersRef;
-  void h.authRef;
+  const resolved = await resolveHandlerSecrets(ctx.ownerId, h);
+  if ('error' in resolved) return { ok: false, error: resolved.error };
+  const { secrets } = resolved;
+  const scrub = (s: string) => scrubSecrets(s, secrets);
+
+  const req = buildHttpRequest(h, input, secrets);
   const init: RequestInit = {
-    method,
-    headers,
+    method: req.method,
+    headers: req.headers,
     signal: AbortSignal.timeout(h.timeoutMs ?? HTTP_TIMEOUT_MS_DEFAULT),
   };
-  if (method !== 'GET' && method !== 'HEAD') {
-    init.body = JSON.stringify(input);
-  }
+  if (req.body !== null) init.body = req.body;
+
   try {
-    const res = await fetch(h.url, init);
+    const res = await fetch(req.url, init);
     const text = await res.text();
-    ctx.step?.setMeta({ status: res.status, length: text.length });
+    ctx.step?.setMeta({ url: scrub(req.url), method: req.method, status: res.status, length: text.length });
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: scrub(`${res.status} ${res.statusText}: ${text.slice(0, 500)}`),
+      };
+    }
     let parsed: unknown = text;
     try {
       parsed = JSON.parse(text);
     } catch {
       /* keep raw text */
     }
-    if (!res.ok) {
-      return { ok: false, error: `${res.status} ${res.statusText}: ${text.slice(0, 500)}` };
-    }
     return { ok: true, output: parsed };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: scrub(msg) };
   }
 }

@@ -190,6 +190,9 @@ importers:
       '@mantle/voice':
         specifier: workspace:*
         version: link:../../packages/voice
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@3.25.76)
       '@napi-rs/canvas':
         specifier: ~0.1.100
         version: 0.1.100

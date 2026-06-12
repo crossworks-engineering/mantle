@@ -2,28 +2,13 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireOwner } from '@/lib/auth';
 import { createTool, listToolsForOwner } from '@/lib/tools';
+import { ToolHandlerSchema } from '@/lib/tool-handler-schema';
 
 export async function GET() {
   const user = await requireOwner();
   const rows = await listToolsForOwner(user.id);
   return NextResponse.json({ tools: rows });
 }
-
-const HandlerSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('builtin'), ref: z.string().min(1).max(120) }),
-  z.object({
-    kind: z.literal('http'),
-    url: z.string().url().max(2000),
-    method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
-    headersRef: z.string().nullable().optional(),
-    authRef: z.string().nullable().optional(),
-    timeoutMs: z.number().int().min(100).max(120_000).optional(),
-  }),
-  z.object({
-    kind: z.literal('shell'),
-    cmd: z.string().min(1).max(8000),
-  }),
-]);
 
 const CreateBody = z.object({
   slug: z
@@ -34,7 +19,7 @@ const CreateBody = z.object({
   name: z.string().min(1).max(120),
   description: z.string().min(1).max(2000),
   inputSchema: z.record(z.string(), z.unknown()).optional(),
-  handler: HandlerSchema,
+  handler: ToolHandlerSchema,
   requiresConfirm: z.boolean().optional(),
   enabled: z.boolean().optional(),
 });

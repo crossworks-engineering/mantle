@@ -46,6 +46,17 @@ export { LIFELOG_TOOLS, LIFELOG_TOOL_SLUGS, LIFELOG_AUTO_GRANT_SLUGS } from './b
 export { seedBuiltinTools } from './seed';
 export { resolveTool, resolveTools, dispatchTool } from './dispatch';
 export {
+  buildHttpRequest,
+  collectParamNames,
+  collectSecretRefs,
+  refKey,
+  scrubSecrets,
+  templateStrings,
+  type BuiltHttpRequest,
+  type HttpHandler,
+  type SecretRef,
+} from './http-template';
+export {
   listPendingCalls,
   countPending,
   getPendingCall,

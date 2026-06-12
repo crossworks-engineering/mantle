@@ -2,31 +2,16 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireOwner } from '@/lib/auth';
 import { deleteTool, getToolById, updateTool } from '@/lib/tools';
+import { ToolHandlerSchema } from '@/lib/tool-handler-schema';
 
 const IdParams = z.object({ id: z.string().uuid() });
-
-const HandlerSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('builtin'), ref: z.string().min(1).max(120) }),
-  z.object({
-    kind: z.literal('http'),
-    url: z.string().url().max(2000),
-    method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
-    headersRef: z.string().nullable().optional(),
-    authRef: z.string().nullable().optional(),
-    timeoutMs: z.number().int().min(100).max(120_000).optional(),
-  }),
-  z.object({
-    kind: z.literal('shell'),
-    cmd: z.string().min(1).max(8000),
-  }),
-]);
 
 const PatchBody = z
   .object({
     name: z.string().min(1).max(120),
     description: z.string().min(1).max(2000),
     inputSchema: z.record(z.string(), z.unknown()),
-    handler: HandlerSchema,
+    handler: ToolHandlerSchema,
     requiresConfirm: z.boolean(),
     enabled: z.boolean(),
   })
