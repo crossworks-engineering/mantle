@@ -58,6 +58,9 @@ export type ProfilePreferences = {
    *  the route falls back to the default `tables` (Ledger) specialist. Configured
    *  on the /tables surface itself (the Assist panel agent picker). */
   tablesAssistAgentSlug?: string;
+  /** Slug of the agent the API Console (/dev-tools) "Assist" panel delegates
+   *  to. Unset → the default `toolsmith` specialist. */
+  devToolsAssistAgentSlug?: string;
 };
 
 export const DEFAULT_PREFERENCES: ProfilePreferences = {
@@ -131,6 +134,10 @@ export async function loadProfilePreferences(
     tablesAssistAgentSlug:
       typeof prefs.tablesAssistAgentSlug === 'string' && prefs.tablesAssistAgentSlug.length > 0
         ? prefs.tablesAssistAgentSlug
+        : undefined,
+    devToolsAssistAgentSlug:
+      typeof prefs.devToolsAssistAgentSlug === 'string' && prefs.devToolsAssistAgentSlug.length > 0
+        ? prefs.devToolsAssistAgentSlug
         : undefined,
   };
 }

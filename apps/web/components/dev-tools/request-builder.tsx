@@ -10,7 +10,17 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, KeyRound, Save, Send, Settings2, Wand2, X } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  KeyRound,
+  Save,
+  Send,
+  Settings2,
+  Sparkles,
+  Wand2,
+  X,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -227,8 +237,18 @@ function SchemaPeek({ schema }: { schema: Record<string, unknown> }) {
 }
 
 export function RequestBuilder() {
-  const { draft, setDraft, send, cancel, sending, activeEnv, saveDraftTo, collections } =
-    useDevTools();
+  const {
+    draft,
+    setDraft,
+    send,
+    cancel,
+    sending,
+    activeEnv,
+    saveDraftTo,
+    collections,
+    assistOpen,
+    setAssistOpen,
+  } = useDevTools();
   const toast = useToast();
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
@@ -298,6 +318,18 @@ export function RequestBuilder() {
               onClick={() => setSaveToolOpen(true)}
             >
               <Wand2 /> Save as agent tool
+            </Button>
+          )}
+          {!assistOpen && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-xs max-md:hidden"
+              title="Open the Toolsmith assistant — it reads API docs and builds tools for you"
+              onClick={() => setAssistOpen(true)}
+            >
+              <Sparkles /> Toolsmith
             </Button>
           )}
         </div>

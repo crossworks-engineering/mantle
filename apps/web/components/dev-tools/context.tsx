@@ -75,6 +75,10 @@ type DevToolsContextValue = {
 
   agentTools: AgentToolInfo[];
   refreshAgentTools: () => Promise<void>;
+
+  /** Toolsmith Assist panel visibility (toggled from the builder header). */
+  assistOpen: boolean;
+  setAssistOpen: (open: boolean) => void;
 };
 
 const Ctx = createContext<DevToolsContextValue | null>(null);
@@ -116,6 +120,7 @@ export function DevToolsProvider({
 
   const [mcp, setMcp] = useState<McpState>({ status: 'idle' });
   const [agentTools, setAgentTools] = useState<AgentToolInfo[]>(initialAgentTools);
+  const [assistOpen, setAssistOpen] = useState(false);
 
   const activeEnv = useMemo(
     () => environments.find((e) => e.id === activeEnvId) ?? environments[0] ?? null,
@@ -313,6 +318,8 @@ export function DevToolsProvider({
     loadMcpTools,
     agentTools,
     refreshAgentTools,
+    assistOpen,
+    setAssistOpen,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

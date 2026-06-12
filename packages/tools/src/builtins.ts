@@ -47,6 +47,7 @@ import { TOOL_RESULT_TOOLS } from './builtins-tool-results';
 import { CONTACT_TOOLS } from './builtins-contacts';
 import { LIFELOG_TOOLS } from './builtins-lifelog';
 import { PEER_TOOLS } from './builtins-peers';
+import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -1054,6 +1055,10 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Federation — query other people's Mantles for data they've shared with
   // you. Outbound half of docs/federation.md; reads only what a peer granted.
   ...PEER_TOOLS,
+  // Toolsmith — author/test/group/grant templated HTTP API tools (+ web_fetch
+  // for reading API docs). Granted to the Toolsmith specialist; mirrored over
+  // MCP so Claude Code can drive the same flow. http-only by design.
+  ...TOOLSMITH_TOOLS,
 ];
 
 // P6: there is no flat "default assistant grant" anymore. A generalist persona's

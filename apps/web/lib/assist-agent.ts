@@ -18,7 +18,7 @@ import { db, agents, and, eq } from '@mantle/db';
 import { loadProfilePreferences } from '@mantle/content';
 import { ASSIST_SURFACE_DEFAULTS } from '@/lib/system-manifest/manifest';
 
-export type AssistSurface = 'pages' | 'tables';
+export type AssistSurface = 'pages' | 'tables' | 'dev-tools';
 
 /** The specialist slug each surface defaults to — derived from the manifest
  *  (single source of truth), so adding/renaming an Assist specialist is one
@@ -35,7 +35,11 @@ export async function resolveAssistAgentSlug(
 ): Promise<string | null> {
   const prefs = await loadProfilePreferences(ownerId);
   const preferred =
-    surface === 'pages' ? prefs.pagesAssistAgentSlug : prefs.tablesAssistAgentSlug;
+    surface === 'pages'
+      ? prefs.pagesAssistAgentSlug
+      : surface === 'tables'
+        ? prefs.tablesAssistAgentSlug
+        : prefs.devToolsAssistAgentSlug;
 
   // Try the saved preference first, then the default specialist. Dedupe so we
   // don't probe the same slug twice when the preference IS the default.

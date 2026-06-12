@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Agent picker for the editor "Assist" panels (/pages and /tables).
+ * Agent picker for the in-surface "Assist" panels (/pages, /tables, /dev-tools).
  *
  * The configurability the operator asked for lives HERE, on the surface itself:
  * a compact dropdown in the Assist panel header that chooses which agent the
@@ -38,7 +38,7 @@ export function AssistAgentPicker({
    *  panel can update its "X is working…" labels. Optional. */
   onAgentNameChange,
 }: {
-  surface: 'pages' | 'tables';
+  surface: 'pages' | 'tables' | 'dev-tools';
   defaultLabel: string;
   onAgentNameChange?: (name: string | null) => void;
 }) {
@@ -62,10 +62,16 @@ export function AssistAgentPicker({
         const prefJson = (await prefRes.json().catch(() => ({}))) as {
           pages?: string | null;
           tables?: string | null;
+          'dev-tools'?: string | null;
         };
         if (cancelled) return;
         setAgents((agentsJson.agents ?? []).map((a) => ({ slug: a.slug, name: a.name })));
-        const current = surface === 'pages' ? prefJson.pages : prefJson.tables;
+        const current =
+          surface === 'pages'
+            ? prefJson.pages
+            : surface === 'tables'
+              ? prefJson.tables
+              : prefJson['dev-tools'];
         setValue(current || DEFAULT_VALUE);
       } finally {
         if (!cancelled) setLoaded(true);

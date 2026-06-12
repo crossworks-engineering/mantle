@@ -67,6 +67,7 @@ import {
   getPendingCall,
   listPendingCalls,
   rejectPendingCall,
+  TOOLSMITH_TOOLS,
 } from '@mantle/tools';
 import { authUsers, resolveSingleOwnerId } from '@mantle/db';
 import {
@@ -1336,6 +1337,65 @@ server.tool(
     };
   },
 );
+
+/* ───────────────────────── Toolsmith over MCP ──────────────────────────
+ *
+ * The api_tool_* / tool_group_* / agent_* / web_fetch / api_key_refs set
+ * lets an MCP client (Claude Code, Claude Desktop) author, test, group,
+ * and grant templated HTTP API tools — the same capability the in-app
+ * Toolsmith agent has, on the user's own Claude subscription instead of
+ * Mantle's metered API key. "Read these Mapbox docs and build me the
+ * tool set" works end-to-end from Claude Code.
+ *
+ * Registered straight from TOOLSMITH_TOOLS (single source of truth) via
+ * a JSON-Schema→zod shape bridge, so the two surfaces cannot drift. The
+ * handlers run with the MCP process's OWNER_ID — same trust model as
+ * every other tool in this file.
+ */
+
+/** Convert the limited JSON-Schema vocabulary the Toolsmith defs use
+ *  (string / number / boolean / object / array<string> / enum, with
+ *  per-property descriptions) into a zod raw shape for server.tool(). */
+function zodShapeFromJsonSchema(schema: Record<string, unknown>): Record<string, z.ZodTypeAny> {
+  const props = (schema.properties ?? {}) as Record<string, Record<string, unknown>>;
+  const required = new Set((schema.required as string[]) ?? []);
+  const shape: Record<string, z.ZodTypeAny> = {};
+  for (const [key, def] of Object.entries(props)) {
+    let t: z.ZodTypeAny;
+    const type = def.type;
+    if (Array.isArray(def.enum) && def.enum.every((v) => typeof v === 'string')) {
+      t = z.enum(def.enum as [string, ...string[]]);
+    } else if (type === 'string') t = z.string();
+    else if (type === 'number' || type === 'integer') t = z.number();
+    else if (type === 'boolean') t = z.boolean();
+    else if (type === 'array') t = z.array(z.string());
+    else if (type === 'object') t = z.record(z.unknown());
+    else if (Array.isArray(type) && type.includes('null')) t = z.string().nullable();
+    else t = z.unknown();
+    if (typeof def.description === 'string') t = t.describe(def.description);
+    if (!required.has(key)) t = t.optional();
+    shape[key] = t;
+  }
+  return shape;
+}
+
+for (const def of TOOLSMITH_TOOLS) {
+  server.tool(
+    def.slug,
+    def.description,
+    zodShapeFromJsonSchema(def.inputSchema),
+    async (args: Record<string, unknown>) => {
+      const result = await def.handler(args ?? {}, { ownerId: OWNER_ID! });
+      if (!result.ok) {
+        return {
+          content: [{ type: 'text' as const, text: `Error: ${result.error}` }],
+          isError: true,
+        };
+      }
+      return jsonReply(result.output);
+    },
+  );
+}
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

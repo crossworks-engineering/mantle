@@ -29,6 +29,7 @@ import {
   TABLE_TOOL_SLUGS,
   CONTACT_AUTO_GRANT_SLUGS,
   LIFELOG_AUTO_GRANT_SLUGS,
+  TOOLSMITH_TOOL_SLUGS,
 } from '@mantle/tools';
 import type { AiWorkerKind } from '@mantle/db';
 import { SKILL_INSTRUCTIONS, AGENT_PROMPTS } from './prompts';
@@ -76,8 +77,8 @@ export type ManifestAgent = {
   toolGroupSlugs?: string[];
   /** Does the persona delegate TO this agent (invoke_agent allowlist)? */
   isDelegate?: boolean;
-  /** Binds the /pages or /tables editor "Assist" panel to this agent. */
-  assistSurface?: 'pages' | 'tables';
+  /** Binds an in-surface "Assist" panel (/pages, /tables, /dev-tools) to this agent. */
+  assistSurface?: 'pages' | 'tables' | 'dev-tools';
   params: { temperature: number; max_tokens?: number };
   memoryConfig?: { max_iterations?: number };
   priority: number;
@@ -346,6 +347,13 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     description: "Query other people's Mantles for data they've shared (docs/federation.md).",
     toolSlugs: ['peer_list', 'peer_query', 'peer_node_get'],
   },
+  {
+    slug: 'toolsmith',
+    name: 'Toolsmith kit',
+    description:
+      'Author/test/group/grant templated HTTP API tools + web_fetch for reading API docs — the Toolsmith specialist (and trusted operators) only: it can mint new capabilities and grant them to agents.',
+    toolSlugs: [...TOOLSMITH_TOOL_SLUGS],
+  },
 ];
 
 // ── Agents ───────────────────────────────────────────────────────────────────
@@ -458,6 +466,26 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     priority: 100,
   },
   {
+    slug: 'toolsmith',
+    name: 'Toolsmith',
+    description: 'API integration specialist — reads service docs, authors + tests agent-callable HTTP tools; backs the API Console Assist panel.',
+    role: 'custom',
+    model: 'anthropic/claude-sonnet-4.6',
+    envModelVar: 'TOOLSMITH_MODEL',
+    systemPrompt: AGENT_PROMPTS['toolsmith']!,
+    // `toolsmith` (the api_tool_*/group/grant/web_fetch kit) + `research` so it
+    // can locate a service's docs when given only a name. Deliberately NOT
+    // memory-core — it works from docs + the registry, not the user's brain.
+    toolGroupSlugs: ['toolsmith', 'research'],
+    skillSlugs: [],
+    isDelegate: true,
+    assistSurface: 'dev-tools',
+    // Doc-reading + author + test loops chew iterations; match Ledger's budget.
+    params: { temperature: 0.2, max_tokens: 16000 },
+    memoryConfig: { max_iterations: 30 },
+    priority: 100,
+  },
+  {
     slug: 'coder',
     name: 'Brian the Coder',
     description: 'Code + ops specialist (holds the unrestricted terminal).',
@@ -506,10 +534,11 @@ export const DELEGATE_SLUGS: readonly string[] = MANIFEST_AGENTS.filter((a) => a
   (a) => a.slug,
 );
 
-/** surface → default specialist slug, for the editor Assist panels. */
-export const ASSIST_SURFACE_DEFAULTS: Record<'pages' | 'tables', string> = Object.fromEntries(
-  MANIFEST_AGENTS.filter((a) => a.assistSurface).map((a) => [a.assistSurface!, a.slug]),
-) as Record<'pages' | 'tables', string>;
+/** surface → default specialist slug, for the in-surface Assist panels. */
+export const ASSIST_SURFACE_DEFAULTS: Record<'pages' | 'tables' | 'dev-tools', string> =
+  Object.fromEntries(
+    MANIFEST_AGENTS.filter((a) => a.assistSurface).map((a) => [a.assistSurface!, a.slug]),
+  ) as Record<'pages' | 'tables' | 'dev-tools', string>;
 
 /**
  * Tool slugs that exist as real handlers but are registered OUTSIDE the static

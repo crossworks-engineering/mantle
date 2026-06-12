@@ -6,8 +6,11 @@ graph, and answer Telegram — using the bundled MCP server. One-time setup
 per client machine; after that the tools are simply present every launch.
 
 **What this is (and isn't).** [`apps/mcp`](../apps/mcp/src/server.ts) is a
-**tool surface**, not a chat channel: ~50 tools of raw, persona-less access to
-your data. A conversation you have in Claude Desktop does *not* enter the
+**tool surface**, not a chat channel: ~70 tools of raw, persona-less access to
+your data — including the full Toolsmith set (`api_tool_*`, `web_fetch`,
+groups + grants), so a Claude Code session can read a service's API docs and
+author/test/deploy new agent tools on your own subscription instead of
+Mantle's metered key. See [`toolsmith.md`](./toolsmith.md). A conversation you have in Claude Desktop does *not* enter the
 unified conversation stream ([`conversation.md`](./conversation.md)) — your
 in-app assistant won't "remember" the chat itself. But everything Claude
 *writes* through it (a note, a todo, a life log) is a real brain write: the

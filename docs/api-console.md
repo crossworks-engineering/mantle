@@ -102,3 +102,14 @@ Security posture: every route sits behind `requireOwner()`. The proxy
 is an intentional SSRF-by-design for the single owner — the same power
 their `http` tools already have. Nothing new is network-exposed; the
 MCP bridge stays stdio.
+
+## 5. The Toolsmith Assist panel
+
+The console's header has a **Toolsmith** button — an in-surface Assist
+panel (same pattern as /pages and /tables) backed by the Toolsmith
+specialist. Instead of building a request by hand, describe the
+integration ("read the API docs at <url> and build tools for X") and
+Toolsmith runs the whole loop: web_fetch the docs, author the
+templates, test against the live API, bundle + grant. The same
+capability is exposed over MCP for Claude Code users. See
+[`toolsmith.md`](./toolsmith.md).

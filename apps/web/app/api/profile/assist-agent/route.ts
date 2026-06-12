@@ -1,10 +1,10 @@
 /**
- * POST /api/profile/assist-agent — set which agent the editor "Assist" panel on
- * a given surface (`pages` | `tables`) delegates to. Backs the agent picker that
- * lives in the /pages and /tables Assist panels. Persists to
- * profiles.preferences.{pagesAssistAgentSlug,tablesAssistAgentSlug}.
+ * POST /api/profile/assist-agent — set which agent the in-surface "Assist"
+ * panel (`pages` | `tables` | `dev-tools`) delegates to. Backs the agent
+ * picker in each panel. Persists to
+ * profiles.preferences.{pages,tables,devTools}AssistAgentSlug.
  *
- * Body: { surface: 'pages' | 'tables', agentSlug: string | null }
+ * Body: { surface: 'pages' | 'tables' | 'dev-tools', agentSlug: string | null }
  *   - agentSlug null/'' clears the override → the route falls back to the
  *     default specialist slug for that surface.
  */
@@ -24,12 +24,13 @@ export async function GET() {
   return NextResponse.json({
     pages: prefs.pagesAssistAgentSlug ?? null,
     tables: prefs.tablesAssistAgentSlug ?? null,
+    'dev-tools': prefs.devToolsAssistAgentSlug ?? null,
     defaults: DEFAULT_ASSIST_SLUG,
   });
 }
 
 const Body = z.object({
-  surface: z.enum(['pages', 'tables']),
+  surface: z.enum(['pages', 'tables', 'dev-tools']),
   agentSlug: z.string().min(1).max(120).nullable(),
 });
 
@@ -43,10 +44,18 @@ export async function POST(req: Request) {
   // Empty string is treated as "clear" by loadProfilePreferences (length check),
   // so storing '' is a safe way to reset to the default.
   const value = agentSlug ?? '';
-  const key = surface === 'pages' ? 'pagesAssistAgentSlug' : 'tablesAssistAgentSlug';
+  const key =
+    surface === 'pages'
+      ? 'pagesAssistAgentSlug'
+      : surface === 'tables'
+        ? 'tablesAssistAgentSlug'
+        : 'devToolsAssistAgentSlug';
   const prefs = await updateProfilePreferences(user.id, { [key]: value });
-  return NextResponse.json({
-    ok: true,
-    agentSlug: surface === 'pages' ? prefs.pagesAssistAgentSlug ?? null : prefs.tablesAssistAgentSlug ?? null,
-  });
+  const current =
+    surface === 'pages'
+      ? prefs.pagesAssistAgentSlug
+      : surface === 'tables'
+        ? prefs.tablesAssistAgentSlug
+        : prefs.devToolsAssistAgentSlug;
+  return NextResponse.json({ ok: true, agentSlug: current ?? null });
 }

@@ -19,7 +19,7 @@ export { parseDocumentBytes } from './parse';
 
 export { extractPdfTextWithPassword, type PdfPasswordResult } from './pdf-password';
 
-export { tikaIsUp, tikaVersion } from './tika';
+export { parseTikaBytes, tikaIsUp, tikaVersion } from './tika';
 
 export { MAX_UPLOAD_BYTES } from './limits';
 

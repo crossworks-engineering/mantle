@@ -42,9 +42,20 @@ export { PERSONA_TOOLS, PERSONA_TOOL_SLUGS } from './builtins-persona';
 export { TODO_TOOLS, TODO_TOOL_SLUGS } from './builtins-todos';
 export { TERMINAL_TOOLS, TERMINAL_TOOL_SLUGS } from './builtins-terminal';
 export { CONTACT_TOOLS, CONTACT_AUTO_GRANT_SLUGS } from './builtins-contacts';
+export { TOOLSMITH_TOOLS, TOOLSMITH_TOOL_SLUGS } from './builtins-toolsmith';
 export { LIFELOG_TOOLS, LIFELOG_TOOL_SLUGS, LIFELOG_AUTO_GRANT_SLUGS } from './builtins-lifelog';
 export { seedBuiltinTools } from './seed';
 export { resolveTool, resolveTools, dispatchTool } from './dispatch';
+export {
+  listToolsForOwner,
+  getToolById,
+  createTool,
+  updateTool,
+  deleteTool,
+  type ToolSummary,
+  type CreateToolInput,
+  type UpdateToolInput,
+} from './crud';
 export {
   buildHttpRequest,
   collectParamNames,
