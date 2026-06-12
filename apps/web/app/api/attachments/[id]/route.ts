@@ -5,6 +5,7 @@ import { and, eq } from 'drizzle-orm';
 import { db, emailAccounts, emailAttachments, emails } from '@mantle/db';
 import { getContent } from '@mantle/storage';
 import { requireOwner } from '@/lib/auth';
+import { safeDownloadHeaders } from '@/lib/safe-download';
 
 /**
  * Attachment download. Looks up the attachment by id, verifies it belongs to
@@ -35,15 +36,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
   const { body, contentType, contentLength } = await getContent(row.storageKey);
 
-  const headers = new Headers();
-  headers.set('content-type', contentType ?? row.mimeType ?? 'application/octet-stream');
+  const headers = new Headers(safeDownloadHeaders(contentType ?? row.mimeType, row.filename));
   if (contentLength !== undefined) headers.set('content-length', String(contentLength));
-  if (row.filename) {
-    headers.set(
-      'content-disposition',
-      `inline; filename*=UTF-8''${encodeURIComponent(row.filename)}`,
-    );
-  }
 
   const webStream = Readable.toWeb(body) as unknown as NodeReadableStream<Uint8Array>;
   return new NextResponse(webStream as unknown as ReadableStream, { status: 200, headers });

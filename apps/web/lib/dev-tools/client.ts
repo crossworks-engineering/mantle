@@ -25,6 +25,40 @@ const VAR_PATTERN = /\{\{\s*([A-Za-z_][\w.-]*)\s*\}\}/g; // `secret:` refs don't
 const PATH_PARAM_PATTERN = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 const SECRET_REF_TEST = /\{\{\s*secret:/;
 
+/** Mirror the proxy's 2 MB cap on the direct path so a large body can't pull
+ *  the whole response into React state and freeze the console. */
+const MAX_DIRECT_RESPONSE_BYTES = 2 * 1024 * 1024;
+
+async function readCappedText(
+  res: Response,
+  cap: number,
+): Promise<{ text: string; total: number; truncated: boolean }> {
+  const reader = res.body?.getReader();
+  if (!reader) {
+    const text = await res.text();
+    return { text, total: new Blob([text]).size, truncated: false };
+  }
+  const decoder = new TextDecoder();
+  let text = '';
+  let size = 0;
+  let truncated = false;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    if (size + value.byteLength > cap) {
+      text += decoder.decode(value.subarray(0, cap - size), { stream: false });
+      size = cap;
+      truncated = true;
+      await reader.cancel();
+      break;
+    }
+    size += value.byteLength;
+    text += decoder.decode(value, { stream: true });
+  }
+  return { text, total: size, truncated };
+}
+
 export function buildVarMap(env: Environment | null): Record<string, string> {
   const map: Record<string, string> = {};
   if (!env) return map;
@@ -58,6 +92,29 @@ function substitutePathParams(url: string, values: Record<string, string>): stri
   });
 }
 
+/** Fill `{param}` placeholders raw (no encoding) — for query/header values,
+ *  which the dispatcher substitutes in 'raw' mode (the URL-encode happens once
+ *  downstream). Keeps the console run in step with the saved tool. */
+function fillParamsRaw(s: string, values: Record<string, string>): string {
+  return s.replace(PATH_PARAM_PATTERN, (match, name: string) => {
+    const v = values[name];
+    return v === undefined || v === '' ? match : v;
+  });
+}
+
+/** Every distinct `{param}` across the URL, query values, and header values
+ *  (after env-var substitution) — what the builder renders fillable chips for,
+ *  so a query/header param is exercised by a console run just like the URL. */
+export function collectDraftParams(draft: DraftRequest, vars: Record<string, string>): string[] {
+  if (draft.kind !== 'http') return [];
+  const haystack = [
+    substituteVars(draft.url, vars),
+    ...draft.params.filter((p) => p.enabled).map((p) => substituteVars(p.value, vars)),
+    ...draft.headers.filter((h) => h.enabled).map((h) => substituteVars(h.value, vars)),
+  ].join('\n');
+  return pathPlaceholders(haystack);
+}
+
 function activeKv(entries: KeyValueEntry[]): KeyValueEntry[] {
   return entries.filter((e) => e.enabled && e.key.trim() !== '');
 }
@@ -83,7 +140,11 @@ export function resolveHttpDraft(
   url = substitutePathParams(url, draft.pathValues);
 
   const queryPairs = activeKv(draft.params).map(
-    (p) => [substituteVars(p.key, vars), substituteVars(p.value, vars)] as const,
+    (p) =>
+      [
+        substituteVars(p.key, vars),
+        fillParamsRaw(substituteVars(p.value, vars), draft.pathValues),
+      ] as const,
   );
   if (queryPairs.length > 0) {
     const qs = queryPairs
@@ -94,7 +155,10 @@ export function resolveHttpDraft(
 
   const headers: Record<string, string> = {};
   for (const h of activeKv(draft.headers)) {
-    headers[substituteVars(h.key, vars)] = substituteVars(h.value, vars);
+    headers[substituteVars(h.key, vars)] = fillParamsRaw(
+      substituteVars(h.value, vars),
+      draft.pathValues,
+    );
   }
   if (draft.auth.mode === 'bearer' && draft.auth.token) {
     if (!Object.keys(headers).some((k) => k.toLowerCase() === 'authorization')) {
@@ -211,7 +275,7 @@ export async function sendHttpDraft(
       credentials: draft.auth.mode === 'session' ? 'same-origin' : 'omit',
       signal,
     });
-    const text = await res.text();
+    const { text, total, truncated } = await readCappedText(res, MAX_DIRECT_RESPONSE_BYTES);
     const durationMs = Math.round(performance.now() - t0);
     return {
       via: 'direct',
@@ -219,7 +283,8 @@ export async function sendHttpDraft(
       statusText: res.statusText,
       ok: res.ok,
       durationMs,
-      sizeBytes: new Blob([text]).size,
+      sizeBytes: total,
+      truncated,
       headers: [...res.headers.entries()],
       bodyText: text,
       json: tryParseJson(text, res.headers.get('content-type') ?? ''),

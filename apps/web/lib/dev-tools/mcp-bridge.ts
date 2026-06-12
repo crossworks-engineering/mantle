@@ -31,6 +31,7 @@ export type McpToolInfo = {
 
 type Bridge = {
   client: Client;
+  alive: boolean;
   close: () => Promise<void>;
 };
 
@@ -72,10 +73,11 @@ async function spawnBridge(): Promise<Bridge> {
     stderr: 'ignore',
   });
   const client = new Client({ name: 'mantle-api-console', version: '1.0.0' });
-  await client.connect(transport);
-  return {
+  const bridge: Bridge = {
     client,
+    alive: true,
     close: async () => {
+      bridge.alive = false;
       try {
         await client.close();
       } catch {
@@ -83,6 +85,44 @@ async function spawnBridge(): Promise<Bridge> {
       }
     },
   };
+  // If the child crashes (or exits), drop the cached bridge so the next call
+  // respawns instead of reusing a dead client forever. Only clear the cache if
+  // it still points at *this* bridge — a newer one may already have replaced it.
+  client.onclose = () => {
+    bridge.alive = false;
+    void state.bridge?.then((b) => {
+      if (b === bridge) state.bridge = null;
+    }).catch(() => {});
+  };
+  await client.connect(transport);
+  return bridge;
+}
+
+/** Connection-closed errors are recoverable by respawning; others aren't. */
+function isClosedError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /closed|not connected|ECONNRESET|EPIPE|disconnected/i.test(msg);
+}
+
+/** Drop a dead bridge from the cache (if still current) and close it. */
+async function dropBridge(dead: Bridge): Promise<void> {
+  if (state.bridge && (await state.bridge.catch(() => null)) === dead) {
+    state.bridge = null;
+  }
+  await dead.close().catch(() => {});
+}
+
+/** Run an op against the bridge; if the child died mid-call, respawn once. */
+async function withBridge<T>(fn: (b: Bridge) => Promise<T>): Promise<T> {
+  const bridge = await getBridge();
+  try {
+    return await fn(bridge);
+  } catch (err) {
+    if (!isClosedError(err)) throw err;
+    await dropBridge(bridge);
+    const fresh = await getBridge();
+    return await fn(fresh);
+  }
 }
 
 function bumpIdleTimer(): void {
@@ -108,13 +148,14 @@ async function getBridge(): Promise<Bridge> {
 }
 
 export async function listMcpTools(): Promise<McpToolInfo[]> {
-  const bridge = await getBridge();
-  const res = await bridge.client.listTools();
-  return res.tools.map((t) => ({
-    name: t.name,
-    description: t.description ?? '',
-    inputSchema: (t.inputSchema ?? { type: 'object' }) as Record<string, unknown>,
-  }));
+  return withBridge(async (bridge) => {
+    const res = await bridge.client.listTools();
+    return res.tools.map((t) => ({
+      name: t.name,
+      description: t.description ?? '',
+      inputSchema: (t.inputSchema ?? { type: 'object' }) as Record<string, unknown>,
+    }));
+  });
 }
 
 export type McpCallResult = {
@@ -128,14 +169,15 @@ export async function callMcpTool(
   name: string,
   args: Record<string, unknown>,
 ): Promise<McpCallResult> {
-  const bridge = await getBridge();
-  const t0 = performance.now();
-  const res = await bridge.client.callTool({ name, arguments: args });
-  const durationMs = Math.round(performance.now() - t0);
-  const content = Array.isArray(res.content) ? res.content : [];
-  const text = content
-    .map((c) => (c && typeof c === 'object' && 'text' in c ? String(c.text) : ''))
-    .filter(Boolean)
-    .join('\n');
-  return { isError: res.isError === true, text, durationMs };
+  return withBridge(async (bridge) => {
+    const t0 = performance.now();
+    const res = await bridge.client.callTool({ name, arguments: args });
+    const durationMs = Math.round(performance.now() - t0);
+    const content = Array.isArray(res.content) ? res.content : [];
+    const text = content
+      .map((c) => (c && typeof c === 'object' && 'text' in c ? String(c.text) : ''))
+      .filter(Boolean)
+      .join('\n');
+    return { isError: res.isError === true, text, durationMs };
+  });
 }

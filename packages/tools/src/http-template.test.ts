@@ -126,6 +126,23 @@ describe('{{secret:…}} resolution', () => {
     expect(JSON.parse(req.body!)).toEqual({ msg: '{{secret:mapbox/default}}' });
   });
 
+  it('does NOT leak a secret when input forges the internal token', () => {
+    // The author template carries one secret; a hostile model tries to echo it
+    // back by passing the (formerly predictable) substitution token as input.
+    const h: HttpHandler = {
+      kind: 'http',
+      url: 'https://api.example.com/q',
+      method: 'GET',
+      query: { token: '{{secret:mapbox/default}}' },
+    };
+    const forged = '\u0000S0\u0000';
+    const req = buildHttpRequest(h, { leak: forged }, secrets);
+    expect(req.url).toContain('token=pk.SUPER-SECRET-123');
+    // The spilled-over `leak` value must not have round-tripped the plaintext.
+    expect(req.url).not.toContain('leak=pk.SUPER-SECRET-123');
+    expect(req.url).toContain('leak=');
+  });
+
   it('keeps unresolvable refs as literals', () => {
     const h: HttpHandler = {
       kind: 'http',
@@ -143,5 +160,12 @@ describe('scrubSecrets', () => {
     const s = new Map([['svc/key', 'se cret']]);
     const text = 'failed: https://x.test/?t=se%20cret raw=se cret';
     expect(scrubSecrets(text, s)).toBe('failed: https://x.test/?t=[secret:svc/key] raw=[secret:svc/key]');
+  });
+
+  it('replaces the base64 form too (how Basic-auth secrets travel)', () => {
+    const plaintext = 'pk.SUPER-SECRET-123';
+    const s = new Map([['svc/key', plaintext]]);
+    const b64 = Buffer.from(plaintext, 'utf8').toString('base64');
+    expect(scrubSecrets(`echo: ${b64}`, s)).toBe('echo: [secret:svc/key]');
   });
 });

@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
+import { setToolsmithApprovalAction } from './actions';
 
 type ToolHandlerBuiltin = { kind: 'builtin'; ref: string };
 type ToolHandlerHttp = {
@@ -126,10 +127,17 @@ function slugify(s: string): string {
     .slice(0, 64);
 }
 
-export function ToolsClient({ initialTools }: { initialTools: ToolSummary[] }) {
+export function ToolsClient({
+  initialTools,
+  initialRequireApproval,
+}: {
+  initialTools: ToolSummary[];
+  initialRequireApproval: boolean;
+}) {
   const router = useRouter();
   const toast = useToast();
   const [tools, setTools] = useState<ToolSummary[]>(initialTools);
+  const [requireApproval, setRequireApproval] = useState(initialRequireApproval);
   const [editing, setEditing] = useState<
     { mode: 'create' } | { mode: 'edit'; tool: ToolSummary } | null
   >(null);
@@ -139,6 +147,24 @@ export function ToolsClient({ initialTools }: { initialTools: ToolSummary[] }) {
   const [pending, startTransition] = useTransition();
 
   useEffect(() => setTools(initialTools), [initialTools]);
+
+  const toggleRequireApproval = (next: boolean) => {
+    const prev = requireApproval;
+    setRequireApproval(next); // optimistic
+    startTransition(async () => {
+      try {
+        await setToolsmithApprovalAction(next);
+        toast.success(
+          next
+            ? 'Agent-built tools will now require your approval'
+            : 'Agent-built tools no longer require approval',
+        );
+      } catch {
+        setRequireApproval(prev);
+        toast.error('Could not save that setting');
+      }
+    });
+  };
 
   const builtins = tools.filter((t) => t.handler.kind === 'builtin');
   const userDefined = tools.filter((t) => t.handler.kind !== 'builtin');
@@ -194,6 +220,13 @@ export function ToolsClient({ initialTools }: { initialTools: ToolSummary[] }) {
           toast.error(err instanceof Error ? err.message : 'Headers/Query must be JSON objects.');
           return;
         }
+        // Preserve handler fields that have no form input (e.g. timeoutMs set
+        // via the API/Toolsmith) — the PATCH replaces the whole handler jsonb,
+        // so an unmapped field would be silently dropped on save.
+        const priorHttp =
+          editing.mode === 'edit' && editing.tool.handler.kind === 'http'
+            ? editing.tool.handler
+            : null;
         handler = {
           kind: 'http',
           url: form.url,
@@ -201,6 +234,7 @@ export function ToolsClient({ initialTools }: { initialTools: ToolSummary[] }) {
           ...(headers ? { headers } : {}),
           ...(query ? { query } : {}),
           ...(form.bodyTemplate.trim() ? { body: form.bodyTemplate } : {}),
+          ...(priorHttp?.timeoutMs !== undefined ? { timeoutMs: priorHttp.timeoutMs } : {}),
         };
       }
       body = {
@@ -277,6 +311,28 @@ export function ToolsClient({ initialTools }: { initialTools: ToolSummary[] }) {
             {builtins.map((t) => (
               <ToolCard key={t.id} tool={t} selected={selectedId === t.id} onClick={() => openEdit(t)} />
             ))}
+          </section>
+
+          <section className="rounded-lg border border-border p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <Label htmlFor="require-approval" className="text-xs font-medium">
+                  Require my approval for agent-built tools
+                </Label>
+                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                  When on, a tool an agent builds (via Toolsmith) parks each call for your approval
+                  until you clear <span className="font-medium">requires confirm</span> for it. Turn
+                  on if an agent that reads email or the web can author tools.
+                </p>
+              </div>
+              <Switch
+                id="require-approval"
+                checked={requireApproval}
+                disabled={pending}
+                onCheckedChange={toggleRequireApproval}
+                className="mt-0.5 shrink-0"
+              />
+            </div>
           </section>
         </div>
       </div>
@@ -588,7 +644,7 @@ function ToolCard({
         )}
         {tool.requiresConfirm && (
           <span
-            className="shrink-0 rounded-sm bg-rose-500/15 px-1 text-[10px] uppercase tracking-wider text-rose-700 dark:text-rose-300"
+            className="shrink-0 rounded-sm bg-destructive/15 px-1 text-[10px] uppercase tracking-wider text-destructive"
             title="Requires operator confirm"
           >
             confirm

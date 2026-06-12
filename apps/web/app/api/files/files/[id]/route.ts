@@ -9,6 +9,7 @@ import {
   upsertFile,
 } from '@/lib/files';
 import { recordIngest } from '@mantle/tracing';
+import { safeDownloadHeaders } from '@/lib/safe-download';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z.union([
@@ -29,9 +30,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     return new Response(new Uint8Array(res.bytes), {
       status: 200,
       headers: {
-        'content-type': res.row.mimeType,
+        ...safeDownloadHeaders(res.row.mimeType, res.row.filename),
         'content-length': String(res.bytes.byteLength),
-        'content-disposition': `inline; filename="${res.row.filename}"`,
       },
     });
   }

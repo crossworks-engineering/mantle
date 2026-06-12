@@ -47,7 +47,7 @@ import { loadProfilePreferences, buildTimeContextLine } from '@mantle/content';
 import { checkGates } from './gates';
 import { computeNextFireAt } from './schedule';
 import { withHeartbeatContext } from './context';
-import { buildHeartbeatPrompt } from './prompt';
+import { buildHeartbeatPrompt, HEARTBEAT_DATA_BOUNDARY } from './prompt';
 import { runWithInflightLock } from './inflight';
 
 const HEARTBEAT_CONTROL_TOOLS = [
@@ -182,7 +182,7 @@ async function fireInner(
   const persistentSkills = await resolveAgentSkills(hb.ownerId, agent.skillSlugs ?? []);
   const prefs = await loadProfilePreferences(hb.ownerId);
   const baseSystem = composeSystemPromptWithSkills(agent.systemPrompt, persistentSkills);
-  const systemPrompt = `${buildTimeContextLine(prefs, now)}\n\n${baseSystem}`;
+  const systemPrompt = `${buildTimeContextLine(prefs, now)}\n\n${baseSystem}\n\n${HEARTBEAT_DATA_BOUNDARY}`;
 
   // Resolve tool allowlist = the agent's effective set (from its granted tool
   // groups; P6) + the heartbeat control tools (always granted on a heartbeat

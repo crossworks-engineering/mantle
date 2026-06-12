@@ -92,7 +92,13 @@ export function SaveToolDialog({
     for (const h of draft.headers) {
       if (h.enabled && h.key.trim()) headers[substituteVars(h.key, vars)] = substituteVars(h.value, vars);
     }
-    if (draft.auth.mode === 'bearer' && draft.auth.token) {
+    // Mirror the run path: only add the bearer header if none is set manually,
+    // so the saved tool can't carry both `authorization` and `Authorization`.
+    if (
+      draft.auth.mode === 'bearer' &&
+      draft.auth.token &&
+      !Object.keys(headers).some((k) => k.toLowerCase() === 'authorization')
+    ) {
       headers['Authorization'] = `Bearer ${substituteVars(draft.auth.token, vars)}`;
     }
     const body =
@@ -125,6 +131,22 @@ export function SaveToolDialog({
 
   const targetsOwnApi =
     typeof window !== 'undefined' && handler.url.startsWith(window.location.origin + '/api/');
+
+  // Flag credentials baked in as plaintext: a sensitive-keyed header/query whose
+  // value isn't a `{{secret:…}}` vault ref gets written into the tool row as-is.
+  const bakedCredentials = useMemo(() => {
+    const sensitive = /(authorization|api[-_]?key|token|secret|password|cookie|bearer)/i;
+    const hasVaultRef = /\{\{\s*secret:/i;
+    const offenders: string[] = [];
+    const check = (key: string, value: string) => {
+      if (value && sensitive.test(key) && !hasVaultRef.test(value) && !offenders.includes(key)) {
+        offenders.push(key);
+      }
+    };
+    for (const [k, v] of Object.entries(handler.headers ?? {})) check(k, v);
+    for (const [k, v] of Object.entries(handler.query ?? {})) check(k, v);
+    return offenders;
+  }, [handler]);
 
   // Re-seed form state each time the dialog opens.
   useEffect(() => {
@@ -278,6 +300,14 @@ export function SaveToolDialog({
                   This targets Mantle&apos;s own API, which needs a browser session — agent calls
                   will be unauthenticated. For Mantle data, agents should use built-in tools
                   instead.
+                </p>
+              )}
+              {bakedCredentials.length > 0 && (
+                <p className="text-[11px] text-destructive">
+                  {bakedCredentials.join(', ')} carr{bakedCredentials.length === 1 ? 'ies' : 'y'} a
+                  literal credential that will be stored in the tool. Use{' '}
+                  <code className="font-mono">{'{{secret:service/label}}'}</code> instead so the
+                  plaintext stays in the vault (Settings → API keys).
                 </p>
               )}
             </div>

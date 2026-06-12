@@ -41,13 +41,16 @@ export function DevToolsAssistPanel({ onClose }: { onClose: () => void }) {
     const text = prompt.trim();
     if (!text || busy) return;
     setInput('');
+    // Snapshot the transcript BEFORE adding this turn — it's the context the
+    // agent needs to keep continuity across the one-shot delegation.
+    const priorTurns = messages.slice(-12);
     setMessages((m) => [...m, { role: 'user', text }]);
     setBusy(true);
     try {
       const res = await fetch('/api/dev-tools/ai-assist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: text }),
+        body: JSON.stringify({ prompt: text, history: priorTurns }),
       });
       const j = (await res.json().catch(() => ({}))) as { reply?: string; error?: string };
       if (!res.ok) {
@@ -63,6 +66,10 @@ export function DevToolsAssistPanel({ onClose }: { onClose: () => void }) {
       void refreshAgentTools();
     } catch {
       toast.error('Assist failed');
+      setMessages((m) => [
+        ...m,
+        { role: 'assistant', text: '⚠️ Couldn’t reach the assistant — check your connection and try again.' },
+      ]);
     } finally {
       setBusy(false);
       requestAnimationFrame(() =>

@@ -20,10 +20,12 @@
 import { and, eq } from 'drizzle-orm';
 import { db, agents, toolGroups, tools, type ToolHandler } from '@mantle/db';
 import { listApiKeys } from '@mantle/api-keys';
+import { loadProfilePreferences } from '@mantle/content';
 import { parseTikaBytes } from '@mantle/files';
 import { createTool, deleteTool, listToolsForOwner, updateTool } from './crud';
 import { dispatchTool } from './dispatch';
 import { collectParamNames, collectSecretRefs, refKey, type HttpHandler } from './http-template';
+import { guardedFetch } from './ssrf-guard';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 
 /* ───────────────────────────── helpers ───────────────────────────── */
@@ -213,8 +215,10 @@ const web_fetch: BuiltinToolDef = {
       Math.max(1_000, Math.floor(Number(input.max_chars) || DEFAULT_TEXT_CAP)),
     );
     try {
-      const res = await fetch(url, {
-        redirect: 'follow',
+      // guardedFetch blocks private/loopback/link-local/metadata targets and
+      // re-checks each redirect hop, so an injected agent can't turn web_fetch
+      // into an SSRF probe of internal services or the cloud-metadata endpoint.
+      const res = await guardedFetch(url, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
         headers: { 'user-agent': 'mantle-toolsmith/1.0 (+self-hosted assistant)' },
       });
@@ -342,7 +346,7 @@ const api_tool_create: BuiltinToolDef = {
       query: { type: 'object', description: 'query key → value template map' },
       body: { type: 'string', description: 'body template; omit to send unconsumed input as JSON' },
       timeout_ms: { type: 'number', description: '100–120000, default 15000' },
-      requires_confirm: { type: 'boolean', description: 'park calls for operator approval (use for destructive endpoints)' },
+      requires_confirm: { type: 'boolean', description: 'park calls for operator approval — set true for destructive endpoints (deletes, payments, sends). If the owner has "require approval for agent-built tools" on, every authored tool starts gated regardless and only the operator can clear it in Settings → Tools.' },
     },
     required: ['slug', 'name', 'description', 'url'],
   },
@@ -357,6 +361,12 @@ const api_tool_create: BuiltinToolDef = {
     const inputSchema = rec(input.input_schema) ?? { type: 'object', properties: {} };
     const handler = buildHandlerFromInput(input);
     if ('error' in handler) return { ok: false, error: handler.error };
+    // When the owner has turned on "require approval for agent-built tools",
+    // authored tools start confirm-gated so an injected agent can't stand up a
+    // no-confirmation exfiltration endpoint; the operator clears the gate per
+    // tool in Settings → Tools. Off (the default) trusts the single owner and
+    // honours the agent's own requires_confirm choice.
+    const requireApproval = (await loadProfilePreferences(ctx.ownerId)).toolsmithRequireApproval;
     try {
       const row = await createTool(ctx.ownerId, {
         slug,
@@ -364,7 +374,7 @@ const api_tool_create: BuiltinToolDef = {
         description,
         inputSchema,
         handler,
-        requiresConfirm: input.requires_confirm === true,
+        requiresConfirm: requireApproval ? true : input.requires_confirm === true,
         enabled: true,
       });
       const warnings = await handlerWarnings(ctx.ownerId, handler, inputSchema);
@@ -406,7 +416,7 @@ const api_tool_update: BuiltinToolDef = {
       query: { type: 'object' },
       body: { type: ['string', 'null'] },
       timeout_ms: { type: 'number' },
-      requires_confirm: { type: 'boolean' },
+      requires_confirm: { type: 'boolean', description: 'toggle the confirm gate. When the owner requires approval for agent-built tools, you can only tighten it (clearing is operator-only, in Settings → Tools).' },
       enabled: { type: 'boolean' },
     },
     required: ['slug'],
@@ -417,8 +427,24 @@ const api_tool_update: BuiltinToolDef = {
     if (!row) return { ok: false, error: `tool '${slug}' not found` };
     const existing = row.handler as ToolHandler;
 
+    // Shell tools are human-only end to end: refuse before applying ANY field.
+    // Flipping enabled/requires_confirm here would let an agent strip the
+    // operator-confirmation gate off (or re-enable) a destructive shell tool.
+    if (existing.kind === 'shell') {
+      return { ok: false, error: 'shell tools are human-only — edit them in Settings → Tools' };
+    }
+
     const patch: Parameters<typeof updateTool>[2] = {};
-    if (input.requires_confirm !== undefined) patch.requiresConfirm = input.requires_confirm === true;
+    // With "require approval" ON, agents may only TIGHTEN the confirm gate,
+    // never clear it (lowering is operator-only) — otherwise an agent could
+    // re-author a tool confirm-free after create forced it on. With it OFF,
+    // the owner trusts the agent's own requires_confirm choice.
+    const requireApproval = (await loadProfilePreferences(ctx.ownerId)).toolsmithRequireApproval;
+    if (requireApproval) {
+      if (input.requires_confirm === true) patch.requiresConfirm = true;
+    } else if (input.requires_confirm !== undefined) {
+      patch.requiresConfirm = input.requires_confirm === true;
+    }
     if (input.enabled !== undefined) patch.enabled = input.enabled === true;
 
     const touchesDefinition =
@@ -435,9 +461,6 @@ const api_tool_update: BuiltinToolDef = {
     if (touchesDefinition) {
       if (existing.kind === 'builtin') {
         return { ok: false, error: 'built-in tools are code-backed — only enabled/requires_confirm can change' };
-      }
-      if (existing.kind === 'shell') {
-        return { ok: false, error: 'shell tools are human-only — edit them in Settings → Tools' };
       }
       if (input.name !== undefined) patch.name = str(input.name).trim();
       if (input.description !== undefined) patch.description = str(input.description).trim();
@@ -614,9 +637,23 @@ const tool_group_ensure: BuiltinToolDef = {
     if (!requested) return { ok: false, error: 'tool_slugs must be an array of strings' };
     const mode = str(input.mode) === 'replace' ? 'replace' : 'add';
 
-    const known = new Set((await listToolsForOwner(ctx.ownerId)).map((t) => t.slug));
+    const kindBySlug = new Map(
+      (await listToolsForOwner(ctx.ownerId)).map((t) => [t.slug, t.handler.kind] as const),
+    );
+
+    // Hard stop: agents may only bundle http tools. A shell/builtin slug (e.g.
+    // the unrestricted `run_terminal`) would let a later grant escalate an
+    // agent past the "agents author http only" boundary — refuse, don't warn.
+    const nonHttp = requested.filter((s) => kindBySlug.has(s) && kindBySlug.get(s) !== 'http');
+    if (nonHttp.length > 0) {
+      return {
+        ok: false,
+        error: `tool groups may only contain http tools; refused non-http: ${nonHttp.join(', ')}`,
+      };
+    }
+
     const warnings = requested
-      .filter((s) => !known.has(s))
+      .filter((s) => !kindBySlug.has(s))
       .map((s) => `tool '${s}' does not exist (yet) — it will be ignored at runtime until created`);
 
     const [existing] = await db
@@ -709,6 +746,15 @@ const agent_grant_tool_group: BuiltinToolDef = {
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const agentSlug = str(input.agent_slug).trim();
     const groupSlug = str(input.group_slug).trim();
+    // Refuse self-grant: an injected agent must not be able to widen its OWN
+    // capabilities. New grants go to a different, operator-intended agent
+    // (mirrors invoke_agent's self-call refusal).
+    if (ctx.agent?.slug && ctx.agent.slug === agentSlug) {
+      return {
+        ok: false,
+        error: 'an agent cannot grant a tool group to itself — ask the operator to grant it',
+      };
+    }
     const [agent] = await db
       .select({ id: agents.id, groups: agents.toolGroupSlugs })
       .from(agents)
@@ -716,12 +762,28 @@ const agent_grant_tool_group: BuiltinToolDef = {
       .limit(1);
     if (!agent) return { ok: false, error: `agent '${agentSlug}' not found` };
     const [group] = await db
-      .select({ id: toolGroups.id })
+      .select({ id: toolGroups.id, toolSlugs: toolGroups.toolSlugs })
       .from(toolGroups)
       .where(and(eq(toolGroups.ownerId, ctx.ownerId), eq(toolGroups.slug, groupSlug)))
       .limit(1);
     if (!group) {
       return { ok: false, error: `tool group '${groupSlug}' not found — create it with tool_group_ensure` };
+    }
+
+    // Re-check at grant time: a slug bundled while unknown may since have
+    // resolved to a human-authored shell/builtin tool. Agents may only hand
+    // out http capabilities, so refuse to grant a group that holds anything else.
+    const kindBySlug = new Map(
+      (await listToolsForOwner(ctx.ownerId)).map((t) => [t.slug, t.handler.kind] as const),
+    );
+    const nonHttp = (group.toolSlugs ?? []).filter(
+      (s) => kindBySlug.has(s) && kindBySlug.get(s) !== 'http',
+    );
+    if (nonHttp.length > 0) {
+      return {
+        ok: false,
+        error: `group '${groupSlug}' contains non-http tools (${nonHttp.join(', ')}) — agents can only grant http tool groups`,
+      };
     }
     const current = agent.groups ?? [];
     if (current.includes(groupSlug)) {

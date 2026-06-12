@@ -23,6 +23,7 @@ import {
   buildHttpRequest,
   collectSecretRefs,
   refKey,
+  safeFetch,
   scrubSecrets,
   type HttpHandler,
 } from '@mantle/tools';
@@ -43,6 +44,45 @@ const Body = z.object({
   body: z.string().max(1_000_000).nullable().default(null),
   timeoutMs: z.number().int().min(100).max(120_000).default(30_000),
 });
+
+/**
+ * Read at most `cap` bytes from the response, then stop and cancel the stream —
+ * so pointing the console at a multi-GB download doesn't buffer it all. Returns
+ * the captured bytes plus the true total when it fit under the cap.
+ */
+async function readCapped(
+  res: Response,
+  cap: number,
+): Promise<{ bytes: Uint8Array; total: number; truncated: boolean }> {
+  const reader = res.body?.getReader();
+  if (!reader) return { bytes: new Uint8Array(0), total: 0, truncated: false };
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  let truncated = false;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      size += value.byteLength;
+      if (size > cap) {
+        const keep = value.byteLength - (size - cap);
+        if (keep > 0) chunks.push(value.subarray(0, keep));
+        truncated = true;
+        await reader.cancel();
+        break;
+      }
+      chunks.push(value);
+    }
+  }
+  const captured = chunks.reduce((n, c) => n + c.byteLength, 0);
+  const bytes = new Uint8Array(captured);
+  let off = 0;
+  for (const c of chunks) {
+    bytes.set(c, off);
+    off += c.byteLength;
+  }
+  return { bytes, total: truncated ? size : captured, truncated };
+}
 
 export async function POST(req: Request) {
   const user = await requireOwner();
@@ -85,27 +125,28 @@ export async function POST(req: Request) {
   const startedAt = new Date().toISOString();
   const t0 = performance.now();
   try {
-    const res = await fetch(built.url, {
-      method,
-      headers: built.headers,
-      body: method === 'GET' || method === 'HEAD' ? undefined : (built.body ?? undefined),
-      signal: AbortSignal.timeout(timeoutMs),
-      redirect: 'follow',
-    });
-    const buf = await res.arrayBuffer();
-    const durationMs = Math.round(performance.now() - t0);
-    const truncated = buf.byteLength > MAX_RESPONSE_BYTES;
-    const text = new TextDecoder().decode(
-      truncated ? buf.slice(0, MAX_RESPONSE_BYTES) : buf,
+    const res = await safeFetch(
+      built.url,
+      {
+        method,
+        headers: built.headers,
+        body: method === 'GET' || method === 'HEAD' ? undefined : (built.body ?? undefined),
+        signal: AbortSignal.timeout(timeoutMs),
+      },
+      [...secrets.values()],
     );
+    const { bytes, total, truncated } = await readCapped(res, MAX_RESPONSE_BYTES);
+    const durationMs = Math.round(performance.now() - t0);
+    const text = new TextDecoder().decode(bytes);
     return NextResponse.json({
       status: res.status,
       statusText: res.statusText,
       ok: res.ok,
       durationMs,
-      sizeBytes: buf.byteLength,
+      sizeBytes: total,
       truncated,
-      headers: [...res.headers.entries()],
+      // Scrub echoed response headers too — some gateways reflect the api key.
+      headers: [...res.headers.entries()].map(([k, v]) => [k, scrub(v)]),
       bodyText: scrub(text),
       resolvedUrl: scrub(built.url),
       startedAt,

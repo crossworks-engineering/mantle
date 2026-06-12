@@ -46,6 +46,8 @@ export { TOOLSMITH_TOOLS, TOOLSMITH_TOOL_SLUGS } from './builtins-toolsmith';
 export { LIFELOG_TOOLS, LIFELOG_TOOL_SLUGS, LIFELOG_AUTO_GRANT_SLUGS } from './builtins-lifelog';
 export { seedBuiltinTools } from './seed';
 export { resolveTool, resolveTools, dispatchTool } from './dispatch';
+export { safeFetch } from './safe-fetch';
+export { guardedFetch, assertFetchableUrl, isBlockedIp } from './ssrf-guard';
 export {
   listToolsForOwner,
   getToolById,

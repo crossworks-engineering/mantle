@@ -27,6 +27,14 @@ get a real number. And because **heartbeats run agents with the same
 tools**, your morning-briefing routine can include live drive times
 without any extra setup. Anything → ask → answered. That's the loop.
 
+> **Hardening for untrusted input.** If you grant tool-authoring to an
+> agent that reads email or web pages, turn on **Settings → Tools →
+> "Require my approval for agent-built tools."** Every tool an agent
+> builds then waits for your approval on each call until you clear
+> *requires confirm* for it — so a prompt-injected agent can't quietly
+> build and use an exfiltration tool. Off by default for simple
+> single-owner setups.
+
 ## The API Console (System → API Console)
 
 A built-in Postman. Three searchable catalogs, one request builder,

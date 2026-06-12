@@ -1,6 +1,7 @@
 import { resolveActiveShareByToken, isAssetAllowed } from '@/lib/shares';
 import { readFileById } from '@/lib/files';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
+import { safeDownloadHeaders } from '@/lib/safe-download';
 
 /**
  * Public asset bytes for a shared node. Authorization = the token must be
@@ -40,10 +41,8 @@ export async function GET(
 
   const bytes = res.bytes;
   const total = bytes.byteLength;
-  const filename = res.row.filename.replace(/["\\\r\n]/g, '');
   const base: Record<string, string> = {
-    'content-type': res.row.mimeType || 'application/octet-stream',
-    'content-disposition': `inline; filename="${filename}"`,
+    ...safeDownloadHeaders(res.row.mimeType, res.row.filename),
     'accept-ranges': 'bytes',
     // Private + short: browser may cache, shared caches won't; a revoked link
     // 404s on the next request regardless (token is in the path).

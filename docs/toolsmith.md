@@ -8,6 +8,18 @@ against it, proves them against the live API, and grants them to an
 agent — at which point chat turns *and* heartbeat routines can call
 them.
 
+**Safety switch.** A single-owner brain trusts itself, so by default an
+authored tool is usable as soon as it's granted. If you grant
+tool-authoring to an agent that reads untrusted content (email, web
+pages), turn on **Settings → Tools → "Require my approval for
+agent-built tools"**: every agent-authored tool then starts
+confirm-gated — each call parks for your approval until you clear
+"requires confirm" for that tool — so an injected agent can't silently
+stand up an exfiltration endpoint. Independent of this switch, three
+guards are always on: an agent can't grant a group to itself, can't
+lower a tool's confirm gate via update, and `web_fetch` can't reach
+private/internal/metadata addresses.
+
 ```
 user prompt ("read <docs url>, build me routing tools")
    └─→ Toolsmith
@@ -34,6 +46,16 @@ definitions (apps/mcp/src/server.ts registers the array through a
 JSON-Schema→zod bridge, so the surfaces cannot drift). A Claude Code
 session connected to Mantle's MCP server can run the whole
 read-docs → author → test → grant loop with no Mantle-side LLM spend.
+
+**Scoping the MCP surface.** The read-only tools (`api_tool_list` /
+`api_tool_get` / `api_tool_test` / `tool_group_list` / `agent_list` /
+`api_key_refs` / `web_fetch`) are always exposed. The mutating set —
+authoring (`api_tool_create` / `_update` / `_delete`), grouping
+(`tool_group_ensure`), and granting (`agent_grant_tool_group`) — is
+gated on **`MANTLE_MCP_TOOLSMITH_WRITE`**, which defaults **on**. Set it
+to `0` / `false` / `off` on a shared or headless deployment to keep tool
+authoring + granting to the in-app agent while still letting an MCP
+client browse and test the registry.
 
 ## 2. The tool set (packages/tools/src/builtins-toolsmith.ts)
 

@@ -58,15 +58,57 @@ export function emptyDraft(): DraftRequest {
   };
 }
 
-/** Blank bearer tokens + Authorization headers before persisting. */
+/**
+ * Header/param keys that commonly carry a credential. Matched case-insensitively
+ * against the key; a matching entry's value is blanked before persistence.
+ */
+const SENSITIVE_KEY =
+  /\b(authorization|api[-_]?key|apikey|x[-_]?api[-_]?key|x[-_]?auth[-_]?token|access[-_]?token|refresh[-_]?token|id[-_]?token|client[-_]?secret|secret|password|passwd|pwd|token|cookie|session[-_]?id|bearer|signature)\b|(^|[-_])key$/i;
+
+/**
+ * A `{{…}}` template carries no plaintext — `{{secret:svc/label}}` resolves
+ * from the vault server-side, `{{var}}` from the environment — so it is safe to
+ * persist verbatim. Only literal values of sensitive-keyed fields get blanked.
+ */
+function isTemplateValue(v: string): boolean {
+  return /\{\{[^}]+\}\}/.test(v);
+}
+
+function scrubKv(entries: KeyValueEntry[]): KeyValueEntry[] {
+  return entries.map((e) =>
+    e.value && !isTemplateValue(e.value) && SENSITIVE_KEY.test(e.key) ? { ...e, value: '' } : e,
+  );
+}
+
+/**
+ * Blank pasted credentials before persisting: the bearer token, plus any
+ * header or query param under a credential-ish key. `{{secret:…}}`/`{{var}}`
+ * refs survive (they're pointers, not plaintext) so saved requests still run.
+ */
 export function scrubDraftSecrets(d: DraftRequest): DraftRequest {
   return {
     ...d,
-    auth: { ...d.auth, token: d.auth.token ? '' : d.auth.token },
-    headers: d.headers.map((h) =>
-      h.key.toLowerCase() === 'authorization' ? { ...h, value: '' } : h,
-    ),
+    auth: {
+      ...d.auth,
+      token: d.auth.token && !isTemplateValue(d.auth.token) ? '' : d.auth.token,
+    },
+    headers: scrubKv(d.headers),
+    params: scrubKv(d.params),
   };
+}
+
+/** Same heuristic for environment variables — they persist on every edit. */
+export function scrubEnvSecrets(envs: Environment[]): Environment[] {
+  return envs.map((e) => ({ ...e, vars: scrubKv(e.vars) }));
+}
+
+/** Max request-body kept per history entry — history holds 200 of them and is
+ *  re-serialized on every send, so an uncapped multi-MB body blows the quota. */
+const HISTORY_BODY_CAP = 10_000;
+
+export function capDraftBody(d: DraftRequest): DraftRequest {
+  if (d.body.text.length <= HISTORY_BODY_CAP) return d;
+  return { ...d, body: { ...d.body, text: `${d.body.text.slice(0, HISTORY_BODY_CAP)}…[truncated]` } };
 }
 
 /**
@@ -77,9 +119,15 @@ export function scrubDraftSecrets(d: DraftRequest): DraftRequest {
 export function usePersistedState<T>(
   key: string,
   initial: () => T,
+  /** Applied to the value before it's written to localStorage only — the
+   *  in-memory state is unchanged. Use to scrub secrets from the persisted
+   *  copy without blanking values the live session still needs. */
+  persistTransform?: (v: T) => T,
 ): [T, (next: T | ((prev: T) => T)) => void] {
   const [value, setValue] = useState<T>(initial);
   const loaded = useRef(false);
+  const transformRef = useRef(persistTransform);
+  transformRef.current = persistTransform;
 
   useEffect(() => {
     try {
@@ -97,7 +145,8 @@ export function usePersistedState<T>(
       setValue((prev) => {
         const resolved = typeof next === 'function' ? (next as (p: T) => T)(prev) : next;
         try {
-          window.localStorage.setItem(key, JSON.stringify(resolved));
+          const toStore = transformRef.current ? transformRef.current(resolved) : resolved;
+          window.localStorage.setItem(key, JSON.stringify(toStore));
         } catch {
           /* in-memory only */
         }

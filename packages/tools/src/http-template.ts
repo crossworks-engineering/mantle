@@ -17,6 +17,8 @@
  * handlers with no templates at all), or into query params for GET/HEAD.
  */
 
+import { randomUUID } from 'node:crypto';
+
 import type { ToolHandler } from '@mantle/db';
 
 export type HttpHandler = Extract<ToolHandler, { kind: 'http' }>;
@@ -74,6 +76,9 @@ function encodeParam(value: unknown, mode: ParamEncoding): string {
   else if (typeof value === 'string') s = value;
   else if (typeof value === 'number' || typeof value === 'boolean') s = String(value);
   else s = JSON.stringify(value);
+  // Strip NUL bytes: they delimit secret tokens (see buildHttpRequest), so an
+  // input value carrying one could otherwise smuggle a token into raw output.
+  s = s.replace(/\u0000/g, '');
   return mode === 'url' ? encodeURIComponent(s) : s;
 }
 
@@ -117,11 +122,15 @@ export function buildHttpRequest(
   // so input-injected `{{secret:…}}` strings can never resolve.
   const tokens = new Map<string, string>();
   let tokenSeq = 0;
+  // Random per-call nonce so the token is unguessable: a model can't pass an
+  // input value that reconstructs a live token and round-trips a secret out
+  // (input NUL bytes are also stripped in encodeParam as a second line).
+  const nonce = randomUUID();
   const tokenize = (s: string): string =>
     s.replace(SECRET_REF_PATTERN, (m, service: string, label: string) => {
       const plaintext = secrets.get(`${service}/${label}`);
       if (plaintext === undefined) return m;
-      const token = '\u0000S' + tokenSeq++ + '\u0000';
+      const token = '\u0000S' + nonce + ':' + tokenSeq++ + '\u0000';
       tokens.set(token, plaintext);
       return token;
     });
@@ -187,14 +196,23 @@ export function buildHttpRequest(
 }
 
 /** Replace every resolved secret plaintext in `text` with its ref name —
- *  run over anything that can leave the dispatcher (errors, step meta). */
+ *  run over anything that can leave the dispatcher (errors, step meta,
+ *  response bodies). Covers the common transport encodings of the secret:
+ *  raw, URL-encoded, and base64 (how Basic-auth credentials travel, and a
+ *  form upstreams often echo back). */
 export function scrubSecrets(text: string, secrets: Map<string, string>): string {
   let out = text;
   for (const [key, plaintext] of secrets) {
     if (!plaintext) continue;
-    out = out.split(plaintext).join(`[secret:${key}]`);
-    const enc = encodeURIComponent(plaintext);
-    if (enc !== plaintext) out = out.split(enc).join(`[secret:${key}]`);
+    const variants = new Set<string>([plaintext, encodeURIComponent(plaintext)]);
+    try {
+      variants.add(Buffer.from(plaintext, 'utf8').toString('base64'));
+    } catch {
+      /* non-encodable — skip */
+    }
+    for (const v of variants) {
+      if (v && v.length > 0) out = out.split(v).join(`[secret:${key}]`);
+    }
   }
   return out;
 }

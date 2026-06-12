@@ -24,10 +24,12 @@ import {
 import {
   STORAGE_KEYS,
   appendHistory,
+  capDraftBody,
   defaultEnvironments,
   emptyDraft,
   genId,
   scrubDraftSecrets,
+  scrubEnvSecrets,
   usePersistedState,
 } from '@/lib/dev-tools/storage';
 import type {
@@ -99,6 +101,7 @@ export function DevToolsProvider({
   const [environments, setEnvironments] = usePersistedState<Environment[]>(
     STORAGE_KEYS.environments,
     defaultEnvironments,
+    scrubEnvSecrets,
   );
   const [activeEnvId, setActiveEnvId] = usePersistedState<string | null>(
     STORAGE_KEYS.activeEnvId,
@@ -117,6 +120,9 @@ export function DevToolsProvider({
   const [response, setResponse] = useState<ConsoleResponse | null>(null);
   const [sending, setSending] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  // Monotonic id per send: a response/finally only applies if its send is still
+  // the current one, so switching requests mid-flight can't show a stale result.
+  const sendSeq = useRef(0);
 
   const [mcp, setMcp] = useState<McpState>({ status: 'idle' });
   const [agentTools, setAgentTools] = useState<AgentToolInfo[]>(initialAgentTools);
@@ -132,31 +138,43 @@ export function DevToolsProvider({
     [],
   );
   const replaceDraft = useCallback((d: DraftRequest) => {
+    // Abort and invalidate any in-flight send so its response can't land under
+    // the new request, and clear the sending flag the old send no longer owns.
+    abortRef.current?.abort();
+    abortRef.current = null;
+    sendSeq.current++;
+    setSending(false);
     setDraftState(d);
     setResponse(null);
   }, []);
 
+  // Guard the lazy boot with a ref, not the setState updater: an updater must be
+  // pure, and React StrictMode double-invokes it in dev — which would fire two
+  // `/api/dev-tools/mcp` calls and boot the MCP server twice. Reset on error so
+  // the user can retry.
+  const mcpLoadStarted = useRef(false);
   const loadMcpTools = useCallback(() => {
-    setMcp((prev) => {
-      if (prev.status === 'loading' || prev.status === 'ready') return prev;
-      void (async () => {
-        try {
-          const res = await fetch('/api/dev-tools/mcp');
-          const payload = (await res.json()) as { tools?: McpToolInfo[]; error?: string };
-          if (!res.ok || !payload.tools) {
-            setMcp({ status: 'error', error: payload.error ?? 'failed to list MCP tools' });
-            return;
-          }
-          setMcp({ status: 'ready', tools: payload.tools });
-        } catch (err) {
-          setMcp({
-            status: 'error',
-            error: err instanceof Error ? err.message : String(err),
-          });
+    if (mcpLoadStarted.current) return;
+    mcpLoadStarted.current = true;
+    setMcp({ status: 'loading' });
+    void (async () => {
+      try {
+        const res = await fetch('/api/dev-tools/mcp');
+        const payload = (await res.json()) as { tools?: McpToolInfo[]; error?: string };
+        if (!res.ok || !payload.tools) {
+          mcpLoadStarted.current = false;
+          setMcp({ status: 'error', error: payload.error ?? 'failed to list MCP tools' });
+          return;
         }
-      })();
-      return { status: 'loading' };
-    });
+        setMcp({ status: 'ready', tools: payload.tools });
+      } catch (err) {
+        mcpLoadStarted.current = false;
+        setMcp({
+          status: 'error',
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    })();
   }, []);
 
   const refreshAgentTools = useCallback(async () => {
@@ -171,6 +189,7 @@ export function DevToolsProvider({
 
   const send = useCallback(async () => {
     if (sending) return;
+    const seq = ++sendSeq.current;
     setSending(true);
     setResponse(null);
     const controller = new AbortController();
@@ -207,6 +226,7 @@ export function DevToolsProvider({
             : await sendMcpCall(draft.targetName, args, controller.signal);
         label = `${draft.kind}:${draft.targetName}`;
       }
+      if (sendSeq.current !== seq) return; // superseded by a newer send/switch
       setResponse(res);
       setHistory((prev) =>
         appendHistory(prev, {
@@ -218,11 +238,11 @@ export function DevToolsProvider({
           status: res.status,
           ok: res.ok,
           durationMs: res.durationMs,
-          draft: scrubDraftSecrets(draft),
+          draft: scrubDraftSecrets(capDraftBody(draft)),
         }),
       );
     } catch (err) {
-      if ((err as Error).name !== 'AbortError') {
+      if ((err as Error).name !== 'AbortError' && sendSeq.current === seq) {
         setResponse({
           via: draft.kind === 'http' ? 'direct' : draft.kind,
           status: 0,
@@ -238,8 +258,10 @@ export function DevToolsProvider({
         });
       }
     } finally {
-      setSending(false);
-      abortRef.current = null;
+      if (sendSeq.current === seq) {
+        setSending(false);
+        abortRef.current = null;
+      }
     }
   }, [sending, draft, activeEnv, setHistory]);
 

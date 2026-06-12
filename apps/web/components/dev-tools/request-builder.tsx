@@ -41,7 +41,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
-import { buildVarMap, pathPlaceholders, substituteVars } from '@/lib/dev-tools/client';
+import { buildVarMap, collectDraftParams } from '@/lib/dev-tools/client';
 import { genId } from '@/lib/dev-tools/storage';
 import type { AuthMode, BodyMode, Environment, HttpMethod } from '@/lib/dev-tools/types';
 import { useDevTools } from './context';
@@ -257,8 +257,8 @@ export function RequestBuilder() {
 
   const vars = useMemo(() => buildVarMap(activeEnv), [activeEnv]);
   const placeholders = useMemo(
-    () => (draft.kind === 'http' ? pathPlaceholders(substituteVars(draft.url, vars)) : []),
-    [draft.kind, draft.url, vars],
+    () => collectDraftParams(draft, vars),
+    [draft, vars],
   );
 
   const formatBody = () => {

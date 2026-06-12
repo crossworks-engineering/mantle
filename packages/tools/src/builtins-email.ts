@@ -48,17 +48,17 @@ function flatRecipients(...raws: (string | undefined)[]): string[] {
   return out;
 }
 
-/** Recipients NOT permitted by the contact list. Empty contacts ⇒ gate OFF
- *  (send to anyone — today's bootstrap state). Non-empty contacts ⇒ enforced:
- *  recipient must be the user's own account address, or have a matching
- *  `contact` node by email. The contact list IS the allowlist. */
+/** Recipients NOT permitted by the allowlist. The allowlist is the user's own
+ *  account addresses plus their `contact` nodes. Fail CLOSED: with no contacts
+ *  yet, an agent can still email the user themselves but not arbitrary outside
+ *  addresses — so a prompt-injected agent on a fresh install can't exfiltrate
+ *  by emailing a stranger. Add a contact to permit sending to them. */
 async function blockedRecipients(ownerId: string, addrs: string[]): Promise<string[]> {
   // Concrete contact addresses only — `contactEmails` excludes `@domain`
   // wildcards by design. Domains are an INBOUND-only notion ("trust mail FROM
   // this domain"); you can't send to a whole domain. The inbound ContactGate
   // (@mantle/content) is the side that honours domains.
   const contacts = await contactEmails(ownerId); // already lower-cased + deduped
-  if (contacts.length === 0) return []; // gate off until the user adds a first contact
   const accounts = await db
     .select({ address: emailAccounts.address })
     .from(emailAccounts)

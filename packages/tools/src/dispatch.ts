@@ -3,9 +3,10 @@
  * input object; routes to the right handler kind; returns
  * { ok, output } or { ok: false, error }.
  *
- * `builtin` looks up the registered TS function. `http` issues a fetch.
- * `shell` is a future placeholder — returns an error for now until the
- * permissioning story lands.
+ * `builtin` looks up the registered TS function. `http` issues a fetch
+ * (redirects followed manually so secrets never cross origin — see safeFetch).
+ * `shell` runs an operator-authored command; agents can't author or edit shell
+ * tools, and console/agent runs go through the same `requiresConfirm` gate.
  */
 
 import { and, eq } from 'drizzle-orm';
@@ -18,6 +19,7 @@ import {
   refKey,
   scrubSecrets,
 } from './http-template';
+import { safeFetch } from './safe-fetch';
 import type { ToolHandlerContext, ToolHandlerResult } from './types';
 
 /** Look up a tool by slug for a given owner. Returns null if missing/disabled. */
@@ -172,16 +174,19 @@ async function dispatchHttp(
   const { secrets } = resolved;
   const scrub = (s: string) => scrubSecrets(s, secrets);
 
-  const req = buildHttpRequest(h, input, secrets);
-  const init: RequestInit = {
-    method: req.method,
-    headers: req.headers,
-    signal: AbortSignal.timeout(h.timeoutMs ?? HTTP_TIMEOUT_MS_DEFAULT),
-  };
-  if (req.body !== null) init.body = req.body;
-
   try {
-    const res = await fetch(req.url, init);
+    // Inside the try: buildHttpRequest can throw (e.g. encodeURIComponent on a
+    // lone surrogate in model input) and must surface as a scrubbed error, not
+    // an unhandled rejection out of the dispatcher.
+    const req = buildHttpRequest(h, input, secrets);
+    const init: RequestInit = {
+      method: req.method,
+      headers: req.headers,
+      signal: AbortSignal.timeout(h.timeoutMs ?? HTTP_TIMEOUT_MS_DEFAULT),
+    };
+    if (req.body !== null) init.body = req.body;
+
+    const res = await safeFetch(req.url, init, [...secrets.values()]);
     const text = await res.text();
     ctx.step?.setMeta({ url: scrub(req.url), method: req.method, status: res.status, length: text.length });
     if (!res.ok) {
@@ -190,9 +195,13 @@ async function dispatchHttp(
         error: scrub(`${res.status} ${res.statusText}: ${text.slice(0, 500)}`),
       };
     }
-    let parsed: unknown = text;
+    // Scrub the raw text BEFORE parsing so any secret an upstream reflects
+    // back (echo endpoints, debug payloads, mirrored auth headers) is replaced
+    // in the parsed object too — the plaintext must never reach the model.
+    const scrubbed = scrub(text);
+    let parsed: unknown = scrubbed;
     try {
-      parsed = JSON.parse(text);
+      parsed = JSON.parse(scrubbed);
     } catch {
       /* keep raw text */
     }

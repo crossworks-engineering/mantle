@@ -61,6 +61,14 @@ export type ProfilePreferences = {
   /** Slug of the agent the API Console (/dev-tools) "Assist" panel delegates
    *  to. Unset → the default `toolsmith` specialist. */
   devToolsAssistAgentSlug?: string;
+  /** When true, tools an AGENT authors (via Toolsmith / api_tool_create) start
+   *  confirm-gated: every call parks for operator approval until the operator
+   *  clears "requires confirm" for that tool in Settings → Tools. Defaults
+   *  OFF — a simple single-owner brain trusts itself; turn it ON if you grant
+   *  tool-authoring to an agent that reads untrusted content (email/web), so an
+   *  injected agent can't stand up a silent exfiltration endpoint. Independent
+   *  of the always-on guards (self-grant block, no-lower-via-update, SSRF). */
+  toolsmithRequireApproval?: boolean;
 };
 
 export const DEFAULT_PREFERENCES: ProfilePreferences = {
@@ -139,6 +147,7 @@ export async function loadProfilePreferences(
       typeof prefs.devToolsAssistAgentSlug === 'string' && prefs.devToolsAssistAgentSlug.length > 0
         ? prefs.devToolsAssistAgentSlug
         : undefined,
+    toolsmithRequireApproval: prefs.toolsmithRequireApproval === true,
   };
 }
 
@@ -214,6 +223,8 @@ export async function updateProfilePreferences(
     onboardingStep: merged.onboardingStep || undefined,
     pagesAssistAgentSlug: merged.pagesAssistAgentSlug || undefined,
     tablesAssistAgentSlug: merged.tablesAssistAgentSlug || undefined,
+    devToolsAssistAgentSlug: merged.devToolsAssistAgentSlug || undefined,
+    toolsmithRequireApproval: merged.toolsmithRequireApproval === true,
   };
 }
 

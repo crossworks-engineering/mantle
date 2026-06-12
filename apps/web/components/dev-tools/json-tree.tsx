@@ -13,6 +13,9 @@ import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 
 const INITIAL_DEPTH = 3;
+/** Render children in pages so a huge array/object can't mount thousands of
+ *  rows at once and freeze the tab. */
+const CHILD_PAGE = 100;
 
 function Primitive({ value }: { value: unknown }) {
   if (value === null) return <span className="italic text-muted-foreground">null</span>;
@@ -39,15 +42,18 @@ function Node({
   path: string;
   depth: number;
 }) {
-  const [open, setOpen] = useState(depth < INITIAL_DEPTH);
-  const toast = useToast();
-
   const isObject = value !== null && typeof value === 'object';
   const entries: Array<[string, unknown]> = isObject
     ? Array.isArray(value)
       ? value.map((v, i) => [String(i), v] as [string, unknown])
       : Object.entries(value as Record<string, unknown>)
     : [];
+
+  // Don't auto-expand a node with more than one page of children — opening it
+  // is then a deliberate click, and even then children render a page at a time.
+  const [open, setOpen] = useState(depth < INITIAL_DEPTH && entries.length <= CHILD_PAGE);
+  const [shown, setShown] = useState(CHILD_PAGE);
+  const toast = useToast();
 
   const copy = (text: string, what: string) => {
     void navigator.clipboard.writeText(text).then(
@@ -128,7 +134,7 @@ function Node({
       </div>
       {open && (
         <div className={cn('border-l border-border/60 pl-4', depth === 0 && 'ml-1')}>
-          {entries.map(([k, v]) => (
+          {entries.slice(0, shown).map(([k, v]) => (
             <Node
               key={k}
               nodeKey={isArray ? null : k}
@@ -137,6 +143,16 @@ function Node({
               depth={depth + 1}
             />
           ))}
+          {entries.length > shown && (
+            <button
+              type="button"
+              className="px-1 text-muted-foreground underline-offset-2 hover:underline"
+              onClick={() => setShown((s) => s + CHILD_PAGE)}
+            >
+              Show {Math.min(CHILD_PAGE, entries.length - shown)} more — {entries.length - shown}{' '}
+              hidden
+            </button>
+          )}
           <div className="px-1 text-muted-foreground">{isArray ? ']' : '}'}</div>
         </div>
       )}

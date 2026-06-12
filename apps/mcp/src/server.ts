@@ -1351,27 +1351,59 @@ server.tool(
  * a JSON-Schema→zod shape bridge, so the two surfaces cannot drift. The
  * handlers run with the MCP process's OWNER_ID — same trust model as
  * every other tool in this file.
+ *
+ * Scoping: the read-only set (list/get/test/api_key_refs/web_fetch) is
+ * always exposed. The mutating set — authoring (create/update/delete),
+ * grouping (tool_group_ensure), and granting (agent_grant_tool_group) —
+ * is gated on MANTLE_MCP_TOOLSMITH_WRITE, which defaults ON. Set it to
+ * 0/false/off on a shared or headless deployment to expose Toolsmith
+ * read-only while keeping tool authoring + granting to the in-app agent.
  */
 
-/** Convert the limited JSON-Schema vocabulary the Toolsmith defs use
- *  (string / number / boolean / object / array<string> / enum, with
- *  per-property descriptions) into a zod raw shape for server.tool(). */
-function zodShapeFromJsonSchema(schema: Record<string, unknown>): Record<string, z.ZodTypeAny> {
+/** Convert one JSON-Schema property def into a zod type. Honors `items` for
+ *  arrays, `integer` (vs number), nested object `properties`, and `[T,'null']`
+ *  nullable unions — so validation isn't silently dropped if a Toolsmith def
+ *  grows past the original string/number/boolean/array<string> vocabulary. */
+function zodForDef(def: Record<string, unknown>): z.ZodTypeAny {
+  const type = def.type;
+  if (Array.isArray(def.enum) && def.enum.every((v) => typeof v === 'string')) {
+    return z.enum(def.enum as [string, ...string[]]);
+  }
+  if (Array.isArray(type)) {
+    const base = type.find((x) => x !== 'null');
+    const inner = base ? zodForDef({ ...def, type: base }) : z.unknown();
+    return type.includes('null') ? inner.nullable() : inner;
+  }
+  switch (type) {
+    case 'string':
+      return z.string();
+    case 'number':
+      return z.number();
+    case 'integer':
+      return z.number().int();
+    case 'boolean':
+      return z.boolean();
+    case 'array': {
+      const items = (def.items ?? {}) as Record<string, unknown>;
+      return z.array('type' in items || 'enum' in items ? zodForDef(items) : z.unknown());
+    }
+    case 'object': {
+      const props = (def.properties ?? {}) as Record<string, Record<string, unknown>>;
+      if (Object.keys(props).length === 0) return z.record(z.unknown());
+      return z.object(buildZodShape(def));
+    }
+    default:
+      return z.unknown();
+  }
+}
+
+/** Build a zod raw shape from a JSON-Schema object node (properties + required). */
+function buildZodShape(schema: Record<string, unknown>): Record<string, z.ZodTypeAny> {
   const props = (schema.properties ?? {}) as Record<string, Record<string, unknown>>;
   const required = new Set((schema.required as string[]) ?? []);
   const shape: Record<string, z.ZodTypeAny> = {};
   for (const [key, def] of Object.entries(props)) {
-    let t: z.ZodTypeAny;
-    const type = def.type;
-    if (Array.isArray(def.enum) && def.enum.every((v) => typeof v === 'string')) {
-      t = z.enum(def.enum as [string, ...string[]]);
-    } else if (type === 'string') t = z.string();
-    else if (type === 'number' || type === 'integer') t = z.number();
-    else if (type === 'boolean') t = z.boolean();
-    else if (type === 'array') t = z.array(z.string());
-    else if (type === 'object') t = z.record(z.unknown());
-    else if (Array.isArray(type) && type.includes('null')) t = z.string().nullable();
-    else t = z.unknown();
+    let t = zodForDef(def);
     if (typeof def.description === 'string') t = t.describe(def.description);
     if (!required.has(key)) t = t.optional();
     shape[key] = t;
@@ -1379,7 +1411,30 @@ function zodShapeFromJsonSchema(schema: Record<string, unknown>): Record<string,
   return shape;
 }
 
+function zodShapeFromJsonSchema(schema: Record<string, unknown>): Record<string, z.ZodTypeAny> {
+  return buildZodShape(schema);
+}
+
+/** Mutating Toolsmith tools — gated behind MANTLE_MCP_TOOLSMITH_WRITE. */
+const TOOLSMITH_WRITE_SLUGS = new Set([
+  'api_tool_create',
+  'api_tool_update',
+  'api_tool_delete',
+  'tool_group_ensure',
+  'agent_grant_tool_group',
+]);
+const toolsmithWriteEnabled = !/^(0|false|off|no)$/i.test(
+  process.env.MANTLE_MCP_TOOLSMITH_WRITE ?? '',
+);
+if (!toolsmithWriteEnabled) {
+  console.error(
+    '[mantle-mcp] MANTLE_MCP_TOOLSMITH_WRITE is off — exposing Toolsmith read-only ' +
+      `(skipping ${[...TOOLSMITH_WRITE_SLUGS].join(', ')}).`,
+  );
+}
+
 for (const def of TOOLSMITH_TOOLS) {
+  if (!toolsmithWriteEnabled && TOOLSMITH_WRITE_SLUGS.has(def.slug)) continue;
   server.tool(
     def.slug,
     def.description,

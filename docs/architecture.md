@@ -58,7 +58,10 @@ Companion docs:
   app password); never an own MTA. The send half of the §8 read-only pipeline.
 - [`contacts.md`](./contacts.md) — `contact` node type (name + company + email
   + cell + description) and the `/contacts` master-detail UI. The contacts
-  list IS the email allowlist: non-empty contacts engages the send gate.
+  list IS the email allowlist, and it fails closed: the agent may only send to
+  the user's own account addresses plus their contacts — with no contacts yet it
+  can email the user but not arbitrary outside addresses, so a prompt-injected
+  agent can't exfiltrate by mail. Add a contact to permit sending to them.
   Per-method send counters bumped on success. Same-surname-different-given
   reconciler refinement lives here too.
 - [`chat-failover.md`](./chat-failover.md) — primary + backup chat routes for
