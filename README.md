@@ -1,26 +1,30 @@
 # Mantle
 
-**A self-hosted brain for everything you know.** Mantle turns your emails,
-files, notes, documents, conversations, contacts, events, and projects into
-one living, AI-queryable memory — owned by you, running on your hardware,
-with agents that genuinely remember.
+**A second brain that's actually awake.** Most AI assistants are a chat window
+with amnesia — they wait for you to ask. Mantle ingests your emails, files,
+notes, conversations, contacts, and calendar into one structured memory you
+*own*, running on your hardware — and then works on its own, in the
+background, so things happen without you asking.
 
 You talk to it on the web or Telegram (text or voice). You connect Claude to
 it over MCP. You drop a PDF in chat and it's indexed before you've finished
-your sentence. You mention "that gantry note from April" and it knows exactly
-which one — because it read it, summarised it, extracted the facts, linked
-the people and projects, and filed every receipt.
+your sentence. But the part you can't get anywhere else: while you sleep, it
+reads your inbox, files the receipts, surfaces the thing you forgot, and texts
+you a morning briefing — and you never opened the app. It read every item,
+summarised it, extracted the facts, linked the people and projects, and acted.
 
 ---
 
-## The brain is the product
+## The brain is the product — and it's awake
 
-Most AI assistants are a chat window with amnesia. Mantle is built the other
-way around: the **memory system** is the core, and chat is just one doorway
-into it.
+Mantle is built backwards from every chat app: the **memory substrate** is the
+core, chat is just one doorway, and an autonomous agent *lives inside* the
+substrate rather than visiting it. Two things make that work — and neither is a
+weekend feature a competitor bolts on.
 
-Every piece of content that enters — an email, a voice note, a spreadsheet, a
-journal entry — flows through one pipeline into six layers of memory:
+The first is a **real structure, not a vector pile.** Every item that enters —
+an email, a voice note, a spreadsheet, a journal entry — flows through one
+pipeline into a typed, owned data model with six layers of memory:
 
 | Layer | What it holds |
 |---|---|
@@ -39,6 +43,30 @@ words* of any past conversation window.
 The result is an assistant that picks up where you left off — last week or
 last year. No sessions. No "as an AI, I don't have memory of previous
 conversations." One continuous relationship.
+
+## Awake — and safe to leave running
+
+A brain that only answers when asked is a database with a chat skin. Mantle's
+second half is that it *acts*: **heartbeats** run agent routines on schedules
+you set, ingestion pipelines feed it from email, Telegram, files, and voice
+without you lifting a finger, and it can even **build its own API tools** to
+reach the services you use. It works while you're not looking — the difference
+between a thing you query and a thing that helps.
+
+Which is exactly why the boundary matters, and why most of the engineering is
+there. An autonomous brain that reads your inbox is a prompt-injection target,
+so Mantle treats every ingested email, web page, and message as **data, never
+instructions**: a malicious message can't make it leak your secrets, the tools
+an agent builds for itself stay confirm-gated until you approve them, outbound
+email is locked to your own contacts, and `web_fetch` can't be steered into
+your internal network. **"Autonomous" and "safe to leave running" in the same
+sentence is the thing no chat app and no hosted assistant can say** — because
+none of them act on your whole life to begin with. Underneath it: AES-256-GCM
+sealed secrets, owner-scoped everything, and a test suite that pins the trust
+boundary in place.
+
+(And the horizon: **federation** — sovereign Mantles answering scoped queries
+for each other, brains that talk to brains. It's the endgame, not the opening.)
 
 ## Who it's for
 
