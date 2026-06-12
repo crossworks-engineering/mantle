@@ -54,6 +54,7 @@ not a click-by-click tour.
 
 | Item | What it's for |
 |---|---|
+| **API Console** | A built-in Postman: explore + run every built-in API call, MCP tool, and agent tool. Save any HTTP request as a new agent tool, or ask the **Toolsmith** agent to build tools straight from a service's API docs. See [API Console & Toolsmith](../04-configuring/07-api-console-and-toolsmith.md). |
 | **Traces** | A detailed log of every unit of work — each assistant turn, each extraction — with steps, cost, and timing. The "show me exactly what happened" view. |
 | **Debug** | A set of operational dashboards (overview, spend, topics, digests, facts, agents, telegram, **Journey**, **Integrity**) for understanding and auditing the brain. For the curious and for troubleshooting. |
 

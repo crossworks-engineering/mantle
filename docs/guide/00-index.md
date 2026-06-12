@@ -50,6 +50,12 @@ opposite way: **memory is the product.**
   cloud model, or mix the two with automatic failover. Embeddings run locally and
   free by default.
 
+- **It can learn any API.** Point the built-in **Toolsmith** agent at a service's
+  API documentation — maps, weather, your accounting system — and it builds,
+  tests, and grants your assistant a new tool for it. From then on it's just
+  conversation: "how long will I drive to the airport?" gets a live answer. See
+  [API Console & Toolsmith](04-configuring/07-api-console-and-toolsmith.md).
+
 ---
 
 ## What you can do with it
