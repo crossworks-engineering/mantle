@@ -67,6 +67,18 @@ Build identity is resolved once, at build/dev-start, in
 server safe) and exposes `VERSION_LABEL` (`v0.19.0-alpha`) for the wordmark and
 `versionDetail()` (`v0.19.0-alpha · 5a96bcd · 2026-06-05`) for the hover tooltip.
 
+## Changelog entries
+
+User-facing releases get a markdown entry at `docs/_changelog/<x.y.z>.md`
+(the `_` prefix keeps the folder out of the `/docs` reader and brain indexing).
+The in-app **/changelog** page renders the newest entry and links the rest;
+the sidebar's version link shows a "What's new?" pill until the changelog has
+been viewed on this build (localStorage `mantle_changelog_last_seen_version`
+vs `APP_VERSION`). Entry format: an `# x.y.z — <date>` heading, then
+`## Highlights` / `## Fixes` / `## Notes` sections, written for the operator
+(what changed and where to find it), not commit-log prose. Not every patch
+needs one — write entries for releases worth announcing.
+
 ## Docker builds
 
 `.git` is excluded from the build context ([`.dockerignore`](../.dockerignore)),

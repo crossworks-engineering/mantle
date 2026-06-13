@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { PanelLeft, PanelLeftClose } from 'lucide-react';
 import { Header } from '@/components/layout/header';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
+import { ChangelogLink } from '@/components/layout/changelog-link';
 import { UpdateBanner } from '@/components/layout/update-banner';
 import { LiveColumn } from '@/components/layout/live-column';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
@@ -111,6 +112,7 @@ export function AppShell({
         pendingApprovals={pendingApprovals}
         onNavigate={onNavigate}
       />
+      <ChangelogLink onNavigate={onNavigate} />
     </>
   );
 

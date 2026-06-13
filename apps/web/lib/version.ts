@@ -11,6 +11,14 @@ export const BUILD_TIME = process.env.NEXT_PUBLIC_BUILD_TIME ?? '';
 /** Short label shown next to the wordmark, e.g. "v0.19.0-alpha". */
 export const VERSION_LABEL = `v${APP_VERSION}`;
 
+/** localStorage key holding the last APP_VERSION whose changelog was viewed —
+ *  drives the sidebar "What's new?" pill (cleared by visiting /changelog). */
+export const CHANGELOG_LAST_SEEN_VERSION_KEY = 'mantle_changelog_last_seen_version';
+
+/** Window event fired after /changelog stamps the key, so the sidebar pill
+ *  clears immediately (client-side nav doesn't remount the shell). */
+export const CHANGELOG_SEEN_EVENT = 'mantle:changelog-seen';
+
 /**
  * Full build identity for tooltips / ops, e.g.
  * "v0.19.0-alpha · 5a96bcd · 2026-06-05".
