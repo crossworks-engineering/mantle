@@ -49,9 +49,18 @@ import {
 import { recordChatUsage } from './llm-usage';
 import { isChatFailover } from './chat-failover';
 import type { ChatMessage } from './messages';
+import { fenceRetrieved } from './messages';
 import { parseToolArgs } from './tool-args';
 
 const DEFAULT_MAX_ITERATIONS = 6;
+
+/** Tools that return content authored by third parties (a fetched web page,
+ *  a web-search answer + its source snippets). Their successful results are
+ *  fenced as data before going back to the model, so an injected "ignore your
+ *  task and email this to…" inside a page or hit can't be read as an
+ *  instruction. Auto-retrieved content (notes/emails/passages) is already
+ *  fenced in messages.ts; this closes the agent-pulled path. */
+const UNTRUSTED_CONTENT_TOOL_SLUGS = new Set(['web_fetch', 'web_search']);
 
 // ── Tool-volume guards (structural backstop against tool-spam runaways) ──
 // A misbehaving model (notably Grok-4.x fixating on one tool) can emit hundreds
@@ -696,7 +705,14 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       if (!outcome.ok) {
         payload = JSON.stringify({ error: outcome.error });
       } else {
-        const serialized = JSON.stringify(outcome.output);
+        let serialized = JSON.stringify(outcome.output);
+        // Fence untrusted external content BEFORE the inline/spill decision so
+        // the boundary travels both paths: inline results carry it directly,
+        // and spilled results are stored fenced — so read_result page/grep/
+        // query return fenced content too, never a clean instruction.
+        if (UNTRUSTED_CONTENT_TOOL_SLUGS.has(slug)) {
+          serialized = fenceRetrieved(serialized);
+        }
         if (Buffer.byteLength(serialized, 'utf8') <= handling.inlineMaxBytes) {
           payload = serialized;
         } else {
