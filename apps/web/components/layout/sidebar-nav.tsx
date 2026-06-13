@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   Activity,
   ArrowUpCircle,
@@ -44,6 +44,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { useRealtime } from '@/components/realtime/use-realtime';
 
 type NavItem = {
   name: string;
@@ -64,6 +65,11 @@ export function SidebarNav({
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  // Live pending-approval badge: when a tool call is queued/approved/rejected
+  // anywhere (a chat turn, a heartbeat fire, a Telegram tap), the realtime
+  // bridge pings us and we refetch the server-computed count. No polling.
+  useRealtime(['pending_tool_call'], () => router.refresh());
 
   const groups: NavGroup[] = [
     {

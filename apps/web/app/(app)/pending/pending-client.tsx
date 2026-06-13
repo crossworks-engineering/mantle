@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, X } from 'lucide-react';
+import { Check, X, FlaskConical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useRealtime } from '@/components/realtime/use-realtime';
 
 type PendingRow = {
   id: string;
@@ -19,14 +20,46 @@ type PendingRow = {
   executedAt: string | null;
 };
 
-export function PendingClient({ initialRows }: { initialRows: PendingRow[] }) {
+export function PendingClient({
+  initialRows,
+  devMode = false,
+}: {
+  initialRows: PendingRow[];
+  devMode?: boolean;
+}) {
   const router = useRouter();
   const [rows, setRows] = useState<PendingRow[]>(initialRows);
   const [error, setError] = useState<string>();
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [queueing, setQueueing] = useState(false);
   const [, startTransition] = useTransition();
 
   useEffect(() => setRows(initialRows), [initialRows]);
+
+  // Keep this list live: a decision made elsewhere — a Telegram tap, another
+  // tab — repaints here without a manual refresh, same signal that drives the
+  // sidebar badge.
+  useRealtime(['pending_tool_call'], () => router.refresh());
+
+  const queueTestApproval = async () => {
+    setQueueing(true);
+    setError(undefined);
+    try {
+      const res = await fetch('/api/dev-tools/queue-approval', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(b.error ?? 'could not queue test approval');
+        return;
+      }
+      startTransition(() => router.refresh());
+    } finally {
+      setQueueing(false);
+    }
+  };
 
   const decide = async (id: string, decision: 'approve' | 'reject') => {
     setBusyId(id);
@@ -62,11 +95,24 @@ export function PendingClient({ initialRows }: { initialRows: PendingRow[] }) {
       )}
 
       <section className="space-y-2">
-        <div className="flex items-baseline justify-between">
+        <div className="flex items-baseline justify-between gap-3">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
             Awaiting decision
           </h2>
-          <span className="text-xs text-muted-foreground">{pending.length}</span>
+          <div className="flex items-center gap-3">
+            {devMode && (
+              <Button
+                onClick={queueTestApproval}
+                disabled={queueing}
+                size="sm"
+                variant="outline"
+                title="Dev only: queue a harmless approval to exercise the live badge + Telegram card"
+              >
+                <FlaskConical /> Queue test approval
+              </Button>
+            )}
+            <span className="text-xs text-muted-foreground">{pending.length}</span>
+          </div>
         </div>
         {pending.length === 0 ? (
           <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">

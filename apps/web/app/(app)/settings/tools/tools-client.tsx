@@ -20,7 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
-import { setToolsmithApprovalAction } from './actions';
+import { setHeartbeatEgressGateAction, setToolsmithApprovalAction } from './actions';
 
 type ToolHandlerBuiltin = { kind: 'builtin'; ref: string };
 type ToolHandlerHttp = {
@@ -130,14 +130,17 @@ function slugify(s: string): string {
 export function ToolsClient({
   initialTools,
   initialRequireApproval,
+  initialEgressGate,
 }: {
   initialTools: ToolSummary[];
   initialRequireApproval: boolean;
+  initialEgressGate: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
   const [tools, setTools] = useState<ToolSummary[]>(initialTools);
   const [requireApproval, setRequireApproval] = useState(initialRequireApproval);
+  const [egressGate, setEgressGate] = useState(initialEgressGate);
   const [editing, setEditing] = useState<
     { mode: 'create' } | { mode: 'edit'; tool: ToolSummary } | null
   >(null);
@@ -161,6 +164,24 @@ export function ToolsClient({
         );
       } catch {
         setRequireApproval(prev);
+        toast.error('Could not save that setting');
+      }
+    });
+  };
+
+  const toggleEgressGate = (next: boolean) => {
+    const prev = egressGate;
+    setEgressGate(next); // optimistic
+    startTransition(async () => {
+      try {
+        await setHeartbeatEgressGateAction(next);
+        toast.success(
+          next
+            ? 'Unattended heartbeats will now park email/web for approval'
+            : 'Unattended heartbeats run email/web inline again',
+        );
+      } catch {
+        setEgressGate(prev);
         toast.error('Could not save that setting');
       }
     });
@@ -330,6 +351,29 @@ export function ToolsClient({
                 checked={requireApproval}
                 disabled={pending}
                 onCheckedChange={toggleRequireApproval}
+                className="mt-0.5 shrink-0"
+              />
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-border p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <Label htmlFor="egress-gate" className="text-xs font-medium">
+                  Approve email &amp; web during unattended heartbeats
+                </Label>
+                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                  When on, a heartbeat that fires while you&apos;re away parks any{' '}
+                  <span className="font-medium">email or web</span> call for your approval instead of
+                  running it inline. You can clear it from the Telegram card on your phone. The
+                  heartbeat&apos;s own message reply is unaffected.
+                </p>
+              </div>
+              <Switch
+                id="egress-gate"
+                checked={egressGate}
+                disabled={pending}
+                onCheckedChange={toggleEgressGate}
                 className="mt-0.5 shrink-0"
               />
             </div>

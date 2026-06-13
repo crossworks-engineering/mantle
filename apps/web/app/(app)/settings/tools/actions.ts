@@ -14,3 +14,8 @@ export async function setToolsmithApprovalAction(value: boolean): Promise<void> 
   const user = await requireOwner();
   await updateProfilePreferences(user.id, { toolsmithRequireApproval: value === true });
 }
+
+export async function setHeartbeatEgressGateAction(value: boolean): Promise<void> {
+  const user = await requireOwner();
+  await updateProfilePreferences(user.id, { heartbeatEgressGate: value === true });
+}

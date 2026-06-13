@@ -69,6 +69,16 @@ export type ProfilePreferences = {
    *  injected agent can't stand up a silent exfiltration endpoint. Independent
    *  of the always-on guards (self-grant block, no-lower-via-update, SSRF). */
   toolsmithRequireApproval?: boolean;
+  /** When true, outbound/egress tools (email_send, web_fetch, web_search)
+   *  fired during an UNATTENDED heartbeat run park for operator approval
+   *  instead of executing inline. Only tools that reach OUT are gated — the
+   *  heartbeat's own surface reply (the final Telegram message) is not a tool
+   *  and still goes through. Defaults OFF: most heartbeats are trusted
+   *  routines. Turn it ON for an agent that reads untrusted content on a
+   *  timer, so an injected instruction can't silently email or fetch on your
+   *  behalf while you're away. Pairs with the interactive Telegram approval
+   *  card so a parked egress call can be cleared from a phone. */
+  heartbeatEgressGate?: boolean;
 };
 
 export const DEFAULT_PREFERENCES: ProfilePreferences = {
@@ -148,6 +158,7 @@ export async function loadProfilePreferences(
         ? prefs.devToolsAssistAgentSlug
         : undefined,
     toolsmithRequireApproval: prefs.toolsmithRequireApproval === true,
+    heartbeatEgressGate: prefs.heartbeatEgressGate === true,
   };
 }
 
@@ -225,6 +236,7 @@ export async function updateProfilePreferences(
     tablesAssistAgentSlug: merged.tablesAssistAgentSlug || undefined,
     devToolsAssistAgentSlug: merged.devToolsAssistAgentSlug || undefined,
     toolsmithRequireApproval: merged.toolsmithRequireApproval === true,
+    heartbeatEgressGate: merged.heartbeatEgressGate === true,
   };
 }
 

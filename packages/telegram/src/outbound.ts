@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { db, telegramAccounts, type TelegramAccount } from '@mantle/db';
-import { InputFile } from 'grammy';
+import { InlineKeyboard, InputFile } from 'grammy';
 import type { ReactionTypeEmoji } from 'grammy/types';
 import { botFor } from './client';
 
@@ -31,6 +31,102 @@ export async function sendMessage(
     ids.push(sent.message_id);
   }
   return ids;
+}
+
+/** Prefix on approval-card `callback_data`. Kept short — Telegram caps
+ *  callback_data at 64 bytes and a uuid already eats 36. */
+const APPROVAL_CB_PREFIX = 'mantle';
+
+/** Parse an approval-card button tap. Returns null for any callback that
+ *  isn't one of ours (so foreign buttons / malformed data are ignored). */
+export function parseApprovalCallback(
+  data: string | undefined,
+): { decision: 'approve' | 'reject'; pendingId: string } | null {
+  if (!data) return null;
+  const parts = data.split(':');
+  if (parts.length !== 3 || parts[0] !== APPROVAL_CB_PREFIX) return null;
+  const [, action, pendingId] = parts;
+  if (action !== 'approve' && action !== 'reject') return null;
+  if (!pendingId) return null;
+  return { decision: action, pendingId };
+}
+
+/**
+ * Send an approval card for a queued tool call: a short summary plus
+ * inline Approve / Reject buttons. Tapping a button rides back as a
+ * `callback_query` the poll worker resolves (parseApprovalCallback →
+ * approve/reject → editApprovalCard).
+ *
+ * `argsPreview` is a pre-truncated, secret-free one-liner — the caller
+ * owns redaction since only it knows which args are sensitive.
+ */
+export async function sendApprovalCard(
+  account: TelegramAccount,
+  chatId: string,
+  card: { pendingId: string; toolSlug: string; argsPreview?: string; via?: string },
+): Promise<number> {
+  const bot = await botFor(account);
+  const lines = [
+    '🔐 *Approval needed*',
+    `Tool: \`${card.toolSlug}\``,
+    card.via ? `From: ${card.via}` : null,
+    card.argsPreview ? `\n${card.argsPreview}` : null,
+  ].filter(Boolean) as string[];
+  const keyboard = new InlineKeyboard()
+    .text('✅ Approve', `${APPROVAL_CB_PREFIX}:approve:${card.pendingId}`)
+    .text('✕ Reject', `${APPROVAL_CB_PREFIX}:reject:${card.pendingId}`);
+  // Plain text (no parse_mode): the args preview can contain arbitrary
+  // characters that would break Markdown parsing and bounce the send.
+  // The asterisks/backticks above render literally — acceptable for a
+  // utility card; correctness (the card always arrives) beats prettiness.
+  const sent = await bot.api.sendMessage(chatId, lines.join('\n'), {
+    reply_markup: keyboard,
+  });
+  return sent.message_id;
+}
+
+/**
+ * Rewrite an approval card after it's been decided: drop the buttons and
+ * append the outcome line, so the chat history shows what happened and
+ * the buttons can't be tapped twice. Soft-fails — a failed edit (message
+ * too old, already edited) must not break the callback ack.
+ */
+export async function editApprovalCard(
+  account: TelegramAccount,
+  chatId: string,
+  messageId: number,
+  originalText: string,
+  outcome: string,
+): Promise<void> {
+  const bot = await botFor(account);
+  try {
+    await bot.api.editMessageText(chatId, messageId, `${originalText}\n\n${outcome}`, {
+      reply_markup: { inline_keyboard: [] },
+    });
+  } catch (err) {
+    console.error(
+      '[telegram] editApprovalCard failed (non-fatal):',
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
+/** Answer a callback query (the little toast + spinner-clear on the tapped
+ *  button). Soft-fails: a stale/expired callback id is non-fatal. */
+export async function answerCallback(
+  account: TelegramAccount,
+  callbackQueryId: string,
+  text: string,
+): Promise<void> {
+  const bot = await botFor(account);
+  try {
+    await bot.api.answerCallbackQuery(callbackQueryId, { text });
+  } catch (err) {
+    console.error(
+      '[telegram] answerCallbackQuery failed (non-fatal):',
+      err instanceof Error ? err.message : err,
+    );
+  }
 }
 
 /**

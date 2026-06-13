@@ -13,4 +13,8 @@ export {
   editMessage,
   accountForChat,
   accountById,
+  sendApprovalCard,
+  editApprovalCard,
+  answerCallback,
+  parseApprovalCallback,
 } from './outbound';

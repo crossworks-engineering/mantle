@@ -18,12 +18,13 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { db, agents, toolGroups, tools, type ToolHandler } from '@mantle/db';
+import { db, agents, pendingToolCalls, toolGroups, tools, type ToolHandler } from '@mantle/db';
 import { listApiKeys } from '@mantle/api-keys';
 import { loadProfilePreferences } from '@mantle/content';
 import { parseTikaBytes } from '@mantle/files';
 import { createTool, deleteTool, listToolsForOwner, updateTool } from './crud';
 import { dispatchTool } from './dispatch';
+import { notifyPendingCreated } from './pending-notify';
 import { collectParamNames, collectSecretRefs, refKey, type HttpHandler } from './http-template';
 import { guardedFetch } from './ssrf-guard';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
@@ -789,6 +790,52 @@ const agent_grant_tool_group: BuiltinToolDef = {
     if (current.includes(groupSlug)) {
       return { ok: true, output: { agent_slug: agentSlug, group_slug: groupSlug, already_granted: true } };
     }
+
+    // Cross-agent grant confirmation: when an AGENT initiates this (ctx.agent
+    // set, as opposed to the operator driving it via the API Console / MCP),
+    // don't widen another agent's powers on the agent's say-so. Park it for
+    // operator approval. On approval the same tool re-runs with NO agent
+    // context (pending dispatch passes only ownerId) → this branch is skipped
+    // and the grant applies. Validation above already ran, so we never queue
+    // an unknown-agent / non-http / already-granted call. (Self-grant is hard-
+    // refused earlier — it never reaches here.)
+    if (ctx.agent) {
+      const grantArgs = { agent_slug: agentSlug, group_slug: groupSlug };
+      const [requester] = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, ctx.agent.slug)))
+        .limit(1);
+      const [pending] = await db
+        .insert(pendingToolCalls)
+        .values({
+          ownerId: ctx.ownerId,
+          agentId: requester?.id ?? null,
+          toolSlug: 'agent_grant_tool_group',
+          args: grantArgs,
+        })
+        .returning({ id: pendingToolCalls.id });
+      if (pending?.id) {
+        void notifyPendingCreated({
+          ownerId: ctx.ownerId,
+          pendingId: pending.id,
+          toolSlug: 'agent_grant_tool_group',
+          args: grantArgs,
+          via: `agent ${ctx.agent.slug}`,
+        });
+      }
+      return {
+        ok: true,
+        output: {
+          status: 'queued_for_approval',
+          pending_id: pending?.id ?? null,
+          message:
+            `Granting '${groupSlug}' to agent '${agentSlug}' needs operator approval. ` +
+            `Queued at /pending; it applies once approved. Do not retry this turn.`,
+        },
+      };
+    }
+
     await db
       .update(agents)
       .set({ toolGroupSlugs: [...current, groupSlug], updatedAt: new Date() })

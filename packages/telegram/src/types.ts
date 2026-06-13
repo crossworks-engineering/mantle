@@ -12,6 +12,39 @@ export type GateResult =
   | { action: 'pair'; code: string; isResend: boolean }
   | { action: 'drop' };
 
+/**
+ * A parsed inline-keyboard tap from an approval card (the buttons
+ * `sendApprovalCard` attaches). `callback_data` is `mantle:approve:<id>`
+ * / `mantle:reject:<id>`; anything else is ignored.
+ */
+export interface ApprovalCallback {
+  decision: 'approve' | 'reject';
+  pendingId: string;
+}
+
+/** What the injected approval handler returns: whether the decision
+ *  applied, plus a short human line shown in the edited card + toast. */
+export interface ApprovalDecisionResult {
+  ok: boolean;
+  text: string;
+}
+
+/**
+ * Optional callbacks the poll worker injects so transport-layer code
+ * (this package) can act on inbound control events WITHOUT importing
+ * `@mantle/tools` — that import would close a dependency cycle, since
+ * tools already depends on telegram. The worker (apps/web) sits above
+ * both and can wire the two together.
+ */
+export interface PollHandlers {
+  /** Apply an approve/reject decision for the owner who taps the button. */
+  onApproval?: (input: {
+    ownerId: string;
+    decision: 'approve' | 'reject';
+    pendingId: string;
+  }) => Promise<ApprovalDecisionResult>;
+}
+
 /** Normalised inbound message shape — what `sync` hands to the persistor. */
 export interface InboundMessage {
   /** Telegram update_id (used as the dedupe + ack key). */

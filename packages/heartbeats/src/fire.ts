@@ -58,6 +58,13 @@ const HEARTBEAT_CONTROL_TOOLS = [
   'heartbeat_fire',
 ];
 
+/** Tools that reach OUT of the brain — email + web. When the operator
+ *  enables `heartbeatEgressGate`, these are force-confirmed for an
+ *  unattended fire so they park for approval instead of running inline.
+ *  The heartbeat's own surface reply is delivered separately (not a tool)
+ *  and is unaffected. */
+const HEARTBEAT_EGRESS_SLUGS = new Set(['email_send', 'web_fetch', 'web_search']);
+
 export type FireResult = {
   /** See HeartbeatFireDisposition in @mantle/db for the canonical
    *  vocabulary + operator-triage semantics. Kept in sync as a
@@ -193,7 +200,18 @@ async function fireInner(
     ...effectiveToolSlugs(agentGroupTools),
     ...HEARTBEAT_CONTROL_TOOLS,
   ]);
-  const tools = await resolveAgentTools(hb.ownerId, [...allSlugs]);
+  const resolvedTools = await resolveAgentTools(hb.ownerId, [...allSlugs]);
+  // Egress gate (opt-in): on an unattended fire, route email/web tools
+  // through the approval queue rather than letting them run inline. The
+  // queued call fires a Telegram approval card (see @mantle/tools
+  // notifyPendingCreated, reached via the tool-loop's requires_confirm
+  // path), so the operator can clear it from a phone. No effect when the
+  // preference is off — the common case.
+  const tools = prefs.heartbeatEgressGate
+    ? resolvedTools.map((t) =>
+        HEARTBEAT_EGRESS_SLUGS.has(t.slug) ? { ...t, requiresConfirm: true } : t,
+      )
+    : resolvedTools;
 
   // 4. Run loop inside a trace + heartbeat context --------------
   const hbAdapter = getChatAdapter(agent.provider);

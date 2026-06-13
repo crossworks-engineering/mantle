@@ -1,5 +1,33 @@
 import { describe, expect, it } from 'vitest';
-import { mimeFromFilename, sniffImageMime } from './outbound';
+import { mimeFromFilename, parseApprovalCallback, sniffImageMime } from './outbound';
+
+describe('parseApprovalCallback', () => {
+  const id = '11111111-2222-3333-4444-555555555555';
+
+  it('parses an approve tap', () => {
+    expect(parseApprovalCallback(`mantle:approve:${id}`)).toEqual({
+      decision: 'approve',
+      pendingId: id,
+    });
+  });
+
+  it('parses a reject tap', () => {
+    expect(parseApprovalCallback(`mantle:reject:${id}`)).toEqual({
+      decision: 'reject',
+      pendingId: id,
+    });
+  });
+
+  it('rejects foreign / malformed callback data', () => {
+    expect(parseApprovalCallback(undefined)).toBeNull();
+    expect(parseApprovalCallback('')).toBeNull();
+    expect(parseApprovalCallback('someoneelse:approve:' + id)).toBeNull(); // wrong prefix
+    expect(parseApprovalCallback('mantle:delete:' + id)).toBeNull(); // wrong action
+    expect(parseApprovalCallback('mantle:approve:')).toBeNull(); // empty id
+    expect(parseApprovalCallback('mantle:approve')).toBeNull(); // missing segment
+    expect(parseApprovalCallback(`mantle:approve:${id}:extra`)).toBeNull(); // trailing junk
+  });
+});
 
 describe('mimeFromFilename', () => {
   it('maps Telegram photo extensions to image mimes', () => {

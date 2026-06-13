@@ -80,6 +80,12 @@ export {
 } from './pending';
 
 export {
+  notifyPendingCreated,
+  notifyPendingChanged,
+  PENDING_CHANGED_CHANNEL,
+} from './pending-notify';
+
+export {
   registerAgentInvoker,
   getAgentInvoker,
   type AgentInvoker,

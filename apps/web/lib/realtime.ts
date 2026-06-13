@@ -1,6 +1,7 @@
 import postgres from 'postgres';
 import { eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
+import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
 
 /**
  * Realtime bridge (server-only). A single app-wide Postgres LISTENer on the
@@ -51,10 +52,18 @@ async function ensureListening(): Promise<void> {
     const subIndexed = await sql.listen('node_indexed', (nodeId) => {
       void fanout(nodeId);
     });
+    // Approval queue changes (a tool call queued / approved / rejected).
+    // Unlike node_* the payload IS the owner id, not a node id — so we
+    // broadcast directly without a nodes lookup. Drives the live sidebar
+    // pending-approval badge + /pending repaint.
+    const subPending = await sql.listen(PENDING_CHANGED_CHANNEL, (ownerId) => {
+      broadcast({ ownerId, type: 'pending_tool_call', id: '' });
+    });
     bridge.stop = async () => {
       try {
         await subIngested.unlisten();
         await subIndexed.unlisten();
+        await subPending.unlisten();
       } catch {
         /* ignore */
       }
@@ -69,6 +78,18 @@ async function ensureListening(): Promise<void> {
   }
 }
 
+/** Push a fully-formed change to every subscriber. One bad subscriber
+ *  must not break the rest. */
+function broadcast(change: RealtimeChange): void {
+  for (const cb of bridge.subs) {
+    try {
+      cb(change);
+    } catch {
+      /* one bad subscriber shouldn't break the rest */
+    }
+  }
+}
+
 async function fanout(nodeId: string): Promise<void> {
   if (bridge.subs.size === 0) return;
   try {
@@ -78,14 +99,7 @@ async function fanout(nodeId: string): Promise<void> {
       .where(eq(nodes.id, nodeId))
       .limit(1);
     if (!n) return;
-    const change: RealtimeChange = { ownerId: n.ownerId, type: n.type as string, id: nodeId };
-    for (const cb of bridge.subs) {
-      try {
-        cb(change);
-      } catch {
-        /* one bad subscriber shouldn't break the rest */
-      }
-    }
+    broadcast({ ownerId: n.ownerId, type: n.type as string, id: nodeId });
   } catch {
     /* lookup failure — drop this notify rather than crash the listener */
   }

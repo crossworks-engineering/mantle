@@ -12,7 +12,8 @@ import {
 } from '@mantle/db';
 import { botFor } from './client';
 import { gate } from './gate';
-import type { InboundMessage } from './types';
+import { answerCallback, editApprovalCard, parseApprovalCallback } from './outbound';
+import type { InboundMessage, PollHandlers } from './types';
 
 /**
  * One pass of getUpdates for a single account. Long-polls up to `timeout`
@@ -21,7 +22,11 @@ import type { InboundMessage } from './types';
  * The worker calls this in a loop; one pass per (job, tick) so pg-boss
  * can serialise concurrent ticks via singletonKey.
  */
-export async function pollOnce(account: TelegramAccount, timeoutSec = 25): Promise<{
+export async function pollOnce(
+  account: TelegramAccount,
+  timeoutSec = 25,
+  handlers: PollHandlers = {},
+): Promise<{
   updatesReceived: number;
   delivered: number;
 }> {
@@ -33,7 +38,9 @@ export async function pollOnce(account: TelegramAccount, timeoutSec = 25): Promi
     updates = await bot.api.getUpdates({
       offset: offset === 0 ? undefined : offset,
       timeout: timeoutSec,
-      allowed_updates: ['message'],
+      // `callback_query` carries inline-button taps from approval cards
+      // (sendApprovalCard). Without it here Telegram never delivers them.
+      allowed_updates: ['message', 'callback_query'],
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -66,6 +73,13 @@ export async function pollOnce(account: TelegramAccount, timeoutSec = 25): Promi
   let maxReceived = -1;
   for (const update of updates) {
     if (update.update_id > maxReceived) maxReceived = update.update_id;
+    // Inline-button taps (approval cards) come as callback_query, not
+    // message. Handle + ack them here so the cursor still advances past
+    // them; they never go through gate()/persist().
+    if (update.callback_query) {
+      await handleCallback(account, update.callback_query, handlers);
+      continue;
+    }
     const inbound = normalise(update);
     if (!inbound) continue;
     const result = await gate(account, inbound);
@@ -98,6 +112,73 @@ export async function pollOnce(account: TelegramAccount, timeoutSec = 25): Promi
     .where(eq(telegramAccounts.id, account.id));
 
   return { updatesReceived: updates.length, delivered };
+}
+
+/**
+ * Resolve an approval-card button tap. Authorisation is deliberately
+ * derived from the *chat row*, never from the callback's `from` id: a tap
+ * is honoured only if it arrives in a chat that is already `allowed` on
+ * this account, and it acts solely on that chat's owner's queue. The
+ * actual approve/reject is delegated to the injected handler so this
+ * package never imports @mantle/tools (cycle avoidance).
+ *
+ * Soft-fails throughout — a callback we can't process still gets an
+ * answerCallbackQuery so the user's button stops spinning.
+ */
+async function handleCallback(
+  account: TelegramAccount,
+  cq: NonNullable<Update['callback_query']>,
+  handlers: PollHandlers,
+): Promise<void> {
+  const parsed = parseApprovalCallback(cq.data);
+  const chatId = cq.message?.chat?.id != null ? String(cq.message.chat.id) : null;
+  if (!parsed || !chatId) {
+    await answerCallback(account, cq.id, 'Unrecognised action.');
+    return;
+  }
+  if (!handlers.onApproval) {
+    await answerCallback(account, cq.id, 'Approvals are not available right now.');
+    return;
+  }
+
+  const [chat] = await db
+    .select({ status: telegramChats.allowlistStatus, userId: telegramChats.userId })
+    .from(telegramChats)
+    .where(
+      and(
+        eq(telegramChats.accountId, account.id),
+        eq(telegramChats.telegramChatId, chatId),
+      ),
+    )
+    .limit(1);
+  if (!chat || chat.status !== 'allowed') {
+    await answerCallback(account, cq.id, 'Not authorised.');
+    return;
+  }
+
+  let outcome: { ok: boolean; text: string };
+  try {
+    outcome = await handlers.onApproval({
+      ownerId: chat.userId,
+      decision: parsed.decision,
+      pendingId: parsed.pendingId,
+    });
+  } catch (err) {
+    console.error('[telegram-sync] approval handler threw:', err);
+    outcome = { ok: false, text: 'Something went wrong applying that.' };
+  }
+
+  await answerCallback(account, cq.id, outcome.text);
+  // Rewrite the card so the buttons clear and the chat shows the outcome.
+  if (cq.message) {
+    await editApprovalCard(
+      account,
+      chatId,
+      cq.message.message_id,
+      'text' in cq.message && typeof cq.message.text === 'string' ? cq.message.text : '🔐 Approval',
+      outcome.text,
+    );
+  }
 }
 
 /**

@@ -34,6 +34,7 @@ import {
   resolveTools,
   processToolResultForModel,
   resolveResultHandling,
+  notifyPendingCreated,
   type ResultHandlingConfig,
   type ToolCallRecord,
 } from '@mantle/tools';
@@ -599,7 +600,19 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
               })
               .returning({ id: pendingToolCalls.id });
             const pendingId = pending?.id ?? null;
-            if (pendingId) pendingIds.push(pendingId);
+            if (pendingId) {
+              pendingIds.push(pendingId);
+              // Surface the approval wherever the operator is: live badge
+              // + a one-tap Telegram card. Fire-and-forget — the row is
+              // already persisted and /pending owns the truth.
+              void notifyPendingCreated({
+                ownerId: args.ownerId,
+                pendingId,
+                toolSlug: slug,
+                args: input,
+                via: args.agentSlug ? `agent ${args.agentSlug}` : undefined,
+              });
+            }
             handle.setSkipped('requires_confirm');
             handle.setMeta({ pendingId, requiresConfirm: true });
             return {

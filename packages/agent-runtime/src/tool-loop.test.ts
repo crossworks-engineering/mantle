@@ -57,6 +57,7 @@ vi.mock('@mantle/tools', () => ({
     embedMinBytes: 0,
     spillMaxBytes: 10_000_000,
   })),
+  notifyPendingCreated: vi.fn(async () => {}),
 }));
 
 vi.mock('@mantle/db', () => ({

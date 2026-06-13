@@ -12,6 +12,7 @@ import {
   tools as toolsTable,
 } from '@mantle/db';
 import { dispatchTool } from './dispatch';
+import { notifyPendingChanged } from './pending-notify';
 import { startTrace, step } from '@mantle/tracing';
 
 export type PendingSummary = {
@@ -112,6 +113,8 @@ export async function rejectPendingCall(
       ),
     )
     .returning();
+  // Repaint the badge / any open card the moment the status flips.
+  if (row) void notifyPendingChanged(ownerId);
   return row ? toSummary(row) : null;
 }
 
@@ -141,6 +144,9 @@ export async function approvePendingCall(
     )
     .returning();
   if (!claimed) return null;
+  // Status has flipped to 'approved' — repaint the badge now, before the
+  // (possibly slow) dispatch below.
+  void notifyPendingChanged(ownerId);
 
   // Resolve the tool by slug (not the snapshot at queue time — the
   // operator might have edited the handler in the meantime).

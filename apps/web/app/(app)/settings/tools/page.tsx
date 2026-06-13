@@ -17,6 +17,7 @@ export default async function ToolsPage() {
       <ToolsClient
         initialTools={rows}
         initialRequireApproval={prefs.toolsmithRequireApproval === true}
+        initialEgressGate={prefs.heartbeatEgressGate === true}
       />
     </>
   );
