@@ -3,7 +3,7 @@
 // relay's routing token + the device's public key.
 
 import { and, eq } from 'drizzle-orm';
-import { db, pushInstance, pushSubscriptions } from '@mantle/db';
+import { db, pushInstance, pushPrefs, pushSubscriptions } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
 
 export interface PushInstanceSecret {
@@ -118,4 +118,46 @@ export async function deleteSubscriptionByRoutingToken(routingToken: string): Pr
 
 export async function markPushed(id: string): Promise<void> {
   await db.update(pushSubscriptions).set({ lastPushAt: new Date() }).where(eq(pushSubscriptions.id, id));
+}
+
+// --- Preferences (single row; trigger toggles + quiet hours) ---
+
+export interface PushPreferences {
+  assistantMessages: boolean;
+  approvals: boolean;
+  quietEnabled: boolean;
+  quietStart: string; // HH:MM
+  quietEnd: string; // HH:MM
+  timezone: string; // IANA, e.g. 'Africa/Johannesburg'
+}
+
+export const DEFAULT_PUSH_PREFS: PushPreferences = {
+  assistantMessages: true,
+  approvals: true,
+  quietEnabled: false,
+  quietStart: '22:00',
+  quietEnd: '07:00',
+  timezone: 'UTC',
+};
+
+export async function getPushPrefs(): Promise<PushPreferences> {
+  const [row] = await db.select().from(pushPrefs).limit(1);
+  if (!row) return DEFAULT_PUSH_PREFS;
+  return {
+    assistantMessages: row.assistantMessages,
+    approvals: row.approvals,
+    quietEnabled: row.quietEnabled,
+    quietStart: row.quietStart,
+    quietEnd: row.quietEnd,
+    timezone: row.timezone,
+  };
+}
+
+export async function updatePushPrefs(patch: Partial<PushPreferences>): Promise<PushPreferences> {
+  const next = { ...(await getPushPrefs()), ...patch };
+  await db
+    .insert(pushPrefs)
+    .values({ ...next, singleton: true })
+    .onConflictDoUpdate({ target: pushPrefs.singleton, set: next });
+  return next;
 }

@@ -15,7 +15,8 @@
  * later refinement; see §10.
  */
 import postgres from 'postgres';
-import { pushOutbound } from '../lib/push/notify';
+import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
+import { pushApproval, pushOutbound } from '../lib/push/notify';
 
 interface ConversationChange {
   ownerId: string;
@@ -23,7 +24,7 @@ interface ConversationChange {
   direction: 'inbound' | 'outbound';
 }
 
-async function handle(payload: string): Promise<void> {
+async function handleConversation(payload: string): Promise<void> {
   let c: ConversationChange;
   try {
     c = JSON.parse(payload) as ConversationChange;
@@ -45,22 +46,39 @@ async function handle(payload: string): Promise<void> {
   }
 }
 
+// pending_changed's payload IS the owner id (not JSON) — see @mantle/tools.
+async function handlePending(ownerId: string): Promise<void> {
+  if (!ownerId) return;
+  try {
+    const r = await pushApproval(ownerId);
+    if (!r.skipped) {
+      console.log(`[push-notify] approvals: delivered ${r.delivered}/${r.attempted}`);
+    }
+  } catch (err) {
+    console.error('[push-notify] approval send failed:', (err as Error).message);
+  }
+}
+
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL must be set');
   // Needed to decrypt the instance token at rest (@mantle/crypto).
   if (!process.env.MANTLE_MASTER_KEY) throw new Error('MANTLE_MASTER_KEY must be set');
 
-  console.log('[push-notify] worker up — listening on conversation_changed');
+  console.log('[push-notify] worker up — listening on conversation_changed + pending_changed');
   const sql = postgres(url, { max: 1, prepare: false });
-  const sub = await sql.listen('conversation_changed', (payload) => {
-    void handle(payload);
+  const subConversation = await sql.listen('conversation_changed', (payload) => {
+    void handleConversation(payload);
+  });
+  const subPending = await sql.listen(PENDING_CHANGED_CHANNEL, (ownerId) => {
+    void handlePending(ownerId);
   });
 
   const shutdown = async () => {
     console.log('[push-notify] shutting down…');
     try {
-      await sub.unlisten();
+      await subConversation.unlisten();
+      await subPending.unlisten();
       await sql.end({ timeout: 5 });
     } catch {
       /* ignore */

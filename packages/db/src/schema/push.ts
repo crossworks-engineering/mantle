@@ -57,3 +57,27 @@ export const pushSubscriptions = pgTable(
 
 export type PushSubscription = typeof pushSubscriptions.$inferSelect;
 export type NewPushSubscription = typeof pushSubscriptions.$inferInsert;
+
+/**
+ * `push_prefs` — single-row notification preferences (push-notifications.md §10).
+ * Per-trigger toggles + quiet hours, enforced Mantle-side by the send-worker
+ * before it calls the relay. `quiet_start`/`quiet_end` are `HH:MM` in `timezone`.
+ */
+export const pushPrefs = pgTable(
+  'push_prefs',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    /** Push outbound assistant turns (the assistant reaching out). */
+    assistantMessages: boolean('assistant_messages').notNull().default(true),
+    /** Push when a tool call needs approval. */
+    approvals: boolean('approvals').notNull().default(true),
+    quietEnabled: boolean('quiet_enabled').notNull().default(false),
+    quietStart: text('quiet_start').notNull().default('22:00'),
+    quietEnd: text('quiet_end').notNull().default('07:00'),
+    timezone: text('timezone').notNull().default('UTC'),
+    singleton: boolean('singleton').notNull().default(true),
+  },
+  (t) => [uniqueIndex('push_prefs_singleton_uq').on(t.singleton)],
+);
+
+export type PushPrefsRow = typeof pushPrefs.$inferSelect;

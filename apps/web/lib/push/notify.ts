@@ -1,26 +1,40 @@
-// The send path: given an outbound conversation turn, seal a teaser to each of
-// the owner's devices and hand it to the relay. Pure server logic, shared by the
-// push-notify worker. Content never leaves here unsealed.
+// The send path: given an outbound conversation turn (or a pending approval),
+// seal a teaser to each of the owner's devices and hand it to the relay —
+// gated by the owner's per-trigger toggles + quiet hours (push-notifications.md
+// §10). Pure server logic, shared by the push-notify worker. Content never
+// leaves here unsealed.
 
 import { and, desc, eq } from 'drizzle-orm';
 import { db, agents, assistantMessages } from '@mantle/db';
+import { countPending } from '@mantle/tools';
 import { sealToDevice } from './seal';
 import { relayNotify } from './relay-client';
+import { isQuietNow } from './quiet-hours';
 import {
   deleteSubscriptionByRoutingToken,
   getPushInstance,
+  getPushPrefs,
   listSubscriptions,
   markPushed,
+  type DeviceRow,
+  type PushInstanceSecret,
 } from './store';
 
 /** The plaintext that gets sealed to the device (push-notifications.md §6). */
 interface PushPayload {
   v: 1;
-  t: string; // title (agent name)
+  t: string; // title (agent name, or "Mantle")
   b: string; // body (teaser)
-  agentSlug: string;
+  agentSlug?: string;
   deepLink: string;
   ts: number;
+}
+
+export interface PushResult {
+  attempted: number;
+  delivered: number;
+  dropped: number; // unregistered devices removed
+  skipped?: 'not_connected' | 'no_devices' | 'no_message' | 'disabled' | 'quiet_hours';
 }
 
 function teaser(text: string, max = 140): string {
@@ -55,21 +69,50 @@ async function latestOutbound(
   return { agentName: agent.name, text: msg.text };
 }
 
-export interface PushOutboundResult {
-  attempted: number;
-  delivered: number;
-  dropped: number; // unregistered devices removed
-  skipped?: 'not_connected' | 'no_devices' | 'no_message';
+/** Seal `payload` to each device and forward to the relay. Prunes dead devices. */
+async function sendToDevices(
+  instance: PushInstanceSecret,
+  devices: DeviceRow[],
+  payload: PushPayload,
+  collapseKey: string,
+): Promise<{ delivered: number; dropped: number }> {
+  const plaintext = JSON.stringify(payload);
+  let delivered = 0;
+  let dropped = 0;
+  for (const device of devices) {
+    let ciphertext: string;
+    try {
+      ciphertext = await sealToDevice(device.publicKey, plaintext);
+    } catch {
+      continue; // a bad public key shouldn't break the others
+    }
+    const res = await relayNotify(instance.relayUrl, instance.instanceToken, {
+      routingToken: device.routingToken,
+      ciphertext,
+      collapseKey,
+    });
+    if (res.ok) {
+      delivered++;
+      void markPushed(device.id);
+    } else if (res.unregistered) {
+      dropped++;
+      await deleteSubscriptionByRoutingToken(device.routingToken);
+    }
+  }
+  return { delivered, dropped };
 }
 
 /**
  * Push the latest outbound turn for {ownerId, agentSlug} to every enrolled
- * device. Best-effort: a per-device failure never throws; a dead device (410)
- * is pruned. Returns a small tally for logging.
+ * device — unless the assistant-messages trigger is off or it's quiet hours.
  */
-export async function pushOutbound(ownerId: string, agentSlug: string): Promise<PushOutboundResult> {
+export async function pushOutbound(ownerId: string, agentSlug: string): Promise<PushResult> {
   const instance = await getPushInstance();
   if (!instance) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'not_connected' };
+
+  const prefs = await getPushPrefs();
+  if (!prefs.assistantMessages) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'disabled' };
+  if (isQuietNow(prefs)) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'quiet_hours' };
 
   const devices = await listSubscriptions(ownerId);
   if (devices.length === 0) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_devices' };
@@ -85,29 +128,36 @@ export async function pushOutbound(ownerId: string, agentSlug: string): Promise<
     deepLink: `/chat/${agentSlug}`,
     ts: Date.now(),
   };
-  const plaintext = JSON.stringify(payload);
+  const { delivered, dropped } = await sendToDevices(instance, devices, payload, agentSlug);
+  return { attempted: devices.length, delivered, dropped };
+}
 
-  let delivered = 0;
-  let dropped = 0;
-  for (const device of devices) {
-    let ciphertext: string;
-    try {
-      ciphertext = await sealToDevice(device.publicKey, plaintext);
-    } catch {
-      continue; // a bad public key shouldn't break the others
-    }
-    const res = await relayNotify(instance.relayUrl, instance.instanceToken, {
-      routingToken: device.routingToken,
-      ciphertext,
-      collapseKey: agentSlug, // supersede repeated nudges from the same agent
-    });
-    if (res.ok) {
-      delivered++;
-      void markPushed(device.id);
-    } else if (res.unregistered) {
-      dropped++;
-      await deleteSubscriptionByRoutingToken(device.routingToken);
-    }
-  }
+/**
+ * Push a pending-approval nudge to the owner's devices — unless the approvals
+ * trigger is off or it's quiet hours. Collapses on "approvals" so repeated
+ * nudges supersede.
+ */
+export async function pushApproval(ownerId: string): Promise<PushResult> {
+  const instance = await getPushInstance();
+  if (!instance) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'not_connected' };
+
+  const prefs = await getPushPrefs();
+  if (!prefs.approvals) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'disabled' };
+  if (isQuietNow(prefs)) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'quiet_hours' };
+
+  const devices = await listSubscriptions(ownerId);
+  if (devices.length === 0) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_devices' };
+
+  const count = await countPending(ownerId);
+  if (count === 0) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_message' };
+
+  const payload: PushPayload = {
+    v: 1,
+    t: 'Mantle',
+    b: count === 1 ? 'An action needs your approval.' : `${count} actions need your approval.`,
+    deepLink: '/pending',
+    ts: Date.now(),
+  };
+  const { delivered, dropped } = await sendToDevices(instance, devices, payload, 'approvals');
   return { attempted: devices.length, delivered, dropped };
 }
