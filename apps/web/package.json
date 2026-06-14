@@ -1,6 +1,6 @@
 {
   "name": "@mantle/web",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,6 +14,7 @@
     "worker:files:dev": "tsx --watch --env-file-if-exists=./.env.local workers/files-watch.ts",
     "worker:docs:dev": "tsx --watch --env-file-if-exists=./.env.local workers/docs-sync.ts",
     "worker:events:dev": "tsx --watch --env-file-if-exists=./.env.local workers/events-reminders.ts",
+    "worker:push:dev": "tsx --watch --env-file-if-exists=./.env.local workers/push-notify.ts",
     "pgboss:init": "tsx --env-file-if-exists=./.env.local scripts/pgboss-init.ts",
     "seed:telegram": "tsx --env-file-if-exists=./.env.local scripts/seed-telegram.ts",
     "seed:heartbeat-demo": "tsx --env-file-if-exists=./.env.local scripts/seed-get-to-know-user.ts",
@@ -113,6 +114,7 @@
     "hast-util-to-html": "^9.0.5",
     "heic-convert": "^2.1.0",
     "katex": "^0.16.47",
+    "libsodium-wrappers": "^0.8.4",
     "lowlight": "^3.3.0",
     "lucide-react": "^0.469.0",
     "marked": "^18.0.4",
@@ -142,6 +144,7 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/dagre": "^0.7.52",
     "@types/katex": "^0.16.8",
+    "@types/libsodium-wrappers": "^0.8.2",
     "@types/node": "^22.10.5",
     "@types/react": "^19.0.5",
     "@types/react-dom": "^19.0.3",

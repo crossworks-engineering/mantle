@@ -645,6 +645,13 @@
       "when": 1782691200000,
       "tag": "0091_conversation_changed_notify",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1782777600000,
+      "tag": "0092_push",
+      "breakpoints": true
     }
   ]
 }
