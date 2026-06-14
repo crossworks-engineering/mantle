@@ -25,7 +25,7 @@ export function KpiCards({ items }: { items: Kpi[] }) {
             className={cn(
               'h-full bg-gradient-to-t from-primary/5 to-card transition-colors',
               k.href && 'hover:border-primary/40',
-              k.accent && 'border-amber-500/40 from-amber-500/10',
+              k.accent && 'border-primary/40 from-primary/15',
             )}
           >
             <CardHeader className="relative">

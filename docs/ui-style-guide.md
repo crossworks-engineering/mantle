@@ -59,6 +59,24 @@ Rules:
   matching `-foreground` (e.g. `hover:bg-accent hover:text-accent-foreground`; for
   a fill on a row whose meta text is `text-muted-foreground`, flip it with
   `group-hover:text-accent-foreground`). Swept app-wide 2026-06-03.
+
+  **Which fill where** — what each surface pair is *for* (reach for the right one,
+  then text it with its own foreground):
+
+  | Fill | Use it for |
+  |---|---|
+  | `bg-background` / `text-foreground` | the page itself |
+  | `bg-card` / `text-card-foreground` | neutral raised panels, cards |
+  | `bg-accent` / `text-accent-foreground` | a **soft highlighted surface** — accent cards, hover/active rows, chips that set BOTH tokens |
+  | `bg-secondary` / `text-secondary-foreground` | a quieter filled chip / segmented control |
+  | `bg-muted` / `text-muted-foreground` | the most subdued surface + secondary text on `background` |
+  | `bg-primary` / `text-primary-foreground` | the single brand/action accent — primary buttons, the one thing that should pop. Don't tile large areas with it (it's saturated). |
+  | `bg-destructive` / `text-destructive-foreground` | errors / destructive actions only |
+
+  Rule of thumb: **`accent` is the "card accent"; `primary` is the single pop on
+  top; `muted`/`secondary` are the quiet fills.** For a tinted-but-not-filled
+  emphasis, a faint `bg-primary/10` (contrast-checked) is fine — but a *filled*
+  coloured surface must bring its matching `-foreground`.
 - **Semantic action colours come from tokens, not literal green/red.** Affirmative
   = `primary`, dangerous/removing = `destructive` (e.g. the sender approve/deny
   Button variants). A hardcoded `bg-green-600`/`bg-red-600` ignores the theme.
