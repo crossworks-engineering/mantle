@@ -8,10 +8,16 @@ only auth scope is the owner. Everything here is **owner-gated via
 `requireOwner()`**, which accepts the session cookie *or* a mobile bearer token —
 so each route works unchanged from web and mobile.
 
-> Status: **smoke-tested end-to-end on local dev (2026-06-13)** — migration 0090
-> applied, and all four route groups verified with a mobile bearer (dashboard
-> summary, conversations, read cursor, avatar all 200; owner-gate 307s without a
-> token). The avatar route needed a fix during that pass — see its section.
+> Status: **DEPLOYED TO PROD (2026-06-14, v0.24.0).** Migrations 0089/0090/0091
+> applied on prod (drizzle count 89 → 92) via the gated `migrate` one-shot; data
+> intact (nodes unchanged). All routes live behind the owner-gate: a no-token
+> request 307s to /login (edge middleware), an invalid-bearer request gets a clean
+> **401** from `getOwnerOr401`, and `mobile-login` 401s bad creds. Pre-migration
+> brain dump taken first (`backups/mantle-20260614-172127.dump`).
+>
+> Previously: smoke-tested end-to-end on local dev (2026-06-13) — all four route
+> groups verified with a mobile bearer; the avatar route needed a fix (see its
+> section).
 
 ## Auth — per-device bearer tokens
 

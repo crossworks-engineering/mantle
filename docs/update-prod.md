@@ -76,6 +76,15 @@ checks), `/settings/network` (the new **Activate Tailscale** card).
 
 ## Gotchas
 
+- **Caddyfile changes need a Caddy RESTART, not just reload** (learned 2026-06-14
+  shipping the `push.crossworks.network` block). The Caddyfile is bind-mounted as a
+  single **file** (`./infra/caddy/Caddyfile:/etc/caddy/Caddyfile`). rsync (like most
+  editors) writes a new inode and renames it over the path, but Docker resolved the
+  bind mount to the **original inode** at container-start — so the container keeps
+  serving the old file and `caddy reload` reports `config is unchanged`. Fix:
+  `docker restart mantle_caddy` (re-resolves the path → new inode), then the new
+  site block loads and its cert issues on first request. `docker compose up -d` does
+  **not** recreate caddy on a mount-content change, so restart it explicitly.
 - **telegram poller**: leave `worker_telegram` RUNNING (`restart: unless-stopped`).
   The dev/prod bot split (2026-06-02) means prod polls only `saskianewbot` and dev
   only `saskiadevbot` — disjoint tokens, no 409. If you ever re-share a token across
