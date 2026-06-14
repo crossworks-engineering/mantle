@@ -26,30 +26,52 @@ function eqConstantTime(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 async function verify(token: string, secret: string): Promise<boolean> {
-  const dot = token.lastIndexOf('.');
-  if (dot < 0) return false;
-  const payload = token.slice(0, dot);
-  const sigPart = token.slice(dot + 1);
-
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const expected = new Uint8Array(
-    await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)),
-  );
-  const got = b64urlDecode(sigPart);
-  if (!eqConstantTime(got, expected)) return false;
-
+  // Wrapped end-to-end: a malformed token (bad base64 in the sig or payload)
+  // must resolve to `false`, never throw — otherwise an attacker-controlled
+  // Bearer value would crash the middleware into a 500 instead of a clean 401.
   try {
+    const dot = token.lastIndexOf('.');
+    if (dot < 0) return false;
+    const payload = token.slice(0, dot);
+    const sigPart = token.slice(dot + 1);
+
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+    const expected = new Uint8Array(
+      await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)),
+    );
+    const got = b64urlDecode(sigPart);
+    if (!eqConstantTime(got, expected)) return false;
+
     const json = new TextDecoder().decode(b64urlDecode(payload));
     const data = JSON.parse(json);
     if (typeof data.exp !== 'number') return false;
     if (Date.now() / 1000 > data.exp) return false;
     return true;
+  } catch {
+    return false;
+  }
+}
+
+function bearerToken(req: NextRequest): string | null {
+  const h = req.headers.get('authorization') ?? '';
+  const m = /^Bearer\s+(.+)$/i.exec(h.trim());
+  return m ? m[1]!.trim() : null;
+}
+
+/** True if the token's payload carries the mobile kind marker (`k:'m'`). The
+ *  signature/expiry are checked separately by `verify`. */
+function isMobileToken(token: string): boolean {
+  const dot = token.lastIndexOf('.');
+  if (dot < 0) return false;
+  try {
+    const json = new TextDecoder().decode(b64urlDecode(token.slice(0, dot)));
+    return JSON.parse(json).k === 'm';
   } catch {
     return false;
   }
@@ -73,14 +95,28 @@ export async function middleware(req: NextRequest) {
     });
   }
 
-  const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
-  if (!token || !(await verify(token, secret))) {
-    const url = new URL('/login', req.url);
-    url.searchParams.set('next', path);
-    return NextResponse.redirect(url);
+  const cookie = req.cookies.get(SESSION_COOKIE_NAME)?.value;
+  if (cookie && (await verify(cookie, secret))) return NextResponse.next();
+
+  // Mobile companion: Authorization: Bearer <mobile-token>. Signed with the same
+  // secret; we additionally require the mobile kind marker. Per-device
+  // revocation is enforced in the Node layer (getSessionUser).
+  const bearer = bearerToken(req);
+  if (bearer) {
+    if ((await verify(bearer, secret)) && isMobileToken(bearer)) {
+      return NextResponse.next();
+    }
+    // A bearer was presented but is invalid — this is an API client, not a
+    // browser, so answer 401 rather than redirect to an HTML login page.
+    return new NextResponse('Unauthorized', {
+      status: 401,
+      headers: { 'Cache-Control': 'no-store' },
+    });
   }
 
-  return NextResponse.next();
+  const url = new URL('/login', req.url);
+  url.searchParams.set('next', path);
+  return NextResponse.redirect(url);
 }
 
 export const config = {

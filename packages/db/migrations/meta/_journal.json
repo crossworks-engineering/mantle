@@ -624,6 +624,20 @@
       "when": 1782432000000,
       "tag": "0088_research_group_add_pro",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1782518400000,
+      "tag": "0089_mobile_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1782604800000,
+      "tag": "0090_assistant_read_cursors",
+      "breakpoints": true
     }
   ]
 }
