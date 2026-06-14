@@ -24,9 +24,15 @@ so each route works unchanged from web and mobile.
   401s a malformed one (wrapped in try/catch).
 - Routes: `POST /api/auth/mobile-login` `{email, password, deviceName}` →
   `{token, expiresIn}`; `POST /api/auth/mobile-logout` (revokes by `jti`).
-- **Client contract:** a revoked-but-unexpired token passes the Edge gate but gets
-  **307 → /login** from `requireOwner()` handlers (not 401). The app treats **401
-  OR 3xx→/login** as "session invalid".
+- **Client contract:** a revoked/expired token still passes the stateless Edge
+  gate (revocation is enforced in the Node layer). The JSON API routes below gate
+  with **`getOwnerOr401()`**, which returns a clean **401 `{error:'unauthorized'}`**
+  in that case — not a redirect. (HTML *page* routes still use `requireOwner()` →
+  **307 → /login**.) The app treats **401 OR 3xx→/login** as "session invalid".
+- **`getOwnerOr401()`** (`lib/auth.ts`) is the gate for programmatic JSON routes:
+  it returns `SessionUser | NextResponse`, so the handler does
+  `const owner = await getOwnerOr401(); if (owner instanceof NextResponse) return owner;`.
+  Used by dashboard-summary, conversations, read, and avatar.
 
 ## Dashboard summary
 
@@ -49,7 +55,9 @@ so each route works unchanged from web and mobile.
 - `GET /api/assistant/conversations` → `{ conversations: [{ agentId, slug, name,
   avatar, lastMessage: {text, direction, createdAt} | null, unreadCount }] }`.
 - `POST /api/assistant/read` `{ agentSlug?, at? }` — marks an agent's thread read
-  (clears unread). Omitting `agentSlug` marks the default agent.
+  (clears unread). Omitting `agentSlug` marks the default agent. Body is
+  `safeParse`d → **400 `{error:'invalid_body'}`** on a malformed/mistyped body
+  (not a 500); unknown agent → 404.
 
 ## Agent avatar image
 

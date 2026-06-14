@@ -1,5 +1,6 @@
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { NextResponse } from 'next/server';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
@@ -187,6 +188,25 @@ export async function requireOwner(): Promise<SessionUser> {
   const user = await getSessionUser();
   if (!user) redirect('/login');
   return user;
+}
+
+/**
+ * Owner gate for JSON API routes (the mobile companion). Unlike
+ * `requireOwner()`, which `redirect()`s to /login — a 307 to an HTML page,
+ * wrong for a programmatic client — this returns a 401 JSON response the caller
+ * returns as-is:
+ *
+ *     const owner = await getOwnerOr401();
+ *     if (owner instanceof NextResponse) return owner;
+ *     // owner: SessionUser
+ *
+ * A revoked or expired bearer slips past the stateless Edge gate (revocation is
+ * enforced here in the Node layer), so this is where it's caught — now as a
+ * clean 401 instead of a redirect.
+ */
+export async function getOwnerOr401(): Promise<SessionUser | NextResponse> {
+  const user = await getSessionUser();
+  return user ?? NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 }
 
 /**

@@ -1,5 +1,6 @@
+import { NextResponse } from 'next/server';
 import { and, eq } from 'drizzle-orm';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { renderAvatarSvg } from '@/lib/avatar-svg';
 import { db, agents } from '@mantle/db';
 
@@ -23,7 +24,8 @@ export async function GET(
   req: Request,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  const user = await requireOwner();
+  const owner = await getOwnerOr401();
+  if (owner instanceof NextResponse) return owner;
   const { id: key } = await ctx.params;
   const size = Math.min(
     256,
@@ -35,7 +37,7 @@ export async function GET(
     .from(agents)
     .where(
       and(
-        eq(agents.ownerId, user.id),
+        eq(agents.ownerId, owner.id),
         UUID_RE.test(key) ? eq(agents.id, key) : eq(agents.slug, key),
       ),
     )

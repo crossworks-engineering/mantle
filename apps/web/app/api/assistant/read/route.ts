@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { resolveAssistantAgent } from '@/lib/assistant';
 import { markAssistantRead } from '@/lib/assistant-inbox';
 
@@ -16,15 +16,21 @@ const Body = z.object({
  * Owner-gated → works with a mobile bearer token.
  */
 export async function POST(req: Request) {
-  const user = await requireOwner();
-  const body = Body.parse(await req.json().catch(() => ({})));
+  const owner = await getOwnerOr401();
+  if (owner instanceof NextResponse) return owner;
 
-  const agent = await resolveAssistantAgent(user.id, body.agentSlug);
+  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
+  }
+  const body = parsed.data;
+
+  const agent = await resolveAssistantAgent(owner.id, body.agentSlug);
   if (!agent) {
     return NextResponse.json({ error: 'no_agent' }, { status: 404 });
   }
 
   const at = body.at ? new Date(body.at) : new Date();
-  await markAssistantRead(user.id, agent.id, at);
+  await markAssistantRead(owner.id, agent.id, at);
   return NextResponse.json({ ok: true, agentSlug: agent.slug, lastReadAt: at.toISOString() });
 }

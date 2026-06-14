@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { assistantConversations } from '@/lib/assistant-inbox';
 
 /**
@@ -8,7 +8,8 @@ import { assistantConversations } from '@/lib/assistant-inbox';
  * Owner-gated, so it works with a mobile bearer token.
  */
 export async function GET() {
-  const user = await requireOwner();
-  const conversations = await assistantConversations(user.id);
+  const owner = await getOwnerOr401();
+  if (owner instanceof NextResponse) return owner;
+  const conversations = await assistantConversations(owner.id);
   return NextResponse.json({ conversations });
 }
