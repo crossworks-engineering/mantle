@@ -115,7 +115,19 @@ so each route works unchanged from web and mobile.
 
 The repo hand-writes migrations (drizzle-kit snapshots collide). Added:
 `0089_mobile_tokens.sql`, `0090_assistant_read_cursors.sql`, each with a
-`meta/_journal.json` entry. Apply with `pnpm db:migrate`. **Both applied on local
-dev (2026-06-13);** `assistant_read_cursors` verified: composite PK
+`meta/_journal.json` entry. Apply with `pnpm db:migrate`. **0089–0091 applied on
+prod (2026-06-14, v0.24.0);** `assistant_read_cursors` verified: composite PK
 `(owner_id, agent_id)`, `last_read_at timestamptz default now()`, FK →
 `agents(id) ON DELETE CASCADE`.
+
+## Push notifications (M2)
+
+`0092_push.sql` + `lib/push/*` + `workers/push-notify.ts` (Mantle v0.25.0) add the
+backend half of **Mantle Push**: owner-gated `POST /api/push/connect` (lazily
+generates this install's instance token, registers it with the relay, mints an
+enrollment ticket), `POST|GET /api/push/subscriptions`, `DELETE
+/api/push/subscriptions/:id`, `POST /api/push/reset`; and `worker_push`, which
+LISTENs `conversation_changed` (migration 0091) and forwards each outbound turn's
+**libsodium-sealed** teaser to the relay's `/notify`. Full design +
+relay/app halves: `../../mantle-companion/docs/push-notifications.md`. The relay
+is live at `https://push.crossworks.network` (mock provider until APNs/FCM creds).
