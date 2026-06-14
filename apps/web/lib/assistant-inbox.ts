@@ -70,7 +70,7 @@ export async function assistantConversations(
       and(
         eq(agents.ownerId, ownerId),
         eq(agents.enabled, true),
-        inArray(agents.role, CHATTABLE_ROLES),
+        inArray(agents.role, [...CHATTABLE_ROLES]),
       ),
     )
     .orderBy(desc(agents.priority));
@@ -96,7 +96,7 @@ export async function assistantConversations(
         .limit(1);
 
       const cursor = cursors.get(a.id) ?? EPOCH;
-      const [{ unread }] = await db
+      const [unreadRow] = await db
         .select({ unread: sql<number>`count(*)::int` })
         .from(assistantMessages)
         .where(
@@ -107,6 +107,7 @@ export async function assistantConversations(
             gt(assistantMessages.createdAt, cursor),
           ),
         );
+      const unread = unreadRow?.unread;
 
       return {
         agentId: a.id,

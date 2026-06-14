@@ -8,8 +8,10 @@ only auth scope is the owner. Everything here is **owner-gated via
 `requireOwner()`**, which accepts the session cookie *or* a mobile bearer token —
 so each route works unchanged from web and mobile.
 
-> Status: built but **not yet verified end-to-end against a running server in the
-> session that wrote it.** Apply migrations and smoke-test before relying on it.
+> Status: **smoke-tested end-to-end on local dev (2026-06-13)** — migration 0090
+> applied, and all four route groups verified with a mobile bearer (dashboard
+> summary, conversations, read cursor, avatar all 200; owner-gate 307s without a
+> token). The avatar route needed a fix during that pass — see its section.
 
 ## Auth — per-device bearer tokens
 
@@ -51,19 +53,32 @@ so each route works unchanged from web and mobile.
 
 ## Agent avatar image
 
-- `GET /api/agents/[slug]/avatar?size=` (`app/api/agents/[slug]/avatar/route.ts`)
-  — **server-renders the boring-avatars SVG** with
-  `renderToStaticMarkup(createElement(Avatar, { name: seed, variant: style, size,
-  colors }))`, reusing the existing `boring-avatars` dep. `runtime = 'nodejs'`.
-  Returns `image/svg+xml`; **404** when the agent has no `avatar` (client falls
-  back to initials).
+- `GET /api/agents/[id]/avatar?size=` (`app/api/agents/[id]/avatar/route.ts`) —
+  server-renders the agent's boring-avatars SVG so non-web clients can show the
+  same avatar. `runtime = 'nodejs'`. Returns `image/svg+xml`; **404** when the
+  agent has no `avatar` (client falls back to initials). The key resolves as a
+  **uuid when it looks like one, else as a slug** — so the companion's
+  `/api/agents/<slug>/avatar` calls work unchanged.
 - Palette is the **hex** Clean-Slate chart ramp (`#6366F1 …`), not the theme's
   oklch tokens, because SVG consumers like `flutter_svg` can't parse `oklch()`.
-- **Watch this one:** rendering a React component in an API route is the most
-  fragile piece — confirm it produces valid SVG and doesn't pull browser-only code.
+- **Two gotchas hit (and fixed) during smoke-testing:**
+  1. **Segment-name conflict.** The route was first added at `[slug]/avatar`, but
+     `agents/[id]/…` already exists. Next forbids two different dynamic slug names
+     at one level and silently 404s *both*. Fix: nest under the existing `[id]`.
+  2. **`react-dom/server` can't render the boring-avatars component here.** It
+     calls `useId()`, and in a Next route the bundled React runtime and an
+     imported `react-dom/server` are **two different React instances**, so the
+     hook dispatcher is null → `Cannot read properties of null (reading 'useId')`.
+     Fix: **`lib/avatar-svg.ts`**, a pure-string port of boring-avatars v2 (no
+     React, no hooks; works in any runtime). Byte-for-byte colour+geometry parity
+     with the library is pinned by `lib/avatar-svg.test.ts` (every variant × 8
+     seeds) so it can't drift on a `boring-avatars` upgrade.
 
 ## Migrations
 
 The repo hand-writes migrations (drizzle-kit snapshots collide). Added:
 `0089_mobile_tokens.sql`, `0090_assistant_read_cursors.sql`, each with a
-`meta/_journal.json` entry. Apply with `pnpm db:migrate`.
+`meta/_journal.json` entry. Apply with `pnpm db:migrate`. **Both applied on local
+dev (2026-06-13);** `assistant_read_cursors` verified: composite PK
+`(owner_id, agent_id)`, `last_read_at timestamptz default now()`, FK →
+`agents(id) ON DELETE CASCADE`.
