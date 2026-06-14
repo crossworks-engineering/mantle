@@ -21,3 +21,17 @@
 		max_size 100MB
 	}
 }
+
+# Mantle Push — the blind, E2E-encrypted push relay (repo: ~/Projects/mantle-push).
+# Interim: co-located here behind Caddy; moves to its own VPS at first real client
+# (a transparent DNS repoint). DNS for push.crossworks.network already points at
+# prod. Inert until the `push` container joins this network (mantle_default) —
+# until then this host returns 502, which does not affect the main site above.
+# See mantle-push/docs/deploy.md.
+push.crossworks.network {
+	encode zstd gzip
+	reverse_proxy push:8787
+	request_body {
+		max_size 64KB
+	}
+}
