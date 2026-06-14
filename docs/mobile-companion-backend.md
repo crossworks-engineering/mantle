@@ -59,6 +59,29 @@ so each route works unchanged from web and mobile.
   `safeParse`d → **400 `{error:'invalid_body'}`** on a malformed/mistyped body
   (not a 500); unknown agent → 404.
 
+## Live chat (SSE)
+
+- **`GET /api/assistant/stream`** (`app/api/assistant/stream/route.ts`) — a
+  per-owner Server-Sent Events stream. Each turn (any channel) emits
+  `data: {agentSlug, direction}`; the client refetches that thread + the inbox on
+  receipt (the same "ping-to-refetch" model as `/api/realtime`). Heartbeat
+  comment every 25s. Owner-gated with `getOwnerOr401` → clean 401 before the
+  stream opens. Mirrors `/api/realtime` exactly (verified byte-identical
+  `: connected` framing).
+- **Migration `0091_conversation_changed_notify.sql`** — an `AFTER INSERT` trigger
+  on `assistant_messages` that `pg_notify('conversation_changed', …)` with a JSON
+  payload `{ownerId, agentSlug, direction}` (the slug via an indexed PK subquery
+  on `agents`, so the client needs no id→slug lookup). Distinct from the existing
+  `summarize_due` trigger (agent-id only, drives summarization).
+- **`lib/realtime.ts`** gained a `conversation_changed` LISTEN on its shared
+  bridge connection + `subscribeConversations()` (parallel to `subscribeRealtime`).
+  Since `assistant_messages` aren't `nodes`, they don't flow through the existing
+  `node_ingested` path — this is a separate channel on the same bridge.
+- Verified live: trigger→NOTIFY→bridge→subscriber delivers `{ownerId, agentSlug,
+  direction}` end-to-end (fresh-eval). Note: a *running* dev server's bridge is a
+  `globalThis` singleton that survives HMR, so a newly-added LISTEN needs a server
+  restart to register — a dev-only artifact; prod evaluates the module once.
+
 ## Agent avatar image
 
 - `GET /api/agents/[id]/avatar?size=` (`app/api/agents/[id]/avatar/route.ts`) —

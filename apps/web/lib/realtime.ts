@@ -17,8 +17,20 @@ import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
 export type RealtimeChange = { ownerId: string; type: string; id: string };
 type Subscriber = (c: RealtimeChange) => void;
 
+/** A conversation turn landed (any channel). Drives the mobile companion's
+ *  live chat (/api/assistant/stream). Payload comes from the
+ *  `conversation_changed` NOTIFY (migration 0091). */
+export const CONVERSATION_CHANGED_CHANNEL = 'conversation_changed';
+export type ConversationChange = {
+  ownerId: string;
+  agentSlug: string;
+  direction: 'inbound' | 'outbound';
+};
+type ConvSubscriber = (c: ConversationChange) => void;
+
 type Bridge = {
   subs: Set<Subscriber>;
+  convSubs: Set<ConvSubscriber>;
   starting: Promise<void> | null;
   stop: (() => Promise<void>) | null;
 };
@@ -30,7 +42,15 @@ declare global {
 
 // Survive Next.js dev HMR (module re-eval) so we never stack up listeners.
 const bridge: Bridge =
-  globalThis.__mantleRealtime ?? { subs: new Set<Subscriber>(), starting: null, stop: null };
+  globalThis.__mantleRealtime ?? {
+    subs: new Set<Subscriber>(),
+    convSubs: new Set<ConvSubscriber>(),
+    starting: null,
+    stop: null,
+  };
+// A bridge persisted from before this field existed (dev HMR re-eval) won't
+// have convSubs — backfill it so subscribeConversations can't hit `undefined`.
+bridge.convSubs ??= new Set<ConvSubscriber>();
 globalThis.__mantleRealtime = bridge;
 
 async function ensureListening(): Promise<void> {
@@ -59,11 +79,22 @@ async function ensureListening(): Promise<void> {
     const subPending = await sql.listen(PENDING_CHANGED_CHANNEL, (ownerId) => {
       broadcast({ ownerId, type: 'pending_tool_call', id: '' });
     });
+    // Conversation turns (any channel) — payload is JSON {ownerId, agentId,
+    // direction}, broadcast to the chat-stream subscribers. Drives live chat.
+    const subConversation = await sql.listen(CONVERSATION_CHANGED_CHANNEL, (payload) => {
+      try {
+        const c = JSON.parse(payload) as ConversationChange;
+        if (c && c.ownerId && c.agentSlug) broadcastConversation(c);
+      } catch {
+        /* malformed payload — drop it rather than crash the listener */
+      }
+    });
     bridge.stop = async () => {
       try {
         await subIngested.unlisten();
         await subIndexed.unlisten();
         await subPending.unlisten();
+        await subConversation.unlisten();
       } catch {
         /* ignore */
       }
@@ -105,6 +136,17 @@ async function fanout(nodeId: string): Promise<void> {
   }
 }
 
+/** Push a conversation change to every chat-stream subscriber. */
+function broadcastConversation(change: ConversationChange): void {
+  for (const cb of bridge.convSubs) {
+    try {
+      cb(change);
+    } catch {
+      /* one bad subscriber shouldn't break the rest */
+    }
+  }
+}
+
 /** Subscribe to node changes. Lazily starts the shared listener on first use.
  *  Returns an unsubscribe fn. */
 export async function subscribeRealtime(cb: Subscriber): Promise<() => void> {
@@ -116,5 +158,19 @@ export async function subscribeRealtime(cb: Subscriber): Promise<() => void> {
   }
   return () => {
     bridge.subs.delete(cb);
+  };
+}
+
+/** Subscribe to conversation turns (live chat). Shares the one LISTEN
+ *  connection with subscribeRealtime; returns an unsubscribe fn. */
+export async function subscribeConversations(cb: ConvSubscriber): Promise<() => void> {
+  bridge.convSubs.add(cb);
+  try {
+    await ensureListening();
+  } catch (err) {
+    console.error('[realtime] listener start failed:', err);
+  }
+  return () => {
+    bridge.convSubs.delete(cb);
   };
 }

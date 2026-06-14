@@ -638,6 +638,13 @@
       "when": 1782604800000,
       "tag": "0090_assistant_read_cursors",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1782691200000,
+      "tag": "0091_conversation_changed_notify",
+      "breakpoints": true
     }
   ]
 }
