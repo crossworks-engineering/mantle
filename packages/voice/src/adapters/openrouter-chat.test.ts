@@ -26,12 +26,17 @@ let mockResult: unknown = {
   choices: [{ message: { role: 'assistant', content: 'hi' } }],
   usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
 };
+// Per-test override of the SDK's send behaviour (e.g. throw N times then
+// succeed, to exercise the empty-body retry). Null ⇒ the default: return
+// mockResult. Receives the 1-based call count so a test can branch on attempt.
+let mockSendImpl: ((call: number) => Promise<unknown>) | null = null;
 
 vi.mock('@openrouter/sdk', () => ({
   OpenRouter: vi.fn().mockImplementation(() => ({
     chat: {
       send: vi.fn(async (req: { chatRequest: Record<string, unknown> }) => {
         sendCalls.push(req);
+        if (mockSendImpl) return mockSendImpl(sendCalls.length);
         return mockResult;
       }),
     },
@@ -47,6 +52,7 @@ function setMockResult(r: unknown) {
 
 afterEach(() => {
   sendCalls.length = 0;
+  mockSendImpl = null;
 });
 
 describe('openrouter-chat message translation', () => {
@@ -492,5 +498,75 @@ describe('openrouter-chat error surface', () => {
         messages: [{ role: 'user', content: 'hi' }],
       }),
     ).rejects.toThrow(/model required/);
+  });
+});
+
+describe('openrouter-chat empty-body retry', () => {
+  // The prod incident: an upstream stall returned an empty 2xx body, the SDK's
+  // JSON.parse threw "Unexpected end of JSON input", and the whole turn died
+  // with a context-free error and no retry. These pin the fix.
+  it('retries an empty/truncated-body parse error, then succeeds', async () => {
+    vi.useFakeTimers();
+    try {
+      mockSendImpl = async (call) => {
+        if (call === 1) throw new SyntaxError('Unexpected end of JSON input');
+        return {
+          model: 'anthropic/claude-sonnet-4.6',
+          choices: [{ message: { role: 'assistant', content: 'recovered' } }],
+          usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+        };
+      };
+      const p = openrouterChatAdapter.chat({
+        apiKey: 'sk-test',
+        model: 'anthropic/claude-sonnet-4.6',
+        messages: [{ role: 'user', content: 'hi' }],
+      });
+      await vi.advanceTimersByTimeAsync(10_000); // pump the backoff sleep
+      const result = await p;
+      expect(result.text).toBe('recovered');
+      expect(sendCalls.length).toBe(2); // first attempt threw, retry succeeded
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('exhausts retries and throws a contextful error naming the model (not the bare parse message)', async () => {
+    vi.useFakeTimers();
+    try {
+      mockSendImpl = async () => {
+        throw new SyntaxError('Unexpected end of JSON input');
+      };
+      const p = openrouterChatAdapter.chat({
+        apiKey: 'sk-test',
+        model: 'anthropic/claude-sonnet-4.6',
+        messages: [{ role: 'user', content: 'hi' }],
+        maxRetries: 2,
+      });
+      // Attach the rejection matcher BEFORE pumping timers so the eventual
+      // rejection always has a handler (no unhandled-rejection noise).
+      const assertion = expect(p).rejects.toThrow(
+        /empty or truncated response from anthropic\/claude-sonnet-4\.6/,
+      );
+      await vi.advanceTimersByTimeAsync(30_000);
+      await assertion;
+      expect(sendCalls.length).toBe(3); // 1 initial + 2 retries
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does NOT retry a complete-but-malformed JSON body (only end-of-input)', async () => {
+    mockSendImpl = async () => {
+      // A genuine parse bug, not a truncated body — must surface immediately.
+      throw new SyntaxError('Unexpected token x in JSON at position 0');
+    };
+    await expect(
+      openrouterChatAdapter.chat({
+        apiKey: 'sk-test',
+        model: 'anthropic/claude-sonnet-4.6',
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    ).rejects.toThrow(/Unexpected token x/);
+    expect(sendCalls.length).toBe(1); // no retry
   });
 });

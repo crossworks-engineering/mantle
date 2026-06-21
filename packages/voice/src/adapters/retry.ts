@@ -74,6 +74,21 @@ export function parseRetryAfterMs(headers?: Headers | null): number | undefined 
   return undefined;
 }
 
+/**
+ * An empty or truncated 2xx body that `JSON.parse` choked on — the signature of
+ * an upstream timeout / dropped connection that still returned 200 (or a cut-off
+ * stream). V8 throws `SyntaxError: "Unexpected end of JSON input"` for
+ * `JSON.parse('')` or a truncated object. It's transient — the same request
+ * usually succeeds on retry. We match ONLY the end-of-input family, not every
+ * malformed body: a complete-but-invalid payload is a genuine bug we must not
+ * mask behind retries. (Caught in prod: a 16-step assistant turn died here after
+ * a 34s upstream stall returned an empty body — see openrouter-chat.ts.)
+ */
+export function isEmptyJsonBodyError(err: unknown): boolean {
+  if (!(err instanceof SyntaxError)) return false;
+  return /unexpected end of (json )?input/i.test(err.message);
+}
+
 /** Decide whether an adapter error is worth retrying, and after how long. */
 export function classifyChatError(err: unknown): {
   retry: boolean;
@@ -93,6 +108,9 @@ export function classifyChatError(err: unknown): {
   // Raw fetch network failures surface as TypeError ("fetch failed", ECONNRESET,
   // DNS, …). The wrapper only guards a network call, so this is a blip — retry.
   if (err instanceof TypeError) return { retry: true };
+  // Empty/truncated JSON body — an upstream stall that returned no parseable
+  // payload. Transient, and not covered by the status/network checks above.
+  if (isEmptyJsonBodyError(err)) return { retry: true };
   const msg = String((err as { message?: unknown } | null)?.message ?? '');
   if (/fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up/i.test(msg)) {
     return { retry: true };
@@ -102,6 +120,7 @@ export function classifyChatError(err: unknown): {
 
 function describeError(err: unknown): string {
   if (err instanceof ChatHttpError) return `HTTP ${err.status}`;
+  if (isEmptyJsonBodyError(err)) return 'empty/truncated response';
   const name = (err as { name?: string } | null)?.name;
   return name && name !== 'Error' ? name : 'network error';
 }

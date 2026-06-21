@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   ChatHttpError,
   classifyChatError,
+  isEmptyJsonBodyError,
   parseRetryAfterMs,
   withChatRetry,
   DEFAULT_MAX_RETRIES,
@@ -71,8 +72,28 @@ describe('classifyChatError', () => {
     expect(classifyChatError({ status: 503 }).retry).toBe(true);
     expect(classifyChatError({ status: 401 }).retry).toBe(false);
   });
+  it('retries an empty/truncated JSON body (upstream stall → unparseable 2xx)', () => {
+    expect(classifyChatError(new SyntaxError('Unexpected end of JSON input')).retry).toBe(true);
+    expect(classifyChatError(new SyntaxError('Unexpected end of input')).retry).toBe(true);
+  });
+  it('does not retry a complete-but-malformed JSON body (real parse bug)', () => {
+    expect(
+      classifyChatError(new SyntaxError('Unexpected token x in JSON at position 0')).retry,
+    ).toBe(false);
+  });
   it('does not retry an ordinary error', () => {
     expect(classifyChatError(new Error('boom')).retry).toBe(false);
+  });
+});
+
+describe('isEmptyJsonBodyError', () => {
+  it('matches only the end-of-input SyntaxError family', () => {
+    expect(isEmptyJsonBodyError(new SyntaxError('Unexpected end of JSON input'))).toBe(true);
+    expect(isEmptyJsonBodyError(new SyntaxError('Unexpected end of input'))).toBe(true);
+    expect(isEmptyJsonBodyError(new SyntaxError('Unexpected token x in JSON'))).toBe(false);
+    expect(isEmptyJsonBodyError(new TypeError('Unexpected end of JSON input'))).toBe(false);
+    expect(isEmptyJsonBodyError(new Error('boom'))).toBe(false);
+    expect(isEmptyJsonBodyError(null)).toBe(false);
   });
 });
 

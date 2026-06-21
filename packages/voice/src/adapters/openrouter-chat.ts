@@ -43,6 +43,11 @@ import {
   OPENROUTER_BASE_URL,
   OPENROUTER_CHAT_MODELS,
 } from '../catalogs/openrouter';
+import { DEFAULT_MAX_RETRIES, isEmptyJsonBodyError } from './retry';
+
+// Backoff for the empty-body retry below — mirrors retry.ts's full-jitter shape.
+const RETRY_BASE_DELAY_MS = 500;
+const RETRY_MAX_DELAY_MS = 8_000;
 
 /** Text content block. Used for messages that need a cache_control
  *  marker (the array form is required — markers hang off the block,
@@ -348,7 +353,20 @@ function extractReplyText(message: unknown): string {
  *  envelope, surfaced from the underlying provider) and `.body` (the raw
  *  HTTP response). Keep the original error chained via `cause` so callers
  *  who type-check on `OpenRouterError` still get something useful. */
-function enrichOpenRouterError(err: unknown, model: string): Error {
+function enrichOpenRouterError(err: unknown, model: string, elapsedMs?: number): Error {
+  // Empty/truncated 2xx body the SDK couldn't parse — an upstream timeout or
+  // dropped connection surfaces here as a context-free `SyntaxError: Unexpected
+  // end of JSON input` with no status. Wrap it so the trace shows what actually
+  // happened, naming the model + how long the call stalled before the body died.
+  if (isEmptyJsonBodyError(err)) {
+    const took = elapsedMs != null ? ` after ${(elapsedMs / 1000).toFixed(1)}s` : '';
+    const wrapped = new Error(
+      `openrouter-chat: empty or truncated response from ${model}${took} — likely an upstream timeout or dropped connection`,
+      { cause: err },
+    );
+    wrapped.name = 'OpenRouterEmptyResponseError';
+    return wrapped;
+  }
   if (!(err instanceof OpenRouterError)) {
     return err instanceof Error ? err : new Error(String(err));
   }
@@ -411,21 +429,47 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
   // tool records) aren't nominally assignable to the SDK's zod-generated input
   // types, so we bridge once here rather than scattering `as unknown as` over
   // individual fields. Behaviour is unchanged; the laundering is one line.
-  let result: Awaited<ReturnType<typeof client.chat.send>>;
-  try {
-    result = await client.chat.send({
+  const sendOnce = () =>
+    client.chat.send({
       chatRequest: chatRequest as unknown as Parameters<
         typeof client.chat.send
       >[0]['chatRequest'],
     });
-  } catch (err) {
-    // The SDK throws subclasses of OpenRouterError on non-2xx responses.
-    // Its top-level `message` is the generic OR description ("Provider
-    // returned error", "Unauthorized", etc.) — the actionable upstream
-    // detail lives in `.error.message` / `.error.metadata` (the OR
-    // envelope), and the raw HTTP body lives on `.body`. Unpack so the
-    // trace + console show what actually failed.
-    throw enrichOpenRouterError(err, opts.model);
+
+  // The SDK retries HTTP-level transients (429/5xx/network) itself, which is why
+  // the registry does NOT wrap this adapter in withChatRetry (double-retrying
+  // would compound attempt counts). The ONE transient the SDK does NOT cover is
+  // an empty/truncated 2xx body: it reads the body, `JSON.parse` throws a bare
+  // SyntaxError, and the whole turn dies — the exact failure that killed a
+  // 16-step assistant turn after a 34s upstream stall. Retry THAT case (only)
+  // here, with full-jitter backoff, then surface a contextful error.
+  const maxRetries = opts.maxRetries ?? DEFAULT_MAX_RETRIES;
+  const startedAt = Date.now();
+  let result: Awaited<ReturnType<typeof client.chat.send>>;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      result = await sendOnce();
+      break;
+    } catch (err) {
+      if (isEmptyJsonBodyError(err) && attempt < maxRetries) {
+        const delay = Math.round(
+          Math.random() *
+            Math.min(RETRY_MAX_DELAY_MS, RETRY_BASE_DELAY_MS * 2 ** attempt),
+        );
+        console.warn(
+          `[openrouter-chat] ${opts.model}: empty/truncated response — ` +
+            `retry ${attempt + 1}/${maxRetries} in ${delay}ms`,
+        );
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      // Non-2xx → OpenRouterError; its top-level `message` is the generic OR
+      // description ("Provider returned error", "Unauthorized") — the actionable
+      // upstream detail lives in `.error.message` / `.error.metadata` and the raw
+      // body on `.body`. An exhausted empty-body retry → a contextful wrap. Both
+      // go through enrichOpenRouterError so the trace shows what actually failed.
+      throw enrichOpenRouterError(err, opts.model, Date.now() - startedAt);
+    }
   }
   if (!('choices' in result)) {
     throw new Error(
