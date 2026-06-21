@@ -40,4 +40,38 @@ describe('parseXlsx', () => {
     const buf = makeWorkbook({ Empty: [] });
     expect((await parseXlsx(buf)).length).toBe(0);
   });
+
+  it('caps a huge-row sheet and flags it truncated (no million-row walk)', async () => {
+    // 6,001 rows: header + 6,000 data rows. sheetRows caps the read at 5,000,
+    // so the tail must be dropped and the result marked truncated.
+    const rows: unknown[][] = [['marker']];
+    for (let i = 1; i <= 6000; i += 1) rows.push([`row_${i}`]);
+    rows[1] = ['FIRST_ROW_SENTINEL'];
+    rows[6000] = ['LAST_ROW_SENTINEL'];
+    const text = await parseXlsx(makeWorkbook({ Big: rows }));
+    expect(text).toContain('FIRST_ROW_SENTINEL');
+    expect(text).not.toContain('LAST_ROW_SENTINEL');
+    expect(text).toContain('[spreadsheet truncated for indexing');
+  });
+
+  it('clamps a phantom-wide used-range instead of walking it', async () => {
+    // Real data is one tiny cell, but the sheet declares a used range out to
+    // column ZZ (701 cols). The clamp must keep the data + flag truncation,
+    // and — critically — return fast (no 700-column iteration explosion).
+    const ws = XLSX.utils.aoa_to_sheet([['hello', 'world']]);
+    ws['!ref'] = 'A1:ZZ1';
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Phantom');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+    const text = await parseXlsx(buf);
+    expect(text).toContain('hello,world');
+    expect(text).toContain('[spreadsheet truncated for indexing');
+  });
+
+  it('does not flag a small, dense sheet as truncated', async () => {
+    const text = await parseXlsx(
+      makeWorkbook({ Small: [['a', 'b'], [1, 2]] }),
+    );
+    expect(text).not.toContain('[spreadsheet truncated');
+  });
 });

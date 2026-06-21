@@ -72,7 +72,7 @@ fallback — the durable index always goes through the vision worker regardless.
 |---|---|---|---|
 | `ensureDatedUploadFolder` | `@mantle/files` | web /assistant, Telegram | ensure `files.<slug>.<YYYY-MM-DD>` exists, return its ltree path |
 | `upsertFile` / `syncFileFromDisk` | `@mantle/files` | all save paths | write bytes (disk first) + DB node; sanitise filename; sha dedup |
-| `parseDocumentBytes(bytes, ext)` | `@mantle/files` | extractor, `extractAttachmentForTurn` | three-tier dispatch: in-process parsers (pdf-parse/mammoth/SheetJS) → Tika fallback → empty string |
+| `parseDocumentBytes(bytes, ext)` | `@mantle/files` | extractor, `extractAttachmentForTurn` | three-tier dispatch: in-process parsers (pdf-parse/mammoth/SheetJS) → Tika fallback → empty string. **Spreadsheets are bounded** — see note below. |
 | `rasterizePdfToPngs(bytes, {maxPages})` | `@mantle/files/rasterize` | extractor (`ocrIngestPdfNode`) | render a textless PDF's pages → PNG for the OCR fallback (lazy `pdf-to-png-converter`; pdfjs + `@napi-rs/canvas`) |
 | `parseTikaBytes(bytes, {mimeType})` | `@mantle/files/tika` | `parseDocumentBytes` (tier 2) | PUT to `apache/tika:3.3.0.0` docker service → plain text. Never-throws: any failure (service down, timeout, unparseable) returns `''`. Handles .odt/.ods/.odp/.pptx/.ppt/.doc/.rtf/.epub. |
 | `transcodeImageForVision` | `@mantle/files` | `runVisionWorker` | HEIC/HEIF → JPEG (libheif WASM), passthrough otherwise |
@@ -82,6 +82,22 @@ fallback — the durable index always goes through the vision worker regardless.
 | `notifyNodeIngested(nodeId)` | `@mantle/db` | all updates + the extractor | the one documented `node_ingested` notify; best-effort |
 | `MAX_UPLOAD_BYTES` (25 MB) | `@mantle/files` | Files UI, /assistant, MCP | single storage cap (distinct from the vision limit) |
 | `maxImageBytesFor(model)` | `@mantle/tracing` | responder routing | per-provider raw-image size limit |
+
+**Spreadsheets are bounded (`parseXlsx`).** xlsx/xls files routinely declare an
+inflated used-range — stray formatting or a deleted-but-not-cleared block pushes
+the sheet dimension out to row 1,048,576 / column XFD while the real data is a
+handful of cells. SheetJS's `sheet_to_csv` walks the **whole** declared range, so
+an unbounded parse iterates millions of phantom cells: minutes of synchronous,
+event-loop-blocking work on the single extractor (head-of-line-blocking the whole
+extract queue) ending in a multi-MB string. Two prod uploads (720 KB + 591 KB
+sheets) hung past the **10-minute trace watchdog** that way — the trace was
+opened but recorded **zero steps** (the stall is in the parse, *before* the first
+`llm_extract` step) and was reaped as `abandoned`, even though the process never
+crashed. [`packages/files/src/xlsx.ts`](../packages/files/src/xlsx.ts) now caps
+rows at read time (`sheetRows`, 5 000), clamps each sheet's column span (256),
+and caps total output (256 KB), appending a truncation marker when any limit
+bites. For recall text this is lossless in practice; a pathological workbook is
+truncated rather than stalling ingest.
 
 **The `node_ingested` contract:** migration `0018`'s trigger is **AFTER
 INSERT only**. A fresh insert notifies automatically; any code that *updates* a
