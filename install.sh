@@ -40,6 +40,7 @@ SKIP_START="${MANTLE_SKIP_START:-}"
 
 say()  { printf '\033[1;36m▶ %s\033[0m\n' "$*"; }
 ok()   { printf '\033[1;32m✔ %s\033[0m\n' "$*"; }
+warn() { printf '\033[1;33m⚠ %s\033[0m\n' "$*" >&2; }
 die()  { printf '\033[1;31m✘ %s\033[0m\n' "$*" >&2; exit 1; }
 
 # ── 1. prerequisites ─────────────────────────────────────────────────────────
@@ -59,7 +60,7 @@ gen_secret() {
 
 # ── 2. scaffold + fetch the deploy bundle ────────────────────────────────────
 say "Installing Mantle into ${HOME_DIR} (bundle ref: ${CHANNEL})"
-mkdir -p "$HOME_DIR/infra/caddy" "$HOME_DIR/infra/postgres/init" "$HOME_DIR/scripts" "$HOME_DIR/data"
+mkdir -p "$HOME_DIR/infra/caddy" "$HOME_DIR/infra/postgres/init" "$HOME_DIR/infra/updater" "$HOME_DIR/scripts" "$HOME_DIR/data"
 cd "$HOME_DIR"
 
 fetch() { # fetch <repo-path> <local-path>
@@ -71,6 +72,11 @@ fetch .env.prod.example                  .env.prod.example
 fetch infra/caddy/Caddyfile              infra/caddy/Caddyfile
 fetch infra/postgres/init/01-extensions.sql  infra/postgres/init/01-extensions.sql
 fetch infra/postgres/init/02-auth-schema.sql infra/postgres/init/02-auth-schema.sql
+# The updater sidecar's entrypoint script. Compose bind-mounts it at
+# ./infra/updater/updater.sh — if it's missing, Docker silently creates an empty
+# DIRECTORY there and mantle_updater crash-loops. MUST stay in sync with every
+# host path docker-compose.yml bind-mounts (cf. release.yml's `cp -R infra`).
+fetch infra/updater/updater.sh           infra/updater/updater.sh
 fetch scripts/db-dump.sh                 scripts/db-dump.sh
 fetch scripts/db-restore.sh              scripts/db-restore.sh
 chmod +x scripts/db-dump.sh scripts/db-restore.sh
@@ -121,7 +127,29 @@ EOF
   ok ".env written with generated secrets (mode 600)"
 fi
 
-# ── 4. pull + start ──────────────────────────────────────────────────────────
+# ── 4. pre-flight (domain install only) ──────────────────────────────────────
+# Catch the two failures that otherwise surface only as an opaque Caddy/ACME
+# error minutes later: the domain not pointing here yet, and ports 80/443 busy.
+# Both are WARNINGS, not hard stops — DNS may still be propagating, and the box
+# may sit behind a load balancer / proxy that legitimately breaks a naive match.
+if [ -n "$DOMAIN" ]; then
+  myip="$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+  domip="$(getent ahostsv4 "$DOMAIN" 2>/dev/null | awk '{print $1; exit}')"
+  if [ -n "$myip" ] && [ -n "$domip" ] && [ "$myip" != "$domip" ]; then
+    warn "$DOMAIN resolves to $domip but this host's public IP is $myip."
+    warn "Caddy can't get an HTTPS certificate until DNS points $DOMAIN here."
+    warn "Fix the A record (or wait for propagation), then re-run — continuing anyway."
+  fi
+  if command -v ss >/dev/null 2>&1; then
+    for p in 80 443; do
+      if ss -ltnH "( sport = :$p )" 2>/dev/null | grep -q ":$p"; then
+        warn "port $p is already in use — Caddy needs 80 and 443. Free it or the front door won't bind."
+      fi
+    done
+  fi
+fi
+
+# ── 5. pull + start ──────────────────────────────────────────────────────────
 if [ -n "$SKIP_START" ]; then
   ok "MANTLE_SKIP_START set — scaffold + .env done; start later with: docker compose up -d --wait"
   exit 0
@@ -131,7 +159,20 @@ docker compose pull
 say "Starting the stack — migrations run first, the embedder model pulls once (~300 MB)…"
 docker compose up -d --wait
 
-# ── 5. done ──────────────────────────────────────────────────────────────────
+# ── 6. verify the stack is actually healthy ──────────────────────────────────
+# `up -d --wait` can return success while a container with no healthcheck is
+# crash-looping (this is how a broken updater sidecar used to slip through). The
+# one-shot `migrate` / `ollama_pull` containers exit 0 by design, so match only
+# the genuinely-bad states.
+unhealthy="$(docker compose ps --format '{{.Name}}\t{{.Status}}' 2>/dev/null \
+  | grep -iE 'restarting|unhealthy' || true)"
+if [ -n "$unhealthy" ]; then
+  warn "the stack started but some containers are not healthy:"
+  printf '%s\n' "$unhealthy" >&2
+  warn "inspect with:  docker compose logs <name>   (e.g. docker compose ps)"
+fi
+
+# ── 7. done ──────────────────────────────────────────────────────────────────
 URL="${DOMAIN:+https://$DOMAIN}"; URL="${URL:-http://localhost}"
 ok "Mantle is up."
 cat <<EOF
