@@ -131,3 +131,13 @@ LISTENs `conversation_changed` (migration 0091) and forwards each outbound turn'
 **libsodium-sealed** teaser to the relay's `/notify`. Full design +
 relay/app halves: `../../mantle-companion/docs/push-notifications.md`. The relay
 is live at `https://push.crossworks.network` (mock provider until APNs/FCM creds).
+
+## Location (v0.27.0)
+
+The app can attach a device **location** to each chat turn — there's no new
+endpoint; it rides on `POST /api/assistant/turn` (JSON `location` key, or a
+`location` form field on multipart). The server stores it on the inbound message,
+makes the agent location-aware, and lazily reverse-geocodes (Mapbox) into a cached
+`location` node. Full mobile integration contract (fields, Flutter mapping,
+permissions, verify steps): **[`handover-companion-location.md`](./handover-companion-location.md)**.
+Shipped + deployed in v0.27.0.
