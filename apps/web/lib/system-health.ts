@@ -4,6 +4,7 @@ import si from 'systeminformation';
 import { db, sql } from '@mantle/db';
 import { filesRoot, tikaVersion } from '@mantle/files';
 import { bucketReachable } from '@mantle/storage';
+import { resolveEmbeddingConfig } from '@mantle/embeddings';
 import { attachmentBytes } from './dashboard';
 import { getTailnetStatus } from './tailscale';
 
@@ -115,31 +116,26 @@ async function pgHealth() {
 }
 
 const DEFAULT_LOCAL_EMBED_URL = 'http://localhost:11434/v1';
-type EmbedConfigRow = { model: string; provider: string; base_url: string | null };
 
 /** Probe the configured embedder. Only the `local` provider is a self-hosted
  *  server we can ping (Ollama/LM Studio/TEI on the per-route base URL or
  *  MANTLE_LOCAL_EMBEDDING_URL); we GET its OpenAI-compatible `/models` and
  *  confirm the configured model is loaded — "reachable AND serving the right
  *  model" is the only state that actually embeds. Cloud providers need a key
- *  and cost a call, so they report as remote (up: null). Never throws. */
+ *  and cost a call, so they report as remote (up: null). Never throws.
+ *
+ *  Resolution goes through `resolveEmbeddingConfig` — the SAME single source of
+ *  truth ingest uses — so a fresh install with no `embedding_config` row sees
+ *  the bundled local default (LOCAL_FALLBACK_CONFIG) and gets probed, instead
+ *  of being reported "not configured" while it is in fact embedding. */
 async function embedderHealth(userId: string): Promise<SystemHealth['embedder']> {
-  let row: EmbedConfigRow | undefined;
-  try {
-    const result = await db.execute<EmbedConfigRow>(sql`
-      SELECT model, primary_provider AS provider, primary_base_url AS base_url
-      FROM embedding_config WHERE owner_id = ${userId} LIMIT 1
-    `);
-    row = (Array.isArray(result) ? result : (result as { rows?: EmbedConfigRow[] }).rows ?? [])[0];
-  } catch {
-    return { up: null, provider: null, model: null, detail: null };
-  }
-  if (!row) return { up: null, provider: null, model: null, detail: 'not configured' };
-  const { provider, model } = row;
+  const cfg = await resolveEmbeddingConfig(userId);
+  const provider = cfg.primary.provider;
+  const model = cfg.model;
   if (provider !== 'local') {
     return { up: null, provider, model, detail: `remote · ${provider}` };
   }
-  const base = (row.base_url || process.env.MANTLE_LOCAL_EMBEDDING_URL || DEFAULT_LOCAL_EMBED_URL).replace(/\/+$/, '');
+  const base = (cfg.primary.baseUrl || process.env.MANTLE_LOCAL_EMBEDDING_URL || DEFAULT_LOCAL_EMBED_URL).replace(/\/+$/, '');
   try {
     const res = await fetch(`${base}/models`, { signal: AbortSignal.timeout(1_200) });
     if (!res.ok) return { up: false, provider, model, detail: `unreachable · HTTP ${res.status}` };
