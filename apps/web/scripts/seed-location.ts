@@ -2,18 +2,21 @@
  * Backfill the location/geo capability onto an EXISTING brain.
  *
  * Fresh installs get this automatically: the manifest persona now grants the
- * `location` tool group and the `location_awareness` skill, and onboarding-
- * provision seeds the persona from the manifest. This script is the backfill for
- * brains provisioned before location landed.
+ * `location` tool group and the `location_awareness` + `navigation` skills, and
+ * onboarding-provision seeds the persona from the manifest. This script is the
+ * backfill for brains provisioned before location/navigation landed.
  *
  * What it does (all idempotent, gap-fill — never clobbers operator edits):
- *   1. applyManifest(onlySkills:['location_awareness']) — seeds the `location`
- *      tool group, the Mapbox HTTP tools (mapbox_reverse_geocode/_search), the
- *      location_* builtins, and the location_awareness skill, and attaches that
- *      skill to the manifest persona.
- *   2. Grants the `location` tool GROUP to every enabled responder/assistant —
- *      applyManifest attaches persona SKILLS but not its tool GROUPS (the persona
- *      is provisioned separately), so the group grant is backfilled here.
+ *   1. applyManifest(onlySkills:['location_awareness','navigation']) — seeds the
+ *      `location` tool group, the Mapbox HTTP tools (mapbox_reverse_geocode /
+ *      _search / _directions), the location_* + route_map builtins, and the two
+ *      geo skills, attaching them to the manifest persona.
+ *   2. Grants the `location` + `profile` tool GROUPS to every enabled
+ *      responder/assistant — applyManifest attaches persona SKILLS but not its
+ *      tool GROUPS (the persona is provisioned separately), so the group grants
+ *      are backfilled here. This reaches operator-owned responders (e.g. Saskia /
+ *      `telegram-default`) too, which is the only way the live persona gets these.
+ *      `profile` carries `set_timezone` so a travelling user's clock stays right.
  *
  * The Mapbox tools stay dormant until a `mapbox` key is added under
  * Settings → API keys. See docs/remote-db-dev.md + docs/api-console.md.
@@ -28,11 +31,11 @@ import { db, agents } from '@mantle/db';
 import { sql } from 'drizzle-orm';
 import { applyManifest } from '../lib/system-manifest/seed';
 
-const LOCATION_GROUP = 'location';
-const LOCATION_SKILL = 'location_awareness';
+const LOCATION_GROUPS = ['location', 'profile'];
+const LOCATION_SKILLS = ['location_awareness', 'navigation'];
 
 export async function seedLocation(ownerId: string): Promise<void> {
-  await applyManifest(ownerId, { only: [], onlySkills: [LOCATION_SKILL], mode: 'gap-fill' });
+  await applyManifest(ownerId, { only: [], onlySkills: LOCATION_SKILLS, mode: 'gap-fill' });
 
   const responders = await db
     .select({ id: agents.id, slug: agents.slug, groups: agents.toolGroupSlugs })
@@ -48,17 +51,20 @@ export async function seedLocation(ownerId: string): Promise<void> {
   let granted = 0;
   for (const a of responders) {
     const cur = a.groups ?? [];
-    if (cur.includes(LOCATION_GROUP)) continue;
+    const missing = LOCATION_GROUPS.filter((g) => !cur.includes(g));
+    if (missing.length === 0) continue;
     await db
       .update(agents)
-      .set({ toolGroupSlugs: [...cur, LOCATION_GROUP], updatedAt: new Date() })
+      .set({ toolGroupSlugs: [...cur, ...missing], updatedAt: new Date() })
       .where(eq(agents.id, a.id));
     granted += 1;
-    console.log(`[location] granted '${LOCATION_GROUP}' group to agent '${a.slug}'`);
+    console.log(`[location] granted ${missing.map((g) => `'${g}'`).join(' + ')} to agent '${a.slug}'`);
   }
   console.log(
-    `[location] done — '${LOCATION_GROUP}' group granted to ${granted} responder/assistant agent(s); ` +
-      `skill '${LOCATION_SKILL}' + Mapbox tools seeded (dormant until a 'mapbox' key is added).`,
+    `[location] done — ${LOCATION_GROUPS.map((g) => `'${g}'`).join(' + ')} group(s) granted to ` +
+      `${granted} responder/assistant agent(s); skills ${LOCATION_SKILLS.map((s) => `'${s}'`).join(' + ')} + ` +
+      `Mapbox tools (reverse-geocode/search/directions + route_map) seeded ` +
+      `(geo tools dormant until a 'mapbox' key is added; set_timezone works immediately).`,
   );
 }
 

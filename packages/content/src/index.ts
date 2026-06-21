@@ -389,6 +389,15 @@ export {
   type LocationSource,
 } from './location-ping';
 
+export {
+  applyAutoTimezone,
+  decideAutoTimezone,
+  locationTrustedForTimezone,
+  timezoneForCoords,
+  TZ_TRUST_ACCURACY_M,
+  type AutoTzDecision,
+} from './auto-timezone';
+
 export { buildIdentityContext } from './identity-context';
 
 export {

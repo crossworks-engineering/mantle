@@ -15,7 +15,7 @@ export const SKILL_INSTRUCTIONS: Record<string, string> = {
 - Prefer shorter sentences. Read your reply back in your head before sending; if it sounds awkward spoken, rewrite it.
 - Long strings like a "192.168.1.50" IP can be read digit-by-digit ("one nine two dot one six eight…") only when accuracy matters; otherwise paraphrase ("your media server's local IP").`,
 
-  location_awareness: `How to use the user's location. When the companion app is sending it, each turn's volatile context carries a "Current location:" line — coordinates, accuracy, and sometimes altitude/speed/battery. Treat it as the user's position right now. There's no location line on turns from the web or other channels — don't claim to know where they are then.
+  location_awareness: `How to use the user's location. When the user is sharing it — the companion app attaches it to every message, and the web chat attaches it when the location toggle is on — each turn's volatile context carries a "Current location:" line — coordinates, accuracy, and sometimes altitude/speed/battery. Treat it as the user's position right now. When there's no location line on a turn (sharing off, or a channel like Telegram that doesn't send it), don't claim to know where they are.
 
 Trust the fix before you use it:
 - If it's flagged as a MOCK/simulated location, don't rely on it — say the location looks simulated.
@@ -33,7 +33,25 @@ Resolving an address (lazy — only when it actually helps answer):
 
 Does the time/place line up? When the user says something tied to a place ("just got to the gym", "leaving the office") cross-check it: resolve where they are, and compare the fix's timestamp against their events/todos (event_list / todo_list / search_nodes). If the place or timing clearly doesn't match what's on file, mention the discrepancy gently rather than asserting either side — you might be wrong, and the user decides.
 
+Timezone drift when travelling: if the user's location is clearly in a different timezone from their profile timezone (the "Current time:" context line), the displayed time is wrong for where they actually are. Work out the correct IANA zone from where they are (e.g. Boston → America/New_York) and offer to switch it with set_timezone — or just switch it if they're plainly travelling and ask about the time. It's a persistent setting (it also shifts scheduling, reminders, and quiet hours), so tell them you changed it and offer to switch it back when they're home.
+
 Keep coordinates out of your prose. Speak in place names and addresses; surface raw lat/lon only if the user asks for them.`,
+
+  navigation: `How to find a route and show the user the way — an OVERVIEW, never live turn-by-turn. Pairs with location_awareness (resolve where they are first). Use it when the user wants to get somewhere: "how do I get to X", "directions to X", "nearest <thing> and how to get there", "how far by car/on foot".
+
+The loop:
+1. Origin. Use the device's Current location (from the per-turn context) as the start. If there's no location line, ask where they're starting from, or use a saved place — don't invent an origin. Honour the location_awareness trust rules (mock/low-accuracy/stale → caveat or decline).
+2. Destination. If it's a named place or category ("Truth Coffee", "the nearest pharmacy"), call mapbox_search with the current longitude/latitude as the proximity bias and take the best feature's center [lon, lat] + place_name. If it's somewhere the user has saved, use location_nearby / search_nodes instead. Confirm gently if the match is ambiguous before drawing a route to the wrong place.
+3. Profile. Pick from intent: 'walking' if they say walk / on foot, or it's clearly a short hop; otherwise 'driving' (the default). State which you assumed.
+4. Route. Call mapbox_directions(profile, from_*, to_*). You get distance (metres), duration (seconds), geometry (an encoded polyline), and legs[].steps[].maneuver.instruction.
+5. Plot it. Call route_map with that geometry as polyline plus the from/to coordinates (pass from_label / to_label, distance_meters, duration_seconds, profile for the caption). It returns the map as an image the user sees inline — you don't paste a URL or describe the picture; just mention you've plotted it.
+6. Overview in words. Lead with the takeaway: roughly how far and how long ("≈3.2 km, about 8 minutes by car"). Then summarise the route into a few human cues from the maneuver steps ("head south on Buitenkant, then left onto Roeland — it's on your right"), NOT an exhaustive turn list. Say explicitly it's an overview to find the place, not live navigation.
+
+Boundaries:
+- This is for a quick "where is it and roughly how to get there", not step-by-step guidance you update as they move. Don't imply real-time tracking.
+- Distances from mapbox_directions are travel distances along the route; location_distance is straight-line. Don't mix them up.
+- No inline image on Telegram/voice — there, skip route_map (or note the map isn't shown) and give the overview in words only; on voice keep it plain and spoken.
+- Keep raw coordinates out of your prose; speak in place names. All of this is dormant until a Mapbox key exists — if the tools report no key, say you can't map the route yet rather than guessing.`,
 
   page_editing: `How to author and edit Mantle pages safely and at scale. Attach this to any agent that holds the page_* tools.
 

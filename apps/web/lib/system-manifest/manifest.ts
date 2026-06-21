@@ -30,6 +30,7 @@ import {
   CONTACT_AUTO_GRANT_SLUGS,
   LIFELOG_AUTO_GRANT_SLUGS,
   LOCATION_TOOL_SLUGS,
+  PROFILE_TOOL_SLUGS,
   TOOLSMITH_TOOL_SLUGS,
   type HttpHandler,
 } from '@mantle/tools';
@@ -172,6 +173,12 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     description: 'Use the device location: resolve/cache addresses, find nearby places, reason about distance + timing.',
     instructions: SKILL_INSTRUCTIONS['location_awareness']!,
   },
+  {
+    slug: 'navigation',
+    name: 'Navigation',
+    description: 'Find a route to a place, plot it on an inline map, and give a short driving/walking overview (not live turn-by-turn).',
+    instructions: SKILL_INSTRUCTIONS['navigation']!,
+  },
 ];
 
 // ── Seeded HTTP API tools ────────────────────────────────────────────────────
@@ -233,6 +240,43 @@ export const MANIFEST_HTTP_TOOLS: readonly ManifestHttpTool[] = [
         access_token: MAPBOX_KEY_REF,
         proximity: '{longitude},{latitude}',
         limit: '{limit}',
+      },
+    },
+  },
+  {
+    slug: 'mapbox_directions',
+    name: 'Find a route (Mapbox)',
+    description:
+      "Find a route between two points via Mapbox Directions. Pass `profile` ('driving' or 'walking'), then the origin `from_longitude`/`from_latitude` and destination `to_longitude`/`to_latitude` (decimal degrees; usually the device's Current location → a place from mapbox_search). Returns `routes[0]` with `distance` (metres), `duration` (seconds), `geometry` (an ENCODED POLYLINE, precision 5 — feed it straight to route_map to plot the path), and `legs[].steps[].maneuver.instruction` (turn cues for a short human overview — NOT live turn-by-turn). Read-only; requires a Mapbox key (Settings → API keys, service 'mapbox').",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        profile: {
+          type: 'string',
+          enum: ['driving', 'walking'],
+          description: "routing profile: 'driving' (default) or 'walking'",
+        },
+        from_longitude: { type: 'number', description: 'origin longitude, −180..180' },
+        from_latitude: { type: 'number', description: 'origin latitude, −90..90' },
+        to_longitude: { type: 'number', description: 'destination longitude, −180..180' },
+        to_latitude: { type: 'number', description: 'destination latitude, −90..90' },
+      },
+      required: ['profile', 'from_longitude', 'from_latitude', 'to_longitude', 'to_latitude'],
+    },
+    handler: {
+      kind: 'http',
+      method: 'GET',
+      // Numbers + the literal `,`/`;` separators stay intact through path
+      // templating (numbers URL-encode to themselves); `profile` is a bare word.
+      url: 'https://api.mapbox.com/directions/v5/mapbox/{profile}/{from_longitude},{from_latitude};{to_longitude},{to_latitude}',
+      query: {
+        access_token: MAPBOX_KEY_REF,
+        // polyline (precision 5) so the geometry drops straight into the Static
+        // Images `path` overlay; simplified keeps it under the static-URL cap.
+        geometries: 'polyline',
+        overview: 'simplified',
+        steps: 'true',
+        alternatives: 'false',
       },
     },
   },
@@ -443,10 +487,18 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'location',
     name: 'Location & places',
     description:
-      'Geo awareness: reverse-geocode coordinates to an address (Mapbox), find places nearby, reuse saved places, and compute distances. Pairs with the location_awareness skill.',
-    // Local builtins (save/nearby/distance) + the seeded Mapbox HTTP tools. The
-    // Mapbox tools stay dormant until the user adds a 'mapbox' key.
+      'Geo awareness: reverse-geocode coordinates to an address (Mapbox), find places nearby, reuse saved places, compute distances, find routes and plot them on an inline map. Pairs with the location_awareness + navigation skills.',
+    // Local builtins (save/nearby/distance + route_map) + the seeded Mapbox HTTP
+    // tools (reverse-geocode/search/directions). All stay dormant until the user
+    // adds a 'mapbox' key.
     toolSlugs: [...LOCATION_TOOL_SLUGS, ...MANIFEST_HTTP_TOOL_SLUGS],
+  },
+  {
+    slug: 'profile',
+    name: 'Profile preferences',
+    description:
+      "Adjust the owner's time-aware profile settings in-conversation — currently the timezone, so a travelling user's clock, scheduling, and reminders stay correct without visiting Settings.",
+    toolSlugs: [...PROFILE_TOOL_SLUGS],
   },
   {
     slug: 'toolsmith',
@@ -493,8 +545,9 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'tool-results',
       'page-share',
       'location',
+      'profile',
     ],
-    skillSlugs: ['tool_grounding', 'voice_reply', 'rich_writing', 'location_awareness'],
+    skillSlugs: ['tool_grounding', 'voice_reply', 'rich_writing', 'location_awareness', 'navigation'],
     params: { temperature: 0.7, max_tokens: 16000 },
     priority: 100,
   },

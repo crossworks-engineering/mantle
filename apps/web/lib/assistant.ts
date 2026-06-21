@@ -53,6 +53,7 @@ import {
   buildLocationContextLine,
   buildTimeContextLine,
   loadProfilePreferences,
+  applyAutoTimezone,
   type LocationPing,
 } from '@mantle/content';
 import {
@@ -248,7 +249,25 @@ export async function runAssistantTurn(
   // prepending it to the system prompt put it inside cache breakpoint 1
   // and busted the persona prefix every turn (2026-06 chat-cost audit).
   // Mirrors the apps/agent (Telegram) flow.
-  const prefs = await loadProfilePreferences(ownerId);
+  let prefs = await loadProfilePreferences(ownerId);
+  // Auto-set the timezone from a trustworthy device location (mobile always;
+  // web when the fix isn't an IP/VPN fallback) so the time line below is right
+  // for where the user actually is. Best-effort — a failure here must not sink
+  // the turn. When it switches, we tell the agent so it mentions it + offers to
+  // revert (the change also moves scheduling/reminders, so it's never silent).
+  let timezoneSwitch: { timezone: string; previous: string } | undefined;
+  if (options?.location) {
+    try {
+      const res = await applyAutoTimezone(ownerId, options.location, prefs);
+      prefs = res.prefs;
+      timezoneSwitch = res.switched;
+    } catch (err) {
+      console.error(
+        '[assistant] auto-timezone skipped:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
   const timeContextLine = buildTimeContextLine(prefs);
   const promptWithSkills = composeSystemPromptWithSkills(agent.systemPrompt, attachedSkills);
 
@@ -302,7 +321,20 @@ export async function runAssistantTurn(
   // never enter the cached persona prefix. The location_awareness skill teaches
   // the agent how to act on it.
   const locationContextLine = buildLocationContextLine(options?.location ?? null);
-  const volatileContext = [timeContextLine, locationContextLine, openHeartbeatBlock.trim()]
+  // When the timezone auto-switched this turn, tell the agent so it surfaces the
+  // change to the user (and can offer to switch it back) rather than it happening
+  // invisibly behind a persistent setting.
+  const timezoneSwitchNote = timezoneSwitch
+    ? `Note: the user's timezone was just auto-updated to ${timezoneSwitch.timezone} ` +
+      `(was ${timezoneSwitch.previous}) based on their current location. Briefly let them ` +
+      `know you've done this, and offer to switch it back when they're home.`
+    : '';
+  const volatileContext = [
+    timeContextLine,
+    locationContextLine,
+    timezoneSwitchNote,
+    openHeartbeatBlock.trim(),
+  ]
     .filter(Boolean)
     .join('\n\n');
   // Heartbeat continuity tools are injected below as a per-turn affordance

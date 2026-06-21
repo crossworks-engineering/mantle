@@ -34,6 +34,7 @@ import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
 import { WORKER_DELEGATION_TOOLS } from './builtins-workers';
 import { EVENT_TOOLS } from './builtins-events';
+import { PROFILE_TOOLS } from './builtins-profile';
 import { TODO_TOOLS } from './builtins-todos';
 import { PERSONA_TOOLS } from './builtins-persona';
 import { TERMINAL_TOOLS } from './builtins-terminal';
@@ -1060,9 +1061,13 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // for reading API docs). Granted to the Toolsmith specialist; mirrored over
   // MCP so Claude Code can drive the same flow. http-only by design.
   ...TOOLSMITH_TOOLS,
-  // Locations — the local (no-API) half of geo awareness: save a resolved
-  // place, find saved places nearby (cache reader), and haversine distance.
-  // The reverse-geocoding itself is a seeded Mapbox HTTP tool, not a builtin.
+  // Profile — adjust time-aware preferences (timezone) in-conversation, so a
+  // travelling user's "Current time" stays right without a trip to Settings.
+  ...PROFILE_TOOLS,
+  // Locations — the local half of geo awareness: save a resolved place, find
+  // saved places nearby (cache reader), haversine distance, and route_map (the
+  // one that calls Mapbox — renders a route polyline to an inline PNG artifact).
+  // Reverse-geocoding / search / directions are seeded Mapbox HTTP tools.
   ...LOCATION_TOOLS,
 ];
 

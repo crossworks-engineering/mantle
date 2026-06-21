@@ -45,6 +45,7 @@ export { CONTACT_TOOLS, CONTACT_AUTO_GRANT_SLUGS } from './builtins-contacts';
 export { TOOLSMITH_TOOLS, TOOLSMITH_TOOL_SLUGS } from './builtins-toolsmith';
 export { LIFELOG_TOOLS, LIFELOG_TOOL_SLUGS, LIFELOG_AUTO_GRANT_SLUGS } from './builtins-lifelog';
 export { LOCATION_TOOLS, LOCATION_TOOL_SLUGS } from './builtins-locations';
+export { PROFILE_TOOLS, PROFILE_TOOL_SLUGS } from './builtins-profile';
 export { seedBuiltinTools } from './seed';
 export { resolveTool, resolveTools, dispatchTool } from './dispatch';
 export { safeFetch } from './safe-fetch';

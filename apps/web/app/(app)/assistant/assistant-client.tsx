@@ -8,6 +8,7 @@ import {
   FileText,
   Image as ImageIcon,
   Loader2,
+  MapPin,
   Mic,
   MicOff,
   Paperclip,
@@ -141,6 +142,22 @@ export function AssistantClient({
   const [attachedPreviewUrl, setAttachedPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Share-location toggle ──
+  // Sticky opt-in (persisted): when on, each send attaches a fresh browser
+  // geolocation fix to the turn — the same `location` wire contract the companion
+  // uses, so the agent gets an origin for "where am I" / routing. Off by default;
+  // the browser owns the actual permission prompt. Geolocation needs a secure
+  // context (HTTPS/localhost), which prod + dev both satisfy.
+  const SHARE_LOCATION_KEY = 'mantle_assistant_share_location';
+  const [shareLocation, setShareLocation] = useState(false);
+  useEffect(() => {
+    try {
+      setShareLocation(localStorage.getItem(SHARE_LOCATION_KEY) === '1');
+    } catch {
+      /* private mode / no storage — default off */
+    }
+  }, []);
+
   const scrollerRef = useRef<HTMLDivElement>(null);
 
   // ── Scroll-up lazy loading of older messages ──
@@ -257,6 +274,52 @@ export function AssistantClient({
     );
   };
 
+  // Read one browser geolocation fix and map it onto the `location` wire shape
+  // (LocationPing) the turn route already sanitises. Resolves undefined on any
+  // failure (denied / unavailable / timeout) so a turn never blocks on it.
+  const getBrowserLocation = useCallback((): Promise<Record<string, unknown> | undefined> => {
+    if (typeof navigator === 'undefined' || !('geolocation' in navigator)) {
+      return Promise.resolve(undefined);
+    }
+    return new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const c = pos.coords;
+          resolve({
+            latitude: c.latitude,
+            longitude: c.longitude,
+            accuracy: c.accuracy,
+            altitude: c.altitude,
+            altitudeAccuracy: c.altitudeAccuracy,
+            heading: c.heading,
+            speed: c.speed,
+            source: 'network', // browser geolocation — never GPS-grade; skill caveats accuracy
+            timestamp: new Date(pos.timestamp).toISOString(),
+          });
+        },
+        () => resolve(undefined),
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 60_000 },
+      );
+    });
+  }, []);
+
+  // Toggle the sticky opt-in. Turning it ON triggers the browser permission
+  // prompt up-front so denial surfaces now rather than silently at send time.
+  const toggleShareLocation = useCallback(async () => {
+    if (shareLocation) {
+      setShareLocation(false);
+      try { localStorage.setItem(SHARE_LOCATION_KEY, '0'); } catch { /* no storage */ }
+      return;
+    }
+    const fix = await getBrowserLocation();
+    if (!fix) {
+      setError('Could not get your location — allow location access for this site, then try again.');
+      return;
+    }
+    setShareLocation(true);
+    try { localStorage.setItem(SHARE_LOCATION_KEY, '1'); } catch { /* no storage */ }
+  }, [shareLocation, getBrowserLocation]);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = draft.trim();
@@ -305,6 +368,9 @@ export function AssistantClient({
       // the fetch lives in the persistent shell (survives navigation) and drives
       // the floating mini-chat. Multipart for uploads (streams raw, no base64
       // bloat); JSON for text-only.
+      // Best-effort fresh location fix when sharing is on — rides on the turn as
+      // the `location` field (JSON) or form field (multipart), same as mobile.
+      const location = shareLocation ? await getBrowserLocation() : undefined;
       let body: FormData | string;
       let isJson: boolean;
       if (hasFile) {
@@ -312,10 +378,11 @@ export function AssistantClient({
         if (text) formData.set('text', text);
         if (agentSlug) formData.set('agentSlug', agentSlug);
         formData.set(isImage ? 'image' : 'file', attachedFile);
+        if (location) formData.set('location', JSON.stringify(location));
         body = formData;
         isJson = false;
       } else {
-        body = JSON.stringify({ text, agentSlug });
+        body = JSON.stringify({ text, agentSlug, ...(location ? { location } : {}) });
         isJson = true;
       }
       const data = (await runTurn({
@@ -649,6 +716,23 @@ export function AssistantClient({
                   title="Attach image or document"
                 >
                   <Paperclip className="h-4 w-4" />
+                </button>
+                {/* Share-location toggle — sticky opt-in. When on, each send
+                    attaches a fresh browser geolocation fix so the assistant
+                    knows where you are (directions, "what's nearby"). */}
+                <button
+                  type="button"
+                  onClick={() => void toggleShareLocation()}
+                  disabled={!agentReady || sending}
+                  aria-pressed={shareLocation}
+                  className={
+                    shareLocation
+                      ? 'rounded-md bg-primary p-2 text-primary-foreground hover:bg-primary/90 disabled:opacity-40'
+                      : 'rounded-md border border-input bg-background p-2 text-muted-foreground hover:bg-muted disabled:opacity-40'
+                  }
+                  title={shareLocation ? 'Sharing your location with the assistant — click to stop' : 'Share your location with the assistant'}
+                >
+                  <MapPin className="h-4 w-4" />
                 </button>
                 {/* Mic toggle — push-to-talk style. Recording state
                     shows a red destructive button; transcribing shows

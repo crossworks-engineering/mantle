@@ -23,6 +23,12 @@ import { db, profiles } from '@mantle/db';
 export type ProfilePreferences = {
   /** IANA timezone, e.g. 'Africa/Johannesburg'. UTC when not set. */
   timezone: string;
+  /** The last zone the auto-from-location hook DERIVED (not necessarily the one
+   *  in `timezone`, if the user manually overrode since). Used purely for
+   *  hysteresis: the hook only acts when the freshly-derived zone differs from
+   *  this, so it won't fight a manual change or re-switch every turn at the same
+   *  place. See auto-timezone.ts. */
+  lastAutoTimezone?: string;
   /** BCP-47 locale, e.g. 'en-GB'. Drives date/number/currency
    *  formatting. Falls back to en-GB to match the legacy pinned
    *  format-datetime behaviour, so existing UI doesn't shift for
@@ -117,6 +123,10 @@ export async function loadProfilePreferences(
       typeof prefs.timezone === 'string' && prefs.timezone.length > 0
         ? prefs.timezone
         : DEFAULT_PREFERENCES.timezone,
+    lastAutoTimezone:
+      typeof prefs.lastAutoTimezone === 'string' && prefs.lastAutoTimezone.length > 0
+        ? prefs.lastAutoTimezone
+        : undefined,
     locale:
       typeof prefs.locale === 'string' && prefs.locale.length > 0
         ? prefs.locale
@@ -225,6 +235,7 @@ export async function updateProfilePreferences(
   const merged = (row?.preferences ?? {}) as Partial<ProfilePreferences>;
   return {
     timezone: merged.timezone ?? DEFAULT_PREFERENCES.timezone,
+    lastAutoTimezone: merged.lastAutoTimezone || undefined,
     locale: merged.locale ?? DEFAULT_PREFERENCES.locale,
     avatarStyle: merged.avatarStyle || undefined,
     avatarSeed: merged.avatarSeed || undefined,

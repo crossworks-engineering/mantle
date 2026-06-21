@@ -13,7 +13,7 @@ import {
   ASSIST_SURFACE_DEFAULTS,
   type ManifestAgent,
 } from './manifest';
-import { BUILTIN_TOOLS, collectParamNames, collectSecretRefs } from '@mantle/tools';
+import { BUILTIN_TOOLS, buildHttpRequest, collectParamNames, collectSecretRefs } from '@mantle/tools';
 
 /**
  * Manifest drift guard (modeled on packages/voice/.../catalog-consistency.test.ts).
@@ -144,13 +144,40 @@ describe('system manifest integrity', () => {
     expect(orphans, 'these HTTP tools belong to no group').toEqual([]);
   });
 
-  it('the persona holds the location group + skill (geo awareness ships on by default)', () => {
+  it('mapbox_directions templates profile + coords into the path without corrupting the separators', () => {
+    const tool = MANIFEST_HTTP_TOOLS.find((t) => t.slug === 'mapbox_directions')!;
+    const req = buildHttpRequest(
+      tool.handler,
+      { profile: 'driving', from_longitude: 18.4241, from_latitude: -33.9249, to_longitude: 18.45, to_latitude: -33.9 },
+      new Map([['mapbox/default', 'pk.TEST-KEY']]),
+    );
+    // The `,`/`;` separators must survive as literals (numbers URL-encode to
+    // themselves) — a corrupted path is the classic failure mode here.
+    expect(req.url).toContain('/directions/v5/mapbox/driving/18.4241,-33.9249;18.45,-33.9');
+    expect(req.url).toContain('geometries=polyline'); // precision 5 → drops into the static path overlay
+    expect(req.url).toContain('overview=simplified');
+    expect(req.url).toContain('steps=true');
+    expect(req.url).toContain('access_token=pk.TEST-KEY');
+  });
+
+  it('the persona holds the location group + skills (geo awareness + navigation ship on by default)', () => {
     const persona = MANIFEST_AGENTS.find((a) => a.isPersona)!;
     expect(persona.toolGroupSlugs ?? []).toContain('location');
     expect(persona.skillSlugs).toContain('location_awareness');
+    expect(persona.skillSlugs).toContain('navigation');
     const grant = effectiveTools(persona);
     expect(grant.has('location_nearby')).toBe(true);
     expect(grant.has('mapbox_reverse_geocode')).toBe(true);
+    // Routing: the directions HTTP tool + the route_map renderer come with the
+    // location group, so the persona can find AND plot a route out of the box.
+    expect(grant.has('mapbox_directions')).toBe(true);
+    expect(grant.has('route_map')).toBe(true);
+  });
+
+  it('the persona can set the timezone (travel time-awareness ships on by default)', () => {
+    const persona = MANIFEST_AGENTS.find((a) => a.isPersona)!;
+    expect(persona.toolGroupSlugs ?? []).toContain('profile');
+    expect(effectiveTools(persona).has('set_timezone')).toBe(true);
   });
 
   it('every skill has a non-empty instruction body', () => {

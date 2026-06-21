@@ -141,3 +141,14 @@ makes the agent location-aware, and lazily reverse-geocodes (Mapbox) into a cach
 `location` node. Full mobile integration contract (fields, Flutter mapping,
 permissions, verify steps): **[`handover-companion-location.md`](./handover-companion-location.md)**.
 Shipped + deployed in v0.27.0.
+
+## Navigation — routes + inline maps (next release)
+
+Building on Location: the assistant can now **find a route** to a place and
+**plot it on an inline map** with a short driving/walking overview (not live
+turn-by-turn). **No new endpoint and no app changes** — the map comes back as an
+ordinary **image artifact** on the existing chat-turn response, which the
+companion already renders. The companion keeps sending location exactly as before.
+Full contract + how it works server-side:
+**[`handover-navigation.md`](./handover-navigation.md)**. Dormant until a `mapbox`
+key is added; lands in the next release.

@@ -36,7 +36,8 @@
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
     "drizzle-orm": "^0.38.3",
-    "marked": "^18.0.4"
+    "marked": "^18.0.4",
+    "tz-lookup": "^6.1.25"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
