@@ -175,9 +175,16 @@ services:
     restart: unless-stopped
     environment:
       # Cap JVM heap so Tika can't balloon on a malicious or pathological
-      # document. JAVA_TOOL_OPTIONS not JAVA_OPTS — Tika's launcher doesn't
+      # document, while leaving headroom for legitimately large Office files.
+      # 512m was too tight: a ~24 MB .pptx / text-heavy .docx unzips to many
+      # times its size as XML, and Tika holds that in heap — big real decks
+      # OOM'd to an empty parse (no_text_layer). 1g roughly doubles the budget
+      # and still fits the 4 GB minimum box (stack idles ~2.5 GB; -Xms stays
+      # low at 128m so idle Tika is ~40 MB — only a big parse climbs toward the
+      # ceiling). On an 8 GB+ box with heavy deck/Office workloads, -Xmx2g is
+      # safe. JAVA_TOOL_OPTIONS not JAVA_OPTS — Tika's launcher doesn't
       # propagate JAVA_OPTS to the forked TikaServerProcess (verified live).
-      JAVA_TOOL_OPTIONS: "-Xmx512m -Xms128m"
+      JAVA_TOOL_OPTIONS: "-Xmx1g -Xms128m"
     healthcheck:
       # apache/tika image has only bash (no curl/wget/nc), so probe via
       # bash's built-in /dev/tcp + a minimal HTTP/1.0 GET against /version.
