@@ -46,6 +46,13 @@ type KeyRow = {
 // with zero wired capabilities, so partially-wired providers (Mistral +
 // Cohere — chat declared but only embedding wired) looked fully working.
 
+// Sentinel for the "not an LLM/voice provider" path — lets the operator store a
+// key for an arbitrary HTTP API (mapbox, locationiq, …) that their API-console
+// tools reference via {{secret:service/label}}. The backend already accepts any
+// service matching ^[a-z0-9_-]+$; the dropdown just needs an escape hatch.
+const CUSTOM_SERVICE = '__custom__';
+const SERVICE_RE = /^[a-z0-9_-]+$/;
+
 type Selection = { mode: 'create' } | { mode: 'view'; id: string } | null;
 
 export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
@@ -64,6 +71,7 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
 
   // Create form.
   const [service, setService] = useState('openrouter');
+  const [customService, setCustomService] = useState('');
   const [label, setLabel] = useState('default');
   const [plaintext, setPlaintext] = useState('');
 
@@ -107,19 +115,25 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
       toast.error('Paste the key value.');
       return;
     }
+    if (isCustom && !SERVICE_RE.test(effectiveService)) {
+      toast.error('Enter a service name (lowercase letters, numbers, dashes).');
+      return;
+    }
+    const finalLabel = label.trim() || 'default';
     const res = await fetch('/api/keys', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ service: service.trim(), label: label.trim() || 'default', plaintext }),
+      body: JSON.stringify({ service: effectiveService, label: finalLabel, plaintext }),
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       toast.error(body.error ?? 'Failed to save key.');
       return;
     }
-    setRevealed({ key: plaintext, service: service.trim(), label: label.trim() || 'default' });
+    setRevealed({ key: plaintext, service: effectiveService, label: finalLabel });
     setPlaintext('');
     setLabel('default');
+    setCustomService('');
     startTransition(() => router.refresh());
   }
 
@@ -158,6 +172,8 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
     startTransition(() => router.refresh());
   }
 
+  const isCustom = service === CUSTOM_SERVICE;
+  const effectiveService = (isCustom ? customService : service).trim().toLowerCase();
   const provider = SUPPORTED_PROVIDERS.find((p) => p.id === service);
 
   return (
@@ -245,7 +261,25 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
                         </option>
                       );
                     })}
+                    <option value={CUSTOM_SERVICE}>Custom / other API…</option>
                   </select>
+                  {isCustom && (
+                    <>
+                      <Input
+                        id="custom-service"
+                        value={customService}
+                        onChange={(e) => setCustomService(e.target.value.toLowerCase())}
+                        placeholder="e.g. mapbox"
+                        autoFocus
+                        required
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Service name for a non-LLM API your API-console tools call (lowercase
+                        letters, numbers, dashes). Reference it in a tool as{' '}
+                        <code>{`{{secret:${effectiveService || 'service'}/${label.trim() || 'default'}}}`}</code>.
+                      </p>
+                    </>
+                  )}
                   {provider && (() => {
                     const { wired, unwired } = wiredCapabilitiesFor(provider);
                     return (
