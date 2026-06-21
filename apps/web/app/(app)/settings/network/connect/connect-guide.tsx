@@ -141,19 +141,28 @@ tailscale status         # confirm it joined`}
 
             <TabsContent value="macos" className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                Install the app from the{' '}
-                <Ext href={TS_DOWNLOAD_URL}>Tailscale site</Ext> (or{' '}
-                <code className="font-mono">brew install tailscale</code> for the CLI), then sign in.
+                Install the menu-bar app — it runs the background service for you — then sign in from
+                its icon:
               </p>
               <CopyBlock
-                code={`brew install tailscale   # optional: CLI instead of the menu-bar app
-sudo tailscale up        # prints a URL — open it, sign in
-tailscale status`}
+                code={`brew install --cask tailscale   # the menu-bar app (recommended)
+open -a Tailscale                # then click the icon → Log in`}
               />
               <p className="text-xs text-muted-foreground">
-                With the menu-bar app, just click the icon → <strong>Log in</strong>. No terminal
-                needed.
+                No Homebrew? Download the app from the{' '}
+                <Ext href={TS_DOWNLOAD_URL}>Tailscale site</Ext> or the Mac App Store — same thing.
               </p>
+              <p className="text-xs text-muted-foreground">
+                Heads-up: the CLI-only formula (<code className="font-mono">brew install tailscale</code>){' '}
+                does <strong>not</strong> start the background daemon, so{' '}
+                <code className="font-mono">tailscale up</code> fails with “is Tailscale running?”. If
+                you hit that, switch to the app:
+              </p>
+              <CopyBlock
+                code={`brew uninstall tailscale
+brew install --cask tailscale
+open -a Tailscale`}
+              />
             </TabsContent>
 
             <TabsContent value="windows" className="space-y-3">

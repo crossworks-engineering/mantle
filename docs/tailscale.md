@@ -18,6 +18,14 @@ It's the **networking layer** under the [chat primary/backup routes](./chat-fail
 (the first local model). Those answer "which model"; this answers "how does the
 cloud box reach the model running in my house."
 
+> **Two directions.** This doc covers the *outbound* use — the core reaching out
+> to an inference box on your tailnet. The same node also works *inbound*: with
+> `tailscale serve --tcp` it publishes the core's Postgres + object store onto the
+> tailnet, so the **UI/app layer can run as a separate client** (a laptop dev
+> server, an Electron desktop build, another device) while the core stays on the
+> server. See [Split UI / core](./split-ui-core.md) for that architecture, and
+> [Developing against a remote database](./remote-db-dev.md) for the dev workflow.
+
 ---
 
 ## 0. As built (what shipped)
@@ -114,6 +122,11 @@ drives the whole UI design below — you pick a machine by name, never a number.
 
 1. Install Tailscale (one command / one app) and sign in with a free account.
    Your box joins your tailnet as, say, `gpu-box`.
+   - **macOS:** `brew install --cask tailscale && open -a Tailscale` (the menu-bar
+     app), then sign in from the icon. Avoid the CLI-only `brew install tailscale`
+     formula — it doesn't start the background daemon, so `tailscale up` fails with
+     "is Tailscale running?". The platform-by-platform steps live in the in-app
+     **Local network → Connect a device** guide.
 2. Run your model server (Ollama / LM Studio) as usual.
 3. In the Tailscale admin console, click **Generate auth key** and copy it.
 
