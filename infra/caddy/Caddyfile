@@ -22,16 +22,10 @@
 	}
 }
 
-# Mantle Push — the blind, E2E-encrypted push relay (repo: ~/Projects/mantle-push).
-# Interim: co-located here behind Caddy; moves to its own VPS at first real client
-# (a transparent DNS repoint). DNS for push.crossworks.network already points at
-# prod. Inert until the `push` container joins this network (mantle_default) —
-# until then this host returns 502, which does not affect the main site above.
-# See mantle-push/docs/deploy.md.
-push.crossworks.network {
-	encode zstd gzip
-	reverse_proxy push:8787
-	request_body {
-		max_size 64KB
-	}
-}
+# NOTE: this is the generic, single-site front door shipped to every install.
+# The author's prod also co-locates a "Mantle Push" relay on a second site block
+# (push.crossworks.network). That stays OUT of the public Caddyfile on purpose:
+# its hostname points at the author's own box, so on any other install Caddy
+# would endlessly fail to obtain a cert for a domain it doesn't control —
+# log spam plus a real Let's Encrypt rate-limit risk on that zone. Operators who
+# run the push relay add their own site block via a private overlay Caddyfile.

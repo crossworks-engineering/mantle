@@ -315,6 +315,18 @@ services:
     # tunnels — not reachable from the internet.
     ports:
       - "127.0.0.1:3000:3000"
+    # Liveness: is the Next.js server actually answering HTTP? `fetch` rejects
+    # ONLY on a network error (connection refused / not listening), so any
+    # response — including the 401 this owner-gated route returns when
+    # unauthenticated — means the app is up. Uses node (curl is purged from the
+    # final image). Makes `up -d --wait` and Caddy's depends_on gate on a
+    # working app instead of just a started container.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(()=>process.exit(0)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
 
   # ── Caddy: TLS-terminating reverse proxy — the public front door ───────────
   # Automatic HTTPS (Let's Encrypt) when MANTLE_SITE_ADDRESS is a hostname;
@@ -325,7 +337,7 @@ services:
     container_name: mantle_caddy
     restart: unless-stopped
     depends_on:
-      - web
+      web: { condition: service_healthy }
     ports:
       - "80:80"
       - "443:443"
