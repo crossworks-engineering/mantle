@@ -1,6 +1,6 @@
 {
   "name": "mantle",
-  "version": "0.26.0",
+  "version": "0.27.0",
   "private": true,
   "description": "Mantle — an AI-queryable life tree.",
   "license": "SEE LICENSE IN LICENSE.md",
@@ -49,7 +49,11 @@
     "prod:down": "docker compose down",
     "prod:logs": "docker compose logs -f",
     "db:dump": "bash scripts/db-dump.sh",
-    "db:restore": "bash scripts/db-restore.sh"
+    "db:restore": "bash scripts/db-restore.sh",
+    "db:tunnel": "bash scripts/prod-db-tunnel.sh up",
+    "db:tunnel:down": "bash scripts/prod-db-tunnel.sh down",
+    "tailscale:serve": "bash scripts/prod-tailscale-serve.sh up",
+    "tailscale:serve:status": "bash scripts/prod-tailscale-serve.sh status"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
