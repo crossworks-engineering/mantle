@@ -189,6 +189,10 @@ export async function recordTurn(args: {
   model?: string | null;
   attachments?: ConversationAttachment[];
   externalRef?: ConversationExternalRef | null;
+  /** Free-form per-turn metadata persisted on `assistant_messages.data` —
+   *  currently the device `{ location }` ping the companion app attaches to
+   *  inbound turns. Omitted ⇒ left at the column default. */
+  data?: Record<string, unknown> | null;
   tx?: Executor;
 }): Promise<AssistantMessage> {
   const exec = args.tx ?? db;
@@ -203,6 +207,7 @@ export async function recordTurn(args: {
       model: args.model ?? null,
       attachments: args.attachments ?? [],
       externalRef: args.externalRef ?? null,
+      ...(args.data != null ? { data: args.data } : {}),
     })
     .returning();
   if (!row) throw new Error('recordTurn: insert returned no row');

@@ -48,6 +48,7 @@ import { CONTACT_TOOLS } from './builtins-contacts';
 import { LIFELOG_TOOLS } from './builtins-lifelog';
 import { PEER_TOOLS } from './builtins-peers';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
+import { LOCATION_TOOLS } from './builtins-locations';
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -1059,6 +1060,10 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // for reading API docs). Granted to the Toolsmith specialist; mirrored over
   // MCP so Claude Code can drive the same flow. http-only by design.
   ...TOOLSMITH_TOOLS,
+  // Locations — the local (no-API) half of geo awareness: save a resolved
+  // place, find saved places nearby (cache reader), and haversine distance.
+  // The reverse-geocoding itself is a seeded Mapbox HTTP tool, not a builtin.
+  ...LOCATION_TOOLS,
 ];
 
 // P6: there is no flat "default assistant grant" anymore. A generalist persona's

@@ -50,8 +50,10 @@ import { registerAgentInvoker, type ToolArtifact } from '@mantle/tools';
 import { getChatAdapter, stripAudioTags } from '@mantle/voice';
 import {
   buildIdentityContext,
+  buildLocationContextLine,
   buildTimeContextLine,
   loadProfilePreferences,
+  type LocationPing,
 } from '@mantle/content';
 import {
   buildOpenHeartbeatContext,
@@ -177,6 +179,10 @@ export async function runAssistantTurn(
     /** Which agent answers this turn (the /assistant agent selector). Resolved
      *  owner-scoped + enabled; falls back to the default assistant. */
     agentSlug?: string;
+    /** Device location attached to this turn by the companion app. Persisted on
+     *  the inbound row (`data.location`) and rendered into the volatile context
+     *  so the agent is location-aware. Sanitized by the caller (the route). */
+    location?: LocationPing;
   },
 ): Promise<AssistantTurnResult> {
   const trimmed = text.trim();
@@ -232,6 +238,7 @@ export async function runAssistantTurn(
     text: displayText,
     channel: 'web',
     attachments: inboundAttachments,
+    ...(options?.location ? { data: { location: options.location } } : {}),
   });
 
   const attachedSkills = await resolveAgentSkills(ownerId, agent.skillSlugs ?? []);
@@ -290,7 +297,12 @@ export async function runAssistantTurn(
   // across turns. The time line and the heartbeat block ("asked Nmin
   // ago" churns) go to the uncached volatile slot instead.
   const effectiveSystemPrompt = identityBlock + promptWithSkills;
-  const volatileContext = [timeContextLine, openHeartbeatBlock.trim()]
+  // Device location (when the companion app sent it) rides the uncached volatile
+  // slot beside the time line — it's per-turn and changes constantly, so it must
+  // never enter the cached persona prefix. The location_awareness skill teaches
+  // the agent how to act on it.
+  const locationContextLine = buildLocationContextLine(options?.location ?? null);
+  const volatileContext = [timeContextLine, locationContextLine, openHeartbeatBlock.trim()]
     .filter(Boolean)
     .join('\n\n');
   // Heartbeat continuity tools are injected below as a per-turn affordance

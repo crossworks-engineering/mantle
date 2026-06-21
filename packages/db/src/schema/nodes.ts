@@ -35,6 +35,7 @@ export const nodeType = pgEnum('node_type', [
   'mantle_peer',
   'documentation',
   'lifelog',
+  'location',
 ]);
 
 export const nodes = pgTable(

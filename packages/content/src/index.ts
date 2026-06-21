@@ -365,6 +365,30 @@ export {
   type UpdateLifelogInput,
 } from './lifelog';
 
+export {
+  LOCATIONS_ROOT_LABEL,
+  listLocations,
+  countLocations,
+  listLocationTags,
+  getLocation,
+  createLocation,
+  updateLocation,
+  deleteLocation,
+  findNearbyLocations,
+  haversineMeters,
+  type LocationRow,
+  type NearbyLocation,
+  type CreateLocationInput,
+  type UpdateLocationInput,
+} from './locations';
+
+export {
+  sanitizeLocationPing,
+  buildLocationContextLine,
+  type LocationPing,
+  type LocationSource,
+} from './location-ping';
+
 export { buildIdentityContext } from './identity-context';
 
 export {

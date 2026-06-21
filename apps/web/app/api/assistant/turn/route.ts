@@ -23,6 +23,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireOwner } from '@/lib/auth';
 import { runAssistantTurn } from '@/lib/assistant';
+import { sanitizeLocationPing, type LocationPing } from '@mantle/content';
 import { extractAttachmentForTurn } from '@mantle/agent-runtime';
 import {
   ensureDatedUploadFolder,
@@ -38,7 +39,21 @@ import { recordIngest, startTrace, step } from '@mantle/tracing';
 const Body = z.object({
   text: z.string().min(1).max(20_000),
   agentSlug: z.string().optional(),
+  // Device location the companion app attaches to each message. Validated by
+  // sanitizeLocationPing (tolerant: bad fields drop, never fatal), not zod —
+  // accept anything object-shaped here and let the sanitizer decide.
+  location: z.unknown().optional(),
 });
+
+/** Parse a multipart `location` form field (a JSON string) into a clean ping. */
+function locationFromForm(raw: FormDataEntryValue | null): LocationPing | undefined {
+  if (typeof raw !== 'string' || !raw.trim()) return undefined;
+  try {
+    return sanitizeLocationPing(JSON.parse(raw)) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 const ASSISTANT_UPLOADS_SLUG = 'assistant-uploads';
 const IMAGE_MIME_PREFIX = 'image/';
@@ -192,6 +207,7 @@ async function runTurn(req: Request): Promise<TurnResult> {
   let userText = '';
   let agentSlug: string | undefined;
   let attachment: Attachment | null = null;
+  let location: LocationPing | undefined;
 
   try {
     if (contentType.includes('multipart/form-data')) {
@@ -199,6 +215,7 @@ async function runTurn(req: Request): Promise<TurnResult> {
       if (!form) return { status: 400, body: { error: 'invalid multipart body' } };
       userText = ((form.get('text') as string | null) ?? '').trim();
       agentSlug = ((form.get('agentSlug') as string | null) ?? '').trim() || undefined;
+      location = locationFromForm(form.get('location'));
       // Images arrive under 'image', documents under 'file'; accept either.
       const file = form.get('image') ?? form.get('file');
       if (file instanceof Blob && file.size > 0) {
@@ -246,6 +263,7 @@ async function runTurn(req: Request): Promise<TurnResult> {
       }
       userText = parsed.data.text;
       agentSlug = parsed.data.agentSlug?.trim() || undefined;
+      location = sanitizeLocationPing(parsed.data.location) ?? undefined;
     }
 
     // Hand the turn the attachment's extracted text (+ the raw image for a
@@ -254,6 +272,7 @@ async function runTurn(req: Request): Promise<TurnResult> {
     // The persisted inbound row shows the user's own typed text (displayText).
     const { inbound, outbound, reply, artifacts } = await runAssistantTurn(user.id, userText, {
       agentSlug,
+      ...(location ? { location } : {}),
       ...(attachment
         ? {
             displayText: userText,

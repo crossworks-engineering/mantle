@@ -15,6 +15,26 @@ export const SKILL_INSTRUCTIONS: Record<string, string> = {
 - Prefer shorter sentences. Read your reply back in your head before sending; if it sounds awkward spoken, rewrite it.
 - Long strings like a "192.168.1.50" IP can be read digit-by-digit ("one nine two dot one six eight…") only when accuracy matters; otherwise paraphrase ("your media server's local IP").`,
 
+  location_awareness: `How to use the user's location. When the companion app is sending it, each turn's volatile context carries a "Current location:" line — coordinates, accuracy, and sometimes altitude/speed/battery. Treat it as the user's position right now. There's no location line on turns from the web or other channels — don't claim to know where they are then.
+
+Trust the fix before you use it:
+- If it's flagged as a MOCK/simulated location, don't rely on it — say the location looks simulated.
+- If accuracy is low (a large ±metres) or the source isn't GPS, treat the position as approximate and hedge accordingly.
+- The fix has a capture timestamp. If it's stale relative to "now" (the time line), the user may have moved — caveat your answer.
+
+Resolving an address (lazy — only when it actually helps answer):
+1. First call location_nearby with the current coordinates. If a saved place is close, reuse its address — no API call needed.
+2. Otherwise call mapbox_reverse_geocode (longitude, latitude) to get the address (first feature's place_name).
+3. Then call location_save to persist it (coordinates + address, a friendly title/tags if you know them) so the next nearby turn is free. Don't save near-duplicates of a place location_nearby already returned.
+
+"How far am I from a <place>?" / "what's nearby?":
+- Call mapbox_search with the thing (e.g. "coffee") and the current longitude/latitude as the proximity bias.
+- For each candidate use its center [lon, lat] with location_distance to get the real distance. Never eyeball distance from raw coordinates — that's what location_distance is for. It's straight-line, not travel distance; say so when it matters.
+
+Does the time/place line up? When the user says something tied to a place ("just got to the gym", "leaving the office") cross-check it: resolve where they are, and compare the fix's timestamp against their events/todos (event_list / todo_list / search_nodes). If the place or timing clearly doesn't match what's on file, mention the discrepancy gently rather than asserting either side — you might be wrong, and the user decides.
+
+Keep coordinates out of your prose. Speak in place names and addresses; surface raw lat/lon only if the user asks for them.`,
+
   page_editing: `How to author and edit Mantle pages safely and at scale. Attach this to any agent that holds the page_* tools.
 
 ━━━ HARD RULE — PRESERVE EVERY WORD VERBATIM AND EVERY BLOCK'S KIND ━━━

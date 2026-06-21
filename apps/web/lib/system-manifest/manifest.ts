@@ -29,7 +29,9 @@ import {
   TABLE_TOOL_SLUGS,
   CONTACT_AUTO_GRANT_SLUGS,
   LIFELOG_AUTO_GRANT_SLUGS,
+  LOCATION_TOOL_SLUGS,
   TOOLSMITH_TOOL_SLUGS,
+  type HttpHandler,
 } from '@mantle/tools';
 import type { AiWorkerKind } from '@mantle/db';
 import { SKILL_INSTRUCTIONS, AGENT_PROMPTS } from './prompts';
@@ -52,6 +54,22 @@ export type ManifestToolGroup = {
   description: string;
   /** Builtin tool slugs this group confers when granted to an agent. */
   toolSlugs: string[];
+};
+
+/** A templated HTTP API tool shipped with a provisioned Mantle and seeded at
+ *  install — the SAME shape the Toolsmith agent authors at runtime, but baked
+ *  into the manifest so common integrations (geocoding) work out of the box
+ *  once the user adds the service key. The `handler` references the key via a
+ *  `{{secret:service/label}}` vault ref, so no plaintext lives here. Seeded by
+ *  applyManifest → seedManifestHttpTools (upsert by owner+slug). */
+export type ManifestHttpTool = {
+  slug: string;
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  handler: HttpHandler;
+  /** Pause for operator approval on each call. Read-only lookups: false. */
+  requiresConfirm?: boolean;
 };
 
 export type ManifestAgent = {
@@ -148,7 +166,81 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     description: 'How Mantle works + the operating workflow (for the coder agent).',
     instructions: SKILL_INSTRUCTIONS['mantle-ops']!,
   },
+  {
+    slug: 'location_awareness',
+    name: 'Location awareness',
+    description: 'Use the device location: resolve/cache addresses, find nearby places, reason about distance + timing.',
+    instructions: SKILL_INSTRUCTIONS['location_awareness']!,
+  },
 ];
+
+// ── Seeded HTTP API tools ────────────────────────────────────────────────────
+//
+// Shipped, ready-to-use HTTP tools (the install-seed counterpart to the
+// Toolsmith authoring loop). They reference the key as a vault ref, so they sit
+// dormant until the user adds the matching key under Settings → API keys
+// (service 'mapbox', label 'default'); dispatch + the Toolsmith warning surface
+// a clear "add it" message until then. Adding the next provider (LocationIQ) is
+// a new entry here OR a live Toolsmith authoring run — no new architecture.
+//
+// Mapbox Geocoding v5: reverse turns coordinates into an address; the forward
+// endpoint with a `proximity` bias answers "what <thing> is near me" (the
+// coffee-place example). Both read-only ⇒ requiresConfirm omitted (false).
+
+export const MAPBOX_KEY_REF = '{{secret:mapbox/default}}';
+
+export const MANIFEST_HTTP_TOOLS: readonly ManifestHttpTool[] = [
+  {
+    slug: 'mapbox_reverse_geocode',
+    name: 'Reverse geocode (Mapbox)',
+    description:
+      "Turn coordinates into a human-readable address via Mapbox. Input is `longitude` then `latitude` (decimal degrees). Returns Mapbox `features` (the first `place_name` is the best address). Use when you have coordinates (e.g. the device's Current location) and need the address — but check location_nearby first to reuse a saved place, and save the result with location_save afterwards. Requires a Mapbox key (Settings → API keys, service 'mapbox').",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        longitude: { type: 'number', description: 'decimal degrees, −180..180' },
+        latitude: { type: 'number', description: 'decimal degrees, −90..90' },
+      },
+      required: ['longitude', 'latitude'],
+    },
+    handler: {
+      kind: 'http',
+      method: 'GET',
+      url: 'https://api.mapbox.com/geocoding/v5/mapbox.places/{longitude},{latitude}.json',
+      query: { access_token: MAPBOX_KEY_REF, limit: '1' },
+    },
+  },
+  {
+    slug: 'mapbox_search',
+    name: 'Search places (Mapbox)',
+    description:
+      "Find places matching a text query (e.g. 'coffee', 'pharmacy', 'Truth Coffee') near a point, via Mapbox forward geocoding with a proximity bias. Pass `query` plus the `longitude`/`latitude` to bias around (usually the device's Current location). Returns Mapbox `features` with each match's `place_name` and `center` ([lon, lat]) — feed those coordinates to location_distance to tell the user how far each is. Requires a Mapbox key (Settings → API keys, service 'mapbox').",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'free-text place/category to search for' },
+        longitude: { type: 'number', description: 'proximity-bias longitude' },
+        latitude: { type: 'number', description: 'proximity-bias latitude' },
+        limit: { type: 'integer', minimum: 1, maximum: 10, description: 'max results (default 5)' },
+      },
+      required: ['query', 'longitude', 'latitude'],
+    },
+    handler: {
+      kind: 'http',
+      method: 'GET',
+      url: 'https://api.mapbox.com/geocoding/v5/mapbox.places/{query}.json',
+      query: {
+        access_token: MAPBOX_KEY_REF,
+        proximity: '{longitude},{latitude}',
+        limit: '{limit}',
+      },
+    },
+  },
+];
+
+/** Slugs of the seeded HTTP tools — known to the manifest the same way builtin
+ *  slugs are, so a tool group may bundle them without tripping the drift test. */
+export const MANIFEST_HTTP_TOOL_SLUGS: readonly string[] = MANIFEST_HTTP_TOOLS.map((t) => t.slug);
 
 // ── Tool groups ──────────────────────────────────────────────────────────────
 //
@@ -348,6 +440,15 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['peer_list', 'peer_query', 'peer_node_get'],
   },
   {
+    slug: 'location',
+    name: 'Location & places',
+    description:
+      'Geo awareness: reverse-geocode coordinates to an address (Mapbox), find places nearby, reuse saved places, and compute distances. Pairs with the location_awareness skill.',
+    // Local builtins (save/nearby/distance) + the seeded Mapbox HTTP tools. The
+    // Mapbox tools stay dormant until the user adds a 'mapbox' key.
+    toolSlugs: [...LOCATION_TOOL_SLUGS, ...MANIFEST_HTTP_TOOL_SLUGS],
+  },
+  {
     slug: 'toolsmith',
     name: 'Toolsmith kit',
     description:
@@ -391,8 +492,9 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'ingest',
       'tool-results',
       'page-share',
+      'location',
     ],
-    skillSlugs: ['tool_grounding', 'voice_reply', 'rich_writing'],
+    skillSlugs: ['tool_grounding', 'voice_reply', 'rich_writing', 'location_awareness'],
     params: { temperature: 0.7, max_tokens: 16000 },
     priority: 100,
   },
@@ -554,10 +656,13 @@ export const KNOWN_EXTERNAL_TOOL_SLUGS: readonly string[] = [
   'heartbeat_update_state',
 ];
 
-/** The set of tool slugs the manifest is allowed to reference. */
+/** The set of tool slugs the manifest is allowed to reference: builtins, the
+ *  runtime-only externals, and the seeded HTTP tools (so a group may bundle
+ *  mapbox_* without false-failing the drift test). */
 export const KNOWN_TOOL_SLUGS: ReadonlySet<string> = new Set<string>([
   ...BUILTIN_TOOLS.map((t) => t.slug),
   ...KNOWN_EXTERNAL_TOOL_SLUGS,
+  ...MANIFEST_HTTP_TOOL_SLUGS,
 ]);
 
 /** Slugs of every manifest tool group (the set an agent may reference). */
@@ -568,6 +673,7 @@ export const KNOWN_TOOL_GROUP_SLUGS: ReadonlySet<string> = new Set<string>(
 export const SYSTEM_MANIFEST = {
   skills: MANIFEST_SKILLS,
   toolGroups: MANIFEST_TOOL_GROUPS,
+  httpTools: MANIFEST_HTTP_TOOLS,
   agents: MANIFEST_AGENTS,
   workers: MANIFEST_WORKERS,
 } as const;

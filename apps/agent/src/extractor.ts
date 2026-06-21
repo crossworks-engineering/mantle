@@ -93,7 +93,7 @@ const HARD_SKIP_TYPES = new Set(['branch']);
  *  `task` and `event` are first-class content: title + body + metadata
  *  (status, due_at, starts_at, location, …) all become part of the body
  *  the extractor summarises and embeds. */
-const DEFAULT_EXTRACT_TYPES = ['note', 'page', 'table', 'file', 'email', 'email_thread', 'secret', 'task', 'event', 'contact', 'documentation', 'lifelog'];
+const DEFAULT_EXTRACT_TYPES = ['note', 'page', 'table', 'file', 'email', 'email_thread', 'secret', 'task', 'event', 'contact', 'documentation', 'lifelog', 'location'];
 
 /** Max characters of body text we feed the summarizer in one shot.
  *  Long emails / PDFs get truncated to keep the prompt bounded and the
@@ -397,6 +397,21 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
       node.title,
       ...(typeof d.category === 'string' && d.category ? [`Area: ${d.category}`] : []),
       ...(typeof d.mood === 'string' && d.mood ? [`Mood: ${d.mood}`] : []),
+      ...(body ? ['', body] : []),
+    ];
+    return lines.join('\n');
+  }
+  // ─── Locations — resolved place: name + address + coordinates ─────────
+  if (node.type === 'location') {
+    const d = (node.data ?? {}) as Record<string, unknown>;
+    const body = typeof d.body === 'string' ? d.body : '';
+    const address = typeof d.address === 'string' ? d.address : '';
+    const lat = typeof d.latitude === 'number' ? d.latitude : null;
+    const lon = typeof d.longitude === 'number' ? d.longitude : null;
+    const lines = [
+      node.title,
+      ...(address ? [`Address: ${address}`] : []),
+      ...(lat !== null && lon !== null ? [`Coordinates: ${lat}, ${lon}`] : []),
       ...(body ? ['', body] : []),
     ];
     return lines.join('\n');

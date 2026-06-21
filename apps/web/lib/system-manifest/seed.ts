@@ -20,14 +20,16 @@
  */
 
 import { and, eq, inArray } from 'drizzle-orm';
-import { db, agents, skills, toolGroups, apiKeys, type AgentMemoryConfig, type AgentParams } from '@mantle/db';
-import { seedBuiltinTools } from '@mantle/tools';
+import { db, agents, skills, toolGroups, tools, apiKeys, type AgentMemoryConfig, type AgentParams } from '@mantle/db';
+import { seedBuiltinTools, createTool, updateTool } from '@mantle/tools';
 import {
   MANIFEST_AGENTS,
+  MANIFEST_HTTP_TOOLS,
   MANIFEST_SKILLS,
   MANIFEST_TOOL_GROUPS,
   PERSONA_SLUG,
   type ManifestAgent,
+  type ManifestHttpTool,
   type ManifestSkill,
   type ManifestToolGroup,
 } from './manifest';
@@ -122,6 +124,41 @@ async function upsertToolGroup(ownerId: string, def: ManifestToolGroup, mode: Ap
     name: def.name,
     description: def.description,
     toolSlugs: def.toolSlugs,
+    enabled: true,
+  });
+}
+
+/** Seed a manifest HTTP tool (e.g. Mapbox geocoding). Like skills/groups:
+ *  gap-fill leaves an existing tool untouched (operator may have edited it);
+ *  overwrite re-syncs it to the manifest. Never clobbers a non-http tool that
+ *  happens to share the slug (a human-authored shell tool, say). The tool sits
+ *  dormant until the user adds the `{{secret:…}}` key it references. */
+async function upsertHttpTool(ownerId: string, def: ManifestHttpTool, mode: ApplyMode): Promise<void> {
+  const [existing] = await db
+    .select({ id: tools.id, handler: tools.handler })
+    .from(tools)
+    .where(and(eq(tools.ownerId, ownerId), eq(tools.slug, def.slug)))
+    .limit(1);
+  if (existing) {
+    if (mode === 'overwrite' && existing.handler?.kind === 'http') {
+      await updateTool(ownerId, existing.id, {
+        name: def.name,
+        description: def.description,
+        inputSchema: def.inputSchema,
+        handler: def.handler,
+        requiresConfirm: def.requiresConfirm ?? false,
+        enabled: true,
+      });
+    }
+    return;
+  }
+  await createTool(ownerId, {
+    slug: def.slug,
+    name: def.name,
+    description: def.description,
+    inputSchema: def.inputSchema,
+    handler: def.handler,
+    requiresConfirm: def.requiresConfirm ?? false,
     enabled: true,
   });
 }
@@ -258,6 +295,10 @@ export async function seedToolCapabilities(
 ): Promise<void> {
   // Builtin tool rows must exist for the slugs the groups/agents reference.
   await seedBuiltinTools(ownerId);
+  // Seeded HTTP tools (e.g. Mapbox geocoding) — referenced by tool groups too,
+  // so they must exist before group upserts (a group bundling mapbox_* would
+  // otherwise resolve short at runtime). Dormant until the user adds the key.
+  for (const def of MANIFEST_HTTP_TOOLS) await upsertHttpTool(ownerId, def, mode);
   // Tool groups (capability bundles) — the unit every agent grants.
   for (const def of MANIFEST_TOOL_GROUPS) await upsertToolGroup(ownerId, def, mode);
 }

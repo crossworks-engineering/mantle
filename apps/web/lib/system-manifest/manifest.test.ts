@@ -3,6 +3,8 @@ import {
   MANIFEST_AGENTS,
   MANIFEST_SKILLS,
   MANIFEST_TOOL_GROUPS,
+  MANIFEST_HTTP_TOOLS,
+  MANIFEST_HTTP_TOOL_SLUGS,
   MANIFEST_WORKERS,
   KNOWN_TOOL_SLUGS,
   KNOWN_TOOL_GROUP_SLUGS,
@@ -11,7 +13,7 @@ import {
   ASSIST_SURFACE_DEFAULTS,
   type ManifestAgent,
 } from './manifest';
-import { BUILTIN_TOOLS } from '@mantle/tools';
+import { BUILTIN_TOOLS, collectParamNames, collectSecretRefs } from '@mantle/tools';
 
 /**
  * Manifest drift guard (modeled on packages/voice/.../catalog-consistency.test.ts).
@@ -115,6 +117,40 @@ describe('system manifest integrity', () => {
     // …and the Pages specialist DOES own page authoring (so delegation has a target).
     const pages = MANIFEST_AGENTS.find((a) => a.slug === 'pages')!;
     expect(effectiveTools(pages).has('page_create'), 'Pages agent authors pages').toBe(true);
+  });
+
+  it('seeded HTTP tools are well-formed, declare every placeholder, and use a vault ref', () => {
+    const slugs = MANIFEST_HTTP_TOOLS.map((t) => t.slug);
+    expect(new Set(slugs).size, 'duplicate HTTP tool slug').toBe(slugs.length);
+    expect(MANIFEST_HTTP_TOOL_SLUGS).toEqual(slugs);
+    for (const tool of MANIFEST_HTTP_TOOLS) {
+      expect(tool.handler.kind, `${tool.slug} must be an http handler`).toBe('http');
+      expect(tool.handler.url, `${tool.slug} url`).toMatch(/^https?:\/\//);
+      expect(tool.description.trim().length, `${tool.slug} description`).toBeGreaterThan(0);
+      const props = new Set(Object.keys((tool.inputSchema.properties as object) ?? {}));
+      // Every {param} placeholder must be a declared input (else the model can
+      // never fill it) — the same check the Toolsmith create path warns on.
+      for (const p of collectParamNames(tool.handler)) {
+        expect(props.has(p), `${tool.slug}: placeholder {${p}} is not in input_schema`).toBe(true);
+      }
+      // Auth rides a vault ref, never an inline key.
+      expect(collectSecretRefs(tool.handler).length, `${tool.slug} must reference a vault key`).toBeGreaterThan(0);
+    }
+  });
+
+  it('every seeded HTTP tool is bundled by at least one tool group (grantable)', () => {
+    const inAGroup = new Set(MANIFEST_TOOL_GROUPS.flatMap((g) => g.toolSlugs));
+    const orphans = MANIFEST_HTTP_TOOL_SLUGS.filter((s) => !inAGroup.has(s));
+    expect(orphans, 'these HTTP tools belong to no group').toEqual([]);
+  });
+
+  it('the persona holds the location group + skill (geo awareness ships on by default)', () => {
+    const persona = MANIFEST_AGENTS.find((a) => a.isPersona)!;
+    expect(persona.toolGroupSlugs ?? []).toContain('location');
+    expect(persona.skillSlugs).toContain('location_awareness');
+    const grant = effectiveTools(persona);
+    expect(grant.has('location_nearby')).toBe(true);
+    expect(grant.has('mapbox_reverse_geocode')).toBe(true);
   });
 
   it('every skill has a non-empty instruction body', () => {
