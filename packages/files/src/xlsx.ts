@@ -44,7 +44,9 @@ const MAX_COLS_PER_SHEET = 256;
  *  (the summary prompt is truncated to ~24K chars upstream), so a larger body
  *  here only widens chunk/retrieval coverage, it doesn't grow token cost. The
  *  phantom-range hang is prevented by the row/col caps above, not this one. */
-const MAX_TEXT_BYTES = 1_000_000;
+// Char count (compared against `csv.length`), not bytes — aligned with the
+// extractor's char-based TEXT_STORE_MAX_CHARS. (Was misnamed MAX_TEXT_BYTES.)
+const MAX_TEXT_CHARS = 1_000_000;
 const TRUNCATION_NOTE =
   '[spreadsheet truncated for indexing — large or sparse workbook]';
 
@@ -79,8 +81,8 @@ export async function parseXlsx(buf: Buffer): Promise<string> {
     }
     const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false }).trim();
     if (csv.length === 0) continue;
-    if (total + csv.length > MAX_TEXT_BYTES) {
-      const room = MAX_TEXT_BYTES - total;
+    if (total + csv.length > MAX_TEXT_CHARS) {
+      const room = MAX_TEXT_CHARS - total;
       if (room > 0) parts.push(`# Sheet: ${name}\n${csv.slice(0, room)}`);
       truncated = true;
       break; // stop before walking any further sheets
