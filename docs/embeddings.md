@@ -158,6 +158,33 @@ The shipped default. Worth knowing how it's wired:
 
 ---
 
+## Throughput on a CPU-only box (the three knobs)
+
+EmbeddingGemma on a GPU is instant; on a **shared-vCPU VPS with no GPU** it's serial CPU inference — a few chunks per second at best. That's fine for everyday ingest (a note, an email — 1–3 short texts), but it bites when you bulk-ingest **large documents that chunk into hundreds of passages** (a big spreadsheet or PDF). Two things compound:
+
+1. A single embed request that's too large can't finish inside the per-request timeout and aborts.
+2. Multiple extractor jobs running at once contend for the same cores, so each one slows down and is more likely to time out.
+
+**Symptom:** extractor traces failing at the `embed_batch` / `write_chunks` step with `"The operation was aborted due to timeout"`, the file ending up with only a title/summary chunk, and the job retry-looping (burning CPU). On a healthy box you never see this.
+
+**The adapter already sub-batches** — [`local-embedding.ts`](../packages/voice/src/adapters/local-embedding.ts) splits the caller's batch into sequential sub-requests (default 16 texts each) so a retry resumes from the completed sub-batches via the embedding cache. Three env knobs tune it for slow/fast hardware (all passed through the compose `x-app-env` anchor):
+
+| Env var | Default | What it does | When to change |
+| --- | --- | --- | --- |
+| `EXTRACT_CONCURRENCY` | `2` | In-flight extractor jobs (clamped 1–8). | **Drop to `1`** on a CPU-only embedder so jobs don't contend for cores. |
+| `MANTLE_LOCAL_EMBED_BATCH` | `16` | Texts per local-embedder HTTP request. | **Lower (e.g. `8`)** on an especially slow box so each request clears the timeout; raise on a GPU. |
+| `MANTLE_LOCAL_EMBED_TIMEOUT_MS` | `120000` | Per-request timeout (ms). | Raise for very slow hardware so a legitimate sub-batch isn't aborted early. |
+
+```bash
+# .env on a small CPU-only box:
+EXTRACT_CONCURRENCY=1
+MANTLE_LOCAL_EMBED_BATCH=8
+```
+
+**The real fix is hardware.** These knobs trade latency for reliability — they stop the timeouts, but a CPU embedder is still the throughput ceiling for both bulk ingest and live `search_chunks`. If you regularly ingest bulky documents, give the box more/faster vCPU, or point the embedding route at a **GPU or remote EmbeddingGemma** (`/settings/embedding`, same model — see failover below); then you can raise `MANTLE_LOCAL_EMBED_BATCH` back up. Re-ingest anything that landed thin while the box was timing out (clear its `data.summary`/`extract_completed_at` and re-fire `node_ingested`, or use the `process_extraction` tool).
+
+---
+
 ## Primary + backup routes (failover)
 
 Availability without breaking the space lock. The config holds **two routes to the same model**: a primary and an optional backup. They differ only in *route* — provider, base URL, API key — **never in model**. The `/settings/embedding` form keeps the backup pinned to the primary's model id for exactly this reason.
