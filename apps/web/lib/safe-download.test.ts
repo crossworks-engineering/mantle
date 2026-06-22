@@ -2,11 +2,26 @@ import { describe, expect, it } from 'vitest';
 import { safeDownloadHeaders } from './safe-download';
 
 describe('safeDownloadHeaders', () => {
-  it('forces SVG to an attachment octet-stream (no inline script execution)', () => {
+  it('serves SVG inline as image/svg+xml so <img> embeds render', () => {
     const h = safeDownloadHeaders('image/svg+xml', 'logo.svg');
-    expect(h['content-type']).toBe('application/octet-stream');
-    expect(h['content-disposition']).toMatch(/^attachment;/);
+    expect(h['content-type']).toBe('image/svg+xml');
+    expect(h['content-disposition']).toMatch(/^inline;/);
     expect(h['x-content-type-options']).toBe('nosniff');
+  });
+
+  it('sandboxes SVG with a scriptless CSP (no script execution on direct nav)', () => {
+    const h = safeDownloadHeaders('image/svg+xml', 'logo.svg');
+    const csp = h['content-security-policy'] ?? '';
+    expect(csp).toContain('sandbox');
+    expect(csp).not.toContain('allow-scripts');
+    expect(csp).toContain("default-src 'none'");
+  });
+
+  it('handles SVG mime parameters and casing', () => {
+    const h = safeDownloadHeaders('IMAGE/SVG+XML; charset=utf-8', 'logo.svg');
+    expect(h['content-type']).toBe('image/svg+xml');
+    expect(h['content-disposition']).toMatch(/^inline;/);
+    expect(h['content-security-policy']).toContain('sandbox');
   });
 
   it('forces HTML to an attachment', () => {
