@@ -75,6 +75,12 @@ export type ProfilePreferences = {
    *  injected agent can't stand up a silent exfiltration endpoint. Independent
    *  of the always-on guards (self-grant block, no-lower-via-update, SSRF). */
   toolsmithRequireApproval?: boolean;
+  /** APP_VERSION the boot-time manifest reconcile last synced this brain to.
+   *  The reconcile (apps/web instrumentation → reconcileManifestOnBoot) runs once
+   *  per version on a deployed/updated instance, so a self-hoster who only pulls a
+   *  new image still gets new tools/skills/group-membership without running seed
+   *  scripts. Equal to APP_VERSION ⇒ already reconciled, skip. */
+  lastReconciledVersion?: string;
   /** When true, outbound/egress tools (email_send, web_fetch, web_search)
    *  fired during an UNATTENDED heartbeat run park for operator approval
    *  instead of executing inline. Only tools that reach OUT are gated — the
@@ -169,6 +175,10 @@ export async function loadProfilePreferences(
         : undefined,
     toolsmithRequireApproval: prefs.toolsmithRequireApproval === true,
     heartbeatEgressGate: prefs.heartbeatEgressGate === true,
+    lastReconciledVersion:
+      typeof prefs.lastReconciledVersion === 'string' && prefs.lastReconciledVersion.length > 0
+        ? prefs.lastReconciledVersion
+        : undefined,
   };
 }
 
@@ -248,6 +258,7 @@ export async function updateProfilePreferences(
     devToolsAssistAgentSlug: merged.devToolsAssistAgentSlug || undefined,
     toolsmithRequireApproval: merged.toolsmithRequireApproval === true,
     heartbeatEgressGate: merged.heartbeatEgressGate === true,
+    lastReconciledVersion: merged.lastReconciledVersion || undefined,
   };
 }
 

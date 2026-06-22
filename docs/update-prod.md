@@ -19,6 +19,16 @@ this box.
 3. **up** the stack (`docker compose up -d`) — the one-shot `migrate` service
    runs **pending DB migrations first** (gated), then web/agent/workers recreate
    on the new image.
+4. **manifest reconcile** (automatic, in the web image). On boot the web server
+   runs `reconcileManifestOnBoot` (apps/web `instrumentation.ts`): once per
+   APP_VERSION, on an already-provisioned brain, it syncs new seeded HTTP tools,
+   new skills, and **tool-GROUP membership** to the manifest, and unions the
+   persona's default groups onto enabled responders. So a release that adds a tool
+   to an existing group (e.g. 0.28.0 added `route_map`/`mapbox_directions` to
+   `location`) reaches the live responder with **no manual `seed:*` run** —
+   including for self-hosters who only `docker compose pull && up -d`. Additive
+   (never removes a grant), best-effort (never fails boot), production-only,
+   opt-out via `MANTLE_DISABLE_BOOT_RECONCILE=1`.
 
 Code is forward-and-back; **migrations are forward-only** — always dump first.
 
