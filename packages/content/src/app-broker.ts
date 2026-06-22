@@ -44,7 +44,7 @@ async function openSqlite(file: string): Promise<SqliteDb> {
 
 /** Statements an app must not run through the broker (file/engine escapes). */
 const BLOCKED = /^\s*(attach|detach|vacuum\s+into|pragma)\b/i;
-function assertSafe(sql: string): void {
+export function assertSafe(sql: string): void {
   if (BLOCKED.test(sql)) {
     throw new Error('statement not allowed (ATTACH/DETACH/PRAGMA/VACUUM INTO are blocked)');
   }
