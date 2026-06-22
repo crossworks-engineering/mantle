@@ -43,6 +43,39 @@ export function emptySource(): AppSource {
   };
 }
 
+/** Source-tree limits. Enforced in the content layer so BOTH the web autosave
+ *  route and the agent's app_file_write share one ceiling (the agent path used
+ *  to be uncapped). The web route's zod schema references these too. */
+export const MAX_APP_FILES = 50;
+export const MAX_APP_FILE_BYTES = 256 * 1024;
+export const MAX_APP_PATH_LEN = 256;
+
+export class AppSourceLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AppSourceLimitError';
+  }
+}
+
+/** Throw AppSourceLimitError if a source tree exceeds the file-count, per-file
+ *  size, or path-length ceilings. Covers a single-file write too (build `next`
+ *  then validate). */
+export function assertSourceWithinLimits(source: AppSource): void {
+  const paths = Object.keys(source.files);
+  if (paths.length > MAX_APP_FILES) {
+    throw new AppSourceLimitError(`too many files (${paths.length}; max ${MAX_APP_FILES})`);
+  }
+  for (const p of paths) {
+    if (p.length > MAX_APP_PATH_LEN) {
+      throw new AppSourceLimitError(`file path too long (max ${MAX_APP_PATH_LEN} chars): ${p.slice(0, 80)}`);
+    }
+    const bytes = Buffer.byteLength(source.files[p] ?? '', 'utf8');
+    if (bytes > MAX_APP_FILE_BYTES) {
+      throw new AppSourceLimitError(`file '${p}' too large (${bytes} bytes; max ${MAX_APP_FILE_BYTES})`);
+    }
+  }
+}
+
 export type AppVisibility = 'private' | 'public';
 
 export type AppRow = {
@@ -328,6 +361,7 @@ export async function saveDraftSource(
   source: AppSource,
 ): Promise<boolean> {
   if (!(await ownsApp(ownerId, id))) return false;
+  assertSourceWithinLimits(source);
   await db
     .update(apps)
     .set({ draftSource: source, draftUpdatedAt: new Date() })
@@ -347,6 +381,7 @@ export async function writeDraftFile(
   if (!app) return null;
   const base = workingSource(app);
   const next: AppSource = { entry: base.entry, files: { ...base.files, [path]: content } };
+  assertSourceWithinLimits(next);
   await db
     .update(apps)
     .set({ draftSource: next, draftUpdatedAt: new Date() })
