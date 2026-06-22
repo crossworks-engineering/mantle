@@ -118,7 +118,6 @@ export {
   MAX_APP_PATH_LEN,
   type AppRow,
   type AppDetail,
-  type AppVisibility,
   type AppSort,
   type CreateAppInput,
   type UpdateAppInput,

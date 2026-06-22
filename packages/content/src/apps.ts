@@ -6,7 +6,6 @@
  *   nodes.title           display name
  *   nodes.data.icon       optional emoji / icon
  *   nodes.data.summary    extractor-written summary (if 'app' is extracted)
- *   nodes.data.visibility 'private' | 'public'
  *   apps.source           { entry, files } — built + run
  *   apps.source_text      derived plaintext (concatenated source; FTS reads this)
  *   apps.manifest         { toolSlugs, sqlite, description }
@@ -76,15 +75,12 @@ export function assertSourceWithinLimits(source: AppSource): void {
   }
 }
 
-export type AppVisibility = 'private' | 'public';
-
 export type AppRow = {
   id: string;
   title: string;
   icon: string | null;
   tags: string[];
   summary: string | null;
-  visibility: AppVisibility;
   description: string | null;
   /** Number of declared api_tool slugs. */
   toolCount: number;
@@ -121,7 +117,6 @@ function rowOf(n: Node, s: Partial<SidecarCols> = {}): AppRow {
     icon: typeof d.icon === 'string' ? d.icon : null,
     tags: n.tags ?? [],
     summary: typeof d.summary === 'string' ? d.summary : null,
-    visibility: d.visibility === 'public' ? 'public' : 'private',
     description: typeof manifest.description === 'string' ? manifest.description : null,
     toolCount: manifest.toolSlugs?.length ?? 0,
     hasBuild: !!s.publishedBuild?.ok,
@@ -301,7 +296,7 @@ export async function createApp(ownerId: string, input: CreateAppInput): Promise
         type: 'app',
         title: input.title.trim().slice(0, 200) || 'Untitled app',
         path: APPS_ROOT_LABEL,
-        data: { visibility: 'private', ...(input.icon ? { icon: input.icon } : {}) },
+        data: { ...(input.icon ? { icon: input.icon } : {}) },
         tags: dedupeTags(input.tags ?? []),
       })
       .returning();
@@ -323,7 +318,6 @@ export type UpdateAppInput = Partial<{
   title: string;
   icon: string;
   tags: string[];
-  visibility: AppVisibility;
 }>;
 
 export async function updateAppMeta(
@@ -339,7 +333,6 @@ export async function updateAppMeta(
   if (!node) return null;
   const newData = { ...((node.data ?? {}) as Record<string, unknown>) };
   if (input.icon !== undefined) newData.icon = input.icon;
-  if (input.visibility !== undefined) newData.visibility = input.visibility;
   await db
     .update(nodes)
     .set({
