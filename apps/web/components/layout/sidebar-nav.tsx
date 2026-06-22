@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   Activity,
+  AppWindow,
   ArrowUpCircle,
   BookOpen,
   BookText,
@@ -83,6 +84,7 @@ export function SidebarNav({
         { name: 'Notes', href: '/notes', icon: FileText },
         { name: 'Pages', href: '/pages', icon: BookText },
         { name: 'Tables', href: '/tables', icon: Table2 },
+        { name: 'Apps', href: '/apps', icon: AppWindow },
         { name: 'Todos', href: '/todos', icon: CheckSquare },
         { name: 'Events', href: '/events', icon: CalendarDays },
         { name: 'Contacts', href: '/contacts', icon: Contact },

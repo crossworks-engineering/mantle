@@ -23,6 +23,17 @@
  *      overwrite to MANIFEST_SKILLS, so operator-AUTHORED skills are never touched.
  *   3. Union the manifest persona's default tool groups onto enabled responders —
  *      ADD only, never remove (see missingPersonaGroups).
+ *   4. Provision any specialist agent that this version of the manifest ships but
+ *      the brain is MISSING (e.g. `appsmith` in 0.31) — create-only, and wire the
+ *      persona's delegation to it. This closes the same gap step 1 closes for
+ *      tool groups, but for whole NEW specialists: a `docker compose pull && up`
+ *      update never runs `seed:<agent>`, so without this a shipped specialist
+ *      (and the persona's ability to delegate to it) silently never reaches an
+ *      existing brain. gap-fill never overwrites an existing agent's
+ *      prompt/model/params, and we key on EXISTENCE (not enabled), so a specialist
+ *      the operator DISABLED is left alone — disable to opt out, don't delete.
+ *      Needs the OpenRouter key a provisioned brain already has; if absent the
+ *      whole reconcile is caught + retried on the next boot (self-healing).
  *
  * Safety: production-only, opt-out via MANTLE_DISABLE_BOOT_RECONCILE=1, skips a
  * fresh/unprovisioned brain (onboarding owns that), runs once per process and once
@@ -35,7 +46,7 @@ import { db, agents } from '@mantle/db';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
 import { APP_VERSION } from '@/lib/version';
 import { applyManifest, seedToolCapabilities } from './seed';
-import { PERSONA_TOOL_GROUP_SLUGS } from './manifest';
+import { MANIFEST_AGENTS, PERSONA_TOOL_GROUP_SLUGS } from './manifest';
 import { missingPersonaGroups } from './reconcile-util';
 
 let ranThisProcess = false;
@@ -74,6 +85,27 @@ async function grantPersonaGroupsByRole(ownerId: string): Promise<string[]> {
     granted.push(`${a.slug}:+${missing.join(',')}`);
   }
   return granted;
+}
+
+/**
+ * Create any manifest specialist agent the brain is missing (a NEW specialist
+ * shipped this version), and wire the persona's delegation to it. Keyed on
+ * existence (not enabled) so an operator-disabled specialist is never recreated.
+ * gap-fill: never overwrites an existing agent's prompt/model/params. Returns the
+ * slugs created.
+ */
+async function provisionMissingSpecialists(ownerId: string): Promise<string[]> {
+  const rows = await db
+    .select({ slug: agents.slug })
+    .from(agents)
+    .where(eq(agents.ownerId, ownerId));
+  const have = new Set(rows.map((r) => r.slug));
+  const missing = MANIFEST_AGENTS.filter((a) => !a.isPersona && !have.has(a.slug)).map((a) => a.slug);
+  if (missing.length === 0) return [];
+  // only:<missing> seeds just those agents (create) + wires delegation for the
+  // ones that are isDelegate. Existing agents are untouched.
+  await applyManifest(ownerId, { only: missing, mode: 'gap-fill' });
+  return missing;
 }
 
 export async function reconcileManifestOnBoot(): Promise<void> {
@@ -120,11 +152,13 @@ export async function reconcileManifestOnBoot(): Promise<void> {
     await seedToolCapabilities(ownerId, 'overwrite');
     await applyManifest(ownerId, { only: [], mode: 'gap-fill', skillMode: 'overwrite' });
     const granted = await grantPersonaGroupsByRole(ownerId);
+    const provisioned = await provisionMissingSpecialists(ownerId);
     await updateProfilePreferences(ownerId, { lastReconciledVersion: APP_VERSION });
 
     console.log(
       `[reconcile] synced manifest to v${APP_VERSION}` +
-        (granted.length ? `; granted ${granted.join('; ')}` : ' (grants already current)'),
+        (granted.length ? `; granted ${granted.join('; ')}` : ' (grants already current)') +
+        (provisioned.length ? `; provisioned ${provisioned.join(', ')}` : ''),
     );
   } catch (err) {
     // Best-effort: a reconcile failure must never take the server down.

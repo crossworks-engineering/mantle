@@ -36,6 +36,7 @@ export const nodeType = pgEnum('node_type', [
   'documentation',
   'lifelog',
   'location',
+  'app',
 ]);
 
 export const nodes = pgTable(

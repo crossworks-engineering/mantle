@@ -75,6 +75,9 @@ export type ProfilePreferences = {
    *  the route falls back to the default `tables` (Ledger) specialist. Configured
    *  on the /tables surface itself (the Assist panel agent picker). */
   tablesAssistAgentSlug?: string;
+  /** Slug of the agent the `/apps` editor "Assist" panel delegates to. Unset →
+   *  the default `appsmith` specialist. Configured on the /apps surface. */
+  appsAssistAgentSlug?: string;
   /** Slug of the agent the API Console (/dev-tools) "Assist" panel delegates
    *  to. Unset → the default `toolsmith` specialist. */
   devToolsAssistAgentSlug?: string;
@@ -182,6 +185,10 @@ export async function loadProfilePreferences(
     tablesAssistAgentSlug:
       typeof prefs.tablesAssistAgentSlug === 'string' && prefs.tablesAssistAgentSlug.length > 0
         ? prefs.tablesAssistAgentSlug
+        : undefined,
+    appsAssistAgentSlug:
+      typeof prefs.appsAssistAgentSlug === 'string' && prefs.appsAssistAgentSlug.length > 0
+        ? prefs.appsAssistAgentSlug
         : undefined,
     devToolsAssistAgentSlug:
       typeof prefs.devToolsAssistAgentSlug === 'string' && prefs.devToolsAssistAgentSlug.length > 0
@@ -324,6 +331,7 @@ export async function updateProfilePreferences(
     onboardingStep: merged.onboardingStep || undefined,
     pagesAssistAgentSlug: merged.pagesAssistAgentSlug || undefined,
     tablesAssistAgentSlug: merged.tablesAssistAgentSlug || undefined,
+    appsAssistAgentSlug: merged.appsAssistAgentSlug || undefined,
     devToolsAssistAgentSlug: merged.devToolsAssistAgentSlug || undefined,
     toolsmithRequireApproval: merged.toolsmithRequireApproval === true,
     heartbeatEgressGate: merged.heartbeatEgressGate === true,

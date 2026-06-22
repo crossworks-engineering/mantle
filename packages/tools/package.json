@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@mantle/api-keys": "workspace:*",
+    "@mantle/app-build": "workspace:*",
     "@mantle/content": "workspace:*",
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
@@ -20,6 +21,7 @@
     "@mantle/embeddings": "workspace:*",
     "@mantle/files": "workspace:*",
     "@mantle/search": "workspace:*",
+    "@mantle/storage": "workspace:*",
     "@mantle/telegram": "workspace:*",
     "@mantle/tracing": "workspace:*",
     "@mantle/voice": "workspace:*",

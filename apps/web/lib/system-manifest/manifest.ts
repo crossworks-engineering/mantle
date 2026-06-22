@@ -26,6 +26,7 @@
 import {
   BUILTIN_TOOLS,
   PAGE_TOOL_SLUGS,
+  APP_TOOL_SLUGS,
   TABLE_TOOL_SLUGS,
   CONTACT_AUTO_GRANT_SLUGS,
   LIFELOG_AUTO_GRANT_SLUGS,
@@ -96,10 +97,13 @@ export type ManifestAgent = {
   toolGroupSlugs?: string[];
   /** Does the persona delegate TO this agent (invoke_agent allowlist)? */
   isDelegate?: boolean;
-  /** Binds an in-surface "Assist" panel (/pages, /tables, /dev-tools) to this agent. */
-  assistSurface?: 'pages' | 'tables' | 'dev-tools';
+  /** Binds an in-surface "Assist" panel (/pages, /tables, /apps, /dev-tools) to this agent. */
+  assistSurface?: 'pages' | 'tables' | 'apps' | 'dev-tools';
   params: { temperature: number; max_tokens?: number };
-  memoryConfig?: { max_iterations?: number };
+  /** Persisted verbatim to agents.memory_config. `delegate_to` lets a SPECIALIST
+   *  delegate to another specialist (wireDelegation only wires the persona) —
+   *  e.g. Appsmith → toolsmith for data-tool authoring. */
+  memoryConfig?: { max_iterations?: number; delegate_to?: string[] };
   priority: number;
 };
 
@@ -127,6 +131,12 @@ const PAGE_AUTHORING_TOOL_SLUGS = PAGE_TOOL_SLUGS.filter(
 /** Table authoring set: every table tool except the whole-table delete (that
  *  rides `table-admin`). Row/column deletes stay — they're routine grid editing. */
 const TABLE_AUTHORING_TOOL_SLUGS = TABLE_TOOL_SLUGS.filter((s) => s !== 'table_delete');
+/** App authoring set for the `apps` group: every app tool except whole-app
+ *  delete + publish (those ride the `app-admin` group, the Appsmith specialist
+ *  only). No overlap between `apps` and `app-admin`. */
+const APP_AUTHORING_TOOL_SLUGS = APP_TOOL_SLUGS.filter(
+  (s) => !['app_delete', 'app_publish'].includes(s),
+);
 
 // ── Skills ───────────────────────────────────────────────────────────────────
 
@@ -162,6 +172,12 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     instructions: SKILL_INSTRUCTIONS['table_authoring']!,
   },
   {
+    slug: 'app_authoring',
+    name: 'App authoring',
+    description: 'The mini-app sandbox contract: allowed imports, the host bridge, sqlite, draft→build→publish.',
+    instructions: SKILL_INSTRUCTIONS['app_authoring']!,
+  },
+  {
     slug: 'mantle-ops',
     name: 'Mantle ops',
     description: 'How Mantle works + the operating workflow (for the coder agent).',
@@ -178,6 +194,12 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     name: 'Navigation',
     description: 'Find a route to a place, plot it on an inline map, and give a short driving/walking overview (not live turn-by-turn).',
     instructions: SKILL_INSTRUCTIONS['navigation']!,
+  },
+  {
+    slug: 'integrations',
+    name: 'Integrations',
+    description: 'Recognise "add/connect an API or service" requests and delegate them to the Toolsmith specialist to build, test, and grant.',
+    instructions: SKILL_INSTRUCTIONS['integrations']!,
   },
 ];
 
@@ -370,6 +392,19 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['page_share', 'page_unshare'],
   },
   {
+    slug: 'apps',
+    name: 'Apps toolkit',
+    description:
+      'Author + build mini apps: source files, esbuild, declared api_tools + sqlite schema (authoring subset; excludes whole-app delete + publish).',
+    toolSlugs: [...APP_AUTHORING_TOOL_SLUGS],
+  },
+  {
+    slug: 'app-admin',
+    name: 'App admin',
+    description: 'Destructive + go-live app ops (delete, publish) — the Appsmith specialist only.',
+    toolSlugs: ['app_delete', 'app_publish'],
+  },
+  {
     slug: 'tables',
     name: 'Tables toolkit',
     description:
@@ -557,7 +592,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'location',
       'profile',
     ],
-    skillSlugs: ['tool_grounding', 'voice_reply', 'rich_writing', 'location_awareness', 'navigation'],
+    skillSlugs: ['tool_grounding', 'voice_reply', 'rich_writing', 'location_awareness', 'navigation', 'integrations'],
     params: { temperature: 0.7, max_tokens: 16000 },
     priority: 100,
   },
@@ -665,6 +700,28 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     params: { temperature: 0.2 },
     priority: 100,
   },
+  {
+    slug: 'appsmith',
+    name: 'Appsmith',
+    description:
+      'Mini-app builder — writes real TSX against the app\'s shadcn UI + theme, bundles with esbuild, renders in a sandbox; backs the /apps Assist panel.',
+    role: 'custom',
+    model: 'anthropic/claude-opus-4.8',
+    envModelVar: 'APPSMITH_MODEL',
+    systemPrompt: AGENT_PROMPTS['appsmith']!,
+    // `apps` (authoring) + `app-admin` (delete/publish) reassemble the full
+    // APP_TOOL_SLUGS set; `files`/`memory-core` for source reads + lookups;
+    // `delegation` so it can hand data-tool work to the toolsmith.
+    toolGroupSlugs: ['apps', 'app-admin', 'files', 'memory-core', 'delegation'],
+    skillSlugs: ['app_authoring'],
+    isDelegate: true,
+    assistSurface: 'apps',
+    params: { temperature: 0.2, max_tokens: 32000 },
+    // Codegen → build → read-errors → fix loops chew iterations. delegate_to
+    // toolsmith: Appsmith doesn't author HTTP tools, it delegates that.
+    memoryConfig: { max_iterations: 30, delegate_to: ['toolsmith'] },
+    priority: 100,
+  },
 ];
 
 // ── Workers ──────────────────────────────────────────────────────────────────
@@ -700,10 +757,10 @@ export const DELEGATE_SLUGS: readonly string[] = MANIFEST_AGENTS.filter((a) => a
 );
 
 /** surface → default specialist slug, for the in-surface Assist panels. */
-export const ASSIST_SURFACE_DEFAULTS: Record<'pages' | 'tables' | 'dev-tools', string> =
+export const ASSIST_SURFACE_DEFAULTS: Record<'pages' | 'tables' | 'apps' | 'dev-tools', string> =
   Object.fromEntries(
     MANIFEST_AGENTS.filter((a) => a.assistSurface).map((a) => [a.assistSurface!, a.slug]),
-  ) as Record<'pages' | 'tables' | 'dev-tools', string>;
+  ) as Record<'pages' | 'tables' | 'apps' | 'dev-tools', string>;
 
 /**
  * Tool slugs that exist as real handlers but are registered OUTSIDE the static

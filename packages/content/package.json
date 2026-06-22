@@ -17,6 +17,7 @@
     "./peers": "./src/peers.ts",
     "./peers-crypto": "./src/peers-crypto.ts",
     "./pages": "./src/pages.ts",
+    "./app-broker": "./src/app-broker.ts",
     "./tables": "./src/tables.ts",
     "./table-model": "./src/table-model.ts",
     "./table-to-text": "./src/table-to-text.ts",

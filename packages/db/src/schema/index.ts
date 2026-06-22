@@ -8,6 +8,8 @@ export * from './nodes';
 export * from './emails';
 export * from './secrets';
 export * from './pages';
+export * from './apps';
+export * from './app-databases';
 export * from './tables';
 export * from './doc-collections';
 export * from './shares';

@@ -46,6 +46,7 @@ const nextConfig: NextConfig = {
   transpilePackages: [
     '@mantle/agent-runtime',
     '@mantle/api-keys',
+    '@mantle/app-build',
     '@mantle/crypto',
     '@mantle/db',
     '@mantle/email',
@@ -87,6 +88,11 @@ const nextConfig: NextConfig = {
     // Server-only; pulls optional per-OS native temp-sensor modules — externalize
     // so webpack doesn't try to bundle them (they're require()d at runtime).
     'systeminformation',
+    // /apps build pipeline: esbuild ships a platform binary, server-only and
+    // reached THROUGH a transpiled workspace package (@mantle/app-build), so it
+    // also needs the webpack externals hook below for the production build.
+    // (Per-app SQLite uses the built-in `node:sqlite` — no extra dep.)
+    'esbuild',
   ],
   // Externalize `@napi-rs/canvas` for the PRODUCTION server build (webpack).
   // `serverExternalPackages` alone doesn't externalize it when it's reached
@@ -110,6 +116,10 @@ const nextConfig: NextConfig = {
               callback: (err?: null, result?: string) => void,
             ) => {
               if (request && (request === '@napi-rs/canvas' || request.startsWith('@napi-rs/canvas-'))) {
+                return callback(null, `commonjs ${request}`);
+              }
+              // /apps build pipeline native (see serverExternalPackages note).
+              if (request && request === 'esbuild') {
                 return callback(null, `commonjs ${request}`);
               }
               callback();

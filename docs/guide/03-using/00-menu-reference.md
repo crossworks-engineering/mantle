@@ -17,6 +17,7 @@ not a click-by-click tour.
 | **Pages** | Rich, Notion-style documents (headings, callouts, tables, columns, to-dos). For real writing. See [Pages, Tables, Notes & Docs](04-pages-tables-notes-docs.md). |
 | **Docs** | Read and navigate all documentation straight from disk (works even without indexing), and manage which collections are indexed for the assistant. Includes this User Guide. |
 | **Tables** | Typed data grids (like a lightweight Airtable): columns, formulas, totals, import from spreadsheets. |
+| **Apps** | Build small interactive mini apps by describing them — the Appsmith agent writes the code, which runs sandboxed inside Mantle, themed to match. See [Apps](06-apps.md). |
 | **Todos** | Tasks with status, priority, and due dates. |
 | **Events** | Calendar events with reminders that ping you on Telegram. Supports recurring events. |
 | **Contacts** | People you know — name, company, one or more emails (or `@domain` wildcards), phone, and an AI-facing description. The allowlist for email in **both** directions: whose mail is ingested *and* who the assistant may email. See [Contacts](05-todos-events-contacts-secrets.md). |
