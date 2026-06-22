@@ -11,7 +11,7 @@
  * NOT re-exported from the package index — import via '@mantle/content/app-broker'
  * so it stays out of client/edge bundles.
  */
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, rm, stat } from 'node:fs/promises';
 import * as path from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes, appDatabases } from '@mantle/db';
@@ -39,7 +39,13 @@ async function openSqlite(file: string): Promise<SqliteDb> {
   const mod = (await import('node:sqlite')) as unknown as {
     DatabaseSync: new (p: string) => SqliteDb;
   };
-  return new mod.DatabaseSync(file);
+  const handle = new mod.DatabaseSync(file);
+  // We open/close a handle per request, so two concurrent calls to the same app
+  // can collide on the write lock. Wait up to 5s for the lock instead of failing
+  // immediately with SQLITE_BUSY. (Server-side PRAGMA — not app-supplied SQL, so
+  // it bypasses the broker's assertSafe guard by design.)
+  handle.exec('PRAGMA busy_timeout = 5000');
+  return handle;
 }
 
 /** Statements an app must not run through the broker (file/engine escapes). */
@@ -159,12 +165,25 @@ export async function appDbExec(
   assertSafe(sql);
   const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
   const handle = await openSqlite(reg.storagePath);
+  let res: DbExecResult;
   try {
     const r = handle.prepare(sql).run(...params);
-    return { changes: Number(r.changes), lastInsertRowid: Number(r.lastInsertRowid) };
+    res = { changes: Number(r.changes), lastInsertRowid: Number(r.lastInsertRowid) };
   } finally {
     handle.close();
   }
+  // Best-effort: keep the registry's size_bytes truthful after a write (a write
+  // is the only thing that grows the file). Never fail the exec over this.
+  try {
+    const { size } = await stat(reg.storagePath);
+    await db
+      .update(appDatabases)
+      .set({ sizeBytes: size, updatedAt: new Date() })
+      .where(eq(appDatabases.id, reg.id));
+  } catch {
+    /* size tracking is best-effort */
+  }
+  return res;
 }
 
 /** Every on-disk file SQLite may create for one database: the file itself plus
