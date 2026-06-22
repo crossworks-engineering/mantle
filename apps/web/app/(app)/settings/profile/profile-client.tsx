@@ -56,6 +56,10 @@ export function ProfileClient({
   const [reminderAgent, setReminderAgent] = useState(
     defaults.reminderAgentSlug ?? REMINDER_AUTO,
   );
+  // Effective default is 'telegram' when unset (matches the reminder worker).
+  const [reminderChannel, setReminderChannel] = useState<string>(
+    defaults.reminderChannel ?? 'telegram',
+  );
   const [avatar, setAvatar] = useState<AvatarValue | null>(
     defaults.avatarStyle ? { style: defaults.avatarStyle, seed: defaults.avatarSeed || userId } : null,
   );
@@ -175,6 +179,26 @@ export function ProfileClient({
             <code className="font-mono">5/19/2026, 5:35 PM</code>.
           </p>
         </div>
+      </section>
+
+      <section className="space-y-1.5">
+        <Label htmlFor="reminderChannel">Reminder delivery</Label>
+        <Select value={reminderChannel} onValueChange={setReminderChannel}>
+          <SelectTrigger id="reminderChannel">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="telegram">Telegram</SelectItem>
+            <SelectItem value="mobile">Mobile app</SelectItem>
+          </SelectContent>
+        </Select>
+        <input type="hidden" name="reminderChannel" value={reminderChannel} />
+        <p className="text-xs text-muted-foreground">
+          Where event reminders are delivered. This follows the last surface you
+          messaged from automatically; set it here to override until you next
+          message from the other one. A reminder set to the mobile app shows in
+          your chat and pushes to enrolled devices.
+        </p>
       </section>
 
       <section className="space-y-1.5">

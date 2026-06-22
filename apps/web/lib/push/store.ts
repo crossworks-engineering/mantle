@@ -120,24 +120,16 @@ export async function markPushed(id: string): Promise<void> {
   await db.update(pushSubscriptions).set({ lastPushAt: new Date() }).where(eq(pushSubscriptions.id, id));
 }
 
-// --- Preferences (single row; trigger toggles + quiet hours) ---
+// --- Preferences (single row; per-trigger toggles) ---
 
 export interface PushPreferences {
   assistantMessages: boolean;
   approvals: boolean;
-  quietEnabled: boolean;
-  quietStart: string; // HH:MM
-  quietEnd: string; // HH:MM
-  timezone: string; // IANA, e.g. 'Africa/Johannesburg'
 }
 
 export const DEFAULT_PUSH_PREFS: PushPreferences = {
   assistantMessages: true,
   approvals: true,
-  quietEnabled: false,
-  quietStart: '22:00',
-  quietEnd: '07:00',
-  timezone: 'UTC',
 };
 
 export async function getPushPrefs(): Promise<PushPreferences> {
@@ -146,10 +138,6 @@ export async function getPushPrefs(): Promise<PushPreferences> {
   return {
     assistantMessages: row.assistantMessages,
     approvals: row.approvals,
-    quietEnabled: row.quietEnabled,
-    quietStart: row.quietStart,
-    quietEnd: row.quietEnd,
-    timezone: row.timezone,
   };
 }
 

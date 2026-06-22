@@ -29,6 +29,7 @@ import {
   type AgentParams,
   type AssistantMessage,
   type ConversationAttachment,
+  type ConversationChannel,
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import {
@@ -53,6 +54,7 @@ import {
   buildLocationContextLine,
   buildTimeContextLine,
   loadProfilePreferences,
+  noteInboundChannel,
   applyAutoTimezone,
   type LocationPing,
 } from '@mantle/content';
@@ -184,6 +186,11 @@ export async function runAssistantTurn(
      *  the inbound row (`data.location`) and rendered into the volatile context
      *  so the agent is location-aware. Sanitized by the caller (the route). */
     location?: LocationPing;
+    /** Surface this turn arrived on — 'web' (browser) or 'mobile' (companion
+     *  app), derived from the request's auth. Tags both the inbound and outbound
+     *  rows so proactive delivery can follow the last channel used. Defaults to
+     *  'web'. */
+    channel?: ConversationChannel;
   },
 ): Promise<AssistantTurnResult> {
   const trimmed = text.trim();
@@ -232,15 +239,21 @@ export async function runAssistantTurn(
           },
         ]
       : [];
+  const channel: ConversationChannel = options?.channel ?? 'web';
   const inbound = await recordTurn({
     ownerId,
     agentId: agent.id,
     direction: 'inbound',
     text: displayText,
-    channel: 'web',
+    channel,
     attachments: inboundAttachments,
     ...(options?.location ? { data: { location: options.location } } : {}),
   });
+  // Remember the surface this turn came in on so proactive delivery (reminders)
+  // follows the last channel the user actually used. Best-effort — a failure
+  // here must never sink the turn. Only mobile/telegram are reminder-capable;
+  // noteInboundChannel no-ops for web (a browser can't receive a push).
+  void noteInboundChannel(ownerId, channel);
 
   const attachedSkills = await resolveAgentSkills(ownerId, agent.skillSlugs ?? []);
   // Current-time / timezone / locale context so the assistant can resolve
@@ -556,7 +569,7 @@ export async function runAssistantTurn(
     agentId: agent.id,
     direction: 'outbound',
     text: reply,
-    channel: 'web',
+    channel,
     model: agent.model,
   });
 

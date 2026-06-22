@@ -6,8 +6,15 @@ import { nodes } from './nodes';
 /** Which transport a conversation turn arrived/left on. The conversation
  *  itself is per (owner, agent); the channel is just provenance + the hint
  *  for which transport sends an outbound reply. New channels (whatsapp, …)
- *  extend this union — see docs/conversation.md. */
-export type ConversationChannel = 'web' | 'telegram' | 'whatsapp';
+ *  extend this union — see docs/conversation.md.
+ *
+ *  'web' vs 'mobile': both are the same HTTP surface (`/api/assistant/turn`),
+ *  distinguished by auth — a session cookie is 'web' (browser), a mobile
+ *  bearer token is 'mobile' (the companion app). The split lets proactive
+ *  delivery (reminders) follow the last channel the user actually used; a
+ *  browser can't receive an out-of-band push, the app can. See
+ *  docs/reminder-delivery-routing.md. */
+export type ConversationChannel = 'web' | 'telegram' | 'whatsapp' | 'mobile';
 
 /** A media payload attached to a turn. Maps onto the `/assistant`
  *  ArtifactView render shape (audio → player, image → preview). `nodeId`

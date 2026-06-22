@@ -276,11 +276,14 @@ export {
   DEFAULT_PREFERENCES,
   loadProfilePreferences,
   updateProfilePreferences,
+  noteInboundChannel,
   isValidTimezone,
   isValidLocale,
+  isReminderChannel,
   formatInProfile,
   buildTimeContextLine,
   type ProfilePreferences,
+  type ReminderChannel,
 } from './profile-preferences';
 
 export {

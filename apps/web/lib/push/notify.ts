@@ -1,15 +1,15 @@
 // The send path: given an outbound conversation turn (or a pending approval),
 // seal a teaser to each of the owner's devices and hand it to the relay —
-// gated by the owner's per-trigger toggles + quiet hours (push-notifications.md
-// §10). Pure server logic, shared by the push-notify worker. Content never
-// leaves here unsealed.
+// gated by the owner's per-trigger toggles (push-notifications.md §10). Quiet
+// hours were removed (docs/reminder-delivery-routing.md §C); OS-level Do Not
+// Disturb handles night muting. Pure server logic, shared by the push-notify
+// worker. Content never leaves here unsealed.
 
 import { and, desc, eq } from 'drizzle-orm';
 import { db, agents, assistantMessages } from '@mantle/db';
 import { countPending } from '@mantle/tools';
 import { sealToDevice } from './seal';
 import { relayNotify } from './relay-client';
-import { isQuietNow } from './quiet-hours';
 import {
   deleteSubscriptionByRoutingToken,
   getPushInstance,
@@ -34,7 +34,7 @@ export interface PushResult {
   attempted: number;
   delivered: number;
   dropped: number; // unregistered devices removed
-  skipped?: 'not_connected' | 'no_devices' | 'no_message' | 'disabled' | 'quiet_hours';
+  skipped?: 'not_connected' | 'no_devices' | 'no_message' | 'disabled';
 }
 
 function teaser(text: string, max = 140): string {
@@ -104,7 +104,7 @@ async function sendToDevices(
 
 /**
  * Push the latest outbound turn for {ownerId, agentSlug} to every enrolled
- * device — unless the assistant-messages trigger is off or it's quiet hours.
+ * device — unless the assistant-messages trigger is off.
  */
 export async function pushOutbound(ownerId: string, agentSlug: string): Promise<PushResult> {
   const instance = await getPushInstance();
@@ -112,7 +112,6 @@ export async function pushOutbound(ownerId: string, agentSlug: string): Promise<
 
   const prefs = await getPushPrefs();
   if (!prefs.assistantMessages) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'disabled' };
-  if (isQuietNow(prefs)) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'quiet_hours' };
 
   const devices = await listSubscriptions(ownerId);
   if (devices.length === 0) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_devices' };
@@ -134,8 +133,7 @@ export async function pushOutbound(ownerId: string, agentSlug: string): Promise<
 
 /**
  * Push a pending-approval nudge to the owner's devices — unless the approvals
- * trigger is off or it's quiet hours. Collapses on "approvals" so repeated
- * nudges supersede.
+ * trigger is off. Collapses on "approvals" so repeated nudges supersede.
  */
 export async function pushApproval(ownerId: string): Promise<PushResult> {
   const instance = await getPushInstance();
@@ -143,7 +141,6 @@ export async function pushApproval(ownerId: string): Promise<PushResult> {
 
   const prefs = await getPushPrefs();
   if (!prefs.approvals) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'disabled' };
-  if (isQuietNow(prefs)) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'quiet_hours' };
 
   const devices = await listSubscriptions(ownerId);
   if (devices.length === 0) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_devices' };

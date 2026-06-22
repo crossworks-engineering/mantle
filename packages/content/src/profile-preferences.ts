@@ -18,7 +18,11 @@
  */
 
 import { eq, sql } from 'drizzle-orm';
-import { db, profiles } from '@mantle/db';
+import { db, profiles, type ConversationChannel } from '@mantle/db';
+
+/** Transports that can deliver a reminder out-of-band. A browser ('web') can't
+ *  receive a push, so it never becomes a reminder target. */
+export type ReminderChannel = 'telegram' | 'mobile';
 
 export type ProfilePreferences = {
   /** IANA timezone, e.g. 'Africa/Johannesburg'. UTC when not set. */
@@ -46,6 +50,13 @@ export type ProfilePreferences = {
    *  persona, e.g. 'telegram-default' (Saskia), so they don't come from
    *  whichever bot happened to be most recent. */
   reminderAgentSlug?: string;
+  /** Where event reminders are delivered: 'telegram' (a bot DM) or 'mobile' (a
+   *  push to the companion app). Auto-tracked — it follows the last channel the
+   *  user actually messaged on (see noteInboundChannel), and can be set manually
+   *  from the profile; a manual choice holds until the next message on the other
+   *  channel supersedes it. Unset ⇒ the reminder worker defaults to 'telegram'
+   *  (backward-compatible). See docs/reminder-delivery-routing.md. */
+  reminderChannel?: ReminderChannel;
   /** What the user likes to be called (captured during onboarding). Cosmetic —
    *  the assistant's real knowledge of the user comes from the Life Log identity
    *  block; this is for greetings/UI. */
@@ -149,6 +160,9 @@ export async function loadProfilePreferences(
       typeof prefs.reminderAgentSlug === 'string' && prefs.reminderAgentSlug.length > 0
         ? prefs.reminderAgentSlug
         : undefined,
+    reminderChannel: isReminderChannel(prefs.reminderChannel)
+      ? prefs.reminderChannel
+      : undefined,
     displayName:
       typeof prefs.displayName === 'string' && prefs.displayName.length > 0
         ? prefs.displayName
@@ -205,6 +219,57 @@ export function isValidLocale(loc: string): boolean {
   }
 }
 
+/** Narrow an unknown value to a deliverable ReminderChannel. */
+export function isReminderChannel(v: unknown): v is ReminderChannel {
+  return v === 'telegram' || v === 'mobile';
+}
+
+/**
+ * Record the channel an inbound turn arrived on as the user's reminder
+ * destination, so proactive delivery follows the surface they last used. Only
+ * reminder-capable channels stick: 'telegram' and 'mobile'. 'web' (browser) and
+ * any other channel are ignored — a browser can't receive an out-of-band push,
+ * so using it must not steal the reminder target away from the phone.
+ *
+ * Best-effort and idempotent: the write is gated to only fire when the value
+ * actually changes (no per-turn churn), and upserts so a brand-new user's first
+ * message still lands. Callers invoke it fire-and-forget (`void`) — a failure
+ * here must never break the turn.
+ */
+export async function noteInboundChannel(
+  userId: string,
+  channel: ConversationChannel,
+): Promise<void> {
+  if (!isReminderChannel(channel)) return;
+  const merge = JSON.stringify({ reminderChannel: channel });
+  try {
+    await db
+      .insert(profiles)
+      .values({
+        userId,
+        preferences: { ...DEFAULT_PREFERENCES, reminderChannel: channel } as unknown as Record<
+          string,
+          unknown
+        >,
+      })
+      .onConflictDoUpdate({
+        target: profiles.userId,
+        set: {
+          preferences: sql`${profiles.preferences} || ${merge}::jsonb`,
+          updatedAt: new Date(),
+        },
+        // Skip the write when it's already this channel — avoids bumping
+        // updatedAt on every turn from the same surface.
+        setWhere: sql`coalesce(${profiles.preferences}->>'reminderChannel', '') <> ${channel}`,
+      });
+  } catch (err) {
+    console.error(
+      '[profile] noteInboundChannel failed:',
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
 /** Persist new preferences. Merges into the existing jsonb so future
  *  keys aren't wiped by an older-client write. Validates tz + locale
  *  before touching the DB so a typo doesn't store and then break
@@ -222,6 +287,9 @@ export async function updateProfilePreferences(
     throw new Error(
       `'${patch.locale}' is not a recognised BCP-47 locale. Try e.g. 'en-GB' or 'en-US'.`,
     );
+  }
+  if (patch.reminderChannel != null && !isReminderChannel(patch.reminderChannel)) {
+    throw new Error(`'${patch.reminderChannel}' is not a valid reminder channel ('telegram' | 'mobile').`);
   }
 
   const merge = JSON.stringify(patch);
@@ -250,6 +318,7 @@ export async function updateProfilePreferences(
     avatarStyle: merged.avatarStyle || undefined,
     avatarSeed: merged.avatarSeed || undefined,
     reminderAgentSlug: merged.reminderAgentSlug || undefined,
+    reminderChannel: isReminderChannel(merged.reminderChannel) ? merged.reminderChannel : undefined,
     displayName: merged.displayName || undefined,
     onboardedAt: merged.onboardedAt || undefined,
     onboardingStep: merged.onboardingStep || undefined,

@@ -60,8 +60,10 @@ export type NewPushSubscription = typeof pushSubscriptions.$inferInsert;
 
 /**
  * `push_prefs` — single-row notification preferences (push-notifications.md §10).
- * Per-trigger toggles + quiet hours, enforced Mantle-side by the send-worker
- * before it calls the relay. `quiet_start`/`quiet_end` are `HH:MM` in `timezone`.
+ * Per-trigger toggles, enforced Mantle-side by the send-worker before it calls
+ * the relay. Quiet hours were removed (docs/reminder-delivery-routing.md §C) —
+ * OS-level Do Not Disturb covers night-time muting for a mobile app, so the
+ * `quiet_*` + `timezone` columns are gone.
  */
 export const pushPrefs = pgTable(
   'push_prefs',
@@ -71,10 +73,6 @@ export const pushPrefs = pgTable(
     assistantMessages: boolean('assistant_messages').notNull().default(true),
     /** Push when a tool call needs approval. */
     approvals: boolean('approvals').notNull().default(true),
-    quietEnabled: boolean('quiet_enabled').notNull().default(false),
-    quietStart: text('quiet_start').notNull().default('22:00'),
-    quietEnd: text('quiet_end').notNull().default('07:00'),
-    timezone: text('timezone').notNull().default('UTC'),
     singleton: boolean('singleton').notNull().default(true),
   },
   (t) => [uniqueIndex('push_prefs_singleton_uq').on(t.singleton)],

@@ -666,6 +666,13 @@
       "when": 1782950400000,
       "tag": "0094_node_type_location",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1783036800000,
+      "tag": "0095_drop_push_quiet_hours",
+      "breakpoints": true
     }
   ]
 }

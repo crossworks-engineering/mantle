@@ -41,6 +41,7 @@ import {
   buildIdentityContext,
   buildTimeContextLine,
   loadProfilePreferences,
+  noteInboundChannel,
 } from '@mantle/content';
 import { ensureDatedUploadFolder, upsertFile } from '@mantle/files';
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
@@ -663,6 +664,10 @@ async function handleMessage(messageId: string): Promise<void> {
             ...(row.telegramMessageId ? { messageId: row.telegramMessageId } : {}),
           },
         });
+        // Telegram is reminder-capable, so messaging a bot makes Telegram the
+        // reminder destination (until the user next messages from the app).
+        // Best-effort — must never break the inbound. See reminder-delivery-routing.md.
+        void noteInboundChannel(USER_ID!, 'telegram');
 
         const { personaNotes, facts: relevantFacts, digests, contentHits, chunkHits, relations, history } =
           await step(

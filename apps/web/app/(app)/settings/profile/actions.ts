@@ -9,7 +9,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { requireOwner } from '@/lib/auth';
-import { updateProfilePreferences } from '@mantle/content';
+import { isReminderChannel, updateProfilePreferences } from '@mantle/content';
 
 export async function updatePreferencesAction(formData: FormData): Promise<void> {
   const user = await requireOwner();
@@ -22,6 +22,9 @@ export async function updatePreferencesAction(formData: FormData): Promise<void>
   const avatarSeed = String(formData.get('avatarSeed') ?? '').trim();
   // Empty string = "most recent chat" (unset); the loader treats '' as undefined.
   const reminderAgentSlug = String(formData.get('reminderAgentSlug') ?? '').trim();
+  // Manual override for where reminders go; the select only offers valid values,
+  // so guard and only set when recognised (an unexpected value won't throw the save).
+  const reminderChannel = String(formData.get('reminderChannel') ?? '').trim();
   if (!timezone && !locale) {
     throw new Error('Set timezone or locale (or both) before saving.');
   }
@@ -31,6 +34,7 @@ export async function updatePreferencesAction(formData: FormData): Promise<void>
     avatarStyle,
     avatarSeed,
     reminderAgentSlug,
+    ...(isReminderChannel(reminderChannel) ? { reminderChannel } : {}),
   });
   // Lots of pages render dates — refresh the cache so the new
   // timezone takes effect immediately on next nav rather than after

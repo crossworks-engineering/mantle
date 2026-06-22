@@ -3,20 +3,28 @@
  *
  *   1. For each owner with at least one event, find rows where
  *      remind_at <= now() AND reminder_sent_at IS NULL.
- *   2. Resolve the owner's reminder target = the most-recent DM
- *      that's been allow-listed (telegram_chats.allowlist_status='allowed',
- *      chat_type='private', ordered by last_message_at desc).
- *   3. Send a Telegram message via the account that owns that chat.
- *   4. Mark reminder_sent_at so we don't re-fire on the next tick.
+ *   2. Deliver each reminder on the owner's reminder channel (profile pref
+ *      `reminderChannel`, which auto-follows the surface they last messaged on —
+ *      see noteInboundChannel; defaults to 'telegram'):
+ *        - 'telegram' → send via the most-recent allow-listed private DM
+ *          (telegram_chats, ordered by last_message_at desc), optionally pinned
+ *          to a persona via `reminderAgentSlug`.
+ *        - 'mobile'   → record an OUTBOUND assistant turn (channel='mobile')
+ *          attributed to the owner's reminder/default agent. That turn lands in
+ *          the unified conversation stream (the companion app shows it) AND fires
+ *          conversation_changed → push-notify worker → a sealed push to enrolled
+ *          devices. The recorded turn IS the delivery; no enrolled device is
+ *          required for the reminder to reach the app's thread.
+ *   3. Mark reminder_sent_at (or roll a recurrence forward) so we don't re-fire.
  *
- * Idempotent: even if the worker restarts mid-batch, the worst case is
- * a duplicate send (we mark sent AFTER the Telegram API call). Single-
- * user system, fine.
+ * Idempotent: even if the worker restarts mid-batch, the worst case is a
+ * duplicate (we mark sent AFTER the send/record). Single-user system, fine.
  *
- * If no allowed DM exists for the owner, we LEAVE reminder_sent_at null
- * and log — the next tick will retry once the user pairs a chat.
+ * If the telegram channel has no allowed DM, we LEAVE reminder_sent_at null and
+ * log — the next tick retries once the user pairs a chat. See
+ * docs/reminder-delivery-routing.md.
  */
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import {
   db,
   agents,
@@ -26,8 +34,10 @@ import {
   type TelegramAccount,
 } from '@mantle/db';
 import { sendMessage } from '@mantle/telegram';
+import { recordTurn } from '@mantle/agent-runtime';
 import { loadProfilePreferences, maybeRunScheduledBackups } from '@mantle/content';
 import { maybeSweep } from '@mantle/tools';
+import { pickWebDefaultAgent } from '../lib/assistant-select';
 import {
   listDueReminders,
   markReminderSent,
@@ -35,6 +45,10 @@ import {
   ownersWithEvents,
   type EventRow,
 } from '../lib/events';
+
+/** Chat-capable roles a reminder can be attributed to when delivering to the
+ *  app (mirrors resolveAssistantAgent's candidate set). */
+const CHATTABLE_ROLES = ['assistant', 'responder', 'custom'] as const;
 
 const TICK_MS = 30_000;
 
@@ -120,6 +134,59 @@ function formatReminder(e: EventRow): string {
   return lines.join('\n');
 }
 
+type ReminderAgent = { id: string; slug: string };
+
+/** Which agent a mobile reminder is attributed to: the pinned `reminderAgentSlug`
+ *  persona when set + enabled, else the owner's web-default agent. Returns null
+ *  when the owner has no enabled chat-capable agent at all (can't record a turn
+ *  without one). Mirrors resolveAssistantAgent (assistant.ts) but kept local +
+ *  lightweight so the worker doesn't pull the whole responder graph. */
+async function resolveReminderAgent(
+  ownerId: string,
+  preferredSlug?: string,
+): Promise<ReminderAgent | null> {
+  if (preferredSlug) {
+    const [picked] = await db
+      .select({ id: agents.id, slug: agents.slug })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.ownerId, ownerId),
+          eq(agents.slug, preferredSlug),
+          eq(agents.enabled, true),
+        ),
+      )
+      .limit(1);
+    if (picked) return picked;
+    console.warn(
+      `[events-reminders] reminder agent '${preferredSlug}' not found/enabled; using the web-default agent.`,
+    );
+  }
+  const candidates = await db
+    .select({ id: agents.id, slug: agents.slug, role: agents.role, priority: agents.priority })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.ownerId, ownerId),
+        eq(agents.enabled, true),
+        inArray(agents.role, [...CHATTABLE_ROLES]),
+      ),
+    );
+  const pick = pickWebDefaultAgent(candidates);
+  return pick ? { id: pick.id, slug: pick.slug } : null;
+}
+
+/** Recurring events roll their single row forward to the next occurrence
+ *  (re-arming the reminder); one-shots just get marked sent. Call AFTER a
+ *  successful delivery so a failed send retries next tick. */
+async function markReminderDone(evt: EventRow): Promise<void> {
+  if (evt.recur !== 'none') {
+    await rollForwardRecurrence(evt.id);
+  } else {
+    await markReminderSent(evt.id);
+  }
+}
+
 async function tick(): Promise<void> {
   // Piggyback the periodic tick to sweep expired tool-result spills. Shares an
   // hourly throttle with the opportunistic spill-path sweep, so this runs even
@@ -133,6 +200,45 @@ async function tick(): Promise<void> {
     const due = await listDueReminders(ownerId, 50);
     if (due.length === 0) continue;
     const prefs = await loadProfilePreferences(ownerId);
+
+    // 'mobile' → deliver to the companion app by recording an outbound turn;
+    // anything else (incl. the default/unset) → Telegram. reminderChannel
+    // auto-follows the last surface the user messaged on (noteInboundChannel).
+    if (prefs.reminderChannel === 'mobile') {
+      const agent = await resolveReminderAgent(ownerId, prefs.reminderAgentSlug);
+      if (!agent) {
+        console.warn(
+          `[events-reminders] ${due.length} reminders due for owner ${ownerId} (mobile), but no enabled chat agent to attribute them to. Skipping.`,
+        );
+        continue;
+      }
+      for (const evt of due) {
+        try {
+          // The recorded turn IS the delivery: it lands in the unified stream
+          // (the app shows it) and fires conversation_changed → push-notify →
+          // a sealed push to enrolled devices. No device required for it to
+          // reach the thread, so we mark done unconditionally on success.
+          await recordTurn({
+            ownerId,
+            agentId: agent.id,
+            direction: 'outbound',
+            text: formatReminder(evt),
+            channel: 'mobile',
+          });
+          await markReminderDone(evt);
+          console.log(
+            `[events-reminders] recorded mobile reminder for "${evt.title}"` +
+              (evt.recur !== 'none' ? ` (repeats ${evt.recur}, rolled forward)` : '') +
+              ` → agent ${agent.slug}`,
+          );
+        } catch (err) {
+          console.error(`[events-reminders] failed mobile reminder for ${evt.id}:`, err);
+          // Leave reminder_sent_at null so we retry next tick.
+        }
+      }
+      continue;
+    }
+
     const target = await findReminderChat(ownerId, prefs.reminderAgentSlug);
     if (!target) {
       console.warn(
@@ -143,14 +249,7 @@ async function tick(): Promise<void> {
     for (const evt of due) {
       try {
         await sendMessage(target.account, target.telegramChatId, formatReminder(evt));
-        // Recurring events roll their single row forward to the next
-        // occurrence (re-arming the reminder); one-shots just get marked
-        // sent. rollForwardRecurrence handles both, so call it always.
-        if (evt.recur !== 'none') {
-          await rollForwardRecurrence(evt.id);
-        } else {
-          await markReminderSent(evt.id);
-        }
+        await markReminderDone(evt);
         console.log(
           `[events-reminders] sent reminder for "${evt.title}"` +
             (evt.recur !== 'none' ? ` (repeats ${evt.recur}, rolled forward)` : '') +

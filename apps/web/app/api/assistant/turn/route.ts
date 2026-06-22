@@ -21,7 +21,7 @@
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { requireOwnerWithSource } from '@/lib/auth';
 import { runAssistantTurn } from '@/lib/assistant';
 import { sanitizeLocationPing, type LocationPing } from '@mantle/content';
 import { extractAttachmentForTurn } from '@mantle/agent-runtime';
@@ -199,9 +199,10 @@ export async function POST(req: Request): Promise<NextResponse> {
 }
 
 async function runTurn(req: Request): Promise<TurnResult> {
-  // requireOwner() before the try so an auth redirect propagates rather than
-  // being swallowed as a 500. (The route is also gated by middleware.)
-  const user = await requireOwner();
+  // requireOwnerWithSource() before the try so an auth redirect propagates
+  // rather than being swallowed as a 500. (The route is also gated by
+  // middleware.) `source` tags the turn 'web' (browser) vs 'mobile' (companion).
+  const { user, source } = await requireOwnerWithSource();
   const contentType = req.headers.get('content-type') ?? '';
 
   let userText = '';
@@ -272,6 +273,7 @@ async function runTurn(req: Request): Promise<TurnResult> {
     // The persisted inbound row shows the user's own typed text (displayText).
     const { inbound, outbound, reply, artifacts } = await runAssistantTurn(user.id, userText, {
       agentSlug,
+      channel: source,
       ...(location ? { location } : {}),
       ...(attachment
         ? {

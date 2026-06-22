@@ -21,6 +21,12 @@ const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
 
 export type SessionUser = { id: string; email: string };
 
+/** How a request authenticated: a session cookie is the web browser; a mobile
+ *  bearer token is the companion app. Maps 1:1 onto the inbound
+ *  ConversationChannel for web/mobile turns, so a reply/reminder can follow the
+ *  surface the user is actually on. See docs/reminder-delivery-routing.md. */
+export type AuthSource = 'web' | 'mobile';
+
 function secret(): Buffer {
   const s = process.env.SESSION_SECRET;
   if (!s || s.length < 32) {
@@ -163,10 +169,12 @@ async function getBearerUser(): Promise<SessionUser | null> {
 
 export { SESSION_COOKIE_NAME };
 
-/** Returns the current user, or null. Safe in Server Components.
- *  Resolves a session cookie first; falls back to a mobile bearer token so
- *  every handler that already calls this also accepts the mobile companion. */
-export async function getSessionUser(): Promise<SessionUser | null> {
+/** Resolve the current user AND how they authenticated. Cookie first ('web'),
+ *  then a mobile bearer ('mobile'). Returns null when neither resolves. The
+ *  source is what lets a turn be tagged with the right ConversationChannel. */
+export async function getSessionUserWithSource(): Promise<
+  { user: SessionUser; source: AuthSource } | null
+> {
   const c = (await cookies()).get(SESSION_COOKIE_NAME);
   if (c) {
     const data = verify(c.value);
@@ -176,11 +184,19 @@ export async function getSessionUser(): Promise<SessionUser | null> {
         .from(authUsers)
         .where(eq(authUsers.id, data.uid))
         .limit(1);
-      if (row && row.email) return { id: row.id, email: row.email };
+      if (row && row.email) return { user: { id: row.id, email: row.email }, source: 'web' };
     }
   }
   // Mobile companion: Authorization: Bearer <mobile-token>.
-  return getBearerUser();
+  const bearer = await getBearerUser();
+  return bearer ? { user: bearer, source: 'mobile' } : null;
+}
+
+/** Returns the current user, or null. Safe in Server Components.
+ *  Resolves a session cookie first; falls back to a mobile bearer token so
+ *  every handler that already calls this also accepts the mobile companion. */
+export async function getSessionUser(): Promise<SessionUser | null> {
+  return (await getSessionUserWithSource())?.user ?? null;
 }
 
 /** Gate for protected pages. Redirects to /login if no session. */
@@ -188,6 +204,14 @@ export async function requireOwner(): Promise<SessionUser> {
   const user = await getSessionUser();
   if (!user) redirect('/login');
   return user;
+}
+
+/** Like `requireOwner()` but also reports how the request authenticated, so the
+ *  caller can tag the turn's ConversationChannel ('web' vs 'mobile'). */
+export async function requireOwnerWithSource(): Promise<{ user: SessionUser; source: AuthSource }> {
+  const res = await getSessionUserWithSource();
+  if (!res) redirect('/login');
+  return res;
 }
 
 /**

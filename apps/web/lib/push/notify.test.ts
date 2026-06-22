@@ -1,11 +1,12 @@
 // Tests for the push send path — the gating decisions and the seal→relay→prune
 // delivery loop in notify.ts. This is the code that decides whether a
-// notification leaves the box at all (per-trigger toggles + quiet hours,
-// push-notifications.md §10), so every skip reason and its ordering is pinned.
+// notification leaves the box at all (per-trigger toggles, push-notifications.md
+// §10), so every skip reason and its ordering is pinned. (Quiet hours were
+// removed — docs/reminder-delivery-routing.md §C.)
 //
 // All I/O is mocked: the store (DB), seal (crypto), the relay client (network),
-// quiet-hours (clock), countPending (@mantle/tools), and the raw drizzle `db`
-// used by latestOutbound. No DB or network is touched.
+// countPending (@mantle/tools), and the raw drizzle `db` used by latestOutbound.
+// No DB or network is touched.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -43,7 +44,6 @@ vi.mock('@mantle/db', () => {
 vi.mock('@mantle/tools', () => ({ countPending: vi.fn() }));
 vi.mock('./seal', () => ({ sealToDevice: vi.fn() }));
 vi.mock('./relay-client', () => ({ relayNotify: vi.fn() }));
-vi.mock('./quiet-hours', () => ({ isQuietNow: vi.fn() }));
 vi.mock('./store', () => ({
   getPushInstance: vi.fn(),
   getPushPrefs: vi.fn(),
@@ -56,7 +56,6 @@ import { pushOutbound, pushApproval } from './notify';
 import { countPending } from '@mantle/tools';
 import { sealToDevice } from './seal';
 import { relayNotify } from './relay-client';
-import { isQuietNow } from './quiet-hours';
 import {
   getPushInstance,
   getPushPrefs,
@@ -66,14 +65,7 @@ import {
 } from './store';
 
 const INSTANCE = { instanceToken: 'itok', relayInstanceId: 'iid', relayUrl: 'https://relay.example' };
-const PREFS = {
-  assistantMessages: true,
-  approvals: true,
-  quietEnabled: false,
-  quietStart: '22:00',
-  quietEnd: '07:00',
-  timezone: 'UTC',
-};
+const PREFS = { assistantMessages: true, approvals: true };
 const device = (over: Partial<Record<string, unknown>> = {}) => ({
   id: 'dev-1',
   routingToken: 'route-1',
@@ -89,7 +81,6 @@ beforeEach(() => {
   // Sensible "everything allowed" defaults; individual tests override.
   vi.mocked(getPushInstance).mockResolvedValue(INSTANCE);
   vi.mocked(getPushPrefs).mockResolvedValue(PREFS);
-  vi.mocked(isQuietNow).mockReturnValue(false);
   vi.mocked(listSubscriptions).mockResolvedValue([device()]);
   vi.mocked(sealToDevice).mockResolvedValue('ciphertext');
   vi.mocked(relayNotify).mockResolvedValue({ ok: true, status: 200 });
@@ -105,17 +96,10 @@ describe('pushOutbound — gating', () => {
     expect(listSubscriptions).not.toHaveBeenCalled();
   });
 
-  it('skips disabled when the assistant-messages trigger is off', async () => {
+  it('skips disabled when the assistant-messages trigger is off (before touching devices)', async () => {
     vi.mocked(getPushPrefs).mockResolvedValue({ ...PREFS, assistantMessages: false });
     const res = await pushOutbound('owner', 'ada');
     expect(res.skipped).toBe('disabled');
-    expect(listSubscriptions).not.toHaveBeenCalled();
-  });
-
-  it('skips quiet_hours when it is currently quiet', async () => {
-    vi.mocked(isQuietNow).mockReturnValue(true);
-    const res = await pushOutbound('owner', 'ada');
-    expect(res.skipped).toBe('quiet_hours');
     expect(listSubscriptions).not.toHaveBeenCalled();
   });
 
@@ -137,14 +121,6 @@ describe('pushOutbound — gating', () => {
     dbState.queue = [[{ id: 'a1', name: 'Ada' }], []]; // agent found, no message
     const res = await pushOutbound('owner', 'ada');
     expect(res.skipped).toBe('no_message');
-  });
-
-  it('gating order: a trigger that is off wins over quiet hours and devices', async () => {
-    vi.mocked(getPushPrefs).mockResolvedValue({ ...PREFS, assistantMessages: false });
-    vi.mocked(isQuietNow).mockReturnValue(true);
-    const res = await pushOutbound('owner', 'ada');
-    expect(res.skipped).toBe('disabled'); // checked before quiet hours
-    expect(isQuietNow).not.toHaveBeenCalled();
   });
 });
 
@@ -218,11 +194,6 @@ describe('pushApproval', () => {
     vi.mocked(getPushPrefs).mockResolvedValue({ ...PREFS, approvals: false });
     expect((await pushApproval('owner')).skipped).toBe('disabled');
     expect(countPending).not.toHaveBeenCalled();
-  });
-
-  it('skips quiet_hours when it is currently quiet', async () => {
-    vi.mocked(isQuietNow).mockReturnValue(true);
-    expect((await pushApproval('owner')).skipped).toBe('quiet_hours');
   });
 
   it('skips no_devices when the owner has no devices', async () => {

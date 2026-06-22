@@ -1,5 +1,6 @@
-// GET/PUT /api/push/preferences — per-trigger toggles + quiet hours (owner-gated).
-// PUT accepts a partial patch; unknown/invalid fields are ignored.
+// GET/PUT /api/push/preferences — per-trigger toggles (owner-gated). PUT accepts
+// a partial patch; unknown/invalid fields are ignored. (Quiet hours removed —
+// docs/reminder-delivery-routing.md §C.)
 
 import { type NextRequest, NextResponse } from 'next/server';
 import { getOwnerOr401 } from '@/lib/auth';
