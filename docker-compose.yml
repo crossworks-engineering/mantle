@@ -96,6 +96,20 @@ x-app-env: &app-env
   # the box — no cloud key, no API calls, fast. The resolver already defaults
   # a fresh install to local/embeddinggemma:latest; this just supplies the host.
   MANTLE_LOCAL_EMBEDDING_URL: ${MANTLE_LOCAL_EMBEDDING_URL:-http://ollama:11434/v1}
+  # Extractor worker concurrency (in-flight extraction jobs). Default 2 suits a
+  # multi-core / GPU box. Drop to 1 on a CPU-only embedder: concurrent jobs
+  # otherwise contend for the same cores and a big file's embed batch can blow
+  # past the local-embedder timeout mid-run. Clamped 1..8 in code.
+  EXTRACT_CONCURRENCY: ${EXTRACT_CONCURRENCY:-2}
+  # Texts per local-embedder HTTP request. Default 16 clears the per-request
+  # timeout on a shared vCPU; lower (e.g. 8) on an especially slow box so each
+  # request finishes inside the window, raise on a GPU. The embedding cache makes
+  # a retry resume from completed sub-batches.
+  MANTLE_LOCAL_EMBED_BATCH: ${MANTLE_LOCAL_EMBED_BATCH:-16}
+  # Per-request timeout (ms) for the local embedder. Generous by default because
+  # the slow case is legitimate CPU inference, not a hung socket; raise on very
+  # slow hardware so a sub-batch isn't aborted prematurely.
+  MANTLE_LOCAL_EMBED_TIMEOUT_MS: ${MANTLE_LOCAL_EMBED_TIMEOUT_MS:-120000}
   # HTTP forward-proxy for reaching models on your tailnet (the optional
   # `tailnet` profile). Only used for routes the operator flags "via tailnet";
   # harmless otherwise. Points at the bundled tailscale service.

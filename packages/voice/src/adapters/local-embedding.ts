@@ -62,8 +62,12 @@ const SUB_BATCH = (() => {
 
 /** Per-request timeout. Generous because the slow case is legitimate work
  *  (CPU inference), not a hung socket — the sub-batching above is what keeps
- *  any single request small enough that this rarely matters. */
-const REQUEST_TIMEOUT_MS = 120_000;
+ *  any single request small enough that this rarely matters. Override via
+ *  `MANTLE_LOCAL_EMBED_TIMEOUT_MS` for unusually slow hardware. */
+const REQUEST_TIMEOUT_MS = (() => {
+  const n = Number.parseInt(process.env.MANTLE_LOCAL_EMBED_TIMEOUT_MS ?? '', 10);
+  return Number.isFinite(n) && n >= 1_000 ? n : 120_000;
+})();
 
 async function embedOnce(
   req: EmbedRequest,
