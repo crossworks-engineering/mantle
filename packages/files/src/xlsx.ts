@@ -34,10 +34,17 @@ const MAX_ROWS_PER_SHEET = 5_000;
 /** Columns rendered per sheet. `sheetRows` doesn't bound width, so we clamp the
  *  range's column span before `sheet_to_csv` to stop a phantom XFD-wide range. */
 const MAX_COLS_PER_SHEET = 256;
-/** Total CSV bytes across all sheets. The real backstop — a workbook that is
- *  legitimately dense (many sheets, each near the row/col caps) still can't
- *  produce an unbounded body or an unbounded LLM bill. */
-const MAX_TEXT_BYTES = 256 * 1024;
+/** Total CSV chars across all sheets — the backstop against a legitimately
+ *  dense workbook (many sheets, each near the row/col caps) emitting an
+ *  unbounded body. Aligned with the extractor's `TEXT_STORE_MAX_CHARS` (the
+ *  per-node retrievable-text ceiling): the extractor chunks+stores up to that
+ *  much for EVERY format, so a spreadsheet shouldn't be a tighter special case
+ *  — its rows become individually-embedded `search_chunks` passages like any
+ *  other document. Note the LLM bill is bounded SEPARATELY and independently
+ *  (the summary prompt is truncated to ~24K chars upstream), so a larger body
+ *  here only widens chunk/retrieval coverage, it doesn't grow token cost. The
+ *  phantom-range hang is prevented by the row/col caps above, not this one. */
+const MAX_TEXT_BYTES = 1_000_000;
 const TRUNCATION_NOTE =
   '[spreadsheet truncated for indexing — large or sparse workbook]';
 

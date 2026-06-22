@@ -11,7 +11,8 @@
  *      genuinely-empty file.
  *   2. Apache Tika fallback (self-hosted docker service) — for everything
  *      else our in-process parsers can't handle: .odt / .ods / .odp / .pptx
- *      / .ppt / .doc / .rtf / .epub plus the long tail Tika supports. Tika
+ *      / .ppt / .doc / .rtf / .epub / .vsdx / .vsd plus the long tail Tika
+ *      supports. Tika
  *      is **never-throws**: any failure (service down, timeout, unsupported
  *      bytes) returns '' so we degrade cleanly. See ./tika.ts.
  *   3. Returns '' for an extension we don't try to extract text from at all
@@ -25,7 +26,8 @@ import { TEXT_EXTS, TIKA_EXTS, mimeForExt } from './slug';
 export async function parseDocumentBytes(bytes: Buffer, ext: string): Promise<string> {
   if (ext === 'pdf') return (await import('./pdf')).parsePdf(bytes);
   if (ext === 'docx') return (await import('./docx')).parseDocx(bytes);
-  if (ext === 'xlsx' || ext === 'xls') return (await import('./xlsx')).parseXlsx(bytes);
+  if (ext === 'xlsx' || ext === 'xls' || ext === 'xlsm' || ext === 'xlsb')
+    return (await import('./xlsx')).parseXlsx(bytes);
   if (TEXT_EXTS.has(ext)) return bytes.toString('utf8');
   // Tier 2 — anything else Tika might know how to parse. Lazy import keeps
   // the fetch + AbortController machinery off the cold path for the common

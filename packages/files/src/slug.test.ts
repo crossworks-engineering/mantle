@@ -153,6 +153,9 @@ describe('mimeForExt', () => {
     expect(mimeForExt('docx')).toMatch(/wordprocessingml/);
     expect(mimeForExt('xlsx')).toMatch(/spreadsheetml/);
     expect(mimeForExt('xls')).toBe('application/vnd.ms-excel');
+    expect(mimeForExt('xlsm')).toMatch(/macroEnabled/);
+    expect(mimeForExt('xlsb')).toMatch(/binary\.macroEnabled/);
+    expect(mimeForExt('vsdx')).toMatch(/visio/);
     expect(mimeForExt('csv')).toMatch(/^text\/csv/);
   });
 
@@ -172,8 +175,8 @@ describe('extension sets', () => {
     expect(INGESTABLE_EXTS.has('pdf')).toBe(true);
   });
 
-  it('INGESTABLE_EXTS includes the office formats', () => {
-    for (const ext of ['docx', 'xlsx', 'xls']) {
+  it('INGESTABLE_EXTS includes the office formats (incl. macro-enabled Excel)', () => {
+    for (const ext of ['docx', 'xlsx', 'xls', 'xlsm', 'xlsb']) {
       expect(INGESTABLE_EXTS.has(ext)).toBe(true);
     }
   });
@@ -204,9 +207,11 @@ describe('parserRouteForExt', () => {
     expect(parserRouteForExt('docx')).toBe('mammoth');
   });
 
-  it('routes both xlsx and legacy xls to SheetJS (tier 1)', () => {
+  it('routes the whole Excel family — xlsx, legacy xls, macro xlsm, binary xlsb — to SheetJS (tier 1)', () => {
     expect(parserRouteForExt('xlsx')).toBe('sheetjs');
     expect(parserRouteForExt('xls')).toBe('sheetjs');
+    expect(parserRouteForExt('xlsm')).toBe('sheetjs');
+    expect(parserRouteForExt('xlsb')).toBe('sheetjs');
   });
 
   it('routes text-family extensions to utf8 (tier 1)', () => {
@@ -225,7 +230,7 @@ describe('parserRouteForExt', () => {
   it('routes specifically the formats we promised Tika would cover', () => {
     // Belt-and-braces: the exact set from the file-ingestion.md changelog.
     // If someone narrows TIKA_EXTS in the future, this fails loudly.
-    for (const ext of ['odt', 'ods', 'odp', 'pptx', 'ppt', 'doc', 'rtf', 'epub']) {
+    for (const ext of ['odt', 'ods', 'odp', 'pptx', 'ppt', 'doc', 'rtf', 'epub', 'vsdx', 'vsd']) {
       expect(parserRouteForExt(ext)).toBe('tika');
     }
   });

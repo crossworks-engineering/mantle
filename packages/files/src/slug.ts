@@ -79,14 +79,16 @@ export const PREVIEWABLE_MARKDOWN_EXTS = new Set<string>(['md', 'markdown']);
 /** Formats handled by the Tika fallback (./tika.ts) — anything our in-process
  *  parsers (pdf/docx/xlsx/text) can't handle but Tika reliably can.
  *  LibreOffice native (.odt/.ods/.odp), PowerPoint (.pptx/.ppt), legacy Word
- *  (.doc), Rich Text (.rtf), e-books (.epub). Tika supports more (RFC822
- *  mail, MS Publisher, …); add slugs here as you need them. */
+ *  (.doc), Rich Text (.rtf), e-books (.epub), Visio diagrams (.vsdx/.vsd —
+ *  Tika pulls the shape text). Tika supports more (RFC822 mail, MS Publisher,
+ *  …); add slugs here as you need them. */
 export const TIKA_EXTS = new Set<string>([
   'odt', 'ods', 'odp',
   'pptx', 'ppt',
   'doc',
   'rtf',
   'epub',
+  'vsdx', 'vsd',
 ]);
 /** TEXT_EXTS + every binary type the extractor can pull readable text from.
  *  In-process: pdf-parse, mammoth, SheetJS. Tika-routed: TIKA_EXTS. Each
@@ -95,7 +97,7 @@ export const TIKA_EXTS = new Set<string>([
  *  through parseDocumentBytes → tika.ts. */
 export const INGESTABLE_EXTS = new Set<string>([
   ...TEXT_EXTS,
-  'pdf', 'docx', 'xlsx', 'xls',
+  'pdf', 'docx', 'xlsx', 'xls', 'xlsm', 'xlsb',
   ...TIKA_EXTS,
 ]);
 
@@ -109,7 +111,7 @@ export type ParserRoute = 'pdf-parse' | 'mammoth' | 'sheetjs' | 'utf8' | 'tika' 
 export function parserRouteForExt(ext: string): ParserRoute {
   if (ext === 'pdf') return 'pdf-parse';
   if (ext === 'docx') return 'mammoth';
-  if (ext === 'xlsx' || ext === 'xls') return 'sheetjs';
+  if (ext === 'xlsx' || ext === 'xls' || ext === 'xlsm' || ext === 'xlsb') return 'sheetjs';
   if (TEXT_EXTS.has(ext)) return 'utf8';
   if (TIKA_EXTS.has(ext)) return 'tika';
   return 'none';
@@ -155,6 +157,10 @@ export function mimeForExt(ext: string): string {
       return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
     case 'xls':
       return 'application/vnd.ms-excel';
+    case 'xlsm':
+      return 'application/vnd.ms-excel.sheet.macroEnabled.12';
+    case 'xlsb':
+      return 'application/vnd.ms-excel.sheet.binary.macroEnabled.12';
     case 'doc':
       return 'application/msword';
     case 'pptx':
@@ -171,6 +177,10 @@ export function mimeForExt(ext: string): string {
       return 'application/rtf';
     case 'epub':
       return 'application/epub+zip';
+    case 'vsdx':
+      return 'application/vnd.ms-visio.drawing';
+    case 'vsd':
+      return 'application/vnd.visio';
     default:
       return 'application/octet-stream';
   }
