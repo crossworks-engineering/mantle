@@ -458,6 +458,16 @@ export async function publishApp(ownerId: string, id: string): Promise<AppDetail
 
 export async function deleteApp(ownerId: string, id: string): Promise<boolean> {
   if (!(await ownsApp(ownerId, id))) return false;
+  // Remove the per-app SQLite file BEFORE the node delete cascades the
+  // `app_databases` row away (we resolve the path from that row). Best-effort:
+  // a stray file must not block the delete. Dynamic import keeps the server-only
+  // broker (node:fs/sqlite) out of the content index / edge bundles.
+  try {
+    const { deleteAppDatabaseFile } = await import('./app-broker');
+    await deleteAppDatabaseFile(ownerId, id);
+  } catch {
+    /* best-effort file cleanup; the DB rows still cascade below */
+  }
   await db.delete(nodes).where(eq(nodes.id, id)); // `apps` + `app_databases` cascade.
   return true;
 }

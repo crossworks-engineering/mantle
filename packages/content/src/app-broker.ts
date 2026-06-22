@@ -11,7 +11,7 @@
  * NOT re-exported from the package index — import via '@mantle/content/app-broker'
  * so it stays out of client/edge bundles.
  */
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import * as path from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes, appDatabases } from '@mantle/db';
@@ -165,4 +165,26 @@ export async function appDbExec(
   } finally {
     handle.close();
   }
+}
+
+/** Every on-disk file SQLite may create for one database: the file itself plus
+ *  the rollback-journal / WAL sidecars. We clean all of them on delete. */
+export function appDbFiles(storagePath: string): string[] {
+  return ['', '-journal', '-wal', '-shm'].map((suffix) => `${storagePath}${suffix}`);
+}
+
+/**
+ * Remove an app's on-disk SQLite file(s). Called when the app node is deleted —
+ * the `app_databases` registry row cascades away with the node, but the file on
+ * the volume would otherwise leak. Best-effort + idempotent (`force` ignores a
+ * missing file); no-op if the app never opened a database.
+ */
+export async function deleteAppDatabaseFile(ownerId: string, appNodeId: string): Promise<void> {
+  const [row] = await db
+    .select({ storagePath: appDatabases.storagePath })
+    .from(appDatabases)
+    .where(and(eq(appDatabases.appNodeId, appNodeId), eq(appDatabases.ownerId, ownerId)))
+    .limit(1);
+  if (!row) return;
+  await Promise.all(appDbFiles(row.storagePath).map((f) => rm(f, { force: true })));
 }

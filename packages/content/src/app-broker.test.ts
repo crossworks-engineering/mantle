@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertSafe, assertSafeScript } from './app-broker';
+import { assertSafe, assertSafeScript, appDbFiles } from './app-broker';
 
 /**
  * `assertSafe` is the runtime guard on SQL a sandboxed mini app sends through
@@ -68,5 +68,21 @@ describe('assertSafeScript', () => {
 
   it('tolerates trailing semicolons and blank statements', () => {
     expect(() => assertSafeScript('CREATE TABLE t (x);;\n  ;')).not.toThrow();
+  });
+});
+
+/**
+ * On delete we must remove not just the .sqlite file but every sidecar SQLite
+ * can leave behind, or the volume leaks files after an app is deleted.
+ */
+describe('appDbFiles', () => {
+  it('lists the db file plus its journal/WAL/SHM sidecars', () => {
+    const base = '/data/app-dbs/owner/app.sqlite';
+    expect(appDbFiles(base)).toEqual([
+      base,
+      `${base}-journal`,
+      `${base}-wal`,
+      `${base}-shm`,
+    ]);
   });
 });
