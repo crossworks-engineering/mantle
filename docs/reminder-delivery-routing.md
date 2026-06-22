@@ -7,12 +7,21 @@
 > `timezone` columns dropped via migration `0095`). Mobile reminders are now
 > gated only by the `assistantMessages` push toggle. Also landed: web profile UI
 > + API (D) — a "Reminder delivery" selector on `/settings/profile` plus a
-> mobile-facing `GET/PUT /api/profile/reminder-channel`. Still to do: **companion
-> toggle (E)** — the only remaining chunk, in the `~/Projects/mantle-companion`
-> repo (incl. removing the app's now-dead quiet-hours UI). It is the design for
-> letting event/reminder notifications reach the **Mantle Companion** mobile app
-> (not just Telegram), routed by the user's most recently used communication
-> channel, with a profile-level override. Written 2026-06-21.
+> mobile-facing `GET/PUT /api/profile/reminder-channel`. **Server side is
+> COMPLETE.** It is the design for letting event/reminder notifications reach the
+> **Mantle Companion** mobile app (not just Telegram), routed by the user's most
+> recently used communication channel, with a profile-level override. Written
+> 2026-06-21; deployed in v0.29.0.
+>
+> **Decision (2026-06-22): the in-app channel toggle (E) is dropped — by design,
+> not pending.** Picking "Telegram" from inside the Mantle app is self-defeating
+> (if you want Telegram, message Telegram). The channel already auto-follows the
+> last surface you used, and the **web** profile selector covers the rare explicit
+> override, so an in-app picker adds no value. The ONLY remaining companion-side
+> work is **removing the app's now-dead quiet-hours UI** (its server backing was
+> dropped in `0095`). A future enhancement may have a mobile reminder schedule a
+> local OS notification/alarm at `remind_at` so it fires actively without
+> depending on a live push or the app being open (see §"mobile = passive" below).
 >
 > **Terminology guard.** This doc uses "channel" in the
 > `ConversationChannel` sense — the per-turn enum
@@ -215,10 +224,13 @@ semantics (where the reminder genuinely is a message in the thread).
 3. Worker mobile branch (B).
 4. Strip quiet hours (C).
 5. Web API + UI (D).
-6. Companion toggle (E).
+6. ~~Companion toggle (E).~~ **Dropped by design (2026-06-22)** — see the status
+   note at the top. Remaining companion work is only removing the dead
+   quiet-hours UI.
 7. Tests alongside each step (F).
 
-Steps 1–5 + F land in this repo; step 6 lands in `~/Projects/mantle-companion`.
+Steps 1–5 + F land in this repo and shipped in v0.29.0. The only outstanding
+work is the companion's dead-quiet-hours-UI cleanup in `~/Projects/mantle-companion`.
 
 ## Open questions
 
