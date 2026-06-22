@@ -14,9 +14,13 @@
  * brain in line with the manifest, once per version:
  *   1. seedToolCapabilities(overwrite) — sync HTTP tools + tool-group MEMBERSHIP
  *      (gap-fill, the onboarding mode, deliberately won't touch an existing group).
- *   2. applyManifest(only:[], gap-fill) — seed missing skills + attach the persona's
- *      skills. `only:[]` means NO specialist agents are created/overwritten (and so
- *      no OpenRouter key is required) — operator agent customisations are untouched.
+ *   2. applyManifest(only:[], gap-fill, skillMode:overwrite) — force-sync the
+ *      manifest-owned skill BODIES to the canonical text (so a shipped skill edit —
+ *      e.g. the search_chunks retrieval policy in tool_grounding — actually reaches an
+ *      existing brain on update, the same way tool-group membership does in step 1).
+ *      `only:[]` still means NO specialist agents are created/overwritten (no OpenRouter
+ *      key required) and the persona's own prompt is untouched; skillMode scopes the
+ *      overwrite to MANIFEST_SKILLS, so operator-AUTHORED skills are never touched.
  *   3. Union the manifest persona's default tool groups onto enabled responders —
  *      ADD only, never remove (see missingPersonaGroups).
  *
@@ -114,7 +118,7 @@ export async function reconcileManifestOnBoot(): Promise<void> {
     if (prefs.lastReconciledVersion === APP_VERSION) return;
 
     await seedToolCapabilities(ownerId, 'overwrite');
-    await applyManifest(ownerId, { only: [], mode: 'gap-fill' });
+    await applyManifest(ownerId, { only: [], mode: 'gap-fill', skillMode: 'overwrite' });
     const granted = await grantPersonaGroupsByRole(ownerId);
     await updateProfilePreferences(ownerId, { lastReconciledVersion: APP_VERSION });
 

@@ -41,6 +41,12 @@ export type ApplyManifestOpts = {
   /** Restrict to these SKILL slugs (CLI per-skill seeds). Omitted = all skills. */
   onlySkills?: string[];
   mode?: ApplyMode;
+  /** Override the mode for SKILLS only. Lets the boot reconcile force-sync
+   *  manifest-owned skill bodies ('overwrite') while leaving agents gap-filled
+   *  (prompts/params/model untouched, no OpenRouter key required). Defaults to
+   *  `mode`. Operator-authored skills (not in MANIFEST_SKILLS) are never seen
+   *  by this loop, so they're never touched. */
+  skillMode?: ApplyMode;
 };
 export type ApplyManifestResult = { seededSkills: string[]; seededAgents: string[] };
 
@@ -313,11 +319,13 @@ export async function applyManifest(
   //    that grants them. See docs/tools-and-skills.md.
   await seedToolCapabilities(ownerId, mode);
 
-  // 2. Skills (filtered by onlySkills).
+  // 2. Skills (filtered by onlySkills). `skillMode` lets a caller force-sync
+  //    manifest skill bodies (boot reconcile) without overwriting agents.
+  const skillMode = opts.skillMode ?? mode;
   const skillDefs = opts.onlySkills
     ? MANIFEST_SKILLS.filter((s) => opts.onlySkills!.includes(s.slug))
     : MANIFEST_SKILLS;
-  for (const def of skillDefs) await upsertSkill(ownerId, def, mode);
+  for (const def of skillDefs) await upsertSkill(ownerId, def, skillMode);
 
   // 3. Specialist agents (filtered by `only`; the persona is created elsewhere).
   const agentDefs = MANIFEST_AGENTS.filter(
