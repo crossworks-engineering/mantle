@@ -15,6 +15,9 @@ out/
 # production
 build/
 dist/
+# …but the Apps API route segment is named `build` — it's source, not output.
+# (brackets escaped: `[id]` is a literal dir, not a glob character class.)
+!apps/web/app/api/apps/\[id\]/build/
 
 # misc
 .DS_Store
