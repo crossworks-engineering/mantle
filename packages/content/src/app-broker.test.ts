@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertSafe } from './app-broker';
+import { assertSafe, assertSafeScript } from './app-broker';
 
 /**
  * `assertSafe` is the runtime guard on SQL a sandboxed mini app sends through
@@ -40,5 +40,33 @@ describe('assertSafe', () => {
     // `pragmatic` or `attachments` must not trip it.
     expect(() => assertSafe('SELECT * FROM attachments')).not.toThrow();
     expect(() => assertSafe('SELECT pragmatic FROM notes')).not.toThrow();
+  });
+});
+
+/**
+ * `assertSafeScript` guards multi-statement schema DDL. `assertSafe` alone only
+ * inspects the first verb, so the script guard is what stops a piggybacked
+ * ATTACH after a legitimate CREATE TABLE.
+ */
+describe('assertSafeScript', () => {
+  it('allows a multi-statement schema of plain DDL', () => {
+    const ddl =
+      'CREATE TABLE IF NOT EXISTS cities (name TEXT PRIMARY KEY);\n' +
+      'CREATE INDEX IF NOT EXISTS cities_name ON cities (name);';
+    expect(() => assertSafeScript(ddl)).not.toThrow();
+  });
+
+  it('blocks a blocked verb piggybacked after a valid statement', () => {
+    const ddl = "CREATE TABLE t (x INTEGER); ATTACH DATABASE '/etc/passwd' AS leak;";
+    expect(() => assertSafeScript(ddl)).toThrow(/not allowed/i);
+  });
+
+  it('blocks a PRAGMA buried mid-script', () => {
+    const ddl = 'CREATE TABLE a (x); PRAGMA writable_schema = ON; CREATE TABLE b (y);';
+    expect(() => assertSafeScript(ddl)).toThrow(/not allowed/i);
+  });
+
+  it('tolerates trailing semicolons and blank statements', () => {
+    expect(() => assertSafeScript('CREATE TABLE t (x);;\n  ;')).not.toThrow();
   });
 });

@@ -50,6 +50,20 @@ export function assertSafe(sql: string): void {
   }
 }
 
+/**
+ * Guard a multi-statement script (the app's declared schema DDL). `assertSafe`
+ * is anchored to the FIRST verb, so on its own it would wave through a piggyback
+ * like `CREATE TABLE t(x); ATTACH DATABASE '…'`. Split on `;` and check each
+ * statement so a blocked verb anywhere in the script is caught. We only scan
+ * here — the DDL is still executed as one `exec()` — so a `;` inside a string
+ * literal can over-split but never under-blocks (it can't hide a blocked verb).
+ */
+export function assertSafeScript(sql: string): void {
+  for (const stmt of sql.split(';')) {
+    if (stmt.trim()) assertSafe(stmt);
+  }
+}
+
 /** Find or create the registry row + on-disk file for an app's database.
  *  Verifies the app node exists + is owned (defense in depth — the route also
  *  checks ownership before calling). */
@@ -96,6 +110,10 @@ export async function ensureAppDatabase(
 ): Promise<{ id: string; storagePath: string; schemaVersion: number }> {
   const reg = await ensureRegistry(ownerId, appNodeId);
   if (schema && schema.schemaSql.trim() && schema.schemaVersion > reg.schemaVersion) {
+    // Defense in depth: the schema DDL is agent-authored and applied via a raw
+    // multi-statement exec, so it must clear the same file-escape guard as the
+    // runtime broker — otherwise an ATTACH in the DDL would reach the filesystem.
+    assertSafeScript(schema.schemaSql);
     const handle = await openSqlite(reg.storagePath);
     try {
       handle.exec(schema.schemaSql);

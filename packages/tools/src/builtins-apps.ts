@@ -25,6 +25,7 @@ import {
   type AppDetail,
 } from '@mantle/content';
 import { buildApp } from '@mantle/app-build';
+import { assertSafeScript } from '@mantle/content/app-broker';
 import { putContent } from '@mantle/storage';
 import { recordIngest } from '@mantle/tracing';
 import { resolveTool } from './dispatch';
@@ -312,6 +313,13 @@ const app_db_schema_set: BuiltinToolDef = {
     const schemaSql = str(input.schema_sql);
     if (!id) return { ok: false, error: 'id is required' };
     if (!schemaSql.trim()) return { ok: false, error: 'schema_sql is required' };
+    // Reject file-escape DDL up front so the agent gets clear feedback now,
+    // rather than a runtime failure when the app first opens its database.
+    try {
+      assertSafeScript(schemaSql);
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
     const app = await getApp(ctx.ownerId, id);
     if (!app) return { ok: false, error: `app ${id} not found` };
     const nextVersion = (app.manifest.sqlite?.schemaVersion ?? 0) + 1;
