@@ -54,6 +54,16 @@ const DEAD_LETTER_QUEUE = 'mantle.extract.dead';
 const DEFAULT_CONCURRENCY = 2;
 const MAX_CONCURRENCY = 8;
 
+/** How long a worker may hold a single extraction before pg-boss declares the
+ *  job expired and retries it. pg-boss defaults to **15 min** — too tight for a
+ *  slow/CPU embedder on a bulky document: hundreds of chunks embed serially for
+ *  >15 min, so the job expires mid-run, retries, and eventually dead-letters
+ *  without ever finishing (the embedding cache lets a retry resume, but on a
+ *  slow box it mostly thrashes). 60 min gives a big extraction room to complete
+ *  in one clean pass; raise via `MANTLE_EXTRACT_EXPIRE_MIN` on very slow
+ *  hardware (a GPU/upgraded box can leave it at the default). */
+const EXTRACT_EXPIRE_MIN = Number(process.env.MANTLE_EXTRACT_EXPIRE_MIN) || 60;
+
 /** Retry policy lives on the queue so every job inherits it. With backoff the
  *  delays grow ~30s → 60s → 120s → 240s → 480s, spreading rate-limit retries
  *  out over minutes instead of hammering the provider. After 5 failed tries
@@ -63,6 +73,7 @@ const EXTRACT_QUEUE_OPTIONS = {
   retryLimit: 5,
   retryDelay: 30,
   retryBackoff: true,
+  expireInSeconds: EXTRACT_EXPIRE_MIN * 60,
   deadLetter: DEAD_LETTER_QUEUE,
 };
 

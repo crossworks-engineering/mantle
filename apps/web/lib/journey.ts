@@ -173,10 +173,13 @@ export async function listActivity(
   return filtered.slice(0, limit);
 }
 
-/** Real traces finish in seconds; anything still `running` past this is almost
- *  certainly orphaned (the process restarted or crashed before its `finally`
- *  could write a terminal status). */
-const ABANDON_AFTER_MIN = 10;
+/** Real traces finish in seconds, but a bulky-document extraction on a slow CPU
+ *  embedder can legitimately run for many minutes. Keep this ABOVE the extract
+ *  queue's job-expiry (`MANTLE_EXTRACT_EXPIRE_MIN`, default 60) plus a buffer, so
+ *  a long-but-live run isn't false-flagged as abandoned in the activity view —
+ *  only a genuinely orphaned trace (process crashed before writing a terminal
+ *  status) gets reaped. */
+const ABANDON_AFTER_MIN = (Number(process.env.MANTLE_EXTRACT_EXPIRE_MIN) || 60) + 15;
 
 /**
  * Reconcile orphaned traces: mark long-`running` rows as `error: abandoned`
