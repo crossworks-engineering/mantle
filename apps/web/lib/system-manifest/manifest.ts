@@ -319,8 +319,18 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'files',
     name: 'Files',
-    description: 'Read source files + folders, and create files.',
-    toolSlugs: ['folder_list', 'folder_get_by_path', 'file_list', 'file_get', 'file_read', 'file_create'],
+    description: 'Read, create, rename, and update files + folders (non-destructive — no delete).',
+    toolSlugs: [
+      'folder_list',
+      'folder_get_by_path',
+      'file_list',
+      'file_get',
+      'file_read',
+      'file_create',
+      'file_rename',
+      'folder_rename',
+      'folder_describe',
+    ],
   },
   {
     slug: 'notes',

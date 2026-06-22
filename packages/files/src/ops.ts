@@ -29,6 +29,7 @@ import {
   mimeForExt,
   removeFolder as removeFolderOnDisk,
   renameFile as renameFileOnDisk,
+  renameFolder as renameFolderOnDisk,
   sanitizeFilename,
   slugifyFolder,
   TEXT_EXTS,
@@ -745,6 +746,99 @@ export async function renameFileById(args: {
     .where(eq(nodes.id, node.id))
     .returning();
   return updated ? fileRowFromNode(updated) : null;
+}
+
+/** Swap the LAST label of an ltree path for `newLabel`, keeping the parent
+ *  prefix. Pure (no DB/disk) so the path math is unit-testable. The root
+ *  `files` (no dot) returns just `newLabel`, but callers reject renaming root. */
+export function renamedFolderPath(oldPath: string, newLabel: string): string {
+  const dot = oldPath.lastIndexOf('.');
+  return dot === -1 ? newLabel : `${oldPath.slice(0, dot)}.${newLabel}`;
+}
+
+/**
+ * Rename a folder in place (same parent, new label). Rewrites the ltree path
+ * of the folder AND every descendant — folders and files alike, since a file's
+ * `path` IS its parent folder's path — in one cascade, and renames the matching
+ * directory on disk (the whole subtree moves with it). Throws on the root, an
+ * invalid name, or a name collision. Returns null only when the id isn't a
+ * folder the owner has.
+ */
+export async function renameFolderById(args: {
+  ownerId: string;
+  folderId: string;
+  /** New display name; slugified the same way createFolder does. */
+  newSlug: string;
+}): Promise<FolderRow | null> {
+  const [node] = await db
+    .select()
+    .from(nodes)
+    .where(and(eq(nodes.id, args.folderId), eq(nodes.ownerId, args.ownerId)))
+    .limit(1);
+  if (!node || node.type !== 'branch') return null;
+  if (node.path === FILES_ROOT_LABEL) {
+    throw new Error('renameFolderById: cannot rename the files root');
+  }
+  const slug = slugifyFolder(args.newSlug);
+  if (!slug) throw new Error(`renameFolderById: invalid name '${args.newSlug}'`);
+  const newLabel = dashToLtree(slug);
+  const oldPath = node.path;
+  const newPath = renamedFolderPath(oldPath, newLabel);
+  if (newPath === oldPath) {
+    const counts = await folderCounts(args.ownerId, oldPath);
+    return folderRowFromNode(node, counts.childFolderCount, counts.fileCount);
+  }
+
+  // Collision: another branch already at the target path. The
+  // nodes_branch_owner_path_uq index also enforces this; we check first for a
+  // clean error rather than a constraint-violation string.
+  const [clash] = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, args.ownerId),
+        eq(nodes.type, 'branch'),
+        sql`${nodes.path}::text = ${newPath}`,
+      ),
+    )
+    .limit(1);
+  if (clash) {
+    throw new Error(`renameFolderById: a folder named '${slug}' already exists here`);
+  }
+
+  // Disk first (atomic fs.rename of the directory), then the DB cascade in a
+  // transaction. If the DB write fails, put the directory back so disk and DB
+  // never diverge.
+  await renameFolderOnDisk(oldPath, newPath);
+  try {
+    await db.transaction(async (tx) => {
+      // Rewrite the prefix for the folder itself + every descendant (folders and
+      // files — a file's path IS its parent folder's path). The folder itself is
+      // handled by the CASE: `subpath(path, nlevel(oldPath))` would throw
+      // "invalid positions" when offset == nlevel (the self row), so map it to
+      // newPath directly; descendants keep their tail under the new prefix.
+      await tx.execute(sql`
+        UPDATE ${nodes}
+        SET path = CASE
+              WHEN path = ${oldPath}::ltree THEN text2ltree(${newPath})
+              ELSE (text2ltree(${newPath}) || subpath(path, nlevel(${oldPath}::ltree)))::ltree
+            END,
+            updated_at = now()
+        WHERE owner_id = ${args.ownerId} AND path <@ ${oldPath}::ltree
+      `);
+      // The folder's own label fields (path already rewritten above).
+      const data = (node.data ?? {}) as Record<string, unknown>;
+      await tx
+        .update(nodes)
+        .set({ title: slug, slug, data: { ...data, slug }, updatedAt: new Date() })
+        .where(eq(nodes.id, node.id));
+    });
+  } catch (err) {
+    await renameFolderOnDisk(newPath, oldPath).catch(() => {});
+    throw err;
+  }
+  return folderById({ ownerId: args.ownerId, folderId: args.folderId });
 }
 
 export async function bulkDeleteFiles(args: {

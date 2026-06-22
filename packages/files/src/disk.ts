@@ -113,6 +113,36 @@ export async function renameFile(
   return { path: to };
 }
 
+/** Rename a folder's directory in place (the whole subtree moves with it).
+ *  `fromLtree`/`toLtree` are the OLD and NEW full ltree paths of the folder.
+ *  Throws on collision; refuses to rename the root. The caller pairs this with
+ *  the DB ltree cascade. */
+export async function renameFolder(
+  fromLtree: string,
+  toLtree: string,
+): Promise<{ path: string }> {
+  const from = diskPathForLtree(fromLtree);
+  const to = diskPathForLtree(toLtree);
+  if (!from || !to) throw new Error('renameFolder: path resolution failed');
+  if (from === filesRoot() || to === filesRoot()) {
+    throw new Error('renameFolder: refusing to rename the files root');
+  }
+  if (from === to) return { path: from };
+  try {
+    await fs.access(to);
+    throw new Error(`renameFolder: '${toLtree}' already exists`);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      if (err instanceof Error && err.message.includes('already exists')) throw err;
+    }
+  }
+  // Make sure the destination parent exists (same parent for a rename, but cheap
+  // insurance and keeps this correct if ever reused for a move).
+  await fs.mkdir(path.dirname(to), { recursive: true });
+  await fs.rename(from, to);
+  return { path: to };
+}
+
 /** Recursively remove a folder. Caller must check it's empty in the DB
  *  beforehand — this is the unconditional "delete from disk" half. */
 export async function removeFolder(ltreePath: string): Promise<void> {

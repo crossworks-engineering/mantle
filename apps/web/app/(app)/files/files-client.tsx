@@ -83,6 +83,12 @@ type TextExt = 'md' | 'txt' | 'json';
 
 const FILES_ROOT = 'files';
 
+/** What the rename dialog is acting on — a file (stem, extension preserved) or
+ *  a folder (slug). */
+type RenameTarget =
+  | { kind: 'file'; id: string; filename: string; extension: string }
+  | { kind: 'folder'; id: string; slug: string };
+
 /** Normalize a free-typed folder name into a slug (lowercase, dashes). */
 function slugify(input: string): string {
   return input
@@ -117,6 +123,7 @@ export function FilesClient({
   const [createFileExt, setCreateFileExt] = useState<TextExt | null>(null);
   const [deleteFolderOpen, setDeleteFolderOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
 
   // Sync local file state when server re-fetches.
   useEffect(() => {
@@ -282,7 +289,18 @@ export function FilesClient({
               </nav>
 
               {currentFolder && currentFolder.path !== FILES_ROOT && (
-                <div className="mt-1 flex items-center justify-end">
+                <div className="mt-1 flex items-center justify-end gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7"
+                    onClick={() =>
+                      setRenameTarget({ kind: 'folder', id: currentFolder.id, slug: currentFolder.slug })
+                    }
+                    disabled={busy}
+                  >
+                    <Pencil /> Rename
+                  </Button>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -419,6 +437,7 @@ export function FilesClient({
                       <th className="px-3 py-2 text-right">Size</th>
                       <th className="px-3 py-2 text-left">Summary</th>
                       <th className="px-3 py-2 text-left">Modified</th>
+                      <th className="w-10 px-3 py-2" aria-label="Actions" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -467,6 +486,24 @@ export function FilesClient({
                         <td className="px-3 py-2 text-xs text-muted-foreground">
                           {fmtRelative(f.updatedAt)}
                         </td>
+                        <td className="px-3 py-2 text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                            aria-label={`Rename ${f.filename}`}
+                            onClick={() =>
+                              setRenameTarget({
+                                kind: 'file',
+                                id: f.id,
+                                filename: f.filename,
+                                extension: f.extension,
+                              })
+                            }
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -494,6 +531,13 @@ export function FilesClient({
           refresh();
           openFile(id);
         }}
+      />
+
+      {/* ── Rename file / folder dialog ───────────────────────────── */}
+      <RenameDialog
+        target={renameTarget}
+        onOpenChange={(open) => !open && setRenameTarget(null)}
+        onRenamed={refresh}
       />
 
       {/* ── Delete folder confirm ─────────────────────────────────── */}
@@ -538,6 +582,105 @@ export function FilesClient({
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+// ─── Rename file / folder dialog ───────────────────────────────────
+function RenameDialog({
+  target,
+  onOpenChange,
+  onRenamed,
+}: {
+  target: RenameTarget | null;
+  onOpenChange: (open: boolean) => void;
+  onRenamed: () => void;
+}) {
+  const toast = useToast();
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!target) return;
+    setBusy(false);
+    if (target.kind === 'file') {
+      const suffix = target.extension ? `.${target.extension}` : '';
+      setName(
+        suffix && target.filename.endsWith(suffix)
+          ? target.filename.slice(0, -suffix.length)
+          : target.filename,
+      );
+    } else {
+      setName(target.slug);
+    }
+  }, [target]);
+
+  if (!target) return null;
+  const isFile = target.kind === 'file';
+  const valid = name.trim().length > 0;
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!valid || busy) return;
+    setBusy(true);
+    const url = isFile ? `/api/files/files/${target.id}` : `/api/files/folders/${target.id}`;
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rename: name.trim() }),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      const b = (await res.json().catch(() => ({}))) as { error?: string };
+      toast.error(b.error ?? 'Rename failed');
+      return;
+    }
+    toast.success('Renamed');
+    onRenamed();
+    onOpenChange(false);
+  };
+
+  return (
+    <Dialog open={!!target} onOpenChange={(open) => !open && onOpenChange(false)}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Rename {isFile ? 'file' : 'folder'}</DialogTitle>
+          <DialogDescription>
+            {isFile
+              ? 'The extension is kept — only the name changes.'
+              : 'Every file and sub-folder inside moves with it.'}
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="rename-input">New name</Label>
+            <div className="flex items-center gap-1">
+              <Input
+                id="rename-input"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoFocus
+              />
+              {isFile && target.extension && (
+                <span className="shrink-0 text-sm text-muted-foreground">.{target.extension}</span>
+              )}
+            </div>
+            {!isFile && name.trim() && (
+              <p className="text-xs text-muted-foreground">
+                Saved as <code className="font-mono">{slugify(name)}</code>
+              </p>
+            )}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <SubmitButton pending={busy} disabled={!valid}>
+              Rename {isFile ? 'file' : 'folder'}
+            </SubmitButton>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

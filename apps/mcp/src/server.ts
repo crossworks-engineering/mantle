@@ -58,6 +58,8 @@ import {
   listFiles,
   listFolders,
   readFileById,
+  renameFileById,
+  renameFolderById,
   updateFolderDescription,
   upsertFile,
   MAX_UPLOAD_BYTES,
@@ -384,6 +386,36 @@ server.tool(
 );
 
 server.tool(
+  'folder_rename',
+  "Rename a folder in place. `new_name` is lowercased + sanitised. Every file and sub-folder inside moves with it (their paths update). Pass `folder_id` or `path`. Cannot rename the `files` root.",
+  {
+    folder_id: z.string().uuid().optional(),
+    path: z.string().optional(),
+    new_name: z.string().min(1).max(64),
+  },
+  async ({ folder_id, path, new_name }) => {
+    let id = folder_id ?? null;
+    if (!id && path) {
+      const found = await folderByPath({ ownerId: OWNER_ID!, path });
+      id = found?.id ?? null;
+    }
+    if (!id) {
+      return { content: [{ type: 'text', text: 'folder_rename: pass folder_id or path' }], isError: true };
+    }
+    try {
+      const updated = await renameFolderById({ ownerId: OWNER_ID!, folderId: id, newSlug: new_name });
+      if (!updated) {
+        return { content: [{ type: 'text', text: 'folder not found' }], isError: true };
+      }
+      return jsonReply(updated);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { content: [{ type: 'text', text: `folder_rename failed: ${msg}` }], isError: true };
+    }
+  },
+);
+
+server.tool(
   'folder_delete',
   "Delete a folder. Refuses unless the folder is empty — clear its children first. Cannot delete the `files` root.",
   { folder_id: z.string().uuid() },
@@ -485,6 +517,24 @@ server.tool(
       return { content: [{ type: 'text', text: 'file not found' }], isError: true };
     }
     return jsonReply(row);
+  },
+);
+
+server.tool(
+  'file_rename',
+  "Rename a file in place — its folder and extension are kept, only the basename changes. `new_stem` is the new name WITHOUT the extension (e.g. `huntsman-report` → `customerx-report`).",
+  { file_id: z.string().uuid(), new_stem: z.string().min(1).max(200) },
+  async ({ file_id, new_stem }) => {
+    try {
+      const row = await renameFileById({ ownerId: OWNER_ID!, fileId: file_id, newStem: new_stem });
+      if (!row) {
+        return { content: [{ type: 'text', text: 'file not found' }], isError: true };
+      }
+      return jsonReply(row);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { content: [{ type: 'text', text: `file_rename failed: ${msg}` }], isError: true };
+    }
   },
 );
 

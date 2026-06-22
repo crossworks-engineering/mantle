@@ -28,6 +28,9 @@ import {
   listFiles,
   listFolders,
   readFileById,
+  renameFileById,
+  renameFolderById,
+  updateFolderDescription,
   upsertFile,
 } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
@@ -776,6 +779,90 @@ const file_create: BuiltinToolDef = {
   },
 };
 
+const file_rename: BuiltinToolDef = {
+  slug: 'file_rename',
+  name: 'Rename a file',
+  description:
+    "Rename a file in place — its folder and extension are kept, only the basename changes. `new_stem` is the new name WITHOUT the extension (e.g. rename `huntsman-report.xlsx` → stem `customerx-report`). Find the file id with `file_list` / `file_get` first. To change a file's CONTENTS use `file_create` with overwrite=true; to rename a FOLDER use `folder_rename`.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      file_id: { type: 'string', format: 'uuid' },
+      new_stem: { type: 'string', description: 'new basename, no extension' },
+    },
+    required: ['file_id', 'new_stem'],
+  },
+  handler: async (input, ctx) => {
+    const fileId = str(input.file_id);
+    const newStem = str(input.new_stem);
+    if (!fileId || !newStem) return { ok: false, error: 'file_id + new_stem required' };
+    try {
+      const row = await renameFileById({ ownerId: ctx.ownerId, fileId, newStem });
+      if (!row) return { ok: false, error: 'file not found' };
+      ctx.step?.setOutput({ fileId: row.id, filename: row.filename });
+      return { ok: true, output: row };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+const folder_rename: BuiltinToolDef = {
+  slug: 'folder_rename',
+  name: 'Rename a folder',
+  description:
+    "Rename a folder in place. `new_name` is lowercased and sanitised automatically. Every file and sub-folder inside moves with it (their paths update), so this is safe for a folder full of content. Find the folder id with `folder_list` / `folder_get_by_path` first. The root `files` folder can't be renamed. To change a folder's DESCRIPTION use `folder_describe`.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      folder_id: { type: 'string', format: 'uuid' },
+      new_name: { type: 'string' },
+    },
+    required: ['folder_id', 'new_name'],
+  },
+  handler: async (input, ctx) => {
+    const folderId = str(input.folder_id);
+    const newName = str(input.new_name);
+    if (!folderId || !newName) return { ok: false, error: 'folder_id + new_name required' };
+    try {
+      const row = await renameFolderById({ ownerId: ctx.ownerId, folderId, newSlug: newName });
+      if (!row) return { ok: false, error: 'folder not found' };
+      ctx.step?.setOutput({ folderId: row.id, path: row.path });
+      return { ok: true, output: row };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+const folder_describe: BuiltinToolDef = {
+  slug: 'folder_describe',
+  name: 'Update a folder description',
+  description:
+    "Set or update a folder's free-text description (what the folder is for). Find the folder id with `folder_list` / `folder_get_by_path` first. This does NOT rename the folder — use `folder_rename` for that.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      folder_id: { type: 'string', format: 'uuid' },
+      description: { type: 'string' },
+    },
+    required: ['folder_id', 'description'],
+  },
+  handler: async (input, ctx) => {
+    const folderId = str(input.folder_id);
+    const description = str(input.description);
+    if (!folderId) return { ok: false, error: 'folder_id required' };
+    try {
+      const row = await updateFolderDescription({ ownerId: ctx.ownerId, folderId, description });
+      if (!row) return { ok: false, error: 'folder not found' };
+      ctx.step?.setOutput({ folderId: row.id });
+      return { ok: true, output: row };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
 // ─── telegram ─────────────────────────────────────────────────────────────
 
 import { accountForChat, sendMessage } from '@mantle/telegram';
@@ -997,6 +1084,9 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   node_read,
   secret_create,
   file_create,
+  file_rename,
+  folder_rename,
+  folder_describe,
   telegram_send,
   process_extraction,
   invoke_agent,

@@ -1,10 +1,18 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireOwner } from '@/lib/auth';
-import { deleteFolder, folderById, updateFolderDescription } from '@/lib/files';
+import {
+  deleteFolder,
+  folderById,
+  renameFolderById,
+  updateFolderDescription,
+} from '@/lib/files';
 
 const IdParams = z.object({ id: z.string().uuid() });
-const PatchBody = z.object({ description: z.string().max(2000) });
+const PatchBody = z.union([
+  z.object({ description: z.string().max(2000) }),
+  z.object({ rename: z.string().min(1).max(64) }),
+]);
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await requireOwner();
@@ -31,13 +39,29 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       { status: 400 },
     );
   }
-  const folder = await updateFolderDescription({
-    ownerId: user.id,
-    folderId: idParsed.data.id,
-    description: parsed.data.description,
-  });
-  if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  return NextResponse.json({ folder });
+  try {
+    if ('rename' in parsed.data) {
+      const folder = await renameFolderById({
+        ownerId: user.id,
+        folderId: idParsed.data.id,
+        newSlug: parsed.data.rename,
+      });
+      if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
+      return NextResponse.json({ folder });
+    }
+    const folder = await updateFolderDescription({
+      ownerId: user.id,
+      folderId: idParsed.data.id,
+      description: parsed.data.description,
+    });
+    if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    return NextResponse.json({ folder });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'rename failed' },
+      { status: 400 },
+    );
+  }
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {

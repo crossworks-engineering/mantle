@@ -39,6 +39,7 @@ export {
   readFile,
   deleteFile,
   renameFile,
+  renameFolder,
   removeFolder,
 } from './disk';
 
@@ -71,6 +72,8 @@ export {
   ensureDatedUploadFolder,
   updateFolderDescription,
   deleteFolder,
+  renameFolderById,
+  renamedFolderPath,
   listFolders,
   listAllFolders,
   folderById,

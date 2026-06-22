@@ -114,6 +114,12 @@ describe('system manifest integrity', () => {
     expect(grant.has('lifelog_delete'), 'destructive lifelog delete is deliberate-only').toBe(false);
     expect(grant.has('invoke_agent'), 'persona must be able to delegate').toBe(true);
     expect(grant.has('page_share'), 'persona keeps page sharing').toBe(true);
+    // Files: the persona CAN rename/update (non-destructive — closes the audit
+    // gap where it couldn't anonymise a file), but holds no destructive file op.
+    expect(grant.has('file_rename'), 'persona can rename files').toBe(true);
+    expect(grant.has('folder_rename'), 'persona can rename folders').toBe(true);
+    expect(grant.has('folder_describe'), 'persona can update folder descriptions').toBe(true);
+    expect(grant.has('file_delete'), 'no destructive file delete exists/granted').toBe(false);
     // …and the Pages specialist DOES own page authoring (so delegation has a target).
     const pages = MANIFEST_AGENTS.find((a) => a.slug === 'pages')!;
     expect(effectiveTools(pages).has('page_create'), 'Pages agent authors pages').toBe(true);

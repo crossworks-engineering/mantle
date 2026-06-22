@@ -9,6 +9,7 @@ export {
   ensureFilesRootBranch,
   createFolder,
   updateFolderDescription,
+  renameFolderById,
   deleteFolder,
   listFolders,
   listAllFolders,
