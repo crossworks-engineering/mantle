@@ -10,7 +10,13 @@
  * best-effort).
  */
 export async function register(): Promise<void> {
-  if (process.env.NEXT_RUNTIME !== 'nodejs') return;
-  const { reconcileManifestOnBoot } = await import('@/lib/system-manifest/reconcile');
-  void reconcileManifestOnBoot();
+  // The import MUST live inside the `=== 'nodejs'` block: in the edge build
+  // `process.env.NEXT_RUNTIME` inlines to 'edge', so the whole block (and its
+  // dynamic import of the node-only reconcile → seed → @mantle/email chain) is
+  // dead-code-eliminated and never bundled for edge. An early-return guard does
+  // NOT achieve this — webpack still bundles the dynamic chunk after the return.
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    const { reconcileManifestOnBoot } = await import('@/lib/system-manifest/reconcile');
+    void reconcileManifestOnBoot();
+  }
 }
