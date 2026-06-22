@@ -186,6 +186,15 @@ describe('system manifest integrity', () => {
     }
   });
 
+  it('the tool_grounding skill teaches passage-first retrieval (search_chunks)', () => {
+    // Guards the retrieval policy that stops the responder brute-forcing whole-file
+    // reads instead of querying the chunk index. If someone drops this line, the
+    // skill silently reverts to the old "search then read whole files" behaviour.
+    const grounding = MANIFEST_SKILLS.find((s) => s.slug === 'tool_grounding');
+    expect(grounding, 'tool_grounding skill missing from manifest').toBeDefined();
+    expect(grounding!.instructions).toContain('search_chunks');
+  });
+
   it('every specialist agent has a system prompt; the persona has none (persona-bank)', () => {
     for (const agent of MANIFEST_AGENTS) {
       if (agent.isPersona) {

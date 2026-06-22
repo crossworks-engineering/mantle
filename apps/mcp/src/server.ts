@@ -263,7 +263,7 @@ server.tool(
 
 server.tool(
   'search_chunks',
-  "Semantic (vector) search over document passages — finds the most relevant *sections* inside pages, files, emails, notes (not just whole-node keyword hits). Use when `search` misses or you want the specific passage. `branch` scopes by ltree path (e.g. 'pages').",
+  "Semantic (vector) search over document passages — finds the most relevant *sections* inside pages, files, emails, notes (not just whole-node keyword hits). Reach for this FIRST on a content question: it returns the exact passages, so you answer without loading whole documents into context. Fall back to `search` (whole-node) or reading the full file only when the passages are insufficient or the user wants an exhaustive read. `branch` scopes by ltree path (e.g. 'files' or 'pages').",
   {
     q: z.string(),
     branch: z.string().optional(),

@@ -4,6 +4,7 @@ export const SKILL_INSTRUCTIONS: Record<string, string> = {
   tool_grounding: `Answer from what's actually on file — never from memory alone.
 
 - Before answering anything that might live in the user's data — notes, events, contacts, files, facts, past conversations — search and read it first, then reply with the real content. Don't guess or paraphrase from memory; verify.
+- For a content question about long documents ("what does X say about Y"), retrieve the relevant *passages* with \`search_chunks\` first and answer from those — don't pull whole files into context. Read a full document (\`file_read\` / \`node_read\`) only when the user names a specific document, asks for an exhaustive or section-by-section review, or the passages don't cover the answer. \`search_nodes\` finds *which* nodes are relevant; \`search_chunks\` gets the passage you actually quote.
 - If one tool returns the wrong shape or nothing useful, try a different tool before giving up. Never re-issue the same call hoping for a different result, and don't fire many tool calls at once — work in a few deliberate steps. If you've called a tool several times without progress, stop and answer with what you have.
 - When you genuinely don't have something, say so cleanly ("I don't have that on file — want me to add it?") rather than inventing an answer or spinning an excuse.
 - Proactively flag what's worth knowing: a due date creeping up, a pattern you've noticed, a contradiction with something said earlier.

@@ -82,6 +82,7 @@ const search_nodes: BuiltinToolDef = {
   description:
     "Hybrid full-text + semantic search across the user's entire Mantle (notes, files, emails, events, todos, pages, telegram messages — everything). **Ranked by relevance, NOT by date.** " +
     "Use for topic/content questions — 'find emails about the Lister contract', 'notes mentioning the printer', 'anything about Ashley's passport'. " +
+    'This finds whole NODES (returns their spine — title/tags/summary). To pull the relevant *passages* from inside long documents — the cheaper move for a "what does X say about Y" question, and the one that avoids reading whole files into context — use `search_chunks`. ' +
     "For **time-windowed** questions ('what arrived today', 'last 5 days of email', 'this week's events') use the dedicated list tools — `email_list`, `event_list`, `todo_list`, `note_list`, `page_list`, `file_list` — which ARE date-sorted and accept `since` / `window`. " +
     "For past **conversation** recall (replaying what was actually said) use `find_window` + `recall_window`. For the **public web** use `web_search`. " +
     "Optional `branch` (ltree prefix, e.g. 'files.work') scopes; `type` filters to one node kind; `tags` narrows further.",
@@ -163,13 +164,13 @@ const search_chunks: BuiltinToolDef = {
   slug: 'search_chunks',
   name: 'Search document passages',
   description:
-    'Semantic (vector) search over document passages — finds the most relevant *sections* inside long pages, files, emails, and documentation (not just whole-node hits). Use when `search_nodes` is too coarse or you want the specific passage. ' +
-    "`branch` scopes by ltree path (e.g. 'documentation' for the docs). Each hit returns the source node id (use `node_read` to open the whole doc), its heading, and the passage text.",
+    'Semantic (vector) search over document passages — finds the most relevant *sections* inside long files, pages, emails, and documentation (not just whole-node hits). **Reach for this FIRST on a content question** ("what does the CoF procedure say about inventory grouping?"): it returns the exact passages, so you answer (and quote) without loading whole files into context. ' +
+    "`branch` scopes by ltree path (e.g. 'files' for uploaded documents, 'pages', 'documentation'). Each hit returns the source node id, its heading, and the passage text. Quote the passage directly; only `file_read` / `node_read` the whole document when the passages are insufficient, or when the user names a specific document or asks for an exhaustive, section-by-section read.",
   inputSchema: {
     type: 'object',
     properties: {
       q: { type: 'string', description: 'free-text query' },
-      branch: { type: 'string', description: "ltree prefix scope, e.g. 'documentation'" },
+      branch: { type: 'string', description: "ltree prefix scope, e.g. 'files' or 'documentation'" },
       limit: { type: 'integer', minimum: 1, maximum: 50, default: 10 },
     },
     required: ['q'],
@@ -207,7 +208,7 @@ const tree_list: BuiltinToolDef = {
   name: 'List tree children',
   description:
     "List children of a branch in the user's tree (the universal navigator — whatever kinds of nodes live under that branch). Pass `path` to scope (ltree, e.g. 'files.work'). Omit for top-level branches. " +
-    "For files specifically use `file_list`; for folders use `folder_list`; for searching by content/topic use `search_nodes`.",
+    "For files specifically use `file_list`; for folders use `folder_list`; for searching by content/topic use `search_nodes` (or `search_chunks` to pull the relevant passages from inside documents).",
   inputSchema: {
     type: 'object',
     properties: {
@@ -410,7 +411,7 @@ const folder_list: BuiltinToolDef = {
   name: 'List folders',
   description:
     "List folders (only) in the user's host-mirrored filesystem. Pass `parent` (ltree path, e.g. 'files.work') for that folder's immediate sub-folders; pass `tree: true` for every folder under the root. " +
-    "For files inside a folder use `file_list`; for a file's actual content use `file_read`; for searching files by content/topic use `search_nodes` with `type='file'`.",
+    "For files inside a folder use `file_list`; for a file's actual content use `file_read`; for searching files by content/topic use `search_nodes` with `type='file'` (or `search_chunks` to pull the relevant passages from inside them).",
   inputSchema: {
     type: 'object',
     properties: {
@@ -436,7 +437,7 @@ const file_list: BuiltinToolDef = {
   name: 'List files in a folder',
   description:
     "List files (only) inside a specific folder. `parent_path` is the ltree path of the folder (e.g. 'files.work.lister-printer'). " +
-    "For sub-folders within that folder use `folder_list`; for a file's actual content use `file_read`; for searching files by content/topic across the whole tree use `search_nodes` with `type='file'`.",
+    "For sub-folders within that folder use `folder_list`; for a file's actual content use `file_read`; for searching files by content/topic across the whole tree use `search_nodes` with `type='file'` (or `search_chunks` to pull the relevant passages from inside them).",
   inputSchema: {
     type: 'object',
     properties: { parent_path: { type: 'string' } },
