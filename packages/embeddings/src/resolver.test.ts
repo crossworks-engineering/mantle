@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_EMBEDDING_MODEL,
   clearEmbeddingModelCache,
+  resolveEmbeddingConfig,
   resolveEmbeddingModel,
 } from './index';
 
@@ -64,6 +65,17 @@ describe('resolveEmbeddingModel', () => {
     clearEmbeddingModelCache('owner-a');
     const aAfter = await resolveEmbeddingModel('owner-a');
     expect(aAfter).toBe(DEFAULT_EMBEDDING_MODEL);
+  });
+
+  it('leaves the perf-tuning fields unset on the fallback config (→ env/default)', async () => {
+    // No row / DB down → the four tuning knobs are absent, so every consumer
+    // (extract queue, local-embed adapter) falls through to its env → code
+    // default. The DB-hit path that surfaces real values is exercised live.
+    const cfg = await resolveEmbeddingConfig('owner-a');
+    expect(cfg.extractionConcurrency ?? null).toBeNull();
+    expect(cfg.extractionTimeBudgetMinutes ?? null).toBeNull();
+    expect(cfg.localEmbedBatchSize ?? null).toBeNull();
+    expect(cfg.localEmbedRequestTimeoutMs ?? null).toBeNull();
   });
 
   it('argless clearEmbeddingModelCache wipes everything', async () => {

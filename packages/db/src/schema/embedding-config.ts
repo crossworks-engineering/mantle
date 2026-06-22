@@ -51,6 +51,22 @@ export const embeddingConfig = pgTable('embedding_config', {
   }),
   backupLabel: text('backup_label'),
 
+  // ─── Performance / throughput tuning (all nullable → fall back to env →
+  //     code default; see /settings/embedding "Performance & throughput") ───
+  /** Max concurrent extraction jobs (pg-boss workers). Null → EXTRACT_CONCURRENCY
+   *  env → 2. Drop to 1 on a CPU-only embedder so jobs don't contend for cores.
+   *  Boot-time: applies after the agent restarts. */
+  extractionConcurrency: integer('extraction_concurrency'),
+  /** Minutes a single extraction may run before pg-boss expires + retries the
+   *  job. Null → MANTLE_EXTRACT_EXPIRE_MIN env → 60. Boot-time. */
+  extractionTimeBudgetMinutes: integer('extraction_time_budget_minutes'),
+  /** Texts per local-embedder HTTP request. Null → MANTLE_LOCAL_EMBED_BATCH env
+   *  → 16. Smaller (8) clears the timeout on a slow vCPU. Applies live. */
+  localEmbedBatchSize: integer('local_embed_batch_size'),
+  /** Per-request timeout (ms) for the local embedder. Null →
+   *  MANTLE_LOCAL_EMBED_TIMEOUT_MS env → 120000. Applies live. */
+  localEmbedRequestTimeoutMs: integer('local_embed_request_timeout_ms'),
+
   /** Stamped when a primary→backup failover last fired. Surfaced in the UI. */
   lastFailoverAt: timestamp('last_failover_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

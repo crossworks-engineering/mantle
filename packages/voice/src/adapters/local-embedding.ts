@@ -91,7 +91,12 @@ async function embedOnce(
       'content-type': 'application/json',
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    // Per-call override from the embedding config (null/<1s → the env/const default).
+    signal: AbortSignal.timeout(
+      req.localEmbedTimeoutMs && req.localEmbedTimeoutMs >= 1_000
+        ? req.localEmbedTimeoutMs
+        : REQUEST_TIMEOUT_MS,
+    ),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -131,11 +136,14 @@ export const localEmbedding: EmbeddingDispatcher = {
     // window, and the caller's embedding cache makes a retry RESUME from the
     // completed sub-batches instead of restarting. Sequential on purpose —
     // parallel requests just contend for the same cores.
+    // Per-call override from the embedding config (null → the env/const default).
+    const batchSize =
+      req.localEmbedBatchSize && req.localEmbedBatchSize >= 1 ? req.localEmbedBatchSize : SUB_BATCH;
     const out: number[][] = [];
     let model = req.model;
     let tokensIn: number | undefined;
-    for (let start = 0; start < texts.length; start += SUB_BATCH) {
-      const slice = texts.slice(start, start + SUB_BATCH);
+    for (let start = 0; start < texts.length; start += batchSize) {
+      const slice = texts.slice(start, start + batchSize);
       const r = await embedOnce(req, slice);
       out.push(...r.vectors);
       model = r.model;

@@ -25,6 +25,15 @@ function orNull(v: FormDataEntryValue | null): string | null {
   const s = str(v);
   return s.length > 0 ? s : null;
 }
+/** Parse an optional integer form field, clamped to [min,max]. Blank → null
+ *  (the resolver then falls back to env → code default). */
+function nullableInt(v: FormDataEntryValue | null, min: number, max: number): number | null {
+  const s = str(v);
+  if (!s) return null;
+  const n = Number.parseInt(s, 10);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(Math.max(n, min), max);
+}
 
 export async function saveEmbeddingConfigAction(
   formData: FormData,
@@ -49,6 +58,15 @@ export async function saveEmbeddingConfigAction(
       backupBaseUrl: backupEnabled ? orNull(formData.get('backup_base_url')) : null,
       backupApiKeyId: backupEnabled ? orNull(formData.get('backup_api_key_id')) : null,
       backupLabel: backupEnabled ? orNull(formData.get('backup_label')) : null,
+      // Performance & throughput — blank → null → env → code default.
+      extractionConcurrency: nullableInt(formData.get('extraction_concurrency'), 1, 8),
+      extractionTimeBudgetMinutes: nullableInt(formData.get('extraction_time_budget_minutes'), 1, 720),
+      localEmbedBatchSize: nullableInt(formData.get('local_embed_batch_size'), 1, 512),
+      localEmbedRequestTimeoutMs: nullableInt(
+        formData.get('local_embed_request_timeout_ms'),
+        1000,
+        600000,
+      ),
     });
     revalidatePath('/settings/embedding');
     return { ok: true, model };

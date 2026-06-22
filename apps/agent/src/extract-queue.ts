@@ -47,6 +47,7 @@
  */
 
 import PgBoss from 'pg-boss';
+import { resolveEmbeddingConfig } from '@mantle/embeddings';
 import { extractNode } from './extractor.js';
 
 const EXTRACT_QUEUE = 'mantle.extract';
@@ -84,13 +85,16 @@ let boss: PgBoss | null = null;
 /** Per-node in-flight chain — see the same-node concurrency note above. */
 const inflightByNode = new Map<string, Promise<unknown>>();
 
-/** Resolve the worker concurrency from `EXTRACT_CONCURRENCY` (clamped 1..8). */
-function resolveConcurrency(): number {
-  const raw = process.env.EXTRACT_CONCURRENCY;
-  if (!raw) return DEFAULT_CONCURRENCY;
-  const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n) || n < 1) return DEFAULT_CONCURRENCY;
-  return Math.min(n, MAX_CONCURRENCY);
+/** Resolve the worker concurrency, clamped 1..8. Precedence: the embedding
+ *  config's `extractionConcurrency` (DB, passed as `override`) → `EXTRACT_CONCURRENCY`
+ *  env → DEFAULT_CONCURRENCY. */
+function resolveConcurrency(override?: number | null): number {
+  const envN = process.env.EXTRACT_CONCURRENCY
+    ? Number.parseInt(process.env.EXTRACT_CONCURRENCY, 10)
+    : NaN;
+  const candidate = override != null ? override : envN;
+  if (!Number.isFinite(candidate) || candidate < 1) return DEFAULT_CONCURRENCY;
+  return Math.min(candidate, MAX_CONCURRENCY);
 }
 
 /**
@@ -129,22 +133,33 @@ export async function startExtractQueue(databaseUrl: string, ownerId: string): P
   boss.on('error', (err) => console.error('[extract-queue] pg-boss error:', err));
   await boss.start();
 
+  // Resolve the per-owner throughput tuning from the embedding config (null →
+  // env → code default). The concurrency + job budget are boot-time (the worker
+  // pool size and queue policy are fixed here), so a change in the UI applies on
+  // the next agent restart. Best-effort — a DB hiccup falls back to env/default.
+  const cfg = await resolveEmbeddingConfig(ownerId).catch(() => null);
+  const expireMin =
+    cfg?.extractionTimeBudgetMinutes && cfg.extractionTimeBudgetMinutes >= 1
+      ? cfg.extractionTimeBudgetMinutes
+      : EXTRACT_EXPIRE_MIN;
+  const queueOptions = { ...EXTRACT_QUEUE_OPTIONS, expireInSeconds: expireMin * 60 };
+
   // Dead-letter target first — the main queue references it by name.
   await boss.createQueue(DEAD_LETTER_QUEUE, { name: DEAD_LETTER_QUEUE, policy: 'standard' });
 
-  await boss.createQueue(EXTRACT_QUEUE, { name: EXTRACT_QUEUE, ...EXTRACT_QUEUE_OPTIONS });
+  await boss.createQueue(EXTRACT_QUEUE, { name: EXTRACT_QUEUE, ...queueOptions });
   // createQueue is ON CONFLICT DO NOTHING — an existing install keeps whatever
   // policy the queue was first created with (it shipped as 'standard', where
-  // singletonKey dedup is a no-op). updateQueue makes the 'short' policy land
-  // on already-created queues too.
-  await boss.updateQueue(EXTRACT_QUEUE, { name: EXTRACT_QUEUE, ...EXTRACT_QUEUE_OPTIONS });
+  // singletonKey dedup is a no-op). updateQueue makes the 'short' policy + the
+  // resolved expiry land on already-created queues too.
+  await boss.updateQueue(EXTRACT_QUEUE, { name: EXTRACT_QUEUE, ...queueOptions });
 
   const redriven = await redriveDeadLetters();
   if (redriven > 0) {
     console.log(`[extract-queue] re-drove ${redriven} dead-lettered job(s) for a fresh retry round`);
   }
 
-  const concurrency = resolveConcurrency();
+  const concurrency = resolveConcurrency(cfg?.extractionConcurrency);
   for (let i = 0; i < concurrency; i++) {
     // Each registration is its own polling worker; pg-boss hands out distinct
     // jobs via SKIP LOCKED, so N workers = up to N concurrent extractions, each
@@ -173,7 +188,8 @@ export async function startExtractQueue(databaseUrl: string, ownerId: string): P
   }
 
   console.log(
-    `[extract-queue] ${concurrency} worker(s) on ${EXTRACT_QUEUE} (policy=short, retry 5× w/ backoff → ${DEAD_LETTER_QUEUE})`,
+    `[extract-queue] ${concurrency} worker(s) on ${EXTRACT_QUEUE} ` +
+      `(policy=short, ${expireMin}min budget, retry 5× w/ backoff → ${DEAD_LETTER_QUEUE})`,
   );
 }
 

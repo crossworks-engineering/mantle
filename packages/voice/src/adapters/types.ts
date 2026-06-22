@@ -602,6 +602,14 @@ export interface EmbedRequest {
    *  box behind NAT. Honoured by the `local-embedding` adapter; inert when no
    *  proxy is configured. */
   viaTailnet?: boolean;
+  /** Texts per HTTP request for the `local-embedding` adapter. Lets the embedding
+   *  config tune throughput per-owner (small on a CPU box so a request fits the
+   *  timeout, large on a GPU). Null/undefined → the adapter's own
+   *  `MANTLE_LOCAL_EMBED_BATCH` env → 16. Ignored by cloud adapters. */
+  localEmbedBatchSize?: number;
+  /** Per-request timeout (ms) for the `local-embedding` adapter. Null/undefined
+   *  → `MANTLE_LOCAL_EMBED_TIMEOUT_MS` env → 120000. Ignored by cloud adapters. */
+  localEmbedTimeoutMs?: number;
 }
 
 export interface EmbedResult {

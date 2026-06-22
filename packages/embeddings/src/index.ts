@@ -119,6 +119,18 @@ export interface EmbeddingConfig {
   primary: EmbeddingRoute;
   /** Same-model fallback route, or null when failover is disabled. */
   backup: EmbeddingRoute | null;
+  // ── Performance / throughput tuning. Null/undefined → the consumer's env var
+  //    → code default (so a compose override still works). Surfaced here so the
+  //    one resolver feeds both the extractor (concurrency/budget) and the local
+  //    embed adapter (batch/timeout). See /settings/embedding. ──
+  /** Max concurrent extraction jobs. Read by the agent's extract queue at boot. */
+  extractionConcurrency?: number | null;
+  /** Minutes a single extraction may run before the queue expires the job. */
+  extractionTimeBudgetMinutes?: number | null;
+  /** Texts per local-embedder request (threaded into the adapter per call). */
+  localEmbedBatchSize?: number | null;
+  /** Local-embedder per-request timeout in ms (threaded per call). */
+  localEmbedRequestTimeoutMs?: number | null;
 }
 
 /** Used when the owner has no `embedding_config` row (fresh install, or the
@@ -173,6 +185,10 @@ export async function resolveEmbeddingConfig(ownerId: string): Promise<Embedding
                 label: row.backupLabel ?? 'Backup',
               }
             : null,
+        extractionConcurrency: row.extractionConcurrency,
+        extractionTimeBudgetMinutes: row.extractionTimeBudgetMinutes,
+        localEmbedBatchSize: row.localEmbedBatchSize,
+        localEmbedRequestTimeoutMs: row.localEmbedRequestTimeoutMs,
       };
     }
   } catch (err) {
@@ -312,6 +328,10 @@ export async function embedMultimodal(
       apiKeyId: opts?.apiKeyId !== undefined ? opts.apiKeyId : baseConfig.primary.apiKeyId,
     },
     backup: baseConfig.backup,
+    extractionConcurrency: baseConfig.extractionConcurrency,
+    extractionTimeBudgetMinutes: baseConfig.extractionTimeBudgetMinutes,
+    localEmbedBatchSize: baseConfig.localEmbedBatchSize,
+    localEmbedRequestTimeoutMs: baseConfig.localEmbedRequestTimeoutMs,
   };
   // No trace → fast path with no instrumentation overhead.
   if (!currentTrace()) {
@@ -462,6 +482,10 @@ async function doEmbed(
         // (768) so requesting it everywhere keeps inserts compatible.
         dimensions,
         baseUrl: r.baseUrl ?? undefined,
+        // Per-call throughput overrides for the local adapter (null → adapter's
+        // own env/const fallback). Ignored by cloud adapters.
+        localEmbedBatchSize: config.localEmbedBatchSize ?? undefined,
+        localEmbedTimeoutMs: config.localEmbedRequestTimeoutMs ?? undefined,
       });
       apiCalls++;
       if (result.vectors.length !== slice.length) {

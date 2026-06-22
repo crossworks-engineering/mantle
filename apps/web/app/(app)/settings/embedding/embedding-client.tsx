@@ -31,6 +31,21 @@ type ConfigDTO = {
   backupApiKeyId: string | null;
   backupLabel: string | null;
   lastFailoverAt: string | null;
+  extractionConcurrency: number | null;
+  extractionTimeBudgetMinutes: number | null;
+  localEmbedBatchSize: number | null;
+  localEmbedRequestTimeoutMs: number | null;
+};
+
+/** Hardware-profile presets for the Performance section. Blank ('') = "use the
+ *  default" (null in the DB → env → code default). */
+const PERF_PRESETS: Record<
+  'balanced' | 'small-cpu' | 'gpu',
+  { concurrency: string; budget: string; batch: string; timeout: string }
+> = {
+  balanced: { concurrency: '', budget: '', batch: '', timeout: '' },
+  'small-cpu': { concurrency: '1', budget: '', batch: '8', timeout: '' },
+  gpu: { concurrency: '4', budget: '30', batch: '100', timeout: '60000' },
 };
 
 type ProbeResult = { dim: number } | { error: string };
@@ -86,6 +101,31 @@ export function EmbeddingClient({
   const [testing, setTesting] = useState<'primary' | 'backup' | null>(null);
   const [pending, startTransition] = useTransition();
   const [rebuilding, setRebuilding] = useState(false);
+
+  // ── Performance & throughput (blank = use the default) ──
+  const num = (n: number | null | undefined) => (n != null ? String(n) : '');
+  const [perfConcurrency, setPerfConcurrency] = useState(num(config?.extractionConcurrency));
+  const [perfBudget, setPerfBudget] = useState(num(config?.extractionTimeBudgetMinutes));
+  const [perfBatch, setPerfBatch] = useState(num(config?.localEmbedBatchSize));
+  const [perfTimeout, setPerfTimeout] = useState(num(config?.localEmbedRequestTimeoutMs));
+  const currentPreset =
+    (Object.keys(PERF_PRESETS) as (keyof typeof PERF_PRESETS)[]).find((name) => {
+      const p = PERF_PRESETS[name];
+      return (
+        p.concurrency === perfConcurrency &&
+        p.budget === perfBudget &&
+        p.batch === perfBatch &&
+        p.timeout === perfTimeout
+      );
+    }) ?? 'custom';
+  function applyPreset(name: string) {
+    const p = PERF_PRESETS[name as keyof typeof PERF_PRESETS];
+    if (!p) return; // 'custom' → leave the fields as-is
+    setPerfConcurrency(p.concurrency);
+    setPerfBudget(p.budget);
+    setPerfBatch(p.batch);
+    setPerfTimeout(p.timeout);
+  }
 
   async function testRoute(which: 'primary' | 'backup') {
     const r = which === 'primary' ? primary : backup;
@@ -235,6 +275,112 @@ export function EmbeddingClient({
               bare
             />
           )}
+        </fieldset>
+
+        {/* ── Performance & throughput ──────────────────────────────── */}
+        <fieldset className="space-y-3 rounded-md border border-border p-4">
+          <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Performance &amp; throughput
+          </legend>
+          <div className="space-y-1.5">
+            <Label htmlFor="perf_preset">Hardware profile</Label>
+            <select
+              id="perf_preset"
+              value={currentPreset}
+              onChange={(e) => applyPreset(e.target.value)}
+              className={SELECT_CLASS}
+            >
+              <option value="balanced">Balanced (default)</option>
+              <option value="small-cpu">Small CPU VPS — no GPU</option>
+              <option value="gpu">GPU / fast remote</option>
+              <option value="custom" disabled={currentPreset !== 'custom'}>
+                Custom
+              </option>
+            </select>
+            <p className="text-xs text-muted-foreground">
+              A one-click starting point — it just fills the fields below; tweak any of
+              them and Save. A blank field uses the built-in default. On a small CPU-only
+              VPS, pick <strong>Small CPU VPS</strong>.
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="extraction_concurrency">Extraction concurrency</Label>
+              <Input
+                id="extraction_concurrency"
+                name="extraction_concurrency"
+                type="number"
+                min="1"
+                max="8"
+                value={perfConcurrency}
+                onChange={(e) => setPerfConcurrency(e.target.value)}
+                placeholder="default 2"
+              />
+              <p className="text-xs text-muted-foreground">
+                How many files index at once. Drop to <code>1</code> on a CPU-only box so
+                jobs don&apos;t fight for the same cores.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="extraction_time_budget_minutes">Time budget (min)</Label>
+              <Input
+                id="extraction_time_budget_minutes"
+                name="extraction_time_budget_minutes"
+                type="number"
+                min="1"
+                max="720"
+                value={perfBudget}
+                onChange={(e) => setPerfBudget(e.target.value)}
+                placeholder="default 60"
+              />
+              <p className="text-xs text-muted-foreground">
+                How long one file may index before it&apos;s retried. Big documents on a
+                slow embedder need the room.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="local_embed_batch_size">Local embed batch size</Label>
+              <Input
+                id="local_embed_batch_size"
+                name="local_embed_batch_size"
+                type="number"
+                min="1"
+                max="512"
+                value={perfBatch}
+                onChange={(e) => setPerfBatch(e.target.value)}
+                placeholder="default 16"
+              />
+              <p className="text-xs text-muted-foreground">
+                Texts per request to the local embedder. Smaller (<code>8</code>) clears
+                the timeout on a slow vCPU; larger suits a GPU. Only affects the{' '}
+                <code>local</code> provider.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="local_embed_request_timeout_ms">Local embed timeout (ms)</Label>
+              <Input
+                id="local_embed_request_timeout_ms"
+                name="local_embed_request_timeout_ms"
+                type="number"
+                min="1000"
+                max="600000"
+                step="1000"
+                value={perfTimeout}
+                onChange={(e) => setPerfTimeout(e.target.value)}
+                placeholder="default 120000"
+              />
+              <p className="text-xs text-muted-foreground">
+                How long one local embed request may run before it&apos;s aborted. Raise on
+                very slow hardware.
+              </p>
+            </div>
+          </div>
+
+          <p className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            ℹ Batch size and timeout apply immediately. Concurrency and the time budget are
+            read when the extractor starts, so they take effect after the agent restarts.
+          </p>
         </fieldset>
 
         <SubmitButton pending={pending}>Save embedding config</SubmitButton>

@@ -32,6 +32,10 @@ export default async function EmbeddingPage() {
                 backupApiKeyId: config.backupApiKeyId,
                 backupLabel: config.backupLabel,
                 lastFailoverAt: config.lastFailoverAt?.toISOString() ?? null,
+                extractionConcurrency: config.extractionConcurrency,
+                extractionTimeBudgetMinutes: config.extractionTimeBudgetMinutes,
+                localEmbedBatchSize: config.localEmbedBatchSize,
+                localEmbedRequestTimeoutMs: config.localEmbedRequestTimeoutMs,
               }
             : null
         }

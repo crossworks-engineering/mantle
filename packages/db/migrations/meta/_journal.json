@@ -694,6 +694,13 @@
       "when": 1783296000000,
       "tag": "0098_app_databases",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1783382400000,
+      "tag": "0099_embedding_tuning",
+      "breakpoints": true
     }
   ]
 }

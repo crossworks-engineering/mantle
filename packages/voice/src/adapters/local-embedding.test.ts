@@ -87,4 +87,27 @@ describe('local-embedding adapter', () => {
     expect(r.vectors.map((v) => v[0])).toEqual(texts.map((_, i) => i));
     expect(r.tokensIn).toBe(20);
   });
+
+  it('honours a per-call localEmbedBatchSize over the default sub-batch', async () => {
+    // The embedding config threads batch size through EmbedRequest so a slow box
+    // can shrink it without an env/restart. 20 inputs at batchSize 8 → 8 + 8 + 4.
+    const calls: Array<{ input: string[] }> = [];
+    globalThis.fetch = (async (_url: unknown, init: { body?: string }) => {
+      const body = JSON.parse(init?.body ?? '{}') as { input: string[] };
+      calls.push({ input: body.input });
+      return {
+        ok: true,
+        json: async () => ({ data: body.input.map((_, i) => ({ embedding: [i], index: i })), model: 'm' }),
+      };
+    }) as unknown as typeof fetch;
+    const a = getEmbeddingAdapter('local')!;
+    const texts = Array.from({ length: 20 }, (_, i) => `t${i}`);
+    await a.embed({ apiKey: 'x', model: 'm', input: texts, localEmbedBatchSize: 8 });
+    expect(calls.map((c) => c.input.length)).toEqual([8, 8, 4]);
+
+    // An invalid (<1) override falls back to the default sub-batch (16 → 16 + 4).
+    calls.length = 0;
+    await a.embed({ apiKey: 'x', model: 'm', input: texts, localEmbedBatchSize: 0 });
+    expect(calls.map((c) => c.input.length)).toEqual([16, 4]);
+  });
 });

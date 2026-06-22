@@ -22,6 +22,11 @@ export type EmbeddingConfigInput = {
   backupBaseUrl: string | null;
   backupApiKeyId: string | null;
   backupLabel: string | null;
+  // Performance / throughput tuning (null → env → code default).
+  extractionConcurrency: number | null;
+  extractionTimeBudgetMinutes: number | null;
+  localEmbedBatchSize: number | null;
+  localEmbedRequestTimeoutMs: number | null;
 };
 
 export async function getEmbeddingConfig(ownerId: string): Promise<EmbeddingConfigRow | null> {
