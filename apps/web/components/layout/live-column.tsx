@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import {
   Activity,
   AlertCircle,
@@ -19,6 +20,7 @@ import {
   useLiveActivity,
 } from '@/components/journey/use-live-activity';
 import type { ActivityItem } from '@/lib/journey';
+import { formatElapsed } from './elapsed';
 
 /**
  * Always-on Activity column in the app shell. Shows what's processing right now
@@ -43,6 +45,18 @@ function outcomeText(it: ActivityItem): string | null {
   return parts.length ? parts.join(' · ') : 'indexed';
 }
 
+/** A live, self-ticking elapsed timer for an in-flight item — counts up every
+ *  second (independent of the 5s activity poll) so a long-running process still
+ *  visibly progresses instead of looking frozen. */
+function ElapsedTimer({ startedAt }: { startedAt: string }) {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => force((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return <>{formatElapsed(ageSeconds(startedAt))}</>;
+}
+
 export function LiveColumn({
   collapsed,
   onToggle,
@@ -57,7 +71,6 @@ export function LiveColumn({
   const recent = data?.recent ?? [];
   const live = active.length > 0;
   const hasAny = active.length + failures.length + recent.length > 0;
-  const anyStalled = active.some((it) => ageSeconds(it.startedAt) > STALL_THRESHOLD_S);
 
   return (
     <aside className="fixed inset-y-0 right-0 z-30 hidden w-[var(--activity-w)] flex-col border-l bg-sidebar pt-16 transition-[width] duration-200 ease-in-out lg:flex">
@@ -66,7 +79,6 @@ export function LiveColumn({
           active={active.length}
           failures={failures.length}
           recent={recent.length}
-          anyStalled={anyStalled}
           loaded={loaded}
           onToggle={onToggle}
         />
@@ -116,27 +128,21 @@ export function LiveColumn({
                 {active.length > 0 && (
                   <Section label="Active now">
                     {active.map((it) => {
-                      const stalled = ageSeconds(it.startedAt) > STALL_THRESHOLD_S;
+                      const longRunning = ageSeconds(it.startedAt) > STALL_THRESHOLD_S;
                       return (
                         <Row key={it.traceId} it={it}>
                           <div className="flex items-center gap-2">
-                            <Loader2
-                              className={cn(
-                                'size-3.5 shrink-0',
-                                stalled ? 'text-amber-500' : 'animate-spin text-emerald-500',
-                              )}
-                              aria-hidden
-                            />
+                            {/* Always spinning — a long-running process is busy,
+                                not broken; the elapsed timer shows progress. */}
+                            <Loader2 className="size-3.5 shrink-0 animate-spin text-emerald-500" aria-hidden />
                             <ActionIcon iconKey={it.iconKey} className="size-3.5 shrink-0 text-muted-foreground" />
                             <span className="truncate text-sm font-medium">{it.label}</span>
                             <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
-                              {relativeTime(it.startedAt)}
+                              <ElapsedTimer startedAt={it.startedAt} />
                             </span>
                           </div>
-                          {stalled && (
-                            <div className="pl-5 text-xs text-amber-600 dark:text-amber-400">
-                              running unusually long — may be stalled
-                            </div>
+                          {longRunning && (
+                            <div className="pl-5 text-xs text-muted-foreground">busy</div>
                           )}
                         </Row>
                       );
@@ -207,14 +213,12 @@ function CollapsedRail({
   active,
   failures,
   recent,
-  anyStalled,
   loaded,
   onToggle,
 }: {
   active: number;
   failures: number;
   recent: number;
-  anyStalled: boolean;
   loaded: boolean;
   onToggle: () => void;
 }) {
@@ -239,12 +243,7 @@ function CollapsedRail({
         count={active}
         title={`${active} running`}
         onClick={onToggle}
-        icon={
-          <Loader2
-            className={cn('size-4', anyStalled ? 'text-amber-500' : 'animate-spin text-emerald-500')}
-            aria-hidden
-          />
-        }
+        icon={<Loader2 className="size-4 animate-spin text-emerald-500" aria-hidden />}
       />
       <StatusPip
         show={failures > 0}
