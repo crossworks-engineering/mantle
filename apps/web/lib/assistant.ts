@@ -506,6 +506,17 @@ export async function runAssistantTurn(
           agentDepth: 1,
           delegateTo: (agent.memoryConfig as { delegate_to?: string[] } | null)?.delegate_to ?? [],
           resultHandling: agent.memoryConfig?.result_handling ?? null,
+          // Honor the agent's per-turn iteration override for the TOP-LEVEL
+          // responder turn too (not just delegated children). A heavy
+          // gather-then-author task needs more than the runtime default of 6
+          // rounds or the loop force_finals mid-read and never authors. Clamp
+          // matches invoke-agent: positive ints only, hard-capped at 30.
+          ...(() => {
+            const requested = (agent.memoryConfig as { max_iterations?: number } | null)?.max_iterations;
+            return typeof requested === 'number' && requested > 0
+              ? { maxIterations: Math.min(30, Math.floor(requested)) }
+              : {};
+          })(),
           initialMessages: messages,
           tools: allowedTools,
           // /assistant has no outbound channel beyond the reply stream
