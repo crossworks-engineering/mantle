@@ -622,6 +622,14 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       content_hit_limit: 5,
       inject_lifelog: true,
       delegate_to: [],
+      // The generalist isn't only a read-then-reply chat agent: real tasks are
+      // "read N source docs → compile → author a page/note", which needs more
+      // than the runtime default of 6 tool rounds. At 6 the loop force_finals
+      // mid-read and the authoring step never runs (the task looks "never
+      // finished"). 25 gives headroom for heavy gather-then-write turns; the
+      // runtime still hard-caps at 30. Specialists set their own (Pages 20,
+      // Tables/Toolsmith/Appsmith 30).
+      max_iterations: 25,
     },
     priority: 100,
   },
