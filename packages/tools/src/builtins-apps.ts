@@ -225,7 +225,7 @@ const app_build: BuiltinToolDef = {
     if (!app) return { ok: false, error: `app ${id} not found` };
     const source = workingSource(app);
     try {
-      const res = await buildApp(source);
+      const res = await buildApp(source, { declaredToolSlugs: app.manifest.toolSlugs ?? [] });
       ctx.step?.setMeta({ ok: res.ok, errors: res.errors.length, warnings: res.warnings.length });
       if (res.ok && res.code) {
         const buf = Buffer.from(res.code, 'utf8');

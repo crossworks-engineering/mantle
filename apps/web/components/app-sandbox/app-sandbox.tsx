@@ -93,7 +93,17 @@ export function AppSandbox({
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ slug: req.slug, input: req.input }),
           });
-          reply(await r.json());
+          const data = await r.json();
+          // 403 == the slug isn't in the app's declared tools. That's a wiring
+          // bug, not a transient failure — surface it plainly to the builder
+          // even if the app's own code swallows the rejection.
+          if (r.status === 403 && data?.ok === false) {
+            onError?.(
+              `This app tried to use the tool “${req.slug}”, which it hasn't declared. ` +
+                `Add it to the app's tools (app_tools_set) — or ask Appsmith to — before it can run.`,
+            );
+          }
+          reply(data);
           return;
         }
         // db.query | db.exec
@@ -108,7 +118,7 @@ export function AppSandbox({
         reply({ ok: false, error: err instanceof Error ? err.message : String(err) });
       }
     },
-    [appId],
+    [appId, onError],
   );
 
   // Listen for messages from THIS iframe only.

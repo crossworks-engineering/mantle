@@ -100,3 +100,64 @@ describe('buildApp — error reporting', () => {
     expect(res.errors.some((e) => e.location !== null)).toBe(true);
   });
 });
+
+describe('lintToolRefs — undeclared host.tools.call', () => {
+  it('warns (does not error) for a host.tools.call slug that is not declared', async () => {
+    const src = app({
+      'App.tsx':
+        "import { host } from '@host';\n" +
+        "export default function App() {\n" +
+        "  const go = () => host.tools.call('openweather_geocode', { q: 'x' });\n" +
+        "  return <button onClick={go}>go</button>;\n" +
+        '}\n',
+    });
+    const res = await buildApp(src, { declaredToolSlugs: [] });
+    expect(res.ok).toBe(true); // warning-only: the build still succeeds
+    expect(res.warnings.some((w) => /openweather_geocode/.test(w.text))).toBe(true);
+    const w = res.warnings.find((w) => /openweather_geocode/.test(w.text));
+    expect(w?.location?.file).toBe('App.tsx');
+    expect(w?.location?.line).toBe(3);
+  });
+
+  it('does not warn when the slug is declared', async () => {
+    const src = app({
+      'App.tsx':
+        "import { host } from '@host';\n" +
+        "export default function App() {\n" +
+        "  void (() => host.tools.call('weather_now', {}));\n" +
+        "  return <div>ok</div>;\n" +
+        '}\n',
+    });
+    const res = await buildApp(src, { declaredToolSlugs: ['weather_now'] });
+    expect(res.ok).toBe(true);
+    expect(res.warnings.some((w) => /weather_now/.test(w.text))).toBe(false);
+  });
+
+  it('skips the lint entirely when declaredToolSlugs is omitted (back-compat)', async () => {
+    const src = app({
+      'App.tsx':
+        "import { host } from '@host';\n" +
+        "export default function App() {\n" +
+        "  void (() => host.tools.call('anything', {}));\n" +
+        "  return <div>ok</div>;\n" +
+        '}\n',
+    });
+    const res = await buildApp(src);
+    expect(res.warnings.some((w) => /isn't in the app's declared tools/.test(w.text))).toBe(false);
+  });
+
+  it('ignores dynamic (non-literal) slugs — no false positives', async () => {
+    const src = app({
+      'App.tsx':
+        "import { host } from '@host';\n" +
+        "export default function App() {\n" +
+        "  const slug = 'x';\n" +
+        "  void (() => host.tools.call(slug, {}));\n" +
+        "  return <div>ok</div>;\n" +
+        '}\n',
+    });
+    const res = await buildApp(src, { declaredToolSlugs: [] });
+    expect(res.ok).toBe(true);
+    expect(res.warnings.length).toBe(0);
+  });
+});

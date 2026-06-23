@@ -159,8 +159,58 @@ function toMsg(m: Message): BuildMessage {
   };
 }
 
-/** Bundle an app's source tree into one self-mounting ESM module. */
-export async function buildApp(source: AppSource): Promise<BuildResult> {
+// Matches a `host.tools.call('slug', …)` site with a *literal* slug. Dynamic
+// slugs (a variable) are intentionally not matched — we can't statically know
+// them, and flagging them would be a false positive.
+const TOOL_CALL_RE = /host\s*\.\s*tools\s*\.\s*call\s*\(\s*(['"`])([^'"`]+)\1/g;
+
+/**
+ * Static lint: find every `host.tools.call('<slug>')` whose slug isn't in the
+ * app's declared `toolSlugs`. The host broker refuses undeclared slugs at
+ * runtime (a 403 the user only sees when the call fires), so surfacing the
+ * mismatch at build time turns a silent runtime failure into feedback the
+ * agent (and the Build panel) sees immediately. Returns BuildMessages so the
+ * caller can fold them into the build's warnings/errors. Literal slugs only.
+ */
+export function lintToolRefs(source: AppSource, declaredSlugs: string[]): BuildMessage[] {
+  const declared = new Set(declaredSlugs);
+  const out: BuildMessage[] = [];
+  for (const [file, text] of Object.entries(source.files)) {
+    TOOL_CALL_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = TOOL_CALL_RE.exec(text)) !== null) {
+      const slug = m[2];
+      if (!slug || declared.has(slug)) continue;
+      const pre = text.slice(0, m.index);
+      const line = pre.length - pre.replace(/\n/g, '').length + 1; // 1-based
+      const column = m.index - (pre.lastIndexOf('\n') + 1); // 0-based within line
+      out.push({
+        text:
+          `This app calls tool '${slug}' via host.tools.call, but '${slug}' isn't in the app's declared tools — ` +
+          `the host will refuse it at runtime. Declare it with app_tools_set (build the tool via the toolsmith first if it doesn't exist), or remove the call.`,
+        location: { file, line, column },
+      });
+    }
+  }
+  return out;
+}
+
+/** Bundle an app's source tree into one self-mounting ESM module. When
+ *  `declaredToolSlugs` is supplied, undeclared `host.tools.call` slugs are
+ *  appended to the build's warnings (see lintToolRefs). */
+export async function buildApp(
+  source: AppSource,
+  opts: { declaredToolSlugs?: string[] } = {},
+): Promise<BuildResult> {
+  const toolWarnings = opts.declaredToolSlugs
+    ? lintToolRefs(source, opts.declaredToolSlugs)
+    : [];
+  const withToolWarnings = (r: BuildResult): BuildResult =>
+    toolWarnings.length ? { ...r, warnings: [...r.warnings, ...toolWarnings] } : r;
+  return withToolWarnings(await buildAppInner(source));
+}
+
+async function buildAppInner(source: AppSource): Promise<BuildResult> {
   const entry = normKey(source.entry || 'App.tsx');
   if (!(entry in source.files)) {
     return {

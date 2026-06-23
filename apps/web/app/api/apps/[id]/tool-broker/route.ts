@@ -33,7 +33,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const allowed = app.manifest.toolSlugs ?? [];
   if (!allowed.includes(parsed.data.slug)) {
     return NextResponse.json(
-      { ok: false, error: `tool '${parsed.data.slug}' is not declared by this app` },
+      {
+        ok: false,
+        error: `This app isn't allowed to use the tool '${parsed.data.slug}'. It must be declared in the app's tools before it can run.`,
+      },
       { status: 403 },
     );
   }

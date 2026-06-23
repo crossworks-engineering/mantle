@@ -21,7 +21,9 @@ export type AppBuildOutcome = {
 export async function runAppBuild(ownerId: string, id: string): Promise<AppBuildOutcome | null> {
   const app = await getApp(ownerId, id);
   if (!app) return null;
-  const res = await buildApp(workingSource(app));
+  const res = await buildApp(workingSource(app), {
+    declaredToolSlugs: app.manifest.toolSlugs ?? [],
+  });
   if (res.ok && res.code) {
     const put = await putContent(Buffer.from(res.code, 'utf8'), 'application/javascript');
     await setDraftBuild(ownerId, id, {
