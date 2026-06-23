@@ -53,26 +53,64 @@ the `{placeholder}` values you used become the tool's inputs, you give
 it a slug and a description the model will read, and it lands in the
 registry ready to grant.
 
-## Toolsmith — the agent that builds tools
+## Toolsmith — let the AI build the integration for you
 
-The console's **Toolsmith** button opens an assistant panel. Give it a
-prompt like:
+You don't have to build the request by hand. **Toolsmith** is the
+specialist agent that reads a service's API docs and builds a working,
+tested tool for you. There are two ways to reach it:
 
-> Read the Mapbox Directions docs at
-> https://docs.mapbox.com/api/navigation/directions/ and build me a
-> find_route tool that takes an origin and destination.
+- **Just ask your assistant.** In chat (web or Telegram): *"Connect
+  Mapbox and build me a tool that finds a driving route between two
+  places — docs are at
+  https://docs.mapbox.com/api/navigation/directions/."* The assistant
+  hands the job to Toolsmith.
+- **API Console → Toolsmith.** The console's **Toolsmith** button opens
+  the same agent in a panel, right beside the catalogs and request
+  builder.
 
-Toolsmith then does what an integration engineer would: reads the
-documentation page, checks your key vault for the right
-`{{secret:…}}` reference (and asks you to add the key if it's
-missing — it never handles the raw value), writes the tool with a
-proper input schema, **tests it against the live API**, fixes what
-fails, bundles the result into a tool group, and asks which agent
-should receive it. You watch the new tools appear in the console's
-list as it works.
+### Building an integration, step by step
 
-It manages the whole lifecycle too: ask it to list your tools, re-test
-them, fix one after a service changed its API, or retire one safely.
+1. **Have the docs ready.** Find the service's API documentation URL —
+   Toolsmith reads the page to learn the endpoint, parameters, and auth.
+   (Name only the service and it will try to find the docs itself, but a
+   URL is faster and surer.)
+2. **Add the API key if the service needs one.** Most do. Store it once
+   under **Settings → API keys**
+   ([Keys & local models](./04-keys-embedding-local-models.md)) as a
+   `service`/`label` pair. Toolsmith references it as
+   `{{secret:service/label}}` and never sees the raw value — if the key
+   is missing it stops and tells you exactly what to add.
+3. **Describe what you want.** Give it the goal, the docs URL, and what
+   the tool should take and return:
+   > Read the Mapbox Directions docs at
+   > https://docs.mapbox.com/api/navigation/directions/ and build a
+   > `find_route` tool that takes an origin and destination and returns
+   > the drive time and distance. Grant it to my assistant.
+4. **Let it work.** Toolsmith writes the tool with a proper input
+   schema, **tests it against the live API**, fixes what fails, and
+   bundles the result into a tool group. You watch the new tools appear
+   in the console's list as it goes.
+5. **Approve and grant.** A freshly built tool does nothing until it's
+   granted to an agent. Toolsmith asks which agent should receive it; if
+   you've turned on approval for agent-built tools (below), the grant
+   waits for you under **Settings → Pending**.
+6. **Use it.** From then on it's just conversation — the agent calls the
+   tool whenever it needs that data, including inside heartbeat routines.
+
+### Writing a good request
+
+- **Give the docs URL.** It's the single biggest factor in getting a
+  correct tool on the first try.
+- **Name the auth.** "Uses an API key" / "Bearer token" — and have the
+  key stored first, so Toolsmith isn't blocked mid-build.
+- **Say what goes in and what comes out.** "takes a city, returns the
+  5-day forecast" beats "a weather tool."
+- **Say who should get it.** The default is your main assistant; name
+  another agent if a specialist or a heartbeat routine should use it.
+
+Toolsmith manages the whole lifecycle too: ask it to list your tools,
+re-test them, fix one after a service changed its API, or retire one
+safely.
 
 ## For Claude Code users (advanced)
 
