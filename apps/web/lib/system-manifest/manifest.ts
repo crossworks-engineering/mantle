@@ -9,14 +9,18 @@
  * so a CI drift-test (manifest.test.ts) can fail the build on a dangling/typo'd
  * slug, and a live checker (integrity.ts) can diff the real DB rows against it.
  *
- * Phase 1 (current): the manifest is DESCRIPTIVE — it carries the link
- * structure (slugs, roles, tool/skill lists, delegation, assist surfaces,
- * models, params). The big instruction/prompt BODIES still live in the seed
- * scripts; Phase 2 moves them here and makes the seeders drive off the manifest.
+ * This is the AUTHORITATIVE source: it carries the link structure (slugs, roles,
+ * tool/skill lists, delegation, assist surfaces, models, params), and the
+ * instruction/prompt BODIES live in ./prompts.ts (referenced by slug). Onboarding
+ * (fresh brains), the boot reconcile (existing brains on upgrade), the CLI
+ * `pnpm seed:*` scripts, and the /settings/config checker all derive from here —
+ * see ./CLAUDE.md for the change/propagation contract. The one deliberate overlay
+ * is the persona PROMPT (generated from the persona bank in onboarding); the
+ * persona's structure (model/params/memoryConfig/tool groups) lives here.
  *
  * Server-only (imports @mantle/tools). Consumers are all server-side: the
- * integrity checker, onboarding's sanity step, the /debug/integrity route, and
- * the validator test.
+ * integrity + config checkers, onboarding, reconcile, the /debug/integrity and
+ * /settings/config routes, and the validator test.
  *
  * NB: the named operator personas `telegram-default` (Saskia) and `apostle-paul`
  * are NOT manifest slugs — they're operator-owned and must never be seeded or

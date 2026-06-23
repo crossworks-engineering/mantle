@@ -44,3 +44,10 @@ Non-negotiables (full detail in the guide):
 - **Tailwind v4**: no dynamically built class names (use literal-string arrays).
 - **Workflow**: `pnpm --filter @mantle/web run typecheck` before commit; commit on `main`
   with the `Co-Authored-By` trailer; don't push unless asked.
+
+**Changing what a brain ships with** (default agents, skills, tool groups, workers,
+the persona) — there is ONE source of truth: the system manifest. Read
+[`lib/system-manifest/CLAUDE.md`](lib/system-manifest/CLAUDE.md) first. Never
+hardcode a model, prompt, grant, or worker in onboarding, a seed script, or the
+runtime; change `lib/system-manifest/` and it propagates to fresh AND existing
+brains.

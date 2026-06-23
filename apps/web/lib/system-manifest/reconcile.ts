@@ -88,33 +88,35 @@ async function grantPersonaGroupsByRole(ownerId: string): Promise<string[]> {
 }
 
 /**
- * Union each manifest specialist's default tool groups onto the EXISTING
- * specialist agent — additive, never removes (mirrors grantPersonaGroupsByRole).
- * Closes the gap where a NEW group added to an existing specialist (e.g.
- * Appsmith gaining `research` so it can read library/API docs while coding)
- * never reaches an already-provisioned brain: provisionMissingSpecialists only
- * CREATES absent agents, and gap-fill never re-grants an existing one. Keyed on
+ * Union each manifest specialist's default tool groups AND skill links onto the
+ * EXISTING specialist agent — additive, never removes (mirrors
+ * grantPersonaGroupsByRole). Closes the gap where a NEW group or skill added to
+ * an existing specialist (e.g. Appsmith gaining `research`, or a new skill wired
+ * to a specialist) never reaches an already-provisioned brain:
+ * provisionMissingSpecialists only CREATES absent agents, and reconcile's
+ * applyManifest runs with only:[] so it touches no existing specialist. Keyed on
  * enabled — a disabled specialist is an opt-out and is left alone. Returns the
- * `slug:+groups` strings granted.
+ * `slug:+added` strings granted.
  */
-async function grantSpecialistGroupsByManifest(ownerId: string): Promise<string[]> {
+async function grantSpecialistCapabilities(ownerId: string): Promise<string[]> {
   const rows = await db
-    .select({ id: agents.id, slug: agents.slug, groups: agents.toolGroupSlugs })
+    .select({ id: agents.id, slug: agents.slug, groups: agents.toolGroupSlugs, skills: agents.skillSlugs })
     .from(agents)
     .where(and(eq(agents.ownerId, ownerId), eq(agents.enabled, true)));
   const bySlug = new Map(rows.map((r) => [r.slug, r] as const));
   const granted: string[] = [];
   for (const a of MANIFEST_AGENTS) {
-    if (a.isPersona || !a.toolGroupSlugs?.length) continue;
+    if (a.isPersona) continue;
     const row = bySlug.get(a.slug);
     if (!row) continue; // absent (or disabled) → provisionMissingSpecialists owns it
-    const missing = missingPersonaGroups(row.groups, a.toolGroupSlugs);
-    if (missing.length === 0) continue;
-    await db
-      .update(agents)
-      .set({ toolGroupSlugs: [...(row.groups ?? []), ...missing], updatedAt: new Date() })
-      .where(eq(agents.id, row.id));
-    granted.push(`${a.slug}:+${missing.join(',')}`);
+    const missingGroups = missingPersonaGroups(row.groups, a.toolGroupSlugs ?? []);
+    const missingSkills = missingPersonaGroups(row.skills, a.skillSlugs);
+    if (missingGroups.length === 0 && missingSkills.length === 0) continue;
+    const set: Record<string, unknown> = { updatedAt: new Date() };
+    if (missingGroups.length) set.toolGroupSlugs = [...(row.groups ?? []), ...missingGroups];
+    if (missingSkills.length) set.skillSlugs = [...(row.skills ?? []), ...missingSkills];
+    await db.update(agents).set(set).where(eq(agents.id, row.id));
+    granted.push(`${a.slug}:+${[...missingGroups, ...missingSkills].join(',')}`);
   }
   return granted;
 }
@@ -235,7 +237,7 @@ export async function reconcileManifestOnBoot(): Promise<void> {
     await applyManifest(ownerId, { only: [], mode: 'gap-fill', skillMode: 'overwrite' });
     const granted = await grantPersonaGroupsByRole(ownerId);
     const provisioned = await provisionMissingSpecialists(ownerId);
-    const specialistGrants = await grantSpecialistGroupsByManifest(ownerId);
+    const specialistGrants = await grantSpecialistCapabilities(ownerId);
     const defsSynced = await syncSpecialistDefs(ownerId);
     // Create any MISSING required worker (a new always-on worker shipped this
     // version). Provision-only: an existing worker's model/provider is never
