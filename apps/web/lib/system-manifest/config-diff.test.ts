@@ -56,8 +56,12 @@ const MANIFEST: ManifestSlices = {
     { slug: 'pages', name: 'Pages', description: '', toolSlugs: ['page_create', 'page_update'] },
   ],
   workers: [
-    { kind: 'extractor', name: 'Extractor', model: 'google/gemini-3.1-flash-lite', required: true },
-    { kind: 'tts', name: 'Voice', model: 'x-ai/grok-voice-tts-1.0', required: false },
+    { kind: 'extractor', name: 'Extractor', required: true, provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
+    {
+      kind: 'tts', name: 'Voice', required: false,
+      provider: 'openrouter', model: 'x-ai/grok-voice-tts-1.0',
+      altProvider: 'xai', altModel: 'grok-voice-latest', altKeyService: 'xai',
+    },
   ],
   delegateSlugs: ['pages'],
 };
@@ -211,6 +215,12 @@ describe('diffConfig — skills, tool groups, workers', () => {
     const live = inSyncLive();
     live.workers[0]!.isDefault = false;
     expect(find(diffConfig(live, MANIFEST), 'worker', 'extractor').status).toBe('missing');
+  });
+
+  it('a worker on its declared alt route (voice → xAI) is not drift', () => {
+    const live = inSyncLive();
+    live.workers[1]!.model = 'grok-voice-latest'; // the tts alt model
+    expect(find(diffConfig(live, MANIFEST), 'worker', 'tts').status).toBe('ok');
   });
 });
 

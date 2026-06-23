@@ -320,7 +320,10 @@ function diffWorker(w: ManifestWorker, live: LiveConfig): EntityDiff {
       fields: [],
     };
   }
-  if (def.model !== w.model) {
+  // A worker on its declared alt route (voice → xAI) is not drift — accept the
+  // default model OR the alt model.
+  const modelOk = def.model === w.model || (w.altModel != null && def.model === w.altModel);
+  if (!modelOk) {
     return {
       ...base,
       status: 'modified',

@@ -9,7 +9,9 @@ export { resolveEffectivePersona, type PersonaCandidate } from './persona';
 export {
   applyManifest,
   seedToolCapabilities,
+  seedManifestWorkers,
   type ApplyManifestOpts,
   type ApplyManifestResult,
   type ApplyMode,
+  type SeedWorkersResult,
 } from './seed';

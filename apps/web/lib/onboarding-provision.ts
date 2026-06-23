@@ -6,26 +6,31 @@ import {
   type PersonaGender,
   type PersonaPresetKey,
 } from '@mantle/content';
-import {
-  createAiWorker,
-  updateAiWorker,
-  listAiWorkers,
-  type CreateAiWorkerInput,
-} from '@/lib/ai-workers';
+import { updateAiWorker, listAiWorkers } from '@/lib/ai-workers';
 import { createAgent, updateAgent } from '@/lib/agents';
-// The specialist stack (skills + Pages/Ledger/Remy/Researcher/Coder + their
-// delegation wiring) is seeded from the declarative manifest — the single source
-// of truth shared with the CLI `pnpm seed:*` scripts and the integrity checker.
-import { applyManifest, seedToolCapabilities, PERSONA_TOOL_GROUP_SLUGS } from '@/lib/system-manifest';
+// Workers, the persona's structure, and the specialist stack are all seeded from
+// the declarative manifest — the single source of truth shared with the CLI
+// `pnpm seed:*` scripts, the boot reconcile, and the integrity/config checker.
+import {
+  applyManifest,
+  seedToolCapabilities,
+  seedManifestWorkers,
+  PERSONA_MANIFEST,
+  PERSONA_SLUG,
+  PERSONA_TOOL_GROUP_SLUGS,
+} from '@/lib/system-manifest';
 
 /**
  * Onboarding provisioner — turns the API keys the user just entered into a
- * fully-working agent + AI-worker set. A single OpenRouter key powers everything:
+ * fully-working agent + AI-worker set. This is the user OVERLAY on the manifest
+ * template: the keys decide which routes seed, the personality step decides the
+ * persona's name/voice/preset; everything structural (worker models + routing,
+ * the persona's model/params/budgets, the specialist stack) comes from the
+ * manifest (MANIFEST_WORKERS / PERSONA_MANIFEST), seeded via seedManifestWorkers
+ * + applyManifest.
  *
- *   OpenRouter (one required key) → the persona responder + extractor /
- *     summarizer / reflector / document / vision / image_gen, and — when no xAI
- *     key was added — voice too (tts + stt). `gemini-3.1-flash-lite` is the cheap
- *     multimodal workhorse behind most of it (verified affordable on one key).
+ *   OpenRouter (one required key) → the persona responder + the indexing/media
+ *     workers, and — when no xAI key was added — voice too (tts + stt).
  *   xAI (optional) → upgrades voice (tts + stt) to the dedicated grok route.
  *   Embeddings → local EmbeddingGemma (no row, no key — resolved by default).
  *
@@ -35,26 +40,10 @@ import { applyManifest, seedToolCapabilities, PERSONA_TOOL_GROUP_SLUGS } from '@
  * by the personality step via `savePersonaAgent`.
  */
 
-// Hybrid routing: OpenRouter is the one required key and covers chat, the
-// indexing workers, image-reading (vision), and image generation — all solid on
-// it. VOICE (tts/stt) is the one place the aggregator is weak, so it runs on a
-// dedicated xAI key when the user adds one (grok voices ara/rex — the proven
-// path the production personas use). Embeddings stay local.
-// All OpenRouter-routed defaults below are the exact models verified working +
-// affordable on a single OpenRouter key (operator-tested 2026-06). gemini-3.1-
-// flash-lite is multimodal, so it backs extractor/summarizer/reflector AND
-// document + vision — one cheap model for most of the brain.
-const WORKER_MODEL = 'google/gemini-3.1-flash-lite'; // extractor / summarizer / reflector (OpenRouter)
-const DOCUMENT_MODEL = 'google/gemini-3.1-flash-lite'; // PDF/document reader (OpenRouter)
-const VISION_MODEL = 'google/gemini-3.1-flash-lite'; // image-reading (OpenRouter)
-const ASSISTANT_MODEL = 'anthropic/claude-sonnet-4.6'; // the persona responder (OpenRouter)
-const IMAGE_GEN_MODEL = 'google/gemini-3.1-flash-image-preview'; // image generation (OpenRouter)
-const SEARCH_MODEL = 'perplexity/sonar'; // standard web search (OpenRouter)
-const SEARCH_ADVANCED_MODEL = 'perplexity/sonar-pro'; // deep web search (OpenRouter)
-const XAI_TTS_MODEL = 'grok-voice-latest'; // spoken replies (dedicated xAI key)
-const XAI_STT_MODEL = 'grok-stt'; // voice-note transcription (dedicated xAI key)
-const OR_TTS_MODEL = 'x-ai/grok-voice-tts-1.0'; // voice on the OpenRouter key
-const OR_STT_MODEL = 'openai/gpt-4o-mini-transcribe'; // transcription on the OpenRouter key
+// Worker models + routing now live in the manifest (MANIFEST_WORKERS), seeded
+// via seedManifestWorkers. The one thing onboarding still owns is the user
+// OVERLAY: which API keys exist (handled inside the seeder) and the persona's
+// voice id, which follows the chosen gender.
 
 /** Voice id per persona gender — xAI grok voices (the dedicated TTS route, and
  *  the same voices the production personas use): female `ara`, male `rex`. */
@@ -62,7 +51,7 @@ export function voiceForGender(gender: PersonaGender): string {
   return gender === 'female' ? 'ara' : 'rex';
 }
 
-export const PERSONA_AGENT_SLUG = 'assistant';
+export const PERSONA_AGENT_SLUG = PERSONA_SLUG;
 
 export type ProvisionResult = {
   createdWorkers: { kind: string; name: string; provider: string; model: string }[];
@@ -110,99 +99,14 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
   const openrouter = keys['openrouter'] ?? null;
   const xai = keys['xai'] ?? null;
 
-  const existing = await listAiWorkers(ownerId);
-  const haveKind = new Set(existing.map((w) => w.kind));
-  // Track the tts worker id (pre-existing or created this run) so the agent can
-  // wire its voice without a second listAiWorkers round-trip.
-  let ttsWorkerId: string | null = existing.find((w) => w.kind === 'tts')?.id ?? null;
-
-  const created: ProvisionResult['createdWorkers'] = [];
-  const skipped: string[] = [];
-
-  // Helper: create one default worker for a kind, unless one already exists.
-  // Returns the created worker, or null if a worker of that kind already existed.
-  async function ensureWorker(input: CreateAiWorkerInput) {
-    if (haveKind.has(input.kind)) return null;
-    const worker = await createAiWorker({ ...input, enabled: true, isDefault: true });
-    created.push({
-      kind: input.kind,
-      name: input.name,
-      provider: input.provider,
-      model: input.model,
-    });
-    haveKind.add(input.kind);
-    return worker;
-  }
-
-  if (!openrouter) {
-    // OpenRouter is the backbone — without it nothing chat-shaped can run.
-    skipped.push('chat + indexing workers (no OpenRouter key)');
-  } else {
-    await ensureWorker({
-      ownerId, kind: 'extractor', name: 'Extractor', provider: 'openrouter',
-      model: WORKER_MODEL, apiKeyId: openrouter, params: { extract_facts: true },
-    });
-    await ensureWorker({
-      ownerId, kind: 'summarizer', name: 'Summarizer', provider: 'openrouter',
-      model: WORKER_MODEL, apiKeyId: openrouter,
-    });
-    await ensureWorker({
-      ownerId, kind: 'reflector', name: 'Reflector', provider: 'openrouter',
-      model: WORKER_MODEL, apiKeyId: openrouter,
-    });
-    await ensureWorker({
-      ownerId, kind: 'document', name: 'Document reader', provider: 'openrouter',
-      model: DOCUMENT_MODEL, apiKeyId: openrouter,
-    });
-    // Image reading (vision) + image generation also ride the OpenRouter key —
-    // both work well on it, and cost nothing until actually used.
-    await ensureWorker({
-      ownerId, kind: 'vision', name: 'Read images', provider: 'openrouter',
-      model: VISION_MODEL, apiKeyId: openrouter,
-    });
-    await ensureWorker({
-      ownerId, kind: 'image_gen', name: 'Image generation', provider: 'openrouter',
-      model: IMAGE_GEN_MODEL, apiKeyId: openrouter,
-    });
-    // Web search tiers (Perplexity Sonar via the OpenRouter key). Standard =
-    // cheap/fast for everyday lookups; advanced = stronger/slower for hard ones.
-    await ensureWorker({
-      ownerId, kind: 'search', name: 'Web search', provider: 'openrouter',
-      model: SEARCH_MODEL, apiKeyId: openrouter,
-    });
-    await ensureWorker({
-      ownerId, kind: 'search_advanced', name: 'Deep web search', provider: 'openrouter',
-      model: SEARCH_ADVANCED_MODEL, apiKeyId: openrouter,
-    });
-  }
-
-  // Voice (spoken replies + voice-note transcription). Prefer a dedicated xAI
-  // key when the user added one (the smoother, proven path, grok voices ara/rex).
-  // Otherwise fall back to the OpenRouter key (grok-voice-tts-1.0 / whisper) so
-  // voice still works out of the box on a single key.
-  if (xai) {
-    const tts = await ensureWorker({
-      ownerId, kind: 'tts', name: 'Assistant voice', provider: 'xai',
-      model: XAI_TTS_MODEL, apiKeyId: xai,
-      params: { voice: voiceForGender('female'), format: 'mp3' },
-    });
-    if (tts) ttsWorkerId = tts.id;
-    await ensureWorker({
-      ownerId, kind: 'stt', name: 'Transcribe voice', provider: 'xai',
-      model: XAI_STT_MODEL, apiKeyId: xai, params: { language: 'en' },
-    });
-  } else if (openrouter) {
-    const tts = await ensureWorker({
-      ownerId, kind: 'tts', name: 'Assistant voice', provider: 'openrouter',
-      model: OR_TTS_MODEL, apiKeyId: openrouter,
-      params: { voice: voiceForGender('female'), format: 'mp3' },
-    });
-    if (tts) ttsWorkerId = tts.id;
-    await ensureWorker({
-      ownerId, kind: 'stt', name: 'Transcribe voice', provider: 'openrouter',
-      model: OR_STT_MODEL, apiKeyId: openrouter, params: { language: 'en' },
-    });
-  }
+  // Seed AI workers from the manifest (the single source for models/params +
+  // the OpenRouter→xAI voice routing). Idempotent; skips kinds that need a key
+  // the user didn't add. The tts default voice is the female preset; the
+  // personality step retunes it per chosen gender (savePersonaAgent).
+  const { created, skipped } = await seedManifestWorkers(ownerId);
+  // The persona wires this worker's id for voice; re-read after seeding.
+  const ttsWorkerId =
+    (await listAiWorkers(ownerId)).find((w) => w.kind === 'tts')?.id ?? null;
 
   // Seed the capability SUBSTRATE — the builtin tool ROWS *and* the tool GROUPS —
   // BEFORE the persona is created and granted its groups. P6 makes groups the
@@ -229,34 +133,28 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
       .limit(1);
     if (!existingAgent) {
       const name = DEFAULT_PERSONA_NAMES.female;
-      // The generalist grant is pure tool GROUPS (P6) — the manifest persona's
-      // bundle set. Page/table AUTHORING is delegated to the Pages / Ledger
-      // specialists (P5; the persona reaches them via invoke_agent); the persona
-      // keeps `page-share`. The runtime expands these into the effective set.
+      // Structure comes from the manifest persona entry (model, params, context
+      // budgets, tool groups) — the single template. The OVERLAY is the bits the
+      // user chooses: the generated prompt (persona bank + personality step), the
+      // name, and the tts worker. role='responder' serves both the web /assistant
+      // (which falls back responder→) and Telegram.
       await createAgent(ownerId, {
-        slug: PERSONA_AGENT_SLUG,
+        slug: PERSONA_SLUG,
         name,
         description: 'Your personal assistant.',
-        role: 'responder',
+        role: PERSONA_MANIFEST.role,
         provider: 'openrouter',
-        model: ASSISTANT_MODEL,
+        model: PERSONA_MANIFEST.model,
         apiKeyId: openrouter,
         ttsWorkerId,
         systemPrompt: buildPersonaPrompt('warm', { assistantName: name, gender: 'female' }),
         toolGroupSlugs: [...PERSONA_TOOL_GROUP_SLUGS],
-        memoryConfig: {
-          history_limit: 20,
-          digest_limit: 3,
-          fact_limit: 10,
-          content_hit_limit: 5,
-          inject_lifelog: true,
-          delegate_to: [],
-        },
-        params: { temperature: 0.7, max_tokens: 16000 },
-        priority: 100,
+        memoryConfig: { ...(PERSONA_MANIFEST.memoryConfig ?? {}) },
+        params: { ...PERSONA_MANIFEST.params },
+        priority: PERSONA_MANIFEST.priority,
         enabled: true,
       });
-      createdAgent = { slug: PERSONA_AGENT_SLUG, name };
+      createdAgent = { slug: PERSONA_SLUG, name };
     } else if (!existingAgent.toolGroupSlugs || existingAgent.toolGroupSlugs.length === 0) {
       // Repair an assistant that was provisioned before grants existed (or
       // hand-created empty) — re-running the wizard restores the generalist
@@ -308,7 +206,8 @@ export async function savePersonaAgent(
   await updateAgent(ownerId, row.id, {
     name,
     systemPrompt: buildPersonaPrompt(input.presetKey, { assistantName: name, gender: input.gender }),
-    params: { temperature: input.temperature, max_tokens: 16000 },
+    // temperature is the user's overlay; max_tokens stays the manifest default.
+    params: { temperature: input.temperature, max_tokens: PERSONA_MANIFEST.params.max_tokens },
   });
 
   // Retune the voice to match the gender (the worker was created female-default).

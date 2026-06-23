@@ -35,7 +35,7 @@ import {
   TOOLSMITH_TOOL_SLUGS,
   type HttpHandler,
 } from '@mantle/tools';
-import type { AiWorkerKind } from '@mantle/db';
+import type { AiWorkerKind, AiWorkerParams, AgentMemoryConfig } from '@mantle/db';
 import { SKILL_INSTRUCTIONS, AGENT_PROMPTS } from './prompts';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -100,21 +100,33 @@ export type ManifestAgent = {
   /** Binds an in-surface "Assist" panel (/pages, /tables, /apps, /dev-tools) to this agent. */
   assistSurface?: 'pages' | 'tables' | 'apps' | 'dev-tools';
   params: { temperature: number; max_tokens?: number };
-  /** Persisted verbatim to agents.memory_config. `delegate_to` lets a SPECIALIST
-   *  delegate to another specialist (wireDelegation only wires the persona) —
-   *  e.g. Appsmith → toolsmith for data-tool authoring. */
-  memoryConfig?: { max_iterations?: number; delegate_to?: string[] };
+  /** Persisted verbatim to agents.memory_config. Carries the persona's context
+   *  budgets (history/digest/fact limits, inject_lifelog) and a specialist's
+   *  `max_iterations`; `delegate_to` lets a SPECIALIST delegate to another
+   *  specialist (wireDelegation only wires the persona) — e.g. Appsmith →
+   *  toolsmith for data-tool authoring. */
+  memoryConfig?: AgentMemoryConfig;
   priority: number;
 };
 
 export type ManifestWorker = {
   kind: AiWorkerKind;
   name: string;
-  /** Canonical model on the one-OpenRouter-key baseline (voice may run on xAI). */
-  model: string;
   /** Required for a healthy brain (the always-on indexing pipeline) vs optional
    *  (media — present only when provisioned). */
   required: boolean;
+  /** Default route on the one-OpenRouter-key baseline. */
+  provider: string;
+  /** Canonical model on the default route. */
+  model: string;
+  /** Default-route params (e.g. extractor {extract_facts}, tts {voice,format}). */
+  params?: AiWorkerParams;
+  /** When the user has a key for this service, prefer the alt route instead of
+   *  the default (voice upgrades to a dedicated xAI route). */
+  altKeyService?: string;
+  altProvider?: string;
+  altModel?: string;
+  altParams?: AiWorkerParams;
 };
 
 // ── Derived tool lists (match the seed scripts exactly) ──────────────────────
@@ -595,6 +607,18 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     ],
     skillSlugs: ['tool_grounding', 'voice_reply', 'rich_writing', 'location_awareness', 'navigation', 'integrations'],
     params: { temperature: 0.7, max_tokens: 16000 },
+    // Context budgets for the generalist responder. Onboarding seeds these
+    // verbatim; the persona's PROMPT stays an overlay (persona bank + the
+    // personality step), so it is not carried here. delegate_to is wired
+    // separately by wireDelegation (starts empty).
+    memoryConfig: {
+      history_limit: 20,
+      digest_limit: 3,
+      fact_limit: 10,
+      content_hit_limit: 5,
+      inject_lifelog: true,
+      delegate_to: [],
+    },
     priority: 100,
   },
   {
@@ -728,30 +752,49 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
 
 // ── Workers ──────────────────────────────────────────────────────────────────
 
+// One OpenRouter key powers everything; gemini-3.1-flash-lite is the cheap
+// multimodal workhorse behind the indexing pipeline + document/vision. Voice
+// (tts/stt) runs on the OpenRouter route by default and UPGRADES to a dedicated
+// xAI route when the user has an xAI key (the proven grok path). These models +
+// params are the single source — onboarding and reconcile both seed from here
+// (see resolveWorkerRoute + seedManifestWorkers). The tts `voice` is the female
+// default ('ara' = voiceForGender('female')); the personality step retunes it.
 export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
-  { kind: 'extractor', name: 'Extractor', model: 'google/gemini-3.1-flash-lite', required: true },
-  { kind: 'summarizer', name: 'Summarizer', model: 'google/gemini-3.1-flash-lite', required: true },
-  { kind: 'reflector', name: 'Reflector', model: 'google/gemini-3.1-flash-lite', required: true },
-  { kind: 'document', name: 'Document reader', model: 'google/gemini-3.1-flash-lite', required: true },
-  { kind: 'vision', name: 'Read images', model: 'google/gemini-3.1-flash-lite', required: false },
-  { kind: 'image_gen', name: 'Image generation', model: 'google/gemini-3.1-flash-image-preview', required: false },
-  { kind: 'tts', name: 'Assistant voice', model: 'x-ai/grok-voice-tts-1.0', required: false },
-  { kind: 'stt', name: 'Transcribe voice', model: 'openai/gpt-4o-mini-transcribe', required: false },
+  { kind: 'extractor', name: 'Extractor', required: true, provider: 'openrouter', model: 'google/gemini-3.1-flash-lite', params: { extract_facts: true } },
+  { kind: 'summarizer', name: 'Summarizer', required: true, provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
+  { kind: 'reflector', name: 'Reflector', required: true, provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
+  { kind: 'document', name: 'Document reader', required: true, provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
+  { kind: 'vision', name: 'Read images', required: false, provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
+  { kind: 'image_gen', name: 'Image generation', required: false, provider: 'openrouter', model: 'google/gemini-3.1-flash-image-preview' },
+  {
+    kind: 'tts', name: 'Assistant voice', required: false,
+    provider: 'openrouter', model: 'x-ai/grok-voice-tts-1.0', params: { voice: 'ara', format: 'mp3' },
+    altKeyService: 'xai', altProvider: 'xai', altModel: 'grok-voice-latest', altParams: { voice: 'ara', format: 'mp3' },
+  },
+  {
+    kind: 'stt', name: 'Transcribe voice', required: false,
+    provider: 'openrouter', model: 'openai/gpt-4o-mini-transcribe', params: { language: 'en' },
+    altKeyService: 'xai', altProvider: 'xai', altModel: 'grok-stt', altParams: { language: 'en' },
+  },
   // Web search tiers (Perplexity Sonar via OpenRouter). The researcher's
   // `web_search` uses the cheap/fast tier; `web_search_pro` the stronger one.
-  { kind: 'search', name: 'Web search', model: 'perplexity/sonar', required: false },
-  { kind: 'search_advanced', name: 'Deep web search', model: 'perplexity/sonar-pro', required: false },
+  { kind: 'search', name: 'Web search', required: false, provider: 'openrouter', model: 'perplexity/sonar' },
+  { kind: 'search_advanced', name: 'Deep web search', required: false, provider: 'openrouter', model: 'perplexity/sonar-pro' },
 ];
 
 // ── Derived selectors (single computation; kills the duplication) ────────────
 
+/** The persona agent's manifest entry — the template onboarding builds the
+ *  generalist from (model/params/memoryConfig/tool groups). Its PROMPT is the
+ *  one overlay: generated from the persona bank + the personality step. */
+export const PERSONA_MANIFEST = MANIFEST_AGENTS.find((a) => a.isPersona)!;
+
 /** Slug of the persona agent (the delegation entry point). */
-export const PERSONA_SLUG = MANIFEST_AGENTS.find((a) => a.isPersona)!.slug;
+export const PERSONA_SLUG = PERSONA_MANIFEST.slug;
 
 /** The persona's default tool grant (P6: pure tool GROUPS — the generalist's
  *  whole capability). Onboarding seeds a fresh persona with exactly these. */
-export const PERSONA_TOOL_GROUP_SLUGS: readonly string[] =
-  MANIFEST_AGENTS.find((a) => a.isPersona)!.toolGroupSlugs ?? [];
+export const PERSONA_TOOL_GROUP_SLUGS: readonly string[] = PERSONA_MANIFEST.toolGroupSlugs ?? [];
 
 /** The agents the persona delegates to (memory_config.delegate_to). */
 export const DELEGATE_SLUGS: readonly string[] = MANIFEST_AGENTS.filter((a) => a.isDelegate).map(

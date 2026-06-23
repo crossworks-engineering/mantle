@@ -22,17 +22,20 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { db, agents, skills, toolGroups, tools, apiKeys, type AgentMemoryConfig, type AgentParams } from '@mantle/db';
 import { seedBuiltinTools, createTool, updateTool } from '@mantle/tools';
+import { createAiWorker, listAiWorkers } from '@/lib/ai-workers';
 import {
   MANIFEST_AGENTS,
   MANIFEST_HTTP_TOOLS,
   MANIFEST_SKILLS,
   MANIFEST_TOOL_GROUPS,
+  MANIFEST_WORKERS,
   PERSONA_SLUG,
   type ManifestAgent,
   type ManifestHttpTool,
   type ManifestSkill,
   type ManifestToolGroup,
 } from './manifest';
+import { resolveWorkerRoute } from './worker-route';
 
 export type ApplyMode = 'gap-fill' | 'overwrite';
 export type ApplyManifestOpts = {
@@ -59,6 +62,67 @@ async function resolveOpenRouterKeyId(ownerId: string): Promise<string> {
     throw new Error("No 'openrouter' API key found. Add one at /settings/keys first.");
   }
   return (rows.find((r) => r.label === 'default') ?? rows[0]!).id;
+}
+
+/** service → api_key id for this owner (prefers the 'default'-labelled key). */
+async function keyIdByService(ownerId: string): Promise<Record<string, string>> {
+  const rows = await db
+    .select({ id: apiKeys.id, service: apiKeys.service, label: apiKeys.label })
+    .from(apiKeys)
+    .where(eq(apiKeys.userId, ownerId));
+  const map: Record<string, string> = {};
+  for (const k of rows) {
+    if (!(k.service in map) || k.label === 'default') map[k.service] = k.id;
+  }
+  return map;
+}
+
+export type SeedWorkersResult = {
+  created: { kind: string; name: string; provider: string; model: string }[];
+  skipped: string[];
+};
+
+/**
+ * Seed AI workers from MANIFEST_WORKERS — the single source for worker
+ * models/params/routing, shared by onboarding and the boot reconcile. Idempotent:
+ * a kind that already has a worker is left untouched (never re-models an existing
+ * worker — operator cost choices stand). Picks each worker's route via
+ * resolveWorkerRoute (voice upgrades to xAI when that key exists) and skips a
+ * worker whose route has no key. `requiredOnly` (the reconcile path) seeds just
+ * the always-on indexing workers, leaving optional media workers to onboarding.
+ */
+export async function seedManifestWorkers(
+  ownerId: string,
+  opts: { requiredOnly?: boolean } = {},
+): Promise<SeedWorkersResult> {
+  const [keys, existing] = await Promise.all([keyIdByService(ownerId), listAiWorkers(ownerId)]);
+  const keyServices = new Set(Object.keys(keys));
+  const haveKind = new Set(existing.map((w) => w.kind));
+  const created: SeedWorkersResult['created'] = [];
+  const skipped: string[] = [];
+  for (const w of MANIFEST_WORKERS) {
+    if (haveKind.has(w.kind)) continue;
+    if (opts.requiredOnly && !w.required) continue;
+    const route = resolveWorkerRoute(w, keyServices);
+    if (!route) {
+      skipped.push(`${w.kind} (no ${w.provider} key)`);
+      continue;
+    }
+    await createAiWorker({
+      ownerId,
+      kind: w.kind,
+      name: w.name,
+      provider: route.provider,
+      model: route.model,
+      apiKeyId: keys[route.keyService]!,
+      params: route.params,
+      enabled: true,
+      isDefault: true,
+    });
+    created.push({ kind: w.kind, name: w.name, provider: route.provider, model: route.model });
+    haveKind.add(w.kind);
+  }
+  return { created, skipped };
 }
 
 function union(a: readonly string[], b: readonly string[]): string[] {

@@ -45,7 +45,7 @@ import { sql } from 'drizzle-orm';
 import { db, agents, type AgentParams } from '@mantle/db';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
 import { APP_VERSION } from '@/lib/version';
-import { applyManifest, seedToolCapabilities } from './seed';
+import { applyManifest, seedToolCapabilities, seedManifestWorkers } from './seed';
 import { MANIFEST_AGENTS, PERSONA_TOOL_GROUP_SLUGS } from './manifest';
 import { missingPersonaGroups } from './reconcile-util';
 
@@ -237,6 +237,11 @@ export async function reconcileManifestOnBoot(): Promise<void> {
     const provisioned = await provisionMissingSpecialists(ownerId);
     const specialistGrants = await grantSpecialistGroupsByManifest(ownerId);
     const defsSynced = await syncSpecialistDefs(ownerId);
+    // Create any MISSING required worker (a new always-on worker shipped this
+    // version). Provision-only: an existing worker's model/provider is never
+    // overwritten (operator cost choices stand); optional media workers are left
+    // to onboarding.
+    const { created: workersCreated } = await seedManifestWorkers(ownerId, { requiredOnly: true });
     await updateProfilePreferences(ownerId, { lastReconciledVersion: APP_VERSION });
 
     console.log(
@@ -244,7 +249,8 @@ export async function reconcileManifestOnBoot(): Promise<void> {
         (granted.length ? `; persona +${granted.join('; ')}` : ' (persona grants current)') +
         (provisioned.length ? `; provisioned ${provisioned.join(', ')}` : '') +
         (specialistGrants.length ? `; specialists +${specialistGrants.join('; ')}` : '') +
-        (defsSynced.length ? `; defs synced ${defsSynced.join(', ')}` : ''),
+        (defsSynced.length ? `; defs synced ${defsSynced.join(', ')}` : '') +
+        (workersCreated.length ? `; workers +${workersCreated.map((w) => w.kind).join(',')}` : ''),
     );
   } catch (err) {
     // Best-effort: a reconcile failure must never take the server down.
