@@ -7,10 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
 import { BackLink } from '@/components/layout/back-link';
 import { AppSandbox } from '@/components/app-sandbox/app-sandbox';
-import { cn } from '@/lib/utils';
+import { CodeView } from '@/components/app-sandbox/code-view';
+import { FileTree } from '@/components/app-sandbox/file-tree';
 import type { AppDetail } from '@mantle/content';
 
 type BuildMsg = { text: string; location: { file: string; line: number; column: number } | null };
@@ -141,80 +143,81 @@ export function AppDetailClient({ app }: { app: AppDetail }) {
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_320px]">
-        {/* Source viewer */}
-        <div className="flex min-h-0 flex-col border-r border-border">
-          <div className="flex flex-wrap gap-1 border-b border-border p-2">
-            {paths.map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setActivePath(p)}
-                className={cn(
-                  'rounded-md px-2 py-1 text-xs transition-colors',
-                  p === activePath
-                    ? 'bg-accent text-accent-foreground'
-                    : 'text-muted-foreground hover:bg-foreground/[0.06]',
-                )}
-              >
-                {p}
-                {p === source.entry ? ' ·entry' : ''}
-              </button>
-            ))}
+      <Tabs defaultValue="builder" className="flex min-h-0 flex-1 flex-col gap-0">
+        <div className="border-b border-border px-3 py-2">
+          <TabsList>
+            <TabsTrigger value="builder">Builder</TabsTrigger>
+            <TabsTrigger value="code">Code</TabsTrigger>
+          </TabsList>
+        </div>
+
+        {/* Builder — open two-column: live preview + Appsmith assist. */}
+        <TabsContent
+          value="builder"
+          className="mt-0 grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px]"
+        >
+          <div className="flex min-h-0 flex-col overflow-y-auto border-r border-border p-3">
+            <AppSandbox appId={app.id} reloadKey={reloadKey} onError={(m) => toast.error(m)} />
+            {buildErrors.length > 0 && (
+              <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+                <p className="mb-1 font-medium">Build errors</p>
+                <ul className="flex flex-col gap-1">
+                  {buildErrors.map((e, i) => (
+                    <li key={i}>
+                      {e.location ? `${e.location.file}:${e.location.line} — ` : ''}
+                      {e.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
-          <pre className="min-h-0 flex-1 overflow-auto bg-card p-3 text-xs leading-relaxed text-card-foreground">
-            <code>{activeContent}</code>
-          </pre>
-        </div>
 
-        {/* Live preview */}
-        <div className="flex min-h-0 flex-col overflow-y-auto border-r border-border p-3">
-          <AppSandbox appId={app.id} reloadKey={reloadKey} onError={(m) => toast.error(m)} />
-          {buildErrors.length > 0 && (
-            <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
-              <p className="mb-1 font-medium">Build errors</p>
-              <ul className="flex flex-col gap-1">
-                {buildErrors.map((e, i) => (
-                  <li key={i}>
-                    {e.location ? `${e.location.file}:${e.location.line} — ` : ''}
-                    {e.text}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
+          <div className="flex min-h-0 flex-col overflow-y-auto bg-sidebar p-3">
+            <p className="flex items-center gap-1.5 text-sm font-medium">
+              <Sparkles className="size-4" />
+              Appsmith
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Describe a change and Appsmith edits the app. Changes land in the draft — review the
+              preview, then Publish.
+            </p>
+            <Separator className="my-3" />
+            <form onSubmit={runAssist} className="flex flex-col gap-2">
+              <Textarea
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder="e.g. show a 5-day forecast in a grid"
+                rows={3}
+                disabled={busy === 'assist'}
+              />
+              <Button type="submit" size="sm" disabled={busy !== null || !prompt.trim()}>
+                {busy === 'assist' ? 'Working…' : 'Send to Appsmith'}
+              </Button>
+            </form>
+            {reply && (
+              <div className="mt-3 whitespace-pre-wrap rounded-md border border-border bg-card p-3 text-xs text-card-foreground">
+                {reply}
+              </div>
+            )}
+          </div>
+        </TabsContent>
 
-        {/* Assist panel */}
-        <div className="flex min-h-0 flex-col overflow-y-auto bg-sidebar p-3">
-          <p className="flex items-center gap-1.5 text-sm font-medium">
-            <Sparkles className="size-4" />
-            Appsmith
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Describe a change and Appsmith edits the app. Changes land in the draft — review the
-            preview, then Publish.
-          </p>
-          <Separator className="my-3" />
-          <form onSubmit={runAssist} className="flex flex-col gap-2">
-            <Textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="e.g. show a 5-day forecast in a grid"
-              rows={3}
-              disabled={busy === 'assist'}
-            />
-            <Button type="submit" size="sm" disabled={busy !== null || !prompt.trim()}>
-              {busy === 'assist' ? 'Working…' : 'Send to Appsmith'}
-            </Button>
-          </form>
-          {reply && (
-            <div className="mt-3 whitespace-pre-wrap rounded-md border border-border bg-card p-3 text-xs text-card-foreground">
-              {reply}
-            </div>
-          )}
-        </div>
-      </div>
+        {/* Code — file-tree sidebar + a syntax-highlighted source viewer. */}
+        <TabsContent
+          value="code"
+          className="mt-0 grid min-h-0 flex-1 grid-cols-[200px_minmax(0,1fr)]"
+        >
+          <FileTree
+            paths={paths}
+            entry={source.entry}
+            activePath={activePath}
+            onSelect={setActivePath}
+            className="border-r border-border"
+          />
+          <CodeView path={activePath} content={activeContent} className="min-h-0" />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

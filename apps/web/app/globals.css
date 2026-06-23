@@ -3371,55 +3371,55 @@
 /* Code-block syntax highlighting (CodeBlockLowlight / highlight.js). Token
    classes map onto theme tokens so highlighting tracks the active theme +
    light/dark instead of shipping a fixed hljs colour scheme. Scoped to
-   .ProseMirror, so it covers both the Pages editor and the assistant's
-   rich renderer. Unhighlighted code falls back to the prose foreground. */
-.ProseMirror .hljs-comment,
-.ProseMirror .hljs-quote {
+   .ProseMirror (Pages editor + assistant rich renderer) and .code-view (the
+   Apps source viewer). Unhighlighted code falls back to the foreground. */
+:is(.ProseMirror, .code-view) .hljs-comment,
+:is(.ProseMirror, .code-view) .hljs-quote {
   color: var(--muted-foreground);
   font-style: italic;
 }
-.ProseMirror .hljs-keyword,
-.ProseMirror .hljs-selector-tag,
-.ProseMirror .hljs-built_in,
-.ProseMirror .hljs-name,
-.ProseMirror .hljs-tag {
+:is(.ProseMirror, .code-view) .hljs-keyword,
+:is(.ProseMirror, .code-view) .hljs-selector-tag,
+:is(.ProseMirror, .code-view) .hljs-built_in,
+:is(.ProseMirror, .code-view) .hljs-name,
+:is(.ProseMirror, .code-view) .hljs-tag {
   color: var(--chart-1);
 }
-.ProseMirror .hljs-string,
-.ProseMirror .hljs-attr,
-.ProseMirror .hljs-regexp,
-.ProseMirror .hljs-addition,
-.ProseMirror .hljs-meta-string {
+:is(.ProseMirror, .code-view) .hljs-string,
+:is(.ProseMirror, .code-view) .hljs-attr,
+:is(.ProseMirror, .code-view) .hljs-regexp,
+:is(.ProseMirror, .code-view) .hljs-addition,
+:is(.ProseMirror, .code-view) .hljs-meta-string {
   color: var(--chart-4);
 }
-.ProseMirror .hljs-number,
-.ProseMirror .hljs-literal,
-.ProseMirror .hljs-type,
-.ProseMirror .hljs-symbol,
-.ProseMirror .hljs-bullet,
-.ProseMirror .hljs-link {
+:is(.ProseMirror, .code-view) .hljs-number,
+:is(.ProseMirror, .code-view) .hljs-literal,
+:is(.ProseMirror, .code-view) .hljs-type,
+:is(.ProseMirror, .code-view) .hljs-symbol,
+:is(.ProseMirror, .code-view) .hljs-bullet,
+:is(.ProseMirror, .code-view) .hljs-link {
   color: var(--chart-2);
 }
-.ProseMirror .hljs-title,
-.ProseMirror .hljs-section,
-.ProseMirror .hljs-function .hljs-title,
-.ProseMirror .hljs-class .hljs-title {
+:is(.ProseMirror, .code-view) .hljs-title,
+:is(.ProseMirror, .code-view) .hljs-section,
+:is(.ProseMirror, .code-view) .hljs-function .hljs-title,
+:is(.ProseMirror, .code-view) .hljs-class .hljs-title {
   color: var(--chart-3);
 }
-.ProseMirror .hljs-attribute,
-.ProseMirror .hljs-variable,
-.ProseMirror .hljs-template-variable,
-.ProseMirror .hljs-params,
-.ProseMirror .hljs-meta {
+:is(.ProseMirror, .code-view) .hljs-attribute,
+:is(.ProseMirror, .code-view) .hljs-variable,
+:is(.ProseMirror, .code-view) .hljs-template-variable,
+:is(.ProseMirror, .code-view) .hljs-params,
+:is(.ProseMirror, .code-view) .hljs-meta {
   color: var(--chart-5);
 }
-.ProseMirror .hljs-deletion {
+:is(.ProseMirror, .code-view) .hljs-deletion {
   color: var(--destructive);
 }
-.ProseMirror .hljs-emphasis {
+:is(.ProseMirror, .code-view) .hljs-emphasis {
   font-style: italic;
 }
-.ProseMirror .hljs-strong {
+:is(.ProseMirror, .code-view) .hljs-strong {
   font-weight: 600;
 }
 
