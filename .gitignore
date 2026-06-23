@@ -80,3 +80,6 @@ skills-lock.json
 # The gold cases (recall-cases.json) and the runner ARE committed.
 apps/web/scripts/eval/last-run.json
 apps/web/scripts/eval/*.run.json
+
+# Per-app SQLite databases (local dev APP_DB_DIR default) — runtime data.
+apps/web/.app-dbs/
