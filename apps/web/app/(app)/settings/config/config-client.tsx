@@ -228,7 +228,7 @@ export function ConfigClient({ report }: { report: ConfigDiffReport }) {
     const res = await adoptItemAction(e.kind as AdoptKind, e.slug);
     setSubmitting(false);
     if (res.ok) {
-      toast.success(`Adopted ${e.name} from template`);
+      toast.success(`Committed changes to ${e.name}`);
       startTransition(() => router.refresh());
     } else {
       toast.error(res.error);
@@ -240,7 +240,7 @@ export function ConfigClient({ report }: { report: ConfigDiffReport }) {
     const res = await adoptAllAction();
     setSubmitting(false);
     if (res.ok) {
-      toast.success(`Adopted ${res.count} item${res.count === 1 ? '' : 's'} from template`);
+      toast.success(`Committed ${res.count} change${res.count === 1 ? '' : 's'} from template`);
       startTransition(() => router.refresh());
     } else {
       toast.error(res.error);
@@ -277,21 +277,21 @@ export function ConfigClient({ report }: { report: ConfigDiffReport }) {
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button type="button" size="sm" variant="outline" className="mt-3 w-full" disabled={submitting}>
-                  Adopt all ({adoptAllCount})
+                  Commit all ({adoptAllCount})
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Adopt {adoptAllCount} change{adoptAllCount === 1 ? '' : 's'} from the template?</AlertDialogTitle>
+                  <AlertDialogTitle>Commit {adoptAllCount} change{adoptAllCount === 1 ? '' : 's'} from the template?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Applies every adoptable item now (the same syncs the next version bump
-                    would make). Worker model changes are excluded — adopt those
+                    Applies every committable item now (the same syncs the next version bump
+                    would make). Worker model changes are excluded — commit those
                     individually. Operator-added items are never removed.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={runAdoptAll}>Adopt all</AlertDialogAction>
+                  <AlertDialogAction onClick={runAdoptAll}>Commit all</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
@@ -374,17 +374,17 @@ export function ConfigClient({ report }: { report: ConfigDiffReport }) {
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button type="button" size="sm" disabled={submitting}>
-                        Adopt from template
+                        Commit changes
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>Adopt “{selected.name}” from the template?</AlertDialogTitle>
+                        <AlertDialogTitle>Commit changes to “{selected.name}” from the template?</AlertDialogTitle>
                         <AlertDialogDescription>{adoptDescription(selected)}</AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => runAdopt(selected)}>Adopt</AlertDialogAction>
+                        <AlertDialogAction onClick={() => runAdopt(selected)}>Commit</AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
@@ -394,7 +394,7 @@ export function ConfigClient({ report }: { report: ConfigDiffReport }) {
                 </>
               ) : selected.status === 'extra' ? (
                 <p className="text-xs text-muted-foreground">
-                  Operator-added — not in the template. Adopt never deletes it.
+                  Operator-added — not in the template. Committing never deletes it.
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground">In sync with the template.</p>
