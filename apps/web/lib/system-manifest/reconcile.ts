@@ -42,7 +42,7 @@
  */
 import { and, eq, inArray } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
-import { db, agents } from '@mantle/db';
+import { db, agents, type AgentParams } from '@mantle/db';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
 import { APP_VERSION } from '@/lib/version';
 import { applyManifest, seedToolCapabilities } from './seed';
@@ -120,6 +120,56 @@ async function grantSpecialistGroupsByManifest(ownerId: string): Promise<string[
 }
 
 /**
+ * Force-sync each EXISTING manifest specialist's PRODUCT-OWNED definition —
+ * systemPrompt + model + params — to the manifest, mirroring the skill-body
+ * force-sync in step 2. A shipped specialist prompt FIX (e.g. the Appsmith
+ * build→declare→call ordering that fixes invented tool slugs, v0.34.1) lives in
+ * the AGENT prompt, which gap-fill deliberately never overwrites — so without
+ * this it reaches only fresh installs, never an already-provisioned brain. A
+ * specialist's prompt is product-owned the same way a manifest skill body is.
+ * The PERSONA is never touched (its prompt is operator-owned); tool groups,
+ * skills, and delegation are left to the additive grants so operator ADDITIONS
+ * survive; a disabled specialist is skipped (opt-out). Model honours the same
+ * per-agent env override the seed uses. Returns the slugs whose def changed.
+ */
+async function syncSpecialistDefs(ownerId: string): Promise<string[]> {
+  const rows = await db
+    .select({
+      id: agents.id,
+      slug: agents.slug,
+      enabled: agents.enabled,
+      systemPrompt: agents.systemPrompt,
+      model: agents.model,
+      params: agents.params,
+    })
+    .from(agents)
+    .where(eq(agents.ownerId, ownerId));
+  const bySlug = new Map(rows.map((r) => [r.slug, r] as const));
+  const synced: string[] = [];
+  for (const a of MANIFEST_AGENTS) {
+    if (a.isPersona || !a.systemPrompt) continue;
+    const row = bySlug.get(a.slug);
+    if (!row || !row.enabled) continue;
+    const model = (a.envModelVar ? process.env[a.envModelVar] : undefined) || a.model;
+    const promptChanged = (row.systemPrompt ?? '') !== a.systemPrompt;
+    const modelChanged = row.model !== model;
+    const paramsChanged = JSON.stringify(row.params ?? {}) !== JSON.stringify(a.params);
+    if (!promptChanged && !modelChanged && !paramsChanged) continue;
+    await db
+      .update(agents)
+      .set({
+        systemPrompt: a.systemPrompt,
+        model,
+        params: a.params as AgentParams,
+        updatedAt: new Date(),
+      })
+      .where(eq(agents.id, row.id));
+    synced.push(a.slug);
+  }
+  return synced;
+}
+
+/**
  * Create any manifest specialist agent the brain is missing (a NEW specialist
  * shipped this version), and wire the persona's delegation to it. Keyed on
  * existence (not enabled) so an operator-disabled specialist is never recreated.
@@ -186,13 +236,15 @@ export async function reconcileManifestOnBoot(): Promise<void> {
     const granted = await grantPersonaGroupsByRole(ownerId);
     const provisioned = await provisionMissingSpecialists(ownerId);
     const specialistGrants = await grantSpecialistGroupsByManifest(ownerId);
+    const defsSynced = await syncSpecialistDefs(ownerId);
     await updateProfilePreferences(ownerId, { lastReconciledVersion: APP_VERSION });
 
     console.log(
       `[reconcile] synced manifest to v${APP_VERSION}` +
         (granted.length ? `; persona +${granted.join('; ')}` : ' (persona grants current)') +
         (provisioned.length ? `; provisioned ${provisioned.join(', ')}` : '') +
-        (specialistGrants.length ? `; specialists +${specialistGrants.join('; ')}` : ''),
+        (specialistGrants.length ? `; specialists +${specialistGrants.join('; ')}` : '') +
+        (defsSynced.length ? `; defs synced ${defsSynced.join(', ')}` : ''),
     );
   } catch (err) {
     // Best-effort: a reconcile failure must never take the server down.
