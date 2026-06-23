@@ -88,6 +88,38 @@ async function grantPersonaGroupsByRole(ownerId: string): Promise<string[]> {
 }
 
 /**
+ * Union each manifest specialist's default tool groups onto the EXISTING
+ * specialist agent — additive, never removes (mirrors grantPersonaGroupsByRole).
+ * Closes the gap where a NEW group added to an existing specialist (e.g.
+ * Appsmith gaining `research` so it can read library/API docs while coding)
+ * never reaches an already-provisioned brain: provisionMissingSpecialists only
+ * CREATES absent agents, and gap-fill never re-grants an existing one. Keyed on
+ * enabled — a disabled specialist is an opt-out and is left alone. Returns the
+ * `slug:+groups` strings granted.
+ */
+async function grantSpecialistGroupsByManifest(ownerId: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: agents.id, slug: agents.slug, groups: agents.toolGroupSlugs })
+    .from(agents)
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.enabled, true)));
+  const bySlug = new Map(rows.map((r) => [r.slug, r] as const));
+  const granted: string[] = [];
+  for (const a of MANIFEST_AGENTS) {
+    if (a.isPersona || !a.toolGroupSlugs?.length) continue;
+    const row = bySlug.get(a.slug);
+    if (!row) continue; // absent (or disabled) → provisionMissingSpecialists owns it
+    const missing = missingPersonaGroups(row.groups, a.toolGroupSlugs);
+    if (missing.length === 0) continue;
+    await db
+      .update(agents)
+      .set({ toolGroupSlugs: [...(row.groups ?? []), ...missing], updatedAt: new Date() })
+      .where(eq(agents.id, row.id));
+    granted.push(`${a.slug}:+${missing.join(',')}`);
+  }
+  return granted;
+}
+
+/**
  * Create any manifest specialist agent the brain is missing (a NEW specialist
  * shipped this version), and wire the persona's delegation to it. Keyed on
  * existence (not enabled) so an operator-disabled specialist is never recreated.
@@ -153,12 +185,14 @@ export async function reconcileManifestOnBoot(): Promise<void> {
     await applyManifest(ownerId, { only: [], mode: 'gap-fill', skillMode: 'overwrite' });
     const granted = await grantPersonaGroupsByRole(ownerId);
     const provisioned = await provisionMissingSpecialists(ownerId);
+    const specialistGrants = await grantSpecialistGroupsByManifest(ownerId);
     await updateProfilePreferences(ownerId, { lastReconciledVersion: APP_VERSION });
 
     console.log(
       `[reconcile] synced manifest to v${APP_VERSION}` +
-        (granted.length ? `; granted ${granted.join('; ')}` : ' (grants already current)') +
-        (provisioned.length ? `; provisioned ${provisioned.join(', ')}` : ''),
+        (granted.length ? `; persona +${granted.join('; ')}` : ' (persona grants current)') +
+        (provisioned.length ? `; provisioned ${provisioned.join(', ')}` : '') +
+        (specialistGrants.length ? `; specialists +${specialistGrants.join('; ')}` : ''),
     );
   } catch (err) {
     // Best-effort: a reconcile failure must never take the server down.

@@ -465,8 +465,9 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'research',
     name: 'Web research',
-    description: 'Live web search (Perplexity Sonar via OpenRouter), standard + deep tiers.',
-    toolSlugs: ['web_search', 'web_search_pro'],
+    description:
+      'Live web access — search (Perplexity Sonar via OpenRouter, standard + deep tiers) plus web_fetch to read a page or documentation by URL.',
+    toolSlugs: ['web_search', 'web_search_pro', 'web_fetch'],
   },
   {
     slug: 'email',
@@ -711,8 +712,9 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     systemPrompt: AGENT_PROMPTS['appsmith']!,
     // `apps` (authoring) + `app-admin` (delete/publish) reassemble the full
     // APP_TOOL_SLUGS set; `files`/`memory-core` for source reads + lookups;
-    // `delegation` so it can hand data-tool work to the toolsmith.
-    toolGroupSlugs: ['apps', 'app-admin', 'files', 'memory-core', 'delegation'],
+    // `delegation` so it can hand data-tool work to the toolsmith; `research`
+    // (web_search + web_fetch) so it can look up library/API docs while coding.
+    toolGroupSlugs: ['apps', 'app-admin', 'files', 'memory-core', 'delegation', 'research'],
     skillSlugs: ['app_authoring'],
     isDelegate: true,
     assistSurface: 'apps',
