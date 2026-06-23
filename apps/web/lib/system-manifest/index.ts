@@ -10,8 +10,10 @@ export {
   applyManifest,
   seedToolCapabilities,
   seedManifestWorkers,
+  adoptManifestItem,
   type ApplyManifestOpts,
   type ApplyManifestResult,
   type ApplyMode,
   type SeedWorkersResult,
+  type AdoptKind,
 } from './seed';

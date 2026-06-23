@@ -1,7 +1,24 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import { diffLines } from 'diff';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { adoptItemAction, adoptAllAction } from './actions';
+import type { AdoptKind } from '@/lib/system-manifest';
 import type {
   ConfigDiffReport,
   EntityDiff,
@@ -60,7 +77,7 @@ function StatusPill({ status }: { status: DiffStatus }) {
   );
 }
 
-/** A short value preview for the detail header rows. */
+/** A short value preview for the detail rows. */
 function asText(v: string | string[] | null): string {
   if (v == null) return '—';
   return Array.isArray(v) ? (v.length ? v.join(', ') : '—') : v;
@@ -68,6 +85,37 @@ function asText(v: string | string[] | null): string {
 
 function isBody(field: string): boolean {
   return field === 'instructions' || field === 'systemPrompt';
+}
+
+/** Line-level diff (jsdiff) from the brain's current body → the template body, so
+ *  `+` shows what adopting would add and `−` what it would drop. */
+function DiffBody({ before, after }: { before: string; after: string }) {
+  const parts = diffLines(before, after);
+  return (
+    <pre className="mt-2 max-h-80 overflow-auto rounded-md bg-muted/40 p-2 font-mono text-[11px] leading-relaxed">
+      {parts.flatMap((p, i) =>
+        p.value
+          .replace(/\n$/, '')
+          .split('\n')
+          .map((ln, j) => (
+            <div
+              key={`${i}-${j}`}
+              className={cn(
+                'whitespace-pre-wrap',
+                p.added && 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
+                p.removed && 'bg-destructive/15 text-destructive',
+                !p.added && !p.removed && 'text-muted-foreground',
+              )}
+            >
+              <span className="select-none opacity-60">
+                {p.added ? '+ ' : p.removed ? '− ' : '  '}
+              </span>
+              {ln || ' '}
+            </div>
+          )),
+      )}
+    </pre>
+  );
 }
 
 function FieldRow({ field }: { field: FieldDiff }) {
@@ -115,22 +163,9 @@ function FieldRow({ field }: { field: FieldDiff }) {
       ) : isBody(field.field) ? (
         <details className="mt-2 text-xs">
           <summary className="cursor-pointer text-muted-foreground">
-            {field.info ? 'Prompt differs from the template' : 'Body differs from the template'} — show both
+            {field.info ? 'Prompt differs from the template' : 'Body differs from the template'} — show diff
           </summary>
-          <div className="mt-2 grid gap-2 md:grid-cols-2">
-            <div>
-              <p className="mb-1 text-[11px] uppercase tracking-wider text-muted-foreground">Template</p>
-              <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 p-2 font-mono text-[11px]">
-                {asText(field.manifest)}
-              </pre>
-            </div>
-            <div>
-              <p className="mb-1 text-[11px] uppercase tracking-wider text-muted-foreground">This brain</p>
-              <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 p-2 font-mono text-[11px]">
-                {asText(field.live)}
-              </pre>
-            </div>
-          </div>
+          <DiffBody before={asText(field.live) === '—' ? '' : asText(field.live)} after={asText(field.manifest) === '—' ? '' : asText(field.manifest)} />
         </details>
       ) : (
         <div className="mt-2 grid gap-2 md:grid-cols-2">
@@ -148,7 +183,29 @@ function FieldRow({ field }: { field: FieldDiff }) {
   );
 }
 
+/** Per-kind one-liner shown in the adopt confirm dialog. */
+function adoptDescription(e: EntityDiff): string {
+  if (e.status === 'missing') return 'This will create it in your brain from the template.';
+  switch (e.kind) {
+    case 'persona':
+      return 'Unions the template’s default tool groups, delegation, and skills onto your persona. Your persona’s prompt, model, and parameters are left untouched.';
+    case 'agent':
+      return 'Overwrites this specialist’s prompt, model, and parameters to the template, and adds any template tool groups/skills it’s missing. Groups/skills you added stay.';
+    case 'skill':
+      return 'Overwrites this skill’s instructions with the template version.';
+    case 'tool-group':
+      return 'Re-syncs this tool group’s membership to the template.';
+    case 'worker':
+      return 'Sets this worker’s model/provider to the template route — this can replace a model you tuned for cost.';
+  }
+}
+
 export function ConfigClient({ report }: { report: ConfigDiffReport }) {
+  const router = useRouter();
+  const toast = useToast();
+  const [, startTransition] = useTransition();
+  const [submitting, setSubmitting] = useState(false);
+
   const sections = useMemo(() => sectionize(report.entities), [report.entities]);
   // Auto-select the first entity that isn't OK, else the very first.
   const firstNonOk = report.entities.find((e) => e.status !== 'ok') ?? report.entities[0] ?? null;
@@ -159,6 +216,36 @@ export function ConfigClient({ report }: { report: ConfigDiffReport }) {
     report.entities.find((e) => `${e.kind}:${e.slug}` === selectedKey) ?? firstNonOk;
 
   const { ok, modified, missing, extra } = report.counts;
+
+  // Matches adoptAllAction's filter: adoptable minus modified workers (those need
+  // a deliberate per-item click).
+  const adoptAllCount = report.entities.filter(
+    (e) => e.adoptable && !(e.kind === 'worker' && e.status === 'modified'),
+  ).length;
+
+  async function runAdopt(e: EntityDiff) {
+    setSubmitting(true);
+    const res = await adoptItemAction(e.kind as AdoptKind, e.slug);
+    setSubmitting(false);
+    if (res.ok) {
+      toast.success(`Adopted ${e.name} from template`);
+      startTransition(() => router.refresh());
+    } else {
+      toast.error(res.error);
+    }
+  }
+
+  async function runAdoptAll() {
+    setSubmitting(true);
+    const res = await adoptAllAction();
+    setSubmitting(false);
+    if (res.ok) {
+      toast.success(`Adopted ${res.count} item${res.count === 1 ? '' : 's'} from template`);
+      startTransition(() => router.refresh());
+    } else {
+      toast.error(res.error);
+    }
+  }
 
   return (
     <div className="md:grid md:h-full md:grid-cols-[360px_1fr] md:overflow-hidden">
@@ -186,6 +273,29 @@ export function ConfigClient({ report }: { report: ConfigDiffReport }) {
               {extra} added
             </span>
           </div>
+          {adoptAllCount > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button type="button" size="sm" variant="outline" className="mt-3 w-full" disabled={submitting}>
+                  Adopt all ({adoptAllCount})
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Adopt {adoptAllCount} change{adoptAllCount === 1 ? '' : 's'} from the template?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Applies every adoptable item now (the same syncs the next version bump
+                    would make). Worker model changes are excluded — adopt those
+                    individually. Operator-added items are never removed.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={runAdoptAll}>Adopt all</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </div>
 
         <div className="space-y-3 p-3 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
@@ -258,10 +368,38 @@ export function ConfigClient({ report }: { report: ConfigDiffReport }) {
               <p className="text-sm text-muted-foreground">Nothing to reconcile — this matches the template.</p>
             ) : null}
 
-            <p className="border-t border-border pt-3 text-xs text-muted-foreground">
-              Adopting changes from the template lands in a later update. For now this is a
-              read-only check.
-            </p>
+            <div className="border-t border-border pt-3">
+              {selected.adoptable ? (
+                <>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button type="button" size="sm" disabled={submitting}>
+                        Adopt from template
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Adopt “{selected.name}” from the template?</AlertDialogTitle>
+                        <AlertDialogDescription>{adoptDescription(selected)}</AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => runAdopt(selected)}>Adopt</AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Writes the manifest version to this brain now.
+                  </p>
+                </>
+              ) : selected.status === 'extra' ? (
+                <p className="text-xs text-muted-foreground">
+                  Operator-added — not in the template. Adopt never deletes it.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">In sync with the template.</p>
+              )}
+            </div>
           </div>
         ) : (
           <div className="flex h-full items-center justify-center p-6">

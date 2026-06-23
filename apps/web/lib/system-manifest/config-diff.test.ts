@@ -224,6 +224,20 @@ describe('diffConfig — skills, tool groups, workers', () => {
   });
 });
 
+describe('diffConfig — adoptable flag', () => {
+  it('marks missing + modified items adoptable, ok + extra not', () => {
+    const live = inSyncLive();
+    live.skills[0]!.instructions = 'EDITED'; // modified
+    live.agents = live.agents.filter((a) => a.slug !== 'pages'); // pages missing
+    live.toolGroups.push({ slug: 'mine', name: 'Mine', enabled: true, toolSlugs: [] }); // extra
+    const entities = diffConfig(live, MANIFEST);
+    expect(find(entities, 'skill', 'tool_grounding').adoptable).toBe(true); // modified
+    expect(find(entities, 'agent', 'pages').adoptable).toBe(true); // missing
+    expect(find(entities, 'skill', 'voice_reply').adoptable).toBe(false); // ok
+    expect(find(entities, 'tool-group', 'mine').adoptable).toBe(false); // extra
+  });
+});
+
 describe('diffConfig — operator extras', () => {
   it('reports operator-added agent / skill / tool group as extra', () => {
     const live = inSyncLive();

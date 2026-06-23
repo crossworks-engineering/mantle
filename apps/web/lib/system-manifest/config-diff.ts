@@ -76,7 +76,14 @@ export type EntityDiff = {
   summary: string;
   /** Tracked fields that differ (empty when status is 'ok'). */
   fields: FieldDiff[];
+  /** Can the operator "Adopt from template" this item? True for missing/modified
+   *  (apply the manifest version); false for ok (nothing to do) and extra
+   *  (operator-added — adopting would mean deleting, which we never do). */
+  adoptable: boolean;
 };
+
+/** A diff before the (status-derived) `adoptable` flag is stamped on. */
+export type EntityDiffCore = Omit<EntityDiff, 'adoptable'>;
 
 export type ConfigDiffReport = {
   generatedAt: string;
@@ -196,7 +203,7 @@ function maxSeverity(a: AuditSeverity, b: AuditSeverity): AuditSeverity {
 
 // ─── per-kind diffing ────────────────────────────────────────────────────────
 
-function diffPersona(live: LiveConfig, m: ManifestSlices): EntityDiff {
+function diffPersona(live: LiveConfig, m: ManifestSlices): EntityDiffCore {
   const manifestPersona = m.agents.find((a) => a.isPersona);
   const personaSlug = manifestPersona?.slug ?? 'assistant';
   // Resolve the agent that ACTUALLY serves as the persona (slug-flexible).
@@ -239,7 +246,7 @@ function diffPersona(live: LiveConfig, m: ManifestSlices): EntityDiff {
   };
 }
 
-function diffSpecialist(a: ManifestAgent, live: LiveConfig, m: ManifestSlices): EntityDiff {
+function diffSpecialist(a: ManifestAgent, live: LiveConfig, m: ManifestSlices): EntityDiffCore {
   const row = live.agents.find((r) => r.slug === a.slug);
   const base = { kind: 'agent' as const, slug: a.slug, name: row?.name || a.name };
 
@@ -274,7 +281,7 @@ function diffSpecialist(a: ManifestAgent, live: LiveConfig, m: ManifestSlices): 
   return { ...base, status: 'modified', severity, summary: summarizeFields(fields), fields };
 }
 
-function diffSkill(s: ManifestSkill, live: LiveConfig): EntityDiff {
+function diffSkill(s: ManifestSkill, live: LiveConfig): EntityDiffCore {
   const row = live.skills.find((r) => r.slug === s.slug);
   const base = { kind: 'skill' as const, slug: s.slug, name: row?.name || s.name };
   if (!row || !row.enabled) {
@@ -292,7 +299,7 @@ function diffSkill(s: ManifestSkill, live: LiveConfig): EntityDiff {
   return { ...base, status: 'ok', severity: 'low', summary: 'matches the template', fields: [] };
 }
 
-function diffToolGroup(g: ManifestToolGroup, live: LiveConfig): EntityDiff {
+function diffToolGroup(g: ManifestToolGroup, live: LiveConfig): EntityDiffCore {
   const row = live.toolGroups.find((r) => r.slug === g.slug);
   const base = { kind: 'tool-group' as const, slug: g.slug, name: row?.name || g.name };
   if (!row || !row.enabled) {
@@ -305,7 +312,7 @@ function diffToolGroup(g: ManifestToolGroup, live: LiveConfig): EntityDiff {
   return { ...base, status: 'ok', severity: 'low', summary: 'matches the template', fields: [] };
 }
 
-function diffWorker(w: ManifestWorker, live: LiveConfig): EntityDiff {
+function diffWorker(w: ManifestWorker, live: LiveConfig): EntityDiffCore {
   // A kind is "present" when it has a default + enabled worker (what the runtime uses).
   const def = live.workers.find((r) => r.kind === w.kind && r.enabled && r.isDefault);
   const anyRow = live.workers.find((r) => r.kind === w.kind);
@@ -336,8 +343,8 @@ function diffWorker(w: ManifestWorker, live: LiveConfig): EntityDiff {
 }
 
 /** Operator-added entities with no manifest counterpart — informational. */
-function diffExtras(live: LiveConfig, m: ManifestSlices): EntityDiff[] {
-  const out: EntityDiff[] = [];
+function diffExtras(live: LiveConfig, m: ManifestSlices): EntityDiffCore[] {
+  const out: EntityDiffCore[] = [];
   const manifestAgentSlugs = new Set(m.agents.map((a) => a.slug));
   const personaSlug = m.agents.find((a) => a.isPersona)?.slug ?? 'assistant';
   const livePersona = resolveEffectivePersona(
@@ -398,7 +405,7 @@ export function diffConfig(
   live: LiveConfig,
   manifest: ManifestSlices = DEFAULT_MANIFEST,
 ): EntityDiff[] {
-  const entities: EntityDiff[] = [];
+  const entities: EntityDiffCore[] = [];
   entities.push(diffPersona(live, manifest));
   for (const a of manifest.agents) {
     if (a.isPersona) continue;
@@ -408,7 +415,12 @@ export function diffConfig(
   for (const g of manifest.toolGroups) entities.push(diffToolGroup(g, live));
   for (const w of manifest.workers) entities.push(diffWorker(w, live));
   entities.push(...diffExtras(live, manifest));
-  return entities;
+  // Stamp the (status-derived) adopt affordance: apply the manifest version of a
+  // missing/modified item; ok = nothing to do, extra = operator-added (never deleted).
+  return entities.map((e) => ({
+    ...e,
+    adoptable: e.status === 'missing' || e.status === 'modified',
+  }));
 }
 
 /** Tally entity statuses for the report header. */

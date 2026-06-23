@@ -1,6 +1,6 @@
 {
   "name": "@mantle/web",
-  "version": "0.37.0",
+  "version": "0.38.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -113,6 +113,7 @@
     "cmdk": "^1.1.1",
     "dagre": "^0.8.5",
     "date-fns": "^4.1.0",
+    "diff": "^9.0.0",
     "drizzle-orm": "^0.38.3",
     "esbuild": "^0.24.2",
     "hast-util-to-html": "^9.0.5",

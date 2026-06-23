@@ -20,9 +20,19 @@
  */
 
 import { and, eq, inArray } from 'drizzle-orm';
-import { db, agents, skills, toolGroups, tools, apiKeys, type AgentMemoryConfig, type AgentParams } from '@mantle/db';
+import {
+  db,
+  agents,
+  skills,
+  toolGroups,
+  tools,
+  apiKeys,
+  type AgentMemoryConfig,
+  type AgentParams,
+  type AiWorkerKind,
+} from '@mantle/db';
 import { seedBuiltinTools, createTool, updateTool } from '@mantle/tools';
-import { createAiWorker, listAiWorkers } from '@/lib/ai-workers';
+import { createAiWorker, updateAiWorker, listAiWorkers } from '@/lib/ai-workers';
 import {
   MANIFEST_AGENTS,
   MANIFEST_HTTP_TOOLS,
@@ -30,12 +40,15 @@ import {
   MANIFEST_TOOL_GROUPS,
   MANIFEST_WORKERS,
   PERSONA_SLUG,
+  PERSONA_TOOL_GROUP_SLUGS,
+  DELEGATE_SLUGS,
   type ManifestAgent,
   type ManifestHttpTool,
   type ManifestSkill,
   type ManifestToolGroup,
 } from './manifest';
 import { resolveWorkerRoute } from './worker-route';
+import { resolveEffectivePersona } from './persona';
 
 export type ApplyMode = 'gap-fill' | 'overwrite';
 export type ApplyManifestOpts = {
@@ -414,4 +427,151 @@ export async function applyManifest(
   await attachPersonaSkills(ownerId);
 
   return { seededSkills: skillDefs.map((s) => s.slug), seededAgents };
+}
+
+// ─── per-item adopt (the /settings/config "Adopt from template" action) ──────
+//
+// Applies the manifest version of ONE item to the brain on demand — the same
+// writes the boot reconcile makes on a version bump, but for a single item the
+// operator picked. Semantics match reconcile exactly (see ./CLAUDE.md):
+//   - skill / tool-group: overwrite the body / membership to the manifest.
+//   - specialist agent: MERGE — overwrite prompt/model/params, UNION groups +
+//     skills (operator additions survive); a missing one is created + wired.
+//   - persona: STRUCTURE only — union default groups + delegation, attach skills;
+//     never the prompt/model/params (operator-owned).
+//   - worker: create the missing one, or re-model an existing one to the route
+//     (an explicit click MAY overwrite an operator-tuned model).
+
+export type AdoptKind = 'persona' | 'agent' | 'skill' | 'tool-group' | 'worker';
+
+/** MERGE a manifest specialist onto the brain: overwrite product-owned fields,
+ *  union grants. Missing → create + wire delegation. Mirrors the boot reconcile
+ *  (syncSpecialistDefs + grantSpecialistCapabilities) for one agent. */
+async function adoptSpecialist(ownerId: string, def: ManifestAgent): Promise<void> {
+  const [row] = await db
+    .select({ id: agents.id, skills: agents.skillSlugs, groups: agents.toolGroupSlugs })
+    .from(agents)
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, def.slug)))
+    .limit(1);
+  if (!row) {
+    await applyManifest(ownerId, { only: [def.slug], mode: 'gap-fill' });
+    return;
+  }
+  const model = (def.envModelVar ? process.env[def.envModelVar] : undefined) || def.model;
+  await db
+    .update(agents)
+    .set({
+      systemPrompt: def.systemPrompt ?? '',
+      model,
+      params: def.params as AgentParams,
+      skillSlugs: union(row.skills ?? [], def.skillSlugs),
+      toolGroupSlugs: union(row.groups ?? [], def.toolGroupSlugs ?? []),
+      enabled: true,
+      updatedAt: new Date(),
+    })
+    .where(eq(agents.id, row.id));
+  if (def.isDelegate) await wireDelegation(ownerId, [def.slug]);
+}
+
+/** Union the manifest persona's default tool groups + delegation onto the
+ *  effective persona and attach its manifest skills. Never touches the
+ *  operator-owned prompt/model/params. */
+async function adoptPersonaStructure(ownerId: string): Promise<void> {
+  const rows = await db
+    .select({
+      id: agents.id,
+      slug: agents.slug,
+      enabled: agents.enabled,
+      role: agents.role,
+      priority: agents.priority,
+      groups: agents.toolGroupSlugs,
+      memoryConfig: agents.memoryConfig,
+    })
+    .from(agents)
+    .where(eq(agents.ownerId, ownerId));
+  const persona = resolveEffectivePersona(
+    rows.map((r) => ({ slug: r.slug, enabled: r.enabled, role: r.role, priority: r.priority })),
+  );
+  if (!persona) throw new Error('No persona agent to adopt onto.');
+  const row = rows.find((r) => r.slug === persona.slug)!;
+  const mc = (row.memoryConfig ?? {}) as AgentMemoryConfig & { delegate_to?: string[] };
+  const current = Array.isArray(mc.delegate_to) ? mc.delegate_to : [];
+  await db
+    .update(agents)
+    .set({
+      toolGroupSlugs: union(row.groups ?? [], [...PERSONA_TOOL_GROUP_SLUGS]),
+      memoryConfig: { ...mc, delegate_to: union(current, [...DELEGATE_SLUGS]) },
+      updatedAt: new Date(),
+    })
+    .where(eq(agents.id, row.id));
+  await attachPersonaSkills(ownerId);
+}
+
+/** Create the missing worker, or re-model an existing one to its manifest route. */
+async function adoptWorker(ownerId: string, kind: AiWorkerKind): Promise<void> {
+  const w = MANIFEST_WORKERS.find((x) => x.kind === kind);
+  if (!w) throw new Error(`Unknown manifest worker '${kind}'.`);
+  const keys = await keyIdByService(ownerId);
+  const route = resolveWorkerRoute(w, new Set(Object.keys(keys)));
+  if (!route) {
+    throw new Error(
+      `Can't adopt the '${kind}' worker — no API key for ${w.provider}. Add one at /settings/keys.`,
+    );
+  }
+  const existing = (await listAiWorkers(ownerId)).find((x) => x.kind === kind);
+  if (existing) {
+    await updateAiWorker(ownerId, existing.id, {
+      provider: route.provider,
+      model: route.model,
+      apiKeyId: keys[route.keyService]!,
+      params: route.params,
+    });
+  } else {
+    await createAiWorker({
+      ownerId,
+      kind: w.kind,
+      name: w.name,
+      provider: route.provider,
+      model: route.model,
+      apiKeyId: keys[route.keyService]!,
+      params: route.params,
+      enabled: true,
+      isDefault: true,
+    });
+  }
+}
+
+/** Apply the manifest version of one config item to the brain (the /settings/config
+ *  adopt action). Throws on an unknown slug or a worker with no key. */
+export async function adoptManifestItem(
+  ownerId: string,
+  kind: AdoptKind,
+  slug: string,
+): Promise<void> {
+  switch (kind) {
+    case 'skill': {
+      const def = MANIFEST_SKILLS.find((s) => s.slug === slug);
+      if (!def) throw new Error(`Unknown manifest skill '${slug}'.`);
+      await upsertSkill(ownerId, def, 'overwrite');
+      return;
+    }
+    case 'tool-group': {
+      const def = MANIFEST_TOOL_GROUPS.find((g) => g.slug === slug);
+      if (!def) throw new Error(`Unknown manifest tool group '${slug}'.`);
+      await upsertToolGroup(ownerId, def, 'overwrite');
+      return;
+    }
+    case 'agent': {
+      const def = MANIFEST_AGENTS.find((a) => a.slug === slug && !a.isPersona);
+      if (!def) throw new Error(`Unknown manifest specialist '${slug}'.`);
+      await adoptSpecialist(ownerId, def);
+      return;
+    }
+    case 'persona':
+      await adoptPersonaStructure(ownerId);
+      return;
+    case 'worker':
+      await adoptWorker(ownerId, slug as AiWorkerKind);
+      return;
+  }
 }
