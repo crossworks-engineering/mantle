@@ -42,6 +42,7 @@ vi.mock('@mantle/db', () => {
 });
 
 vi.mock('@mantle/tools', () => ({ countPending: vi.fn() }));
+vi.mock('@mantle/content', () => ({ loadProfilePreferences: vi.fn() }));
 vi.mock('./seal', () => ({ sealToDevice: vi.fn() }));
 vi.mock('./relay-client', () => ({ relayNotify: vi.fn() }));
 vi.mock('./store', () => ({
@@ -54,6 +55,7 @@ vi.mock('./store', () => ({
 
 import { pushOutbound, pushApproval } from './notify';
 import { countPending } from '@mantle/tools';
+import { loadProfilePreferences } from '@mantle/content';
 import { sealToDevice } from './seal';
 import { relayNotify } from './relay-client';
 import {
@@ -85,6 +87,11 @@ beforeEach(() => {
   vi.mocked(sealToDevice).mockResolvedValue('ciphertext');
   vi.mocked(relayNotify).mockResolvedValue({ ok: true, status: 200 });
   vi.mocked(countPending).mockResolvedValue(1);
+  // Approvals only push when the operator's last channel is the companion app.
+  // Default to that here; the wrong-channel case overrides.
+  vi.mocked(loadProfilePreferences).mockResolvedValue({
+    reminderChannel: 'mobile',
+  } as Awaited<ReturnType<typeof loadProfilePreferences>>);
 });
 
 describe('pushOutbound — gating', () => {
@@ -194,6 +201,23 @@ describe('pushApproval', () => {
     vi.mocked(getPushPrefs).mockResolvedValue({ ...PREFS, approvals: false });
     expect((await pushApproval('owner')).skipped).toBe('disabled');
     expect(countPending).not.toHaveBeenCalled();
+  });
+
+  it('skips wrong_channel when the operator is not on the mobile channel', async () => {
+    vi.mocked(loadProfilePreferences).mockResolvedValue({
+      reminderChannel: 'telegram',
+    } as Awaited<ReturnType<typeof loadProfilePreferences>>);
+    expect((await pushApproval('owner')).skipped).toBe('wrong_channel');
+    // Bails before touching devices — the Telegram card is the notification.
+    expect(listSubscriptions).not.toHaveBeenCalled();
+    expect(relayNotify).not.toHaveBeenCalled();
+  });
+
+  it('skips wrong_channel when reminderChannel is unset (defaults to Telegram)', async () => {
+    vi.mocked(loadProfilePreferences).mockResolvedValue(
+      {} as Awaited<ReturnType<typeof loadProfilePreferences>>,
+    );
+    expect((await pushApproval('owner')).skipped).toBe('wrong_channel');
   });
 
   it('skips no_devices when the owner has no devices', async () => {

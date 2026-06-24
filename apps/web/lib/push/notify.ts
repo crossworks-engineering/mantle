@@ -8,6 +8,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { db, agents, assistantMessages } from '@mantle/db';
 import { countPending } from '@mantle/tools';
+import { loadProfilePreferences } from '@mantle/content';
 import { sealToDevice } from './seal';
 import { relayNotify } from './relay-client';
 import {
@@ -34,7 +35,7 @@ export interface PushResult {
   attempted: number;
   delivered: number;
   dropped: number; // unregistered devices removed
-  skipped?: 'not_connected' | 'no_devices' | 'no_message' | 'disabled';
+  skipped?: 'not_connected' | 'no_devices' | 'no_message' | 'disabled' | 'wrong_channel';
 }
 
 function teaser(text: string, max = 140): string {
@@ -133,7 +134,12 @@ export async function pushOutbound(ownerId: string, agentSlug: string): Promise<
 
 /**
  * Push a pending-approval nudge to the owner's devices — unless the approvals
- * trigger is off. Collapses on "approvals" so repeated nudges supersede.
+ * trigger is off, or the operator's last communication channel isn't the
+ * companion app. Approvals follow `reminderChannel` (the sticky last-channel
+ * signal, see docs/reminder-delivery-routing.md): a `telegram`/unset operator
+ * gets the one-tap Telegram card instead (pending-notify.ts), so pushing here
+ * too would double-notify. Only the `mobile` channel routes to a device push.
+ * Collapses on "approvals" so repeated nudges supersede.
  */
 export async function pushApproval(ownerId: string): Promise<PushResult> {
   const instance = await getPushInstance();
@@ -141,6 +147,11 @@ export async function pushApproval(ownerId: string): Promise<PushResult> {
 
   const prefs = await getPushPrefs();
   if (!prefs.approvals) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'disabled' };
+
+  const profile = await loadProfilePreferences(ownerId);
+  if (profile.reminderChannel !== 'mobile') {
+    return { attempted: 0, delivered: 0, dropped: 0, skipped: 'wrong_channel' };
+  }
 
   const devices = await listSubscriptions(ownerId);
   if (devices.length === 0) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_devices' };

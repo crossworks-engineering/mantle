@@ -6,9 +6,17 @@
  *   - in-app  → pg_notify('pending_changed', ownerId). The web app's
  *               realtime bridge (apps/web/lib/realtime.ts) LISTENs and
  *               repaints the sidebar badge + /pending live, no refresh.
+ *               The push-notify worker also LISTENs and (for `mobile`
+ *               operators) sends a device push deep-linking to /pending.
  *   - Telegram → a one-tap Approve/Reject card pushed to the operator's
  *               paired chat, so an approval can be acted on from a phone
  *               while away from the app.
+ *
+ * The active approval surface follows `reminderChannel` — the sticky
+ * last-communication-channel signal (see docs/reminder-delivery-routing.md):
+ * a `mobile` operator gets the in-app queue + a device push (and NO Telegram
+ * card); a `telegram`/unset operator gets the Telegram card. Routing to one
+ * channel avoids double-notifying. The in-app badge fires regardless.
  *
  * Everything here is fire-and-forget: a notify or push failure must never
  * break the turn that queued the call — the row is already persisted and
@@ -18,6 +26,7 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, telegramChats } from '@mantle/db';
 import { accountById, sendApprovalCard } from '@mantle/telegram';
+import { loadProfilePreferences } from '@mantle/content';
 
 /** The Postgres channel the web realtime bridge LISTENs on for approval
  *  queue changes. Exported so notifier + listener share one string. */
@@ -103,10 +112,19 @@ export async function notifyPendingCreated(input: {
   args: Record<string, unknown>;
   via?: string;
 }): Promise<void> {
-  // In-app badge first — cheapest, always relevant.
+  // In-app badge first — cheapest, always relevant. (This also wakes the
+  // push-notify worker, which sends a device push when the operator's
+  // channel is `mobile`.)
   await notifyPendingChanged(input.ownerId);
 
+  // The Telegram card is the approval surface only when the operator's last
+  // channel is Telegram (or unset). A `mobile` operator approves from the
+  // companion app's /pending queue (woken by the push above), so skip the
+  // card to avoid notifying on two channels.
   try {
+    const prefs = await loadProfilePreferences(input.ownerId);
+    if (prefs.reminderChannel === 'mobile') return;
+
     const chat = await resolveApprovalChat(input.ownerId);
     if (!chat) return;
     const account = await accountById(chat.accountId);
