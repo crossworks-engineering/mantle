@@ -116,7 +116,11 @@ results" in one call, instead of the agent adding rows one at a time.
 
 `packages/tools/src/builtins-tables.ts` — the `table_*` builtins. Reads:
 `table_list`, `table_get`, `table_rows_list` (windowed id+preview snapshot —
-read this *before* editing, so you target rows by id), `table_row_get`.
+read this *before* editing, so you target rows by id), `table_row_get`,
+`table_query` (filter rows by value — `{column, op, value}` predicates, AND-ed
+or `match:"any"`, optional `sort`/`columns`; returns only matching rows + a
+total count. The structured-lookup path — "design pressure for circuit X" —
+instead of paging the whole grid. Read-only, persists nothing).
 Edits (→ `draft_data`, return a review hint): `table_row_add`/`update`/`delete`,
 `table_cell_set`, `table_column_add`/`update`/`delete`, `table_set_aggregate`
 ("add totals"), `table_set_view`. Plus `table_create`, `table_from_file`

@@ -260,7 +260,7 @@ cache + `extract_cost_cap_micro_usd`.
 - **MCP (read-only for pages):** `page_list`, `page_get`, plus `search_chunks`
   (passage-level vector search across all content).
 - **In-app agent (read + write):** the web assistant's builtins include
-  `page_create` / `page_update` / `page_delete` / `page_list` / `page_get`
+  `page_create` (pass `parent_id` to nest a **sub-page**) / `page_update` / `page_delete` / `page_list` / `page_get`
   ([`packages/tools/src/builtins-pages.ts`](../packages/tools/src/builtins-pages.ts)),
   block-addressed edits (`page_block_*`), and `page_split` (break a long page
   into sub-pages along its headings — see §8 Phase 4b).

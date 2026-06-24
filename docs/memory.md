@@ -1021,6 +1021,9 @@ Two Anthropic cache breakpoints emitted here (persona, digests); the tool-loop
 adds a third, moving one on the latest tail message — three of four total.
 Knobs: `memory_config.{fact_limit, content_hit_limit, chunk_limit,
 digest_limit}`; env `MANTLE_{SALIENCE_LAMBDA,RECENCY_*,QUERY_ENRICH}`.
+`chunk_limit` defaults to 12 (the runtime `CHUNK_LIMIT_DEFAULT`) — enough
+section passages to cover a long procedure/standard without forcing a full
+file read every turn; a per-agent override still wins.
 
 - **Identity (always-on "who you are")** — alongside the always-injected
   preferences, `buildIdentityContext` distils the user's **Life Logs** (the
