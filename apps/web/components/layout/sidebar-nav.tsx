@@ -21,6 +21,7 @@ import {
   FolderTree,
   GitCompare,
   GitMerge,
+  Cloud,
   Hammer,
   Layers,
   HeartPulse,
@@ -106,6 +107,7 @@ export function SidebarNav({
       items: [
         { name: 'Appearance', href: '/settings/appearance', icon: Palette },
         { name: 'Accounts', href: '/settings/accounts', icon: Settings },
+        { name: 'Microsoft', href: '/settings/microsoft', icon: Cloud },
         { name: 'Profile', href: '/settings/profile', icon: User },
         { name: 'API keys', href: '/settings/keys', icon: Key },
         { name: 'Agents', href: '/settings/agents', icon: Bot },

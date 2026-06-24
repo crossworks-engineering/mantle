@@ -6,6 +6,7 @@ export * from './push';
 export * from './profiles';
 export * from './nodes';
 export * from './emails';
+export * from './microsoft';
 export * from './secrets';
 export * from './pages';
 export * from './apps';

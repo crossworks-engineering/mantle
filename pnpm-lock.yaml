@@ -172,6 +172,9 @@ importers:
       '@mantle/heartbeats':
         specifier: workspace:*
         version: link:../../packages/heartbeats
+      '@mantle/microsoft':
+        specifier: workspace:*
+        version: link:../../packages/microsoft
       '@mantle/rules':
         specifier: workspace:*
         version: link:../../packages/rules
@@ -751,6 +754,25 @@ importers:
       '@mantle/voice':
         specifier: workspace:*
         version: link:../voice
+      drizzle-orm:
+        specifier: ^0.38.3
+        version: 0.38.4(@types/react@19.2.14)(pg@8.20.0)(postgres@3.4.9)(react@19.2.6)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.19
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
+  packages/microsoft:
+    dependencies:
+      '@mantle/crypto':
+        specifier: workspace:*
+        version: link:../crypto
+      '@mantle/db':
+        specifier: workspace:*
+        version: link:../db
       drizzle-orm:
         specifier: ^0.38.3
         version: 0.38.4(@types/react@19.2.14)(pg@8.20.0)(postgres@3.4.9)(react@19.2.6)
