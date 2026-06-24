@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { ensureTableDoc, type TableDoc } from '@mantle/content/table-model';
 import { AssistAgentPicker } from '@/components/assist-agent-picker';
+import { useAssistStage, SpecialistWorking } from '@/components/specialist-working';
 
 type Msg = { role: 'user' | 'assistant'; text: string };
 
@@ -42,6 +43,8 @@ export function TableAssistPanel({
   // copy below. null (the default option) falls back to the passed agentName.
   const [pickedName, setPickedName] = useState<string | null>(null);
   const displayName = pickedName ?? agentName;
+  // Live "what is Ledger doing" label, polled while a run is in flight.
+  const stage = useAssistStage('/api/assist/stage?surface=tables', busy);
 
   async function send(prompt: string) {
     const text = prompt.trim();
@@ -129,11 +132,7 @@ export function TableAssistPanel({
             </div>
           ))
         )}
-        {busy && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" aria-hidden /> {displayName} is working…
-          </div>
-        )}
+        {busy && <SpecialistWorking stage={stage} agentName={displayName} />}
       </div>
 
       <form

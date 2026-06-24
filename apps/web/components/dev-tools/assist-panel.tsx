@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { AssistAgentPicker } from '@/components/assist-agent-picker';
+import { useAssistStage, SpecialistWorking } from '@/components/specialist-working';
 import { useDevTools } from './context';
 
 type Msg = { role: 'user' | 'assistant'; text: string };
@@ -36,6 +37,8 @@ export function DevToolsAssistPanel({ onClose }: { onClose: () => void }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pickedName, setPickedName] = useState<string | null>(null);
   const displayName = pickedName ?? 'Toolsmith';
+  // Live "what is Toolsmith doing" label, polled while a run is in flight.
+  const stage = useAssistStage('/api/assist/stage?surface=dev-tools', busy);
 
   async function send(prompt: string) {
     const text = prompt.trim();
@@ -139,12 +142,7 @@ export function DevToolsAssistPanel({ onClose }: { onClose: () => void }) {
             </div>
           ))
         )}
-        {busy && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" aria-hidden /> {displayName} is working —
-            reading docs, writing and testing tools can take a minute…
-          </div>
-        )}
+        {busy && <SpecialistWorking stage={stage} agentName={displayName} />}
       </div>
 
       <form

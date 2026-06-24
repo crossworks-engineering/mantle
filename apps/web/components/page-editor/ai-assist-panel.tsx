@@ -34,6 +34,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { AssistAgentPicker } from '@/components/assist-agent-picker';
+import { useAssistStage, SpecialistWorking } from '@/components/specialist-working';
 
 type ChangeKind = 'added' | 'removed' | 'changed';
 type SampleChange =
@@ -91,6 +92,8 @@ export function AiAssistPanel({
   const [discarding, setDiscarding] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
+  // Live "what is Pages doing" label, polled while a run is in flight.
+  const stage = useAssistStage('/api/assist/stage?surface=pages', pending);
 
   // Bubble the pending flag up so the parent can lock the editor while
   // the AI call is in flight. The cleanup releases the lock on unmount
@@ -202,7 +205,7 @@ export function AiAssistPanel({
           </div>
         )}
         {messages.map((m, i) => (m.role === 'user' ? <UserBubble key={i} text={m.text} /> : <AssistantBubble key={i} data={m.data} />))}
-        {pending && <PendingIndicator />}
+        {pending && <SpecialistWorking stage={stage} agentName="Pages" />}
       </div>
 
       {/* ── Draft controls ─────────────────────────────────────────── */}
@@ -379,26 +382,5 @@ function ChangeChip({ kind }: { kind: ChangeKind }) {
     <span className={cn('inline-flex size-4 shrink-0 items-center justify-center rounded text-[10px] font-bold', cls)}>
       {label}
     </span>
-  );
-}
-
-function PendingIndicator() {
-  return (
-    <div className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/10 p-3 text-sm shadow-sm">
-      <span className="relative flex size-6 shrink-0 items-center justify-center">
-        <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary/30" />
-        <Sparkles className="relative size-4 text-primary" aria-hidden />
-      </span>
-      <span className="font-medium text-foreground">Pages is working</span>
-      <span className="ml-0.5 flex items-end gap-1" aria-hidden>
-        {[0, 150, 300].map((d) => (
-          <span
-            key={d}
-            className="size-1.5 animate-bounce rounded-full bg-primary"
-            style={{ animationDelay: `${d}ms` }}
-          />
-        ))}
-      </span>
-    </div>
   );
 }

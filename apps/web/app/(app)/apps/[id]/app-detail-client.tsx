@@ -13,6 +13,7 @@ import { BackLink } from '@/components/layout/back-link';
 import { AppSandbox } from '@/components/app-sandbox/app-sandbox';
 import { CodeEditor } from '@/components/app-sandbox/code-editor';
 import { FileTree } from '@/components/app-sandbox/file-tree';
+import { useAssistStage, SpecialistWorking } from '@/components/specialist-working';
 import type { AppDetail } from '@mantle/content';
 
 type BuildMsg = { text: string; location: { file: string; line: number; column: number } | null };
@@ -44,6 +45,8 @@ export function AppDetailClient({ app }: { app: AppDetail }) {
   // select mode is active. Both reset whenever the app reloads (rebuild/publish).
   const [inspect, setInspect] = useState(false);
   const [focusRegion, setFocusRegion] = useState<string | null>(null);
+  // Live "what is Appsmith doing" label, polled while an assist run is in flight.
+  const assistStage = useAssistStage('/api/assist/stage?surface=apps', busy === 'assist');
 
   const activeContent = files[activePath] ?? files[source.entry] ?? '';
   const canFormat = FORMATTABLE.has(extOf(activePath));
@@ -316,7 +319,12 @@ export function AppDetailClient({ app }: { app: AppDetail }) {
                 {busy === 'assist' ? 'Working…' : 'Send to Appsmith'}
               </Button>
             </form>
-            {reply && (
+            {busy === 'assist' && (
+              <div className="mt-3">
+                <SpecialistWorking stage={assistStage} agentName="Appsmith" />
+              </div>
+            )}
+            {busy !== 'assist' && reply && (
               <div className="mt-3 whitespace-pre-wrap rounded-md border border-border bg-card p-3 text-xs text-card-foreground">
                 {reply}
               </div>
