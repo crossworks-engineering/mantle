@@ -27,6 +27,8 @@ import {
   getTable,
   listRows,
   listTables,
+  queryRows,
+  resolveCell,
   saveTableDraft,
   setAggregate,
   setCell,
@@ -37,6 +39,7 @@ import {
   updateTable,
   AGGREGATE_KINDS,
   COLUMN_TYPES,
+  FILTER_OPS,
   type AggregateKind,
   type CellValue,
   type Column,
@@ -508,6 +511,96 @@ const table_row_get: BuiltinToolDef = {
   },
 };
 
+const table_query: BuiltinToolDef = {
+  slug: 'table_query',
+  name: 'Query rows by value',
+  description:
+    "Find the rows that match a filter — the structured-lookup tool, the right way to answer a question about a specific record or subset of a big grid. `filters` is an array of `{ column, op, value }` (column by name OR id; op ∈ eq|neq|contains|gt|lt|gte|lte|empty|notEmpty), AND-ed by default — pass `match: \"any\"` to OR them. Optional `sort` ([{ column, dir }]) and `columns` (return just these columns). Returns ONLY the matching rows (id + cells keyed by column name, formula columns resolved) plus `total_matches`, so you can answer \"what's the design pressure for circuit 17-P08-D17003\" or \"which CMLs are below their retirement thickness\" directly instead of paging the whole table. Read-only — nothing is saved (unlike `table_set_view`). Reads the draft if one exists; pages large match sets via `offset`/`limit`.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      table_id: { type: 'string' },
+      filters: {
+        type: 'array',
+        description: 'predicates over columns; AND-ed unless match="any"',
+        items: {
+          type: 'object',
+          properties: {
+            column: { type: 'string', description: 'column id or name' },
+            op: { type: 'string', enum: [...FILTER_OPS] },
+            value: { description: 'compared against the cell (omit for empty/notEmpty)' },
+          },
+          required: ['column', 'op'],
+        },
+      },
+      match: { type: 'string', enum: ['all', 'any'], description: "combine filters with AND ('all', default) or OR ('any')" },
+      sort: {
+        type: 'array',
+        items: { type: 'object', properties: { column: { type: 'string' }, dir: { type: 'string', enum: ['asc', 'desc'] } }, required: ['column'] },
+      },
+      columns: { type: 'array', items: { type: 'string' }, description: 'restrict returned cells to these columns (id or name)' },
+      offset: { type: 'number' },
+      limit: { type: 'number', description: 'max matching rows to return (default 50, max 500)' },
+    },
+    required: ['table_id'],
+  },
+  handler: async (input, ctx) => {
+    const tableId = str(input.table_id).trim();
+    if (!tableId) return { ok: false, error: 'table_id is required' };
+    const table = await getTable(ctx.ownerId, tableId);
+    if (!table) return { ok: false, error: `table ${tableId} not found` };
+    const doc = baseline(table);
+
+    const ignoredFilters: string[] = [];
+    const filters: Filter[] = (Array.isArray(input.filters) ? input.filters : [])
+      .map((f): Filter | null => {
+        const rec = f as Record<string, unknown>;
+        const col = resolveColumn(doc, str(rec.column));
+        if (!col) {
+          ignoredFilters.push(str(rec.column));
+          return null;
+        }
+        return { colId: col.id, op: str(rec.op) as Filter['op'], value: (rec.value ?? null) as CellValue };
+      })
+      .filter((f): f is Filter => f !== null);
+    const sort: SortSpec[] = (Array.isArray(input.sort) ? input.sort : [])
+      .map((s): SortSpec | null => {
+        const col = resolveColumn(doc, str((s as Record<string, unknown>).column));
+        return col ? { colId: col.id, dir: (s as Record<string, unknown>).dir === 'desc' ? 'desc' : 'asc' } : null;
+      })
+      .filter((s): s is SortSpec => s !== null);
+    const match = str(input.match) === 'any' ? 'any' : 'all';
+
+    const matched = queryRows(doc, { filters, sort, match });
+    const offset = typeof input.offset === 'number' ? Math.max(0, input.offset) : 0;
+    const limit = Math.max(1, Math.min(typeof input.limit === 'number' ? input.limit : 50, 500));
+
+    const wantCols = strArr(input.columns)
+      .map((c) => resolveColumn(doc, c))
+      .filter((c): c is Column => c !== null);
+    const projCols = wantCols.length ? wantCols : doc.columns;
+    const rows = matched.slice(offset, offset + limit).map((r) => {
+      const cells: Record<string, CellValue> = {};
+      for (const col of projCols) cells[col.name] = resolveCell(doc, r, col);
+      return { id: r.id, cells };
+    });
+
+    ctx.step?.setOutput({ table_id: tableId, matches: matched.length });
+    return {
+      ok: true,
+      output: {
+        table_id: tableId,
+        total_matches: matched.length,
+        offset,
+        limit,
+        columns: projCols.map((c) => c.name),
+        rows,
+        ...(ignoredFilters.length ? { ignored_filters: ignoredFilters } : {}),
+      },
+    };
+  },
+};
+
 // ───────────────────────── row edits (→ draft) ─────────────────────────
 
 const CELLS_HINT =
@@ -819,6 +912,7 @@ export const TABLE_TOOLS: BuiltinToolDef[] = [
   table_get,
   table_rows_list,
   table_row_get,
+  table_query,
   table_row_add,
   table_row_update,
   table_row_delete,

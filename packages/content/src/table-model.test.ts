@@ -13,6 +13,7 @@ import {
   emptyTableDoc,
   ensureTableDoc,
   findColumnByName,
+  queryRows,
   resolveCell,
   setAggregate,
   setCell,
@@ -206,6 +207,50 @@ describe('views (filter + sort)', () => {
   it('unknown view id returns all rows in document order', () => {
     const doc = grid();
     expect(applyView(doc, 'nope').map((r) => r.id)).toEqual(['r1', 'r2']);
+  });
+});
+
+describe('queryRows (ad-hoc filter + sort)', () => {
+  function bigGrid(): TableDoc {
+    let doc = grid();
+    doc = addRow(doc, { c_item: 'Anvil', c_qty: 1, c_price: 50 }).doc;
+    return doc;
+  }
+
+  it('ANDs filters by default', () => {
+    const doc = bigGrid();
+    const rows = queryRows(doc, {
+      filters: [
+        { colId: 'c_price', op: 'lt', value: 40 },
+        { colId: 'c_qty', op: 'gte', value: 3 },
+      ],
+    });
+    expect(rows.map((r) => r.cells.c_item)).toEqual(['Gadget']);
+  });
+
+  it('ORs filters when match=any', () => {
+    const doc = bigGrid();
+    const rows = queryRows(doc, {
+      match: 'any',
+      filters: [
+        { colId: 'c_item', op: 'eq', value: 'Widget' },
+        { colId: 'c_price', op: 'gte', value: 50 },
+      ],
+    });
+    expect(rows.map((r) => r.cells.c_item).sort()).toEqual(['Anvil', 'Widget']);
+  });
+
+  it('applies sort and leaves the doc unchanged', () => {
+    const doc = bigGrid();
+    const before = doc.rows.map((r) => r.id);
+    const rows = queryRows(doc, { sort: [{ colId: 'c_price', dir: 'desc' }] });
+    expect(rows.map((r) => r.cells.c_item)).toEqual(['Anvil', 'Widget', 'Gadget']);
+    expect(doc.rows.map((r) => r.id)).toEqual(before); // pure: no mutation
+  });
+
+  it('no filters returns every row in document order', () => {
+    const doc = bigGrid();
+    expect(queryRows(doc, {}).map((r) => r.id)).toEqual(['r1', 'r2', doc.rows[2]!.id]);
   });
 });
 

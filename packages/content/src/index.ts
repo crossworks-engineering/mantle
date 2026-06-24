@@ -236,6 +236,8 @@ export {
   computeAggregate,
   addSelectOption,
   applyView,
+  queryRows,
+  type RowQuery,
   setView,
   COLUMN_TYPES,
   AGGREGATE_KINDS,

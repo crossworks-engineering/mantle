@@ -551,6 +551,33 @@ export function applyView(doc: TableDoc, viewId?: string | null): Row[] {
   return rows;
 }
 
+/** An ad-hoc query over the grid — the same filter + sort a saved View carries,
+ *  but supplied at call time and never persisted. */
+export type RowQuery = {
+  filters?: Filter[];
+  /** 'all' (default) ANDs the filters; 'any' ORs them. */
+  match?: 'all' | 'any';
+  sort?: SortSpec[];
+};
+
+/** Filter + sort rows by an ad-hoc query, returning the matching rows (no view
+ *  saved, doc unchanged). Reuses the exact predicate + comparator that saved
+ *  views use, so `table_query` and a saved view agree. Pure. */
+export function queryRows(doc: TableDoc, q: RowQuery = {}): Row[] {
+  const filters = q.filters ?? [];
+  let rows = doc.rows;
+  if (filters.length) {
+    const any = q.match === 'any';
+    rows = rows.filter((r) =>
+      any ? filters.some((f) => matchesFilter(doc, r, f)) : filters.every((f) => matchesFilter(doc, r, f)),
+    );
+  }
+  if (q.sort?.length) {
+    rows = [...rows].sort((a, b) => compareRows(doc, a, b, q.sort!));
+  }
+  return rows;
+}
+
 /** Upsert a saved view by id (or append a new one). */
 export function setView(doc: TableDoc, view: View): TableDoc {
   const views = [...(doc.views ?? [])];

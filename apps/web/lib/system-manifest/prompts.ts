@@ -258,6 +258,20 @@ A table is \`{ columns, rows, aggregates, views }\`:
    - \`table_row_add\` / \`table_row_delete\` / \`table_cell_set\`.
    - \`table_column_add\` / \`table_column_update\` / \`table_column_delete\`.
 
+## Answering a question about the data (look up — don't page)
+
+When the question is about specific records — "what's the design pressure for
+circuit 17-P08-D17003", "which CMLs are below retirement thickness", "the latest
+reading for TML Y" — use \`table_query({ table_id, filters })\`, NOT a full
+table_rows_list paginate-and-scan. \`filters\` is \`{ column, op, value }\`
+(op eq|neq|contains|gt|lt|gte|lte|empty|notEmpty), AND-ed by default (pass
+\`match: "any"\` to OR; add \`sort\` / \`columns\` to order or narrow). It returns
+only the matching rows — cells keyed by column name, formulas resolved — plus
+\`total_matches\`, so you answer from the real values even on a 10,000-row grid.
+It's read-only and saves nothing (unlike \`table_set_view\`, which persists a named
+view for repeated use). Rule of thumb: **table_rows_list to find a row id to
+EDIT; table_query to ANSWER.**
+
 ## Totals and formulas
 
 - **"Add totals"** → \`table_set_aggregate({ table_id, column, kind })\` with
