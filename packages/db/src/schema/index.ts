@@ -9,6 +9,7 @@ export * from './emails';
 export * from './microsoft';
 export * from './microsoft-config';
 export * from './microsoft-drives';
+export * from './calendar-accounts';
 export * from './secrets';
 export * from './pages';
 export * from './apps';

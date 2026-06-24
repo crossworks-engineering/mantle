@@ -19,7 +19,7 @@
  * worker rolls the single row forward to its next occurrence (re-arming
  * the reminder) instead of marking it sent — see `rollForwardRecurrence`.
  */
-import { and, asc, desc, eq, gte, ilike, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
 
 export type { RecurFreq } from './events-time';
@@ -451,6 +451,187 @@ export async function ownersWithEvents(): Promise<string[]> {
     .from(nodes)
     .where(eq(nodes.type, 'event'));
   return rows.map((r) => r.ownerId);
+}
+
+// ── External calendar sync ────────────────────────────────────────────────
+// Events ingested from an external calendar (ICS feed, Google, Microsoft) are
+// ordinary `event` nodes carrying provenance in `data` — so they appear in the
+// events UI, search, and the knowledge graph exactly like native events. Dedup
+// is by (owner, external_account_id, external_uid). Synced events suppress the
+// Mantle reminder (the source calendar owns notifications) by stamping
+// `reminder_sent_at` and a 0-minute lead.
+
+export type UpsertExternalEventInput = {
+  /** The calendar_accounts row this event came from. */
+  externalAccountId: string;
+  /** Stable id for this event/occurrence within the source (dedup key). */
+  externalUid: string;
+  /** Source kind for provenance/UI: 'ics' | 'google' | 'microsoft'. */
+  externalSource: string;
+  title: string;
+  startsAt: string;
+  endsAt?: string | null;
+  allDay?: boolean;
+  location?: string | null;
+  description?: string;
+  timezone?: string;
+  tags?: string[];
+};
+
+function externalEventData(input: UpsertExternalEventInput): Record<string, unknown> {
+  const startsAt = new Date(input.startsAt);
+  if (Number.isNaN(startsAt.getTime())) throw new Error('invalid starts_at');
+  const data: Record<string, unknown> = {
+    body: input.description ?? '',
+    starts_at: startsAt.toISOString(),
+    timezone: sanitiseTimezone(input.timezone),
+    recur: 'none', // occurrences are expanded by the provider; no roll-forward
+    all_day: !!input.allDay,
+    // Suppress the Mantle reminder — the external calendar already notifies.
+    remind_minutes_before: 0,
+    remind_at: startsAt.toISOString(),
+    reminder_sent_at: new Date().toISOString(),
+    external_uid: input.externalUid,
+    external_account_id: input.externalAccountId,
+    external_source: input.externalSource,
+  };
+  if (input.endsAt) {
+    const endsAt = new Date(input.endsAt);
+    if (!Number.isNaN(endsAt.getTime())) data.ends_at = endsAt.toISOString();
+  }
+  if (input.location) data.location = input.location.slice(0, 200);
+  return data;
+}
+
+/** Create or update the event node for an external calendar item. Re-extracts
+ *  (re-embeds) only when title/time/location/body actually changed. */
+export async function upsertExternalEvent(
+  ownerId: string,
+  input: UpsertExternalEventInput,
+): Promise<EventRow> {
+  await ensureRoot(ownerId);
+  const title = input.title.trim().slice(0, 200) || 'Untitled event';
+  const data = externalEventData(input);
+
+  const [existing] = await db
+    .select()
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'event'),
+        sql`${nodes.data}->>'external_account_id' = ${input.externalAccountId}`,
+        sql`${nodes.data}->>'external_uid' = ${input.externalUid}`,
+      ),
+    )
+    .limit(1);
+
+  if (existing) {
+    const old = (existing.data ?? {}) as Record<string, unknown>;
+    const contentChanged =
+      existing.title !== title ||
+      old.starts_at !== data.starts_at ||
+      old.ends_at !== data.ends_at ||
+      old.location !== data.location ||
+      old.body !== data.body;
+    if (!contentChanged) return rowOf(existing); // no-op re-sync, no churn
+
+    // Preserve any fields we don't manage; drop stale extractor output.
+    const merged: Record<string, unknown> = { ...old, ...data };
+    delete merged.summary;
+    delete merged.summary_model;
+    delete merged.summary_at;
+    delete merged.entities;
+    const [updated] = await db
+      .update(nodes)
+      .set({
+        title,
+        data: merged,
+        tags: dedupeTags(input.tags ?? existing.tags ?? []),
+        embedding: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(nodes.id, existing.id))
+      .returning();
+    if (!updated) throw new Error('upsertExternalEvent: update returned no row');
+    await notifyNodeIngested(existing.id);
+    return rowOf(updated);
+  }
+
+  const [row] = await db
+    .insert(nodes)
+    .values({
+      ownerId,
+      type: 'event',
+      title,
+      path: EVENTS_ROOT_LABEL,
+      data,
+      tags: dedupeTags(input.tags ?? []),
+    })
+    .returning();
+  if (!row) throw new Error('upsertExternalEvent: insert returned no row');
+  return rowOf(row); // INSERT fires node_ingested → extractor
+}
+
+/** External UIDs currently stored for a calendar account — used to detect
+ *  events deleted upstream (present last sync, gone this sync). */
+export async function listExternalEventUids(
+  ownerId: string,
+  externalAccountId: string,
+): Promise<string[]> {
+  const rows = await db
+    .select({ uid: sql<string>`${nodes.data}->>'external_uid'` })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'event'),
+        sql`${nodes.data}->>'external_account_id' = ${externalAccountId}`,
+      ),
+    );
+  return rows.map((r) => r.uid).filter((u): u is string => !!u);
+}
+
+/** Delete synced event nodes for the given external UIDs (upstream removals). */
+export async function deleteExternalEvents(
+  ownerId: string,
+  externalAccountId: string,
+  uids: string[],
+): Promise<number> {
+  if (uids.length === 0) return 0;
+  const rows = await db
+    .select({ id: nodes.id, uid: sql<string>`${nodes.data}->>'external_uid'` })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'event'),
+        sql`${nodes.data}->>'external_account_id' = ${externalAccountId}`,
+      ),
+    );
+  const drop = new Set(uids);
+  const ids = rows.filter((r) => drop.has(r.uid)).map((r) => r.id);
+  if (ids.length === 0) return 0;
+  await db.delete(nodes).where(inArray(nodes.id, ids));
+  return ids.length;
+}
+
+/** Remove every synced event for an account (called when a calendar is deleted). */
+export async function deleteAllExternalEvents(
+  ownerId: string,
+  externalAccountId: string,
+): Promise<number> {
+  const rows = await db
+    .delete(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'event'),
+        sql`${nodes.data}->>'external_account_id' = ${externalAccountId}`,
+      ),
+    )
+    .returning({ id: nodes.id });
+  return rows.length;
 }
 
 function dedupeTags(tags: string[]): string[] {

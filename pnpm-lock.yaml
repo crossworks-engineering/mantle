@@ -151,6 +151,9 @@ importers:
       '@mantle/app-build':
         specifier: workspace:*
         version: link:../../packages/app-build
+      '@mantle/calendar':
+        specifier: workspace:*
+        version: link:../../packages/calendar
       '@mantle/content':
         specifier: workspace:*
         version: link:../../packages/content
@@ -545,6 +548,31 @@ importers:
       '@types/react-dom':
         specifier: ^19.0.0
         version: 19.2.3(@types/react@19.2.14)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
+  packages/calendar:
+    dependencies:
+      '@mantle/content':
+        specifier: workspace:*
+        version: link:../content
+      '@mantle/crypto':
+        specifier: workspace:*
+        version: link:../crypto
+      '@mantle/db':
+        specifier: workspace:*
+        version: link:../db
+      drizzle-orm:
+        specifier: ^0.38.3
+        version: 0.38.4(@types/react@19.2.14)(pg@8.20.0)(postgres@3.4.9)(react@19.2.6)
+      ical.js:
+        specifier: ^2.1.0
+        version: 2.2.1
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.19
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -5079,6 +5107,9 @@ packages:
   http-errors@2.0.1:
     resolution: {integrity: sha512-4FbRdAX+bSdmo4AUFuS0WNiPz8NgFt+r8ThgNWmlrjQjt1Q7ZR9+zTlce2859x4KSXrwIsaeTqDoKQmtP8pLmQ==}
     engines: {node: '>= 0.8'}
+
+  ical.js@2.2.1:
+    resolution: {integrity: sha512-yK/UlPbEs316igb/tjRgbFA8ZV75rCsBJp/hWOatpyaPNlgw0dGDmU+FoicOcwX4xXkeXOkYiOmCqNPFpNPkQg==}
 
   iconv-lite@0.6.3:
     resolution: {integrity: sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==}
@@ -11015,6 +11046,8 @@ snapshots:
       setprototypeof: 1.2.0
       statuses: 2.0.2
       toidentifier: 1.0.1
+
+  ical.js@2.2.1: {}
 
   iconv-lite@0.6.3:
     dependencies:

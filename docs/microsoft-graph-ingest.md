@@ -1,6 +1,6 @@
 # Microsoft Graph ingestion — design
 
-**Status:** M0 (OAuth) + M1 (SharePoint/OneDrive) + M2 (Outlook mail) built — migrations `0100`–`0103` pending apply. M3 (calendar) not started.
+**Status:** M0 (OAuth) + M1 (SharePoint/OneDrive) + M2 (Outlook mail) built — migrations `0100`–`0103` pending apply. **M3 (calendar) HELD** — superseded by the provider-agnostic calendar pipeline (`docs/calendar-ingest.md`); M3 becomes "implement `CalendarProvider` for Graph `/me/calendarView/delta`", reusing `ms_accounts` tokens, exactly as Outlook mail reused the email pipeline.
 **Author:** drafted 2026-06-24
 
 > **M2 build notes (2026-06-24).** Outlook mail reuses the email pipeline

@@ -493,6 +493,19 @@ services:
       # Scheduled backups land here (see MANTLE_BACKUP_DIR in x-app-env).
       - ${MANTLE_DATA_DIR:-./data}/backups:/data/backups
 
+  # Calendar sync: pulls subscribed external calendars (ICS feeds; Google/MS
+  # later) into the brain as event nodes. No volume — events live in Postgres.
+  worker_calendar:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/calendar-sync.ts"]
+    container_name: mantle_worker_calendar
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate:  { condition: service_completed_successfully }
+    environment:
+      <<: *app-env
+
   # Push-notify worker — LISTENs on conversation_changed and forwards sealed
   # teasers to Mantle Push (push.crossworks.network) for backgrounded devices.
   # No-op until a device Connects (push_instance/push_subscriptions empty).

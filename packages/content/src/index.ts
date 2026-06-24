@@ -49,9 +49,14 @@ export {
   markReminderSent,
   rollForwardRecurrence,
   ownersWithEvents,
+  upsertExternalEvent,
+  listExternalEventUids,
+  deleteExternalEvents,
+  deleteAllExternalEvents,
   type EventRow,
   type CreateEventInput,
   type UpdateEventInput,
+  type UpsertExternalEventInput,
   type RecurFreq,
 } from './events';
 
