@@ -13,7 +13,7 @@
  * Env loading is handled by Node's `--env-file-if-exists=.env.local` flag.
  */
 import PgBoss from 'pg-boss';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { BACKFILL_QUEUE, backfillMatch, imap, syncAccount } from '@mantle/email';
 import { db, emailAccounts } from '@mantle/db';
 
@@ -61,10 +61,12 @@ async function main() {
   // Fan-out: every 2 minutes, enqueue a sync job for each enabled account.
   await boss.schedule(SCHEDULER_QUEUE, '*/2 * * * *');
   await boss.work(SCHEDULER_QUEUE, async () => {
+    // IMAP only — `provider='microsoft'` companion accounts are synced by the
+    // microsoft-sync worker via Graph (see workers/microsoft-sync.ts).
     const accounts = await db
       .select({ id: emailAccounts.id, provider: emailAccounts.provider })
       .from(emailAccounts)
-      .where(eq(emailAccounts.enabled, true));
+      .where(and(eq(emailAccounts.enabled, true), eq(emailAccounts.provider, 'imap')));
     for (const a of accounts) {
       // singletonKey collapses concurrent enqueues for the same account.
       await boss.send(SYNC_QUEUE, { accountId: a.id } satisfies SyncJob, {
@@ -86,6 +88,9 @@ async function main() {
         console.log('[sync] skip', job.data.accountId, 'disabled or missing');
         continue;
       }
+      // Safety net: microsoft companion accounts are handled by the microsoft
+      // worker; never let one reach the IMAP-only pickProvider.
+      if (account.provider !== 'imap') continue;
       const provider = pickProvider(account.provider);
       try {
         const t0 = Date.now();
@@ -109,6 +114,10 @@ async function main() {
         .where(eq(emailAccounts.id, job.data.accountId))
         .limit(1);
       if (!account) continue;
+      // IMAP-only path; microsoft companion accounts ingest via the microsoft
+      // worker (sender-approval backfill for them is not wired yet — new mail
+      // still flows through the watermark sync).
+      if (account.provider !== 'imap') continue;
       const provider = pickProvider(account.provider);
       try {
         const t0 = Date.now();

@@ -2,7 +2,7 @@ import { headers } from 'next/headers';
 import { asc, eq } from 'drizzle-orm';
 import { CheckCircle2, Cloud, Plus } from 'lucide-react';
 import { db, msAccounts, type MsDrive } from '@mantle/db';
-import { defaultRedirectUri, getConfigStatus, listDrives } from '@mantle/microsoft';
+import { defaultRedirectUri, getConfigStatus, getMailAccount, listDrives } from '@mantle/microsoft';
 import { requireOwner } from '@/lib/auth';
 import { formatDateTime } from '@/lib/format-datetime';
 import { SetPageTitle } from '@/components/layout/page-title';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { DisconnectButton } from './disconnect-button';
 import { MsConfigForm } from './config-form';
 import { DrivesList } from './drives-list';
+import { MailToggle } from './mail-toggle';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,9 +40,14 @@ export default async function MicrosoftSettingsPage({
     .where(eq(msAccounts.userId, user.id))
     .orderBy(asc(msAccounts.upn));
 
-  // Drives per account, for the opt-in picker.
+  // Drives + mail status per account, for the opt-in pickers.
   const drivesByAccount = new Map<string, MsDrive[]>(
     await Promise.all(rows.map(async (r) => [r.id, await listDrives(r.id)] as const)),
+  );
+  const mailEnabledByAccount = new Map<string, boolean>(
+    await Promise.all(
+      rows.map(async (r) => [r.id, !!(await getMailAccount(user.id, r.id))?.enabled] as const),
+    ),
   );
 
   return (
@@ -123,6 +129,9 @@ export default async function MicrosoftSettingsPage({
                       </div>
                       <DisconnectButton accountId={r.id} upn={r.upn} />
                     </div>
+                    {!needsReconnect && (
+                      <MailToggle msAccountId={r.id} enabled={mailEnabledByAccount.get(r.id) ?? false} />
+                    )}
                     {!needsReconnect && <DrivesList accountId={r.id} drives={drivesByAccount.get(r.id) ?? []} />}
                   </div>
                 );

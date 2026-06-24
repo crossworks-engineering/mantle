@@ -16,6 +16,7 @@
   "dependencies": {
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
+    "@mantle/email": "workspace:*",
     "@mantle/files": "workspace:*",
     "@mantle/storage": "workspace:*",
     "drizzle-orm": "^0.38.3"

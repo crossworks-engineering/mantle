@@ -773,6 +773,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@mantle/email':
+        specifier: workspace:*
+        version: link:../email
       '@mantle/files':
         specifier: workspace:*
         version: link:../files

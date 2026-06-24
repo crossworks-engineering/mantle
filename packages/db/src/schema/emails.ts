@@ -99,6 +99,10 @@ export const emailAccounts = pgTable(
      *  Stored (not derived from address) so different `alex@…` accounts can
      *  coexist without colliding. Set at account-creation time. */
     branchPath: text('branch_path').notNull(),
+    /** For `provider = 'microsoft'` companion accounts: the `ms_accounts` row
+     *  whose OAuth token drives Graph mail sync. Null for IMAP accounts. FK
+     *  enforced in SQL (migration 0103) to avoid a schema import cycle. */
+    msAccountId: uuid('ms_account_id'),
     // Provider-specific sync cursor (history id, delta link, UID/modseq pair…).
     syncState: jsonb('sync_state').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
     lastSyncAt: timestamp('last_sync_at', { withTimezone: true }),

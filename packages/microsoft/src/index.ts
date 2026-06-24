@@ -45,3 +45,7 @@ export { syncDrive, type DriveSyncResult } from './drives/sync';
 export { storeRemoteFileAsNode, type StoredFile } from './drives/store';
 export { discoverForAccount, setDriveEnabled, listDrives } from './drives/manage';
 export type { DriveItem, GraphDrive, GraphSite } from './drives/types';
+
+// ── M2: Outlook mail (reuses the email pipeline via a Graph provider) ───────
+export { graphMailProvider } from './outlook/mail';
+export { ensureMailAccount, setMailEnabled, getMailAccount } from './outlook/manage';

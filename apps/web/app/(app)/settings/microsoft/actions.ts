@@ -2,7 +2,14 @@
 
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { clearConfig, deleteAccount, discoverForAccount, saveConfig, setDriveEnabled } from '@mantle/microsoft';
+import {
+  clearConfig,
+  deleteAccount,
+  discoverForAccount,
+  saveConfig,
+  setDriveEnabled,
+  setMailEnabled,
+} from '@mantle/microsoft';
 import { requireOwner } from '@/lib/auth';
 
 /** Disconnect a connected Microsoft account (owner-scoped). Drops the sealed
@@ -67,5 +74,12 @@ export async function discoverDrivesAction(formData: FormData): Promise<void> {
 export async function toggleDriveAction(driveDbId: string, enabled: boolean): Promise<void> {
   const user = await requireOwner();
   await setDriveEnabled(user.id, driveDbId, enabled);
+  revalidatePath('/settings/microsoft');
+}
+
+/** Enable/disable Outlook mail sync for an account. */
+export async function toggleMailAction(msAccountId: string, enabled: boolean): Promise<void> {
+  const user = await requireOwner();
+  await setMailEnabled(user.id, msAccountId, enabled);
   revalidatePath('/settings/microsoft');
 }

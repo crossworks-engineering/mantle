@@ -1,7 +1,28 @@
 # Microsoft Graph ingestion — design
 
-**Status:** M0 (OAuth core) + M1 (SharePoint/OneDrive sync) built — migrations `0100`–`0102` pending apply. M2–M3 not started.
+**Status:** M0 (OAuth) + M1 (SharePoint/OneDrive) + M2 (Outlook mail) built — migrations `0100`–`0103` pending apply. M3 (calendar) not started.
 **Author:** drafted 2026-06-24
+
+> **M2 build notes (2026-06-24).** Outlook mail reuses the email pipeline
+> wholesale (Choice A): `@mantle/microsoft/outlook/mail.ts` implements
+> `@mantle/email`'s `EmailProvider` interface (listSince / fetchFull /
+> listRecent / listFromSender) over Graph, and the existing `syncAccount` does
+> the contact gate, classification, dedup, and node+emails+attachments insert
+> unchanged. A companion `email_accounts` row (`provider='microsoft'`, new
+> `ms_account_id` FK, migration `0103`) satisfies the emails FK and links the
+> OAuth token. `outlook/manage.ts` creates/toggles it; the microsoft-sync worker
+> gained a mail scheduler+queue; the IMAP worker now filters to `provider='imap'`
+> (skips the companions). UI: a "Outlook mail" opt-in toggle per account.
+>
+> **Cursor:** monotonic `receivedDateTime` watermark in
+> `email_accounts.sync_state.graph.mail.since` (mirrors IMAP's UID watermark);
+> `ge` re-yields the boundary message, deduped. Delta (deletion-aware) not used —
+> the email pipeline is append-only like IMAP.
+>
+> **v1 simplifications:** Inbox folder only (other folders later, like IMAP
+> discovery); mail respects the SAME contact gate (only approved senders
+> ingested — zero contacts = nothing); sender-approval backfill not wired for
+> Microsoft accounts (new mail still flows via the watermark).
 
 > **M1 build notes (2026-06-24).** Shipped: `@mantle/microsoft/drives/`
 > (`discover` OneDrive + followed SharePoint libraries → `ms_drives`; `sync`
