@@ -7,12 +7,21 @@
  * built on top. See docs/microsoft-graph-ingest.md.
  */
 export {
-  isMicrosoftConfigured,
-  getOAuthConfig,
   MS_SCOPES,
   msScopeString,
+  defaultRedirectUri,
+  oauthConfigFromEnv,
   type MsOAuthConfig,
 } from './config';
+export {
+  resolveOAuthConfig,
+  getConfigStatus,
+  isMicrosoftConfigured,
+  saveConfig,
+  clearConfig,
+  type MsConfigStatus,
+  type SaveConfigInput,
+} from './config-store';
 export {
   buildAuthorizeUrl,
   createPkce,

@@ -7,6 +7,7 @@ export * from './profiles';
 export * from './nodes';
 export * from './emails';
 export * from './microsoft';
+export * from './microsoft-config';
 export * from './secrets';
 export * from './pages';
 export * from './apps';

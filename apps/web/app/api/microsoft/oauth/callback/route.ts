@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
-import { exchangeCode, fetchMe, upsertAccountFromTokens } from '@mantle/microsoft';
+import { exchangeCode, fetchMe, resolveOAuthConfig, upsertAccountFromTokens } from '@mantle/microsoft';
 import { requireOwner } from '@/lib/auth';
 
 /**
@@ -22,8 +22,8 @@ function msBranchPath(upn: string): string {
   return `microsoft.${clean}_${hash}`;
 }
 
-function settingsRedirect(params: Record<string, string>): NextResponse {
-  const url = new URL('/settings/microsoft', process.env.NEXT_PUBLIC_APP_URL);
+function settingsRedirect(req: NextRequest, params: Record<string, string>): NextResponse {
+  const url = new URL('/settings/microsoft', req.url);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   const res = NextResponse.redirect(url);
   // One-shot cookies — clear regardless of outcome.
@@ -43,17 +43,20 @@ export async function GET(req: NextRequest) {
   // User declined consent, or Azure returned an error.
   if (oauthError) {
     const desc = url.searchParams.get('error_description') ?? oauthError;
-    return settingsRedirect({ error: desc.slice(0, 200) });
+    return settingsRedirect(req, { error: desc.slice(0, 200) });
   }
 
   const expectedState = req.cookies.get('ms_oauth_state')?.value;
   const verifier = req.cookies.get('ms_oauth_verifier')?.value;
   if (!code || !state || !expectedState || state !== expectedState || !verifier) {
-    return settingsRedirect({ error: 'Invalid or expired sign-in attempt. Please try again.' });
+    return settingsRedirect(req, { error: 'Invalid or expired sign-in attempt. Please try again.' });
   }
 
+  const cfg = await resolveOAuthConfig(user.id);
+  if (!cfg) return settingsRedirect(req, { error: 'not_configured' });
+
   try {
-    const tokens = await exchangeCode({ code, verifier });
+    const tokens = await exchangeCode(cfg, { code, verifier });
     const me = await fetchMe(tokens.accessToken);
     await upsertAccountFromTokens({
       userId: user.id,
@@ -63,8 +66,8 @@ export async function GET(req: NextRequest) {
       branchPath: msBranchPath(me.upn),
       tokens,
     });
-    return settingsRedirect({ connected: me.upn });
+    return settingsRedirect(req, { connected: me.upn });
   } catch (err) {
-    return settingsRedirect({ error: (err as Error).message.slice(0, 200) });
+    return settingsRedirect(req, { error: (err as Error).message.slice(0, 200) });
   }
 }

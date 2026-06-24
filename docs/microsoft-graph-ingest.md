@@ -4,14 +4,24 @@
 **Author:** drafted 2026-06-24
 
 > **M0 build notes (2026-06-24).** Shipped: `@mantle/microsoft` package
-> (`config`, `oauth` PKCE, `token-store` with single-flight refresh, `client`),
-> `ms_accounts` schema + migration `0100`, `/api/microsoft/oauth/{start,callback}`
-> routes, and the `/settings/microsoft` page (connect / list / disconnect) + nav
-> entry. All packages typecheck clean. **Not yet done:** apply migration `0100`
-> (DATABASE_URL is prod — needs a `pg_dump` backup + go-ahead first), set
-> `MS_CLIENT_ID`/`MS_CLIENT_SECRET`/`NEXT_PUBLIC_APP_URL`, and the Azure app
-> registration. Until those land, `/settings/microsoft` shows the "Not configured"
-> state. Browser end-to-end verification is blocked on all three.
+> (`config`, `config-store`, `oauth` PKCE, `token-store` with single-flight
+> refresh, `client`), `ms_accounts` + `microsoft_config` schema + migrations
+> `0100`/`0101`, `/api/microsoft/oauth/{start,callback}` routes, and the
+> `/settings/microsoft` page (Azure-app config form + connect / list / disconnect)
+> + nav entry. All packages typecheck clean.
+>
+> **Azure app config is UI-settable** (no longer env-only): the
+> `microsoft_config` singleton-per-owner table (client secret sealed, AAD =
+> owner id) is the primary path, with `MS_*` env as fallback for headless/
+> scripted deploys. `config-store.resolveOAuthConfig()` encodes the DB→env
+> precedence; the redirect URI is stored explicitly and surfaced in the form to
+> copy into Azure (no `NEXT_PUBLIC_APP_URL` dependency).
+>
+> **Not yet done:** apply migrations `0100`+`0101` (DATABASE_URL is prod — needs
+> a `pg_dump` backup + go-ahead first), and the Azure app registration itself
+> (admin consent). After the migrations land, an admin just fills in the form —
+> no env or restart needed. Browser end-to-end verification is blocked on the
+> migrations (the page queries both new tables).
 **Decision context:** Multiple users will need to connect Microsoft 365 sources.
 We are building a **Microsoft Graph foundation** (OAuth2 + Graph client +
 delta-sync framework), not a one-off SharePoint connector. SharePoint ships

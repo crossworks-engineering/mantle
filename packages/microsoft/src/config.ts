@@ -1,14 +1,11 @@
 /**
- * Microsoft Graph integration — shared, per-deployment configuration.
+ * Microsoft Graph integration — OAuth config shape, scopes, and endpoints.
  *
- * Delegated (per-user) OAuth against ONE Azure app registration whose
- * credentials live in env (not per user). Self-hosted per-brain: each brain
- * carries its own `MS_CLIENT_ID`/`MS_CLIENT_SECRET` and stores per-user tokens
- * in its own Postgres. See docs/microsoft-graph-ingest.md.
- *
- * Nothing here is secret to *read* except the client secret; the values are
- * resolved lazily so a brain with no Microsoft integration configured never
- * trips on missing env until someone actually tries to connect.
+ * The *resolution* of a concrete config (which client id / secret / tenant /
+ * redirect URI to use) lives in `config-store.ts`, which prefers a UI-set
+ * `microsoft_config` row and falls back to `MS_*` env. This module holds only
+ * the pure pieces with no DB or env coupling, plus the env reader the store
+ * uses for its fallback.
  */
 
 export interface MsOAuthConfig {
@@ -30,13 +27,6 @@ const AUTHORITY = 'https://login.microsoftonline.com';
  * covers every surface (SharePoint/OneDrive files, Outlook mail + calendar)
  * and users never have to re-consent as M1–M3 land. All read-only for v1 —
  * widen to `.ReadWrite` only when a write feature actually needs it.
- *
- *   offline_access  → refresh tokens (without this, no background sync)
- *   openid profile  → identify the signed-in user (upn / display name)
- *   Files.Read.All  → OneDrive + SharePoint document libraries (drives)
- *   Sites.Read.All  → SharePoint site/drive enumeration
- *   Mail.Read       → Outlook mail (M2)
- *   Calendars.Read  → Outlook calendar (M3)
  */
 export const MS_SCOPES = [
   'offline_access',
@@ -52,43 +42,33 @@ export function msScopeString(): string {
   return MS_SCOPES.join(' ');
 }
 
-/** True when this brain has Microsoft integration configured. Lets the UI
- *  hide the "Connect Microsoft" affordance instead of dead-ending on a 500. */
-export function isMicrosoftConfigured(): boolean {
-  return Boolean(process.env.MS_CLIENT_ID && process.env.MS_CLIENT_SECRET);
-}
-
-/** Resolve the OAuth config, throwing a clear error if a brain tried to use
- *  the integration without configuring it. Callers should gate on
- *  `isMicrosoftConfigured()` first for a friendly message. */
-export function getOAuthConfig(): MsOAuthConfig {
-  const clientId = process.env.MS_CLIENT_ID;
-  const clientSecret = process.env.MS_CLIENT_SECRET;
-  if (!clientId || !clientSecret) {
-    throw new Error(
-      'Microsoft integration is not configured — set MS_CLIENT_ID and MS_CLIENT_SECRET ' +
-        '(see docs/microsoft-graph-ingest.md).',
-    );
-  }
-  const tenant = process.env.MS_TENANT || 'common';
-  // The redirect URI must be absolute and stable (Azure matches it exactly).
-  // Derive it from the app's public origin unless explicitly overridden.
-  const redirectUri =
-    process.env.MS_REDIRECT_URI ||
-    `${(process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/$/, '')}/api/microsoft/oauth/callback`;
-  if (!/^https?:\/\//.test(redirectUri)) {
-    throw new Error(
-      'Cannot derive the Microsoft OAuth redirect URI — set NEXT_PUBLIC_APP_URL ' +
-        '(or MS_REDIRECT_URI) to an absolute https URL.',
-    );
-  }
-  return { clientId, clientSecret, tenant, redirectUri };
-}
-
 export function authorizeEndpoint(tenant: string): string {
   return `${AUTHORITY}/${tenant}/oauth2/v2.0/authorize`;
 }
 
 export function tokenEndpoint(tenant: string): string {
   return `${AUTHORITY}/${tenant}/oauth2/v2.0/token`;
+}
+
+/** Build the canonical redirect URI for an app origin (e.g. `https://host`).
+ *  The settings form prefills this; whatever is stored must match Azure. */
+export function defaultRedirectUri(origin: string): string {
+  return `${origin.replace(/\/$/, '')}/api/microsoft/oauth/callback`;
+}
+
+/**
+ * Resolve a complete OAuth config from `MS_*` env, or null if env doesn't have
+ * at least a client id + secret. Used as the fallback when no UI config row
+ * exists. The redirect URI falls back to NEXT_PUBLIC_APP_URL-derived if
+ * MS_REDIRECT_URI isn't set explicitly.
+ */
+export function oauthConfigFromEnv(): MsOAuthConfig | null {
+  const clientId = process.env.MS_CLIENT_ID;
+  const clientSecret = process.env.MS_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return null;
+  const tenant = process.env.MS_TENANT || 'common';
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+  const redirectUri = process.env.MS_REDIRECT_URI || (appUrl ? defaultRedirectUri(appUrl) : '');
+  if (!/^https?:\/\//.test(redirectUri)) return null;
+  return { clientId, clientSecret, tenant, redirectUri };
 }

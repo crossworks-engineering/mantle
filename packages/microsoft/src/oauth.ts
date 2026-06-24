@@ -10,7 +10,7 @@
  *   3. refreshTokens()      — token-store calls this when an access token nears expiry
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { authorizeEndpoint, getOAuthConfig, msScopeString, tokenEndpoint } from './config';
+import { authorizeEndpoint, msScopeString, tokenEndpoint, type MsOAuthConfig } from './config';
 
 function b64url(buf: Buffer): string {
   return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -37,8 +37,7 @@ export function createState(): string {
 }
 
 /** Build the URL to send the user's browser to for sign-in + consent. */
-export function buildAuthorizeUrl(opts: { state: string; challenge: string }): string {
-  const cfg = getOAuthConfig();
+export function buildAuthorizeUrl(cfg: MsOAuthConfig, opts: { state: string; challenge: string }): string {
   const params = new URLSearchParams({
     client_id: cfg.clientId,
     response_type: 'code',
@@ -75,8 +74,7 @@ interface RawTokenResponse {
   error_description?: string;
 }
 
-async function postToken(body: URLSearchParams): Promise<TokenSet> {
-  const cfg = getOAuthConfig();
+async function postToken(cfg: MsOAuthConfig, body: URLSearchParams): Promise<TokenSet> {
   const res = await fetch(tokenEndpoint(cfg.tenant), {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -99,9 +97,9 @@ async function postToken(body: URLSearchParams): Promise<TokenSet> {
 }
 
 /** Step 2: exchange the authorization code for the first token set. */
-export function exchangeCode(opts: { code: string; verifier: string }): Promise<TokenSet> {
-  const cfg = getOAuthConfig();
+export function exchangeCode(cfg: MsOAuthConfig, opts: { code: string; verifier: string }): Promise<TokenSet> {
   return postToken(
+    cfg,
     new URLSearchParams({
       client_id: cfg.clientId,
       client_secret: cfg.clientSecret,
@@ -117,9 +115,9 @@ export function exchangeCode(opts: { code: string; verifier: string }): Promise<
 /** Step 3: trade a refresh token for a fresh access token (+ a rotated refresh
  *  token). The caller MUST persist `refreshToken` from the result — Azure
  *  invalidates the old one. */
-export function refreshTokens(refreshToken: string): Promise<TokenSet> {
-  const cfg = getOAuthConfig();
+export function refreshTokens(cfg: MsOAuthConfig, refreshToken: string): Promise<TokenSet> {
   return postToken(
+    cfg,
     new URLSearchParams({
       client_id: cfg.clientId,
       client_secret: cfg.clientSecret,

@@ -16,6 +16,7 @@ import { and, eq } from 'drizzle-orm';
 import { db, msAccounts, type MsAccount } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
 import { refreshTokens, type TokenSet } from './oauth';
+import { resolveOAuthConfig } from './config-store';
 
 /** Refresh this many ms before the hard expiry — covers clock skew + the
  *  round-trip so a token handed out is still valid by the time it's used. */
@@ -112,9 +113,12 @@ export async function getValidAccessToken(userId: string, accountId: string): Pr
     if (!locked.refreshTokenEnc) return null; // can't refresh — needs reconnect
     const refreshToken = open(locked.refreshTokenEnc, locked.id);
 
+    const cfg = await resolveOAuthConfig(userId);
+    if (!cfg) throw new Error('Microsoft app is not configured — cannot refresh token');
+
     let fresh: TokenSet;
     try {
-      fresh = await refreshTokens(refreshToken);
+      fresh = await refreshTokens(cfg, refreshToken);
     } catch (err) {
       // Record the failure so the UI can prompt a reconnect; rethrow so the
       // caller (and pg-boss, once M1 lands) sees it.
