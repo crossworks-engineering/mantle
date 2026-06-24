@@ -34,6 +34,80 @@ function captureHostCss(): string {
   return out;
 }
 
+// Host-injected "inspect mode" overlay. Lives in the iframe but is NOT part of
+// the app bundle, so it works on every app with no rebuild and stays a host
+// concern. When the parent posts {kind:'inspect',on:true}, hovering outlines the
+// nearest [data-app-region] ancestor and clicking locks it (clicking the same
+// one clears it). The locked region is posted back as {kind:'select'}; the
+// parent feeds it to Appsmith as focusRegionIds. Esc exits. Pure DOM, defensive.
+const INSPECTOR = `
+(function(){
+  var on=false, locked=null, hovered=null, lbl=null;
+  function regionOf(el){
+    while(el && el.nodeType===1 && el!==document.body){
+      if(el.getAttribute && el.hasAttribute('data-app-region')) return el;
+      el=el.parentElement;
+    }
+    return null;
+  }
+  function q(id){ try{ return id ? document.querySelector('[data-app-region="'+(window.CSS&&CSS.escape?CSS.escape(id):id)+'"]') : null; }catch(e){ return null; } }
+  function label(){
+    if(!lbl){
+      lbl=document.createElement('div');
+      lbl.style.cssText='position:fixed;z-index:2147483647;pointer-events:none;display:none;font:500 11px/1.4 ui-sans-serif,system-ui,sans-serif;padding:2px 6px;border-radius:4px;background:var(--ring,#3b82f6);color:#fff;box-shadow:0 1px 4px rgba(0,0,0,.35);white-space:nowrap;';
+      document.body.appendChild(lbl);
+    }
+    return lbl;
+  }
+  function paintLocked(){
+    var prev=document.querySelectorAll('[data-app-locked]');
+    for(var i=0;i<prev.length;i++){ prev[i].removeAttribute('data-app-locked'); prev[i].style.outline=''; prev[i].style.outlineOffset=''; }
+    var el=q(locked);
+    if(el){ el.setAttribute('data-app-locked','1'); el.style.outline='2px solid var(--ring,#3b82f6)'; el.style.outlineOffset='1px'; }
+  }
+  function clearHover(){
+    if(hovered && !hovered.hasAttribute('data-app-locked')){ hovered.style.outline=''; hovered.style.outlineOffset=''; }
+    hovered=null;
+    if(lbl) lbl.style.display='none';
+  }
+  function onMove(e){
+    if(!on) return;
+    var el=regionOf(e.target);
+    if(el===hovered) return;
+    clearHover();
+    if(!el) return;
+    hovered=el;
+    if(!el.hasAttribute('data-app-locked')){ el.style.outline='2px dashed var(--ring,#3b82f6)'; el.style.outlineOffset='1px'; }
+    var r=el.getBoundingClientRect(), L=label();
+    L.textContent=el.getAttribute('data-app-region');
+    L.style.display='block';
+    L.style.left=Math.max(2,r.left)+'px';
+    L.style.top=Math.max(2,r.top-20)+'px';
+  }
+  function onClick(e){
+    if(!on) return;
+    var el=regionOf(e.target);
+    if(!el) return;
+    e.preventDefault(); e.stopPropagation(); if(e.stopImmediatePropagation) e.stopImmediatePropagation();
+    var id=el.getAttribute('data-app-region');
+    locked=(locked===id)?null:id;
+    clearHover(); paintLocked();
+    window.parent.postMessage({ v:1, kind:'select', regionId:locked, label:locked }, '*');
+    onMove(e);
+  }
+  function setOn(v){ on=v; document.body.style.cursor=v?'crosshair':''; if(!v) clearHover(); }
+  window.addEventListener('message', function(e){
+    if(e.source!==window.parent) return;
+    var m=e.data; if(!m||m.v!==1) return;
+    if(m.kind==='inspect'){ setOn(!!m.on); return; }
+    if(m.kind==='select'){ locked=m.regionId||null; clearHover(); paintLocked(); return; }
+  });
+  document.addEventListener('mousemove', onMove, true);
+  document.addEventListener('click', onClick, true);
+  document.addEventListener('keydown', function(e){ if(on && e.key==='Escape'){ setOn(false); window.parent.postMessage({v:1,kind:'inspect',on:false},'*'); } });
+})();
+`;
+
 function buildSrcDoc(bundleCode: string): string {
   const html = document.documentElement;
   const cls = html.className || '';
@@ -59,6 +133,7 @@ function buildSrcDoc(bundleCode: string): string {
 <body class="bg-background text-foreground">
 <div id="root"></div>
 <script type="module">${bundleCode}</script>
+<script>${INSPECTOR}</script>
 </body>
 </html>`;
 }
@@ -67,15 +142,44 @@ export function AppSandbox({
   appId,
   reloadKey = 0,
   onError,
+  inspect = false,
+  selectedRegionId = null,
+  onSelect,
+  onInspectChange,
 }: {
   appId: string;
   /** Bump to force a re-fetch + re-render (e.g. after a build/publish). */
   reloadKey?: number;
   onError?: (message: string) => void;
+  /** When true, hovering the preview outlines [data-app-region]s and clicking
+   *  one locks it (inspect mode). */
+  inspect?: boolean;
+  /** The host-held locked selection — pushed down to keep the iframe's outline
+   *  in sync (e.g. cleared when the user dismisses the focus chip). */
+  selectedRegionId?: string | null;
+  /** The user locked or cleared a region in the preview (null = cleared). */
+  onSelect?: (regionId: string | null) => void;
+  /** The iframe changed inspect state itself (e.g. Esc to exit). */
+  onInspectChange?: (on: boolean) => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [status, setStatus] = useState<Status>('loading');
   const [height, setHeight] = useState(320);
+
+  const postToFrame = useCallback((msg: unknown) => {
+    iframeRef.current?.contentWindow?.postMessage(msg, '*');
+  }, []);
+
+  // Push inspect-mode + the locked selection down whenever they change or the
+  // app (re)becomes ready, so a fresh iframe inherits the current state.
+  useEffect(() => {
+    if (status !== 'ready') return;
+    postToFrame({ v: 1, kind: 'inspect', on: inspect });
+  }, [inspect, status, postToFrame]);
+  useEffect(() => {
+    if (status !== 'ready') return;
+    postToFrame({ v: 1, kind: 'select', regionId: selectedRegionId });
+  }, [selectedRegionId, status, postToFrame]);
 
   // Broker a request from the app and post the correlated response back.
   const handleRequest = useCallback(
@@ -139,12 +243,20 @@ export function AppSandbox({
         onError?.(m.message);
         return;
       }
+      if (m.kind === 'select') {
+        onSelect?.(m.regionId);
+        return;
+      }
+      if (m.kind === 'inspect') {
+        onInspectChange?.(m.on);
+        return;
+      }
       // A request needing a response.
       void handleRequest(m);
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [handleRequest, onError]);
+  }, [handleRequest, onError, onSelect, onInspectChange]);
 
   // Fetch the bundle and (re)render into the iframe.
   useEffect(() => {

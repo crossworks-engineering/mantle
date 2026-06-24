@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Hammer, Rocket, Undo2, Sparkles } from 'lucide-react';
+import { Hammer, Rocket, Undo2, Sparkles, SquareDashedMousePointer, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
@@ -29,8 +29,17 @@ export function AppDetailClient({ app }: { app: AppDetail }) {
   const [buildErrors, setBuildErrors] = useState<BuildMsg[]>([]);
   const [prompt, setPrompt] = useState('');
   const [reply, setReply] = useState<string | null>(null);
+  // Inspect-to-focus: the region the user locked in the preview, and whether
+  // select mode is active. Both reset whenever the app reloads (rebuild/publish).
+  const [inspect, setInspect] = useState(false);
+  const [focusRegion, setFocusRegion] = useState<string | null>(null);
 
   const activeContent = source.files[activePath] ?? source.files[source.entry] ?? '';
+
+  useEffect(() => {
+    setInspect(false);
+    setFocusRegion(null);
+  }, [reloadKey]);
 
   async function build() {
     setBusy('build');
@@ -97,7 +106,10 @@ export function AppDetailClient({ app }: { app: AppDetail }) {
       const res = await fetch(`/api/apps/${app.id}/ai-assist`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ prompt: prompt.trim() }),
+        body: JSON.stringify({
+          prompt: prompt.trim(),
+          ...(focusRegion ? { focusRegionIds: [focusRegion] } : {}),
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -157,7 +169,31 @@ export function AppDetailClient({ app }: { app: AppDetail }) {
           className="mt-0 grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px]"
         >
           <div className="flex min-h-0 flex-col overflow-y-auto border-r border-border p-3">
-            <AppSandbox appId={app.id} reloadKey={reloadKey} onError={(m) => toast.error(m)} />
+            <div className="mb-2 flex items-center gap-2">
+              <Button
+                size="sm"
+                variant={inspect ? 'default' : 'outline'}
+                onClick={() => setInspect((v) => !v)}
+                title="Click a region in the preview to focus Appsmith on it"
+              >
+                <SquareDashedMousePointer />
+                {inspect ? 'Selecting… (Esc)' : 'Select element'}
+              </Button>
+              {inspect && (
+                <span className="text-xs text-muted-foreground">
+                  Hover a region, click to focus it.
+                </span>
+              )}
+            </div>
+            <AppSandbox
+              appId={app.id}
+              reloadKey={reloadKey}
+              onError={(m) => toast.error(m)}
+              inspect={inspect}
+              selectedRegionId={focusRegion}
+              onSelect={setFocusRegion}
+              onInspectChange={setInspect}
+            />
             {buildErrors.length > 0 && (
               <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
                 <p className="mb-1 font-medium">Build errors</p>
@@ -179,10 +215,27 @@ export function AppDetailClient({ app }: { app: AppDetail }) {
               Appsmith
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Describe a change and Appsmith edits the app. Changes land in the draft — review the
+              Describe a change and Appsmith edits the app. Use <span className="font-medium">Select
+              element</span> to point it at one region. Changes land in the draft — review the
               preview, then Publish.
             </p>
             <Separator className="my-3" />
+            {focusRegion && (
+              <div className="mb-2 flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1.5 text-xs text-card-foreground">
+                <SquareDashedMousePointer className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate">
+                  Focusing <span className="font-medium">{focusRegion}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setFocusRegion(null)}
+                  className="shrink-0 rounded text-muted-foreground hover:text-foreground"
+                  aria-label="Clear focus"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            )}
             <form onSubmit={runAssist} className="flex flex-col gap-2">
               <Textarea
                 value={prompt}

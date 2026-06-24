@@ -25,19 +25,25 @@ export type BridgeReq =
 export type BridgeEvt =
   | { v: 1; kind: 'ready' }
   | { v: 1; kind: 'resize'; height: number }
-  | { v: 1; kind: 'error'; message: string; stack?: string };
+  | { v: 1; kind: 'error'; message: string; stack?: string }
+  // Inspect mode (host-injected overlay → host): the user locked/cleared a
+  // selection (regionId = a data-app-region value, or null when cleared), or
+  // exited inspect via Esc (`inspect` with on:false).
+  | { v: 1; kind: 'select'; regionId: string | null; label?: string }
+  | { v: 1; kind: 'inspect'; on: boolean };
 
 /** Responses the host sends DOWN, correlated to a BridgeReq by `id`. */
 export type BridgeRes =
   | { v: 1; id: string; ok: true; output: unknown }
   | { v: 1; id: string; ok: false; error: string };
 
-/** Control messages the host pushes DOWN unprompted (Phase 3 annotations). */
-export type BridgeCtl = {
-  v: 1;
-  kind: 'annotate';
-  regions: { id: string; note?: string; severity?: 'info' | 'warn' }[];
-};
+/** Control messages the host pushes DOWN unprompted: agent region annotations,
+ *  and inspect-mode control (toggle select mode; set/clear the locked selection
+ *  from the host side, e.g. when the user clears the focus chip). */
+export type BridgeCtl =
+  | { v: 1; kind: 'annotate'; regions: { id: string; note?: string; severity?: 'info' | 'warn' }[] }
+  | { v: 1; kind: 'inspect'; on: boolean }
+  | { v: 1; kind: 'select'; regionId: string | null };
 
 export type FromApp = BridgeReq | BridgeEvt;
 export type FromHost = BridgeRes | BridgeCtl;
