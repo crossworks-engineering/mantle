@@ -20,9 +20,13 @@ export function chunkDocText(
   text: string,
   opts: { maxChars?: number; overlapChars?: number } = {},
 ): DocChunk[] {
-  const maxChars = Math.max(1, opts.maxChars ?? 1500);
+  // ~2.75k-char chunks (≈700 tokens) keep a whole procedure step / table row
+  // coherent in one passage; paired with the lower chunk_limit (8) this holds
+  // roughly the same retrieval budget as the old 1.5k/12 with far less
+  // fragmentation. Callers can still override per-call.
+  const maxChars = Math.max(1, opts.maxChars ?? 2750);
   // Cap overlap at half the chunk so each chunk still makes net forward progress.
-  const overlapChars = Math.max(0, Math.min(opts.overlapChars ?? 150, Math.floor(maxChars / 2)));
+  const overlapChars = Math.max(0, Math.min(opts.overlapChars ?? 300, Math.floor(maxChars / 2)));
   const trimmed = text.trim();
   if (!trimmed) return [];
 

@@ -620,11 +620,10 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       digest_limit: 3,
       fact_limit: 10,
       content_hit_limit: 5,
-      // Long procedure/standard/spec docs chunk into 100+ passages; at the old
-      // runtime default of 3 the responder answered from ~2% of a 64-page doc.
-      // 12 (~18k chars) gives real document coverage. Kept in sync with the
-      // runtime CHUNK_LIMIT_DEFAULT so fresh brains and upgraded brains match.
-      chunk_limit: 12,
+      // Section passages to auto-inject. Budget = chunk_limit × chunk size;
+      // with the larger ~2.75k-char chunks, 8 ≈ 22k chars of real coverage.
+      // Kept in sync with the runtime CHUNK_LIMIT_DEFAULT.
+      chunk_limit: 8,
       inject_lifelog: true,
       delegate_to: [],
       // The generalist isn't only a read-then-reply chat agent: real tasks are
