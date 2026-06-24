@@ -14,6 +14,7 @@ import { AppSandbox } from '@/components/app-sandbox/app-sandbox';
 import { CodeEditor } from '@/components/app-sandbox/code-editor';
 import { FileTree } from '@/components/app-sandbox/file-tree';
 import { useAssistStage, SpecialistWorking } from '@/components/specialist-working';
+import { ChatBubble } from '@/components/chat-bubble';
 import type { AppDetail } from '@mantle/content';
 
 type BuildMsg = { text: string; location: { file: string; line: number; column: number } | null };
@@ -325,8 +326,10 @@ export function AppDetailClient({ app }: { app: AppDetail }) {
               </div>
             )}
             {busy !== 'assist' && reply && (
-              <div className="mt-3 whitespace-pre-wrap rounded-md border border-border bg-card p-3 text-xs text-card-foreground">
-                {reply}
+              <div className="mt-3">
+                <ChatBubble role="assistant" agentName="Appsmith">
+                  {reply}
+                </ChatBubble>
               </div>
             )}
           </div>

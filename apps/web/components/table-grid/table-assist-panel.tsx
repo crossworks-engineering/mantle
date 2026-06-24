@@ -2,12 +2,12 @@
 
 import { useRef, useState } from 'react';
 import { Loader2, SendHorizontal, Sparkles, X } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { ensureTableDoc, type TableDoc } from '@mantle/content/table-model';
 import { AssistAgentPicker } from '@/components/assist-agent-picker';
 import { useAssistStage, SpecialistWorking } from '@/components/specialist-working';
+import { ChatBubble } from '@/components/chat-bubble';
 
 type Msg = { role: 'user' | 'assistant'; text: string };
 
@@ -118,18 +118,13 @@ export function TableAssistPanel({
           </div>
         ) : (
           messages.map((m, i) => (
-            <div
+            <ChatBubble
               key={i}
-              className={cn(
-                'rounded-lg px-2.5 py-1.5 text-sm',
-                m.role === 'user' ? 'bg-muted text-foreground' : 'border border-border bg-background',
-              )}
+              role={m.role}
+              agentName={m.role === 'assistant' ? displayName : undefined}
             >
-              {m.role === 'assistant' && (
-                <div className="mb-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{displayName}</div>
-              )}
-              <p className="whitespace-pre-wrap leading-relaxed">{m.text}</p>
-            </div>
+              {m.text}
+            </ChatBubble>
           ))
         )}
         {busy && <SpecialistWorking stage={stage} agentName={displayName} />}

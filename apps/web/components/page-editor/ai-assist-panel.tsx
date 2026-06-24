@@ -35,6 +35,7 @@ import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { AssistAgentPicker } from '@/components/assist-agent-picker';
 import { useAssistStage, SpecialistWorking } from '@/components/specialist-working';
+import { ChatBubble } from '@/components/chat-bubble';
 
 type ChangeKind = 'added' | 'removed' | 'changed';
 type SampleChange =
@@ -92,6 +93,10 @@ export function AiAssistPanel({
   const [discarding, setDiscarding] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
+  // The picker can repoint Assist at a different agent; reflect its name in the
+  // copy + the assistant bubbles. null (the default) falls back to "Pages".
+  const [pickedName, setPickedName] = useState<string | null>(null);
+  const displayName = pickedName ?? 'Pages';
   // Live "what is Pages doing" label, polled while a run is in flight.
   const stage = useAssistStage('/api/assist/stage?surface=pages', pending);
 
@@ -177,7 +182,11 @@ export function AiAssistPanel({
           <Sparkles className="size-4 shrink-0 text-primary" />
           {/* Which agent handles page-assist is configurable here, on the
               surface itself; defaults to the Pages specialist. */}
-          <AssistAgentPicker surface="pages" defaultLabel="Pages (default)" />
+          <AssistAgentPicker
+            surface="pages"
+            defaultLabel="Pages (default)"
+            onAgentNameChange={setPickedName}
+          />
         </div>
         <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label="Close panel">
           <X />
@@ -204,8 +213,8 @@ export function AiAssistPanel({
             </p>
           </div>
         )}
-        {messages.map((m, i) => (m.role === 'user' ? <UserBubble key={i} text={m.text} /> : <AssistantBubble key={i} data={m.data} />))}
-        {pending && <SpecialistWorking stage={stage} agentName="Pages" />}
+        {messages.map((m, i) => (m.role === 'user' ? <UserBubble key={i} text={m.text} /> : <AssistantBubble key={i} data={m.data} agentName={displayName} />))}
+        {pending && <SpecialistWorking stage={stage} agentName={displayName} />}
       </div>
 
       {/* ── Draft controls ─────────────────────────────────────────── */}
@@ -297,20 +306,16 @@ export function AiAssistPanel({
 // ─── Sub-components ─────────────────────────────────────────────────────
 
 function UserBubble({ text }: { text: string }) {
-  return (
-    <div className="ml-6 rounded-md border border-border bg-background/60 p-2 text-sm">
-      {text}
-    </div>
-  );
+  return <ChatBubble role="user">{text}</ChatBubble>;
 }
 
-function AssistantBubble({ data }: { data: AssistReply }) {
+function AssistantBubble({ data, agentName }: { data: AssistReply; agentName: string }) {
   const total = data.diff.added + data.diff.changed + data.diff.removed;
   return (
-    <div className="mr-6 space-y-2">
-      <div className="rounded-md border border-primary/30 bg-primary/5 p-2 text-sm">
-        <p className="whitespace-pre-wrap">{data.reply}</p>
-      </div>
+    <div className="space-y-2">
+      <ChatBubble role="assistant" agentName={agentName}>
+        {data.reply}
+      </ChatBubble>
       {total > 0 && <DiffSummary diff={data.diff} />}
       {total === 0 && data.hasDraft && (
         <p className="text-[11px] italic text-muted-foreground">
