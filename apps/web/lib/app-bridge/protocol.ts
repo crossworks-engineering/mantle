@@ -43,7 +43,11 @@ export type BridgeRes =
 export type BridgeCtl =
   | { v: 1; kind: 'annotate'; regions: { id: string; note?: string; severity?: 'info' | 'warn' }[] }
   | { v: 1; kind: 'inspect'; on: boolean }
-  | { v: 1; kind: 'select'; regionId: string | null };
+  | { v: 1; kind: 'select'; regionId: string | null }
+  // Live theme: the host's <html> class + data-color-theme, mirrored onto the
+  // iframe's <html> so a dark/light or colour-theme switch restyles a RUNNING
+  // app (every theme's tokens are already in the linked stylesheet).
+  | { v: 1; kind: 'theme'; cls: string; colorTheme: string | null };
 
 export type FromApp = BridgeReq | BridgeEvt;
 export type FromHost = BridgeRes | BridgeCtl;

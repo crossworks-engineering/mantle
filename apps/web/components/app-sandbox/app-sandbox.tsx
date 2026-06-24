@@ -57,6 +57,24 @@ function captureHostCss(): string {
   return out;
 }
 
+/** The host stylesheet markup to drop into the iframe <head>. We LINK the same
+ *  stylesheet files the host already loaded (so the browser reuses its cached,
+ *  already-parsed copy instead of re-parsing ~400 KB of inlined CSS per srcdoc)
+ *  and inline only the small dynamic <style> tags (theme vars next-themes
+ *  injects, etc.). Falls back to a full inline capture when the host exposes no
+ *  <link> stylesheets (e.g. some dev setups inline everything). */
+function hostStyleMarkup(): string {
+  const links = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'))
+    .map((l) => l.href)
+    .filter(Boolean);
+  if (links.length === 0) return `<style>${captureHostCss()}</style>`;
+  const inline = Array.from(document.querySelectorAll('style'))
+    .map((s) => s.textContent || '')
+    .join('\n');
+  const linkTags = links.map((href) => `<link rel="stylesheet" href="${href}" />`).join('\n');
+  return `${linkTags}\n<style>${inline}</style>`;
+}
+
 // Host-injected "inspect mode" overlay. Lives in the iframe but is NOT part of
 // the app bundle, so it works on every app with no rebuild and stays a host
 // concern. When the parent posts {kind:'inspect',on:true}, hovering outlines the
@@ -124,6 +142,7 @@ const INSPECTOR = `
     var m=e.data; if(!m||m.v!==1) return;
     if(m.kind==='inspect'){ setOn(!!m.on); return; }
     if(m.kind==='select'){ locked=m.regionId||null; clearHover(); paintLocked(); return; }
+    if(m.kind==='theme'){ var h=document.documentElement; h.className=m.cls||''; if(m.colorTheme){ h.setAttribute('data-color-theme', m.colorTheme); } else { h.removeAttribute('data-color-theme'); } return; }
   });
   document.addEventListener('mousemove', onMove, true);
   document.addEventListener('click', onClick, true);
@@ -135,7 +154,7 @@ function buildSrcDoc(bundleCode: string, importMapJson: string): string {
   const html = document.documentElement;
   const cls = html.className || '';
   const colorTheme = html.dataset.colorTheme ? ` data-color-theme="${html.dataset.colorTheme}"` : '';
-  const css = captureHostCss();
+  const styleMarkup = hostStyleMarkup();
   // CSP: the app may only render — NO network of its own. `connect-src 'none'`
   // blocks fetch/XHR/WebSocket, but img/font loads are network too, so they're
   // held to inline sources only (data:/blob:) — a wildcard there would be an
@@ -143,13 +162,14 @@ function buildSrcDoc(bundleCode: string, importMapJson: string): string {
   // The app's only egress is the postMessage bridge to the parent, which
   // brokers tool + sqlite calls server-side. Inline style + script are ours.
   //
-  // `script-src` additionally allows ONLY `<origin>/app-runtime/` — the shared
-  // React/kit/host runtime the import map points at. The iframe has an opaque
-  // origin, so `'self'` matches NOTHING here; we name the host origin + path
-  // explicitly, scoped to the runtime dir so it's not a general egress channel.
+  // The iframe has an opaque origin, so CSP `'self'` matches NOTHING here; we
+  // name the host origin + path explicitly, scoped tight so neither is a general
+  // egress channel: `script-src` allows ONLY `<origin>/app-runtime/` (the shared
+  // React/kit/host runtime the import map points at); `style-src` allows ONLY
+  // `<origin>/_next/` (the host's compiled stylesheet, linked not inlined).
   const origin = location.origin;
   const csp =
-    "default-src 'none'; style-src 'unsafe-inline'; " +
+    `default-src 'none'; style-src 'unsafe-inline' ${origin}/_next/; ` +
     `script-src 'unsafe-inline' ${origin}/app-runtime/; ` +
     "img-src data: blob:; font-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'";
   return `<!doctype html>
@@ -158,7 +178,7 @@ function buildSrcDoc(bundleCode: string, importMapJson: string): string {
 <meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy" content="${csp}" />
 <script type="importmap">${importMapJson}</script>
-<style>${css}</style>
+${styleMarkup}
 <style>/* Paint the iframe canvas with the theme background, NOT transparent: a
    sandboxed (opaque-origin) iframe renders WHITE where it's transparent, so any
    gap between the app content and the iframe height showed a white strip. With
@@ -229,6 +249,22 @@ export function AppSandbox({
     if (status !== 'ready') return;
     postToFrame({ v: 1, kind: 'select', regionId: selectedRegionId });
   }, [selectedRegionId, status, postToFrame]);
+
+  // Mirror the host's live theme (the <html> class + data-color-theme) into the
+  // iframe so a dark/light or colour-theme switch restyles a RUNNING app without
+  // a reload — the srcdoc only baked in the theme as of mount. Sync once on ready
+  // (covers a change between srcdoc build and mount), then on every host change.
+  useEffect(() => {
+    if (status !== 'ready') return;
+    const send = () => {
+      const h = document.documentElement;
+      postToFrame({ v: 1, kind: 'theme', cls: h.className || '', colorTheme: h.dataset.colorTheme ?? null });
+    };
+    send();
+    const obs = new MutationObserver(send);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-color-theme'] });
+    return () => obs.disconnect();
+  }, [status, postToFrame]);
 
   // Broker a request from the app and post the correlated response back.
   const handleRequest = useCallback(
