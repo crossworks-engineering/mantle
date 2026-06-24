@@ -1,7 +1,29 @@
 # Microsoft Graph ingestion — design
 
-**Status:** M0 (OAuth core) built — migration `0100_ms_accounts` pending apply. M1–M3 not started.
+**Status:** M0 (OAuth core) + M1 (SharePoint/OneDrive sync) built — migrations `0100`–`0102` pending apply. M2–M3 not started.
 **Author:** drafted 2026-06-24
+
+> **M1 build notes (2026-06-24).** Shipped: `@mantle/microsoft/drives/`
+> (`discover` OneDrive + followed SharePoint libraries → `ms_drives`; `sync`
+> delta-query → file nodes; `store` = the email-attachment ingestion path;
+> `manage` enable/discover), `ms_drives` + `ms_drive_items` schema + migration
+> `0102`, the `workers/microsoft-sync.ts` pg-boss worker (+ dev script +
+> `worker_microsoft` compose service), and a drive picker on `/settings/microsoft`
+> (opt-in toggles, "Refresh drives"). All packages typecheck clean.
+>
+> **Key reuse decision:** synced files are ordinary `type: 'file'` nodes (NOT a
+> new node type), so the existing extractor parses/summarizes/embeds them
+> unchanged. Provenance lives in `ms_drive_items` + `data.source`
+> (`sharepoint`/`onedrive`). Dedup is owner-scoped by sha256 (a file shared with
+> an email attachment is one node).
+>
+> **v1 simplifications (noted for later):** flat layout — all of a drive's files
+> land under one branch (`<acct>.<driveLabel>`), folder tree not mirrored into
+> ltree (SharePoint path kept in `web_url`); `graphGetAll` loads a delta page set
+> into memory (fine for bounded libraries — see "Large libraries"); files over
+> `MAX_UPLOAD_BYTES` skipped; changed-content leaves the old node until GC.
+> Discovery covers OneDrive + *followed* SharePoint sites (manual add-by-URL
+> later).
 
 > **M0 build notes (2026-06-24).** Shipped: `@mantle/microsoft` package
 > (`config`, `config-store`, `oauth` PKCE, `token-store` with single-flight

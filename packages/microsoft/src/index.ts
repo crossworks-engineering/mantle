@@ -38,3 +38,10 @@ export {
   deleteAccount,
 } from './token-store';
 export { graphGet, graphGetAll, graphFetchRaw, type GraphError } from './client';
+
+// ── M1: SharePoint / OneDrive drive sync ───────────────────────────────────
+export { discoverDrives } from './drives/discover';
+export { syncDrive, type DriveSyncResult } from './drives/sync';
+export { storeRemoteFileAsNode, type StoredFile } from './drives/store';
+export { discoverForAccount, setDriveEnabled, listDrives } from './drives/manage';
+export type { DriveItem, GraphDrive, GraphSite } from './drives/types';

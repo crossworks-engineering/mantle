@@ -431,6 +431,21 @@ services:
     environment:
       <<: *app-env
 
+  # Microsoft drive sync: delta-syncs enabled OneDrive / SharePoint document
+  # libraries into the brain as file nodes. Needs MinIO (file bytes → storage)
+  # like the email worker.
+  worker_microsoft:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/microsoft-sync.ts"]
+    container_name: mantle_worker_microsoft
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      minio:    { condition: service_healthy }
+      migrate:  { condition: service_completed_successfully }
+    environment:
+      <<: *app-env
+
   # External-edit watcher: chokidar over MANTLE_FILES_ROOT mirrors host file
   # changes (Syncthing / vim / cp) into the brain. Needs the files volume.
   worker_files:

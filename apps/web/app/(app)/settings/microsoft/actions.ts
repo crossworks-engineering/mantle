@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { clearConfig, deleteAccount, saveConfig } from '@mantle/microsoft';
+import { clearConfig, deleteAccount, discoverForAccount, saveConfig, setDriveEnabled } from '@mantle/microsoft';
 import { requireOwner } from '@/lib/auth';
 
 /** Disconnect a connected Microsoft account (owner-scoped). Drops the sealed
@@ -52,5 +52,20 @@ export async function saveMsConfig(
 export async function clearMsConfig(): Promise<void> {
   const user = await requireOwner();
   await clearConfig(user.id);
+  revalidatePath('/settings/microsoft');
+}
+
+/** Re-enumerate an account's drives (OneDrive + followed SharePoint libraries). */
+export async function discoverDrivesAction(formData: FormData): Promise<void> {
+  const user = await requireOwner();
+  const accountId = String(formData.get('accountId') ?? '');
+  if (accountId) await discoverForAccount(user.id, accountId);
+  revalidatePath('/settings/microsoft');
+}
+
+/** Enable/disable a single drive for sync. */
+export async function toggleDriveAction(driveDbId: string, enabled: boolean): Promise<void> {
+  const user = await requireOwner();
+  await setDriveEnabled(user.id, driveDbId, enabled);
   revalidatePath('/settings/microsoft');
 }

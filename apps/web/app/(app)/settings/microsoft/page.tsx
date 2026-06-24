@@ -1,14 +1,15 @@
 import { headers } from 'next/headers';
 import { asc, eq } from 'drizzle-orm';
 import { CheckCircle2, Cloud, Plus } from 'lucide-react';
-import { db, msAccounts } from '@mantle/db';
-import { defaultRedirectUri, getConfigStatus } from '@mantle/microsoft';
+import { db, msAccounts, type MsDrive } from '@mantle/db';
+import { defaultRedirectUri, getConfigStatus, listDrives } from '@mantle/microsoft';
 import { requireOwner } from '@/lib/auth';
 import { formatDateTime } from '@/lib/format-datetime';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { Button } from '@/components/ui/button';
 import { DisconnectButton } from './disconnect-button';
 import { MsConfigForm } from './config-form';
+import { DrivesList } from './drives-list';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +38,11 @@ export default async function MicrosoftSettingsPage({
     .from(msAccounts)
     .where(eq(msAccounts.userId, user.id))
     .orderBy(asc(msAccounts.upn));
+
+  // Drives per account, for the opt-in picker.
+  const drivesByAccount = new Map<string, MsDrive[]>(
+    await Promise.all(rows.map(async (r) => [r.id, await listDrives(r.id)] as const)),
+  );
 
   return (
     <>
@@ -87,37 +93,37 @@ export default async function MicrosoftSettingsPage({
           </p>
         ) : (
           rows.length > 0 && (
-            <div className="space-y-2">
+            <div className="space-y-4">
               {rows.map((r) => {
                 const needsReconnect = !r.accessTokenEnc || !r.refreshTokenEnc;
                 return (
-                  <div
-                    key={r.id}
-                    className="flex items-center gap-3 rounded-lg border border-border bg-card p-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium">{r.upn}</span>
-                        <span
-                          className={
-                            needsReconnect
-                              ? 'rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive'
-                              : 'rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-900 dark:bg-green-950 dark:text-green-100'
-                          }
-                        >
-                          {needsReconnect ? 'needs reconnect' : 'connected'}
-                        </span>
+                  <div key={r.id} className="space-y-2">
+                    <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-medium">{r.upn}</span>
+                          <span
+                            className={
+                              needsReconnect
+                                ? 'rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive'
+                                : 'rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-900 dark:bg-green-950 dark:text-green-100'
+                            }
+                          >
+                            {needsReconnect ? 'needs reconnect' : 'connected'}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {r.displayName ? `${r.displayName} · ` : ''}
+                          {r.scopes.length} scope{r.scopes.length === 1 ? '' : 's'} · token valid until{' '}
+                          {formatDateTime(r.tokenExpiresAt ?? null)}
+                        </div>
+                        {r.lastSyncError && (
+                          <div className="mt-0.5 truncate text-xs text-destructive">⚠ {r.lastSyncError}</div>
+                        )}
                       </div>
-                      <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {r.displayName ? `${r.displayName} · ` : ''}
-                        {r.scopes.length} scope{r.scopes.length === 1 ? '' : 's'} · token valid until{' '}
-                        {formatDateTime(r.tokenExpiresAt ?? null)}
-                      </div>
-                      {r.lastSyncError && (
-                        <div className="mt-0.5 truncate text-xs text-destructive">⚠ {r.lastSyncError}</div>
-                      )}
+                      <DisconnectButton accountId={r.id} upn={r.upn} />
                     </div>
-                    <DisconnectButton accountId={r.id} upn={r.upn} />
+                    {!needsReconnect && <DrivesList accountId={r.id} drives={drivesByAccount.get(r.id) ?? []} />}
                   </div>
                 );
               })}
