@@ -144,9 +144,14 @@ export function looksAnaphoricFollowup(text: string): boolean {
 }
 
 /** How many section-level passages to auto-pull into context (the fine-grained
- *  complement to the node-level content hits). Default kept small — these carry
- *  real passage text (~1.5k chars each), so they're the priciest context slice. */
-const CHUNK_LIMIT_DEFAULT = 3;
+ *  complement to the node-level content hits). These carry real passage text
+ *  (~1.5k chars each), so they're the priciest context slice — but a long
+ *  procedure/standard/spec document chunks into 100+ passages, and at 3 the
+ *  responder was answering from ~2% of a 64-page doc. 12 (~18k chars / ~4.5k
+ *  tokens) gives modern long-context models enough of the document to reason
+ *  over without forcing a full file_read every turn. A per-agent
+ *  memory_config.chunk_limit still overrides this. */
+const CHUNK_LIMIT_DEFAULT = 12;
 /** Cosine cutoff for a chunk to be worth injecting. Looser than the node cutoff
  *  (0.6): a passage can match tightly on a sub-topic the node summary misses. */
 const CHUNK_CUTOFF = 0.65;
