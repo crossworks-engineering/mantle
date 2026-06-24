@@ -18,12 +18,15 @@ describe('buildApp — happy path', () => {
     expect(res.esbuildVersion).toMatch(/^\d+\.\d+/);
   });
 
-  it('inlines React (no bare external imports remain)', async () => {
+  it('externalizes React + @host (resolved via the shared runtime import map)', async () => {
     const res = await buildApp(app({ 'App.tsx': TRIVIAL }));
     expect(res.ok).toBe(true);
-    // The bundle must be standalone — React is bundled, not left as an import.
-    expect(res.code).not.toMatch(/from\s*["']react["']/);
-    expect(res.code).not.toMatch(/import\s*\{[^}]*\}\s*from\s*["']react-dom/);
+    // React (here the automatic-JSX runtime) and the host bridge are NOT
+    // bundled — they remain bare imports the iframe's import map resolves to the
+    // one shared runtime. The app ships only its own code, so it stays tiny.
+    expect(res.code).toMatch(/["']react\/jsx-runtime["']/);
+    expect(res.code).toMatch(/["']@host["']/);
+    expect(res.code!.length).toBeLessThan(5000);
   });
 
   it('allows the curated runtime: react, lucide-react, the kit, and @host', async () => {

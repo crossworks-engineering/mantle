@@ -132,6 +132,30 @@ const nextConfig: NextConfig = {
         },
       }),
   reactStrictMode: true,
+  // The shared mini-app runtime (packages/app-build → public/app-runtime/) is
+  // imported by sandboxed app iframes via an import map. Those iframes have an
+  // OPAQUE origin (sandbox without allow-same-origin), so a module fetch is
+  // cross-origin (Origin: null) and needs CORS — hence ACAO. The runtime files
+  // are content-hashed → immutable; the manifest maps specifiers to the current
+  // hashes, so it must always revalidate.
+  async headers() {
+    return [
+      {
+        source: '/app-runtime/:file(.+\\.js)',
+        headers: [
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+        ],
+      },
+      {
+        source: '/app-runtime/manifest.json',
+        headers: [
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'Cache-Control', value: 'no-cache' },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -3,7 +3,12 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "types": ["node"]
+    "types": ["node"],
+    // build-runtime.ts is executed directly by Node (the build:runtime script),
+    // which requires explicit `.ts` import specifiers. This package is only ever
+    // typechecked (--noEmit) or transpiled by Next, never emitted by tsc — so
+    // allowing the extension keeps the Node-run and tsc paths in agreement.
+    "allowImportingTsExtensions": true
   },
   "include": ["src/**/*.ts"]
 }

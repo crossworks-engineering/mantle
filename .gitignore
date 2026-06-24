@@ -83,3 +83,6 @@ apps/web/scripts/eval/*.run.json
 
 # Per-app SQLite databases (local dev APP_DB_DIR default) — runtime data.
 apps/web/.app-dbs/
+
+# Generated shared mini-app runtime (packages/app-build → build:runtime, via pre(dev|build))
+apps/web/public/app-runtime/

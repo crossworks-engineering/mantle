@@ -1,9 +1,11 @@
 /**
  * The mini-app bundler. Takes an app's virtual source tree and produces a single
- * self-mounting ESM bundle for the sandbox iframe. React + the curated UI kit +
- * the host bridge are all bundled in (each iframe is its own isolated document),
- * so the output has zero external/import-map requirements — the iframe just
- * loads it as a module and the app mounts itself.
+ * self-mounting ESM bundle for the sandbox iframe. React, the curated UI kit and
+ * the host bridge are NOT bundled in — they're marked external and resolved at
+ * runtime by an import map (see build-runtime.ts + app-sandbox.tsx), so one
+ * shared React/kit is fetched + parsed ONCE across every app and reload instead
+ * of re-bundled (~40 KB+) into each app. The app's output is just its own code
+ * (+ any allowed npm like lucide-react, which tree-shakes small per app).
  *
  * Build inputs are agent-authored TSX; build errors are returned (not thrown)
  * with file/line locations so Appsmith can read them and self-correct.
@@ -12,6 +14,14 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import esbuild, { type BuildOptions, type Message, type Plugin } from 'esbuild';
 import { KIT } from './kit';
+
+/** Specifiers provided by the shared runtime via the iframe import map — marked
+ *  external so they stay as bare imports in the app bundle. The react family is
+ *  externalized GLOBALLY (below) so even a bundled dep's React (e.g. lucide's)
+ *  resolves to the one shared instance; the `@`-prefixed kit/host specifiers are
+ *  externalized per-import by the plugin (with an allowlist check). Keep this in
+ *  sync with build-runtime.ts RUNTIME_SPECIFIERS. */
+const REACT_EXTERNALS = ['react', 'react/jsx-runtime', 'react-dom', 'react-dom/client'];
 
 // A REAL directory inside this package, used as the esbuild resolveDir for the
 // virtual entry + kit + app modules so bare imports (react, react-dom/client,
@@ -39,7 +49,6 @@ export type BuildResult = {
 export const ESBUILD_VERSION = esbuild.version;
 
 const APP_NS = 'app';
-const KIT_NS = 'kit';
 const STDIN = '<stdin>';
 
 /** Bare npm packages a mini app may import. Everything else is rejected. */
@@ -83,13 +92,15 @@ function virtualPlugin(source: AppSource): Plugin {
   return {
     name: 'mantle-app-virtual',
     setup(build) {
-      // Kit + alias imports (@host, @/components/ui/*, @/lib/utils).
+      // Kit + alias imports (@host, @/components/ui/*, @/lib/utils): marked
+      // external (allowlisted) so they resolve from the shared runtime import
+      // map at load time instead of being bundled into every app.
       build.onResolve({ filter: /^@/ }, (args) => {
-        if (args.path in KIT) return { path: args.path, namespace: KIT_NS };
+        if (args.path in KIT) return { path: args.path, external: true };
         return {
           errors: [
             {
-              text: `Unknown import '${args.path}'. Allowed: react, ${Object.keys(KIT).join(', ')}, and relative files.`,
+              text: `Unknown import '${args.path}'. Allowed: react, ${Object.keys(KIT).join(', ')}, lucide-react, and relative files.`,
             },
           ],
         };
@@ -119,7 +130,6 @@ function virtualPlugin(source: AppSource): Plugin {
         // node_modules imports (react-dom → scheduler, etc.) resolve freely.
         const fromUserCode =
           args.namespace === APP_NS ||
-          args.namespace === KIT_NS ||
           args.importer === STDIN ||
           args.importer.endsWith(`/${STDIN}`);
         if (!fromUserCode) return null;
@@ -132,12 +142,6 @@ function virtualPlugin(source: AppSource): Plugin {
           ],
         };
       });
-
-      build.onLoad({ filter: /.*/, namespace: KIT_NS }, (args) => ({
-        contents: KIT[args.path] ?? '',
-        loader: 'tsx',
-        resolveDir: REAL_DIR,
-      }));
 
       build.onLoad({ filter: /.*/, namespace: APP_NS }, (args) => {
         const contents = files[args.path];
@@ -230,6 +234,9 @@ async function buildAppInner(source: AppSource): Promise<BuildResult> {
     platform: 'browser',
     target: 'es2020',
     jsx: 'automatic',
+    // React (incl. any bundled dep's React, e.g. lucide-react) resolves to the
+    // one shared runtime instance via the iframe import map — never re-bundled.
+    external: REACT_EXTERNALS,
     write: false,
     minify: true,
     legalComments: 'none',

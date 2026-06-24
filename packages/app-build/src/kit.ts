@@ -6,9 +6,12 @@
  * apps/web source tree or its node_modules at build time. React is bundled into
  * each app (each iframe is its own isolated document).
  *
- * These are SOURCE STRINGS (TSX/TS), not live modules — they're compiled by
- * esbuild as part of each app build. Keep them dependency-light (only `react`)
- * and theme-token-only (never hardcode colours), matching apps/web/CLAUDE.md.
+ * These are SOURCE STRINGS (TSX/TS), not live modules. They are compiled ONCE
+ * into the shared `/app-runtime` (see build-runtime.ts) and resolved at load time
+ * via the iframe import map — apps mark `react`/`@host`/`@/components/ui/*`
+ * external rather than re-bundling them. Keep them dependency-light (only `react`
+ * + `react-dom/client` in @host) and theme-token-only (never hardcode colours),
+ * matching apps/web/CLAUDE.md.
  */
 
 /** `cn` — minimal class joiner (no clsx/tailwind-merge dep). Generated apps

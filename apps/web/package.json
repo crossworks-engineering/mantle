@@ -1,10 +1,13 @@
 {
   "name": "@mantle/web",
-  "version": "0.42.1",
+  "version": "0.43.0",
   "private": true,
   "type": "module",
   "scripts": {
+    "app-runtime": "pnpm --filter @mantle/app-build build:runtime",
+    "predev": "pnpm run app-runtime",
     "dev": "next dev --turbo",
+    "prebuild": "pnpm run app-runtime",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

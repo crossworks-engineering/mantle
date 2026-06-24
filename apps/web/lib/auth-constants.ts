@@ -15,4 +15,14 @@ export const SESSION_COOKIE_NAME = 'mantle_session';
 // cookie — so it must bypass the session gate. See docs/federation.md.
 // `/api/version` exposes only the build identity (version/SHA/build time) — no
 // sensitive data — so it stays open for uptime/ops probes. See docs/versioning.md.
-export const PUBLIC_PATHS = ['/login', '/api/auth', '/s', '/api/federation', '/api/version'];
+// `/app-runtime` is the shared mini-app runtime (React + UI kit + host bridge) —
+// open-source library code with no secrets or user data. Sandboxed app iframes
+// load it with an OPAQUE origin (no session cookie), so it must bypass the gate.
+export const PUBLIC_PATHS = [
+  '/login',
+  '/api/auth',
+  '/s',
+  '/api/federation',
+  '/api/version',
+  '/app-runtime',
+];

@@ -10,6 +10,7 @@
 import { getApp, workingSource, setDraftBuild } from '@mantle/content';
 import { buildApp, type BuildMessage } from '@mantle/app-build';
 import { putContent } from '@mantle/storage';
+// Apps now externalize React/kit/@host to the shared /app-runtime import map.
 
 export type AppBuildOutcome = {
   buildOk: boolean;
