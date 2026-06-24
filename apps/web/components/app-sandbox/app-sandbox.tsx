@@ -128,7 +128,18 @@ function buildSrcDoc(bundleCode: string): string {
 <meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy" content="${csp}" />
 <style>${css}</style>
-<style>html,body{margin:0;background:transparent}#root{padding:0}</style>
+<style>/* Paint the iframe canvas with the theme background, NOT transparent: a
+   sandboxed (opaque-origin) iframe renders WHITE where it's transparent, so any
+   gap between the app content and the iframe height showed a white strip. With
+   the themed background, any such gap is invisible (matches the app + host). */
+html,body{margin:0;background:var(--background)}#root{padding:0}
+/* The app is embedded in an auto-sized iframe with no real viewport, so
+   viewport-height utilities would inflate it into a tall, mostly-empty box (a
+   small app leaves a big blank area below). Collapse them to content height —
+   the iframe then hugs the actual content. Belt-and-braces with the authoring
+   rule that tells Appsmith not to use these. */
+.min-h-screen,.min-h-dvh,.min-h-svh,.min-h-lvh{min-height:0!important}
+.h-screen,.h-dvh,.h-svh,.h-lvh{height:auto!important}</style>
 </head>
 <body class="bg-background text-foreground">
 <div id="root"></div>
@@ -170,6 +181,13 @@ export function AppSandbox({
     iframeRef.current?.contentWindow?.postMessage(msg, '*');
   }, []);
 
+  // Hold the callbacks in refs so effects can call the latest without listing
+  // them as deps. Parents pass inline closures (e.g. onError={(m)=>toast(m)})
+  // that change identity every render — without this, typing in the Assist box
+  // re-ran the bundle-fetch effect below and reloaded the iframe (white flash).
+  const cbRef = useRef({ onError, onSelect, onInspectChange });
+  cbRef.current = { onError, onSelect, onInspectChange };
+
   // Push inspect-mode + the locked selection down whenever they change or the
   // app (re)becomes ready, so a fresh iframe inherits the current state.
   useEffect(() => {
@@ -202,7 +220,7 @@ export function AppSandbox({
           // bug, not a transient failure — surface it plainly to the builder
           // even if the app's own code swallows the rejection.
           if (r.status === 403 && data?.ok === false) {
-            onError?.(
+            cbRef.current.onError?.(
               `This app tried to use the tool “${req.slug}”, which it hasn't declared. ` +
                 `Add it to the app's tools (app_tools_set) — or ask Appsmith to — before it can run.`,
             );
@@ -222,7 +240,7 @@ export function AppSandbox({
         reply({ ok: false, error: err instanceof Error ? err.message : String(err) });
       }
     },
-    [appId, onError],
+    [appId],
   );
 
   // Listen for messages from THIS iframe only.
@@ -240,15 +258,15 @@ export function AppSandbox({
         return;
       }
       if (m.kind === 'error') {
-        onError?.(m.message);
+        cbRef.current.onError?.(m.message);
         return;
       }
       if (m.kind === 'select') {
-        onSelect?.(m.regionId);
+        cbRef.current.onSelect?.(m.regionId);
         return;
       }
       if (m.kind === 'inspect') {
-        onInspectChange?.(m.on);
+        cbRef.current.onInspectChange?.(m.on);
         return;
       }
       // A request needing a response.
@@ -256,7 +274,7 @@ export function AppSandbox({
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [handleRequest, onError, onSelect, onInspectChange]);
+  }, [handleRequest]);
 
   // Fetch the bundle and (re)render into the iframe.
   useEffect(() => {
@@ -271,7 +289,7 @@ export function AppSandbox({
         }
         if (!r.ok) {
           setStatus('error');
-          onError?.(`bundle load failed (${r.status})`);
+          cbRef.current.onError?.(`bundle load failed (${r.status})`);
           return;
         }
         const code = await r.text();
@@ -281,12 +299,12 @@ export function AppSandbox({
       .catch((err) => {
         if (cancelled) return;
         setStatus('error');
-        onError?.(err instanceof Error ? err.message : String(err));
+        cbRef.current.onError?.(err instanceof Error ? err.message : String(err));
       });
     return () => {
       cancelled = true;
     };
-  }, [appId, reloadKey, onError]);
+  }, [appId, reloadKey]);
 
   return (
     <div className="relative w-full overflow-hidden rounded-lg border border-border bg-background">
