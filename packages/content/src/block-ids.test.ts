@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { allBlocksHaveIds, ensureBlockIds } from './block-ids';
+import { allBlocksHaveIds, ensureBlockIds, repairTableRows } from './block-ids';
 
 describe('ensureBlockIds', () => {
   it('injects an id on every top-level block', () => {
@@ -203,5 +203,51 @@ describe('allBlocksHaveIds', () => {
       ],
     };
     expect(allBlocksHaveIds(doc)).toBe(false);
+  });
+});
+
+describe('repairTableRows', () => {
+  const cell = (t: string) => ({ type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: t }] }] });
+  const para = (t: string) => ({ type: 'paragraph', content: [{ type: 'text', text: t }] });
+
+  it('wraps a bare paragraph child of a tableRow back into a tableCell', () => {
+    // The exact production shape: a 3-col row where 2 cells lost their wrapper.
+    const doc = {
+      type: 'doc',
+      content: [
+        { type: 'table', content: [{ type: 'tableRow', content: [cell('SOP / Procedure'), para('NATREF SOP Rev.0'), para('✅ Complete')] }] },
+      ],
+    };
+    const fixed = repairTableRows(doc) as typeof doc;
+    const row = (fixed.content[0] as { content: Array<{ type: string; content: unknown[] }> }).content[0] as {
+      content: Array<{ type: string; content: Array<{ type: string }> }>;
+    };
+    // All three children are now cells (the intended 3-column row).
+    expect(row.content.map((c) => c.type)).toEqual(['tableCell', 'tableCell', 'tableCell']);
+    // The wrapped cells hold the original paragraph as their block content.
+    expect(row.content[1]?.content[0]?.type).toBe('paragraph');
+  });
+
+  it('leaves a valid table untouched (same reference)', () => {
+    const doc = {
+      type: 'doc',
+      content: [{ type: 'table', content: [{ type: 'tableRow', content: [cell('A'), cell('B')] }] }],
+    };
+    expect(repairTableRows(doc)).toBe(doc);
+  });
+
+  it('repairs a table nested inside a column', () => {
+    const doc = {
+      type: 'doc',
+      content: [
+        {
+          type: 'columnList',
+          content: [{ type: 'column', content: [{ type: 'table', content: [{ type: 'tableRow', content: [cell('X'), para('Y')] }] }] }],
+        },
+      ],
+    };
+    const fixed = repairTableRows(doc) as typeof doc;
+    const row = (((fixed.content[0] as any).content[0].content[0].content[0]) as { content: Array<{ type: string }> });
+    expect(row.content.map((c) => c.type)).toEqual(['tableCell', 'tableCell']);
   });
 });

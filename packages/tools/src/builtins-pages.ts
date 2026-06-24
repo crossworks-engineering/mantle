@@ -52,7 +52,7 @@ const page_create: BuiltinToolDef = {
   slug: 'page_create',
   name: 'Create a page',
   description:
-    "Create a rich document (a `page` node under /pages) in the user's Mantle from content YOU compose. `title` required; `markdown` is the body in the rich dialect (callouts, columns, tables, task lists, highlights). The page is indexed into the brain — summary, embedding, facts, entities — so it becomes searchable and recallable. Prefer this over note_create when the content is long-form or structured (a plan, a doc, a comparison) that deserves real formatting; use note_create for quick plain-text captures. **For importing an existing file (Notion export, sermon markdown, etc.) use `page_from_file` instead — re-emitting the file body in this tool's `markdown` arg truncates silently above ~6 K output tokens.**",
+    "Create a rich document (a `page` node under /pages) in the user's Mantle from content YOU compose. `title` required; `markdown` is the body in the rich dialect (callouts, columns, tables, task lists, highlights). The page is indexed into the brain — summary, embedding, facts, entities — so it becomes searchable and recallable. To make a SUB-PAGE, pass `parent_id` (an existing page's id, e.g. from page_list / search_nodes) and the new page nests under it; omit for a top-level page. Prefer this over note_create when the content is long-form or structured (a plan, a doc, a comparison) that deserves real formatting; use note_create for quick plain-text captures. **For importing an existing file (Notion export, sermon markdown, etc.) use `page_from_file` instead — re-emitting the file body in this tool's `markdown` arg truncates silently above ~6 K output tokens.**",
   inputSchema: {
     type: 'object',
     properties: {
@@ -60,6 +60,11 @@ const page_create: BuiltinToolDef = {
       markdown: { type: 'string', description: MARKDOWN_HINT },
       tags: { type: 'array', items: { type: 'string' } },
       icon: { type: 'string', description: 'optional emoji icon, e.g. "📄"' },
+      parent_id: {
+        type: 'string',
+        format: 'uuid',
+        description: 'optional — id of an existing page to nest this new page UNDER (creates a sub-page). Omit for a top-level page.',
+      },
     },
     required: ['title'],
   },
@@ -69,6 +74,7 @@ const page_create: BuiltinToolDef = {
     const markdown = str(input.markdown);
     const tags = strArr(input.tags);
     const icon = str(input.icon).trim();
+    const parentId = str(input.parent_id).trim();
     try {
       const doc = markdownToDoc(markdown);
       const page = await createPage(ctx.ownerId, {
@@ -76,6 +82,7 @@ const page_create: BuiltinToolDef = {
         doc,
         tags,
         ...(icon ? { icon } : {}),
+        ...(parentId ? { parentId } : {}),
       });
       ctx.step?.setOutput({ id: page.id, title: page.title });
       void recordIngest({
@@ -86,13 +93,20 @@ const page_create: BuiltinToolDef = {
         payload: {
           via: 'page_create_tool',
           tags,
+          ...(parentId ? { parentId } : {}),
           ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
         },
         snippet: markdown,
       });
-      return { ok: true, output: { id: page.id, title: page.title, tags: page.tags } };
+      return { ok: true, output: { id: page.id, title: page.title, tags: page.tags, ...(parentId ? { parent_id: parentId } : {}) } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      const msg = err instanceof Error ? err.message : String(err);
+      // createPage throws ParentPageNotFoundError ("…parent page not found") when
+      // parent_id isn't one of the owner's pages — surface that plainly.
+      if (parentId && msg.includes('parent page not found')) {
+        return { ok: false, error: `parent_id '${parentId}' is not one of your pages — pass the id of an existing page (see page_list / search_nodes).` };
+      }
+      return { ok: false, error: msg };
     }
   },
 };

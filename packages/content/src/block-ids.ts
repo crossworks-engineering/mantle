@@ -128,6 +128,54 @@ function walk(node: AnyNode): AnyNode {
 }
 
 /**
+ * Repair invalid table structure so a doc stays renderable. ProseMirror's
+ * `tableRow` content model is `(tableCell | tableHeader)+`; an agent block
+ * edit (or any programmatic write) can drop a cell's wrapper, leaving a bare
+ * `paragraph` (or other block) as a DIRECT row child. That doc is schema-
+ * invalid, so the editor throws `RangeError: Invalid content for node
+ * tableRow` the instant it loads — white-screening the whole page. Wrap any
+ * stray non-cell child back into a `tableCell` (restoring the intended
+ * column). Recurses, so nested tables (inside columns / callouts) are fixed
+ * too. Idempotent; returns the SAME reference when nothing needed fixing, so
+ * the getPage read-path no-op + lazy-persist optimisation still holds.
+ */
+export function repairTableRows<T extends Record<string, unknown>>(doc: T): T {
+  return repairWalk(doc as AnyNode) as unknown as T;
+}
+
+const CELL_TYPES = new Set(['tableCell', 'tableHeader']);
+
+/** Wrap a stray row child in a `tableCell`. A cell needs block content, so a
+ *  bare inline/text node gets a `paragraph` wrapper first. */
+function wrapInCell(child: AnyNode): AnyNode {
+  const inner =
+    child && typeof child.type === 'string' && child.type !== 'text'
+      ? child
+      : { type: 'paragraph', attrs: { id: newId() }, content: child ? [child] : [] };
+  return { type: 'tableCell', attrs: { id: newId() }, content: [inner] };
+}
+
+function repairWalk(node: AnyNode): AnyNode {
+  if (!node || typeof node !== 'object' || !Array.isArray(node.content) || node.content.length === 0) {
+    return node;
+  }
+  // Recurse first so deeply-nested tables get repaired as well.
+  let changed = false;
+  const walked: AnyNode[] = new Array(node.content.length);
+  for (let i = 0; i < node.content.length; i++) {
+    const w = repairWalk(node.content[i]!);
+    walked[i] = w;
+    if (w !== node.content[i]) changed = true;
+  }
+  let content = walked;
+  if (node.type === 'tableRow' && walked.some((c) => !c || !CELL_TYPES.has(c.type ?? ''))) {
+    content = walked.map((c) => (c && CELL_TYPES.has(c.type ?? '') ? c : wrapInCell(c)));
+    changed = true;
+  }
+  return changed ? { ...node, content } : node;
+}
+
+/**
  * Check whether a doc has ids on every block — handy for tests + for the
  * lazy-backfill paths that want to skip the rewrite when there's nothing
  * to do. Walks the whole tree; O(N) in nodes.

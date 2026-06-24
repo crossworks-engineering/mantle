@@ -270,7 +270,7 @@ export {
 
 export { markdownToDoc } from './markdown-to-doc';
 
-export { ensureBlockIds, allBlocksHaveIds, BLOCK_NODE_TYPES } from './block-ids';
+export { ensureBlockIds, repairTableRows, allBlocksHaveIds, BLOCK_NODE_TYPES } from './block-ids';
 
 export { listBlocks, type BlockListEntry, type ListBlocksOptions } from './block-list';
 

@@ -19,7 +19,7 @@ import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import { db, nodes, pages, entityEdges, notifyNodeIngested, type Node } from '@mantle/db';
 import { docToText } from './doc-to-text';
 import { referencedFileIds } from './doc-assets';
-import { ensureBlockIds } from './block-ids';
+import { ensureBlockIds, repairTableRows } from './block-ids';
 import { childPagePath } from './page-path';
 import { splitDocByHeading, extractSection, type SplitLevel } from './page-split';
 
@@ -197,8 +197,13 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
   // that way until the user edits.
   const rawDoc = (row.doc as Record<string, unknown> | null) ?? EMPTY_DOC;
   const rawDraft = (row.draft as Record<string, unknown> | null) ?? null;
-  const doc = ensureBlockIds(rawDoc);
-  const draft = rawDraft ? ensureBlockIds(rawDraft) : null;
+  // repairTableRows BEFORE ensureBlockIds: a malformed draft (a tableRow with a
+  // bare paragraph child, from a bad agent block edit) makes the editor throw
+  // `RangeError: Invalid content for node tableRow` on load. Repairing here
+  // self-heals existing bad docs on read — the change is then persisted back by
+  // the lazy backfill below, so no migration is needed.
+  const doc = ensureBlockIds(repairTableRows(rawDoc));
+  const draft = rawDraft ? ensureBlockIds(repairTableRows(rawDraft)) : null;
 
   const docChanged = doc !== rawDoc && row.doc !== null; // only persist if there's a row to update
   const draftChanged = draft !== rawDraft && rawDraft !== null;
@@ -626,7 +631,7 @@ export async function saveDraft(
   // endpoint accepts whatever the editor sends, and an editor that doesn't
   // yet preserve the id global attr (or a programmatic write) would
   // otherwise strip them. Idempotent + cheap.
-  const enriched = ensureBlockIds(doc);
+  const enriched = ensureBlockIds(repairTableRows(doc));
   await db
     .update(pages)
     .set({ draftDoc: enriched, draftUpdatedAt: new Date() })
@@ -739,7 +744,7 @@ export async function commitPage(
   // Guarantee the committed doc carries stable per-block ids so the
   // brain (via doc_text), Phase 2b block tools, and the editor diff
   // view all see addressable blocks. Idempotent.
-  const enriched = ensureBlockIds(doc);
+  const enriched = ensureBlockIds(repairTableRows(doc));
   const newData = { ...((node.data ?? {}) as Record<string, unknown>) };
   delete newData.summary;
   delete newData.summary_model;
