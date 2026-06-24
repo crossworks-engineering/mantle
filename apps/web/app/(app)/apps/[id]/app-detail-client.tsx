@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Hammer, Rocket, Undo2, Sparkles, SquareDashedMousePointer, X } from 'lucide-react';
+import { Hammer, Rocket, Undo2, Sparkles, SquareDashedMousePointer, X, Save, WandSparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
@@ -11,21 +11,32 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
 import { BackLink } from '@/components/layout/back-link';
 import { AppSandbox } from '@/components/app-sandbox/app-sandbox';
-import { CodeView } from '@/components/app-sandbox/code-view';
+import { CodeEditor } from '@/components/app-sandbox/code-editor';
 import { FileTree } from '@/components/app-sandbox/file-tree';
 import type { AppDetail } from '@mantle/content';
 
 type BuildMsg = { text: string; location: { file: string; line: number; column: number } | null };
+
+// Extensions the /format (Prettier) route handles — mirror its PARSER map so the
+// button only enables for files the server can actually format.
+const FORMATTABLE = new Set([
+  'tsx', 'ts', 'jsx', 'js', 'mjs', 'cjs', 'css', 'scss', 'less', 'json', 'html', 'htm', 'md', 'markdown',
+]);
+const extOf = (p: string) => p.slice(p.lastIndexOf('.') + 1).toLowerCase();
 
 export function AppDetailClient({ app }: { app: AppDetail }) {
   const router = useRouter();
   const toast = useToast();
 
   const source = app.draft ?? app.source;
-  const paths = useMemo(() => Object.keys(source.files).sort(), [source.files]);
+  // Editable working copy of the source tree. Re-synced from the server on every
+  // reload (build / publish / discard / assist), which also drops local edits.
+  const [files, setFiles] = useState<Record<string, string>>(source.files);
+  const [dirty, setDirty] = useState(false);
+  const paths = useMemo(() => Object.keys(files).sort(), [files]);
   const [activePath, setActivePath] = useState(source.entry);
   const [reloadKey, setReloadKey] = useState(0);
-  const [busy, setBusy] = useState<null | 'build' | 'publish' | 'discard' | 'assist'>(null);
+  const [busy, setBusy] = useState<null | 'build' | 'publish' | 'discard' | 'assist' | 'save' | 'format'>(null);
   const [buildErrors, setBuildErrors] = useState<BuildMsg[]>([]);
   const [prompt, setPrompt] = useState('');
   const [reply, setReply] = useState<string | null>(null);
@@ -34,14 +45,25 @@ export function AppDetailClient({ app }: { app: AppDetail }) {
   const [inspect, setInspect] = useState(false);
   const [focusRegion, setFocusRegion] = useState<string | null>(null);
 
-  const activeContent = source.files[activePath] ?? source.files[source.entry] ?? '';
+  const activeContent = files[activePath] ?? files[source.entry] ?? '';
+  const canFormat = FORMATTABLE.has(extOf(activePath));
 
   useEffect(() => {
     setInspect(false);
     setFocusRegion(null);
   }, [reloadKey]);
 
+  // Re-sync the editable copy whenever the server source changes (a build,
+  // publish, discard, or an Appsmith edit). Drops any unsaved local edits.
+  useEffect(() => {
+    setFiles(source.files);
+    setDirty(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadKey]);
+
   async function build() {
+    // Unsaved editor changes must reach the draft before we compile it.
+    if (dirty && !(await saveDraft())) return;
     setBusy('build');
     setBuildErrors([]);
     try {
@@ -121,6 +143,52 @@ export function AppDetailClient({ app }: { app: AppDetail }) {
       setPrompt('');
       router.refresh();
       setReloadKey((k) => k + 1);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Persist the edited file tree to the draft. Returns true on success so the
+  // Build action can save-then-build when there are unsaved edits.
+  async function saveDraft(): Promise<boolean> {
+    setBusy('save');
+    try {
+      const res = await fetch(`/api/apps/${app.id}/draft`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ entry: source.entry, files }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error ?? 'Could not save.');
+        return false;
+      }
+      setDirty(false);
+      toast.success('Saved to draft.');
+      router.refresh();
+      return true;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function formatActive() {
+    setBusy('format');
+    try {
+      const res = await fetch(`/api/apps/${app.id}/format`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ path: activePath, content: activeContent }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? 'Could not format.');
+        return;
+      }
+      if (data.formatted !== activeContent) {
+        setFiles((f) => ({ ...f, [activePath]: data.formatted }));
+        setDirty(true);
+      }
     } finally {
       setBusy(null);
     }
@@ -256,7 +324,7 @@ export function AppDetailClient({ app }: { app: AppDetail }) {
           </div>
         </TabsContent>
 
-        {/* Code — file-tree sidebar + a syntax-highlighted source viewer. */}
+        {/* Code — file-tree sidebar + an editable, syntax-highlighted editor. */}
         <TabsContent
           value="code"
           className="mt-0 grid min-h-0 flex-1 grid-cols-[200px_minmax(0,1fr)]"
@@ -268,7 +336,42 @@ export function AppDetailClient({ app }: { app: AppDetail }) {
             onSelect={setActivePath}
             className="border-r border-border"
           />
-          <CodeView path={activePath} content={activeContent} className="min-h-0" />
+          <div className="flex min-h-0 flex-col">
+            <div className="flex items-center gap-2 border-b border-border px-3 py-1.5">
+              <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+                {activePath}
+                {dirty && <span className="ml-1.5 text-foreground">●</span>}
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={formatActive}
+                disabled={busy !== null || !canFormat}
+                title={canFormat ? 'Format with Prettier' : 'No formatter for this file type'}
+              >
+                <WandSparkles />
+                {busy === 'format' ? 'Formatting…' : 'Format'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={saveDraft}
+                disabled={busy !== null || !dirty}
+              >
+                <Save />
+                {busy === 'save' ? 'Saving…' : 'Save'}
+              </Button>
+            </div>
+            <CodeEditor
+              path={activePath}
+              value={activeContent}
+              onChange={(next) => {
+                setFiles((f) => ({ ...f, [activePath]: next }));
+                setDirty(true);
+              }}
+              className="min-h-0 flex-1"
+            />
+          </div>
         </TabsContent>
       </Tabs>
     </div>

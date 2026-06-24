@@ -93,6 +93,9 @@ const nextConfig: NextConfig = {
     // also needs the webpack externals hook below for the production build.
     // (Per-app SQLite uses the built-in `node:sqlite` — no extra dep.)
     'esbuild',
+    // /apps code editor's Format route: prettier dynamically require()s its
+    // parser plugins at runtime, so webpack must not try to bundle it.
+    'prettier',
   ],
   // Externalize `@napi-rs/canvas` for the PRODUCTION server build (webpack).
   // `serverExternalPackages` alone doesn't externalize it when it's reached
