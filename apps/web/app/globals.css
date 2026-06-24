@@ -3073,6 +3073,14 @@
     @apply bg-background text-foreground;
     letter-spacing: var(--tracking-normal);
   }
+  /* Native <select> option lists: Chrome/Edge render the dropdown popup with
+     system colours, so a themed (e.g. near-white dark-theme) foreground lands
+     on the browser's light popup — invisible options. Pin both the option fill
+     and text to the popover token pair so the native list tracks the theme. */
+  select option {
+    background-color: var(--popover);
+    color: var(--popover-foreground);
+  }
 }
 
 /* ============================================================================
