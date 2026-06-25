@@ -9,17 +9,33 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  CornerLeftUp,
+  FolderInput,
+  GripVertical,
   Pencil,
   Plus,
   Search,
   Trash2,
 } from 'lucide-react';
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  pointerWithin,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { PageSort } from '@/lib/pages';
@@ -65,6 +81,10 @@ type PageRow = {
 };
 
 type TagCount = { tag: string; count: number };
+
+/** Droppable id for the "move to the top level" zone shown while dragging a
+ *  nested page. A literal sentinel — page ids are uuids, so it never collides. */
+const TOP_LEVEL_DROP_ID = '__pages_root__';
 
 const SORT_LABELS: Record<PageSort, string> = {
   edited: 'Last edited',
@@ -210,6 +230,76 @@ export function PagesClient({
       return next;
     });
 
+  // ── Drag-to-reparent (tree mode) ─────────────────────────────────────────
+  // The whole hierarchy is client-side here, so re-parenting is a drag of one
+  // row onto another (→ nest under it) or onto the top-level zone (→ un-nest).
+  // There's no manual sibling ordering (children sort by title), so a drop is
+  // purely "set parent". A 6px activation distance keeps plain clicks selecting.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const activeRow = activeId ? (pages.find((p) => p.id === activeId) ?? null) : null;
+
+  /** All pages beneath `id` in the tree (excludes `id` itself). Cycle-safe. */
+  const descendantIdsOf = useMemo(() => {
+    return (id: string): Set<string> => {
+      const out = new Set<string>();
+      const stack = [...(childrenByParent.get(id) ?? [])];
+      while (stack.length) {
+        const n = stack.pop()!;
+        if (out.has(n.id)) continue;
+        out.add(n.id);
+        const kids = childrenByParent.get(n.id);
+        if (kids) stack.push(...kids);
+      }
+      return out;
+    };
+  }, [childrenByParent]);
+
+  // Targets you can't drop onto: the dragged page itself + its descendants
+  // (would create a cycle). Recomputed when a drag starts.
+  const invalidDropIds = useMemo(() => {
+    if (!activeId) return new Set<string>();
+    const s = descendantIdsOf(activeId);
+    s.add(activeId);
+    return s;
+  }, [activeId, descendantIdsOf]);
+
+  const move = async (id: string, parentId: string | null) => {
+    // Surface the result immediately, then re-pull the SSR tree (the same
+    // refresh pattern create/delete use). Expand the new parent so the moved
+    // page is visible where it landed instead of hiding in a collapsed branch.
+    const res = await fetch(`/api/pages/${id}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parentId }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      toast.error(j.error ?? 'Could not move page');
+      return;
+    }
+    if (parentId) setExpanded((prev) => new Set(prev).add(parentId));
+    toast.success(parentId ? 'Page moved' : 'Moved to top level');
+    startNav(() => router.refresh());
+  };
+
+  const onDragEnd = (e: DragEndEvent) => {
+    setActiveId(null);
+    const { active, over } = e;
+    if (!over) return;
+    const sourceId = String(active.id);
+    const src = pages.find((p) => p.id === sourceId);
+    if (!src) return;
+    const targetParent = over.id === TOP_LEVEL_DROP_ID ? null : String(over.id);
+    if (targetParent === (src.parentId ?? null)) return; // already there — no-op
+    // Belt-and-braces with the disabled drop targets + the server cycle guard.
+    if (targetParent && (targetParent === sourceId || descendantIdsOf(sourceId).has(targetParent))) {
+      toast.error("Can't move a page into one of its own sub-pages");
+      return;
+    }
+    void move(sourceId, targetParent);
+  };
+
   const buildHref = (over: {
     page?: number;
     tag?: string | null;
@@ -322,10 +412,15 @@ export function PagesClient({
           hasChildren={kidHasChildren}
           expanded={isExpanded}
           selected={selected?.id === p.id}
+          allPages={pages}
+          descendantIdsOf={descendantIdsOf}
+          disabledDrop={invalidDropIds.has(p.id)}
+          dragging={activeId === p.id}
           onToggle={() => toggle(p.id)}
           onSelect={() => setSelectedId(p.id)}
           onAddChild={() => void createChild(p.id)}
           onDelete={() => setDeleteTarget(p)}
+          onMove={(parentId) => void move(p.id, parentId)}
         />,
       );
       if (kidHasChildren && isExpanded) rows.push(...renderTree(p.id, depth + 1));
@@ -457,11 +552,25 @@ export function PagesClient({
             navPending && 'opacity-60',
           )}
         >
-          {pages.length === 0
-            ? emptyState
-            : mode === 'tree'
-              ? renderTree(null, 0)
-              : pages.map((p) => (
+          {pages.length === 0 ? (
+            emptyState
+          ) : mode === 'tree' ? (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={pointerWithin}
+              onDragStart={(e) => setActiveId(String(e.active.id))}
+              onDragEnd={onDragEnd}
+              onDragCancel={() => setActiveId(null)}
+            >
+              {/* Un-nest target — only while dragging a page that has a parent. */}
+              {activeRow && activeRow.parentId !== null && <TopLevelDropZone />}
+              {renderTree(null, 0)}
+              <DragOverlay dropAnimation={null}>
+                {activeRow ? <DragGhost row={activeRow} /> : null}
+              </DragOverlay>
+            </DndContext>
+          ) : (
+            pages.map((p) => (
                   <button
                     key={p.id}
                     onClick={() => setSelectedId(p.id)}
@@ -494,7 +603,8 @@ export function PagesClient({
                       </div>
                     </div>
                   </button>
-                ))}
+                ))
+          )}
         </div>
 
         {total > 0 && (
@@ -611,37 +721,82 @@ export function PagesClient({
 }
 
 /** One row in the hierarchy tree. Chevron toggles expand; the body selects
- *  (drives the preview); hover reveals add-sub-page + delete. Indentation is
- *  an inline `paddingLeft` (depth-driven, so not a Tailwind dynamic class). */
+ *  (drives the preview); the left grip drags the page to re-parent it; hover
+ *  reveals move / add-sub-page / delete. The row is a drop target — dropping
+ *  another page onto it nests that page underneath. Indentation is an inline
+ *  `paddingLeft` (depth-driven, so not a Tailwind dynamic class). */
 function TreeRow({
   row,
   depth,
   hasChildren,
   expanded,
   selected,
+  allPages,
+  descendantIdsOf,
+  disabledDrop,
+  dragging,
   onToggle,
   onSelect,
   onAddChild,
   onDelete,
+  onMove,
 }: {
   row: PageRow;
   depth: number;
   hasChildren: boolean;
   expanded: boolean;
   selected: boolean;
+  allPages: PageRow[];
+  descendantIdsOf: (id: string) => Set<string>;
+  disabledDrop: boolean;
+  dragging: boolean;
   onToggle: () => void;
   onSelect: () => void;
   onAddChild: () => void;
   onDelete: () => void;
+  onMove: (parentId: string | null) => void;
 }) {
+  const { setNodeRef: setDropRef, isOver } = useDroppable({ id: row.id, disabled: disabledDrop });
+  const {
+    setNodeRef: setDragRef,
+    attributes,
+    listeners,
+  } = useDraggable({ id: row.id });
+
+  // Valid "Move to…" parents: every other page except this one and its own
+  // descendants (those would cycle). Built lazily — the menu mounts on open.
+  const moveTargets = useMemo(() => {
+    const bad = descendantIdsOf(row.id);
+    return allPages
+      .filter((p) => p.id !== row.id && !bad.has(p.id))
+      .sort((a, b) => a.title.localeCompare(b.title));
+  }, [allPages, descendantIdsOf, row.id]);
+
+  const nesting = isOver && !disabledDrop;
+
   return (
     <div
+      ref={setDropRef}
       className={cn(
         'group flex items-center gap-1 rounded-md pr-1 transition-colors hover:bg-muted/50',
         selected && 'bg-accent/60',
+        nesting && 'ring-2 ring-inset ring-primary bg-primary/10',
+        dragging && 'opacity-40',
       )}
       style={{ paddingLeft: depth * 16 }}
     >
+      <button
+        type="button"
+        ref={setDragRef}
+        {...listeners}
+        {...attributes}
+        aria-label={`Drag to move “${row.title}”`}
+        title="Drag to move"
+        className="flex size-5 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100 active:cursor-grabbing focus-visible:opacity-100"
+      >
+        <GripVertical className="size-3.5" />
+      </button>
+
       {hasChildren ? (
         <button
           type="button"
@@ -667,6 +822,42 @@ function TreeRow({
       </button>
 
       <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 text-muted-foreground"
+              aria-label="Move page"
+              title="Move to…"
+            >
+              <FolderInput />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="max-h-72 w-56 overflow-y-auto">
+            <DropdownMenuItem disabled={row.parentId === null} onClick={() => onMove(null)}>
+              <CornerLeftUp />
+              Top level
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            {moveTargets.length === 0 ? (
+              <DropdownMenuItem disabled>No other pages</DropdownMenuItem>
+            ) : (
+              moveTargets.map((t) => (
+                <DropdownMenuItem
+                  key={t.id}
+                  disabled={t.id === row.parentId}
+                  onClick={() => onMove(t.id)}
+                >
+                  <span className="size-4 shrink-0 text-center text-sm leading-4" aria-hidden>
+                    {t.icon ?? '📄'}
+                  </span>
+                  <span className="min-w-0 truncate">{t.title}</span>
+                </DropdownMenuItem>
+              ))
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button
           variant="ghost"
           size="icon"
@@ -687,6 +878,36 @@ function TreeRow({
           <Trash2 />
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** The floating preview that follows the cursor while dragging a tree row. */
+function DragGhost({ row }: { row: PageRow }) {
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5 text-sm font-medium shadow-lg">
+      <GripVertical className="size-3.5 text-muted-foreground" />
+      <span aria-hidden>{row.icon ?? '📄'}</span>
+      <span className="max-w-48 truncate">{row.title}</span>
+    </div>
+  );
+}
+
+/** Drop band at the top of the tree (shown only while dragging a nested page)
+ *  that re-parents the dragged page to the top level. */
+function TopLevelDropZone() {
+  const { setNodeRef, isOver } = useDroppable({ id: TOP_LEVEL_DROP_ID });
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        'mb-1 rounded-md border border-dashed px-3 py-2 text-center text-xs transition-colors',
+        isOver
+          ? 'border-primary bg-primary/10 text-foreground'
+          : 'border-border text-muted-foreground',
+      )}
+    >
+      Drop here to move to the top level
     </div>
   );
 }

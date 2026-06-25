@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mentionRefs } from './mention-refs';
+import { mentionRefs, buildMentionParagraph } from './mention-refs';
 
 describe('mentionRefs', () => {
   it('returns empty sets for nullish / mention-free docs', () => {
@@ -42,5 +42,39 @@ describe('mentionRefs', () => {
       content: [{ type: 'paragraph', content: [{ type: 'mention', attrs: { id: 'e9' } }] }],
     };
     expect(mentionRefs(doc)).toEqual({ entityIds: ['e9'], nodeIds: [] });
+  });
+});
+
+describe('buildMentionParagraph', () => {
+  it('builds a bare node chip when no lead text is given', () => {
+    const para = buildMentionParagraph({ id: 'page1', label: 'Q3 Plan', ref: 'node', kind: 'page' });
+    expect(para).toEqual({
+      type: 'paragraph',
+      content: [{ type: 'mention', attrs: { id: 'page1', label: 'Q3 Plan', ref: 'node', kind: 'page' } }],
+    });
+  });
+
+  it('prepends trimmed lead text + a space before the chip', () => {
+    const para = buildMentionParagraph({
+      id: 'ent1',
+      label: 'Sarah',
+      ref: 'entity',
+      leadText: '  See also:  ',
+    });
+    expect(para.content).toEqual([
+      { type: 'text', text: 'See also: ' },
+      { type: 'mention', attrs: { id: 'ent1', label: 'Sarah', ref: 'entity', kind: null } },
+    ]);
+  });
+
+  it('round-trips through mentionRefs as the right edge kind', () => {
+    const doc = {
+      type: 'doc',
+      content: [
+        buildMentionParagraph({ id: 'page1', label: 'Plan', ref: 'node' }),
+        buildMentionParagraph({ id: 'ent1', label: 'Sarah', ref: 'entity', leadText: 'cc' }),
+      ],
+    };
+    expect(mentionRefs(doc)).toEqual({ entityIds: ['ent1'], nodeIds: ['page1'] });
   });
 });

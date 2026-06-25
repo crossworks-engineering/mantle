@@ -16,11 +16,13 @@
  */
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
-import { db, nodes, pages, entityEdges, notifyNodeIngested, type Node } from '@mantle/db';
+import { db, nodes, pages, entities, entityEdges, notifyNodeIngested, type Node } from '@mantle/db';
 import { docToText } from './doc-to-text';
 import { referencedFileIds } from './doc-assets';
 import { ensureBlockIds, repairTableRows } from './block-ids';
 import { childPagePath } from './page-path';
+import { insertAfterBlock, type PMBlockNode } from './block-edit';
+import { buildMentionParagraph, type MentionRef } from './mention-refs';
 import { splitDocByHeading, extractSection, type SplitLevel } from './page-split';
 
 export const PAGES_ROOT_LABEL = 'pages';
@@ -347,6 +349,117 @@ export async function countPageDescendants(ownerId: string, id: string): Promise
   return rows[0]?.count ?? 0;
 }
 
+/** Thrown by `movePage` when the requested new parent is the page itself or one
+ *  of its own descendants — re-parenting there would detach the subtree into a
+ *  cycle. The tool layer maps this to a friendly message. */
+export class PageCycleError extends Error {
+  constructor() {
+    super('movePage: cannot move a page under itself or one of its own descendants');
+    this.name = 'PageCycleError';
+  }
+}
+
+/** True when `maybeDescendantId` is a page beneath `ancestorId` in the
+ *  parent_id tree (excludes the ancestor itself). Cycle-safe via UNION. */
+async function isDescendantPage(
+  ownerId: string,
+  ancestorId: string,
+  maybeDescendantId: string,
+): Promise<boolean> {
+  const result = await db.execute<{ hit: boolean }>(sql`
+    WITH RECURSIVE descendants AS (
+      SELECT id FROM ${nodes}
+       WHERE parent_id = ${ancestorId} AND owner_id = ${ownerId} AND type = 'page'
+      UNION
+      SELECT n.id FROM ${nodes} n
+        JOIN descendants d ON n.parent_id = d.id
+       WHERE n.owner_id = ${ownerId} AND n.type = 'page'
+    )
+    SELECT EXISTS(SELECT 1 FROM descendants WHERE id = ${maybeDescendantId}) AS hit
+  `);
+  const rows = (
+    Array.isArray(result) ? result : (result as { rows?: Array<{ hit: boolean }> }).rows ?? []
+  ) as Array<{ hit: boolean }>;
+  return rows[0]?.hit === true;
+}
+
+/**
+ * Re-parent a page (Phase 4d). Moves `id` to nest UNDER `newParentId` — making
+ * it a sub-page — or back to the top level when `newParentId` is null. The
+ * page's whole subtree moves with it: every descendant's ltree `path` is
+ * recomputed from the page's new path in one recursive pass, mirroring the
+ * `parentPath.childLabel` rule `createPage` uses (see page-path.ts).
+ *
+ * Structural only — body, tags, sharing, draft, and the brain index are all
+ * untouched and nothing re-indexes (a move changes a page's place, not its
+ * text). Only the moved node's `updated_at` is bumped so the move surfaces in
+ * the "recently edited" sort. Guards:
+ *  - `id` must be one of the owner's pages (returns null otherwise).
+ *  - `newParentId`, when set, must be one of the owner's pages
+ *    (`ParentPageNotFoundError`) and must NOT be the page itself or one of its
+ *    descendants (`PageCycleError`).
+ * A move that's already in place is a no-op (returns the current row).
+ */
+export async function movePage(
+  ownerId: string,
+  id: string,
+  newParentId: string | null,
+): Promise<PageRow | null> {
+  const [node] = await db
+    .select()
+    .from(nodes)
+    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
+    .limit(1);
+  if (!node) return null;
+
+  const target = newParentId ?? null;
+  let newPath: string = PAGES_ROOT_LABEL;
+
+  if (target) {
+    if (target === id) throw new PageCycleError();
+    const [parent] = await db
+      .select({ id: nodes.id, path: nodes.path })
+      .from(nodes)
+      .where(and(eq(nodes.id, target), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
+      .limit(1);
+    if (!parent) throw new ParentPageNotFoundError();
+    // The new parent must not live inside the moved page's own subtree.
+    if (await isDescendantPage(ownerId, id, target)) throw new PageCycleError();
+    newPath = childPagePath(parent.path, id);
+  }
+
+  // Already where it's being asked to go — nothing to write.
+  if ((node.parentId ?? null) === target) return rowOf(node);
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(nodes)
+      .set({ parentId: target, path: sql`${newPath}::ltree`, updatedAt: new Date() })
+      .where(eq(nodes.id, id));
+    // Rebuild every descendant's path from the moved node's new path down. The
+    // moved node's children still point at it via parent_id (only the moved
+    // node's own parent_id changed), so the walk reaches exactly its subtree;
+    // each level composes parentNewPath || '.' || idLabel (== childPagePath).
+    await tx.execute(sql`
+      WITH RECURSIVE subtree AS (
+        SELECT id, ${newPath}::text AS new_path
+          FROM ${nodes} WHERE id = ${id}
+        UNION ALL
+        SELECT n.id, s.new_path || '.' || replace(n.id::text, '-', '_')
+          FROM ${nodes} n
+          JOIN subtree s ON n.parent_id = s.id
+         WHERE n.owner_id = ${ownerId} AND n.type = 'page'
+      )
+      UPDATE ${nodes} SET path = subtree.new_path::ltree
+        FROM subtree
+       WHERE ${nodes}.id = subtree.id AND subtree.id <> ${id}
+    `);
+  });
+
+  const [updated] = await db.select().from(nodes).where(eq(nodes.id, id)).limit(1);
+  return updated ? rowOf(updated) : null;
+}
+
 /** A node that links TO a given page — one inbound `references` edge, resolved
  *  to its source node. Powers the "Referenced by" panel. */
 export type Backlink = {
@@ -523,6 +636,121 @@ export async function extractSectionToChild(
   await saveDraft(ownerId, pageId, newParent);
 
   return { childId: child.id, title: child.title };
+}
+
+/** Thrown by `addPageMention` when the mention target isn't one of the owner's
+ *  nodes/entities. The tool layer maps this to a friendly message. */
+export class MentionTargetNotFoundError extends Error {
+  constructor(ref: MentionRef, id: string) {
+    super(`addPageMention: ${ref} ${id} not found`);
+    this.name = 'MentionTargetNotFoundError';
+  }
+}
+
+/** Thrown by `addPageMention` when `afterBlockId` doesn't match any block in the
+ *  page (stale id, or the user edited since). */
+export class MentionAnchorNotFoundError extends Error {
+  constructor(blockId: string) {
+    super(`addPageMention: anchor block ${blockId} not found`);
+    this.name = 'MentionAnchorNotFoundError';
+  }
+}
+
+export type AddMentionResult = {
+  targetId: string;
+  /** The chip text written into the page (resolved from the target's title). */
+  label: string;
+  ref: MentionRef;
+  /** The anchor block the chip was placed after, or null when appended. */
+  afterBlockId: string | null;
+  /** True when the chip was appended to the end of the page. */
+  appended: boolean;
+};
+
+/**
+ * Insert a mention chip into a page — the programmatic equivalent of typing
+ * `@Target`. The chip is a REAL link, not plain text: ref='node' points at
+ * another page/note and ref='entity' at a person/project/place. The target's
+ * current title is resolved from `nodes`/`entities` so the chip text matches
+ * what the user sees (override with `label`). The chip lands in a fresh
+ * `[leadText ]@Target` paragraph, either appended to the end of the page or
+ * dropped right after `afterBlockId` (a block id from listBlocks).
+ *
+ * Writes to `draft_doc` ONLY — the published doc is untouched. The graph edge
+ * (`references` for a node, `mentioned_in` for an entity) is built by the
+ * extractor when the user commits, exactly as for a hand-typed mention; this is
+ * the same draft-then-review model the block tools use. Returns null if the
+ * page doesn't exist.
+ */
+export async function addPageMention(
+  ownerId: string,
+  pageId: string,
+  opts: {
+    targetId: string;
+    ref?: MentionRef;
+    label?: string;
+    leadText?: string;
+    afterBlockId?: string | null;
+  },
+): Promise<AddMentionResult | null> {
+  const page = await getPage(ownerId, pageId);
+  if (!page) return null;
+
+  const ref: MentionRef = opts.ref === 'entity' ? 'entity' : 'node';
+  let label = opts.label?.trim() ?? '';
+  let kind: string | null = null;
+
+  // Resolve the target + its display label from the owner's own data, so a
+  // mention can never link to (or leak the title of) something they don't own.
+  if (ref === 'node') {
+    const [n] = await db
+      .select({ title: nodes.title, type: nodes.type })
+      .from(nodes)
+      .where(and(eq(nodes.id, opts.targetId), eq(nodes.ownerId, ownerId)))
+      .limit(1);
+    if (!n) throw new MentionTargetNotFoundError('node', opts.targetId);
+    if (!label) label = n.title;
+    kind = n.type;
+  } else {
+    const [e] = await db
+      .select({ name: entities.name, kind: entities.kind })
+      .from(entities)
+      .where(and(eq(entities.id, opts.targetId), eq(entities.ownerId, ownerId)))
+      .limit(1);
+    if (!e) throw new MentionTargetNotFoundError('entity', opts.targetId);
+    if (!label) label = e.name;
+    kind = e.kind;
+  }
+
+  const paragraph = buildMentionParagraph({
+    id: opts.targetId,
+    label,
+    ref,
+    kind,
+    leadText: opts.leadText,
+  });
+
+  // Block edits always operate on the current working copy (draft if one's open,
+  // else the published doc) and write back to the draft — mirrors the block tools.
+  const baseline = (page.draft ?? page.doc) as Record<string, unknown>;
+  const afterBlockId = opts.afterBlockId?.trim() || null;
+
+  let nextDoc: Record<string, unknown>;
+  if (afterBlockId) {
+    const res = insertAfterBlock(baseline, afterBlockId, [paragraph as PMBlockNode]);
+    if (!res.found) throw new MentionAnchorNotFoundError(afterBlockId);
+    nextDoc = res.doc;
+  } else {
+    const cloned = JSON.parse(JSON.stringify(baseline)) as Record<string, unknown> & {
+      content?: unknown[];
+    };
+    cloned.content = [...(Array.isArray(cloned.content) ? cloned.content : []), paragraph];
+    nextDoc = cloned;
+  }
+
+  const ok = await saveDraft(ownerId, pageId, nextDoc);
+  if (!ok) return null;
+  return { targetId: opts.targetId, label, ref, afterBlockId, appended: afterBlockId === null };
 }
 
 export type UpdatePageInput = Partial<{

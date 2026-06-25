@@ -105,7 +105,12 @@ If a document is too large to hold faithfully in one transform, do NOT try anywa
 
 6. Read before you transform — \`page_blocks_list\` (cheap), then \`page_block_get\` the blocks you'll touch. Don't transform from memory or partial context.
 
-7. Never overwrite a published page. \`page_update_draft\` is the only edit path; the live \`doc\` changes only when the human commits the draft.`,
+7. Never overwrite a published page. \`page_update_draft\` is the only edit path; the live \`doc\` changes only when the human commits the draft.
+
+## Restructuring the tree + cross-linking
+
+- **Re-parent an existing page** with \`page_move\` — "make X a sub-page of Y" → \`page_move({ id: X, parent_id: Y })\`; "pull X back to the top level" → \`page_move({ id: X, to_top_level: true })\`. The page keeps its body/tags/sharing/index and its own sub-pages travel with it; it refuses a cycle (can't move under itself or its own descendant). This is for moving a page that ALREADY exists — to create a new page already nested, pass \`parent_id\` to \`page_create\`; to carve sub-pages OUT of one big page, use \`page_split\` / \`page_extract_section\`. \`page_move\` publishes immediately (it's structural, not a body edit — no draft step).
+- **Link one doc to another** with \`page_mention\` — a real @-mention, not a plain markdown link, so on commit it becomes a graph edge (a backlink on the target's "Referenced by", or a \`mentioned_in\` edge for an entity). "Reference the Q3 plan here" → \`page_mention({ page_id, target_id: <plan id>, lead_text: 'See also:' })\`; mention a person with \`ref: 'entity'\`. Writes to draft like the other block tools; the chip text defaults to the target's current title. Prefer this over typing a bare \`[title](url)\` when the intent is a genuine cross-reference — the bare link renders but builds no edge.`,
 
   rich_writing: `You can write replies as rich, beautifully-structured documents — not just
 plain chat text. The web assistant renders your reply through the same editor

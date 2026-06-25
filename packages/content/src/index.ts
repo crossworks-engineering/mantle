@@ -69,6 +69,11 @@ export {
   getPage,
   createPage,
   updatePage,
+  movePage,
+  PageCycleError,
+  addPageMention,
+  MentionTargetNotFoundError,
+  MentionAnchorNotFoundError,
   saveDraft,
   discardDraft,
   commitPage,
@@ -85,6 +90,7 @@ export {
   type UpdatePageInput,
   type SplitPageResult,
   type ExtractSectionResult,
+  type AddMentionResult,
 } from './pages';
 export {
   splitDocByHeading,
@@ -325,7 +331,12 @@ export {
 
 export { chunkDocText, type DocChunk } from './chunk';
 
-export { mentionRefs, type MentionRefs } from './mention-refs';
+export {
+  mentionRefs,
+  buildMentionParagraph,
+  type MentionRefs,
+  type MentionRef,
+} from './mention-refs';
 
 export {
   DEFAULT_PREFERENCES,

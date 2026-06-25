@@ -12,6 +12,8 @@ export {
   createPage,
   ParentPageNotFoundError,
   updatePage,
+  movePage,
+  PageCycleError,
   saveDraft,
   discardDraft,
   commitPage,
