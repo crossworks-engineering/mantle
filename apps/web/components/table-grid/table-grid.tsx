@@ -17,6 +17,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   ArrowDown,
   ArrowDownToLine,
@@ -226,8 +227,27 @@ export function TableGrid({ doc, onChange }: { doc: TableDoc; onChange: (next: T
 
   const hasAggregates = Object.keys(doc.aggregates ?? {}).length > 0;
 
+  // Row virtualization — only the rows in (and just around) the viewport are
+  // mounted. A 3000-row grid is ~54k stateful cells; rendering them all froze
+  // the tab for seconds on open. The scroll container is this component's root;
+  // off-screen rows are replaced by two spacer <tr>s carrying their height, so
+  // the scrollbar, sort, and footer totals all still see the full set.
+  const rows = table.getRowModel().rows;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 34,
+    overscan: 12,
+    getItemKey: (index) => rows[index]!.id,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const padTop = virtualRows.length ? virtualRows[0]!.start : 0;
+  const padBottom = virtualRows.length ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1]!.end : 0;
+  const colSpanAll = doc.columns.length + 2;
+
   return (
-    <div className="overflow-x-auto">
+    <div ref={scrollRef} className="h-full overflow-auto scrollbar-thin">
       <table className="w-full border-collapse text-sm">
         <thead>
           {table.getHeaderGroups().map((hg) => (
@@ -256,26 +276,44 @@ export function TableGrid({ doc, onChange }: { doc: TableDoc; onChange: (next: T
           ))}
         </thead>
         <tbody>
-          {table.getRowModel().rows.map((row) => (
-            <tr key={row.id} className="group border-b border-border hover:bg-muted/40">
-              <td className="px-2 py-1 text-center align-middle text-xs text-muted-foreground">
-                <button
-                  className="opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
-                  onClick={() => onChange(deleteRow(doc, row.id))}
-                  aria-label="Delete row"
-                  type="button"
-                >
-                  <Trash2 className="size-3.5" />
-                </button>
-              </td>
-              {row.getVisibleCells().map((cell) => (
-                <td key={cell.id} className="border-l border-border p-0 align-middle">
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </td>
-              ))}
-              <td aria-hidden />
+          {padTop > 0 && (
+            <tr aria-hidden>
+              <td colSpan={colSpanAll} style={{ height: padTop }} className="p-0" />
             </tr>
-          ))}
+          )}
+          {virtualRows.map((vr) => {
+            const row = rows[vr.index]!;
+            return (
+              <tr
+                key={row.id}
+                data-index={vr.index}
+                ref={rowVirtualizer.measureElement}
+                className="group border-b border-border hover:bg-muted/40"
+              >
+                <td className="px-2 py-1 text-center align-middle text-xs text-muted-foreground">
+                  <button
+                    className="opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
+                    onClick={() => onChange(deleteRow(doc, row.id))}
+                    aria-label="Delete row"
+                    type="button"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </td>
+                {row.getVisibleCells().map((cell) => (
+                  <td key={cell.id} className="border-l border-border p-0 align-middle">
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
+                <td aria-hidden />
+              </tr>
+            );
+          })}
+          {padBottom > 0 && (
+            <tr aria-hidden>
+              <td colSpan={colSpanAll} style={{ height: padBottom }} className="p-0" />
+            </tr>
+          )}
           {doc.rows.length === 0 && (
             <tr>
               <td colSpan={doc.columns.length + 2} className="px-3 py-6 text-center text-sm text-muted-foreground">

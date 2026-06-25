@@ -259,7 +259,7 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
       </div>
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="min-h-0 flex-1 overflow-auto scrollbar-thin">
+        <div className="min-h-0 flex-1 overflow-hidden">
           <TableGrid doc={doc} onChange={setDoc} />
         </div>
         {assistOpen && (

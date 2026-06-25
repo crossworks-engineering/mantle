@@ -197,6 +197,16 @@ panel (§4). `table-model` is a browser-safe leaf so the client reuses the share
 ops. API routes under `app/api/tables/` mirror `/pages`
 (`route` · `[id]` · `[id]/draft` · `[id]/commit` · `[id]/discard-draft` · `[id]/import` · `[id]/ai-assist`).
 
+**Large grids are virtualized** (`@tanstack/react-virtual`): the grid root is the
+scroll container and only the rows in/near the viewport are mounted — a 3,000-row
+× 18-col table keeps ~30 `<tr>`s (~120 cell inputs) in the DOM instead of ~54k
+stateful cells, which is what froze the tab for seconds on open. Two spacer `<tr>`s
+carry the off-screen height so the scrollbar, client sort, and totals footer still
+see every row. Because selecting a table is a **server round-trip** (the grid loads
+SSR), the clicked list item shows a spinner and the detail pane a "Loading table…"
+overlay (`pendingId`, cleared when the new selection lands) so the click never
+feels dead.
+
 ---
 
 ## 6. Export — `.xlsx`

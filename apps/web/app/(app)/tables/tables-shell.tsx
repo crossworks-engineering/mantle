@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, ChevronRight, PanelLeftClose, PanelLeftOpen, Plus, Search, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, PanelLeftClose, PanelLeftOpen, Plus, Search, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useListNav } from '@/lib/use-list-nav';
 import { useRealtime } from '@/components/realtime/use-realtime';
@@ -66,6 +66,17 @@ export function TablesShell(props: Props) {
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const selectedId = selectedTable?.id ?? null;
+
+  // Which table is mid-open. Selecting is a server round-trip (the full grid is
+  // loaded SSR), so without a cue the click feels dead for a beat. Set on click,
+  // cleared once the new selection lands.
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  useEffect(() => { setPendingId(null); }, [selectedId]);
+  const selectTable = (id: string) => {
+    if (id === selectedId) return;
+    setPendingId(id);
+    go({ selected: id });
+  };
 
   // Restore persisted width + collapse after mount (avoids SSR hydration drift).
   useEffect(() => {
@@ -189,13 +200,17 @@ export function TablesShell(props: Props) {
               tables.map((t) => (
                 <button
                   key={t.id}
-                  onClick={() => go({ selected: t.id })}
+                  onClick={() => selectTable(t.id)}
+                  aria-busy={pendingId === t.id}
                   className={cn(
                     'group flex w-full items-start gap-2 rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
                     selectedId === t.id && 'border-l-primary',
+                    pendingId === t.id && 'border-l-primary',
                   )}
                 >
-                  <span className="mt-0.5 shrink-0 text-base leading-none">{t.icon || '📊'}</span>
+                  <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-base leading-none">
+                    {pendingId === t.id ? <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden /> : (t.icon || '📊')}
+                  </span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium">{t.title}</div>
                     <div className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -247,7 +262,7 @@ export function TablesShell(props: Props) {
       )}
 
       {/* Right: the selected table's editor */}
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         {selectedTable ? (
           <TableDetailClient key={selectedTable.id} initial={selectedTable} embedded />
         ) : (
@@ -257,6 +272,13 @@ export function TablesShell(props: Props) {
               {tables.length === 0 ? 'Create a table to get started.' : 'Select a table.'}
             </div>
           </>
+        )}
+        {pendingId && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/60 backdrop-blur-[1px]">
+            <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" aria-hidden /> Loading table…
+            </span>
+          </div>
         )}
       </div>
 
