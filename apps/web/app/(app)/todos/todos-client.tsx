@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, ListTodo, Plus, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ListPager } from '@/components/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
+import { syncSelectionParam } from '@/lib/url-sync';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { TodoForm, emptyTodoForm, PRIORITIES, type Priority, type TodoPayload } from './todo-form';
@@ -64,6 +65,19 @@ export function TodosClient({
         ? { mode: 'view', id: initialTodos[0].id }
         : { mode: 'create' },
   );
+
+  // Reflect the selected todo in the URL (?selected=) as the user clicks
+  // around — copy-/share-/bookmark-able, and aligned with the `/n/<id>`
+  // permalink. `replaceState` (no fetch, no back-stack entry); skip the first
+  // run so a fresh load / deep link isn't rewritten before any interaction.
+  const didSyncMount = useRef(false);
+  useEffect(() => {
+    if (!didSyncMount.current) {
+      didSyncMount.current = true;
+      return;
+    }
+    syncSelectionParam('selected', sel?.mode === 'view' ? sel.id : null);
+  }, [sel]);
 
   // Re-seed on SSR nav (search / filter / page), keeping a deep-linked todo
   // that falls outside the current slice pinned at the top.

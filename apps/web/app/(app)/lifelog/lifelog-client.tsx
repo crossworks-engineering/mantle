@@ -29,6 +29,7 @@ import { useToast } from '@/components/ui/toast';
 import { TagPill } from '@/components/tag-pill';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
+import { syncSelectionParam } from '@/lib/url-sync';
 import { LifelogEditor, type LifelogRow } from './lifelog-editor';
 
 const ALL = '__all__';
@@ -99,6 +100,7 @@ export function LifelogClient({
   const selectEntry = (id: string) =>
     guard(() => {
       setSelectedId(id);
+      syncSelectionParam('selected', id);
       exitEdit();
     });
 
@@ -116,6 +118,7 @@ export function LifelogClient({
   const onSaved = (saved: LifelogRow) => {
     exitEdit();
     setSelectedId(saved.id);
+    syncSelectionParam('selected', saved.id);
     router.refresh();
   };
 
@@ -138,7 +141,10 @@ export function LifelogClient({
     }
     toast.success('Life log deleted');
     if (selected?.id === deleteTarget.id) exitEdit();
-    if (selectedId === deleteTarget.id) setSelectedId(null);
+    if (selectedId === deleteTarget.id) {
+      setSelectedId(null);
+      syncSelectionParam('selected', null);
+    }
     setDeleteTarget(null);
     router.refresh();
   };

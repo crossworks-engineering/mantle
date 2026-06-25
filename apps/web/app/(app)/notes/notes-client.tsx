@@ -33,6 +33,7 @@ import { useToast } from '@/components/ui/toast';
 import { TagPill } from '@/components/tag-pill';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
+import { syncSelectionParam } from '@/lib/url-sync';
 import { NoteEditor, type NoteRow } from './note-editor';
 
 type TagCount = { tag: string; count: number };
@@ -171,6 +172,7 @@ export function NotesClient({
   const selectNote = (id: string) =>
     guard(() => {
       setSelectedId(id);
+      syncSelectionParam('selected', id);
       exitEdit();
     });
 
@@ -192,6 +194,7 @@ export function NotesClient({
     setFocus(false);
     setDirty(false);
     setSelectedId(saved.id);
+    syncSelectionParam('selected', saved.id);
     startNav(() => router.refresh());
   };
 
@@ -235,7 +238,10 @@ export function NotesClient({
     }
     toast.success('Note deleted');
     if (selected?.id === deleteTarget.id) exitEdit();
-    if (selectedId === deleteTarget.id) setSelectedId(null);
+    if (selectedId === deleteTarget.id) {
+      setSelectedId(null);
+      syncSelectionParam('selected', null);
+    }
     setDeleteTarget(null);
     startNav(() => router.refresh());
   };
