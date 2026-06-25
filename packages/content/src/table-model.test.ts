@@ -13,6 +13,7 @@ import {
   emptyTableDoc,
   ensureTableDoc,
   findColumnByName,
+  groupRows,
   queryRows,
   resolveCell,
   setAggregate,
@@ -251,6 +252,55 @@ describe('queryRows (ad-hoc filter + sort)', () => {
   it('no filters returns every row in document order', () => {
     const doc = bigGrid();
     expect(queryRows(doc, {}).map((r) => r.id)).toEqual(['r1', 'r2', doc.rows[2]!.id]);
+  });
+});
+
+describe('groupRows (group by)', () => {
+  function catGrid(): TableDoc {
+    return {
+      columns: [
+        { id: 'c_svc', name: 'Service', type: 'text' },
+        { id: 'c_metal', name: 'Metallurgy', type: 'text' },
+        { id: 'c_press', name: 'Pressure', type: 'number' },
+      ],
+      rows: [
+        { id: 'r1', cells: { c_svc: 'Steam', c_metal: 'CS', c_press: 1000 } },
+        { id: 'r2', cells: { c_svc: 'Steam', c_metal: 'CS', c_press: 2000 } },
+        { id: 'r3', cells: { c_svc: 'Amine', c_metal: 'SS', c_press: 500 } },
+        { id: 'r4', cells: { c_svc: 'Amine', c_metal: 'CS', c_press: 3000 } },
+      ],
+      aggregates: {},
+      views: [],
+    };
+  }
+
+  it('buckets by a column in first-seen order with correct counts', () => {
+    const buckets = groupRows(catGrid(), { groupColIds: ['c_svc'] });
+    expect(buckets.map((b) => b.key)).toEqual([['Steam'], ['Amine']]);
+    expect(buckets.map((b) => b.rows.length)).toEqual([2, 2]);
+    expect(buckets[0]!.rows.map((r) => r.id)).toEqual(['r1', 'r2']);
+  });
+
+  it('per-group aggregates compose with computeAggregate over bucket.rows', () => {
+    const doc = catGrid();
+    const buckets = groupRows(doc, { groupColIds: ['c_svc'] });
+    const maxByService = buckets.map((b) => [b.key[0], computeAggregate(doc, 'c_press', 'max', b.rows)]);
+    expect(maxByService).toEqual([['Steam', 2000], ['Amine', 3000]]);
+  });
+
+  it('filters rows before grouping', () => {
+    const buckets = groupRows(catGrid(), {
+      groupColIds: ['c_metal'],
+      filters: [{ colId: 'c_press', op: 'gte', value: 1000 }],
+    });
+    // r3 (SS, 500) is filtered out → only a CS bucket of r1, r2, r4
+    expect(buckets.map((b) => b.key)).toEqual([['CS']]);
+    expect(buckets[0]!.rows.map((r) => r.id)).toEqual(['r1', 'r2', 'r4']);
+  });
+
+  it('supports a multi-column composite key', () => {
+    const buckets = groupRows(catGrid(), { groupColIds: ['c_svc', 'c_metal'] });
+    expect(buckets.map((b) => b.key)).toEqual([['Steam', 'CS'], ['Amine', 'SS'], ['Amine', 'CS']]);
   });
 });
 

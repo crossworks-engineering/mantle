@@ -238,6 +238,8 @@ export {
   applyView,
   queryRows,
   type RowQuery,
+  groupRows,
+  type GroupBucket,
   setView,
   COLUMN_TYPES,
   AGGREGATE_KINDS,

@@ -25,6 +25,7 @@ import {
   findColumnByName,
   findRow,
   getTable,
+  groupRows,
   listRows,
   listTables,
   queryRows,
@@ -85,6 +86,24 @@ function resolveCells(
     else unknownRefs.push(k);
   }
   return { cells, unknown: unknownRefs };
+}
+
+/** Make a clipped page self-announce. Every windowed read caps `rows` at 500;
+ *  the exact unbounded count lives in `total`. When more rows match than were
+ *  returned, surface `truncated`/`next_offset`/`hint` so a caller never mistakes
+ *  the returned slice for the whole result set (and knows to page or to read
+ *  the total for counts). Returns {} when nothing was clipped. */
+function pageMeta(total: number, offset: number, returned: number): Record<string, unknown> {
+  const more = total - (offset + returned);
+  if (more <= 0) return {};
+  const nextOffset = offset + returned;
+  return {
+    truncated: true,
+    next_offset: nextOffset,
+    hint:
+      `${more} more row(s) match beyond this page — only ${returned} of ${total} returned. ` +
+      `For a COUNT use the total (${total}); to read the rest, re-call with offset=${nextOffset}.`,
+  };
 }
 
 const DRAFT_REVIEW_HINT = (tableId: string) =>
@@ -448,6 +467,7 @@ const table_get: BuiltinToolDef = {
         total_rows: listed.total,
         offset: listed.offset,
         limit: listed.limit,
+        ...pageMeta(listed.total, listed.offset, listed.rows.length),
         ...(aggregates.length ? { aggregates } : {}),
       },
     };
@@ -483,7 +503,7 @@ const table_rows_list: BuiltinToolDef = {
       viewId: str(input.view_id).trim() || null,
     });
     ctx.step?.setOutput({ table_id: tableId, total: listed.total });
-    return { ok: true, output: { table_id: tableId, ...listed } };
+    return { ok: true, output: { table_id: tableId, ...listed, ...pageMeta(listed.total, listed.offset, listed.rows.length) } };
   },
 };
 
@@ -515,7 +535,7 @@ const table_query: BuiltinToolDef = {
   slug: 'table_query',
   name: 'Query rows by value',
   description:
-    "Find the rows that match a filter — the structured-lookup tool, the right way to answer a question about a specific record or subset of a big grid. `filters` is an array of `{ column, op, value }` (column by name OR id; op ∈ eq|neq|contains|gt|lt|gte|lte|empty|notEmpty), AND-ed by default — pass `match: \"any\"` to OR them. Optional `sort` ([{ column, dir }]) and `columns` (return just these columns). Returns ONLY the matching rows (id + cells keyed by column name, formula columns resolved) plus `total_matches`, so you can answer \"what's the design pressure for circuit 17-P08-D17003\" or \"which CMLs are below their retirement thickness\" directly instead of paging the whole table. Read-only — nothing is saved (unlike `table_set_view`). Reads the draft if one exists; pages large match sets via `offset`/`limit`.",
+    "Find the rows that match a filter — the structured-lookup tool, the right way to answer a question about a specific record or subset of a big grid. `filters` is an array of `{ column, op, value }` (column by name OR id; op ∈ eq|neq|contains|gt|lt|gte|lte|empty|notEmpty), AND-ed by default — pass `match: \"any\"` to OR them. Optional `sort` ([{ column, dir }]) and `columns` (return just these columns). Returns ONLY the matching rows (id + cells keyed by column name, formula columns resolved) plus `total_matches`, so you can answer \"what's the design pressure for circuit 17-P08-D17003\" or \"which CMLs are below their retirement thickness\" directly instead of paging the whole table. Pass `aggregate` ([{ column, kind }], kind ∈ sum|avg|count|min|max|filled|empty) to compute totals over the WHOLE matched set in one call — e.g. max design pressure among CS circuits — without reading the rows back. **`rows` is capped at 500 per call; `total_matches` is exact and unbounded — use it for COUNTS, and `offset` to page the rest (the response sets `truncated`/`next_offset` when clipped).** Read-only — nothing is saved (unlike `table_set_view`). Reads the draft if one exists. For grouped breakdowns (\"count by metallurgy\") use `table_aggregate`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -539,6 +559,18 @@ const table_query: BuiltinToolDef = {
         items: { type: 'object', properties: { column: { type: 'string' }, dir: { type: 'string', enum: ['asc', 'desc'] } }, required: ['column'] },
       },
       columns: { type: 'array', items: { type: 'string' }, description: 'restrict returned cells to these columns (id or name)' },
+      aggregate: {
+        type: 'array',
+        description: 'compute totals over the full matched set (not just the returned page)',
+        items: {
+          type: 'object',
+          properties: {
+            column: { type: 'string', description: 'column id or name' },
+            kind: { type: 'string', enum: AGGREGATE_KINDS.filter((k) => k !== 'none') },
+          },
+          required: ['column', 'kind'],
+        },
+      },
       offset: { type: 'number' },
       limit: { type: 'number', description: 'max matching rows to return (default 50, max 500)' },
     },
@@ -585,6 +617,22 @@ const table_query: BuiltinToolDef = {
       return { id: r.id, cells };
     });
 
+    // Aggregates over the FULL matched set (not the returned page) — so
+    // "max design pressure among CS circuits" is one call, cap-immune.
+    const ignoredAggregates: string[] = [];
+    const aggregates = (Array.isArray(input.aggregate) ? input.aggregate : [])
+      .map((a): { column: string; kind: AggregateKind; value: number | null } | null => {
+        const rec = a as Record<string, unknown>;
+        const col = resolveColumn(doc, str(rec.column));
+        const kind = str(rec.kind) as AggregateKind;
+        if (!col || !AGGREGATE_KINDS.includes(kind) || kind === 'none') {
+          ignoredAggregates.push(str(rec.column));
+          return null;
+        }
+        return { column: col.name, kind, value: computeAggregate(doc, col.id, kind, matched) };
+      })
+      .filter((a): a is { column: string; kind: AggregateKind; value: number | null } => a !== null);
+
     ctx.step?.setOutput({ table_id: tableId, matches: matched.length });
     return {
       ok: true,
@@ -595,6 +643,141 @@ const table_query: BuiltinToolDef = {
         limit,
         columns: projCols.map((c) => c.name),
         rows,
+        ...(aggregates.length ? { aggregates } : {}),
+        ...pageMeta(matched.length, offset, rows.length),
+        ...(ignoredFilters.length ? { ignored_filters: ignoredFilters } : {}),
+        ...(ignoredAggregates.length ? { ignored_aggregates: ignoredAggregates } : {}),
+      },
+    };
+  },
+};
+
+const table_aggregate: BuiltinToolDef = {
+  slug: 'table_aggregate',
+  name: 'Group + summarise rows',
+  description:
+    "Summarise a table by category — the GROUP BY tool. `group_by` is one or more columns (id or name); rows are bucketed by their combined value and each group returns its row `count` plus any `metrics` you ask for (`[{ column, kind }]`, kind ∈ sum|avg|count|min|max|filled|empty). Optional `filters` (same `{ column, op, value }` shape as table_query) restrict the rows first, `match` ANDs/ORs them, `sort` ({ by, dir } — by = 'count', a group column, or a metric column) orders the groups (default: most populous first), and `limit`/`offset` page the groups. Answers \"how many circuits per metallurgy\", \"max design pressure by service\", or \"what distinct damage types exist\" (group_by alone) in ONE call — no row paging. Read-only; reads the draft if present.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      table_id: { type: 'string' },
+      group_by: { type: 'array', items: { type: 'string' }, description: 'column(s) to group by (id or name)' },
+      metrics: {
+        type: 'array',
+        description: 'per-group aggregates to compute',
+        items: {
+          type: 'object',
+          properties: {
+            column: { type: 'string', description: 'column id or name' },
+            kind: { type: 'string', enum: AGGREGATE_KINDS.filter((k) => k !== 'none') },
+          },
+          required: ['column', 'kind'],
+        },
+      },
+      filters: {
+        type: 'array',
+        description: 'restrict rows before grouping (AND-ed unless match="any")',
+        items: {
+          type: 'object',
+          properties: { column: { type: 'string' }, op: { type: 'string', enum: [...FILTER_OPS] }, value: {} },
+          required: ['column', 'op'],
+        },
+      },
+      match: { type: 'string', enum: ['all', 'any'], description: "combine filters with AND ('all', default) or OR ('any')" },
+      sort: {
+        type: 'object',
+        properties: { by: { type: 'string', description: "'count', a group column, or a metric column" }, dir: { type: 'string', enum: ['asc', 'desc'] } },
+      },
+      offset: { type: 'number' },
+      limit: { type: 'number', description: 'max groups to return (default 50, max 500)' },
+    },
+    required: ['table_id', 'group_by'],
+  },
+  handler: async (input, ctx) => {
+    const tableId = str(input.table_id).trim();
+    if (!tableId) return { ok: false, error: 'table_id is required' };
+    const table = await getTable(ctx.ownerId, tableId);
+    if (!table) return { ok: false, error: `table ${tableId} not found` };
+    const doc = baseline(table);
+
+    const groupCols = strArr(input.group_by)
+      .map((r) => resolveColumn(doc, r))
+      .filter((c): c is Column => c !== null);
+    if (groupCols.length === 0) return { ok: false, error: 'group_by must name at least one existing column' };
+
+    const ignoredFilters: string[] = [];
+    const filters: Filter[] = (Array.isArray(input.filters) ? input.filters : [])
+      .map((f): Filter | null => {
+        const rec = f as Record<string, unknown>;
+        const col = resolveColumn(doc, str(rec.column));
+        if (!col) {
+          ignoredFilters.push(str(rec.column));
+          return null;
+        }
+        return { colId: col.id, op: str(rec.op) as Filter['op'], value: (rec.value ?? null) as CellValue };
+      })
+      .filter((f): f is Filter => f !== null);
+    const match = str(input.match) === 'any' ? 'any' : 'all';
+
+    const metricSpecs = (Array.isArray(input.metrics) ? input.metrics : [])
+      .map((m): { colId: string; column: string; kind: AggregateKind } | null => {
+        const rec = m as Record<string, unknown>;
+        const col = resolveColumn(doc, str(rec.column));
+        const kind = str(rec.kind) as AggregateKind;
+        return col && AGGREGATE_KINDS.includes(kind) && kind !== 'none' ? { colId: col.id, column: col.name, kind } : null;
+      })
+      .filter((m): m is { colId: string; column: string; kind: AggregateKind } => m !== null);
+
+    const buckets = groupRows(doc, { groupColIds: groupCols.map((c) => c.id), filters, match });
+    type Group = { key: Record<string, CellValue>; count: number; metrics?: { column: string; kind: AggregateKind; value: number | null }[] };
+    let groups: Group[] = buckets.map((b) => ({
+      key: Object.fromEntries(groupCols.map((c, i) => [c.name, b.key[i] ?? null])),
+      count: b.rows.length,
+      ...(metricSpecs.length
+        ? { metrics: metricSpecs.map((m) => ({ column: m.column, kind: m.kind, value: computeAggregate(doc, m.colId, m.kind, b.rows) })) }
+        : {}),
+    }));
+
+    // Order the groups. Default = most populous first; or by an explicit
+    // { by, dir } over count / a group column / a named metric.
+    const sortRec = input.sort && typeof input.sort === 'object' ? (input.sort as Record<string, unknown>) : null;
+    const by = sortRec ? str(sortRec.by) || 'count' : 'count';
+    const sign = sortRec && str(sortRec.dir) === 'asc' ? 1 : -1;
+    groups = [...groups].sort((a, b) => {
+      let va: CellValue, vb: CellValue;
+      if (by === 'count') {
+        va = a.count;
+        vb = b.count;
+      } else if (metricSpecs.some((m) => m.column === by)) {
+        va = a.metrics?.find((x) => x.column === by)?.value ?? null;
+        vb = b.metrics?.find((x) => x.column === by)?.value ?? null;
+      } else if (groupCols.some((c) => c.name === by)) {
+        va = a.key[by] ?? null;
+        vb = b.key[by] ?? null;
+      } else {
+        return 0;
+      }
+      const na = typeof va === 'number' ? va : null;
+      const nb = typeof vb === 'number' ? vb : null;
+      const cmp = na !== null && nb !== null ? na - nb : String(va ?? '').localeCompare(String(vb ?? ''));
+      return sign * cmp;
+    });
+
+    const offset = typeof input.offset === 'number' ? Math.max(0, input.offset) : 0;
+    const limit = typeof input.limit === 'number' ? Math.max(1, Math.min(input.limit, 500)) : 50;
+    const total = groups.length;
+    const page = groups.slice(offset, offset + limit);
+
+    ctx.step?.setOutput({ table_id: tableId, groups: total });
+    return {
+      ok: true,
+      output: {
+        table_id: tableId,
+        group_by: groupCols.map((c) => c.name),
+        total_groups: total,
+        offset,
+        groups: page,
+        ...pageMeta(total, offset, page.length),
         ...(ignoredFilters.length ? { ignored_filters: ignoredFilters } : {}),
       },
     };
@@ -913,6 +1096,7 @@ export const TABLE_TOOLS: BuiltinToolDef[] = [
   table_rows_list,
   table_row_get,
   table_query,
+  table_aggregate,
   table_row_add,
   table_row_update,
   table_row_delete,

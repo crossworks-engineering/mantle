@@ -578,6 +578,39 @@ export function queryRows(doc: TableDoc, q: RowQuery = {}): Row[] {
   return rows;
 }
 
+/** One group bucket: the group-key cell values (aligned, in order, to the
+ *  requested group columns) plus the rows that fell into it. */
+export type GroupBucket = { key: CellValue[]; rows: Row[] };
+
+/** Group rows by one or more columns, after an optional filter — the SQL
+ *  GROUP BY analog. Buckets keep first-seen order; callers compute per-group
+ *  aggregates over `bucket.rows` with `computeAggregate`. Pure. Lets a caller
+ *  answer "count of circuits by metallurgy" or "max design pressure per
+ *  service" in one pass instead of paging the whole grid and grouping by hand. */
+export function groupRows(
+  doc: TableDoc,
+  opts: { groupColIds: string[]; filters?: Filter[]; match?: 'all' | 'any' },
+): GroupBucket[] {
+  const cols = opts.groupColIds
+    .map((id) => findColumn(doc, id))
+    .filter((c): c is Column => c !== null);
+  const rows = queryRows(doc, { filters: opts.filters, match: opts.match });
+  const order: string[] = [];
+  const buckets = new Map<string, GroupBucket>();
+  for (const r of rows) {
+    const key = cols.map((c) => resolveCell(doc, r, c));
+    const k = JSON.stringify(key);
+    let bucket = buckets.get(k);
+    if (!bucket) {
+      bucket = { key, rows: [] };
+      buckets.set(k, bucket);
+      order.push(k);
+    }
+    bucket.rows.push(r);
+  }
+  return order.map((k) => buckets.get(k)!);
+}
+
 /** Upsert a saved view by id (or append a new one). */
 export function setView(doc: TableDoc, view: View): TableDoc {
   const views = [...(doc.views ?? [])];
