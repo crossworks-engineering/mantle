@@ -104,13 +104,14 @@ export function AppShell({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const body = (onNavigate?: () => void) => (
+  const body = (onNavigate?: () => void, collapsed = false) => (
     <>
       {contextCard}
       <UpdateBanner onNavigate={onNavigate} />
       <SidebarNav
         pendingApprovals={pendingApprovals}
         onNavigate={onNavigate}
+        collapsed={collapsed}
       />
       <ChangelogLink onNavigate={onNavigate} />
     </>
@@ -136,7 +137,7 @@ export function AppShell({
 
         {/* Desktop sidebar */}
         <aside className="fixed inset-y-0 left-0 z-30 hidden w-[var(--nav-w)] flex-col border-r bg-sidebar pt-16 transition-[width] duration-200 ease-in-out md:flex">
-          <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">{body()}</div>
+          <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">{body(undefined, navCollapsed)}</div>
           {/* Collapse toggle, pinned at the foot of the rail. */}
           <div className="shrink-0 border-t border-border p-2">
             <button
