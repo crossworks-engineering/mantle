@@ -6,6 +6,7 @@ live internet: it plans queries, searches, cross-checks, and hands back a cited
 synthesis. Saskia delegates to it; Saskia decides whether to keep the result.
 
 Companion docs:
+- [`reader.md`](./reader.md) — the page-reader sibling: *finds* pages here, *reads* a given URL there.
 - [`recall.md`](./recall.md) — the inward twin (memory recall).
 - [`architecture.md` §9b'](./architecture.md#9b-agent-delegation-invoke_agent)
   — the `invoke_agent` delegation path both agents ride on.
@@ -110,9 +111,10 @@ attributed to the researcher (not double-counted into Saskia's turn).
 - **Quality is Sonar's quality.** `web_search` returns what Perplexity finds;
   the researcher cross-checks and flags disagreement, but can't verify beyond
   what the web surfaces.
-- **No fetch-and-read of arbitrary pages.** It works from Sonar's synthesised
-  answer + citation URLs, not by crawling each page. Deeper source reading is a
-  possible follow-up (a `fetch_url` tool).
+- **No fetch-and-read of arbitrary pages itself.** The Researcher works from
+  Sonar's synthesised answer + citation URLs, not by crawling each page. To read
+  a specific page in full, Saskia delegates to the [Reader](./reader.md)
+  (`web_fetch`) instead — they're split on purpose: find vs. read.
 - **`researcher` ≠ `remy`.** Outward (web) vs inward (your archive) — kept as
   distinct personas on purpose so each has one clear job.
 
@@ -146,8 +148,9 @@ running `web_search`.
 
 ## 9. Future work
 
-- **`fetch_url`** — let the researcher read a specific page in full, not just
-  Sonar's synthesis.
+- ~~**`fetch_url`** — read a specific page in full~~ — shipped as the
+  [Reader](./reader.md) agent (`web_fetch`), a sibling specialist rather than a
+  tool on the Researcher.
 - **Auto-save toggle** — a per-agent option to persist every research run as a
   note (vs. the current Saskia-decides default).
 - **Dedicated search providers** — the adapter framework could add Exa/Tavily as

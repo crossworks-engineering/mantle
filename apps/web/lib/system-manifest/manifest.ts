@@ -493,6 +493,13 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['web_search', 'web_search_pro', 'web_fetch'],
   },
   {
+    slug: 'web-read',
+    name: 'Web page reader',
+    description:
+      'Open a web page by URL and read its readable content (web_fetch only — no search). The Reader specialist; lets the responder pull a specific page in as context without the search tiers.',
+    toolSlugs: ['web_fetch'],
+  },
+  {
     slug: 'email',
     name: 'Email',
     description: 'Send + read email (gated by the contacts allowlist).',
@@ -709,6 +716,23 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     systemPrompt: AGENT_PROMPTS['researcher']!,
     // P6: `research` (web_search) + `memory-core` for the node lookups it cites.
     toolGroupSlugs: ['research', 'memory-core'],
+    skillSlugs: [],
+    isDelegate: true,
+    params: { temperature: 0.3 },
+    priority: 100,
+  },
+  {
+    slug: 'reader',
+    name: 'Reader',
+    description: 'Web page reader — opens a URL and reads its content back as context for the responder.',
+    role: 'custom',
+    model: 'anthropic/claude-sonnet-4.6',
+    envModelVar: 'READER_MODEL',
+    systemPrompt: AGENT_PROMPTS['reader']!,
+    // Just `web-read` (web_fetch) — a focused page reader, deliberately without
+    // the search tiers (that's the Researcher) or memory-core (it works from the
+    // URL it's handed, like the Toolsmith works from docs).
+    toolGroupSlugs: ['web-read'],
     skillSlugs: [],
     isDelegate: true,
     params: { temperature: 0.3 },

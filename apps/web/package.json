@@ -1,6 +1,6 @@
 {
   "name": "@mantle/web",
-  "version": "0.56.2",
+  "version": "0.57.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -26,6 +26,7 @@
     "seed:coder": "tsx --env-file-if-exists=./.env.local scripts/seed-coder-agent.ts",
     "seed:remy": "tsx --env-file-if-exists=./.env.local scripts/seed-remy.ts",
     "seed:researcher": "tsx --env-file-if-exists=./.env.local scripts/seed-researcher.ts",
+    "seed:reader": "tsx --env-file-if-exists=./.env.local scripts/seed-reader.ts",
     "seed:docs": "tsx --env-file-if-exists=./.env.local scripts/seed-docs.ts",
     "seed:pages": "tsx --env-file-if-exists=./.env.local scripts/seed-pages-agent.ts",
     "seed:tables": "tsx --env-file-if-exists=./.env.local scripts/seed-tables-agent.ts",
