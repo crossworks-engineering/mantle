@@ -54,6 +54,7 @@ import { LIFELOG_TOOLS } from './builtins-lifelog';
 import { PEER_TOOLS } from './builtins-peers';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import { LOCATION_TOOLS } from './builtins-locations';
+import { EXPORT_TOOLS } from './builtins-export';
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -1165,6 +1166,10 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // one that calls Mapbox — renders a route polyline to an inline PNG artifact).
   // Reverse-geocoding / search / directions are seeded Mapbox HTTP tools.
   ...LOCATION_TOOLS,
+  // Export — render a page/note to Word (.docx) or a table to Excel (.xlsx) and
+  // save it under /files/exports. Shares @mantle/content's resolveExport with
+  // the web download button, so the assistant and the UI emit identical files.
+  ...EXPORT_TOOLS,
 ];
 
 // P6: there is no flat "default assistant grant" anymore. A generalist persona's

@@ -36,7 +36,9 @@
   "dependencies": {
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
+    "docx": "^9.5.1",
     "drizzle-orm": "^0.38.3",
+    "exceljs": "^4.4.0",
     "marked": "^18.0.4",
     "tz-lookup": "^6.1.25"
   },

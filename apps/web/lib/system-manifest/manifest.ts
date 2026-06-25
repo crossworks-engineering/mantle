@@ -434,6 +434,13 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['table_delete'],
   },
   {
+    slug: 'export',
+    name: 'Document export',
+    description:
+      'Render a page/note to Word (.docx) or a table to Excel (.xlsx) and save it under /files/exports. Non-destructive.',
+    toolSlugs: ['export_node'],
+  },
+  {
     slug: 'contacts',
     name: 'Contacts',
     description: 'The people/org index — also the email allowlist (docs/contacts.md). No delete (escape hatch).',
@@ -608,6 +615,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'page-share',
       'location',
       'profile',
+      'export',
     ],
     skillSlugs: ['tool_grounding', 'voice_reply', 'rich_writing', 'location_awareness', 'navigation', 'integrations'],
     params: { temperature: 0.7, max_tokens: 16000 },
@@ -649,7 +657,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // (delete/overwrite) + `page-share` reassemble the complete PAGE_TOOL_SLUGS
     // set; `files`/`memory-core` cover source reads + cross-context lookups.
     // (Approach A: this coarsens to full `files`/`memory-core`, a benign gain.)
-    toolGroupSlugs: ['pages', 'page-admin', 'page-share', 'files', 'memory-core'],
+    toolGroupSlugs: ['pages', 'page-admin', 'page-share', 'files', 'memory-core', 'export'],
     skillSlugs: ['rich_writing', 'page_editing'],
     isDelegate: true,
     assistSurface: 'pages',
@@ -667,7 +675,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     systemPrompt: AGENT_PROMPTS['tables']!,
     // P6: `tables` is the authoring subset (no `table-admin`/table_delete);
     // `files`/`memory-core` cover source reads + cross-context lookups.
-    toolGroupSlugs: ['tables', 'files', 'memory-core'],
+    toolGroupSlugs: ['tables', 'files', 'memory-core', 'export'],
     skillSlugs: ['table_authoring'],
     isDelegate: true,
     assistSurface: 'tables',

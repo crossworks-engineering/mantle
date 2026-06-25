@@ -96,6 +96,12 @@ const nextConfig: NextConfig = {
     // /apps code editor's Format route: prettier dynamically require()s its
     // parser plugins at runtime, so webpack must not try to bundle it.
     'prettier',
+    // Office export (page/note → .docx, table → .xlsx) — reached through the
+    // transpiled @mantle/content package. exceljs in particular does dynamic
+    // require()s; externalize both so the webpack build doesn't try to bundle
+    // them. Both are direct apps/web deps so the externalization resolves.
+    'docx',
+    'exceljs',
   ],
   // Externalize `@napi-rs/canvas` for the PRODUCTION server build (webpack).
   // `serverExternalPackages` alone doesn't externalize it when it's reached

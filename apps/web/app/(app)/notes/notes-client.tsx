@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { ShareControl } from '@/components/share/share-control';
+import { ExportButton } from '@/components/export/export-button';
 import { useToast } from '@/components/ui/toast';
 import { TagPill } from '@/components/tag-pill';
 import { cn } from '@/lib/utils';
@@ -516,6 +517,7 @@ function NotePreview({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <ExportButton nodeId={note.id} label="Word" />
           <ShareControl nodeId={note.id} />
           <Button variant="outline" size="sm" onClick={onEdit}>
             <Pencil /> Edit

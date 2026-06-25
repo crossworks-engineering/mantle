@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input';
 import { TagInput } from '@/components/tag-input';
 import { BackLink } from '@/components/layout/back-link';
 import { ShareControl } from '@/components/share/share-control';
+import { ExportButton } from '@/components/export/export-button';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { PageEditor } from '@/components/page-editor/page-editor';
 import { PageOutline } from '@/components/page-editor/page-outline';
@@ -646,6 +647,7 @@ export function PageDetailClient({
           >
             <StretchHorizontal /> Full width
           </Button>
+          <ExportButton nodeId={initial.id} label="Word" />
           <ShareControl nodeId={initial.id} beforeEnable={commit} />
           <Button
             size="sm"

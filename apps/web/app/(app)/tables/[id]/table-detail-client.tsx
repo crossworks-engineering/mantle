@@ -18,6 +18,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { ExportButton } from '@/components/export/export-button';
 import { TableGrid } from '@/components/table-grid/table-grid';
 import { TableAssistPanel } from '@/components/table-grid/table-assist-panel';
 import { ensureTableDoc, type TableDoc } from '@mantle/content/table-model';
@@ -242,6 +243,7 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
           <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={importing}>
             {importing ? <Loader2 className="animate-spin" /> : <Upload />} Import
           </Button>
+          <ExportButton nodeId={initial.id} label="Excel" />
           {dirty && (
             <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => void discard()}>
               <Undo2 /> Discard

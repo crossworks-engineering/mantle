@@ -310,6 +310,18 @@ export {
   type RenderPageEmailResult,
 } from './render-page-email';
 
+export { renderDocx, type RenderDocxOptions, type LoadedImage } from './render-docx';
+export { renderXlsx, type RenderXlsxOptions } from './render-xlsx';
+export {
+  resolveExport,
+  EXPORT_MIME,
+  EXPORTABLE_TYPES,
+  type ExportResult,
+  type ExportFormat,
+  type ExportKind,
+  type ResolveExportOptions,
+} from './export-node';
+
 export { chunkDocText, type DocChunk } from './chunk';
 
 export { mentionRefs, type MentionRefs } from './mention-refs';
