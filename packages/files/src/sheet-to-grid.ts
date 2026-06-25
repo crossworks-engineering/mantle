@@ -75,26 +75,34 @@ function normalize(v: unknown, type: InferredColumnType): string | number | bool
 }
 
 function parseSheet(name: string, rowsAoA: unknown[][]): ParsedSheet | null {
-  // Drop fully-empty leading rows; the first non-empty row is the header.
+  // Drop fully-empty rows; the first non-empty row is the header.
   const nonEmpty = rowsAoA.filter((r) => r.some((c) => !isBlank(c)));
   if (nonEmpty.length === 0) return null;
 
   const headerRow = nonEmpty[0]!;
   const width = nonEmpty.reduce((w, r) => Math.max(w, r.length), headerRow.length);
-  const headers: string[] = [];
-  for (let i = 0; i < width; i++) {
-    const h = headerRow[i];
-    headers.push(isBlank(h) ? `Column ${i + 1}` : String(h).trim());
-  }
-
   const bodyRaw = nonEmpty.slice(1);
-  // Column-major samples for type inference.
-  const columns: ParsedColumn[] = headers.map((hName, i) => ({
-    name: hName,
+
+  // Keep only columns that carry signal: a non-blank header OR at least one
+  // non-blank body cell. A single stray formatted cell out at column 16k would
+  // otherwise set `width` and balloon the grid with thousands of empty
+  // `Column N`s (real cause of degenerate checklist imports). Columns are kept
+  // in source order; placeholder names use the ORIGINAL index so they still map
+  // to where they sat in the sheet.
+  const keep: number[] = [];
+  for (let i = 0; i < width; i++) {
+    const headerBlank = isBlank(headerRow[i]);
+    const bodyBlank = bodyRaw.every((r) => isBlank(r[i]));
+    if (!headerBlank || !bodyBlank) keep.push(i);
+  }
+  if (keep.length === 0) return null;
+
+  const columns: ParsedColumn[] = keep.map((i) => ({
+    name: isBlank(headerRow[i]) ? `Column ${i + 1}` : String(headerRow[i]).trim(),
     type: inferType(bodyRaw.map((r) => r[i])),
   }));
 
-  const rows = bodyRaw.map((r) => columns.map((c, i) => normalize(r[i], c.type)));
+  const rows = bodyRaw.map((r) => keep.map((i, k) => normalize(r[i], columns[k]!.type)));
   return { name, columns, rows };
 }
 

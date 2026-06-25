@@ -54,6 +54,37 @@ describe('parseSheetToGrid', () => {
     expect(sheet!.rows[0]).toEqual(['x', 'y', null]);
   });
 
+  it('drops phantom all-empty columns from a stray far cell', () => {
+    // A real 2-column grid, but one body row has a lone value parked far out
+    // (a formatted/merged stray cell), widening the sheet. The empty columns
+    // between must be dropped, not imported as `Column 3..N`.
+    const wide: unknown[][] = [
+      ['Name', 'Qty'],
+      ['Widget', 2],
+      ['Gadget', 3],
+    ];
+    const strayRow: unknown[] = [];
+    strayRow[10] = 'x'; // stray value at column 11 → width balloons to 11
+    wide.push(strayRow);
+    const [sheet] = parseSheetToGrid(workbook({ S: wide }));
+    // Column 11 carries the stray value so it survives; the 8 empty columns
+    // (3..10) between are dropped.
+    expect(sheet!.columns.map((c) => c.name)).toEqual(['Name', 'Qty', 'Column 11']);
+  });
+
+  it('keeps a real-header column whose body is entirely empty', () => {
+    const buf = workbook({
+      S: [
+        ['Name', 'Notes'],
+        ['Ada', null],
+        ['Grace', null],
+      ],
+    });
+    const [sheet] = parseSheetToGrid(buf);
+    expect(sheet!.columns.map((c) => c.name)).toEqual(['Name', 'Notes']);
+    expect(sheet!.rows).toEqual([['Ada', null], ['Grace', null]]);
+  });
+
   it('parses CSV bytes as a single sheet', () => {
     const csv = 'Name,Age\nAda,36\nGrace,40\n';
     const sheets = parseSheetToGrid(Buffer.from(csv, 'utf-8'));
