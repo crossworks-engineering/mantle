@@ -253,6 +253,20 @@ describe('queryRows (ad-hoc filter + sort)', () => {
     const doc = bigGrid();
     expect(queryRows(doc, {}).map((r) => r.id)).toEqual(['r1', 'r2', doc.rows[2]!.id]);
   });
+
+  it('excludes empty cells from ordered comparisons (no magnitude)', () => {
+    let doc = grid();
+    doc = addRow(doc, { c_item: 'Blank', c_qty: 5 }).doc; // no c_price → empty
+    // lt/gt/gte/lte must NOT match the blank-price row (would have via '' < '100')
+    for (const op of ['lt', 'gte', 'gt', 'lte'] as const) {
+      const rows = queryRows(doc, { filters: [{ colId: 'c_price', op, value: 100 }] });
+      expect(rows.some((r) => r.cells.c_item === 'Blank')).toBe(false);
+    }
+    expect(queryRows(doc, { filters: [{ colId: 'c_price', op: 'lt', value: 100 }] }).map((r) => r.cells.c_item).sort()).toEqual(['Gadget', 'Widget']);
+    // `empty` still finds it; string ordered-compare on a populated text column is unaffected
+    expect(queryRows(doc, { filters: [{ colId: 'c_price', op: 'empty' }] }).map((r) => r.cells.c_item)).toEqual(['Blank']);
+    expect(queryRows(doc, { filters: [{ colId: 'c_item', op: 'gt', value: 'F' }] }).map((r) => r.cells.c_item).sort()).toEqual(['Gadget', 'Widget']);
+  });
 });
 
 describe('groupRows (group by)', () => {

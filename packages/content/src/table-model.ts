@@ -495,6 +495,13 @@ function matchesFilter(doc: TableDoc, row: Row, f: Filter): boolean {
   const value = resolveCell(doc, row, col);
   if (f.op === 'empty') return cellIsEmpty(value);
   if (f.op === 'notEmpty') return !cellIsEmpty(value);
+  // Ordered comparisons never hold for an empty cell — it has no magnitude or
+  // order (SQL NULL semantics). Without this, `lt 30000` on a blank cell would
+  // fall through to the string path below (`'' < '30000'` === true) and wrongly
+  // match every empty-valued row. eq/neq/contains keep their string behaviour.
+  if (f.op === 'gt' || f.op === 'lt' || f.op === 'gte' || f.op === 'lte') {
+    if (cellIsEmpty(value)) return false;
+  }
   const target = f.value ?? null;
   const numA = cellNumber(value);
   const numB = cellNumber(target);
