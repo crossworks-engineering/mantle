@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { pageExtensions } from '@/components/page-editor/extensions';
 import { richMarkdownToHtml } from '@/lib/rich-markdown';
@@ -17,7 +18,31 @@ import { richMarkdownToHtml } from '@/lib/rich-markdown';
  * (which is what gets us the callout NodeView + column/table layout for free).
  */
 export function RichText({ markdown }: { markdown: string }) {
+  const router = useRouter();
   const html = useMemo(() => richMarkdownToHtml(markdown), [markdown]);
+
+  // The shared page extensions set `link.openOnClick:false` (right for the
+  // editable canvas, where a click places the cursor). Here the reply is
+  // read-only, so links should actually navigate — including the `/n/<id>`
+  // permalinks responders embed to point at a document. Same-origin links go
+  // through the SPA router (no full reload); external links open in a new tab.
+  const onClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+      const anchor = (e.target as HTMLElement).closest('a');
+      const href = anchor?.getAttribute('href');
+      if (!href) return;
+      const url = new URL(href, window.location.origin);
+      if (url.origin === window.location.origin) {
+        e.preventDefault();
+        router.push(url.pathname + url.search + url.hash);
+      } else {
+        e.preventDefault();
+        window.open(url.href, '_blank', 'noopener,noreferrer');
+      }
+    },
+    [router],
+  );
 
   const editor = useEditor({
     extensions: pageExtensions,
@@ -45,5 +70,9 @@ export function RichText({ markdown }: { markdown: string }) {
     // (immediatelyRender:false means the editor is client-only).
     return null;
   }
-  return <EditorContent editor={editor} />;
+  return (
+    <div onClick={onClick}>
+      <EditorContent editor={editor} />
+    </div>
+  );
 }

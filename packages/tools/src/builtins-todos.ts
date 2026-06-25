@@ -19,6 +19,7 @@ import {
   deleteTodo,
   getTodo,
   listTodos,
+  nodeUrl,
   updateTodo,
   type TodoPriority,
   type TodoStatus,
@@ -74,7 +75,8 @@ const todo_get: BuiltinToolDef = {
   description:
     "Read one todo by id — full row including body, status, priority, due_at. " +
     "Use after `todo_list` or `search_nodes` returns the id you want details on. " +
-    "For browsing/filtering todos use `todo_list`.",
+    "For browsing/filtering todos use `todo_list`. " +
+    'Returns a `url` permalink — link the todo as a markdown `[title](url)` when you reference it to the user.',
   inputSchema: {
     type: 'object',
     properties: { id: { type: 'string' } },
@@ -85,7 +87,7 @@ const todo_get: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id required' };
     const row = await getTodo(ctx.ownerId, id);
     if (!row) return { ok: false, error: `todo ${id} not found` };
-    return { ok: true, output: row };
+    return { ok: true, output: { ...row, url: nodeUrl(row.id) } };
   },
 };
 

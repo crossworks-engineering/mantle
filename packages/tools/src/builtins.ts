@@ -34,6 +34,7 @@ import {
   upsertFile,
 } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
+import { nodeUrl } from '@mantle/content';
 import type { BuiltinToolDef } from './types';
 import { WORKER_DELEGATION_TOOLS } from './builtins-workers';
 import { EVENT_TOOLS } from './builtins-events';
@@ -90,7 +91,8 @@ const search_nodes: BuiltinToolDef = {
     'This finds whole NODES (returns their spine — title/tags/summary). To pull the relevant *passages* from inside long documents — the cheaper move for a "what does X say about Y" question, and the one that avoids reading whole files into context — use `search_chunks`. ' +
     "For **time-windowed** questions ('what arrived today', 'last 5 days of email', 'this week's events') use the dedicated list tools — `email_list`, `event_list`, `todo_list`, `note_list`, `page_list`, `file_list` — which ARE date-sorted and accept `since` / `window`. " +
     "For past **conversation** recall (replaying what was actually said) use `find_window` + `recall_window`. For the **public web** use `web_search`. " +
-    "Optional `branch` (ltree prefix, e.g. 'files.work') scopes; `type` filters to one node kind; `tags` narrows further.",
+    "Optional `branch` (ltree prefix, e.g. 'files.work') scopes; `type` filters to one node kind; `tags` narrows further. " +
+    'Each hit carries a `url` permalink — when you surface an item to the user, link it as a markdown `[title](url)` so they can click straight through to it.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -152,6 +154,7 @@ const search_nodes: BuiltinToolDef = {
           title: r.title,
           path: r.path,
           tags: r.tags,
+          url: nodeUrl(r.id),
           summary:
             typeof (r.data as Record<string, unknown> | null)?.summary === 'string'
               ? (r.data as Record<string, unknown>).summary
@@ -463,7 +466,8 @@ const node_read: BuiltinToolDef = {
   description:
     "Universal reader — read the full content of any node by id. Returns title, type, tags, path, summary, and the full `data` blob (markdown body for notes, body+location+starts_at for events, status+due_at for tasks, etc.). " +
     "**Prefer type-specific readers when available** — `note_get` / `event_get` / `todo_get` / `page_get` / `email_get` — they return cleaner shapes for their type. " +
-    "For nodes of `type='file'` the body lives in object storage — use `file_read` instead. This tool is the fallback that works for any node type (incl. secret, sermon, contact, telegram_message).",
+    "For nodes of `type='file'` the body lives in object storage — use `file_read` instead. This tool is the fallback that works for any node type (incl. secret, sermon, contact, telegram_message). " +
+    'Returns a `url` permalink — link the item as a markdown `[title](url)` when you reference it to the user.',
   inputSchema: {
     type: 'object',
     properties: { node_id: { type: 'string', format: 'uuid' } },
@@ -496,6 +500,7 @@ const node_read: BuiltinToolDef = {
         title: row.title,
         path: row.path,
         tags: row.tags,
+        url: nodeUrl(row.id),
         data: row.data,
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),

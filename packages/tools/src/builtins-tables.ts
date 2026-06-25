@@ -38,6 +38,7 @@ import {
   updateColumn,
   updateRow,
   updateTable,
+  nodeUrl,
   AGGREGATE_KINDS,
   COLUMN_TYPES,
   FILTER_OPS,
@@ -430,7 +431,7 @@ const table_get: BuiltinToolDef = {
   slug: 'table_get',
   name: 'Get a table',
   description:
-    "Read one table by id: its columns (id, name, type), a window of rows (default 50; page with `offset`), the total row count, and any column totals (aggregates). Reads the in-flight draft if one exists, else the published grid. **For just the rows addressable by id, `table_rows_list` is lighter.** Large grids page via `offset`/`limit`; the full result spills to the read_result store automatically.",
+    "Read one table by id: its columns (id, name, type), a window of rows (default 50; page with `offset`), the total row count, and any column totals (aggregates). Reads the in-flight draft if one exists, else the published grid. **For just the rows addressable by id, `table_rows_list` is lighter.** Large grids page via `offset`/`limit`; the full result spills to the read_result store automatically. Returns a `url` permalink — link the table as a markdown `[title](url)` when you reference it to the user.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -461,6 +462,7 @@ const table_get: BuiltinToolDef = {
       output: {
         id: table.id,
         title: table.title,
+        url: nodeUrl(table.id),
         has_draft: table.draft != null,
         columns: doc.columns.map((c) => ({ id: c.id, name: c.name, type: c.type, ...(c.formula ? { formula: c.formula } : {}) })),
         rows: listed.rows,

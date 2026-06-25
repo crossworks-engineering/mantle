@@ -32,6 +32,7 @@ import {
   revokeShare,
   getActiveShareForNode,
   shareUrlForToken,
+  nodeUrl,
 } from '@mantle/content';
 import { fileById, readFileById } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
@@ -391,7 +392,7 @@ const page_get: BuiltinToolDef = {
   slug: 'page_get',
   name: 'Get a page',
   description:
-    "Read one page by id. Returns the title, tags, summary, and the document as plaintext (`content`). To edit metadata only (title / tags / icon), use `page_update`. **For body styling or restyling on an existing page, delegate to the `pages` agent via `invoke_agent` — it writes to draft_doc only (preserves the live page) and is configured with the right model + safety rules for whole-doc transforms.** For block-level structure (which blocks exist, addressable by id) use `page_blocks_list` instead — lighter, no body returned.",
+    "Read one page by id. Returns the title, tags, summary, and the document as plaintext (`content`). To edit metadata only (title / tags / icon), use `page_update`. **For body styling or restyling on an existing page, delegate to the `pages` agent via `invoke_agent` — it writes to draft_doc only (preserves the live page) and is configured with the right model + safety rules for whole-doc transforms.** For block-level structure (which blocks exist, addressable by id) use `page_blocks_list` instead — lighter, no body returned. Returns a `url` permalink — link the page as a markdown `[title](url)` when you reference it to the user.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -412,6 +413,7 @@ const page_get: BuiltinToolDef = {
           title: page.title,
           tags: page.tags,
           summary: page.summary,
+          url: nodeUrl(page.id),
           content: docToText(page.doc),
         },
       };

@@ -26,6 +26,7 @@ import {
   getEvent,
   listEvents,
   loadProfilePreferences,
+  nodeUrl,
   updateEvent,
   type RecurFreq,
 } from '@mantle/content';
@@ -97,7 +98,8 @@ const event_get: BuiltinToolDef = {
   description:
     "Read one event by id — full row including body, location, starts_at, ends_at. " +
     "Use after `event_list` or `search_nodes` returns the id you want details on. " +
-    "For browsing/filtering events use `event_list`.",
+    "For browsing/filtering events use `event_list`. " +
+    'Returns a `url` permalink — link the event as a markdown `[title](url)` when you reference it to the user.',
   inputSchema: {
     type: 'object',
     properties: { id: { type: 'string' } },
@@ -108,7 +110,7 @@ const event_get: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id required' };
     const row = await getEvent(ctx.ownerId, id);
     if (!row) return { ok: false, error: `event ${id} not found` };
-    return { ok: true, output: row };
+    return { ok: true, output: { ...row, url: nodeUrl(row.id) } };
   },
 };
 

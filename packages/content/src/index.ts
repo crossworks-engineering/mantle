@@ -299,6 +299,7 @@ export {
   recordShareView,
   publicBaseUrl,
   shareUrlForToken,
+  nodeUrl,
   type ShareableType,
   type ShareSummary,
 } from './shares';

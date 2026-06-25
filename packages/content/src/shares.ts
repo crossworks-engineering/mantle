@@ -57,6 +57,18 @@ export function shareUrlForToken(token: string): string {
   return `${publicBaseUrl()}/s/${token}`;
 }
 
+/** Canonical in-app permalink for any node, by id alone — `<origin>/n/<id>`.
+ *  The `/n/[id]` route resolves the node's type and redirects to the right
+ *  surface (note → /notes?selected, page → /pages/<id>, …), so callers never
+ *  need to know the type. This is the link responders embed when they reference
+ *  an item to the user (markdown `[title](url)`), and it stays correct even if a
+ *  surface's URL shape changes. Absolute so it survives outside the web request
+ *  cycle (Telegram, email) and same-origin in the app (the chat renderer routes
+ *  same-origin links via the SPA router). */
+export function nodeUrl(id: string): string {
+  return `${publicBaseUrl()}/n/${id}`;
+}
+
 /** SQL predicate: a share row that is currently active (not revoked, not past
  *  its expiry). */
 function activePredicate() {

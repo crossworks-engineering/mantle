@@ -9,7 +9,7 @@
  * credentials use secret_create; for file-shaped content use file_create.
  */
 
-import { createNote, getNote, listNotes } from '@mantle/content';
+import { createNote, getNote, listNotes, nodeUrl } from '@mantle/content';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
 
@@ -108,7 +108,8 @@ const note_get: BuiltinToolDef = {
   description:
     "Fetch a single note by id — full row including the markdown content. Use after `note_list` or " +
     "`search_nodes` returns the id you want to read in full. For listing/browsing notes use `note_list`; " +
-    "for semantic search across all content (not just notes) use `search_nodes`.",
+    "for semantic search across all content (not just notes) use `search_nodes`. " +
+    'Returns a `url` permalink — link the note as a markdown `[title](url)` when you reference it to the user.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -123,7 +124,7 @@ const note_get: BuiltinToolDef = {
       const row = await getNote(ctx.ownerId, id);
       if (!row) return { ok: false, error: `note '${id}' not found` };
       ctx.step?.setOutput({ id: row.id, title: row.title });
-      return { ok: true, output: row };
+      return { ok: true, output: { ...row, url: nodeUrl(row.id) } };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }

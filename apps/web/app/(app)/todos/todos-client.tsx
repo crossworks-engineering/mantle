@@ -32,6 +32,8 @@ export function TodosClient({
   query,
   status,
   priority,
+  initialSelectedId,
+  initialSelectedTodo,
 }: {
   initialTodos: TodoRow[];
   total: number;
@@ -40,19 +42,38 @@ export function TodosClient({
   query: string;
   status: Status | 'all';
   priority: Priority | 'all';
+  initialSelectedId?: string | null;
+  initialSelectedTodo?: TodoRow | null;
 }) {
   const router = useRouter();
   const { pending: navPending, go } = useListNav();
   const toast = useToast();
-  const [todos, setTodos] = useState(initialTodos);
+  // A deep-linked todo (`?selected=`) may sit outside the current page slice;
+  // seed it into the list so the detail pane can render it immediately.
+  const [todos, setTodos] = useState(() =>
+    initialSelectedTodo && !initialTodos.some((t) => t.id === initialSelectedTodo.id)
+      ? [initialSelectedTodo, ...initialTodos]
+      : initialTodos,
+  );
   const [searchInput, setSearchInput] = useState(query);
   const [pending, startTransition] = useTransition();
   const [sel, setSel] = useState<Selection>(() =>
-    initialTodos[0] ? { mode: 'view', id: initialTodos[0].id } : { mode: 'create' },
+    initialSelectedId
+      ? { mode: 'view', id: initialSelectedId }
+      : initialTodos[0]
+        ? { mode: 'view', id: initialTodos[0].id }
+        : { mode: 'create' },
   );
 
-  // Re-seed on SSR nav (search / filter / page).
-  useEffect(() => setTodos(initialTodos), [initialTodos]);
+  // Re-seed on SSR nav (search / filter / page), keeping a deep-linked todo
+  // that falls outside the current slice pinned at the top.
+  useEffect(() => {
+    setTodos(
+      initialSelectedTodo && !initialTodos.some((t) => t.id === initialSelectedTodo.id)
+        ? [initialSelectedTodo, ...initialTodos]
+        : initialTodos,
+    );
+  }, [initialTodos, initialSelectedTodo]);
 
   // Debounced search → URL (?q=); resets to page 1.
   useEffect(() => {
