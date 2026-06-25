@@ -269,6 +269,16 @@ cache + `extract_cost_cap_micro_usd`.
   *(The MCP surface above is still read-only; only the in-app agent authors.)*
 - **Public sharing:** a page can be shared read-only at `/s/[token]` — see
   [`sharing.md`](./sharing.md).
+- **Export to Word (`.docx`):** a page (or a note) renders to a real Word
+  document via `renderDocx` in `@mantle/content` — it walks the same ProseMirror
+  tree the email renderer does, embedding page images through an injected loader;
+  notes reach it through `markdownToDoc`, so one renderer covers both.
+  `resolveExport()` dispatches by node type (`page`/`note` → `.docx`, `table` →
+  `.xlsx`; see [`tables.md`](./tables.md)). A **Download** button in the page /
+  note detail header hits `GET /api/export/[id]`; the `export_node` agent tool
+  saves under `/files/exports` (a dedicated `export` tool group granted to the
+  persona + Pages / Ledger). OOXML opens cleanly in Word / Google Docs /
+  LibreOffice.
 
 ---
 

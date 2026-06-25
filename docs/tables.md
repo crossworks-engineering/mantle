@@ -120,15 +120,34 @@ read this *before* editing, so you target rows by id), `table_row_get`,
 `table_query` (filter rows by value — `{column, op, value}` predicates, AND-ed
 or `match:"any"`, optional `sort`/`columns`; returns only matching rows + a
 total count. The structured-lookup path — "design pressure for circuit X" —
-instead of paging the whole grid. Read-only, persists nothing).
+instead of paging the whole grid. Read-only, persists nothing. Also takes
+`aggregate: [{column, kind}]`, computed over the **full matched set** — "max
+design pressure among CS circuits" is one cap-immune call, no rows read back).
+`table_aggregate` (the **GROUP BY** tool: `group_by` columns + optional
+`metrics`, `filters`, `match`, `sort` over count / a group column / a metric,
+and limit/offset paging — "count by metallurgy", "max design pressure by
+service", "distinct damage types" in one call. Built on a pure `groupRows` in
+`table-model.ts`. Read-only).
 Edits (→ `draft_data`, return a review hint): `table_row_add`/`update`/`delete`,
 `table_cell_set`, `table_column_add`/`update`/`delete`, `table_set_aggregate`
-("add totals"), `table_set_view`. Plus `table_create`, `table_from_file`
+("add totals"), `table_set_view`. Plus `export_node` (the table → `.xlsx` path —
+see §6). Plus `table_create`, `table_from_file`
 (spreadsheet import), `table_from_text` (build a grid from a pasted CSV/TSV/
 markdown block in one call — the "results → table" path), `table_update`
 (metadata), `table_commit`, `table_delete` (`requiresConfirm`). Cells accept column **name or id**. Oversized
 `table_get`/`table_rows_list` spill to the `read_result` store automatically.
 MCP exposes read-only `table_list`/`table_get`/`table_rows_list`.
+
+**Windowed reads announce incompleteness.** Every windowed read caps `rows` at
+500. `table_query`/`table_get`/`table_rows_list` emit `truncated` + `next_offset`
++ a `hint` whenever the returned slice is smaller than the true total (the exact
+unbounded count is in `total_matches`/`total_rows`), so an agent counting/maxing
+over the returned rows can't mistake a 500-row page for the whole set. For a
+count or extremum over a >500-match set, reach for the aggregate path instead of
+paging. **Ordered filters respect blanks:** `gt/lt/gte/lte` never match an empty
+cell (SQL NULL semantics — a blank has no order), so `Design Pressure < 1000`
+returns only real sub-1000 rows; `empty`/`notEmpty` are the way to ask about
+blanks.
 
 **"Ledger" — the Tables agent** (`seed:tables`, slug stays `tables`) +
 **`table_authoring` skill** (`seed:tables-skill`): the typed-grid analog of Pages
@@ -180,6 +199,25 @@ ops. API routes under `app/api/tables/` mirror `/pages`
 
 ---
 
-## 6. Deliberately deferred (not v1)
+## 6. Export — `.xlsx`
+
+A table renders to a real Excel workbook via `renderXlsx` (in `@mantle/content`,
+`exceljs`-backed): it maps the typed `TableDoc` to formatted cells —
+currency / percent / checkbox — and appends a **totals** row where a column has
+an aggregate. `resolveExport()` dispatches by node type (`table` → `.xlsx`,
+`page`/`note` → `.docx`; see [`pages.md`](./pages.md)). Two doorways:
+
+- **Web** — a **Download** button in the `/tables/<id>` detail header hits
+  `GET /api/export/[id]`.
+- **Agent** — the `export_node` tool saves the workbook under `/files/exports`;
+  it lives in a dedicated `export` tool group granted to the persona + Pages /
+  Ledger.
+
+OOXML opens cleanly in Excel / Google Sheets / LibreOffice — no separate ODF
+path.
+
+---
+
+## 7. Deliberately deferred (not v1)
 Public sharing of tables (`/s/[token]` + a `renderTableDoc`), row drag-reorder,
 cross-table relations/rollups, and real-time multi-cell collab.
