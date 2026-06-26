@@ -47,10 +47,23 @@ async function assistantTurnImpl(input: AssistantTurnInput): Promise<AssistantTu
   if (options?.agentSlug) DBOS.span?.setAttribute('mantle.agent_slug', options.agentSlug);
   DBOS.logger.info(`[assistant_turn] start (owner=${ownerId}, surface=${surface})`);
 
-  const result = await DBOS.runStep(() => runAssistantTurn(ownerId, text, options), {
-    name: 'run_turn',
-    retriesAllowed: false,
-  });
+  let result;
+  try {
+    result = await DBOS.runStep(() => runAssistantTurn(ownerId, text, options), {
+      name: 'run_turn',
+      retriesAllowed: false,
+    });
+  } catch (err) {
+    // The DBOS run record already captures status=ERROR + the error; add an
+    // explicit, queryable failure log + span attribute so "which runs had
+    // issues and why" is answerable without digging into the journal. The error
+    // re-throws so the workflow lands in ERROR (the client surfaces a failed
+    // turn off the workflow status — Step 5c/5d).
+    const msg = err instanceof Error ? err.message : String(err);
+    DBOS.span?.setAttribute('mantle.error', msg);
+    DBOS.logger.error(`[assistant_turn] FAILED (owner=${ownerId}, surface=${surface}): ${msg}`);
+    throw err;
+  }
 
   DBOS.span?.setAttribute('mantle.reply_chars', result.reply.length);
   DBOS.span?.setAttribute('mantle.artifact_count', result.artifacts.length);
