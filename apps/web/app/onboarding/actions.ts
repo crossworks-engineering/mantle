@@ -20,7 +20,6 @@ import {
   type PersonaGender,
   type PersonaPresetKey,
 } from '@mantle/content';
-import { db, agents, eq, and } from '@mantle/db';
 import { setApiKey, listApiKeys } from '@mantle/api-keys';
 import { resolveEmbeddingConfig, probeEmbeddingRoute } from '@mantle/embeddings';
 import { requireOwner } from '@/lib/auth';
@@ -35,6 +34,7 @@ import {
 import { checkSystemIntegrity } from '@/lib/system-manifest';
 import { markOnboarded } from '@/lib/onboarding';
 import { listAiWorkers } from '@/lib/ai-workers';
+import { getAgentBySlug } from '@/lib/agents';
 
 /** Persist the furthest step the user has reached (resume marker). */
 export async function setOnboardingStep(step: string): Promise<void> {
@@ -154,11 +154,7 @@ export async function runSanityChecks(): Promise<SanityCheck[]> {
   }
 
   // The assistant agent exists + is enabled (friendly named row).
-  const [agent] = await db
-    .select({ name: agents.name, enabled: agents.enabled })
-    .from(agents)
-    .where(and(eq(agents.ownerId, user.id), eq(agents.slug, PERSONA_AGENT_SLUG)))
-    .limit(1);
+  const agent = await getAgentBySlug(user.id, PERSONA_AGENT_SLUG);
   checks.push({
     label: 'Your assistant',
     ok: Boolean(agent?.enabled),

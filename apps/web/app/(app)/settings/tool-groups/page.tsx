@@ -1,7 +1,6 @@
-import { eq } from 'drizzle-orm';
-import { db, tools } from '@mantle/db';
 import { requireOwner } from '@/lib/auth';
 import { listToolGroups, listToolGroupBackrefs } from '@/lib/tool-groups';
+import { listToolsForOwner } from '@/lib/tools';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { ToolGroupsClient } from './tool-groups-client';
 
@@ -9,17 +8,7 @@ export default async function ToolGroupsPage() {
   const user = await requireOwner();
   const [groups, toolRows, backrefs] = await Promise.all([
     listToolGroups(user.id),
-    db
-      .select({
-        slug: tools.slug,
-        name: tools.name,
-        description: tools.description,
-        requiresConfirm: tools.requiresConfirm,
-        handler: tools.handler,
-      })
-      .from(tools)
-      .where(eq(tools.ownerId, user.id))
-      .orderBy(tools.slug),
+    listToolsForOwner(user.id),
     listToolGroupBackrefs(user.id),
   ]);
   // Map → plain object for the client boundary, and attach the fan-out.

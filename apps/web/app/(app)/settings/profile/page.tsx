@@ -1,11 +1,10 @@
-import { and, eq } from 'drizzle-orm';
 import { requireOwner } from '@/lib/auth';
 import {
   DEFAULT_PREFERENCES,
   loadProfilePreferences,
   formatInProfile,
 } from '@mantle/content';
-import { db, agents, channels } from '@mantle/db';
+import { listReminderCapableAgents } from '@/lib/agents';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { ProfileClient } from './profile-client';
 import { updatePreferencesAction } from './actions';
@@ -28,19 +27,7 @@ export default async function ProfilePage() {
   // Agents that can actually deliver a reminder — an enabled agent with an
   // enabled Telegram channel (docs/comms-channels.md). The user picks one as the
   // event-reminder sender.
-  const reminderAgents = await db
-    .selectDistinct({ slug: agents.slug, name: agents.name })
-    .from(agents)
-    .innerJoin(channels, eq(channels.agentId, agents.id))
-    .where(
-      and(
-        eq(agents.ownerId, user.id),
-        eq(agents.enabled, true),
-        eq(channels.type, 'telegram'),
-        eq(channels.enabled, true),
-      ),
-    )
-    .orderBy(agents.name);
+  const reminderAgents = await listReminderCapableAgents(user.id);
   // Render a sample "this is what now() looks like" so the operator
   // sees the effect of the chosen settings before saving anything
   // else that depends on them.

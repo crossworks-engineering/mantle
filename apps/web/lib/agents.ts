@@ -3,6 +3,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import {
   db,
   agents,
+  channels,
   applyPersonaUpdate,
   noteRef,
   type Agent,
@@ -124,6 +125,37 @@ export async function getAgent(userId: string, id: string): Promise<AgentSummary
     .where(and(eq(agents.id, id), eq(agents.ownerId, userId)))
     .limit(1);
   return row ? toSummary(row) : null;
+}
+
+/** One owner-scoped agent by its slug (the persona lookup), or null. */
+export async function getAgentBySlug(userId: string, slug: string): Promise<AgentSummary | null> {
+  const [row] = await db
+    .select()
+    .from(agents)
+    .where(and(eq(agents.slug, slug), eq(agents.ownerId, userId)))
+    .limit(1);
+  return row ? toSummary(row) : null;
+}
+
+/**
+ * Agents that can actually deliver a reminder — an enabled agent with an enabled
+ * Telegram channel (docs/comms-channels.md). The profile page lets the operator
+ * pick one as the event-reminder sender. Distinct, ordered by name.
+ */
+export function listReminderCapableAgents(userId: string): Promise<{ slug: string; name: string }[]> {
+  return db
+    .selectDistinct({ slug: agents.slug, name: agents.name })
+    .from(agents)
+    .innerJoin(channels, eq(channels.agentId, agents.id))
+    .where(
+      and(
+        eq(agents.ownerId, userId),
+        eq(agents.enabled, true),
+        eq(channels.type, 'telegram'),
+        eq(channels.enabled, true),
+      ),
+    )
+    .orderBy(agents.name);
 }
 
 export type CreateAgentInput = {
