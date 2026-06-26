@@ -102,3 +102,49 @@ export interface ToolGroupDTO {
 export interface ToolGroupWithRefs extends ToolGroupDTO {
   grantedTo: string[];
 }
+
+// ── AI workers ────────────────────────────────────────────────────────────────
+
+/** Worker kinds (mirrors the @mantle/db `ai_worker_kind` enum). Drift is caught
+ *  by `toAiWorkerDTO` in lib/ai-workers, whose mapping won't compile if the db
+ *  enum gains/renames a value. */
+export type AiWorkerKind =
+  | 'reflector'
+  | 'extractor'
+  | 'summarizer'
+  | 'tts'
+  | 'stt'
+  | 'vision'
+  | 'document'
+  | 'image_gen'
+  | 'embedding'
+  | 'search'
+  | 'search_advanced';
+
+/** An AI worker as returned by `GET /api/ai-workers`. `params` is jsonb (shape
+ *  varies by kind) — kept loose here; the form narrows per kind. */
+export interface AiWorkerDTO {
+  id: string;
+  slug: string;
+  name: string;
+  kind: AiWorkerKind;
+  provider: string;
+  model: string;
+  apiKeyId: string | null;
+  systemPrompt: string | null;
+  params: Record<string, unknown>;
+  enabled: boolean;
+  priority: number;
+  isDefault: boolean;
+  backupProvider: string | null;
+  backupModel: string | null;
+  backupApiKeyId: string | null;
+  backupEnabled: boolean;
+  baseUrl: string | null;
+  viaTailnet: boolean;
+  backupBaseUrl: string | null;
+  backupViaTailnet: boolean;
+  lastUsedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

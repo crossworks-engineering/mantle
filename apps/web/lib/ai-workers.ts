@@ -27,10 +27,45 @@ import {
   type AiWorkerParams,
   type NewAiWorker,
 } from '@mantle/db';
+import type { AiWorkerDTO } from '@mantle/client-types';
 
 // Resolution helpers live in @mantle/db so apps/agent can use them
 // without depending on apps/web. Re-exported here for convenience.
 export { getDefaultWorker, bumpWorkerUsage } from '@mantle/db';
+
+/**
+ * Serialize a worker row to its API/wire shape (dates → ISO strings). The
+ * explicit `AiWorkerDTO` return type makes this the drift checkpoint: if the
+ * db row (or the `ai_worker_kind` enum) diverges from the client contract, this
+ * mapping stops compiling. The `/api/ai-workers` routes return this.
+ */
+export function toAiWorkerDTO(w: AiWorker): AiWorkerDTO {
+  return {
+    id: w.id,
+    slug: w.slug,
+    name: w.name,
+    kind: w.kind,
+    provider: w.provider,
+    model: w.model,
+    apiKeyId: w.apiKeyId,
+    systemPrompt: w.systemPrompt,
+    params: w.params as Record<string, unknown>,
+    enabled: w.enabled,
+    priority: w.priority,
+    isDefault: w.isDefault,
+    backupProvider: w.backupProvider,
+    backupModel: w.backupModel,
+    backupApiKeyId: w.backupApiKeyId,
+    backupEnabled: w.backupEnabled,
+    baseUrl: w.baseUrl,
+    viaTailnet: w.viaTailnet,
+    backupBaseUrl: w.backupBaseUrl,
+    backupViaTailnet: w.backupViaTailnet,
+    lastUsedAt: w.lastUsedAt ? w.lastUsedAt.toISOString() : null,
+    createdAt: w.createdAt.toISOString(),
+    updatedAt: w.updatedAt.toISOString(),
+  };
+}
 
 export type CreateAiWorkerInput = {
   ownerId: string;
