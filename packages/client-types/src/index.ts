@@ -83,3 +83,22 @@ export interface ToolSettings {
   /** Unattended heartbeats park email/web calls for approval. */
   egressGate: boolean;
 }
+
+// ── Tool groups ───────────────────────────────────────────────────────────────
+
+/** A tool group — a named bundle of tool slugs granted to agents wholesale. */
+export interface ToolGroupDTO {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  toolSlugs: string[];
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** `GET /api/tool-groups` — each group plus which agent slugs grant it. */
+export interface ToolGroupWithRefs extends ToolGroupDTO {
+  grantedTo: string[];
+}
