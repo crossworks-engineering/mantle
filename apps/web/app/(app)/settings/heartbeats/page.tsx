@@ -1,8 +1,8 @@
-import { asc, eq } from 'drizzle-orm';
-import { db, agents, skills } from '@mantle/db';
 import { formatInProfile, loadProfilePreferences } from '@mantle/content';
 import { requireOwner } from '@/lib/auth';
 import { listHeartbeats } from '@/lib/heartbeats';
+import { listAgentOptions } from '@/lib/agents';
+import { listSkills } from '@/lib/skills';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { HeartbeatsClient, type HeartbeatFormattedTimes } from './heartbeats-client';
 
@@ -21,16 +21,8 @@ export default async function HeartbeatsPage() {
   const user = await requireOwner();
   const [rows, agentRows, skillRows, prefs] = await Promise.all([
     listHeartbeats(user.id),
-    db
-      .select({ slug: agents.slug, name: agents.name, role: agents.role })
-      .from(agents)
-      .where(eq(agents.ownerId, user.id))
-      .orderBy(asc(agents.slug)),
-    db
-      .select({ slug: skills.slug, name: skills.name, defaultState: skills.defaultState })
-      .from(skills)
-      .where(eq(skills.ownerId, user.id))
-      .orderBy(asc(skills.slug)),
+    listAgentOptions(user.id),
+    listSkills(user.id),
     loadProfilePreferences(user.id),
   ]);
 

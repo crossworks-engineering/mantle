@@ -1,8 +1,13 @@
 import { headers } from 'next/headers';
-import { asc, eq } from 'drizzle-orm';
 import { CheckCircle2, Cloud, Plus } from 'lucide-react';
-import { db, msAccounts, type MsDrive } from '@mantle/db';
-import { defaultRedirectUri, getConfigStatus, getMailAccount, listDrives } from '@mantle/microsoft';
+import {
+  defaultRedirectUri,
+  getConfigStatus,
+  getMailAccount,
+  listAccounts,
+  listDrives,
+  type MsDrive,
+} from '@mantle/microsoft';
 import { requireOwner } from '@/lib/auth';
 import { formatDateTime } from '@/lib/format-datetime';
 import { SetPageTitle } from '@/components/layout/page-title';
@@ -34,11 +39,7 @@ export default async function MicrosoftSettingsPage({
   const sp = (await searchParams) ?? {};
   const [status, origin] = await Promise.all([getConfigStatus(user.id), requestOrigin()]);
 
-  const rows = await db
-    .select()
-    .from(msAccounts)
-    .where(eq(msAccounts.userId, user.id))
-    .orderBy(asc(msAccounts.upn));
+  const rows = await listAccounts(user.id);
 
   // Drives + mail status per account, for the opt-in pickers.
   const drivesByAccount = new Map<string, MsDrive[]>(

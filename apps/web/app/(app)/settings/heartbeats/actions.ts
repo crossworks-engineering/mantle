@@ -16,17 +16,14 @@ import {
   createHeartbeat,
   deleteHeartbeat,
   getHeartbeat,
+  getHeartbeatRow,
   updateHeartbeat,
   type CreateHeartbeatInput,
+  type HeartbeatScheduleSpec,
+  type HeartbeatSurface,
+  type HeartbeatQuietHours,
 } from '@/lib/heartbeats';
-import type {
-  HeartbeatScheduleSpec,
-  HeartbeatSurface,
-  HeartbeatQuietHours,
-} from '@mantle/db';
 import { forceFire } from '@mantle/heartbeats';
-import { db, heartbeats } from '@mantle/db';
-import { and, eq } from 'drizzle-orm';
 
 function parseSchedule(formData: FormData): HeartbeatScheduleSpec {
   const kind = String(formData.get('schedule_kind') ?? '');
@@ -172,13 +169,8 @@ export async function fireNowAction(formData: FormData): Promise<void> {
   const user = await requireOwner();
   const id = String(formData.get('id') ?? '');
   if (!id) throw new Error('id required');
-  // Reload via the schema directly so we hand forceFire the full
-  // Heartbeat row shape (the lib summary trims some fields).
-  const [row] = await db
-    .select()
-    .from(heartbeats)
-    .where(and(eq(heartbeats.ownerId, user.id), eq(heartbeats.id, id)))
-    .limit(1);
+  // Reload the FULL row (the lib summary trims fields forceFire needs).
+  const row = await getHeartbeatRow(user.id, id);
   if (!row) throw new Error('heartbeat not found');
   await forceFire(row);
   revalidatePath('/settings/heartbeats');

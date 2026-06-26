@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation';
-import { countUsers } from '@mantle/db';
 import { LoginForm } from './login-form';
-import { getSessionUser } from '@/lib/auth';
+import { getSessionUser, isFirstRun } from '@/lib/auth';
 
 export default async function LoginPage({
   searchParams,
@@ -14,7 +13,7 @@ export default async function LoginPage({
 
   // Fresh install (empty auth.users) ⇒ first-run "create your account" instead
   // of sign-in. The signup endpoint enforces the same single-user gate server-side.
-  const firstRun = (await countUsers()) === 0;
+  const firstRun = await isFirstRun();
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-4">
