@@ -37,9 +37,41 @@ function withAuth(init?: RequestInit): RequestInit {
   };
 }
 
+/**
+ * Auth failure as seen by a *client* fetch. Two shapes, because routes gate two
+ * ways: `getOwnerOr401` → JSON 401, and `requireOwner` → 307 to /login that
+ * `fetch` silently follows (landing on the login HTML, 200). Without this, an
+ * expired session would parse as `{}` and render an empty screen instead of
+ * bouncing to login — a trap every converted screen would otherwise inherit.
+ */
+function isAuthFailure(res: Response): boolean {
+  if (res.status === 401) return true;
+  if (res.redirected) {
+    try {
+      return new URL(res.url).pathname.startsWith('/login');
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+/** Send the browser to login, preserving where we were. No-op on the server or
+ *  if we're already on the login screen (avoids a redirect loop). */
+function bounceToLogin(): void {
+  if (typeof window === 'undefined') return;
+  if (window.location.pathname.startsWith('/login')) return;
+  const next = window.location.pathname + window.location.search;
+  window.location.href = `/login?next=${encodeURIComponent(next)}`;
+}
+
 /** Fetch a JSON resource, returning the parsed body or throwing `ApiError`. */
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, withAuth(init));
+  if (isAuthFailure(res)) {
+    bounceToLogin();
+    throw new ApiError('unauthorized', 401);
+  }
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
     const msg = typeof body.error === 'string' ? body.error : `${res.status} ${res.statusText}`;
