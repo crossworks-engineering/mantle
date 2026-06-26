@@ -82,6 +82,9 @@ by default.
 | `/settings/ai-workers` | ✅ converted (built the API first; 2178-line form kept uncontrolled) |
 | `/settings/agents` | ✅ converted (6 data sources via existing REST; added tailnet-peers + test-chat endpoints) |
 | `/settings/heartbeats` | ✅ converted (built POST/PATCH/DELETE/fire + `/api/agents/options`; JSON body from the controlled form) |
+| `/settings/profile` | ✅ converted (new GET/PUT `/api/profile`; query-gate + inner form; live Intl preview) |
+| `/settings/discover` | ✅ converted (endpoints existed; accounts gate client-side; scan = useQuery, promote = mutation) |
+| `/settings/microsoft` | ✅ converted (built config + drives + mail + disconnect endpoints; sub-components self-fetch) |
 
 Convert more by following the reference; order by Electron priority.
 
@@ -132,3 +135,20 @@ Notes from the conversions so far:
 - **Picker needs a wider set than an existing GET returns**: `/api/agents` lists
   only conversational roles, but heartbeats bind any agent → added a dedicated
   `GET /api/agents/options` rather than overloading the existing list endpoint.
+- **Query gate + inner form** (profile): when form `useState` must seed from
+  fetched data, split into an outer component that runs the query + loading/error
+  gate and an inner form that takes the loaded data as props — the inner mounts
+  only once data exists, so its `useState` initializers are correct (no
+  seed-from-async-data effect dance).
+- **Self-fetching leaf components** (microsoft mail-toggle / drives-list): instead
+  of the parent fetching N children's data and prop-drilling, give each leaf its
+  own `useQuery` keyed by id + mutations with optimistic `setQueryData`. The
+  parent just lists ids. Mutations that need fresh server-derived state return it
+  from the endpoint and write it into the cache.
+- **`useSearchParams` needs Suspense** (microsoft / accounts read `?connected=`
+  / `?selected=`/`?mode=`): wrap the client component in `<Suspense>` in the
+  server page or `next build` errors with a CSR-bailout (see the
+  deploy-preflight memory).
+- **Live/expensive reads** (discover IMAP scan, microsoft drive discover): set
+  `staleTime: Infinity` + `refetchOnWindowFocus: false` so a tab refocus doesn't
+  silently re-run a slow probe; expose a manual Rescan via `refetch()`.
