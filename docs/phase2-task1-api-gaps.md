@@ -15,8 +15,9 @@ Audited at commit `fe27dbe` (2026-06-26). Raw grep returns **27 non-API files**,
 but **only 17 are real runtime-DB holes** — see "Not holes" at the bottom before
 touching anything.
 
-**Progress:** Group A (email/accounts, 8 holes) ✅ done in v0.60.0. **9 real holes
-remain** (groups B–F).
+**Progress:** Group A (email/accounts, 8 holes) ✅ v0.60.0 · Group F (4 rewires)
+✅ v0.60.1. **5 real holes remain**: Group B heartbeats (2), C microsoft (1),
+D node-detail (1), E login bootstrap (1).
 
 ---
 
@@ -67,12 +68,16 @@ Account responses are credential-redacted (`redactAccount` strips `imapConfigEnc
 
 - [ ] `app/login/page.tsx` — *page* — DB helper: `countUsers` → **NEW** tiny `GET /api/auth/bootstrap-state` (has-any-user flag); avoids shipping `@mantle/db` for a single count
 
-### F. Already-covered — 4 holes, REWIRE only (endpoint exists)
+### F. Already-covered — 4 holes ✅ DONE (v0.60.1)
 
-- [ ] `app/(app)/settings/profile/page.tsx` — *page* — DB: `agents, channels` → **REWIRE** to `/api/agents` + `/api/profile/reminder-channel`
-- [ ] `app/(app)/settings/tool-groups/page.tsx` — *page* — DB: `tools` → **REWIRE** to `/api/tools` (+ `/api/tool-groups`)
-- [ ] `app/onboarding/page.tsx` — *page* — DB: `agents` → **REWIRE** to `/api/agents`
-- [ ] `app/onboarding/actions.ts` — *server action* — DB: `agents` → **REWIRE** to `/api/agents` mutations
+Pure rewires — call the lib fn the existing endpoint already uses (an SSR page
+must not fetch its own HTTP API during render). Two owner-scoped helpers added to
+`@/lib/agents` (`getAgentBySlug`, `listReminderCapableAgents`); no new endpoints.
+
+- [x] `app/(app)/settings/profile/page.tsx` — *page* → `listReminderCapableAgents` (`@/lib/agents`)
+- [x] `app/(app)/settings/tool-groups/page.tsx` — *page* → `listToolsForOwner` (`@/lib/tools`)
+- [x] `app/onboarding/page.tsx` — *page* → `getAgentBySlug` (`@/lib/agents`)
+- [x] `app/onboarding/actions.ts` — *server action* → `getAgentBySlug` (`@/lib/agents`)
 
 ---
 
