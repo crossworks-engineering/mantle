@@ -2,8 +2,10 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
+import type { SkillDTO, SkillBackrefs } from '@mantle/client-types';
 import { apiFetch, apiSend } from '@/lib/api-fetch';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Switch } from '@/components/ui/switch';
@@ -22,25 +24,9 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 
-type SkillSummary = {
-  id: string;
-  slug: string;
-  name: string;
-  description: string;
-  instructions: string;
-  /** Template state shape heartbeats inherit. Empty {} by default. */
-  defaultState: Record<string, unknown>;
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
-
-/** Heartbeat back-references per skill slug. Empty array OR missing
- *  key both mean "no heartbeats reference this skill". */
-type HeartbeatBackrefs = Record<
-  string,
-  Array<{ slug: string; name: string; status: string }>
->;
+// Row + backref shapes come from the shared client-types package (the wire
+// contract), so this screen never imports @mantle/db just to name them.
+type SkillSummary = SkillDTO;
 
 type FormState = {
   slug: string;
@@ -96,7 +82,7 @@ export function SkillsClient() {
   const backrefsQuery = useQuery({
     queryKey: ['skills', 'backrefs'],
     queryFn: () =>
-      apiFetch<{ backrefs: HeartbeatBackrefs }>('/api/skills/backrefs').then((r) => r.backrefs),
+      apiFetch<{ backrefs: SkillBackrefs }>('/api/skills/backrefs').then((r) => r.backrefs),
   });
   const skills = skillsQuery.data ?? [];
   const heartbeatBackrefs = backrefsQuery.data ?? {};
@@ -203,8 +189,26 @@ export function SkillsClient() {
           </Button>
         </div>
         <div className="space-y-2 p-3 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
+          {/* Subtle, non-blocking notice: the list still works without the
+              heartbeat-usage badges if their fetch fails. */}
+          {backrefsQuery.isError && (
+            <p className="flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground">
+              <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
+              Couldn’t load heartbeat usage — badges hidden.
+              <button
+                type="button"
+                onClick={() => backrefsQuery.refetch()}
+                className="ml-auto shrink-0 underline underline-offset-2 hover:text-foreground"
+              >
+                Retry
+              </button>
+            </p>
+          )}
           {skillsQuery.isPending ? (
-            <p className="px-4 py-8 text-center text-sm text-muted-foreground">Loading skills…</p>
+            <div className="flex flex-col items-center gap-3 px-4 py-10 text-sm text-muted-foreground">
+              <Spinner size={28} />
+              Loading skills…
+            </div>
           ) : skillsQuery.isError ? (
             <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-6 text-center text-sm text-destructive">
               <p>Couldn’t load skills: {skillsQuery.error.message}</p>
