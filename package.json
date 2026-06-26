@@ -10,9 +10,10 @@
   },
   "scripts": {
     "predev": "bash scripts/preflight-dev.sh",
-    "dev": "concurrently -n web,mcp,worker,tg,files,docs,events,agent -c blue,magenta,green,yellow,gray,blue,white,cyan \"pnpm -C apps/web dev\" \"pnpm -C apps/mcp dev\" \"pnpm -C apps/web worker:dev\" \"pnpm -C apps/web worker:telegram:dev\" \"pnpm -C apps/web worker:files:dev\" \"pnpm -C apps/web worker:docs:dev\" \"pnpm -C apps/web worker:events:dev\" \"pnpm -C apps/agent dev\"",
+    "dev": "concurrently -n web,api,mcp,worker,tg,files,docs,events,agent -c blue,red,magenta,green,yellow,gray,blue,white,cyan \"pnpm -C apps/web dev\" \"pnpm -C apps/api dev\" \"pnpm -C apps/mcp dev\" \"pnpm -C apps/web worker:dev\" \"pnpm -C apps/web worker:telegram:dev\" \"pnpm -C apps/web worker:files:dev\" \"pnpm -C apps/web worker:docs:dev\" \"pnpm -C apps/web worker:events:dev\" \"pnpm -C apps/agent dev\"",
     "predev:web": "bash scripts/preflight-dev.sh",
     "dev:web": "pnpm -C apps/web dev",
+    "dev:api": "pnpm -C apps/api dev",
     "predev:agent": "bash scripts/preflight-dev.sh",
     "dev:agent": "pnpm -C apps/agent dev",
     "dev:mcp": "pnpm -C apps/mcp dev",

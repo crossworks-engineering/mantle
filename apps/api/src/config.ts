@@ -21,6 +21,17 @@ import { resolveSystemDatabaseUrl, RUNNER_QUEUE } from '@mantle/assistant-runtim
 // Re-exported here so the rest of apps/api keeps importing them from './config'.
 export { resolveSystemDatabaseUrl, RUNNER_QUEUE };
 
+/** DBOS admin server config. DBOS ships its own HTTP run-inspection server, but
+ *  we DON'T run it: run inspection is going to live in Mantle's /debug, built on
+ *  the same WorkflowStatus data (see runs.ts). Disabling it also drops the
+ *  default :3001 port collision with the web dev server. Opt in for ad-hoc use
+ *  with MANTLE_RUNNER_ADMIN_PORT=<n>. */
+function adminServerConfig(): { runAdminServer: boolean; adminPort?: number } {
+  const port = Number(process.env.MANTLE_RUNNER_ADMIN_PORT);
+  if (Number.isFinite(port) && port > 0) return { runAdminServer: true, adminPort: port };
+  return { runAdminServer: false };
+}
+
 /** Apply DBOS config. Call once, before DBOS.launch(). */
 export function configureDBOS(): void {
   const tracesEndpoint = process.env.OTLP_TRACES_ENDPOINT;
@@ -37,6 +48,7 @@ export function configureDBOS(): void {
     // OTel-standard attribute naming so spans interop with any collector.
     otelAttributeFormat: 'semconv',
     logLevel: process.env.DBOS_LOG_LEVEL ?? 'info',
+    ...adminServerConfig(),
   });
 }
 
