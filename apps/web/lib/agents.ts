@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { AgentDTO } from '@mantle/client-types';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import {
   db,
@@ -19,50 +20,13 @@ import {
  * /api/agents/* routes are the only callers.
  */
 
-export type AgentSummary = {
-  id: string;
-  slug: string;
-  name: string;
-  description: string | null;
-  role: Agent['role'];
-  /** Provider id — see packages/voice/src/providers.ts. */
-  provider: string;
-  model: string;
-  apiKeyId: string | null;
-  /** Optional BACKUP chat route (migration 0062). When backupEnabled and the
-   *  primary fails over (route-down / 429 / 5xx), the runtime answers here.
-   *  Unlike embeddings, a chat backup may be a DIFFERENT model. */
-  backupProvider: string | null;
-  backupModel: string | null;
-  backupApiKeyId: string | null;
-  backupEnabled: boolean;
-  /** Per-route host + tailnet flag (migration 0063). `baseUrl` overrides the
-   *  provider default host for this route; `viaTailnet` dispatches through the
-   *  Tailscale proxy. Both routes carry their own pair. */
-  baseUrl: string | null;
-  viaTailnet: boolean;
-  backupBaseUrl: string | null;
-  backupViaTailnet: boolean;
-  /** Per-agent voice: the `kind='tts'` ai_worker this agent speaks with.
-   *  null = fall back to the owner's default TTS worker (migration 0066). */
-  ttsWorkerId: string | null;
-  systemPrompt: string;
-  skillSlugs: string[];
-  toolGroupSlugs: string[];
-  memoryConfig: AgentMemoryConfig;
-  params: AgentParams;
-  avatar: AgentAvatar | null;
-  /** Layer-1 persona: what the agent has *learned* about the user (written by
-   *  the reflector + the update_persona tool). Includes the soft-retired audit
-   *  tail — the UI filters with activeNotes(). */
-  personaNotes: PersonaNote[];
-  priority: number;
-  enabled: boolean;
-  lastUsedAt: string | null;
-  usageCount: number;
-  createdAt: string;
-  updatedAt: string;
-};
+/**
+ * The summary the CRUD layer returns and `GET /api/agents` serializes. Aliased
+ * to the wire DTO in `@mantle/client-types` so the server shape and the client
+ * consumer can't drift — if `toSummary` stops matching the contract, this file
+ * stops compiling. Dates are ISO strings (see `toSummary`).
+ */
+export type AgentSummary = AgentDTO;
 
 function toSummary(a: Agent): AgentSummary {
   return {

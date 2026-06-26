@@ -157,3 +157,111 @@ export interface AiWorkerConfig {
   /** Online tailnet peer MagicDNS names (route base-URL datalist). */
   tailnetPeers: string[];
 }
+
+// ── Agents ────────────────────────────────────────────────────────────────────
+
+/** Conversational + worker roles an agent row can carry. Mirrors the
+ *  `agent_role` enum (`packages/db/src/schema/agents.ts`); the `/settings/agents`
+ *  page only lists the conversational ones. */
+export type AgentRole =
+  | 'assistant'
+  | 'responder'
+  | 'extractor'
+  | 'summarizer'
+  | 'reflector'
+  | 'custom';
+
+/** Per-agent generated avatar (style + seed → DiceBear). null = initials. */
+export interface AgentAvatarDTO {
+  style: string;
+  seed: string;
+}
+
+/** Memory/budget tuning (jsonb). All fields optional — empty = runtime defaults.
+ *  Replicated standalone (NOT re-exported from @mantle/db) to keep this package
+ *  zero-dep; the server aliases its `AgentMemoryConfig` against this so drift is
+ *  a compile error. */
+export interface AgentMemoryConfigDTO {
+  history_limit?: number;
+  history_window_hours?: number | null;
+  digest_limit?: number;
+  fact_limit?: number;
+  content_hit_limit?: number;
+  chunk_limit?: number;
+  inject_lifelog?: boolean;
+  summarize_threshold?: number;
+  summarize_batch?: number;
+  extract_types?: string[];
+  extract_facts?: boolean;
+  extract_cost_cap_micro_usd?: number | null;
+  delegate_to?: string[];
+  max_iterations?: number;
+  result_handling?: {
+    inline_max_kb?: number;
+    embed_min_kb?: number;
+    spill_max_kb?: number;
+  };
+}
+
+/** Sampling + voice-reply params (jsonb). */
+export interface AgentParamsDTO {
+  temperature?: number;
+  max_tokens?: number;
+  top_p?: number;
+  max_retries?: number;
+  voice?: {
+    enabled?: boolean;
+    name?: 'alloy' | 'echo' | 'fable' | 'nova' | 'onyx' | 'shimmer';
+    model?: 'tts-1' | 'tts-1-hd';
+    speed?: number;
+  };
+}
+
+/** One persona note (jsonb element). Soft-retired, never deleted — the read
+ *  path filters `retiredAt`. `at`/`retiredAt` are ISO strings. */
+export interface PersonaNoteDTO {
+  id?: string;
+  kind: 'style' | 'relationship' | 'correction';
+  content: string;
+  at: string;
+  source?: { type: 'turn' | 'digest'; id: string };
+  retiredAt?: string;
+  retiredReason?: 'superseded' | 'removed';
+  supersededBy?: string;
+}
+
+/** An agent as returned by `GET /api/agents` (and `…/[id]`). Dates are ISO
+ *  strings. The server aliases its `AgentSummary` to this so the wire shape and
+ *  the consuming client can't drift. */
+export interface AgentDTO {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  role: AgentRole;
+  provider: string;
+  model: string;
+  apiKeyId: string | null;
+  backupProvider: string | null;
+  backupModel: string | null;
+  backupApiKeyId: string | null;
+  backupEnabled: boolean;
+  baseUrl: string | null;
+  viaTailnet: boolean;
+  backupBaseUrl: string | null;
+  backupViaTailnet: boolean;
+  ttsWorkerId: string | null;
+  systemPrompt: string;
+  skillSlugs: string[];
+  toolGroupSlugs: string[];
+  memoryConfig: AgentMemoryConfigDTO;
+  params: AgentParamsDTO;
+  avatar: AgentAvatarDTO | null;
+  personaNotes: PersonaNoteDTO[];
+  priority: number;
+  enabled: boolean;
+  lastUsedAt: string | null;
+  usageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
