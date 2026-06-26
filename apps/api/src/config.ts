@@ -14,21 +14,12 @@
  */
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
+import { resolveSystemDatabaseUrl, RUNNER_QUEUE } from '@mantle/assistant-runtime';
 
-/** Resolve the DBOS system-database URL. Defaults to the same Postgres server
- *  as DATABASE_URL with the database name swapped to `mantle_dbos_sys` (DBOS
- *  creates it on first launch). Override wholesale with DBOS_SYSTEM_DATABASE_URL. */
-export function resolveSystemDatabaseUrl(): string {
-  const explicit = process.env.DBOS_SYSTEM_DATABASE_URL;
-  if (explicit) return explicit;
-  const appUrl = process.env.DATABASE_URL;
-  if (!appUrl) {
-    throw new Error('DATABASE_URL (or DBOS_SYSTEM_DATABASE_URL) must be set for the runner service');
-  }
-  const u = new URL(appUrl);
-  u.pathname = '/mantle_dbos_sys';
-  return u.toString();
-}
+// The system-DB resolver + queue name are the shared cross-process contract
+// (the web enqueuer uses the same), so they live in @mantle/assistant-runtime.
+// Re-exported here so the rest of apps/api keeps importing them from './config'.
+export { resolveSystemDatabaseUrl, RUNNER_QUEUE };
 
 /** Apply DBOS config. Call once, before DBOS.launch(). */
 export function configureDBOS(): void {
@@ -49,10 +40,9 @@ export function configureDBOS(): void {
   });
 }
 
-/** The single queue all assistant/agent runners dispatch on. Concurrency caps
- *  total in-flight runs across every apps/api process (the LLM-provider
- *  backpressure valve). Override the cap with MANTLE_RUNNER_CONCURRENCY. */
-export const RUNNER_QUEUE = 'mantle';
+/** Concurrency cap for the shared RUNNER_QUEUE — bounds total in-flight runs
+ *  across every apps/api process (the LLM-provider backpressure valve).
+ *  Override with MANTLE_RUNNER_CONCURRENCY. */
 export function runnerConcurrency(): number {
   const raw = Number(process.env.MANTLE_RUNNER_CONCURRENCY);
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 8;

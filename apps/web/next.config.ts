@@ -80,6 +80,7 @@ const nextConfig: NextConfig = {
   // runtime ("Cannot find native binding" otherwise). Works in plain Node
   // (the extractor) already; this fixes the web /assistant turn.
   serverExternalPackages: [
+    '@dbos-inc/dbos-sdk',
     'pg-boss',
     'postgres',
     'heic-convert',

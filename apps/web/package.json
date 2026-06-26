@@ -54,6 +54,7 @@
     "rotate:master-key": "tsx --env-file-if-exists=./.env.local scripts/rotate-master-key.ts"
   },
   "dependencies": {
+    "@dbos-inc/dbos-sdk": "^4.22.6",
     "@aws-sdk/client-s3": "^3.726.0",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/modifiers": "^9.0.0",

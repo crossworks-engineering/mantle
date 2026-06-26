@@ -155,6 +155,9 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.726.0
         version: 3.1047.0
+      '@dbos-inc/dbos-sdk':
+        specifier: ^4.22.6
+        version: 4.22.6
       '@dnd-kit/core':
         specifier: ^6.3.1
         version: 6.3.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)

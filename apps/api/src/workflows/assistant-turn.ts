@@ -18,16 +18,14 @@
  */
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { runAssistantTurn, type RunAssistantTurnOptions } from '@mantle/assistant-runtime';
-import { RUNNER_QUEUE } from '../config';
+import {
+  runAssistantTurn,
+  ASSISTANT_TURN_WORKFLOW,
+  RUNNER_QUEUE,
+  type AssistantTurnInput,
+} from '@mantle/assistant-runtime';
 
-/** Durable, serializable input for one assistant turn (carried in the DBOS
- *  journal). Mirrors runAssistantTurn's (ownerId, text, options) arguments. */
-export type AssistantTurnInput = {
-  ownerId: string;
-  text: string;
-  options?: RunAssistantTurnOptions;
-};
+export type { AssistantTurnInput };
 
 /** Compact result kept in the workflow journal. The reply text + artifacts live
  *  on the persisted assistant_messages rows (the client reads them from there /
@@ -63,7 +61,6 @@ async function assistantTurnImpl(input: AssistantTurnInput): Promise<AssistantTu
   return { inboundId: result.inbound.id, outboundId: result.outbound.id };
 }
 
-export const ASSISTANT_TURN_WORKFLOW = 'assistantTurnWorkflow';
 export const assistantTurnWorkflow = DBOS.registerWorkflow(assistantTurnImpl, {
   name: ASSISTANT_TURN_WORKFLOW,
 });
