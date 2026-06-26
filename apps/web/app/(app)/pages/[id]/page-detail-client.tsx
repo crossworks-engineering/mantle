@@ -19,6 +19,7 @@ import { computeDiffOverlay, type DiffOverlay } from '@mantle/content/page-diff'
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TagInput } from '@/components/tag-input';
+import { EmojiPicker } from '@/components/emoji-picker';
 import { BackLink } from '@/components/layout/back-link';
 import { ShareControl } from '@/components/share/share-control';
 import { ExportButton } from '@/components/export/export-button';
@@ -78,6 +79,7 @@ export function PageDetailClient({
   const initialDoc = (initial.draft ?? initial.doc) as JSONContent;
 
   const [title, setTitle] = useState(initial.title);
+  const [icon, setIcon] = useState<string | null>(initial.icon);
   const [tags, setTags] = useState<string[]>(initial.tags);
   const [width, setWidth] = useState<PageWidth>(initial.width);
   const [docDirty, setDocDirty] = useState(
@@ -111,7 +113,9 @@ export function PageDetailClient({
   const committedRef = useRef(JSON.stringify(initial.doc)); // last published doc (string)
   const committedDocRef = useRef<JSONContent>(initial.doc as JSONContent); // …as object (diff baseline)
   const draftSavedRef = useRef(JSON.stringify(initial.draft ?? initial.doc)); // last autosaved
-  const metaSavedRef = useRef(JSON.stringify({ title: initial.title, tags: initial.tags }));
+  const metaSavedRef = useRef(
+    JSON.stringify({ title: initial.title, tags: initial.tags, icon: initial.icon ?? '' }),
+  );
   const lastDraftAtRef = useRef(Date.now());
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const metaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -144,7 +148,9 @@ export function PageDetailClient({
   // ── Title / tags save live (cheap metadata, never indexes). ─────────
   const saveMeta = useCallback(async () => {
     if (deletedRef.current) return;
-    const payload = { title: title.trim() || 'Untitled page', tags };
+    // `icon: ''` clears it — updatePage stores the blank and rowOf normalises a
+    // blank back to null, so all the `icon ?? '📄'` fallbacks light up again.
+    const payload = { title: title.trim() || 'Untitled page', tags, icon: icon ?? '' };
     const s = JSON.stringify(payload);
     if (s === metaSavedRef.current) return;
     const res = await fetch(`/api/pages/${initial.id}`, {
@@ -153,7 +159,7 @@ export function PageDetailClient({
       body: JSON.stringify(payload),
     });
     if (res.ok) metaSavedRef.current = s;
-  }, [initial.id, title, tags]);
+  }, [initial.id, title, tags, icon]);
 
   // ── Commit: publish + index. The only path that touches the brain. ──
   const commit = useCallback(async () => {
@@ -227,7 +233,7 @@ export function PageDetailClient({
       return;
     }
     scheduleMeta();
-  }, [title, tags, scheduleMeta]);
+  }, [title, tags, icon, scheduleMeta]);
 
   // Leaving the editor flushes the draft + metadata — never commits.
   useEffect(() => {
@@ -676,6 +682,27 @@ export function PageDetailClient({
                 aiOpen || width !== 'wide' ? 'max-w-3xl' : 'max-w-none',
               )}
             >
+              {/* Icon — click to pick (or remove). Saves with the title/tags
+                  metadata; reflects to the tree/list/share via rowOf. */}
+              <div className="mb-1 flex justify-center">
+                <EmojiPicker
+                  value={icon}
+                  onSelect={setIcon}
+                  onClear={() => setIcon(null)}
+                  align="center"
+                  trigger={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      aria-label="Change page icon"
+                      title="Change icon"
+                      className="size-12 rounded-lg p-0 text-3xl leading-none hover:bg-accent"
+                    >
+                      {icon ?? '📄'}
+                    </Button>
+                  }
+                />
+              </div>
               <Input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}

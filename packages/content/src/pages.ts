@@ -67,7 +67,9 @@ function rowOf(n: Node): PageRow {
     id: n.id,
     parentId: n.parentId ?? null,
     title: n.title,
-    icon: typeof d.icon === 'string' ? d.icon : null,
+    // Treat a blank icon as "none" so a cleared icon (stored as '') falls back
+    // to the default glyph everywhere instead of rendering as empty.
+    icon: typeof d.icon === 'string' && d.icon.trim() ? d.icon : null,
     tags: n.tags ?? [],
     summary: typeof d.summary === 'string' ? d.summary : null,
     visibility: d.visibility === 'public' ? 'public' : 'private',
