@@ -1,8 +1,11 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
-import { Plus, Trash2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
+import type { ToolDTO, ToolGroupWithRefs } from '@mantle/client-types';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Switch } from '@/components/ui/switch';
@@ -22,16 +25,8 @@ import { useToast } from '@/components/ui/toast';
 import { ToolPicker, type ToolOption } from '@/components/tool-picker';
 import { cn } from '@/lib/utils';
 
-type ToolGroupSummary = {
-  id: string;
-  slug: string;
-  name: string;
-  description: string;
-  toolSlugs: string[];
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
+// List items carry the agent-grant fan-out from GET /api/tool-groups.
+type ToolGroupSummary = ToolGroupWithRefs;
 
 type FormState = {
   slug: string;
@@ -67,30 +62,62 @@ function slugify(s: string): string {
     .slice(0, 64);
 }
 
-/** `{ groupSlug → agentSlug[] }`: which agents grant each group. */
-type GrantedTo = Record<string, string[]>;
-
-export function ToolGroupsClient({
-  initialGroups,
-  availableTools,
-  grantedTo,
-}: {
-  initialGroups: ToolGroupSummary[];
-  availableTools: ToolOption[];
-  grantedTo: GrantedTo;
-}) {
-  const router = useRouter();
+export function ToolGroupsClient() {
+  const queryClient = useQueryClient();
   const toast = useToast();
-  const [groups, setGroups] = useState<ToolGroupSummary[]>(initialGroups);
+
+  // ── Reads ─────────────────────────────────────────────────────────────────
+  const groupsQuery = useQuery({
+    queryKey: ['tool-groups'],
+    queryFn: () =>
+      apiFetch<{ groups: ToolGroupSummary[] }>('/api/tool-groups').then((r) => r.groups),
+  });
+  // Shares the ['tools'] cache with /settings/tools — projected to the picker shape.
+  const toolsQuery = useQuery({
+    queryKey: ['tools'],
+    queryFn: () => apiFetch<{ tools: ToolDTO[] }>('/api/tools').then((r) => r.tools),
+  });
+  const groups = groupsQuery.data ?? [];
+  const availableTools: ToolOption[] = useMemo(
+    () =>
+      (toolsQuery.data ?? []).map((t) => ({
+        slug: t.slug,
+        name: t.name,
+        description: t.description,
+        requiresConfirm: t.requiresConfirm,
+        kind: t.handler.kind,
+      })),
+    [toolsQuery.data],
+  );
+
   const [editing, setEditing] = useState<
     { mode: 'create' } | { mode: 'edit'; group: ToolGroupSummary } | null
   >(null);
   const [form, setForm] = useState<FormState>(emptyForm());
   const [slugTouched, setSlugTouched] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ToolGroupSummary | null>(null);
-  const [pending, startTransition] = useTransition();
 
-  useEffect(() => setGroups(initialGroups), [initialGroups]);
+  // ── Mutations ───────────────────────────────────────────────────────────────
+  const saveMutation = useMutation({
+    mutationFn: (vars: { mode: 'create' | 'edit'; id?: string; body: Record<string, unknown> }) =>
+      vars.mode === 'create'
+        ? apiSend('/api/tool-groups', 'POST', vars.body)
+        : apiSend(`/api/tool-groups/${vars.id}`, 'PATCH', vars.body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tool-groups'] });
+      setEditing(null);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'save failed'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiSend(`/api/tool-groups/${id}`, 'DELETE'),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: ['tool-groups'] });
+      if (editing?.mode === 'edit' && editing.group.id === id) setEditing(null);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Delete failed.'),
+  });
 
   const onName = (v: string) =>
     setForm((f) => ({ ...f, name: v, slug: slugTouched ? f.slug : slugify(v) }));
@@ -107,7 +134,7 @@ export function ToolGroupsClient({
   };
   const close = () => setEditing(null);
 
-  const submit = async (e: React.FormEvent) => {
+  const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editing) return;
     const body = {
@@ -117,36 +144,18 @@ export function ToolGroupsClient({
       enabled: form.enabled,
       ...(editing.mode === 'create' ? { slug: form.slug.trim() } : {}),
     };
-    const url = editing.mode === 'create' ? '/api/tool-groups' : `/api/tool-groups/${editing.group.id}`;
-    const method = editing.mode === 'create' ? 'POST' : 'PATCH';
-    const res = await fetch(url, {
-      method,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(b.error ?? 'save failed');
-      return;
-    }
-    close();
-    startTransition(() => router.refresh());
+    saveMutation.mutate(
+      editing.mode === 'create'
+        ? { mode: 'create', body }
+        : { mode: 'edit', id: editing.group.id, body },
+    );
   };
 
-  const confirmDelete = async () => {
+  const confirmDelete = () => {
     const g = deleteTarget;
     if (!g) return;
     setDeleteTarget(null);
-    if (editing?.mode === 'edit' && editing.group.id === g.id) close();
-    const res = await fetch(`/api/tool-groups/${g.id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(b.error ?? 'Delete failed.');
-      return;
-    }
-    toast.success(`Deleted ${g.name}`);
-    setGroups((prev) => prev.filter((x) => x.id !== g.id));
-    startTransition(() => router.refresh());
+    deleteMutation.mutate(g.id, { onSuccess: () => toast.success(`Deleted ${g.name}`) });
   };
 
   return (
@@ -162,14 +171,26 @@ export function ToolGroupsClient({
           </Button>
         </div>
         <div className="space-y-2 p-3 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
-          {groups.length === 0 ? (
+          {groupsQuery.isPending ? (
+            <div className="flex flex-col items-center gap-3 px-4 py-10 text-sm text-muted-foreground">
+              <Spinner size={28} />
+              Loading tool groups…
+            </div>
+          ) : groupsQuery.isError ? (
+            <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-6 text-center text-sm text-destructive">
+              <p>Couldn’t load tool groups: {groupsQuery.error.message}</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => groupsQuery.refetch()}>
+                Retry
+              </Button>
+            </div>
+          ) : groups.length === 0 ? (
             <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
               No tool groups yet. Click <strong>New</strong> to bundle some tools.
             </p>
           ) : (
             groups.map((g) => {
               const selected = editing?.mode === 'edit' && editing.group.id === g.id;
-              const agents = grantedTo[g.slug] ?? [];
+              const agents = g.grantedTo ?? [];
               return (
                 <button
                   key={g.id}
@@ -293,7 +314,21 @@ export function ToolGroupsClient({
 
               <div className="space-y-1.5">
                 <Label>Tools in this group</Label>
-                {availableTools.length === 0 ? (
+                {toolsQuery.isError ? (
+                  <p className="flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground">
+                    <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
+                    Couldn’t load the tool list.
+                    <button
+                      type="button"
+                      onClick={() => toolsQuery.refetch()}
+                      className="ml-auto shrink-0 underline underline-offset-2 hover:text-foreground"
+                    >
+                      Retry
+                    </button>
+                  </p>
+                ) : toolsQuery.isPending ? (
+                  <p className="text-xs text-muted-foreground">Loading tools…</p>
+                ) : availableTools.length === 0 ? (
                   <p className="text-xs text-muted-foreground">
                     No tools registered yet. Start <code>pnpm dev</code> to seed built-ins.
                   </p>
@@ -315,7 +350,7 @@ export function ToolGroupsClient({
                 <Button type="button" variant="outline" onClick={close}>
                   Cancel
                 </Button>
-                <SubmitButton pending={pending}>
+                <SubmitButton pending={saveMutation.isPending}>
                   {editing.mode === 'create' ? 'Create group' : 'Save group'}
                 </SubmitButton>
               </div>
@@ -334,7 +369,7 @@ export function ToolGroupsClient({
             <AlertDialogTitle>Delete “{deleteTarget?.name}”?</AlertDialogTitle>
             <AlertDialogDescription>
               {(() => {
-                const refs = deleteTarget ? (grantedTo[deleteTarget.slug] ?? []) : [];
+                const refs = deleteTarget?.grantedTo ?? [];
                 if (refs.length === 0) return 'This cannot be undone.';
                 return `Granted to ${refs.length} agent${refs.length === 1 ? '' : 's'} (${refs.join(', ')}) — the grant will be removed from ${refs.length === 1 ? 'it' : 'them'}. This cannot be undone.`;
               })()}
