@@ -15,9 +15,12 @@ Audited at commit `fe27dbe` (2026-06-26). Raw grep returns **27 non-API files**,
 but **only 17 are real runtime-DB holes** — see "Not holes" at the bottom before
 touching anything.
 
-**Progress:** Group A (email/accounts, 8 holes) ✅ v0.60.0 · Group F (4 rewires)
-✅ v0.60.1. **5 real holes remain**: Group B heartbeats (2), C microsoft (1),
-D node-detail (1), E login bootstrap (1).
+**Progress:** ✅ **ALL 17 real holes closed.** A (email) v0.60.0 · F (rewires)
+v0.60.1 · B/C/D/E (heartbeats/microsoft/node/login) v0.60.2. The §6 grep now
+returns only the documented false positives (comment-only + `import type`).
+**Remaining for full DoD:** relocate the 6 type-only imports to a client-safe
+package (cosmetic — no runtime DB), and HTTP mutation parity for heartbeats
+(group B follow-up).
 
 ---
 
@@ -51,22 +54,29 @@ Account responses are credential-redacted (`redactAccount` strips `imapConfigEnc
 > not (the reads were inline Drizzle in the pages). The package layer was built
 > as part of this task.
 
-### B. Heartbeats — 2 holes (no `/api/heartbeats` exists)
+### B. Heartbeats — 2 holes ✅ DONE (v0.60.2)
 
-- [ ] `app/(app)/settings/heartbeats/page.tsx` — *page* — DB: `agents, skills` → **NEW** `GET /api/heartbeats` (agents/skills already have endpoints; needs a heartbeats list)
-- [ ] `app/(app)/settings/heartbeats/actions.ts` — *server action* — DB: `heartbeats` → **NEW** `POST/PATCH/DELETE /api/heartbeats`
+- [x] `app/(app)/settings/heartbeats/page.tsx` — *page* → `listHeartbeats` + `listAgentOptions` (new, all agents) + `listSkills`
+- [x] `app/(app)/settings/heartbeats/actions.ts` — *server action* → `getHeartbeatRow` (new, full row for `forceFire`) + shape-type re-exports
+- Endpoints: `GET /api/heartbeats`, `GET /api/heartbeats/[id]`. **Follow-up:** HTTP
+  mutation parity (`POST/PATCH/DELETE`) — deferred; needs a Zod schema for the
+  schedule/surface union (none exists in `@mantle/heartbeats` yet). The settings
+  mutations are db-free server actions, so the hole itself is closed.
 
-### C. Microsoft — 1 hole (only OAuth routes exist, no data endpoint)
+### C. Microsoft — 1 hole ✅ DONE (v0.60.2)
 
-- [ ] `app/(app)/settings/microsoft/page.tsx` — *page* — DB: `msAccounts` → **NEW** `GET /api/microsoft/accounts` (drives list already a client comp consuming this)
+- [x] `app/(app)/settings/microsoft/page.tsx` — *page* → `@mantle/microsoft` `listAccounts`
+- Endpoint: `GET /api/microsoft/accounts` (`redactMsAccount` strips sealed OAuth tokens → `hasAccessToken`/`hasRefreshToken` flags).
 
-### D. Node detail — 1 hole
+### D. Node detail — 1 hole ✅ DONE (v0.60.2)
 
-- [ ] `app/(app)/n/[id]/page.tsx` — *page* — DB: `nodes` → **VERIFY then NEW** `GET /api/nodes/[id]` (content endpoints exist for notes/events/etc.; confirm none already returns a raw node before adding)
+- [x] `app/(app)/n/[id]/page.tsx` — *page* → `@mantle/content` `getOwnedNode`
+- Verified no existing endpoint returned a raw node; added `GET /api/nodes/[id]` (type-blind id+type resolver, 404 on leaked id).
 
-### E. Auth bootstrap — 1 hole
+### E. Auth bootstrap — 1 hole ✅ DONE (v0.60.2)
 
-- [ ] `app/login/page.tsx` — *page* — DB helper: `countUsers` → **NEW** tiny `GET /api/auth/bootstrap-state` (has-any-user flag); avoids shipping `@mantle/db` for a single count
+- [x] `app/login/page.tsx` — *page* → `lib/auth` `isFirstRun` (wraps `countUsers`)
+- Endpoint: `GET /api/auth/bootstrap-state` (public, pre-auth; only a boolean leaks).
 
 ### F. Already-covered — 4 holes ✅ DONE (v0.60.1)
 
