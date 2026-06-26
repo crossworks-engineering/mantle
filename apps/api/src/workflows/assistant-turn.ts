@@ -6,15 +6,19 @@
  * resumes via DBOS auto-recovery.
  *
  * GRANULARITY (important): today the whole turn runs as ONE durable step. That
- * already delivers the headline win (execution decoupled from the request) plus
- * queue/concurrency/recovery/run-timing. It does NOT yet give per-tool
- * idempotency: a process crash mid-turn re-runs the entire turn on recovery,
- * which can re-fire side-effecting tools (e.g. re-send an email). True
- * tool-level journaling needs runToolLoop (in @mantle/agent-runtime) instrumented
- * to emit each LLM call + tool dispatch as its own DBOS step — a deliberate
- * later refinement. Because of that, step retries are OFF here: a failed turn
- * surfaces as a failure (Step 5 writes status='failed' on the row), it is not
- * silently replayed.
+ * already delivers the headline win (execution moves onto this dedicated service
+ * and survives a web-process restart via DBOS recovery) plus
+ * queue/concurrency/run-timing. It does NOT yet give per-tool idempotency: a
+ * process crash mid-turn re-runs the entire turn on recovery, which can re-fire
+ * side-effecting tools (e.g. re-send an email). True tool-level journaling needs
+ * runToolLoop (in @mantle/agent-runtime) instrumented to emit each LLM call +
+ * tool dispatch as its own DBOS step — a deliberate later refinement. Because of
+ * that, step retries are OFF here: a failed turn surfaces as a failure, it is
+ * not silently replayed.
+ *
+ * The web route enqueues this workflow and AWAITS its result (relaying the same
+ * response shape it returned when the turn ran in-process), so the step returns
+ * a plain serializable DTO ready for that relay.
  */
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
@@ -23,17 +27,10 @@ import {
   ASSISTANT_TURN_WORKFLOW,
   RUNNER_QUEUE,
   type AssistantTurnInput,
+  type AssistantTurnRunResult,
 } from '@mantle/assistant-runtime';
 
-export type { AssistantTurnInput };
-
-/** Compact result kept in the workflow journal. The reply text + artifacts live
- *  on the persisted assistant_messages rows (the client reads them from there /
- *  over SSE), so the journal only needs the row ids. */
-export type AssistantTurnRunResult = {
-  inboundId: string;
-  outboundId: string;
-};
+export type { AssistantTurnInput, AssistantTurnRunResult };
 
 async function assistantTurnImpl(input: AssistantTurnInput): Promise<AssistantTurnRunResult> {
   const { ownerId, text, options } = input;
@@ -47,31 +44,51 @@ async function assistantTurnImpl(input: AssistantTurnInput): Promise<AssistantTu
   if (options?.agentSlug) DBOS.span?.setAttribute('mantle.agent_slug', options.agentSlug);
   DBOS.logger.info(`[assistant_turn] start (owner=${ownerId}, surface=${surface})`);
 
-  let result;
+  let dto: AssistantTurnRunResult;
   try {
-    result = await DBOS.runStep(() => runAssistantTurn(ownerId, text, options), {
-      name: 'run_turn',
-      retriesAllowed: false,
-    });
+    // Map to the serializable DTO INSIDE the step so what gets journaled (and
+    // returned to the route) is plain JSON — dates stringified, rows reduced to
+    // what the chat UI needs — with no Date round-trip surprises.
+    dto = await DBOS.runStep(
+      async (): Promise<AssistantTurnRunResult> => {
+        const r = await runAssistantTurn(ownerId, text, options);
+        return {
+          inbound: {
+            id: r.inbound.id,
+            text: r.inbound.text,
+            createdAt: r.inbound.createdAt.toISOString(),
+          },
+          outbound: {
+            id: r.outbound.id,
+            text: r.outbound.text,
+            model: r.outbound.model,
+            createdAt: r.outbound.createdAt.toISOString(),
+          },
+          reply: r.reply,
+          artifacts: r.artifacts,
+        };
+      },
+      { name: 'run_turn', retriesAllowed: false },
+    );
   } catch (err) {
     // The DBOS run record already captures status=ERROR + the error; add an
     // explicit, queryable failure log + span attribute so "which runs had
     // issues and why" is answerable without digging into the journal. The error
-    // re-throws so the workflow lands in ERROR (the client surfaces a failed
-    // turn off the workflow status — Step 5c/5d).
+    // re-throws so the workflow lands in ERROR and the route's getResult()
+    // rejects — the web layer surfaces it as the turn's error.
     const msg = err instanceof Error ? err.message : String(err);
     DBOS.span?.setAttribute('mantle.error', msg);
     DBOS.logger.error(`[assistant_turn] FAILED (owner=${ownerId}, surface=${surface}): ${msg}`);
     throw err;
   }
 
-  DBOS.span?.setAttribute('mantle.reply_chars', result.reply.length);
-  DBOS.span?.setAttribute('mantle.artifact_count', result.artifacts.length);
+  DBOS.span?.setAttribute('mantle.reply_chars', dto.reply.length);
+  DBOS.span?.setAttribute('mantle.artifact_count', dto.artifacts.length);
   DBOS.logger.info(
-    `[assistant_turn] done (inbound=${result.inbound.id}, outbound=${result.outbound.id}, ` +
-      `reply_chars=${result.reply.length})`,
+    `[assistant_turn] done (inbound=${dto.inbound.id}, outbound=${dto.outbound.id}, ` +
+      `reply_chars=${dto.reply.length})`,
   );
-  return { inboundId: result.inbound.id, outboundId: result.outbound.id };
+  return dto;
 }
 
 export const assistantTurnWorkflow = DBOS.registerWorkflow(assistantTurnImpl, {

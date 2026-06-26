@@ -24,4 +24,5 @@ export {
   RUNNER_QUEUE,
   resolveSystemDatabaseUrl,
   type AssistantTurnInput,
+  type AssistantTurnRunResult,
 } from './contract';

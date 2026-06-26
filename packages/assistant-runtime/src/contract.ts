@@ -8,6 +8,7 @@
  * engine-free; callers pass these strings to the DBOS APIs themselves.
  */
 
+import type { ToolArtifact } from '@mantle/tools';
 import type { RunAssistantTurnOptions } from './run-turn';
 
 /** DBOS workflow name the runner registers under and enqueuers target. */
@@ -24,6 +25,17 @@ export type AssistantTurnInput = {
   ownerId: string;
   text: string;
   options?: RunAssistantTurnOptions;
+};
+
+/** Serializable result the runner returns (and journals). A plain, JSON-safe
+ *  DTO — dates pre-stringified, the persisted rows reduced to what the chat UI
+ *  needs — so the enqueuer (the web route) can relay it directly with the same
+ *  response shape it returned when the turn ran in-process. */
+export type AssistantTurnRunResult = {
+  inbound: { id: string; text: string; createdAt: string };
+  outbound: { id: string; text: string; model: string | null; createdAt: string };
+  reply: string;
+  artifacts: ToolArtifact[];
 };
 
 /**

@@ -22,7 +22,14 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireOwnerWithSource } from '@/lib/auth';
-import { runAssistantTurn } from '@/lib/assistant';
+import { getDbosClient } from '@/lib/dbos-client';
+import {
+  ASSISTANT_TURN_WORKFLOW,
+  RUNNER_QUEUE,
+  type AssistantTurnInput,
+  type AssistantTurnRunResult,
+  type RunAssistantTurnOptions,
+} from '@mantle/assistant-runtime';
 import { sanitizeLocationPing, type LocationPing } from '@mantle/content';
 import { extractAttachmentForTurn } from '@mantle/agent-runtime';
 import {
@@ -179,14 +186,14 @@ function pruneRecentTurns() {
 export async function POST(req: Request): Promise<NextResponse> {
   const toResponse = (r: TurnResult) => NextResponse.json(r.body, { status: r.status });
   const key = req.headers.get('idempotency-key');
-  if (!key) return toResponse(await runTurn(req));
+  if (!key) return toResponse(await runTurn(req, null));
 
   const cached = recentTurns.get(key);
   if (cached && Date.now() - cached.at < TURN_DEDUP_TTL_MS) return toResponse(cached.result);
 
   let pending = inflightTurns.get(key);
   if (!pending) {
-    pending = runTurn(req);
+    pending = runTurn(req, key);
     inflightTurns.set(key, pending);
     pending
       .then((result) => {
@@ -198,7 +205,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   return toResponse(await pending);
 }
 
-async function runTurn(req: Request): Promise<TurnResult> {
+async function runTurn(req: Request, idempotencyKey: string | null): Promise<TurnResult> {
   // requireOwnerWithSource() before the try so an auth redirect propagates
   // rather than being swallowed as a 500. (The route is also gated by
   // middleware.) `source` tags the turn 'web' (browser) vs 'mobile' (companion).
@@ -271,7 +278,7 @@ async function runTurn(req: Request): Promise<TurnResult> {
     // vision-capable responder). The runtime is transcript-default: it folds
     // the text in and only inlines raw pixels when there's no transcript.
     // The persisted inbound row shows the user's own typed text (displayText).
-    const { inbound, outbound, reply, artifacts } = await runAssistantTurn(user.id, userText, {
+    const options: RunAssistantTurnOptions = {
       agentSlug,
       channel: source,
       ...(location ? { location } : {}),
@@ -287,7 +294,26 @@ async function runTurn(req: Request): Promise<TurnResult> {
             imageNodeId: attachment.nodeId || undefined,
           }
         : {}),
-    });
+    };
+    const input: AssistantTurnInput = { ownerId: user.id, text: userText, options };
+
+    // Run the turn on the dedicated apps/api runner: enqueue the durable
+    // workflow, then await its result. The work EXECUTES in apps/api (off this
+    // request, journaled by DBOS), so it survives a web-process restart and a
+    // client disconnect — if this await is abandoned (the user navigates away),
+    // the workflow still completes and persists, and the client reconciles via
+    // syncLatest on return. The idempotency-key (when present) is the workflow
+    // id, so a retried submit replays the same run instead of starting a new one.
+    const client = await getDbosClient();
+    const handle = await client.enqueue<(i: AssistantTurnInput) => Promise<AssistantTurnRunResult>>(
+      {
+        workflowName: ASSISTANT_TURN_WORKFLOW,
+        queueName: RUNNER_QUEUE,
+        ...(idempotencyKey ? { workflowID: idempotencyKey } : {}),
+      },
+      input,
+    );
+    const { inbound, outbound, reply, artifacts } = await handle.getResult();
     // Forward inbound image METADATA (no base64) — the client already holds
     // the bytes and renders them from a local object URL, so echoing the full
     // base64 back would just waste bandwidth. Documents carry no artifact.
@@ -300,14 +326,14 @@ async function runTurn(req: Request): Promise<TurnResult> {
         inbound: {
           id: inbound.id,
           text: inbound.text,
-          createdAt: inbound.createdAt.toISOString(),
+          createdAt: inbound.createdAt,
           artifacts: inboundArtifacts,
         },
         outbound: {
           id: outbound.id,
           text: outbound.text,
           model: outbound.model,
-          createdAt: outbound.createdAt.toISOString(),
+          createdAt: outbound.createdAt,
         },
         reply,
         artifacts,
