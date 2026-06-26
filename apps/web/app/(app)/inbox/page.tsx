@@ -1,8 +1,14 @@
 import Link from 'next/link';
 import { cookies } from 'next/headers';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { Mail, Plug, UserCheck } from 'lucide-react';
-import { db, emailAccounts, emails, emailAttachments } from '@mantle/db';
+import {
+  INBOX_LIMIT,
+  folderFacets,
+  getMessageWithAttachments,
+  listMessages,
+  navAccounts,
+  setReadStatus,
+} from '@mantle/email';
 import { loadContactGate } from '@mantle/content';
 import { requireOwner } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
@@ -12,8 +18,6 @@ import { MailClient } from '@/components/mail/mail-client';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { folderLabel } from '@/components/mail/folder-icon';
 import type { FolderLink } from '@/components/mail/mail-nav';
-
-const INBOX_LIMIT = 100;
 
 type Search = { account?: string; folder?: string; tab?: string; email?: string };
 
@@ -37,11 +41,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const params = await searchParams;
 
   // Gate: no connected accounts → connect prompt.
-  const accounts = await db
-    .select({ id: emailAccounts.id, address: emailAccounts.address, provider: emailAccounts.provider })
-    .from(emailAccounts)
-    .where(eq(emailAccounts.userId, user.id))
-    .orderBy(emailAccounts.address);
+  const accounts = await navAccounts(user.id);
   if (accounts.length === 0) {
     return (
       <div className="mx-auto max-w-xl space-y-4 px-6 py-16 text-center">
@@ -93,34 +93,14 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
 
   // Auto-mark-read on view. Owner-scoped + idempotent (no-op once read).
   const selectedId = params.email;
-  if (selectedId) {
-    const owned = db
-      .select({ id: emailAccounts.id })
-      .from(emailAccounts)
-      .where(eq(emailAccounts.userId, user.id));
-    await db
-      .update(emails)
-      .set({ isRead: true })
-      .where(
-        and(eq(emails.id, selectedId), eq(emails.isRead, false), inArray(emails.accountId, owned)),
-      );
-  }
+  if (selectedId) await setReadStatus(user.id, selectedId, true);
 
   // Folder facets for the selected account (drives the nav). Counts reflect
   // INGESTED mail, not server totals — a freshly-enabled folder reads 0 until
   // its sync + sender approvals land.
-  const facetRows = await db
-    .select({
-      folder: emails.folder,
-      n: sql<number>`count(*)::int`,
-      unread: sql<number>`count(*) filter (where ${emails.isRead} = false)::int`,
-    })
-    .from(emails)
-    .where(eq(emails.accountId, accountId))
-    .groupBy(emails.folder)
-    .orderBy(desc(sql`count(*)`));
+  const facetRows = await folderFacets(user.id, accountId);
 
-  const facetNames = facetRows.map((f) => f.folder).filter((f): f is string => !!f);
+  const facetNames = facetRows.map((f) => f.folder);
   const selectedFolder =
     (params.folder && facetNames.includes(params.folder) ? params.folder : null) ??
     facetNames.find((f) => f.toUpperCase() === 'INBOX') ??
@@ -129,50 +109,27 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
 
   const tab: 'all' | 'unread' = params.tab === 'unread' ? 'unread' : 'all';
 
-  const folders: FolderLink[] = facetRows
-    .filter((f): f is { folder: string; n: number; unread: number } => !!f.folder)
-    .map((f) => ({
-      name: f.folder,
-      count: f.n,
-      unread: f.unread,
-      active: f.folder === selectedFolder,
-      href: inboxHref({ account: accountId, folder: f.folder, tab }),
-    }));
+  const folders: FolderLink[] = facetRows.map((f) => ({
+    name: f.folder,
+    count: f.count,
+    unread: f.unread,
+    active: f.folder === selectedFolder,
+    href: inboxHref({ account: accountId, folder: f.folder, tab }),
+  }));
 
   // Message list for the centre pane.
-  const listConds = [eq(emails.accountId, accountId)];
-  if (selectedFolder) listConds.push(eq(emails.folder, selectedFolder));
-  if (tab === 'unread') listConds.push(eq(emails.isRead, false));
-  const rows = await db
-    .select({
-      id: emails.id,
-      fromAddr: emails.fromAddr,
-      fromName: emails.fromName,
-      subject: emails.subject,
-      snippet: emails.snippet,
-      internalDate: emails.internalDate,
-      isRead: emails.isRead,
-    })
-    .from(emails)
-    .where(and(...listConds))
-    .orderBy(desc(emails.internalDate))
-    .limit(INBOX_LIMIT);
+  const rows = await listMessages(user.id, {
+    accountId,
+    folder: selectedFolder,
+    unreadOnly: tab === 'unread',
+    limit: INBOX_LIMIT,
+  });
 
   // Selected email + attachments. Owner-scoped via the join so a stolen UUID
   // (even from another account) can't surface another user's mail.
-  const selectedEmail = selectedId
-    ? (
-        await db
-          .select()
-          .from(emails)
-          .innerJoin(emailAccounts, eq(emails.accountId, emailAccounts.id))
-          .where(and(eq(emails.id, selectedId), eq(emailAccounts.userId, user.id)))
-          .limit(1)
-      )[0]?.emails ?? null
-    : null;
-  const attachments = selectedEmail
-    ? await db.select().from(emailAttachments).where(eq(emailAttachments.emailId, selectedEmail.id))
-    : [];
+  const selected = selectedId ? await getMessageWithAttachments(user.id, selectedId) : null;
+  const selectedEmail = selected?.email ?? null;
+  const attachments = selected?.attachments ?? [];
 
   // Restore the nav-collapsed state from the cookie the shell writes.
   const cookieStore = await cookies();

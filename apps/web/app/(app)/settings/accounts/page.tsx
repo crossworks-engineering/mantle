@@ -1,7 +1,6 @@
 import Link from 'next/link';
-import { asc, desc, eq, inArray } from 'drizzle-orm';
 import { Activity, FolderTree, Mail, Pencil, Plus, SlidersHorizontal } from 'lucide-react';
-import { db, emailAccounts, syncRuns, type SyncRun } from '@mantle/db';
+import { listAccounts, latestSyncRuns, type EmailAccount, type SyncRun } from '@mantle/email';
 import { requireOwner } from '@/lib/auth';
 import { formatDateTime } from '@/lib/format-datetime';
 import { SetPageTitle } from '@/components/layout/page-title';
@@ -12,7 +11,7 @@ import { ImapForm } from './imap/imap-form';
 import { FolderPicker } from './[id]/folders/folder-picker';
 import { listAccountFolders } from './folders-actions';
 
-type AccountRow = typeof emailAccounts.$inferSelect;
+type AccountRow = EmailAccount;
 interface ImapCursorShape {
   folders?: Record<string, { uidvalidity: number; lastUid: number }>;
 }
@@ -27,22 +26,7 @@ export default async function AccountsSettingsPage({
   const user = await requireOwner();
   const sp = (await searchParams) ?? {};
 
-  const rows = await db
-    .select()
-    .from(emailAccounts)
-    .where(eq(emailAccounts.userId, user.id))
-    .orderBy(asc(emailAccounts.address));
-
-  const latestRuns = new Map<string, SyncRun>();
-  if (rows.length > 0) {
-    const recent = await db
-      .select()
-      .from(syncRuns)
-      .where(inArray(syncRuns.accountId, rows.map((r) => r.id)))
-      .orderBy(desc(syncRuns.startedAt))
-      .limit(rows.length * 5);
-    for (const r of recent) if (!latestRuns.has(r.accountId)) latestRuns.set(r.accountId, r);
-  }
+  const [rows, latestRuns] = await Promise.all([listAccounts(user.id), latestSyncRuns(user.id)]);
 
   const mode =
     sp.mode === 'add' || sp.mode === 'edit' || sp.mode === 'folders' ? sp.mode : null;

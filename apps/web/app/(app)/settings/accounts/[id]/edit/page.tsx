@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { and, eq } from 'drizzle-orm';
-import { db, emailAccounts } from '@mantle/db';
+import { getAccount } from '@mantle/email';
 import { requireOwner } from '@/lib/auth';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { ImapForm } from '../../imap/imap-form';
@@ -12,11 +11,7 @@ export default async function EditAccountPage({ params }: { params: Promise<{ id
   const user = await requireOwner();
   const { id } = await params;
 
-  const [account] = await db
-    .select()
-    .from(emailAccounts)
-    .where(and(eq(emailAccounts.id, id), eq(emailAccounts.userId, user.id)))
-    .limit(1);
+  const account = await getAccount(user.id, id);
   if (!account) notFound();
 
   return (

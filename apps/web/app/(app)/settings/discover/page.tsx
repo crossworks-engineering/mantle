@@ -1,7 +1,6 @@
 import Link from 'next/link';
-import { and, eq } from 'drizzle-orm';
 import { Plug } from 'lucide-react';
-import { db, emailAccounts } from '@mantle/db';
+import { listImapAccounts } from '@mantle/email';
 import { requireOwner } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { SetPageTitle } from '@/components/layout/page-title';
@@ -15,16 +14,7 @@ import { DiscoverClient } from './discover-client';
  */
 export default async function DiscoverPage() {
   const user = await requireOwner();
-  const accounts = await db
-    .select({ id: emailAccounts.id })
-    .from(emailAccounts)
-    .where(
-      and(
-        eq(emailAccounts.userId, user.id),
-        eq(emailAccounts.provider, 'imap'),
-        eq(emailAccounts.enabled, true),
-      ),
-    );
+  const accounts = await listImapAccounts(user.id, { enabledOnly: true });
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-6 py-6">

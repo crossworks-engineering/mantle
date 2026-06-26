@@ -2,82 +2,20 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { and, eq } from 'drizzle-orm';
-import PgBoss from 'pg-boss';
-import { db, emailAccounts } from '@mantle/db';
-import { probeImapConnection, unsealImapPassword } from '@mantle/email';
+import {
+  listAccountFolders as listAccountFoldersImpl,
+  setIncludedFolders as setIncludedFoldersImpl,
+} from '@mantle/email';
 import { requireOwner } from '@/lib/auth';
 
-const SYNC_QUEUE = 'mantle.email.sync';
-
-/** Lazy pg-boss publisher — one instance per web process. The actual sync
- *  worker runs in its own process; this just lets "save folder selection"
- *  enqueue an immediate rescan instead of waiting for the 2-minute scheduler.
- *  Mirrors the lazy-publisher pattern in `@mantle/email`'s backfill-queue.ts. */
-let _boss: PgBoss | undefined;
-async function boss(): Promise<PgBoss> {
-  if (_boss) return _boss;
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('DATABASE_URL must be set');
-  _boss = new PgBoss({ connectionString: url, schema: 'pgboss' });
-  await _boss.start();
-  await _boss.createQueue(SYNC_QUEUE);
-  return _boss;
-}
-
-export type AccountFoldersResult =
-  | {
-      ok: true;
-      address: string;
-      /** Every folder the server reports right now (the pick list). */
-      allFolders: string[];
-      /** The current explicit allow-list, or null = "scan all non-excluded". */
-      included: string[] | null;
-      /** Folders the operator opted OUT of (rendered disabled). */
-      excluded: string[];
-      /** Folders the sync has actually touched (per the cursor) — used to
-       *  prefill checkboxes when there's no explicit include-list yet. */
-      scanned: string[];
-    }
-  | { ok: false; error: string };
+export type { AccountFoldersResult } from '@mantle/email';
 
 /** List the live folder tree for one IMAP account, plus its current scan
- *  config. Owner-scoped. Hits the IMAP server, so it can be slow/flaky —
- *  always returns a tagged result rather than throwing. */
-export async function listAccountFolders(accountId: string): Promise<AccountFoldersResult> {
+ *  config. Owner-gated wrapper over `@mantle/email` (also at
+ *  `GET /api/email/accounts/[id]/folders`). */
+export async function listAccountFolders(accountId: string) {
   const user = await requireOwner();
-  const [account] = await db
-    .select()
-    .from(emailAccounts)
-    .where(and(eq(emailAccounts.id, accountId), eq(emailAccounts.userId, user.id)))
-    .limit(1);
-  if (!account) return { ok: false, error: 'Account not found.' };
-  if (account.provider !== 'imap' || !account.imapHost || !account.imapPort || !account.imapConfigEnc) {
-    return { ok: false, error: 'This account has no IMAP connection to list folders from.' };
-  }
-
-  try {
-    const pass = unsealImapPassword(account);
-    const probe = await probeImapConnection({
-      host: account.imapHost,
-      port: account.imapPort,
-      secure: account.imapSecure,
-      user: account.address,
-      pass,
-    });
-    const cursor = (account.syncState as { imap?: { folders?: Record<string, unknown> } } | null)?.imap;
-    const scanned = cursor?.folders ? Object.keys(cursor.folders).sort() : [];
-    return {
-      ok: true,
-      address: account.address,
-      allFolders: probe.folders,
-      included: account.imapIncludedFolders,
-      excluded: account.imapExcludedFolders,
-      scanned,
-    };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
+  return listAccountFoldersImpl(user.id, accountId);
 }
 
 /** Persist the explicit folder allow-list for an account and kick an
@@ -88,39 +26,16 @@ export async function setIncludedFolders(formData: FormData): Promise<void> {
   const accountId = String(formData.get('accountId') ?? '');
   if (!accountId) return;
 
-  // Dedup + drop blanks. Empty selection ⇒ NULL = legacy discover-minus-exclude.
-  const folders = [...new Set(formData.getAll('folders').map(String).filter(Boolean))];
-
-  const [account] = await db
-    .select({ id: emailAccounts.id })
-    .from(emailAccounts)
-    .where(and(eq(emailAccounts.id, accountId), eq(emailAccounts.userId, user.id)))
-    .limit(1);
-  if (!account) return;
-
-  await db
-    .update(emailAccounts)
-    .set({ imapIncludedFolders: folders.length > 0 ? folders : null, updatedAt: new Date() })
-    .where(and(eq(emailAccounts.id, accountId), eq(emailAccounts.userId, user.id)));
-
-  // Instant rescan: enqueue a sync for this account. singletonKey collapses
-  // it with any sync the scheduler already queued. Best-effort — if the
-  // worker/queue is down the scheduler still picks it up within ~2 min.
-  try {
-    const b = await boss();
-    await b.send(SYNC_QUEUE, { accountId }, { singletonKey: `sync:${accountId}` });
-  } catch (err) {
-    console.error('[folders] enqueue immediate sync failed', err);
-  }
+  const folders = formData.getAll('folders').map(String);
+  await setIncludedFoldersImpl(user.id, accountId, folders);
 
   revalidatePath('/settings/accounts');
   revalidatePath('/inbox');
   // Land on the plain accounts list — NOT the folders view. The folders pane
-  // (here and on /settings/accounts?mode=folders) does a live IMAP probe on
-  // every render; re-rendering it post-save re-probes, and that probe is
-  // slow/flaky (and contends with the rescan we just enqueued), so the form
+  // does a live IMAP probe on every render; re-rendering it post-save re-probes
+  // (slow/flaky, and contends with the rescan we just enqueued), so the form
   // appears to "blank" even though the save above already committed. Redirect
-  // to a probe-free view sidesteps the re-probe entirely. (redirect() throws
-  // NEXT_REDIRECT, so it must sit outside the try/catch above.)
+  // to a probe-free view sidesteps the re-probe. (redirect() throws
+  // NEXT_REDIRECT, so it must sit outside any try/catch.)
   redirect('/settings/accounts');
 }
