@@ -4,8 +4,8 @@
  * Server actions for the /settings/agents UI.
  *
  * The agents form's CRUD goes through `/api/agents` (REST); this file
- * holds the test-affordance action — same shape as the workers form's
- * testChatAction in [../ai-workers/actions.ts](../ai-workers/actions.ts).
+ * holds the test-affordance action — same shape as the workers form's chat
+ * test, now at `POST /api/ai-workers/[id]/test/chat` (lib/ai-worker-rpc.ts).
  *
  * Lives separately because:
  *   - The test path resolves a runtime adapter, which is heavier than

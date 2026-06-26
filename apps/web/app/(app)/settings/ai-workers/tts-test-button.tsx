@@ -14,7 +14,7 @@ import { Play, Loader2, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
-import { testTtsAction } from './actions';
+import { apiSend } from '@/lib/api-fetch';
 
 export function TtsTestButton({ workerId }: { workerId: string }) {
   const toast = useToast();
@@ -38,7 +38,11 @@ export function TtsTestButton({ workerId }: { workerId: string }) {
           onClick={() => {
             startTransition(async () => {
               try {
-                const result = await testTtsAction(workerId, text);
+                const result = await apiSend<{ ok: true; audioBase64: string; mimeType: string }>(
+                  `/api/ai-workers/${workerId}/test/tts`,
+                  'POST',
+                  { text },
+                );
                 // Build a data URL from the base64 mp3. Browsers cache
                 // data URLs aggressively so we don't waste a new URL
                 // per click unless the audio actually changed.

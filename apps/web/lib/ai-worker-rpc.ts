@@ -1,12 +1,7 @@
 /**
  * AI-worker test/discover RPCs — the live-provider operations behind the
- * /settings/ai-workers test buttons and model/voice pickers. This is the
- * canonical implementation backing the `/api/ai-workers/**` test endpoints.
- *
- * The page's server actions (settings/ai-workers/actions.ts) still hold the
- * original copy of this logic while the screen runs on actions; that file is
- * deleted when the client conversion (Phase C) lands and everything routes
- * through these endpoints instead.
+ * /settings/ai-workers test buttons and model/voice pickers. Backs the
+ * `/api/ai-workers/**` test endpoints (the screen is fully client-fetched).
  *
  * Each function takes the resolved owner `userId` (the caller does the auth
  * gate) and routes through the same adapter registry production uses, so a

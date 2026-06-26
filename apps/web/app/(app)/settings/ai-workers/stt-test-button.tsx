@@ -13,7 +13,7 @@ import { useRef, useState, useTransition } from 'react';
 import { Mic, MicOff, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
-import { testSttAction } from './actions';
+import { apiSend } from '@/lib/api-fetch';
 
 export function SttTestButton({ workerId }: { workerId: string }) {
   const toast = useToast();
@@ -47,7 +47,15 @@ export function SttTestButton({ workerId }: { workerId: string }) {
           const base64 = bufferToBase64(buf);
           startTransition(async () => {
             try {
-              const r = await testSttAction(workerId, base64, mr.mimeType);
+              const r = await apiSend<{
+                ok: true;
+                text: string;
+                language: string | null;
+                duration: number | null;
+              }>(`/api/ai-workers/${workerId}/test/stt`, 'POST', {
+                audioBase64: base64,
+                mimeType: mr.mimeType,
+              });
               setResult({ text: r.text, language: r.language, duration: r.duration });
             } catch (err) {
               toast.error(err instanceof Error ? err.message : String(err));

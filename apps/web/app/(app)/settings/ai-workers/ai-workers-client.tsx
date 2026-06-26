@@ -1,9 +1,14 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Plus, Trash2 } from 'lucide-react';
-import type { AiWorker, AiWorkerKind } from '@mantle/db';
+import type { AiWorkerConfig, AiWorkerDTO, AiWorkerKind } from '@mantle/client-types';
 import { getProvider } from '@mantle/voice/client';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
+import { buildWorkerBody } from '@/lib/ai-worker-form';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -16,6 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { WorkerForm } from './worker-form';
 
@@ -98,38 +104,74 @@ type Selection =
   | { mode: 'create'; kind: AiWorkerKind }
   | null;
 
-export function AiWorkersClient({
-  workers,
-  keys,
-  initialSelectedId,
-  createAction,
-  updateAction,
-  deleteAction,
-  nativeDocProviders,
-  tailnetPeers = [],
-}: {
-  workers: AiWorker[];
-  keys: KeyOption[];
-  initialSelectedId: string | null;
-  createAction: (formData: FormData) => Promise<void>;
-  updateAction: (id: string, formData: FormData) => Promise<void>;
-  deleteAction: (id: string) => Promise<void>;
-  nativeDocProviders: string[];
-  /** Online tailnet peer MagicDNS names — backs the route base-URL datalist. */
-  tailnetPeers?: string[];
-}) {
+export function AiWorkersClient() {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const searchParams = useSearchParams();
+  const initialSelectedId = searchParams.get('selected');
+
+  // ── Reads ─────────────────────────────────────────────────────────────────
+  const workersQuery = useQuery({
+    queryKey: ['ai-workers'],
+    queryFn: () => apiFetch<{ workers: AiWorkerDTO[] }>('/api/ai-workers').then((r) => r.workers),
+  });
+  const keysQuery = useQuery({
+    queryKey: ['keys'],
+    queryFn: () => apiFetch<{ keys: KeyOption[] }>('/api/keys').then((r) => r.keys),
+  });
+  const configQuery = useQuery({
+    queryKey: ['ai-workers', 'config'],
+    queryFn: () => apiFetch<AiWorkerConfig>('/api/ai-workers/config'),
+  });
+  const workers = workersQuery.data ?? [];
+  const keys = keysQuery.data ?? [];
+  const nativeDocProviders = configQuery.data?.nativeDocProviders ?? [];
+  const tailnetPeers = configQuery.data?.tailnetPeers ?? [];
+
   const [sel, setSel] = useState<Selection>(
     initialSelectedId ? { mode: 'edit', id: initialSelectedId } : null,
   );
-  const [deleteTarget, setDeleteTarget] = useState<AiWorker | null>(null);
-  const [, startTransition] = useTransition();
+  const [deleteTarget, setDeleteTarget] = useState<AiWorkerDTO | null>(null);
 
-  // After a create redirect (?selected=newId), preselect the new worker.
+  // ── Mutations ───────────────────────────────────────────────────────────────
+  // The form builds a FormData and calls action(fd); these wrappers turn it into
+  // the JSON the endpoints want. Errors thrown here are caught by the form's
+  // submit (which renders + toasts them), so no onError toast on the mutations.
+  const createMutation = useMutation({
+    mutationFn: (body: ReturnType<typeof buildWorkerBody>) =>
+      apiSend<{ worker: AiWorkerDTO }>('/api/ai-workers', 'POST', body),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['ai-workers'] });
+      setSel({ mode: 'edit', id: res.worker.id });
+    },
+  });
+  const updateMutation = useMutation({
+    mutationFn: async (vars: { id: string; body: ReturnType<typeof buildWorkerBody> }) => {
+      await apiSend(`/api/ai-workers/${vars.id}`, 'PATCH', vars.body);
+      // isDefault is its own atomic endpoint (PATCH ignores it).
+      if (vars.body.isDefault) await apiSend(`/api/ai-workers/${vars.id}/default`, 'POST');
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['ai-workers'] }),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiSend(`/api/ai-workers/${id}`, 'DELETE'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ai-workers'] });
+      setSel(null);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Delete failed.'),
+  });
+
+  const createAction = (fd: FormData) => createMutation.mutateAsync(buildWorkerBody(fd)).then(() => {});
+  const updateAction = (id: string, fd: FormData) =>
+    updateMutation.mutateAsync({ id, body: buildWorkerBody(fd) });
+
+  // After a create (?selected=newId deep-link) preselect that worker.
   useEffect(() => {
     if (initialSelectedId) setSel({ mode: 'edit', id: initialSelectedId });
   }, [initialSelectedId]);
 
-  // Re-derive the edited worker from fresh props so saves reflect immediately.
+  // Re-derive the edited worker from fresh query data so saves reflect immediately.
   const editWorker = sel?.mode === 'edit' ? (workers.find((w) => w.id === sel.id) ?? null) : null;
   const selectedId = sel?.mode === 'edit' ? sel.id : null;
 
@@ -155,8 +197,7 @@ export function AiWorkersClient({
     if (!deleteTarget) return;
     const id = deleteTarget.id;
     setDeleteTarget(null);
-    setSel(null);
-    startTransition(() => deleteAction(id));
+    deleteMutation.mutate(id);
   };
 
   return (
@@ -169,75 +210,89 @@ export function AiWorkersClient({
           </h2>
         </div>
         <div className="space-y-4 p-3 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
-          {KIND_ORDER.map((kind) => {
-            const meta = KIND_META[kind];
-            const items = workers.filter((w) => w.kind === kind);
-            return (
-              <section key={kind} className="space-y-1.5">
-                <div className="flex items-center justify-between gap-2 px-1">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    {meta.label}
-                  </h3>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 px-2 text-xs"
-                    onClick={() => setSel({ mode: 'create', kind })}
-                  >
-                    <Plus /> Add
-                  </Button>
-                </div>
-                {items.length === 0 ? (
-                  <p className="px-1 text-xs text-muted-foreground/60">None configured.</p>
-                ) : (
-                  items.map((w) => {
-                    const selected = selectedId === w.id;
-                    return (
-                      <button
-                        key={w.id}
-                        type="button"
-                        onClick={() => setSel({ mode: 'edit', id: w.id })}
-                        className={cn(
-                          'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
-                          selected && 'border-l-primary',
-                          !w.enabled && 'opacity-60',
-                        )}
-                      >
-                        <div className="flex items-center gap-2">
-                          {w.isDefault ? (
-                            <CheckCircle2
-                              className="size-4 shrink-0 text-emerald-600"
-                              aria-label="Default for this kind"
-                            />
-                          ) : (
-                            <span className="size-4 shrink-0" aria-hidden />
+          {workersQuery.isPending ? (
+            <div className="flex flex-col items-center gap-3 px-4 py-10 text-sm text-muted-foreground">
+              <Spinner size={28} />
+              Loading workers…
+            </div>
+          ) : workersQuery.isError ? (
+            <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-6 text-center text-sm text-destructive">
+              <p>Couldn’t load workers: {workersQuery.error.message}</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => workersQuery.refetch()}>
+                Retry
+              </Button>
+            </div>
+          ) : (
+            KIND_ORDER.map((kind) => {
+              const meta = KIND_META[kind];
+              const items = workers.filter((w) => w.kind === kind);
+              return (
+                <section key={kind} className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2 px-1">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      {meta.label}
+                    </h3>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => setSel({ mode: 'create', kind })}
+                    >
+                      <Plus /> Add
+                    </Button>
+                  </div>
+                  {items.length === 0 ? (
+                    <p className="px-1 text-xs text-muted-foreground/60">None configured.</p>
+                  ) : (
+                    items.map((w) => {
+                      const selected = selectedId === w.id;
+                      return (
+                        <button
+                          key={w.id}
+                          type="button"
+                          onClick={() => setSel({ mode: 'edit', id: w.id })}
+                          className={cn(
+                            'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
+                            selected && 'border-l-primary',
+                            !w.enabled && 'opacity-60',
                           )}
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5">
-                              <span className="truncate text-sm font-medium">{w.name}</span>
-                              {!w.enabled && (
-                                <span className="shrink-0 rounded-sm bg-muted px-1 text-[9px] uppercase tracking-wider text-muted-foreground">
-                                  off
+                        >
+                          <div className="flex items-center gap-2">
+                            {w.isDefault ? (
+                              <CheckCircle2
+                                className="size-4 shrink-0 text-emerald-600"
+                                aria-label="Default for this kind"
+                              />
+                            ) : (
+                              <span className="size-4 shrink-0" aria-hidden />
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="truncate text-sm font-medium">{w.name}</span>
+                                {!w.enabled && (
+                                  <span className="shrink-0 rounded-sm bg-muted px-1 text-[9px] uppercase tracking-wider text-muted-foreground">
+                                    off
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1 truncate text-[11px] text-muted-foreground">
+                                <span className="shrink-0">
+                                  {getProvider(w.provider)?.label ?? w.provider}
                                 </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1 truncate text-[11px] text-muted-foreground">
-                              <span className="shrink-0">
-                                {getProvider(w.provider)?.label ?? w.provider}
-                              </span>
-                              <span aria-hidden>·</span>
-                              <code className="truncate font-mono">{w.model}</code>
+                                <span aria-hidden>·</span>
+                                <code className="truncate font-mono">{w.model}</code>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </button>
-                    );
-                  })
-                )}
-              </section>
-            );
-          })}
+                        </button>
+                      );
+                    })
+                  )}
+                </section>
+              );
+            })
+          )}
         </div>
       </div>
 

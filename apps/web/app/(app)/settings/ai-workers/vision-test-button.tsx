@@ -24,7 +24,7 @@ import { useRef, useState, useTransition } from 'react';
 import { ImagePlus, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
-import { testVisionAction } from './actions';
+import { apiSend } from '@/lib/api-fetch';
 
 export function VisionTestButton({ workerId }: { workerId: string }) {
   const toast = useToast();
@@ -63,7 +63,17 @@ export function VisionTestButton({ workerId }: { workerId: string }) {
           reader.onerror = () => reject(reader.error ?? new Error('read failed'));
           reader.readAsDataURL(file);
         });
-        const r = await testVisionAction(workerId, base64, file.type || 'image/jpeg');
+        const r = await apiSend<{
+          ok: true;
+          text: string;
+          model: string;
+          adapter: string;
+          tokensIn: number | null;
+          tokensOut: number | null;
+        }>(`/api/ai-workers/${workerId}/test/vision`, 'POST', {
+          imageBase64: base64,
+          mimeType: file.type || 'image/jpeg',
+        });
         setResult({
           text: r.text,
           model: r.model,
