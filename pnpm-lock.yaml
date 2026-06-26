@@ -151,6 +151,9 @@ importers:
       '@mantle/app-build':
         specifier: workspace:*
         version: link:../../packages/app-build
+      '@mantle/assistant-runtime':
+        specifier: workspace:*
+        version: link:../../packages/assistant-runtime
       '@mantle/calendar':
         specifier: workspace:*
         version: link:../../packages/calendar
@@ -557,6 +560,43 @@ importers:
       '@types/react-dom':
         specifier: ^19.0.0
         version: 19.2.3(@types/react@19.2.14)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
+  packages/assistant-runtime:
+    dependencies:
+      '@mantle/agent-runtime':
+        specifier: workspace:*
+        version: link:../agent-runtime
+      '@mantle/api-keys':
+        specifier: workspace:*
+        version: link:../api-keys
+      '@mantle/content':
+        specifier: workspace:*
+        version: link:../content
+      '@mantle/db':
+        specifier: workspace:*
+        version: link:../db
+      '@mantle/heartbeats':
+        specifier: workspace:*
+        version: link:../heartbeats
+      '@mantle/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@mantle/tracing':
+        specifier: workspace:*
+        version: link:../tracing
+      '@mantle/voice':
+        specifier: workspace:*
+        version: link:../voice
+      drizzle-orm:
+        specifier: ^0.38.3
+        version: 0.38.4(@types/react@19.2.14)(pg@8.20.0)(postgres@3.4.9)(react@19.2.6)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.19
       typescript:
         specifier: ^5.7.2
         version: 5.9.3

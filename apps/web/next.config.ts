@@ -46,6 +46,7 @@ const nextConfig: NextConfig = {
   transpilePackages: [
     '@mantle/agent-runtime',
     '@mantle/api-keys',
+    '@mantle/assistant-runtime',
     '@mantle/app-build',
     '@mantle/crypto',
     '@mantle/db',

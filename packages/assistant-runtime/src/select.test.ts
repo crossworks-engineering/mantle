@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pickWebDefaultAgent, ROLE_TIEBREAK, type WebDefaultCandidate } from './assistant-select';
+import { pickWebDefaultAgent, ROLE_TIEBREAK, type WebDefaultCandidate } from './select';
 
 /**
  * Web-default agent pick (docs/comms-channels.md §6, decision 5). Role is a soft

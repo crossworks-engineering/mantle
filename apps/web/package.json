@@ -61,6 +61,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@mantle/agent-runtime": "workspace:*",
     "@mantle/api-keys": "workspace:*",
+    "@mantle/assistant-runtime": "workspace:*",
     "@mantle/app-build": "workspace:*",
     "@mantle/calendar": "workspace:*",
     "@mantle/content": "workspace:*",

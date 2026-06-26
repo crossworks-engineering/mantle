@@ -1,7 +1,7 @@
 /**
  * Pure web-default agent selection (docs/comms-channels.md §6, decision 5).
  *
- * Extracted from `resolveAssistantAgent` (assistant.ts) so the priority +
+ * Extracted from `resolveAssistantAgent` (run-turn.ts) so the priority +
  * tiebreak decision is unit-testable with no DB — mirrors the pattern used by
  * `resolveEffectivePersona` (system-manifest/persona.ts). The resolver fetches
  * the enabled chat-capable candidates; this picks the winner deterministically.
