@@ -1,0 +1,23 @@
+{
+  "name": "@mantle/api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx --watch --env-file-if-exists=../web/.env.local src/main.ts",
+    "start": "tsx --env-file-if-exists=../web/.env.local src/main.ts",
+    "smoke": "tsx --env-file-if-exists=../web/.env.local src/smoke.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dbos-inc/dbos-sdk": "^4.22.6",
+    "@mantle/assistant-runtime": "workspace:*",
+    "@mantle/db": "workspace:*",
+    "drizzle-orm": "^0.38.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
