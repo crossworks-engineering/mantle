@@ -1,6 +1,6 @@
 {
   "name": "mantle",
-  "version": "0.63.0",
+  "version": "0.63.1",
   "private": true,
   "description": "Mantle — an AI-queryable life tree.",
   "license": "SEE LICENSE IN LICENSE.md",
