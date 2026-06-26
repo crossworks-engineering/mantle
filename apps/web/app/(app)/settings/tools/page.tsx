@@ -1,24 +1,19 @@
 import { requireOwner } from '@/lib/auth';
-import { listToolsForOwner } from '@/lib/tools';
-import { loadProfilePreferences } from '@mantle/content';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { ToolsClient } from './tools-client';
 
+/**
+ * Tools settings — client data-fetching (Phase 2 · Task 4), following the
+ * /settings/skills template. The page is data-free (auth gate only); the tool
+ * list and the two policy toggles are fetched in the client with TanStack Query
+ * (`/api/tools`, `/api/tools/settings`).
+ */
 export default async function ToolsPage() {
-  const user = await requireOwner();
-  const [rows, prefs] = await Promise.all([
-    listToolsForOwner(user.id),
-    loadProfilePreferences(user.id),
-  ]);
-
+  await requireOwner();
   return (
     <>
       <SetPageTitle title="Tools" />
-      <ToolsClient
-        initialTools={rows}
-        initialRequireApproval={prefs.toolsmithRequireApproval === true}
-        initialEgressGate={prefs.heartbeatEgressGate === true}
-      />
+      <ToolsClient />
     </>
   );
 }

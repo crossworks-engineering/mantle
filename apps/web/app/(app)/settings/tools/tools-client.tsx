@@ -1,8 +1,11 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
-import { Plus, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
+import type { ToolDTO, ToolHandler, ToolSettings } from '@mantle/client-types';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Switch } from '@/components/ui/switch';
@@ -20,35 +23,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
-import { setHeartbeatEgressGateAction, setToolsmithApprovalAction } from './actions';
 
-type ToolHandlerBuiltin = { kind: 'builtin'; ref: string };
-type ToolHandlerHttp = {
-  kind: 'http';
-  url: string;
-  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-  headers?: Record<string, string>;
-  query?: Record<string, string>;
-  body?: string | null;
-  headersRef?: string | null;
-  authRef?: string | null;
-  timeoutMs?: number;
-};
-type ToolHandlerShell = { kind: 'shell'; cmd: string };
-type ToolHandler = ToolHandlerBuiltin | ToolHandlerHttp | ToolHandlerShell;
-
-type ToolSummary = {
-  id: string;
-  slug: string;
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-  handler: ToolHandler;
-  requiresConfirm: boolean;
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
+type ToolSummary = ToolDTO;
 
 type FormKind = 'http' | 'shell';
 
@@ -127,65 +103,103 @@ function slugify(s: string): string {
     .slice(0, 64);
 }
 
-export function ToolsClient({
-  initialTools,
-  initialRequireApproval,
-  initialEgressGate,
-}: {
-  initialTools: ToolSummary[];
-  initialRequireApproval: boolean;
-  initialEgressGate: boolean;
-}) {
-  const router = useRouter();
+const DEFAULT_SETTINGS: ToolSettings = { requireApproval: false, egressGate: false };
+
+export function ToolsClient() {
+  const queryClient = useQueryClient();
   const toast = useToast();
-  const [tools, setTools] = useState<ToolSummary[]>(initialTools);
-  const [requireApproval, setRequireApproval] = useState(initialRequireApproval);
-  const [egressGate, setEgressGate] = useState(initialEgressGate);
+
+  // ── Reads ─────────────────────────────────────────────────────────────────
+  const toolsQuery = useQuery({
+    queryKey: ['tools'],
+    queryFn: () => apiFetch<{ tools: ToolSummary[] }>('/api/tools').then((r) => r.tools),
+  });
+  const settingsQuery = useQuery({
+    queryKey: ['tools', 'settings'],
+    queryFn: () => apiFetch<ToolSettings>('/api/tools/settings'),
+  });
+  const tools = toolsQuery.data ?? [];
+  const settings = settingsQuery.data ?? DEFAULT_SETTINGS;
+
   const [editing, setEditing] = useState<
     { mode: 'create' } | { mode: 'edit'; tool: ToolSummary } | null
   >(null);
   const [form, setForm] = useState<FormState>(emptyForm());
   const [slugTouched, setSlugTouched] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ToolSummary | null>(null);
-  const [pending, startTransition] = useTransition();
 
-  useEffect(() => setTools(initialTools), [initialTools]);
+  // ── Mutations ───────────────────────────────────────────────────────────────
+  // Settings toggles — optimistic: flip the cached value immediately, roll back
+  // on error. (Replaces the old useState + server action + manual rollback.)
+  const settingsMutation = useMutation({
+    mutationFn: (patch: Partial<ToolSettings>) =>
+      apiSend<ToolSettings>('/api/tools/settings', 'PUT', patch),
+    onMutate: async (patch) => {
+      await queryClient.cancelQueries({ queryKey: ['tools', 'settings'] });
+      const prev = queryClient.getQueryData<ToolSettings>(['tools', 'settings']);
+      queryClient.setQueryData<ToolSettings>(['tools', 'settings'], (old) => ({
+        ...(old ?? DEFAULT_SETTINGS),
+        ...patch,
+      }));
+      return { prev };
+    },
+    onError: (_e, _patch, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(['tools', 'settings'], ctx.prev);
+      toast.error('Could not save that setting');
+    },
+    onSuccess: (data) => queryClient.setQueryData(['tools', 'settings'], data),
+  });
 
-  const toggleRequireApproval = (next: boolean) => {
-    const prev = requireApproval;
-    setRequireApproval(next); // optimistic
-    startTransition(async () => {
-      try {
-        await setToolsmithApprovalAction(next);
-        toast.success(
-          next
-            ? 'Agent-built tools will now require your approval'
-            : 'Agent-built tools no longer require approval',
-        );
-      } catch {
-        setRequireApproval(prev);
-        toast.error('Could not save that setting');
-      }
-    });
-  };
+  const toggleRequireApproval = (next: boolean) =>
+    settingsMutation.mutate(
+      { requireApproval: next },
+      {
+        onSuccess: () =>
+          toast.success(
+            next
+              ? 'Agent-built tools will now require your approval'
+              : 'Agent-built tools no longer require approval',
+          ),
+      },
+    );
+  const toggleEgressGate = (next: boolean) =>
+    settingsMutation.mutate(
+      { egressGate: next },
+      {
+        onSuccess: () =>
+          toast.success(
+            next
+              ? 'Unattended heartbeats will now park email/web for approval'
+              : 'Unattended heartbeats run email/web inline again',
+          ),
+      },
+    );
 
-  const toggleEgressGate = (next: boolean) => {
-    const prev = egressGate;
-    setEgressGate(next); // optimistic
-    startTransition(async () => {
-      try {
-        await setHeartbeatEgressGateAction(next);
-        toast.success(
-          next
-            ? 'Unattended heartbeats will now park email/web for approval'
-            : 'Unattended heartbeats run email/web inline again',
-        );
-      } catch {
-        setEgressGate(prev);
-        toast.error('Could not save that setting');
-      }
-    });
-  };
+  const saveMutation = useMutation({
+    mutationFn: (vars: {
+      mode: 'create' | 'edit';
+      id?: string;
+      body: Record<string, unknown>;
+    }) =>
+      vars.mode === 'create'
+        ? apiSend('/api/tools', 'POST', vars.body)
+        : apiSend(`/api/tools/${vars.id}`, 'PATCH', vars.body),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['tools'] });
+      setEditing(null);
+      toast.success(vars.mode === 'create' ? 'Tool created' : 'Tool saved');
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Save failed.'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiSend(`/api/tools/${id}`, 'DELETE'),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: ['tools'] });
+      if (editing?.mode === 'edit' && editing.tool.id === id) setEditing(null);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Delete failed.'),
+  });
 
   const builtins = tools.filter((t) => t.handler.kind === 'builtin');
   const userDefined = tools.filter((t) => t.handler.kind !== 'builtin');
@@ -193,6 +207,7 @@ export function ToolsClient({
   const editTool = editing?.mode === 'edit' ? editing.tool : null;
   const isBuiltin = editTool?.handler.kind === 'builtin';
   const selectedId = editTool?.id ?? null;
+  const settingsBusy = settingsQuery.isPending || settingsMutation.isPending;
 
   const openCreate = () => {
     setForm(emptyForm());
@@ -206,16 +221,14 @@ export function ToolsClient({
   };
   const close = () => setEditing(null);
 
-  const submit = async (e: React.FormEvent) => {
+  const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editing) return;
 
-    // Built-in: only the editable metadata is sent (handler/slug/schema
-    // are code-backed and immutable). Everything else uses the full body.
+    // Built-in: only the editable metadata is sent (handler/slug/schema are
+    // code-backed and immutable). Everything else uses the full body.
     let body: Record<string, unknown>;
     if (editing.mode === 'edit' && editing.tool.handler.kind === 'builtin') {
-      // Built-in name/description/schema/handler are code-defined (re-applied
-      // by the seed on boot) — only confirm + enabled persist here.
       body = {
         requiresConfirm: form.requiresConfirm,
         enabled: form.enabled,
@@ -269,37 +282,18 @@ export function ToolsClient({
       };
     }
 
-    const url = editing.mode === 'create' ? '/api/tools' : `/api/tools/${editing.tool.id}`;
-    const method = editing.mode === 'create' ? 'POST' : 'PATCH';
-    const res = await fetch(url, {
-      method,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(b.error ?? 'Save failed.');
-      return;
-    }
-    toast.success(editing.mode === 'create' ? 'Tool created' : 'Tool saved');
-    close();
-    startTransition(() => router.refresh());
+    saveMutation.mutate(
+      editing.mode === 'create'
+        ? { mode: 'create', body }
+        : { mode: 'edit', id: editing.tool.id, body },
+    );
   };
 
-  const confirmDelete = async () => {
+  const confirmDelete = () => {
     const t = deleteTarget;
     if (!t) return;
     setDeleteTarget(null);
-    if (editing?.mode === 'edit' && editing.tool.id === t.id) close();
-    const res = await fetch(`/api/tools/${t.id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(b.error ?? 'Delete failed.');
-      return;
-    }
-    toast.success(`Deleted ${t.slug}`);
-    setTools((prev) => prev.filter((x) => x.id !== t.id));
-    startTransition(() => router.refresh());
+    deleteMutation.mutate(t.id, { onSuccess: () => toast.success(`Deleted ${t.slug}`) });
   };
 
   return (
@@ -307,32 +301,68 @@ export function ToolsClient({
       {/* ── Left: tool list ──────────────────────────────────────── */}
       <div className="flex flex-col border-b border-border md:h-full md:min-h-0 md:border-b-0 md:border-r">
         <div className="space-y-4 p-3 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
-          <section className="space-y-1.5">
-            <div className="flex items-center justify-between gap-2 px-1">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                User-defined ({userDefined.length})
-              </h3>
-              <Button type="button" size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={openCreate}>
-                <Plus /> New
+          {toolsQuery.isPending ? (
+            <div className="flex flex-col items-center gap-3 px-4 py-10 text-sm text-muted-foreground">
+              <Spinner size={28} />
+              Loading tools…
+            </div>
+          ) : toolsQuery.isError ? (
+            <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-6 text-center text-sm text-destructive">
+              <p>Couldn’t load tools: {toolsQuery.error.message}</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => toolsQuery.refetch()}>
+                Retry
               </Button>
             </div>
-            {userDefined.length === 0 ? (
-              <p className="px-1 text-xs text-muted-foreground/60">None yet.</p>
-            ) : (
-              userDefined.map((t) => (
-                <ToolCard key={t.id} tool={t} selected={selectedId === t.id} onClick={() => openEdit(t)} />
-              ))
-            )}
-          </section>
+          ) : (
+            <>
+              <section className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2 px-1">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    User-defined ({userDefined.length})
+                  </h3>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-xs"
+                    onClick={openCreate}
+                  >
+                    <Plus /> New
+                  </Button>
+                </div>
+                {userDefined.length === 0 ? (
+                  <p className="px-1 text-xs text-muted-foreground/60">None yet.</p>
+                ) : (
+                  userDefined.map((t) => (
+                    <ToolCard key={t.id} tool={t} selected={selectedId === t.id} onClick={() => openEdit(t)} />
+                  ))
+                )}
+              </section>
 
-          <section className="space-y-1.5">
-            <h3 className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Built-in ({builtins.length})
-            </h3>
-            {builtins.map((t) => (
-              <ToolCard key={t.id} tool={t} selected={selectedId === t.id} onClick={() => openEdit(t)} />
-            ))}
-          </section>
+              <section className="space-y-1.5">
+                <h3 className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Built-in ({builtins.length})
+                </h3>
+                {builtins.map((t) => (
+                  <ToolCard key={t.id} tool={t} selected={selectedId === t.id} onClick={() => openEdit(t)} />
+                ))}
+              </section>
+            </>
+          )}
+
+          {settingsQuery.isError && (
+            <p className="flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground">
+              <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
+              Couldn’t load tool policy settings — showing defaults.
+              <button
+                type="button"
+                onClick={() => settingsQuery.refetch()}
+                className="ml-auto shrink-0 underline underline-offset-2 hover:text-foreground"
+              >
+                Retry
+              </button>
+            </p>
+          )}
 
           <section className="rounded-lg border border-border p-3">
             <div className="flex items-start justify-between gap-3">
@@ -348,8 +378,8 @@ export function ToolsClient({
               </div>
               <Switch
                 id="require-approval"
-                checked={requireApproval}
-                disabled={pending}
+                checked={settings.requireApproval}
+                disabled={settingsBusy}
                 onCheckedChange={toggleRequireApproval}
                 className="mt-0.5 shrink-0"
               />
@@ -371,8 +401,8 @@ export function ToolsClient({
               </div>
               <Switch
                 id="egress-gate"
-                checked={egressGate}
-                disabled={pending}
+                checked={settings.egressGate}
+                disabled={settingsBusy}
                 onCheckedChange={toggleEgressGate}
                 className="mt-0.5 shrink-0"
               />
@@ -627,7 +657,7 @@ export function ToolsClient({
                 <Button type="button" variant="outline" onClick={close}>
                   Cancel
                 </Button>
-                <SubmitButton pending={pending}>
+                <SubmitButton pending={saveMutation.isPending}>
                   {editing.mode === 'create' ? 'Create tool' : 'Save tool'}
                 </SubmitButton>
               </div>
