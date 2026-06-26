@@ -76,6 +76,23 @@ export const assistantMessages = pgTable(
      *  etc.) for reply threading + dedup. NULL for web turns. */
     externalRef: jsonb('external_ref').$type<ConversationExternalRef>(),
     data: jsonb('data').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+    /** Execution state of this turn's reply. Defaults to 'complete' so every
+     *  pre-existing row, every inbound row, and every synchronous web write
+     *  classifies correctly with NO backfill (same trick as `channel`). The
+     *  durable apps/api runner creates the outbound row 'pending' (the
+     *  "thinking…" bubble), then flips it to 'complete' (reply filled) or
+     *  'failed' (error set) — so in-progress + failed states survive the user
+     *  navigating away or the process restarting. The DBOS workflow is the
+     *  source of truth for execution; this column is the UI-facing projection.
+     *  See docs/conversation.md + the dedicated-API Phase 1 plan. */
+    status: text('status')
+      .$type<'pending' | 'complete' | 'failed'>()
+      .default('complete')
+      .notNull(),
+    /** Human-readable failure reason when status='failed' (a dead-lettered turn).
+     *  NULL otherwise. Surfaced in the chat bubble so a failed turn is visible
+     *  and retryable rather than silently lost. */
+    error: text('error'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
