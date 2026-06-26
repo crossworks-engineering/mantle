@@ -1,23 +1,22 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { MsConfigStatus } from '@mantle/microsoft';
-import { clearMsConfig, saveMsConfig, type MsConfigResult } from './actions';
-
-const initial: MsConfigResult | undefined = undefined;
+import { apiSend } from '@/lib/api-fetch';
 
 /**
  * Azure AD app registration, editable from the UI (replaces editing `.env` +
  * restart). When the active config comes from environment variables, saving
  * here creates a per-owner override; "Reset to environment" removes it.
  *
- * Controlled inputs so React 19's post-action form reset doesn't wipe what was
- * typed (same reason as the IMAP form).
+ * Controlled inputs so the typed values survive a re-render. Persists via
+ * PUT/DELETE /api/microsoft/config, then invalidates the parent's config query.
  */
 export function MsConfigForm({
   status,
@@ -26,7 +25,7 @@ export function MsConfigForm({
   status: MsConfigStatus;
   suggestedRedirectUri: string;
 }) {
-  const [state, formAction] = useActionState(saveMsConfig, initial);
+  const queryClient = useQueryClient();
   const hasStoredSecret = status.source === 'db';
 
   const [clientId, setClientId] = useState(status.clientId ?? '');
@@ -34,6 +33,42 @@ export function MsConfigForm({
   const [redirectUri, setRedirectUri] = useState(status.redirectUri ?? suggestedRedirectUri);
   const [secret, setSecret] = useState('');
   const [showSecret, setShowSecret] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['microsoft', 'config'] });
+
+  const save = useMutation({
+    mutationFn: () =>
+      apiSend('/api/microsoft/config', 'PUT', {
+        clientId,
+        clientSecret: secret || undefined,
+        tenant: tenant || 'common',
+        redirectUri,
+      }),
+    onSuccess: () => {
+      setSaved(true);
+      setSecret('');
+      void invalidate();
+    },
+    onError: (err) => setError(err instanceof Error ? err.message : String(err)),
+  });
+
+  const clear = useMutation({
+    mutationFn: () => apiSend('/api/microsoft/config', 'DELETE'),
+    onSuccess: () => {
+      setSaved(false);
+      void invalidate();
+    },
+    onError: (err) => setError(err instanceof Error ? err.message : String(err)),
+  });
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSaved(false);
+    save.mutate();
+  };
 
   return (
     <div className="space-y-4 rounded-lg border border-border bg-card p-4">
@@ -49,7 +84,8 @@ export function MsConfigForm({
           >
             app registration
           </a>
-          . {status.source === 'env'
+          .{' '}
+          {status.source === 'env'
             ? 'Currently loaded from environment variables — saving here overrides them.'
             : status.source === 'db'
               ? 'Set here in the UI.'
@@ -57,12 +93,11 @@ export function MsConfigForm({
         </p>
       </div>
 
-      <form action={formAction} className="space-y-4">
+      <form onSubmit={onSubmit} className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="clientId">Application (client) ID</Label>
           <Input
             id="clientId"
-            name="clientId"
             value={clientId}
             onChange={(e) => setClientId(e.target.value)}
             placeholder="00000000-0000-0000-0000-000000000000"
@@ -75,11 +110,14 @@ export function MsConfigForm({
           <div className="relative">
             <Input
               id="clientSecret"
-              name="clientSecret"
               type={showSecret ? 'text' : 'password'}
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
-              placeholder={hasStoredSecret ? `Leave blank to keep current (${status.secretMasked})` : 'Client secret value'}
+              placeholder={
+                hasStoredSecret
+                  ? `Leave blank to keep current (${status.secretMasked})`
+                  : 'Client secret value'
+              }
               className="pr-10"
             />
             <button
@@ -100,7 +138,6 @@ export function MsConfigForm({
           <Label htmlFor="tenant">Directory (tenant)</Label>
           <Input
             id="tenant"
-            name="tenant"
             value={tenant}
             onChange={(e) => setTenant(e.target.value)}
             placeholder="common"
@@ -115,34 +152,39 @@ export function MsConfigForm({
           <Label htmlFor="redirectUri">Redirect URI</Label>
           <Input
             id="redirectUri"
-            name="redirectUri"
             value={redirectUri}
             onChange={(e) => setRedirectUri(e.target.value)}
             required
           />
           <p className="text-xs text-muted-foreground">
-            Add this <strong>exact</strong> URI to the app&apos;s Authentication → Web → Redirect URIs.
+            Add this <strong>exact</strong> URI to the app&apos;s Authentication → Web → Redirect
+            URIs.
           </p>
         </div>
 
-        {state && !state.ok && (
+        {error && (
           <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {state.error}
+            {error}
           </p>
         )}
-        {state?.ok && (
+        {saved && (
           <p className="rounded-md border border-green-500/30 bg-green-50 px-3 py-2 text-sm text-green-900 dark:bg-green-950/40 dark:text-green-100">
             Saved.
           </p>
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          <SubmitButton size="sm">Save Microsoft app</SubmitButton>
+          <SubmitButton size="sm" pending={save.isPending}>
+            Save Microsoft app
+          </SubmitButton>
           {status.source === 'db' && (
             <Button
-              type="submit"
-              formAction={clearMsConfig}
-              formNoValidate
+              type="button"
+              onClick={() => {
+                setError(null);
+                clear.mutate();
+              }}
+              disabled={clear.isPending}
               variant="ghost"
               size="sm"
               className="text-muted-foreground"
