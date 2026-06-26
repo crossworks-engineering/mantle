@@ -47,12 +47,21 @@ const save = useMutation({
 
 ## Conventions
 
+- **Types come from `@mantle/client-types`** — never duplicate a row shape in the client,
+  and never `import` (value) from `@mantle/db` in a client component. Add the wire DTO to
+  that package and alias the server summary to it (`type SkillSummary = SkillDTO`) so a
+  drift between what the server returns and what the client expects is a **type error**.
 - **Query keys** = URL as an array: `['skills']`, `['skills', id]`, `['skills', 'backrefs']`.
 - **Invalidate the broadest affected prefix** after a mutation; don't hand-patch the cache
   unless you need optimistic UI.
 - **Errors**: `apiFetch` throws `ApiError` carrying the endpoint's `{ error }` message —
   surface it via `query.error.message` / mutation `onError` + `toast`.
-- **Auth stays server-side** in the page (`requireOwner`); only data moves to the client.
+- **Auth is handled for you.** `apiFetch` detects a `401` *or* a followed redirect-to-`/login`
+  and bounces the browser to `/login?next=…`. (The page also keeps a server-side
+  `requireOwner()` gate for the initial load.) Don't re-implement this per screen.
+- **Loading** → `<Spinner>` (`components/ui/spinner.tsx`). **Secondary/optional data** (badges,
+  counts that aren't the primary content) → on error, show a subtle non-blocking notice with
+  Retry rather than failing the whole screen (see the skills backrefs notice).
 - **Provider**: `QueryProvider` wraps the app in `app/layout.tsx` — nothing to add per screen.
 
 ## Why no SSR initial data?
