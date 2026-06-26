@@ -290,7 +290,7 @@ services:
     # same one-shot gate — every worker depends_on this completing, so by the time
     # they call pg-boss start() the schema exists and they can't race to create it
     # (which on a fresh DB leaves it uncreated). Idempotent on an existing brain.
-    command: ["sh", "-c", "pnpm -C packages/db migrate && pnpm -C apps/web pgboss:init"]
+    command: ["sh", "-c", "pnpm -C packages/db migrate && pnpm -C apps/web pgboss:init && pnpm -C apps/api provision"]
     container_name: mantle_migrate
     restart: "no"
     depends_on:
@@ -393,6 +393,24 @@ services:
       - ./infra/updater/updater.sh:/updater.sh:ro
       - .:${MANTLE_STACK_DIR:-/opt/mantle-stack}
       - mantle_update_signal:/signal
+
+  # Dedicated durable-runner service: executes assistant/agent LLM work as DBOS
+  # workflows (journaled to the mantle_dbos_sys system DB, provisioned in the
+  # migrate gate) so a turn survives navigation + a web restart. Same image,
+  # different command. Will absorb `agent` (Telegram + ticks) in a later step.
+  api:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    command: ["pnpm", "-C", "apps/api", "start"]
+    container_name: mantle_api
+    restart: unless-stopped
+    depends_on:
+      postgres:    { condition: service_healthy }
+      migrate:     { condition: service_completed_successfully }
+      ollama_pull: { condition: service_completed_successfully }
+    environment:
+      <<: *app-env
+    volumes:
+      - ${MANTLE_DATA_DIR:-./data}/files:/data/files
 
   agent:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}

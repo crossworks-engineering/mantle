@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx --watch --env-file-if-exists=../web/.env.local src/main.ts",
     "start": "tsx --env-file-if-exists=../web/.env.local src/main.ts",
+    "provision": "tsx --env-file-if-exists=../web/.env.local src/provision.ts",
     "smoke": "tsx --env-file-if-exists=../web/.env.local src/smoke.ts",
     "typecheck": "tsc --noEmit"
   },
@@ -14,7 +15,8 @@
     "@mantle/assistant-runtime": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/tracing": "workspace:*",
-    "drizzle-orm": "^0.38.3"
+    "drizzle-orm": "^0.38.3",
+    "postgres": "^3.4.5"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
