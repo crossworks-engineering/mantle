@@ -15,6 +15,9 @@ Audited at commit `fe27dbe` (2026-06-26). Raw grep returns **27 non-API files**,
 but **only 17 are real runtime-DB holes** — see "Not holes" at the bottom before
 touching anything.
 
+**Progress:** Group A (email/accounts, 8 holes) ✅ done in v0.60.0. **9 real holes
+remain** (groups B–F).
+
 ---
 
 ## Real holes — 17 (11 pages + 6 server actions)
@@ -22,22 +25,30 @@ touching anything.
 Each maps to an existing endpoint (**REWIRE**) or needs a new one (**NEW**).
 "DB symbols" = what it imports from `@mantle/db` today.
 
-### A. Email / accounts cluster — 8 holes, biggest payoff (no `/api/email*` exists yet)
+### A. Email / accounts cluster — 8 holes ✅ DONE (v0.60.0)
 
-Build the endpoint set once, close 8 holes. Suggested surface:
-`GET /api/email/accounts`, `GET /api/email/accounts/[id]`,
-`POST/PATCH/DELETE /api/email/accounts/[id]` (incl. IMAP + folders),
-`GET /api/email/messages` (list/inbox), `POST /api/email/discover`.
-All exist as package functions in `@mantle/email` already — wrap, don't rewrite.
+Closed by extracting the inline Drizzle into `@mantle/email` (`accounts.ts`,
+`messages.ts`, `discover.ts`) and wrapping it with `/api/email/**`. The 4 pages +
+4 actions now import `@mantle/email`, not `@mantle/db`. SSR unchanged (in-process);
+client conversion is Task 4. Endpoints built:
+`GET/POST /api/email/accounts`, `GET/PATCH /api/email/accounts/[id]`,
+`GET/PUT /api/email/accounts/[id]/folders`, `GET /api/email/folders`,
+`GET /api/email/messages`, `GET/PATCH /api/email/messages/[id]`,
+`GET /api/email/discover`, `POST /api/email/discover/contacts`.
+Account responses are credential-redacted (`redactAccount` strips `imapConfigEnc`).
 
-- [ ] `app/(app)/inbox/page.tsx` — *page* — DB: `emailAccounts, emails, emailAttachments` → **NEW** `GET /api/email/messages`
-- [ ] `app/(app)/settings/accounts/page.tsx` — *page* — DB: `emailAccounts, syncRuns` → **NEW** `GET /api/email/accounts` (+ sync-run state)
-- [ ] `app/(app)/settings/accounts/[id]/edit/page.tsx` — *page* — DB: `emailAccounts` → **NEW** `GET /api/email/accounts/[id]`
-- [ ] `app/(app)/settings/discover/page.tsx` — *page* — DB: `emailAccounts` → **NEW** (reuse `GET /api/email/accounts`)
-- [ ] `app/(app)/email-actions.ts` — *server action* — DB: `emailAccounts, emails` → **NEW** mutation endpoint(s)
-- [ ] `app/(app)/settings/accounts/folders-actions.ts` — *server action* — DB: `emailAccounts` → **NEW** folder mutation endpoint
-- [ ] `app/(app)/settings/accounts/imap/actions.ts` — *server action* — DB: `emailAccounts` → **NEW** IMAP account CRUD endpoint
-- [ ] `app/(app)/settings/discover/actions.ts` — *server action* — DB: `emailAccounts` → **NEW** `POST /api/email/discover`
+- [x] `app/(app)/inbox/page.tsx` — *page* → `navAccounts`/`folderFacets`/`listMessages`/`getMessageWithAttachments`/`setReadStatus`
+- [x] `app/(app)/settings/accounts/page.tsx` — *page* → `listAccounts` + `latestSyncRuns`
+- [x] `app/(app)/settings/accounts/[id]/edit/page.tsx` — *page* → `getAccount`
+- [x] `app/(app)/settings/discover/page.tsx` — *page* → `listImapAccounts`
+- [x] `app/(app)/email-actions.ts` — *server action* → `setReadStatus`/`setStarred`
+- [x] `app/(app)/settings/accounts/folders-actions.ts` — *server action* → `listAccountFolders`/`setIncludedFolders`
+- [x] `app/(app)/settings/accounts/imap/actions.ts` — *server action* → `connectImapAccount`
+- [x] `app/(app)/settings/discover/actions.ts` — *server action* → `recentUnknownSenders`/`addContactFromSender`
+
+> Note: the audit assumed these "exist as package functions already" — they did
+> not (the reads were inline Drizzle in the pages). The package layer was built
+> as part of this task.
 
 ### B. Heartbeats — 2 holes (no `/api/heartbeats` exists)
 
