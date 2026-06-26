@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import type { JSONContent } from '@tiptap/react';
 import {
   ArrowUpDown,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -15,6 +16,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Tag,
   Trash2,
 } from 'lucide-react';
 import {
@@ -38,6 +40,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { PageSort } from '@/lib/pages';
 import { SubmitButton } from '@/components/ui/submit-button';
 import {
@@ -133,24 +144,6 @@ export function PagesClient({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const [searchInput, setSearchInput] = useState(query);
-
-  // Tag filter row collapses to a single line; a toggle reveals the rest.
-  // `tagsOverflow` (measured while collapsed) gates the toggle so it only shows
-  // when the tags actually wrap past one row.
-  const tagRowRef = useRef<HTMLDivElement>(null);
-  const [tagsExpanded, setTagsExpanded] = useState(false);
-  const [tagsOverflow, setTagsOverflow] = useState(false);
-
-  useEffect(() => {
-    if (tagsExpanded) return; // keep the toggle visible while expanded
-    const el = tagRowRef.current;
-    if (!el) return;
-    const check = () => setTagsOverflow(el.scrollHeight - el.clientHeight > 4);
-    check();
-    const ro = new ResizeObserver(check);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [tags, tagsExpanded]);
 
   // Draggable list-pane width (md+). Default 300px; persisted so it sticks.
   const WIDTH_KEY = 'mantle:pages-list-width';
@@ -471,77 +464,54 @@ export function PagesClient({
             </Button>
           </div>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+          <div className="flex flex-wrap items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-muted-foreground"
+                  title="Sort pages"
+                >
+                  <ArrowUpDown className="size-3.5" />
+                  {SORT_LABELS[sort]}
+                  <ChevronDown className="size-3.5 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuRadioGroup
+                  value={sort}
+                  onValueChange={(v) => go({ sort: v as PageSort, page: 1 })}
+                >
+                  {(Object.keys(SORT_LABELS) as PageSort[]).map((s) => (
+                    <DropdownMenuRadioItem key={s} value={s}>
+                      {SORT_LABELS[s]}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {tags.length > 0 && (
+              <TagFilter
+                tags={tags}
+                activeTag={activeTag}
+                onSelect={(t) => go({ tag: t, page: 1 })}
+              />
+            )}
+
+            {activeTag && (
               <Button
                 variant="ghost"
                 size="sm"
                 className="h-7 gap-1 px-2 text-muted-foreground"
-                title="Sort pages"
+                onClick={() => go({ tag: null, page: 1 })}
+                title="Clear tag filter"
               >
-                <ArrowUpDown className="size-3.5" />
-                {SORT_LABELS[sort]}
-                <ChevronDown className="size-3.5 opacity-60" />
+                Clear
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuRadioGroup
-                value={sort}
-                onValueChange={(v) => go({ sort: v as PageSort, page: 1 })}
-              >
-                {(Object.keys(SORT_LABELS) as PageSort[]).map((s) => (
-                  <DropdownMenuRadioItem key={s} value={s}>
-                    {SORT_LABELS[s]}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {tags.length > 0 && (
-            <div className="flex items-start gap-1.5">
-              <div
-                ref={tagRowRef}
-                className={cn(
-                  'flex flex-1 flex-wrap items-center gap-1.5',
-                  !tagsExpanded && 'max-h-7 overflow-hidden',
-                )}
-              >
-                <Button
-                  size="sm"
-                  variant={activeTag ? 'outline' : 'default'}
-                  className="h-7 rounded-full px-3"
-                  onClick={() => go({ tag: null, page: 1 })}
-                >
-                  All
-                </Button>
-                {tags.map((t) => (
-                  <Button
-                    key={t.tag}
-                    size="sm"
-                    variant={activeTag === t.tag ? 'default' : 'outline'}
-                    className="h-7 rounded-full px-3"
-                    onClick={() => go({ tag: activeTag === t.tag ? null : t.tag, page: 1 })}
-                  >
-                    {t.tag}
-                    <span className="ml-1 opacity-60">{t.count}</span>
-                  </Button>
-                ))}
-              </div>
-              {tagsOverflow && (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="size-7 shrink-0"
-                  onClick={() => setTagsExpanded((v) => !v)}
-                  aria-label={tagsExpanded ? 'Show fewer tags' : 'Show all tags'}
-                  title={tagsExpanded ? 'Show fewer tags' : 'Show all tags'}
-                >
-                  <ChevronDown className={cn('transition-transform', tagsExpanded && 'rotate-180')} />
-                </Button>
-              )}
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         <div
@@ -783,8 +753,9 @@ function TreeRow({
         nesting && 'ring-2 ring-inset ring-primary bg-primary/10',
         dragging && 'opacity-40',
       )}
-      style={{ paddingLeft: depth * 16 }}
     >
+      {/* Grip stays in a fixed left gutter for every row — depth indents the
+          chevron + title below, not the handle, so all handles line up. */}
       <button
         type="button"
         ref={setDragRef}
@@ -803,11 +774,12 @@ function TreeRow({
           onClick={onToggle}
           aria-label={expanded ? 'Collapse' : 'Expand'}
           className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent"
+          style={{ marginLeft: depth * 16 }}
         >
           {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
         </button>
       ) : (
-        <span className="size-6 shrink-0" aria-hidden />
+        <span className="size-6 shrink-0" aria-hidden style={{ marginLeft: depth * 16 }} />
       )}
 
       <button
@@ -909,6 +881,76 @@ function TopLevelDropZone() {
     >
       Drop here to move to the top level
     </div>
+  );
+}
+
+/** Searchable tag filter — Popover + Command (cmdk) combobox. Replaces the
+ *  inline pill row, which got unwieldy past a handful of tags. cmdk filters the
+ *  list by each item's `value` as you type; selecting drives the URL `tag`
+ *  param (SSR filtering), and re-picking the active tag clears it. */
+function TagFilter({
+  tags,
+  activeTag,
+  onSelect,
+}: {
+  tags: TagCount[];
+  activeTag: string | null;
+  onSelect: (tag: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const choose = (tag: string | null) => {
+    onSelect(tag);
+    setOpen(false);
+  };
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          role="combobox"
+          aria-expanded={open}
+          className={cn('h-7 gap-1 px-2 text-muted-foreground', activeTag && 'text-foreground')}
+          title="Filter by tag"
+        >
+          <Tag className="size-3.5" />
+          <span className="max-w-32 truncate">{activeTag ?? 'All tags'}</span>
+          <ChevronDown className="size-3.5 opacity-60" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-60 p-0">
+        <Command>
+          <CommandInput placeholder="Search tags…" className="border-0 focus:ring-0" />
+          <CommandList className="max-h-72">
+            <CommandEmpty className="px-3 py-6 text-center text-xs text-muted-foreground">
+              No tags found.
+            </CommandEmpty>
+            <CommandGroup>
+              {/* Sentinel value so a tag search doesn't accidentally match it. */}
+              <CommandItem value="__all_pages__" onSelect={() => choose(null)}>
+                <Check className={cn('size-4', activeTag === null ? 'opacity-100' : 'opacity-0')} />
+                <span className="flex-1">All pages</span>
+              </CommandItem>
+              {tags.map((t) => (
+                <CommandItem
+                  key={t.tag}
+                  value={t.tag}
+                  onSelect={() => choose(activeTag === t.tag ? null : t.tag)}
+                >
+                  <Check
+                    className={cn('size-4', activeTag === t.tag ? 'opacity-100' : 'opacity-0')}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{t.tag}</span>
+                  <span className="ml-2 shrink-0 text-xs tabular-nums text-muted-foreground">
+                    {t.count}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
