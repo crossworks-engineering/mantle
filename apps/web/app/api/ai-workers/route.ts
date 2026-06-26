@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import type { AiWorkerParams } from '@mantle/db';
+import { clearEmbeddingModelCache } from '@mantle/embeddings';
 import { requireOwner } from '@/lib/auth';
 import { createAiWorker, listAiWorkers, toAiWorkerDTO } from '@/lib/ai-workers';
 
@@ -69,6 +70,9 @@ export async function POST(req: Request) {
       ...rest,
       ...(params !== undefined ? { params: params as AiWorkerParams } : {}),
     });
+    // Embedding model changes must drop the resolver cache NOW (next ingest/recall
+    // would otherwise hit the old model for ~60s).
+    if (worker.kind === 'embedding') clearEmbeddingModelCache(user.id);
     return NextResponse.json({ worker: toAiWorkerDTO(worker) });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -61,6 +61,7 @@ export function toAiWorkerDTO(w: AiWorker): AiWorkerDTO {
     viaTailnet: w.viaTailnet,
     backupBaseUrl: w.backupBaseUrl,
     backupViaTailnet: w.backupViaTailnet,
+    usageCount: w.usageCount,
     lastUsedAt: w.lastUsedAt ? w.lastUsedAt.toISOString() : null,
     createdAt: w.createdAt.toISOString(),
     updatedAt: w.updatedAt.toISOString(),

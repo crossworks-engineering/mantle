@@ -144,7 +144,16 @@ export interface AiWorkerDTO {
   viaTailnet: boolean;
   backupBaseUrl: string | null;
   backupViaTailnet: boolean;
+  usageCount: number;
   lastUsedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** `GET /api/ai-workers/config` — static-ish bits the worker form needs. */
+export interface AiWorkerConfig {
+  /** Providers with a native-PDF document adapter (vs. rasterize-at-ingest). */
+  nativeDocProviders: string[];
+  /** Online tailnet peer MagicDNS names (route base-URL datalist). */
+  tailnetPeers: string[];
 }

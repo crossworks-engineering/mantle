@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { clearEmbeddingModelCache } from '@mantle/embeddings';
 import { requireOwner } from '@/lib/auth';
 import { setDefaultWorker, toAiWorkerDTO } from '@/lib/ai-workers';
 
@@ -13,5 +14,6 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   const worker = await setDefaultWorker(user.id, idParsed.data.id);
   if (!worker) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  if (worker.kind === 'embedding') clearEmbeddingModelCache(user.id);
   return NextResponse.json({ worker: toAiWorkerDTO(worker) });
 }
