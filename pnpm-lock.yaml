@@ -997,6 +997,9 @@ importers:
       '@mantle/app-build':
         specifier: workspace:*
         version: link:../app-build
+      '@mantle/client-types':
+        specifier: workspace:*
+        version: link:../client-types
       '@mantle/content':
         specifier: workspace:*
         version: link:../content

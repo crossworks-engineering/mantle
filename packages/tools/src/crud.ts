@@ -11,19 +11,11 @@
 
 import { and, asc, eq } from 'drizzle-orm';
 import { db, tools, type Tool, type ToolHandler } from '@mantle/db';
+import type { ToolDTO } from '@mantle/client-types';
 
-export type ToolSummary = {
-  id: string;
-  slug: string;
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-  handler: ToolHandler;
-  requiresConfirm: boolean;
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
+/** The API/wire shape (see @mantle/client-types). Aliased here so `toSummary`'s
+ *  output is checked against the client contract — drift is a type error. */
+export type ToolSummary = ToolDTO;
 
 function toSummary(t: Tool): ToolSummary {
   return {

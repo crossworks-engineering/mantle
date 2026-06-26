@@ -37,3 +37,49 @@ export interface HeartbeatRef {
 
 /** `GET /api/skills/backrefs` — heartbeat refs keyed by skill slug. */
 export type SkillBackrefs = Record<string, HeartbeatRef[]>;
+
+// ── Tools ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Tool handler descriptor — the canonical wire shape. Mirrors @mantle/db's
+ * `ToolHandler` union; kept standalone here so this package stays zero-dep (no
+ * postgres type graph). Drift is caught where it matters: `@mantle/tools` aliases
+ * `ToolSummary = ToolDTO`, so if db's union ever diverges from this one, that
+ * package fails to compile.
+ */
+export type ToolHandler =
+  | { kind: 'builtin'; ref: string }
+  | {
+      kind: 'http';
+      url: string;
+      method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+      headers?: Record<string, string>;
+      query?: Record<string, string>;
+      body?: string | null;
+      headersRef?: string | null;
+      authRef?: string | null;
+      timeoutMs?: number;
+    }
+  | { kind: 'shell'; cmd: string };
+
+/** A tool as returned by `GET /api/tools`. */
+export interface ToolDTO {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  handler: ToolHandler;
+  requiresConfirm: boolean;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** `GET/PUT /api/tools/settings` — the two owner-level tool policy toggles. */
+export interface ToolSettings {
+  /** Tools an agent authors (Toolsmith) start confirm-gated until cleared. */
+  requireApproval: boolean;
+  /** Unattended heartbeats park email/web calls for approval. */
+  egressGate: boolean;
+}
