@@ -65,7 +65,14 @@ import {
   openHeartbeatsForSurface,
   registerHeartbeatTools,
 } from '@mantle/heartbeats';
-import { startTrace, step, modelSupportsVision, maxImageBytesFor, refreshModelCatalog } from '@mantle/tracing';
+import {
+  startTrace,
+  step,
+  runDurableStep,
+  modelSupportsVision,
+  maxImageBytesFor,
+  refreshModelCatalog,
+} from '@mantle/tracing';
 import { pickWebDefaultAgent } from './select';
 
 /** Decoded byte size of a base64 string (tolerates a leading data-URL
@@ -252,15 +259,19 @@ export async function runAssistantTurn(
         ]
       : [];
   const channel: ConversationChannel = options?.channel ?? 'web';
-  const inbound = await recordTurn({
-    ownerId,
-    agentId: agent.id,
-    direction: 'inbound',
-    text: displayText,
-    channel,
-    attachments: inboundAttachments,
-    ...(options?.location ? { data: { location: options.location } } : {}),
-  });
+  // Journaled under the durable runner so a crash-resume doesn't insert a
+  // duplicate inbound row (pure passthrough outside a workflow).
+  const inbound = await runDurableStep('record_inbound', () =>
+    recordTurn({
+      ownerId,
+      agentId: agent.id,
+      direction: 'inbound',
+      text: displayText,
+      channel,
+      attachments: inboundAttachments,
+      ...(options?.location ? { data: { location: options.location } } : {}),
+    }),
+  );
   // Remember the surface this turn came in on so proactive delivery (reminders)
   // follows the last channel the user actually used. Best-effort — a failure
   // here must never sink the turn. Only mobile/telegram are reminder-capable;
@@ -587,14 +598,16 @@ export async function runAssistantTurn(
   // branch point where voice-mode reply would skip the strip.
   const reply = stripAudioTags(rawReply).text;
 
-  const outbound = await recordTurn({
-    ownerId,
-    agentId: agent.id,
-    direction: 'outbound',
-    text: reply,
-    channel,
-    model: agent.model,
-  });
+  const outbound = await runDurableStep('record_outbound', () =>
+    recordTurn({
+      ownerId,
+      agentId: agent.id,
+      direction: 'outbound',
+      text: reply,
+      channel,
+      model: agent.model,
+    }),
+  );
 
   void db
     .update(agents)

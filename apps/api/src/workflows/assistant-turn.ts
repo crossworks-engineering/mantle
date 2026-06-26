@@ -5,23 +5,24 @@
  * navigating away from /assistant no longer kills it, and a process restart
  * resumes via DBOS auto-recovery.
  *
- * GRANULARITY (important): today the whole turn runs as ONE durable step. That
- * already delivers the headline win (execution moves onto this dedicated service
- * and survives a web-process restart via DBOS recovery) plus
- * queue/concurrency/run-timing. It does NOT yet give per-tool idempotency: a
- * process crash mid-turn re-runs the entire turn on recovery, which can re-fire
- * side-effecting tools (e.g. re-send an email). True tool-level journaling needs
- * runToolLoop (in @mantle/agent-runtime) instrumented to emit each LLM call +
- * tool dispatch as its own DBOS step — a deliberate later refinement. Because of
- * that, step retries are OFF here: a failed turn surfaces as a failure, it is
- * not silently replayed.
+ * GRANULARITY: the turn runs under withDurableSteps, so every boundary already
+ * marked by @mantle/tracing step() inside runToolLoop (each LLM call + each tool
+ * dispatch) plus record_inbound/record_outbound becomes its own journaled DBOS
+ * step. A crash mid-turn resumes from the last completed step — completed
+ * (side-effecting) tools and row writes are NOT re-run. Nested sub-agent
+ * (invoke_agent) loops journal as a single step each for now (the nesting guard
+ * keeps DBOS from seeing steps-within-steps); per-tool journaling INSIDE a
+ * sub-agent is a later refinement via child workflows. The deterministic glue
+ * between steps (prompt building, context shaping) re-executes harmlessly on
+ * replay since its outputs only feed step inputs the engine ignores.
  *
  * The web route enqueues this workflow and AWAITS its result (relaying the same
- * response shape it returned when the turn ran in-process), so the step returns
+ * response shape it returned when the turn ran in-process); the workflow returns
  * a plain serializable DTO ready for that relay.
  */
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
+import { withDurableSteps } from '@mantle/tracing';
 import {
   runAssistantTurn,
   ASSISTANT_TURN_WORKFLOW,
@@ -46,29 +47,36 @@ async function assistantTurnImpl(input: AssistantTurnInput): Promise<AssistantTu
 
   let dto: AssistantTurnRunResult;
   try {
-    // Map to the serializable DTO INSIDE the step so what gets journaled (and
-    // returned to the route) is plain JSON — dates stringified, rows reduced to
-    // what the chat UI needs — with no Date round-trip surprises.
-    dto = await DBOS.runStep(
+    // Run the turn with a durable executor active: each already-instrumented
+    // boundary inside runAssistantTurn (record_inbound/outbound, and every LLM
+    // call + tool dispatch in runToolLoop via @mantle/tracing step()) becomes a
+    // journaled DBOS step. So a crash mid-turn resumes from the last completed
+    // step — completed tools/rows are NOT re-run. The deterministic glue between
+    // steps re-executes harmlessly on replay (its outputs only feed step inputs,
+    // which the engine ignores in favour of journaled results).
+    //
+    // The DTO mapping uses `new Date(...)` because on replay the journaled row's
+    // createdAt deserializes to a string, not a Date.
+    dto = await withDurableSteps(
+      (name, fn) => DBOS.runStep(fn, { name }),
       async (): Promise<AssistantTurnRunResult> => {
         const r = await runAssistantTurn(ownerId, text, options);
         return {
           inbound: {
             id: r.inbound.id,
             text: r.inbound.text,
-            createdAt: r.inbound.createdAt.toISOString(),
+            createdAt: new Date(r.inbound.createdAt).toISOString(),
           },
           outbound: {
             id: r.outbound.id,
             text: r.outbound.text,
             model: r.outbound.model,
-            createdAt: r.outbound.createdAt.toISOString(),
+            createdAt: new Date(r.outbound.createdAt).toISOString(),
           },
           reply: r.reply,
           artifacts: r.artifacts,
         };
       },
-      { name: 'run_turn', retriesAllowed: false },
     );
   } catch (err) {
     // The DBOS run record already captures status=ERROR + the error; add an

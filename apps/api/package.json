@@ -13,6 +13,7 @@
     "@dbos-inc/dbos-sdk": "^4.22.6",
     "@mantle/assistant-runtime": "workspace:*",
     "@mantle/db": "workspace:*",
+    "@mantle/tracing": "workspace:*",
     "drizzle-orm": "^0.38.3"
   },
   "devDependencies": {
