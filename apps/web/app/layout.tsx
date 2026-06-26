@@ -6,6 +6,7 @@ import 'katex/dist/katex.min.css';
 import { fontSans, fontLogo } from '@/lib/fonts';
 import { ThemeProvider } from '@/components/theme-provider';
 import { ColorThemeProvider } from '@/components/color-theme-provider';
+import { QueryProvider } from '@/components/query-provider';
 import { COLOR_THEME_STORAGE_KEY, DEFAULT_COLOR_THEME } from '@/lib/themes';
 
 export const metadata: Metadata = {
@@ -29,7 +30,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           enableSystem
           disableTransitionOnChange
         >
-          <ColorThemeProvider>{children}</ColorThemeProvider>
+          <ColorThemeProvider>
+            <QueryProvider>{children}</QueryProvider>
+          </ColorThemeProvider>
         </ThemeProvider>
       </body>
     </html>
