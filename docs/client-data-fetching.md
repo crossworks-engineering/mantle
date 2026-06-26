@@ -79,6 +79,7 @@ by default.
 | `/settings/skills` | ✅ converted (reference template) |
 | `/settings/tools` | ✅ converted (+ second data source, optimistic toggles) |
 | `/settings/tool-groups` | ✅ converted (reuses the `['tools']` cache) |
+| `/settings/ai-workers` | ✅ converted (built the API first; 2178-line form kept uncontrolled) |
 
 Convert more by following the reference; order by Electron priority.
 
@@ -92,3 +93,12 @@ Notes from the conversions so far:
   summary to it (`type XSummary = XDTO`). Keep the package zero-dep: define complex
   shapes (e.g. `ToolHandler`) standalone rather than re-export from `@mantle/db`
   (which drags its node-typed graph in); the alias still catches drift at compile.
+  When there's no summary layer (e.g. ai-workers returns raw rows), add a
+  `toXDTO(row)` mapper instead — its explicit return type is the drift checkpoint,
+  and it's where ISO-date serialization happens.
+- **Uncontrolled forms** (build a `FormData` at submit, like the worker form) needn't
+  be rewritten: keep the FormData submit and convert it to JSON in a `lib/*-form.ts`
+  helper the parent's mutation calls. Move any server-side side-effects (e.g. the
+  embedding resolver-cache invalidation) into the endpoint so behavior is preserved.
+- **Screens with no endpoints yet** (ai-workers) → build the API first (Task-1 style),
+  in phases if large (CRUD, then RPCs, then the client), each independently shippable.
