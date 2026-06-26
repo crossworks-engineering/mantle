@@ -8,7 +8,7 @@
  * /settings/tools if injected-send ever becomes a concern.
  */
 
-import { and, desc, eq, gte } from 'drizzle-orm';
+import { and, desc, eq, gte, or } from 'drizzle-orm';
 import { db, emailAccounts, emails, type EmailAccount } from '@mantle/db';
 import { accountCanSend, sendEmail, type EmailAttachment } from '@mantle/email';
 import {
@@ -428,7 +428,12 @@ const email_get: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      id: { type: 'string', description: 'uuid of the email row' },
+      id: {
+        type: 'string',
+        description:
+          "the email's id — accepts EITHER the email-row id (from `email_list`) OR the node id " +
+          "(from `search_nodes` with type='email'). Both forms resolve to the same email.",
+      },
     },
     required: ['id'],
   },
@@ -442,6 +447,12 @@ const email_get: BuiltinToolDef = {
       // a spill, and sent the model paging through HTML soup (2026-06-11 turn
       // that 500'd on an empty reply). body_text is canonical (it's what the
       // extractor indexes); HTML is only a fallback source, converted to text.
+      //
+      // Match on EITHER the email-row id OR the node id: `email_list` hands the
+      // model `id` (the row PK) but `search_nodes` (the topic-search path this
+      // tool's own description points at) hands it `nodeId`. Accepting both
+      // closes the gap where a search → open → reply flow died on "not found"
+      // because the model passed the node id it had just been given.
       const [row] = await db
         .select({
           id: emails.id,
@@ -463,7 +474,7 @@ const email_get: BuiltinToolDef = {
           deliveryKind: emails.deliveryKind,
         })
         .from(emails)
-        .where(eq(emails.id, id))
+        .where(or(eq(emails.id, id), eq(emails.nodeId, id)))
         .limit(1);
       if (!row) return { ok: false, error: `email '${id}' not found` };
       const text = row.bodyText?.trim();
