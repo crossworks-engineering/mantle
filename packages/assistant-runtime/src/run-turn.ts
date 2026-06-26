@@ -164,42 +164,46 @@ export async function resolveAssistantAgent(
  * vision transcript already lands in /files via the upload path, so
  * the LLM can recover it via search_nodes if it's relevant later.
  */
+/** Options for {@link runAssistantTurn}. All fields are plain serializable data
+ *  so the durable apps/api runner can carry them as a workflow input. */
+export type RunAssistantTurnOptions = {
+  displayText?: string;
+  /** Whether the attachment is an image (vision) or a document (parsed
+   *  text). Drives the injected marker's wording + which re-read tool the
+   *  model is pointed at. Defaults to 'image'. */
+  attachmentKind?: 'image' | 'file';
+  /** Raw image bytes to show a vision-capable responder directly. Images
+   *  only — documents have no inline form. */
+  image?: UserImage;
+  /** Extracted text for the attachment — a vision transcript for images,
+   *  parsed text for documents. Preferred over the raw image: cheap,
+   *  cacheable, and the worker already answered the user's question at
+   *  ingest. Injected as text. */
+  imageTranscript?: string;
+  /** Note injected when the attachment couldn't be read at all. */
+  imageNote?: string;
+  /** File node id of the saved attachment, surfaced in the injected text so
+   *  the model can re-read it (extract_from_image / file_read) on a
+   *  follow-up. */
+  imageNodeId?: string;
+  /** Which agent answers this turn (the /assistant agent selector). Resolved
+   *  owner-scoped + enabled; falls back to the default assistant. */
+  agentSlug?: string;
+  /** Device location attached to this turn by the companion app. Persisted on
+   *  the inbound row (`data.location`) and rendered into the volatile context
+   *  so the agent is location-aware. Sanitized by the caller (the route). */
+  location?: LocationPing;
+  /** Surface this turn arrived on — 'web' (browser) or 'mobile' (companion
+   *  app), derived from the request's auth. Tags both the inbound and outbound
+   *  rows so proactive delivery can follow the last channel used. Defaults to
+   *  'web'. */
+  channel?: ConversationChannel;
+};
+
 export async function runAssistantTurn(
   ownerId: string,
   text: string,
-  options?: {
-    displayText?: string;
-    /** Whether the attachment is an image (vision) or a document (parsed
-     *  text). Drives the injected marker's wording + which re-read tool the
-     *  model is pointed at. Defaults to 'image'. */
-    attachmentKind?: 'image' | 'file';
-    /** Raw image bytes to show a vision-capable responder directly. Images
-     *  only — documents have no inline form. */
-    image?: UserImage;
-    /** Extracted text for the attachment — a vision transcript for images,
-     *  parsed text for documents. Preferred over the raw image: cheap,
-     *  cacheable, and the worker already answered the user's question at
-     *  ingest. Injected as text. */
-    imageTranscript?: string;
-    /** Note injected when the attachment couldn't be read at all. */
-    imageNote?: string;
-    /** File node id of the saved attachment, surfaced in the injected text so
-     *  the model can re-read it (extract_from_image / file_read) on a
-     *  follow-up. */
-    imageNodeId?: string;
-    /** Which agent answers this turn (the /assistant agent selector). Resolved
-     *  owner-scoped + enabled; falls back to the default assistant. */
-    agentSlug?: string;
-    /** Device location attached to this turn by the companion app. Persisted on
-     *  the inbound row (`data.location`) and rendered into the volatile context
-     *  so the agent is location-aware. Sanitized by the caller (the route). */
-    location?: LocationPing;
-    /** Surface this turn arrived on — 'web' (browser) or 'mobile' (companion
-     *  app), derived from the request's auth. Tags both the inbound and outbound
-     *  rows so proactive delivery can follow the last channel used. Defaults to
-     *  'web'. */
-    channel?: ConversationChannel;
-  },
+  options?: RunAssistantTurnOptions,
 ): Promise<AssistantTurnResult> {
   const trimmed = text.trim();
   if (!trimmed) throw new Error('runAssistantTurn: empty text');

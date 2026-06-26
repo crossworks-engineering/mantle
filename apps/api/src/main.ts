@@ -16,6 +16,7 @@ import { configureDBOS, RUNNER_QUEUE, runnerConcurrency } from './config';
 // Import workflow modules for their registration side-effects (registerWorkflow
 // runs at import, before launch).
 import './workflows/ping';
+import './workflows/assistant-turn';
 
 async function main(): Promise<void> {
   configureDBOS();

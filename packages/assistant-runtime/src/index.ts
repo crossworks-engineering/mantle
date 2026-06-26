@@ -12,6 +12,7 @@ export {
   resolveAssistantAgent,
   CHATTABLE_ROLES,
   type AssistantTurnResult,
+  type RunAssistantTurnOptions,
 } from './run-turn';
 export {
   pickWebDefaultAgent,
