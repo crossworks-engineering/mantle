@@ -15,6 +15,7 @@
  * DB itself doesn't apply any.
  */
 
+import type { HeartbeatDTO } from '@mantle/client-types';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import {
   db,
@@ -38,30 +39,13 @@ export type {
   HeartbeatSurface,
 } from '@mantle/db';
 
-export type HeartbeatSummary = {
-  id: string;
-  slug: string;
-  name: string;
-  description: string | null;
-  agentSlug: string;
-  skillSlug: string;
-  scheduleKind: 'once' | 'interval' | 'cron' | 'manual';
-  schedule: HeartbeatScheduleSpec;
-  surface: HeartbeatSurface;
-  nextFireAt: string | null;
-  lastFiredAt: string | null;
-  fireCount: number;
-  maxFires: number | null;
-  minIdleMinutes: number | null;
-  quietHours: HeartbeatQuietHours | null;
-  earliestAt: string | null;
-  cooldownMinutes: number | null;
-  state: Record<string, unknown>;
-  status: 'active' | 'paused' | 'completed' | 'cancelled';
-  completionReason: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
+/**
+ * The summary the CRUD layer returns and `GET /api/heartbeats` serializes.
+ * Aliased to the wire DTO in `@mantle/client-types` so the server shape and the
+ * client consumer can't drift — if `toSummary` stops matching the contract, this
+ * file stops compiling. Dates are ISO strings (see `toSummary`).
+ */
+export type HeartbeatSummary = HeartbeatDTO;
 
 function toSummary(h: Heartbeat): HeartbeatSummary {
   return {
