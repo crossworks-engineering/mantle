@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
-import { db, authUsers, mobileTokens } from '@mantle/db';
+import { db, authUsers, mobileTokens, countUsers } from '@mantle/db';
 import { SESSION_COOKIE_NAME } from './auth-constants';
 
 /**
@@ -18,6 +18,15 @@ import { SESSION_COOKIE_NAME } from './auth-constants';
  */
 
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
+
+/**
+ * Fresh install? (empty `auth.users`). Drives the login screen's
+ * sign-in-vs-create-account split. The signup endpoint enforces the same
+ * single-user gate server-side; this is only the UI hint.
+ */
+export async function isFirstRun(): Promise<boolean> {
+  return (await countUsers()) === 0;
+}
 
 export type SessionUser = { id: string; email: string };
 

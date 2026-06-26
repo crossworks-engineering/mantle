@@ -29,6 +29,15 @@ import {
 } from '@mantle/db';
 import { computeNextFireAt, notifyHeartbeatDue, validateSchedule } from '@mantle/heartbeats';
 
+// Re-export the heartbeat shape types so callers (form actions, API routes) get
+// them without importing @mantle/db directly.
+export type {
+  Heartbeat,
+  HeartbeatQuietHours,
+  HeartbeatScheduleSpec,
+  HeartbeatSurface,
+} from '@mantle/db';
+
 export type HeartbeatSummary = {
   id: string;
   slug: string;
@@ -100,6 +109,19 @@ export async function getHeartbeat(
     .where(and(eq(heartbeats.id, id), eq(heartbeats.ownerId, ownerId)))
     .limit(1);
   return row ? toSummary(row) : null;
+}
+
+/**
+ * The full owner-scoped Heartbeat row (not the trimmed summary) — `forceFire`
+ * and other engine calls need every column. Returns null if not found/owned.
+ */
+export async function getHeartbeatRow(ownerId: string, id: string): Promise<Heartbeat | null> {
+  const [row] = await db
+    .select()
+    .from(heartbeats)
+    .where(and(eq(heartbeats.id, id), eq(heartbeats.ownerId, ownerId)))
+    .limit(1);
+  return row ?? null;
 }
 
 export type CreateHeartbeatInput = {

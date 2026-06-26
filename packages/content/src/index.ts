@@ -484,3 +484,5 @@ export {
   type PersonaPresetKey,
   type PersonaPreset,
 } from './persona-bank';
+
+export { getOwnedNode } from './nodes';

@@ -127,6 +127,21 @@ export async function getAgent(userId: string, id: string): Promise<AgentSummary
   return row ? toSummary(row) : null;
 }
 
+/**
+ * Every agent for the owner as `{slug, name, role}`, ordered by slug — the
+ * catalogue the heartbeat form's agent selector renders. Unlike `listAgents`
+ * this is NOT filtered to conversational roles (a heartbeat can target any).
+ */
+export function listAgentOptions(
+  userId: string,
+): Promise<{ slug: string; name: string; role: Agent['role'] }[]> {
+  return db
+    .select({ slug: agents.slug, name: agents.name, role: agents.role })
+    .from(agents)
+    .where(eq(agents.ownerId, userId))
+    .orderBy(agents.slug);
+}
+
 /** One owner-scoped agent by its slug (the persona lookup), or null. */
 export async function getAgentBySlug(userId: string, slug: string): Promise<AgentSummary | null> {
   const [row] = await db
