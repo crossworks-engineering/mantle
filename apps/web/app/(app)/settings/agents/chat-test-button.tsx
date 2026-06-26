@@ -22,7 +22,7 @@ import { Loader2, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
-import { testAgentChatAction } from './actions';
+import { apiSend } from '@/lib/api-fetch';
 
 export function AgentChatTestButton({ agentId }: { agentId: string }) {
   const toast = useToast();
@@ -52,7 +52,13 @@ export function AgentChatTestButton({ agentId }: { agentId: string }) {
           onClick={() => {
             startTransition(async () => {
               try {
-                const r = await testAgentChatAction(agentId, prompt);
+                const r = await apiSend<{
+                  reply: string;
+                  model: string;
+                  adapter: string;
+                  tokensIn: number | null;
+                  tokensOut: number | null;
+                }>(`/api/agents/${agentId}/test/chat`, 'POST', { prompt });
                 setResult({
                   reply: r.reply,
                   model: r.model,

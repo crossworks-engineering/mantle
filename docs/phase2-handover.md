@@ -23,7 +23,9 @@ RSC pages + server actions read `@mantle/db` in-process. See `docs/frontend-back
 
 ### Task 4 — screens converted so far
 `/settings/skills` (v0.62.0, the reference) · `/settings/tools` (v0.62.2) ·
-`/settings/tool-groups` (v0.62.3) · `/settings/ai-workers` (v0.63.0, the big one).
+`/settings/tool-groups` (v0.62.3) · `/settings/ai-workers` (v0.63.0, the big one) ·
+`/settings/agents` (the 6-source one; reused existing REST + added `/api/tailscale/peers`
+and `/api/agents/[id]/test/chat`, deleting the last server action).
 
 The data layer is **TanStack Query v5**. Full pattern + conventions:
 `docs/client-data-fetching.md` (READ THIS before converting a screen).
@@ -95,13 +97,9 @@ the test buttons, which need real provider API keys).
 Pages still SSR (read `@mantle/*` in-process). None has a *real* `@mantle/db` hole anymore
 (Task 1 closed those), but they still server-render their data:
 
-- **`/settings/agents`** — heavy (avatar/persona/telegram) BUT already has full REST
-  (`/api/agents`, `/api/agents/[id]`, `.../persona`, `.../avatar`, `.../telegram*`). No Phase-A/B
-  needed → likely the best next target. `agents-client.tsx` already imports types from `@mantle/db`
-  (type-only) — move those to a new `AgentDTO` in client-types.
 - **`/settings/heartbeats`** — has `GET /api/heartbeats(+[id])`; mutations still server actions →
   needs mutation endpoints (or a Zod schema for the schedule/surface union — noted as a Task-1
-  follow-up).
+  follow-up). Likely the best next target now that agents is done.
 - **`/settings/accounts`, `/settings/microsoft`, `/settings/discover`, `/settings/profile`** — email/MS
   account + profile screens; some have endpoints from Task 1, some need the secondary ones.
 - **Content screens** (`/notes`, `/pages`, `/todos`, `/events`, `/tables`, `/contacts`, `/lifelog`,
@@ -110,8 +108,8 @@ Pages still SSR (read `@mantle/*` in-process). None has a *real* `@mantle/db` ho
 
 ### Two known follow-ups (small, deferred)
 - Heartbeat HTTP **mutation** endpoints (POST/PATCH/DELETE) — needs a Zod schedule/surface schema.
-- Relocate the remaining type-only `@mantle/db` imports (agents-client, persona-notes-editor,
-  calendar-row, drives-list) into client-types so the §6 grep is 100% empty (cosmetic).
+- Relocate the remaining type-only `@mantle/db` imports (persona-notes-editor, calendar-row,
+  drives-list) into client-types so the §6 grep is 100% empty (cosmetic). agents-client done.
 
 ## Cadence (from project memory — follow these)
 

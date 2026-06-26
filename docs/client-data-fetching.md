@@ -80,6 +80,7 @@ by default.
 | `/settings/tools` | ✅ converted (+ second data source, optimistic toggles) |
 | `/settings/tool-groups` | ✅ converted (reuses the `['tools']` cache) |
 | `/settings/ai-workers` | ✅ converted (built the API first; 2178-line form kept uncontrolled) |
+| `/settings/agents` | ✅ converted (6 data sources via existing REST; added tailnet-peers + test-chat endpoints) |
 
 Convert more by following the reference; order by Electron priority.
 
@@ -102,3 +103,15 @@ Notes from the conversions so far:
   embedding resolver-cache invalidation) into the endpoint so behavior is preserved.
 - **Screens with no endpoints yet** (ai-workers) → build the API first (Task-1 style),
   in phases if large (CRUD, then RPCs, then the client), each independently shippable.
+- **Multi-source screens** (agents reads 6: agents, keys, skills, tool-groups, tts
+  workers, tailnet peers) → one `useQuery` per source, each keyed to its own URL,
+  then derive view-model arrays (filter enabled / map to the option shape) in
+  `useMemo`. Most sources already had a GET from earlier screens — only the two
+  genuinely missing endpoints were built (`/api/tailscale/peers`, and the
+  test-chat affordance `/api/agents/[id]/test/chat`, which replaced the last
+  server action so the screen has zero server-action deps).
+- **Mutable list + `router.refresh()`** (agents kept the list in `useState` and
+  hand-upserted on save): replace the state with `agentsQuery.data ?? []` and the
+  refresh with `invalidateQueries(['agents'])`. Track in-flight save with a plain
+  `useState` boolean for `<SubmitButton pending>` (the optimistic upsert is dropped
+  — invalidate refetches; a brief repaint is acceptable, matching the other screens).

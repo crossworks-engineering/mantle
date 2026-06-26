@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
-import { ArrowLeftRight, Loader2, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowLeftRight, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -28,7 +28,17 @@ import {
   isProviderWired,
   providersForCapability,
 } from '@mantle/voice/client';
-import type { AgentAvatar, PersonaNote } from '@mantle/db';
+import type {
+  AgentDTO,
+  AgentAvatarDTO,
+  PersonaNoteDTO,
+  AgentMemoryConfigDTO,
+  SkillDTO,
+  ToolGroupWithRefs,
+  AiWorkerDTO,
+} from '@mantle/client-types';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
+import { Spinner } from '@/components/ui/spinner';
 import { AvatarPicker } from '@/components/avatar-picker';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { ToggleList, type ToggleListItem } from '@/components/toggle-list';
@@ -78,58 +88,14 @@ const ROLES = [
 
 type Role = (typeof ROLES)[number]['value'];
 
-type MemoryConfig = {
-  history_limit?: number;
-  history_window_hours?: number | null;
-  digest_limit?: number;
-  fact_limit?: number;
-  content_hit_limit?: number;
-  summarize_threshold?: number;
-  summarize_batch?: number;
-  extract_types?: string[];
-  extract_facts?: boolean;
-  extract_cost_cap_micro_usd?: number | null;
-  /** Agent slugs this agent may delegate to via invoke_agent. */
-  delegate_to?: string[];
-  /** Tool-result spill thresholds (KB). Empty = env/global defaults. */
-  result_handling?: { inline_max_kb?: number; embed_min_kb?: number; spill_max_kb?: number };
-};
+// Wire shapes come from @mantle/client-types (the `/api/**` contract); the local
+// names below keep the rest of this file unchanged. `AgentSummary` is the agent
+// DTO; the others are aliases for the jsonb sub-shapes the form reads/writes.
+type MemoryConfig = AgentMemoryConfigDTO;
+type AgentAvatar = AgentAvatarDTO;
+type PersonaNote = PersonaNoteDTO;
 
-type AgentSummary = {
-  id: string;
-  slug: string;
-  name: string;
-  description: string | null;
-  role: Role;
-  /** Provider id (see packages/voice/src/providers.ts). 'openrouter'
-   *  for legacy rows pre-migration 0048. */
-  provider: string;
-  model: string;
-  apiKeyId: string | null;
-  backupProvider: string | null;
-  backupModel: string | null;
-  backupApiKeyId: string | null;
-  backupEnabled: boolean;
-  baseUrl: string | null;
-  viaTailnet: boolean;
-  backupBaseUrl: string | null;
-  backupViaTailnet: boolean;
-  /** Pinned TTS worker (migration 0066); null = default TTS worker. */
-  ttsWorkerId: string | null;
-  systemPrompt: string;
-  skillSlugs: string[];
-  toolGroupSlugs: string[];
-  memoryConfig: MemoryConfig;
-  params: { temperature?: number; max_tokens?: number; top_p?: number };
-  avatar: AgentAvatar | null;
-  personaNotes: PersonaNote[];
-  priority: number;
-  enabled: boolean;
-  lastUsedAt: string | null;
-  usageCount: number;
-  createdAt: string;
-  updatedAt: string;
-};
+type AgentSummary = AgentDTO;
 
 type ApiKeyOption = { id: string; service: string; label: string; masked: string };
 
@@ -465,37 +431,74 @@ const SELECT_CLASS =
 const TEXTAREA_CLASS =
   'w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50';
 
-export function AgentsClient({
-  initialAgents,
-  apiKeys,
-  availableSkills,
-  availableToolGroups,
-  tailnetPeers = [],
-  ttsWorkers = [],
-}: {
-  initialAgents: AgentSummary[];
-  apiKeys: ApiKeyOption[];
-  availableSkills: SkillOption[];
-  availableToolGroups: ToolGroupOption[];
-  /** MagicDNS names of online tailnet peers — backs the base-URL datalist when
-   *  a tailnet is up. Empty otherwise (input stays free-text). */
-  tailnetPeers?: string[];
-  /** The owner's `kind='tts'` ai_workers — options for the per-agent voice
-   *  picker. Empty = none created yet (picker shows just "Default"). */
-  ttsWorkers?: TtsWorkerOption[];
-}) {
-  const router = useRouter();
-  const [agents, setAgents] = useState<AgentSummary[]>(initialAgents);
-  const [pending, startTransition] = useTransition();
+export function AgentsClient() {
+  const queryClient = useQueryClient();
   const toast = useToast();
   const [deleteTarget, setDeleteTarget] = useState<AgentSummary | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  // After a create/edit, we call router.refresh() to re-run the server
-  // component; this hook propagates the new list into our local state.
-  // (useState's initialValue is only read on first mount.)
-  useEffect(() => {
-    setAgents(initialAgents);
-  }, [initialAgents]);
+  // All data is client-fetched against `/api/**` (Phase 2 · Task 4) — no
+  // SSR props, so the screen carries no in-process DB read. Query keys mirror
+  // the URLs; mutations invalidate `['agents']` (the client-side replacement
+  // for router.refresh()).
+  const agentsQuery = useQuery({
+    queryKey: ['agents'],
+    queryFn: () => apiFetch<{ agents: AgentSummary[] }>('/api/agents').then((r) => r.agents),
+  });
+  const keysQuery = useQuery({
+    queryKey: ['keys'],
+    queryFn: () => apiFetch<{ keys: ApiKeyOption[] }>('/api/keys').then((r) => r.keys),
+  });
+  const skillsQuery = useQuery({
+    queryKey: ['skills'],
+    queryFn: () => apiFetch<{ skills: SkillDTO[] }>('/api/skills').then((r) => r.skills),
+  });
+  const toolGroupsQuery = useQuery({
+    queryKey: ['tool-groups'],
+    queryFn: () => apiFetch<{ groups: ToolGroupWithRefs[] }>('/api/tool-groups').then((r) => r.groups),
+  });
+  const ttsWorkersQuery = useQuery({
+    queryKey: ['ai-workers'],
+    queryFn: () => apiFetch<{ workers: AiWorkerDTO[] }>('/api/ai-workers').then((r) => r.workers),
+  });
+  const tailnetQuery = useQuery({
+    queryKey: ['tailnet', 'peers'],
+    queryFn: () => apiFetch<{ peers: string[] }>('/api/tailscale/peers').then((r) => r.peers),
+  });
+
+  const agents = agentsQuery.data ?? [];
+  const apiKeys = keysQuery.data ?? [];
+  const tailnetPeers = tailnetQuery.data ?? [];
+  // Only enabled skills / tool groups are grantable; TTS pickers want kind='tts'.
+  const availableSkills = useMemo<SkillOption[]>(
+    () =>
+      (skillsQuery.data ?? [])
+        .filter((s) => s.enabled)
+        .map((s) => ({ slug: s.slug, name: s.name, description: s.description })),
+    [skillsQuery.data],
+  );
+  const availableToolGroups = useMemo<ToolGroupOption[]>(
+    () =>
+      (toolGroupsQuery.data ?? [])
+        .filter((g) => g.enabled)
+        .map((g) => ({ slug: g.slug, name: g.name, description: g.description, toolSlugs: g.toolSlugs })),
+    [toolGroupsQuery.data],
+  );
+  const ttsWorkers = useMemo<TtsWorkerOption[]>(
+    () =>
+      (ttsWorkersQuery.data ?? [])
+        .filter((w) => w.kind === 'tts')
+        .map((w) => ({
+          id: w.id,
+          slug: w.slug,
+          name: w.name,
+          provider: w.provider,
+          model: w.model,
+          enabled: w.enabled,
+          isDefault: w.isDefault,
+        })),
+    [ttsWorkersQuery.data],
+  );
 
   const [editing, setEditing] = useState<{ mode: 'create' } | { mode: 'edit'; agent: AgentSummary }>();
   const [form, setForm] = useState<FormState>(emptyForm());
@@ -789,61 +792,43 @@ export function AgentsClient({
 
     const url = editing.mode === 'create' ? '/api/agents' : `/api/agents/${editing.agent.id}`;
     const method = editing.mode === 'create' ? 'POST' : 'PATCH';
-    const res = await fetch(url, {
-      method,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(b.error ?? 'Save failed.');
-      return;
+    setSaving(true);
+    try {
+      // Both POST and PATCH return `{ agent: row }` (dates already ISO).
+      const { agent: saved } = await apiSend<{ agent: AgentSummary }>(url, method, body);
+      toast.success(editing.mode === 'create' ? 'Agent created' : 'Agent saved');
+      // Keep focus on the just-saved row instead of dropping back to the
+      // empty-detail state. Promote the saved record into `editing` (turning a
+      // create into an edit naturally — slug/id are now known) and resync the
+      // form fields to whatever the server canonicalised. invalidate(['agents'])
+      // then refetches the list around the still-selected row.
+      if (saved) {
+        setEditing({ mode: 'edit', agent: saved });
+        setForm(formFromAgent(saved));
+        setSlugTouched(true);
+      } else {
+        closeDialog();
+      }
+      await queryClient.invalidateQueries({ queryKey: ['agents'] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Save failed.');
+    } finally {
+      setSaving(false);
     }
-    toast.success(editing.mode === 'create' ? 'Agent created' : 'Agent saved');
-    // Keep focus on the just-saved row instead of dropping back to the
-    // empty-detail state. Both POST and PATCH return `{ agent: row }`;
-    // we promote the saved record into `editing` (turning a create into an
-    // edit naturally — slug/id are now known) and resync the form fields
-    // to whatever the server canonicalised. router.refresh() then repaints
-    // the list around the still-selected row.
-    const body2 = (await res.json().catch(() => ({}))) as { agent?: AgentSummary };
-    if (body2.agent) {
-      const saved = body2.agent;
-      setEditing({ mode: 'edit', agent: saved });
-      setForm(formFromAgent(saved));
-      setSlugTouched(true);
-      // Upsert the canonical row into the local list right away so the row
-      // (avatar, name, badges) repaints deterministically — don't rely solely
-      // on router.refresh()'s re-fetch, which races this client state and
-      // intermittently leaves the row stale (e.g. avatar not updating until a
-      // second save). Mirrors the delete path, which also mutates `agents`
-      // directly. router.refresh() below still reconciles ordering.
-      setAgents((prev) => {
-        const idx = prev.findIndex((x) => x.id === saved.id);
-        if (idx === -1) return [...prev, saved];
-        const next = prev.slice();
-        next[idx] = saved;
-        return next;
-      });
-    } else {
-      closeDialog();
-    }
-    startTransition(() => router.refresh());
   };
 
   const confirmDelete = async () => {
     const a = deleteTarget;
     if (!a) return;
-    const res = await fetch(`/api/agents/${a.id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(b.error ?? 'Delete failed.');
+    try {
+      await apiSend(`/api/agents/${a.id}`, 'DELETE');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Delete failed.');
       return;
     }
     toast.success(`Deleted ${a.name}`);
     if (editing?.mode === 'edit' && editing.agent.id === a.id) closeDialog();
-    setAgents((prev) => prev.filter((x) => x.id !== a.id));
-    startTransition(() => router.refresh());
+    await queryClient.invalidateQueries({ queryKey: ['agents'] });
   };
 
   const activeResponder = useMemo(
@@ -855,6 +840,26 @@ export function AgentsClient({
   );
   const selectedId = editing?.mode === 'edit' ? editing.agent.id : null;
   const temp = Number.parseFloat(form.temperature) || 0;
+
+  if (agentsQuery.isPending) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+  if (agentsQuery.isError) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm">
+        <p className="text-muted-foreground">
+          {agentsQuery.error instanceof Error ? agentsQuery.error.message : 'Failed to load agents.'}
+        </p>
+        <Button type="button" variant="outline" size="sm" onClick={() => agentsQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -1862,7 +1867,7 @@ export function AgentsClient({
               <Button type="button" variant="outline" onClick={closeDialog}>
                 Cancel
               </Button>
-              <SubmitButton pending={pending}>
+              <SubmitButton pending={saving}>
                 {editing.mode === 'create' ? 'Create agent' : 'Save agent'}
               </SubmitButton>
             </div>
