@@ -48,6 +48,15 @@ export function configureDBOS(): void {
     // OTel-standard attribute naming so spans interop with any collector.
     otelAttributeFormat: 'semconv',
     logLevel: process.env.DBOS_LOG_LEVEL ?? 'info',
+    // Pin a STABLE application version. DBOS only auto-recovers in-flight
+    // workflows within the same applicationVersion; left as the default (a code
+    // hash) a deploy would strand any turn that was mid-flight. A constant means
+    // a turn interrupted by a deploy resumes on the new process. Accepted
+    // tradeoff (single-user, multi-second turns): if a release changes the
+    // workflow's STEP SEQUENCE, replaying an old in-flight turn could diverge —
+    // bump MANTLE_RUNNER_VERSION at that release to force a clean version
+    // boundary (old in-flight turns then won't auto-recover; they'd be re-sent).
+    applicationVersion: process.env.MANTLE_RUNNER_VERSION || 'mantle-runner-1',
     ...adminServerConfig(),
   });
 }

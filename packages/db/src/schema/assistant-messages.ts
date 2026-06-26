@@ -76,22 +76,23 @@ export const assistantMessages = pgTable(
      *  etc.) for reply threading + dedup. NULL for web turns. */
     externalRef: jsonb('external_ref').$type<ConversationExternalRef>(),
     data: jsonb('data').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
-    /** Execution state of this turn's reply. Defaults to 'complete' so every
-     *  pre-existing row, every inbound row, and every synchronous web write
-     *  classifies correctly with NO backfill (same trick as `channel`). The
-     *  durable apps/api runner creates the outbound row 'pending' (the
-     *  "thinking…" bubble), then flips it to 'complete' (reply filled) or
-     *  'failed' (error set) — so in-progress + failed states survive the user
-     *  navigating away or the process restarting. The DBOS workflow is the
-     *  source of truth for execution; this column is the UI-facing projection.
-     *  See docs/conversation.md + the dedicated-API Phase 1 plan. */
+    /** RESERVED execution-state projection. Not yet written: the current durable
+     *  runner runs the turn and the web route AWAITS its result, so a failure
+     *  surfaces synchronously (getResult rejects → the client shows the error)
+     *  and every row is 'complete'. These columns are the UI-facing projection
+     *  for the planned async-delivery model (route returns 202; the runner
+     *  creates the outbound row 'pending' — the durable "thinking…" bubble — then
+     *  flips it to 'complete' or 'failed'), where in-progress/failed states must
+     *  survive navigation. Defaulting to 'complete' classifies all existing rows
+     *  with no backfill (same trick as `channel`). DBOS WorkflowStatus is the
+     *  execution source of truth; this is the read-model. See docs/conversation.md
+     *  + the dedicated-API Phase 1 plan. */
     status: text('status')
       .$type<'pending' | 'complete' | 'failed'>()
       .default('complete')
       .notNull(),
-    /** Human-readable failure reason when status='failed' (a dead-lettered turn).
-     *  NULL otherwise. Surfaced in the chat bubble so a failed turn is visible
-     *  and retryable rather than silently lost. */
+    /** Reserved (see `status`): human-readable failure reason for a 'failed'
+     *  turn under the future async-delivery model; NULL today. */
     error: text('error'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
