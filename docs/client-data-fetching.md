@@ -81,6 +81,7 @@ by default.
 | `/settings/tool-groups` | ✅ converted (reuses the `['tools']` cache) |
 | `/settings/ai-workers` | ✅ converted (built the API first; 2178-line form kept uncontrolled) |
 | `/settings/agents` | ✅ converted (6 data sources via existing REST; added tailnet-peers + test-chat endpoints) |
+| `/settings/heartbeats` | ✅ converted (built POST/PATCH/DELETE/fire + `/api/agents/options`; JSON body from the controlled form) |
 
 Convert more by following the reference; order by Electron priority.
 
@@ -115,3 +116,19 @@ Notes from the conversions so far:
   refresh with `invalidateQueries(['agents'])`. Track in-flight save with a plain
   `useState` boolean for `<SubmitButton pending>` (the optimistic upsert is dropped
   — invalidate refetches; a brief repaint is acceptable, matching the other screens).
+- **Building the mutation API + Zod from scratch** (heartbeats had only GETs): put
+  the create/update Zod schemas in a shared `lib/*-schema.ts` (both `POST` and the
+  `[id]` `PATCH` import them) with a `toCreateInput`/`toUpdateInput` that converts
+  wire shapes to the lib input (e.g. ISO `earliestAt` → `Date`) and forwards only
+  present keys so a status-only `PATCH` doesn't clobber config. Pause/resume is just
+  `PATCH {status}`; fire-now is a verb sub-route (`POST …/[id]/fire`).
+- **Controlled forms** (heartbeats holds a `FormState` in `useState`, unlike the
+  uncontrolled worker form) → build a typed JSON body inline at submit and `apiSend`
+  it; no FormData round-trip needed.
+- **SSR-only date formatting** (heartbeats threaded server-formatted `nextFireAt`
+  through props solely to dodge a hydration mismatch): once the page is pure
+  client-fetch there's no SSR pass to mismatch, so drop the prop and format inline
+  with the shared `formatDateTime` (en-GB, browser tz).
+- **Picker needs a wider set than an existing GET returns**: `/api/agents` lists
+  only conversational roles, but heartbeats bind any agent → added a dedicated
+  `GET /api/agents/options` rather than overloading the existing list endpoint.
