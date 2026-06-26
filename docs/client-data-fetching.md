@@ -77,5 +77,18 @@ by default.
 | Screen | State |
 |---|---|
 | `/settings/skills` | ✅ converted (reference template) |
+| `/settings/tools` | ✅ converted (+ second data source, optimistic toggles) |
+| `/settings/tool-groups` | ✅ converted (reuses the `['tools']` cache) |
 
 Convert more by following the reference; order by Electron priority.
+
+Notes from the conversions so far:
+- **Shared caches**: a screen that needs another resource just queries its key
+  (`['tools']`) — TanStack dedupes across screens, no prop-drilling.
+- **Optimistic toggles**: for instant on/off switches, `useMutation` with
+  `onMutate` (cache the previous value, set the new one) + rollback in `onError`.
+  See `/settings/tools`.
+- **New shared type** → add the DTO to `@mantle/client-types` and alias the server
+  summary to it (`type XSummary = XDTO`). Keep the package zero-dep: define complex
+  shapes (e.g. `ToolHandler`) standalone rather than re-export from `@mantle/db`
+  (which drags its node-typed graph in); the alias still catches drift at compile.
