@@ -1,14 +1,15 @@
 # Live Turn Streaming — Session Handover
 
-**Branch:** `feat/live-turn-streaming` · **Version:** v0.72.3 · **Untagged, unpushed** (default-branch +
+**Branch:** `feat/live-turn-streaming` · **Version:** v0.74.0 · **Untagged, unpushed** (default-branch +
 tag + deploy are Jason's call). **Design doc:** [`docs/live-turn-streaming.md`](live-turn-streaming.md).
 
-**Status:** Phases 0–2 + the narrator worker + **Phase 3a (token streaming)** are DONE, committed, and
-browser-verified. The reply now types out live, delegated sub-agents stream into the same trail, the console
-is clean, the transcript sticks-to-bottom, and the responder writes mobile-safe standard Markdown. **Next
-up: Phase 3b (Anthropic streaming) and 3c (status lifecycle + non-blocking route).**
+**Status:** Phases 0–2 + the narrator worker + **Phase 3a (token streaming)** + **Phase 3c (durable status
+lifecycle + non-blocking route)** are DONE, committed, and browser-verified. The reply types out live and the
+turn route now returns **202 immediately** — the client drives completion off the live stream and reconciles
+to the durable `assistant_messages` row, so a turn survives navigation/backgrounding. **Next up: Phase 3b
+(Anthropic native streaming) and Phase 4 (mobile companion + replay).**
 
-This is the resume point — read this, then the design doc §5–§9 for the 3b/3c detail.
+This is the resume point — read this, then the design doc §5–§9 for the 3b/Phase-4 detail.
 
 ---
 
@@ -16,6 +17,8 @@ This is the resume point — read this, then the design doc §5–§9 for the 3b
 
 | Commit | Ver | What |
 |---|---|---|
+| `368aa3a8` | 0.74.0 | **Phase 3c Part B** — non-blocking route (202 `{turnId}`) + client/dock drive off the live stream, reconcile to the durable row on done/error. |
+| `15c58f8a` | 0.73.0 | **Phase 3c Part A** — runner owns the durable outbound row (pending→complete/failed) + emits `turn-start`/`done`/`error` via a tracing turn-lifecycle observer. |
 | `99038998` | 0.72.3 | **Responder → standard Markdown.** New `chat_writing` skill (no rich dialect); Pages keeps `rich_writing`. |
 | `937fa97e` | 0.72.2 | **Stick-to-bottom autoscroll** + a jump-to-latest button. |
 | `97fdd066` | 0.72.1 | **flushSync fix** — live buffer renders via ReactMarkdown; RichText `setContent` deferred to a microtask. |
@@ -48,11 +51,20 @@ still authors the rich Mantle dialect for documents.
   `ChatResult`); the per-token `publishTurnEvent` calls inside the LLM step are non-journaled side effects.
   Durability (journal) and liveness (NOTIFY bus) ride separate paths automatically — **no new lib/service
   needed.** On crash-resume the step re-runs and re-streams; the answer is never lost (it's the return value).
-- **The web route still BLOCKS** on `handle.getResult()` (`apps/web/app/api/assistant/turn/route.ts` ~L316).
-  Token streaming is independent of that — the client already holds the SSE subscription AND gets the durable
-  reply from the POST. So the route-flip is deferred to **3c**.
-- **Contract** = `TurnEvent` in `@mantle/client-types` (v, turnId, seq, round, type, data). Emitted today:
-  `status`, `text-delta`, `reasoning-delta`. Defined + waiting for 3c: `done`, `error`, `turn-start`.
+- **The web route is now NON-BLOCKING** (3c, `route.ts`): when `isTurnStreamingEnabled()` and the client
+  sent an idempotency-key, it enqueues and returns **202 `{turnId}`** immediately (no `getResult()`). The
+  client types the reply off the stream and reconciles to the durable row on `done`. The legacy blocking
+  relay stays for flag-off (and any no-key POST). The **runner owns the outbound row**: inserts it `pending`
+  at turn start, finalizes it `complete`/`failed` (`run-turn.ts`).
+- **Contract** = `TurnEvent` in `@mantle/client-types` (v, turnId, seq, round, type, data). All emitted now:
+  `status`, `text-delta`, `reasoning-delta`, and (3c) `turn-start` (carries inbound/outbound row ids),
+  `done`, `error`. `turnId` on the wire = the client's idempotency-key/streamId (the stable
+  subscribe-before-rows-exist handle); the durable outbound row id rides in `turn-start`.
+- **Turn-lifecycle observer** (3c, third tracing observer in `store.ts`): `setTurnLifecycleObserver`/
+  `emitTurnLifecycle(turnId, ownerId, phase, data)`. Driven EXPLICITLY by the runtime (not the trace) so
+  `turn-start` fires once the rows exist and `done`/`error` fire once the outbound text is committed (which
+  is AFTER the responder trace closes). It owns the per-turn seq-cursor retirement on done/error, so seq
+  stays monotonic past the trace boundary (`startTrace` defers cleanup to it when a runner is wired).
 - **Two tracing observers** (siblings, in `packages/tracing/src/store.ts`), set by `apps/api` at boot
   (`turn-stream-observer.ts`), no-op unless a trace carries a `turnId`:
   - **step observer** (`setStepObserver`) → `status` events (the trail). Installed always.
@@ -133,19 +145,22 @@ contract as OpenRouter. Only matters for brains on the `anthropic` provider *dir
 (incl. `anthropic/claude-*` via OpenRouter, which is what the local + default brains use) already streams.
 Mirror the OpenRouter adapter's structure + its 4 wire-shape tests.
 
-**Phase 3c — message lifecycle + non-blocking route** (the mobile/background-grade piece, design doc §6–§7):
-1. Wire `assistant_messages.status` (`pending → complete/failed`) — runner inserts the outbound row `pending`
-   at turn start (gives a stable turnId before any text), flips to `complete`/`failed` at the end. Column +
-   `error` already exist (migration `0105`); currently every row is inserted `complete`, never flipped.
-2. Emit `done`/`error` **terminal events** on the bus; client replaces its streamed buffer with the durable
-   row's text on `done` (reconciliation already happens via the POST today — this makes it stream-driven).
-3. Flip the web route (`apps/web/app/api/assistant/turn/route.ts` ~L316) to **return `turnId` immediately**
-   instead of `await handle.getResult()`. This is the real rewrite — the client + dock provider must stop
-   expecting the full result synchronously and drive everything off the stream + the durable row.
+**Phase 3c — message lifecycle + non-blocking route — ✅ DONE** (`15c58f8a` Part A, `368aa3a8` Part B). All
+three pieces landed + browser-verified: `assistant_messages.status` is wired (runner inserts `pending`,
+finalizes `complete`/`failed`); `turn-start`/`done`/`error` terminal events fire on the bus via the
+turn-lifecycle observer; the web route returns 202 `{turnId}` immediately and the client + dock drive off the
+stream and reconcile to the durable row. See §1/§3 above. **One known-deferred gap:** tool-produced sidecar
+artifacts (TTS/generated images) over the non-blocking transport (the existing `task_c50089a3` /
+[[api-service-phase2]] item) — the blocking path is unchanged, and the durable file nodes still exist in
+/files; the live non-blocking reply just won't carry them until that transport lands. If you pick this up:
+artifacts exceed the 8 KB NOTIFY cap, so they can't ride a `done` event — they need their own fetch on
+reconcile (persist + a get-by-id, or fold into the durable row's `attachments`).
 
 **Phase 4 — mobile companion + replay** (design doc §8): the Flutter companion (`~/Projects/mantle-companion`)
 consumes the same `GET /turn/:id/stream` (bearer header, not cookie); add the `turn_stream_buffer` table for
-`Last-Event-ID` replay/resume (NOTIFY has no backlog). Push relay covers backgrounded turns.
+`Last-Event-ID` replay/resume (NOTIFY has no backlog). The web client already tolerates a missed terminal
+event (a 3s `syncLatest` safety poll on the durable row) — mobile should reconcile against
+`assistant_messages.status` the same way. Push relay covers backgrounded turns.
 
 **Smaller / open:**
 - **Cross-reload persistence of the thought record** — survive a hard refresh (store a compact trail on
@@ -165,6 +180,10 @@ consumes the same `GET /turn/:id/stream` (bearer header, not cookie); add the `t
   prod pending. See [[responder-chat-writing-split]].
 - The narrator worker auto-seeds to existing brains on the version-bump reconcile (it's `required`); no step.
 - Migration `0106` (narrator enum) ships with the branch — `pg_dump` prod before `db:migrate`
-  ([[backup-before-live-migration]]); enum-adds aren't reversible.
+  ([[backup-before-live-migration]]); enum-adds aren't reversible. **3c adds NO new migration** — it writes
+  `assistant_messages.status`/`error`, which already exist (migration `0105`, shipped earlier).
 - Flags for prod: decide whether to enable `MANTLE_TURN_STREAMING` / `MANTLE_TURN_TOKENS` /
-  `MANTLE_TURN_NARRATION` there (all dark by default).
+  `MANTLE_TURN_NARRATION` there (all dark by default). **Note (3c):** `MANTLE_TURN_STREAMING` now also flips
+  the route non-blocking (202 instead of the awaited result). The client adapts to the response shape, so a
+  server/client flag mismatch degrades gracefully (the safety poll still reconciles), but enable the server
+  + `NEXT_PUBLIC_MANTLE_TURN_STREAMING` together for the intended UX.
