@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Editor, JSONContent } from '@tiptap/react';
 import {
   Check,
@@ -29,6 +30,8 @@ import { PageOutline } from '@/components/page-editor/page-outline';
 import { PageBacklinks } from '@/components/page-editor/page-backlinks';
 import { AiAssistPanel } from '@/components/page-editor/ai-assist-panel';
 import type { Backlink } from '@/lib/pages';
+import { apiFetch } from '@/lib/api-fetch';
+import { Spinner } from '@/components/ui/spinner';
 import { buildPageToc, type TocEntry } from '@mantle/content/page-toc';
 import {
   AlertDialog,
@@ -66,7 +69,44 @@ const DRAFT_DEBOUNCE_MS = 1500;
 const DRAFT_MAX_WAIT_MS = 8000;
 const META_DEBOUNCE_MS = 1000;
 
-export function PageDetailClient({
+/**
+ * Outer gate: client-fetch the page + its backlinks, then mount the editor with
+ * the loaded data (Phase 2 · Task 4). The editor (`PageDetailEditor`) seeds a lot
+ * of `useState`/refs from `initial`, so it must only mount once data exists —
+ * hence the split rather than seeding from an async value.
+ */
+export function PageDetailClient({ pageId }: { pageId: string }) {
+  const pageQuery = useQuery({
+    queryKey: ['pages', pageId],
+    queryFn: () => apiFetch<{ page: PageDetail }>(`/api/pages/${pageId}`).then((r) => r.page),
+  });
+  const backlinksQuery = useQuery({
+    queryKey: ['pages', pageId, 'backlinks'],
+    queryFn: () =>
+      apiFetch<{ backlinks: Backlink[] }>(`/api/pages/${pageId}/backlinks`).then((r) => r.backlinks),
+  });
+
+  if (pageQuery.isPending) {
+    return (
+      <div className="flex h-dvh items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+  if (pageQuery.isError) {
+    const notFound = pageQuery.error instanceof Error && /not found|404/i.test(pageQuery.error.message);
+    return (
+      <div className="flex h-dvh flex-col items-center justify-center gap-3 p-6 text-center text-sm">
+        <p className="text-muted-foreground">{notFound ? 'Page not found.' : 'Failed to load page.'}</p>
+        <BackLink href="/pages">Back to pages</BackLink>
+      </div>
+    );
+  }
+
+  return <PageDetailEditor initial={pageQuery.data} backlinks={backlinksQuery.data ?? []} />;
+}
+
+function PageDetailEditor({
   initial,
   backlinks,
 }: {
@@ -74,6 +114,7 @@ export function PageDetailClient({
   backlinks: Backlink[];
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const toast = useToast();
 
   const initialDoc = (initial.draft ?? initial.doc) as JSONContent;
@@ -537,13 +578,13 @@ export function PageDetailClient({
     // diff; a discard (no arg) leaves it. The overlay itself is recomputed from
     // committed-vs-draft after the remount — no need to thread block ids here.
     setReviewMode(changedBlockIds !== undefined);
-    // Pull the latest draft from the server. router.refresh re-runs the
-    // server component which re-reads getPage; the new initial.draft
-    // propagates down. The useEffect above detects the prop change and
-    // bumps editorKey THEN — so PageEditor remounts with the right
-    // content, not the stale-before-refetch content.
-    router.refresh();
-  }, [router]);
+    // Pull the latest draft from the server. Invalidating the page query
+    // refetches getPage; the new `initial.draft` propagates down through the
+    // outer gate, and the useEffect above detects the prop change and bumps
+    // editorKey THEN — so PageEditor remounts with the right content, not the
+    // stale-before-refetch content.
+    void queryClient.invalidateQueries({ queryKey: ['pages', initial.id] });
+  }, [queryClient, initial.id]);
 
   const confirmDelete = async () => {
     deletedRef.current = true; // suppress flush
@@ -554,6 +595,8 @@ export function PageDetailClient({
       return;
     }
     toast.success('Page deleted');
+    // Drop the list cache so the deleted page is gone when we land back there.
+    void queryClient.invalidateQueries({ queryKey: ['pages'] });
     router.push('/pages');
   };
 

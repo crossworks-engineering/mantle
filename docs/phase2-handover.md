@@ -103,13 +103,17 @@ the test buttons, which need real provider API keys).
 
 ## Remaining Task-4 work (next targets)
 
-Every `/settings/*` screen is now client-fetched. The remaining SSR pages are the
-content screens. None has a *real* `@mantle/db` hole anymore (Task 1 closed those), but
-they still server-render their data:
+Every `/settings/*` screen is now client-fetched, and **`/pages` (the content-screen
+template) is done** — confirming the pattern: content screens mostly already do their
+mutations via client `fetch`, so the work is wiring the *initial loads* + closing small
+GET gaps. None has a *real* `@mantle/db` hole anymore (Task 1 closed those).
 
-- **Content screens** (`/notes`, `/pages`, `/todos`, `/events`, `/tables`, `/contacts`, `/lifelog`,
-  `/inbox`) — the larger surface; most already have REST + client components that fetch for mutations.
-  `/pages` was the doc's suggested template; order by Electron priority.
+- **Remaining content screens** (`/notes`, `/todos`, `/events`, `/tables`, `/contacts`,
+  `/lifelog`, `/inbox`) — same shape as `/pages`: most already have REST + client mutation
+  components; expect to extend a list GET (sort/pagination/facets) + add any missing
+  secondary GET, then make the page data-free and key a `useQuery` off the URL params.
+  Order by Electron priority. `/pages` (`pages-client.tsx` + `[id]/page-detail-client.tsx`)
+  is the worked example — URL-driven list + outer-gate editor.
 
 ### Known follow-up (small, deferred)
 - Relocate the remaining type-only `@mantle/db` imports (persona-notes-editor, calendar-row,

@@ -86,6 +86,7 @@ by default.
 | `/settings/discover` | ✅ converted (endpoints existed; accounts gate client-side; scan = useQuery, promote = mutation) |
 | `/settings/microsoft` | ✅ converted (built config + drives + mail + disconnect endpoints; sub-components self-fetch) |
 | `/settings/accounts` | ✅ converted (endpoints existed; URL-driven master-detail → client; IMAP test/save + folder picker as mutations) |
+| `/pages` (+ `/pages/[id]`) | ✅ converted (first content screen; mutations were already client-fetch — wired the initial loads + extended the list GET + backlinks endpoint) |
 
 Convert more by following the reference; order by Electron priority.
 
@@ -164,3 +165,13 @@ Notes from the conversions so far:
   required-field validation while routing to one `useMutation`. `apiSend` throws on
   the 400 (probe/save failure) → surface `mutation.error`; a successful save
   `router.push`es to the list.
+- **Content screen where mutations are already client-fetch** (`/pages`): the SSR
+  part was only the initial load. Keep the URL-driven list (`q`/`tag`/`sort`/`page`
+  via useSearchParams) and put those params IN the query key so a `go()` navigation
+  re-fetches automatically; `placeholderData: (prev) => prev` keeps the list visible
+  while paging. Swap the mutations' `router.refresh()` for
+  `invalidateQueries(['pages'])`. For the rich editor (`/pages/[id]`), use the
+  outer-gate + inner-component split (the editor seeds many refs from `initial`, so
+  it must mount only after the fetch); its out-of-band AI refresh becomes
+  `invalidateQueries(['pages', id])`, which re-renders the inner with fresh `initial`
+  and triggers the existing remount effect.
