@@ -30,10 +30,18 @@ vi.mock('@mantle/db', () => ({
   },
 }));
 
-import { startTrace, step } from './store';
+import {
+  startTrace,
+  step,
+  setStepObserver,
+  setTurnDeltaObserver,
+  emitTurnDelta,
+} from './store';
 
 afterEach(() => {
   h.stepUpdates.length = 0;
+  setStepObserver(null);
+  setTurnDeltaObserver(null);
 });
 
 describe('step() observability — setError', () => {
@@ -71,5 +79,45 @@ describe('step() observability — setError', () => {
     });
     const skipped = h.stepUpdates.find((u) => u.status === 'skipped');
     expect(skipped, 'the skipped step should have been persisted').toBeTruthy();
+  });
+});
+
+describe('live turn streaming — delegated child traces', () => {
+  it('child inherits the turnId + shares one seq cursor; only the root streams reply text', async () => {
+    const stepEvents: Array<{ turnId: string; seq: number; phase: string; name: string }> = [];
+    const deltaEvents: Array<{ seq: number; text: string }> = [];
+    setStepObserver((e) => stepEvents.push({ turnId: e.turnId, seq: e.seq, phase: e.phase, name: e.name }));
+    setTurnDeltaObserver((e) => deltaEvents.push({ seq: e.seq, text: e.text }));
+
+    await startTrace({ ownerId: 'o', kind: 'responder_turn', turnId: 'turn-1' }, async () => {
+      emitTurnDelta(0, 'text', 'root-a '); // root → streamed
+      await step({ name: 'invoke_agent', kind: 'compute', input: {} }, async () => {
+        // A delegated agent opens its OWN trace WITHOUT a turnId (as invokeAgent
+        // does, for cost isolation) — it must INHERIT the turn's id so its steps
+        // surface in the same live stream.
+        await startTrace({ ownerId: 'o', kind: 'manual', subjectKind: 'child_agent' }, async () => {
+          await step({ name: 'page_create', kind: 'compute', input: {} }, async () => {
+            emitTurnDelta(0, 'text', 'CHILD '); // child reply text → must be suppressed
+            return { ok: true as const };
+          });
+          return 'child-done';
+        });
+        return { ok: true as const };
+      });
+      emitTurnDelta(1, 'text', 'root-b'); // root again → streamed
+      return 'done';
+    });
+
+    // Every step event — parent AND the delegated child — carries the turn id.
+    expect(stepEvents.length).toBeGreaterThan(0);
+    expect(stepEvents.every((e) => e.turnId === 'turn-1')).toBe(true);
+    // The child's own step surfaced in the same stream (the fix).
+    expect(stepEvents.some((e) => e.name === 'page_create' && e.phase === 'start')).toBe(true);
+    // One monotonic seq cursor across status + token events — no collisions.
+    const seqs = [...stepEvents.map((e) => e.seq), ...deltaEvents.map((d) => d.seq)];
+    expect(new Set(seqs).size).toBe(seqs.length);
+    // Only the ROOT turn streamed reply text — the child's tokens are suppressed
+    // so a sub-agent's output never pollutes the visible reply.
+    expect(deltaEvents.map((d) => d.text)).toEqual(['root-a ', 'root-b']);
   });
 });

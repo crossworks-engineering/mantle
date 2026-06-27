@@ -95,12 +95,18 @@ export type TokenDelta = {
 export type TraceContext = {
   readonly id: string;
   readonly ownerId: string;
-  /** Live-streaming correlation id; null for un-streamed (background) traces. */
+  /** Live-streaming correlation id; null for un-streamed (background) traces.
+   *  A delegated child inherits the parent's `turnId` (see startTrace) so its
+   *  steps surface in the SAME live stream. */
   readonly turnId: string | null;
+  /** True only for the trace that INTRODUCED the turnId (the top-level turn);
+   *  false for delegated children that inherited it. The token-delta (reply text)
+   *  stream is gated to the root so a sub-agent's output never pollutes the
+   *  visible reply — children still surface their STATUS in the trail. */
+  readonly isStreamRoot: boolean;
   startedAtMs: number;
   ordinalCounter: number; // next root-step ordinal
   childOrdinals: Map<string, number>; // parent step id -> next child ordinal
-  streamSeq: number; // monotonic cursor for the live event stream's `seq`
   tokens: { in: number; out: number; cacheRead: number };
   costMicroUsd: number;
   stepCount: number;
@@ -149,6 +155,21 @@ export function currentStep(): ActiveStep | null {
   return stepStore.getStore() ?? null;
 }
 
+// ─── Per-turn live sequence cursor ───────────────────────────────────────────
+//
+// The stream's `seq` must be monotonic across the WHOLE turn, including any
+// delegated sub-agents — each of which runs in its OWN trace (for cost) but
+// INHERITS the turn's `turnId`. A per-trace counter would restart at 0 inside
+// each child and collide; this per-turnId registry keeps one cursor for status
+// + token events from the root turn and every descendant. The root trace deletes
+// its entry when it finishes (all children have settled by then).
+const turnSeqCounters = new Map<string, number>();
+function nextTurnSeq(turnId: string): number {
+  const n = turnSeqCounters.get(turnId) ?? 0;
+  turnSeqCounters.set(turnId, n + 1);
+  return n;
+}
+
 let stepObserver: StepObserver | null = null;
 
 /**
@@ -175,7 +196,7 @@ function notifyStepObserver(
       traceId: trace.id,
       ownerId: trace.ownerId,
       turnId: trace.turnId,
-      seq: trace.streamSeq++,
+      seq: nextTurnSeq(trace.turnId),
       name: e.name,
       kind: e.kind,
       phase: e.phase,
@@ -225,9 +246,13 @@ export function isTurnStreaming(): boolean {
 export function emitTurnDelta(round: number, kind: 'text' | 'reasoning', text: string): void {
   const obs = turnDeltaObserver;
   const trace = currentTrace();
-  if (!obs || !trace?.turnId) return;
+  // Only the ROOT turn streams reply text — a delegated sub-agent's tokens are
+  // intermediate (its result is folded back into the persona's own reply), so
+  // they must not append to the visible reply buffer. Sub-agent STATUS still
+  // surfaces via the step observer above.
+  if (!obs || !trace?.turnId || !trace.isStreamRoot) return;
   try {
-    obs({ turnId: trace.turnId, ownerId: trace.ownerId, seq: trace.streamSeq++, round, kind, text });
+    obs({ turnId: trace.turnId, ownerId: trace.ownerId, seq: nextTurnSeq(trace.turnId), round, kind, text });
   } catch (err) {
     logErr('turn delta observer', err);
   }
@@ -287,14 +312,20 @@ export async function startTrace<T>(
   fn: () => Promise<T>,
 ): Promise<T> {
   const id = genId();
+  // Inherit the live-stream identity from a parent trace (a delegated sub-agent
+  // opens its own trace but should stream into the SAME turn). A trace is the
+  // stream ROOT only when it introduces the turnId itself.
+  const parentTurnId = currentTrace()?.turnId ?? null;
+  const turnId = init.turnId ?? parentTurnId;
+  const isStreamRoot = !!init.turnId && !parentTurnId;
   const ctx: TraceContext = {
     id,
     ownerId: init.ownerId,
-    turnId: init.turnId ?? null,
+    turnId,
+    isStreamRoot,
     startedAtMs: Date.now(),
     ordinalCounter: 0,
     childOrdinals: new Map(),
-    streamSeq: 0,
     tokens: { in: 0, out: 0, cacheRead: 0 },
     costMicroUsd: 0,
     stepCount: 0,
@@ -344,6 +375,9 @@ export async function startTrace<T>(
       ctx.failedError = err instanceof Error ? err.message : String(err);
       throw err;
     } finally {
+      // The root turn owns the per-turn seq cursor; drop it once the whole turn
+      // (root + all delegated children, which have settled by now) is done.
+      if (isStreamRoot && turnId) turnSeqCounters.delete(turnId);
       const duration = Date.now() - ctx.startedAtMs;
       db.update(traces)
         .set({
