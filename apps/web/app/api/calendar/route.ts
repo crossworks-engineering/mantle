@@ -1,15 +1,27 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { addIcsFeed, listCalendarAccounts } from '@mantle/calendar';
+import type { CalendarAccountDTO } from '@mantle/client-types';
 import { getOwnerOr401 } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-/** Subscribed calendar feeds for /settings/calendar. */
+/** Subscribed calendar feeds for /settings/calendar. Maps each row to the wire
+ *  DTO — the sealed `feedUrlEnc` credential / `ownerId` / `syncState` never reach
+ *  the browser, and the `CalendarAccountDTO` annotation makes drift a type error. */
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
-  const accounts = await listCalendarAccounts(user.id);
+  const accounts: CalendarAccountDTO[] = (await listCalendarAccounts(user.id)).map((a) => ({
+    id: a.id,
+    provider: a.provider,
+    displayName: a.displayName,
+    color: a.color,
+    enabled: a.enabled,
+    lastEventCount: a.lastEventCount,
+    lastSyncAt: a.lastSyncAt?.toISOString() ?? null,
+    lastSyncError: a.lastSyncError,
+  }));
   return NextResponse.json({ accounts });
 }
 

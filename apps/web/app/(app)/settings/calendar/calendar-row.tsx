@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { CalendarDays, Trash2 } from 'lucide-react';
-import type { CalendarAccount } from '@mantle/db';
+import type { CalendarAccountDTO } from '@mantle/client-types';
 import { apiSend } from '@/lib/api-fetch';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -21,7 +21,7 @@ import {
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
 
-export function CalendarRow({ account }: { account: CalendarAccount }) {
+export function CalendarRow({ account }: { account: CalendarAccountDTO }) {
   const queryClient = useQueryClient();
   const [pending, setPending] = useState(false);
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['calendar'] });

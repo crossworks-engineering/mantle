@@ -12,9 +12,11 @@ recipe).
 
 ---
 
-## Where things stand: #1–#6 are CLOSED. Only #7 (cosmetic) remains.
+## Where things stand: #1–#7 are CLOSED. The arc is done (one tracked email-types follow-up).
 
-The remediation list (full detail in the audit doc) is a 7-item plan. The first six are **done**:
+The remediation list (full detail in the audit doc) is a 7-item plan — **all seven are done**. The
+only loose thread is a cosmetic follow-up split out of #7 (the email `Email`/`EmailAttachment` client
+types — see #7 below).
 
 | # | What | Status |
 |---|------|--------|
@@ -24,7 +26,7 @@ The remediation list (full detail in the audit doc) is a 7-item plan. The first 
 | #4 | **Every dynamic `(app)` screen is now client-fetched** (24 screens, v0.66.1–0.66.20) | ✅ v0.66.20 |
 | #5 | SSE bearer for `/api/realtime` — new fetch-based `apiEventStream` (base-URL + bearer) replaces `EventSource` in `useRealtime` | ✅ v0.66.21 (raw-asset `src`s + assistant stream internals remain) |
 | #6 | DB-less dev — superseded by #4; client-fetch path is the mechanism, local auth gate made DB-less (`detachedDevUser`), orphaned seam removed | ✅ v0.66.22 |
-| #7 | Cosmetic: relocate 3 type-only `@mantle/db` client imports | ⬜ TODO |
+| #7 | Cosmetic: relocate type-only `@mantle/db` client imports → `@mantle/client-types` | ✅ v0.66.23 (calendar/drives/persona done; email cluster `inbox`+`reading-pane` tracked separately) |
 
 **Verification sweep (v0.66.20) is clean:** the only non-type `@/lib`/`@mantle` data imports left in
 any `(app)/**/page.tsx` are `/n/[id]` (a `redirect()` router), the static-markdown readers
@@ -105,9 +107,20 @@ identity instead of querying the DB. Triple-gated: `NODE_ENV!=='production'` AND
 vars set → impossible in prod. `docs/db-less-dev.md` rewritten to this model. NOT runtime-verified
 (needs a live remote + minted token; 2nd dev server collides with the running stack).
 
-### #7 — cosmetic
-Relocate the 3 type-only `@mantle/db` client imports (`persona-notes-editor`, `calendar-row`,
-`drives-list`) into `@mantle/client-types` so the §9 grep is 100% empty. Pure tidiness.
+### #7 — cosmetic ✅ DONE (v0.66.23)
+Relocated the type-only `@mantle/db` client imports into `@mantle/client-types`:
+`persona-notes-editor` → existing `PersonaNoteDTO`; `calendar-row` + `calendar-client` → new
+`CalendarAccountDTO`; `drives-list` → new `MsDriveDTO`. (The old handover said "3 files" but
+`calendar-client` was a 4th using the same type.) The `GET /api/calendar` and
+`GET/POST /api/microsoft/accounts/[id]/drives` routes now **map rows to those DTOs**, so the sealed
+`feedUrlEnc` credential + the Graph `deltaLink` cursor stop reaching the browser, and the `: …DTO[]`
+return annotation makes a row↔wire drift a compile error.
+
+**Split-out follow-up (the email cluster):** `inbox-client` + `components/reading-pane` still import
+`Email`/`EmailAttachment` from `@mantle/db`. That needs a full `EmailDTO`/`EmailAttachmentDTO` (the
+`emails` row is large) plus a `ReadingPane` prop cascade — bigger than the cosmetic set, so it was
+deferred (spawned as its own task). **Until it lands the §9 grep isn't 100% empty** — two client
+files remain.
 
 ### Tiny follow-ups (optional, non-blocking)
 - A few route files have **stale doc-comments** saying "owner-scoped via `requireOwner`" while the
@@ -174,7 +187,7 @@ highest-value things to eyeball:
   **don't tag** (tag-push is the publish event). **Push** updates PR #1 — the user has been fine with
   continuous pushing this arc but **offer/confirm** rather than assume.
 - This arc's version history: #1 → 0.65.0 · #2 → 0.65.1 · #3 → 0.66.0 · #4 → 0.66.1…0.66.20 ·
-  #5 → 0.66.21 · #6 → **0.66.22**.
+  #5 → 0.66.21 · #6 → 0.66.22 · #7 → **0.66.23**.
 
 ## Key files / reference points
 

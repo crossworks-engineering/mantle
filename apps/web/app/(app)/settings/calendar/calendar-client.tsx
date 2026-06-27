@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import type { CalendarAccount } from '@mantle/db';
+import type { CalendarAccountDTO } from '@mantle/client-types';
 import { apiFetch } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -15,7 +15,7 @@ export function CalendarClient() {
   const calendarsQuery = useQuery({
     queryKey: ['calendar'],
     queryFn: () =>
-      apiFetch<{ accounts: CalendarAccount[] }>('/api/calendar').then((r) => r.accounts),
+      apiFetch<{ accounts: CalendarAccountDTO[] }>('/api/calendar').then((r) => r.accounts),
   });
   const accounts = calendarsQuery.data ?? [];
 

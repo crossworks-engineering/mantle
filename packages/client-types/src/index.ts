@@ -275,6 +275,47 @@ export interface AgentOptionDTO {
   role: AgentRole;
 }
 
+// ── Calendar ────────────────────────────────────────────────────────────────────
+
+/** A subscribed calendar feed as returned by `GET /api/calendar` — the wire
+ *  projection of @mantle/db's `CalendarAccount` row. The sealed `feedUrlEnc`
+ *  credential, `ownerId`, and `syncState` are server-only and intentionally
+ *  omitted; dates are ISO strings. The route maps its rows to this so the wire
+ *  shape and the consuming client can't drift. */
+export interface CalendarAccountDTO {
+  id: string;
+  /** 'ics' (future: 'google' | 'microsoft'). */
+  provider: string;
+  displayName: string;
+  /** Optional UI accent (hex) so multiple calendars are distinguishable. */
+  color: string | null;
+  enabled: boolean;
+  lastEventCount: number | null;
+  lastSyncAt: string | null;
+  lastSyncError: string | null;
+}
+
+// ── Microsoft (SharePoint / OneDrive) ───────────────────────────────────────────
+
+/** A discovered drive as returned by `GET/POST /api/microsoft/accounts/[id]/drives`
+ *  — the wire projection of @mantle/db's `MsDrive` row. The Graph `deltaLink`
+ *  cursor and `accountId` are server-only and omitted; `lastSyncAt` is an ISO
+ *  string. The route maps its rows to this so the shapes can't drift. */
+export interface MsDriveDTO {
+  id: string;
+  /** Graph drive id. */
+  driveId: string;
+  /** `personal` (OneDrive) | `documentLibrary` (SharePoint) | other. */
+  driveType: string;
+  name: string;
+  /** SharePoint site display name; null for OneDrive. */
+  siteName: string | null;
+  webUrl: string | null;
+  enabled: boolean;
+  lastSyncAt: string | null;
+  lastError: string | null;
+}
+
 // ── Heartbeats ─────────────────────────────────────────────────────────────────
 
 /** A heartbeat's schedule (jsonb). `cron` is read-only in v1 (the form locks it);

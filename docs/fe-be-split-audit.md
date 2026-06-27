@@ -141,8 +141,14 @@ proven 9-step recipe) plus a handful of *systemic* infra fixes (B server-action 
    the client-fetch path (`apiFetch` + `NEXT_PUBLIC_MANTLE_API_BASE`) *is* the DB-less mechanism;
    removed the orphaned `lib/remote-data.ts` + `lib/data/*` seam and made the local auth gate DB-less
    via `detachedDevUser()`. `docs/db-less-dev.md` rewritten.
-7. **Cosmetic:** relocate the 3 type-only `@mantle/db` client imports (persona-notes-editor,
-   calendar-row, drives-list) into `@mantle/client-types`.
+7. ~~**Cosmetic:** relocate the type-only `@mantle/db` client imports into `@mantle/client-types`.~~
+   ✅ **DONE for the calendar/drives/persona set** — `persona-notes-editor` (→ existing
+   `PersonaNoteDTO`), `calendar-row` + `calendar-client` (→ new `CalendarAccountDTO`), `drives-list`
+   (→ new `MsDriveDTO`). The two GET routes now map rows to those DTOs, so the sealed `feedUrlEnc`
+   credential and the Graph `deltaLink` cursor no longer reach the browser, and a row↔wire drift is a
+   compile error. **Remaining:** the **email cluster** — `inbox-client` + `reading-pane` still import
+   `Email`/`EmailAttachment` (a large row + a `ReadingPane` cascade), tracked separately; until it
+   lands the §9 grep isn't 100% empty.
 
 After 1–4 the frontend is functionally separated for the converted surface; 5–6 complete the
 Electron/DB-less story; the §9 grep (`@mantle/db` outside `/api`) is already effectively clean —

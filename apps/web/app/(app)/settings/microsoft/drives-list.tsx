@@ -2,7 +2,7 @@
 
 import { FolderGit2, HardDrive, Loader2, RefreshCw } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { MsDrive } from '@mantle/db';
+import type { MsDriveDTO } from '@mantle/client-types';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Spinner } from '@/components/ui/spinner';
@@ -23,13 +23,13 @@ export function DrivesList({ accountId }: { accountId: string }) {
   const drivesQuery = useQuery({
     queryKey: key,
     queryFn: () =>
-      apiFetch<{ drives: MsDrive[] }>(`/api/microsoft/accounts/${accountId}/drives`).then(
+      apiFetch<{ drives: MsDriveDTO[] }>(`/api/microsoft/accounts/${accountId}/drives`).then(
         (r) => r.drives,
       ),
   });
 
   const discover = useMutation({
-    mutationFn: () => apiSend<{ drives: MsDrive[] }>(`/api/microsoft/accounts/${accountId}/drives`, 'POST'),
+    mutationFn: () => apiSend<{ drives: MsDriveDTO[] }>(`/api/microsoft/accounts/${accountId}/drives`, 'POST'),
     onSuccess: (res) => queryClient.setQueryData(key, res.drives),
     onError: (err) => toast.error(err instanceof Error ? err.message : String(err)),
   });
@@ -38,7 +38,7 @@ export function DrivesList({ accountId }: { accountId: string }) {
     mutationFn: ({ driveDbId, enabled }: { driveDbId: string; enabled: boolean }) =>
       apiSend(`/api/microsoft/drives/${driveDbId}`, 'PATCH', { enabled }),
     onSuccess: (_res, { driveDbId, enabled }) =>
-      queryClient.setQueryData<MsDrive[]>(key, (old) =>
+      queryClient.setQueryData<MsDriveDTO[]>(key, (old) =>
         (old ?? []).map((d) => (d.id === driveDbId ? { ...d, enabled } : d)),
       ),
     onError: (err) => toast.error(err instanceof Error ? err.message : String(err)),
