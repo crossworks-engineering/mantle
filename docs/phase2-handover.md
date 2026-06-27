@@ -19,7 +19,7 @@ for the original why + full task list.
 | **Task 3** — DB-less dev | ✅ foundation (v0.61.0). Seam `apps/web/lib/remote-data.ts` (`MANTLE_REMOTE_API`). Doc `docs/db-less-dev.md`. |
 | **Task 4** — convert screens to client data-fetching | ✅ **done (v0.63.11)** — every `(app)` screen incl. `/inbox` is client-fetched. |
 | Task 5 — Electron shell | ⬜ not started |
-| Task 6 — absorb `apps/agent` into `apps/api` | ⬜ not started (Phase 1 carryover) |
+| Task 6 — absorb `apps/agent` into `apps/api` | ✅ **done (v0.64.0)** — `apps/agent` deleted; its runtime + a durable Telegram-turn DBOS workflow now live in `apps/api`. |
 
 ### Task 4 — screens converted (ALL but `/inbox`)
 
