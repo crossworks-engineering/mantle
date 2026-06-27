@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { cookies } from 'next/headers';
 import { requireOwner } from '@/lib/auth';
 import { AppShell } from '@/components/app-shell';
@@ -27,7 +28,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <AppShell
       email={user.email ?? null}
-      contextCard={<UsageCard ownerId={user.id} />}
+      // Own Suspense boundary: UsageCard is an async server component, and
+      // without a local boundary its SSR suspension bubbles to the route
+      // boundary, putting the whole shell (incl. the header) under a streaming
+      // boundary that's absent at client hydration — which shifts every radix
+      // `useId` in the shell and trips a hydration-id mismatch. Containing it
+      // here keeps the rest of the shell's tree-context symmetric.
+      contextCard={
+        <Suspense fallback={null}>
+          <UsageCard ownerId={user.id} />
+        </Suspense>
+      }
       initialNavCollapsed={navCollapsed}
       initialActivityCollapsed={activityCollapsed}
     >
