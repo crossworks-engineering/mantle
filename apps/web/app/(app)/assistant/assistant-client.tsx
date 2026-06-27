@@ -21,6 +21,8 @@ import { formatDateTime } from '@/lib/format-datetime';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { RichText } from '@/components/assistant/rich-text';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { apiFetch } from '@/lib/api-fetch';
 import { assetUrl } from '@/lib/asset-url';
 
@@ -661,8 +663,16 @@ export function AssistantClient({
                             </span>
                             {streamTrail.length > 0 && <ThoughtTrail steps={streamTrail} live />}
                             {streamReply && (
-                              <div className={streamTrail.length > 0 ? 'mt-3' : ''}>
-                                <RichText markdown={streamReply} />
+                              // Live buffer: a lightweight ReactMarkdown render, NOT the
+                              // TipTap RichText editor — the editor's setContent() runs
+                              // flushSync and collides with React mid-render when the buffer
+                              // changes every token. The durable reply below swaps in RichText.
+                              <div
+                                className={`prose dark:prose-invert max-w-none [&>:first-child]:mt-0 [&>:last-child]:mb-0 ${
+                                  streamTrail.length > 0 ? 'mt-3' : ''
+                                }`}
+                              >
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamReply}</ReactMarkdown>
                               </div>
                             )}
                           </div>

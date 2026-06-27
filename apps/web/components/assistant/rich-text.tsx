@@ -60,9 +60,17 @@ export function RichText({ markdown }: { markdown: string }) {
   });
 
   // Re-apply when the text changes (e.g. an optimistic row resolves to the
-  // server copy). Cheap — Saskia turns are immutable once persisted.
+  // server copy). `setContent` runs `flushSync` internally; deferring it to a
+  // microtask keeps it OUT of React's render/commit phase, so it can't re-enter
+  // while React is already rendering — the "flushSync was called from inside a
+  // lifecycle method" warning, which fired once per visible turn on load (and on
+  // every token while a reply streamed nearby). The microtask runs after the
+  // current render settles; the isDestroyed guard covers a quick unmount.
   useEffect(() => {
-    if (editor) editor.commands.setContent(html);
+    if (!editor) return;
+    queueMicrotask(() => {
+      if (!editor.isDestroyed) editor.commands.setContent(html);
+    });
   }, [editor, html]);
 
   if (!editor) {
