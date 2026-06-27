@@ -1,8 +1,23 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireOwner } from '@/lib/auth';
-import { createPage, docToText, listPages, ParentPageNotFoundError } from '@/lib/pages';
+import {
+  countPages,
+  createPage,
+  docToText,
+  listPageTags,
+  listPages,
+  ParentPageNotFoundError,
+  type PageSort,
+} from '@/lib/pages';
 import { recordIngest } from '@mantle/tracing';
+
+const SORTS: PageSort[] = ['edited', 'newest', 'oldest', 'title'];
+const PAGE_SIZE = 50;
+// Tree mode loads the whole hierarchy at once (a personal KB is hundreds of
+// pages, not thousands). The flat/paginated path kicks in only when a search or
+// tag filter is active — mirrors the old server page.
+const TREE_LIMIT = 2000;
 
 /** A ProseMirror/TipTap document — an opaque object the editor owns. We only
  *  validate that it's an object here; `docToText` flattens it for the brain. */
@@ -17,14 +32,47 @@ const CreateBody = z.object({
   parentId: z.string().uuid().optional(),
 });
 
+/**
+ * The /pages list. Two shapes, matching the old server page:
+ *   - filtering (q or tag): a flat, paginated, sorted list + `total` for the pager.
+ *   - otherwise: the whole hierarchy (`mode: 'tree'`, up to TREE_LIMIT), built
+ *     client-side from parent_id.
+ * Always returns the tag facet counts so the filter UI needs no second request.
+ */
 export async function GET(req: Request) {
   const user = await requireOwner();
-  const url = new URL(req.url);
-  const rows = await listPages(user.id, {
-    query: url.searchParams.get('q') ?? undefined,
-    tag: url.searchParams.get('tag') ?? undefined,
+  const sp = new URL(req.url).searchParams;
+
+  const page = Math.max(1, Number.parseInt(sp.get('page') ?? '1', 10) || 1);
+  const query = sp.get('q')?.trim() || undefined;
+  const tag = sp.get('tag')?.trim() || undefined;
+  const sortParam = sp.get('sort');
+  const sort: PageSort = SORTS.includes(sortParam as PageSort) ? (sortParam as PageSort) : 'edited';
+  const filtering = Boolean(query || tag);
+
+  const tagsPromise = listPageTags(user.id);
+
+  if (filtering) {
+    const [pages, total, tags] = await Promise.all([
+      listPages(user.id, { query, tag, sort, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+      countPages(user.id, { query, tag }),
+      tagsPromise,
+    ]);
+    return NextResponse.json({ mode: 'list', pages, total, page, pageSize: PAGE_SIZE, tags });
+  }
+
+  const [pages, tags] = await Promise.all([
+    listPages(user.id, { sort, limit: TREE_LIMIT }),
+    tagsPromise,
+  ]);
+  return NextResponse.json({
+    mode: 'tree',
+    pages,
+    total: pages.length,
+    page: 1,
+    pageSize: TREE_LIMIT,
+    tags,
   });
-  return NextResponse.json({ pages: rows });
 }
 
 export async function POST(req: Request) {
