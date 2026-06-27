@@ -218,6 +218,17 @@ summarizer fed by ground truth, emitting `status` events on the same bus. Not a 
 
 ## 5. Phase 3 — token streaming
 
+> **Implementation status (Phase 3a — done, v0.72.0):** `chatStream()` ships on the **OpenRouter** adapter
+> (the common path; `anthropic/claude-*` via OpenRouter streams through it). It returns the final
+> `ChatResult` AND publishes `text-delta`/`reasoning-delta` over the NOTIFY bus via a tracing **delta
+> observer** (`emitTurnDelta`, sibling of the step observer); the tool-loop's `dispatchChat` uses it when
+> `isTurnStreaming()`. Gated by `MANTLE_TURN_TOKENS`. The web route still blocks on `getResult()` — tokens
+> stream independently of that, so the route-flip (§9.3) is deferred to **3c**. **Delegated sub-agents
+> stream into the same turn**: child traces inherit the parent `turnId`, the `seq` cursor is per-turn, and a
+> new `isStreamRoot` flag keeps reply text on the top-level turn while sub-agent status surfaces in the
+> trail. Remaining: **3b** (Anthropic native streaming) + **3c** (status lifecycle + `done`/`error` +
+> non-blocking route). The DBOS durability/liveness split (§5b) worked as designed — no new dependency.
+
 ### 5a. Adapter: add `chatStream()`
 Non-breaking expansion of `ChatDispatcher` (the interface already anticipates this). Each adapter
 gains a streaming path that **returns the final `ChatResult` AND publishes deltas**:

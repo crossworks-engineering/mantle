@@ -1,9 +1,10 @@
 # Live Turn Streaming — Session Handover
 
 **Branch:** `feat/live-turn-streaming` · **Design doc:** [`docs/live-turn-streaming.md`](live-turn-streaming.md)
-**Status:** Steps 0–2 DONE + the narrator promoted to its own worker kind, all committed and verified.
-Next destination: **Step 3 (token streaming).**
-**Version:** ~v0.71.0 · **Untagged**, **unpushed** (default-branch + tag are Jason's call).
+**Status:** Steps 0–2 + narrator worker + **Phase 3a (token streaming)** DONE — committed & verified
+in-browser (reply types out live; delegated sub-agents stream into the same turn). Remaining in Step 3:
+**3b (Anthropic adapter chatStream)** + **3c (status lifecycle + non-blocking route)**.
+**Version:** ~v0.72.0 · **Untagged**, **unpushed** (default-branch + tag are Jason's call).
 
 This is the resume point. Read this first, then the design doc for the Step-3 plan.
 
@@ -19,6 +20,9 @@ This is the resume point. Read this first, then the design doc for the Step-3 pl
 | `cf4e13db` | **thought-trail UI** — persistent inline record per turn |
 | `7005f056` | **Step 2** — narrate the trail in the assistant's voice |
 | `044f7b1a` | **narrator worker kind** — its own configurable worker + verbosity dial (v0.71.0) |
+| `1542dad4` | **Phase 3a (server)** — `chatStream()` on OpenRouter + tracing delta observer + tool-loop wiring (v0.72.0, flag `MANTLE_TURN_TOKENS`) |
+| `e14c109a` | **Phase 3a (client)** — reply types out live, reconciles to the durable reply |
+| `33983412` | **delegated sub-agents stream** — child traces inherit the turnId; per-turn seq cursor; reply text stays root-only |
 
 Plus the design doc + a doc-only `282b6cc7`. `main` is reconciled to `98f76e51` (the FE/BE-split fixes that
 were stranded on this branch — see git log).
@@ -94,18 +98,32 @@ Then open http://localhost:3001/assistant and send something that forces a tool,
   `apps/api/`) so pnpm workspace resolution works; `/tmp` fails with MODULE_NOT_FOUND.
 - **`cd` persists across Bash calls** — `cd` back to repo root before `pnpm version:bump` / `git add`.
 
-## 6. Step 3 — the next destination (token streaming)
+## 6. Step 3 — token streaming
 
-See [`docs/live-turn-streaming.md`](live-turn-streaming.md) §5–§7, §9. In short:
-1. Add `chatStream()` to the **OpenRouter** adapter, then **Anthropic** — each RETURNS the final
-   `ChatResult` (durable, journaled by DBOS) AND publishes `text-delta`/`reasoning-delta` (ephemeral).
-   `usage:{include:true}` so cost tracking survives. Tool-call args stream as fragments → accumulate, parse
-   at `finish_reason`.
-2. Flip the web route to **return `turnId` + stream** instead of awaiting `getResult()`.
-3. Wire the `assistant_messages.status` lifecycle (`pending → complete/failed`) + client reconciliation: on
-   `done`, replace the streamed buffer with the durable DB text.
-4. The hard part is the **DBOS durability/liveness split** — the journal records the final result; tokens
-   ride the ephemeral NOTIFY bus around it. The `text-delta` event type already exists in the contract.
+**DBOS was NOT the obstacle** (the worry going in): DBOS journals a step's *return value*; the per-token
+`publishTurnEvent` calls are non-journaled side effects inside the LLM step. Durability (the journaled
+`ChatResult`) and liveness (tokens on the NOTIFY bus) ride separate paths automatically — no new
+library/service needed. The audit confirming this is in the commit history; see §5b of the design doc.
+
+**3a — DONE (`1542dad4` server, `e14c109a` client, `33983412` delegation).** `chatStream()` on OpenRouter
+returns the final `ChatResult` (journaled) AND publishes `text-delta`/`reasoning-delta` via a tracing
+delta-observer (`setTurnDeltaObserver`/`emitTurnDelta`/`isTurnStreaming`, sibling of the step observer).
+`usage:{include:true}` keeps cost tracking; tool-call args accumulate by index. The tool-loop's
+`dispatchChat` picks chatStream when streaming is active. Gated by **`MANTLE_TURN_TOKENS`** (installing the
+delta observer is what flips `isTurnStreaming()` on — fully dark otherwise). The web route still BLOCKS on
+`getResult()` — token streaming is independent of that, so the route-flip is deferred to 3c. Client:
+`useTurnStream` accumulates `text-delta` (latest round) → the reply types out, reconciles to the durable
+reply when the POST lands. **Delegated sub-agents stream too**: child traces inherit the parent turnId, the
+seq cursor is per-TURN (root + children share it), and `isStreamRoot` keeps the visible reply text to the
+top-level turn while sub-agent STATUS surfaces in the trail.
+
+**Remaining:**
+- **3b** — `chatStream()` on the **Anthropic** adapter (native `messages` streaming; `content_block_delta`
+  text + thinking). Only matters for brains on the `anthropic` provider directly — the openrouter path
+  (incl. `anthropic/claude-*` *via* OpenRouter) already streams.
+- **3c** — wire `assistant_messages.status` (`pending → complete/failed`) + emit `done`/`error` terminal
+  events + flip the web route to **return `turnId` immediately** instead of awaiting `getResult()`. This is
+  the mobile/background-grade piece (the companion reconnects + reconciles against the durable row).
 
 ## 7. Open ideas / decisions (Jason's, captured)
 
