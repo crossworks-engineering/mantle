@@ -1,14 +1,17 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Hammer, Rocket, Undo2, Sparkles, SquareDashedMousePointer, X, Save, WandSparkles } from 'lucide-react';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
+import { SetPageTitle } from '@/components/layout/page-title';
 import { BackLink } from '@/components/layout/back-link';
 import { AppSandbox } from '@/components/app-sandbox/app-sandbox';
 import { CodeEditor } from '@/components/app-sandbox/code-editor';
@@ -26,9 +29,35 @@ const FORMATTABLE = new Set([
 ]);
 const extOf = (p: string) => p.slice(p.lastIndexOf('.') + 1).toLowerCase();
 
-export function AppDetailClient({ app }: { app: AppDetail }) {
-  const router = useRouter();
+/** Outer query-gate so the page stays data-free. */
+export function AppDetailClient({ id }: { id: string }) {
+  const appQuery = useQuery({
+    queryKey: ['apps', id],
+    queryFn: () => apiFetch<{ app: AppDetail }>(`/api/apps/${id}`),
+    retry: false,
+  });
+
+  if (appQuery.isPending) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+  if (appQuery.isError) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+        <p>Couldn&apos;t load this app.</p>
+        <BackLink href="/apps">Back to apps</BackLink>
+      </div>
+    );
+  }
+  return <AppDetailView app={appQuery.data.app} />;
+}
+
+function AppDetailView({ app }: { app: AppDetail }) {
   const toast = useToast();
+  const queryClient = useQueryClient();
 
   const source = app.draft ?? app.source;
   // Editable working copy of the source tree. Re-synced from the server on every
@@ -71,12 +100,10 @@ export function AppDetailClient({ app }: { app: AppDetail }) {
     setBusy('build');
     setBuildErrors([]);
     try {
-      const res = await fetch(`/api/apps/${app.id}/build`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error ?? 'Build failed.');
-        return;
-      }
+      const data = await apiSend<{ errors?: BuildMsg[]; buildOk?: boolean }>(
+        `/api/apps/${app.id}/build`,
+        'POST',
+      );
       setBuildErrors(data.errors ?? []);
       if (data.buildOk) {
         toast.success('Build succeeded.');
@@ -84,6 +111,8 @@ export function AppDetailClient({ app }: { app: AppDetail }) {
       } else {
         toast.error(`Build failed (${data.errors?.length ?? 0} error(s)).`);
       }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Build failed.');
     } finally {
       setBusy(null);
     }
@@ -92,15 +121,12 @@ export function AppDetailClient({ app }: { app: AppDetail }) {
   async function publish() {
     setBusy('publish');
     try {
-      const res = await fetch(`/api/apps/${app.id}/publish`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error ?? 'Publish failed.');
-        return;
-      }
+      await apiSend(`/api/apps/${app.id}/publish`, 'POST');
       toast.success('Published.');
-      router.refresh();
+      await queryClient.invalidateQueries({ queryKey: ['apps', app.id] });
       setReloadKey((k) => k + 1);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Publish failed.');
     } finally {
       setBusy(null);
     }
@@ -109,14 +135,12 @@ export function AppDetailClient({ app }: { app: AppDetail }) {
   async function discard() {
     setBusy('discard');
     try {
-      const res = await fetch(`/api/apps/${app.id}/draft`, { method: 'DELETE' });
-      if (!res.ok) {
-        toast.error('Could not discard the draft.');
-        return;
-      }
+      await apiSend(`/api/apps/${app.id}/draft`, 'DELETE');
       toast.success('Draft discarded.');
-      router.refresh();
+      await queryClient.invalidateQueries({ queryKey: ['apps', app.id] });
       setReloadKey((k) => k + 1);
+    } catch {
+      toast.error('Could not discard the draft.');
     } finally {
       setBusy(null);
     }
@@ -129,24 +153,21 @@ export function AppDetailClient({ app }: { app: AppDetail }) {
     setReply(null);
     setBuildErrors([]);
     try {
-      const res = await fetch(`/api/apps/${app.id}/ai-assist`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
+      const data = await apiSend<{ reply?: string; build?: { errors?: BuildMsg[] } }>(
+        `/api/apps/${app.id}/ai-assist`,
+        'POST',
+        {
           prompt: prompt.trim(),
           ...(focusRegion ? { focusRegionIds: [focusRegion] } : {}),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error ?? 'Appsmith couldn’t run.');
-        return;
-      }
+        },
+      );
       setReply(data.reply ?? '');
       setBuildErrors(data.build?.errors ?? []);
       setPrompt('');
-      router.refresh();
+      await queryClient.invalidateQueries({ queryKey: ['apps', app.id] });
       setReloadKey((k) => k + 1);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Appsmith couldn’t run.');
     } finally {
       setBusy(null);
     }
@@ -157,20 +178,14 @@ export function AppDetailClient({ app }: { app: AppDetail }) {
   async function saveDraft(): Promise<boolean> {
     setBusy('save');
     try {
-      const res = await fetch(`/api/apps/${app.id}/draft`, {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ entry: source.entry, files }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        toast.error(data.error ?? 'Could not save.');
-        return false;
-      }
+      await apiSend(`/api/apps/${app.id}/draft`, 'PUT', { entry: source.entry, files });
       setDirty(false);
       toast.success('Saved to draft.');
-      router.refresh();
+      await queryClient.invalidateQueries({ queryKey: ['apps', app.id] });
       return true;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save.');
+      return false;
     } finally {
       setBusy(null);
     }
@@ -179,20 +194,16 @@ export function AppDetailClient({ app }: { app: AppDetail }) {
   async function formatActive() {
     setBusy('format');
     try {
-      const res = await fetch(`/api/apps/${app.id}/format`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ path: activePath, content: activeContent }),
+      const data = await apiSend<{ formatted: string }>(`/api/apps/${app.id}/format`, 'POST', {
+        path: activePath,
+        content: activeContent,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error ?? 'Could not format.');
-        return;
-      }
       if (data.formatted !== activeContent) {
         setFiles((f) => ({ ...f, [activePath]: data.formatted }));
         setDirty(true);
       }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not format.');
     } finally {
       setBusy(null);
     }
@@ -200,6 +211,7 @@ export function AppDetailClient({ app }: { app: AppDetail }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <SetPageTitle title={app.title} />
       <div className="flex items-center justify-between gap-3 border-b border-border p-3">
         <div className="flex items-center gap-3">
           <BackLink href="/apps">Apps</BackLink>
