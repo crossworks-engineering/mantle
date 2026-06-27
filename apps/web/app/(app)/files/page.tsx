@@ -1,42 +1,26 @@
+import { Suspense } from 'react';
 import { requireOwner } from '@/lib/auth';
-import {
-  ensureFilesRootBranch,
-  folderByPath,
-  listAllFolders,
-  listFiles,
-} from '@/lib/files';
+import { Spinner } from '@/components/ui/spinner';
 import { FilesClient } from './files-client';
 
-export default async function FilesPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ path?: string }>;
-}) {
-  const user = await requireOwner();
-  await ensureFilesRootBranch(user.id);
-
-  const sp = await searchParams;
-  const currentPath = sp.path && sp.path.length > 0 ? sp.path : 'files';
-
-  // Validate the requested path actually exists; fall back to root.
-  let resolved = currentPath;
-  let folder = await folderByPath({ ownerId: user.id, path: resolved });
-  if (!folder) {
-    resolved = 'files';
-    folder = await folderByPath({ ownerId: user.id, path: 'files' });
-  }
-
-  const [tree, files] = await Promise.all([
-    listAllFolders(user.id),
-    listFiles({ ownerId: user.id, parentPath: resolved }),
-  ]);
-
+/**
+ * Files: data-free. FilesClient fetches the folder tree + the current folder's
+ * files from the /api/files endpoints, resolves the `?path` param against the
+ * tree, and derives the current folder — no SSR DB read. (The root branch is
+ * ensured by those GET handlers.) Wrapped in Suspense because the client reads
+ * `useSearchParams`.
+ */
+export default async function FilesPage() {
+  await requireOwner();
   return (
-    <FilesClient
-      tree={tree}
-      currentPath={resolved}
-      currentFolder={folder ?? null}
-      files={files}
-    />
+    <Suspense
+      fallback={
+        <div className="flex h-full items-center justify-center">
+          <Spinner />
+        </div>
+      }
+    >
+      <FilesClient />
+    </Suspense>
   );
 }
