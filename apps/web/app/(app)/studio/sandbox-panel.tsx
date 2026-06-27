@@ -12,6 +12,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Loader2, RotateCcw, Send } from 'lucide-react';
+import { apiSend } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -40,13 +41,12 @@ export function SandboxPanel({ agentId, agentName }: { agentId: string; agentNam
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch('/api/studio/sandbox', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ agentId, messages: next }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? 'sandbox failed');
+      const json = await apiSend<{
+        reply?: string;
+        model: string;
+        tokensIn: number | null;
+        tokensOut: number | null;
+      }>('/api/studio/sandbox', 'POST', { agentId, messages: next });
       setMessages([...next, { role: 'assistant', content: json.reply ?? '' }]);
       setMeta({ model: json.model, tokensIn: json.tokensIn, tokensOut: json.tokensOut });
     } catch (e) {

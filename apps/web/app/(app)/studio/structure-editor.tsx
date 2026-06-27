@@ -4,12 +4,13 @@
  * Agent Studio Phase 3 — structure editing (docs/agent-studio.md). Rewire an
  * agent's graph from the inspector: swap its model, tune params, attach/detach
  * skills, add/remove delegates, and reset a manifest agent to its canonical
- * default. Every change PATCHes the agent and calls onSaved → router.refresh, so
- * the integrity health overlay + composed-prompt preview relight live.
+ * default. Every change PATCHes the agent and calls onSaved → refetch the studio
+ * graph, so the integrity health overlay + composed-prompt preview relight live.
  */
 
 import { useEffect, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, Loader2, RotateCcw } from 'lucide-react';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ModelSelect } from '@/components/ui/model-select';
@@ -102,9 +103,8 @@ export function StructureEditor({
   useEffect(() => {
     if (!open || catalog.length || catalogLoading) return;
     setCatalogLoading(true);
-    fetch('/api/model-context')
-      .then((r) => r.json())
-      .then((d) => setCatalog((d.models as ExplorerModel[]) ?? []))
+    apiFetch<{ models?: ExplorerModel[] }>('/api/model-context')
+      .then((d) => setCatalog(d.models ?? []))
       .catch(() => {})
       .finally(() => setCatalogLoading(false));
   }, [open, catalog.length, catalogLoading]);
@@ -113,15 +113,7 @@ export function StructureEditor({
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/agents/${agent.id}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j.error ?? 'update failed');
-      }
+      await apiSend(`/api/agents/${agent.id}`, 'PATCH', body);
       onSaved();
     } catch (e) {
       setError((e as Error).message);
@@ -155,15 +147,7 @@ export function StructureEditor({
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch('/api/studio/reset', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ slug: agent.slug }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j.error ?? 'reset failed');
-      }
+      await apiSend('/api/studio/reset', 'POST', { slug: agent.slug });
       onSaved();
     } catch (e) {
       setError((e as Error).message);

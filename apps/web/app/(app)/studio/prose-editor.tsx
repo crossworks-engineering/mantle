@@ -12,6 +12,7 @@
 
 import { useCallback, useState } from 'react';
 import { History, Pencil, RotateCcw, Save, X } from 'lucide-react';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -80,22 +81,24 @@ export function ProseEditor({
   const loadVersions = useCallback(async () => {
     setVersions(null);
     const qs = new URLSearchParams({ entityType, entityId, field });
-    const res = await fetch(`/api/studio/prose?${qs}`);
-    const json = await res.json();
-    setVersions(res.ok ? (json.versions ?? []) : []);
+    try {
+      const json = await apiFetch<{ versions?: Version[] }>(`/api/studio/prose?${qs}`);
+      setVersions(json.versions ?? []);
+    } catch {
+      setVersions([]);
+    }
   }, [entityType, entityId, field]);
 
   async function post(payload: Record<string, unknown>) {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch('/api/studio/prose', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ entityType, entityId, field, ...payload }),
+      const json = await apiSend<{ versions?: Version[] }>('/api/studio/prose', 'POST', {
+        entityType,
+        entityId,
+        field,
+        ...payload,
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? 'save failed');
       setVersions(json.versions ?? []);
       onSaved();
       return true;
