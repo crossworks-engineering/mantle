@@ -1,203 +1,332 @@
-# Live Turn Streaming — Session Handover
+# Chat System / Live Turn Streaming — Session Handover
 
-**Branch:** `feat/live-turn-streaming` · **Version:** v0.76.0 · **Untagged, unpushed** (default-branch +
-tag + deploy are Jason's call). **Design doc:** [`docs/live-turn-streaming.md`](live-turn-streaming.md).
+**Branch:** `feat/live-turn-streaming` · **Version:** v0.76.0 · **Untagged, unpushed** (default-branch + tag +
+deploy are Jason's call). **Design doc:** [`docs/live-turn-streaming.md`](live-turn-streaming.md).
+**Conversation model:** [`docs/conversation.md`](conversation.md).
 
-**Status:** Phases 0–2 + the narrator worker + **3a (token streaming)** + **3c (durable status lifecycle +
-non-blocking route)** + **3b (streaming on every provider)** + **Stop mid-flight** are DONE, committed, and
-verified. The reply types out live, the route returns **202 immediately** (client drives off the stream +
-durable row, survives navigation), a Stop button aborts generation on any provider and restores the prompt
-for correction. **Step 3 is complete. Next up: Phase 4 (mobile companion + `turn_stream_buffer` replay).**
-
-This is the resume point — read this, then the design doc §8 for the Phase-4 detail.
+**Status — Step 3 (token streaming) is COMPLETE.** The web `/assistant` chat now: streams the reply token by
+token over a live thought trail; runs the turn in a separate durable process that survives
+navigation/backgrounding (the route returns **202 immediately**); lets the user **Stop** mid-flight on **any
+provider** (generation actually halts, the partial reply is kept, and the prompt drops back into the composer
+for correction); and the responder writes portable standard Markdown. **Next up: Phase 4 — the Flutter
+companion consumes the same stream + a replay buffer.** This file is the resume point; read it top-to-bottom,
+then the design doc §8 for Phase-4 detail.
 
 ---
 
-## 1. What shipped (newest first, all on `feat/live-turn-streaming`)
+## 1. TL;DR of the architecture
+
+A turn is **two processes bridged by Postgres NOTIFY**:
+
+```
+ browser (apps/web, Next.js — serves ALL /api/**)        runner (apps/api — DBOS, no HTTP)
+ ───────────────────────────────────────────────        ──────────────────────────────────
+ POST /api/assistant/turn  ──enqueue DBOS workflow──▶    runAssistantTurn():
+   ← 202 {turnId}  (non-blocking, streaming on)            insert inbound + outbound('pending')
+ GET  /turn/:id/stream  (SSE) ◀─── pg_notify ──────────    emit turn-start
+   status / text-delta / reasoning-delta /                 tool loop → chatStream(onDelta, signal)
+   turn-start / done / error                       ──┐       └▶ publishTurnEvent('turn_stream')
+ POST /turn/:id/cancel  ──── pg_notify ─────────────┼──▶    cancel listener → abortTurn() → AbortController
+                                                    │      finalize outbound('complete'/'failed')
+ reconcile to durable assistant_messages row  ◀─────┘      emit done / error
+```
+
+- **Durability vs liveness travel on separate paths and never mix.** The *answer* is the DBOS-journaled
+  return value of the LLM step → persisted to `assistant_messages` (exactly-once, survives crash). The
+  *deltas* are fire-and-forget `pg_notify` decoration around that step. A dropped delta is cosmetic; the DB
+  row is the source of truth. This is the one principle everything hangs off (design doc §0).
+- **DBOS was never the obstacle** to streaming. It journals the step's return value; the per-token
+  `publishTurnEvent` calls inside the step are non-journaled side effects. No new lib/service was needed.
+- **`turnId` on the wire** = the client-minted **idempotency-key** = the DBOS **workflow id** = the live
+  **stream correlation id**. It's stable *before any row exists*, so the client subscribes to the stream
+  before it POSTs. The **durable outbound `assistant_messages` id is a separate handle**, delivered to the
+  client in the `turn-start` event (`outboundId`).
+
+## 2. What shipped (this session, newest first — all on `feat/live-turn-streaming`)
 
 | Commit | Ver | What |
 |---|---|---|
-| `445cd098` | 0.76.0 | **Phase 3b + all-provider streaming + Stop** — `chatStream()` on all six remaining adapters (Anthropic/Google native SSE; xAI/HF/DeepSeek/local via a shared OpenAI-compat streamer), each abort-aware. |
-| `0e65c7a4` | 0.75.1 | **Stop restores the prompt** to the composer for correction. |
-| `5a445e1c` | 0.75.0 | **Stop mid-flight** — the Enter button becomes a Stop button; cross-process abort halts generation, keeps the partial reply. |
-| `368aa3a8` | 0.74.0 | **Phase 3c Part B** — non-blocking route (202 `{turnId}`) + client/dock drive off the live stream, reconcile to the durable row on done/error. |
-| `15c58f8a` | 0.73.0 | **Phase 3c Part A** — runner owns the durable outbound row (pending→complete/failed) + emits `turn-start`/`done`/`error` via a tracing turn-lifecycle observer. |
-| `99038998` | 0.72.3 | **Responder → standard Markdown.** New `chat_writing` skill (no rich dialect); Pages keeps `rich_writing`. |
-| `937fa97e` | 0.72.2 | **Stick-to-bottom autoscroll** + a jump-to-latest button. |
-| `97fdd066` | 0.72.1 | **flushSync fix** — live buffer renders via ReactMarkdown; RichText `setContent` deferred to a microtask. |
-| `9769c90e` | — | docs: Phase 3a. |
-| `33983412` | 0.72.0 | **Delegated sub-agents stream** into the same turn (turnId inheritance, per-turn seq, `isStreamRoot`). |
-| `e14c109a` | 0.72.0 | **Phase 3a client** — the reply types out live, reconciles to the durable reply. |
-| `1542dad4` | 0.72.0 | **Phase 3a server** — `chatStream()` on OpenRouter + tracing delta observer + tool-loop wiring (flag-dark). |
-| `5673e880` | 0.71.0 | Narrator made a **required baseline worker** (auto-seeds on onboarding + upgrade). |
-| `044f7b1a`/`5b206060` | 0.71.0 | Narrator promoted to its **own configurable worker kind** (verbosity dial). |
+| `f4dbfdd1` | — | docs: Phase 3b. |
+| `445cd098` | 0.76.0 | **Phase 3b + all-provider streaming + Stop** — `chatStream()` on all 6 remaining adapters (Anthropic/Google native SSE; xAI/HF/DeepSeek/local via a shared OpenAI-compat streamer), each abort-aware. New `adapters/sse.ts`. |
+| `0e65c7a4` | 0.75.1 | **Stop restores the prompt** to the composer (focus + cursor-to-end) for correction. |
+| `5a445e1c` | 0.75.0 | **Stop mid-flight** — Enter button → Stop button; cross-process abort halts generation, keeps the partial. |
+| `368aa3a8` | 0.74.0 | **Phase 3c Part B** — non-blocking 202 route + client/dock drive off the stream, reconcile to the durable row. |
+| `15c58f8a` | 0.73.0 | **Phase 3c Part A** — runner owns the durable outbound row (pending→complete/failed) + emits turn-start/done/error via a tracing turn-lifecycle observer. |
+| `99038998` | 0.72.3 | **Responder → standard Markdown** (`chat_writing` skill; Pages keeps `rich_writing`). |
+| `937fa97e` | 0.72.2 | Stick-to-bottom autoscroll + jump-to-latest button. |
+| `97fdd066` | 0.72.1 | flushSync fix (live buffer via ReactMarkdown; RichText `setContent` microtask-deferred). |
+| `33983412` | 0.72.0 | Delegated sub-agents stream into the same turn (turnId inheritance, per-turn seq, `isStreamRoot`). |
+| `e14c109a` / `1542dad4` | 0.72.0 | **Phase 3a** client + server — reply types out live (OpenRouter `chatStream` + delta observer). |
+| `5673e880` / `044f7b1a` / `5b206060` | 0.71.0 | Narrator promoted to its own required baseline worker kind (verbosity dial). |
 
-Earlier (prior session): `adb1cdf9` Step 0 (contract + bus), `dfaf4219` Step 1 (grounded status), `cf4e13db`
-thought-trail UI, `7005f056` Step 2 (narration). `main` is reconciled to `98f76e51` (the FE/BE-split fixes).
+Prior session: `adb1cdf9` Step 0 (contract + bus), `dfaf4219` Step 1 (grounded status), `cf4e13db` thought-
+trail UI, `7005f056` Step 2 (narration). `main` is at `98f76e51` (the FE/BE-split fixes — see
+[[api-service-phase2]]).
 
-## 2. What the feature does now
+## 3. The event contract (`TurnEvent` in `@mantle/client-types/src/index.ts`)
 
-During an assistant turn the chat shows a **live thought trail** (status, narrated in the assistant's voice)
-AND, with token streaming on, the **reply types out** below it — then reconciles to the durable reply when
-the POST lands. **Delegated sub-agents** (e.g. the Pages specialist) now surface their own steps in the same
-trail. The transcript **follows new content while you're at the bottom** and offers a jump button if you've
-scrolled up. The responder writes **standard Markdown** (portable to web + mobile); the **Pages** specialist
-still authors the rich Mantle dialect for documents.
+Zero-runtime typed DTO (no zod); the producer stamps `v`/`seq`/`round`. **Every event:**
+`{ v, turnId, seq, round, type, data }`.
 
-## 3. Architecture — the load-bearing facts
+| `type` | `data` | Emitted? | Notes |
+|---|---|---|---|
+| `turn-start` | `{ agentSlug, model, inboundId?, outboundId? }` | ✅ | Fires once the durable rows exist. `outboundId` is the reconciliation handle. |
+| `status` | `{ label, kind?, stepId? }` | ✅ | The thought trail. `stepId` lets a narrated line replace its grounded line in place. |
+| `reasoning-delta` | `{ text }` | ✅ (tokens on) | Model thinking; shown faintly, not the reply. |
+| `text-delta` | `{ text }` | ✅ (tokens on) | A chunk of the visible reply. `round` scopes it to a tool-loop round. |
+| `done` | `{ status: 'complete' }` | ✅ | Outbound row is final → client reconciles to the DB row. |
+| `error` | `{ status: 'failed', message }` | ✅ | Turn failed. |
+| `tool-start` / `tool-end` | `{ name, summary? }` / `{ name, ok }` | ❌ defined-only | Reserved; the trail uses `status` today. |
 
-- **Two processes, always.** The turn runs in **`apps/api`** (DBOS runner, no HTTP); the browser's SSE
-  socket is served by **`apps/web`** (all `/api/**`). They bridge ONLY via Postgres `NOTIFY` (`turn_stream`
-  channel). `@mantle/turn-stream` `publishTurnEvent` → `pg_notify`; `subscribeTurnStream` in
-  `apps/web/lib/realtime.ts` (owner+turn filtered; ownerId stripped before the browser).
-- **DBOS was NOT the streaming obstacle.** DBOS journals a step's *return value* (the assembled
-  `ChatResult`); the per-token `publishTurnEvent` calls inside the LLM step are non-journaled side effects.
-  Durability (journal) and liveness (NOTIFY bus) ride separate paths automatically — **no new lib/service
-  needed.** On crash-resume the step re-runs and re-streams; the answer is never lost (it's the return value).
-- **The web route is now NON-BLOCKING** (3c, `route.ts`): when `isTurnStreamingEnabled()` and the client
-  sent an idempotency-key, it enqueues and returns **202 `{turnId}`** immediately (no `getResult()`). The
-  client types the reply off the stream and reconciles to the durable row on `done`. The legacy blocking
-  relay stays for flag-off (and any no-key POST). The **runner owns the outbound row**: inserts it `pending`
-  at turn start, finalizes it `complete`/`failed` (`run-turn.ts`).
-- **Contract** = `TurnEvent` in `@mantle/client-types` (v, turnId, seq, round, type, data). All emitted now:
-  `status`, `text-delta`, `reasoning-delta`, and (3c) `turn-start` (carries inbound/outbound row ids),
-  `done`, `error`. `turnId` on the wire = the client's idempotency-key/streamId (the stable
-  subscribe-before-rows-exist handle); the durable outbound row id rides in `turn-start`.
-- **Stop a turn mid-flight** (`5a445e1c`): the composer's Enter button becomes a red Stop button while a
-  turn streams. Cross-process abort: `POST /api/assistant/turn/:id/cancel` → `publishTurnCancel` →
-  `turn_cancel` NOTIFY → the runner's cancel listener (`apps/api/src/turn-cancel.ts`) → `abortTurn(owner,
-  turnId)` aborts a per-turn `AbortController` (registry in `store.ts`). The tool loop threads
-  `currentTurnAbortSignal()` into `chatStream` → the OpenRouter SDK fetch; on abort the adapter returns its
-  PARTIAL reply (not a throw), so `run-turn` finalizes the row `'complete'` with the partial (a stop is
-  detected via `signal.aborted`, distinct from a real error). Generation halts ~360ms after the click.
-- **Turn-lifecycle observer** (3c, third tracing observer in `store.ts`): `setTurnLifecycleObserver`/
-  `emitTurnLifecycle(turnId, ownerId, phase, data)`. Driven EXPLICITLY by the runtime (not the trace) so
-  `turn-start` fires once the rows exist and `done`/`error` fire once the outbound text is committed (which
-  is AFTER the responder trace closes). It owns the per-turn seq-cursor retirement on done/error, so seq
-  stays monotonic past the trace boundary (`startTrace` defers cleanup to it when a runner is wired).
-- **Two tracing observers** (siblings, in `packages/tracing/src/store.ts`), set by `apps/api` at boot
-  (`turn-stream-observer.ts`), no-op unless a trace carries a `turnId`:
-  - **step observer** (`setStepObserver`) → `status` events (the trail). Installed always.
-  - **turn-delta observer** (`setTurnDeltaObserver`/`emitTurnDelta`/`isTurnStreaming`) → `text-delta`/
-    `reasoning-delta`. Installed **only when `MANTLE_TURN_TOKENS` is set** — installing it is ALSO the gate
-    that flips `isTurnStreaming()` on, so the tool-loop only uses `chatStream` when the flag is set.
-- **`chatStream()`** is an optional `ChatDispatcher` method (`packages/voice/src/adapters/types.ts`).
-  **OpenRouter implements it** (`openrouter-chat.ts`): `stream:true` + `usage:{include:true}`, iterates the
-  SDK EventStream, fires `onDelta` per text/reasoning chunk, accumulates tool-call arg fragments by index,
-  returns the SAME `ChatResult` as `chat()`. The tool-loop's `dispatchChat` (`tool-loop.ts`) picks it over
-  `chat()` when streaming is active — at the main round, the failover-backup round, and the force-final pass.
-- **Delegated agents stream into the same turn.** `invokeAgent` opens the child in its own trace (for cost);
-  `startTrace` now **inherits the parent's `turnId`** so the child's steps fire the observers. The live
-  `seq` cursor is **per-turn** (a `turnId→counter` registry in store.ts), so root + children share one
-  monotonic sequence. A new **`isStreamRoot`** flag gates the reply-text stream to the top-level turn (a
-  sub-agent's tokens are intermediate — its status surfaces in the trail, its text doesn't pollute the reply).
-- **Client** (`apps/web/app/(app)/assistant/`): `use-turn-stream.ts` `useTurnStream(turnId)` returns
-  `{label, trail, reply}` — accumulates `text-delta` into a latest-round reply buffer (ref accumulator).
-  `assistant-client.tsx` renders the **live buffer with ReactMarkdown** (NOT RichText — see gotchas), the
-  trail with `ThoughtTrail`, and on the durable POST reply swaps in `RichText`. Stick-to-bottom lives here too.
-- **Narrator** is its own **required baseline worker kind** (`narrator`, migration `0106`). `narrateStatus`
-  (`apps/api/src/turn-narration.ts`) resolves it first, falls back to `summarizer`; its `system_prompt` is a
-  user-tunable verbosity dial (Settings → AI workers). See [[live-turn-streaming]] memory for full detail.
-- **Formatting skills** (manifest): responder = **`chat_writing`** (standard Markdown only); Pages =
-  **`rich_writing`** (the rich dialect) — unchanged. See [[responder-chat-writing-split]].
+`seq` is monotonic per turn across the root turn AND delegated sub-agents (one `turnId→counter` registry).
+`TURN_EVENT_SCHEMA_VERSION = 1`; bump only on a breaking change to an existing event's shape (new types/fields
+are additive). The SSE frame is `id: <seq>\ndata: <event JSON>\n\n` — `id:` is the future `Last-Event-ID`
+resume cursor (no backlog yet → see Phase 4).
 
-## 4. Resume locally (servers + flags)
+## 4. File map (where everything lives)
 
-Local DB is **Docker Desktop** (`mantle_pg`/`mantle_minio`/`mantle_tika`); `DATABASE_URL` =
-`127.0.0.1:54323` (line 10 of `apps/web/.env.local`; the prod-tailnet + tunnel URLs are commented below it).
-Owner id = `bc505da9-c323-43c7-bafb-6c06a2d443de`. The four flags are already in `.env.local` (gitignored):
-`MANTLE_TURN_STREAMING=1`, `NEXT_PUBLIC_MANTLE_TURN_STREAMING=1`, `MANTLE_TURN_NARRATION=1`,
-`MANTLE_TURN_TOKENS=1`.
+**Contract + transport**
+- `packages/client-types/src/index.ts` — `TurnEvent` union + `TurnEventType` + per-type data interfaces.
+- `packages/turn-stream/src/` — server transport. `channel.ts` (`TURN_STREAM_CHANNEL='turn_stream'`,
+  `TURN_CANCEL_CHANNEL='turn_cancel'`, `TURN_EVENT_SCHEMA_VERSION`); `publish.ts`
+  (`publishTurnEvent(ownerId,event)`, `publishTurnCancel(ownerId,turnId)`, the `TurnStreamEnvelope` /
+  `TurnCancelEnvelope` types). Both fire-and-forget; never throw.
+
+**Runner (`apps/api`)**
+- `src/main.ts` — boot: `installTurnStreamObserver()` + `startTurnCancelListener()` before `DBOS.launch()`.
+- `src/turn-stream-observer.ts` — installs the THREE tracing observers (see §5) → `publishTurnEvent`.
+- `src/turn-cancel.ts` — dedicated Postgres LISTEN on `turn_cancel` → `abortTurn(ownerId, turnId)`.
+- `src/workflows/assistant-turn.ts` — the DBOS workflow wrapping `runAssistantTurn` in `withDurableSteps`.
+- `src/turn-narration.ts` — `narrateStatus()` (resolves the `narrator` worker → `summarizer` fallback).
+
+**Turn logic (`@mantle/assistant-runtime`)**
+- `src/run-turn.ts` — **the heart.** `runAssistantTurn()`: resolves agent, loads context, inserts inbound +
+  `pending` outbound, emits `turn-start`, registers the AbortController, runs the tool loop, finalizes the row
+  + emits `done`/`error`, detects Stop vs error. See the §7 walkthrough.
+
+**Tracing (`@mantle/tracing/src/store.ts`)** — the observer + abort plumbing:
+- step observer (`setStepObserver`) → `status`; delta observer (`setTurnDeltaObserver`/`emitTurnDelta`/
+  `isTurnStreaming`) → `text-delta`/`reasoning-delta`; lifecycle observer
+  (`setTurnLifecycleObserver`/`emitTurnLifecycle`) → `turn-start`/`done`/`error`.
+- per-turn seq registry (`nextTurnSeq`); per-turn **abort registry**
+  (`registerTurnAbort`/`abortTurn`/`unregisterTurnAbort`/`currentTurnAbortSignal`).
+- `startTrace` inherits a parent's `turnId` (delegation) + sets `isStreamRoot`.
+
+**Tool loop (`@mantle/agent-runtime/src/tool-loop.ts`)**
+- `dispatchChat()` — picks `adapter.chatStream` over `adapter.chat` when `isTurnStreaming()`, and injects
+  `currentTurnAbortSignal()` into both. The single chokepoint for streaming + Stop wiring.
+
+**Chat adapters (`@mantle/voice/src/adapters/`)** — all now stream + honour `opts.signal`:
+- `types.ts` — `ChatOptions.signal?`, `ChatDispatcher.chatStream?(opts, onDelta)`, `ChatStreamSink`,
+  `ChatStreamDelta`.
+- `sse.ts` — `readSSE()` (abort-aware SSE line reader, async generator), `safeDelta()`, `chatAbortSignal()`
+  (combines a Stop signal + a per-call timeout for the one-shot `chat()`).
+- `openai-compat.ts` — `streamOpenAICompatChat()` (shared by xai/hf/deepseek/local) + the message/tool
+  translation. `openrouter-chat.ts` — `openrouterChatStream()` (SDK-based). `anthropic-chat.ts` —
+  `anthropicChatStream()` + `buildAnthropicBody()` (native Messages SSE). `google-chat.ts` —
+  `googleChatStream()` + `buildGoogleBody()` (`:streamGenerateContent?alt=sse`). `xai/huggingface/deepseek/
+  local-chat.ts` — thin `chatStream` delegating to the shared streamer.
+- Tests: `chat-stream.test.ts` (12 wire-shape tests across all 3 SSE dialects + abort).
+
+**Web routes (`apps/web/app/api/assistant/`)**
+- `turn/route.ts` — POST: auth + attachment extraction (sync), enqueue, then **202 `{turnId}`** if streaming
+  on (else the legacy blocking `getResult()` relay).
+- `turn/[turnId]/stream/route.ts` — GET SSE; flag-gated 404; bearer-authed; `subscribeTurnStream`.
+- `turn/[turnId]/cancel/route.ts` — POST; flag-gated; bearer-authed; `publishTurnCancel`.
+- `messages/route.ts` — GET page of the thread (now returns `status`/`error`).
+- `lib/realtime.ts` — `subscribeTurnStream(ownerId, turnId, cb)` (one shared LISTEN connection, fans out to a
+  Set of subscribers, owner+turn filtered, ownerId stripped before the browser).
+- `lib/assistant.ts` — `recentAssistantMessages` / `assistantMessagesBefore` (timeline reads, carry
+  `status`/`error`).
+
+**Client (`apps/web/.../assistant/` + `components/assistant/`)**
+- `components/assistant/use-turn-stream.ts` — `useTurnStream(turnId)` →
+  `{ label, trail, reply, phase, outboundId, inboundId, error }`. Subscribes via `apiEventStream`; accumulates
+  `text-delta` (latest round, ref accumulator); captures ids from `turn-start`; flips `phase` on `done`/`error`.
+- `app/(app)/assistant/assistant-client.tsx` — the transcript + composer. `submit()`, the non-blocking
+  reconciliation (`reconcileDone`/`failActiveTurn`/phase-effect/safety-poll), `syncLatest` (merge-by-id),
+  the **Stop** button + `stopTurn()` + prompt-restore, and the render (live ReactMarkdown buffer / durable
+  RichText / pending thinking-bubble / failed error).
+- `components/assistant/assistant-dock.tsx` — app-wide provider; `runTurn()` (the persistent POST); on 202,
+  `subscribeDockTurn()` drives the floating mini-chat so a turn keeps progressing across navigation.
+- `components/assistant/thought-trail.tsx` — `ThoughtTrail` (live + frozen-record modes).
+- `lib/turn-streaming.ts` — `isTurnStreamingEnabled()` (server) / `isTurnStreamingEnabledClient()`.
+
+## 5. The three tracing observers + the streaming gate
+
+Installed once at boot by `apps/api/src/turn-stream-observer.ts`; each is a **no-op unless the trace carries a
+`turnId`** (background work pays nothing):
+
+1. **step observer** — every `step()` start → a grounded `status` event, then (off the critical path, if
+   `MANTLE_TURN_NARRATION`) a narrated upgrade with the same `stepId`. **Always installed.**
+2. **turn-delta observer** — `text-delta`/`reasoning-delta`. **Installed only when `MANTLE_TURN_TOKENS` is
+   set** — and *installing it is itself the gate*: `isTurnStreaming()` returns true iff the observer exists AND
+   the current trace has a `turnId`. So flag-off ⇒ the tool loop uses one-shot `chat()`, zero behaviour change.
+3. **turn-lifecycle observer** — `turn-start`/`done`/`error`. **Always installed.** Driven EXPLICITLY by
+   `run-turn.ts` (not by the trace) so timing tracks the durable row: `turn-start` after the rows exist,
+   `done`/`error` after the outbound text is committed (which is *after* the responder trace closes). It owns
+   retirement of the per-turn seq cursor on `done`/`error`, so seq stays monotonic past the trace boundary
+   (`startTrace` defers that cleanup when a lifecycle observer is wired).
+
+## 6. Streaming + Stop, per provider
+
+`dispatchChat` calls `adapter.chatStream(opts, onDelta)` when streaming is active, passing
+`opts.signal = currentTurnAbortSignal()`. Each adapter:
+- **OpenRouter** (`openrouter-chat.ts`) — `@openrouter/sdk`, `stream:true` + `usage.include`. Signal → the
+  SDK `send(req, { signal })`.
+- **Anthropic** (`anthropic-chat.ts`) — native `/v1/messages` SSE: `message_start` (usage) /
+  `content_block_start` (tool_use id+name) / `content_block_delta` (`text_delta` | `thinking_delta` →
+  reasoning | `input_json_delta` → tool args by block index) / `message_delta` (output tokens).
+- **Google** (`google-chat.ts`) — `:streamGenerateContent?alt=sse`: incremental `candidates[0].content.parts[].text`
+  + whole `functionCall` parts (Gemini doesn't fragment tool args) + `usageMetadata`.
+- **xAI / HuggingFace / DeepSeek / local** — share `streamOpenAICompatChat` (OpenAI delta format:
+  `choices[0].delta.content` / `.reasoning_content` / `.tool_calls` frags by index, `[DONE]`,
+  `stream_options.include_usage`). HF applies its routing suffix + drops the internal `routing` from the body;
+  local routes through `tailnetFetch` when `viaTailnet`.
+
+**Abort contract (uniform):** on `signal.aborted` the streamer **stops reading and returns the PARTIAL reply**
+(dropping half-formed tool-call fragments) — it does NOT throw. So a Stop looks like a (short) successful turn:
+`run-turn` finalizes the row `complete` with the partial. A real error still throws → the row goes `failed`.
+The one-shot `chat()` paths also thread the signal (via `chatAbortSignal`) so a Stop during a force-final /
+backup call aborts too.
+
+## 7. One turn, end to end (the walkthrough)
+
+1. **Client `submit()`** (`assistant-client.tsx`): mints `idempotencyKey = crypto.randomUUID()`; shows an
+   optimistic inbound bubble; `lastPromptRef.current = text`; `setActiveTurnId(idempotencyKey)` →
+   `useTurnStream` opens the SSE socket *before* the POST.
+2. **`runTurn()`** (dock provider) POSTs `/api/assistant/turn` with header `idempotency-key`.
+3. **Route** auths, processes any attachment synchronously, `client.enqueue(workflowID = idempotencyKey)`,
+   returns **202 `{turnId}`** (streaming on). `submit` sees no `outbound` in the response → records
+   `pendingTurnRef` and leaves completion to the stream.
+4. **Runner** (`runAssistantTurn`, via the DBOS workflow): `record_inbound` → `record_outbound_pending`
+   (status `pending`, empty text, stable id) → **emit `turn-start`** (`inboundId`, `outboundId`) →
+   `registerTurnAbort(streamId, ownerId)` → build prompt → **tool loop**. `dispatchChat` streams via
+   `chatStream`; each delta → `emitTurnDelta` → `publishTurnEvent('turn_stream')` → SSE → the client's
+   `reply` buffer types out (rendered with ReactMarkdown). `step()` boundaries → `status` events → the trail.
+5. **Completion:** finalize `finalize_outbound` (status `complete`, text = reply, model) → **emit `done`** →
+   `retireAbort()`.
+6. **Client reconciles:** `useTurnStream.phase` → `'done'` → the phase-effect runs `reconcileDone()`:
+   `syncLatest()` (merge-by-id) pulls the canonical inbound + complete outbound rows, drops the optimistic
+   bubble, freezes the thought trail onto the outbound row (by `outboundId`), and renders it with **RichText**.
+   `sending=false`. A 3s **safety poll** on the durable row is the backstop if `done` is missed (NOTIFY has no
+   backlog).
+7. **Stop path:** user clicks Stop → `stopTurn()` POSTs `/turn/:id/cancel` (and restores `lastPromptRef` into
+   the composer + focuses it). `publishTurnCancel` → `turn_cancel` NOTIFY → runner's listener →
+   `abortTurn(ownerId, turnId)` aborts the AbortController → the in-flight `chatStream` returns its partial →
+   the turn finalizes `complete` with the partial → `done` → normal reconcile. Generation halts ~360ms after
+   the click.
+8. **Error path:** the tool loop throws (not aborted) → `fail_outbound` (status `failed`, error) → emit
+   `error` → re-throw (workflow → ERROR). Client `phase='error'` → `failActiveTurn()` shows it + drops the
+   optimistic bubble.
+
+## 8. Resume locally (servers + flags)
+
+Local DB is **Docker Desktop** (`mantle_pg`/`mantle_minio`/`mantle_tika`); app DB is `postgres` at
+`127.0.0.1:54323` (line 10 of `apps/web/.env.local`; prod-tailnet + tunnel URLs commented below it). Owner id
+= `bc505da9-c323-43c7-bafb-6c06a2d443de`. Query the row state with:
+`docker exec mantle_pg psql -U postgres -d postgres -t -A -F '|' -c "select direction,status,length(text) from assistant_messages order by created_at desc limit 4;"`
+
+The four flags are already in `.env.local` (gitignored): `MANTLE_TURN_STREAMING=1`,
+`NEXT_PUBLIC_MANTLE_TURN_STREAMING=1`, `MANTLE_TURN_NARRATION=1`, `MANTLE_TURN_TOKENS=1`.
 
 ```bash
-# 1. web dev server — use the preview tooling (mcp preview_start "web") OR:
-pnpm --filter @mantle/web dev --port 3001     # .claude/launch.json "web" config
-# 2. the runner (REQUIRED — turns don't execute without it; reads ../web/.env.local):
-pnpm --filter @mantle/api dev
+# 1. web — preview tooling (mcp preview_start "web") OR: pnpm --filter @mantle/web dev --port 3001
+# 2. the runner (REQUIRED — turns don't execute without it; reads ../web/.env.local).
+#    Start it as a HARNESS-MANAGED BACKGROUND TASK so it isn't reaped when the shell ends:
+pnpm --filter @mantle/api dev      # via Bash run_in_background:true
 ```
-Open `http://localhost:3001/assistant`. A plain question types out live. To see delegation stream, force it:
-*"Create a new page titled X with two short sections"* (the persona lacks the `pages` authoring group, so it
-MUST delegate to the Pages specialist). The runner logs to wherever you redirect it; `[assistant_turn] done`
-marks completion.
+Open `http://localhost:3001/assistant`. Confirm it's healthy in the runner log: `runner service online`,
+**no** `Contention detected in queue` (that means duplicate runners — kill all `tsx … main.ts` and start one).
 
-## 5. Gotchas (don't relearn)
+**Verify in-browser without provider keys:** the local/default brain uses **OpenRouter**, which streams + Stops
+end-to-end. A precise smoke (no UI flakiness): from a `preview_eval`, open `fetch('/api/assistant/turn/<uuid>/stream')`
+and read the SSE, `fetch('/api/assistant/turn', {idempotency-key:<uuid>})` to start, and
+`fetch('/api/assistant/turn/<uuid>/cancel')` to Stop — assert text-deltas arrive then halt + `done` fires +
+the partial persists (`select … from assistant_messages`). The 6 non-OpenRouter adapters need that provider's
+API key for live tests, so they're covered by `chat-stream.test.ts` instead.
+
+## 9. Gotchas (don't relearn)
 
 - **`tsx --watch` on `apps/api` does NOT reload workspace-package edits** (`@mantle/voice`, `@mantle/tracing`,
-  `@mantle/agent-runtime`). After editing a package, **restart the runner**. Edits in `apps/api/src` hot-reload.
-- **The runner gets reaped** (SIGTERM) when a bash session that spawned it ends — it went down ~3× this
-  session. If turns hang, `pgrep -f apps/api/src/main.ts`; restart it (background it from a fresh shell).
-- **Skill/worker changes are DB-side** — a seed (`seed:rich-writing`, the scratch scripts) or `applyManifest`
-  writes the DB; the running runner picks them up per turn (no restart). But a *code* change needs a restart.
-- **MANTLE_TURN_TOKENS is the streaming gate.** Flag off ⇒ `isTurnStreaming()` false everywhere ⇒ the turn
-  runs the one-shot `chat()` (zero behaviour change). Flag on (runner installs the delta observer) ⇒ streams.
-- **Live buffer must NOT use `RichText`.** RichText is a TipTap editor; `setContent` runs `flushSync`, which
-  re-enters mid-render when the buffer changes every token. Use ReactMarkdown for the live buffer; RichText's
-  own `setContent` is now microtask-deferred (it errored once per visible turn on load before).
-- **The MCP preview console buffer does NOT clear on reload or `console.clear()`** — only a fresh
-  `preview_start` resets it. To tell stale errors from live ones, restart the preview server and load once.
-- **The assistant SPA drifts to `/`** a beat after a hard nav to `/assistant` — re-navigate and re-check
-  (it settles). When asserting on a freshly-dispatched scroll/React state, read it in a SEPARATE eval (state
-  commits async).
-- **The persona delegates non-deterministically.** "Use your researcher" sometimes gets refused ("I don't
-  have a researcher") even though it's wired. The reliable delegation trigger is page authoring (persona has
-  no `pages` group → must delegate to Pages).
-- **Headless scratch scripts** live INSIDE the repo (`apps/api/`, `apps/web/scripts/`) so pnpm workspace +
-  the `@/` alias resolve; `/tmp` fails. `cd` persists across Bash calls — `cd` back to repo root before
-  `pnpm version:bump` / `git add`.
+  `@mantle/agent-runtime`, `@mantle/assistant-runtime`). After editing a package, **restart the runner.** Edits
+  in `apps/api/src` hot-reload.
+- **The runner gets reaped** when the bash session that spawned it ends (a `nohup … &` inside a one-shot Bash
+  call dies; it went down repeatedly). Start it with the harness's **background mode** (`run_in_background:true`)
+  so it persists. Duplicate runners cause `Contention detected in queue mantle` — `pkill -9 -f "tsx.*main.ts"`,
+  then start exactly one.
+- **`MANTLE_TURN_TOKENS` is the token-streaming gate; `MANTLE_TURN_STREAMING` is the master gate** (SSE +
+  cancel routes exist AND the POST route goes non-blocking). Client mirror: `NEXT_PUBLIC_MANTLE_TURN_STREAMING`.
+  The client adapts to the *response shape* (202 vs full result), so a server/client flag mismatch degrades
+  gracefully (the safety poll still reconciles) — but enable them together for the intended UX.
+- **The live buffer must render with ReactMarkdown, NOT RichText.** RichText is a TipTap editor; `setContent`
+  runs `flushSync`, which re-enters mid-render when the buffer changes every token. The durable reply uses
+  RichText (its `setContent` is microtask-deferred).
+- **Two SSE subscribers per turn is normal** (the page's `useTurnStream` + the dock's `subscribeDockTurn`).
+  `subscribeTurnStream` fans out to a Set — verified both receive every delta. Don't "fix" it.
+- **The MCP preview console buffer does NOT clear** on reload/`console.clear()` — only a fresh `preview_start`.
+  Mid-edit transient parse errors get captured and look scary but are stale; trust `tsc` + a fresh load.
+- **DOM-assert carefully:** the assistant SPA drifts to `/` a beat after a hard nav to `/assistant`
+  (re-navigate + settle ~6s). The thought-trail renders its own `<li>`s, so `querySelectorAll('li')` grabs
+  them — select the turn row via `li[class*="group/turn"]`. Read freshly-dispatched React state in a separate
+  eval (commits async). Harness round-trip latency makes "capture at 2s" miss a fast turn — schedule an
+  **in-page** sampler/`setTimeout` and read its results, rather than `sleep` + capture.
+- **Stop keeps the turn** in the thread (partial reply preserved) and restores the prompt to the box. If a
+  future ask is "pull-back" (the stopped turn *disappears*), that needs the runner to delete the rows on stop
+  (orphans the trace's subject ref) — not done. Prompt-restore is text-only (attachments aren't re-attached).
+- **Headless scratch scripts** live INSIDE the repo (`apps/api/`, `apps/web/scripts/`) so pnpm workspace + the
+  `@/` alias resolve; `/tmp` fails. `cd` back to repo root before `pnpm version:bump` / `git add`.
 - **Two concurrent `next dev` sharing `.next` = ENOENT + crushes the Mac** ([[no-concurrent-next-builds]]).
-  Stop the other chat's server before starting your own.
+- **Cadence:** commit each discrete change separately; bump by extent (`pnpm version:bump patch|minor`); tag/
+  push/deploy only when Jason says ([[commit-and-version-cadence]], [[deploy-cadence]]).
 
-## 6. Remaining work
+## 10. Remaining work
 
-**Phase 3b — provider streaming — ✅ DONE** (`445cd098`). `chatStream()` now exists on ALL chat adapters,
-each honouring `opts.signal` (so Stop works on every provider, not just OpenRouter): Anthropic + Google use
-native SSE; xAI/HuggingFace/DeepSeek/local share a new `streamOpenAICompatChat` in `openai-compat.ts`; a
-shared abort-aware SSE reader lives in `adapters/sse.ts`. On abort each returns the PARTIAL reply (drops
-half-formed tool fragments) rather than throwing, so the turn finalizes `complete` with the partial — same as
-OpenRouter. No tool-loop change (dispatchChat already prefers `chatStream` + injects
-`currentTurnAbortSignal()`). 12 wire-shape tests in `adapters/chat-stream.test.ts` lock down all three SSE
-dialects + abort; live-verifying a specific provider needs that provider's API key (the new adapters are
-unit-tested; OpenRouter stays the live-smoked path).
-
-**Phase 3c — message lifecycle + non-blocking route — ✅ DONE** (`15c58f8a` Part A, `368aa3a8` Part B). All
-three pieces landed + browser-verified: `assistant_messages.status` is wired (runner inserts `pending`,
-finalizes `complete`/`failed`); `turn-start`/`done`/`error` terminal events fire on the bus via the
-turn-lifecycle observer; the web route returns 202 `{turnId}` immediately and the client + dock drive off the
-stream and reconcile to the durable row. See §1/§3 above. **One known-deferred gap:** tool-produced sidecar
-artifacts (TTS/generated images) over the non-blocking transport (the existing `task_c50089a3` /
-[[api-service-phase2]] item) — the blocking path is unchanged, and the durable file nodes still exist in
-/files; the live non-blocking reply just won't carry them until that transport lands. If you pick this up:
-artifacts exceed the 8 KB NOTIFY cap, so they can't ride a `done` event — they need their own fetch on
-reconcile (persist + a get-by-id, or fold into the durable row's `attachments`).
-
-**Phase 4 — mobile companion + replay** (design doc §8): the Flutter companion (`~/Projects/mantle-companion`)
-consumes the same `GET /turn/:id/stream` (bearer header, not cookie); add the `turn_stream_buffer` table for
-`Last-Event-ID` replay/resume (NOTIFY has no backlog). The web client already tolerates a missed terminal
-event (a 3s `syncLatest` safety poll on the durable row) — mobile should reconcile against
-`assistant_messages.status` the same way. Push relay covers backgrounded turns.
+**Phase 4 — mobile companion + replay** (design doc §8; the main remaining build):
+- The Flutter companion (`~/Projects/mantle-companion`, [[mantle-companion]]) consumes the SAME
+  `GET /api/assistant/turn/:id/stream` — it's **bearer-authed from day one** (header, not cookie), so no new
+  endpoint. It mints the `turnId` and subscribes before POSTing, exactly like the web client.
+- Add a **`turn_stream_buffer` table** for `Last-Event-ID` replay/resume: NOTIFY has no backlog, so a mobile
+  client that backgrounds + reconnects misses events. Buffer recent events per turn keyed by `seq`; on
+  reconnect with `Last-Event-ID: <seq>`, replay `seq > N` then live-tail. The SSE frame already carries
+  `id: <seq>`.
+- Reconcile against the durable row the same way web does — on foreground, read `assistant_messages.status`
+  (`pending`/`complete`/`failed`); the web client's 3s safety poll is the reference. Push relay
+  ([[mantle-push]]) covers fully-backgrounded turns.
 
 **Smaller / open:**
-- **Cross-reload persistence of the thought record** — survive a hard refresh (store a compact trail on
-  `assistant_messages.data`, or derive from the turn's trace on read). Currently session-scoped.
+- **Cross-reload persistence of the thought trail** — survive a hard refresh (store a compact trail on
+  `assistant_messages.data`, or derive it from the turn's trace on read). Currently session-scoped; on reload
+  a finished turn shows its reply but not its trail.
+- **Deferred: tool-produced sidecar artifacts over the non-blocking transport** (`task_c50089a3` /
+  [[api-service-phase2]]). TTS/generated-image artifacts don't ride the live reply (they exceed the 8 KB NOTIFY
+  cap). They need their own fetch on reconcile (persist + a get-by-id, or fold into the durable row's
+  `attachments`). The blocking path is unchanged; the file nodes still exist in /files.
 - **Unify the durable renderer?** Now that the responder writes standard Markdown, the durable reply could
-  render via ReactMarkdown too (dropping RichText for responder replies) for perfect streaming↔final
-  consistency. RichText still gives SPA-nav on `/n/` permalinks — weigh that. (Optional polish.)
-- **Narrate "Thinking…" too?** Skipped to save spend; revisit if the voice should be continuous.
+  render via ReactMarkdown too (dropping RichText for responder replies) → perfect streaming↔final
+  consistency. Weigh against RichText's SPA-nav on `/n/` permalinks. (Optional polish.)
+- **Narrate "Thinking…" too?** Skipped to save spend; revisit if the voice should feel continuous.
+- **`tool-start`/`tool-end` events** are defined in the contract but unused — the trail rides `status`. Wire
+  them if the UI wants distinct tool chips.
 
-## 7. ⚠️ Deploy notes (when this branch ships)
+## 11. ⚠️ Deploy notes (when this branch ships — nothing done in prod yet)
 
-- **Detach `rich_writing` from each existing brain's responder persona** — the boot reconcile is
-  additive-only; it creates `chat_writing` + attaches it, but won't remove `rich_writing`, so an existing
-  persona keeps the dialect and still leaks it into chat. One-time per brain (prod, Ashley):
-  `update agents set skill_slugs = array_remove(skill_slugs,'rich_writing') where owner_id=<id> and <responder persona slug>`
-  (persona slug may be `assistant` OR an operator persona like `telegram-default`/Saskia). Done on local;
-  prod pending. See [[responder-chat-writing-split]].
-- The narrator worker auto-seeds to existing brains on the version-bump reconcile (it's `required`); no step.
-- Migration `0106` (narrator enum) ships with the branch — `pg_dump` prod before `db:migrate`
-  ([[backup-before-live-migration]]); enum-adds aren't reversible. **3c adds NO new migration** — it writes
-  `assistant_messages.status`/`error`, which already exist (migration `0105`, shipped earlier).
-- Flags for prod: decide whether to enable `MANTLE_TURN_STREAMING` / `MANTLE_TURN_TOKENS` /
-  `MANTLE_TURN_NARRATION` there (all dark by default). **Note (3c):** `MANTLE_TURN_STREAMING` now also flips
-  the route non-blocking (202 instead of the awaited result). The client adapts to the response shape, so a
-  server/client flag mismatch degrades gracefully (the safety poll still reconciles), but enable the server
-  + `NEXT_PUBLIC_MANTLE_TURN_STREAMING` together for the intended UX.
+- **Detach `rich_writing` from each existing brain's responder persona.** The boot reconcile is additive-only:
+  it creates `chat_writing` + attaches it but won't remove `rich_writing`, so an existing persona keeps the
+  rich dialect and leaks it into chat. One-time per brain (prod, Ashley):
+  `update agents set skill_slugs = array_remove(skill_slugs,'rich_writing') where owner_id=<id> and slug='<responder persona slug>'`
+  (slug may be `assistant` OR an operator persona like `telegram-default`/Saskia). Done on local; **prod
+  pending.** See [[responder-chat-writing-split]].
+- **Migration `0106`** (narrator worker enum) ships with the branch — `pg_dump` prod first
+  ([[backup-before-live-migration]]); enum-adds aren't reversible. The narrator worker auto-seeds to existing
+  brains on the version-bump reconcile (it's `required`). **Phases 3a–3c + Stop + 3b add NO new migration** —
+  they write `assistant_messages.status`/`error`, which already exist (migration `0105`).
+- **Prod flags** (all dark by default): decide `MANTLE_TURN_STREAMING` (+ `NEXT_PUBLIC_…`), `MANTLE_TURN_TOKENS`,
+  `MANTLE_TURN_NARRATION`. Note that `MANTLE_TURN_STREAMING` now *also* flips the route non-blocking, so enable
+  the server + public client flags together.
+- **Prod deploy is a registry pull** (`titanwest/mantle:latest`), not build-on-VPS ([[prod-deploy-is-registry-pull]]);
+  run `pnpm -C apps/web build` first as a preflight ([[deploy-preflight-next-build]]).
+
+---
+*Memory anchors: [[live-turn-streaming]] (full detail), [[api-service-phase2]] (the FE/BE split this rides on),
+[[responder-chat-writing-split]], [[mantle-companion]], [[mantle-push]], [[commit-and-version-cadence]].*
