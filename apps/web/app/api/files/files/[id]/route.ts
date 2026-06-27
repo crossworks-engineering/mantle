@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401, getOwnerForAsset } from '@/lib/auth';
 import {
   deleteFileById,
   fileById,
@@ -18,7 +18,10 @@ const PatchBody = z.union([
 ]);
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
+  // getOwnerForAsset (not getOwnerOr401): the `?raw=1` bytes are loaded as an
+  // <img>/<iframe>/download src that can't carry a bearer, so a detached client
+  // authenticates via the `?at=` asset token. Session (cookie/bearer) still wins.
+  const user = await getOwnerForAsset(_req);
   if (user instanceof Response) return user;
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) {

@@ -4,6 +4,7 @@ import { Inbox, Mail, MailOpen, Paperclip, Star } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { EmailDTO, EmailAttachmentDTO } from '@mantle/client-types';
 import { apiSend } from '@/lib/api-fetch';
+import { assetUrl } from '@/lib/asset-url';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
 
@@ -135,7 +136,7 @@ export function ReadingPane({
             {attachments.map((a) => (
               <li key={a.id}>
                 <a
-                  href={`/api/attachments/${a.id}`}
+                  href={assetUrl(`/api/attachments/${a.id}`)}
                   target="_blank"
                   rel="noreferrer"
                   className="text-primary underline-offset-2 hover:underline"

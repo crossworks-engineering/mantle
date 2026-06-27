@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { PanelLeft, PanelLeftClose } from 'lucide-react';
 import { apiFetch } from '@/lib/api-fetch';
+import { setAssetToken } from '@/lib/asset-url';
 import { Header } from '@/components/layout/header';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { ChangelogLink } from '@/components/layout/changelog-link';
@@ -44,6 +45,9 @@ type ShellData = {
   onboarded: boolean;
   avatar: { style: string; seed: string } | null;
   pendingApprovals: number;
+  /** Short-lived asset-access token for browser-native srcs in detached mode
+   *  (see lib/asset-url). Absent/ignored same-origin. */
+  assetToken?: string;
 };
 
 export function AppShell({
@@ -81,6 +85,12 @@ export function AppShell({
   useEffect(() => {
     if (shellQuery.data && !shellQuery.data.onboarded) router.replace('/onboarding');
   }, [shellQuery.data, router]);
+
+  // Publish the asset-access token so `assetUrl()` can sign browser-native srcs
+  // (<img>/<iframe>/download) for a detached client. No-op same-origin.
+  useEffect(() => {
+    setAssetToken(shellQuery.data?.assetToken);
+  }, [shellQuery.data?.assetToken]);
 
   // Close the drawer on navigation.
   useEffect(() => {

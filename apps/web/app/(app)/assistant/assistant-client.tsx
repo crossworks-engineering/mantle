@@ -20,6 +20,7 @@ import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { RichText } from '@/components/assistant/rich-text';
 import { apiFetch } from '@/lib/api-fetch';
+import { assetUrl } from '@/lib/asset-url';
 
 /** A sidecar artifact attached to a message. Mirrors @mantle/tools
  *  ToolArtifact, with the discriminated `kind` driving the rendering
@@ -933,7 +934,7 @@ function ChannelBadge({ channel }: { channel?: string }) {
  *  its actual content (e.g. a voice transcript) already lives in the turn text. */
 function StoredAttachmentView({ attachment }: { attachment: StoredAttachment }) {
   if (attachment.kind === 'image' && attachment.nodeId) {
-    const src = `/api/files/files/${attachment.nodeId}?raw=1`;
+    const src = assetUrl(`/api/files/files/${attachment.nodeId}?raw=1`);
     return (
       <div className="overflow-hidden rounded-lg border border-border bg-background/60">
         {/* eslint-disable-next-line @next/next/no-img-element */}

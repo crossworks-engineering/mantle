@@ -64,17 +64,25 @@ function bearerToken(req: NextRequest): string | null {
   return m ? m[1]!.trim() : null;
 }
 
-/** True if the token's payload carries the mobile kind marker (`k:'m'`). The
- *  signature/expiry are checked separately by `verify`. */
-function isMobileToken(token: string): boolean {
+/** The kind marker (`k`) in a token's payload, or null. Cookies carry none;
+ *  mobile bearers carry `'m'`, asset tokens `'a'`. Signature/expiry are checked
+ *  separately by `verify`. */
+function tokenKind(token: string): string | null {
   const dot = token.lastIndexOf('.');
-  if (dot < 0) return false;
+  if (dot < 0) return null;
   try {
-    const json = new TextDecoder().decode(b64urlDecode(token.slice(0, dot)));
-    return JSON.parse(json).k === 'm';
+    const k = JSON.parse(new TextDecoder().decode(b64urlDecode(token.slice(0, dot)))).k;
+    return typeof k === 'string' ? k : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+/** Byte-serving asset routes whose `<img>`/`<iframe>`/download `src`s can't
+ *  carry a bearer header, so they may authenticate via a `?at=` asset token.
+ *  Scoped narrowly — the asset token is accepted for NOTHING else. */
+function isAssetPath(path: string): boolean {
+  return path.startsWith('/api/files/files/') || path.startsWith('/api/attachments/');
 }
 
 // ── CORS for the detached client (Electron / cross-origin dev / DB-less) ──────
@@ -150,10 +158,10 @@ export async function middleware(req: NextRequest) {
   }
 
   const cookie = req.cookies.get(SESSION_COOKIE_NAME)?.value;
-  // A session cookie must be a real cookie, not a mobile bearer token reused as
-  // one — that would dodge mobile-token revocation (enforced only on the bearer
-  // path). Mirror lib/auth's verify(), which rejects `k:'m'` on the cookie path.
-  if (cookie && (await verify(cookie, secret)) && !isMobileToken(cookie)) {
+  // A session cookie must be a real cookie, not a kinded token reused as one — a
+  // mobile token would dodge revocation, an asset token would grant full session
+  // access. Mirror lib/auth's verify(), which rejects any `k` on the cookie path.
+  if (cookie && (await verify(cookie, secret)) && tokenKind(cookie) === null) {
     return withCors(NextResponse.next());
   }
 
@@ -163,12 +171,23 @@ export async function middleware(req: NextRequest) {
   // enforced in the Node layer (getSessionUser).
   const bearer = bearerToken(req);
   if (bearer) {
-    if ((await verify(bearer, secret)) && isMobileToken(bearer)) {
+    if ((await verify(bearer, secret)) && tokenKind(bearer) === 'm') {
       return withCors(NextResponse.next());
     }
     // A bearer was presented but is invalid — this is an API client, not a
     // browser, so answer 401 rather than redirect to an HTML login page.
     return withCors(unauthorized());
+  }
+
+  // Browser-native asset sources (<img>/<iframe>/download) can't send a bearer
+  // header, so they convey auth via a short-lived signed `?at=` token — accepted
+  // ONLY for the byte-serving asset paths so it can't reach any other API. The
+  // route re-validates (lib/auth getOwnerForAsset) and owner-scopes the lookup.
+  if (isAssetPath(path) && req.method === 'GET') {
+    const at = req.nextUrl.searchParams.get('at');
+    if (at && (await verify(at, secret)) && tokenKind(at) === 'a') {
+      return withCors(NextResponse.next());
+    }
   }
 
   // No credential at all. An /api/** request must get a STATUS (a programmatic

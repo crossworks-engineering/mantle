@@ -73,13 +73,13 @@ function verify(token: string): { uid: string; exp: number } | null {
   if (!timingSafeEqual(got, expected)) return null;
   try {
     const data = JSON.parse(b64urlDecode(payload).toString('utf8'));
-    // A session cookie must NOT be a mobile bearer token. Mobile tokens carry
-    // `k:'m'` and the same `{uid,exp}` payload, so without this a (signed,
-    // valid) mobile token placed in the session cookie would authenticate via
-    // this DB-lookup path — which never checks mobile_tokens.revoked_at — and
-    // thereby survive a mobile-logout revocation. Reject it here; bearers go
-    // through verifyMobileToken (which enforces the row + revocation).
-    if (data.k === 'm') return null;
+    // A session cookie must be a cookie — never a kinded token reused as one.
+    // Mobile (`k:'m'`) and asset (`k:'a'`) tokens share the `{uid,exp}` payload,
+    // so without this a signed mobile token in the cookie would authenticate via
+    // this DB-lookup path (which never checks mobile_tokens.revoked_at, dodging
+    // a mobile-logout revocation), and an asset token would grant full session
+    // access instead of just byte-serving. Cookies carry no `k`; reject any.
+    if (data.k !== undefined) return null;
     if (typeof data.uid !== 'string' || typeof data.exp !== 'number') return null;
     if (Date.now() / 1000 > data.exp) return null;
     return { uid: data.uid, exp: data.exp };
@@ -150,6 +150,65 @@ function verifyMobileToken(token: string): MobileClaims | null {
 /** Extract the `jti` from a (valid) mobile token — used by logout to revoke. */
 export function mobileTokenJti(token: string): string | null {
   return verifyMobileToken(token)?.jti ?? null;
+}
+
+// ── Asset access tokens (`k:'a'`) ─────────────────────────────────────────────
+// Short-lived, owner-scoped, stateless signed token for browser-native asset
+// sources — `<img>`/`<iframe>`/download `src`s to `/api/files/files/[id]?raw=1`
+// and `/api/attachments/[id]` — which CANNOT carry an Authorization header, so a
+// detached/Electron client (cross-origin, no cookie) can't otherwise load them.
+// Delivered in the URL (`?at=`), so the TTL is deliberately short to bound a
+// leaked URL; no revocation row (unlike mobile tokens) — TTL + secret-rotation
+// is the kill switch. Scope is byte-serving only: the Edge middleware accepts it
+// for asset paths exclusively, and the cookie path rejects any kinded token.
+
+const ASSET_TOKEN_TTL_SECONDS = 2 * 60 * 60; // 2h — one working session.
+
+/** Mint a short-lived asset-access token for `userId` (see block comment). */
+export function buildAssetToken(userId: string): string {
+  const exp = Math.floor(Date.now() / 1000) + ASSET_TOKEN_TTL_SECONDS;
+  const payload = b64urlEncode(Buffer.from(JSON.stringify({ uid: userId, exp, k: 'a' }), 'utf8'));
+  return sign(payload);
+}
+
+/** Verify an asset token's signature, expiry and kind (`k:'a'`). No DB. */
+function verifyAssetToken(token: string): { uid: string } | null {
+  const dot = token.lastIndexOf('.');
+  if (dot < 0) return null;
+  const payload = token.slice(0, dot);
+  const expected = createHmac('sha256', secret()).update(payload).digest();
+  const got = b64urlDecode(token.slice(dot + 1));
+  if (got.length !== expected.length) return null;
+  if (!timingSafeEqual(got, expected)) return null;
+  try {
+    const data = JSON.parse(b64urlDecode(payload).toString('utf8'));
+    if (data.k !== 'a') return null;
+    if (typeof data.uid !== 'string' || typeof data.exp !== 'number') return null;
+    if (Date.now() / 1000 > data.exp) return null;
+    return { uid: data.uid };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Owner gate for the byte-serving asset routes only. Resolves the session
+ * (cookie/bearer) first; failing that, accepts a valid `?at=` asset token in the
+ * URL — the one place a browser-native `src` can convey auth. Owner-scoped: the
+ * route still scopes the lookup to the returned id, so a token for user X only
+ * reaches X's bytes. Returns a 401 JSON `Response` like `getOwnerOr401`.
+ */
+export async function getOwnerForAsset(req: Request): Promise<SessionUser | NextResponse> {
+  const user = await getSessionUser();
+  if (user) return user;
+  const at = new URL(req.url).searchParams.get('at');
+  if (at) {
+    const claims = verifyAssetToken(at);
+    // The signature proves the server minted this for `uid`; the route scopes to
+    // it. No DB lookup — the token is short-lived and email isn't needed here.
+    if (claims) return { id: claims.uid, email: '' };
+  }
+  return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 }
 
 /**

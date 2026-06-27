@@ -5,6 +5,7 @@ import { Download, Eye, FileText, Loader2, PencilLine, Save, SplitSquareHorizont
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
+import { assetUrl } from '@/lib/asset-url';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
@@ -197,7 +198,7 @@ export function FileEditor({
             </a>
           </Button>
           <Button asChild variant="outline" size="icon" className="size-9">
-            <a href={`/api/files/files/${file.id}?raw=1`} download={file.filename} title="Download">
+            <a href={assetUrl(`/api/files/files/${file.id}?raw=1`)} download={file.filename} title="Download">
               <Download aria-hidden />
             </a>
           </Button>
@@ -261,7 +262,7 @@ export function FileEditor({
  * never executes embedded scripts, so it's safe to show.
  */
 function FilePreviewBody({ file }: { file: FileRow }) {
-  const src = `/api/files/files/${file.id}?raw=1`;
+  const src = assetUrl(`/api/files/files/${file.id}?raw=1`);
   const mime = file.mimeType || '';
   const isImage = mime.startsWith('image/');
   const isPdf = mime === 'application/pdf';

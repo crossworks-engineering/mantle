@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { countPending } from '@mantle/tools';
 import { loadProfilePreferences } from '@mantle/content';
-import { getOwnerOr401 } from '@/lib/auth';
+import { buildAssetToken, getOwnerOr401 } from '@/lib/auth';
 import { isOnboarded } from '@/lib/onboarding';
 
 /**
@@ -24,5 +24,10 @@ export async function GET() {
   const avatar = prefs.avatarStyle
     ? { style: prefs.avatarStyle, seed: prefs.avatarSeed || user.id }
     : null;
-  return NextResponse.json({ onboarded, avatar, pendingApprovals });
+  // Short-lived asset-access token so a detached client's <img>/<iframe>/download
+  // srcs (which can't carry a bearer) can load `?raw=1` files + attachments. The
+  // client appends it via `assetUrl()`; same-origin ignores it (cookie auth). See
+  // lib/asset-url.ts + getOwnerForAsset.
+  const assetToken = buildAssetToken(user.id);
+  return NextResponse.json({ onboarded, avatar, pendingApprovals, assetToken });
 }
