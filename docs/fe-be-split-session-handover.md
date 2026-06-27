@@ -122,10 +122,22 @@ settings/{`accounts/[id]/edit`, `peers`, `entities`, `pdf-passwords`}. `n/[id]` 
   keep `DebugTabs`/`SetPageTitle`. `ChatAgentOverride` now PATCHes via `apiSend` + invalidates.
   `ActiveNow` already self-polls. Debug formatters import from `traces-format`, not `@/lib/traces`.
 
-**REMAINING:** `/studio` (graph read — build a GET), extend partials for `/` dashboard
-(`/api/dashboard/summary`) + `/assistant` (`/api/assistant/messages`). `/docs/[...slug]` +
-`/changelog` are static markdown — leave server-only. Each: build a GET returning the page's bundle,
-then run the recipe.
+- ✅ `/studio` (v0.66.18): new `GET /api/studio`; outer `StudioClient` gate fetches the graph and
+  renders the stable `StudioView` (selection survives refetch); `onSaved` invalidates `['studio']`.
+  Editor mutations (prose/structure/sandbox) moved to apiFetch/apiSend.
+- ✅ `/` dashboard (v0.66.19): new full `GET /api/dashboard` (kept separate from the compact mobile
+  `…/summary`); `DashboardClient` fetches it, builds KPIs (icons client-side), renders the existing
+  presentational components (type-only lib imports → client-safe). Page keeps the self-polling
+  `SystemVitals` island.
+- ✅ `/assistant` (v0.66.20): new `GET /api/assistant/thread` (agent list + resolved agent + initial
+  thread, keyed on the ?agent hint); `AssistantThreadClient` renders header + `AgentSelect` +
+  the re-keyed `AssistantClient`. Page only resolves the agent hint from ?agent/cookie (no DB).
+
+**§A / #4 is CLOSED (v0.66.20).** Sweep clean — the only SSR data reads left in `(app)/**/page.tsx`
+are `/n/[id]` (redirect router) and the static-markdown readers (`/docs/[...slug]`, `/changelog`),
+all server-only by design. Remaining audit items: #5 (SSE bearer for `/api/realtime`), #6 (DB-less
+seam adoption), #7 (cosmetic type-import relocation). The assistant turn/stream internals (SSE) are
+the natural lead-in to #5.
 
 ### #5 — SSE bearer for `/api/realtime`
 `/api/realtime` is consumed by `components/realtime/use-realtime.ts` via raw `EventSource`, which

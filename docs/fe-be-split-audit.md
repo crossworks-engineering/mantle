@@ -45,20 +45,25 @@ Litmus tests are from `docs/frontend-backend-split.md` §9 (definition of done).
 The conversion targeted a *named* list; these were outside it and still `await` DB reads in
 `page.tsx` and pass props. 12 import data packages directly; the rest read via `@/lib/*` helpers.
 
-- **No endpoint yet (build the API first):** ~~`/traces`(+`[id]`)~~ ✅ (v0.66.13, new
-  `GET /api/traces` + `…/[id]`), ~~the `/debug/*` family~~ ✅ (v0.66.14–0.66.17: overview, agents,
-  context, digests, facts, journey(+`[traceId]`), spend, telegram, topics — each got a new
-  `GET /api/debug/*`; `/debug/integrity` was already done). **Still TODO:** `/studio` (graph read).
-  (settings/{calendar,config,network,embedding,backups} + `/docs` were the #3 batch / are static.)
+- **No endpoint yet (build the API first):** ✅ **DONE.** ~~`/traces`(+`[id]`)~~ (v0.66.13),
+  ~~the `/debug/*` family~~ (v0.66.14–0.66.17), ~~`/studio`~~ (v0.66.18, `GET /api/studio` + editor
+  fetches → apiSend). (settings/{calendar,config,network,embedding,backups} were the #3 batch.)
 - **Endpoint exists, page still SSR-loads (just wire it):** ✅ **DONE (v0.66.1–0.66.12).**
   `/apps`(+`[id]`), `/pending`, `/heartbeats/[id]` (new `…/detail`), `/files`, `/secrets`(+`[id]`),
   `/models` (new `…/explore`), `/nodes/[id]/history` (new endpoint), `/dev-tools`,
   settings/{accounts/[id]/edit, keys (#3), peers, entities, pdf-passwords, updates (#3)}. A few
   needed a small new GET to bundle what the page computed (`/heartbeats/[id]/detail`,
   `/models/explore`, `/nodes/[id]/history`) or a pagination extension (`/secrets`, `/apps`).
-- **Partial endpoints (extend to cover the page):** `/` dashboard (`/api/dashboard/summary`),
-  `/assistant` (`/api/assistant/messages`).
-- **Legitimately server-only (exclude):** `/n/[id]` (redirect router), `/changelog` (static md).
+- **Partial endpoints (extend to cover the page):** ✅ **DONE.** `/` dashboard (new full
+  `GET /api/dashboard`, kept separate from the mobile `…/summary`; v0.66.19) and `/assistant` (new
+  `GET /api/assistant/thread`; v0.66.20).
+- **Legitimately server-only (exclude):** `/n/[id]` (redirect router), `/docs/[...slug]` +
+  `/changelog` (static markdown).
+
+> **§A is now closed (v0.66.20).** Sweep is clean: the only non-type `@/lib`/`@mantle` data imports
+> left in any `(app)/**/page.tsx` are `/n/[id]` (redirect), the static-markdown readers
+> (`@/lib/docs-reader`, `@/lib/changelog`), and `COLOR_THEMES` (a static constant). Everything
+> dynamic is client-fetched.
 
 ### B. Server actions + `revalidatePath` still present
 9 `'use server'` files, **31 actions, all reachable from client components** (onboarding ×11, docs
@@ -119,9 +124,9 @@ proven 9-step recipe) plus a handful of *systemic* infra fixes (B server-action 
 4. **Unconverted screens (A):** *in progress.* The **"endpoint already exists" sub-bucket is ✅ done**
    (v0.66.1–0.66.12): apps(+[id]), pending, heartbeats/[id], files, secrets(+[id]), models,
    nodes/[id]/history, dev-tools, settings/{peers, entities, pdf-passwords, accounts/[id]/edit}.
-   **Build-endpoint bucket:** ~~`/traces`(+`[id]`)~~ ✅ (v0.66.13), ~~the `/debug/*` family~~ ✅
-   (v0.66.14–0.66.17). **Remaining:** `/studio` (graph read), plus extend the partial endpoints for
-   `/` (dashboard) and `/assistant`.
+   **Build-endpoint bucket:** ✅ **DONE** — `/traces`(+`[id]`) (v0.66.13), the `/debug/*` family
+   (v0.66.14–0.66.17), `/studio` (v0.66.18), `/` dashboard (v0.66.19), `/assistant` (v0.66.20).
+   **§A is fully closed** — only the static-markdown readers + the `/n/[id]` redirect stay SSR.
 5. **SSE (D):** fetch-based reader honoring base-URL + bearer, so `/api/realtime` works detached.
 6. **DB-less (E):** route the converted pages through `lib/data/*`; expand `docs/db-less-dev.md`
    coverage as screens land.
