@@ -33,6 +33,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
+import { apiSend, ApiError } from '@/lib/api-fetch';
 import { AssistAgentPicker } from '@/components/assist-agent-picker';
 import { useAssistStage, SpecialistWorking } from '@/components/specialist-working';
 import { ChatBubble } from '@/components/chat-bubble';
@@ -116,15 +117,7 @@ export function AiAssistPanel({
     setDraft('');
     setPending(true);
     try {
-      const res = await fetch(`/api/pages/${pageId}/ai-assist`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          focusBlockIds: focusBlockIds.length ? focusBlockIds : undefined,
-        }),
-      });
-      const json = (await res.json().catch(() => ({}))) as
+      const json = await apiSend<
         | {
             ok: true;
             reply: string;
@@ -132,12 +125,15 @@ export function AiAssistPanel({
             diff: AssistReply['diff'];
             hasDraft: boolean;
           }
-        | { error: string };
-      if (!res.ok || !('ok' in json)) {
-        const err = 'error' in json ? json.error : `request failed (${res.status})`;
+        | { error: string }
+      >(`/api/pages/${pageId}/ai-assist`, 'POST', {
+        prompt,
+        focusBlockIds: focusBlockIds.length ? focusBlockIds : undefined,
+      });
+      if (!('ok' in json)) {
         setMessages((m) => [
           ...m,
-          { role: 'assistant', data: { reply: `⚠ ${err}`, diff: { added: 0, removed: 0, changed: 0, unchangedCount: 0, sample: [] }, hasDraft: false } },
+          { role: 'assistant', data: { reply: `⚠ ${json.error}`, diff: { added: 0, removed: 0, changed: 0, unchangedCount: 0, sample: [] }, hasDraft: false } },
         ]);
         return;
       }
@@ -149,6 +145,13 @@ export function AiAssistPanel({
       // editor refreshes from the new draft + highlights the edited blocks.
       const total = json.diff.added + json.diff.changed + json.diff.removed;
       if (total > 0) onChanged(json.changedBlockIds ?? []);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      const err = e instanceof Error ? e.message : 'request failed';
+      setMessages((m) => [
+        ...m,
+        { role: 'assistant', data: { reply: `⚠ ${err}`, diff: { added: 0, removed: 0, changed: 0, unchangedCount: 0, sample: [] }, hasDraft: false } },
+      ]);
     } finally {
       setPending(false);
       // Defer scroll to next tick so the new message is in the DOM.
@@ -162,13 +165,12 @@ export function AiAssistPanel({
     if (discarding) return;
     setDiscarding(true);
     try {
-      const res = await fetch(`/api/pages/${pageId}/discard-draft`, { method: 'POST' });
-      if (!res.ok) {
-        toast.error('Could not discard draft');
-        return;
-      }
+      await apiSend(`/api/pages/${pageId}/discard-draft`, 'POST');
       toast.success('Draft discarded — page reverted to last commit');
       onChanged();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not discard draft');
     } finally {
       setDiscarding(false);
     }

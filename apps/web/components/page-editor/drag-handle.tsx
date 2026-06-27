@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { extractSection } from '@mantle/content/page-split';
 import { cn } from '@/lib/utils';
+import { apiSend } from '@/lib/api-fetch';
 import { randomAsideAngle, randomAsideColor } from './aside-style';
 
 /**
@@ -127,22 +128,16 @@ export function EditorDragHandle({ editor }: { editor: Editor }) {
     const section = extractSection(editor.getJSON() as Record<string, unknown>, headingId);
     if (!section) return;
     try {
-      const res = await fetch('/api/pages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: section.title || 'Untitled page',
-          parentId,
-          doc: {
-            type: 'doc',
-            content: section.childBlocks.length ? section.childBlocks : [{ type: 'paragraph' }],
-          },
-        }),
-      });
-      if (!res.ok) return;
-      const { page } = (await res.json()) as {
+      const { page } = await apiSend<{
         page: { id: string; title: string; icon: string | null };
-      };
+      }>('/api/pages', 'POST', {
+        title: section.title || 'Untitled page',
+        parentId,
+        doc: {
+          type: 'doc',
+          content: section.childBlocks.length ? section.childBlocks : [{ type: 'paragraph' }],
+        },
+      });
       const content = [
         ...section.before,
         { type: 'childPage', attrs: { pageId: page.id, title: page.title, icon: page.icon ?? null } },

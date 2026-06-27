@@ -7,6 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 
 type ShareInfo = { id: string; token: string; path: string } | null;
 
@@ -40,8 +41,11 @@ export function ShareControl({
 
   const load = useCallback(async () => {
     try {
-      const r = await fetch(`/api/shares?nodeId=${encodeURIComponent(nodeId)}`, { cache: 'no-store' });
-      if (r.ok) setShare(((await r.json()) as { share: ShareInfo }).share);
+      const data = await apiFetch<{ share: ShareInfo }>(
+        `/api/shares?nodeId=${encodeURIComponent(nodeId)}`,
+        { cache: 'no-store' },
+      );
+      setShare(data.share);
     } catch {
       // best-effort; the toggle still works
     } finally {
@@ -60,20 +64,15 @@ export function ShareControl({
         // Publish the current state first (pages commit their draft) so the
         // link reflects exactly what the owner sees at share time.
         await beforeEnable?.();
-        const r = await fetch('/api/shares', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ nodeId }),
-        });
-        const d = (await r.json()) as { share?: ShareInfo; error?: string };
-        if (!r.ok || !d.share) throw new Error(d.error ?? 'Could not create link');
+        const d = await apiSend<{ share?: ShareInfo }>('/api/shares', 'POST', { nodeId });
+        if (!d.share) throw new Error('Could not create link');
         setShare(d.share);
       } else if (share) {
-        const r = await fetch(`/api/shares/${share.id}`, { method: 'DELETE' });
-        if (!r.ok) throw new Error('Could not revoke link');
+        await apiSend(`/api/shares/${share.id}`, 'DELETE');
         setShare(null);
       }
     } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
       toast.error(e instanceof Error ? e.message : 'Something went wrong');
     } finally {
       setBusy(false);

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { LiveActivity } from '@/lib/journey';
+import { apiFetch } from '@/lib/api-fetch';
 
 /**
  * Polls /api/activity for the always-on live snapshot (active / recent /
@@ -28,9 +29,10 @@ export function useLiveActivity(pollMs = 5000): {
       controller?.abort();
       controller = new AbortController();
       try {
-        const res = await fetch('/api/activity', { cache: 'no-store', signal: controller.signal });
-        if (!res.ok) return;
-        const json = (await res.json()) as LiveActivity;
+        const json = await apiFetch<LiveActivity>('/api/activity', {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
         if (alive) setData(json);
       } catch {
         // network blip — keep last-good snapshot, retry next tick

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import Link from 'next/link';
 import { ChevronRight, FileText } from 'lucide-react';
+import { apiFetch } from '@/lib/api-fetch';
 
 /**
  * Card chrome for a `childPage` block — a clickable link to a sub-page. The
@@ -30,9 +31,8 @@ export function ChildPageView({ node }: NodeViewProps) {
   useEffect(() => {
     if (!pageId) return;
     let cancelled = false;
-    fetch(`/api/pages/${pageId}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: { page?: { title?: string; icon?: string | null } } | null) => {
+    apiFetch<{ page?: { title?: string; icon?: string | null } }>(`/api/pages/${pageId}`)
+      .then((data) => {
         if (cancelled || !data?.page) return;
         if (typeof data.page.title === 'string' && data.page.title) setTitle(data.page.title);
         setIcon(typeof data.page.icon === 'string' ? data.page.icon : null);

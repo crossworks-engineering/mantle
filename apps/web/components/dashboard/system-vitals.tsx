@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api-fetch';
 import { formatBytes, formatPct, formatUptime } from '@/lib/format-bytes';
 import { VitalsBar } from './vitals-bar';
 
@@ -32,9 +33,10 @@ export function SystemVitals() {
       const ac = new AbortController();
       acRef.current = ac;
       try {
-        const res = await fetch('/api/health', { cache: 'no-store', signal: ac.signal });
-        if (!res.ok) throw new Error(String(res.status));
-        const json = (await res.json()) as SystemHealth;
+        const json = await apiFetch<SystemHealth>('/api/health', {
+          cache: 'no-store',
+          signal: ac.signal,
+        });
         if (!cancelled) {
           setData(json);
           setStale(false);

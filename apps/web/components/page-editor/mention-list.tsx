@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { AtSign, FileText, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api-fetch';
 
 export type MentionItem = {
   ref: 'node' | 'entity';
@@ -58,9 +59,10 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(funct
     const seq = ++seqRef.current;
     const ctrl = new AbortController();
     setLoading(true);
-    fetch(`/api/mentions/search?q=${encodeURIComponent(q)}`, { signal: ctrl.signal })
-      .then((res) => (res.ok ? res.json() : { items: [] }))
-      .then((data: { items?: MentionItem[] }) => {
+    apiFetch<{ items?: MentionItem[] }>(`/api/mentions/search?q=${encodeURIComponent(q)}`, {
+      signal: ctrl.signal,
+    })
+      .then((data) => {
         if (seq !== seqRef.current) return; // a newer query superseded this one
         setItems(data.items ?? []);
         setLoading(false);

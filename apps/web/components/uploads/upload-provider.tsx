@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, ChevronDown, Loader2, UploadCloud, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api-fetch';
 
 /**
  * App-wide background file uploader. Lives in the persistent app shell so a
@@ -71,13 +72,10 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       const form = new FormData();
       form.set('parentPath', entry.parentPath);
       form.set('file', entry.file);
-      const res = await fetch('/api/files/files', { method: 'POST', body: form });
-      if (!res.ok) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string };
-        update(id, { status: 'error', error: b.error ?? `failed (${res.status})` });
-      } else {
-        update(id, { status: 'done' });
-      }
+      // FormData body: apiFetch (NOT apiSend) so the multipart boundary survives.
+      // It throws ApiError on non-2xx, so the old !res.ok branch folds into catch.
+      await apiFetch('/api/files/files', { method: 'POST', body: form });
+      update(id, { status: 'done' });
     } catch (err) {
       update(id, { status: 'error', error: err instanceof Error ? err.message : 'upload failed' });
     } finally {
