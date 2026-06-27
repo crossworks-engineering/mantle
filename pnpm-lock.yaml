@@ -35,6 +35,9 @@ importers:
       '@mantle/assistant-runtime':
         specifier: workspace:*
         version: link:../../packages/assistant-runtime
+      '@mantle/client-types':
+        specifier: workspace:*
+        version: link:../../packages/client-types
       '@mantle/content':
         specifier: workspace:*
         version: link:../../packages/content
@@ -62,6 +65,9 @@ importers:
       '@mantle/tracing':
         specifier: workspace:*
         version: link:../../packages/tracing
+      '@mantle/turn-stream':
+        specifier: workspace:*
+        version: link:../../packages/turn-stream
       '@mantle/voice':
         specifier: workspace:*
         version: link:../../packages/voice

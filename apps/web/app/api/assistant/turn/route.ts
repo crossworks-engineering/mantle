@@ -284,6 +284,11 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
     const options: RunAssistantTurnOptions = {
       agentSlug,
       channel: source,
+      // The client mints one uuid per submit and sends it as the Idempotency-Key
+      // (it's also the workflow id). Reuse it as the live-stream correlation id
+      // so the producer publishes this turn's status on the same id the client
+      // already subscribed to — no extra wire field.
+      ...(idempotencyKey ? { streamId: idempotencyKey } : {}),
       ...(location ? { location } : {}),
       ...(attachment
         ? {

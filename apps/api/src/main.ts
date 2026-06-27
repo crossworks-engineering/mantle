@@ -15,6 +15,7 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { configureDBOS, RUNNER_QUEUE, runnerConcurrency } from './config';
 import { startAgentRuntime, stopAgentRuntime } from './agent/runtime';
+import { installTurnStreamObserver } from './turn-stream-observer';
 // Import workflow modules for their registration side-effects (registerWorkflow
 // runs at import, before launch).
 import './workflows/ping';
@@ -23,6 +24,10 @@ import { enqueueTelegramTurn } from './workflows/telegram-turn';
 
 async function main(): Promise<void> {
   configureDBOS();
+  // Bridge trace steps → live turn-status events for streamed turns. Pure
+  // registration (no I/O); harmless when MANTLE_TURN_STREAMING is off, since
+  // the web SSE endpoint that relays these events is itself flag-gated.
+  installTurnStreamObserver();
   await DBOS.launch();
   // The shared runner queue — concurrency caps total in-flight runs across all
   // apps/api processes (LLM-provider backpressure).

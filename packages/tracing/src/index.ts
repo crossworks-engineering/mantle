@@ -6,6 +6,7 @@ export {
   recordStepUsage,
   currentTrace,
   currentStep,
+  setStepObserver,
   type TraceKind,
   type TraceStepKind,
   type StepStatus,
@@ -13,6 +14,9 @@ export {
   type StartStepInit,
   type StepHandle,
   type TokenDelta,
+  type StepPhase,
+  type StepObserver,
+  type StepObserverEvent,
 } from './store';
 
 export {

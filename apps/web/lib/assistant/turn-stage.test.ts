@@ -33,4 +33,33 @@ describe('stageLabelForStep', () => {
     expect(stageLabelForStep('extract_attachment')).toBeNull();
     expect(stageLabelForStep('some_other_step')).toBeNull();
   });
+
+  it('enriches the label with a safe query arg when present', () => {
+    expect(stageLabelForStep('tool: web_search', { query: 'Pinnacle SLA' })).toBe(
+      'Searching the web for “Pinnacle SLA”…',
+    );
+    expect(stageLabelForStep('tool: search_nodes', { q: 'invoice' })).toBe(
+      'Searching your brain for “invoice”…',
+    );
+    expect(stageLabelForStep('tool: invoke_agent', { agent: 'Researcher' })).toBe(
+      'Delegating to Researcher…',
+    );
+  });
+
+  it('never echoes a secret-looking arg into the label', () => {
+    // No safe query key present → falls back to the bucket label, not the token.
+    expect(stageLabelForStep('tool: web_search', { api_key: 'sk-deadbeef' })).toBe(
+      'Searching the web…',
+    );
+    expect(stageLabelForStep('tool: search_nodes', { authToken: 'secret' })).toBe(
+      'Searching your brain…',
+    );
+  });
+
+  it('caps an over-long query arg', () => {
+    const long = 'x'.repeat(80);
+    const label = stageLabelForStep('tool: web_search', { query: long });
+    expect(label).toContain('…');
+    expect(label!.length).toBeLessThan(80);
+  });
 });

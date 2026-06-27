@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useAssistantDock } from '@/components/assistant/assistant-dock';
 import { useTurnStage } from '@/components/assistant/use-turn-stage';
+import { useTurnStreamStatus } from '@/components/assistant/use-turn-stream';
 import {
   CornerDownLeft,
   FileText,
@@ -127,9 +128,13 @@ export function AssistantClient({
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
-  // Live "what's the agent doing" label, polled from the running trace while a
-  // turn is in flight — shown next to the typing dots.
-  const stageLabel = useTurnStage(sending);
+  // Live "what's the agent doing" label. The stream (keyed on the in-flight
+  // turn's id) pushes status the instant each step starts; the poll is the
+  // fallback while streaming is off or before the socket connects. Stream wins.
+  const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
+  const streamLabel = useTurnStreamStatus(activeTurnId);
+  const polledLabel = useTurnStage(sending);
+  const stageLabel = streamLabel ?? polledLabel;
   const [error, setError] = useState<string>();
   // ── Voice-in state ──
   const [recording, setRecording] = useState(false);
@@ -365,6 +370,9 @@ export function AssistantClient({
     };
     setMessages((prev) => [...prev, optimistic]);
     setDraft('');
+    // Open the live status stream for this turn (same uuid the server keys it
+    // on) the instant we start — before the POST — so we catch the early steps.
+    setActiveTurnId(idempotencyKey);
     setSending(true);
 
     try {
@@ -443,6 +451,8 @@ export function AssistantClient({
       setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
     } finally {
       setSending(false);
+      // Close the status stream; the durable reply is already in `messages`.
+      setActiveTurnId(null);
     }
   };
 

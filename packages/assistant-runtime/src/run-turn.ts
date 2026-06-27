@@ -205,6 +205,12 @@ export type RunAssistantTurnOptions = {
    *  rows so proactive delivery can follow the last channel used. Defaults to
    *  'web'. */
   channel?: ConversationChannel;
+  /** Client-minted per-turn correlation id (the same uuid sent as the request's
+   *  Idempotency-Key). When set, this turn's trace steps are published as live
+   *  `status`/token events keyed by it, so the client can narrate the turn as it
+   *  runs (see docs/live-turn-streaming.md). Omit → no live stream; the poll
+   *  fallback still works. */
+  streamId?: string;
 };
 
 export async function runAssistantTurn(
@@ -481,6 +487,9 @@ export async function runAssistantTurn(
       {
         kind: 'responder_turn',
         ownerId,
+        // When the client minted a stream id, key this turn's live status/token
+        // events on it (no-op when absent — the trace just isn't streamed).
+        turnId: options?.streamId,
         subjectId: inbound.id,
         subjectKind: 'assistant_message',
         agentId: agent.id,

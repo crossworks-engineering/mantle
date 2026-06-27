@@ -42,6 +42,9 @@ export type StepStatus = 'running' | 'success' | 'error' | 'skipped';
 export type StartTraceInit = {
   kind: TraceKind;
   ownerId: string;
+  /** When set, this trace's steps are published as live turn events keyed by
+   *  this id (the responder turn). Omit for background traces — they pay nothing. */
+  turnId?: string;
   subjectId?: string;
   subjectKind?: string;
   agentId?: string | null;
@@ -54,6 +57,34 @@ export type StartStepInit = {
   input?: Record<string, unknown>;
 };
 
+/** Lifecycle phase of a step, for the optional step observer. */
+export type StepPhase = 'start' | 'end';
+
+/**
+ * A step lifecycle event handed to a registered observer. Fired ONLY for traces
+ * opened with a `turnId` (the live-streamed responder turn), so generic
+ * background traces pay nothing. This is the generic tap the runner uses to turn
+ * trace steps into live `status`/tool events — tracing itself knows nothing
+ * about turn streaming beyond carrying the id and calling back.
+ */
+export type StepObserverEvent = {
+  traceId: string;
+  ownerId: string;
+  /** The turn correlation id this trace was opened with. */
+  turnId: string;
+  /** Monotonic per-turn sequence across all observed step events. */
+  seq: number;
+  name: string;
+  kind: TraceStepKind;
+  phase: StepPhase;
+  /** For `end`: did the step succeed (success|skipped)? Always true for `start`. */
+  ok: boolean;
+  /** The step's input args — carried on `start` only, for label enrichment. */
+  input?: Record<string, unknown>;
+};
+
+export type StepObserver = (e: StepObserverEvent) => void;
+
 export type TokenDelta = {
   input?: number;
   output?: number;
@@ -64,9 +95,12 @@ export type TokenDelta = {
 export type TraceContext = {
   readonly id: string;
   readonly ownerId: string;
+  /** Live-streaming correlation id; null for un-streamed (background) traces. */
+  readonly turnId: string | null;
   startedAtMs: number;
   ordinalCounter: number; // next root-step ordinal
   childOrdinals: Map<string, number>; // parent step id -> next child ordinal
+  streamSeq: number; // monotonic cursor for the live event stream's `seq`
   tokens: { in: number; out: number; cacheRead: number };
   costMicroUsd: number;
   stepCount: number;
@@ -113,6 +147,44 @@ export function currentTrace(): TraceContext | null {
 
 export function currentStep(): ActiveStep | null {
   return stepStore.getStore() ?? null;
+}
+
+let stepObserver: StepObserver | null = null;
+
+/**
+ * Register a single global step observer (or clear it with null). The runner
+ * (apps/api) installs one to publish live turn events; every other process
+ * leaves it unset and pays nothing. Generic by design — tracing only ever hands
+ * back the step's identity + the trace's `turnId`/`ownerId`.
+ */
+export function setStepObserver(fn: StepObserver | null): void {
+  stepObserver = fn;
+}
+
+/** Fire the observer for a step lifecycle transition. NEVER throws — an observer
+ *  fault must not break the traced work. No-op unless an observer is registered
+ *  AND this trace carries a `turnId` (so background traces stay free). */
+function notifyStepObserver(
+  trace: TraceContext,
+  e: { name: string; kind: TraceStepKind; phase: StepPhase; ok: boolean; input?: Record<string, unknown> },
+): void {
+  const obs = stepObserver;
+  if (!obs || !trace.turnId) return;
+  try {
+    obs({
+      traceId: trace.id,
+      ownerId: trace.ownerId,
+      turnId: trace.turnId,
+      seq: trace.streamSeq++,
+      name: e.name,
+      kind: e.kind,
+      phase: e.phase,
+      ok: e.ok,
+      input: e.input,
+    });
+  } catch (err) {
+    logErr('step observer', err);
+  }
 }
 
 /**
@@ -172,9 +244,11 @@ export async function startTrace<T>(
   const ctx: TraceContext = {
     id,
     ownerId: init.ownerId,
+    turnId: init.turnId ?? null,
     startedAtMs: Date.now(),
     ordinalCounter: 0,
     childOrdinals: new Map(),
+    streamSeq: 0,
     tokens: { in: 0, out: 0, cacheRead: 0 },
     costMicroUsd: 0,
     stepCount: 0,
@@ -305,6 +379,11 @@ export async function step<T>(
     logErr('open step', err);
   }
 
+  // Live turn streaming tap: announce the step's start (no-op unless this trace
+  // carries a turnId and an observer is installed). Input rides along for label
+  // enrichment ("Searching your brain for …").
+  notifyStepObserver(trace, { name: init.name, kind: init.kind, phase: 'start', ok: true, input: init.input });
+
   const handle: StepHandle = {
     id,
     traceId: trace.id,
@@ -371,6 +450,14 @@ export async function step<T>(
         })
         .where(eq(traceSteps.id, id))
         .catch((e) => logErr('finish step', e));
+      // Announce the step's end (Step-1 status ignores this; tool-end/token
+      // phases consume it later). Carries no input.
+      notifyStepObserver(trace, {
+        name: init.name,
+        kind: init.kind,
+        phase: 'end',
+        ok: status === 'success' || status === 'skipped',
+      });
     }
   });
 }
