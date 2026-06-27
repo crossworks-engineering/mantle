@@ -30,7 +30,11 @@ and `/api/agents/[id]/test/chat`, deleting the last server action) ·
 + `/api/agents/options` + `lib/heartbeat-schema.ts` Zod — and deleted its server actions) ·
 `/settings/profile` (new GET/PUT `/api/profile`) ·
 `/settings/discover` (endpoints existed; client accounts-gate + scan/promote) ·
-`/settings/microsoft` (built config/drives/mail/disconnect endpoints; self-fetching sub-components).
+`/settings/microsoft` (built config/drives/mail/disconnect endpoints; self-fetching sub-components) ·
+`/settings/accounts` (URL-driven master-detail → client; endpoints all existed; IMAP test/save +
+folder picker as mutations; the `[id]/folders` deep-link page too).
+
+**All `/settings/*` screens are now client-fetched.** Next surface = the content screens.
 
 The data layer is **TanStack Query v5**. Full pattern + conventions:
 `docs/client-data-fetching.md` (READ THIS before converting a screen).
@@ -99,19 +103,10 @@ the test buttons, which need real provider API keys).
 
 ## Remaining Task-4 work (next targets)
 
-Pages still SSR (read `@mantle/*` in-process). None has a *real* `@mantle/db` hole anymore
-(Task 1 closed those), but they still server-render their data:
+Every `/settings/*` screen is now client-fetched. The remaining SSR pages are the
+content screens. None has a *real* `@mantle/db` hole anymore (Task 1 closed those), but
+they still server-render their data:
 
-- **`/settings/accounts`** — the last cluster screen + the biggest. A URL-driven
-  master-detail (`?selected=&mode=add|edit|folders`) over IMAP accounts. The endpoints
-  mostly EXIST already (GET/POST `/api/email/accounts`, GET/PATCH `…/[id]`, GET/PUT
-  `…/[id]/folders`); the work is (1) the page master-detail rewrite to a client
-  component (fetch accounts via useQuery, keep the `?selected/?mode` URL semantics via
-  useSearchParams + Link, wrap in Suspense), (2) `imap/imap-form.tsx`
-  (`useActionState(handleImapForm)` → useMutation against POST/PATCH `/api/email/accounts`;
-  note the `intent: 'test'|'save'` two-step), (3) `[id]/folders/folder-picker.tsx`
-  (`setIncludedFolders` action → PUT `…/[id]/folders`). Then delete `imap/actions.ts`
-  + `folders-actions.ts`. Credential-handling — give it a focused pass.
 - **Content screens** (`/notes`, `/pages`, `/todos`, `/events`, `/tables`, `/contacts`, `/lifelog`,
   `/inbox`) — the larger surface; most already have REST + client components that fetch for mutations.
   `/pages` was the doc's suggested template; order by Electron priority.

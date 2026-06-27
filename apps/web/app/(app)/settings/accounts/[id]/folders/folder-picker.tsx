@@ -1,14 +1,17 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { SubmitButton } from '@/components/ui/submit-button';
-import { setIncludedFolders } from '../../folders-actions';
+import { useToast } from '@/components/ui/toast';
+import { apiSend } from '@/lib/api-fetch';
 
 /**
- * Checkbox picker over an account's IMAP folders. Submits as a plain form
- * action (`setIncludedFolders`): each checked, enabled checkbox posts its
- * value under `folders`. Excluded folders are disabled (never submitted).
- * Empty selection ⇒ the action stores NULL = "scan all non-excluded".
+ * Checkbox picker over an account's IMAP folders. On submit it PUTs the checked,
+ * non-excluded folders to `/api/email/accounts/[id]/folders` and lands on the
+ * accounts list. Empty selection ⇒ the endpoint stores NULL = "scan all
+ * non-excluded".
  */
 export function FolderPicker({
   accountId,
@@ -23,6 +26,10 @@ export function FolderPicker({
   excluded: string[];
   scanned: string[];
 }) {
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const toast = useToast();
+
   const excludedSet = useMemo(() => new Set(excluded), [excluded]);
   const scannedSet = useMemo(() => new Set(scanned), [scanned]);
   // Prefill: the explicit include-list if set; otherwise the folders the sync
@@ -50,9 +57,29 @@ export function FolderPicker({
     setChecked(on ? new Set(selectable) : new Set());
   }
 
+  const save = useMutation({
+    // Only checked, non-excluded folders. Empty array = "scan all non-excluded".
+    mutationFn: () =>
+      apiSend(`/api/email/accounts/${accountId}/folders`, 'PUT', {
+        folders: selectable.filter((f) => checked.has(f)),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['email', 'accounts'] });
+      // Land on the probe-free list — re-rendering the folders pane re-probes IMAP
+      // (slow/flaky) and contends with the rescan we just kicked.
+      router.push('/settings/accounts');
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : String(err)),
+  });
+
   return (
-    <form action={setIncludedFolders} className="space-y-4">
-      <input type="hidden" name="accountId" value={accountId} />
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        save.mutate();
+      }}
+      className="space-y-4"
+    >
 
       {included === null && (
         <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
@@ -105,7 +132,7 @@ export function FolderPicker({
         immediate rescan.
       </p>
 
-      <SubmitButton>Save &amp; rescan</SubmitButton>
+      <SubmitButton pending={save.isPending}>Save &amp; rescan</SubmitButton>
     </form>
   );
 }

@@ -85,6 +85,7 @@ by default.
 | `/settings/profile` | ✅ converted (new GET/PUT `/api/profile`; query-gate + inner form; live Intl preview) |
 | `/settings/discover` | ✅ converted (endpoints existed; accounts gate client-side; scan = useQuery, promote = mutation) |
 | `/settings/microsoft` | ✅ converted (built config + drives + mail + disconnect endpoints; sub-components self-fetch) |
+| `/settings/accounts` | ✅ converted (endpoints existed; URL-driven master-detail → client; IMAP test/save + folder picker as mutations) |
 
 Convert more by following the reference; order by Electron priority.
 
@@ -149,6 +150,17 @@ Notes from the conversions so far:
   / `?selected=`/`?mode=`): wrap the client component in `<Suspense>` in the
   server page or `next build` errors with a CSR-bailout (see the
   deploy-preflight memory).
-- **Live/expensive reads** (discover IMAP scan, microsoft drive discover): set
-  `staleTime: Infinity` + `refetchOnWindowFocus: false` so a tab refocus doesn't
-  silently re-run a slow probe; expose a manual Rescan via `refetch()`.
+- **Live/expensive reads** (discover IMAP scan, microsoft drive discover, accounts
+  folder probe): set `staleTime: Infinity` + `refetchOnWindowFocus: false` so a tab
+  refocus doesn't silently re-run a slow probe; expose a manual Rescan via `refetch()`.
+- **URL-driven master-detail → client** (accounts `?selected=&mode=add|edit|folders`):
+  keep the exact URL semantics — `useSearchParams()` for the current view + `<Link>`
+  for navigation (client nav updates the params → re-render). The list is one
+  `useQuery(['email','accounts'])`; the folders pane lazily `enabled`s its own query
+  off `mode==='folders'`. Wrap the client in `<Suspense>` (useSearchParams).
+- **Two-intent form via `submitter`** (IMAP test vs save): keep one `<form onSubmit>`
+  with two `type="submit"` buttons carrying `value="test"|"save"`; read
+  `(e.nativeEvent as SubmitEvent).submitter?.value` to branch. Preserves native
+  required-field validation while routing to one `useMutation`. `apiSend` throws on
+  the 400 (probe/save failure) → surface `mutation.error`; a successful save
+  `router.push`es to the list.
