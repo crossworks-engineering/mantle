@@ -10,14 +10,15 @@
 import { NextResponse } from 'next/server';
 import { Readable } from 'node:stream';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { getApp } from '@mantle/content';
 import { getContent } from '@mantle/storage';
 
 export const runtime = 'nodejs';
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
   const app = await getApp(user.id, id);
   if (!app) return new NextResponse('not found', { status: 404 });

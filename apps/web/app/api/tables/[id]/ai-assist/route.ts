@@ -12,7 +12,7 @@
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { getTable } from '@/lib/tables';
 import { listRows, type TableDoc } from '@mantle/content';
 import { invokeAgent } from '@mantle/agent-runtime';
@@ -40,7 +40,8 @@ function structureSummary(doc: TableDoc): string {
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {

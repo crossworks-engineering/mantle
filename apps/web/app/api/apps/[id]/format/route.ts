@@ -7,7 +7,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import prettier from 'prettier';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { MAX_APP_FILE_BYTES, MAX_APP_PATH_LEN } from '@mantle/content';
 
 export const runtime = 'nodejs';
@@ -37,7 +37,8 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  await requireOwner();
+  const gate = await getOwnerOr401();
+  if (gate instanceof Response) return gate;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid input' }, { status: 400 });
 

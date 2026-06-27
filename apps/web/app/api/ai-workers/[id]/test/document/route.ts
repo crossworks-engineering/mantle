@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { testDocument } from '@/lib/ai-worker-rpc';
 
 const Body = z.object({ pdfBase64: z.string().min(1) });
 
 /** Run a PDF through a document worker's native-extract path (base64 in). */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'pdfBase64 required' }, { status: 400 });

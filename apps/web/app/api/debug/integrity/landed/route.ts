@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { resolveCapabilities } from '@/lib/integrity/capabilities';
 import { listLanded } from '@/lib/integrity/landed';
 import type { LandedReport } from '@/lib/integrity/types';
@@ -11,7 +11,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const url = new URL(req.url);
   const limitRaw = url.searchParams.get('limit');
   const limitNum = limitRaw ? Number(limitRaw) : NaN;

@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { connectImapAccount, getAccount, redactAccount } from '@mantle/email';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 
 /** One owner-scoped account (credential stripped). */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await params;
   const account = await getAccount(user.id, id);
   if (!account) return NextResponse.json({ error: 'Account not found.' }, { status: 404 });
@@ -29,7 +30,8 @@ const EditBody = z.object({
 
 /** Edit an existing IMAP account. `intent: 'test'` probes only; `'save'` persists. */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await params;
   const parsed = EditBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {

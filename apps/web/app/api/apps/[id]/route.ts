@@ -3,13 +3,14 @@
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { getApp, updateAppMeta, deleteApp } from '@mantle/content';
 
 export const runtime = 'nodejs';
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
   const app = await getApp(user.id, id);
   if (!app) return NextResponse.json({ error: 'app not found' }, { status: 404 });
@@ -23,7 +24,8 @@ const PatchBody = z.object({
 });
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
   const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
@@ -36,7 +38,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
   const ok = await deleteApp(user.id, id);
   if (!ok) return NextResponse.json({ error: 'app not found' }, { status: 404 });

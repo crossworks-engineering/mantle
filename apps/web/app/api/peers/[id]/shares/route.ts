@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { grantPeerShare, listPeerShares, revokePeerShare } from '@mantle/content';
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
   return NextResponse.json({ shares: await listPeerShares(user.id, id) });
 }
@@ -13,7 +14,8 @@ const NodeBody = z.object({ nodeId: z.string().uuid() });
 
 /** Grant this peer read access to a node. */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
   const parsed = NodeBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
@@ -26,7 +28,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
 /** Revoke this peer's access to a node. nodeId in the query string. */
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
   const nodeId = new URL(req.url).searchParams.get('nodeId') ?? '';
   if (!nodeId) return NextResponse.json({ error: 'nodeId required' }, { status: 400 });

@@ -15,7 +15,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db, pendingToolCalls } from '@mantle/db';
 import { notifyPendingCreated } from '@mantle/tools';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,7 +35,8 @@ export async function POST(req: Request) {
   if (process.env.NODE_ENV === 'production') {
     return NextResponse.json({ error: 'not available in production' }, { status: 404 });
   }
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const raw = await req.json().catch(() => ({}));
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {

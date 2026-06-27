@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { countNotes, createNote, isDigestTag, listNoteTags, listNotes } from '@/lib/notes';
 import { recordIngest } from '@mantle/tracing';
 
@@ -18,7 +18,8 @@ const CreateBody = z.object({
  * itself a digest tag like `agent:assistant`).
  */
 export async function GET(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const sp = new URL(req.url).searchParams;
   const page = Math.max(1, Number.parseInt(sp.get('page') ?? '1', 10) || 1);
   const query = sp.get('q')?.trim() || undefined;
@@ -34,7 +35,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {

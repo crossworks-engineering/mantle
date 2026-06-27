@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { resolveExport } from '@mantle/content';
 import { readFileById } from '@/lib/files';
 import { safeDownloadHeaders } from '@/lib/safe-download';
@@ -14,7 +14,8 @@ const IdParams = z.object({ id: z.string().uuid() });
  * persisted (the agent `export_node` tool is the save-to-Files path).
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const parsed = IdParams.safeParse(await ctx.params);
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });

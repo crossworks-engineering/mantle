@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { recentUnknownSenders } from '@mantle/email';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 
 const Query = z.object({
   sinceDays: z.coerce.number().int().min(1).max(3650).optional(),
@@ -11,7 +11,8 @@ const Query = z.object({
 /** Live-discover senders who recently emailed the owner but aren't yet contacts.
  *  Reads IMAP on demand across enabled accounts; persists nothing. */
 export async function GET(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const sp = new URL(req.url).searchParams;
   const parsed = Query.safeParse({
     sinceDays: sp.get('sinceDays') ?? undefined,

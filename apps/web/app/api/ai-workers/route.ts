@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import type { AiWorkerParams } from '@mantle/db';
 import { clearEmbeddingModelCache } from '@mantle/embeddings';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { createAiWorker, listAiWorkers, toAiWorkerDTO } from '@/lib/ai-workers';
 
 const KIND = z.enum([
@@ -48,13 +48,15 @@ const CreateBody = z.object({
 
 /** All workers for the owner, ordered by kind then priority. */
 export async function GET() {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const rows = await listAiWorkers(user.id);
   return NextResponse.json({ workers: rows.map(toAiWorkerDTO) });
 }
 
 export async function POST(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(

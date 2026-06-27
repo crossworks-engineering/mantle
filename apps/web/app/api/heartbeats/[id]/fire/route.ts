@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { getHeartbeatRow } from '@/lib/heartbeats';
 import { forceFire } from '@mantle/heartbeats';
 
@@ -9,7 +9,8 @@ import { forceFire } from '@mantle/heartbeats';
  * needs). Was the `fireNowAction` server action.
  */
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await params;
   const row = await getHeartbeatRow(user.id, id);
   if (!row) return NextResponse.json({ error: 'Heartbeat not found.' }, { status: 404 });

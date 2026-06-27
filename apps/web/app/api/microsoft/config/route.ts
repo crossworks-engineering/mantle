@@ -6,7 +6,7 @@ import {
   getConfigStatus,
   saveConfig,
 } from '@mantle/microsoft';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 
 /** App origin from the request, so the suggested redirect URI matches the host
  *  the user actually reaches Mantle on. Mirrors the old page server logic. */
@@ -19,7 +19,8 @@ function requestOrigin(req: Request): string {
 
 /** Current Azure-app config status + the redirect URI to suggest (host-derived). */
 export async function GET(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const status = await getConfigStatus(user.id);
   return NextResponse.json({
     status,
@@ -37,7 +38,8 @@ const SaveBody = z.object({
 
 /** Save (or override) the brain's Azure AD app config from the UI. */
 export async function PUT(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const parsed = SaveBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(
@@ -62,7 +64,8 @@ export async function PUT(req: Request) {
 
 /** Remove the UI config, reverting to environment variables (if any). */
 export async function DELETE() {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   await clearConfig(user.id);
   return NextResponse.json({ status: await getConfigStatus(user.id) });
 }

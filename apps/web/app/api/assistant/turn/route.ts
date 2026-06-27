@@ -21,7 +21,7 @@
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwnerWithSource } from '@/lib/auth';
+import { getOwnerOr401WithSource } from '@/lib/auth';
 import { getDbosClient } from '@/lib/dbos-client';
 import {
   ASSISTANT_TURN_WORKFLOW,
@@ -206,10 +206,13 @@ export async function POST(req: Request): Promise<NextResponse> {
 }
 
 async function runTurn(req: Request, idempotencyKey: string | null): Promise<TurnResult> {
-  // requireOwnerWithSource() before the try so an auth redirect propagates
-  // rather than being swallowed as a 500. (The route is also gated by
-  // middleware.) `source` tags the turn 'web' (browser) vs 'mobile' (companion).
-  const { user, source } = await requireOwnerWithSource();
+  // Auth before the try so a failure surfaces as a clean 401 (not a swallowed
+  // 500, and not an HTML login redirect — a programmatic client needs a status).
+  // The route is also gated by middleware. `source` tags the turn 'web'
+  // (browser) vs 'mobile' (companion).
+  const auth = await getOwnerOr401WithSource();
+  if (auth instanceof NextResponse) return { status: 401, body: { error: 'unauthorized' } };
+  const { user, source } = auth;
   const contentType = req.headers.get('content-type') ?? '';
 
   let userText = '';

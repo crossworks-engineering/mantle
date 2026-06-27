@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { rotateApiKey } from '@/lib/api-keys';
 
 const RotateBody = z.object({
@@ -8,7 +8,8 @@ const RotateBody = z.object({
 });
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
   const idParse = z.string().uuid().safeParse(id);
   if (!idParse.success) {

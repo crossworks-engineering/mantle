@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 import { exchangeCode, fetchMe, resolveOAuthConfig, upsertAccountFromTokens } from '@mantle/microsoft';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 
 /**
  * OAuth callback: validate state against the cookie, exchange the code (+ PKCE
@@ -33,7 +33,8 @@ function settingsRedirect(req: NextRequest, params: Record<string, string>): Nex
 }
 
 export async function GET(req: NextRequest) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
 
   const url = new URL(req.url);
   const code = url.searchParams.get('code');

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { countEvents, createEvent, listEvents } from '@/lib/events';
 
 const PAGE_SIZE = 50;
@@ -19,7 +19,8 @@ const CreateBody = z.object({
 });
 
 export async function GET(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const url = new URL(req.url);
   const windowParam = url.searchParams.get('window');
   const window: 'upcoming' | 'past' | 'all' =
@@ -38,7 +39,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {

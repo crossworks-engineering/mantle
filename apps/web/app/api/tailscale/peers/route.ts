@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { getTailnetPeerNames } from '@/lib/tailscale';
 
 /**
@@ -9,7 +9,8 @@ import { getTailnetPeerNames } from '@/lib/tailscale';
  * the form degrades to a free-text host field rather than erroring.
  */
 export async function GET() {
-  await requireOwner();
+  const gate = await getOwnerOr401();
+  if (gate instanceof Response) return gate;
   const peers = await getTailnetPeerNames();
   return NextResponse.json({ peers });
 }

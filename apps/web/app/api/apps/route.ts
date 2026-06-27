@@ -3,7 +3,7 @@
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { createApp, listApps, countApps, type AppSort } from '@mantle/content';
 import { recordIngest } from '@mantle/tracing';
 
@@ -12,7 +12,8 @@ export const runtime = 'nodejs';
 const PAGE_SIZE = 50;
 
 export async function GET(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const url = new URL(req.url);
   const query = url.searchParams.get('q')?.trim() || undefined;
   const tag = url.searchParams.get('tag')?.trim() || undefined;
@@ -34,7 +35,8 @@ const CreateBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(

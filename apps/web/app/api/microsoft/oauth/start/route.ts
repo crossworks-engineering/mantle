@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { buildAuthorizeUrl, createPkce, createState, resolveOAuthConfig } from '@mantle/microsoft';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 
 /**
  * Kick off the delegated OAuth flow: resolve this brain's Azure app config
@@ -21,7 +21,8 @@ const COOKIE_OPTS = {
 };
 
 export async function GET(req: NextRequest) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
 
   const cfg = await resolveOAuthConfig(user.id);
   if (!cfg) {

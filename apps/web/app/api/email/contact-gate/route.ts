@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { loadContactGate } from '@mantle/content';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 
 /**
  * Inbox inbound allowlist state. The contacts list IS the email allowlist, so
@@ -10,7 +10,8 @@ import { requireOwner } from '@/lib/auth';
  * `loadContactGate` in @mantle/content for the exact rule.
  */
 export async function GET() {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const gate = await loadContactGate(user.id);
   return NextResponse.json({ isEmpty: gate.isEmpty });
 }

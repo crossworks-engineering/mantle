@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import type { AiWorkerParams } from '@mantle/db';
 import { clearEmbeddingModelCache } from '@mantle/embeddings';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { deleteAiWorker, getAiWorker, toAiWorkerDTO, updateAiWorker } from '@/lib/ai-workers';
 
 const IdParams = z.object({ id: z.string().uuid() });
@@ -30,7 +30,8 @@ const PatchBody = z
   .refine((b) => Object.keys(b).length > 0, 'nothing to update');
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   const worker = await getAiWorker(user.id, idParsed.data.id);
@@ -39,7 +40,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
@@ -60,7 +62,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   // Read the kind before deleting so we can drop the embedding cache if needed.

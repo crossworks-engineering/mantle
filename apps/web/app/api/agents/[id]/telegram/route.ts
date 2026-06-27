@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { getAgent } from '@/lib/agents';
 import {
   connectAgentTelegram,
@@ -22,7 +22,8 @@ async function resolveAgent(ownerId: string, raw: unknown) {
 }
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { agent, error } = await resolveAgent(user.id, await ctx.params);
   if (error) return error;
   const binding = await getAgentTelegram(user.id, agent.id);
@@ -31,7 +32,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { agent, error } = await resolveAgent(user.id, await ctx.params);
   if (error) return error;
   const parsed = ConnectBody.safeParse(await req.json().catch(() => ({})));
@@ -49,7 +51,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { agent, error } = await resolveAgent(user.id, await ctx.params);
   if (error) return error;
   await disconnectAgentTelegram(user.id, agent.id);

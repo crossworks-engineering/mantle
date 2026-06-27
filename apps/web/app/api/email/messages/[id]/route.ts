@@ -6,7 +6,7 @@ import {
   setReadStatus,
   setStarred,
 } from '@mantle/email';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 
 /**
  * One owner-scoped message with its attachments. The email body is sanitised
@@ -15,7 +15,8 @@ import { requireOwner } from '@/lib/auth';
  * (the sanitisation that used to live in the server-rendered `ReadingPane`).
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await params;
   const result = await getMessageWithAttachments(user.id, id);
   if (!result) return NextResponse.json({ error: 'Message not found.' }, { status: 404 });
@@ -29,7 +30,8 @@ const PatchBody = z
 
 /** Flip read / starred flags on one message (owner-scoped, idempotent). */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await params;
   const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {

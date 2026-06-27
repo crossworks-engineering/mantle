@@ -27,7 +27,7 @@ import {
   scrubSecrets,
   type HttpHandler,
 } from '@mantle/tools';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,7 +85,8 @@ async function readCapped(
 }
 
 export async function POST(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const raw = await req.json().catch(() => ({}));
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {

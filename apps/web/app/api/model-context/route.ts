@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import {
   refreshModelCatalog,
   contextLimitMap,
@@ -24,7 +24,8 @@ import {
  *       fetchedAt: epoch | null }
  */
 export async function GET() {
-  await requireOwner();
+  const gate = await getOwnerOr401();
+  if (gate instanceof Response) return gate;
   await refreshModelCatalog();
   return NextResponse.json({
     limits: contextLimitMap(),

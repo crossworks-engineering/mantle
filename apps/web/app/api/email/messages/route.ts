@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { listMessages } from '@mantle/email';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 
 const Query = z.object({
   account: z.string().uuid(),
@@ -12,7 +12,8 @@ const Query = z.object({
 
 /** Message list for one owned account (centre pane), newest first. */
 export async function GET(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const sp = new URL(req.url).searchParams;
   const parsed = Query.safeParse({
     account: sp.get('account') ?? undefined,

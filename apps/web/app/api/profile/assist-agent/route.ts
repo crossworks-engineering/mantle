@@ -11,7 +11,7 @@
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
 import { DEFAULT_ASSIST_SLUG } from '@/lib/assist-agent';
 
@@ -19,7 +19,8 @@ import { DEFAULT_ASSIST_SLUG } from '@/lib/assist-agent';
  *  routes fall back to. Lets the in-panel picker render its current selection
  *  without threading prefs through the page server components. */
 export async function GET() {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const prefs = await loadProfilePreferences(user.id);
   return NextResponse.json({
     pages: prefs.pagesAssistAgentSlug ?? null,
@@ -35,7 +36,8 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid input' }, { status: 400 });

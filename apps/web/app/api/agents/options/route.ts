@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { listAgentOptions } from '@/lib/agents';
 import type { AgentOptionDTO } from '@mantle/client-types';
 
@@ -9,7 +9,8 @@ import type { AgentOptionDTO } from '@mantle/client-types';
  * agentSlug that may be a worker-role agent, so the picker needs the full set.
  */
 export async function GET() {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const agents: AgentOptionDTO[] = await listAgentOptions(user.id);
   return NextResponse.json({ agents });
 }

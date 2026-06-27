@@ -11,7 +11,7 @@
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import {
   DEFAULT_PREFERENCES,
   isReminderChannel,
@@ -21,7 +21,8 @@ import {
 import { listReminderCapableAgents } from '@/lib/agents';
 
 export async function GET() {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const [preferences, reminderAgents] = await Promise.all([
     loadProfilePreferences(user.id),
     listReminderCapableAgents(user.id),
@@ -46,7 +47,8 @@ const Body = z.object({
 });
 
 export async function PUT(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid input.' }, { status: 400 });

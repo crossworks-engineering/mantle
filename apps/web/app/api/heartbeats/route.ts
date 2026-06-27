@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { createHeartbeat, listHeartbeats } from '@/lib/heartbeats';
 import { CreateHeartbeatBody, toCreateInput } from '@/lib/heartbeat-schema';
 
 /** List the owner's heartbeats (summaries). */
 export async function GET() {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const heartbeats = await listHeartbeats(user.id);
   return NextResponse.json({ heartbeats });
 }
@@ -13,7 +14,8 @@ export async function GET() {
 /** Create a heartbeat. The lib computes the first next_fire_at and (when `state`
  *  is omitted) seeds from the bound skill's defaultState. */
 export async function POST(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const parsed = CreateHeartbeatBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(

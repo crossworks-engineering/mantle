@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { discoverModels } from '@/lib/ai-worker-rpc';
 
 const Body = z.object({
@@ -11,7 +11,8 @@ const Body = z.object({
 
 /** List the models a given api key can access — narrows the form's dropdown. */
 export async function POST(req: Request) {
-  await requireOwner();
+  const gate = await getOwnerOr401();
+  if (gate instanceof Response) return gate;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'invalid input' }, { status: 400 });

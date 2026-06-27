@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { getLiveActivity } from '@/lib/journey';
 
 /**
@@ -11,7 +11,8 @@ import { getLiveActivity } from '@/lib/journey';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const live = await getLiveActivity(user.id);
   return NextResponse.json(live, { headers: { 'Cache-Control': 'no-store' } });
 }

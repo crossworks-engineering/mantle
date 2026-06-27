@@ -243,6 +243,23 @@ export async function getOwnerOr401(): Promise<SessionUser | NextResponse> {
 }
 
 /**
+ * Like `getOwnerOr401()` but also reports how the request authenticated
+ * ('web' cookie vs 'mobile' bearer), for routes that tag a turn's
+ * ConversationChannel. The 401-instead-of-redirect contract is what an API
+ * route needs (vs `requireOwnerWithSource()`, which redirects):
+ *
+ *     const auth = await getOwnerOr401WithSource();
+ *     if (auth instanceof NextResponse) return auth;
+ *     const { user, source } = auth;
+ */
+export async function getOwnerOr401WithSource(): Promise<
+  { user: SessionUser; source: AuthSource } | NextResponse
+> {
+  const res = await getSessionUserWithSource();
+  return res ?? NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+}
+
+/**
  * Verify email+password against auth.users. Returns the user id on match,
  * null otherwise. Pure DB-driven — no external auth service.
  */
