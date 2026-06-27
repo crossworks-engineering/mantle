@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Loader2, Plus, RefreshCw, ShieldCheck, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
+import { Spinner } from '@/components/ui/spinner';
 import { formatDateTime } from '@/lib/format-datetime';
-import { testApiKeyAction, type TestApiKeyResult } from './actions';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
+import type { TestApiKeyResult } from '@/lib/api-key-test';
 import {
   Dialog,
   DialogContent,
@@ -55,19 +57,27 @@ const SERVICE_RE = /^[a-z0-9_-]+$/;
 
 type Selection = { mode: 'create' } | { mode: 'view'; id: string } | null;
 
-export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
-  const router = useRouter();
+export function KeysClient() {
+  const queryClient = useQueryClient();
   const toast = useToast();
-  const [keys, setKeys] = useState<KeyRow[]>(initialKeys);
+  const keysQuery = useQuery({
+    queryKey: ['keys'],
+    queryFn: () => apiFetch<{ keys: KeyRow[] }>('/api/keys').then((r) => r.keys),
+  });
+  const [keys, setKeys] = useState<KeyRow[]>([]);
   const [pending, startTransition] = useTransition();
+  const [sel, setSel] = useState<Selection>(null);
 
-  const [sel, setSel] = useState<Selection>(() =>
-    initialKeys[0] ? { mode: 'view', id: initialKeys[0].id } : { mode: 'create' },
-  );
-
+  // Seed the optimistic local list from the query (re-seeds on invalidate) and
+  // auto-select the first key once loaded.
   useEffect(() => {
-    setKeys(initialKeys);
-  }, [initialKeys]);
+    if (!keysQuery.data) return;
+    setKeys(keysQuery.data);
+    setSel((prev) =>
+      prev ?? (keysQuery.data[0] ? { mode: 'view', id: keysQuery.data[0].id } : { mode: 'create' }),
+    );
+  }, [keysQuery.data]);
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['keys'] });
 
   // Create form.
   const [service, setService] = useState('openrouter');
@@ -92,7 +102,10 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
   async function onTest(row: KeyRow) {
     setTesting((s) => ({ ...s, [row.id]: true }));
     try {
-      const result = await testApiKeyAction(row.id, row.service);
+      const result = await apiSend<TestApiKeyResult>('/api/keys/test', 'POST', {
+        keyId: row.id,
+        service: row.service,
+      });
       setTestResults((s) => ({ ...s, [row.id]: result }));
     } catch (err) {
       setTestResults((s) => ({
@@ -134,7 +147,7 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
     setPlaintext('');
     setLabel('default');
     setCustomService('');
-    startTransition(() => router.refresh());
+    startTransition(() => { refresh(); });
   }
 
   async function onRotate(e: React.FormEvent) {
@@ -153,7 +166,7 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
     setRevealed({ key: rotateValue, service: rotating.service, label: rotating.label });
     setRotating(undefined);
     setRotateValue('');
-    startTransition(() => router.refresh());
+    startTransition(() => { refresh(); });
   }
 
   async function confirmDelete() {
@@ -169,12 +182,20 @@ export function KeysClient({ initialKeys }: { initialKeys: KeyRow[] }) {
     toast.success(`Deleted ${row.service}/${row.label}`);
     if (sel?.mode === 'view' && sel.id === row.id) setSel({ mode: 'create' });
     setKeys((prev) => prev.filter((k) => k.id !== row.id));
-    startTransition(() => router.refresh());
+    startTransition(() => { refresh(); });
   }
 
   const isCustom = service === CUSTOM_SERVICE;
   const effectiveService = (isCustom ? customService : service).trim().toLowerCase();
   const provider = SUPPORTED_PROVIDERS.find((p) => p.id === service);
+
+  if (keysQuery.isPending) {
+    return (
+      <div className="flex h-full items-center justify-center py-16">
+        <Spinner />
+      </div>
+    );
+  }
 
   return (
     <div className="md:grid md:h-full md:grid-cols-[340px_1fr] md:overflow-hidden">

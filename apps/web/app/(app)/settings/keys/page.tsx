@@ -1,26 +1,18 @@
 import { requireOwner } from '@/lib/auth';
-import { listApiKeys } from '@/lib/api-keys';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { KeysClient } from './keys-client';
 
+/**
+ * /settings/api-keys — sealed provider API keys. Data-free: KeysClient fetches
+ * GET /api/keys, mutates via POST/DELETE /api/keys (+ /[id]/rotate), and probes
+ * a key via POST /api/keys/test.
+ */
 export default async function KeysSettingsPage() {
-  const user = await requireOwner();
-  const keys = await listApiKeys(user.id);
-
+  await requireOwner();
   return (
     <>
       <SetPageTitle title="API keys" />
-
-      <KeysClient
-        initialKeys={keys.map((k) => ({
-          id: k.id,
-          service: k.service,
-          label: k.label,
-          masked: k.masked,
-          lastUsed: k.lastUsed?.toISOString() ?? null,
-          updatedAt: k.updatedAt.toISOString(),
-        }))}
-      />
+      <KeysClient />
     </>
   );
 }

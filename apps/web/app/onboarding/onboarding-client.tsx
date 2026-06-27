@@ -40,7 +40,7 @@ import {
   setOnboardingStep,
   type SanityCheck,
 } from './actions';
-import type { TestApiKeyResult } from '@/app/(app)/settings/keys/actions';
+import type { TestApiKeyResult } from '@/lib/api-key-test';
 import type { ProvisionResult } from '@/lib/onboarding-provision';
 import { TelegramBotSection } from '@/components/telegram/telegram-bot-section';
 

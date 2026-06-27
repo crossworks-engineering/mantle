@@ -23,7 +23,7 @@ import {
 import { setApiKey, listApiKeys } from '@mantle/api-keys';
 import { resolveEmbeddingConfig, probeEmbeddingRoute } from '@mantle/embeddings';
 import { requireOwner } from '@/lib/auth';
-import { testApiKeyAction, type TestApiKeyResult } from '@/app/(app)/settings/keys/actions';
+import { probeApiKey, type TestApiKeyResult } from '@/lib/api-key-test';
 import {
   provisionDefaults,
   savePersonaAgent,
@@ -74,7 +74,7 @@ export async function saveAndTestKey(
     };
   }
   const row = await setApiKey(user.id, service, 'default', trimmed);
-  const test = await testApiKeyAction(row.id, service);
+  const test = await probeApiKey(row.id, service);
   return { saved: true, test };
 }
 
@@ -86,7 +86,7 @@ export async function testExistingKey(service: string): Promise<TestApiKeyResult
   if (!key) {
     return { ok: false, message: 'No key saved for this provider yet.', provider: service, adapter: '' };
   }
-  return testApiKeyAction(key.id, service);
+  return probeApiKey(key.id, service);
 }
 
 /** Which provider keys are already saved (drives the step ticks on resume). */
@@ -119,13 +119,13 @@ export async function runSanityChecks(): Promise<SanityCheck[]> {
   // OpenRouter — chat, memory indexing, image reading + generation.
   const orKey = byService.get('openrouter');
   if (orKey) {
-    const t = await testApiKeyAction(orKey.id, 'openrouter');
+    const t = await probeApiKey(orKey.id, 'openrouter');
     checks.push({ label: 'OpenRouter (chat, images)', ok: t.ok, detail: t.message });
   }
   // xAI — voice (only present if the user added it).
   const xaiKey = byService.get('xai');
   if (xaiKey) {
-    const t = await testApiKeyAction(xaiKey.id, 'xai');
+    const t = await probeApiKey(xaiKey.id, 'xai');
     checks.push({ label: 'xAI (voice: speak + transcribe)', ok: t.ok, detail: t.message });
   }
 
