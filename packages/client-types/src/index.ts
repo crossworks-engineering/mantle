@@ -436,6 +436,16 @@ export interface TurnStartData {
   agentSlug: string;
   /** Resolved model id, when known at turn start (else null). */
   model: string | null;
+  /** Durable `assistant_messages` id of the inbound (user) row, persisted before
+   *  the model runs. Lets a client swap its optimistic user bubble for the
+   *  canonical row without waiting on the POST. Optional (additive): a client
+   *  that predates this field ignores it. */
+  inboundId?: string;
+  /** Durable `assistant_messages` id of the outbound (reply) row, inserted
+   *  `pending` at turn start. This is the turn's authoritative reconciliation
+   *  handle — the client binds the reply bubble to it and, on `done`, reads the
+   *  final text from this row (vs. the advisory streamed buffer). Optional. */
+  outboundId?: string;
 }
 
 /** A short "what it's doing now" line ("Searching your brain…"). `kind` is an

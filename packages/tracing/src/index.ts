@@ -10,6 +10,8 @@ export {
   setTurnDeltaObserver,
   isTurnStreaming,
   emitTurnDelta,
+  setTurnLifecycleObserver,
+  emitTurnLifecycle,
   type TraceKind,
   type TraceStepKind,
   type StepStatus,
@@ -22,6 +24,9 @@ export {
   type StepObserverEvent,
   type TurnDeltaEvent,
   type TurnDeltaObserver,
+  type TurnLifecyclePhase,
+  type TurnLifecycleEvent,
+  type TurnLifecycleObserver,
 } from './store';
 
 export {

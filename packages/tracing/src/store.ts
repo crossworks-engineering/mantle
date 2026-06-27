@@ -258,6 +258,58 @@ export function emitTurnDelta(round: number, kind: 'text' | 'reasoning', text: s
   }
 }
 
+// ─── Turn lifecycle observer (Phase 3c: turn-start + terminal events) ─────────
+
+/** Lifecycle transition of a whole turn (vs. one step): `turn-start` once the
+ *  durable rows exist, `done`/`error` once the outbound row is finalized. */
+export type TurnLifecyclePhase = 'turn-start' | 'done' | 'error';
+
+/** A turn lifecycle event. Unlike status/token events these are driven
+ *  EXPLICITLY by the runtime — not by the trace — so their timing tracks the
+ *  durable `assistant_messages` row (turn-start after the rows exist; done/error
+ *  after the outbound text is committed), and they may fire OUTSIDE the trace
+ *  context (the outbound row is finalized after the responder trace closes).
+ *  `seq` shares the per-turn cursor with status + token events. */
+export type TurnLifecycleEvent = {
+  turnId: string;
+  ownerId: string;
+  seq: number;
+  phase: TurnLifecyclePhase;
+  /** Phase-specific payload — row ids for `turn-start`, the message for `error`. */
+  data: Record<string, unknown>;
+};
+export type TurnLifecycleObserver = (e: TurnLifecycleEvent) => void;
+
+let turnLifecycleObserver: TurnLifecycleObserver | null = null;
+
+/** Register the global turn-lifecycle observer (the runner installs one to
+ *  publish turn-start/done/error to the live bus). Unset everywhere else, so the
+ *  runtime's `emitTurnLifecycle` calls are free no-ops outside the runner. */
+export function setTurnLifecycleObserver(fn: TurnLifecycleObserver | null): void {
+  turnLifecycleObserver = fn;
+}
+
+/** Emit a turn lifecycle event for `turnId`. Allocates `seq` from the per-turn
+ *  cursor; on a TERMINAL phase (done/error) it also retires that cursor — so the
+ *  terminal event owns end-of-turn cleanup (startTrace defers to it; see there).
+ *  NEVER throws — a publish fault must not break the turn. */
+export function emitTurnLifecycle(
+  turnId: string,
+  ownerId: string,
+  phase: TurnLifecyclePhase,
+  data: Record<string, unknown> = {},
+): void {
+  const obs = turnLifecycleObserver;
+  if (!obs) return;
+  try {
+    obs({ turnId, ownerId, seq: nextTurnSeq(turnId), phase, data });
+  } catch (err) {
+    logErr('turn lifecycle observer', err);
+  } finally {
+    if (phase === 'done' || phase === 'error') turnSeqCounters.delete(turnId);
+  }
+}
+
 /**
  * Attribute LLM usage (tokens + cost) to the *currently running* step and
  * its trace from OUTSIDE the step body — for helpers that run several layers
@@ -375,9 +427,14 @@ export async function startTrace<T>(
       ctx.failedError = err instanceof Error ? err.message : String(err);
       throw err;
     } finally {
-      // The root turn owns the per-turn seq cursor; drop it once the whole turn
-      // (root + all delegated children, which have settled by now) is done.
-      if (isStreamRoot && turnId) turnSeqCounters.delete(turnId);
+      // The root turn owns the per-turn seq cursor. When a lifecycle observer is
+      // installed (the runner), the terminal `done`/`error` event — which fires
+      // AFTER this trace closes, once the outbound row is finalized — retires the
+      // cursor instead, so its seq stays monotonic past the trace boundary. Only
+      // clean up here when nothing downstream will (no runner wired).
+      if (isStreamRoot && turnId && turnLifecycleObserver === null) {
+        turnSeqCounters.delete(turnId);
+      }
       const duration = Date.now() - ctx.startedAtMs;
       db.update(traces)
         .set({

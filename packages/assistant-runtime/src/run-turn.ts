@@ -45,6 +45,7 @@ import {
   resolveAgentTools,
   resolveBackupAdapter,
   runToolLoop,
+  updateAssistantMessageOutcome,
   type UserImage,
 } from '@mantle/agent-runtime';
 import { registerAgentInvoker, type ToolArtifact } from '@mantle/tools';
@@ -69,6 +70,7 @@ import {
   startTrace,
   step,
   runDurableStep,
+  emitTurnLifecycle,
   modelSupportsVision,
   maxImageBytesFor,
   refreshModelCatalog,
@@ -283,6 +285,37 @@ export async function runAssistantTurn(
   // here must never sink the turn. Only mobile/telegram are reminder-capable;
   // noteInboundChannel no-ops for web (a browser can't receive a push).
   void noteInboundChannel(ownerId, channel);
+
+  // Insert the OUTBOUND row 'pending' (empty text) right now — before the LLM
+  // runs — so the turn has a stable durable id from the very start. This is the
+  // durable "thinking…" bubble: a client (or a reload mid-turn) can bind to it,
+  // it survives navigation, and the non-blocking route reconciles to it on
+  // 'done'. Finalized below to 'complete' (text filled) or 'failed' (error set).
+  // History loading filters status='complete', so this empty row never leaks
+  // into a later turn's prompt. Journaled so a crash-resume reuses the same id.
+  const outboundPending = await runDurableStep('record_outbound_pending', () =>
+    recordTurn({
+      ownerId,
+      agentId: agent.id,
+      direction: 'outbound',
+      text: '',
+      channel,
+      model: agent.model,
+      status: 'pending',
+    }),
+  );
+  // turn-start: both durable rows now exist. Carries their ids so the client can
+  // swap its optimistic bubbles for the canonical rows without waiting on the
+  // POST. No-op unless this turn is streamed (streamId set) AND the runner has
+  // installed the lifecycle observer. See docs/live-turn-streaming.md §6.
+  if (options?.streamId) {
+    emitTurnLifecycle(options.streamId, ownerId, 'turn-start', {
+      agentSlug: agent.slug,
+      model: agent.model,
+      inboundId: inbound.id,
+      outboundId: outboundPending.id,
+    });
+  }
 
   const attachedSkills = await resolveAgentSkills(ownerId, agent.skillSlugs ?? []);
   // Current-time / timezone / locale context so the assistant can resolve
@@ -566,23 +599,44 @@ export async function runAssistantTurn(
   // picture. The failed first attempt stays its own 'error' trace; the
   // retry is a separate 'success' trace flagged image_retry_after_error.
   let loopOutcome: Awaited<ReturnType<typeof runLoop>>;
-  if (canSeeImage) {
-    try {
-      loopOutcome = await runLoop(buildMessages(userImage, trimmed), { image_attached: true });
-    } catch (err) {
-      console.warn(
-        '[assistant] responder failed with image attached; retrying text-only:',
-        err instanceof Error ? err.message : err,
-      );
+  try {
+    if (canSeeImage) {
+      try {
+        loopOutcome = await runLoop(buildMessages(userImage, trimmed), { image_attached: true });
+      } catch (err) {
+        console.warn(
+          '[assistant] responder failed with image attached; retrying text-only:',
+          err instanceof Error ? err.message : err,
+        );
+        loopOutcome = await runLoop(buildMessages(undefined, textWithTranscript), {
+          image_attached: false,
+          image_retry_after_error: true,
+        });
+      }
+    } else {
       loopOutcome = await runLoop(buildMessages(undefined, textWithTranscript), {
         image_attached: false,
-        image_retry_after_error: true,
       });
     }
-  } else {
-    loopOutcome = await runLoop(buildMessages(undefined, textWithTranscript), {
-      image_attached: false,
-    });
+  } catch (err) {
+    // The turn could not produce a reply (the model errored and any image retry
+    // also failed). Flip the pending outbound row to 'failed' so the durable
+    // record + a reload + the non-blocking client all reflect it, emit the
+    // terminal error event, then re-throw — the workflow lands in ERROR and the
+    // blocking route's getResult() still rejects (unchanged failure surface).
+    const msg = err instanceof Error ? err.message : String(err);
+    await runDurableStep('fail_outbound', () =>
+      updateAssistantMessageOutcome({
+        ownerId,
+        id: outboundPending.id,
+        status: 'failed',
+        error: msg,
+      }),
+    ).catch((e) => console.error('[assistant] could not mark turn failed:', e));
+    if (options?.streamId) {
+      emitTurnLifecycle(options.streamId, ownerId, 'error', { message: msg });
+    }
+    throw err;
   }
   let rawReply = loopOutcome.reply;
   if (!rawReply.trim()) {
@@ -607,16 +661,22 @@ export async function runAssistantTurn(
   // branch point where voice-mode reply would skip the strip.
   const reply = stripAudioTags(rawReply).text;
 
-  const outbound = await runDurableStep('record_outbound', () =>
-    recordTurn({
+  // Finalize the pending outbound row: fill the composed reply + flip the status
+  // to 'complete'. Journaled, so a crash-resume re-applies it idempotently.
+  const finalized = await runDurableStep('finalize_outbound', () =>
+    updateAssistantMessageOutcome({
       ownerId,
-      agentId: agent.id,
-      direction: 'outbound',
+      id: outboundPending.id,
+      status: 'complete',
       text: reply,
-      channel,
       model: agent.model,
     }),
   );
+  // The row was inserted this same turn, so it should always still be there;
+  // fall back to the pending row with the reply folded in if it somehow vanished
+  // (e.g. a concurrent delete) so the turn still returns a coherent result.
+  const outbound: AssistantMessage =
+    finalized ?? { ...outboundPending, text: reply, model: agent.model, status: 'complete' };
 
   void db
     .update(agents)
@@ -627,6 +687,12 @@ export async function runAssistantTurn(
     })
     .where(eq(agents.id, agent.id))
     .catch(() => {});
+
+  // done: the durable outbound row is final — the client reconciles to it (the
+  // streamed buffer was advisory). No-op unless the turn is streamed.
+  if (options?.streamId) {
+    emitTurnLifecycle(options.streamId, ownerId, 'done', { outboundId: outboundPending.id });
+  }
 
   return { inbound, outbound, reply, artifacts: loopOutcome.artifacts };
 }

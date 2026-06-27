@@ -19,8 +19,10 @@
 import {
   setStepObserver,
   setTurnDeltaObserver,
+  setTurnLifecycleObserver,
   type StepObserverEvent,
   type TurnDeltaEvent,
+  type TurnLifecycleEvent,
 } from '@mantle/tracing';
 import { stageLabelForStep, type StageLabel } from '@mantle/assistant-runtime';
 import { publishTurnEvent, TURN_EVENT_SCHEMA_VERSION } from '@mantle/turn-stream';
@@ -61,6 +63,33 @@ function deltaEvent(e: TurnDeltaEvent): TurnEvent {
   };
 }
 
+/** Map a turn-lifecycle transition → its `turn-start` / `done` / `error` turn
+ *  event. These ride the SAME `seq` cursor as status/token events (terminal
+ *  events come last). `round` is 0 — lifecycle events aren't round-scoped. */
+function lifecycleEvent(e: TurnLifecycleEvent): TurnEvent {
+  const base = { v: TURN_EVENT_SCHEMA_VERSION, turnId: e.turnId, seq: e.seq, round: 0 } as const;
+  if (e.phase === 'turn-start') {
+    return {
+      ...base,
+      type: 'turn-start',
+      data: {
+        agentSlug: typeof e.data.agentSlug === 'string' ? e.data.agentSlug : '',
+        model: typeof e.data.model === 'string' ? e.data.model : null,
+        ...(typeof e.data.inboundId === 'string' ? { inboundId: e.data.inboundId } : {}),
+        ...(typeof e.data.outboundId === 'string' ? { outboundId: e.data.outboundId } : {}),
+      },
+    };
+  }
+  if (e.phase === 'error') {
+    return {
+      ...base,
+      type: 'error',
+      data: { status: 'failed', message: typeof e.data.message === 'string' ? e.data.message : 'turn failed' },
+    };
+  }
+  return { ...base, type: 'done', data: { status: 'complete' } };
+}
+
 export function installTurnStreamObserver(): void {
   // Phase 3: token deltas. Installing this observer is ALSO what flips
   // `isTurnStreaming()` true in the tool-loop, so the turn only streams (uses the
@@ -71,6 +100,14 @@ export function installTurnStreamObserver(): void {
       void publishTurnEvent(e.ownerId, deltaEvent(e));
     });
   }
+
+  // Turn lifecycle (turn-start / done / error). Always installed — these frame
+  // the stream the same way `status` does and are gated client-side by the web
+  // SSE route's MANTLE_TURN_STREAMING flag, not by the token flag. The runtime's
+  // emitTurnLifecycle calls are free no-ops until this observer exists.
+  setTurnLifecycleObserver((e: TurnLifecycleEvent) => {
+    void publishTurnEvent(e.ownerId, lifecycleEvent(e));
+  });
 
   setStepObserver((e: StepObserverEvent) => {
     // Narrate on step entry. (End events drive tool-end/token phases later.)
