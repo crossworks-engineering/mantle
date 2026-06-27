@@ -75,3 +75,14 @@ export function formatTime(input: Input, missing = 'never'): string {
   if (!d) return missing;
   return new Intl.DateTimeFormat(LOCALE, TIME_OPTS).format(d);
 }
+
+/**
+ * `YYYY-MM-DD` in the viewer's LOCAL timezone (defaults to now). Use this to
+ * compare against day-bucketed date strings — `new Date().toISOString().slice(0,10)`
+ * is UTC, so it highlights the wrong day for a viewer whose local date differs
+ * from UTC (e.g. evening in the Americas, or already-tomorrow in APAC).
+ */
+export function localDay(date: Date = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}`;
+}

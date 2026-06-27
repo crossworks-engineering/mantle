@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
+import { localDay } from '@/lib/format-datetime';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -299,7 +300,7 @@ const SEVERITY_STYLE: Record<AuditSeverity, string> = {
 function spanMeta(check: AuditCheck): { text: string; recent: boolean } | null {
   if (check.ok || !check.oldestAt || !check.newestAt) return null;
   const text = check.oldestAt === check.newestAt ? check.oldestAt : `${check.oldestAt} → ${check.newestAt}`;
-  const cutoff = new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10);
+  const cutoff = localDay(new Date(Date.now() - 2 * 86_400_000)); // local date, not UTC
   return { text, recent: check.newestAt >= cutoff };
 }
 

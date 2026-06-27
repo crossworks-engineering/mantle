@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api-fetch';
-import { formatDateTime } from '@/lib/format-datetime';
+import { formatDateTime, localDay } from '@/lib/format-datetime';
 import { formatDuration, formatMicroUsd } from '@/lib/traces-format';
 import { Spinner } from '@/components/ui/spinner';
 import type { ContentIndexCoverage, DuplicateEdgeStats } from '@/lib/debug';
@@ -306,7 +306,7 @@ export function OverviewClient() {
           <div className="flex h-32 items-end gap-1">
             {daily14d.map((d) => {
               const heightPct = maxDaily > 0 ? (d.costMicroUsd / maxDaily) * 100 : 0;
-              const today = d.day === new Date().toISOString().slice(0, 10);
+              const today = d.day === localDay(); // local date, not UTC (wrong bar near local midnight)
               return (
                 <div
                   key={d.day}
