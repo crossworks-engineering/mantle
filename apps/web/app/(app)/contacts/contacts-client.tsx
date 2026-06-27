@@ -8,8 +8,11 @@
  */
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Mail, Phone, Plus, Search, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -27,6 +30,7 @@ import { useToast } from '@/components/ui/toast';
 import { TagInput } from '@/components/tag-input';
 import { ListPager } from '@/components/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
+import { apiFetch } from '@/lib/api-fetch';
 // IMPORTANT: import from the *leaf* `contacts-format` subpath, NOT the
 // `@/lib/contacts` re-export — that one barrels through `@mantle/content` →
 // `@mantle/db` → `postgres` (Node-only `fs`), which Next can't ship to the
@@ -41,27 +45,77 @@ import {
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
 
-export function ContactsClient({
-  contacts,
-  total,
-  page,
-  pageSize,
-  query,
-  selected,
-}: {
+type ContactsListResponse = {
   contacts: ContactRow[];
   total: number;
   page: number;
   pageSize: number;
-  query: string;
-  selected: ContactRow | null;
-}) {
+};
+
+export function ContactsClient() {
+  const searchParams = useSearchParams();
   const { go, pending } = useListNav();
+
+  // URL is the source of truth (matches the old SSR page).
+  const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10) || 1);
+  const query = searchParams.get('q')?.trim() ?? '';
+  const requestedId = searchParams.get('id')?.trim() || null;
+
+  const listQuery = useQuery({
+    queryKey: ['contacts', { q: query, page }],
+    queryFn: () => {
+      const qs = new URLSearchParams();
+      if (query) qs.set('q', query);
+      if (page > 1) qs.set('page', String(page));
+      const s = qs.toString();
+      return apiFetch<ContactsListResponse>(`/api/contacts${s ? `?${s}` : ''}`);
+    },
+    placeholderData: (prev) => prev,
+  });
+
+  const contacts = listQuery.data?.contacts ?? [];
+  const total = listQuery.data?.total ?? 0;
+  const pageSize = listQuery.data?.pageSize ?? 50;
+
+  // Selection defaults to the first row (master-detail convention); ?id wins. A
+  // deep-linked id outside the current slice is fetched directly.
+  const selectedId = requestedId ?? contacts[0]?.id ?? null;
+  const selectedContactQuery = useQuery({
+    queryKey: ['contacts', selectedId],
+    queryFn: () =>
+      apiFetch<{ contact: ContactRow }>(`/api/contacts/${selectedId}`).then((r) => r.contact),
+    enabled: !!selectedId && !contacts.some((c) => c.id === selectedId),
+  });
+  const selected =
+    (selectedId ? contacts.find((c) => c.id === selectedId) : null) ??
+    (selectedContactQuery.data?.id === selectedId ? selectedContactQuery.data : null) ??
+    null;
+
   const [q, setQ] = useState(query);
 
-  // The form state mirrors `selected` and resets whenever the selection
-  // changes (server-side nav → new props). Local edits stay client-only until
-  // Save runs.
+  if (listQuery.isPending) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+  if (listQuery.isError && !listQuery.data) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm">
+        <p className="text-muted-foreground">
+          {listQuery.error instanceof Error ? listQuery.error.message : 'Failed to load contacts.'}
+        </p>
+        <Button variant="outline" size="sm" onClick={() => listQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  // The form state (ContactForm) mirrors `selected` and resets when the
+  // selection changes (it's keyed on selected.id). Local edits stay client-only
+  // until Save runs.
   return (
     <div className="grid h-full grid-cols-1 md:grid-cols-[340px_1fr] md:gap-0">
       {/* ─── LIST ─────────────────────────────────────────────────────── */}
@@ -152,6 +206,7 @@ export function ContactsClient({
 
 function NewContactButton() {
   const toast = useToast();
+  const queryClient = useQueryClient();
   const { go } = useListNav();
   const [pending, start] = useTransition();
   const onClick = () => {
@@ -169,6 +224,7 @@ function NewContactButton() {
         toast.error(body.error ?? 'Could not create contact');
         return;
       }
+      await queryClient.invalidateQueries({ queryKey: ['contacts'] });
       go({ id: body.contact.id, page: null });
     });
   };
@@ -181,6 +237,7 @@ function NewContactButton() {
 
 function ContactForm({ contact }: { contact: ContactRow }) {
   const toast = useToast();
+  const queryClient = useQueryClient();
   const { go } = useListNav();
   const [firstName, setFirstName] = useState(contact.firstName);
   const [lastName, setLastName] = useState(contact.lastName);
@@ -240,8 +297,9 @@ function ContactForm({ contact }: { contact: ContactRow }) {
         return;
       }
       toast.success('Saved');
-      // Refresh the SSR list (so the row's display name updates if it changed).
-      go({});
+      // Refetch the list so the row's display name updates if it changed (and
+      // the selected-detail row, which is read from the list).
+      void queryClient.invalidateQueries({ queryKey: ['contacts'] });
     });
   };
 
@@ -255,7 +313,9 @@ function ContactForm({ contact }: { contact: ContactRow }) {
       }
       toast.success('Deleted');
       setConfirmDelete(false);
-      // Drop the id so the server page auto-selects the next one (or empty).
+      // Refetch so the deleted row is gone, then drop the id so selection
+      // falls back to the first contact (or empty).
+      await queryClient.invalidateQueries({ queryKey: ['contacts'] });
       go({ id: null });
     });
   };
