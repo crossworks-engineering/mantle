@@ -85,6 +85,12 @@ type Message = {
   artifacts?: Artifact[];
   /** Optimistic flag while we wait for the server reply. */
   pending?: boolean;
+  /** Durable execution state (migration 0105). Outbound rows are 'pending' while
+   *  the runner works, 'complete' when the reply lands, 'failed' on error — so a
+   *  reload mid-turn renders the right state. Undefined on optimistic rows. */
+  status?: 'pending' | 'complete' | 'failed';
+  /** Failure reason for a 'failed' turn; null/undefined otherwise. */
+  error?: string | null;
   /** The grounded status steps streamed during this turn, frozen onto the reply
    *  as a persistent "thought" record. Outbound only; session-scoped (the
    *  durable record is the trace). */
@@ -143,15 +149,32 @@ export function AssistantClient({
   // turn's id) pushes status the instant each step starts; the poll is the
   // fallback while streaming is off or before the socket connects. Stream wins.
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
-  const { label: streamLabel, trail: streamTrail, reply: streamReply } = useTurnStream(activeTurnId);
+  const {
+    label: streamLabel,
+    trail: streamTrail,
+    reply: streamReply,
+    phase: streamPhase,
+    outboundId: streamOutboundId,
+    error: streamError,
+  } = useTurnStream(activeTurnId);
   const polledLabel = useTurnStage(sending);
   const stageLabel = streamLabel ?? polledLabel;
-  // Mirror the live trail into a ref so `send` can freeze it onto the reply at
-  // completion (state would be stale in that closure).
+  // Mirror the live trail + the durable outbound id into refs so the completion
+  // reconciler (which runs async, off the stream's `done`) reads fresh values
+  // rather than stale closure captures.
   const trailRef = useRef<ThoughtEvent[]>([]);
   useEffect(() => {
     trailRef.current = streamTrail;
   }, [streamTrail]);
+  const outboundIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    outboundIdRef.current = streamOutboundId;
+  }, [streamOutboundId]);
+  // The in-flight non-blocking turn awaiting reconciliation (set by `submit`
+  // when the route returns 202; consumed by the phase effect on done/error).
+  // `startedAt` lets the safety poll find the turn's outbound row even if the
+  // `turn-start` event (which carries the id) was missed.
+  const pendingTurnRef = useRef<{ optimisticId: string; turnId: string; startedAt: string } | null>(null);
   const [error, setError] = useState<string>();
   // ── Voice-in state ──
   const [recording, setRecording] = useState(false);
@@ -281,15 +304,140 @@ export function AssistantClient({
       );
       const latest = data.messages ?? [];
       setMessages((prev) => {
-        const have = new Set(prev.map((m) => m.id));
-        const additions = latest.filter((m) => !have.has(m.id));
-        if (additions.length === 0) return prev;
-        return [...prev, ...additions].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        // Merge by id: ADD rows we don't have, and UPDATE ones whose durable
+        // fields changed (a 'pending' row finalizing to 'complete'/'failed' —
+        // its text/status/error flip server-side). Client-only fields (live
+        // `artifacts`, frozen `thoughts`, the optimistic local preview) are
+        // preserved. Returns `prev` unchanged when nothing moved (safe no-op).
+        const byId = new Map(prev.map((m) => [m.id, m]));
+        let changed = false;
+        for (const row of latest) {
+          const existing = byId.get(row.id);
+          if (!existing) {
+            byId.set(row.id, row);
+            changed = true;
+          } else if (
+            existing.text !== row.text ||
+            existing.status !== row.status ||
+            existing.error !== row.error ||
+            existing.model !== row.model
+          ) {
+            byId.set(row.id, {
+              ...existing,
+              text: row.text,
+              status: row.status,
+              error: row.error,
+              model: row.model,
+              channel: row.channel ?? existing.channel,
+              attachments: row.attachments ?? existing.attachments,
+            });
+            changed = true;
+          }
+        }
+        if (!changed) return prev;
+        return [...byId.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       });
     } catch {
       /* network blip — the next turn or a reload will reconcile */
     }
   }, [agentSlug]);
+
+  // ── Non-blocking turn completion ──
+  // The streaming route returns 202 immediately; the live stream then drives the
+  // reply, and these reconcile the transcript to the DURABLE row when the turn
+  // ends (the streamed buffer was advisory). `done` → pull the canonical rows
+  // and freeze the thought trail onto the reply; `error` → surface it. A short
+  // safety poll backs them up in case the terminal event is missed (NOTIFY has
+  // no backlog, so a reconnect mid-turn could drop it).
+  const endActiveTurn = useCallback(() => {
+    setSending(false);
+    setActiveTurnId(null);
+    pendingTurnRef.current = null;
+  }, []);
+
+  const reconcileDone = useCallback(
+    async (optimisticId: string) => {
+      const trail = trailRef.current;
+      const outboundId = outboundIdRef.current;
+      await syncLatest(); // pulls the canonical inbound + (now 'complete') outbound
+      setMessages((prev) => {
+        // Drop the optimistic user bubble (the canonical inbound is now present),
+        // and freeze the live thought trail onto the durable outbound row.
+        let next = prev.filter((m) => m.id !== optimisticId);
+        if (outboundId && trail.length) {
+          next = next.map((m) =>
+            m.id === outboundId && !m.thoughts ? { ...m, thoughts: [...trail] } : m,
+          );
+        }
+        return next;
+      });
+      endActiveTurn();
+    },
+    [syncLatest, endActiveTurn],
+  );
+
+  const failActiveTurn = useCallback(
+    (optimisticId: string, message: string) => {
+      setError(message);
+      setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+      endActiveTurn();
+    },
+    [endActiveTurn],
+  );
+
+  // React to the live terminal events for the in-flight non-blocking turn.
+  useEffect(() => {
+    const pending = pendingTurnRef.current;
+    if (!pending) return;
+    if (streamPhase === 'done') {
+      void reconcileDone(pending.optimisticId);
+    } else if (streamPhase === 'error') {
+      failActiveTurn(pending.optimisticId, streamError ?? 'The turn failed.');
+    }
+  }, [streamPhase, streamError, reconcileDone, failActiveTurn]);
+
+  // Safety net: if no terminal event arrives (a dropped reconnect), poll the
+  // durable rows. Once the in-flight turn's outbound row reports a terminal
+  // status, reconcile the same way the stream would have. Only runs while a
+  // non-blocking turn is in flight; stops the moment it settles.
+  useEffect(() => {
+    if (!sending || !pendingTurnRef.current) return;
+    let stopped = false;
+    const tick = async () => {
+      const pending = pendingTurnRef.current;
+      if (stopped || !pending) return;
+      try {
+        const qs = new URLSearchParams({ limit: String(PAGE_SIZE) });
+        if (agentSlug) qs.set('agent', agentSlug);
+        const data = await apiFetch<{ messages: Message[] }>(
+          `/api/assistant/messages?${qs.toString()}`,
+          { cache: 'no-store' },
+        );
+        const outboundId = outboundIdRef.current;
+        const rows = data.messages ?? [];
+        // Prefer the exact row id (from turn-start); fall back to the newest
+        // outbound row created at/after this turn started, so a missed
+        // turn-start can't leave the turn hung.
+        const row = outboundId
+          ? rows.find((m) => m.id === outboundId && m.direction === 'outbound')
+          : rows
+              .filter((m) => m.direction === 'outbound' && m.createdAt >= pending.startedAt)
+              .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+              .pop();
+        if (stopped || !pendingTurnRef.current) return;
+        if (row?.status === 'complete') void reconcileDone(pending.optimisticId);
+        else if (row?.status === 'failed') failActiveTurn(pending.optimisticId, row.error ?? 'The turn failed.');
+      } catch {
+        /* transient — try again next tick */
+      }
+    };
+    // First poll after a grace period (the stream usually wins), then every 3s.
+    const t = setInterval(tick, 3000);
+    return () => {
+      stopped = true;
+      clearInterval(t);
+    };
+  }, [sending, agentSlug, reconcileDone, failActiveTurn]);
 
   // A turn for THIS agent is running that this page didn't start (you navigated
   // back mid-flight, or it's a dock reply). Drives a "working" indicator, and
@@ -453,6 +601,13 @@ export function AssistantClient({
         body = JSON.stringify({ text, agentSlug, ...(location ? { location } : {}) });
         isJson = true;
       }
+      type BlockingTurn = {
+        inbound: { id: string; text: string; createdAt: string; artifacts?: Artifact[] };
+        outbound: { id: string; text: string; model: string | null; createdAt: string };
+        artifacts?: Artifact[];
+        warnings?: string[];
+      };
+      type NonBlockingTurn = { turnId: string; warnings?: string[] };
       const data = (await runTurn({
         agentSlug,
         agentName: agentName ?? 'Assistant',
@@ -460,57 +615,64 @@ export function AssistantClient({
         displayText: optimistic.text,
         body,
         isJson,
-      })) as {
-        inbound: { id: string; text: string; createdAt: string; artifacts?: Artifact[] };
-        outbound: { id: string; text: string; model: string | null; createdAt: string };
-        artifacts?: Artifact[];
-        warnings?: string[];
-      };
-      setMessages((prev) => [
-        ...prev.filter((m) => m.id !== optimisticId),
-        {
-          id: data.inbound.id,
-          direction: 'inbound',
-          text: data.inbound.text,
-          createdAt: data.inbound.createdAt,
-          // Keep the optimistic artifacts (local object-URL preview) — the
-          // server no longer echoes the image base64 back, so the browser
-          // renders from the bytes it already has. Falls back to the server
-          // metadata if there was no local preview.
-          artifacts: optimistic.artifacts ?? data.inbound.artifacts ?? [],
-        },
-        {
-          id: data.outbound.id,
-          direction: 'outbound',
-          text: data.outbound.text,
-          model: data.outbound.model,
-          createdAt: data.outbound.createdAt,
-          artifacts: data.artifacts ?? [],
-          // Freeze the live status trail onto the reply as a persistent record.
-          ...(trailRef.current.length ? { thoughts: [...trailRef.current] } : {}),
-        },
-      ]);
-      if (data.warnings?.length) {
-        // Soft-fail warnings (e.g. vision worker missing) get
-        // surfaced as a non-blocking notice rather than a red error.
-        setError(data.warnings.join(' · '));
-      }
-      // Reset the input WITHOUT revoking the object URL — it now backs the
-      // sent message's preview (revoking would blank it). It's released when
-      // the page reloads; image sends are infrequent enough that the
-      // retained URL is negligible.
+      })) as BlockingTurn | NonBlockingTurn;
+
+      // The send was accepted — clear the composer attachment either way. Reset
+      // WITHOUT revoking the object URL: it now backs the sent bubble's preview
+      // (revoking would blank it); it's released on the next page load.
       setAttachedFile(null);
       setAttachedPreviewUrl(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
+
+      if ('outbound' in data) {
+        // BLOCKING result (streaming off): the full reply is already here — swap
+        // the optimistic rows for the durable ones now and end the turn.
+        setMessages((prev) => [
+          ...prev.filter((m) => m.id !== optimisticId),
+          {
+            id: data.inbound.id,
+            direction: 'inbound',
+            text: data.inbound.text,
+            createdAt: data.inbound.createdAt,
+            // Keep the optimistic artifacts (local object-URL preview) — the
+            // server no longer echoes the image base64 back, so the browser
+            // renders from the bytes it already has.
+            artifacts: optimistic.artifacts ?? data.inbound.artifacts ?? [],
+          },
+          {
+            id: data.outbound.id,
+            direction: 'outbound',
+            text: data.outbound.text,
+            model: data.outbound.model,
+            createdAt: data.outbound.createdAt,
+            status: 'complete',
+            artifacts: data.artifacts ?? [],
+            // Freeze the live status trail onto the reply as a persistent record.
+            ...(trailRef.current.length ? { thoughts: [...trailRef.current] } : {}),
+          },
+        ]);
+        if (data.warnings?.length) setError(data.warnings.join(' · '));
+        setSending(false);
+        setActiveTurnId(null);
+      } else {
+        // NON-BLOCKING (202): the live stream now types the reply out; the phase
+        // effect (and the safety poll) reconcile to the durable row on
+        // done/error. Hand them the turn — keep the optimistic bubble + spinner.
+        pendingTurnRef.current = {
+          optimisticId,
+          turnId: idempotencyKey,
+          startedAt: optimistic.createdAt,
+        };
+        if (data.warnings?.length) setError(data.warnings.join(' · '));
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
       // Drop the optimistic row on error so the user can retry without dupes.
       setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
-    } finally {
       setSending(false);
-      // Close the status stream; the durable reply is already in `messages`.
       setActiveTurnId(null);
+      pendingTurnRef.current = null;
     }
   };
 
@@ -656,6 +818,28 @@ export function AssistantClient({
                     {/* MAIN CANVAS: Saskia's reply as a rich document. */}
                     <div className="min-w-0 lg:col-start-1 lg:row-start-1">
                       {turn.response ? (
+                        turn.response.status === 'failed' ? (
+                          // Durable failed turn (reloaded after an error).
+                          <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                            <span>{turn.response.error || 'This turn failed.'}</span>
+                          </div>
+                        ) : turn.response.status === 'pending' ? (
+                          // Durable pending turn (reloaded mid-flight) — the runner
+                          // is still working; show a thinking bubble.
+                          <div
+                            className="inline-flex items-center gap-2 rounded-2xl px-3.5 py-3"
+                            style={{ backgroundColor: accent.soft }}
+                          >
+                            <span className="flex items-center gap-1" aria-hidden>
+                              <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.3s]" />
+                              <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.15s]" />
+                              <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60" />
+                            </span>
+                            <span className="text-xs text-current opacity-70">
+                              {agentName ?? 'Assistant'} is working…
+                            </span>
+                          </div>
+                        ) : (
                         <article>
                           <div className="mb-2 flex items-center gap-2">
                             <span className="text-sm font-medium text-muted-foreground">
@@ -692,6 +876,7 @@ export function AssistantClient({
                             </div>
                           </div>
                         </article>
+                        )
                       ) : showTyping ? (
                         // Once status events arrive, the typing dots give way to
                         // the live thought trail building in place, and — when

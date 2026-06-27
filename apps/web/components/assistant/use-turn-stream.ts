@@ -15,6 +15,9 @@ export interface ThoughtEvent {
   label: string;
 }
 
+/** Lifecycle of the subscribed turn, driven by the terminal bus events. */
+export type TurnPhase = 'idle' | 'streaming' | 'done' | 'error';
+
 export interface TurnStream {
   /** Latest status label — for the live typing line. Null before any event. */
   label: string | null;
@@ -26,6 +29,17 @@ export interface TurnStream {
    *  final answer typing out). Empty until the model emits text. Advisory: the
    *  durable reply reconciles it on completion. */
   reply: string;
+  /** Where this turn is in its lifecycle. 'streaming' once subscribed; flips to
+   *  'done'/'error' when the terminal bus event lands. The caller reconciles to
+   *  the durable row on 'done' and surfaces `error` on 'error'. */
+  phase: TurnPhase;
+  /** Durable `assistant_messages` id of the outbound (reply) row, from the
+   *  `turn-start` event — the reconciliation handle for the finished turn. */
+  outboundId: string | null;
+  /** Durable id of the inbound (user) row, from `turn-start`. */
+  inboundId: string | null;
+  /** Failure reason once `phase === 'error'`; null otherwise. */
+  error: string | null;
 }
 
 /**
@@ -41,6 +55,10 @@ export interface TurnStream {
 export function useTurnStream(turnId: string | null): TurnStream {
   const [trail, setTrail] = useState<ThoughtEvent[]>([]);
   const [reply, setReply] = useState('');
+  const [phase, setPhase] = useState<TurnPhase>('idle');
+  const [outboundId, setOutboundId] = useState<string | null>(null);
+  const [inboundId, setInboundId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   // Ref accumulator for the reply so appends are deterministic (the setState
   // updater stays a pure set-to-same-string, safe under StrictMode double-invoke).
   const replyRef = useRef('');
@@ -50,12 +68,18 @@ export function useTurnStream(turnId: string | null): TurnStream {
     if (!turnId || !isTurnStreamingEnabledClient()) {
       setTrail([]);
       setReply('');
+      setPhase('idle');
+      setOutboundId(null);
+      setInboundId(null);
+      setError(null);
       replyRef.current = '';
       replyRoundRef.current = -1;
       return;
     }
     replyRef.current = '';
     replyRoundRef.current = -1;
+    setPhase('streaming');
+    setError(null);
     let stopped = false;
     const stop = apiEventStream(
       `/api/assistant/turn/${turnId}/stream`,
@@ -74,6 +98,21 @@ export function useTurnStream(turnId: string | null): TurnStream {
               replyRef.current += ev.data.text;
             }
             setReply(replyRef.current);
+            return;
+          }
+          if (ev && ev.type === 'turn-start') {
+            // The durable rows now exist — capture their ids for reconciliation.
+            if (typeof ev.data?.outboundId === 'string') setOutboundId(ev.data.outboundId);
+            if (typeof ev.data?.inboundId === 'string') setInboundId(ev.data.inboundId);
+            return;
+          }
+          if (ev && ev.type === 'done') {
+            setPhase('done');
+            return;
+          }
+          if (ev && ev.type === 'error') {
+            setError(typeof ev.data?.message === 'string' ? ev.data.message : 'The turn failed.');
+            setPhase('error');
             return;
           }
           if (ev && ev.type === 'status' && typeof ev.data?.label === 'string') {
@@ -109,10 +148,22 @@ export function useTurnStream(turnId: string | null): TurnStream {
       stop();
       setTrail([]);
       setReply('');
+      setPhase('idle');
+      setOutboundId(null);
+      setInboundId(null);
+      setError(null);
       replyRef.current = '';
       replyRoundRef.current = -1;
     };
   }, [turnId]);
 
-  return { label: trail.length ? trail[trail.length - 1]!.label : null, trail, reply };
+  return {
+    label: trail.length ? trail[trail.length - 1]!.label : null,
+    trail,
+    reply,
+    phase,
+    outboundId,
+    inboundId,
+    error,
+  };
 }
