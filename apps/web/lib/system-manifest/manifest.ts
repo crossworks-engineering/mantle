@@ -828,6 +828,12 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
   // `web_search` uses the cheap/fast tier; `web_search_pro` the stronger one.
   { kind: 'search', name: 'Web search', required: false, provider: 'openrouter', model: 'perplexity/sonar' },
   { kind: 'search_advanced', name: 'Deep web search', required: false, provider: 'openrouter', model: 'perplexity/sonar-pro' },
+  // Narrator — restyles the live turn "thought trail" status into the assistant's
+  // voice. Optional (the feature is flag-gated and the runtime falls back to the
+  // summarizer when absent), and the same cheap/fast workhorse model. The
+  // verbosity (phrase → sentence → paragraph) is tuned via the worker's system
+  // prompt + max_tokens in Settings → AI workers, not here.
+  { kind: 'narrator', name: 'Narrator', required: false, provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
 ];
 
 // ── Derived selectors (single computation; kills the duplication) ────────────

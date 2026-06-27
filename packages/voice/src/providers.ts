@@ -239,4 +239,7 @@ export const CAPABILITY_FOR_KIND: Record<string, ProviderCapability> = {
   // OpenRouter, so it shares the 'chat' capability (provider eligibility).
   search: 'chat',
   search_advanced: 'chat',
+  // The narrator runs a plain chat-completion to restyle a status line — same
+  // 'chat' capability/provider eligibility as the other one-shot LLM workers.
+  narrator: 'chat',
 };

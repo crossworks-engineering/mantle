@@ -80,6 +80,14 @@ export function paramsFromForm(kind: AiWorkerKind, fd: FormData): Record<string,
         summarize_batch: num(fd.get('summarize_batch')),
         huggingface_routing: str(fd.get('huggingface_routing')),
       };
+    case 'narrator':
+      // Plain chat knobs. The verbosity dial is the systemPrompt (handled by
+      // buildWorkerBody) + max_tokens — no narrator-specific params.
+      return {
+        temperature: num(fd.get('temperature')),
+        max_tokens: num(fd.get('max_tokens')),
+        huggingface_routing: str(fd.get('huggingface_routing')),
+      };
     default:
       return {};
   }

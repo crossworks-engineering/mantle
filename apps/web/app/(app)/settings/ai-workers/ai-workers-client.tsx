@@ -43,6 +43,11 @@ const KIND_META: Record<AiWorkerKind, { label: string; description: string }> = 
     label: 'Summarizer',
     description: 'Rolls Telegram conversations into topic-based digests (Tier-2 memory).',
   },
+  narrator: {
+    label: 'Narrator',
+    description:
+      'Restyles the live turn “thought trail” into the assistant’s voice. Its system prompt is the verbosity dial — tune it for a terse phrase, a sentence, or a short paragraph. Falls back to the Summarizer when unset.',
+  },
   tts: {
     label: 'Voice (TTS)',
     description:
@@ -92,6 +97,7 @@ const KIND_ORDER: AiWorkerKind[] = [
   'extractor',
   'summarizer',
   'reflector',
+  'narrator',
   // 'embedding' is retired as a worker kind — the embedder lives at
   // /settings/embedding (one config row, migration 0061). Hidden here.
   'image_gen',

@@ -119,7 +119,8 @@ export type AiWorkerKind =
   | 'image_gen'
   | 'embedding'
   | 'search'
-  | 'search_advanced';
+  | 'search_advanced'
+  | 'narrator';
 
 /** An AI worker as returned by `GET /api/ai-workers`. `params` is jsonb (shape
  *  varies by kind) — kept loose here; the form narrows per kind. */
