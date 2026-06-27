@@ -5,26 +5,38 @@ import { apiEventStream } from '@/lib/api-fetch';
 import { isTurnStreamingEnabledClient } from '@/lib/turn-streaming';
 import type { TurnEvent } from '@mantle/client-types';
 
+/** One grounded step in a turn's thought trail (a `status` event, kept). */
+export interface ThoughtEvent {
+  /** Coarse bucket for the icon/theme (thinking | web | brain | delegate | tool). */
+  kind: string;
+  /** The user-facing line ("Searching your brain for “Pinnacle”…"). */
+  label: string;
+}
+
+export interface TurnStream {
+  /** Latest status label — for the live typing line. Null before any event. */
+  label: string | null;
+  /** Ordered, consecutive-deduped trail of status steps seen this turn. Becomes
+   *  the persistent "thought" record attached to the reply. */
+  trail: ThoughtEvent[];
+}
+
 /**
- * Subscribe to the live status of one in-flight turn and return the latest
- * status label ("Searching your brain for …"), or null.
+ * Subscribe to one in-flight turn's live status and accumulate it into a trail.
  *
  * The client mints the turn's id (the submit's uuid) and passes it here while
- * the turn is in flight; the SSE stream pushes `status` events the moment each
- * step starts — instant, vs the ~900ms poll. No-op (returns null) when streaming
- * is disabled or `turnId` is null, so the caller's poll fallback (`useTurnStage`)
- * stays in charge while the feature is dark.
- *
- * Best-effort: a dropped connection auto-reconnects (apiEventStream), and any
- * gap is covered by the durable reply on the POST's return. We read only
- * `status` here; richer event types arrive in later phases.
+ * the turn runs; the SSE stream pushes `status` events the instant each step
+ * starts. We keep the whole ordered sequence (not just the latest) so the caller
+ * can both show the live line AND freeze the trail onto the finished reply as a
+ * record. No-op (empty) when streaming is disabled or `turnId` is null, leaving
+ * the poll fallback in charge.
  */
-export function useTurnStreamStatus(turnId: string | null): string | null {
-  const [label, setLabel] = useState<string | null>(null);
+export function useTurnStream(turnId: string | null): TurnStream {
+  const [trail, setTrail] = useState<ThoughtEvent[]>([]);
 
   useEffect(() => {
     if (!turnId || !isTurnStreamingEnabledClient()) {
-      setLabel(null);
+      setTrail([]);
       return;
     }
     let stopped = false;
@@ -35,10 +47,16 @@ export function useTurnStreamStatus(turnId: string | null): string | null {
         try {
           const ev = JSON.parse(data) as TurnEvent;
           if (ev && ev.type === 'status' && typeof ev.data?.label === 'string') {
-            setLabel(ev.data.label);
+            const next: ThoughtEvent = { kind: ev.data.kind ?? 'tool', label: ev.data.label };
+            setTrail((prev) => {
+              // Collapse consecutive duplicates (e.g. Thinking… → Thinking…).
+              const last = prev[prev.length - 1];
+              if (last && last.label === next.label) return prev;
+              return [...prev, next];
+            });
           }
         } catch {
-          /* malformed frame — ignore, keep the last label */
+          /* malformed frame — ignore, keep the trail */
         }
       },
       { onError: () => {} },
@@ -47,9 +65,9 @@ export function useTurnStreamStatus(turnId: string | null): string | null {
     return () => {
       stopped = true;
       stop();
-      setLabel(null);
+      setTrail([]);
     };
   }, [turnId]);
 
-  return label;
+  return { label: trail.length ? trail[trail.length - 1]!.label : null, trail };
 }

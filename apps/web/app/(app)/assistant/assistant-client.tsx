@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useAssistantDock } from '@/components/assistant/assistant-dock';
 import { useTurnStage } from '@/components/assistant/use-turn-stage';
-import { useTurnStreamStatus } from '@/components/assistant/use-turn-stream';
+import { useTurnStream, type ThoughtEvent } from '@/components/assistant/use-turn-stream';
+import { ThoughtTrail } from '@/components/assistant/thought-trail';
 import {
   CornerDownLeft,
   FileText,
@@ -78,6 +79,10 @@ type Message = {
   artifacts?: Artifact[];
   /** Optimistic flag while we wait for the server reply. */
   pending?: boolean;
+  /** The grounded status steps streamed during this turn, frozen onto the reply
+   *  as a persistent "thought" record. Outbound only; session-scoped (the
+   *  durable record is the trace). */
+  thoughts?: ThoughtEvent[];
 };
 
 /** A conversational turn: the user's prompt and Saskia's response. The
@@ -132,9 +137,15 @@ export function AssistantClient({
   // turn's id) pushes status the instant each step starts; the poll is the
   // fallback while streaming is off or before the socket connects. Stream wins.
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
-  const streamLabel = useTurnStreamStatus(activeTurnId);
+  const { label: streamLabel, trail: streamTrail } = useTurnStream(activeTurnId);
   const polledLabel = useTurnStage(sending);
   const stageLabel = streamLabel ?? polledLabel;
+  // Mirror the live trail into a ref so `send` can freeze it onto the reply at
+  // completion (state would be stale in that closure).
+  const trailRef = useRef<ThoughtEvent[]>([]);
+  useEffect(() => {
+    trailRef.current = streamTrail;
+  }, [streamTrail]);
   const [error, setError] = useState<string>();
   // ── Voice-in state ──
   const [recording, setRecording] = useState(false);
@@ -430,6 +441,8 @@ export function AssistantClient({
           model: data.outbound.model,
           createdAt: data.outbound.createdAt,
           artifacts: data.artifacts ?? [],
+          // Freeze the live status trail onto the reply as a persistent record.
+          ...(trailRef.current.length ? { thoughts: [...trailRef.current] } : {}),
         },
       ]);
       if (data.warnings?.length) {
@@ -604,6 +617,9 @@ export function AssistantClient({
                             </span>
                             <ChannelBadge channel={turn.response.channel} />
                           </div>
+                          {turn.response.thoughts && turn.response.thoughts.length > 0 && (
+                            <ThoughtTrail steps={turn.response.thoughts} className="mb-3 max-w-xl" />
+                          )}
                           <div>
                             <RichText markdown={turn.response.text} />
                             {turn.response.attachments && turn.response.attachments.length > 0 && (
@@ -631,24 +647,36 @@ export function AssistantClient({
                           </div>
                         </article>
                       ) : showTyping ? (
-                        <div
-                          className="inline-flex items-center gap-2 rounded-2xl px-3.5 py-3"
-                          style={{ backgroundColor: accent.soft }}
-                        >
-                          <span className="sr-only">
-                            {agentName ?? 'Assistant'} is {stageLabel ?? 'typing'}
-                          </span>
-                          <span className="flex items-center gap-1" aria-hidden>
-                            <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.3s]" />
-                            <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.15s]" />
-                            <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60" />
-                          </span>
-                          {stageLabel && (
-                            <span className="text-xs text-current opacity-70" aria-hidden>
-                              {stageLabel}
+                        // Once status events arrive, the typing dots give way to
+                        // the live thought trail building in place; before that
+                        // (or on the poll fallback) keep the classic dots.
+                        streamTrail.length > 0 ? (
+                          <div className="max-w-xl">
+                            <span className="sr-only">
+                              {agentName ?? 'Assistant'} is {stageLabel ?? 'typing'}
                             </span>
-                          )}
-                        </div>
+                            <ThoughtTrail steps={streamTrail} live />
+                          </div>
+                        ) : (
+                          <div
+                            className="inline-flex items-center gap-2 rounded-2xl px-3.5 py-3"
+                            style={{ backgroundColor: accent.soft }}
+                          >
+                            <span className="sr-only">
+                              {agentName ?? 'Assistant'} is {stageLabel ?? 'typing'}
+                            </span>
+                            <span className="flex items-center gap-1" aria-hidden>
+                              <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.3s]" />
+                              <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.15s]" />
+                              <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60" />
+                            </span>
+                            {stageLabel && (
+                              <span className="text-xs text-current opacity-70" aria-hidden>
+                                {stageLabel}
+                              </span>
+                            )}
+                          </div>
+                        )
                       ) : null}
                     </div>
                   </li>
