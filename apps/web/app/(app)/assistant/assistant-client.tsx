@@ -137,7 +137,7 @@ export function AssistantClient({
   // turn's id) pushes status the instant each step starts; the poll is the
   // fallback while streaming is off or before the socket connects. Stream wins.
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
-  const { label: streamLabel, trail: streamTrail } = useTurnStream(activeTurnId);
+  const { label: streamLabel, trail: streamTrail, reply: streamReply } = useTurnStream(activeTurnId);
   const polledLabel = useTurnStage(sending);
   const stageLabel = streamLabel ?? polledLabel;
   // Mirror the live trail into a ref so `send` can freeze it onto the reply at
@@ -648,14 +648,23 @@ export function AssistantClient({
                         </article>
                       ) : showTyping ? (
                         // Once status events arrive, the typing dots give way to
-                        // the live thought trail building in place; before that
-                        // (or on the poll fallback) keep the classic dots.
-                        streamTrail.length > 0 ? (
+                        // the live thought trail building in place, and — when
+                        // token streaming is on — the reply itself typing out
+                        // below it. Before any of that (or on the poll fallback)
+                        // keep the classic dots. The streamed reply is advisory:
+                        // when the durable turn.response lands above, this whole
+                        // branch is replaced by the authoritative <article>.
+                        streamTrail.length > 0 || streamReply ? (
                           <div className="max-w-xl">
                             <span className="sr-only">
                               {agentName ?? 'Assistant'} is {stageLabel ?? 'typing'}
                             </span>
-                            <ThoughtTrail steps={streamTrail} live />
+                            {streamTrail.length > 0 && <ThoughtTrail steps={streamTrail} live />}
+                            {streamReply && (
+                              <div className={streamTrail.length > 0 ? 'mt-3' : ''}>
+                                <RichText markdown={streamReply} />
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div

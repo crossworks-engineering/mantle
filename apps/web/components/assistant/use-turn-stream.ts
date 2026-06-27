@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiEventStream } from '@/lib/api-fetch';
 import { isTurnStreamingEnabledClient } from '@/lib/turn-streaming';
 import type { TurnEvent } from '@mantle/client-types';
@@ -21,6 +21,11 @@ export interface TurnStream {
   /** Ordered, consecutive-deduped trail of status steps seen this turn. Becomes
    *  the persistent "thought" record attached to the reply. */
   trail: ThoughtEvent[];
+  /** Accumulated visible reply text from `text-delta` events (the LATEST tool-loop
+   *  round — a new round resets the buffer, so tool-then-answer turns show only the
+   *  final answer typing out). Empty until the model emits text. Advisory: the
+   *  durable reply reconciles it on completion. */
+  reply: string;
 }
 
 /**
@@ -35,12 +40,22 @@ export interface TurnStream {
  */
 export function useTurnStream(turnId: string | null): TurnStream {
   const [trail, setTrail] = useState<ThoughtEvent[]>([]);
+  const [reply, setReply] = useState('');
+  // Ref accumulator for the reply so appends are deterministic (the setState
+  // updater stays a pure set-to-same-string, safe under StrictMode double-invoke).
+  const replyRef = useRef('');
+  const replyRoundRef = useRef(-1);
 
   useEffect(() => {
     if (!turnId || !isTurnStreamingEnabledClient()) {
       setTrail([]);
+      setReply('');
+      replyRef.current = '';
+      replyRoundRef.current = -1;
       return;
     }
+    replyRef.current = '';
+    replyRoundRef.current = -1;
     let stopped = false;
     const stop = apiEventStream(
       `/api/assistant/turn/${turnId}/stream`,
@@ -48,6 +63,19 @@ export function useTurnStream(turnId: string | null): TurnStream {
         if (stopped) return;
         try {
           const ev = JSON.parse(data) as TurnEvent;
+          if (ev && ev.type === 'text-delta' && typeof ev.data?.text === 'string') {
+            const round = typeof ev.round === 'number' ? ev.round : 0;
+            if (round > replyRoundRef.current) {
+              // A fresh round (e.g. the final answer after tool calls) — replace
+              // the buffer so intermediate-round text isn't shown beneath it.
+              replyRoundRef.current = round;
+              replyRef.current = ev.data.text;
+            } else {
+              replyRef.current += ev.data.text;
+            }
+            setReply(replyRef.current);
+            return;
+          }
           if (ev && ev.type === 'status' && typeof ev.data?.label === 'string') {
             const stepId = ev.data.stepId;
             const incoming: ThoughtEvent = { stepId, kind: ev.data.kind ?? 'tool', label: ev.data.label };
@@ -80,8 +108,11 @@ export function useTurnStream(turnId: string | null): TurnStream {
       stopped = true;
       stop();
       setTrail([]);
+      setReply('');
+      replyRef.current = '';
+      replyRoundRef.current = -1;
     };
   }, [turnId]);
 
-  return { label: trail.length ? trail[trail.length - 1]!.label : null, trail };
+  return { label: trail.length ? trail[trail.length - 1]!.label : null, trail, reply };
 }
