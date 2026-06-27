@@ -108,8 +108,8 @@ template) is done** — confirming the pattern: content screens mostly already d
 mutations via client `fetch`, so the work is wiring the *initial loads* + closing small
 GET gaps. None has a *real* `@mantle/db` hole anymore (Task 1 closed those).
 
-- **Remaining content screens** (`/events`, `/tables`, `/contacts`,
-  `/lifelog`, `/inbox`) — same shape as `/pages`/`/notes`/`/todos`: most already have REST + client
+- **Remaining content screens** (`/tables`, `/contacts`, `/lifelog`, `/inbox`)
+  — same shape as `/pages`/`/notes`/`/todos`/`/events`: most already have REST + client
   mutation components; expect to extend a list GET (sort/pagination/facets) + add any
   missing secondary GET, then make the page data-free and key a `useQuery` off the URL
   params. Order by Electron priority. `/pages` + `/notes` are the worked examples — the

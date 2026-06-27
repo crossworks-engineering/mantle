@@ -89,6 +89,7 @@ by default.
 | `/pages` (+ `/pages/[id]`) | ✅ converted (first content screen; mutations were already client-fetch — wired the initial loads + extended the list GET + backlinks endpoint) |
 | `/notes` (+ `/notes/[id]`) | ✅ converted (same shape as /pages; extended the list GET; deep-linked note via a secondary `enabled` query; `[id]` is just a redirect) |
 | `/todos` | ✅ converted (status/priority filters; kept the local optimistic list, seeded from the query; extended the list GET with pagination) |
+| `/events` (+ `/events/[id]`) | ✅ converted (window filter; local optimistic list like /todos; the `useRealtime` callback → invalidate; small `[id]` outer-gate) |
 
 Convert more by following the reference; order by Electron priority.
 
