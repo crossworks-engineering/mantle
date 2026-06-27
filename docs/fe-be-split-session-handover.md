@@ -1,232 +1,186 @@
 # FE/BE Split — Session Handover (for a fresh context)
 
-**Read this, then [`docs/fe-be-split-audit.md`](fe-be-split-audit.md)** (the living remediation
-checklist) and [`docs/client-data-fetching.md`](client-data-fetching.md) (the conversion recipe).
+**Read this first**, then [`docs/fe-be-split-audit.md`](fe-be-split-audit.md) (the living remediation
+checklist #1–#7) and [`docs/client-data-fetching.md`](client-data-fetching.md) (the per-screen
+recipe).
 
-- **Branch:** `feat/dedicated-api-runners` · **Version:** `0.66.0` · **PR:** crossworks-engineering/mantle#1 (open, all work pushed) · **working tree clean.**
-- The whole arc is the **frontend/backend split**: make `apps/web` a pure client that talks to the
-  server only over HTTP `/api/**`, so an Electron desktop client and DB-less local dev become
-  possible. Definition of done: `docs/frontend-backend-split.md` §9.
-
----
-
-## What this session did (top of stack → down)
-
-1. **Task 6 — absorbed `apps/agent` into `apps/api`** (Phase-1 carryover), v0.64.0.
-   - Moved `apps/agent/src/*` → `apps/api/src/agent/*`; `main()` → `startAgentRuntime(opts)` +
-     `stopAgentRuntime()`; `apps/api/main.ts` calls them after DBOS launch. Deleted `apps/agent`;
-     dropped the compose `agent` service; root `dev` script drops the `agent` pane.
-   - **Re-modeled the Telegram responder turn as a durable DBOS workflow**
-     (`apps/api/src/workflows/telegram-turn.ts`) — runs `handleTelegramMessage` under
-     `withDurableSteps`, enqueued with `workflowID = messageId`. Journaled the two replay hazards
-     via `runDurableStep` (the atomic processed-claim + the inbound `recordTurn`).
-   - **NOT live-smoked** (needs a configured Telegram account + agent + key in a dev DB); reasoned
-     to mirror the live-verified assistant-turn pattern. Recorded in memory `api-service-phase1.md`.
-
-2. **The audit** ([`docs/fe-be-split-audit.md`](fe-be-split-audit.md)) — 5 parallel sub-agents +
-   greps. Verdict: the *converted core* (the 17 screens + `/inbox`) and *client bundle purity* are
-   clean; the gaps were the unconverted tail, server actions, the app shell, and detached-client
-   auth/CORS/SSE. The doc has the prioritized remediation list (#1–#7) and is kept updated as items
-   land.
-
-3. **#1 — detached-client `/api` auth** (v0.65.0):
-   - `apps/web/middleware.ts`: unauthenticated `/api/**` now returns **401 JSON, not a 307 login
-     redirect**; opt-in CORS via `MANTLE_API_CORS_ORIGINS` (off by default, bearer-only, handles
-     `OPTIONS` preflight). One file fixes the common case for every route.
-   - **Swept all 138 `/api` route handlers (213 call sites) from `requireOwner()` →
-     `getOwnerOr401()`** + an `if (x instanceof Response) return x` guard (the global `Response` —
-     `NextResponse extends Response` — so no new import). Pages keep `requireOwner` (a browser
-     *should* get the login screen). Added `getOwnerOr401WithSource` for `assistant/turn`.
-
-4. **#2 — data-free app shell** (v0.65.1):
-   - New `GET /api/shell` → `{ onboarded, avatar, pendingApprovals }`. `app/(app)/layout.tsx` is now
-     auth + collapse-cookies only; `AppShell` (client) fetches `/api/shell`, sources the avatar +
-     badge, and **owns the onboarding redirect** (`router.replace('/onboarding')` when `!onboarded`).
-
-5. **#3 — eliminated ALL server actions** (v0.65.x → v0.66.0). Converted + deleted all **9**
-   `'use server'` files, one screen per commit: **config, backups, updates, calendar, network,
-   docs, embedding, keys, onboarding**. After this: `grep -rl "'use server'" apps/web` is **empty**
-   and **`revalidatePath` is gone**. Because #3 and #4 are the same screens, this also closed #4 for
-   those 9. Notables:
-   - **Calendar** removed the last two `<form action={serverAction}>` submits.
-   - **Keys**: extracted the key-probe logic to **`lib/api-key-test.ts` (`probeApiKey`)**, shared by
-     `POST /api/keys/test` and onboarding's sanity checks.
-   - **Onboarding** (11 actions): one `/api/onboarding` route — `GET` resume-state + `POST`
-     dispatcher over `action`; the already-onboarded redirect moved client-side (`?force` via
-     `useSearchParams`, so the page is wrapped in `<Suspense>`).
-
-**Status now:** ✅ #1 · ✅ #2 · ✅ #3 (+ #4 for those 9 screens). `/api` routes: 184 total, **172
-`getOwnerOr401`**, 4 stray `requireOwner` (see Loose ends).
+- **Branch:** `feat/dedicated-api-runners` · **Version:** `0.66.20` · **PR:**
+  crossworks-engineering/mantle#1 (open, all work pushed) · **working tree clean.**
+- **The arc:** make `apps/web` a pure client that talks to the server only over HTTP `/api/**`, so an
+  Electron desktop client and DB-less local dev become possible. Definition of done:
+  `docs/frontend-backend-split.md` §9.
 
 ---
 
-## The proven conversion recipe (used for all of #3; use it for #4)
+## Where things stand: #1–#4 are CLOSED. #5/#6/#7 remain.
+
+The remediation list (full detail in the audit doc) is a 7-item plan. The first four — the bulk of
+the work — are **done**:
+
+| # | What | Status |
+|---|------|--------|
+| #1 | Detached-client `/api` auth: middleware 401s (not 307-redirects) unauthenticated `/api/**`; opt-in CORS (`MANTLE_API_CORS_ORIGINS`); all route handlers gate via `getOwnerOr401()` | ✅ v0.65.0 |
+| #2 | Data-free app shell: `GET /api/shell`; `(app)/layout.tsx` is auth+cookies only; `AppShell` fetches chrome + owns the onboarding redirect | ✅ v0.65.1 |
+| #3 | Eliminated **all 9** `'use server'` files (config, backups, updates, calendar, network, docs, embedding, keys, onboarding); `revalidatePath` gone | ✅ v0.66.0 |
+| #4 | **Every dynamic `(app)` screen is now client-fetched** (24 screens, v0.66.1–0.66.20) | ✅ v0.66.20 |
+| #5 | SSE bearer for `/api/realtime` (client `EventSource` can't carry a bearer / API base) | ⬜ TODO |
+| #6 | DB-less seam adoption (`lib/remote-data.ts`) | ⬜ TODO |
+| #7 | Cosmetic: relocate 3 type-only `@mantle/db` client imports | ⬜ TODO |
+
+**Verification sweep (v0.66.20) is clean:** the only non-type `@/lib`/`@mantle` data imports left in
+any `(app)/**/page.tsx` are `/n/[id]` (a `redirect()` router), the static-markdown readers
+(`@/lib/docs-reader` for `/docs/[...slug]`, `@/lib/changelog`), and `COLOR_THEMES` (a static
+constant). All of those are server-only by design. Everything dynamic is client-fetched.
+
+### What #4 delivered (the screens converted this arc)
+
+All typecheck-clean, one commit per screen, `v0.66.1 → v0.66.20`:
+
+- **"Endpoint already existed, just wired it"** (v0.66.1–0.66.12): `/apps`(+`[id]`), `/pending`,
+  `/heartbeats/[id]` (new `…/detail`), `/files` (+`file-editor`), `/secrets`(+`[id]`; paginated
+  `GET /api/secrets`), `/models` (new `…/explore`), `/nodes/[id]/history` (new endpoint),
+  `/dev-tools` (seeds via `/api/tools`), settings/{`accounts/[id]/edit`, `peers`, `entities`,
+  `pdf-passwords`}.
+- **"Built the endpoint first"** (v0.66.13–0.66.20): `/traces`(+`[id]`) → `GET /api/traces`+`…/[id]`;
+  the whole **`/debug/*`** family (overview, agents, context, digests, facts, journey+`[traceId]`,
+  spend, telegram, topics) → a `GET /api/debug/*` each; `/studio` → `GET /api/studio`; `/` dashboard
+  → new full `GET /api/dashboard` (kept separate from the compact mobile `…/summary`); `/assistant`
+  → `GET /api/assistant/thread`.
+
+---
+
+## The proven conversion recipe (use it for #6 and any future screen work)
 
 Per screen (mirrors `docs/client-data-fetching.md`):
 
 1. **Build the endpoint(s)** under `app/api/<area>/`:
-   - `GET` returns exactly the bundle the page used to compute (replicate its server logic; move any
-     server-side date-formatting / derived fields into the GET).
-   - One `POST`/`PATCH`/`DELETE` per mutation. Move the old server action's *body* into the route.
+   - `GET` returns *exactly* the bundle the page computed (replicate its server logic; move
+     server-side date-formatting / derived fields into the GET so the client needs no server libs).
+   - One `POST`/`PATCH`/`DELETE` per mutation; move the old handler's *body* into the route.
    - Every route: `const user = await getOwnerOr401(); if (user instanceof Response) return user;`
-   - For mutations that returned a `{ ok, message }`-style result the UI branches on, return it with
-     **200** (not a 4xx) so `apiSend` resolves and the client branches — matches the old action.
-2. **Data-free the page**: `await requireOwner()` then render the client component with **no data
-   props**. Add `<Suspense>` if the client uses `useSearchParams`.
+   - Mutations the UI branches on return **200 + `{ ok, message }`** (not a 4xx) so `apiSend` resolves.
+2. **Data-free the page**: `await requireOwner()` (pages keep `requireOwner` — a browser *should* get
+   the login screen), parse URL params/cookies if needed (neither is a DB read), render the client
+   with **no data props**. Add `<Suspense>` only if the *client* calls `useSearchParams`.
 3. **Convert the client**:
-   - **Outer query-gate + inner view** when the inner seeds `useState` from the data (profile/
-     config/backups/updates/network/embedding/keys/onboarding all use this): outer runs
-     `useQuery(['key'])` + loading/error gate → inner takes the loaded data as props and mounts only
-     once it exists (so `useState` initializers are correct).
-   - **Single component with `useQuery`** when there's no seeded form state (docs, calendar list).
-   - Replace each server-action call with `apiSend('/api/...', 'POST'|'PATCH'|'DELETE', body)`.
-   - Replace `router.refresh()` / `revalidatePath` with
-     `queryClient.invalidateQueries({ queryKey: ['key'] })`.
-   - `<form action={serverAction}>` → `<form onSubmit={...}>` (or keep `action={localFn}` where the
-     local fn calls `apiSend`).
-4. **Delete the `actions.ts`** (`git rm`); grep for stray importers (clients + cross-imports — e.g.
-   onboarding imported keys' `testApiKeyAction`).
-5. **Verify:** `pnpm --filter @mantle/web run typecheck` (the gate). Commit (one per screen) + bump
+   - **Outer query-gate + inner view** when the inner seeds `useState`/refs from the data — the inner
+     must mount *after* the fetch (e.g. peers, entities, apps, secrets, files, studio).
+   - **Single component with `useQuery`** when there's no seeded form state.
+   - URL-driven lists: page parses searchParams → passes as **props** → client `useQuery` keyed on
+     them with `placeholderData:(prev)=>prev`; `useListNav`/`<Link>` filters keep driving the URL, so
+     nav → new props → refetch. (Forwarding params as props avoids `useSearchParams`/Suspense.)
+   - Replace raw `fetch`/server-action calls with `apiFetch`/`apiSend('/api/...', 'POST'|…, body)`.
+   - Replace `router.refresh()` / `revalidatePath` with `queryClient.invalidateQueries({ queryKey })`.
+4. **Verify:** `pnpm --filter @mantle/web run typecheck` (the gate). Commit (one per screen) + bump
    (`pnpm version:bump patch`; `minor` to close a whole item) + push when asked.
 
 ---
 
-## Remaining work (in priority order)
+## Remaining work (priority order)
 
-### #4 — the unconverted screens that never had server actions (the biggest remaining chunk)
-
-**✅ "Endpoint already exists, just wire it" — DONE (v0.66.1–0.66.12).** Converted: `apps`(+`[id]`),
-`pending`, `heartbeats/[id]` (built `GET /api/heartbeats/[id]/detail`), `files` (+`file-editor`),
-`secrets`(+`[id]`; extended `GET /api/secrets` to paginate), `models` (built `GET /api/models/explore`),
-`nodes/[id]/history` (built `GET /api/nodes/[id]/history`), `dev-tools` (seeds via `GET /api/tools`),
-settings/{`accounts/[id]/edit`, `peers`, `entities`, `pdf-passwords`}. `n/[id]` stays server-only
-(redirect router). Pattern notes:
-- URL-driven lists (`apps`, `secrets`, `models`): page parses searchParams (no DB) → passes as
-  props → client `useQuery` keyed on them with `placeholderData:(prev)=>prev`; `useListNav` still
-  drives the URL. **No `useSearchParams`/Suspense needed** when the page forwards params as props
-  (only `/files` reads `useSearchParams` in the client → wrapped in `<Suspense>`).
-- A few needed a small new GET that bundles what the page computed (heartbeats detail / models
-  explore / nodes history) or a pagination extension (`/secrets`, `/apps`).
-- `/dev-tools` only data-frees the page (seeds `DevToolsShell` from `/api/tools`); the console's
-  internal per-request fetches (`/api/dev-tools/*`, raw `fetch`) are a **separate larger pass** if a
-  detached client needs them.
-- Raw-asset element `src`s (`/api/files/files/[id]?raw=1` in `<img>`/`<iframe>`/download) were left
-  same-origin — a detached-asset-auth follow-up, same class as the SSE bearer (#5).
-
-**"Build the endpoint first" — mostly done:**
-- ✅ `/traces`(+`[id]`) (v0.66.13): new `GET /api/traces` + `…/[id]`; SSR list → `TracesClient`
-  (filters/sort/pager stay URL-driven `<Link>`s). Repointed `TraceDetailView`'s formatter import
-  to the pure `@/lib/traces-format` so it bundles client-side.
-- ✅ the whole `/debug/*` family (v0.66.14–0.66.17): overview, agents, context, digests, facts,
-  journey(+`[traceId]`), spend, telegram, topics — each got a `GET /api/debug/*` + a client; pages
-  keep `DebugTabs`/`SetPageTitle`. `ChatAgentOverride` now PATCHes via `apiSend` + invalidates.
-  `ActiveNow` already self-polls. Debug formatters import from `traces-format`, not `@/lib/traces`.
-
-- ✅ `/studio` (v0.66.18): new `GET /api/studio`; outer `StudioClient` gate fetches the graph and
-  renders the stable `StudioView` (selection survives refetch); `onSaved` invalidates `['studio']`.
-  Editor mutations (prose/structure/sandbox) moved to apiFetch/apiSend.
-- ✅ `/` dashboard (v0.66.19): new full `GET /api/dashboard` (kept separate from the compact mobile
-  `…/summary`); `DashboardClient` fetches it, builds KPIs (icons client-side), renders the existing
-  presentational components (type-only lib imports → client-safe). Page keeps the self-polling
-  `SystemVitals` island.
-- ✅ `/assistant` (v0.66.20): new `GET /api/assistant/thread` (agent list + resolved agent + initial
-  thread, keyed on the ?agent hint); `AssistantThreadClient` renders header + `AgentSelect` +
-  the re-keyed `AssistantClient`. Page only resolves the agent hint from ?agent/cookie (no DB).
-
-**§A / #4 is CLOSED (v0.66.20).** Sweep clean — the only SSR data reads left in `(app)/**/page.tsx`
-are `/n/[id]` (redirect router) and the static-markdown readers (`/docs/[...slug]`, `/changelog`),
-all server-only by design. Remaining audit items: #5 (SSE bearer for `/api/realtime`), #6 (DB-less
-seam adoption), #7 (cosmetic type-import relocation). The assistant turn/stream internals (SSE) are
-the natural lead-in to #5.
-
-### #5 — SSE bearer for `/api/realtime`
-`/api/realtime` is consumed by `components/realtime/use-realtime.ts` via raw `EventSource`, which
-**can't send an `Authorization` header or honor `NEXT_PUBLIC_MANTLE_API_BASE`** — so it's cookie/
-same-origin only, unusable from a detached client. Also still `requireOwner` (redirect) — flip to
-`getOwnerOr401`. Fix: replace `EventSource` with a fetch-based SSE reader (or token-in-query).
-`assistant/stream` is already the bearer-correct reference.
+### #5 — SSE bearer for `/api/realtime` (the next natural task)
+- **Route side is already fine:** `app/api/realtime/route.ts` gates via `getOwnerOr401()` (which
+  falls through to `getBearerUser`), so it already accepts a bearer. *(The old handover said "flip it
+  to getOwnerOr401" — that's stale; already done.)*
+- **The real gap is the client:** `components/realtime/use-realtime.ts:25` opens
+  `new EventSource(\`/api/realtime${qs}\`)`. The `EventSource` API **can't set an `Authorization`
+  header or honor `NEXT_PUBLIC_MANTLE_API_BASE`** — so realtime is cookie/same-origin only, dead from
+  a detached/Electron client. **Fix:** replace `EventSource` with a fetch-based SSE reader (stream the
+  `ReadableStream`, parse `data:` frames) that uses `apiFetch`-style base-URL+bearer, or accept a
+  token-in-query. `app/api/assistant/stream/route.ts` + its client reader are the bearer-correct
+  reference to copy.
+- **Same class of problem** (defer with #5): raw-asset element `src`s —
+  `/api/files/files/[id]?raw=1` in `<img>`/`<iframe>`/download links (file-editor), avatar images,
+  etc. — are browser-native sources that can't carry a bearer. And the **assistant turn/stream**
+  internals (`AssistantClient` → `/api/assistant/turn` + `/api/assistant/stream`) were intentionally
+  left untouched in #4. All are the "needs a non-fetch transport to carry auth" bucket.
 
 ### #6 — DB-less seam adoption
 `lib/remote-data.ts` (`isRemoteData`/`remoteGet`) is built but adopted by exactly one module
-(`lib/data/email-accounts.ts`). It's a fast-follow to the client-fetch conversion — route converted
-pages' server reads through `lib/data/*`, or rely on the pure client-fetch path. See
-`docs/db-less-dev.md`.
+(`lib/data/email-accounts.ts`). Now that every screen is client-fetched, the cleanest path may be to
+lean on the pure client-fetch path rather than retrofit `lib/data/*` everywhere — decide per screen.
+See `docs/db-less-dev.md`. NOT runtime-verified (needs a live remote + minted token).
 
 ### #7 — cosmetic
 Relocate the 3 type-only `@mantle/db` client imports (`persona-notes-editor`, `calendar-row`,
-`drives-list`) into `@mantle/client-types` so the Task-0 grep is 100% empty. Pure tidiness.
+`drives-list`) into `@mantle/client-types` so the §9 grep is 100% empty. Pure tidiness.
 
----
-
-## Loose ends / small follow-ups
-
-- **4 `/api` routes still use `requireOwner` (redirect-on-fail), not `getOwnerOr401`:**
-  `app/api/assistant/messages/route.ts`, `app/api/activity/route.ts`,
-  `app/api/secrets/[id]/reveal/route.ts`, `app/api/dev-tools/proxy/route.ts`. The #1 sweep regex
-  only matched `const user = await requireOwner()`; these use a different call shape and slipped
-  through. Convert them for contract consistency (a detached client hitting them on an expired token
-  gets an HTML redirect, not a 401). 3 routes also use a hand-rolled `getSessionUser` + 401
-  (`auth/change-password`, `updates/status`, `updates/check`) — those are fine (already 401).
-- **`agent-os/`** — an unrelated embedded git repo appeared in the working tree mid-session and got
-  swept into a commit by `git add -A`; untracked + gitignored in `ec58d45`. If you see it again,
-  it's ignored now. **Beware `git add -A`** in this repo for that reason — prefer `git add <paths>`.
+### Tiny follow-ups (optional, non-blocking)
+- A few route files have **stale doc-comments** saying "owner-scoped via `requireOwner`" while the
+  code actually calls `getOwnerOr401()` (assistant/messages, activity, secrets/[id]/reveal,
+  dev-tools/proxy). Functionally correct — just comment drift. *(The old handover listed these as
+  "stray requireOwner routes to convert" — that's resolved; they already 401.)*
+- `/dev-tools`: the page is data-free, but the console's internal per-request fetches
+  (`/api/dev-tools/*`, raw `fetch` inside `DevToolsProvider`) weren't converted — a separate pass if a
+  detached client needs the console itself.
 
 ---
 
 ## Hard-won gotchas (don't relearn)
 
 - **`getOwnerOr401` guard uses the global `Response`**, not `NextResponse` — `NextResponse extends
-  Response`, so `if (x instanceof Response) return x` narrows `SessionUser | NextResponse` →
-  `SessionUser` with **no import**. (Routes here use the global `Response.json`, not `NextResponse`.)
-- **Mutations the UI branches on should return 200 + `{ ok, message }`** (not a 4xx), so `apiSend`
-  (which throws on non-2xx) resolves and the existing client branch works (network/embedding/docs/
-  onboarding all rely on this).
-- **Outer-gate + inner-view** is the pattern whenever the inner seeds `useState`/refs from data —
-  the inner must mount *after* the fetch. Don't try to re-seed an already-mounted form.
-- **`useSearchParams` (and `useRouter().replace` off query data) needs `<Suspense>`** around the
-  client in the server page, or `next build` fails with a CSR-bailout.
+  Response`, so `if (x instanceof Response) return x` narrows `SessionUser | NextResponse` with no
+  import. (Some routes still check `instanceof NextResponse` — both work; prefer `Response`.)
+- **Client bundle purity** — the #1 trap when moving a render into a client: never *value*-import
+  `@mantle/db` or a server lib into a client-bundled file (drags `postgres`/Node in). Type-only
+  imports are erased and fine. Watch shared presentational components that get pulled client-side:
+  `TraceDetailView` had to repoint `formatDuration`/`formatMicroUsd` from `@/lib/traces` (server) to
+  the pure `@/lib/traces-format`. `@/lib/journey-format`, `@/lib/traces-format` are the pure
+  siblings of their server libs. Use `@mantle/content/*` **subpath leaves**, not the barrel.
+- **A "server component" with no `'use client'` and no server-only API (no `async`, no DB) bundles
+  fine inside a client** — that's how `NodeBiography` / `TraceDetailView` / the dashboard cards got
+  reused. Just make sure *their* imports are all client-safe.
+- **`useSearchParams` in the client needs `<Suspense>`** around it in the server page, or `next build`
+  fails with a CSR-bailout. Avoid it entirely by having the page parse searchParams and pass them as
+  props (the URL-driven-list pattern).
 - **JSON dates**: `Date` columns arrive as ISO strings over HTTP. `formatDateTime`/`new Date(...)`
-  handle strings; watch `.toISOString()` on a value that's now a string (wrap in `new Date()`).
-- **Client bundle purity**: never *value*-import `@mantle/db` / server packages in a `'use client'`
-  file (drags `postgres`/Node in). Type-only imports are erased and fine; use `@mantle/content/*`
-  **subpath leaves** (contacts-format, lifelog-options, table-model, page-diff, …) not the barrel.
+  handle strings; watch `.toISOString()` on a value that's now a string. Most DTOs here already type
+  dates as `string` (e.g. `TraceSummary.startedAt`, `AssistantTimelineRow.createdAt`).
+- **Outer-gate + inner-view** whenever the inner seeds `useState` from data — mount the inner *after*
+  the fetch. For master-detail screens that mutate a local list (peers, secrets, entities), the inner
+  seeds from the loaded data and mutates locally; the outer's query is just the seed.
+- **Mutations the UI branches on return 200 + body** (not a 4xx) so `apiSend` (throws on non-2xx)
+  resolves and the client branch runs.
 - **`apiFetch`/`apiSend`** (`lib/api-fetch.ts`) already inject base-URL + bearer when
-  `NEXT_PUBLIC_MANTLE_API_BASE`/`_TOKEN` are set, and bounce to `/login` on 401 — don't re-implement.
-- **Can't run a 2nd `next dev`** — it collides on `.next` with the user's running `pnpm start`
-  stack. So everything is **typecheck-verified, not browser-smoke-tested** (see below).
+  `NEXT_PUBLIC_MANTLE_API_BASE`/`_TOKEN` are set, and bounce to `/login` on a 401 or a followed
+  redirect-to-/login — don't re-implement.
+- **Can't run a 2nd `next dev`** — it collides on `.next` with the user's running `pnpm start` stack
+  (see [[no-concurrent-next-builds]]). So everything is **typecheck-verified, not browser-smoked.**
+- **`git add -A` is dangerous here** — an embedded `agent-os/` repo once got swept into a commit
+  (gitignored since `ec58d45`). Prefer `git add <explicit paths>`. The shell cwd also drifts between
+  Bash calls — `cd /Users/jasonschoeman/Projects/mantle` before `pnpm version:bump`.
 
 ---
 
 ## Verification status (honest)
 
-Every commit is **`@mantle/web` typecheck-clean** and the **91 agent tests pass**. **Nothing is
-browser/runtime-smoke-tested** (a second dev server collides with the user's stack). After a dev
-restart, the highest-value things to eyeball:
-- The data-free **app shell** (avatar + pending badge load; onboarding redirect for a fresh install).
-- The **`/api` 401 contract** (hit an `/api` route logged-out → 401 JSON, not a redirect).
-- Each converted screen: list/form loads (brief spinner) → mutate → it reflects.
-- **Telegram durable turn** (Task 6) — needs a configured account + agent + key; crash-resume is
-  reasoned, not tested.
+Every commit is **`@mantle/web` typecheck-clean**. **Nothing this arc is browser/runtime
+smoke-tested** (a 2nd dev server collides with the user's running stack). After a dev restart, the
+highest-value things to eyeball:
+- A converted screen end-to-end: loads (brief `<Spinner>`) → mutate → reflects.
+- URL-driven lists (`/apps`, `/secrets`, `/models`, `/traces`, `/debug/*`): filter/sort/page nav
+  refetches and the detail pane tracks selection.
+- The `/api` 401 contract: hit an `/api` route logged-out → 401 JSON, not an HTML redirect.
+- `/studio` + `/assistant`: client selection / agent state survives a refetch (the keyed-remount /
+  stable-instance logic).
 
 ## Cadence (from project memory)
 
-- One commit per discrete change (per screen). Bump version by extent (`pnpm version:bump
-  patch|minor`); **don't tag** (tag-push is the publish event). **Push** updates PR #1 — the user
-  has been fine with continuous pushing but **offer/confirm** rather than assume.
-- Version history this arc: Task 6 → 0.64.0 · #1 → 0.65.0 · #2 → 0.65.1 · #3 → 0.65.2/0.65.3/0.65.4
-  → **0.66.0** (#3 complete).
+- One commit per discrete change (per screen). Bump by extent (`pnpm version:bump patch|minor`);
+  **don't tag** (tag-push is the publish event). **Push** updates PR #1 — the user has been fine with
+  continuous pushing this arc but **offer/confirm** rather than assume.
+- This arc's version history: #1 → 0.65.0 · #2 → 0.65.1 · #3 → 0.66.0 · #4 → 0.66.1…**0.66.20**.
 
 ## Key files / reference points
 
-- Audit + remediation checklist: `docs/fe-be-split-audit.md`. Original plan + DoD:
-  `docs/frontend-backend-split.md`. Conversion recipe + per-screen notes: `docs/client-data-fetching.md`.
+- Checklist: `docs/fe-be-split-audit.md`. Plan + DoD: `docs/frontend-backend-split.md`. Recipe:
+  `docs/client-data-fetching.md`. DB-less: `docs/db-less-dev.md`.
 - Auth: `apps/web/lib/auth.ts` (`getOwnerOr401`, `getOwnerOr401WithSource`), `apps/web/middleware.ts`.
-- Client data layer: `apps/web/lib/api-fetch.ts`, `components/query-provider.tsx`,
-  `components/ui/spinner.tsx`. Shared wire types: `packages/client-types`.
-- Worked #3 examples to copy: `/settings/config` (RPC mutations), `/settings/backups` (FormData
-  form), `/settings/updates` (gate + preserved polling), `/settings/network` (run() wrapper),
-  `/docs` (list + dialog), `/settings/embedding` (big seeded form), `/settings/keys` (optimistic
-  list + extracted lib fn), `/onboarding` (multi-step + POST dispatcher).
+- Client data layer: `apps/web/lib/api-fetch.ts` (`apiFetch`/`apiSend`), `components/query-provider.tsx`,
+  `components/ui/spinner.tsx`. Shared wire types: `packages/client-types` (`@mantle/client-types`).
+- Bearer-correct SSE reference for #5: `app/api/assistant/stream/route.ts` + its client reader.
+- Pure formatter siblings (client-safe): `@/lib/traces-format`, `@/lib/journey-format`.
 - UI conventions (read before UI work): `apps/web/CLAUDE.md`, `docs/ui-style-guide.md`.
-- Project memory: `api-service-phase1.md` (Phase 1 / Task 6), `commit-and-version-cadence.md`,
-  `no-concurrent-next-builds.md`, `deploy-cadence.md`.
+- Project memory: `api-service-phase2.md` (this arc's state), `api-service-phase1.md` (Phase 1 /
+  Task 6 durable runners), `commit-and-version-cadence.md`, `no-concurrent-next-builds.md`,
+  `deploy-cadence.md`.
