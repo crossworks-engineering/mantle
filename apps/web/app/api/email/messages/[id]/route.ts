@@ -6,13 +6,16 @@ import {
   setReadStatus,
   setStarred,
 } from '@mantle/email';
+import type { MessageDetailDTO } from '@mantle/client-types';
 import { getOwnerOr401 } from '@/lib/auth';
 
 /**
- * One owner-scoped message with its attachments. The email body is sanitised
- * here, on the server, so the HTML is never trusted in the browser bundle —
- * the client renders `bodyHtmlSafe` into a sandboxed iframe as a second layer
- * (the sanitisation that used to live in the server-rendered `ReadingPane`).
+ * One owner-scoped message with its attachments. Mapped to the wire DTO: the raw
+ * `bodyHtml` is sanitised here (so untrusted HTML never reaches the browser —
+ * the client renders `bodyHtmlSafe` into a sandboxed iframe as a second layer)
+ * and the row's server-only columns (account/node/provider ids, headers, labels)
+ * are dropped. The `MessageDetailDTO` annotation makes a row↔wire drift a
+ * compile error.
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
@@ -20,8 +23,30 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const result = await getMessageWithAttachments(user.id, id);
   if (!result) return NextResponse.json({ error: 'Message not found.' }, { status: 404 });
-  const bodyHtmlSafe = result.email.bodyHtml ? sanitizeEmailHtml(result.email.bodyHtml) : null;
-  return NextResponse.json({ ...result, bodyHtmlSafe });
+  const { email, attachments } = result;
+  const dto: MessageDetailDTO = {
+    email: {
+      id: email.id,
+      subject: email.subject,
+      fromAddr: email.fromAddr,
+      fromName: email.fromName,
+      toAddrs: email.toAddrs,
+      ccAddrs: email.ccAddrs,
+      internalDate: email.internalDate.toISOString(),
+      folder: email.folder,
+      isRead: email.isRead,
+      isStarred: email.isStarred,
+      bodyText: email.bodyText,
+    },
+    attachments: attachments.map((a) => ({
+      id: a.id,
+      filename: a.filename,
+      mimeType: a.mimeType,
+      sizeBytes: a.sizeBytes,
+    })),
+    bodyHtmlSafe: email.bodyHtml ? sanitizeEmailHtml(email.bodyHtml) : null,
+  };
+  return NextResponse.json(dto);
 }
 
 const PatchBody = z

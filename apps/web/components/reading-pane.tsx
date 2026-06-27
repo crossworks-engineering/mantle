@@ -2,7 +2,7 @@
 
 import { Inbox, Mail, MailOpen, Paperclip, Star } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { Email, EmailAttachment } from '@mantle/db';
+import type { EmailDTO, EmailAttachmentDTO } from '@mantle/client-types';
 import { apiSend } from '@/lib/api-fetch';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
@@ -27,8 +27,8 @@ export function ReadingPane({
   attachments,
   bodyHtmlSafe,
 }: {
-  email: Email | null;
-  attachments: EmailAttachment[];
+  email: EmailDTO | null;
+  attachments: EmailAttachmentDTO[];
   bodyHtmlSafe: string | null;
 }) {
   const queryClient = useQueryClient();

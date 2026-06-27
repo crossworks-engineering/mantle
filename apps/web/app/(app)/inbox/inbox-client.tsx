@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Mail, Plug, UserCheck } from 'lucide-react';
-import type { Email, EmailAttachment } from '@mantle/db';
+import type { MessageDetailDTO } from '@mantle/client-types';
 import type { PublicEmailAccount, FolderFacet, MessageListItem } from '@mantle/email';
 import { apiFetch, apiSend } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
@@ -17,7 +17,7 @@ import { folderLabel } from '@/components/mail/folder-icon';
 import type { FolderLink } from '@/components/mail/mail-nav';
 import type { MailAccount } from '@/components/mail/account-switcher';
 
-type MessageDetail = { email: Email; attachments: EmailAttachment[]; bodyHtmlSafe: string | null };
+type MessageDetail = MessageDetailDTO;
 
 /** Build a /inbox URL preserving the 3-pane navigation context. */
 function inboxHref(p: {
