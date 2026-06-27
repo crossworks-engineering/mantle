@@ -1,26 +1,45 @@
 'use client';
 
-import { useActionState, useEffect, useRef } from 'react';
+import { useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
+import { apiSend } from '@/lib/api-fetch';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { addIcsFeedAction, type AddFeedResult } from './actions';
 
-const initial: AddFeedResult | undefined = undefined;
-
-/** Subscribe to an iCalendar feed. Controlled-free: on success the form resets
- *  so the next feed can be added immediately. */
+/** Subscribe to an iCalendar feed. On success the form resets so the next feed
+ *  can be added immediately, and the ['calendar'] list is invalidated. */
 export function AddFeedForm() {
-  const [state, formAction] = useActionState(addIcsFeedAction, initial);
+  const queryClient = useQueryClient();
   const ref = useRef<HTMLFormElement>(null);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState(false);
 
-  useEffect(() => {
-    if (state?.ok) ref.current?.reset();
-  }, [state]);
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    setPending(true);
+    setError(null);
+    setOk(false);
+    try {
+      await apiSend('/api/calendar', 'POST', {
+        displayName: String(fd.get('displayName') ?? ''),
+        url: String(fd.get('url') ?? ''),
+      });
+      setOk(true);
+      ref.current?.reset();
+      queryClient.invalidateQueries({ queryKey: ['calendar'] });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invalid input');
+    } finally {
+      setPending(false);
+    }
+  }
 
   return (
-    <form ref={ref} action={formAction} className="space-y-3 rounded-lg border border-border bg-card p-4">
+    <form ref={ref} onSubmit={onSubmit} className="space-y-3 rounded-lg border border-border bg-card p-4">
       <div className="space-y-1">
         <h3 className="text-sm font-semibold">Subscribe to a calendar</h3>
         <p className="text-xs text-muted-foreground">
@@ -43,17 +62,17 @@ export function AddFeedForm() {
           required
         />
       </div>
-      {state && !state.ok && (
+      {error && (
         <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {state.error}
+          {error}
         </p>
       )}
-      {state?.ok && (
+      {ok && (
         <p className="rounded-md border border-green-500/30 bg-green-50 px-3 py-2 text-sm text-green-900 dark:bg-green-950/40 dark:text-green-100">
           Subscribed. First sync runs within two minutes.
         </p>
       )}
-      <SubmitButton size="sm">
+      <SubmitButton size="sm" pending={pending}>
         <Plus /> Subscribe
       </SubmitButton>
     </form>
