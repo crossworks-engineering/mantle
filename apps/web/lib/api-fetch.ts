@@ -89,9 +89,11 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
  * fetch-based reader carries the base-URL + bearer exactly like `apiFetch`.
  *
  * Calls `onMessage` once per `data:` frame (comments `:`/keep-alives are
- * skipped). Auto-reconnects with capped backoff on a dropped/closed connection,
- * mirroring EventSource — but stops (and bounces to /login) on an auth failure.
- * Returns a disposer; call it on unmount to close the stream.
+ * skipped); a throwing `onMessage` is routed to `onError` without dropping the
+ * connection. Auto-reconnects with exponential backoff + jitter on a
+ * dropped/closed connection, mirroring EventSource — but stops (and bounces to
+ * /login) on an auth failure. Returns a disposer; call it on unmount to close
+ * the stream.
  */
 export function apiEventStream(
   path: string,
@@ -133,7 +135,16 @@ export function apiEventStream(
               .filter((l) => l.startsWith('data:'))
               .map((l) => l.slice(5).replace(/^ /, ''))
               .join('\n');
-            if (data) onMessage(data);
+            if (data) {
+              // A throwing consumer is a consumer bug, not a connection fault —
+              // route it to onError but keep reading; never let it reach the
+              // outer catch (which would treat it as a drop and reconnect).
+              try {
+                onMessage(data);
+              } catch (cbErr) {
+                opts?.onError?.(cbErr);
+              }
+            }
           }
         }
       } catch (err) {
@@ -142,7 +153,12 @@ export function apiEventStream(
       }
       if (closed) return;
       attempt += 1;
-      await new Promise((r) => setTimeout(r, Math.min(10_000, 1000 * attempt)));
+      // Exponential backoff with full-ish jitter: a synchronously-failing
+      // endpoint doesn't get hammered ~1×/s, and a deploy/restart doesn't make
+      // every tab reconnect in lockstep (thundering herd). Resets to 0 above on
+      // a successful connect.
+      const ceiling = Math.min(30_000, 1000 * 2 ** attempt);
+      await new Promise((r) => setTimeout(r, ceiling * (0.5 + Math.random() * 0.5)));
     }
   };
 
