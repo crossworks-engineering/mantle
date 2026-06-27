@@ -108,12 +108,14 @@ template) is done** — confirming the pattern: content screens mostly already d
 mutations via client `fetch`, so the work is wiring the *initial loads* + closing small
 GET gaps. None has a *real* `@mantle/db` hole anymore (Task 1 closed those).
 
-- **Remaining content screens** (`/notes`, `/todos`, `/events`, `/tables`, `/contacts`,
-  `/lifelog`, `/inbox`) — same shape as `/pages`: most already have REST + client mutation
-  components; expect to extend a list GET (sort/pagination/facets) + add any missing
-  secondary GET, then make the page data-free and key a `useQuery` off the URL params.
-  Order by Electron priority. `/pages` (`pages-client.tsx` + `[id]/page-detail-client.tsx`)
-  is the worked example — URL-driven list + outer-gate editor.
+- **Remaining content screens** (`/todos`, `/events`, `/tables`, `/contacts`,
+  `/lifelog`, `/inbox`) — same shape as `/pages`/`/notes`: most already have REST + client
+  mutation components; expect to extend a list GET (sort/pagination/facets) + add any
+  missing secondary GET, then make the page data-free and key a `useQuery` off the URL
+  params. Order by Electron priority. `/pages` + `/notes` are the worked examples — the
+  URL-driven list pattern (params-in-key + `placeholderData` + `invalidate` on mutate) and,
+  for a rich editor, the outer-gate split (`/pages/[id]`). A deep-linked detail row that may
+  fall outside the list slice → a secondary `enabled` query (see `/notes` selected note).
 
 ### Known follow-up (small, deferred)
 - Relocate the remaining type-only `@mantle/db` imports (persona-notes-editor, calendar-row,
