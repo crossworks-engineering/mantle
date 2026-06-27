@@ -49,6 +49,14 @@ const QUERY_KEYS = ['query', 'q', 'search', 'term', 'text', 'question', 'title']
 /** Where invoke_agent carries the specialist it's delegating to. */
 const AGENT_KEYS = ['agent', 'agent_slug', 'slug', 'name', 'target'] as const;
 
+/** A tool step logs its input as `{ slug, args }`; the user-facing values live
+ *  under `args`. Unwrap it (falling back to the object itself for any flat
+ *  caller) so enrichment reads `args.q`, not a non-existent top-level `q`. */
+function toolArgs(input?: Record<string, unknown>): Record<string, unknown> | undefined {
+  const a = input?.args;
+  return a && typeof a === 'object' ? (a as Record<string, unknown>) : input;
+}
+
 export function stageLabelForStep(
   name: string,
   input?: Record<string, unknown>,
@@ -60,14 +68,15 @@ export function stageLabelForStep(
   const tool = /^tool:\s*(.+)$/.exec(name);
   if (tool) {
     const slug = tool[1]!.trim();
+    const args = toolArgs(input);
     if (slug === 'invoke_agent') {
-      const who = pickString(input, AGENT_KEYS);
+      const who = pickString(args, AGENT_KEYS);
       return {
         label: who ? `Delegating to ${who}…` : 'Delegating to a specialist…',
         kind: 'delegate',
       };
     }
-    const q = pickString(input, QUERY_KEYS);
+    const q = pickString(args, QUERY_KEYS);
     if (slug === 'web_search') {
       return { label: q ? `Searching the web for “${q}”…` : 'Searching the web…', kind: 'web' };
     }

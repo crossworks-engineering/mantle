@@ -46,6 +46,18 @@ describe('stageLabelForStep', () => {
     );
   });
 
+  it('reads args from the real nested step-input shape `{ slug, args }`', () => {
+    // The tool loop logs input as { slug, args: {...} } — enrichment must look
+    // under `args`, not the top level. (Regression: brain search showed the bare
+    // bucket label because `q` lived at input.args.q.)
+    expect(
+      stageLabelForStep('tool: search_nodes', { slug: 'search_nodes', args: { q: 'streaming', limit: 20 } }),
+    ).toBe('Searching your brain for “streaming”…');
+    expect(
+      stageLabelForStep('tool: invoke_agent', { slug: 'invoke_agent', args: { agent: 'Researcher' } }),
+    ).toBe('Delegating to Researcher…');
+  });
+
   it('never echoes a secret-looking arg into the label', () => {
     // No safe query key present → falls back to the bucket label, not the token.
     expect(stageLabelForStep('tool: web_search', { api_key: 'sk-deadbeef' })).toBe(
