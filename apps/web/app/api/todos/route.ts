@@ -4,9 +4,14 @@ import { requireOwner } from '@/lib/auth';
 import {
   TODO_PRIORITIES,
   TODO_STATUSES,
+  countTodos,
   createTodo,
   listTodos,
+  type TodoStatus,
+  type TodoPriority,
 } from '@/lib/todos';
+
+const PAGE_SIZE = 50;
 
 const CreateBody = z.object({
   title: z.string().min(1).max(200),
@@ -22,23 +27,28 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const statusParam = url.searchParams.get('status');
   const priorityParam = url.searchParams.get('priority');
-  const status =
+  const status: TodoStatus | 'all' =
     statusParam && statusParam !== 'all' && (TODO_STATUSES as readonly string[]).includes(statusParam)
-      ? (statusParam as (typeof TODO_STATUSES)[number])
+      ? (statusParam as TodoStatus)
       : 'all';
-  const priority =
+  const priority: TodoPriority | 'all' =
     priorityParam &&
     priorityParam !== 'all' &&
     (TODO_PRIORITIES as readonly string[]).includes(priorityParam)
-      ? (priorityParam as (typeof TODO_PRIORITIES)[number])
+      ? (priorityParam as TodoPriority)
       : 'all';
-  const rows = await listTodos(user.id, {
+  const page = Math.max(1, Number.parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
+  const opts = {
     query: url.searchParams.get('q') ?? undefined,
     status,
     priority,
     tag: url.searchParams.get('tag') ?? undefined,
-  });
-  return NextResponse.json({ todos: rows });
+  };
+  const [todos, total] = await Promise.all([
+    listTodos(user.id, { ...opts, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+    countTodos(user.id, opts),
+  ]);
+  return NextResponse.json({ todos, total, page, pageSize: PAGE_SIZE });
 }
 
 export async function POST(req: Request) {

@@ -88,6 +88,7 @@ by default.
 | `/settings/accounts` | ✅ converted (endpoints existed; URL-driven master-detail → client; IMAP test/save + folder picker as mutations) |
 | `/pages` (+ `/pages/[id]`) | ✅ converted (first content screen; mutations were already client-fetch — wired the initial loads + extended the list GET + backlinks endpoint) |
 | `/notes` (+ `/notes/[id]`) | ✅ converted (same shape as /pages; extended the list GET; deep-linked note via a secondary `enabled` query; `[id]` is just a redirect) |
+| `/todos` | ✅ converted (status/priority filters; kept the local optimistic list, seeded from the query; extended the list GET with pagination) |
 
 Convert more by following the reference; order by Electron priority.
 
@@ -176,3 +177,11 @@ Notes from the conversions so far:
   it must mount only after the fetch); its out-of-band AI refresh becomes
   `invalidateQueries(['pages', id])`, which re-renders the inner with fresh `initial`
   and triggers the existing remount effect.
+- **Screen with a local optimistic list** (`/todos` prepends-on-create, optimistic toggle):
+  don't rip out the local `useState` list — seed it from the query in a `useEffect` keyed on
+  `listQuery.data` (+ the deep-linked row), keep the optimistic `setTodos`, and swap
+  `router.refresh()` for `invalidateQueries(['todos'])` (the refetch re-runs the seed effect to
+  reconcile). Two traps: (1) the page defaulted `status='open'` while the GET defaults to `'all'`,
+  so the client must send `status` explicitly; (2) extracting a list filter to `const opts = {…}`
+  drops call-site contextual typing — annotate the narrowed union vars (`status: TodoStatus |
+  'all'`) or the spread re-widens them to `string`.
