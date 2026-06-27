@@ -10,9 +10,12 @@ import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import {
   SECRET_KINDS,
+  countSecrets,
   createSecret,
   listSecrets,
 } from '@/lib/secrets';
+
+const PAGE_SIZE = 50;
 
 const FieldSchema = z.object({
   label: z.string().max(80),
@@ -39,8 +42,13 @@ export async function GET(req: Request) {
       ? (kindParam as (typeof SECRET_KINDS)[number])
       : 'all';
   const tag = url.searchParams.get('tag') ?? undefined;
-  const rows = await listSecrets(user.id, { query, kind, tag });
-  return NextResponse.json({ secrets: rows });
+  const page = Math.max(1, Number(url.searchParams.get('page') ?? '1') || 1);
+  const offset = (page - 1) * PAGE_SIZE;
+  const [secrets, total] = await Promise.all([
+    listSecrets(user.id, { query, kind, tag, limit: PAGE_SIZE, offset }),
+    countSecrets(user.id, { query, kind, tag }),
+  ]);
+  return NextResponse.json({ secrets, total, page, pageSize: PAGE_SIZE });
 }
 
 export async function POST(req: Request) {
