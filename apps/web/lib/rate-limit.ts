@@ -68,18 +68,28 @@ export function rateLimit(
 /**
  * Pull a stable client identifier from the request. Trusts the standard
  * reverse-proxy headers (`x-forwarded-for`, `x-real-ip`) which Caddy /
- * nginx set; falls back to the request URL host for direct connections.
+ * nginx set; falls back to `unknown` for direct connections.
  *
  * We don't include the user-agent — a sophisticated attacker can rotate
  * it cheaply and we don't want to give a free reset for trivial header
  * variation.
+ *
+ * X-Forwarded-For is `client, proxy1, proxy2, …`. The LEFTMOST entry is
+ * client-supplied and therefore forgeable — keying on it lets an attacker mint a
+ * fresh rate-limit bucket per request by rotating a fake `X-Forwarded-For`,
+ * defeating the login/signup throttle. Caddy *appends* the address it observed,
+ * so the entry our nearest trusted proxy added (counting `MANTLE_TRUSTED_PROXIES`
+ * hops from the right, default 1) is the real, unspoofable client IP. Override
+ * the hop count if you chain more than one trusted proxy.
  */
 export function clientIp(req: Request): string {
   const xff = req.headers.get('x-forwarded-for');
   if (xff) {
-    // First entry is the original client; the rest are proxies.
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
+    const parts = xff.split(',').map((s) => s.trim()).filter(Boolean);
+    if (parts.length) {
+      const hops = Math.max(1, Number(process.env.MANTLE_TRUSTED_PROXIES) || 1);
+      return parts[Math.max(0, parts.length - hops)]!;
+    }
   }
   const xri = req.headers.get('x-real-ip');
   if (xri) return xri.trim();
