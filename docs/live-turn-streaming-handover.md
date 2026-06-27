@@ -1,15 +1,15 @@
 # Live Turn Streaming — Session Handover
 
-**Branch:** `feat/live-turn-streaming` · **Version:** v0.74.0 · **Untagged, unpushed** (default-branch +
+**Branch:** `feat/live-turn-streaming` · **Version:** v0.76.0 · **Untagged, unpushed** (default-branch +
 tag + deploy are Jason's call). **Design doc:** [`docs/live-turn-streaming.md`](live-turn-streaming.md).
 
-**Status:** Phases 0–2 + the narrator worker + **Phase 3a (token streaming)** + **Phase 3c (durable status
-lifecycle + non-blocking route)** are DONE, committed, and browser-verified. The reply types out live and the
-turn route now returns **202 immediately** — the client drives completion off the live stream and reconciles
-to the durable `assistant_messages` row, so a turn survives navigation/backgrounding. **Next up: Phase 3b
-(Anthropic native streaming) and Phase 4 (mobile companion + replay).**
+**Status:** Phases 0–2 + the narrator worker + **3a (token streaming)** + **3c (durable status lifecycle +
+non-blocking route)** + **3b (streaming on every provider)** + **Stop mid-flight** are DONE, committed, and
+verified. The reply types out live, the route returns **202 immediately** (client drives off the stream +
+durable row, survives navigation), a Stop button aborts generation on any provider and restores the prompt
+for correction. **Step 3 is complete. Next up: Phase 4 (mobile companion + `turn_stream_buffer` replay).**
 
-This is the resume point — read this, then the design doc §5–§9 for the 3b/Phase-4 detail.
+This is the resume point — read this, then the design doc §8 for the Phase-4 detail.
 
 ---
 
@@ -17,6 +17,8 @@ This is the resume point — read this, then the design doc §5–§9 for the 3b
 
 | Commit | Ver | What |
 |---|---|---|
+| `445cd098` | 0.76.0 | **Phase 3b + all-provider streaming + Stop** — `chatStream()` on all six remaining adapters (Anthropic/Google native SSE; xAI/HF/DeepSeek/local via a shared OpenAI-compat streamer), each abort-aware. |
+| `0e65c7a4` | 0.75.1 | **Stop restores the prompt** to the composer for correction. |
 | `5a445e1c` | 0.75.0 | **Stop mid-flight** — the Enter button becomes a Stop button; cross-process abort halts generation, keeps the partial reply. |
 | `368aa3a8` | 0.74.0 | **Phase 3c Part B** — non-blocking route (202 `{turnId}`) + client/dock drive off the live stream, reconcile to the durable row on done/error. |
 | `15c58f8a` | 0.73.0 | **Phase 3c Part A** — runner owns the durable outbound row (pending→complete/failed) + emits `turn-start`/`done`/`error` via a tracing turn-lifecycle observer. |
@@ -147,11 +149,15 @@ marks completion.
 
 ## 6. Remaining work
 
-**Phase 3b — Anthropic `chatStream()`** (`packages/voice/src/adapters/anthropic-chat.ts`). Native `messages`
-streaming: `content_block_delta` text + (if enabled) thinking deltas; same return-the-ChatResult + onDelta
-contract as OpenRouter. Only matters for brains on the `anthropic` provider *directly* — the OpenRouter path
-(incl. `anthropic/claude-*` via OpenRouter, which is what the local + default brains use) already streams.
-Mirror the OpenRouter adapter's structure + its 4 wire-shape tests.
+**Phase 3b — provider streaming — ✅ DONE** (`445cd098`). `chatStream()` now exists on ALL chat adapters,
+each honouring `opts.signal` (so Stop works on every provider, not just OpenRouter): Anthropic + Google use
+native SSE; xAI/HuggingFace/DeepSeek/local share a new `streamOpenAICompatChat` in `openai-compat.ts`; a
+shared abort-aware SSE reader lives in `adapters/sse.ts`. On abort each returns the PARTIAL reply (drops
+half-formed tool fragments) rather than throwing, so the turn finalizes `complete` with the partial — same as
+OpenRouter. No tool-loop change (dispatchChat already prefers `chatStream` + injects
+`currentTurnAbortSignal()`). 12 wire-shape tests in `adapters/chat-stream.test.ts` lock down all three SSE
+dialects + abort; live-verifying a specific provider needs that provider's API key (the new adapters are
+unit-tested; OpenRouter stays the live-smoked path).
 
 **Phase 3c — message lifecycle + non-blocking route — ✅ DONE** (`15c58f8a` Part A, `368aa3a8` Part B). All
 three pieces landed + browser-verified: `assistant_messages.status` is wired (runner inserts `pending`,
