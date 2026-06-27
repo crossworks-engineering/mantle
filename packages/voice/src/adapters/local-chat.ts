@@ -17,11 +17,19 @@
  * retry before the primary→backup failover layer takes over.
  */
 
-import type { ChatDispatcher, ChatModelInfo, ChatOptions, ChatResult } from './types';
+import type {
+  ChatDispatcher,
+  ChatModelInfo,
+  ChatOptions,
+  ChatResult,
+  ChatStreamSink,
+} from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
+import { chatAbortSignal } from './sse';
 import type { DiscoveryResult } from '../discover';
 import {
   extractOpenAICompatToolCalls,
+  streamOpenAICompatChat,
   toOpenAICompatMessages,
   type OpenAICompatChatResponse,
 } from './openai-compat';
@@ -60,7 +68,7 @@ async function localChat(opts: ChatOptions): Promise<ChatResult> {
       'content-type': 'application/json',
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(300_000),
+    signal: chatAbortSignal(opts.signal, 300_000),
   });
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
@@ -107,9 +115,26 @@ async function localChatDiscover(_apiKey: string): Promise<DiscoveryResult<ChatM
   }
 }
 
+/** Streaming local chat — OpenAI-compatible SSE against the configured box,
+ *  through the Tailscale proxy when `viaTailnet` is set. */
+function localChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Promise<ChatResult> {
+  if (!opts.model) throw new Error('local-chat: model required');
+  return streamOpenAICompatChat(
+    opts,
+    {
+      url: `${baseUrl(opts.baseUrl)}/chat/completions`,
+      headers: { Authorization: `Bearer ${opts.apiKey || 'local'}`, 'content-type': 'application/json' },
+      provider: 'local',
+      ...(opts.viaTailnet ? { fetchImpl: tailnetFetch as typeof fetch } : {}),
+    },
+    onDelta,
+  );
+}
+
 export const localChatAdapter: ChatDispatcher = {
   providerId: 'local',
   adapterName: 'local-chat',
   chat: localChat,
+  chatStream: localChatStream,
   discoverModels: localChatDiscover,
 };

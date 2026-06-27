@@ -31,8 +31,10 @@ import type {
   ChatModelInfo,
   ChatOptions,
   ChatResult,
+  ChatStreamSink,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
+import { chatAbortSignal } from './sse';
 import type { DiscoveryResult } from '../discover';
 import {
   HUGGINGFACE_BASE_URL,
@@ -42,6 +44,7 @@ import {
 } from '../catalogs/huggingface';
 import {
   extractOpenAICompatToolCalls,
+  streamOpenAICompatChat,
   toOpenAICompatMessages,
   type OpenAICompatChatResponse,
 } from './openai-compat';
@@ -103,7 +106,7 @@ async function hfChat(opts: ChatOptions): Promise<ChatResult> {
       'content-type': 'application/json',
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60_000),
+    signal: chatAbortSignal(opts.signal, 60_000),
   });
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
@@ -162,10 +165,32 @@ async function hfDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo
   }
 }
 
+/** Streaming HF chat — OpenAI-compatible SSE. Applies the same routing suffix as
+ *  hfChat and strips the HF-internal `routing` from `extra` so it never reaches
+ *  the wire body. */
+function hfChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Promise<ChatResult> {
+  if (!opts.apiKey) throw new Error('huggingface-chat: apiKey required');
+  if (!opts.model) throw new Error('huggingface-chat: model required');
+  const routing = (opts.extra?.routing as string | undefined) ?? undefined;
+  const model = applyRoutingSuffix(opts.model, routing);
+  return streamOpenAICompatChat(
+    // model = suffixed; extra dropped (routing is consumed into the suffix, not a
+    // wire field), matching hfChat's body.
+    { ...opts, model, extra: undefined },
+    {
+      url: `${HUGGINGFACE_BASE_URL}/chat/completions`,
+      headers: { Authorization: `Bearer ${opts.apiKey}`, 'content-type': 'application/json' },
+      provider: 'huggingface',
+    },
+    onDelta,
+  );
+}
+
 export const huggingfaceChatAdapter: ChatDispatcher = {
   providerId: 'huggingface',
   adapterName: 'huggingface-chat',
   chat: hfChat,
+  chatStream: hfChatStream,
   discoverModels: hfDiscover,
   staticCatalog: () => HUGGINGFACE_CHAT_MODELS,
 };
