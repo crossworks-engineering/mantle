@@ -1,8 +1,9 @@
 # Live Turn Streaming — Session Handover
 
 **Branch:** `feat/live-turn-streaming` · **Design doc:** [`docs/live-turn-streaming.md`](live-turn-streaming.md)
-**Status:** Steps 0–2 DONE, committed, and live-verified in-browser. Next destination: **Step 3 (token streaming).**
-**Version:** ~v0.70.0 · **Untagged**, **unpushed** (default-branch + tag are Jason's call).
+**Status:** Steps 0–2 DONE + the narrator promoted to its own worker kind, all committed and verified.
+Next destination: **Step 3 (token streaming).**
+**Version:** ~v0.71.0 · **Untagged**, **unpushed** (default-branch + tag are Jason's call).
 
 This is the resume point. Read this first, then the design doc for the Step-3 plan.
 
@@ -17,6 +18,7 @@ This is the resume point. Read this first, then the design doc for the Step-3 pl
 | `3c1524c5` | fix — read tool args from the nested `{slug,args}` step input |
 | `cf4e13db` | **thought-trail UI** — persistent inline record per turn |
 | `7005f056` | **Step 2** — narrate the trail in the assistant's voice |
+| `044f7b1a` | **narrator worker kind** — its own configurable worker + verbosity dial (v0.71.0) |
 
 Plus the design doc + a doc-only `282b6cc7`. `main` is reconciled to `98f76e51` (the FE/BE-split fixes that
 were stranded on this branch — see git log).
@@ -107,11 +109,15 @@ See [`docs/live-turn-streaming.md`](live-turn-streaming.md) §5–§7, §9. In s
 
 ## 7. Open ideas / decisions (Jason's, captured)
 
-- **Promote the narrator to its own `narrator` worker kind** (enum migration + manifest + drift type), so
-  its model/prompt/params are managed in Settings separately from `summarizer`. **Key payoff (Jason's
-  note):** a user-tunable **verbosity** — a phrase vs a sentence vs a *paragraph* — via the narrator
-  worker's `systemPrompt`/params ("a skill that tells it how much to say"). The call site
-  (`narrateStatus`) won't change; just swap `getDefaultWorker('summarizer')` → `('narrator')`.
+- ~~**Promote the narrator to its own `narrator` worker kind**~~ — **DONE (`044f7b1a`, v0.71.0).**
+  `narrator` is now a real worker kind (enum migration `0106`, `NarratorParams`, manifest entry, the full
+  AI-workers Settings form, `CAPABILITY_FOR_KIND`). `narrateStatus` resolves the `narrator` worker first and
+  honours its `systemPrompt` (the **verbosity dial** — phrase vs sentence vs paragraph) + `temperature`/
+  `max_tokens`; brains without one fall back to `summarizer` + the built-in concise prompt (zero
+  regression). The narrator is **optional** ⇒ seeded on fresh onboarding only — an existing brain gets one
+  via Settings → AI workers → *Add* or `/settings/config` → *Adopt from template*. The one-line `tidy` cap
+  was relaxed 80→400 so a longer setting isn't truncated. Verified end-to-end on the local brain (concise
+  fallback vs a full paragraph once a tuned narrator worker is the default).
 - **Cross-reload persistence** of the thought record (survive a hard refresh): store a compact trail on the
   outbound `assistant_messages.data`, or derive it from the turn's trace on read. Currently session-scoped.
 - **Narrate "Thinking…" too?** Skipped today to save spend; revisit if the voice should be continuous.

@@ -202,6 +202,17 @@ while the agent actually delegated). So:
 After Phase 3 its job *narrows* to "compress the real `reasoning-delta` stream into one line" — a
 summarizer fed by ground truth, emitting `status` events on the same bus. Not a parallel guesser.
 
+> **Implementation status (Step 2 + narrator worker — done):** the narrator is a CONFIGURABLE AI
+> worker, not local Ollama. Step 2 reused the `summarizer` worker; it was then promoted to its own
+> **`narrator` worker kind** (`044f7b1a`, v0.71.0 — enum migration `0106`, `NarratorParams`, manifest
+> entry, the full AI-workers Settings form). Its **system prompt is the user-tunable verbosity dial**
+> (terse phrase → sentence → short paragraph; `max_tokens` is the length control). `narrateStatus`
+> resolves the `narrator` worker first and falls back to `summarizer` + the built-in concise prompt
+> on brains that don't have one (zero regression). Optional ⇒ fresh-onboarding only; adopt onto an
+> existing brain via Settings → AI workers. Still fire-and-forget, off the turn's critical path, tool
+> steps only; "Thinking…" stays plain (no narrator spend). The ground-truth-only / never-predict rule
+> above still holds — the narrator only restyles a real status line.
+
 ---
 
 ## 5. Phase 3 — token streaming
@@ -308,7 +319,9 @@ Each step is independently shippable and degrades gracefully to the one before i
 
 - **Buffer store** when we scale out: `turn_stream_buffer` table (no new infra, fits the
   Postgres-centric stack) vs Redis (purpose-built, another dependency). Lean table-first.
-- **Narrator model:** which local Ollama model balances latency vs phrasing quality.
+- ~~**Narrator model:**~~ **RESOLVED** — the narrator is its own configurable worker kind; the model is
+  a per-owner Settings choice (default: openrouter `gemini-flash-lite`), and its system prompt is the
+  verbosity dial. See §4's implementation note.
 - **Reasoning exposure:** show `reasoning-delta` to end users (collapsible) or only feed it to the
   narrator? Privacy/UX call — default to narrator-only first.
 - **Endpoint home — RESOLVED:** the SSE endpoint lives in **`apps/web`** (all `/api/**` routes do;
