@@ -94,29 +94,31 @@ Per screen (mirrors `docs/client-data-fetching.md`):
 ## Remaining work (in priority order)
 
 ### #4 — the unconverted screens that never had server actions (the biggest remaining chunk)
-These still SSR-read the DB. Two buckets:
 
-**a) Page imports a server data package directly** (grep:
-`grep -rln "from '@mantle/\(content\|email\|files\|calendar\|tools\|microsoft\|search\)'" "apps/web/app/(app)" --include=page.tsx`):
-- `apps/page.tsx`, `apps/[id]/page.tsx` (`@mantle/content` — `/api/apps` exists, just wire it)
-- `pending/page.tsx` (`listPendingCalls` — `/api/pending` exists)
-- `settings/entities/page.tsx` (`findDuplicateCandidates` — `/api/entities/*` exists)
-- `settings/pdf-passwords/page.tsx` (`/api/pdf-passwords` exists)
-- `settings/peers/page.tsx` (`listPeers` — `/api/peers` exists)
-- `settings/accounts/[id]/edit/page.tsx` (`getAccount` — `/api/email/accounts/[id]` exists)
-- `heartbeats/[id]/page.tsx` (renders inline, **no client component yet** — build one;
-  `/api/heartbeats/[id]` exists)
-- `n/[id]/page.tsx` — **legitimately server-only** (it's a `redirect()` router, not a screen; leave it)
+**✅ "Endpoint already exists, just wire it" — DONE (v0.66.1–0.66.12).** Converted: `apps`(+`[id]`),
+`pending`, `heartbeats/[id]` (built `GET /api/heartbeats/[id]/detail`), `files` (+`file-editor`),
+`secrets`(+`[id]`; extended `GET /api/secrets` to paginate), `models` (built `GET /api/models/explore`),
+`nodes/[id]/history` (built `GET /api/nodes/[id]/history`), `dev-tools` (seeds via `GET /api/tools`),
+settings/{`accounts/[id]/edit`, `peers`, `entities`, `pdf-passwords`}. `n/[id]` stays server-only
+(redirect router). Pattern notes:
+- URL-driven lists (`apps`, `secrets`, `models`): page parses searchParams (no DB) → passes as
+  props → client `useQuery` keyed on them with `placeholderData:(prev)=>prev`; `useListNav` still
+  drives the URL. **No `useSearchParams`/Suspense needed** when the page forwards params as props
+  (only `/files` reads `useSearchParams` in the client → wrapped in `<Suspense>`).
+- A few needed a small new GET that bundles what the page computed (heartbeats detail / models
+  explore / nodes history) or a pagination extension (`/secrets`, `/apps`).
+- `/dev-tools` only data-frees the page (seeds `DevToolsShell` from `/api/tools`); the console's
+  internal per-request fetches (`/api/dev-tools/*`, raw `fetch`) are a **separate larger pass** if a
+  detached client needs them.
+- Raw-asset element `src`s (`/api/files/files/[id]?raw=1` in `<img>`/`<iframe>`/download) were left
+  same-origin — a detached-asset-auth follow-up, same class as the SSE bearer (#5).
 
-**b) Page reads via `@/lib/*` helpers** (need MISSING endpoints built first): `/traces`(+`[id]`),
+**REMAINING = "build the endpoint first"** (page reads via `@/lib/*`, no API yet): `/traces`(+`[id]`),
 the `/debug/*` family (agents, context, digests, facts, journey(+`[traceId]`), spend, telegram,
 topics — only `/debug/integrity` is converted), `/studio` (graph read), `/docs/[...slug]` reader
 (largely static markdown — may stay server-only), `/` dashboard + `/assistant` (extend the existing
-partial `/api/dashboard/summary` + `/api/assistant/messages`), `/files`, `/secrets`, `/models`,
-`/dev-tools`, `/nodes/[id]/history`. (`/changelog` is static markdown — low priority / leave.)
-
-Order suggestion: do the bucket-(a) "endpoint already exists" ones first (fast), then build
-endpoints + convert for bucket (b). Run the recipe per screen.
+partial `/api/dashboard/summary` + `/api/assistant/messages`). (`/changelog` is static markdown —
+leave.) Each: build a GET returning the page's bundle, then run the recipe.
 
 ### #5 — SSE bearer for `/api/realtime`
 `/api/realtime` is consumed by `components/realtime/use-realtime.ts` via raw `EventSource`, which
