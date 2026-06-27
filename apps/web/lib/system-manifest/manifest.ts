@@ -176,9 +176,15 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     instructions: SKILL_INSTRUCTIONS['page_editing']!,
   },
   {
+    slug: 'chat_writing',
+    name: 'Chat writing',
+    description: 'Standard Markdown for conversational replies — portable to web, mobile, and voice; no rich page dialect.',
+    instructions: SKILL_INSTRUCTIONS['chat_writing']!,
+  },
+  {
     slug: 'rich_writing',
     name: 'Rich writing',
-    description: 'The rich Mantle dialect: callouts, asides, columns, tables, task lists, KaTeX.',
+    description: 'The rich Mantle dialect (callouts, asides, columns, KaTeX) for authoring PAGE documents — the Pages specialist.',
     instructions: SKILL_INSTRUCTIONS['rich_writing']!,
   },
   {
@@ -624,7 +630,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'profile',
       'export',
     ],
-    skillSlugs: ['tool_grounding', 'voice_reply', 'rich_writing', 'location_awareness', 'navigation', 'integrations'],
+    skillSlugs: ['tool_grounding', 'voice_reply', 'chat_writing', 'location_awareness', 'navigation', 'integrations'],
     params: { temperature: 0.7, max_tokens: 16000 },
     // Context budgets for the generalist responder. Onboarding seeds these
     // verbatim; the persona's PROMPT stays an overlay (persona bank + the
