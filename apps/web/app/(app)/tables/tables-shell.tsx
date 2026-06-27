@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Loader2, PanelLeftClose, PanelLeftOpen, Plus, Search, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useListNav } from '@/lib/use-list-nav';
-import { apiFetch } from '@/lib/api-fetch';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import { Spinner } from '@/components/ui/spinner';
 import { useRealtime } from '@/components/realtime/use-realtime';
 import { SetPageTitle } from '@/components/layout/page-title';
@@ -165,16 +165,14 @@ export function TablesShell() {
     if (!title) return;
     setCreating(true);
     try {
-      const res = await fetch('/api/tables', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title }),
-      });
-      if (!res.ok) { toast.error('Could not create table'); return; }
-      const { table } = await res.json();
+      const { table } = await apiSend<{ table: TableDetail }>('/api/tables', 'POST', { title });
       setCreateOpen(false);
       await queryClient.invalidateQueries({ queryKey: ['tables'] });
       go({ selected: table.id });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      toast.error('Could not create table');
+      return;
     } finally {
       setCreating(false);
     }
@@ -182,8 +180,13 @@ export function TablesShell() {
 
   const confirmDelete = useCallback(async () => {
     if (!deleteTarget) return;
-    const res = await fetch(`/api/tables/${deleteTarget.id}`, { method: 'DELETE' });
-    if (!res.ok) { toast.error('Could not delete table'); return; }
+    try {
+      await apiSend(`/api/tables/${deleteTarget.id}`, 'DELETE');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      toast.error('Could not delete table');
+      return;
+    }
     toast.success('Table deleted');
     const wasSelected = deleteTarget.id === selectedId;
     setDeleteTarget(null);

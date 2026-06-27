@@ -23,6 +23,7 @@ import { ExportButton } from '@/components/export/export-button';
 import { TableGrid } from '@/components/table-grid/table-grid';
 import { TableAssistPanel } from '@/components/table-grid/table-assist-panel';
 import { ensureTableDoc, type TableDoc } from '@mantle/content/table-model';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import type { TableDetail } from '@/lib/tables';
 
 /** Display name of the table specialist (agent slug stays `tables`). */
@@ -62,16 +63,12 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
     if (s === draftSavedRef.current) return;
     setDraftSaving(true);
     try {
-      const res = await fetch(`/api/tables/${initial.id}/draft`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: docRef.current }),
-      });
-      if (!res.ok) {
-        toast.error('Could not save draft');
-        return;
-      }
+      await apiSend(`/api/tables/${initial.id}/draft`, 'PUT', { data: docRef.current });
       draftSavedRef.current = s;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      toast.error('Could not save draft');
+      return;
     } finally {
       setDraftSaving(false);
     }
@@ -89,12 +86,12 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
   useEffect(() => {
     if (title === metaSavedRef.current) return;
     const h = setTimeout(async () => {
-      const res = await fetch(`/api/tables/${initial.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: title.trim() || 'Untitled table' }),
-      });
-      if (res.ok) metaSavedRef.current = title;
+      try {
+        await apiSend(`/api/tables/${initial.id}`, 'PATCH', { title: title.trim() || 'Untitled table' });
+        metaSavedRef.current = title;
+      } catch {
+        // metadata autosave is best-effort; the next edit retries.
+      }
     }, META_DEBOUNCE_MS);
     return () => clearTimeout(h);
   }, [title, initial.id]);
@@ -103,12 +100,12 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
   useEffect(() => {
     if (icon === iconSavedRef.current) return;
     const h = setTimeout(async () => {
-      const res = await fetch(`/api/tables/${initial.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ icon: icon.trim() }),
-      });
-      if (res.ok) iconSavedRef.current = icon;
+      try {
+        await apiSend(`/api/tables/${initial.id}`, 'PATCH', { icon: icon.trim() });
+        iconSavedRef.current = icon;
+      } catch {
+        // metadata autosave is best-effort; the next edit retries.
+      }
     }, META_DEBOUNCE_MS);
     return () => clearTimeout(h);
   }, [icon, initial.id]);
@@ -120,21 +117,16 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
     if (s === committedRef.current) return;
     setCommitting(true);
     try {
-      const res = await fetch(`/api/tables/${initial.id}/commit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: docRef.current }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        toast.error(j.error ?? 'Commit failed');
-        return;
-      }
+      await apiSend(`/api/tables/${initial.id}/commit`, 'POST', { data: docRef.current });
       committedRef.current = s;
       draftSavedRef.current = s;
       toast.success('Committed');
       // Refresh the list summary (title/updatedAt) + the selected-table query.
       void queryClient.invalidateQueries({ queryKey: ['tables'] });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      toast.error(e instanceof Error ? e.message : 'Commit failed');
+      return;
     } finally {
       setCommitting(false);
     }
@@ -142,14 +134,21 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
 
   // ── Discard: throw away the draft, revert to the published grid. ──
   const discard = useCallback(async () => {
-    await fetch(`/api/tables/${initial.id}/discard-draft`, { method: 'POST' });
-    const res = await fetch(`/api/tables/${initial.id}`);
-    if (res.ok) {
-      const { table } = (await res.json()) as { table: TableDetail };
+    try {
+      await apiSend(`/api/tables/${initial.id}/discard-draft`, 'POST');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      // fire-and-forget: the re-read below reflects whatever the server kept.
+    }
+    try {
+      const { table } = await apiFetch<{ table: TableDetail }>(`/api/tables/${initial.id}`);
       const fresh = ensureTableDoc(table.data);
       setDoc(fresh);
       committedRef.current = JSON.stringify(fresh);
       draftSavedRef.current = committedRef.current;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      // re-read failed; leave the current grid in place.
     }
     toast.success('Draft discarded');
   }, [initial.id, toast]);
@@ -161,23 +160,28 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
       try {
         const fd = new FormData();
         fd.append('file', file);
-        const res = await fetch(`/api/tables/${initial.id}/import`, { method: 'POST', body: fd });
-        const j = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          toast.error(j.error ?? 'Import failed');
-          return;
-        }
+        // FormData body: apiFetch (NOT apiSend) so the multipart boundary survives.
+        const j = await apiFetch<{ rows: number; columns: number; extra_tables?: unknown[] }>(
+          `/api/tables/${initial.id}/import`,
+          { method: 'POST', body: fd },
+        );
         // The first sheet landed in the draft — reload it.
-        const got = await fetch(`/api/tables/${initial.id}`);
-        if (got.ok) {
-          const { table } = (await got.json()) as { table: TableDetail };
+        try {
+          const { table } = await apiFetch<{ table: TableDetail }>(`/api/tables/${initial.id}`);
           setDoc(ensureTableDoc(table.draft ?? table.data));
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 401) return;
+          // re-read failed; the import still landed server-side.
         }
         const extra = (j.extra_tables?.length ?? 0) as number;
         toast.success(
           `Imported ${j.rows} rows × ${j.columns} columns${extra ? ` (+${extra} more table${extra === 1 ? '' : 's'})` : ''}. Review, then Commit.`,
         );
         if (extra) void queryClient.invalidateQueries({ queryKey: ['tables'] });
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) return;
+        toast.error(e instanceof Error ? e.message : 'Import failed');
+        return;
       } finally {
         setImporting(false);
       }
@@ -186,8 +190,10 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
   );
 
   const doDelete = useCallback(async () => {
-    const res = await fetch(`/api/tables/${initial.id}`, { method: 'DELETE' });
-    if (!res.ok) {
+    try {
+      await apiSend(`/api/tables/${initial.id}`, 'DELETE');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
       toast.error('Could not delete table');
       return;
     }

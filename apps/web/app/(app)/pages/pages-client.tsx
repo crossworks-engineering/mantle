@@ -51,7 +51,7 @@ import {
 } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { PageSort } from '@/lib/pages';
-import { apiFetch } from '@/lib/api-fetch';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import { Spinner } from '@/components/ui/spinner';
 import { SubmitButton } from '@/components/ui/submit-button';
 import {
@@ -226,8 +226,7 @@ export function PagesClient() {
     }
     let cancelled = false;
     setDeleteDescendants(null);
-    fetch(`/api/pages/${deleteTarget.id}/descendant-count`)
-      .then((r) => (r.ok ? r.json() : null))
+    apiFetch<{ count?: number }>(`/api/pages/${deleteTarget.id}/descendant-count`)
       .then((d) => {
         if (!cancelled && d) setDeleteDescendants(typeof d.count === 'number' ? d.count : 0);
       })
@@ -283,14 +282,11 @@ export function PagesClient() {
     // Surface the result immediately, then re-pull the SSR tree (the same
     // refresh pattern create/delete use). Expand the new parent so the moved
     // page is visible where it landed instead of hiding in a collapsed branch.
-    const res = await fetch(`/api/pages/${id}/move`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parentId }),
-    });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast.error(j.error ?? 'Could not move page');
+    try {
+      await apiSend(`/api/pages/${id}/move`, 'POST', { parentId });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      toast.error(e instanceof Error ? e.message : 'Could not move page');
       return;
     }
     if (parentId) setExpanded((prev) => new Set(prev).add(parentId));
@@ -354,17 +350,17 @@ export function PagesClient() {
     }
     setSaving(true);
     try {
-      const res = await fetch('/api/pages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: form.title.trim(), tags: form.tags }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        toast.error(j.error ?? `request failed (${res.status})`);
+      let created: PageRow;
+      try {
+        ({ page: created } = await apiSend<{ page: PageRow }>('/api/pages', 'POST', {
+          title: form.title.trim(),
+          tags: form.tags,
+        }));
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) return;
+        toast.error(e instanceof Error ? e.message : 'request failed');
         return;
       }
-      const { page: created } = (await res.json()) as { page: PageRow };
       setForm({ title: '', tags: [] });
       setOpen(false);
       toast.success('Page created');
@@ -379,25 +375,28 @@ export function PagesClient() {
 
   // Create a sub-page under `parentId` and open it (create & edit, like New).
   const createChild = async (parentId: string) => {
-    const res = await fetch('/api/pages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Untitled page', parentId }),
-    });
-    if (!res.ok) {
-      toast.error('Could not create sub-page');
+    let created: PageRow;
+    try {
+      ({ page: created } = await apiSend<{ page: PageRow }>('/api/pages', 'POST', {
+        title: 'Untitled page',
+        parentId,
+      }));
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      toast.error(e instanceof Error ? e.message : 'Could not create sub-page');
       return;
     }
-    const { page: created } = (await res.json()) as { page: PageRow };
     void queryClient.invalidateQueries({ queryKey: ['pages'] }); // keep the list fresh
     router.push(`/pages/${created.id}`);
   };
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    const res = await fetch(`/api/pages/${deleteTarget.id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      toast.error('Could not delete page');
+    try {
+      await apiSend(`/api/pages/${deleteTarget.id}`, 'DELETE');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      toast.error(e instanceof Error ? e.message : 'Could not delete page');
       return;
     }
     toast.success(
@@ -1010,9 +1009,8 @@ function PagePreview({ row, onDelete }: { row: PageRow; onDelete: () => void }) 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch(`/api/pages/${row.id}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then(({ page }: { page: { doc: JSONContent; draft: JSONContent | null } }) => {
+    apiFetch<{ page: { doc: JSONContent; draft: JSONContent | null } }>(`/api/pages/${row.id}`)
+      .then(({ page }) => {
         if (!cancelled) {
           setDoc(page.draft ?? page.doc);
           setIsDraft(!!page.draft);

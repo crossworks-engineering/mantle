@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { ListPager } from '@/components/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
-import { apiFetch } from '@/lib/api-fetch';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { useNow } from '@/components/use-now';
@@ -128,17 +128,14 @@ export function EventsClient() {
   }, [now, all, tz]);
 
   const createEvent = async (payload: EventPayload) => {
-    const res = await fetch('/api/events', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast.error(j.error ?? `Could not save event (${res.status})`);
+    let event: EventRow;
+    try {
+      ({ event } = await apiSend<{ event: EventRow }>('/api/events', 'POST', payload));
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not save event');
       return;
     }
-    const { event } = (await res.json()) as { event: EventRow };
     setEvents((p) => [event, ...p]);
     setSel({ mode: 'view', id: event.id });
     toast.success(`Saved “${event.title}”`);

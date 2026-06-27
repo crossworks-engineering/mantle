@@ -520,8 +520,7 @@ export function AgentsClient() {
   const [contextLimits, setContextLimits] = useState<Record<string, number>>({});
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/model-context')
-      .then((r) => (r.ok ? r.json() : null))
+    apiFetch<{ limits?: Record<string, number> }>('/api/model-context')
       .then((d) => {
         if (!cancelled && d?.limits) setContextLimits(d.limits as Record<string, number>);
       })
@@ -560,8 +559,9 @@ export function AgentsClient() {
     // previous provider.
     setCatalogState({ loading: true, error: null });
     setCatalog([]);
-    fetch(`/api/models?provider=${encodeURIComponent(provider)}`)
-      .then((r) => (r.ok ? r.json() : null))
+    apiFetch<{ models?: ExplorerModel[]; error?: string }>(
+      `/api/models?provider=${encodeURIComponent(provider)}`,
+    )
       .then((d) => {
         if (cancelled) return;
         if (d?.models && Array.isArray(d.models)) {
@@ -598,8 +598,9 @@ export function AgentsClient() {
     let cancelled = false;
     setBackupCatalogState({ loading: true, error: null });
     setBackupCatalog([]);
-    fetch(`/api/models?provider=${encodeURIComponent(provider)}`)
-      .then((r) => (r.ok ? r.json() : null))
+    apiFetch<{ models?: ExplorerModel[]; error?: string }>(
+      `/api/models?provider=${encodeURIComponent(provider)}`,
+    )
       .then((d) => {
         if (cancelled) return;
         if (d?.models && Array.isArray(d.models)) {

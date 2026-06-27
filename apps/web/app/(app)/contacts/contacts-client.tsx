@@ -30,7 +30,7 @@ import { useToast } from '@/components/ui/toast';
 import { TagInput } from '@/components/tag-input';
 import { ListPager } from '@/components/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
-import { apiFetch } from '@/lib/api-fetch';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 // IMPORTANT: import from the *leaf* `contacts-format` subpath, NOT the
 // `@/lib/contacts` re-export — that one barrels through `@mantle/content` →
 // `@mantle/db` → `postgres` (Node-only `fs`), which Next can't ship to the
@@ -211,21 +211,19 @@ function NewContactButton() {
   const [pending, start] = useTransition();
   const onClick = () => {
     start(async () => {
-      const res = await fetch('/api/contacts', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
+      let contact: ContactRow;
+      try {
         // Create a fully-empty draft — the form opens to blank fields. Empty
         // contacts are inert (no email ⇒ not in the allowlist, no recipient
         // match ⇒ no counter bumps) until the user fills them in.
-        body: '{}',
-      });
-      const body = (await res.json().catch(() => ({}))) as { contact?: ContactRow; error?: string };
-      if (!res.ok || !body.contact) {
-        toast.error(body.error ?? 'Could not create contact');
+        ({ contact } = await apiSend<{ contact: ContactRow }>('/api/contacts', 'POST', {}));
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+        toast.error(e instanceof Error ? e.message : 'Could not create contact');
         return;
       }
       await queryClient.invalidateQueries({ queryKey: ['contacts'] });
-      go({ id: body.contact.id, page: null });
+      go({ id: contact.id, page: null });
     });
   };
   return (
@@ -277,10 +275,8 @@ function ContactForm({ contact }: { contact: ContactRow }) {
       return;
     }
     start(async () => {
-      const res = await fetch(`/api/contacts/${contact.id}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
+      try {
+        await apiSend<{ contact: ContactRow }>(`/api/contacts/${contact.id}`, 'PATCH', {
           first_name: firstName,
           last_name: lastName,
           company,
@@ -289,11 +285,10 @@ function ContactForm({ contact }: { contact: ContactRow }) {
           cell,
           description,
           tags,
-        }),
-      });
-      const body = (await res.json().catch(() => ({}))) as { contact?: ContactRow; error?: string };
-      if (!res.ok || !body.contact) {
-        toast.error(body.error ?? 'Could not save');
+        });
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+        toast.error(e instanceof Error ? e.message : 'Could not save');
         return;
       }
       toast.success('Saved');
@@ -305,10 +300,11 @@ function ContactForm({ contact }: { contact: ContactRow }) {
 
   const onDelete = () => {
     startDelete(async () => {
-      const res = await fetch(`/api/contacts/${contact.id}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        toast.error(body.error ?? 'Could not delete');
+      try {
+        await apiSend(`/api/contacts/${contact.id}`, 'DELETE');
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+        toast.error(e instanceof Error ? e.message : 'Could not delete');
         return;
       }
       toast.success('Deleted');

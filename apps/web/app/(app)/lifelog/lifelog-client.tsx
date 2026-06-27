@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { ListPager } from '@/components/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
-import { apiFetch } from '@/lib/api-fetch';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import { TagPill } from '@/components/tag-pill';
@@ -156,9 +156,11 @@ export function LifelogClient() {
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    const res = await fetch(`/api/lifelog/${deleteTarget.id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      toast.error('Could not delete life log');
+    try {
+      await apiSend(`/api/lifelog/${deleteTarget.id}`, 'DELETE');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not delete life log');
       return;
     }
     toast.success('Life log deleted');

@@ -28,6 +28,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { formatDateTime } from '@/lib/format-datetime';
+import { apiSend, ApiError } from '@/lib/api-fetch';
 import type { PersonaNoteDTO } from '@mantle/client-types';
 
 type Kind = PersonaNoteDTO['kind'];
@@ -108,19 +109,15 @@ export function PersonaNotesEditor({
   async function call(body: Action): Promise<boolean> {
     setBusy(true);
     try {
-      const res = await fetch(`/api/agents/${agentId}/persona`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        agent?: { personaNotes?: PersonaNoteDTO[] };
-        error?: string;
-      };
-      if (!res.ok) throw new Error(data.error ?? `request failed (${res.status})`);
+      const data = await apiSend<{ agent?: { personaNotes?: PersonaNoteDTO[] } }>(
+        `/api/agents/${agentId}/persona`,
+        'POST',
+        body,
+      );
       setNotes(data.agent?.personaNotes ?? []);
       return true;
     } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return false;
       toast.error(e instanceof Error ? e.message : String(e));
       return false;
     } finally {

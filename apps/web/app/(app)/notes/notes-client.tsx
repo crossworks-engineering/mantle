@@ -35,7 +35,7 @@ import { TagPill } from '@/components/tag-pill';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
 import { syncSelectionParam } from '@/lib/url-sync';
-import { apiFetch } from '@/lib/api-fetch';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import { Spinner } from '@/components/ui/spinner';
 import { NoteEditor, type NoteRow } from './note-editor';
 
@@ -259,9 +259,11 @@ export function NotesClient() {
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    const res = await fetch(`/api/notes/${deleteTarget.id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      toast.error('Could not delete note');
+    try {
+      await apiSend(`/api/notes/${deleteTarget.id}`, 'DELETE');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not delete note');
       return;
     }
     toast.success('Note deleted');

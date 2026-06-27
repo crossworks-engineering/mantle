@@ -30,7 +30,7 @@ import { PageOutline } from '@/components/page-editor/page-outline';
 import { PageBacklinks } from '@/components/page-editor/page-backlinks';
 import { AiAssistPanel } from '@/components/page-editor/ai-assist-panel';
 import type { Backlink } from '@/lib/pages';
-import { apiFetch } from '@/lib/api-fetch';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import { Spinner } from '@/components/ui/spinner';
 import { buildPageToc, type TocEntry } from '@mantle/content/page-toc';
 import {
@@ -138,8 +138,7 @@ function PageDetailEditor({
       return;
     }
     let cancelled = false;
-    fetch(`/api/pages/${initial.id}/descendant-count`)
-      .then((r) => (r.ok ? r.json() : null))
+    apiFetch<{ count?: number }>(`/api/pages/${initial.id}/descendant-count`)
       .then((d) => {
         if (!cancelled && d) setDeleteDescendants(typeof d.count === 'number' ? d.count : 0);
       })
@@ -170,13 +169,11 @@ function PageDetailEditor({
     if (s === draftSavedRef.current) return;
     setDraftSaving(true);
     try {
-      const res = await fetch(`/api/pages/${initial.id}/draft`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ doc: docRef.current }),
-      });
-      if (!res.ok) {
-        toast.error('Could not save draft');
+      try {
+        await apiSend(`/api/pages/${initial.id}/draft`, 'PUT', { doc: docRef.current });
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) return;
+        toast.error(e instanceof Error ? e.message : 'Could not save draft');
         return;
       }
       draftSavedRef.current = s;
@@ -194,12 +191,13 @@ function PageDetailEditor({
     const payload = { title: title.trim() || 'Untitled page', tags, icon: icon ?? '' };
     const s = JSON.stringify(payload);
     if (s === metaSavedRef.current) return;
-    const res = await fetch(`/api/pages/${initial.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) metaSavedRef.current = s;
+    try {
+      await apiSend(`/api/pages/${initial.id}`, 'PATCH', payload);
+      metaSavedRef.current = s;
+    } catch {
+      // Silent — a failed metadata write just reverts on next load (matches the
+      // prior `if (res.ok)` no-op-on-failure). apiSend's 401 bounce still fires.
+    }
   }, [initial.id, title, tags, icon]);
 
   // ── Commit: publish + index. The only path that touches the brain. ──
@@ -211,14 +209,11 @@ function PageDetailEditor({
     setCommitting(true);
     try {
       await saveMeta(); // make sure title/tags reflect the screen too
-      const res = await fetch(`/api/pages/${initial.id}/commit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ doc: docRef.current }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        toast.error(j.error ?? 'Commit failed');
+      try {
+        await apiSend(`/api/pages/${initial.id}/commit`, 'POST', { doc: docRef.current });
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) return;
+        toast.error(e instanceof Error ? e.message : 'Commit failed');
         return;
       }
       committedRef.current = docStr;
@@ -353,11 +348,7 @@ function PageDetailEditor({
     if (next === width) return;
     setWidth(next); // optimistic
     try {
-      await fetch(`/api/pages/${initial.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ width: next }),
-      });
+      await apiSend(`/api/pages/${initial.id}`, 'PATCH', { width: next });
     } catch {
       // Width is a cosmetic preference; a failed write just reverts next load.
     }
@@ -588,10 +579,12 @@ function PageDetailEditor({
 
   const confirmDelete = async () => {
     deletedRef.current = true; // suppress flush
-    const res = await fetch(`/api/pages/${initial.id}`, { method: 'DELETE' });
-    if (!res.ok) {
+    try {
+      await apiSend(`/api/pages/${initial.id}`, 'DELETE');
+    } catch (e) {
       deletedRef.current = false;
-      toast.error('Could not delete page');
+      if (e instanceof ApiError && e.status === 401) return;
+      toast.error(e instanceof Error ? e.message : 'Could not delete page');
       return;
     }
     toast.success('Page deleted');

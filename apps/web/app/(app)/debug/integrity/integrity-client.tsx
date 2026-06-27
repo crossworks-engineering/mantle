@@ -16,6 +16,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { useRealtime } from '@/components/realtime/use-realtime';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import type {
   AuditCheck,
   AuditReport,
@@ -203,10 +204,10 @@ function LiveView() {
     async (quiet = false) => {
       if (!quiet) setLoading(true);
       try {
-        const res = await fetch('/api/debug/integrity/landed');
-        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
-        setReport((await res.json()) as LandedReport);
+        const data = await apiFetch<LandedReport>('/api/debug/integrity/landed');
+        setReport(data);
       } catch (err) {
+        if (err instanceof ApiError && err.status === 401) return;
         if (!quiet) toast.error(err instanceof Error ? err.message : 'Load failed');
       } finally {
         setLoading(false);
@@ -231,15 +232,11 @@ function LiveView() {
   async function remove(nodeId: string) {
     setDeleting(nodeId);
     try {
-      const res = await fetch('/api/debug/integrity/landed/delete', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ nodeId }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
+      await apiSend('/api/debug/integrity/landed/delete', 'POST', { nodeId });
       setReport((r) => (r ? { ...r, items: r.items.filter((i) => i.nodeId !== nodeId) } : r));
       toast.success('Deleted node + footprint');
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) return;
       toast.error(err instanceof Error ? err.message : 'Delete failed');
     } finally {
       setDeleting(null);
@@ -368,12 +365,11 @@ function AuditView() {
   async function runAudit() {
     setRunning(true);
     try {
-      const res = await fetch('/api/debug/integrity/audit');
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
-      const data = (await res.json()) as AuditReport;
+      const data = await apiFetch<AuditReport>('/api/debug/integrity/audit');
       setReport(data);
       toast.success(data.totalViolations === 0 ? 'Corpus clean — no violations' : `${data.totalViolations} violations across ${data.checks.filter((c) => !c.ok).length} checks`);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) return;
       toast.error(err instanceof Error ? err.message : 'Audit failed');
     } finally {
       setRunning(false);
@@ -466,12 +462,11 @@ function SystemView() {
   const run = useCallback(async () => {
     setRunning(true);
     try {
-      const res = await fetch('/api/debug/integrity/system');
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
-      const data = (await res.json()) as SystemReport;
+      const data = await apiFetch<SystemReport>('/api/debug/integrity/system');
       setReport(data);
       toast.success(data.problems === 0 ? 'Config clean — every vital link resolves' : `${data.problems} config check(s) failing`);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) return;
       toast.error(err instanceof Error ? err.message : 'Check failed');
     } finally {
       setRunning(false);

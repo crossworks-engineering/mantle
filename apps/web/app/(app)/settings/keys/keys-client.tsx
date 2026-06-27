@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Spinner } from '@/components/ui/spinner';
 import { formatDateTime } from '@/lib/format-datetime';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import type { TestApiKeyResult } from '@/lib/api-key-test';
 import {
   Dialog,
@@ -133,14 +133,15 @@ export function KeysClient() {
       return;
     }
     const finalLabel = label.trim() || 'default';
-    const res = await fetch('/api/keys', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ service: effectiveService, label: finalLabel, plaintext }),
-    });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(body.error ?? 'Failed to save key.');
+    try {
+      await apiSend('/api/keys', 'POST', {
+        service: effectiveService,
+        label: finalLabel,
+        plaintext,
+      });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      toast.error(e instanceof Error ? e.message : 'Failed to save key.');
       return;
     }
     setRevealed({ key: plaintext, service: effectiveService, label: finalLabel });
@@ -153,14 +154,11 @@ export function KeysClient() {
   async function onRotate(e: React.FormEvent) {
     e.preventDefault();
     if (!rotating || !rotateValue.trim()) return;
-    const res = await fetch(`/api/keys/${rotating.id}/rotate`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ plaintext: rotateValue }),
-    });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(body.error ?? 'Failed to rotate.');
+    try {
+      await apiSend(`/api/keys/${rotating.id}/rotate`, 'POST', { plaintext: rotateValue });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      toast.error(e instanceof Error ? e.message : 'Failed to rotate.');
       return;
     }
     setRevealed({ key: rotateValue, service: rotating.service, label: rotating.label });
@@ -173,10 +171,11 @@ export function KeysClient() {
     const row = deleteTarget;
     if (!row) return;
     setDeleteTarget(undefined);
-    const res = await fetch(`/api/keys/${row.id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(body.error ?? 'Failed to delete.');
+    try {
+      await apiSend(`/api/keys/${row.id}`, 'DELETE');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      toast.error(e instanceof Error ? e.message : 'Failed to delete.');
       return;
     }
     toast.success(`Deleted ${row.service}/${row.label}`);

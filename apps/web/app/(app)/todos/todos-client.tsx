@@ -10,7 +10,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { ListPager } from '@/components/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
 import { syncSelectionParam } from '@/lib/url-sync';
-import { apiFetch } from '@/lib/api-fetch';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { TodoForm, emptyTodoForm, PRIORITIES, type Priority, type TodoPayload } from './todo-form';
@@ -117,17 +117,14 @@ export function TodosClient() {
   const selected = sel?.mode === 'view' ? (todos.find((t) => t.id === sel.id) ?? null) : null;
 
   const createTodo = async (payload: TodoPayload) => {
-    const res = await fetch('/api/todos', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast.error(j.error ?? `Could not save todo (${res.status})`);
+    let todo: TodoRow;
+    try {
+      ({ todo } = await apiSend<{ todo: TodoRow }>('/api/todos', 'POST', payload));
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not save todo');
       return;
     }
-    const { todo } = (await res.json()) as { todo: TodoRow };
     setTodos((prev) => [todo, ...prev]);
     setSel({ mode: 'view', id: todo.id });
     toast.success(`Added “${todo.title}”`);
@@ -137,17 +134,14 @@ export function TodosClient() {
   };
 
   const saveTodo = async (id: string, payload: TodoPayload): Promise<boolean> => {
-    const res = await fetch(`/api/todos/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast.error(j.error ?? `Could not update todo (${res.status})`);
+    let todo: TodoRow;
+    try {
+      ({ todo } = await apiSend<{ todo: TodoRow }>(`/api/todos/${id}`, 'PATCH', payload));
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return false; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not update todo');
       return false;
     }
-    const { todo } = (await res.json()) as { todo: TodoRow };
     setTodos((prev) => prev.map((t) => (t.id === id ? todo : t)));
     startTransition(async () => {
       await queryClient.invalidateQueries({ queryKey: ['todos'] });
@@ -158,18 +152,15 @@ export function TodosClient() {
   const toggleStatus = async (t: TodoRow) => {
     const next: Status = t.status === 'open' ? 'done' : 'open';
     setTodos((prev) => prev.map((x) => (x.id === t.id ? { ...x, status: next } : x))); // optimistic
-    const res = await fetch(`/api/todos/${t.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: next }),
-    });
-    if (!res.ok) {
+    let todo: TodoRow;
+    try {
+      ({ todo } = await apiSend<{ todo: TodoRow }>(`/api/todos/${t.id}`, 'PATCH', { status: next }));
+    } catch (e) {
       setTodos((prev) => prev.map((x) => (x.id === t.id ? { ...x, status: t.status } : x))); // revert
-      const j = await res.json().catch(() => ({}));
-      toast.error(j.error ?? `Could not update todo (${res.status})`);
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not update todo');
       return;
     }
-    const { todo } = (await res.json()) as { todo: TodoRow };
     setTodos((prev) => prev.map((x) => (x.id === t.id ? todo : x)));
     startTransition(async () => {
       await queryClient.invalidateQueries({ queryKey: ['todos'] });
@@ -177,10 +168,11 @@ export function TodosClient() {
   };
 
   const removeTodo = async (id: string) => {
-    const res = await fetch(`/api/todos/${id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast.error(j.error ?? `Could not delete todo (${res.status})`);
+    try {
+      await apiSend(`/api/todos/${id}`, 'DELETE');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not delete todo');
       return;
     }
     toast.success('Todo deleted');
