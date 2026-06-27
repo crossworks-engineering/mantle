@@ -16,7 +16,7 @@ Litmus tests are from `docs/frontend-backend-split.md` §9 (definition of done).
 | No server actions | ✅ **DONE (v0.65.x)** — all 9 action files removed; `grep "'use server'"` is empty |
 | `revalidatePath` gone | ✅ **DONE** — 0 calls remain |
 | Every screen reachable over HTTP | ❌ **~24 `(app)` routes still server-render against the DB**; several have no endpoint |
-| Bearer auth across all `/api` incl. SSE | ✅ **JSON `/api` done (v0.65.0)** — middleware 401s unauthenticated `/api`, all 138 routes use `getOwnerOr401`, opt-in CORS added. ⚠️ SSE `/api/realtime` still not bearer-ready (item #5) |
+| Bearer auth across all `/api` incl. SSE | ✅ **JSON `/api` done (v0.65.0)** — middleware 401s unauthenticated `/api`, all 138 routes use `getOwnerOr401`, opt-in CORS added. ✅ **SSE `/api/realtime` now bearer-ready (item #5)** — `useRealtime` uses the new fetch-based `apiEventStream` (base-URL + bearer), no longer `EventSource`. ⚠️ raw-asset `src`s + assistant turn/stream internals still browser-native (follow-ups) |
 | DB-less dev works | ⚠️ **mechanism built, 1 screen adopts it** — every other screen errors in remote mode |
 | Phase 1 durable assistant path intact | ✅ unchanged |
 
@@ -87,10 +87,13 @@ self-fetched (`ownerId` prop).
   client without that shim won't. Flip API routes to `getOwnerOr401`.
 - **No CORS on `/api`.** ACAO/`OPTIONS` exist only for `/app-runtime/*`. A cross-origin client is
   blocked at preflight on any JSON POST / `Authorization` request.
-- **SSE not detached-ready.** `/api/realtime` uses `requireOwner` (redirect) and is consumed via
-  browser `EventSource`, which can't send an `Authorization` header or honor `MANTLE_API_BASE`
-  (hardcoded relative URL in `components/realtime/use-realtime.ts:25`). `assistant/stream` is the
-  one bearer-correct SSE route. Needs a fetch-based SSE reader (or token-in-query) + `getOwnerOr401`.
+- ~~**SSE not detached-ready.**~~ ✅ **DONE (item #5).** The `/api/realtime` route already gated via
+  `getOwnerOr401` (accepts a bearer); the gap was the client `EventSource`, which can't send an
+  `Authorization` header or honor `MANTLE_API_BASE`. Replaced with `apiEventStream` (`lib/api-fetch.ts`)
+  — a fetch-based SSE reader carrying base-URL + bearer like `apiFetch`, auto-reconnecting with backoff.
+  `useRealtime` now uses it. **Remaining (follow-ups):** raw-asset element `src`s
+  (`/api/files/...?raw=1` in `<img>`/`<iframe>`/downloads, avatars) and the assistant turn/stream
+  internals are still browser-native transports that can't carry a bearer.
 - **Middleware bearer is mobile-only.** `middleware.ts` accepts only `k:'m'` tokens; a general
   detached token kind won't pass the Edge gate.
 
@@ -127,7 +130,9 @@ proven 9-step recipe) plus a handful of *systemic* infra fixes (B server-action 
    **Build-endpoint bucket:** ✅ **DONE** — `/traces`(+`[id]`) (v0.66.13), the `/debug/*` family
    (v0.66.14–0.66.17), `/studio` (v0.66.18), `/` dashboard (v0.66.19), `/assistant` (v0.66.20).
    **§A is fully closed** — only the static-markdown readers + the `/n/[id]` redirect stay SSR.
-5. **SSE (D):** fetch-based reader honoring base-URL + bearer, so `/api/realtime` works detached.
+5. ~~**SSE (D):** fetch-based reader honoring base-URL + bearer, so `/api/realtime` works detached.~~
+   ✅ **DONE.** New `apiEventStream` in `lib/api-fetch.ts`; `useRealtime` uses it instead of
+   `EventSource`. Follow-ups: raw-asset `src`s + assistant turn/stream still browser-native.
 6. **DB-less (E):** route the converted pages through `lib/data/*`; expand `docs/db-less-dev.md`
    coverage as screens land.
 7. **Cosmetic:** relocate the 3 type-only `@mantle/db` client imports (persona-notes-editor,

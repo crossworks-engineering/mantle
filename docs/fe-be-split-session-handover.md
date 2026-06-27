@@ -12,10 +12,9 @@ recipe).
 
 ---
 
-## Where things stand: #1–#4 are CLOSED. #5/#6/#7 remain.
+## Where things stand: #1–#5 are CLOSED. #6/#7 remain.
 
-The remediation list (full detail in the audit doc) is a 7-item plan. The first four — the bulk of
-the work — are **done**:
+The remediation list (full detail in the audit doc) is a 7-item plan. The first five are **done**:
 
 | # | What | Status |
 |---|------|--------|
@@ -23,7 +22,7 @@ the work — are **done**:
 | #2 | Data-free app shell: `GET /api/shell`; `(app)/layout.tsx` is auth+cookies only; `AppShell` fetches chrome + owns the onboarding redirect | ✅ v0.65.1 |
 | #3 | Eliminated **all 9** `'use server'` files (config, backups, updates, calendar, network, docs, embedding, keys, onboarding); `revalidatePath` gone | ✅ v0.66.0 |
 | #4 | **Every dynamic `(app)` screen is now client-fetched** (24 screens, v0.66.1–0.66.20) | ✅ v0.66.20 |
-| #5 | SSE bearer for `/api/realtime` (client `EventSource` can't carry a bearer / API base) | ⬜ TODO |
+| #5 | SSE bearer for `/api/realtime` — new fetch-based `apiEventStream` (base-URL + bearer) replaces `EventSource` in `useRealtime` | ✅ v0.66.21 (raw-asset `src`s + assistant stream internals remain) |
 | #6 | DB-less seam adoption (`lib/remote-data.ts`) | ⬜ TODO |
 | #7 | Cosmetic: relocate 3 type-only `@mantle/db` client imports | ⬜ TODO |
 
@@ -78,22 +77,21 @@ Per screen (mirrors `docs/client-data-fetching.md`):
 
 ## Remaining work (priority order)
 
-### #5 — SSE bearer for `/api/realtime` (the next natural task)
-- **Route side is already fine:** `app/api/realtime/route.ts` gates via `getOwnerOr401()` (which
-  falls through to `getBearerUser`), so it already accepts a bearer. *(The old handover said "flip it
-  to getOwnerOr401" — that's stale; already done.)*
-- **The real gap is the client:** `components/realtime/use-realtime.ts:25` opens
-  `new EventSource(\`/api/realtime${qs}\`)`. The `EventSource` API **can't set an `Authorization`
-  header or honor `NEXT_PUBLIC_MANTLE_API_BASE`** — so realtime is cookie/same-origin only, dead from
-  a detached/Electron client. **Fix:** replace `EventSource` with a fetch-based SSE reader (stream the
-  `ReadableStream`, parse `data:` frames) that uses `apiFetch`-style base-URL+bearer, or accept a
-  token-in-query. `app/api/assistant/stream/route.ts` + its client reader are the bearer-correct
-  reference to copy.
-- **Same class of problem** (defer with #5): raw-asset element `src`s —
-  `/api/files/files/[id]?raw=1` in `<img>`/`<iframe>`/download links (file-editor), avatar images,
-  etc. — are browser-native sources that can't carry a bearer. And the **assistant turn/stream**
-  internals (`AssistantClient` → `/api/assistant/turn` + `/api/assistant/stream`) were intentionally
-  left untouched in #4. All are the "needs a non-fetch transport to carry auth" bucket.
+### #5 — SSE bearer for `/api/realtime` ✅ DONE (v0.66.21)
+- **Route side was already fine:** `app/api/realtime/route.ts` gates via `getOwnerOr401()`, so it
+  already accepted a bearer.
+- **The client gap is closed:** new `apiEventStream(path, onMessage, opts?)` in `lib/api-fetch.ts` is
+  a fetch-based SSE reader — it carries the same base-URL + bearer + auth-failure/`bounceToLogin`
+  logic as `apiFetch`, parses `data:` frames off the `ReadableStream`, and auto-reconnects with capped
+  backoff (the EventSource semantics we relied on). `components/realtime/use-realtime.ts` now calls it
+  instead of `new EventSource(...)`. Typecheck-clean; not browser-smoked (2nd dev server collides).
+- **Remaining "needs a non-fetch transport to carry auth" follow-ups** (separate, not blocking #6/#7):
+  raw-asset element `src`s — `/api/files/files/[id]?raw=1` in `<img>`/`<iframe>`/download links
+  (file-editor), avatar images, etc. — are browser-native sources that can't carry a bearer. And the
+  **assistant turn/stream** internals (`assistant-dock.tsx` → `/api/assistant/turn`, plus the
+  unconsumed `/api/assistant/stream`) still use raw same-origin `fetch`. These work same-origin
+  (cookie) today; a fully detached client needs a token-in-query or signed-URL approach for the asset
+  `src`s and an `apiFetch`/`apiEventStream` pass over the assistant transport.
 
 ### #6 — DB-less seam adoption
 `lib/remote-data.ts` (`isRemoteData`/`remoteGet`) is built but adopted by exactly one module
@@ -169,7 +167,8 @@ highest-value things to eyeball:
 - One commit per discrete change (per screen). Bump by extent (`pnpm version:bump patch|minor`);
   **don't tag** (tag-push is the publish event). **Push** updates PR #1 — the user has been fine with
   continuous pushing this arc but **offer/confirm** rather than assume.
-- This arc's version history: #1 → 0.65.0 · #2 → 0.65.1 · #3 → 0.66.0 · #4 → 0.66.1…**0.66.20**.
+- This arc's version history: #1 → 0.65.0 · #2 → 0.65.1 · #3 → 0.66.0 · #4 → 0.66.1…0.66.20 ·
+  #5 → **0.66.21**.
 
 ## Key files / reference points
 
@@ -178,7 +177,8 @@ highest-value things to eyeball:
 - Auth: `apps/web/lib/auth.ts` (`getOwnerOr401`, `getOwnerOr401WithSource`), `apps/web/middleware.ts`.
 - Client data layer: `apps/web/lib/api-fetch.ts` (`apiFetch`/`apiSend`), `components/query-provider.tsx`,
   `components/ui/spinner.tsx`. Shared wire types: `packages/client-types` (`@mantle/client-types`).
-- Bearer-correct SSE reference for #5: `app/api/assistant/stream/route.ts` + its client reader.
+- Fetch-based SSE reader (the #5 deliverable): `apiEventStream` in `lib/api-fetch.ts`, used by
+  `components/realtime/use-realtime.ts`. Bearer-correct SSE *route* reference: `app/api/assistant/stream/route.ts`.
 - Pure formatter siblings (client-safe): `@/lib/traces-format`, `@/lib/journey-format`.
 - UI conventions (read before UI work): `apps/web/CLAUDE.md`, `docs/ui-style-guide.md`.
 - Project memory: `api-service-phase2.md` (this arc's state), `api-service-phase1.md` (Phase 1 /

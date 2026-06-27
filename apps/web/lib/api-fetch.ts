@@ -80,6 +80,77 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   return body as T;
 }
 
+/**
+ * Open an SSE stream over the `/api/**` surface — the EventSource replacement
+ * for a detached client. `EventSource` can't set an `Authorization` header or
+ * honor `NEXT_PUBLIC_MANTLE_API_BASE`, so it's cookie/same-origin only; this
+ * fetch-based reader carries the base-URL + bearer exactly like `apiFetch`.
+ *
+ * Calls `onMessage` once per `data:` frame (comments `:`/keep-alives are
+ * skipped). Auto-reconnects with capped backoff on a dropped/closed connection,
+ * mirroring EventSource — but stops (and bounces to /login) on an auth failure.
+ * Returns a disposer; call it on unmount to close the stream.
+ */
+export function apiEventStream(
+  path: string,
+  onMessage: (data: string) => void,
+  opts?: { onError?: (err: unknown) => void },
+): () => void {
+  const controller = new AbortController();
+  let closed = false;
+  let attempt = 0;
+
+  const run = async (): Promise<void> => {
+    while (!closed) {
+      try {
+        const res = await fetch(
+          `${API_BASE}${path}`,
+          withAuth({ signal: controller.signal, headers: { Accept: 'text/event-stream' } }),
+        );
+        if (isAuthFailure(res)) {
+          bounceToLogin();
+          return; // auth failure won't self-heal — don't reconnect.
+        }
+        if (!res.ok || !res.body) throw new ApiError(`stream failed (${res.status})`, res.status);
+
+        attempt = 0; // connected — reset backoff.
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          // Frames are separated by a blank line; flush each complete one.
+          let sep: number;
+          while ((sep = buf.search(/\r\n\r\n|\n\n/)) !== -1) {
+            const frame = buf.slice(0, sep);
+            buf = buf.slice(sep + (buf[sep] === '\r' ? 4 : 2));
+            const data = frame
+              .split(/\r\n|\n/)
+              .filter((l) => l.startsWith('data:'))
+              .map((l) => l.slice(5).replace(/^ /, ''))
+              .join('\n');
+            if (data) onMessage(data);
+          }
+        }
+      } catch (err) {
+        if (closed || controller.signal.aborted) return;
+        opts?.onError?.(err);
+      }
+      if (closed) return;
+      attempt += 1;
+      await new Promise((r) => setTimeout(r, Math.min(10_000, 1000 * attempt)));
+    }
+  };
+
+  void run();
+  return () => {
+    closed = true;
+    controller.abort();
+  };
+}
+
 /** POST/PATCH/DELETE JSON helper — sets the content-type + serializes the body. */
 export function apiSend<T>(
   path: string,
