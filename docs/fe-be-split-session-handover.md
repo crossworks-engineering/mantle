@@ -130,14 +130,27 @@ return annotation makes a row↔wire drift a compile error.
 deferred (spawned as its own task). **Until it lands the §9 grep isn't 100% empty** — two client
 files remain.
 
-### Tiny follow-ups (optional, non-blocking)
-- A few route files have **stale doc-comments** saying "owner-scoped via `requireOwner`" while the
-  code actually calls `getOwnerOr401()` (assistant/messages, activity, secrets/[id]/reveal,
-  dev-tools/proxy). Functionally correct — just comment drift. *(The old handover listed these as
-  "stray requireOwner routes to convert" — that's resolved; they already 401.)*
-- `/dev-tools`: the page is data-free, but the console's internal per-request fetches
-  (`/api/dev-tools/*`, raw `fetch` inside `DevToolsProvider`) weren't converted — a separate pass if a
-  detached client needs the console itself.
+### Post-audit follow-ups — status (integrated at v0.66.29)
+A deep 5-dimension audit (~6.5/10) ran after #1–#7; its criticals + two pre-existing auth bypasses
+were fixed (v0.66.24–25, see #6 note above), and the two big follow-ups landed in sibling agent
+branches now **integrated** onto this branch:
+- ✅ **Raw-`fetch` screens → `apiFetch`/`apiSend`** (v0.66.26–28; commits 94b6af0f/d91aa3b5/a7faf760).
+  ~50 sites across screens, sibling detail panes, assistant reads, dev-tools panels, and shared
+  components. Pattern: `catch (e) { if (e instanceof ApiError && e.status===401) return; toast.error(…) }`
+  so expiry bounces to /login silently; FormData uses `apiFetch` (not `apiSend`) to keep the multipart
+  boundary. **Raw-by-design exceptions left intentionally:** change-password (401 = wrong-password,
+  not just signed-out), updates status-poll (deploy signal), app-sandbox brokers/bundle (mini-app
+  runtime; bundle is JS not JSON), assistant turn/stream (streaming bodies), logout POSTs (401 moot),
+  `lib/dev-tools/client.ts` (HTTP-inspection console needs the raw `Response`).
+- ✅ **`apiEventStream` hardened** (v0.66.29; cherry-pick 0e0fd9b3): a throwing `onMessage` → `onError`
+  (no reconnect storm); exponential backoff (`2**attempt`, cap 30s) + jitter. *Open: Last-Event-ID.*
+
+**Still open** (documented, not done): assistant turn/stream + raw-asset `?raw=1` `src`s detached
+transport (need token-in-query/signed-URL + a FormData-aware `apiFetch`); content DTOs hand-mirrored
+client-side (no drift check) + `apiFetch<T>` unchecked cast + 33/140 mutation routes lack zod; the
+email cluster (`inbox-client`/`reading-pane` type-import `@mantle/db`). Stale `requireOwner`
+doc-comments (assistant/messages, activity, secrets/[id]/reveal, dev-tools/proxy) — comment drift only.
+**Nothing browser-smoked** — the audit's #1 lesson.
 
 ---
 
