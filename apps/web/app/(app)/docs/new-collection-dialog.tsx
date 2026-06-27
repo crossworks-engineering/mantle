@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/select';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { useToast } from '@/components/ui/toast';
-import { createDocCollectionAction } from './actions';
+import { apiSend } from '@/lib/api-fetch';
 
 /** Lowercase-slug a label for the default key (mirrors the action's regex). */
 function slugify(s: string): string {
@@ -40,7 +40,7 @@ function slugify(s: string): string {
  * created enabled and reconciled, so its docs appear at /docs immediately.
  */
 export function NewCollectionDialog() {
-  const router = useRouter();
+  const queryClient = useQueryClient();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
@@ -67,14 +67,22 @@ export function NewCollectionDialog() {
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     startTransition(async () => {
-      const res = await createDocCollectionAction({ label, key, rootPath, brainDepth });
-      if (res.ok) {
-        toast.success(res.message);
-        setOpen(false);
-        reset();
-        router.refresh();
-      } else {
-        toast.error(res.message);
+      try {
+        const res = await apiSend<{ ok: boolean; message: string }>(
+          '/api/docs/collections',
+          'POST',
+          { label, key, rootPath, brainDepth },
+        );
+        if (res.ok) {
+          toast.success(res.message);
+          setOpen(false);
+          reset();
+          queryClient.invalidateQueries({ queryKey: ['docs', 'collections'] });
+        } else {
+          toast.error(res.message);
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Could not create collection');
       }
     });
   }

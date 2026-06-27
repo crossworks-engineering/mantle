@@ -1,38 +1,16 @@
 import { requireOwner } from '@/lib/auth';
-import { listDocCollections } from '@mantle/files';
-import { formatInProfile, loadProfilePreferences } from '@mantle/content';
-import { getReaderNav } from '@/lib/docs-reader';
 import { DocumentationClient } from './documentation-client';
 
 /**
  * Docs landing: read docs from the left sidebar; this pane is the single place to
  * manage indexing — enable/disable a collection for the brain and add new ones.
- * (Consolidated here from the former /settings/documentation page.)
+ * Data-free: DocumentationClient fetches the collections + their formatted sync
+ * times + first-doc links from GET /api/docs/collections, and mutates via
+ * POST /api/docs/collections, PATCH /api/docs/collections/[id], and
+ * POST /api/docs/collections/all.
  */
 export default async function DocsLanding() {
-  const user = await requireOwner();
-  const [cols, prefs, nav] = await Promise.all([
-    listDocCollections(user.id),
-    loadProfilePreferences(user.id),
-    getReaderNav(user.id),
-  ]);
-
-  // Pre-format "last synced" server-side (profile tz/locale) — avoids the
-  // toLocaleString hydration mismatch. Keyed by collection id.
-  const formattedReconciled: Record<string, string | null> = {};
-  for (const c of cols) {
-    formattedReconciled[c.id] = c.lastReconciledAt ? formatInProfile(c.lastReconciledAt, prefs) : null;
-  }
-
-  // First readable doc per collection (key → /docs URL) for a per-row "Open" link.
-  const firstDocHref: Record<string, string | null> = {};
-  for (const c of nav) {
-    const first = c.files[0];
-    firstDocHref[c.key] = first
-      ? `/docs/${encodeURIComponent(c.key)}/${first.split('/').map(encodeURIComponent).join('/')}`
-      : null;
-  }
-
+  await requireOwner();
   return (
     <div className="mx-auto max-w-3xl p-4 md:p-6">
       <div className="mb-4">
@@ -42,19 +20,7 @@ export default async function DocsLanding() {
           indexed into the brain so the assistant can search them.
         </p>
       </div>
-      <DocumentationClient
-        initial={cols.map((c) => ({
-          id: c.id,
-          key: c.key,
-          label: c.label,
-          origin: c.origin,
-          brainDepth: c.brainDepth,
-          enabled: c.enabled,
-          lastReconciledAt: c.lastReconciledAt ? c.lastReconciledAt.toISOString() : null,
-        }))}
-        formattedReconciled={formattedReconciled}
-        firstDocHref={firstDocHref}
-      />
+      <DocumentationClient />
     </div>
   );
 }
