@@ -113,12 +113,19 @@ settings/{`accounts/[id]/edit`, `peers`, `entities`, `pdf-passwords`}. `n/[id]` 
 - Raw-asset element `src`s (`/api/files/files/[id]?raw=1` in `<img>`/`<iframe>`/download) were left
   same-origin — a detached-asset-auth follow-up, same class as the SSE bearer (#5).
 
-**REMAINING = "build the endpoint first"** (page reads via `@/lib/*`, no API yet): `/traces`(+`[id]`),
-the `/debug/*` family (agents, context, digests, facts, journey(+`[traceId]`), spend, telegram,
-topics — only `/debug/integrity` is converted), `/studio` (graph read), `/docs/[...slug]` reader
-(largely static markdown — may stay server-only), `/` dashboard + `/assistant` (extend the existing
-partial `/api/dashboard/summary` + `/api/assistant/messages`). (`/changelog` is static markdown —
-leave.) Each: build a GET returning the page's bundle, then run the recipe.
+**"Build the endpoint first" — mostly done:**
+- ✅ `/traces`(+`[id]`) (v0.66.13): new `GET /api/traces` + `…/[id]`; SSR list → `TracesClient`
+  (filters/sort/pager stay URL-driven `<Link>`s). Repointed `TraceDetailView`'s formatter import
+  to the pure `@/lib/traces-format` so it bundles client-side.
+- ✅ the whole `/debug/*` family (v0.66.14–0.66.17): overview, agents, context, digests, facts,
+  journey(+`[traceId]`), spend, telegram, topics — each got a `GET /api/debug/*` + a client; pages
+  keep `DebugTabs`/`SetPageTitle`. `ChatAgentOverride` now PATCHes via `apiSend` + invalidates.
+  `ActiveNow` already self-polls. Debug formatters import from `traces-format`, not `@/lib/traces`.
+
+**REMAINING:** `/studio` (graph read — build a GET), extend partials for `/` dashboard
+(`/api/dashboard/summary`) + `/assistant` (`/api/assistant/messages`). `/docs/[...slug]` +
+`/changelog` are static markdown — leave server-only. Each: build a GET returning the page's bundle,
+then run the recipe.
 
 ### #5 — SSE bearer for `/api/realtime`
 `/api/realtime` is consumed by `components/realtime/use-realtime.ts` via raw `EventSource`, which

@@ -45,11 +45,11 @@ Litmus tests are from `docs/frontend-backend-split.md` §9 (definition of done).
 The conversion targeted a *named* list; these were outside it and still `await` DB reads in
 `page.tsx` and pass props. 12 import data packages directly; the rest read via `@/lib/*` helpers.
 
-- **No endpoint yet (build the API first):** `/traces`(+`[id]`), the `/debug/*` family
-  (agents, context, digests, facts, journey(+`[traceId]`), spend, telegram, topics — only
-  `/debug/integrity` is converted), `/studio` (graph read), `settings/calendar`, `settings/config`,
-  `settings/network` (tailnet status), `settings/embedding`, `settings/backups`, `/docs`
-  (largely static markdown — may stay server-only).
+- **No endpoint yet (build the API first):** ~~`/traces`(+`[id]`)~~ ✅ (v0.66.13, new
+  `GET /api/traces` + `…/[id]`), ~~the `/debug/*` family~~ ✅ (v0.66.14–0.66.17: overview, agents,
+  context, digests, facts, journey(+`[traceId]`), spend, telegram, topics — each got a new
+  `GET /api/debug/*`; `/debug/integrity` was already done). **Still TODO:** `/studio` (graph read).
+  (settings/{calendar,config,network,embedding,backups} + `/docs` were the #3 batch / are static.)
 - **Endpoint exists, page still SSR-loads (just wire it):** ✅ **DONE (v0.66.1–0.66.12).**
   `/apps`(+`[id]`), `/pending`, `/heartbeats/[id]` (new `…/detail`), `/files`, `/secrets`(+`[id]`),
   `/models` (new `…/explore`), `/nodes/[id]/history` (new endpoint), `/dev-tools`,
@@ -119,9 +119,9 @@ proven 9-step recipe) plus a handful of *systemic* infra fixes (B server-action 
 4. **Unconverted screens (A):** *in progress.* The **"endpoint already exists" sub-bucket is ✅ done**
    (v0.66.1–0.66.12): apps(+[id]), pending, heartbeats/[id], files, secrets(+[id]), models,
    nodes/[id]/history, dev-tools, settings/{peers, entities, pdf-passwords, accounts/[id]/edit}.
-   **Remaining = "build the endpoint first":** `/traces`(+`[id]`), the `/debug/*` family, `/studio`,
-   plus extend the partial endpoints for `/` (dashboard) and `/assistant`. Each needs a new GET
-   that returns the page's bundle, then the recipe per screen.
+   **Build-endpoint bucket:** ~~`/traces`(+`[id]`)~~ ✅ (v0.66.13), ~~the `/debug/*` family~~ ✅
+   (v0.66.14–0.66.17). **Remaining:** `/studio` (graph read), plus extend the partial endpoints for
+   `/` (dashboard) and `/assistant`.
 5. **SSE (D):** fetch-based reader honoring base-URL + bearer, so `/api/realtime` works detached.
 6. **DB-less (E):** route the converted pages through `lib/data/*`; expand `docs/db-less-dev.md`
    coverage as screens land.
