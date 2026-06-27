@@ -90,6 +90,8 @@ by default.
 | `/notes` (+ `/notes/[id]`) | ✅ converted (same shape as /pages; extended the list GET; deep-linked note via a secondary `enabled` query; `[id]` is just a redirect) |
 | `/todos` | ✅ converted (status/priority filters; kept the local optimistic list, seeded from the query; extended the list GET with pagination) |
 | `/events` (+ `/events/[id]`) | ✅ converted (window filter; local optimistic list like /todos; the `useRealtime` callback → invalidate; small `[id]` outer-gate) |
+| `/contacts` | ✅ converted (inline master-detail; list row IS the detail; deep-link `?id=` via secondary query; `go({})` refresh → invalidate) |
+| `/tables` (+ `/tables/[id]`) | ✅ converted (master-detail shell; selected `TableDetail` is a separate query; grid editor's commit/import refresh → invalidate; `[id]` was already a redirect) |
 
 Convert more by following the reference; order by Electron priority.
 
