@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireOwner } from '@/lib/auth';
-import { createLifelog, listLifelogs } from '@/lib/lifelog';
+import { countLifelogs, createLifelog, listLifelogTags, listLifelogs } from '@/lib/lifelog';
 import { recordIngest } from '@mantle/tracing';
+
+const PAGE_SIZE = 50;
 
 const CreateBody = z.object({
   body: z.string().max(20_000),
@@ -16,13 +18,19 @@ const CreateBody = z.object({
 export async function GET(req: Request) {
   const user = await requireOwner();
   const url = new URL(req.url);
-  const rows = await listLifelogs(user.id, {
+  const page = Math.max(1, Number.parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
+  const opts = {
     query: url.searchParams.get('q') ?? undefined,
     mood: url.searchParams.get('mood') ?? undefined,
     category: url.searchParams.get('category') ?? undefined,
     tag: url.searchParams.get('tag') ?? undefined,
-  });
-  return NextResponse.json({ lifelogs: rows });
+  };
+  const [lifelogs, total, tags] = await Promise.all([
+    listLifelogs(user.id, { ...opts, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+    countLifelogs(user.id, opts),
+    listLifelogTags(user.id),
+  ]);
+  return NextResponse.json({ lifelogs, total, page, pageSize: PAGE_SIZE, tags });
 }
 
 export async function POST(req: Request) {
