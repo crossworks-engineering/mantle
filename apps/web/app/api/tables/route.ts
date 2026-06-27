@@ -1,8 +1,18 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireOwner } from '@/lib/auth';
-import { createTable, listTables, tableToText } from '@/lib/tables';
+import {
+  countTables,
+  createTable,
+  listTableTags,
+  listTables,
+  tableToText,
+  type TableSort,
+} from '@/lib/tables';
 import { recordIngest } from '@mantle/tracing';
+
+const SORTS: TableSort[] = ['edited', 'newest', 'oldest', 'title'];
+const PAGE_SIZE = 50;
 
 const CreateBody = z.object({
   title: z.string().min(1).max(200),
@@ -14,11 +24,18 @@ const CreateBody = z.object({
 export async function GET(req: Request) {
   const user = await requireOwner();
   const url = new URL(req.url);
-  const rows = await listTables(user.id, {
-    query: url.searchParams.get('q') ?? undefined,
-    tag: url.searchParams.get('tag') ?? undefined,
-  });
-  return NextResponse.json({ tables: rows });
+  const page = Math.max(1, Number.parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
+  const query = url.searchParams.get('q') ?? undefined;
+  const tag = url.searchParams.get('tag') ?? undefined;
+  const sortParam = url.searchParams.get('sort');
+  const sort: TableSort = SORTS.includes(sortParam as TableSort) ? (sortParam as TableSort) : 'edited';
+
+  const [tables, total, tags] = await Promise.all([
+    listTables(user.id, { query, tag, sort, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+    countTables(user.id, { query, tag }),
+    listTableTags(user.id),
+  ]);
+  return NextResponse.json({ tables, total, page, pageSize: PAGE_SIZE, tags });
 }
 
 export async function POST(req: Request) {

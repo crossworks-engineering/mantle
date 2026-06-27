@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { Check, GitCommitHorizontal, Loader2, Sparkles, Trash2, Undo2, Upload } from 'lucide-react';
 import { BackLink } from '@/components/layout/back-link';
 import { SetPageTitle } from '@/components/layout/page-title';
@@ -32,6 +33,7 @@ const META_DEBOUNCE_MS = 800;
 
 export function TableDetailClient({ initial, embedded = false }: { initial: TableDetail; embedded?: boolean }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const toast = useToast();
 
   const published = ensureTableDoc(initial.data);
@@ -131,7 +133,8 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
       committedRef.current = s;
       draftSavedRef.current = s;
       toast.success('Committed');
-      router.refresh();
+      // Refresh the list summary (title/updatedAt) + the selected-table query.
+      void queryClient.invalidateQueries({ queryKey: ['tables'] });
     } finally {
       setCommitting(false);
     }
@@ -174,12 +177,12 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
         toast.success(
           `Imported ${j.rows} rows × ${j.columns} columns${extra ? ` (+${extra} more table${extra === 1 ? '' : 's'})` : ''}. Review, then Commit.`,
         );
-        if (extra) router.refresh();
+        if (extra) void queryClient.invalidateQueries({ queryKey: ['tables'] });
       } finally {
         setImporting(false);
       }
     },
-    [initial.id, router, toast],
+    [initial.id, queryClient, toast],
   );
 
   const doDelete = useCallback(async () => {
@@ -189,8 +192,9 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
       return;
     }
     toast.success('Table deleted');
+    await queryClient.invalidateQueries({ queryKey: ['tables'] });
     router.push('/tables');
-  }, [initial.id, router, toast]);
+  }, [initial.id, queryClient, router, toast]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
