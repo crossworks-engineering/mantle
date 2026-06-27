@@ -1,29 +1,51 @@
+'use client';
+
 import { Inbox, Mail, MailOpen, Paperclip, Star } from 'lucide-react';
-import { sanitizeEmailHtml } from '@mantle/email';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Email, EmailAttachment } from '@mantle/db';
-import { setEmailReadStatus, setEmailStarred } from '@/app/(app)/email-actions';
+import { apiSend } from '@/lib/api-fetch';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
 
 /**
- * Right-hand pane that renders the selected email. Server-component so
- * the body sanitisation happens before the HTML ever touches the browser;
- * the iframe is a second defense layer.
+ * Right-hand pane that renders the selected email. Client component: the body
+ * arrives pre-sanitised from the API (`bodyHtmlSafe`, computed by
+ * `GET /api/email/messages/[id]`) so the HTML is never trusted in the bundle;
+ * the sandboxed iframe is a second defence layer. The star / read toggles are
+ * `PATCH /api/email/messages/[id]` mutations that invalidate the message,
+ * message list, and folder facets (unread counts move).
  *
- * Empty selection renders a placeholder so the column isn't blank when
- * you land on the dashboard without `?email=` set.
+ * Empty selection renders a placeholder so the column isn't blank when you
+ * land on the inbox without `?email=` set.
+ *
+ * `email.internalDate` is typed `Date` but arrives as an ISO string over HTTP —
+ * `formatDateTime` is string-friendly, and the `<time dateTime>` re-parses it.
  */
 
 export function ReadingPane({
   email,
   attachments,
+  bodyHtmlSafe,
 }: {
   email: Email | null;
   attachments: EmailAttachment[];
+  bodyHtmlSafe: string | null;
 }) {
-  if (!email) return <EmptyPane />;
+  const queryClient = useQueryClient();
 
-  const bodyHtmlSafe = email.bodyHtml ? sanitizeEmailHtml(email.bodyHtml) : undefined;
+  const patch = useMutation({
+    mutationFn: (body: { read?: boolean; starred?: boolean }) =>
+      apiSend(`/api/email/messages/${email!.id}`, 'PATCH', body),
+    onSuccess: () => {
+      // The flags drive unread badges (folders) and row weight (list); the
+      // header toggles re-read off the message query.
+      queryClient.invalidateQueries({ queryKey: ['email', 'message'] });
+      queryClient.invalidateQueries({ queryKey: ['email', 'messages'] });
+      queryClient.invalidateQueries({ queryKey: ['email', 'folders'] });
+    },
+  });
+
+  if (!email) return <EmptyPane />;
 
   return (
     <article className="flex h-full flex-col">
@@ -31,41 +53,37 @@ export function ReadingPane({
         <div className="flex items-start justify-between gap-3">
           <h1 className="text-lg font-semibold leading-snug">{email.subject || '(no subject)'}</h1>
           <div className="flex shrink-0 items-center gap-1">
-            <form action={setEmailStarred}>
-              <input type="hidden" name="emailId" value={email.id} />
-              <input type="hidden" name="starred" value={email.isStarred ? '0' : '1'} />
-              <button
-                type="submit"
-                title={email.isStarred ? 'Unstar' : 'Star'}
-                aria-label={email.isStarred ? 'Unstar' : 'Star'}
-                className="inline-flex items-center rounded-md border border-input bg-background p-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-              >
-                <Star
-                  className={cn('size-3.5', email.isStarred && 'fill-amber-400 text-amber-400')}
-                  aria-hidden
-                />
-              </button>
-            </form>
-            <form action={setEmailReadStatus}>
-              <input type="hidden" name="emailId" value={email.id} />
-              <input type="hidden" name="read" value={email.isRead ? '0' : '1'} />
-              <button
-                type="submit"
-                title={email.isRead ? 'Mark unread' : 'Mark read'}
-                aria-label={email.isRead ? 'Mark unread' : 'Mark read'}
-                className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-              >
-                {email.isRead ? (
-                  <>
-                    <Mail className="size-3.5" aria-hidden /> Mark unread
-                  </>
-                ) : (
-                  <>
-                    <MailOpen className="size-3.5" aria-hidden /> Mark read
-                  </>
-                )}
-              </button>
-            </form>
+            <button
+              type="button"
+              onClick={() => patch.mutate({ starred: !email.isStarred })}
+              disabled={patch.isPending}
+              title={email.isStarred ? 'Unstar' : 'Star'}
+              aria-label={email.isStarred ? 'Unstar' : 'Star'}
+              className="inline-flex items-center rounded-md border border-input bg-background p-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+            >
+              <Star
+                className={cn('size-3.5', email.isStarred && 'fill-amber-400 text-amber-400')}
+                aria-hidden
+              />
+            </button>
+            <button
+              type="button"
+              onClick={() => patch.mutate({ read: !email.isRead })}
+              disabled={patch.isPending}
+              title={email.isRead ? 'Mark unread' : 'Mark read'}
+              aria-label={email.isRead ? 'Mark unread' : 'Mark read'}
+              className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+            >
+              {email.isRead ? (
+                <>
+                  <Mail className="size-3.5" aria-hidden /> Mark unread
+                </>
+              ) : (
+                <>
+                  <MailOpen className="size-3.5" aria-hidden /> Mark read
+                </>
+              )}
+            </button>
           </div>
         </div>
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
@@ -90,7 +108,7 @@ export function ReadingPane({
           )}
           <dt>Date</dt>
           <dd>
-            <time dateTime={email.internalDate.toISOString()}>
+            <time dateTime={new Date(email.internalDate).toISOString()}>
               {formatDateTime(email.internalDate)}
             </time>
           </dd>
@@ -137,7 +155,7 @@ export function ReadingPane({
   );
 }
 
-function Body({ bodyText, bodyHtmlSafe }: { bodyText: string | null; bodyHtmlSafe?: string }) {
+function Body({ bodyText, bodyHtmlSafe }: { bodyText: string | null; bodyHtmlSafe: string | null }) {
   if (bodyHtmlSafe) {
     const srcDoc =
       '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">' +

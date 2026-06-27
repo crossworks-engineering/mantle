@@ -93,7 +93,7 @@ by default.
 | `/contacts` | ✅ converted (inline master-detail; list row IS the detail; deep-link `?id=` via secondary query; `go({})` refresh → invalidate) |
 | `/tables` (+ `/tables/[id]`) | ✅ converted (master-detail shell; selected `TableDetail` is a separate query; grid editor's commit/import refresh → invalidate; `[id]` was already a redirect) |
 | `/lifelog` | ✅ converted (same shape as /notes; mood/category/tag filters; deep-link via secondary query) |
-| `/inbox` | ⬜ not yet — different class of change (server-only `sanitizeEmailHtml` in `ReadingPane`; 3-pane orchestration; see handover) |
+| `/inbox` | ✅ converted (the last screen; moved `sanitizeEmailHtml` into the message GET as `bodyHtmlSafe`; `ReadingPane` → client with PATCH star/read mutations; new `InboxClient` 3-pane orchestrator + `GET /api/email/contact-gate`) |
 
 Convert more by following the reference; order by Electron priority.
 
@@ -190,3 +190,22 @@ Notes from the conversions so far:
   so the client must send `status` explicitly; (2) extracting a list filter to `const opts = {…}`
   drops call-site contextual typing — annotate the narrowed union vars (`status: TodoStatus |
   'all'`) or the spread re-widens them to `string`.
+- **Server-only sanitisation at a security boundary** (`/inbox` `ReadingPane` rendered the
+  email body via `sanitizeEmailHtml`, a VALUE from server pkg `@mantle/email`, into a sandboxed
+  iframe). Don't move the sanitiser to the browser — move it INTO the endpoint:
+  `GET /api/email/messages/[id]` now returns `bodyHtmlSafe` alongside `{ email, attachments }`, so
+  the HTML is sanitised server-side exactly as before and the client just renders the trusted
+  string (iframe stays as the second layer). The pane becomes `'use client'` with the `@mantle/db`
+  `Email`/`EmailAttachment` types kept as type-only imports (erased, no `postgres`/`Buffer` drag),
+  and its two server-action `<form>`s become `apiSend` PATCH mutations that invalidate
+  `['email','message'|'messages'|'folders']`.
+- **3-pane orchestrator** (`/inbox` `InboxClient`): chained queries (accounts → folders →
+  messages) plus a deep-linked `['email','message',selectedId]` detail query. Two gates render
+  client-side before the shell: no-accounts (connect prompt) and the contact allowlist being empty
+  — the latter via a tiny `GET /api/email/contact-gate` → `{ isEmpty }` rather than deriving from
+  `/api/contacts` `total`, because the gate counts email/domain ENTRIES (a contact with no email
+  doesn't count). Mark-read-on-select (the SSR page did an unconditional `setReadStatus(true)` on
+  view) is a `useEffect` keyed on `selectedId` with a per-id ref so a manual "mark unread" while
+  viewing isn't re-clobbered. `INBOX_LIMIT` is a value export — don't import it into the client;
+  omit `limit` and let the endpoint default match. Gate the messages query on `!foldersQuery.isPending`
+  so the folder is resolved before the first fetch (else it lists every folder, then narrows to INBOX).

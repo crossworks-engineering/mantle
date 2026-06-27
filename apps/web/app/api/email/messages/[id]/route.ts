@@ -1,15 +1,26 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getMessageWithAttachments, setReadStatus, setStarred } from '@mantle/email';
+import {
+  getMessageWithAttachments,
+  sanitizeEmailHtml,
+  setReadStatus,
+  setStarred,
+} from '@mantle/email';
 import { requireOwner } from '@/lib/auth';
 
-/** One owner-scoped message with its attachments. */
+/**
+ * One owner-scoped message with its attachments. The email body is sanitised
+ * here, on the server, so the HTML is never trusted in the browser bundle —
+ * the client renders `bodyHtmlSafe` into a sandboxed iframe as a second layer
+ * (the sanitisation that used to live in the server-rendered `ReadingPane`).
+ */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await requireOwner();
   const { id } = await params;
   const result = await getMessageWithAttachments(user.id, id);
   if (!result) return NextResponse.json({ error: 'Message not found.' }, { status: 404 });
-  return NextResponse.json(result);
+  const bodyHtmlSafe = result.email.bodyHtml ? sanitizeEmailHtml(result.email.bodyHtml) : null;
+  return NextResponse.json({ ...result, bodyHtmlSafe });
 }
 
 const PatchBody = z

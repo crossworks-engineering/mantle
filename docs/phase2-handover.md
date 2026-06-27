@@ -17,7 +17,7 @@ for the original why + full task list.
 | **Task 1** — close every `@mantle/db` hole behind an HTTP endpoint | ✅ done (v0.60.x). Checklist `docs/phase2-task1-api-gaps.md`. |
 | **Task 2** — bearer auth across `/api` | ✅ effectively done. `requireOwner`/`getOwnerOr401` fall through to `getBearerUser`; `apiFetch` bounces to `/login` on 401/redirect. |
 | **Task 3** — DB-less dev | ✅ foundation (v0.61.0). Seam `apps/web/lib/remote-data.ts` (`MANTLE_REMOTE_API`). Doc `docs/db-less-dev.md`. |
-| **Task 4** — convert screens to client data-fetching | 🚧 **almost done — only `/inbox` left** (see bottom). |
+| **Task 4** — convert screens to client data-fetching | ✅ **done (v0.63.11)** — every `(app)` screen incl. `/inbox` is client-fetched. |
 | Task 5 — Electron shell | ⬜ not started |
 | Task 6 — absorb `apps/agent` into `apps/api` | ⬜ not started (Phase 1 carryover) |
 
@@ -29,8 +29,11 @@ profile · discover · microsoft · accounts.
 **Content (done):** pages (+`[id]`) · notes (+`[id]`) · todos · events (+`[id]`) ·
 contacts · tables (+`[id]`) · lifelog.
 
-**Only `/inbox` remains** of the entire `(app)` surface. It is NOT a mechanical conversion —
-detailed plan at the bottom.
+**`/inbox` is now done too** (v0.63.11) — the whole `(app)` surface is client-fetched. How it
+went: `sanitizeEmailHtml` moved into `GET /api/email/messages/[id]` (returns `bodyHtmlSafe`);
+`ReadingPane` is now `'use client'` with PATCH star/read mutations; new `InboxClient` 3-pane
+orchestrator; new `GET /api/email/contact-gate`; `app/(app)/email-actions.ts` deleted. Build plan
+that was followed is preserved at the bottom for reference. **Task 4 is complete.**
 
 Data layer = **TanStack Query v5**. Full pattern + the accumulated per-archetype notes:
 **`docs/client-data-fetching.md` (READ THIS FIRST).**
