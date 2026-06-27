@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import {
   loadProfilePreferences,
   updateProfilePreferences,
@@ -17,7 +18,6 @@ import {
   provisionDefaults,
   savePersonaAgent,
   PERSONA_AGENT_SLUG,
-  type SavePersonaInput,
 } from '@/lib/onboarding-provision';
 import { checkSystemIntegrity } from '@/lib/system-manifest';
 import { isOnboarded, markOnboarded } from '@/lib/onboarding';
@@ -36,6 +36,18 @@ export const dynamic = 'force-dynamic';
 
 export type SanityCheck = { label: string; ok: boolean; detail: string };
 const ONBOARDING_LIFELOG_TAG = 'onboarding';
+
+// The only onboarding action that took an unchecked `body as SavePersonaInput`
+// cast — and savePersonaAgent does `input.assistantName.trim()` with no guard,
+// so a malformed body 500'd. Validate it (enums mirror PersonaPresetKey /
+// PersonaGender in @mantle/content; assistantName may be blank — the lib falls
+// back to a default — so no `.min`). zod strips the extra `action` field.
+const PersonaInput = z.object({
+  presetKey: z.enum(['warm', 'professional', 'playful', 'concise']),
+  assistantName: z.string(),
+  gender: z.enum(['female', 'male']),
+  temperature: z.number(),
+});
 
 /** Resume state for the wizard + the already-onboarded flag (the client honours
  *  ?force to re-run on a populated stack) + the provisioned assistant agent id. */
@@ -217,7 +229,14 @@ export async function POST(req: Request) {
         await saveInterview(user.id, (body.answers ?? {}) as Record<string, string>),
       );
     case 'persona': {
-      const applied = await savePersonaAgent(user.id, body as unknown as SavePersonaInput);
+      const parsed = PersonaInput.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json({
+          ok: false,
+          error: parsed.error.issues[0]?.message ?? 'Invalid personality input.',
+        });
+      }
+      const applied = await savePersonaAgent(user.id, parsed.data);
       await updateProfilePreferences(user.id, { onboardingStep: 'telegram' });
       if (!applied) {
         return NextResponse.json({ ok: false, error: 'No assistant agent to update — add an OpenRouter key first.' });
