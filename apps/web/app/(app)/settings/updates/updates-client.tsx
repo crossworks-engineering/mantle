@@ -33,9 +33,53 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/components/ui/toast';
 import type { UpdateCheck, UpdaterStatus } from '@/lib/updates';
-import { checkNowAction, requestUpdateAction } from './actions';
+import { useQuery } from '@tanstack/react-query';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
+import { Spinner } from '@/components/ui/spinner';
 
 type Build = { version: string; sha: string; time: string };
+
+type UpdatesData = {
+  check: UpdateCheck;
+  available: boolean;
+  status: UpdaterStatus | null;
+  build: Build;
+};
+
+/** Outer query-gate: loads the initial bundle so the page stays data-free, then
+ *  renders the (unchanged, stateful + polling) view seeded from it. */
+export function UpdatesClient() {
+  const updatesQuery = useQuery({
+    queryKey: ['updates'],
+    queryFn: () => apiFetch<UpdatesData>('/api/updates'),
+  });
+  if (updatesQuery.isPending) {
+    return (
+      <div className="flex h-full items-center justify-center py-16">
+        <Spinner />
+      </div>
+    );
+  }
+  if (updatesQuery.isError && !updatesQuery.data) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 py-16 text-sm text-muted-foreground">
+        <p>Couldn&apos;t load update status.</p>
+        <button type="button" onClick={() => updatesQuery.refetch()} className="underline">
+          Retry
+        </button>
+      </div>
+    );
+  }
+  const d = updatesQuery.data;
+  return (
+    <UpdatesView
+      initialCheck={d.check}
+      updaterAvailable={d.available}
+      initialStatus={d.status}
+      build={d.build}
+    />
+  );
+}
 
 const PHASE_LABEL: Record<string, string> = {
   requested: 'Waiting for the updater to pick up the request…',
@@ -43,7 +87,7 @@ const PHASE_LABEL: Record<string, string> = {
   rolling: 'Rolling the stack onto it…',
 };
 
-export function UpdatesClient({
+function UpdatesView({
   initialCheck,
   updaterAvailable,
   initialStatus,
@@ -116,7 +160,9 @@ export function UpdatesClient({
   async function onCheckNow() {
     setChecking(true);
     try {
-      setCheck(await checkNowAction());
+      setCheck(await apiSend<UpdateCheck>('/api/updates/check', 'POST'));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Update check failed');
     } finally {
       setChecking(false);
     }
@@ -125,7 +171,17 @@ export function UpdatesClient({
   async function onConfirmUpdate() {
     setConfirmOpen(false);
     const target = check.latest?.tag ?? 'latest';
-    const res = await requestUpdateAction(target);
+    let res: { ok: true } | { ok: false; error: string };
+    try {
+      res = await apiSend<{ ok: true } | { ok: false; error: string }>(
+        '/api/updates/request',
+        'POST',
+        { target },
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Update request failed');
+      return;
+    }
     if (!res.ok) {
       toast.error(res.error);
       return;

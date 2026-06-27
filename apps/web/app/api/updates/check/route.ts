@@ -14,3 +14,11 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   return NextResponse.json(await checkForUpdate(false));
 }
+
+/** Force-refresh the release check (bypasses the 6h cache) for the
+ *  /settings/updates "Check now" button. */
+export async function POST() {
+  const user = await getSessionUser();
+  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  return NextResponse.json(await checkForUpdate(true));
+}
