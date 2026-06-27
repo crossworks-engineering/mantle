@@ -19,6 +19,7 @@ import { formatDateTime } from '@/lib/format-datetime';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { RichText } from '@/components/assistant/rich-text';
+import { apiFetch } from '@/lib/api-fetch';
 
 /** A sidecar artifact attached to a message. Mirrors @mantle/tools
  *  ToolArtifact, with the discriminated `kind` driving the rendering
@@ -192,9 +193,10 @@ export function AssistantClient({
     try {
       const qs = new URLSearchParams({ before: oldest.createdAt, limit: String(PAGE_SIZE) });
       if (agentSlug) qs.set('agent', agentSlug);
-      const res = await fetch(`/api/assistant/messages?${qs.toString()}`, { cache: 'no-store' });
-      if (!res.ok) return;
-      const data = (await res.json()) as { messages: Message[] };
+      const data = await apiFetch<{ messages: Message[] }>(
+        `/api/assistant/messages?${qs.toString()}`,
+        { cache: 'no-store' },
+      );
       const older = data.messages ?? [];
       if (older.length < PAGE_SIZE) setHasMore(false);
       const have = new Set(messages.map((m) => m.id));
@@ -219,9 +221,10 @@ export function AssistantClient({
     try {
       const qs = new URLSearchParams({ limit: String(PAGE_SIZE) });
       if (agentSlug) qs.set('agent', agentSlug);
-      const res = await fetch(`/api/assistant/messages?${qs.toString()}`, { cache: 'no-store' });
-      if (!res.ok) return;
-      const data = (await res.json()) as { messages: Message[] };
+      const data = await apiFetch<{ messages: Message[] }>(
+        `/api/assistant/messages?${qs.toString()}`,
+        { cache: 'no-store' },
+      );
       const latest = data.messages ?? [];
       setMessages((prev) => {
         const have = new Set(prev.map((m) => m.id));
@@ -492,15 +495,12 @@ export function AssistantClient({
       // (Whisper sniffs the extension); .webm matches what
       // MediaRecorder emits in most browsers.
       formData.set('audio', blob, 'recording.webm');
-      const res = await fetch('/api/assistant/transcribe', {
+      // FormData body: apiFetch (NOT apiSend) so the multipart boundary survives;
+      // it still carries the base-URL + bearer and bounces on an auth failure.
+      const data = await apiFetch<{ text: string }>('/api/assistant/transcribe', {
         method: 'POST',
         body: formData,
       });
-      if (!res.ok) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(b.error ?? `request failed (${res.status})`);
-      }
-      const data = (await res.json()) as { text: string };
       // Drop the transcript into the input. The user reviews +
       // sends — auto-sending would punish mishearings (and
       // MediaRecorder webm is finicky enough that we want a

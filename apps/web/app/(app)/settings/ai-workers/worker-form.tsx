@@ -65,7 +65,7 @@ import { Switch } from '@/components/ui/switch';
 import { ModelSelect } from '@/components/ui/model-select';
 import { useToast } from '@/components/ui/toast';
 import type { ExplorerModel } from '@/lib/model-explorer';
-import { apiSend } from '@/lib/api-fetch';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
 import { TtsTestButton } from './tts-test-button';
 import { SttTestButton } from './stt-test-button';
 import { ChatTestButton } from './chat-test-button';
@@ -394,11 +394,10 @@ export function WorkerForm({
   );
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/model-context')
-      .then((r) => (r.ok ? r.json() : null))
+    apiFetch<{ pricing?: typeof orPricing }>('/api/model-context')
       .then((d) => {
         if (cancelled) return;
-        if (d?.pricing) setOrPricing(d.pricing as typeof orPricing);
+        if (d.pricing) setOrPricing(d.pricing);
       })
       .catch(() => {
         /* pricing badge is decorative — ignore fetch failures */

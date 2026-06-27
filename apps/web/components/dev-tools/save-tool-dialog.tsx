@@ -39,6 +39,7 @@ import { SubmitButton } from '@/components/ui/submit-button';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/ui/toast';
 import { buildVarMap, substituteVars } from '@/lib/dev-tools/client';
+import { apiSend, ApiError } from '@/lib/api-fetch';
 import { useDevTools } from './context';
 
 const PARAM_PATTERN = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
@@ -176,27 +177,21 @@ export function SaveToolDialog({
     }
     setPending(true);
     try {
-      const res = await fetch('/api/tools', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          slug: slug.trim(),
-          name: name.trim(),
-          description: description.trim(),
-          inputSchema: { type: 'object', properties, ...(required.length ? { required } : {}) },
-          handler,
-          requiresConfirm,
-          enabled: true,
-        }),
+      await apiSend('/api/tools', 'POST', {
+        slug: slug.trim(),
+        name: name.trim(),
+        description: description.trim(),
+        inputSchema: { type: 'object', properties, ...(required.length ? { required } : {}) },
+        handler,
+        requiresConfirm,
+        enabled: true,
       });
-      if (!res.ok) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string };
-        toast.error(b.error ?? 'Save failed.');
-        return;
-      }
       toast.success(`Tool ${slug.trim()} created`);
       setSavedSlug(slug.trim());
       void refreshAgentTools();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Save failed.');
     } finally {
       setPending(false);
     }
