@@ -13,7 +13,7 @@
  * SSRF note: this lets the owner's browser make the server fetch arbitrary
  * URLs — which is the feature, not a bug, on a single-owner deployment
  * (it's the same power the owner's own `http` agent tools already have).
- * The route sits behind requireOwner like everything else.
+ * The route sits behind getOwnerOr401 like every other /api route.
  */
 
 import { NextResponse } from 'next/server';

@@ -6,7 +6,8 @@ import { getLiveActivity } from '@/lib/journey';
  * Live activity for the always-on Activity surfaces (the app-shell column and
  * the /debug/journey header). Returns what's running now, what recently
  * succeeded (what entered the brain), and recent failures — human-labelled +
- * with outcome counts. Polled client-side; owner-scoped via requireOwner.
+ * with outcome counts. Polled client-side; owner-scoped via getOwnerOr401 (a
+ * JSON API — 401s an unauthenticated/expired client rather than redirecting).
  */
 export const dynamic = 'force-dynamic';
 

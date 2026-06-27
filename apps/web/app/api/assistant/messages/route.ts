@@ -5,7 +5,8 @@ import { assistantMessagesBefore, resolveAssistantAgent } from '@/lib/assistant'
 /**
  * Older page of assistant messages for scroll-up lazy loading. Returns up
  * to `limit` (default 100) messages before the `before` ISO cursor, scoped
- * to the selected agent's thread. Owner-scoped via requireOwner.
+ * to the selected agent's thread. Owner-scoped via getOwnerOr401 (a JSON API —
+ * 401s an unauthenticated/expired client rather than redirecting to /login).
  */
 export const dynamic = 'force-dynamic';
 

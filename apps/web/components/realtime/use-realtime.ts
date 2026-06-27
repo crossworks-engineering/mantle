@@ -11,7 +11,16 @@ import { apiEventStream } from '@/lib/api-fetch';
  *
  * Uses `apiEventStream` (not raw `EventSource`) so a detached/Electron client can
  * carry the base-URL + bearer — `EventSource` can do neither. It auto-reconnects
- * with backoff, so transient drops self-heal; the connection closes on unmount.
+ * with exponential backoff + jitter, so transient drops self-heal; the
+ * connection closes on unmount.
+ *
+ * **Best-effort by design — NOT guaranteed delivery.** The server side is a
+ * Postgres LISTEN/NOTIFY bridge (ephemeral pub/sub, no replayable backlog), so
+ * there's no `Last-Event-ID` resumption: a change that fires *during* a
+ * reconnect gap is missed. This is a "ping to refetch" trigger, not a data
+ * channel — the next change re-pings and the screen catches up, so a stale row
+ * self-heals on the following event. For a screen that must not miss the gap,
+ * pair this with a periodic `refetchInterval` on its query as a safety net.
  */
 export type RealtimeChange = { type: string; id: string };
 

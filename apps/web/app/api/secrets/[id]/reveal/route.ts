@@ -2,7 +2,8 @@
  * POST /api/secrets/[id]/reveal — return decrypted note + fields.
  *
  * Separate path so reveal is greppable in access logs and easy to audit.
- * Owner-scoped via `requireOwner`. No cache headers; never proxied.
+ * Owner-scoped via `getOwnerOr401` (a JSON API — 401s rather than redirecting).
+ * No cache headers; never proxied.
  */
 import { NextResponse } from 'next/server';
 import { getOwnerOr401 } from '@/lib/auth';
