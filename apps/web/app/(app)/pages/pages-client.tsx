@@ -81,18 +81,11 @@ import { PageView } from '@/components/page-editor/page-view';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
 import { buildChildrenIndex } from './page-tree';
+import type { PageRow } from '@mantle/content';
 
-type PageRow = {
-  id: string;
-  parentId: string | null;
-  title: string;
-  icon: string | null;
-  tags: string[];
-  summary: string | null;
-  visibility: 'private' | 'public';
-  createdAt: string;
-  updatedAt: string;
-};
+// Wire shape is the GET /api/pages mapper's output — single source of truth
+// (the canonical row also carries `width`, unused by this list view). Drift
+// between the mapper and what this screen renders is now a compile error.
 
 type TagCount = { tag: string; count: number };
 

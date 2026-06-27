@@ -36,24 +36,12 @@ import {
   formatRelativeShort,
 } from '@/lib/event-time';
 import { EventForm, eventToForm, type EventPayload } from './event-form';
+import type { EventRow } from '@mantle/content';
 
-export type EventRow = {
-  id: string;
-  title: string;
-  body: string;
-  startsAt: string;
-  endsAt: string | null;
-  location: string | null;
-  remindMinutesBefore: number;
-  remindAt: string;
-  reminderSentAt: string | null;
-  recur: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
-  recurUntil: string | null;
-  tags: string[];
-  summary: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
+// Wire shape is the GET /api/events mapper's output — single source of truth.
+// Re-exported so the list client keeps importing it from here; drift is a
+// compile error. (The canonical row also carries `timezone`, unused here.)
+export type { EventRow };
 
 const pad = (n: number) => String(n).padStart(2, '0');
 

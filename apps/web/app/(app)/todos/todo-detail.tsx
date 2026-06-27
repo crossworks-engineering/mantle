@@ -19,21 +19,14 @@ import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
 import { ShareControl } from '@/components/share/share-control';
 import { TodoForm, todoToForm, type Priority, type TodoPayload } from './todo-form';
+import type { TodoRow } from '@mantle/content';
 
 export type Status = 'open' | 'done';
 
-export type TodoRow = {
-  id: string;
-  title: string;
-  body: string;
-  status: Status;
-  priority: Priority;
-  dueAt: string | null;
-  tags: string[];
-  summary: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
+// Wire shape is the GET /api/todos mapper's output — single source of truth.
+// Re-exported so the list client keeps importing it from here; a drift between
+// the @mantle/content row and what this screen renders is now a compile error.
+export type { TodoRow };
 
 const PRIORITY_BADGE: Record<Priority, string> = {
   low: 'bg-muted text-muted-foreground',
