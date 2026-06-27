@@ -145,12 +145,30 @@ branches now **integrated** onto this branch:
 - ✅ **`apiEventStream` hardened** (v0.66.29; cherry-pick 0e0fd9b3): a throwing `onMessage` → `onError`
   (no reconnect storm); exponential backoff (`2**attempt`, cap 30s) + jitter. *Open: Last-Event-ID.*
 
-**Still open** (documented, not done): assistant turn/stream + raw-asset `?raw=1` `src`s detached
-transport (need token-in-query/signed-URL + a FormData-aware `apiFetch`); content DTOs hand-mirrored
-client-side (no drift check) + `apiFetch<T>` unchecked cast + 33/140 mutation routes lack zod; the
-email cluster (`inbox-client`/`reading-pane` type-import `@mantle/db`). Stale `requireOwner`
-doc-comments (assistant/messages, activity, secrets/[id]/reveal, dev-tools/proxy) — comment drift only.
-**Nothing browser-smoked** — the audit's #1 lesson.
+Then the audit's own remediation (its #2–#5 numbering) — mostly done this session (v0.66.30–0.66.33,
+all typecheck-clean, **none browser-smoked**):
+- ✅ **#4 email cluster** (v0.66.30): `EmailDTO`/`EmailAttachmentDTO`/`MessageDetailDTO` in
+  `@mantle/client-types`; `inbox-client`+`reading-pane` off `@mantle/db`; the message route maps to the
+  DTO (raw `bodyHtml`/ids/headers no longer shipped). **§9 grep is now EMPTY.**
+- ✅ **#5 cleanups** (v0.66.31): 4 stale `requireOwner` comments → `getOwnerOr401`; `useRealtime`
+  documented best-effort (LISTEN/NOTIFY ⇒ no Last-Event-ID; pair with `refetchInterval` if needed).
+  Rate-limiter left as-is (intentional single-instance).
+- ✅ **#3a content DTO unification** (v0.66.32): todo/event/lifelog/pages re-export the canonical
+  `@mantle/content` `*Row` (fixed real drift — event missing `timezone`, pages missing `width`); drift
+  now a compile error. **#3b decided:** no blanket response validation (first-party + compile-time
+  drift checks suffice). **#3c** (zod on the 10 body-reading mutation routes — the audit's "33"
+  over-counted) **spawned as a task.**
+- ✅ **#2 assets via signed tokens** (v0.66.33): short-lived owner-scoped asset token (`k:'a'`, 2h) in
+  `?at=` — `buildAssetToken`/`getOwnerForAsset` (lib/auth), minted by `GET /api/shell`, appended by
+  `assetUrl()` (lib/asset-url, same-origin unchanged). Wired file-editor/reading-pane/assistant-client.
+  Middleware accepts `?at=` ONLY for GET on the 2 asset paths; cookie `verify()` now rejects ANY kinded
+  token (hardening). **DEFERRED:** page-EMBEDDED image srcs (baked relative into stored docs → need a
+  render-time `assetUrl` rewrite in the image NodeView; **spawned**) and the assistant turn/stream
+  transport (**deferred by decision** until detached mode is smoke-testable).
+
+**⚠ Two new auth paths shipped untested** — the detached-dev gate (#6) and the asset `?at=` token (#2).
+**Smoke both before any detached/Electron use.** Nothing this whole arc is browser-smoked — the audit's
+#1 lesson.
 
 ---
 
