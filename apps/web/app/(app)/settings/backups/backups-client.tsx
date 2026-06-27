@@ -7,16 +7,23 @@
  * timezone, retention, destination directory); a second shows the last-run
  * status and the dumps currently on disk. The offsite story is one sentence
  * of guidance, not a feature: point your own sync tool at the directory.
+ *
+ * Data-free: the outer component fetches GET /api/backups; the inner form mounts
+ * only once loaded so its useState initializers seed correctly. Save / run-now
+ * are apiSend mutations that invalidate the query.
  */
 
 import { useState, useTransition } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DatabaseBackup, FolderOpen } from 'lucide-react';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
+import { Spinner } from '@/components/ui/spinner';
 import {
   Select,
   SelectContent,
@@ -27,30 +34,49 @@ import {
 import { useToast } from '@/components/ui/toast';
 import type { BackupConfig, BackupFile, BackupStatus } from '@mantle/content';
 
+type BackupsData = {
+  config: BackupConfig;
+  status: BackupStatus | null;
+  dumps: BackupFile[];
+  resolvedDir: string;
+  timezone: string;
+};
+
 function fmtBytes(n: number): string {
   if (n >= 1024 * 1024 * 1024) return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
   if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
   return `${Math.max(1, Math.round(n / 1024))} KB`;
 }
 
-export function BackupsClient({
-  config,
-  status,
-  dumps,
-  resolvedDir,
-  timezone,
-  saveAction,
-  runNowAction,
-}: {
-  config: BackupConfig;
-  status: BackupStatus | null;
-  dumps: BackupFile[];
-  resolvedDir: string;
-  timezone: string;
-  saveAction: (formData: FormData) => Promise<void>;
-  runNowAction: () => Promise<BackupStatus>;
-}) {
+export function BackupsClient() {
+  const backupsQuery = useQuery({
+    queryKey: ['backups'],
+    queryFn: () => apiFetch<BackupsData>('/api/backups'),
+  });
+  if (backupsQuery.isPending) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Spinner />
+      </div>
+    );
+  }
+  if (backupsQuery.isError && !backupsQuery.data) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-16 text-sm text-muted-foreground">
+        <p>Couldn&apos;t load backup settings.</p>
+        <Button variant="outline" size="sm" onClick={() => backupsQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+  return <BackupsView data={backupsQuery.data} />;
+}
+
+function BackupsView({ data }: { data: BackupsData }) {
+  const { config, status, dumps, resolvedDir, timezone } = data;
   const toast = useToast();
+  const queryClient = useQueryClient();
   const [enabled, setEnabled] = useState(config.enabled);
   const [frequency, setFrequency] = useState(config.frequency);
   const [hour, setHour] = useState(String(config.hour));
@@ -60,8 +86,15 @@ export function BackupsClient({
   const onSave = (formData: FormData) => {
     startSaving(async () => {
       try {
-        await saveAction(formData);
+        await apiSend('/api/backups', 'POST', {
+          enabled,
+          frequency,
+          hour: Number(hour),
+          keep: Number(formData.get('keep')),
+          location: String(formData.get('location') ?? '').trim(),
+        });
         toast.success('Backup settings saved');
+        queryClient.invalidateQueries({ queryKey: ['backups'] });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Could not save backup settings');
       }
@@ -71,12 +104,13 @@ export function BackupsClient({
   const onRunNow = () => {
     startRunning(async () => {
       try {
-        const s = await runNowAction();
+        const { status: s } = await apiSend<{ status: BackupStatus }>('/api/backups/run', 'POST');
         if (s.ok) {
           toast.success(`Backup written${s.bytes ? ` (${fmtBytes(s.bytes)})` : ''}`);
         } else {
           toast.error(s.error ?? 'Backup failed');
         }
+        queryClient.invalidateQueries({ queryKey: ['backups'] });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Backup failed');
       }
@@ -106,7 +140,6 @@ export function BackupsClient({
         </CardHeader>
         <CardContent>
           <form action={onSave} className="space-y-4">
-            <input type="hidden" name="enabled" value={enabled ? 'on' : ''} />
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="backup-frequency">Frequency</Label>
@@ -119,7 +152,6 @@ export function BackupsClient({
                     <SelectItem value="weekly">Weekly (Sundays)</SelectItem>
                   </SelectContent>
                 </Select>
-                <input type="hidden" name="frequency" value={frequency} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="backup-hour">At hour</Label>
@@ -135,7 +167,6 @@ export function BackupsClient({
                     ))}
                   </SelectContent>
                 </Select>
-                <input type="hidden" name="hour" value={hour} />
                 <p className="text-xs text-muted-foreground">{timezone}</p>
               </div>
               <div className="space-y-2">
