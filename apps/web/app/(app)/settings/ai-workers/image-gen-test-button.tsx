@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
-import { testImageGenAction } from './actions';
+import { apiSend } from '@/lib/api-fetch';
 
 export function ImageGenTestButton({ workerId }: { workerId: string }) {
   const toast = useToast();
@@ -40,7 +40,14 @@ export function ImageGenTestButton({ workerId }: { workerId: string }) {
     }
     startTransition(async () => {
       try {
-        const r = await testImageGenAction(workerId, p);
+        const r = await apiSend<{
+          ok: true;
+          imageBase64: string;
+          mimeType: string;
+          model: string;
+          adapter: string;
+          revisedPrompt: string | null;
+        }>(`/api/ai-workers/${workerId}/test/image`, 'POST', { prompt: p });
         const dataUrl = `data:${r.mimeType};base64,${r.imageBase64}`;
         setResult({
           dataUrl,

@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { createToolGroup, listToolGroups, listToolGroupBackrefs } from '@/lib/tool-groups';
 
 export async function GET() {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const [groups, backrefs] = await Promise.all([
     listToolGroups(user.id),
     listToolGroupBackrefs(user.id),
@@ -28,7 +29,8 @@ const CreateBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {

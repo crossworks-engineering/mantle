@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { countPageDescendants } from '@/lib/pages';
 
 /**
@@ -8,7 +8,8 @@ import { countPageDescendants } from '@/lib/pages';
  * CASCADE). Read-only; returns 0 for a leaf page.
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
   const count = await countPageDescendants(user.id, id);
   return NextResponse.json({ count });

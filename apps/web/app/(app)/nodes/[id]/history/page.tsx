@@ -7,25 +7,21 @@
  * the biography is built from generic node + traces joins, not
  * type-specific queries.
  *
- * Owner-scoped at the loader; an attacker passing a leaked node id
- * for another owner gets a 404, not a permission error (less
- * informative for probing).
+ * Data-free: NodeHistoryClient fetches the fully-resolved biography from
+ * GET /api/nodes/[id]/history (owner-scoped; 404, not 403, for a leaked id so
+ * existence doesn't leak) and renders the presentational NodeBiography.
  */
 
-import { notFound } from 'next/navigation';
 import { requireOwner } from '@/lib/auth';
-import { loadNodeBiography } from '@/lib/node-biography';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { BackLink } from '@/components/layout/back-link';
-import { NodeBiography } from '@/components/node-biography';
+import { NodeHistoryClient } from './node-history-client';
 
 export default async function NodeHistoryPage(props: {
   params: Promise<{ id: string }>;
 }) {
+  await requireOwner();
   const { id } = await props.params;
-  const user = await requireOwner();
-  const view = await loadNodeBiography(user.id, id);
-  if (!view) notFound();
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-6 py-8">
@@ -34,7 +30,7 @@ export default async function NodeHistoryPage(props: {
         <BackLink href="/files">Files</BackLink>
       </header>
 
-      <NodeBiography view={view} />
+      <NodeHistoryClient id={id} />
     </div>
   );
 }

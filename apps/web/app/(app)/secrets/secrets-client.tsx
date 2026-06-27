@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, Plus, Search } from 'lucide-react';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Spinner } from '@/components/ui/spinner';
 import { ListPager } from '@/components/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
 import { useToast } from '@/components/ui/toast';
@@ -14,24 +16,64 @@ import { SecretDetail, type SecretRow } from './secret-detail';
 
 type Selection = { mode: 'create' } | { mode: 'view'; id: string } | null;
 
+type SecretsPage = { secrets: SecretRow[]; total: number; page: number; pageSize: number };
+
+/** Outer query-gate so the page stays data-free. The URL params (kept by
+ *  `useListNav`) key the query, so navigating refetches. */
 export function SecretsClient({
-  initialSecrets,
-  total,
   page,
-  pageSize,
   query,
   kind,
 }: {
-  initialSecrets: SecretRow[];
-  total: number;
   page: number;
-  pageSize: number;
   query: string;
-  kind: Kind | 'all';
+  kind: string;
 }) {
-  const router = useRouter();
+  const secretsQuery = useQuery({
+    queryKey: ['secrets', { query, kind, page }],
+    queryFn: () => {
+      const params = new URLSearchParams({ page: String(page) });
+      if (query) params.set('q', query);
+      if (kind && kind !== 'all') params.set('kind', kind);
+      return apiFetch<SecretsPage>(`/api/secrets?${params.toString()}`);
+    },
+    placeholderData: (prev) => prev,
+  });
+
+  if (secretsQuery.isPending && !secretsQuery.data) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+  if (secretsQuery.isError && !secretsQuery.data) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+        <p>Couldn&apos;t load secrets.</p>
+        <Button variant="outline" size="sm" onClick={() => secretsQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  return <SecretsView data={secretsQuery.data} query={query} kind={kind} />;
+}
+
+function SecretsView({
+  data,
+  query,
+  kind,
+}: {
+  data: SecretsPage;
+  query: string;
+  kind: string;
+}) {
+  const { secrets: initialSecrets, total, page, pageSize } = data;
   const { pending: navPending, go } = useListNav();
   const toast = useToast();
+  const queryClient = useQueryClient();
   const [secrets, setSecrets] = useState(initialSecrets);
   const [searchInput, setSearchInput] = useState(query);
   const [pending, startTransition] = useTransition();
@@ -39,7 +81,13 @@ export function SecretsClient({
     initialSecrets[0] ? { mode: 'view', id: initialSecrets[0].id } : { mode: 'create' },
   );
 
-  // Re-seed on SSR nav (search / filter / page).
+  const refresh = () => {
+    startTransition(() => {
+      void queryClient.invalidateQueries({ queryKey: ['secrets'] });
+    });
+  };
+
+  // Re-seed on nav (search / filter / page) when the fetched page changes.
   useEffect(() => setSecrets(initialSecrets), [initialSecrets]);
 
   // Debounced search → URL (?q=); resets to page 1.
@@ -55,21 +103,17 @@ export function SecretsClient({
   const selected = sel?.mode === 'view' ? (secrets.find((s) => s.id === sel.id) ?? null) : null;
 
   const createSecret = async (body: SecretBody) => {
-    const res = await fetch('/api/secrets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast.error(j.error ?? `Could not save secret (${res.status})`);
+    let secret: SecretRow;
+    try {
+      ({ secret } = await apiSend<{ secret: SecretRow }>('/api/secrets', 'POST', body));
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not save secret');
       return;
     }
-    const { secret } = (await res.json()) as { secret: SecretRow };
     setSecrets((prev) => [secret, ...prev]);
     setSel({ mode: 'view', id: secret.id });
     toast.success(`Saved “${secret.title}”`);
-    startTransition(() => router.refresh());
+    refresh();
   };
 
   const onUpdated = (s: SecretRow) =>
@@ -81,7 +125,7 @@ export function SecretsClient({
       setSel(next[0] ? { mode: 'view', id: next[0].id } : { mode: 'create' });
       return next;
     });
-    startTransition(() => router.refresh());
+    refresh();
   };
 
   return (

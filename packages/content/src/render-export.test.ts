@@ -62,7 +62,10 @@ describe('renderXlsx', () => {
 
     // Re-open and assert structure.
     const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(buf);
+    // Cast to ExcelJS's expected buffer type: @types/node's generic `Buffer<…>`
+    // resolves differently across the tree's multiple @types/node versions, so
+    // a plain Buffer trips the checker even though it's correct at runtime.
+    await wb.xlsx.load(buf as unknown as Parameters<typeof wb.xlsx.load>[0]);
     const ws = wb.getWorksheet('Stock list')!;
     expect(ws).toBeTruthy();
     expect(ws.getRow(1).getCell(1).value).toBe('Item');

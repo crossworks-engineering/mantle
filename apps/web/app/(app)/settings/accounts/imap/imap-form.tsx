@@ -1,14 +1,17 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, Eye, EyeOff, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { handleImapForm, type ImapFormResult } from './actions';
+import { apiSend } from '@/lib/api-fetch';
 
-const initial: ImapFormResult | undefined = undefined;
+/** Probe result from a successful `intent: 'test'` (saves navigate instead). */
+type TestOk = { ok: true; foldersFound: number; folderSample: string[]; serverName?: string };
 
 /** Existing account passed in for edit mode (never includes the password). */
 export type ImapFormAccount = {
@@ -36,7 +39,8 @@ export type ImapFormAccount = {
  */
 export function ImapForm({ account }: { account?: ImapFormAccount }) {
   const isEdit = !!account;
-  const [state, formAction, pending] = useActionState(handleImapForm, initial);
+  const router = useRouter();
+  const queryClient = useQueryClient();
 
   const [address, setAddress] = useState(account?.address ?? '');
   const [displayName, setDisplayName] = useState(account?.displayName ?? '');
@@ -50,8 +54,48 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
   const [smtpSecure, setSmtpSecure] = useState(account?.smtpSecure ?? true);
   const [firstScanDays, setFirstScanDays] = useState(account?.firstScanDays ?? 365);
 
+  const submit = useMutation({
+    mutationFn: ({ intent }: { intent: 'test' | 'save' }) => {
+      const body = {
+        intent,
+        // Edit uses the stored address (the encryption AAD); add sends it.
+        ...(isEdit ? {} : { address }),
+        displayName: displayName || undefined,
+        host,
+        port,
+        secure,
+        // Blank = keep the stored password (edit) / required (add, enforced by the input).
+        password: password || undefined,
+        firstScanDays,
+        smtpHost: smtpHost || undefined,
+        smtpPort: smtpPort === '' ? undefined : smtpPort,
+        smtpSecure,
+      };
+      return isEdit
+        ? apiSend<TestOk>(`/api/email/accounts/${account.id}`, 'PATCH', body)
+        : apiSend<TestOk>('/api/email/accounts', 'POST', body);
+    },
+    onSuccess: (_res, { intent }) => {
+      if (intent === 'save') {
+        void queryClient.invalidateQueries({ queryKey: ['email', 'accounts'] });
+        // Land on the plain list (mirrors the old action's redirect).
+        router.push('/settings/accounts');
+      }
+    },
+  });
+
+  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    const intent = submitter?.value === 'test' ? 'test' : 'save';
+    submit.mutate({ intent });
+  };
+
+  const pending = submit.isPending;
+  const lastIntent = submit.variables?.intent;
+
   return (
-    <form action={formAction} className="space-y-4">
+    <form onSubmit={onSubmit} className="space-y-4">
       {isEdit && <input type="hidden" name="accountId" value={account.id} />}
       <div className="space-y-2">
         <Label htmlFor="address">Email address</Label>
@@ -219,63 +263,52 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
         </p>
       </div>
 
-      <ResultPanel state={state} pending={pending} />
+      {/* Error from either intent. */}
+      {!pending && submit.isError && (
+        <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <X className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <div>
+            <p className="font-medium">{lastIntent === 'test' ? 'Test failed' : 'Save failed'}</p>
+            <p className="text-destructive/90">
+              {submit.error instanceof Error ? submit.error.message : String(submit.error)}
+            </p>
+          </div>
+        </div>
+      )}
+      {/* Successful probe (saves navigate away, so only `test` lands a panel). */}
+      {!pending && submit.isSuccess && lastIntent === 'test' && submit.data && (
+        <div className="flex items-start gap-2 rounded-md border border-green-500/30 bg-green-50 px-3 py-2 text-sm text-green-900 dark:bg-green-950/40 dark:text-green-100">
+          <Check className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <div className="min-w-0">
+            <p className="font-medium">Connected.</p>
+            <p className="text-green-900/80 dark:text-green-100/80">
+              Authenticated and found <span className="font-medium">{submit.data.foldersFound}</span>{' '}
+              folder{submit.data.foldersFound === 1 ? '' : 's'}
+              {submit.data.serverName ? (
+                <>
+                  {' '}on <span className="font-medium">{submit.data.serverName}</span>
+                </>
+              ) : null}
+              .
+            </p>
+            {submit.data.folderSample.length > 0 && (
+              <p className="mt-1 truncate text-xs text-green-900/70 dark:text-green-100/70">
+                e.g. {submit.data.folderSample.join(' · ')}
+                {submit.data.foldersFound > submit.data.folderSample.length ? ' …' : ''}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-2">
-        <Button
-          type="submit"
-          name="intent"
-          value="test"
-          variant="outline"
-          disabled={pending}
-          className="flex-1"
-        >
-          {pending && state?.intent !== 'save' ? 'Testing…' : 'Test connection'}
+        <Button type="submit" value="test" variant="outline" disabled={pending} className="flex-1">
+          {pending && lastIntent === 'test' ? 'Testing…' : 'Test connection'}
         </Button>
-        <SubmitButton pending={pending} name="intent" value="save" className="flex-1">
+        <SubmitButton pending={pending && lastIntent === 'save'} value="save" className="flex-1">
           {isEdit ? 'Save changes' : 'Connect & save'}
         </SubmitButton>
       </div>
     </form>
-  );
-}
-
-function ResultPanel({ state, pending }: { state: ImapFormResult | undefined; pending: boolean }) {
-  if (pending || !state) return null;
-  if (state.ok === false) {
-    return (
-      <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-        <X className="mt-0.5 size-4 shrink-0" aria-hidden />
-        <div>
-          <p className="font-medium">{state.intent === 'test' ? 'Test failed' : 'Save failed'}</p>
-          <p className="text-destructive/90">{state.error}</p>
-        </div>
-      </div>
-    );
-  }
-  // Only `test` has an ok=true shape; saves redirect on success.
-  return (
-    <div className="flex items-start gap-2 rounded-md border border-green-500/30 bg-green-50 px-3 py-2 text-sm text-green-900 dark:bg-green-950/40 dark:text-green-100">
-      <Check className="mt-0.5 size-4 shrink-0" aria-hidden />
-      <div className="min-w-0">
-        <p className="font-medium">Connected.</p>
-        <p className="text-green-900/80 dark:text-green-100/80">
-          Authenticated and found <span className="font-medium">{state.foldersFound}</span> folder
-          {state.foldersFound === 1 ? '' : 's'}
-          {state.serverName ? (
-            <>
-              {' '}on <span className="font-medium">{state.serverName}</span>
-            </>
-          ) : null}
-          .
-        </p>
-        {state.folderSample.length > 0 && (
-          <p className="mt-1 truncate text-xs text-green-900/70 dark:text-green-100/70">
-            e.g. {state.folderSample.join(' · ')}
-            {state.foldersFound > state.folderSample.length ? ' …' : ''}
-          </p>
-        )}
-      </div>
-    </div>
   );
 }

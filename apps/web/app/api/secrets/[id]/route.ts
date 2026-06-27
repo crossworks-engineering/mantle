@@ -6,7 +6,7 @@
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import {
   SECRET_KINDS,
   deleteSecret,
@@ -32,7 +32,8 @@ export async function GET(
   _req: Request,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
   const row = await getSecretMetadata(user.id, id);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
@@ -43,7 +44,8 @@ export async function PATCH(
   req: Request,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
   const raw = await req.json().catch(() => ({}));
   const parsed = PatchBody.safeParse(raw);
@@ -62,7 +64,8 @@ export async function DELETE(
   _req: Request,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
   const ok = await deleteSecret(user.id, id);
   if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });

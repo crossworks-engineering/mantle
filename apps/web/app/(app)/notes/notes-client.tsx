@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -34,9 +35,19 @@ import { TagPill } from '@/components/tag-pill';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
 import { syncSelectionParam } from '@/lib/url-sync';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
+import { Spinner } from '@/components/ui/spinner';
 import { NoteEditor, type NoteRow } from './note-editor';
 
 type TagCount = { tag: string; count: number };
+
+type NotesListResponse = {
+  notes: NoteRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  tags: TagCount[];
+};
 
 /** Mirror of @mantle/content's isDigestTag — local copy because that module
  *  pulls in the server-only db client and can't enter the client bundle. */
@@ -49,38 +60,55 @@ const LIST_MIN = 300;
 const LIST_MAX = 760;
 const LIST_DEFAULT = 380;
 
-export function NotesClient({
-  notes,
-  total,
-  page,
-  pageSize,
-  tags,
-  activeTag,
-  query,
-  showDigests,
-  initialSelectedId,
-  initialSelectedNote,
-  initialEditing,
-}: {
-  notes: NoteRow[];
-  total: number;
-  page: number;
-  pageSize: number;
-  tags: TagCount[];
-  activeTag: string | null;
-  query: string;
-  showDigests: boolean;
-  initialSelectedId?: string | null;
-  initialSelectedNote?: NoteRow | null;
-  initialEditing?: boolean;
-}) {
+export function NotesClient() {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const toast = useToast();
   const [navPending, startNav] = useTransition();
 
-  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? null);
-  const [editing, setEditing] = useState<boolean>(!!initialEditing);
+  // URL is the source of truth (matches the old SSR page); the list query keys
+  // off these so a `go()` navigation re-fetches automatically.
+  const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10) || 1);
+  const query = searchParams.get('q')?.trim() ?? '';
+  const activeTag = searchParams.get('tag')?.trim() || null;
+  const showDigests = searchParams.get('digests') === '1' || (!!activeTag && isDigestTag(activeTag));
+
+  const listQuery = useQuery({
+    queryKey: ['notes', { q: query, tag: activeTag, digests: showDigests, page }],
+    queryFn: () => {
+      const qs = new URLSearchParams();
+      if (query) qs.set('q', query);
+      if (activeTag) qs.set('tag', activeTag);
+      if (showDigests) qs.set('digests', '1');
+      if (page > 1) qs.set('page', String(page));
+      const s = qs.toString();
+      return apiFetch<NotesListResponse>(`/api/notes${s ? `?${s}` : ''}`);
+    },
+    placeholderData: (prev) => prev,
+  });
+
+  const notes = listQuery.data?.notes ?? [];
+  const total = listQuery.data?.total ?? 0;
+  const pageSize = listQuery.data?.pageSize ?? 50;
+  const tags = listQuery.data?.tags ?? [];
+
+  // Selection + edit mode seed from the URL (a `/notes/[id]` deep-link redirects
+  // to `?selected=&edit=1`), then live as local state.
+  const [selectedId, setSelectedId] = useState<string | null>(
+    searchParams.get('selected')?.trim() || null,
+  );
+  const [editing, setEditing] = useState<boolean>(searchParams.get('edit') === '1');
+
+  // A deep-linked note may sit outside the current list slice — fetch it so the
+  // right pane can open it even when it's not in `notes`.
+  const selectedNoteQuery = useQuery({
+    queryKey: ['notes', selectedId],
+    queryFn: () =>
+      apiFetch<{ note: NoteRow }>(`/api/notes/${selectedId}`).then((r) => r.note),
+    enabled: !!selectedId && !notes.some((n) => n.id === selectedId),
+  });
   const [creating, setCreating] = useState(false);
   const [focus, setFocus] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -147,11 +175,11 @@ export function NotesClient({
     if (selectedId) {
       return (
         notes.find((n) => n.id === selectedId) ??
-        (initialSelectedNote?.id === selectedId ? initialSelectedNote : null)
+        (selectedNoteQuery.data?.id === selectedId ? selectedNoteQuery.data : null)
       );
     }
     return notes[0] ?? null;
-  }, [selectedId, notes, initialSelectedNote]);
+  }, [selectedId, notes, selectedNoteQuery.data]);
 
   /** Run an action, but if the editor has unsaved changes, confirm first. */
   const guard = useCallback(
@@ -195,7 +223,7 @@ export function NotesClient({
     setDirty(false);
     setSelectedId(saved.id);
     syncSelectionParam('selected', saved.id);
-    startNav(() => router.refresh());
+    void queryClient.invalidateQueries({ queryKey: ['notes'] });
   };
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -231,9 +259,11 @@ export function NotesClient({
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    const res = await fetch(`/api/notes/${deleteTarget.id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      toast.error('Could not delete note');
+    try {
+      await apiSend(`/api/notes/${deleteTarget.id}`, 'DELETE');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not delete note');
       return;
     }
     toast.success('Note deleted');
@@ -243,8 +273,28 @@ export function NotesClient({
       syncSelectionParam('selected', null);
     }
     setDeleteTarget(null);
-    startNav(() => router.refresh());
+    void queryClient.invalidateQueries({ queryKey: ['notes'] });
   };
+
+  if (listQuery.isPending) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+  if (listQuery.isError && !listQuery.data) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm">
+        <p className="text-muted-foreground">
+          {listQuery.error instanceof Error ? listQuery.error.message : 'Failed to load notes.'}
+        </p>
+        <Button variant="outline" size="sm" onClick={() => listQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div

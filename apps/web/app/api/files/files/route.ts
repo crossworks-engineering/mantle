@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { ensureFilesRootBranch, listFiles, upsertFile } from '@/lib/files';
 import { MAX_UPLOAD_BYTES } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
@@ -8,7 +8,8 @@ import { recordIngest } from '@mantle/tracing';
 const ListQuery = z.object({ parent: z.string().min(1).max(500) });
 
 export async function GET(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   await ensureFilesRootBranch(user.id);
   const url = new URL(req.url);
   const parsed = ListQuery.safeParse(Object.fromEntries(url.searchParams));
@@ -26,7 +27,8 @@ export async function GET(req: Request) {
  *      text-file creation (markdown / txt / json from the editor)
  */
 export async function POST(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   await ensureFilesRootBranch(user.id);
   const contentType = req.headers.get('content-type') ?? '';
 
@@ -158,7 +160,8 @@ function tryUtf8Snippet(buf: Buffer): string | undefined {
 const BulkDeleteBody = z.object({ ids: z.array(z.string().uuid()).min(1).max(500) });
 
 export async function DELETE(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const raw = await req.json().catch(() => ({}));
   const parsed = BulkDeleteBody.safeParse(raw);
   if (!parsed.success) {

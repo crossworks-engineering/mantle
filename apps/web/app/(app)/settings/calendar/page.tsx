@@ -1,15 +1,15 @@
 import { CalendarDays } from 'lucide-react';
-import { listCalendarAccounts } from '@mantle/calendar';
 import { requireOwner } from '@/lib/auth';
 import { SetPageTitle } from '@/components/layout/page-title';
-import { AddFeedForm } from './add-form';
-import { CalendarRow } from './calendar-row';
+import { CalendarClient } from './calendar-client';
 
-export const dynamic = 'force-dynamic';
-
+/**
+ * Calendar subscriptions (read-only ICS sync). Data-free: CalendarClient fetches
+ * the feeds over HTTP (GET /api/calendar) and mutates via POST /api/calendar +
+ * PATCH/DELETE /api/calendar/[id].
+ */
 export default async function CalendarSettingsPage() {
-  const user = await requireOwner();
-  const accounts = await listCalendarAccounts(user.id);
+  await requireOwner();
 
   return (
     <>
@@ -27,19 +27,7 @@ export default async function CalendarSettingsPage() {
           </p>
         </div>
 
-        <AddFeedForm />
-
-        {accounts.length === 0 ? (
-          <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
-            No calendars yet. Subscribe to one above.
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {accounts.map((a) => (
-              <CalendarRow key={a.id} account={a} />
-            ))}
-          </div>
-        )}
+        <CalendarClient />
       </div>
     </>
   );

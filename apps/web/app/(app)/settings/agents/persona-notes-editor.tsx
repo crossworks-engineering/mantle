@@ -28,9 +28,10 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { formatDateTime } from '@/lib/format-datetime';
-import type { PersonaNote } from '@mantle/db';
+import { apiSend, ApiError } from '@/lib/api-fetch';
+import type { PersonaNoteDTO } from '@mantle/client-types';
 
-type Kind = PersonaNote['kind'];
+type Kind = PersonaNoteDTO['kind'];
 
 const KIND_LABEL: Record<Kind, string> = {
   style: 'Style',
@@ -46,7 +47,7 @@ const KIND_BADGE: Record<Kind, string> = {
 
 /** Match the server's noteRef: real id when present, else a short sha256 of
  *  the content (for legacy id-less notes). Uses Web Crypto on the client. */
-async function refOf(n: PersonaNote): Promise<string> {
+async function refOf(n: PersonaNoteDTO): Promise<string> {
   if (n.id) return n.id;
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(n.content));
   return Array.from(new Uint8Array(buf))
@@ -55,7 +56,7 @@ async function refOf(n: PersonaNote): Promise<string> {
     .slice(0, 8);
 }
 
-function sourceLabel(n: PersonaNote): string {
+function sourceLabel(n: PersonaNoteDTO): string {
   if (n.source?.type === 'turn') return 'from a conversation';
   if (n.source?.type === 'digest') return 'from a digest';
   return 'learned / added';
@@ -72,10 +73,10 @@ export function PersonaNotesEditor({
   initialNotes,
 }: {
   agentId: string;
-  initialNotes: PersonaNote[];
+  initialNotes: PersonaNoteDTO[];
 }) {
   const toast = useToast();
-  const [notes, setNotes] = useState<PersonaNote[]>(initialNotes);
+  const [notes, setNotes] = useState<PersonaNoteDTO[]>(initialNotes);
   const [busy, setBusy] = useState(false);
   const [showRetired, setShowRetired] = useState(false);
   const [query, setQuery] = useState('');
@@ -108,19 +109,15 @@ export function PersonaNotesEditor({
   async function call(body: Action): Promise<boolean> {
     setBusy(true);
     try {
-      const res = await fetch(`/api/agents/${agentId}/persona`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        agent?: { personaNotes?: PersonaNote[] };
-        error?: string;
-      };
-      if (!res.ok) throw new Error(data.error ?? `request failed (${res.status})`);
+      const data = await apiSend<{ agent?: { personaNotes?: PersonaNoteDTO[] } }>(
+        `/api/agents/${agentId}/persona`,
+        'POST',
+        body,
+      );
       setNotes(data.agent?.personaNotes ?? []);
       return true;
     } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return false;
       toast.error(e instanceof Error ? e.message : String(e));
       return false;
     } finally {
@@ -136,7 +133,7 @@ export function PersonaNotesEditor({
     }
   }
 
-  async function startEdit(n: PersonaNote) {
+  async function startEdit(n: PersonaNoteDTO) {
     setEditingRef(await refOf(n));
     setEditText(n.content);
     setEditKind(n.kind);
@@ -150,11 +147,11 @@ export function PersonaNotesEditor({
     }
   }
 
-  async function retire(n: PersonaNote) {
+  async function retire(n: PersonaNoteDTO) {
     await call({ action: 'retire', ref: await refOf(n) });
   }
 
-  async function restore(n: PersonaNote) {
+  async function restore(n: PersonaNoteDTO) {
     await call({ action: 'restore', ref: await refOf(n) });
   }
 

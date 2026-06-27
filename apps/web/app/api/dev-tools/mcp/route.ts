@@ -6,13 +6,14 @@
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { callMcpTool, listMcpTools } from '@/lib/dev-tools/mcp-bridge';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  await requireOwner();
+  const gate = await getOwnerOr401();
+  if (gate instanceof Response) return gate;
   try {
     const tools = await listMcpTools();
     return NextResponse.json({ tools });
@@ -31,7 +32,8 @@ const CallBody = z.object({
 });
 
 export async function POST(req: Request) {
-  await requireOwner();
+  const gate = await getOwnerOr401();
+  if (gate instanceof Response) return gate;
   const raw = await req.json().catch(() => ({}));
   const parsed = CallBody.safeParse(raw);
   if (!parsed.success) {

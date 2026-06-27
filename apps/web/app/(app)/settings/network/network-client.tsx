@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Radio, CircleDot, ArrowRight, Power, PowerOff, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -11,16 +11,41 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
+import { Spinner } from '@/components/ui/spinner';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
 import type { TailnetResult } from '@/lib/tailscale';
 import type { TailscaleConfigSummary } from '@/lib/tailscale-config';
-import {
-  saveTailscaleKeyAction,
-  activateTailnetAction,
-  deactivateTailnetAction,
-  clearTailscaleKeyAction,
-} from './actions';
 
-export function NetworkClient({
+type NetworkData = { status: TailnetResult; config: TailscaleConfigSummary | null };
+type NetworkResult = { ok: boolean; message: string };
+
+/** Outer query-gate so the page stays data-free. */
+export function NetworkClient() {
+  const networkQuery = useQuery({
+    queryKey: ['network'],
+    queryFn: () => apiFetch<NetworkData>('/api/network'),
+  });
+  if (networkQuery.isPending) {
+    return (
+      <div className="flex h-full items-center justify-center py-16">
+        <Spinner />
+      </div>
+    );
+  }
+  if (networkQuery.isError && !networkQuery.data) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 py-16 text-sm text-muted-foreground">
+        <p>Couldn&apos;t load network status.</p>
+        <Button variant="outline" size="sm" onClick={() => networkQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+  return <NetworkView status={networkQuery.data.status} config={networkQuery.data.config} />;
+}
+
+function NetworkView({
   status,
   config,
 }: {
@@ -137,7 +162,7 @@ function ActivateCard({
   connected: boolean;
   sidecarUp: boolean;
 }) {
-  const router = useRouter();
+  const queryClient = useQueryClient();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
   // Show the key form when nothing's stored, or when the user clicks "Replace".
@@ -145,19 +170,25 @@ function ActivateCard({
   const [authKey, setAuthKey] = useState('');
   const [hostname, setHostname] = useState(config?.hostname ?? 'mantle');
 
-  // Poll the server-rendered status a few times so the Connection badge catches
-  // up after the async tailscaled login (a 2xx from /start ≠ joined yet).
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['network'] });
+
+  // Poll status a few times so the Connection badge catches up after the async
+  // tailscaled login (a 2xx from activate ≠ joined yet).
   function pollStatus() {
-    [2000, 5000, 9000, 14000, 20000].forEach((ms) => setTimeout(() => router.refresh(), ms));
+    [2000, 5000, 9000, 14000, 20000].forEach((ms) => setTimeout(refresh, ms));
   }
 
-  function run(fn: () => Promise<{ ok: boolean; message: string }>, opts?: { poll?: boolean }) {
+  function run(fn: () => Promise<NetworkResult>, opts?: { poll?: boolean }) {
     startTransition(async () => {
-      const r = await fn();
-      if (r.ok) toast.success(r.message);
-      else toast.error(r.message);
-      router.refresh();
-      if (r.ok && opts?.poll) pollStatus();
+      try {
+        const r = await fn();
+        if (r.ok) toast.success(r.message);
+        else toast.error(r.message);
+        refresh();
+        if (r.ok && opts?.poll) pollStatus();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Request failed');
+      }
     });
   }
 
@@ -221,7 +252,10 @@ function ActivateCard({
                 disabled={pending || !authKey.trim()}
                 onClick={() =>
                   run(async () => {
-                    const r = await saveTailscaleKeyAction(authKey, hostname);
+                    const r = await apiSend<NetworkResult>('/api/network/key', 'POST', {
+                      authKey,
+                      hostname,
+                    });
                     if (r.ok) {
                       setAuthKey('');
                       setEditing(false);
@@ -249,7 +283,9 @@ function ActivateCard({
                 variant="outline"
                 size="sm"
                 disabled={pending}
-                onClick={() => run(() => deactivateTailnetAction(), { poll: true })}
+                onClick={() =>
+                  run(() => apiSend<NetworkResult>('/api/network/deactivate', 'POST'), { poll: true })
+                }
               >
                 {pending ? <Loader2 className="animate-spin" /> : <PowerOff />}
                 Deactivate
@@ -259,7 +295,9 @@ function ActivateCard({
                 size="sm"
                 disabled={pending || !sidecarUp}
                 title={sidecarUp ? undefined : 'The tailscale sidecar is not running (dev, or profile off)'}
-                onClick={() => run(() => activateTailnetAction(), { poll: true })}
+                onClick={() =>
+                  run(() => apiSend<NetworkResult>('/api/network/activate', 'POST'), { poll: true })
+                }
               >
                 {pending ? <Loader2 className="animate-spin" /> : <Power />}
                 Activate
@@ -274,7 +312,7 @@ function ActivateCard({
               disabled={pending}
               onClick={() =>
                 run(async () => {
-                  const r = await clearTailscaleKeyAction();
+                  const r = await apiSend<NetworkResult>('/api/network/key', 'DELETE');
                   if (r.ok) setEditing(true);
                   return r;
                 })

@@ -1,8 +1,11 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
-import { Plus, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
+import type { SkillDTO, SkillBackrefs } from '@mantle/client-types';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Switch } from '@/components/ui/switch';
@@ -21,18 +24,9 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 
-type SkillSummary = {
-  id: string;
-  slug: string;
-  name: string;
-  description: string;
-  instructions: string;
-  /** Template state shape heartbeats inherit. Empty {} by default. */
-  defaultState: Record<string, unknown>;
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
+// Row + backref shapes come from the shared client-types package (the wire
+// contract), so this screen never imports @mantle/db just to name them.
+type SkillSummary = SkillDTO;
 
 type FormState = {
   slug: string;
@@ -73,32 +67,54 @@ function slugify(s: string): string {
     .slice(0, 64);
 }
 
-/** Heartbeat back-references per skill slug. Empty array OR missing
- *  key both mean "no heartbeats reference this skill". */
-type HeartbeatBackrefs = Record<
-  string,
-  Array<{ slug: string; name: string; status: string }>
->;
-
-export function SkillsClient({
-  initialSkills,
-  heartbeatBackrefs,
-}: {
-  initialSkills: SkillSummary[];
-  heartbeatBackrefs: HeartbeatBackrefs;
-}) {
-  const router = useRouter();
+export function SkillsClient() {
+  const queryClient = useQueryClient();
   const toast = useToast();
-  const [skills, setSkills] = useState<SkillSummary[]>(initialSkills);
+
+  // ── Reads (TanStack Query) ────────────────────────────────────────────────
+  // Query keys mirror the URL; invalidating ['skills'] re-validates both the
+  // list and its backrefs (prefix match) — the client-side replacement for the
+  // server's revalidatePath.
+  const skillsQuery = useQuery({
+    queryKey: ['skills'],
+    queryFn: () => apiFetch<{ skills: SkillSummary[] }>('/api/skills').then((r) => r.skills),
+  });
+  const backrefsQuery = useQuery({
+    queryKey: ['skills', 'backrefs'],
+    queryFn: () =>
+      apiFetch<{ backrefs: SkillBackrefs }>('/api/skills/backrefs').then((r) => r.backrefs),
+  });
+  const skills = skillsQuery.data ?? [];
+  const heartbeatBackrefs = backrefsQuery.data ?? {};
+
   const [editing, setEditing] = useState<
     { mode: 'create' } | { mode: 'edit'; skill: SkillSummary } | null
   >(null);
   const [form, setForm] = useState<FormState>(emptyForm());
   const [slugTouched, setSlugTouched] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<SkillSummary | null>(null);
-  const [pending, startTransition] = useTransition();
 
-  useEffect(() => setSkills(initialSkills), [initialSkills]);
+  // ── Mutations ─────────────────────────────────────────────────────────────
+  const saveMutation = useMutation({
+    mutationFn: (vars: { mode: 'create' | 'edit'; id?: string; body: Record<string, unknown> }) =>
+      vars.mode === 'create'
+        ? apiSend('/api/skills', 'POST', vars.body)
+        : apiSend(`/api/skills/${vars.id}`, 'PATCH', vars.body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['skills'] });
+      setEditing(null);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'save failed'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiSend(`/api/skills/${id}`, 'DELETE'),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: ['skills'] });
+      if (editing?.mode === 'edit' && editing.skill.id === id) setEditing(null);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Delete failed.'),
+  });
 
   const onName = (v: string) =>
     setForm((f) => ({ ...f, name: v, slug: slugTouched ? f.slug : slugify(v) }));
@@ -113,18 +129,14 @@ export function SkillsClient({
     setSlugTouched(true);
     setEditing({ mode: 'edit', skill: s });
   };
-  const close = () => {
-    setEditing(null);
-  };
+  const close = () => setEditing(null);
 
-  const submit = async (e: React.FormEvent) => {
+  const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editing) return;
-    // Parse + validate the default_state JSON before sending. Empty
-    // textarea or whitespace defaults to {}; any other input must
-    // parse as a JSON object (not array, not primitive). Surfaces
-    // errors inline so the operator can correct without losing the
-    // rest of the form.
+    // Parse + validate the default_state JSON before sending. Empty textarea or
+    // whitespace defaults to {}; any other input must parse as a JSON object
+    // (not array, not primitive). Surfaces errors inline.
     let defaultState: Record<string, unknown> = {};
     const raw = form.defaultStateText.trim();
     if (raw.length > 0) {
@@ -148,36 +160,20 @@ export function SkillsClient({
       enabled: form.enabled,
       ...(editing.mode === 'create' ? { slug: form.slug.trim() } : {}),
     };
-    const url = editing.mode === 'create' ? '/api/skills' : `/api/skills/${editing.skill.id}`;
-    const method = editing.mode === 'create' ? 'POST' : 'PATCH';
-    const res = await fetch(url, {
-      method,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(b.error ?? 'save failed');
-      return;
-    }
-    close();
-    startTransition(() => router.refresh());
+    saveMutation.mutate(
+      editing.mode === 'create'
+        ? { mode: 'create', body }
+        : { mode: 'edit', id: editing.skill.id, body },
+    );
   };
 
-  const confirmDelete = async () => {
+  const confirmDelete = () => {
     const s = deleteTarget;
     if (!s) return;
     setDeleteTarget(null);
-    if (editing?.mode === 'edit' && editing.skill.id === s.id) close();
-    const res = await fetch(`/api/skills/${s.id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(b.error ?? 'Delete failed.');
-      return;
-    }
-    toast.success(`Deleted ${s.name}`);
-    setSkills((prev) => prev.filter((x) => x.id !== s.id));
-    startTransition(() => router.refresh());
+    deleteMutation.mutate(s.id, {
+      onSuccess: () => toast.success(`Deleted ${s.name}`),
+    });
   };
 
   return (
@@ -193,7 +189,34 @@ export function SkillsClient({
           </Button>
         </div>
         <div className="space-y-2 p-3 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
-          {skills.length === 0 ? (
+          {/* Subtle, non-blocking notice: the list still works without the
+              heartbeat-usage badges if their fetch fails. */}
+          {backrefsQuery.isError && (
+            <p className="flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground">
+              <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
+              Couldn’t load heartbeat usage — badges hidden.
+              <button
+                type="button"
+                onClick={() => backrefsQuery.refetch()}
+                className="ml-auto shrink-0 underline underline-offset-2 hover:text-foreground"
+              >
+                Retry
+              </button>
+            </p>
+          )}
+          {skillsQuery.isPending ? (
+            <div className="flex flex-col items-center gap-3 px-4 py-10 text-sm text-muted-foreground">
+              <Spinner size={28} />
+              Loading skills…
+            </div>
+          ) : skillsQuery.isError ? (
+            <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-6 text-center text-sm text-destructive">
+              <p>Couldn’t load skills: {skillsQuery.error.message}</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => skillsQuery.refetch()}>
+                Retry
+              </Button>
+            </div>
+          ) : skills.length === 0 ? (
             <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
               No skills yet. Click <strong>New</strong> to author one.
             </p>
@@ -367,7 +390,7 @@ export function SkillsClient({
               <Button type="button" variant="outline" onClick={close}>
                 Cancel
               </Button>
-              <SubmitButton pending={pending}>
+              <SubmitButton pending={saveMutation.isPending}>
                 {editing.mode === 'create' ? 'Create skill' : 'Save skill'}
               </SubmitButton>
             </div>

@@ -5,6 +5,7 @@ import { Loader2, SendHorizontal, Sparkles, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { ensureTableDoc, type TableDoc } from '@mantle/content/table-model';
+import { apiSend, ApiError } from '@/lib/api-fetch';
 import { AssistAgentPicker } from '@/components/assist-agent-picker';
 import { useAssistStage, SpecialistWorking } from '@/components/specialist-working';
 import { ChatBubble } from '@/components/chat-bubble';
@@ -53,17 +54,11 @@ export function TableAssistPanel({
     setMessages((m) => [...m, { role: 'user', text }]);
     setBusy(true);
     try {
-      const res = await fetch(`/api/tables/${tableId}/ai-assist`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: text }),
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(j.error ?? 'Assist failed');
-        setMessages((m) => [...m, { role: 'assistant', text: `⚠️ ${j.error ?? 'Something went wrong.'}` }]);
-        return;
-      }
+      const j = await apiSend<{
+        table?: { draft?: unknown; data?: unknown };
+        summary?: { rowsBefore: number; rowsAfter: number; columnsBefore: number; columnsAfter: number };
+        reply?: string;
+      }>(`/api/tables/${tableId}/ai-assist`, 'POST', { prompt: text });
       // Reload the draft into the grid so the change is visible immediately.
       if (j.table) onApplied(ensureTableDoc(j.table.draft ?? j.table.data));
       const delta =
@@ -71,8 +66,11 @@ export function TableAssistPanel({
           ? ` (${j.summary.columnsAfter} cols · ${j.summary.rowsAfter} rows)`
           : '';
       setMessages((m) => [...m, { role: 'assistant', text: (j.reply || 'Done.') + delta }]);
-    } catch {
-      toast.error('Assist failed');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      const msg = e instanceof Error ? e.message : 'Assist failed';
+      toast.error(msg);
+      setMessages((m) => [...m, { role: 'assistant', text: `⚠️ ${msg}` }]);
     } finally {
       setBusy(false);
       requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }));

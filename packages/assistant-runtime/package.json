@@ -1,0 +1,29 @@
+{
+  "name": "@mantle/assistant-runtime",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mantle/agent-runtime": "workspace:*",
+    "@mantle/api-keys": "workspace:*",
+    "@mantle/content": "workspace:*",
+    "@mantle/db": "workspace:*",
+    "@mantle/heartbeats": "workspace:*",
+    "@mantle/tools": "workspace:*",
+    "@mantle/tracing": "workspace:*",
+    "@mantle/voice": "workspace:*",
+    "drizzle-orm": "^0.38.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.2"
+  }
+}

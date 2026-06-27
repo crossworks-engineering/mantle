@@ -1,31 +1,16 @@
 import Link from 'next/link';
-import { and, eq } from 'drizzle-orm';
-import { Plug } from 'lucide-react';
-import { db, emailAccounts } from '@mantle/db';
 import { requireOwner } from '@/lib/auth';
-import { Button } from '@/components/ui/button';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { DiscoverClient } from './discover-client';
 
 /**
  * /settings/discover — find senders who recently emailed you but aren't yet in
- * your contacts. Contacts are the inbound allowlist, so anyone here is NOT being
- * ingested until you add them. The scan is live (reads IMAP on demand, persists
- * nothing); see actions.ts.
+ * your contacts (the inbound allowlist). Auth gate only; the account gate, the
+ * live IMAP scan, and the promote-to-contact action are all client-fetched via
+ * `/api/email/**` (Phase 2 · Task 4).
  */
 export default async function DiscoverPage() {
-  const user = await requireOwner();
-  const accounts = await db
-    .select({ id: emailAccounts.id })
-    .from(emailAccounts)
-    .where(
-      and(
-        eq(emailAccounts.userId, user.id),
-        eq(emailAccounts.provider, 'imap'),
-        eq(emailAccounts.enabled, true),
-      ),
-    );
-
+  await requireOwner();
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-6 py-6">
       <SetPageTitle title="Discover senders" />
@@ -41,21 +26,7 @@ export default async function DiscoverPage() {
         </p>
       </header>
 
-      {accounts.length === 0 ? (
-        <div className="space-y-4 rounded-lg border border-border bg-muted/20 px-6 py-12 text-center">
-          <Plug className="mx-auto size-7 text-muted-foreground" aria-hidden />
-          <p className="text-sm text-muted-foreground">
-            No email accounts connected yet — connect one to discover senders.
-          </p>
-          <Button asChild>
-            <Link href="/settings/accounts">
-              <Plug aria-hidden /> Connect an account
-            </Link>
-          </Button>
-        </div>
-      ) : (
-        <DiscoverClient />
-      )}
+      <DiscoverClient />
     </div>
   );
 }

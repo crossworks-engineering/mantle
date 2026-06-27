@@ -33,6 +33,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { apiSend } from '@/lib/api-fetch';
 import { columnsContent } from './column';
 import { randomAsideAngle, randomAsideColor } from './aside-style';
 import { uploadAndInsert } from './upload';
@@ -69,15 +70,9 @@ async function insertSubPage(editor: Editor, range: Range) {
   editor.chain().focus().deleteRange(range).run();
   if (!parentId) return; // not inside a saved page; nothing to parent to
   try {
-    const res = await fetch('/api/pages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Untitled page', parentId }),
-    });
-    if (!res.ok) return;
-    const { page } = (await res.json()) as {
+    const { page } = await apiSend<{
       page: { id: string; title: string; icon: string | null };
-    };
+    }>('/api/pages', 'POST', { title: 'Untitled page', parentId });
     editor
       .chain()
       .focus()

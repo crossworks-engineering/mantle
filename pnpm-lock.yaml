@@ -21,14 +21,20 @@ importers:
         specifier: ^2.1.9
         version: 2.1.9(@types/node@25.9.4)(lightningcss@1.32.0)
 
-  apps/agent:
+  apps/api:
     dependencies:
+      '@dbos-inc/dbos-sdk':
+        specifier: ^4.22.6
+        version: 4.22.6
       '@mantle/agent-runtime':
         specifier: workspace:*
         version: link:../../packages/agent-runtime
       '@mantle/api-keys':
         specifier: workspace:*
         version: link:../../packages/api-keys
+      '@mantle/assistant-runtime':
+        specifier: workspace:*
+        version: link:../../packages/assistant-runtime
       '@mantle/content':
         specifier: workspace:*
         version: link:../../packages/content
@@ -130,6 +136,9 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.726.0
         version: 3.1047.0
+      '@dbos-inc/dbos-sdk':
+        specifier: ^4.22.6
+        version: 4.22.6
       '@dnd-kit/core':
         specifier: ^6.3.1
         version: 6.3.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -151,9 +160,15 @@ importers:
       '@mantle/app-build':
         specifier: workspace:*
         version: link:../../packages/app-build
+      '@mantle/assistant-runtime':
+        specifier: workspace:*
+        version: link:../../packages/assistant-runtime
       '@mantle/calendar':
         specifier: workspace:*
         version: link:../../packages/calendar
+      '@mantle/client-types':
+        specifier: workspace:*
+        version: link:../../packages/client-types
       '@mantle/content':
         specifier: workspace:*
         version: link:../../packages/content
@@ -253,6 +268,9 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: ^1.2.8
         version: 1.2.8(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@tanstack/react-query':
+        specifier: ^5.101.1
+        version: 5.101.1(react@19.2.6)
       '@tanstack/react-table':
         specifier: ^8.21.3
         version: 8.21.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -561,6 +579,43 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
+  packages/assistant-runtime:
+    dependencies:
+      '@mantle/agent-runtime':
+        specifier: workspace:*
+        version: link:../agent-runtime
+      '@mantle/api-keys':
+        specifier: workspace:*
+        version: link:../api-keys
+      '@mantle/content':
+        specifier: workspace:*
+        version: link:../content
+      '@mantle/db':
+        specifier: workspace:*
+        version: link:../db
+      '@mantle/heartbeats':
+        specifier: workspace:*
+        version: link:../heartbeats
+      '@mantle/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@mantle/tracing':
+        specifier: workspace:*
+        version: link:../tracing
+      '@mantle/voice':
+        specifier: workspace:*
+        version: link:../voice
+      drizzle-orm:
+        specifier: ^0.38.3
+        version: 0.38.4(@types/react@19.2.14)(pg@8.20.0)(postgres@3.4.9)(react@19.2.6)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.19
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
   packages/calendar:
     dependencies:
       '@mantle/content':
@@ -582,6 +637,12 @@ importers:
       '@types/node':
         specifier: ^22.10.5
         version: 22.19.19
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
+  packages/client-types:
+    devDependencies:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -911,6 +972,9 @@ importers:
       '@mantle/app-build':
         specifier: workspace:*
         version: link:../app-build
+      '@mantle/client-types':
+        specifier: workspace:*
+        version: link:../client-types
       '@mantle/content':
         specifier: workspace:*
         version: link:../content
@@ -1168,6 +1232,11 @@ packages:
 
   '@date-fns/tz@1.4.1':
     resolution: {integrity: sha512-P5LUNhtbj6YfI3iJjw5EL9eUAG6OitD0W3fWQcpQjDRc/QIsL0tRNuO1PcDvPccWL1fSTXXdE1ds+l95DV/OFA==}
+
+  '@dbos-inc/dbos-sdk@4.22.6':
+    resolution: {integrity: sha512-VY7yB0AkBuhC1tn0P9siy/LEJe5T+y+IOXIP2P8/b/sMhT3Jy4EDlakyHrKq8Hy4hpDg5tNV04EWNfOSZJEfSQ==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   '@dnd-kit/accessibility@3.1.1':
     resolution: {integrity: sha512-2P+YgaXF+gRsIihwwY1gCsQSYnu9Zyj2py8kY5fFvUM1qm2WA2u639R6YNVfU4GWr+ZM5mqEsfHZZLoRONbemw==}
@@ -3414,6 +3483,14 @@ packages:
     peerDependencies:
       tailwindcss: '>=3.0.0 || insiders || >=4.0.0-alpha.20 || >=4.0.0-beta.1'
 
+  '@tanstack/query-core@5.101.1':
+    resolution: {integrity: sha512-Y6Y92dkXtNqx67m2pMSxUsA3zOCwv862JexZRP8/EPwvKXMPu9m8rv43spiXWzOUIggQ3SQApttALStzhA8B4g==}
+
+  '@tanstack/react-query@5.101.1':
+    resolution: {integrity: sha512-ZnONUuQKJe1bJMStXUL1s5uKN9FcfC28j5cK+iDZcdSHtUv1wtin1cGc/Oewhf2Oc4eKY7lggtpvT/AbMmhHew==}
+    peerDependencies:
+      react: ^18 || ^19
+
   '@tanstack/react-table@8.21.3':
     resolution: {integrity: sha512-5nNMTSETP4ykGegmVkhjcS8tTLW6Vl4axfEGQN3v0zdHYbK4UfoqfPChclTrJ4EoK9QynqAu9oUf8VEmrpZ5Ww==}
     engines: {node: '>=12'}
@@ -4340,6 +4417,10 @@ packages:
   comma-separated-tokens@2.0.3:
     resolution: {integrity: sha512-Fu4hJdvzeylCfQPp9SGWidpzrMs7tTrlu6Vb8XGaRGck8QSNZJJp538Wrb60Lax4fPwR64ViY468OIUTbRlGZg==}
 
+  commander@12.1.0:
+    resolution: {integrity: sha512-Vw8qHK3bZM9y/P10u3Vib8o/DdkvA2OtPtZvD871QKjy74Wj1WSKFILMPRPSdUSx5RFK1arlJzEtA4PkFgnbuA==}
+    engines: {node: '>=18'}
+
   commander@8.3.0:
     resolution: {integrity: sha512-OkTL9umf+He2DZkUq8f8J9of7yL6RJKI24dVITBmNfZBmri9zYZQrKkuXiKhyfPSu8tUhnVBB1iKXevvnlR4Ww==}
     engines: {node: '>= 12'}
@@ -4375,6 +4456,10 @@ packages:
   cookie@0.7.2:
     resolution: {integrity: sha512-yki5XnKuf750l50uGTllt6kKILY4nQ1eNIQatoXEByZ5dWgnKqbnqmTrBE5B4N7lrMJKQ2ytWMiTO2o0v6Ew/w==}
     engines: {node: '>= 0.6'}
+
+  copy-anything@3.0.5:
+    resolution: {integrity: sha512-yCEafptTtb4bk7GLEQoM8KVJpxAfdBJYaXyzQEgQQQgYrZiDp8SJmGKlYza6CYjEDNstAdNdKA3UuoULlEbS6w==}
+    engines: {node: '>=12.13'}
 
   core-util-is@1.0.3:
     resolution: {integrity: sha512-ZQBvi1DcpJ4GDqanjucZ2Hj3wEO5pZDS89BWbkcrvdxksJorwUDDZamX9ldFkp9aw2lmBDLgkObEA4DWNJ9FYQ==}
@@ -5424,6 +5509,10 @@ packages:
   is-weakset@2.0.4:
     resolution: {integrity: sha512-mfcwb6IzQyOKTs84CQMrOwW4gQcaTOAWJ0zzJCl2WSPDrWk/OzDaImWFH3djXhb24g4eudZfLRozAvPGw4d9hQ==}
     engines: {node: '>= 0.4'}
+
+  is-what@4.1.16:
+    resolution: {integrity: sha512-ZhMwEosbFJkA0YhFnNDgTM4ZxDRsS6HqTo7qsZM08fehyRYIYa0yHu5R6mgo1n/8MgaPBXiPimPD77baVFYg+A==}
+    engines: {node: '>=12.13'}
 
   isarray@1.0.0:
     resolution: {integrity: sha512-VLghIWNM6ELQzo7zwmcg0NmTVyWKYjvIeM83yjp0wRDTmUnrM678fQbcKBo6n2CJEF0szoG//ytg+TKla89ALQ==}
@@ -6731,6 +6820,10 @@ packages:
       babel-plugin-macros:
         optional: true
 
+  superjson@1.13.3:
+    resolution: {integrity: sha512-mJiVjfd2vokfDxsQPOwJ/PtanO87LhpYY88ubI5dUB1Ab58Txbyje3+jpm+/83R/fevaq/107NNhtYBLuoTrFg==}
+    engines: {node: '>=10'}
+
   supports-color@7.2.0:
     resolution: {integrity: sha512-qpCAvRl9stuOHveKsn7HncJRvv501qIacKzQlO/+Lwxc9+0q2wLyv4Dfvt80/DPn2pqOBsJdDiogXGR9+OvwRw==}
     engines: {node: '>=8'}
@@ -7105,6 +7198,18 @@ packages:
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
 
+  ws@8.21.0:
+    resolution: {integrity: sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
   xlsx@0.18.5:
     resolution: {integrity: sha512-dmg3LCjBPHZnQp5/F/+nnTa+miPJxUXB6vtk42YjBBKayDNagxGEeIdWApkYPOf3Z3pm3k62Knjzp7lMeTEtFQ==}
     engines: {node: '>=0.8'}
@@ -7141,6 +7246,11 @@ packages:
   y18n@5.0.8:
     resolution: {integrity: sha512-0pfFzegeDWJHJIAmTLRP2DwHjdF5s7jo9tuztdQxAhINCdvS+3nGINqPd00AphqJR/0LhANUS6/+7SCb98YOfA==}
     engines: {node: '>=10'}
+
+  yaml@2.9.0:
+    resolution: {integrity: sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
 
   yargs-parser@21.1.1:
     resolution: {integrity: sha512-tVpsJW7DdjecAiFpbIB1e3qxIQsE6NoPc5/eTdrbbIC4h0LVsWhnoa3g+m2HclBIujHzsxZ4VJVA+GUuc2/LBw==}
@@ -7576,6 +7686,19 @@ snapshots:
   '@babel/runtime@7.29.2': {}
 
   '@date-fns/tz@1.4.1': {}
+
+  '@dbos-inc/dbos-sdk@4.22.6':
+    dependencies:
+      commander: 12.1.0
+      pg: 8.20.0
+      serialize-error: 8.1.0
+      superjson: 1.13.3
+      ws: 8.21.0
+      yaml: 2.9.0
+    transitivePeerDependencies:
+      - bufferutil
+      - pg-native
+      - utf-8-validate
 
   '@dnd-kit/accessibility@3.1.1(react@19.2.6)':
     dependencies:
@@ -9360,6 +9483,13 @@ snapshots:
       postcss-selector-parser: 6.0.10
       tailwindcss: 4.3.0
 
+  '@tanstack/query-core@5.101.1': {}
+
+  '@tanstack/react-query@5.101.1(react@19.2.6)':
+    dependencies:
+      '@tanstack/query-core': 5.101.1
+      react: 19.2.6
+
   '@tanstack/react-table@8.21.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@tanstack/table-core': 8.21.3
@@ -10348,6 +10478,8 @@ snapshots:
 
   comma-separated-tokens@2.0.3: {}
 
+  commander@12.1.0: {}
+
   commander@8.3.0: {}
 
   compress-commons@4.1.2:
@@ -10377,6 +10509,10 @@ snapshots:
   cookie-signature@1.2.2: {}
 
   cookie@0.7.2: {}
+
+  copy-anything@3.0.5:
+    dependencies:
+      is-what: 4.1.16
 
   core-util-is@1.0.3: {}
 
@@ -11664,6 +11800,8 @@ snapshots:
     dependencies:
       call-bound: 1.0.4
       get-intrinsic: 1.3.0
+
+  is-what@4.1.16: {}
 
   isarray@1.0.0: {}
 
@@ -13364,6 +13502,10 @@ snapshots:
       client-only: 0.0.1
       react: 19.2.6
 
+  superjson@1.13.3:
+    dependencies:
+      copy-anything: 3.0.5
+
   supports-color@7.2.0:
     dependencies:
       has-flag: 4.0.0
@@ -13861,6 +14003,8 @@ snapshots:
 
   wrappy@1.0.2: {}
 
+  ws@8.21.0: {}
+
   xlsx@0.18.5:
     dependencies:
       adler-32: 1.3.1
@@ -13891,6 +14035,8 @@ snapshots:
       yjs: 13.6.30
 
   y18n@5.0.8: {}
+
+  yaml@2.9.0: {}
 
   yargs-parser@21.1.1: {}
 

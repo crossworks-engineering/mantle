@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
+import { Spinner } from '@/components/ui/spinner';
 import {
   ChevronDown,
   ChevronRight,
@@ -100,7 +103,63 @@ function slugify(input: string): string {
     .replace(/^-|-$/g, '');
 }
 
-export function FilesClient({
+/**
+ * Outer data-fetch wrapper so the page stays data-free. Fetches the folder
+ * tree + the current folder's files from the existing /api/files endpoints,
+ * resolves the `?path` param against the tree (falling back to root), and
+ * derives the current folder from the tree — no dedicated endpoint needed.
+ */
+export function FilesClient() {
+  const searchParams = useSearchParams();
+  const requestedPath = searchParams.get('path') || FILES_ROOT;
+
+  const treeQuery = useQuery({
+    queryKey: ['files', 'tree'],
+    queryFn: () => apiFetch<{ folders: FolderRow[] }>('/api/files/folders?tree=true'),
+  });
+
+  const tree = treeQuery.data?.folders ?? [];
+  // Validate the requested path exists; fall back to root (mirrors the old SSR).
+  const currentPath = tree.some((f) => f.path === requestedPath) ? requestedPath : FILES_ROOT;
+  const currentFolder = tree.find((f) => f.path === currentPath) ?? null;
+
+  const filesQuery = useQuery({
+    queryKey: ['files', 'list', currentPath],
+    queryFn: () =>
+      apiFetch<{ files: FileRow[] }>(`/api/files/files?parent=${encodeURIComponent(currentPath)}`),
+    enabled: treeQuery.isSuccess,
+    placeholderData: (prev) => prev,
+  });
+
+  if (treeQuery.isPending || (filesQuery.isPending && !filesQuery.data)) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+  if (treeQuery.isError && !treeQuery.data) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+        <p>Couldn&apos;t load your files.</p>
+        <Button variant="outline" size="sm" onClick={() => treeQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <FilesView
+      tree={tree}
+      currentPath={currentPath}
+      currentFolder={currentFolder}
+      files={filesQuery.data?.files ?? []}
+    />
+  );
+}
+
+function FilesView({
   tree,
   currentPath,
   currentFolder,
@@ -114,6 +173,7 @@ export function FilesClient({
   const router = useRouter();
   const searchParams = useSearchParams();
   const toast = useToast();
+  const queryClient = useQueryClient();
   const [files, setFiles] = useState<FileRow[]>(initialFiles);
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
   const [busy, startTransition] = useTransition();
@@ -134,8 +194,10 @@ export function FilesClient({
   const openFileId = searchParams.get('file');
 
   const refresh = useCallback(() => {
-    startTransition(() => router.refresh());
-  }, [router]);
+    startTransition(() => {
+      void queryClient.invalidateQueries({ queryKey: ['files'] });
+    });
+  }, [queryClient]);
 
   // Live updates: a new file/folder (node_ingested) or a finished extraction
   // (node_indexed) for this owner repaints the list — the summary appears the
@@ -179,10 +241,10 @@ export function FilesClient({
   // ─── Delete folder ───────────────────────────────────────────────
   const confirmDeleteFolder = async () => {
     if (!currentFolder || currentFolder.path === FILES_ROOT) return;
-    const res = await fetch(`/api/files/folders/${currentFolder.id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(b.error ?? 'Delete failed');
+    try {
+      await apiSend(`/api/files/folders/${currentFolder.id}`, 'DELETE');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Delete failed');
       return;
     }
     toast.success(`Deleted "${currentFolder.slug}"`);
@@ -197,14 +259,10 @@ export function FilesClient({
   const confirmBulkDelete = async () => {
     if (selectedFileIds.size === 0) return;
     const ids = Array.from(selectedFileIds);
-    const res = await fetch('/api/files/files', {
-      method: 'DELETE',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ids }),
-    });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(b.error ?? 'Delete failed');
+    try {
+      await apiSend('/api/files/files', 'DELETE', { ids });
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Delete failed');
       return;
     }
     toast.success(`Deleted ${ids.length} file${ids.length === 1 ? '' : 's'}`);
@@ -217,14 +275,10 @@ export function FilesClient({
   const [draftDesc, setDraftDesc] = useState(currentFolder?.description ?? '');
   const saveDescription = async () => {
     if (!currentFolder) return;
-    const res = await fetch(`/api/files/folders/${currentFolder.id}`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ description: draftDesc }),
-    });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(b.error ?? 'Could not save description');
+    try {
+      await apiSend(`/api/files/folders/${currentFolder.id}`, 'PATCH', { description: draftDesc });
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not save description');
       return;
     }
     setEditingDesc(false);
@@ -623,16 +677,13 @@ function RenameDialog({
     if (!valid || busy) return;
     setBusy(true);
     const url = isFile ? `/api/files/files/${target.id}` : `/api/files/folders/${target.id}`;
-    const res = await fetch(url, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ rename: name.trim() }),
-    });
-    setBusy(false);
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(b.error ?? 'Rename failed');
+    try {
+      await apiSend(url, 'PATCH', { rename: name.trim() });
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Rename failed');
       return;
+    } finally {
+      setBusy(false);
     }
     toast.success('Renamed');
     onRenamed();
@@ -716,14 +767,10 @@ function CreateFolderDialog({
     e.preventDefault();
     if (!valid || busy) return;
     setBusy(true);
-    const res = await fetch('/api/files/folders', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ parentPath, slug, description }),
-    });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(b.error ?? 'Could not create folder');
+    try {
+      await apiSend('/api/files/folders', 'POST', { parentPath, slug, description });
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not create folder');
       setBusy(false);
       return;
     }
@@ -814,22 +861,18 @@ function CreateFileDialog({
     e.preventDefault();
     if (!valid || busy) return;
     setBusy(true);
-    const res = await fetch('/api/files/files', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
+    let file: FileRow;
+    try {
+      ({ file } = await apiSend<{ file: FileRow }>('/api/files/files', 'POST', {
         parentPath,
         filename: `${cleanStem}.${type}`,
         content: defaultBodyFor(type),
-      }),
-    });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(b.error ?? 'Could not create file');
+      }));
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not create file');
       setBusy(false);
       return;
     }
-    const { file } = (await res.json()) as { file: FileRow };
     toast.success(`Created ${file.filename}`);
     onOpenChange(false);
     onCreated(file.id);

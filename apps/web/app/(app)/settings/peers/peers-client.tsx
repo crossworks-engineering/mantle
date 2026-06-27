@@ -1,11 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Check, Copy, KeyRound, Network, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Spinner } from '@/components/ui/spinner';
 import { SubmitButton } from '@/components/ui/submit-button';
 import {
   AlertDialog,
@@ -67,7 +70,35 @@ function TokenReveal({ token, onDone }: { token: string; onDone: () => void }) {
   );
 }
 
-export function PeersClient({ initialPeers }: { initialPeers: Peer[] }) {
+/** Outer query-gate so the page stays data-free. */
+export function PeersClient() {
+  const peersQuery = useQuery({
+    queryKey: ['peers'],
+    queryFn: () => apiFetch<{ peers: Peer[] }>('/api/peers'),
+  });
+  if (peersQuery.isPending) {
+    return (
+      <div className="flex justify-center py-12">
+        <Spinner />
+      </div>
+    );
+  }
+  if (peersQuery.isError && !peersQuery.data) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-12 text-sm text-muted-foreground">
+        <p>Couldn&apos;t load peers.</p>
+        <Button variant="outline" size="sm" onClick={() => peersQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+  return <PeersView initialPeers={peersQuery.data.peers} />;
+}
+
+/** Once peers are loaded, this owns the working list (seeds from the fetch,
+ *  then mutates locally as peers are added/edited/removed). */
+function PeersView({ initialPeers }: { initialPeers: Peer[] }) {
   const toast = useToast();
   const [peers, setPeers] = useState<Peer[]>(initialPeers);
   const [sel, setSel] = useState<Selection>(
@@ -178,20 +209,19 @@ function CreatePeer({ onCreated }: { onCreated: (peer: Peer, inboundToken: strin
       return;
     }
     setPending(true);
-    const res = await fetch('/api/peers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ displayName, baseUrl, outboundToken }),
-    });
-    setPending(false);
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast.error(j.error ?? `Could not add peer (${res.status})`);
-      return;
+    try {
+      const { peer, inboundToken } = await apiSend<{ peer: Peer; inboundToken: string }>(
+        '/api/peers',
+        'POST',
+        { displayName, baseUrl, outboundToken },
+      );
+      toast.success(`Added ${peer.displayName}`);
+      onCreated(peer, inboundToken);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not add peer');
+    } finally {
+      setPending(false);
     }
-    const { peer, inboundToken } = await res.json();
-    toast.success(`Added ${peer.displayName}`);
-    onCreated(peer, inboundToken);
   };
 
   return (
@@ -249,8 +279,12 @@ function PeerDetail({
   const [newOutbound, setNewOutbound] = useState('');
 
   const loadShares = useCallback(async () => {
-    const res = await fetch(`/api/peers/${peer.id}/shares`);
-    if (res.ok) setShares((await res.json()).shares ?? []);
+    try {
+      const { shares } = await apiFetch<{ shares: Share[] }>(`/api/peers/${peer.id}/shares`);
+      setShares(shares ?? []);
+    } catch {
+      /* leave the existing list on a transient read failure */
+    }
   }, [peer.id]);
 
   useEffect(() => { void loadShares(); }, [loadShares]);
@@ -259,65 +293,80 @@ function PeerDetail({
   useEffect(() => {
     if (!q.trim()) { setHits([]); return; }
     const h = setTimeout(async () => {
-      const res = await fetch(`/api/peers/nodes?q=${encodeURIComponent(q.trim())}`);
-      if (res.ok) setHits((await res.json()).nodes ?? []);
+      try {
+        const { nodes } = await apiFetch<{ nodes: NodeHit[] }>(
+          `/api/peers/nodes?q=${encodeURIComponent(q.trim())}`,
+        );
+        setHits(nodes ?? []);
+      } catch {
+        setHits([]);
+      }
     }, 300);
     return () => clearTimeout(h);
   }, [q]);
 
   const toggleEnabled = async (enabled: boolean) => {
-    const res = await fetch(`/api/peers/${peer.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled }),
-    });
-    if (!res.ok) return toast.error('Could not update');
-    onChanged({ enabled, status: enabled ? 'active' : 'revoked' });
+    try {
+      await apiSend(`/api/peers/${peer.id}`, 'PATCH', { enabled });
+      onChanged({ enabled, status: enabled ? 'active' : 'revoked' });
+    } catch {
+      toast.error('Could not update');
+    }
   };
 
   const rotate = async () => {
-    const res = await fetch(`/api/peers/${peer.id}/rotate`, { method: 'POST' });
-    if (!res.ok) return toast.error('Could not rotate');
-    onRevealNew((await res.json()).inboundToken);
-    toast.success('New inbound token minted');
+    try {
+      const { inboundToken } = await apiSend<{ inboundToken: string }>(
+        `/api/peers/${peer.id}/rotate`,
+        'POST',
+      );
+      onRevealNew(inboundToken);
+      toast.success('New inbound token minted');
+    } catch {
+      toast.error('Could not rotate');
+    }
   };
 
   const saveOutbound = async () => {
     if (!newOutbound.trim()) return;
-    const res = await fetch(`/api/peers/${peer.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ outboundToken: newOutbound.trim() }),
-    });
-    if (!res.ok) return toast.error('Could not update token');
-    setNewOutbound('');
-    toast.success('Outbound token updated');
+    try {
+      await apiSend(`/api/peers/${peer.id}`, 'PATCH', { outboundToken: newOutbound.trim() });
+      setNewOutbound('');
+      toast.success('Outbound token updated');
+    } catch {
+      toast.error('Could not update token');
+    }
   };
 
   const grant = async (nodeId: string) => {
-    const res = await fetch(`/api/peers/${peer.id}/shares`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nodeId }),
-    });
-    if (!res.ok) return toast.error('Could not grant');
-    setQ('');
-    setHits([]);
-    await loadShares();
+    try {
+      await apiSend(`/api/peers/${peer.id}/shares`, 'POST', { nodeId });
+      setQ('');
+      setHits([]);
+      await loadShares();
+    } catch {
+      toast.error('Could not grant');
+    }
   };
 
   const revoke = async (nodeId: string) => {
-    const res = await fetch(`/api/peers/${peer.id}/shares?nodeId=${nodeId}`, { method: 'DELETE' });
-    if (!res.ok) return toast.error('Could not revoke');
-    await loadShares();
+    try {
+      await apiSend(`/api/peers/${peer.id}/shares?nodeId=${nodeId}`, 'DELETE');
+      await loadShares();
+    } catch {
+      toast.error('Could not revoke');
+    }
   };
 
   const confirmDelete = async () => {
     setDeleteOpen(false);
-    const res = await fetch(`/api/peers/${peer.id}`, { method: 'DELETE' });
-    if (!res.ok) return toast.error('Could not delete peer');
-    toast.success(`Removed ${peer.displayName}`);
-    onDeleted();
+    try {
+      await apiSend(`/api/peers/${peer.id}`, 'DELETE');
+      toast.success(`Removed ${peer.displayName}`);
+      onDeleted();
+    } catch {
+      toast.error('Could not delete peer');
+    }
   };
 
   const grantedIds = new Set(shares.map((s) => s.nodeId));

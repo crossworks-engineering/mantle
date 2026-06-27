@@ -1,39 +1,29 @@
 import { requireOwner } from '@/lib/auth';
-import { listSecrets, countSecrets, type SecretKind } from '@/lib/secrets';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { SecretsClient } from './secrets-client';
 
-const PAGE_SIZE = 50;
-
+/**
+ * Secrets list: data-free. The page only parses the URL params (search / kind /
+ * page) and hands them to SecretsClient, which fetches the page of secret
+ * metadata from GET /api/secrets via useQuery. `useListNav` keeps the params in
+ * the URL. Secret values are never listed — reveal is a separate endpoint.
+ */
 export default async function SecretsPage({
   searchParams,
 }: {
   searchParams: Promise<{ page?: string; q?: string; kind?: string }>;
 }) {
-  const user = await requireOwner();
+  await requireOwner();
   const sp = await searchParams;
 
   const page = Math.max(1, Number.parseInt(sp.page ?? '1', 10) || 1);
-  const query = sp.q?.trim() || undefined;
-  const kind = (sp.kind?.trim() || 'all') as SecretKind | 'all';
-  const opts = { query, kind };
-
-  const [rows, total] = await Promise.all([
-    listSecrets(user.id, { ...opts, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
-    countSecrets(user.id, opts),
-  ]);
+  const query = sp.q?.trim() || '';
+  const kind = sp.kind?.trim() || 'all';
 
   return (
     <>
       <SetPageTitle title="Secrets" />
-      <SecretsClient
-        initialSecrets={rows}
-        total={total}
-        page={page}
-        pageSize={PAGE_SIZE}
-        query={query ?? ''}
-        kind={kind}
-      />
+      <SecretsClient page={page} query={query} kind={kind} />
     </>
   );
 }

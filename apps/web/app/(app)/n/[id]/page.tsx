@@ -1,6 +1,5 @@
-import { and, eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
-import { db, nodes } from '@mantle/db';
+import { getOwnedNode } from '@mantle/content';
 import { requireOwner } from '@/lib/auth';
 
 /**
@@ -30,11 +29,7 @@ export default async function NodePermalink({
   const user = await requireOwner();
   const { id } = await params;
 
-  const [row] = await db
-    .select({ type: nodes.type })
-    .from(nodes)
-    .where(and(eq(nodes.id, id), eq(nodes.ownerId, user.id)))
-    .limit(1);
+  const row = await getOwnedNode(user.id, id);
   if (!row) notFound();
 
   const enc = encodeURIComponent(id);

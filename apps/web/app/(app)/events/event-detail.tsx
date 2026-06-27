@@ -23,6 +23,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/components/ui/toast';
+import { apiSend, ApiError } from '@/lib/api-fetch';
 import { ShareControl } from '@/components/share/share-control';
 import { formatDateTime } from '@/lib/format-datetime';
 import { useNow } from '@/components/use-now';
@@ -35,24 +36,12 @@ import {
   formatRelativeShort,
 } from '@/lib/event-time';
 import { EventForm, eventToForm, type EventPayload } from './event-form';
+import type { EventRow } from '@mantle/content';
 
-export type EventRow = {
-  id: string;
-  title: string;
-  body: string;
-  startsAt: string;
-  endsAt: string | null;
-  location: string | null;
-  remindMinutesBefore: number;
-  remindAt: string;
-  reminderSentAt: string | null;
-  recur: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
-  recurUntil: string | null;
-  tags: string[];
-  summary: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
+// Wire shape is the GET /api/events mapper's output — single source of truth.
+// Re-exported so the list client keeps importing it from here; drift is a
+// compile error. (The canonical row also carries `timezone`, unused here.)
+export type { EventRow };
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -185,17 +174,18 @@ export function EventDetail({
   const [pending, startTransition] = useTransition();
 
   const saveEdit = async (payload: EventPayload) => {
-    const res = await fetch(`/api/events/${meta.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast.error(j.error ?? `Save failed (${res.status})`);
+    let updated: EventRow;
+    try {
+      ({ event: updated } = await apiSend<{ event: EventRow }>(
+        `/api/events/${meta.id}`,
+        'PATCH',
+        payload,
+      ));
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Save failed');
       return;
     }
-    const { event: updated } = (await res.json()) as { event: EventRow };
     setMeta(updated);
     setEditing(false);
     onUpdated?.(updated);
@@ -203,10 +193,11 @@ export function EventDetail({
 
   const confirmDelete = async () => {
     setDeleteOpen(false);
-    const res = await fetch(`/api/events/${meta.id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast.error(j.error ?? `Could not delete event (${res.status})`);
+    try {
+      await apiSend(`/api/events/${meta.id}`, 'DELETE');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not delete event');
       return;
     }
     toast.success(`Deleted “${meta.title}”`);

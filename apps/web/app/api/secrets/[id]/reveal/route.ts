@@ -2,17 +2,19 @@
  * POST /api/secrets/[id]/reveal — return decrypted note + fields.
  *
  * Separate path so reveal is greppable in access logs and easy to audit.
- * Owner-scoped via `requireOwner`. No cache headers; never proxied.
+ * Owner-scoped via `getOwnerOr401` (a JSON API — 401s rather than redirecting).
+ * No cache headers; never proxied.
  */
 import { NextResponse } from 'next/server';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { revealSecret } from '@/lib/secrets';
 
 export async function POST(
   _req: Request,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
   const result = await revealSecret(user.id, id);
   if (!result) return NextResponse.json({ error: 'not found' }, { status: 404 });

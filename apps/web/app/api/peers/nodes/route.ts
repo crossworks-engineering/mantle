@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { and, db, desc, eq, ilike, not, inArray, nodes, sql } from '@mantle/db';
 
 /**
@@ -11,7 +11,8 @@ import { and, db, desc, eq, ilike, not, inArray, nodes, sql } from '@mantle/db';
 const EXCLUDED = ['branch', 'mantle_peer', 'secret'] as const;
 
 export async function GET(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const q = new URL(req.url).searchParams.get('q')?.trim() ?? '';
   if (!q) return NextResponse.json({ nodes: [] });
   const rows = await db

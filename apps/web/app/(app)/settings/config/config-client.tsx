@@ -1,10 +1,12 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { diffLines } from 'diff';
 import { cn } from '@/lib/utils';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import {
   AlertDialog,
@@ -17,7 +19,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { adoptItemAction, adoptAllAction } from './actions';
 import type { AdoptKind } from '@/lib/system-manifest';
 import type {
   ConfigDiffReport,
@@ -200,10 +201,36 @@ function adoptDescription(e: EntityDiff): string {
   }
 }
 
-export function ConfigClient({ report }: { report: ConfigDiffReport }) {
-  const router = useRouter();
+/** Outer query-gate: fetches the diff report client-side so the page stays
+ *  data-free, then renders the view (which seeds its selection from `report`). */
+export function ConfigClient() {
+  const configQuery = useQuery({
+    queryKey: ['config'],
+    queryFn: () => apiFetch<{ report: ConfigDiffReport }>('/api/config').then((r) => r.report),
+  });
+  if (configQuery.isPending) {
+    return (
+      <div className="flex h-full items-center justify-center py-16">
+        <Spinner />
+      </div>
+    );
+  }
+  if (configQuery.isError && !configQuery.data) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 py-16 text-sm text-muted-foreground">
+        <p>Couldn&apos;t load the config report.</p>
+        <Button variant="outline" size="sm" onClick={() => configQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+  return <ConfigView report={configQuery.data} />;
+}
+
+function ConfigView({ report }: { report: ConfigDiffReport }) {
+  const queryClient = useQueryClient();
   const toast = useToast();
-  const [, startTransition] = useTransition();
   const [submitting, setSubmitting] = useState(false);
 
   const sections = useMemo(() => sectionize(report.entities), [report.entities]);
@@ -225,25 +252,27 @@ export function ConfigClient({ report }: { report: ConfigDiffReport }) {
 
   async function runAdopt(e: EntityDiff) {
     setSubmitting(true);
-    const res = await adoptItemAction(e.kind as AdoptKind, e.slug);
-    setSubmitting(false);
-    if (res.ok) {
+    try {
+      await apiSend('/api/config/adopt', 'POST', { kind: e.kind as AdoptKind, slug: e.slug });
       toast.success(`Committed changes to ${e.name}`);
-      startTransition(() => router.refresh());
-    } else {
-      toast.error(res.error);
+      queryClient.invalidateQueries({ queryKey: ['config'] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Adopt failed.');
+    } finally {
+      setSubmitting(false);
     }
   }
 
   async function runAdoptAll() {
     setSubmitting(true);
-    const res = await adoptAllAction();
-    setSubmitting(false);
-    if (res.ok) {
+    try {
+      const res = await apiSend<{ ok: true; count: number }>('/api/config/adopt-all', 'POST');
       toast.success(`Committed ${res.count} change${res.count === 1 ? '' : 's'} from template`);
-      startTransition(() => router.refresh());
-    } else {
-      toast.error(res.error);
+      queryClient.invalidateQueries({ queryKey: ['config'] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Adopt-all failed.');
+    } finally {
+      setSubmitting(false);
     }
   }
 

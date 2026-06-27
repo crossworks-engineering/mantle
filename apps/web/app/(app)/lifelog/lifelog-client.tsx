@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { NotebookPen, Pencil, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
 import { MOODS, CATEGORIES, moodDisplay, categoryLabel } from '@mantle/content/lifelog-options';
 import { Button } from '@/components/ui/button';
@@ -25,6 +26,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { ListPager } from '@/components/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
+import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import { TagPill } from '@/components/tag-pill';
 import { cn } from '@/lib/utils';
@@ -34,54 +37,73 @@ import { LifelogEditor, type LifelogRow } from './lifelog-editor';
 
 const ALL = '__all__';
 
-export function LifelogClient({
-  entries,
-  total,
-  page,
-  pageSize,
-  tags,
-  activeMood,
-  activeCategory,
-  activeTag,
-  query,
-  initialSelectedId,
-  initialSelected,
-  initialEditing,
-}: {
-  entries: LifelogRow[];
+type LifelogListResponse = {
+  lifelogs: LifelogRow[];
   total: number;
   page: number;
   pageSize: number;
   tags: { tag: string; count: number }[];
-  activeMood: string | null;
-  activeCategory: string | null;
-  activeTag: string | null;
-  query: string;
-  initialSelectedId?: string | null;
-  initialSelected?: LifelogRow | null;
-  initialEditing?: boolean;
-}) {
-  const router = useRouter();
+};
+
+export function LifelogClient() {
+  const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const toast = useToast();
   const { pending, go } = useListNav();
 
-  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? null);
-  const [editing, setEditing] = useState<boolean>(!!initialEditing);
+  // URL is the source of truth (matches the old SSR page).
+  const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10) || 1);
+  const query = searchParams.get('q')?.trim() ?? '';
+  const activeMood = searchParams.get('mood')?.trim() || null;
+  const activeCategory = searchParams.get('category')?.trim() || null;
+  const activeTag = searchParams.get('tag')?.trim() || null;
+
+  const listQuery = useQuery({
+    queryKey: ['lifelog', { q: query, mood: activeMood, category: activeCategory, tag: activeTag, page }],
+    queryFn: () => {
+      const qs = new URLSearchParams();
+      if (query) qs.set('q', query);
+      if (activeMood) qs.set('mood', activeMood);
+      if (activeCategory) qs.set('category', activeCategory);
+      if (activeTag) qs.set('tag', activeTag);
+      if (page > 1) qs.set('page', String(page));
+      const s = qs.toString();
+      return apiFetch<LifelogListResponse>(`/api/lifelog${s ? `?${s}` : ''}`);
+    },
+    placeholderData: (prev) => prev,
+  });
+
+  const entries = listQuery.data?.lifelogs ?? [];
+  const total = listQuery.data?.total ?? 0;
+  const pageSize = listQuery.data?.pageSize ?? 50;
+  const tags = listQuery.data?.tags ?? [];
+
+  const [selectedId, setSelectedId] = useState<string | null>(
+    searchParams.get('selected')?.trim() || null,
+  );
+  const [editing, setEditing] = useState<boolean>(searchParams.get('edit') === '1');
   const [creating, setCreating] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<LifelogRow | null>(null);
   const [discard, setDiscard] = useState<{ run: () => void } | null>(null);
   const [searchInput, setSearchInput] = useState(query);
 
+  // A deep-linked entry outside the current slice → fetch it directly.
+  const selectedEntryQuery = useQuery({
+    queryKey: ['lifelog', selectedId],
+    queryFn: () => apiFetch<{ lifelog: LifelogRow }>(`/api/lifelog/${selectedId}`).then((r) => r.lifelog),
+    enabled: !!selectedId && !entries.some((n) => n.id === selectedId),
+  });
+
   const selected = useMemo<LifelogRow | null>(() => {
     if (selectedId) {
       return (
         entries.find((n) => n.id === selectedId) ??
-        (initialSelected?.id === selectedId ? initialSelected : null)
+        (selectedEntryQuery.data?.id === selectedId ? selectedEntryQuery.data : null)
       );
     }
     return entries[0] ?? null;
-  }, [selectedId, entries, initialSelected]);
+  }, [selectedId, entries, selectedEntryQuery.data]);
 
   const guard = useCallback(
     (run: () => void) => {
@@ -119,7 +141,7 @@ export function LifelogClient({
     exitEdit();
     setSelectedId(saved.id);
     syncSelectionParam('selected', saved.id);
-    router.refresh();
+    void queryClient.invalidateQueries({ queryKey: ['lifelog'] });
   };
 
   // Debounced search → URL.
@@ -134,9 +156,11 @@ export function LifelogClient({
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    const res = await fetch(`/api/lifelog/${deleteTarget.id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      toast.error('Could not delete life log');
+    try {
+      await apiSend(`/api/lifelog/${deleteTarget.id}`, 'DELETE');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not delete life log');
       return;
     }
     toast.success('Life log deleted');
@@ -146,8 +170,28 @@ export function LifelogClient({
       syncSelectionParam('selected', null);
     }
     setDeleteTarget(null);
-    router.refresh();
+    void queryClient.invalidateQueries({ queryKey: ['lifelog'] });
   };
+
+  if (listQuery.isPending) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+  if (listQuery.isError && !listQuery.data) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm">
+        <p className="text-muted-foreground">
+          {listQuery.error instanceof Error ? listQuery.error.message : 'Failed to load life logs.'}
+        </p>
+        <Button variant="outline" size="sm" onClick={() => listQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="relative md:grid md:h-full md:grid-cols-[360px_1fr] md:overflow-hidden">

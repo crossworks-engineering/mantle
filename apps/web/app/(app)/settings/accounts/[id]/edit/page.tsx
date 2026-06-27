@@ -1,41 +1,19 @@
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
-import { and, eq } from 'drizzle-orm';
-import { db, emailAccounts } from '@mantle/db';
 import { requireOwner } from '@/lib/auth';
 import { SetPageTitle } from '@/components/layout/page-title';
-import { ImapForm } from '../../imap/imap-form';
+import { EditAccountClient } from './edit-account-client';
 
 /** Edit an existing IMAP account: connection knobs, history window, and an
- *  optional password rotation. The address is fixed (account identity). */
+ *  optional password rotation. Data-free — EditAccountClient fetches the
+ *  account from GET /api/email/accounts/[id] and seeds the shared ImapForm. */
 export default async function EditAccountPage({ params }: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  await requireOwner();
   const { id } = await params;
-
-  const [account] = await db
-    .select()
-    .from(emailAccounts)
-    .where(and(eq(emailAccounts.id, id), eq(emailAccounts.userId, user.id)))
-    .limit(1);
-  if (!account) notFound();
 
   return (
     <div className="mx-auto max-w-md space-y-6 px-6 py-8">
       <SetPageTitle title="Edit account" />
-      <ImapForm
-        account={{
-          id: account.id,
-          address: account.address,
-          displayName: account.displayName,
-          imapHost: account.imapHost,
-          imapPort: account.imapPort,
-          imapSecure: account.imapSecure,
-          smtpHost: account.smtpHost,
-          smtpPort: account.smtpPort,
-          smtpSecure: account.smtpSecure,
-          firstScanDays: account.firstScanDays,
-        }}
-      />
+      <EditAccountClient id={id} />
       <p className="text-xs text-muted-foreground">
         <Link href="/settings/accounts" className="underline">
           ← Back to accounts

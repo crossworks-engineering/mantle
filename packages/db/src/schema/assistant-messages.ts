@@ -76,6 +76,24 @@ export const assistantMessages = pgTable(
      *  etc.) for reply threading + dedup. NULL for web turns. */
     externalRef: jsonb('external_ref').$type<ConversationExternalRef>(),
     data: jsonb('data').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+    /** RESERVED execution-state projection. Not yet written: the current durable
+     *  runner runs the turn and the web route AWAITS its result, so a failure
+     *  surfaces synchronously (getResult rejects → the client shows the error)
+     *  and every row is 'complete'. These columns are the UI-facing projection
+     *  for the planned async-delivery model (route returns 202; the runner
+     *  creates the outbound row 'pending' — the durable "thinking…" bubble — then
+     *  flips it to 'complete' or 'failed'), where in-progress/failed states must
+     *  survive navigation. Defaulting to 'complete' classifies all existing rows
+     *  with no backfill (same trick as `channel`). DBOS WorkflowStatus is the
+     *  execution source of truth; this is the read-model. See docs/conversation.md
+     *  + the dedicated-API Phase 1 plan. */
+    status: text('status')
+      .$type<'pending' | 'complete' | 'failed'>()
+      .default('complete')
+      .notNull(),
+    /** Reserved (see `status`): human-readable failure reason for a 'failed'
+     *  turn under the future async-delivery model; NULL today. */
+    error: text('error'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [

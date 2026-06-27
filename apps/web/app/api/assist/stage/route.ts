@@ -11,7 +11,7 @@
  * run path — two read-only indexed single-row queries.
  */
 import { NextResponse } from 'next/server';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { resolveAssistAgentSlug, type AssistSurface } from '@/lib/assist-agent';
 import { currentSpecialistStage } from '@/lib/assist-stage';
 
@@ -24,7 +24,8 @@ function isSurface(v: string | null): v is AssistSurface {
 }
 
 export async function GET(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const surface = new URL(req.url).searchParams.get('surface');
   if (!isSurface(surface)) {
     return NextResponse.json({ error: 'unknown surface' }, { status: 400 });

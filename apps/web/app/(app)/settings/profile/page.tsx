@@ -1,66 +1,21 @@
-import { and, eq } from 'drizzle-orm';
 import { requireOwner } from '@/lib/auth';
-import {
-  DEFAULT_PREFERENCES,
-  loadProfilePreferences,
-  formatInProfile,
-} from '@mantle/content';
-import { db, agents, channels } from '@mantle/db';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { ProfileClient } from './profile-client';
-import { updatePreferencesAction } from './actions';
 
 /**
- * /settings/profile — the operator's own preferences.
+ * /settings/profile — the operator's own preferences (auth gate only).
  *
- * Two fields today: timezone (IANA) + locale (BCP-47). Both feed:
- *   - Date formatting in the UI (formatDateTime + format-aware
- *     components),
- *   - Saskia's system-prompt time context, so she resolves "tomorrow
- *     at 3pm" correctly when calling event_create.
- *
- * Loaders are owner-scoped via requireOwner(). The page auto-creates
- * the profile row on first visit (see loadProfilePreferences).
+ * Preferences, the reminder-capable agent list, and the owner id are fetched
+ * client-side via `GET /api/profile` (Phase 2 · Task 4), so the screen carries
+ * no in-process DB read. The "now in your settings" sample is computed live in
+ * the client from the chosen tz/locale.
  */
 export default async function ProfilePage() {
-  const user = await requireOwner();
-  const prefs = await loadProfilePreferences(user.id);
-  // Agents that can actually deliver a reminder — an enabled agent with an
-  // enabled Telegram channel (docs/comms-channels.md). The user picks one as the
-  // event-reminder sender.
-  const reminderAgents = await db
-    .selectDistinct({ slug: agents.slug, name: agents.name })
-    .from(agents)
-    .innerJoin(channels, eq(channels.agentId, agents.id))
-    .where(
-      and(
-        eq(agents.ownerId, user.id),
-        eq(agents.enabled, true),
-        eq(channels.type, 'telegram'),
-        eq(channels.enabled, true),
-      ),
-    )
-    .orderBy(agents.name);
-  // Render a sample "this is what now() looks like" so the operator
-  // sees the effect of the chosen settings before saving anything
-  // else that depends on them.
-  const samplePreview = formatInProfile(new Date(), prefs, {
-    dateStyle: 'full',
-    timeStyle: 'long',
-  });
-
+  await requireOwner();
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-6 py-8">
       <SetPageTitle title="Profile" />
-
-      <ProfileClient
-        defaults={prefs}
-        defaultsFallback={DEFAULT_PREFERENCES}
-        samplePreview={samplePreview}
-        userId={user.id}
-        reminderAgents={reminderAgents}
-        action={updatePreferencesAction}
-      />
+      <ProfileClient />
     </div>
   );
 }

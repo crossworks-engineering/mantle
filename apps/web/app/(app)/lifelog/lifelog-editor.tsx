@@ -18,19 +18,12 @@ import {
 import { DateTimePicker } from '@/components/ui/date-time-picker';
 import { TagInput } from '@/components/tag-input';
 import { useToast } from '@/components/ui/toast';
+import type { LifelogRow } from '@mantle/content';
 
-export type LifelogRow = {
-  id: string;
-  title: string;
-  body: string;
-  mood: string | null;
-  category: string | null;
-  entryDate: string | null;
-  tags: string[];
-  summary: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
+// Wire shape is the GET /api/lifelog mapper's output — single source of truth.
+// Re-exported so the list client keeps importing it from here; drift is a
+// compile error.
+export type { LifelogRow };
 
 // Radix Select forbids an empty-string item value, so "no selection" rides a
 // sentinel that maps to '' on save (clears the field).

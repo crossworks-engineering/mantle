@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, X, FlaskConical } from 'lucide-react';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { useRealtime } from '@/components/realtime/use-realtime';
 
 type PendingRow = {
@@ -20,42 +22,31 @@ type PendingRow = {
   executedAt: string | null;
 };
 
-export function PendingClient({
-  initialRows,
-  devMode = false,
-}: {
-  initialRows: PendingRow[];
-  devMode?: boolean;
-}) {
-  const router = useRouter();
-  const [rows, setRows] = useState<PendingRow[]>(initialRows);
+export function PendingClient({ devMode = false }: { devMode?: boolean }) {
+  const queryClient = useQueryClient();
+  const pendingQuery = useQuery({
+    queryKey: ['pending'],
+    queryFn: () => apiFetch<{ pending: PendingRow[] }>('/api/pending?limit=200'),
+  });
   const [error, setError] = useState<string>();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [queueing, setQueueing] = useState(false);
-  const [, startTransition] = useTransition();
 
-  useEffect(() => setRows(initialRows), [initialRows]);
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['pending'] });
 
   // Keep this list live: a decision made elsewhere — a Telegram tap, another
   // tab — repaints here without a manual refresh, same signal that drives the
   // sidebar badge.
-  useRealtime(['pending_tool_call'], () => router.refresh());
+  useRealtime(['pending_tool_call'], invalidate);
 
   const queueTestApproval = async () => {
     setQueueing(true);
     setError(undefined);
     try {
-      const res = await fetch('/api/dev-tools/queue-approval', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-      if (!res.ok) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(b.error ?? 'could not queue test approval');
-        return;
-      }
-      startTransition(() => router.refresh());
+      await apiSend('/api/dev-tools/queue-approval', 'POST', {});
+      await invalidate();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'could not queue test approval');
     } finally {
       setQueueing(false);
     }
@@ -65,24 +56,34 @@ export function PendingClient({
     setBusyId(id);
     setError(undefined);
     try {
-      const res = await fetch(`/api/pending/${id}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ decision }),
-      });
-      if (!res.ok) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(b.error ?? 'decision failed');
-        return;
-      }
-      const data = (await res.json()) as { pending: PendingRow };
-      setRows((prev) => prev.map((r) => (r.id === id ? data.pending : r)));
-      startTransition(() => router.refresh());
+      await apiSend(`/api/pending/${id}`, 'PATCH', { decision });
+      await invalidate();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'decision failed');
     } finally {
       setBusyId(null);
     }
   };
 
+  if (pendingQuery.isPending) {
+    return (
+      <div className="flex justify-center py-12">
+        <Spinner />
+      </div>
+    );
+  }
+  if (pendingQuery.isError && !pendingQuery.data) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-12 text-sm text-muted-foreground">
+        <p>Couldn&apos;t load pending approvals.</p>
+        <Button variant="outline" size="sm" onClick={() => pendingQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  const rows = pendingQuery.data.pending;
   const pending = rows.filter((r) => r.status === 'pending');
   const decided = rows.filter((r) => r.status !== 'pending');
 

@@ -26,3 +26,19 @@ export const PUBLIC_PATHS = [
   '/api/version',
   '/app-runtime',
 ];
+
+/**
+ * DB-less "detached" dev: a local frontend pointed at a remote API
+ * (`NEXT_PUBLIC_MANTLE_API_BASE`) with no local Postgres. The dev auth shim in
+ * `lib/auth` (`detachedDevUser`) and the page-nav bypass in `middleware.ts` both
+ * gate on this.
+ *
+ * Master switch is a SERVER-ONLY env var (deliberately NOT `NEXT_PUBLIC_`, so it
+ * can never be flipped on from a shipped client bundle) AND it is hard-disabled
+ * in production — so the bypass can NEVER activate in a prod build, regardless of
+ * how the public API vars are set. Env-only (no node:crypto), so it is safe to
+ * call from the Edge middleware. See docs/db-less-dev.md.
+ */
+export function isDetachedDev(): boolean {
+  return process.env.NODE_ENV !== 'production' && !!process.env.MANTLE_DETACHED_DEV?.trim();
+}

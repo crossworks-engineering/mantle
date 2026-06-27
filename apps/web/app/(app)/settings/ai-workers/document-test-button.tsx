@@ -11,7 +11,7 @@ import { useRef, useState, useTransition } from 'react';
 import { FileUp, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
-import { testDocumentAction } from './actions';
+import { apiSend } from '@/lib/api-fetch';
 
 export function DocumentTestButton({ workerId }: { workerId: string }) {
   const toast = useToast();
@@ -40,7 +40,14 @@ export function DocumentTestButton({ workerId }: { workerId: string }) {
           reader.onerror = () => reject(reader.error ?? new Error('read failed'));
           reader.readAsDataURL(file);
         });
-        const r = await testDocumentAction(workerId, base64);
+        const r = await apiSend<{
+          ok: true;
+          text: string;
+          model: string;
+          adapter: string;
+          tokensIn: number | null;
+          tokensOut: number | null;
+        }>(`/api/ai-workers/${workerId}/test/document`, 'POST', { pdfBase64: base64 });
         setResult({
           text: r.text,
           model: r.model,

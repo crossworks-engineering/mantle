@@ -7,13 +7,14 @@
  * touch the turn request/response path. Returns `{ label: null }` when idle.
  */
 import { NextResponse } from 'next/server';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { currentTurnStageLabel } from '@/lib/assistant/turn-stage';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const label = await currentTurnStageLabel(user.id);
   return NextResponse.json({ label });
 }

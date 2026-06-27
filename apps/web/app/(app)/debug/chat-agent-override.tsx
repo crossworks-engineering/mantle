@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
+import { apiSend, ApiError } from '@/lib/api-fetch';
 
 type AgentOption = {
   id: string;
@@ -20,7 +21,7 @@ export function ChatAgentOverride({
   current: string | null;
   agents: AgentOption[];
 }) {
-  const router = useRouter();
+  const queryClient = useQueryClient();
   const [value, setValue] = useState<string>(current ?? '');
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string>();
@@ -35,18 +36,16 @@ export function ChatAgentOverride({
     const prev = value;
     setValue(next);
     setError(undefined);
-    const res = await fetch(`/api/telegram/chats/${chatId}`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ responderAgentId: next || null }),
-    });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(b.error ?? 'Save failed.');
+    try {
+      await apiSend(`/api/telegram/chats/${chatId}`, 'PATCH', { responderAgentId: next || null });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Save failed.');
       setValue(prev);
       return;
     }
-    startTransition(() => router.refresh());
+    startTransition(() => {
+      void queryClient.invalidateQueries({ queryKey: ['debug', 'telegram'] });
+    });
   };
 
   return (

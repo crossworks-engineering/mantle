@@ -1,6 +1,6 @@
 {
   "name": "@mantle/web",
-  "version": "0.59.0",
+  "version": "0.66.34",
   "private": true,
   "type": "module",
   "scripts": {
@@ -55,6 +55,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.726.0",
+    "@dbos-inc/dbos-sdk": "^4.22.6",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/modifiers": "^9.0.0",
     "@dnd-kit/sortable": "^10.0.0",
@@ -62,7 +63,9 @@
     "@mantle/agent-runtime": "workspace:*",
     "@mantle/api-keys": "workspace:*",
     "@mantle/app-build": "workspace:*",
+    "@mantle/assistant-runtime": "workspace:*",
     "@mantle/calendar": "workspace:*",
+    "@mantle/client-types": "workspace:*",
     "@mantle/content": "workspace:*",
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
@@ -96,6 +99,7 @@
     "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "@tanstack/react-query": "^5.101.1",
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.14.3",
     "@tiptap/core": "^3.23.5",

@@ -4,7 +4,7 @@ import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { and, eq } from 'drizzle-orm';
 import { db, emailAccounts, emailAttachments, emails } from '@mantle/db';
 import { getContent } from '@mantle/storage';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerForAsset } from '@/lib/auth';
 import { safeDownloadHeaders } from '@/lib/safe-download';
 
 /**
@@ -15,7 +15,10 @@ import { safeDownloadHeaders } from '@/lib/safe-download';
  * self-hosted MinIO on a docker-network address.
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  // getOwnerForAsset: this download URL is an <a href>/<img> src that can't
+  // carry a bearer, so a detached client authenticates via the `?at=` token.
+  const user = await getOwnerForAsset(_req);
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
 
   const [row] = await db

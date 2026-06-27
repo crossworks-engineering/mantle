@@ -46,6 +46,7 @@ const nextConfig: NextConfig = {
   transpilePackages: [
     '@mantle/agent-runtime',
     '@mantle/api-keys',
+    '@mantle/assistant-runtime',
     '@mantle/app-build',
     '@mantle/crypto',
     '@mantle/db',
@@ -79,6 +80,7 @@ const nextConfig: NextConfig = {
   // runtime ("Cannot find native binding" otherwise). Works in plain Node
   // (the extractor) already; this fixes the web /assistant turn.
   serverExternalPackages: [
+    '@dbos-inc/dbos-sdk',
     'pg-boss',
     'postgres',
     'heic-convert',

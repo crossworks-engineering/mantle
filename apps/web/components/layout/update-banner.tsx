@@ -13,6 +13,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowUpCircle } from 'lucide-react';
+import { apiFetch } from '@/lib/api-fetch';
 
 type CheckPayload = {
   updateAvailable?: boolean;
@@ -28,9 +29,7 @@ export function UpdateBanner({ onNavigate }: { onNavigate?: () => void }) {
     let cancelled = false;
     const check = async () => {
       try {
-        const res = await fetch('/api/updates/check', { cache: 'no-store' });
-        if (!res.ok) return;
-        const data = (await res.json()) as CheckPayload;
+        const data = await apiFetch<CheckPayload>('/api/updates/check', { cache: 'no-store' });
         if (!cancelled) setTag(data.updateAvailable ? (data.latest?.tag ?? null) : null);
       } catch {
         // Offline / transient — just don't show the banner.

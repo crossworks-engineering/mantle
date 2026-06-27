@@ -86,3 +86,6 @@ apps/web/.app-dbs/
 
 # Generated shared mini-app runtime (packages/app-build → build:runtime, via pre(dev|build))
 apps/web/public/app-runtime/
+
+# Embedded agent-os repo (not part of this project)
+/agent-os/

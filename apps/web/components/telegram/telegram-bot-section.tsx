@@ -18,6 +18,7 @@ import { useRouter } from 'next/navigation';
 import { Loader2, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import type { AgentTelegramBinding, AgentTelegramChat } from '@/lib/agent-telegram';
 
 export function TelegramBotSection({ agentId }: { agentId: string }) {
@@ -37,11 +38,10 @@ export function TelegramBotSection({ agentId }: { agentId: string }) {
     async (initial = false) => {
       if (initial) setBinding(undefined);
       try {
-        const res = await fetch(`/api/agents/${agentId}/telegram`);
-        const b = (await res.json()) as {
+        const b = await apiFetch<{
           binding?: AgentTelegramBinding | null;
           chats?: AgentTelegramChat[];
-        };
+        }>(`/api/agents/${agentId}/telegram`);
         setBinding(b.binding ?? null);
         setChats(b.chats ?? []);
       } catch {
@@ -62,18 +62,20 @@ export function TelegramBotSection({ agentId }: { agentId: string }) {
   const connect = async () => {
     if (!token.trim()) return;
     setBusy(true);
-    const res = await fetch(`/api/agents/${agentId}/telegram`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token: token.trim() }),
-    });
-    setBusy(false);
-    const b = (await res.json().catch(() => ({}))) as {
-      binding?: AgentTelegramBinding;
-      error?: string;
-    };
-    if (!res.ok || !b.binding) {
-      toast.error(b.error ?? 'Could not link the bot.');
+    let b: { binding?: AgentTelegramBinding };
+    try {
+      b = await apiSend<{ binding?: AgentTelegramBinding }>(`/api/agents/${agentId}/telegram`, 'POST', {
+        token: token.trim(),
+      });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not link the bot.');
+      return;
+    } finally {
+      setBusy(false);
+    }
+    if (!b.binding) {
+      toast.error('Could not link the bot.');
       return;
     }
     setToken('');
@@ -84,11 +86,14 @@ export function TelegramBotSection({ agentId }: { agentId: string }) {
 
   const disconnect = async () => {
     setBusy(true);
-    const res = await fetch(`/api/agents/${agentId}/telegram`, { method: 'DELETE' });
-    setBusy(false);
-    if (!res.ok) {
-      toast.error('Could not unlink the bot.');
+    try {
+      await apiSend(`/api/agents/${agentId}/telegram`, 'DELETE');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not unlink the bot.');
       return;
+    } finally {
+      setBusy(false);
     }
     setBinding(null);
     setChats([]);
@@ -99,16 +104,14 @@ export function TelegramBotSection({ agentId }: { agentId: string }) {
 
   const setChatStatus = async (chatId: string, status: 'allowed' | 'denied') => {
     setBusyChat(chatId);
-    const res = await fetch(`/api/agents/${agentId}/telegram/chats`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chatId, status }),
-    });
-    setBusyChat(null);
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      toast.error(b.error ?? 'Could not update the chat.');
+    try {
+      await apiSend(`/api/agents/${agentId}/telegram/chats`, 'POST', { chatId, status });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not update the chat.');
       return;
+    } finally {
+      setBusyChat(null);
     }
     toast.success(status === 'allowed' ? 'Paired' : 'Blocked');
     void load();

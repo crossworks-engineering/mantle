@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { applyManifest, MANIFEST_AGENTS } from '@/lib/system-manifest';
 
 export const runtime = 'nodejs';
@@ -10,7 +10,8 @@ export const dynamic = 'force-dynamic';
 // Resets a manifest agent to its canonical default (overwrite mode) — system
 // prompt, model, params, skills, delegation. Only manifest slugs are resettable.
 export async function POST(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   let payload: { slug?: string };
   try {
     payload = await req.json();

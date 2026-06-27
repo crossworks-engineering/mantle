@@ -10,6 +10,12 @@ import localFont from 'next/font/local';
 export const fontSans = localFont({
   variable: '--font-sans',
   display: 'swap',
+  // woff2 (not ttf): ~349KB/385KB vs ~875KB/905KB — small enough to load within
+  // the window, so the earlier "preloaded but not used within a few seconds"
+  // warning (a slow ~875KB .ttf finishing after the window's load event) is
+  // resolved and preload can stay on. To regenerate: download the upstream Inter
+  // variable .ttf (rsms/inter) and run `woff2_compress <file>.ttf` (brew install
+  // woff2), then drop the .woff2 into /public/Inter.
   preload: true,
   fallback: [
     'ui-sans-serif',
@@ -25,12 +31,12 @@ export const fontSans = localFont({
   ],
   src: [
     {
-      path: '../public/Inter/Inter-VariableFont_opsz,wght.ttf',
+      path: '../public/Inter/Inter-VariableFont_opsz,wght.woff2',
       style: 'normal',
       weight: '100 900',
     },
     {
-      path: '../public/Inter/Inter-Italic-VariableFont_opsz,wght.ttf',
+      path: '../public/Inter/Inter-Italic-VariableFont_opsz,wght.woff2',
       style: 'italic',
       weight: '100 900',
     },

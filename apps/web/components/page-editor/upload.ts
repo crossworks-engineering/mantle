@@ -1,4 +1,5 @@
 import type { Editor } from '@tiptap/core';
+import { apiFetch } from '@/lib/api-fetch';
 
 /**
  * Upload a file through the existing files pipeline and turn it into an
@@ -20,14 +21,11 @@ export async function uploadToFiles(file: File): Promise<UploadedFile> {
   // Page embeds land in the files root; the user can reorganise in /files.
   fd.set('parentPath', 'files');
   fd.set('file', file);
-  const res = await fetch('/api/files/files', { method: 'POST', body: fd });
-  if (!res.ok) {
-    const b = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(b.error ?? `upload failed (${res.status})`);
-  }
-  const { file: row } = (await res.json()) as {
+  // FormData body: apiFetch (NOT apiSend) so the multipart boundary survives;
+  // it still carries the base-URL + bearer and throws ApiError on non-2xx.
+  const { file: row } = await apiFetch<{
     file: { id: string; filename: string; mimeType: string; sizeBytes: number };
-  };
+  }>('/api/files/files', { method: 'POST', body: fd });
   const mime = row.mimeType ?? file.type ?? '';
   return {
     id: row.id,

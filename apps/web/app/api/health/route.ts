@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { getSystemHealth } from '@/lib/system-health';
 
 /**
@@ -10,7 +10,8 @@ import { getSystemHealth } from '@/lib/system-health';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const health = await getSystemHealth(user.id);
   return NextResponse.json(health, {
     headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },

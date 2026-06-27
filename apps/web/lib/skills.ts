@@ -9,21 +9,12 @@
 
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { db, heartbeats, skills, type Skill } from '@mantle/db';
+import type { SkillDTO } from '@mantle/client-types';
 
-export type SkillSummary = {
-  id: string;
-  slug: string;
-  name: string;
-  description: string;
-  instructions: string;
-  /** Template state shape a heartbeat inherits on create. Empty {}
-   *  unless the skill author has filled it in (e.g.
-   *  {answered:[], expecting_reply:false} for interview skills). */
-  defaultState: Record<string, unknown>;
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
+/** The API/wire shape (see @mantle/client-types). Aliased here so the server's
+ *  `toSummary` output is checked against the client contract — drift is a type
+ *  error, not a runtime surprise. */
+export type SkillSummary = SkillDTO;
 
 function toSummary(s: Skill): SkillSummary {
   return {

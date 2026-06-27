@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/components/ui/toast';
+import { apiSend, ApiError } from '@/lib/api-fetch';
 import { formatDateTime } from '@/lib/format-datetime';
 import { SecretForm, type Field, type Kind, type SecretBody, type SecretFormValues } from './secret-form';
 
@@ -61,13 +62,16 @@ export function SecretDetail({
   const [pending, startTransition] = useTransition();
 
   const fetchPayload = async (): Promise<Payload | null> => {
-    const res = await fetch(`/api/secrets/${meta.id}/reveal`, { method: 'POST' });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast.error(j.error ?? `Reveal failed (${res.status})`);
+    try {
+      const { payload } = await apiSend<{ payload: Payload }>(
+        `/api/secrets/${meta.id}/reveal`,
+        'POST',
+      );
+      return payload;
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Reveal failed');
       return null;
     }
-    return (await res.json()).payload as Payload;
   };
 
   const reveal = async () => {
@@ -122,17 +126,17 @@ export function SecretDetail({
   };
 
   const saveEdit = async (body: SecretBody) => {
-    const res = await fetch(`/api/secrets/${meta.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast.error(j.error ?? `Save failed (${res.status})`);
+    let updated: SecretRow;
+    try {
+      ({ secret: updated } = await apiSend<{ secret: SecretRow }>(
+        `/api/secrets/${meta.id}`,
+        'PATCH',
+        body,
+      ));
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Save failed');
       return;
     }
-    const { secret: updated } = (await res.json()) as { secret: SecretRow };
     setMeta(updated);
     setRevealed({ note: body.note, fields: body.fields });
     setVisibleIdx(new Set(body.fields.map((_, i) => i)));
@@ -142,10 +146,10 @@ export function SecretDetail({
 
   const confirmDelete = async () => {
     setDeleteOpen(false);
-    const res = await fetch(`/api/secrets/${meta.id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast.error(j.error ?? `Could not delete secret (${res.status})`);
+    try {
+      await apiSend(`/api/secrets/${meta.id}`, 'DELETE');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not delete secret');
       return;
     }
     toast.success(`Deleted “${meta.title}”`);

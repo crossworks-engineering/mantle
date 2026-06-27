@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { deleteEvent, getEvent, updateEvent } from '@/lib/events';
 
 const PatchBody = z.object({
@@ -17,7 +17,8 @@ const PatchBody = z.object({
 });
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
   const row = await getEvent(user.id, id);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
@@ -25,7 +26,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
   const raw = await req.json().catch(() => ({}));
   const parsed = PatchBody.safeParse(raw);
@@ -48,7 +50,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
   const ok = await deleteEvent(user.id, id);
   if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });

@@ -1,70 +1,29 @@
+import { Suspense } from 'react';
 import { requireOwner } from '@/lib/auth';
-import { countLifelogs, getLifelog, listLifelogTags, listLifelogs } from '@/lib/lifelog';
 import { SetPageTitle } from '@/components/layout/page-title';
+import { Spinner } from '@/components/ui/spinner';
 import { LifelogClient } from './lifelog-client';
 
-const PAGE_SIZE = 50;
-
-export default async function LifelogPage({
-  searchParams,
-}: {
-  searchParams: Promise<{
-    page?: string;
-    q?: string;
-    mood?: string;
-    category?: string;
-    tag?: string;
-    selected?: string;
-    edit?: string;
-  }>;
-}) {
-  const user = await requireOwner();
-  const sp = await searchParams;
-
-  const page = Math.max(1, Number.parseInt(sp.page ?? '1', 10) || 1);
-  const query = sp.q?.trim() || undefined;
-  const mood = sp.mood?.trim() || undefined;
-  const category = sp.category?.trim() || undefined;
-  const tag = sp.tag?.trim() || undefined;
-  const selectedId = sp.selected?.trim() || null;
-
-  const [lifelogs, total, tags] = await Promise.all([
-    listLifelogs(user.id, {
-      query,
-      mood,
-      category,
-      tag,
-      limit: PAGE_SIZE,
-      offset: (page - 1) * PAGE_SIZE,
-    }),
-    countLifelogs(user.id, { query, mood, category, tag }),
-    listLifelogTags(user.id),
-  ]);
-
-  // Deep-link (`?selected=`) may point outside this page slice — fetch it so
-  // the right pane can open it even when it's not in the list.
-  const initialSelected =
-    selectedId && !lifelogs.some((n) => n.id === selectedId)
-      ? await getLifelog(user.id, selectedId)
-      : null;
-
+/**
+ * /lifelog — auth gate only. The list (paginated/filtered by mood/category/tag/
+ * search), tag facets, and the deep-linked selected entry are client-fetched via
+ * `/api/lifelog(/[id])` (Phase 2 · Task 4), keyed off the URL params which
+ * `LifelogClient` reads with useSearchParams — hence the Suspense boundary.
+ */
+export default async function LifelogPage() {
+  await requireOwner();
   return (
     <>
       <SetPageTitle title="Life Logs" />
-      <LifelogClient
-        entries={lifelogs}
-        total={total}
-        page={page}
-        pageSize={PAGE_SIZE}
-        tags={tags}
-        activeMood={mood ?? null}
-        activeCategory={category ?? null}
-        activeTag={tag ?? null}
-        query={query ?? ''}
-        initialSelectedId={selectedId}
-        initialSelected={initialSelected}
-        initialEditing={sp.edit === '1'}
-      />
+      <Suspense
+        fallback={
+          <div className="flex h-full items-center justify-center">
+            <Spinner />
+          </div>
+        }
+      >
+        <LifelogClient />
+      </Suspense>
     </>
   );
 }

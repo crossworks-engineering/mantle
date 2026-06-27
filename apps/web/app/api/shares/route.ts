@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { createShare, getActiveShareForNode } from '@/lib/shares';
 
 /** GET /api/shares?nodeId=… → the node's active link (or null). */
 export async function GET(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const nodeId = new URL(req.url).searchParams.get('nodeId');
   if (!nodeId) return NextResponse.json({ error: 'nodeId required' }, { status: 400 });
   const share = await getActiveShareForNode(user.id, nodeId);
@@ -18,7 +19,8 @@ const CreateBody = z.object({ nodeId: z.string().uuid() });
 
 /** POST /api/shares { nodeId } → create (or return existing) active link. */
 export async function POST(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'valid nodeId required' }, { status: 400 });
   try {

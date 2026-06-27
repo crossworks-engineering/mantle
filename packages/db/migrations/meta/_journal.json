@@ -736,6 +736,13 @@
       "when": 1783814400000,
       "tag": "0104_calendar_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1783900800000,
+      "tag": "0105_assistant_message_status",
+      "breakpoints": true
     }
   ]
 }

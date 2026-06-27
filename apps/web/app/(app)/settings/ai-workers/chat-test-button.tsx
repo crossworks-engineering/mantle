@@ -16,7 +16,7 @@ import { Loader2, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
-import { testChatAction } from './actions';
+import { apiSend } from '@/lib/api-fetch';
 
 export function ChatTestButton({ workerId }: { workerId: string }) {
   const toast = useToast();
@@ -46,7 +46,14 @@ export function ChatTestButton({ workerId }: { workerId: string }) {
           onClick={() => {
             startTransition(async () => {
               try {
-                const r = await testChatAction(workerId, prompt);
+                const r = await apiSend<{
+                  ok: true;
+                  reply: string;
+                  model: string;
+                  adapter: string;
+                  tokensIn: number | null;
+                  tokensOut: number | null;
+                }>(`/api/ai-workers/${workerId}/test/chat`, 'POST', { prompt });
                 setResult({
                   reply: r.reply,
                   model: r.model,

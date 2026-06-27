@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Boxes, Copy, ExternalLink, KeyRound, Loader2, RefreshCw, Search } from 'lucide-react';
+import { apiFetch, ApiError } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Spinner } from '@/components/ui/spinner';
 import { Badge } from '@/components/ui/badge';
 import {
   Select,
@@ -64,19 +66,7 @@ function timeAgo(ms: number): string {
 
 // ── component ────────────────────────────────────────────────────────────────
 
-export function ModelsClient({
-  providers,
-  provider,
-  meta,
-  rows,
-  total,
-  page,
-  pageSize,
-  q,
-  sort,
-  kind,
-  kinds,
-}: {
+type ExploreBundle = {
   providers: ProviderMeta[];
   provider: string;
   meta: Meta;
@@ -88,10 +78,59 @@ export function ModelsClient({
   sort: ModelSort;
   kind: string;
   kinds: string[];
+};
+
+/** Outer query-gate so the page stays data-free. The URL params (kept by
+ *  `useListNav`) key the query, so navigating refetches. */
+export function ModelsClient({
+  provider,
+  q,
+  sort,
+  kind,
+  page,
+}: {
+  provider: string;
+  q: string;
+  sort: string;
+  kind: string;
+  page: number;
 }) {
-  const router = useRouter();
+  const exploreQuery = useQuery({
+    queryKey: ['models', { provider, q, sort, kind, page }],
+    queryFn: () => {
+      const params = new URLSearchParams({ provider, sort, kind, page: String(page) });
+      if (q) params.set('q', q);
+      return apiFetch<ExploreBundle>(`/api/models/explore?${params.toString()}`);
+    },
+    placeholderData: (prev) => prev,
+  });
+
+  if (exploreQuery.isPending && !exploreQuery.data) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+  if (exploreQuery.isError && !exploreQuery.data) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+        <p>Couldn&apos;t load the model explorer.</p>
+        <Button variant="outline" size="sm" onClick={() => exploreQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  return <ModelsView data={exploreQuery.data} />;
+}
+
+function ModelsView({ data }: { data: ExploreBundle }) {
+  const { providers, provider, meta, rows, total, page, pageSize, q, sort, kind, kinds } = data;
   const { pending: navPending, go } = useListNav();
   const toast = useToast();
+  const queryClient = useQueryClient();
 
   const [searchInput, setSearchInput] = useState(q);
   const [selectedId, setSelectedId] = useState<string | null>(rows[0]?.id ?? null);
@@ -121,17 +160,14 @@ export function ModelsClient({
   const refresh = async () => {
     setRefreshing(true);
     try {
-      const res = await fetch(`/api/models?provider=${encodeURIComponent(provider)}&refresh=1`);
-      if (!res.ok) {
-        const j = (await res.json().catch(() => ({}))) as { error?: string };
-        toast.error(j.error ?? `Refresh failed (${res.status})`);
-        return;
-      }
-      const data = (await res.json()) as { models: unknown[] };
+      // Bust the 5-min server cache, then refetch the explore bundle against it.
+      const data = await apiFetch<{ models: unknown[] }>(
+        `/api/models?provider=${encodeURIComponent(provider)}&refresh=1`,
+      );
       toast.success(`Loaded ${data.models.length} model${data.models.length === 1 ? '' : 's'}`);
-      router.refresh(); // re-run SSR against the now-fresh cache
-    } catch {
-      toast.error('Refresh failed — network error');
+      await queryClient.invalidateQueries({ queryKey: ['models'] });
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Refresh failed — network error');
     } finally {
       setRefreshing(false);
     }

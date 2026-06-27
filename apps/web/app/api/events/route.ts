@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
-import { createEvent, listEvents } from '@/lib/events';
+import { getOwnerOr401 } from '@/lib/auth';
+import { countEvents, createEvent, listEvents } from '@/lib/events';
+
+const PAGE_SIZE = 50;
 
 const CreateBody = z.object({
   title: z.string().min(1).max(200),
@@ -17,21 +19,28 @@ const CreateBody = z.object({
 });
 
 export async function GET(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const url = new URL(req.url);
   const windowParam = url.searchParams.get('window');
-  const window =
+  const window: 'upcoming' | 'past' | 'all' =
     windowParam === 'past' || windowParam === 'all' ? windowParam : 'upcoming';
-  const rows = await listEvents(user.id, {
+  const page = Math.max(1, Number.parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
+  const opts = {
     query: url.searchParams.get('q') ?? undefined,
     window,
     tag: url.searchParams.get('tag') ?? undefined,
-  });
-  return NextResponse.json({ events: rows });
+  };
+  const [events, total] = await Promise.all([
+    listEvents(user.id, { ...opts, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+    countEvents(user.id, opts),
+  ]);
+  return NextResponse.json({ events, total, page, pageSize: PAGE_SIZE });
 }
 
 export async function POST(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {

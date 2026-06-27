@@ -16,13 +16,14 @@
  */
 
 import { NextResponse } from 'next/server';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { getDefaultWorker } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { getSttAdapter, type SttDispatcher } from '@mantle/voice';
 
 export async function POST(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
 
   // Multipart only — base64 in JSON would be wasteful for >100KB
   // audio blobs, and the FormData API handles streaming uploads.

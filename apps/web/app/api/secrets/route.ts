@@ -7,12 +7,15 @@
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import {
   SECRET_KINDS,
+  countSecrets,
   createSecret,
   listSecrets,
 } from '@/lib/secrets';
+
+const PAGE_SIZE = 50;
 
 const FieldSchema = z.object({
   label: z.string().max(80),
@@ -29,7 +32,8 @@ const CreateBody = z.object({
 });
 
 export async function GET(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const url = new URL(req.url);
   const query = url.searchParams.get('q') ?? undefined;
   const kindParam = url.searchParams.get('kind');
@@ -38,12 +42,18 @@ export async function GET(req: Request) {
       ? (kindParam as (typeof SECRET_KINDS)[number])
       : 'all';
   const tag = url.searchParams.get('tag') ?? undefined;
-  const rows = await listSecrets(user.id, { query, kind, tag });
-  return NextResponse.json({ secrets: rows });
+  const page = Math.max(1, Number(url.searchParams.get('page') ?? '1') || 1);
+  const offset = (page - 1) * PAGE_SIZE;
+  const [secrets, total] = await Promise.all([
+    listSecrets(user.id, { query, kind, tag, limit: PAGE_SIZE, offset }),
+    countSecrets(user.id, { query, kind, tag }),
+  ]);
+  return NextResponse.json({ secrets, total, page, pageSize: PAGE_SIZE });
 }
 
 export async function POST(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {

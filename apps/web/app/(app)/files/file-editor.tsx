@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { Download, Eye, FileText, Loader2, PencilLine, Save, SplitSquareHorizontal, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
+import { assetUrl } from '@/lib/asset-url';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
@@ -23,8 +25,6 @@ type FileRow = {
   createdAt: string;
   updatedAt: string;
 };
-
-type FetchResponse = { file: FileRow; content?: string } | { error: string };
 
 type Mode = 'edit' | 'preview' | 'split';
 
@@ -54,16 +54,10 @@ export function FileEditor({
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch(`/api/files/files/${fileId}`);
-        const body = (await res.json()) as FetchResponse;
+        const body = await apiFetch<{ file: FileRow; content?: string }>(
+          `/api/files/files/${fileId}`,
+        );
         if (cancelled) return;
-        if (!res.ok || 'error' in body) {
-          setState({
-            kind: 'error',
-            message: 'error' in body ? body.error : `request failed (${res.status})`,
-          });
-          return;
-        }
         const content = body.content ?? '';
         setState({ kind: 'loaded', file: body.file, content });
         setDraft(content);
@@ -83,19 +77,12 @@ export function FileEditor({
     if (state.kind !== 'loaded') return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/files/files/${fileId}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ content: draft }),
-      });
-      if (!res.ok) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string };
-        toast.error(b.error ?? 'Save failed');
-        return;
-      }
+      await apiSend(`/api/files/files/${fileId}`, 'PATCH', { content: draft });
       setDirty(false);
       toast.success('Saved');
       onSaved();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Save failed');
     } finally {
       setSaving(false);
     }
@@ -106,21 +93,15 @@ export function FileEditor({
     if (state.kind !== 'loaded' || !renameDraft.trim()) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/files/files/${fileId}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ rename: renameDraft.trim() }),
+      const { file } = await apiSend<{ file: FileRow }>(`/api/files/files/${fileId}`, 'PATCH', {
+        rename: renameDraft.trim(),
       });
-      if (!res.ok) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string };
-        toast.error(b.error ?? 'Rename failed');
-        return;
-      }
-      const { file } = (await res.json()) as { file: FileRow };
       setState({ kind: 'loaded', file, content: draft });
       setRenaming(false);
       toast.success('Renamed');
       onSaved();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Rename failed');
     } finally {
       setSaving(false);
     }
@@ -217,7 +198,7 @@ export function FileEditor({
             </a>
           </Button>
           <Button asChild variant="outline" size="icon" className="size-9">
-            <a href={`/api/files/files/${file.id}?raw=1`} download={file.filename} title="Download">
+            <a href={assetUrl(`/api/files/files/${file.id}?raw=1`)} download={file.filename} title="Download">
               <Download aria-hidden />
             </a>
           </Button>
@@ -281,7 +262,7 @@ export function FileEditor({
  * never executes embedded scripts, so it's safe to show.
  */
 function FilePreviewBody({ file }: { file: FileRow }) {
-  const src = `/api/files/files/${file.id}?raw=1`;
+  const src = assetUrl(`/api/files/files/${file.id}?raw=1`);
   const mime = file.mimeType || '';
   const isImage = mime.startsWith('image/');
   const isPdf = mime === 'application/pdf';

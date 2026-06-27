@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { listProseVersions, saveProse, revertProse } from '@/lib/studio/prompt-versions';
 
 export const runtime = 'nodejs';
@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic';
 
 // GET /api/studio/prose?entityType=&entityId=&field= → { versions }
 export async function GET(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { searchParams } = new URL(req.url);
   const entityType = searchParams.get('entityType') ?? '';
   const entityId = searchParams.get('entityId') ?? '';
@@ -25,7 +26,8 @@ export async function GET(req: Request) {
 //   save:   { entityType, entityId, field, body, note? }
 //   revert: { entityType, entityId, field, revertTo }
 export async function POST(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   let payload: {
     entityType?: string;
     entityId?: string;

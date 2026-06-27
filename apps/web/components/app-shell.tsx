@@ -1,8 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import { PanelLeft, PanelLeftClose } from 'lucide-react';
+import { apiFetch } from '@/lib/api-fetch';
+import { setAssetToken } from '@/lib/asset-url';
 import { Header } from '@/components/layout/header';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { ChangelogLink } from '@/components/layout/changelog-link';
@@ -38,18 +41,23 @@ function writeCookie(name: string, on: boolean) {
   document.cookie = `${name}=${on ? '1' : '0'}; path=/; max-age=31536000; samesite=lax`;
 }
 
+type ShellData = {
+  onboarded: boolean;
+  avatar: { style: string; seed: string } | null;
+  pendingApprovals: number;
+  /** Short-lived asset-access token for browser-native srcs in detached mode
+   *  (see lib/asset-url). Absent/ignored same-origin. */
+  assetToken?: string;
+};
+
 export function AppShell({
   email,
-  userAvatar,
-  pendingApprovals,
   contextCard,
   initialNavCollapsed = false,
   initialActivityCollapsed = false,
   children,
 }: {
   email: string | null;
-  userAvatar?: { style: string; seed: string } | null;
-  pendingApprovals: number;
   contextCard: React.ReactNode;
   initialNavCollapsed?: boolean;
   initialActivityCollapsed?: boolean;
@@ -59,6 +67,30 @@ export function AppShell({
   const [navCollapsed, setNavCollapsed] = useState(initialNavCollapsed);
   const [activityCollapsed, setActivityCollapsed] = useState(initialActivityCollapsed);
   const pathname = usePathname();
+  const router = useRouter();
+
+  // Shell chrome — avatar, pending-approvals badge, onboarding gate — fetched
+  // client-side so the layout stays data-free. Until it lands the avatar falls
+  // back to a placeholder and the badge to 0 (the chrome renders immediately).
+  const shellQuery = useQuery({
+    queryKey: ['shell'],
+    queryFn: () => apiFetch<ShellData>('/api/shell'),
+  });
+  const userAvatar = shellQuery.data?.avatar ?? null;
+  const pendingApprovals = shellQuery.data?.pendingApprovals ?? 0;
+
+  // First-run gate: a logged-in but not-yet-onboarded user goes to the wizard
+  // (outside the (app) group, so no redirect loop). Moved here from the server
+  // layout so the shell makes no in-process DB read.
+  useEffect(() => {
+    if (shellQuery.data && !shellQuery.data.onboarded) router.replace('/onboarding');
+  }, [shellQuery.data, router]);
+
+  // Publish the asset-access token so `assetUrl()` can sign browser-native srcs
+  // (<img>/<iframe>/download) for a detached client. No-op same-origin.
+  useEffect(() => {
+    setAssetToken(shellQuery.data?.assetToken);
+  }, [shellQuery.data?.assetToken]);
 
   // Close the drawer on navigation.
   useEffect(() => {

@@ -1,8 +1,10 @@
 'use client';
 
-import { useTransition } from 'react';
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { CalendarDays, Trash2 } from 'lucide-react';
-import type { CalendarAccount } from '@mantle/db';
+import type { CalendarAccountDTO } from '@mantle/client-types';
+import { apiSend } from '@/lib/api-fetch';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -18,10 +20,26 @@ import {
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
-import { deleteCalendarAction, toggleCalendarAction } from './actions';
 
-export function CalendarRow({ account }: { account: CalendarAccount }) {
-  const [pending, startTransition] = useTransition();
+export function CalendarRow({ account }: { account: CalendarAccountDTO }) {
+  const queryClient = useQueryClient();
+  const [pending, setPending] = useState(false);
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['calendar'] });
+
+  async function toggle(next: boolean) {
+    setPending(true);
+    try {
+      await apiSend(`/api/calendar/${account.id}`, 'PATCH', { enabled: next });
+      invalidate();
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function remove() {
+    await apiSend(`/api/calendar/${account.id}`, 'DELETE');
+    invalidate();
+  }
 
   return (
     <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
@@ -44,7 +62,7 @@ export function CalendarRow({ account }: { account: CalendarAccount }) {
       <Switch
         checked={account.enabled}
         disabled={pending}
-        onCheckedChange={(next) => startTransition(() => toggleCalendarAction(account.id, next))}
+        onCheckedChange={toggle}
         aria-label={`Sync ${account.displayName}`}
       />
 
@@ -64,12 +82,12 @@ export function CalendarRow({ account }: { account: CalendarAccount }) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <form action={deleteCalendarAction}>
-              <input type="hidden" name="id" value={account.id} />
-              <AlertDialogAction type="submit" className={cn(buttonVariants({ variant: 'destructive' }))}>
-                Unsubscribe
-              </AlertDialogAction>
-            </form>
+            <AlertDialogAction
+              onClick={remove}
+              className={cn(buttonVariants({ variant: 'destructive' }))}
+            >
+              Unsubscribe
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

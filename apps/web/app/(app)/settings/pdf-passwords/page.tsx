@@ -1,15 +1,18 @@
 import { requireOwner } from '@/lib/auth';
-import { listPdfPasswords } from '@mantle/content';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { PdfPasswordsClient } from './pdf-passwords-client';
 
+/**
+ * PDF passwords: data-free. PdfPasswordsClient fetches the list from
+ * GET /api/pdf-passwords and mutates via POST /api/pdf-passwords +
+ * DELETE /api/pdf-passwords/[id].
+ */
 export default async function PdfPasswordsSettingsPage() {
-  const user = await requireOwner();
-  const passwords = await listPdfPasswords(user.id);
+  await requireOwner();
   return (
     <>
       <SetPageTitle title="PDF passwords" />
-      <PdfPasswordsClient initial={passwords} />
+      <PdfPasswordsClient />
     </>
   );
 }

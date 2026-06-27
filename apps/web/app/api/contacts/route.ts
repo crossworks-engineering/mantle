@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
-import { createContact, listContacts } from '@/lib/contacts';
+import { getOwnerOr401 } from '@/lib/auth';
+import { countContacts, createContact, listContacts } from '@/lib/contacts';
 import { enqueueBackfills } from '@mantle/email';
 import { recordIngest } from '@mantle/tracing';
+
+const PAGE_SIZE = 50;
 
 /**
  * /api/contacts — list + create. The contact list IS the email allowlist, so
@@ -24,17 +26,24 @@ const CreateBody = z.object({
 });
 
 export async function GET(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const url = new URL(req.url);
-  const rows = await listContacts(user.id, {
+  const page = Math.max(1, Number.parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
+  const opts = {
     query: url.searchParams.get('q') ?? undefined,
     tag: url.searchParams.get('tag') ?? undefined,
-  });
-  return NextResponse.json({ contacts: rows });
+  };
+  const [contacts, total] = await Promise.all([
+    listContacts(user.id, { ...opts, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+    countContacts(user.id, opts),
+  ]);
+  return NextResponse.json({ contacts, total, page, pageSize: PAGE_SIZE });
 }
 
 export async function POST(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {

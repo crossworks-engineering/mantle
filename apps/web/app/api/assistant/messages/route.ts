@@ -1,18 +1,20 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { assistantMessagesBefore, resolveAssistantAgent } from '@/lib/assistant';
 
 /**
  * Older page of assistant messages for scroll-up lazy loading. Returns up
  * to `limit` (default 100) messages before the `before` ISO cursor, scoped
- * to the selected agent's thread. Owner-scoped via requireOwner.
+ * to the selected agent's thread. Owner-scoped via getOwnerOr401 (a JSON API —
+ * 401s an unauthenticated/expired client rather than redirecting to /login).
  */
 export const dynamic = 'force-dynamic';
 
 const PAGE = 100;
 
 export async function GET(req: NextRequest) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { searchParams } = new URL(req.url);
 
   const before = searchParams.get('before');

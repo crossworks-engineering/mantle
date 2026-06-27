@@ -1,8 +1,11 @@
 'use client';
 
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { ArrowRight, Check, GitMerge, Network, X } from 'lucide-react';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 
@@ -16,7 +19,33 @@ type Candidate = {
   reason: string;
 };
 
-export function EntitiesClient({ initial }: { initial: Candidate[] }) {
+/** Outer query-gate so the page stays data-free. */
+export function EntitiesClient() {
+  const candidatesQuery = useQuery({
+    queryKey: ['entities', 'candidates'],
+    queryFn: () => apiFetch<{ candidates: Candidate[] }>('/api/entities/candidates'),
+  });
+  if (candidatesQuery.isPending) {
+    return (
+      <div className="flex justify-center py-12">
+        <Spinner />
+      </div>
+    );
+  }
+  if (candidatesQuery.isError && !candidatesQuery.data) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-12 text-sm text-muted-foreground">
+        <p>Couldn&apos;t load duplicate candidates.</p>
+        <Button variant="outline" size="sm" onClick={() => candidatesQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+  return <EntitiesView initial={candidatesQuery.data.candidates} />;
+}
+
+function EntitiesView({ initial }: { initial: Candidate[] }) {
   const toast = useToast();
   const [rows, setRows] = useState<Candidate[]>(initial);
   const [busy, setBusy] = useState<string | null>(null); // dupId in flight
@@ -25,30 +54,27 @@ export function EntitiesClient({ initial }: { initial: Candidate[] }) {
 
   const merge = async (c: Candidate) => {
     setBusy(c.dupId);
-    const res = await fetch('/api/entities/merge', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ canonicalId: c.canonicalId, dupId: c.dupId }),
-    });
-    setBusy(null);
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      return toast.error(j.error ?? 'Merge failed');
+    try {
+      await apiSend('/api/entities/merge', 'POST', { canonicalId: c.canonicalId, dupId: c.dupId });
+      remove(c.dupId);
+      toast.success(`Merged “${c.dupName}” → “${c.canonicalName}”`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Merge failed');
+    } finally {
+      setBusy(null);
     }
-    remove(c.dupId);
-    toast.success(`Merged “${c.dupName}” → “${c.canonicalName}”`);
   };
 
   const dismiss = async (c: Candidate) => {
     setBusy(c.dupId);
-    const res = await fetch('/api/entities/dismiss', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idA: c.canonicalId, idB: c.dupId }),
-    });
-    setBusy(null);
-    if (!res.ok) return toast.error('Could not dismiss');
-    remove(c.dupId);
+    try {
+      await apiSend('/api/entities/dismiss', 'POST', { idA: c.canonicalId, idB: c.dupId });
+      remove(c.dupId);
+    } catch {
+      toast.error('Could not dismiss');
+    } finally {
+      setBusy(null);
+    }
   };
 
   const auto = rows.filter((r) => r.tier === 'auto');

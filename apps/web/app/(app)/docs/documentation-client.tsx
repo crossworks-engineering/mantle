@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { ArrowRight, BookText, Info } from 'lucide-react';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Spinner } from '@/components/ui/spinner';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,45 +20,82 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/components/ui/toast';
-import {
-  setAllDocCollectionsAction,
-  toggleDocCollectionAction,
-  type DocCollectionView,
-} from './actions';
 import { NewCollectionDialog } from './new-collection-dialog';
+
+export type DocCollectionView = {
+  id: string;
+  key: string;
+  label: string;
+  origin: string;
+  brainDepth: string;
+  enabled: boolean;
+  lastReconciledAt: string | null;
+};
+
+type DocsData = {
+  collections: DocCollectionView[];
+  formattedReconciled: Record<string, string | null>;
+  firstDocHref: Record<string, string | null>;
+};
+
+type Result = { ok: boolean; message: string };
 
 /** A pending disable that needs confirmation (single collection or "all"). */
 type DisableTarget = { kind: 'one'; id: string; label: string } | { kind: 'all' };
 
-export function DocumentationClient({
-  initial,
-  formattedReconciled,
-  firstDocHref,
-}: {
-  initial: DocCollectionView[];
-  /** Server-formatted "last synced" strings keyed by collection id (tz/locale
-   *  stable — avoids the toLocaleString hydration mismatch). */
-  formattedReconciled: Record<string, string | null>;
-  /** Per-collection link (key → /docs URL of its first doc) for the "Open" link.
-   *  Reading works regardless of indexing, so this is always available. */
-  firstDocHref?: Record<string, string | null>;
-}) {
-  const router = useRouter();
+/** Outer query-gate so the page stays data-free. */
+export function DocumentationClient() {
+  const docsQuery = useQuery({
+    queryKey: ['docs', 'collections'],
+    queryFn: () => apiFetch<DocsData>('/api/docs/collections'),
+  });
+  if (docsQuery.isPending) {
+    return (
+      <div className="flex justify-center py-12">
+        <Spinner />
+      </div>
+    );
+  }
+  if (docsQuery.isError && !docsQuery.data) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-12 text-sm text-muted-foreground">
+        <p>Couldn&apos;t load documentation collections.</p>
+        <Button variant="outline" size="sm" onClick={() => docsQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+  return <DocumentationView data={docsQuery.data} />;
+}
+
+function DocumentationView({ data }: { data: DocsData }) {
+  const { collections, formattedReconciled, firstDocHref } = data;
+  const queryClient = useQueryClient();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
   const [confirm, setConfirm] = useState<DisableTarget | null>(null);
 
-  const anyEnabled = initial.some((c) => c.enabled);
-  const allEnabled = initial.length > 0 && initial.every((c) => c.enabled);
+  const anyEnabled = collections.some((c) => c.enabled);
+  const allEnabled = collections.length > 0 && collections.every((c) => c.enabled);
 
-  function run(fn: () => Promise<{ ok: boolean; message: string }>) {
+  function run(fn: () => Promise<Result>) {
     startTransition(async () => {
-      const res = await fn();
-      if (res.ok) toast.success(res.message);
-      else toast.error(res.message);
-      router.refresh();
+      try {
+        const res = await fn();
+        if (res.ok) toast.success(res.message);
+        else toast.error(res.message);
+        queryClient.invalidateQueries({ queryKey: ['docs', 'collections'] });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Request failed');
+      }
     });
   }
+
+  const toggle = (id: string, enabled: boolean) =>
+    run(() => apiSend<Result>(`/api/docs/collections/${id}`, 'PATCH', { enabled }));
+  const setAll = (enabled: boolean) =>
+    run(() => apiSend<Result>('/api/docs/collections/all', 'POST', { enabled }));
 
   function onToggle(c: DocCollectionView, next: boolean) {
     if (!next) {
@@ -64,15 +103,15 @@ export function DocumentationClient({
       setConfirm({ kind: 'one', id: c.id, label: c.label });
       return;
     }
-    run(() => toggleDocCollectionAction(c.id, true));
+    toggle(c.id, true);
   }
 
   function confirmDisable() {
     const target = confirm;
     setConfirm(null);
     if (!target) return;
-    if (target.kind === 'all') run(() => setAllDocCollectionsAction(false));
-    else run(() => toggleDocCollectionAction(target.id, false));
+    if (target.kind === 'all') setAll(false);
+    else toggle(target.id, false);
   }
 
   return (
@@ -83,8 +122,8 @@ export function DocumentationClient({
         <Button
           variant="outline"
           size="sm"
-          disabled={pending || allEnabled || initial.length === 0}
-          onClick={() => run(() => setAllDocCollectionsAction(true))}
+          disabled={pending || allEnabled || collections.length === 0}
+          onClick={() => setAll(true)}
         >
           Enable all
         </Button>
@@ -99,7 +138,7 @@ export function DocumentationClient({
       </div>
 
       <div className="space-y-2">
-        {initial.map((c) => (
+        {collections.map((c) => (
           <div
             key={c.id}
             className="flex items-center justify-between gap-4 rounded-lg border bg-card p-3"

@@ -1,13 +1,16 @@
 'use client';
 
 import { useEffect, useRef, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, ListTodo, Plus, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Spinner } from '@/components/ui/spinner';
 import { ListPager } from '@/components/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
 import { syncSelectionParam } from '@/lib/url-sync';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { TodoForm, emptyTodoForm, PRIORITIES, type Priority, type TodoPayload } from './todo-form';
@@ -25,46 +28,68 @@ function dueLabel(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
-export function TodosClient({
-  initialTodos,
-  total,
-  page,
-  pageSize,
-  query,
-  status,
-  priority,
-  initialSelectedId,
-  initialSelectedTodo,
-}: {
-  initialTodos: TodoRow[];
-  total: number;
-  page: number;
-  pageSize: number;
-  query: string;
-  status: Status | 'all';
-  priority: Priority | 'all';
-  initialSelectedId?: string | null;
-  initialSelectedTodo?: TodoRow | null;
-}) {
-  const router = useRouter();
+type TodosListResponse = { todos: TodoRow[]; total: number; page: number; pageSize: number };
+
+export function TodosClient() {
+  const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const { pending: navPending, go } = useListNav();
   const toast = useToast();
-  // A deep-linked todo (`?selected=`) may sit outside the current page slice;
-  // seed it into the list so the detail pane can render it immediately.
-  const [todos, setTodos] = useState(() =>
-    initialSelectedTodo && !initialTodos.some((t) => t.id === initialSelectedTodo.id)
-      ? [initialSelectedTodo, ...initialTodos]
-      : initialTodos,
-  );
+
+  // URL is the source of truth (matches the old SSR page). Status defaults to
+  // 'open' here (the GET defaults to 'all'), so send it explicitly.
+  const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10) || 1);
+  const query = searchParams.get('q')?.trim() ?? '';
+  const status = (searchParams.get('status')?.trim() || 'open') as Status | 'all';
+  const priority = (searchParams.get('priority')?.trim() || 'all') as Priority | 'all';
+  const urlSelected = searchParams.get('selected')?.trim() || null;
+
+  const listQuery = useQuery({
+    queryKey: ['todos', { q: query, status, priority, page }],
+    queryFn: () => {
+      const qs = new URLSearchParams();
+      if (query) qs.set('q', query);
+      qs.set('status', status);
+      if (priority !== 'all') qs.set('priority', priority);
+      if (page > 1) qs.set('page', String(page));
+      return apiFetch<TodosListResponse>(`/api/todos?${qs.toString()}`);
+    },
+    placeholderData: (prev) => prev,
+  });
+
+  // A deep-linked todo (`?selected=`) may sit outside the current slice or be
+  // filtered out — fetch it directly so the detail pane can still open it.
+  const selectedTodoQuery = useQuery({
+    queryKey: ['todos', urlSelected],
+    queryFn: () => apiFetch<{ todo: TodoRow }>(`/api/todos/${urlSelected}`).then((r) => r.todo),
+    enabled: !!urlSelected && !(listQuery.data?.todos ?? []).some((t) => t.id === urlSelected),
+  });
+
+  const total = listQuery.data?.total ?? 0;
+  const pageSize = listQuery.data?.pageSize ?? 50;
+
+  // Local working copy of the list, so mutations can update optimistically. Seeded
+  // from the query (+ a deep-linked todo pinned at the top); the seed effect below
+  // reconciles it whenever the server data changes (incl. after a mutation's invalidate).
+  const [todos, setTodos] = useState<TodoRow[]>([]);
+  useEffect(() => {
+    const base = listQuery.data?.todos ?? [];
+    const extra =
+      selectedTodoQuery.data && !base.some((t) => t.id === selectedTodoQuery.data!.id)
+        ? [selectedTodoQuery.data]
+        : [];
+    setTodos([...extra, ...base]);
+  }, [listQuery.data, selectedTodoQuery.data]);
+
   const [searchInput, setSearchInput] = useState(query);
   const [pending, startTransition] = useTransition();
-  const [sel, setSel] = useState<Selection>(() =>
-    initialSelectedId
-      ? { mode: 'view', id: initialSelectedId }
-      : initialTodos[0]
-        ? { mode: 'view', id: initialTodos[0].id }
-        : { mode: 'create' },
-  );
+  // null = "not yet defaulted"; the effect below picks the first todo / create
+  // mode once the list loads, unless the URL deep-links a selection.
+  const [sel, setSel] = useState<Selection>(urlSelected ? { mode: 'view', id: urlSelected } : null);
+  useEffect(() => {
+    if (sel !== null) return;
+    setSel(todos[0] ? { mode: 'view', id: todos[0].id } : { mode: 'create' });
+  }, [todos, sel]);
 
   // Reflect the selected todo in the URL (?selected=) as the user clicks
   // around — copy-/share-/bookmark-able, and aligned with the `/n/<id>`
@@ -79,16 +104,6 @@ export function TodosClient({
     syncSelectionParam('selected', sel?.mode === 'view' ? sel.id : null);
   }, [sel]);
 
-  // Re-seed on SSR nav (search / filter / page), keeping a deep-linked todo
-  // that falls outside the current slice pinned at the top.
-  useEffect(() => {
-    setTodos(
-      initialSelectedTodo && !initialTodos.some((t) => t.id === initialSelectedTodo.id)
-        ? [initialSelectedTodo, ...initialTodos]
-        : initialTodos,
-    );
-  }, [initialTodos, initialSelectedTodo]);
-
   // Debounced search → URL (?q=); resets to page 1.
   useEffect(() => {
     const h = setTimeout(() => {
@@ -102,64 +117,62 @@ export function TodosClient({
   const selected = sel?.mode === 'view' ? (todos.find((t) => t.id === sel.id) ?? null) : null;
 
   const createTodo = async (payload: TodoPayload) => {
-    const res = await fetch('/api/todos', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast.error(j.error ?? `Could not save todo (${res.status})`);
+    let todo: TodoRow;
+    try {
+      ({ todo } = await apiSend<{ todo: TodoRow }>('/api/todos', 'POST', payload));
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not save todo');
       return;
     }
-    const { todo } = (await res.json()) as { todo: TodoRow };
     setTodos((prev) => [todo, ...prev]);
     setSel({ mode: 'view', id: todo.id });
     toast.success(`Added “${todo.title}”`);
-    startTransition(() => router.refresh());
+    startTransition(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['todos'] });
+    });
   };
 
   const saveTodo = async (id: string, payload: TodoPayload): Promise<boolean> => {
-    const res = await fetch(`/api/todos/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast.error(j.error ?? `Could not update todo (${res.status})`);
+    let todo: TodoRow;
+    try {
+      ({ todo } = await apiSend<{ todo: TodoRow }>(`/api/todos/${id}`, 'PATCH', payload));
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return false; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not update todo');
       return false;
     }
-    const { todo } = (await res.json()) as { todo: TodoRow };
     setTodos((prev) => prev.map((t) => (t.id === id ? todo : t)));
-    startTransition(() => router.refresh());
+    startTransition(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['todos'] });
+    });
     return true;
   };
 
   const toggleStatus = async (t: TodoRow) => {
     const next: Status = t.status === 'open' ? 'done' : 'open';
     setTodos((prev) => prev.map((x) => (x.id === t.id ? { ...x, status: next } : x))); // optimistic
-    const res = await fetch(`/api/todos/${t.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: next }),
-    });
-    if (!res.ok) {
+    let todo: TodoRow;
+    try {
+      ({ todo } = await apiSend<{ todo: TodoRow }>(`/api/todos/${t.id}`, 'PATCH', { status: next }));
+    } catch (e) {
       setTodos((prev) => prev.map((x) => (x.id === t.id ? { ...x, status: t.status } : x))); // revert
-      const j = await res.json().catch(() => ({}));
-      toast.error(j.error ?? `Could not update todo (${res.status})`);
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not update todo');
       return;
     }
-    const { todo } = (await res.json()) as { todo: TodoRow };
     setTodos((prev) => prev.map((x) => (x.id === t.id ? todo : x)));
-    startTransition(() => router.refresh());
+    startTransition(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['todos'] });
+    });
   };
 
   const removeTodo = async (id: string) => {
-    const res = await fetch(`/api/todos/${id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast.error(j.error ?? `Could not delete todo (${res.status})`);
+    try {
+      await apiSend(`/api/todos/${id}`, 'DELETE');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not delete todo');
       return;
     }
     toast.success('Todo deleted');
@@ -168,8 +181,30 @@ export function TodosClient({
       setSel(nextList[0] ? { mode: 'view', id: nextList[0].id } : { mode: 'create' });
       return nextList;
     });
-    startTransition(() => router.refresh());
+    startTransition(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['todos'] });
+    });
   };
+
+  if (listQuery.isPending) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+  if (listQuery.isError && !listQuery.data) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm">
+        <p className="text-muted-foreground">
+          {listQuery.error instanceof Error ? listQuery.error.message : 'Failed to load todos.'}
+        </p>
+        <Button variant="outline" size="sm" onClick={() => listQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="md:grid md:h-full md:grid-cols-[340px_1fr] md:overflow-hidden">

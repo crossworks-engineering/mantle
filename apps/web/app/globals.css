@@ -3814,3 +3814,47 @@
   font-weight: inherit;
   font-size: 0.875em;
 }
+
+/* ============================================================================
+   Spinner — the indeterminate <Spinner> arc (components/ui/spinner.tsx).
+   The ring rotates while the dash grows/shrinks + drifts, so it reads as a
+   living sweep rather than a flat spin. Honours reduced-motion.
+   ========================================================================== */
+.mantle-spinner {
+  animation: mantle-spin 1.4s linear infinite;
+  transform-origin: center;
+}
+.mantle-spinner-arc {
+  stroke-dasharray: 1 150;
+  stroke-dashoffset: 0;
+  transform-origin: center;
+  animation: mantle-spin-dash 1.4s ease-in-out infinite;
+}
+@keyframes mantle-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes mantle-spin-dash {
+  0% {
+    stroke-dasharray: 1 150;
+    stroke-dashoffset: 0;
+  }
+  50% {
+    stroke-dasharray: 90 150;
+    stroke-dashoffset: -35;
+  }
+  100% {
+    stroke-dasharray: 90 150;
+    stroke-dashoffset: -124;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mantle-spinner {
+    animation-duration: 2.4s;
+  }
+  .mantle-spinner-arc {
+    animation: none;
+    stroke-dasharray: 70 150;
+  }
+}

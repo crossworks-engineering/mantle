@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { formatDateTime } from '@/lib/format-datetime';
-import { formatDuration, formatMicroUsd, type TraceDetail as TraceDetailRow } from '@/lib/traces';
+// Pure formatters + type from the client-safe module (not `@/lib/traces`, which
+// drags postgres in) so this can render inside a client component.
+import { formatDuration, formatMicroUsd, type TraceDetail as TraceDetailRow } from '@/lib/traces-format';
 import { TraceDetail } from './[id]/trace-detail';
 
 /** Shared trace detail surface — status + summary fields + step timeline.

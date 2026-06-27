@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { deleteLandedNode } from '@/lib/integrity/landed';
 
 // Delete one real node + its brain footprint via the canonical cascade/reaper
@@ -12,7 +12,8 @@ export const dynamic = 'force-dynamic';
 const Body = z.object({ nodeId: z.string().uuid() });
 
 export async function POST(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const raw = await req.json().catch(() => ({}));
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {

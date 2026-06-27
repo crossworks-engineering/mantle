@@ -12,7 +12,7 @@
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { invokeAgent } from '@mantle/agent-runtime';
 import { resolveAssistAgentSlug } from '@/lib/assist-agent';
 
@@ -39,7 +39,8 @@ function renderTranscript(history: Array<{ role: 'user' | 'assistant'; text: str
 }
 
 export async function POST(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid input' }, { status: 400 });

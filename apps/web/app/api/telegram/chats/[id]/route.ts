@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db, agents, telegramChats } from '@mantle/db';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -13,7 +13,8 @@ const PatchBody = z
   .partial();
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) {
     return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });

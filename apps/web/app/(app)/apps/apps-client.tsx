@@ -3,11 +3,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppWindow, Plus, Trash2, Pencil } from 'lucide-react';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Spinner } from '@/components/ui/spinner';
 import { SubmitButton } from '@/components/ui/submit-button';
 import {
   Dialog,
@@ -31,25 +34,57 @@ import { useListNav } from '@/lib/use-list-nav';
 import { ListPager } from '@/components/layout/list-pager';
 import { AppSandbox } from '@/components/app-sandbox/app-sandbox';
 import { cn } from '@/lib/utils';
-import type { AppRow, AppSort } from '@mantle/content';
+import type { AppRow } from '@mantle/content';
 
+type AppsPage = { apps: AppRow[]; total: number; page: number; pageSize: number };
+
+/** Outer query-gate so the page stays data-free. The URL params (driven by
+ *  `useListNav` in the list) key the query, so navigating refetches. */
 export function AppsClient({
-  apps,
-  total,
   page,
-  pageSize,
   query,
   sort,
 }: {
-  apps: AppRow[];
-  total: number;
   page: number;
-  pageSize: number;
   query: string;
-  sort: AppSort;
+  sort: string;
 }) {
+  const appsQuery = useQuery({
+    queryKey: ['apps', { query, sort, page }],
+    queryFn: () => {
+      const params = new URLSearchParams({ page: String(page), sort });
+      if (query) params.set('q', query);
+      return apiFetch<AppsPage>(`/api/apps?${params.toString()}`);
+    },
+    placeholderData: (prev) => prev,
+  });
+
+  if (appsQuery.isPending) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+  if (appsQuery.isError && !appsQuery.data) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+        <p>Couldn&apos;t load apps.</p>
+        <Button variant="outline" size="sm" onClick={() => appsQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  return <AppsView data={appsQuery.data} query={query} />;
+}
+
+function AppsView({ data, query }: { data: AppsPage; query: string }) {
+  const { apps, total, page, pageSize } = data;
   const router = useRouter();
   const toast = useToast();
+  const queryClient = useQueryClient();
   const { pending, go } = useListNav();
 
   const [selectedId, setSelectedId] = useState<string | null>(apps[0]?.id ?? null);
@@ -65,14 +100,15 @@ export function AppsClient({
   const selected = useMemo(() => apps.find((a) => a.id === selectedId) ?? null, [apps, selectedId]);
 
   async function handleDelete(app: AppRow) {
-    const res = await fetch(`/api/apps/${app.id}`, { method: 'DELETE' });
-    if (!res.ok) {
+    try {
+      await apiSend(`/api/apps/${app.id}`, 'DELETE');
+    } catch {
       toast.error('Could not delete the app.');
       return;
     }
     toast.success(`Deleted "${app.title}".`);
     setDeleteTarget(null);
-    router.refresh();
+    void queryClient.invalidateQueries({ queryKey: ['apps'] });
   }
 
   return (
@@ -234,17 +270,13 @@ function CreateAppDialog({ onCreated }: { onCreated: (id: string) => void }) {
     if (!name.trim()) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/apps', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), description: description.trim() || undefined }),
+      const { app } = await apiSend<{ app: { id: string } }>('/api/apps', 'POST', {
+        name: name.trim(),
+        description: description.trim() || undefined,
       });
-      if (!res.ok) {
-        toast.error('Could not create the app.');
-        return;
-      }
-      const { app } = await res.json();
       onCreated(app.id);
+    } catch {
+      toast.error('Could not create the app.');
     } finally {
       setSaving(false);
     }

@@ -17,6 +17,7 @@ import { useToast } from '@/components/ui/toast';
 import { AssistAgentPicker } from '@/components/assist-agent-picker';
 import { useAssistStage, SpecialistWorking } from '@/components/specialist-working';
 import { ChatBubble } from '@/components/chat-bubble';
+import { apiSend, ApiError } from '@/lib/api-fetch';
 import { useDevTools } from './context';
 
 type Msg = { role: 'user' | 'assistant'; text: string };
@@ -50,29 +51,18 @@ export function DevToolsAssistPanel({ onClose }: { onClose: () => void }) {
     setMessages((m) => [...m, { role: 'user', text }]);
     setBusy(true);
     try {
-      const res = await fetch('/api/dev-tools/ai-assist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: text, history: priorTurns }),
+      const j = await apiSend<{ reply?: string }>('/api/dev-tools/ai-assist', 'POST', {
+        prompt: text,
+        history: priorTurns,
       });
-      const j = (await res.json().catch(() => ({}))) as { reply?: string; error?: string };
-      if (!res.ok) {
-        toast.error(j.error ?? 'Assist failed');
-        setMessages((m) => [
-          ...m,
-          { role: 'assistant', text: `⚠️ ${j.error ?? 'Something went wrong.'}` },
-        ]);
-        return;
-      }
       setMessages((m) => [...m, { role: 'assistant', text: j.reply || 'Done.' }]);
       // Toolsmith may have created/updated/deleted tools — reflect it now.
       void refreshAgentTools();
-    } catch {
-      toast.error('Assist failed');
-      setMessages((m) => [
-        ...m,
-        { role: 'assistant', text: '⚠️ Couldn’t reach the assistant — check your connection and try again.' },
-      ]);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      const msg = e instanceof Error ? e.message : 'Assist failed';
+      toast.error(msg);
+      setMessages((m) => [...m, { role: 'assistant', text: `⚠️ ${msg}` }]);
     } finally {
       setBusy(false);
       requestAnimationFrame(() =>

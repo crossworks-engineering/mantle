@@ -1,4 +1,4 @@
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { subscribeRealtime, type RealtimeChange } from '@/lib/realtime';
 
 /**
@@ -12,7 +12,8 @@ import { subscribeRealtime, type RealtimeChange } from '@/lib/realtime';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request): Promise<Response> {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const typesParam = new URL(req.url).searchParams.get('types');
   const types = typesParam
     ? new Set(typesParam.split(',').map((s) => s.trim()).filter(Boolean))

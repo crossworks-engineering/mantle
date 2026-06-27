@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { PUBLIC_PATHS, SESSION_COOKIE_NAME } from '@/lib/auth-constants';
+import { PUBLIC_PATHS, SESSION_COOKIE_NAME, isDetachedDev } from '@/lib/auth-constants';
 
 /**
  * Lightweight session-cookie check in the Edge runtime. Uses Web Crypto
@@ -64,23 +64,83 @@ function bearerToken(req: NextRequest): string | null {
   return m ? m[1]!.trim() : null;
 }
 
-/** True if the token's payload carries the mobile kind marker (`k:'m'`). The
- *  signature/expiry are checked separately by `verify`. */
-function isMobileToken(token: string): boolean {
+/** The kind marker (`k`) in a token's payload, or null. Cookies carry none;
+ *  mobile bearers carry `'m'`, asset tokens `'a'`. Signature/expiry are checked
+ *  separately by `verify`. */
+function tokenKind(token: string): string | null {
   const dot = token.lastIndexOf('.');
-  if (dot < 0) return false;
+  if (dot < 0) return null;
   try {
-    const json = new TextDecoder().decode(b64urlDecode(token.slice(0, dot)));
-    return JSON.parse(json).k === 'm';
+    const k = JSON.parse(new TextDecoder().decode(b64urlDecode(token.slice(0, dot)))).k;
+    return typeof k === 'string' ? k : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+/** Byte-serving asset routes whose `<img>`/`<iframe>`/download `src`s can't
+ *  carry a bearer header, so they may authenticate via a `?at=` asset token.
+ *  Scoped narrowly — the asset token is accepted for NOTHING else. */
+function isAssetPath(path: string): boolean {
+  return path.startsWith('/api/files/files/') || path.startsWith('/api/attachments/');
+}
+
+// ── CORS for the detached client (Electron / cross-origin dev / DB-less) ──────
+// Opt-in: set MANTLE_API_CORS_ORIGINS to a comma-separated list of allowed
+// origins (or '*' to reflect any). OFF by default — a same-origin browser needs
+// no CORS, so default behaviour is unchanged. Detached clients authenticate with
+// a BEARER token, never cookies, so we deliberately DO NOT emit
+// Access-Control-Allow-Credentials: reflecting an origin WITHOUT credentials is
+// safe (no cookie is ever sent cross-origin, so no CSRF surface; an unauthorized
+// request still 401s). Applies to every /api/** response, including the public
+// ones (a cross-origin client must be able to reach /api/auth to log in).
+const CORS_ORIGINS = (process.env.MANTLE_API_CORS_ORIGINS ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+function corsOrigin(req: NextRequest): string | null {
+  if (CORS_ORIGINS.length === 0) return null;
+  const origin = req.headers.get('origin');
+  if (!origin) return null; // same-origin / non-browser — no CORS needed
+  if (CORS_ORIGINS.includes('*')) return origin;
+  return CORS_ORIGINS.includes(origin) ? origin : null;
+}
+
+function applyCors(res: NextResponse, origin: string): NextResponse {
+  res.headers.set('Access-Control-Allow-Origin', origin);
+  res.headers.append('Vary', 'Origin');
+  res.headers.set('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
+  res.headers.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.headers.set('Access-Control-Max-Age', '86400');
+  return res;
+}
+
+/** 401 for a programmatic (API) client — a clean JSON status it can branch on,
+ *  matching getOwnerOr401's body. A browser EventSource / fetch would otherwise
+ *  silently FOLLOW a redirect-to-/login and read HTML as a 200. */
+function unauthorized(): NextResponse {
+  return NextResponse.json(
+    { error: 'unauthorized' },
+    { status: 401, headers: { 'Cache-Control': 'no-store' } },
+  );
 }
 
 export async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
+  const isApi = path === '/api' || path.startsWith('/api/');
+  const origin = isApi ? corsOrigin(req) : null;
+  const withCors = (res: NextResponse) => (origin ? applyCors(res, origin) : res);
+
+  // CORS preflight is answered before auth — a preflight carries no credentials
+  // and only asks "may I send this request"; gating it would break every
+  // cross-origin call.
+  if (isApi && req.method === 'OPTIONS') {
+    return withCors(new NextResponse(null, { status: 204 }));
+  }
+
   const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + '/'));
-  if (isPublic) return NextResponse.next();
+  if (isPublic) return withCors(NextResponse.next());
 
   const secret = process.env.SESSION_SECRET;
   if (!secret || secret.length < 32) {
@@ -89,30 +149,60 @@ export async function middleware(req: NextRequest) {
     // headers, and access logs. Operator sees the real reason in stderr;
     // the user sees a neutral page.
     console.error('[middleware] SESSION_SECRET missing or <32 chars; refusing all requests');
-    return new NextResponse('Service unavailable', {
-      status: 500,
-      headers: { 'Cache-Control': 'no-store' },
-    });
+    return withCors(
+      new NextResponse('Service unavailable', {
+        status: 500,
+        headers: { 'Cache-Control': 'no-store' },
+      }),
+    );
   }
 
   const cookie = req.cookies.get(SESSION_COOKIE_NAME)?.value;
-  if (cookie && (await verify(cookie, secret))) return NextResponse.next();
+  // A session cookie must be a real cookie, not a kinded token reused as one — a
+  // mobile token would dodge revocation, an asset token would grant full session
+  // access. Mirror lib/auth's verify(), which rejects any `k` on the cookie path.
+  if (cookie && (await verify(cookie, secret)) && tokenKind(cookie) === null) {
+    return withCors(NextResponse.next());
+  }
 
-  // Mobile companion: Authorization: Bearer <mobile-token>. Signed with the same
-  // secret; we additionally require the mobile kind marker. Per-device
-  // revocation is enforced in the Node layer (getSessionUser).
+  // Mobile companion / detached client: Authorization: Bearer <mobile-token>.
+  // Signed with the same secret; we additionally require the mobile kind marker
+  // (the token kind Electron + DB-less dev reuse). Per-device revocation is
+  // enforced in the Node layer (getSessionUser).
   const bearer = bearerToken(req);
   if (bearer) {
-    if ((await verify(bearer, secret)) && isMobileToken(bearer)) {
-      return NextResponse.next();
+    if ((await verify(bearer, secret)) && tokenKind(bearer) === 'm') {
+      return withCors(NextResponse.next());
     }
     // A bearer was presented but is invalid — this is an API client, not a
     // browser, so answer 401 rather than redirect to an HTML login page.
-    return new NextResponse('Unauthorized', {
-      status: 401,
-      headers: { 'Cache-Control': 'no-store' },
-    });
+    return withCors(unauthorized());
   }
+
+  // Browser-native asset sources (<img>/<iframe>/download) can't send a bearer
+  // header, so they convey auth via a short-lived signed `?at=` token — accepted
+  // ONLY for the byte-serving asset paths so it can't reach any other API. The
+  // route re-validates (lib/auth getOwnerForAsset) and owner-scopes the lookup.
+  if (isAssetPath(path) && req.method === 'GET') {
+    const at = req.nextUrl.searchParams.get('at');
+    if (at && (await verify(at, secret)) && tokenKind(at) === 'a') {
+      return withCors(NextResponse.next());
+    }
+  }
+
+  // No credential at all. An /api/** request must get a STATUS (a programmatic
+  // client follows an HTML redirect silently and misreads it as success); only a
+  // page navigation gets the login redirect.
+  if (isApi) return withCors(unauthorized());
+
+  // DB-less detached dev: there's no local session cookie (login never happened)
+  // and a top-level page navigation can't carry a bearer header, so without this
+  // every page nav would 307 to /login BEFORE the page render's requireOwner()
+  // could resolve the identity via detachedDevUser() — an infinite redirect
+  // loop. Let page navs render; the page gate does the rest. Dev-only and never
+  // in production (isDetachedDev). API requests still 401 — the client's data
+  // fetches target the REMOTE API, not this local server.
+  if (isDetachedDev()) return withCors(NextResponse.next());
 
   const url = new URL('/login', req.url);
   url.searchParams.set('next', path);

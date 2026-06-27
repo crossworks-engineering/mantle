@@ -21,6 +21,7 @@ import {
   sendMcpCall,
   sendToolCall,
 } from '@/lib/dev-tools/client';
+import { apiFetch, ApiError } from '@/lib/api-fetch';
 import {
   STORAGE_KEYS,
   appendHistory,
@@ -159,15 +160,15 @@ export function DevToolsProvider({
     setMcp({ status: 'loading' });
     void (async () => {
       try {
-        const res = await fetch('/api/dev-tools/mcp');
-        const payload = (await res.json()) as { tools?: McpToolInfo[]; error?: string };
-        if (!res.ok || !payload.tools) {
+        const payload = await apiFetch<{ tools?: McpToolInfo[]; error?: string }>('/api/dev-tools/mcp');
+        if (!payload.tools) {
           mcpLoadStarted.current = false;
           setMcp({ status: 'error', error: payload.error ?? 'failed to list MCP tools' });
           return;
         }
         setMcp({ status: 'ready', tools: payload.tools });
       } catch (err) {
+        if (err instanceof ApiError && err.status === 401) return;
         mcpLoadStarted.current = false;
         setMcp({
           status: 'error',
@@ -179,11 +180,10 @@ export function DevToolsProvider({
 
   const refreshAgentTools = useCallback(async () => {
     try {
-      const res = await fetch('/api/tools');
-      const payload = (await res.json()) as { tools?: AgentToolInfo[] };
-      if (res.ok && payload.tools) setAgentTools(payload.tools);
+      const payload = await apiFetch<{ tools?: AgentToolInfo[] }>('/api/tools');
+      if (payload.tools) setAgentTools(payload.tools);
     } catch {
-      /* keep the stale list */
+      /* keep the stale list (a 401 already bounced to /login inside apiFetch) */
     }
   }, []);
 

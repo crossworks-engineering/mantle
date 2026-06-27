@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeftRight, RefreshCw } from 'lucide-react';
-import type { AiWorker, AiWorkerKind } from '@mantle/db';
+import type { AiWorkerDTO, AiWorkerKind } from '@mantle/client-types';
 import {
   ANTHROPIC_CHAT_MODELS,
   ANTHROPIC_VISION_MODELS,
@@ -65,12 +65,7 @@ import { Switch } from '@/components/ui/switch';
 import { ModelSelect } from '@/components/ui/model-select';
 import { useToast } from '@/components/ui/toast';
 import type { ExplorerModel } from '@/lib/model-explorer';
-import {
-  discoverModelsAction,
-  listVoicesAction,
-  rebuildEmbeddingIndexAction,
-  testEmbeddingModelAction,
-} from './actions';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
 import { TtsTestButton } from './tts-test-button';
 import { SttTestButton } from './stt-test-button';
 import { ChatTestButton } from './chat-test-button';
@@ -83,7 +78,7 @@ type KeyOption = { id: string; service: string; label: string; masked: string };
 type Props = {
   mode: 'create' | 'edit';
   kind: AiWorkerKind;
-  worker?: AiWorker;
+  worker?: AiWorkerDTO;
   keys: KeyOption[];
   action: (formData: FormData) => Promise<void>;
   /** Controlled by the parent (rendered as header switches). Injected into
@@ -399,11 +394,10 @@ export function WorkerForm({
   );
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/model-context')
-      .then((r) => (r.ok ? r.json() : null))
+    apiFetch<{ pricing?: typeof orPricing }>('/api/model-context')
       .then((d) => {
         if (cancelled) return;
-        if (d?.pricing) setOrPricing(d.pricing as typeof orPricing);
+        if (d.pricing) setOrPricing(d.pricing);
       })
       .catch(() => {
         /* pricing badge is decorative — ignore fetch failures */
@@ -436,11 +430,17 @@ export function WorkerForm({
     if (!keyId && discoveryKind !== 'embedding') return;
     setDiscovery((d) => ({ ...d, loading: true }));
     try {
-      const r = await discoverModelsAction(
-        keyId,
-        discoveryKind,
-        providerOverride ?? provider,
-      );
+      const r = await apiSend<{
+        available: Array<
+          TtsModelInfo | SttModelInfo | ChatModelInfo | VisionModelInfo | ImageGenModelInfo
+        >;
+        filtered: boolean;
+        error: string | null;
+      }>('/api/ai-workers/models', 'POST', {
+        apiKeyId: keyId,
+        kind: discoveryKind,
+        providerId: providerOverride ?? provider,
+      });
       setDiscovery({
         available: r.available,
         filtered: r.filtered,
@@ -1214,7 +1214,11 @@ function TtsFields({
       // Lazy-fetch the voice list. ElevenLabs queries /v1/voices
       // live (includes clones); xAI/Google return their static
       // catalogs through the adapter's voicesForModel.
-      listVoicesAction(apiKeyId, provider, model)
+      apiSend<{ voices: Array<{ id: string; description: string }>; error: string | null }>(
+        '/api/ai-workers/voices',
+        'POST',
+        { apiKeyId, providerId: provider, modelId: model },
+      )
         .then((r) => setLiveVoices(r.voices))
         .catch(() => setLiveVoices(null));
     } else {
@@ -1835,7 +1839,11 @@ function EmbeddingFields({
     setTesting(true);
     setTestError(null);
     try {
-      const r = await testEmbeddingModelAction(slug);
+      const r = await apiSend<{ ok: true; dimensions: number } | { ok: false; error: string }>(
+        '/api/ai-workers/test-embedding',
+        'POST',
+        { model: slug },
+      );
       if (r.ok) {
         setDetected((d) => ({ ...d, [slug]: r.dimensions }));
       } else {
@@ -1852,7 +1860,10 @@ function EmbeddingFields({
     setRebuilding(true);
     setLastRebuild(null);
     try {
-      const r = await rebuildEmbeddingIndexAction();
+      const r = await apiSend<
+        | { ok: true; model: string; result: { totalRows: number; totalWritten: number; durationMs: number } }
+        | { ok: false; error: string }
+      >('/api/ai-workers/reembed', 'POST');
       if (r.ok) {
         setLastRebuild({
           ok: true,

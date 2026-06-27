@@ -13,9 +13,11 @@
  */
 
 import { useMemo, useState, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, ChevronLeft, Cpu, Layers, Sparkles, Star } from 'lucide-react';
+import { apiFetch } from '@/lib/api-fetch';
 import { Badge } from '@/components/ui/badge';
+import { Spinner } from '@/components/ui/spinner';
 import { ProseEditor } from './prose-editor';
 import { StructureEditor } from './structure-editor';
 import { SandboxPanel } from './sandbox-panel';
@@ -289,11 +291,47 @@ function HealthReport({ graph }: { graph: StudioGraph }) {
   );
 }
 
+/** Outer query-gate so the page stays data-free. Renders the (stable) StudioView
+ *  instance once the graph loads, so client selection state survives refetches. */
+export function StudioClient() {
+  const studioQuery = useQuery({
+    queryKey: ['studio'],
+    queryFn: () => apiFetch<{ graph: StudioGraph }>('/api/studio'),
+  });
+
+  if (studioQuery.isPending) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+  if (studioQuery.isError && !studioQuery.data) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-[13px] text-muted-foreground">
+        <p>Couldn&apos;t load the studio graph.</p>
+        <button
+          type="button"
+          onClick={() => studioQuery.refetch()}
+          className="font-medium text-primary hover:underline"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  return <StudioView graph={studioQuery.data.graph} />;
+}
+
 export function StudioView({ graph }: { graph: StudioGraph }) {
-  const router = useRouter();
-  // After a prose edit, re-fetch the server-computed graph so the composed-prompt
-  // preview re-assembles live. Client selection state survives the soft refresh.
-  const onSaved = () => router.refresh();
+  const queryClient = useQueryClient();
+  // After a prose/structure edit, re-fetch the server-computed graph so the
+  // composed-prompt preview re-assembles live. Client selection state survives
+  // the refetch because this component stays mounted across it.
+  const onSaved = () => {
+    void queryClient.invalidateQueries({ queryKey: ['studio'] });
+  };
   const personaSlug = graph.agents.find((a) => a.isPersona)?.slug ?? graph.agents[0]?.slug ?? '';
   const [selection, setSelection] = useState<string>(`agent:${personaSlug}`);
   const [inspectedSkill, setInspectedSkill] = useState<string | null>(null);
@@ -467,7 +505,7 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
             ) : focusedAgent ? (
               // Key the whole inspector by agent id: a stable key per agent
               // remounts it on agent switch (resets edit/sandbox state) but NOT
-              // on router.refresh of the same agent (preserves UI, updates data).
+              // on a graph refetch of the same agent (preserves UI, updates data).
               // Must be the SOLE keyed node here — keyed children mixed with
               // unkeyed siblings inside reconcile wrong and duplicate.
               <AgentInspector

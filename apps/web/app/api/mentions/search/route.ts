@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { searchEntities } from '@mantle/search';
 import { and, db, desc, eq, ilike, inArray, nodes } from '@mantle/db';
 
@@ -14,7 +14,8 @@ import { and, db, desc, eq, ilike, inArray, nodes } from '@mantle/db';
  * commit from the resolved ids the chip carries.
  */
 export async function GET(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const q = new URL(req.url).searchParams.get('q')?.trim() ?? '';
   if (!q) return NextResponse.json({ items: [] });
 

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import {
   createFolder,
   ensureFilesRootBranch,
@@ -14,7 +14,8 @@ const ListQuery = z.object({
 });
 
 export async function GET(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   await ensureFilesRootBranch(user.id);
   const url = new URL(req.url);
   const parsed = ListQuery.safeParse(Object.fromEntries(url.searchParams));
@@ -37,7 +38,8 @@ const CreateBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   await ensureFilesRootBranch(user.id);
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);

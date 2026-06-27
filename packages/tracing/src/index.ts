@@ -15,6 +15,13 @@ export {
   type TokenDelta,
 } from './store';
 
+export {
+  withDurableSteps,
+  runDurableStep,
+  durableStepsActive,
+  type DurableStepExecutor,
+} from './durable';
+
 export { fallbackCostMicroUsd } from './pricing';
 export {
   captureLlmUsage,

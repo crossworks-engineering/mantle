@@ -15,9 +15,12 @@
  * action returns a useful error string the user sees in the form.
  */
 
-import { useState, useTransition } from 'react';
+import { useMemo, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Compass } from 'lucide-react';
 import { SubmitButton } from '@/components/ui/submit-button';
+import { Spinner } from '@/components/ui/spinner';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -28,6 +31,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
 import { AvatarPicker, type AvatarValue } from '@/components/avatar-picker';
 import type { ProfilePreferences } from '@mantle/content';
 
@@ -35,21 +39,48 @@ import type { ProfilePreferences } from '@mantle/content';
  *  value, so we map this to '' before submitting. */
 const REMINDER_AUTO = '__auto__';
 
-export function ProfileClient({
-  defaults,
-  defaultsFallback,
-  samplePreview,
-  userId,
-  reminderAgents,
-  action,
-}: {
-  defaults: ProfilePreferences;
-  defaultsFallback: ProfilePreferences;
-  samplePreview: string;
-  userId: string;
+/** `GET /api/profile` payload. */
+type ProfileData = {
+  preferences: ProfilePreferences;
   reminderAgents: { slug: string; name: string }[];
-  action: (formData: FormData) => Promise<void>;
-}) {
+  fallback: ProfilePreferences;
+  userId: string;
+};
+
+export function ProfileClient() {
+  const profileQuery = useQuery({
+    queryKey: ['profile'],
+    queryFn: () => apiFetch<ProfileData>('/api/profile'),
+  });
+
+  if (profileQuery.isPending) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Spinner />
+      </div>
+    );
+  }
+  if (profileQuery.isError) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-16 text-center text-sm">
+        <p className="text-muted-foreground">
+          {profileQuery.error instanceof Error
+            ? profileQuery.error.message
+            : 'Failed to load profile.'}
+        </p>
+        <Button variant="outline" size="sm" onClick={() => profileQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+  // Inner form mounts only once data is loaded, so its useState seeds correctly.
+  return <ProfileForm data={profileQuery.data} />;
+}
+
+function ProfileForm({ data }: { data: ProfileData }) {
+  const { preferences: defaults, fallback: defaultsFallback, reminderAgents, userId } = data;
+  const queryClient = useQueryClient();
   const toast = useToast();
   const [tz, setTz] = useState(defaults.timezone);
   const [loc, setLoc] = useState(defaults.locale);
@@ -63,8 +94,30 @@ export function ProfileClient({
   const [avatar, setAvatar] = useState<AvatarValue | null>(
     defaults.avatarStyle ? { style: defaults.avatarStyle, seed: defaults.avatarSeed || userId } : null,
   );
-  const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+
+  // Live "now in your settings" preview from the chosen tz/locale — same output
+  // formatInProfile produced server-side, but it updates as you type.
+  const samplePreview = useMemo(() => {
+    try {
+      return new Intl.DateTimeFormat(loc || 'en-GB', {
+        dateStyle: 'full',
+        timeStyle: 'long',
+        timeZone: tz || 'UTC',
+      }).format(new Date());
+    } catch {
+      return '— (check timezone/locale)';
+    }
+  }, [tz, loc]);
+
+  const save = useMutation({
+    mutationFn: (body: Record<string, unknown>) => apiSend('/api/profile', 'PUT', body),
+    onSuccess: () => {
+      toast.success('Preferences saved');
+      void queryClient.invalidateQueries({ queryKey: ['profile'] });
+    },
+    onError: (err) => setError(err instanceof Error ? err.message : String(err)),
+  });
 
   const detectFromBrowser = () => {
     // Browser-side timezone is the user's OS setting — the closest
@@ -81,15 +134,13 @@ export function ProfileClient({
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
-    const fd = new FormData(e.currentTarget);
-    startTransition(async () => {
-      try {
-        await action(fd);
-        toast.success('Preferences saved');
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        setError(msg);
-      }
+    save.mutate({
+      timezone: tz,
+      locale: loc,
+      avatarStyle: avatar?.style ?? '',
+      avatarSeed: avatar?.seed ?? '',
+      reminderAgentSlug: reminderAgent === REMINDER_AUTO ? '' : reminderAgent,
+      reminderChannel,
     });
   };
 
@@ -237,7 +288,7 @@ export function ProfileClient({
       )}
 
       <div>
-        <SubmitButton pending={pending}>Save profile</SubmitButton>
+        <SubmitButton pending={save.isPending}>Save profile</SubmitButton>
       </div>
     </form>
   );

@@ -41,6 +41,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api-fetch';
 import { buildVarMap, collectDraftParams } from '@/lib/dev-tools/client';
 import { genId } from '@/lib/dev-tools/storage';
 import type { AuthMode, BodyMode, Environment, HttpMethod } from '@/lib/dev-tools/types';
@@ -58,9 +59,8 @@ function VaultRefChips() {
 
   useEffect(() => {
     let alive = true;
-    void fetch('/api/keys')
-      .then((r) => r.json())
-      .then((p: { keys?: Array<{ service: string; label: string }> }) => {
+    void apiFetch<{ keys?: Array<{ service: string; label: string }> }>('/api/keys')
+      .then((p) => {
         if (alive) setKeys(p.keys ?? []);
       })
       .catch(() => {

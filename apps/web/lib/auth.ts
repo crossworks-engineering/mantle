@@ -4,8 +4,8 @@ import { NextResponse } from 'next/server';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
-import { db, authUsers, mobileTokens } from '@mantle/db';
-import { SESSION_COOKIE_NAME } from './auth-constants';
+import { db, authUsers, mobileTokens, countUsers } from '@mantle/db';
+import { SESSION_COOKIE_NAME, isDetachedDev } from './auth-constants';
 
 /**
  * Single-user session cookie auth. Cookie value: `<payload>.<sig>` where
@@ -18,6 +18,19 @@ import { SESSION_COOKIE_NAME } from './auth-constants';
  */
 
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
+
+/**
+ * Fresh install? (empty `auth.users`). Drives the login screen's
+ * sign-in-vs-create-account split. The signup endpoint enforces the same
+ * single-user gate server-side; this is only the UI hint.
+ */
+export async function isFirstRun(): Promise<boolean> {
+  // Detached dev has no local DB — never the first-run path, and querying would
+  // throw. (Pages should resolve identity via detachedDevUser before reaching
+  // here; this is belt-and-suspenders so /login can't 500 in remote mode.)
+  if (isDetachedDev()) return false;
+  return (await countUsers()) === 0;
+}
 
 export type SessionUser = { id: string; email: string };
 
@@ -60,6 +73,13 @@ function verify(token: string): { uid: string; exp: number } | null {
   if (!timingSafeEqual(got, expected)) return null;
   try {
     const data = JSON.parse(b64urlDecode(payload).toString('utf8'));
+    // A session cookie must be a cookie — never a kinded token reused as one.
+    // Mobile (`k:'m'`) and asset (`k:'a'`) tokens share the `{uid,exp}` payload,
+    // so without this a signed mobile token in the cookie would authenticate via
+    // this DB-lookup path (which never checks mobile_tokens.revoked_at, dodging
+    // a mobile-logout revocation), and an asset token would grant full session
+    // access instead of just byte-serving. Cookies carry no `k`; reject any.
+    if (data.k !== undefined) return null;
     if (typeof data.uid !== 'string' || typeof data.exp !== 'number') return null;
     if (Date.now() / 1000 > data.exp) return null;
     return { uid: data.uid, exp: data.exp };
@@ -132,6 +152,65 @@ export function mobileTokenJti(token: string): string | null {
   return verifyMobileToken(token)?.jti ?? null;
 }
 
+// ── Asset access tokens (`k:'a'`) ─────────────────────────────────────────────
+// Short-lived, owner-scoped, stateless signed token for browser-native asset
+// sources — `<img>`/`<iframe>`/download `src`s to `/api/files/files/[id]?raw=1`
+// and `/api/attachments/[id]` — which CANNOT carry an Authorization header, so a
+// detached/Electron client (cross-origin, no cookie) can't otherwise load them.
+// Delivered in the URL (`?at=`), so the TTL is deliberately short to bound a
+// leaked URL; no revocation row (unlike mobile tokens) — TTL + secret-rotation
+// is the kill switch. Scope is byte-serving only: the Edge middleware accepts it
+// for asset paths exclusively, and the cookie path rejects any kinded token.
+
+const ASSET_TOKEN_TTL_SECONDS = 2 * 60 * 60; // 2h — one working session.
+
+/** Mint a short-lived asset-access token for `userId` (see block comment). */
+export function buildAssetToken(userId: string): string {
+  const exp = Math.floor(Date.now() / 1000) + ASSET_TOKEN_TTL_SECONDS;
+  const payload = b64urlEncode(Buffer.from(JSON.stringify({ uid: userId, exp, k: 'a' }), 'utf8'));
+  return sign(payload);
+}
+
+/** Verify an asset token's signature, expiry and kind (`k:'a'`). No DB. */
+function verifyAssetToken(token: string): { uid: string } | null {
+  const dot = token.lastIndexOf('.');
+  if (dot < 0) return null;
+  const payload = token.slice(0, dot);
+  const expected = createHmac('sha256', secret()).update(payload).digest();
+  const got = b64urlDecode(token.slice(dot + 1));
+  if (got.length !== expected.length) return null;
+  if (!timingSafeEqual(got, expected)) return null;
+  try {
+    const data = JSON.parse(b64urlDecode(payload).toString('utf8'));
+    if (data.k !== 'a') return null;
+    if (typeof data.uid !== 'string' || typeof data.exp !== 'number') return null;
+    if (Date.now() / 1000 > data.exp) return null;
+    return { uid: data.uid };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Owner gate for the byte-serving asset routes only. Resolves the session
+ * (cookie/bearer) first; failing that, accepts a valid `?at=` asset token in the
+ * URL — the one place a browser-native `src` can convey auth. Owner-scoped: the
+ * route still scopes the lookup to the returned id, so a token for user X only
+ * reaches X's bytes. Returns a 401 JSON `Response` like `getOwnerOr401`.
+ */
+export async function getOwnerForAsset(req: Request): Promise<SessionUser | NextResponse> {
+  const user = await getSessionUser();
+  if (user) return user;
+  const at = new URL(req.url).searchParams.get('at');
+  if (at) {
+    const claims = verifyAssetToken(at);
+    // The signature proves the server minted this for `uid`; the route scopes to
+    // it. No DB lookup — the token is short-lived and email isn't needed here.
+    if (claims) return { id: claims.uid, email: '' };
+  }
+  return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+}
+
 /**
  * Resolve the owner from an `Authorization: Bearer <mobile-token>` header:
  * verify the signature, confirm the row is present/unrevoked/unexpired, bump
@@ -169,12 +248,49 @@ async function getBearerUser(): Promise<SessionUser | null> {
 
 export { SESSION_COOKIE_NAME };
 
+/**
+ * DB-less dev identity. When the frontend is detached (pointed at a remote API
+ * via `NEXT_PUBLIC_MANTLE_API_BASE` with a `NEXT_PUBLIC_MANTLE_API_TOKEN`
+ * bearer), the browser fetches all data straight from the remote — so the local
+ * Next server has no Postgres and the usual `authUsers` lookup would crash. This
+ * stands in for that lookup: it *decodes* (does NOT verify — the token is signed
+ * by the remote, not us) the bearer to learn which user the detached client acts
+ * as, so the local page auth gate agrees with the remote data the client sees.
+ *
+ * Because it trusts a decoded-but-unverified token, the activation gate is a
+ * SERVER-ONLY flag (`isDetachedDev` → `MANTLE_DETACHED_DEV`, never a
+ * `NEXT_PUBLIC_` var an attacker could set from a client bundle) AND it is
+ * hard-disabled in production. So this can never grant access in a prod build.
+ * The companion bypass in `middleware.ts` gates on the same `isDetachedDev()`.
+ * See docs/db-less-dev.md. Email isn't in the token; `MANTLE_DEV_EMAIL`
+ * overrides the placeholder for the few surfaces that show it.
+ */
+function detachedDevUser(): SessionUser | null {
+  if (!isDetachedDev()) return null;
+  const token = process.env.NEXT_PUBLIC_MANTLE_API_TOKEN?.trim();
+  if (!token) return null;
+  try {
+    const dot = token.lastIndexOf('.');
+    const payload = dot > 0 ? token.slice(0, dot) : token;
+    const data = JSON.parse(b64urlDecode(payload).toString('utf8'));
+    if (typeof data.uid !== 'string') return null;
+    return { id: data.uid, email: process.env.MANTLE_DEV_EMAIL?.trim() || 'dev@localhost' };
+  } catch {
+    return null;
+  }
+}
+
 /** Resolve the current user AND how they authenticated. Cookie first ('web'),
  *  then a mobile bearer ('mobile'). Returns null when neither resolves. The
  *  source is what lets a turn be tagged with the right ConversationChannel. */
 export async function getSessionUserWithSource(): Promise<
   { user: SessionUser; source: AuthSource } | null
 > {
+  // DB-less dev: a detached frontend has no local Postgres, so the configured
+  // remote identity stands in for the cookie→authUsers lookup. No-op in prod.
+  const dev = detachedDevUser();
+  if (dev) return { user: dev, source: 'web' };
+
   const c = (await cookies()).get(SESSION_COOKIE_NAME);
   if (c) {
     const data = verify(c.value);
@@ -231,6 +347,23 @@ export async function requireOwnerWithSource(): Promise<{ user: SessionUser; sou
 export async function getOwnerOr401(): Promise<SessionUser | NextResponse> {
   const user = await getSessionUser();
   return user ?? NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+}
+
+/**
+ * Like `getOwnerOr401()` but also reports how the request authenticated
+ * ('web' cookie vs 'mobile' bearer), for routes that tag a turn's
+ * ConversationChannel. The 401-instead-of-redirect contract is what an API
+ * route needs (vs `requireOwnerWithSource()`, which redirects):
+ *
+ *     const auth = await getOwnerOr401WithSource();
+ *     if (auth instanceof NextResponse) return auth;
+ *     const { user, source } = auth;
+ */
+export async function getOwnerOr401WithSource(): Promise<
+  { user: SessionUser; source: AuthSource } | NextResponse
+> {
+  const res = await getSessionUserWithSource();
+  return res ?? NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 }
 
 /**

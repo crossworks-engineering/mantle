@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import type { AgentDTO } from '@mantle/client-types';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import {
   db,
   agents,
+  channels,
   applyPersonaUpdate,
   noteRef,
   type Agent,
@@ -18,50 +20,13 @@ import {
  * /api/agents/* routes are the only callers.
  */
 
-export type AgentSummary = {
-  id: string;
-  slug: string;
-  name: string;
-  description: string | null;
-  role: Agent['role'];
-  /** Provider id — see packages/voice/src/providers.ts. */
-  provider: string;
-  model: string;
-  apiKeyId: string | null;
-  /** Optional BACKUP chat route (migration 0062). When backupEnabled and the
-   *  primary fails over (route-down / 429 / 5xx), the runtime answers here.
-   *  Unlike embeddings, a chat backup may be a DIFFERENT model. */
-  backupProvider: string | null;
-  backupModel: string | null;
-  backupApiKeyId: string | null;
-  backupEnabled: boolean;
-  /** Per-route host + tailnet flag (migration 0063). `baseUrl` overrides the
-   *  provider default host for this route; `viaTailnet` dispatches through the
-   *  Tailscale proxy. Both routes carry their own pair. */
-  baseUrl: string | null;
-  viaTailnet: boolean;
-  backupBaseUrl: string | null;
-  backupViaTailnet: boolean;
-  /** Per-agent voice: the `kind='tts'` ai_worker this agent speaks with.
-   *  null = fall back to the owner's default TTS worker (migration 0066). */
-  ttsWorkerId: string | null;
-  systemPrompt: string;
-  skillSlugs: string[];
-  toolGroupSlugs: string[];
-  memoryConfig: AgentMemoryConfig;
-  params: AgentParams;
-  avatar: AgentAvatar | null;
-  /** Layer-1 persona: what the agent has *learned* about the user (written by
-   *  the reflector + the update_persona tool). Includes the soft-retired audit
-   *  tail — the UI filters with activeNotes(). */
-  personaNotes: PersonaNote[];
-  priority: number;
-  enabled: boolean;
-  lastUsedAt: string | null;
-  usageCount: number;
-  createdAt: string;
-  updatedAt: string;
-};
+/**
+ * The summary the CRUD layer returns and `GET /api/agents` serializes. Aliased
+ * to the wire DTO in `@mantle/client-types` so the server shape and the client
+ * consumer can't drift — if `toSummary` stops matching the contract, this file
+ * stops compiling. Dates are ISO strings (see `toSummary`).
+ */
+export type AgentSummary = AgentDTO;
 
 function toSummary(a: Agent): AgentSummary {
   return {
@@ -124,6 +89,52 @@ export async function getAgent(userId: string, id: string): Promise<AgentSummary
     .where(and(eq(agents.id, id), eq(agents.ownerId, userId)))
     .limit(1);
   return row ? toSummary(row) : null;
+}
+
+/**
+ * Every agent for the owner as `{slug, name, role}`, ordered by slug — the
+ * catalogue the heartbeat form's agent selector renders. Unlike `listAgents`
+ * this is NOT filtered to conversational roles (a heartbeat can target any).
+ */
+export function listAgentOptions(
+  userId: string,
+): Promise<{ slug: string; name: string; role: Agent['role'] }[]> {
+  return db
+    .select({ slug: agents.slug, name: agents.name, role: agents.role })
+    .from(agents)
+    .where(eq(agents.ownerId, userId))
+    .orderBy(agents.slug);
+}
+
+/** One owner-scoped agent by its slug (the persona lookup), or null. */
+export async function getAgentBySlug(userId: string, slug: string): Promise<AgentSummary | null> {
+  const [row] = await db
+    .select()
+    .from(agents)
+    .where(and(eq(agents.slug, slug), eq(agents.ownerId, userId)))
+    .limit(1);
+  return row ? toSummary(row) : null;
+}
+
+/**
+ * Agents that can actually deliver a reminder — an enabled agent with an enabled
+ * Telegram channel (docs/comms-channels.md). The profile page lets the operator
+ * pick one as the event-reminder sender. Distinct, ordered by name.
+ */
+export function listReminderCapableAgents(userId: string): Promise<{ slug: string; name: string }[]> {
+  return db
+    .selectDistinct({ slug: agents.slug, name: agents.name })
+    .from(agents)
+    .innerJoin(channels, eq(channels.agentId, agents.id))
+    .where(
+      and(
+        eq(agents.ownerId, userId),
+        eq(agents.enabled, true),
+        eq(channels.type, 'telegram'),
+        eq(channels.enabled, true),
+      ),
+    )
+    .orderBy(agents.name);
 }
 
 export type CreateAgentInput = {

@@ -1,13 +1,16 @@
 'use client';
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarClock, MapPin, Plus, Repeat, Search } from 'lucide-react';
 import { useRealtime } from '@/components/realtime/use-realtime';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Spinner } from '@/components/ui/spinner';
 import { ListPager } from '@/components/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { useNow } from '@/components/use-now';
@@ -38,36 +41,58 @@ function fmt(iso: string): string {
   });
 }
 
-export function EventsClient({
-  initialEvents,
-  total,
-  page,
-  pageSize,
-  query,
-  window,
-}: {
-  initialEvents: EventRow[];
+type EventsListResponse = {
+  events: EventRow[];
   total: number;
   page: number;
   pageSize: number;
-  query: string;
-  window: 'upcoming' | 'past' | 'all';
-}) {
-  const router = useRouter();
+};
+
+export function EventsClient() {
+  const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const { pending: navPending, go } = useListNav();
   const toast = useToast();
   const now = useNow(60_000); // minute tick drives live badges + grouping
   const tz = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', []);
 
-  const [events, setEvents] = useState(initialEvents);
+  // URL is the source of truth (matches the old SSR page).
+  const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10) || 1);
+  const query = searchParams.get('q')?.trim() ?? '';
+  const windowParam = searchParams.get('window');
+  const window: 'upcoming' | 'past' | 'all' =
+    windowParam === 'past' || windowParam === 'all' ? windowParam : 'upcoming';
+
+  const listQuery = useQuery({
+    queryKey: ['events', { q: query, window, page }],
+    queryFn: () => {
+      const qs = new URLSearchParams();
+      if (query) qs.set('q', query);
+      if (window !== 'upcoming') qs.set('window', window);
+      if (page > 1) qs.set('page', String(page));
+      const s = qs.toString();
+      return apiFetch<EventsListResponse>(`/api/events${s ? `?${s}` : ''}`);
+    },
+    placeholderData: (prev) => prev,
+  });
+
+  const total = listQuery.data?.total ?? 0;
+  const pageSize = listQuery.data?.pageSize ?? 50;
+
+  // Local working copy, so mutations update optimistically; seeded from the query
+  // and reconciled whenever the server data changes (incl. a mutation's invalidate).
+  const [events, setEvents] = useState<EventRow[]>([]);
+  useEffect(() => setEvents(listQuery.data?.events ?? []), [listQuery.data]);
+
   const [searchInput, setSearchInput] = useState(query);
   const [pending, startTransition] = useTransition();
-  const [sel, setSel] = useState<Selection>(() =>
-    initialEvents[0] ? { mode: 'view', id: initialEvents[0].id } : { mode: 'create' },
-  );
-
-  // Re-seed on SSR nav (search / window / page).
-  useEffect(() => setEvents(initialEvents), [initialEvents]);
+  // null = "not yet defaulted"; the effect below selects the first event (or
+  // create mode) once the list loads.
+  const [sel, setSel] = useState<Selection>(null);
+  useEffect(() => {
+    if (sel !== null) return;
+    setSel(events[0] ? { mode: 'view', id: events[0].id } : { mode: 'create' });
+  }, [events, sel]);
 
   // Debounced search → URL (?q=); resets to page 1.
   useEffect(() => {
@@ -79,7 +104,9 @@ export function EventsClient({
   }, [searchInput]);
 
   // Live db-watch: Saskia adds an event / a reminder edit / another tab → refetch.
-  useRealtime(['event'], () => router.refresh());
+  useRealtime(['event'], () => {
+    void queryClient.invalidateQueries({ queryKey: ['events'] });
+  });
 
   const all = events;
   const selected = sel?.mode === 'view' ? (all.find((e) => e.id === sel.id) ?? null) : null;
@@ -101,33 +128,36 @@ export function EventsClient({
   }, [now, all, tz]);
 
   const createEvent = async (payload: EventPayload) => {
-    const res = await fetch('/api/events', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast.error(j.error ?? `Could not save event (${res.status})`);
+    let event: EventRow;
+    try {
+      ({ event } = await apiSend<{ event: EventRow }>('/api/events', 'POST', payload));
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not save event');
       return;
     }
-    const { event } = (await res.json()) as { event: EventRow };
     setEvents((p) => [event, ...p]);
     setSel({ mode: 'view', id: event.id });
     toast.success(`Saved “${event.title}”`);
-    startTransition(() => router.refresh());
+    startTransition(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['events'] });
+    });
   };
 
   const onUpdated = (e: EventRow) => {
     setEvents((p) => p.map((x) => (x.id === e.id ? e : x)));
-    startTransition(() => router.refresh());
+    startTransition(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['events'] });
+    });
   };
 
   const onDeleted = (id: string) => {
     const next = all.filter((e) => e.id !== id);
     setEvents((p) => p.filter((e) => e.id !== id));
     setSel(next[0] ? { mode: 'view', id: next[0].id } : { mode: 'create' });
-    startTransition(() => router.refresh());
+    startTransition(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['events'] });
+    });
   };
 
   const renderCard = (e: EventRow) => {
@@ -174,6 +204,26 @@ export function EventsClient({
       </button>
     );
   };
+
+  if (listQuery.isPending) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+  if (listQuery.isError && !listQuery.data) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm">
+        <p className="text-muted-foreground">
+          {listQuery.error instanceof Error ? listQuery.error.message : 'Failed to load events.'}
+        </p>
+        <Button variant="outline" size="sm" onClick={() => listQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="md:grid md:h-full md:grid-cols-[340px_1fr] md:overflow-hidden">

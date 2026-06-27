@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { createTable, getTable, saveTableDraft } from '@/lib/tables';
 import { parseSheetToGrid } from '@mantle/files/sheet-to-grid';
 import { tableDocFromGrid } from '@mantle/content/table-model';
@@ -11,7 +11,8 @@ import { tableDocFromGrid } from '@mantle/content/table-model';
  * multipart `file` (.xlsx / .xls / .csv).
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const { id } = await ctx.params;
 
   const table = await getTable(user.id, id);

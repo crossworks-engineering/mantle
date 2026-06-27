@@ -37,7 +37,7 @@ import { sendMessage } from '@mantle/telegram';
 import { recordTurn } from '@mantle/agent-runtime';
 import { loadProfilePreferences, maybeRunScheduledBackups } from '@mantle/content';
 import { maybeSweep } from '@mantle/tools';
-import { pickWebDefaultAgent } from '../lib/assistant-select';
+import { pickWebDefaultAgent } from '@mantle/assistant-runtime';
 import {
   listDueReminders,
   markReminderSent,

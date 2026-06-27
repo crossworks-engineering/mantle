@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useMemo, useState, useTransition } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Pause, Play, Plus, Trash2, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -19,15 +19,13 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/components/ui/toast';
+import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
-import {
-  createHeartbeatAction,
-  deleteHeartbeatAction,
-  fireNowAction,
-  toggleHeartbeatAction,
-  updateHeartbeatAction,
-} from './actions';
-import type { HeartbeatSummary } from '@/lib/heartbeats';
+import { formatDateTime } from '@/lib/format-datetime';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
+import type { HeartbeatDTO, AgentOptionDTO, SkillDTO } from '@mantle/client-types';
+
+type HeartbeatSummary = HeartbeatDTO;
 
 type AgentOpt = { slug: string; name: string; role: string };
 type SkillOpt = {
@@ -183,25 +181,39 @@ function statusBadgeClass(s: HeartbeatSummary['status']): string {
   }
 }
 
-/** Server-rendered, locale-stable date strings keyed by heartbeat id.
- *  Avoids the SSR hydration mismatch that toLocaleString() causes when
- *  the Node process tz/locale differs from the browser's. Computed in
- *  page.tsx via formatInProfile and threaded through here. */
-export type HeartbeatFormattedTimes = Record<string, { nextFireAt: string | null }>;
-
-export function HeartbeatsClient({
-  initial,
-  agents,
-  skills,
-  formatted,
-}: {
-  initial: HeartbeatSummary[];
-  agents: AgentOpt[];
-  skills: SkillOpt[];
-  formatted: HeartbeatFormattedTimes;
-}) {
-  const router = useRouter();
+export function HeartbeatsClient() {
+  const queryClient = useQueryClient();
   const toast = useToast();
+
+  // All data is client-fetched against `/api/**` (Phase 2 · Task 4) — no SSR
+  // props, so the screen carries no in-process DB read. Mutations invalidate
+  // `['heartbeats']` (the client-side replacement for router.refresh()).
+  const heartbeatsQuery = useQuery({
+    queryKey: ['heartbeats'],
+    queryFn: () =>
+      apiFetch<{ heartbeats: HeartbeatSummary[] }>('/api/heartbeats').then((r) => r.heartbeats),
+  });
+  // EVERY agent (incl. worker roles) — heartbeats may bind any of them.
+  const agentsQuery = useQuery({
+    queryKey: ['agents', 'options'],
+    queryFn: () => apiFetch<{ agents: AgentOptionDTO[] }>('/api/agents/options').then((r) => r.agents),
+  });
+  const skillsQuery = useQuery({
+    queryKey: ['skills'],
+    queryFn: () => apiFetch<{ skills: SkillDTO[] }>('/api/skills').then((r) => r.skills),
+  });
+
+  const heartbeats = heartbeatsQuery.data ?? [];
+  const agents: AgentOpt[] = agentsQuery.data ?? [];
+  const skills = useMemo<SkillOpt[]>(
+    () =>
+      (skillsQuery.data ?? []).map((s) => ({
+        slug: s.slug,
+        name: s.name,
+        defaultState: (s.defaultState ?? {}) as Record<string, unknown>,
+      })),
+    [skillsQuery.data],
+  );
   const [editing, setEditing] = useState<{ mode: 'create' } | { mode: 'edit'; hb: HeartbeatSummary } | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm());
   const [slugTouched, setSlugTouched] = useState(false);
@@ -252,30 +264,73 @@ export function HeartbeatsClient({
       );
       return;
     }
-    const fd = new FormData();
-    if (editing?.mode === 'edit') fd.set('id', editing.hb.id);
-    fd.set('slug', form.slug);
-    fd.set('name', form.name);
-    fd.set('description', form.description);
-    fd.set('agent_slug', form.agent_slug);
-    fd.set('skill_slug', form.skill_slug);
-    fd.set('schedule_kind', form.schedule_kind);
-    fd.set('schedule_at', form.schedule_at);
-    fd.set('schedule_every_minutes', form.schedule_every_minutes);
-    fd.set('schedule_jitter_minutes', form.schedule_jitter_minutes);
-    fd.set('surface_kind', form.surface_kind);
-    fd.set('surface_chat_id', form.surface_chat_id);
-    fd.set('earliest_at', form.earliest_at);
-    fd.set('max_fires', form.max_fires);
-    fd.set('min_idle_minutes', form.min_idle_minutes);
-    fd.set('quiet_from', form.quiet_from);
-    fd.set('quiet_to', form.quiet_to);
-    fd.set('quiet_tz', form.quiet_tz);
-    fd.set('cooldown_minutes', form.cooldown_minutes);
-    // Validate state_text as a JSON object before submitting. Empty
-    // textarea (or whitespace) defaults to {}; any input must parse
-    // as object (not array, not primitive). Server-side action also
-    // re-validates — defence in depth.
+    // Build the schedule spec from the radio + its fields.
+    let schedule:
+      | { kind: 'once'; at: string }
+      | { kind: 'interval'; every_minutes: number; jitter_minutes: number }
+      | { kind: 'manual' };
+    if (form.schedule_kind === 'once') {
+      if (!form.schedule_at) {
+        toast.error("'once' schedule: pick a date & time.");
+        return;
+      }
+      schedule = { kind: 'once', at: new Date(form.schedule_at).toISOString() };
+    } else if (form.schedule_kind === 'interval') {
+      const every = Number(form.schedule_every_minutes);
+      if (!Number.isFinite(every) || every < 1) {
+        toast.error("'interval' schedule: every (minutes) must be ≥ 1.");
+        return;
+      }
+      schedule = {
+        kind: 'interval',
+        every_minutes: every,
+        jitter_minutes: Number(form.schedule_jitter_minutes) || 0,
+      };
+    } else {
+      schedule = { kind: 'manual' };
+    }
+
+    const surface =
+      form.surface_kind === 'telegram'
+        ? { kind: 'telegram' as const, chat_id: form.surface_chat_id.trim() }
+        : { kind: 'web' as const };
+    if (surface.kind === 'telegram' && !surface.chat_id) {
+      toast.error('Telegram surface: chat_id required.');
+      return;
+    }
+
+    // Quiet hours: both blank = no gate; otherwise the server validates HH:MM.
+    const quietFrom = form.quiet_from.trim();
+    const quietTo = form.quiet_to.trim();
+    const quietHours =
+      !quietFrom && !quietTo
+        ? null
+        : { from: quietFrom, to: quietTo, tz: form.quiet_tz.trim() || null };
+
+    const nint = (s: string): number | null => {
+      const t = s.trim();
+      if (!t) return null;
+      const n = Number(t);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const body: Record<string, unknown> = {
+      slug: form.slug,
+      name: form.name,
+      description: form.description.trim() || null,
+      agentSlug: form.agent_slug,
+      skillSlug: form.skill_slug,
+      schedule,
+      surface,
+      earliestAt: form.earliest_at ? new Date(form.earliest_at).toISOString() : null,
+      maxFires: nint(form.max_fires),
+      minIdleMinutes: nint(form.min_idle_minutes),
+      quietHours,
+      cooldownMinutes: nint(form.cooldown_minutes),
+    };
+
+    // state_text → state (object). Empty textarea = omit so create seeds from
+    // the bound skill's defaultState and edit leaves existing state untouched.
     const rawState = form.state_text.trim();
     if (rawState.length > 0) {
       try {
@@ -284,20 +339,21 @@ export function HeartbeatsClient({
           toast.error('State must be a JSON object (e.g. {"answered": []}).');
           return;
         }
-        fd.set('state', rawState);
+        body.state = parsed;
       } catch (err) {
         toast.error(`State JSON is invalid: ${err instanceof Error ? err.message : String(err)}`);
         return;
       }
     }
+
     try {
       if (editing?.mode === 'edit') {
-        await updateHeartbeatAction(fd);
+        await apiSend(`/api/heartbeats/${editing.hb.id}`, 'PATCH', body);
       } else {
-        await createHeartbeatAction(fd);
+        await apiSend('/api/heartbeats', 'POST', body);
       }
       close();
-      router.refresh();
+      await queryClient.invalidateQueries({ queryKey: ['heartbeats'] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
     }
@@ -309,21 +365,24 @@ export function HeartbeatsClient({
     setDeleteTarget(null);
     if (editing?.mode === 'edit' && editing.hb.id === hb.id) close();
     startTransition(async () => {
-      const fd = new FormData();
-      fd.set('id', hb.id);
-      await deleteHeartbeatAction(fd);
-      router.refresh();
+      try {
+        await apiSend(`/api/heartbeats/${hb.id}`, 'DELETE');
+        await queryClient.invalidateQueries({ queryKey: ['heartbeats'] });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err));
+      }
     });
   };
 
   const onToggle = (h: HeartbeatSummary) => {
     const desired = h.status === 'active' ? 'paused' : 'active';
     startTransition(async () => {
-      const fd = new FormData();
-      fd.set('id', h.id);
-      fd.set('status', desired);
-      await toggleHeartbeatAction(fd);
-      router.refresh();
+      try {
+        await apiSend(`/api/heartbeats/${h.id}`, 'PATCH', { status: desired });
+        await queryClient.invalidateQueries({ queryKey: ['heartbeats'] });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err));
+      }
     });
   };
 
@@ -332,12 +391,36 @@ export function HeartbeatsClient({
     if (!hb) return;
     setFireTarget(null);
     startTransition(async () => {
-      const fd = new FormData();
-      fd.set('id', hb.id);
-      await fireNowAction(fd);
-      router.refresh();
+      try {
+        await apiSend(`/api/heartbeats/${hb.id}/fire`, 'POST');
+        await queryClient.invalidateQueries({ queryKey: ['heartbeats'] });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err));
+      }
     });
   };
+
+  if (heartbeatsQuery.isPending) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+  if (heartbeatsQuery.isError) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm">
+        <p className="text-muted-foreground">
+          {heartbeatsQuery.error instanceof Error
+            ? heartbeatsQuery.error.message
+            : 'Failed to load heartbeats.'}
+        </p>
+        <Button variant="outline" size="sm" onClick={() => heartbeatsQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="md:grid md:h-full md:grid-cols-[360px_1fr] md:overflow-hidden">
@@ -352,12 +435,12 @@ export function HeartbeatsClient({
           </Button>
         </div>
         <div className="space-y-2 p-3 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
-          {initial.length === 0 ? (
+          {heartbeats.length === 0 ? (
             <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
               No heartbeats yet. Click <strong>New</strong> to create one.
             </p>
           ) : (
-            initial.map((h) => {
+            heartbeats.map((h) => {
               const selected = editing?.mode === 'edit' && editing.hb.id === h.id;
               return (
                 <button
@@ -386,9 +469,9 @@ export function HeartbeatsClient({
                     {h.surface.kind === 'telegram' ? `tg:${h.surface.chat_id}` : 'web'} · fires=
                     {h.fireCount}
                   </div>
-                  {h.nextFireAt && h.status === 'active' && formatted[h.id]?.nextFireAt && (
+                  {h.nextFireAt && h.status === 'active' && (
                     <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                      next {formatted[h.id]?.nextFireAt}
+                      next {formatDateTime(h.nextFireAt)}
                     </div>
                   )}
                 </button>

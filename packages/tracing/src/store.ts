@@ -14,6 +14,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { eq, sql } from 'drizzle-orm';
 import { db, traces, traceSteps } from '@mantle/db';
 import { truncateJson } from './truncate';
+import { runDurableStep } from './durable';
 
 export type TraceKind =
   | 'responder_turn'
@@ -333,7 +334,12 @@ export async function step<T>(
     let status: StepStatus = 'success';
     let errMsg: string | null = null;
     try {
-      const result = await fn(handle);
+      // Route the actual work through the durable executor when a workflow has
+      // one active (apps/api): this exact boundary becomes a journaled step, so
+      // a crash-resume returns the recorded result instead of re-running the
+      // LLM call / tool dispatch. Inert (pure passthrough) otherwise. The trace
+      // bookkeeping around it stays best-effort and engine-agnostic.
+      const result = await runDurableStep(init.name, () => fn(handle));
       if (stepInfo.skippedReason) {
         status = 'skipped';
         stepInfo.meta = { ...stepInfo.meta, skipped: stepInfo.skippedReason };

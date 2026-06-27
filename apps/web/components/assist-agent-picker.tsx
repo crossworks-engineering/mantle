@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 
 type AgentOption = { slug: string; name: string };
 
@@ -52,18 +53,14 @@ export function AssistAgentPicker({
     let cancelled = false;
     void (async () => {
       try {
-        const [agentsRes, prefRes] = await Promise.all([
-          fetch('/api/agents'),
-          fetch('/api/profile/assist-agent'),
+        const [agentsJson, prefJson] = await Promise.all([
+          apiFetch<{ agents?: { slug: string; name: string }[] }>('/api/agents'),
+          apiFetch<{
+            pages?: string | null;
+            tables?: string | null;
+            'dev-tools'?: string | null;
+          }>('/api/profile/assist-agent'),
         ]);
-        const agentsJson = (await agentsRes.json().catch(() => ({}))) as {
-          agents?: { slug: string; name: string }[];
-        };
-        const prefJson = (await prefRes.json().catch(() => ({}))) as {
-          pages?: string | null;
-          tables?: string | null;
-          'dev-tools'?: string | null;
-        };
         if (cancelled) return;
         setAgents((agentsJson.agents ?? []).map((a) => ({ slug: a.slug, name: a.name })));
         const current =
@@ -73,6 +70,8 @@ export function AssistAgentPicker({
               ? prefJson.tables
               : prefJson['dev-tools'];
         setValue(current || DEFAULT_VALUE);
+      } catch {
+        // best-effort; the default option stands
       } finally {
         if (!cancelled) setLoaded(true);
       }
@@ -88,24 +87,16 @@ export function AssistAgentPicker({
       setValue(next);
       setSaving(true);
       try {
-        const res = await fetch('/api/profile/assist-agent', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            surface,
-            agentSlug: next === DEFAULT_VALUE ? null : next,
-          }),
+        await apiSend('/api/profile/assist-agent', 'POST', {
+          surface,
+          agentSlug: next === DEFAULT_VALUE ? null : next,
         });
-        if (!res.ok) {
-          setValue(prev);
-          toast.error('Could not change the assist agent');
-          return;
-        }
         const name =
           next === DEFAULT_VALUE ? null : agents.find((a) => a.slug === next)?.name ?? null;
         onAgentNameChange?.(name);
-      } catch {
+      } catch (e) {
         setValue(prev);
+        if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
         toast.error('Could not change the assist agent');
       } finally {
         setSaving(false);

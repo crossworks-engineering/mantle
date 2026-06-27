@@ -1,20 +1,20 @@
-import { notFound } from 'next/navigation';
 import { requireOwner } from '@/lib/auth';
-import { getEvent } from '@/lib/events';
 import { EventDetailClient } from './event-detail-client';
 
+/**
+ * /events/[id] — deep link to one event (auth gate only). The event is
+ * client-fetched via `GET /api/events/[id]` (Phase 2 · Task 4).
+ */
 export default async function EventDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const user = await requireOwner();
+  await requireOwner();
   const { id } = await params;
-  const row = await getEvent(user.id, id);
-  if (!row) notFound();
   return (
     <div className="mx-auto max-w-3xl py-2">
-      <EventDetailClient initial={row} />
+      <EventDetailClient eventId={id} />
     </div>
   );
 }

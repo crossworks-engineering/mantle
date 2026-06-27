@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { getAgent } from '@/lib/agents';
 import { setAgentTelegramChatStatus, TelegramTokenError } from '@/lib/agent-telegram';
 
@@ -12,7 +12,8 @@ const Body = z.object({
 
 /** Approve (pair) or deny a chat on the agent's linked Telegram bot. */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
   const agent = await getAgent(user.id, idParsed.data.id);

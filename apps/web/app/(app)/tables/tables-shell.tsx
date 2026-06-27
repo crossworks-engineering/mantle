@@ -1,10 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Loader2, PanelLeftClose, PanelLeftOpen, Plus, Search, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useListNav } from '@/lib/use-list-nav';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
+import { Spinner } from '@/components/ui/spinner';
 import { useRealtime } from '@/components/realtime/use-realtime';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { Button } from '@/components/ui/button';
@@ -36,23 +39,60 @@ const MIN_W = 220;
 const MAX_W = 520;
 const DEFAULT_W = 320;
 
-type Props = {
+const SORTS: TableSort[] = ['edited', 'newest', 'oldest', 'title'];
+
+type TablesListResponse = {
   tables: TableRow[];
   total: number;
   page: number;
   pageSize: number;
   tags: { tag: string; count: number }[];
-  activeTag: string | null;
-  query: string;
-  sort: TableSort;
-  selectedTable: TableDetail | null;
 };
 
-export function TablesShell(props: Props) {
-  const { tables, total, page, pageSize, tags, activeTag, query, selectedTable } = props;
-  const router = useRouter();
+export function TablesShell() {
+  const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const toast = useToast();
   const { pending: navPending, go } = useListNav();
+
+  // URL is the source of truth (matches the old SSR page).
+  const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10) || 1);
+  const query = searchParams.get('q')?.trim() ?? '';
+  const activeTag = searchParams.get('tag')?.trim() || null;
+  const sortParam = searchParams.get('sort');
+  const sort: TableSort = SORTS.includes(sortParam as TableSort) ? (sortParam as TableSort) : 'edited';
+
+  const listQuery = useQuery({
+    queryKey: ['tables', { q: query, tag: activeTag, sort, page }],
+    queryFn: () => {
+      const qs = new URLSearchParams();
+      if (query) qs.set('q', query);
+      if (activeTag) qs.set('tag', activeTag);
+      if (sort !== 'edited') qs.set('sort', sort);
+      if (page > 1) qs.set('page', String(page));
+      const s = qs.toString();
+      return apiFetch<TablesListResponse>(`/api/tables${s ? `?${s}` : ''}`);
+    },
+    placeholderData: (prev) => prev,
+  });
+
+  const tables = listQuery.data?.tables ?? [];
+  const total = listQuery.data?.total ?? 0;
+  const pageSize = listQuery.data?.pageSize ?? 50;
+  const tags = listQuery.data?.tags ?? [];
+
+  // The full selected table (grid + draft) — a separate fetch since list rows
+  // are summaries. Defaults to the first row (master-detail convention).
+  const selectedId = (searchParams.get('selected')?.trim() || tables[0]?.id) ?? null;
+  const selectedTableQuery = useQuery({
+    queryKey: ['tables', selectedId],
+    queryFn: () =>
+      apiFetch<{ table: TableDetail }>(`/api/tables/${selectedId}`).then((r) => r.table),
+    enabled: !!selectedId,
+    placeholderData: (prev) => prev,
+  });
+  const selectedTable: TableDetail | null =
+    selectedTableQuery.data?.id === selectedId ? selectedTableQuery.data : null;
 
   const [searchInput, setSearchInput] = useState(query);
   const [createOpen, setCreateOpen] = useState(false);
@@ -65,7 +105,6 @@ export function TablesShell(props: Props) {
   const drag = useRef<{ startX: number; startW: number } | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const selectedId = selectedTable?.id ?? null;
 
   // Which table is mid-open. Selecting is a server round-trip (the full grid is
   // loaded SSR), so without a cue the click feels dead for a beat. Set on click,
@@ -85,7 +124,9 @@ export function TablesShell(props: Props) {
     setCollapsed(localStorage.getItem('tables.listCollapsed') === '1');
   }, []);
 
-  useRealtime(['table'], () => router.refresh());
+  useRealtime(['table'], () => {
+    void queryClient.invalidateQueries({ queryKey: ['tables'] });
+  });
 
   // Debounced search → URL.
   useEffect(() => {
@@ -124,15 +165,14 @@ export function TablesShell(props: Props) {
     if (!title) return;
     setCreating(true);
     try {
-      const res = await fetch('/api/tables', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title }),
-      });
-      if (!res.ok) { toast.error('Could not create table'); return; }
-      const { table } = await res.json();
+      const { table } = await apiSend<{ table: TableDetail }>('/api/tables', 'POST', { title });
       setCreateOpen(false);
+      await queryClient.invalidateQueries({ queryKey: ['tables'] });
       go({ selected: table.id });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      toast.error('Could not create table');
+      return;
     } finally {
       setCreating(false);
     }
@@ -140,14 +180,39 @@ export function TablesShell(props: Props) {
 
   const confirmDelete = useCallback(async () => {
     if (!deleteTarget) return;
-    const res = await fetch(`/api/tables/${deleteTarget.id}`, { method: 'DELETE' });
-    if (!res.ok) { toast.error('Could not delete table'); return; }
+    try {
+      await apiSend(`/api/tables/${deleteTarget.id}`, 'DELETE');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      toast.error('Could not delete table');
+      return;
+    }
     toast.success('Table deleted');
     const wasSelected = deleteTarget.id === selectedId;
     setDeleteTarget(null);
+    await queryClient.invalidateQueries({ queryKey: ['tables'] });
     if (wasSelected) go({ selected: null });
-    else router.refresh();
-  }, [deleteTarget, selectedId, go, router, toast]);
+  }, [deleteTarget, selectedId, go, queryClient, toast]);
+
+  if (listQuery.isPending) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+  if (listQuery.isError && !listQuery.data) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm">
+        <p className="text-muted-foreground">
+          {listQuery.error instanceof Error ? listQuery.error.message : 'Failed to load tables.'}
+        </p>
+        <Button variant="outline" size="sm" onClick={() => listQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0">
@@ -265,6 +330,27 @@ export function TablesShell(props: Props) {
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {selectedTable ? (
           <TableDetailClient key={selectedTable.id} initial={selectedTable} embedded />
+        ) : selectedId && selectedTableQuery.isError ? (
+          <>
+            <SetPageTitle title="Tables" />
+            <div className="flex h-full flex-col items-center justify-center gap-3 p-10 text-center text-sm">
+              <p className="text-muted-foreground">
+                {selectedTableQuery.error instanceof Error
+                  ? selectedTableQuery.error.message
+                  : 'Failed to load table.'}
+              </p>
+              <Button variant="outline" size="sm" onClick={() => selectedTableQuery.refetch()}>
+                Retry
+              </Button>
+            </div>
+          </>
+        ) : selectedId ? (
+          <>
+            <SetPageTitle title="Tables" />
+            <div className="flex h-full items-center justify-center">
+              <Spinner />
+            </div>
+          </>
         ) : (
           <>
             <SetPageTitle title="Tables" />

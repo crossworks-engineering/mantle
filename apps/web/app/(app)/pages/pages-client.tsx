@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { JSONContent } from '@tiptap/react';
 import {
   ArrowUpDown,
@@ -50,6 +51,8 @@ import {
 } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { PageSort } from '@/lib/pages';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
+import { Spinner } from '@/components/ui/spinner';
 import { SubmitButton } from '@/components/ui/submit-button';
 import {
   Dialog,
@@ -78,18 +81,11 @@ import { PageView } from '@/components/page-editor/page-view';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
 import { buildChildrenIndex } from './page-tree';
+import type { PageRow } from '@mantle/content';
 
-type PageRow = {
-  id: string;
-  parentId: string | null;
-  title: string;
-  icon: string | null;
-  tags: string[];
-  summary: string | null;
-  visibility: 'private' | 'public';
-  createdAt: string;
-  updatedAt: string;
-};
+// Wire shape is the GET /api/pages mapper's output — single source of truth
+// (the canonical row also carries `width`, unused by this list view). Drift
+// between the mapper and what this screen renders is now a compile error.
 
 type TagCount = { tag: string; count: number };
 
@@ -104,33 +100,52 @@ const SORT_LABELS: Record<PageSort, string> = {
   title: 'Title A–Z',
 };
 
-export function PagesClient({
-  mode,
-  pages,
-  total,
-  page,
-  pageSize,
-  tags,
-  activeTag,
-  query,
-  sort,
-}: {
-  /** 'tree' = full hierarchy (no filter active); 'list' = flat paginated
-   *  results while searching / tag-filtering. */
+const SORTS: PageSort[] = ['edited', 'newest', 'oldest', 'title'];
+
+type PagesListResponse = {
   mode: 'tree' | 'list';
   pages: PageRow[];
   total: number;
   page: number;
   pageSize: number;
   tags: TagCount[];
-  activeTag: string | null;
-  query: string;
-  sort: PageSort;
-}) {
+};
+
+export function PagesClient() {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const toast = useToast();
   const [navPending, startNav] = useTransition();
+
+  // URL is the source of truth (matches the old SSR page); the data query keys
+  // off these so a `go()` navigation re-fetches automatically.
+  const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10) || 1);
+  const query = searchParams.get('q')?.trim() ?? '';
+  const activeTag = searchParams.get('tag')?.trim() || null;
+  const sortParam = searchParams.get('sort');
+  const sort: PageSort = SORTS.includes(sortParam as PageSort) ? (sortParam as PageSort) : 'edited';
+
+  const listQuery = useQuery({
+    queryKey: ['pages', { q: query, tag: activeTag, sort, page }],
+    queryFn: () => {
+      const qs = new URLSearchParams();
+      if (query) qs.set('q', query);
+      if (activeTag) qs.set('tag', activeTag);
+      if (sort !== 'edited') qs.set('sort', sort);
+      if (page > 1) qs.set('page', String(page));
+      const s = qs.toString();
+      return apiFetch<PagesListResponse>(`/api/pages${s ? `?${s}` : ''}`);
+    },
+    placeholderData: (prev) => prev, // keep the list visible while paging/filtering
+  });
+
+  const mode = listQuery.data?.mode ?? (query || activeTag ? 'list' : 'tree');
+  const pages = listQuery.data?.pages ?? [];
+  const total = listQuery.data?.total ?? 0;
+  const pageSize = listQuery.data?.pageSize ?? 50;
+  const tags = listQuery.data?.tags ?? [];
 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<{ title: string; tags: string[] }>({ title: '', tags: [] });
@@ -204,8 +219,7 @@ export function PagesClient({
     }
     let cancelled = false;
     setDeleteDescendants(null);
-    fetch(`/api/pages/${deleteTarget.id}/descendant-count`)
-      .then((r) => (r.ok ? r.json() : null))
+    apiFetch<{ count?: number }>(`/api/pages/${deleteTarget.id}/descendant-count`)
       .then((d) => {
         if (!cancelled && d) setDeleteDescendants(typeof d.count === 'number' ? d.count : 0);
       })
@@ -261,19 +275,16 @@ export function PagesClient({
     // Surface the result immediately, then re-pull the SSR tree (the same
     // refresh pattern create/delete use). Expand the new parent so the moved
     // page is visible where it landed instead of hiding in a collapsed branch.
-    const res = await fetch(`/api/pages/${id}/move`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parentId }),
-    });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast.error(j.error ?? 'Could not move page');
+    try {
+      await apiSend(`/api/pages/${id}/move`, 'POST', { parentId });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      toast.error(e instanceof Error ? e.message : 'Could not move page');
       return;
     }
     if (parentId) setExpanded((prev) => new Set(prev).add(parentId));
     toast.success(parentId ? 'Page moved' : 'Moved to top level');
-    startNav(() => router.refresh());
+    void queryClient.invalidateQueries({ queryKey: ['pages'] });
   };
 
   const onDragEnd = (e: DragEndEvent) => {
@@ -332,23 +343,22 @@ export function PagesClient({
     }
     setSaving(true);
     try {
-      const res = await fetch('/api/pages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: form.title.trim(), tags: form.tags }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        toast.error(j.error ?? `request failed (${res.status})`);
+      let created: PageRow;
+      try {
+        ({ page: created } = await apiSend<{ page: PageRow }>('/api/pages', 'POST', {
+          title: form.title.trim(),
+          tags: form.tags,
+        }));
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) return;
+        toast.error(e instanceof Error ? e.message : 'request failed');
         return;
       }
-      const { page: created } = (await res.json()) as { page: PageRow };
       setForm({ title: '', tags: [] });
       setOpen(false);
       toast.success('Page created');
-      // Invalidate the SSR list cache so the new page is present when the user
-      // navigates back here (without this it only appears on a fresh visit).
-      router.refresh();
+      // Refresh the list cache so the new page is present on navigate-back.
+      void queryClient.invalidateQueries({ queryKey: ['pages'] });
       // New pages open straight into the editor.
       router.push(`/pages/${created.id}`);
     } finally {
@@ -358,25 +368,28 @@ export function PagesClient({
 
   // Create a sub-page under `parentId` and open it (create & edit, like New).
   const createChild = async (parentId: string) => {
-    const res = await fetch('/api/pages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Untitled page', parentId }),
-    });
-    if (!res.ok) {
-      toast.error('Could not create sub-page');
+    let created: PageRow;
+    try {
+      ({ page: created } = await apiSend<{ page: PageRow }>('/api/pages', 'POST', {
+        title: 'Untitled page',
+        parentId,
+      }));
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      toast.error(e instanceof Error ? e.message : 'Could not create sub-page');
       return;
     }
-    const { page: created } = (await res.json()) as { page: PageRow };
-    router.refresh(); // keep the SSR list fresh after navigating into the editor
+    void queryClient.invalidateQueries({ queryKey: ['pages'] }); // keep the list fresh
     router.push(`/pages/${created.id}`);
   };
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    const res = await fetch(`/api/pages/${deleteTarget.id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      toast.error('Could not delete page');
+    try {
+      await apiSend(`/api/pages/${deleteTarget.id}`, 'DELETE');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      toast.error(e instanceof Error ? e.message : 'Could not delete page');
       return;
     }
     toast.success(
@@ -387,7 +400,7 @@ export function PagesClient({
           : 'Page deleted',
     );
     if (selectedId === deleteTarget.id) setSelectedId(null);
-    startNav(() => router.refresh());
+    void queryClient.invalidateQueries({ queryKey: ['pages'] });
   };
 
   // Flatten the tree into rows honoring expand/collapse state.
@@ -428,6 +441,26 @@ export function PagesClient({
         : 'No pages yet. Click “New” to start writing.'}
     </div>
   );
+
+  if (listQuery.isPending) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+  if (listQuery.isError && !listQuery.data) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm">
+        <p className="text-muted-foreground">
+          {listQuery.error instanceof Error ? listQuery.error.message : 'Failed to load pages.'}
+        </p>
+        <Button variant="outline" size="sm" onClick={() => listQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -969,9 +1002,8 @@ function PagePreview({ row, onDelete }: { row: PageRow; onDelete: () => void }) 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch(`/api/pages/${row.id}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then(({ page }: { page: { doc: JSONContent; draft: JSONContent | null } }) => {
+    apiFetch<{ page: { doc: JSONContent; draft: JSONContent | null } }>(`/api/pages/${row.id}`)
+      .then(({ page }) => {
         if (!cancelled) {
           setDoc(page.draft ?? page.doc);
           setIsDraft(!!page.draft);

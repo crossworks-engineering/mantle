@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireOwner } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { createTool, listToolsForOwner } from '@/lib/tools';
 import { ToolHandlerSchema } from '@/lib/tool-handler-schema';
 
 export async function GET() {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const rows = await listToolsForOwner(user.id);
   return NextResponse.json({ tools: rows });
 }
@@ -25,7 +26,8 @@ const CreateBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const user = await requireOwner();
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {
