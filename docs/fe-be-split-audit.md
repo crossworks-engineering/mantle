@@ -50,10 +50,11 @@ The conversion targeted a *named* list; these were outside it and still `await` 
   `/debug/integrity` is converted), `/studio` (graph read), `settings/calendar`, `settings/config`,
   `settings/network` (tailnet status), `settings/embedding`, `settings/backups`, `/docs`
   (largely static markdown — may stay server-only).
-- **Endpoint exists, page still SSR-loads (just wire it):** `/files`, `/secrets`, `/apps`(+`[id]`),
-  `/models`, `/pending`, `/heartbeats/[id]` (also needs a client component — currently inline),
-  `/nodes/[id]/history`, `/dev-tools`, `settings/{accounts/[id]/edit, updates, keys, peers,
-  entities, pdf-passwords}`.
+- **Endpoint exists, page still SSR-loads (just wire it):** ~~`/apps`(+`[id]`)~~ ✅,
+  ~~`/pending`~~ ✅, ~~`/heartbeats/[id]`~~ ✅ (new client + `GET /api/heartbeats/[id]/detail`),
+  ~~settings/{accounts/[id]/edit~~ ✅~~, keys~~ ✅ (#3)~~, peers~~ ✅~~, entities~~ ✅~~,
+  pdf-passwords~~ ✅~~, updates~~ ✅ (#3)}. **Still TODO:** `/files`, `/secrets`, `/models`,
+  `/nodes/[id]/history`, `/dev-tools`. (v0.66.1–0.66.7 converted the rest of this bucket.)
 - **Partial endpoints (extend to cover the page):** `/` dashboard (`/api/dashboard/summary`),
   `/assistant` (`/api/assistant/messages`).
 - **Legitimately server-only (exclude):** `/n/[id]` (redirect router), `/changelog` (static md).
@@ -114,9 +115,12 @@ proven 9-step recipe) plus a handful of *systemic* infra fixes (B server-action 
    `/api/**` endpoints via `apiSend`, every `'use server'` file + `revalidatePath` deleted. The
    key-probe logic was extracted to `lib/api-key-test` (shared by keys + onboarding). This also
    closed #4 for those 9 screens.
-4. **Unconverted screens (A):** build the missing endpoints (traces, debug/*, studio, calendar,
-   config, network, embedding, backups), then convert page-by-page; wire the ones whose endpoint
-   already exists.
+4. **Unconverted screens (A):** *in progress.* The "endpoint already exists" sub-bucket is mostly
+   done (v0.66.1–0.66.7: apps + apps/[id], pending, heartbeats/[id], settings/{peers, entities,
+   pdf-passwords, accounts/[id]/edit}); `/heartbeats/[id]` got a new `…/detail` endpoint + client.
+   **Remaining:** wire `/files`, `/secrets`, `/models`, `/nodes/[id]/history`, `/dev-tools`
+   (endpoints exist), then build the missing endpoints (traces, debug/*, studio) and convert
+   page-by-page.
 5. **SSE (D):** fetch-based reader honoring base-URL + bearer, so `/api/realtime` works detached.
 6. **DB-less (E):** route the converted pages through `lib/data/*`; expand `docs/db-less-dev.md`
    coverage as screens land.
