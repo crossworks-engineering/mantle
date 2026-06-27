@@ -192,6 +192,13 @@ export function AssistantClient({
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [attachedPreviewUrl, setAttachedPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // The text of the in-flight turn's prompt, so a Stop can drop it back into the
+  // composer for correction.
+  const lastPromptRef = useRef('');
+  // Set when a Stop restores the prompt — focus the composer once it re-enables
+  // (the textarea is disabled while `sending`, so we can't focus immediately).
+  const focusAfterStopRef = useRef(false);
 
   // ── Share-location toggle ──
   // Sticky opt-in (persisted): when on, each send attaches a fresh browser
@@ -372,7 +379,27 @@ export function AssistantClient({
     void apiFetch(`/api/assistant/turn/${turnId}/cancel`, { method: 'POST' }).catch(() => {
       /* the done/poll path still reconciles; nothing to surface */
     });
+    // Drop the stopped turn's prompt back into the composer so the user can
+    // correct it and resend. Only when the box is empty — if they'd started
+    // typing the next message while this one streamed, don't clobber it.
+    const prompt = lastPromptRef.current;
+    if (prompt) {
+      setDraft((cur) => (cur.trim() ? cur : prompt));
+      focusAfterStopRef.current = true; // focus once the turn settles + box re-enables
+    }
   }, [activeTurnId, stopping]);
+
+  // After a Stop restores the prompt, focus the composer + cursor-to-end the
+  // moment the turn settles (the box is disabled while `sending`).
+  useEffect(() => {
+    if (sending || !focusAfterStopRef.current) return;
+    focusAfterStopRef.current = false;
+    const el = textareaRef.current;
+    if (!el) return;
+    el.focus();
+    const end = el.value.length;
+    el.setSelectionRange(end, end);
+  }, [sending]);
 
   const reconcileDone = useCallback(
     async (optimisticId: string) => {
@@ -555,6 +582,8 @@ export function AssistantClient({
     // prompt server-side when text is empty.
     if ((!text && !attachedFile) || sending) return;
     setError(undefined);
+    // Remember this turn's prompt so a Stop can drop it back into the composer.
+    lastPromptRef.current = text;
 
     const hasFile = attachedFile != null;
     const isImage = hasFile && attachedFile.type.startsWith('image/');
@@ -1081,6 +1110,7 @@ export function AssistantClient({
                 )}
               </div>
               <textarea
+                ref={textareaRef}
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder={
