@@ -17,6 +17,7 @@ This is the resume point — read this, then the design doc §5–§9 for the 3b
 
 | Commit | Ver | What |
 |---|---|---|
+| `5a445e1c` | 0.75.0 | **Stop mid-flight** — the Enter button becomes a Stop button; cross-process abort halts generation, keeps the partial reply. |
 | `368aa3a8` | 0.74.0 | **Phase 3c Part B** — non-blocking route (202 `{turnId}`) + client/dock drive off the live stream, reconcile to the durable row on done/error. |
 | `15c58f8a` | 0.73.0 | **Phase 3c Part A** — runner owns the durable outbound row (pending→complete/failed) + emits `turn-start`/`done`/`error` via a tracing turn-lifecycle observer. |
 | `99038998` | 0.72.3 | **Responder → standard Markdown.** New `chat_writing` skill (no rich dialect); Pages keeps `rich_writing`. |
@@ -60,6 +61,13 @@ still authors the rich Mantle dialect for documents.
   `status`, `text-delta`, `reasoning-delta`, and (3c) `turn-start` (carries inbound/outbound row ids),
   `done`, `error`. `turnId` on the wire = the client's idempotency-key/streamId (the stable
   subscribe-before-rows-exist handle); the durable outbound row id rides in `turn-start`.
+- **Stop a turn mid-flight** (`5a445e1c`): the composer's Enter button becomes a red Stop button while a
+  turn streams. Cross-process abort: `POST /api/assistant/turn/:id/cancel` → `publishTurnCancel` →
+  `turn_cancel` NOTIFY → the runner's cancel listener (`apps/api/src/turn-cancel.ts`) → `abortTurn(owner,
+  turnId)` aborts a per-turn `AbortController` (registry in `store.ts`). The tool loop threads
+  `currentTurnAbortSignal()` into `chatStream` → the OpenRouter SDK fetch; on abort the adapter returns its
+  PARTIAL reply (not a throw), so `run-turn` finalizes the row `'complete'` with the partial (a stop is
+  detected via `signal.aborted`, distinct from a real error). Generation halts ~360ms after the click.
 - **Turn-lifecycle observer** (3c, third tracing observer in `store.ts`): `setTurnLifecycleObserver`/
   `emitTurnLifecycle(turnId, ownerId, phase, data)`. Driven EXPLICITLY by the runtime (not the trace) so
   `turn-start` fires once the rows exist and `done`/`error` fire once the outbound text is committed (which
