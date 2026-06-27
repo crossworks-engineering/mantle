@@ -1,11 +1,14 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 
 const SELECT_CLASS =
@@ -57,30 +60,46 @@ type RouteState = {
   label: string;
 };
 
-export function EmbeddingClient({
+type EmbeddingData = { config: ConfigDTO | null; columnDims: number; keys: KeyOpt[] };
+
+/** Outer query-gate so the page stays data-free. The inner form mounts only
+ *  once loaded, so its useState initializers seed from the saved config. */
+export function EmbeddingClient() {
+  const embeddingQuery = useQuery({
+    queryKey: ['embedding'],
+    queryFn: () => apiFetch<EmbeddingData>('/api/embedding'),
+  });
+  if (embeddingQuery.isPending) {
+    return (
+      <div className="flex h-full items-center justify-center py-16">
+        <Spinner />
+      </div>
+    );
+  }
+  if (embeddingQuery.isError && !embeddingQuery.data) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 py-16 text-sm text-muted-foreground">
+        <p>Couldn&apos;t load the embedding config.</p>
+        <Button variant="outline" size="sm" onClick={() => embeddingQuery.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+  const d = embeddingQuery.data;
+  return <EmbeddingForm config={d.config} columnDims={d.columnDims} keys={d.keys} />;
+}
+
+function EmbeddingForm({
   config,
   columnDims,
   keys,
-  saveAction,
-  testRouteAction,
-  rebuildAction,
 }: {
   config: ConfigDTO | null;
   columnDims: number;
   keys: KeyOpt[];
-  saveAction: (
-    formData: FormData,
-  ) => Promise<{ ok: true; model: string } | { ok: false; error: string }>;
-  testRouteAction: (route: {
-    provider: string;
-    model: string;
-    baseUrl: string | null;
-    apiKeyId: string | null;
-  }) => Promise<{ ok: true; dimensions: number } | { ok: false; error: string }>;
-  rebuildAction: (
-    repopulate: boolean,
-  ) => Promise<{ ok: true; model: string; result: unknown } | { ok: false; error: string }>;
 }) {
+  const queryClient = useQueryClient();
   const toast = useToast();
   const [model, setModel] = useState(config?.model ?? 'embeddinggemma:latest');
   const [primary, setPrimary] = useState<RouteState>({
@@ -131,7 +150,9 @@ export function EmbeddingClient({
     const r = which === 'primary' ? primary : backup;
     setTesting(which);
     try {
-      const res = await testRouteAction({
+      const res = await apiSend<
+        { ok: true; dimensions: number } | { ok: false; error: string }
+      >('/api/embedding/test', 'POST', {
         provider: r.provider,
         model: model.trim(),
         baseUrl: r.baseUrl.trim() || null,
@@ -141,6 +162,11 @@ export function EmbeddingClient({
         ...p,
         [which]: res.ok ? { dim: res.dimensions } : { error: res.error },
       }));
+    } catch (err) {
+      setProbe((p) => ({
+        ...p,
+        [which]: { error: err instanceof Error ? err.message : 'Probe failed' },
+      }));
     } finally {
       setTesting(null);
     }
@@ -149,25 +175,36 @@ export function EmbeddingClient({
   function runRebuild(repopulate: boolean) {
     setRebuilding(true);
     startTransition(async () => {
-      const res = await rebuildAction(repopulate);
-      setRebuilding(false);
-      if (res.ok) {
-        toast.success(`Re-embed complete — model ${res.model}`);
-      } else {
-        toast.error(`Re-embed failed: ${res.error}`);
+      try {
+        const res = await apiSend<
+          { ok: true; model: string } | { ok: false; error: string }
+        >('/api/embedding/rebuild', 'POST', { repopulate });
+        if (res.ok) toast.success(`Re-embed complete — model ${res.model}`);
+        else toast.error(`Re-embed failed: ${res.error}`);
+      } catch (err) {
+        toast.error(`Re-embed failed: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        setRebuilding(false);
       }
     });
   }
 
   function handleSave(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
+    const body = Object.fromEntries(new FormData(e.currentTarget));
     startTransition(async () => {
-      const res = await saveAction(formData);
-      if (res.ok) {
-        toast.success(`Embedding config saved — ${res.model}`);
-      } else {
-        toast.error(`Save failed: ${res.error}`);
+      try {
+        const res = await apiSend<
+          { ok: true; model: string } | { ok: false; error: string }
+        >('/api/embedding', 'POST', body);
+        if (res.ok) {
+          toast.success(`Embedding config saved — ${res.model}`);
+          queryClient.invalidateQueries({ queryKey: ['embedding'] });
+        } else {
+          toast.error(`Save failed: ${res.error}`);
+        }
+      } catch (err) {
+        toast.error(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     });
   }
