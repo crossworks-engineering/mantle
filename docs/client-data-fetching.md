@@ -92,6 +92,8 @@ by default.
 | `/events` (+ `/events/[id]`) | ✅ converted (window filter; local optimistic list like /todos; the `useRealtime` callback → invalidate; small `[id]` outer-gate) |
 | `/contacts` | ✅ converted (inline master-detail; list row IS the detail; deep-link `?id=` via secondary query; `go({})` refresh → invalidate) |
 | `/tables` (+ `/tables/[id]`) | ✅ converted (master-detail shell; selected `TableDetail` is a separate query; grid editor's commit/import refresh → invalidate; `[id]` was already a redirect) |
+| `/lifelog` | ✅ converted (same shape as /notes; mood/category/tag filters; deep-link via secondary query) |
+| `/inbox` | ⬜ not yet — different class of change (server-only `sanitizeEmailHtml` in `ReadingPane`; 3-pane orchestration; see handover) |
 
 Convert more by following the reference; order by Electron priority.
 

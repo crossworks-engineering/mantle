@@ -108,8 +108,21 @@ template) is done** — confirming the pattern: content screens mostly already d
 mutations via client `fetch`, so the work is wiring the *initial loads* + closing small
 GET gaps. None has a *real* `@mantle/db` hole anymore (Task 1 closed those).
 
-- **Remaining content screens** (`/lifelog`, `/inbox`)
-  — same shape as `/pages`/`/notes`/`/todos`/`/events`/`/contacts`/`/tables`: most already have REST + client
+- **`/inbox`** — the LAST screen, and the only one that's NOT a mechanical list
+  conversion. Endpoints mostly exist already (`GET /api/email/messages`, `GET+PATCH
+  /api/email/messages/[id]` (PATCH does read/star), `GET /api/email/folders`,
+  `GET /api/email/accounts`). The real work: (1) `components/reading-pane.tsx` is a
+  Server Component that imports `sanitizeEmailHtml` (value) from `@mantle/email` —
+  to render it client-side, move sanitization into the message GET (return a
+  `bodyHtmlSafe` field) and make ReadingPane `'use client'` taking that prop + swap
+  its two `email-actions` server-action forms for PATCH mutations; (2) build an
+  `InboxClient` 3-pane orchestrator (account/folder/tab/email from the URL; the two
+  gates — no-accounts + empty-contact-gate, the latter needs a source: derive from
+  `/api/contacts` total or add a tiny endpoint; mark-read-on-select via PATCH);
+  (3) nav-accounts = map `/api/email/accounts` → `{id,address,provider}`. `EmailRow`
+  is already client-safe; verify `MailClient`/`MailNav`/`account-switcher` are too.
+- **Remaining mechanical content screens** — none left; only `/inbox` (above) remains
+  of the `(app)` surface. Same URL-driven pattern as the others where it applies. most already have REST + client
   mutation components; expect to extend a list GET (sort/pagination/facets) + add any
   missing secondary GET, then make the page data-free and key a `useQuery` off the URL
   params. Order by Electron priority. `/pages` + `/notes` are the worked examples — the
