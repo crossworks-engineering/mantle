@@ -6,6 +6,7 @@ import { useTurnStage } from '@/components/assistant/use-turn-stage';
 import { useTurnStream, type ThoughtEvent } from '@/components/assistant/use-turn-stream';
 import { ThoughtTrail } from '@/components/assistant/thought-trail';
 import {
+  ArrowDown,
   CornerDownLeft,
   FileText,
   Image as ImageIcon,
@@ -61,6 +62,9 @@ type StoredAttachment = {
 
 /** Page size for the initial load and each scroll-up fetch. */
 const PAGE_SIZE = 100;
+
+/** Within this many px of the bottom counts as "stuck" for autoscroll-follow. */
+const NEAR_BOTTOM_PX = 24;
 
 type Message = {
   id: string;
@@ -180,6 +184,26 @@ export function AssistantClient({
 
   const scrollerRef = useRef<HTMLDivElement>(null);
 
+  // ── Stick-to-bottom autoscroll ──
+  // Follow new content (a landing reply, streamed tokens, a growing trail) ONLY
+  // while the user is parked at the bottom. The moment they scroll up to read, we
+  // stop yanking them down and offer a jump-to-bottom button instead. `atBottom`
+  // is a ref (the truth read by the scroll effects, no stale closures); `showJump`
+  // is state (drives the button). A small threshold so a deliberate scroll-up
+  // un-sticks but sub-pixel rounding doesn't.
+  const atBottomRef = useRef(true);
+  const [showJump, setShowJump] = useState(false);
+  const scrollToBottom = useCallback((smooth: boolean) => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+  }, []);
+  const jumpToBottom = useCallback(() => {
+    atBottomRef.current = true;
+    setShowJump(false);
+    scrollToBottom(true);
+  }, [scrollToBottom]);
+
   // ── Scroll-up lazy loading of older messages ──
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasMore, setHasMore] = useState(initialMessages.length >= PAGE_SIZE);
@@ -189,18 +213,29 @@ export function AssistantClient({
 
   const turns = useMemo(() => groupTurns(messages), [messages]);
 
-  // Scroll management: after a prepend, restore position (no jump);
-  // otherwise pin to the bottom (initial load + new send/reply).
+  // Scroll management: after a prepend, restore position (no jump); otherwise pin
+  // to the bottom ONLY when the user is parked there (initial load + a send force
+  // `atBottom` true). A reply that lands while they've scrolled up doesn't yank
+  // them — the jump button appears instead.
   useLayoutEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
     if (pendingPrepend.current) {
       el.scrollTop = el.scrollHeight - pendingPrepend.current.prevHeight + pendingPrepend.current.prevTop;
       pendingPrepend.current = null;
-    } else {
+    } else if (atBottomRef.current) {
       el.scrollTop = el.scrollHeight;
+    } else {
+      setShowJump(true);
     }
   }, [messages, sending]);
+
+  // Follow live streaming content (the reply typing out, the trail growing) while
+  // stuck to the bottom. Fires per token/step; a no-op once the user scrolls up.
+  useLayoutEffect(() => {
+    if (atBottomRef.current) scrollToBottom(false);
+    else setShowJump(true);
+  }, [streamReply, streamTrail, scrollToBottom]);
 
   const loadOlder = useCallback(async () => {
     if (loadingRef.current || !hasMore) return;
@@ -277,7 +312,11 @@ export function AssistantClient({
 
   const onScroll = useCallback(() => {
     const el = scrollerRef.current;
-    if (el && el.scrollTop < 120) void loadOlder();
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= NEAR_BOTTOM_PX;
+    atBottomRef.current = nearBottom;
+    setShowJump(!nearBottom);
+    if (el.scrollTop < 120) void loadOlder();
   }, [loadOlder]);
 
   const clearAttachment = () => {
@@ -381,6 +420,10 @@ export function AssistantClient({
         : {}),
       pending: true,
     };
+    // A send always re-sticks to the bottom — the user wants to watch their own
+    // message + the reply, even if they'd scrolled up to read history.
+    atBottomRef.current = true;
+    setShowJump(false);
     setMessages((prev) => [...prev, optimistic]);
     setDraft('');
     // Open the live status stream for this turn (same uuid the server keys it
@@ -544,7 +587,8 @@ export function AssistantClient({
 
   return (
     <>
-      <div ref={scrollerRef} onScroll={onScroll} className="flex-1 overflow-y-auto scrollbar-thin px-6 py-6">
+      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div ref={scrollerRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-6 py-6">
         {turns.length === 0 ? (
           <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/30 px-4 py-10 text-center">
             {agentAvatar ? (
@@ -709,6 +753,17 @@ export function AssistantClient({
               )}
             </ul>
           </>
+        )}
+      </div>
+        {showJump && (
+          <button
+            type="button"
+            onClick={jumpToBottom}
+            aria-label="Jump to latest"
+            className="absolute bottom-4 left-1/2 z-10 flex size-9 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-md transition hover:bg-accent hover:text-accent-foreground"
+          >
+            <ArrowDown className="size-4" aria-hidden />
+          </button>
         )}
       </div>
 
