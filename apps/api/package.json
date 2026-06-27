@@ -12,10 +12,21 @@
   },
   "dependencies": {
     "@dbos-inc/dbos-sdk": "^4.22.6",
+    "@mantle/agent-runtime": "workspace:*",
+    "@mantle/api-keys": "workspace:*",
     "@mantle/assistant-runtime": "workspace:*",
+    "@mantle/content": "workspace:*",
     "@mantle/db": "workspace:*",
+    "@mantle/embeddings": "workspace:*",
+    "@mantle/files": "workspace:*",
+    "@mantle/heartbeats": "workspace:*",
+    "@mantle/storage": "workspace:*",
+    "@mantle/telegram": "workspace:*",
+    "@mantle/tools": "workspace:*",
     "@mantle/tracing": "workspace:*",
+    "@mantle/voice": "workspace:*",
     "drizzle-orm": "^0.38.3",
+    "pg-boss": "^10.1.6",
     "postgres": "^3.4.5"
   },
   "devDependencies": {

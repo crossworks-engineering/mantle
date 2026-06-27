@@ -1460,7 +1460,7 @@ async function ensureCoreToolsOnConversationalAgents(ownerId: string): Promise<s
   return updated;
 }
 
-async function main() {
+export async function startAgentRuntime() {
   const pg = postgres(DATABASE_URL!, { max: 2 });
   console.log('[agent] starting — config from agents table');
 
@@ -1634,26 +1634,18 @@ async function main() {
   }, SWEEP_INTERVAL_MS);
   console.log(`[agent] extract sweep every ${SWEEP_INTERVAL_MS / 1000}s (missed-event safety net)`);
 
-  // Stop the extractor queue gracefully on shutdown so in-flight jobs finish
-  // (and aren't left `active` in pgboss until the maintenance reaper expires
-  // them). Registered once; the handler is idempotent via stopExtractQueue.
-  for (const sig of ['SIGINT', 'SIGTERM'] as const) {
-    process.on(sig, () => {
-      console.log(`[agent] ${sig} — stopping extract queue`);
-      stopExtractQueue().finally(() => process.exit(0));
-    });
-  }
-
   await assertEmbeddingModelConsistency();
   await drainPending();
   await drainUnextractedNodes();
 
-  await new Promise<never>(() => {});
+  // Listeners + timers are now live; return so the host process (apps/api)
+  // stays alive via DBOS. Graceful extractor-queue shutdown is wired through
+  // stopAgentRuntime() below, called from apps/api's signal handler.
 }
 
 // Backstop: every LISTEN handler and setInterval above already routes its
 // errors through .catch() (the reflector + heartbeat ticks even back off),
-// but a rejection that slips past should log and keep the agent alive rather
+// but a rejection that slips past should log and keep the process alive rather
 // than crash-loop on a transient PostgresError (e.g. Postgres restarted and
 // briefly dropped connections). Docker would bounce us anyway; staying up is
 // strictly better — the listeners auto-resubscribe and the next tick recovers.
@@ -1661,7 +1653,13 @@ process.on('unhandledRejection', (reason) => {
   console.error('[agent] unhandledRejection (kept alive):', reason);
 });
 
-main().catch((err) => {
-  console.error('[agent] fatal:', err);
-  process.exit(1);
-});
+/**
+ * Graceful stop for the absorbed agent runtime — drains the extractor queue so
+ * in-flight pg-boss jobs finish (instead of being left `active` until the
+ * maintenance reaper expires them). apps/api's shutdown calls this alongside
+ * DBOS.shutdown(). Idempotent via stopExtractQueue.
+ */
+export async function stopAgentRuntime(): Promise<void> {
+  console.log('[agent] stopping extract queue');
+  await stopExtractQueue();
+}

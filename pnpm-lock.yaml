@@ -21,14 +21,20 @@ importers:
         specifier: ^2.1.9
         version: 2.1.9(@types/node@25.9.4)(lightningcss@1.32.0)
 
-  apps/agent:
+  apps/api:
     dependencies:
+      '@dbos-inc/dbos-sdk':
+        specifier: ^4.22.6
+        version: 4.22.6
       '@mantle/agent-runtime':
         specifier: workspace:*
         version: link:../../packages/agent-runtime
       '@mantle/api-keys':
         specifier: workspace:*
         version: link:../../packages/api-keys
+      '@mantle/assistant-runtime':
+        specifier: workspace:*
+        version: link:../../packages/assistant-runtime
       '@mantle/content':
         specifier: workspace:*
         version: link:../../packages/content
@@ -65,37 +71,6 @@ importers:
       pg-boss:
         specifier: ^10.1.6
         version: 10.4.2
-      postgres:
-        specifier: ^3.4.5
-        version: 3.4.9
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.5
-        version: 22.19.19
-      tsx:
-        specifier: ^4.19.2
-        version: 4.21.0
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-
-  apps/api:
-    dependencies:
-      '@dbos-inc/dbos-sdk':
-        specifier: ^4.22.6
-        version: 4.22.6
-      '@mantle/assistant-runtime':
-        specifier: workspace:*
-        version: link:../../packages/assistant-runtime
-      '@mantle/db':
-        specifier: workspace:*
-        version: link:../../packages/db
-      '@mantle/tracing':
-        specifier: workspace:*
-        version: link:../../packages/tracing
-      drizzle-orm:
-        specifier: ^0.38.3
-        version: 0.38.4(@types/react@19.2.14)(pg@8.20.0)(postgres@3.4.9)(react@19.2.6)
       postgres:
         specifier: ^3.4.5
         version: 3.4.9

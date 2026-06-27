@@ -396,26 +396,14 @@ services:
 
   # Dedicated durable-runner service: executes assistant/agent LLM work as DBOS
   # workflows (journaled to the mantle_dbos_sys system DB, provisioned in the
-  # migrate gate) so a turn survives navigation + a web restart. Same image,
-  # different command. Will absorb `agent` (Telegram + ticks) in a later step.
+  # migrate gate) so a turn survives navigation + a web restart. It ALSO hosts
+  # the absorbed agent runtime — the Telegram responder + the summarize/extract/
+  # heartbeat listeners + the reflector/heartbeat/extract-sweep ticks (formerly
+  # the separate `agent` service). Same image, different command.
   api:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
     command: ["pnpm", "-C", "apps/api", "start"]
     container_name: mantle_api
-    restart: unless-stopped
-    depends_on:
-      postgres:    { condition: service_healthy }
-      migrate:     { condition: service_completed_successfully }
-      ollama_pull: { condition: service_completed_successfully }
-    environment:
-      <<: *app-env
-    volumes:
-      - ${MANTLE_DATA_DIR:-./data}/files:/data/files
-
-  agent:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "apps/agent", "start"]
-    container_name: mantle_agent
     restart: unless-stopped
     depends_on:
       postgres:    { condition: service_healthy }
