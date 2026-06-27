@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
   ArrowRight,
@@ -28,18 +28,25 @@ import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { ToastProvider, useToast } from '@/components/ui/toast';
-import {
-  saveProfileStep,
-  saveAndTestKey,
-  testExistingKey,
-  provisionStep,
-  runSanityChecks,
-  saveInterview,
-  savePersonaStep,
-  finishOnboarding,
-  setOnboardingStep,
-  type SanityCheck,
-} from './actions';
+import { useQuery } from '@tanstack/react-query';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
+import { Spinner } from '@/components/ui/spinner';
+
+type SanityCheck = { label: string; ok: boolean; detail: string };
+
+type OnboardingState = {
+  onboarded: boolean;
+  step: string;
+  timezone: string;
+  locale: string;
+  savedServices: string[];
+  assistantAgentId: string | null;
+};
+
+/** POST one wizard step to the consolidated dispatcher. */
+function onboardingPost<T>(action: string, payload?: Record<string, unknown>): Promise<T> {
+  return apiSend<T>('/api/onboarding', 'POST', { action, ...(payload ?? {}) });
+}
 import type { TestApiKeyResult } from '@/lib/api-key-test';
 import type { ProvisionResult } from '@/lib/onboarding-provision';
 import { TelegramBotSection } from '@/components/telegram/telegram-bot-section';
@@ -74,17 +81,54 @@ function tempWord(t: number): string {
   return 'Creative';
 }
 
-export function OnboardingClient(props: {
-  initialStep: string;
-  initialTimezone: string;
-  initialLocale: string;
-  savedServices: string[];
-  assistantAgentId: string | null;
-}) {
+export function OnboardingClient() {
   return (
     <ToastProvider>
-      <Wizard {...props} />
+      <OnboardingGate />
     </ToastProvider>
+  );
+}
+
+/** Data-free gate: fetches the resume state over HTTP, honours the
+ *  already-onboarded redirect (with ?force bypass) client-side, then seeds the
+ *  wizard. Replaces the props the server page used to pass. */
+function OnboardingGate() {
+  const router = useRouter();
+  const force = useSearchParams().get('force') === '1';
+  const stateQuery = useQuery({
+    queryKey: ['onboarding'],
+    queryFn: () => apiFetch<OnboardingState>('/api/onboarding'),
+  });
+  useEffect(() => {
+    if (stateQuery.data?.onboarded && !force) router.replace('/');
+  }, [stateQuery.data, force, router]);
+
+  if (stateQuery.isPending || (stateQuery.data?.onboarded && !force)) {
+    return (
+      <div className="flex h-dvh items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+  if (stateQuery.isError && !stateQuery.data) {
+    return (
+      <div className="flex h-dvh flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+        <p>Couldn&apos;t start onboarding.</p>
+        <button type="button" onClick={() => stateQuery.refetch()} className="underline">
+          Retry
+        </button>
+      </div>
+    );
+  }
+  const d = stateQuery.data;
+  return (
+    <Wizard
+      initialStep={d.step}
+      initialTimezone={d.timezone}
+      initialLocale={d.locale}
+      savedServices={d.savedServices}
+      assistantAgentId={d.assistantAgentId}
+    />
   );
 }
 
@@ -157,14 +201,14 @@ function Wizard({
   function go(toIndex: number) {
     const next = Math.min(STEPS.length - 1, Math.max(0, toIndex));
     setIndex(next);
-    void setOnboardingStep(STEPS[next]!.key);
+    void onboardingPost('step', { step: STEPS[next]!.key });
   }
 
   // ── key step (shared by openrouter / voice / openai) ──────────────────────
   async function onSaveKey(service: string, value: string) {
     setBusy(true);
     try {
-      const res = await saveAndTestKey(service, value);
+      const res = await onboardingPost<{ saved: boolean; test: TestApiKeyResult }>('saveKey', { service, plaintext: value });
       if (res.saved) setSaved((s) => new Set(s).add(service));
       setResults((r) => ({ ...r, [service]: res.test }));
       if (res.test.ok) toast.success(`${res.test.provider} key works.`);
@@ -176,7 +220,7 @@ function Wizard({
   async function onRetest(service: string) {
     setBusy(true);
     try {
-      const t = await testExistingKey(service);
+      const t = await onboardingPost<TestApiKeyResult>('testKey', { service });
       setResults((r) => ({ ...r, [service]: t }));
       t.ok ? toast.success(`${t.provider} key works.`) : toast.error(t.message);
     } finally {
@@ -187,7 +231,7 @@ function Wizard({
   async function onProvision() {
     setBusy(true);
     try {
-      const res = await provisionStep();
+      const res = await onboardingPost<ProvisionResult>('provision');
       setProvision(res);
       toast.success('Your assistant and workers are set up.');
     } catch (err) {
@@ -200,7 +244,7 @@ function Wizard({
   async function onRunSanity() {
     setBusy(true);
     try {
-      setSanity(await runSanityChecks());
+      setSanity(await onboardingPost<SanityCheck[]>('sanity'));
     } finally {
       setBusy(false);
     }
@@ -215,7 +259,7 @@ function Wizard({
     }
     setBusy(true);
     try {
-      const res = await saveInterview(answers);
+      const res = await onboardingPost<{ ok: boolean; created: number; error?: string }>('interview', { answers });
       if (!res.ok) return toast.error(res.error ?? 'Could not save.');
       toast.success(`Saved ${res.created} thing${res.created === 1 ? '' : 's'} about you.`);
       go(index + 1);
@@ -227,7 +271,7 @@ function Wizard({
   async function onSavePersona() {
     setBusy(true);
     try {
-      const res = await savePersonaStep({ presetKey, assistantName, gender, temperature });
+      const res = await onboardingPost<{ ok: boolean; error?: string }>('persona', { presetKey, assistantName, gender, temperature });
       if (!res.ok) return toast.error(res.error ?? 'Could not save.');
       toast.success(`${assistantName} is ready.`);
       go(index + 1);
@@ -239,7 +283,7 @@ function Wizard({
   async function onFinish() {
     setBusy(true);
     try {
-      await finishOnboarding();
+      await onboardingPost('finish');
       router.push('/assistant');
       router.refresh();
     } finally {
@@ -577,7 +621,7 @@ function Wizard({
                 label: 'Continue',
                 onClick: async () => {
                   setBusy(true);
-                  const res = await saveProfileStep({ timezone, locale });
+                  const res = await onboardingPost<{ ok: boolean; error?: string }>('profile', { timezone, locale });
                   setBusy(false);
                   if (!res.ok) return toast.error(res.error ?? 'Could not save.');
                   go(index + 1);

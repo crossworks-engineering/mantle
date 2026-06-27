@@ -13,8 +13,8 @@ Litmus tests are from `docs/frontend-backend-split.md` §9 (definition of done).
 | DoD criterion | Status |
 |---|---|
 | No page/component/server-action imports `@mantle/db` (value) outside `/api` | ⚠️ **db itself: met** (all such imports are type-only) — but the *data packages* (`@mantle/content/email/files/calendar/tools`) ARE called in pages → coupling persists |
-| No server actions | ❌ **9 action files, 31 actions, all client-reachable** |
-| `revalidatePath` gone | ❌ **8 calls in 4 files** |
+| No server actions | ✅ **DONE (v0.65.x)** — all 9 action files removed; `grep "'use server'"` is empty |
+| `revalidatePath` gone | ✅ **DONE** — 0 calls remain |
 | Every screen reachable over HTTP | ❌ **~24 `(app)` routes still server-render against the DB**; several have no endpoint |
 | Bearer auth across all `/api` incl. SSE | ✅ **JSON `/api` done (v0.65.0)** — middleware 401s unauthenticated `/api`, all 138 routes use `getOwnerOr401`, opt-in CORS added. ⚠️ SSE `/api/realtime` still not bearer-ready (item #5) |
 | DB-less dev works | ⚠️ **mechanism built, 1 screen adopts it** — every other screen errors in remote mode |
@@ -108,9 +108,12 @@ proven 9-step recipe) plus a handful of *systemic* infra fixes (B server-action 
 2. ~~**App shell (C):** make `(app)/layout.tsx` data-free.~~ ✅ **DONE (v0.65.1)** — new
    `GET /api/shell`; layout is auth + cookies only; `AppShell` fetches chrome + owns the
    onboarding redirect.
-3. **Server actions (B):** for each of the 9 action files, add the `/api` endpoint + convert the
-   client to `apiSend`; delete the action + its `revalidatePath`. Pairs naturally with (A) since
-   they're the same screens (calendar/config/network/embedding/updates/keys/backups/docs/onboarding).
+3. ~~**Server actions (B):** for each of the 9 action files, add the `/api` endpoint + convert the
+   client.~~ ✅ **DONE (v0.65.x).** All 9 converted (config, backups, updates, calendar, network,
+   docs, embedding, keys, onboarding) — server pages are data-free, mutations go through new
+   `/api/**` endpoints via `apiSend`, every `'use server'` file + `revalidatePath` deleted. The
+   key-probe logic was extracted to `lib/api-key-test` (shared by keys + onboarding). This also
+   closed #4 for those 9 screens.
 4. **Unconverted screens (A):** build the missing endpoints (traces, debug/*, studio, calendar,
    config, network, embedding, backups), then convert page-by-page; wire the ones whose endpoint
    already exists.
