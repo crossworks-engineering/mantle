@@ -16,7 +16,7 @@ Litmus tests are from `docs/frontend-backend-split.md` §9 (definition of done).
 | No server actions | ❌ **9 action files, 31 actions, all client-reachable** |
 | `revalidatePath` gone | ❌ **8 calls in 4 files** |
 | Every screen reachable over HTTP | ❌ **~24 `(app)` routes still server-render against the DB**; several have no endpoint |
-| Bearer auth across all `/api` incl. SSE | ⚠️ accepted on success, but **~138/162 routes redirect (not 401) on failure**; SSE `/api/realtime` not bearer-ready; **no CORS on `/api`** |
+| Bearer auth across all `/api` incl. SSE | ✅ **JSON `/api` done (v0.65.0)** — middleware 401s unauthenticated `/api`, all 138 routes use `getOwnerOr401`, opt-in CORS added. ⚠️ SSE `/api/realtime` still not bearer-ready (item #5) |
 | DB-less dev works | ⚠️ **mechanism built, 1 screen adopts it** — every other screen errors in remote mode |
 | Phase 1 durable assistant path intact | ✅ unchanged |
 
@@ -100,8 +100,10 @@ proven 9-step recipe) plus a handful of *systemic* infra fixes (B server-action 
 
 ## Recommended remediation order
 
-1. **Systemic auth fix (D):** API routes `requireOwner` → `getOwnerOr401`; add CORS + `OPTIONS` to
-   `/api/**`; broaden the middleware bearer kind. (Unblocks every detached client at once.)
+1. ~~**Systemic auth fix (D):** API routes `requireOwner` → `getOwnerOr401`; add CORS + `OPTIONS` to
+   `/api/**`.~~ ✅ **DONE (v0.65.0).** Middleware 401s unauthenticated `/api` + opt-in CORS
+   (`MANTLE_API_CORS_ORIGINS`); all 138 routes gate via `getOwnerOr401`. (Bearer kind stays
+   mobile-only — the documented Electron/DB-less reuse path; revisit at Task 5 token issuance.)
 2. **App shell (C):** make `(app)/layout.tsx` data-free (client-fetch avatar + pending count).
 3. **Server actions (B):** for each of the 9 action files, add the `/api` endpoint + convert the
    client to `apiSend`; delete the action + its `revalidatePath`. Pairs naturally with (A) since
