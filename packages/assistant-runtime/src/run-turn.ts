@@ -71,6 +71,8 @@ import {
   step,
   runDurableStep,
   emitTurnLifecycle,
+  registerTurnAbort,
+  unregisterTurnAbort,
   modelSupportsVision,
   maxImageBytesFor,
   refreshModelCatalog,
@@ -316,6 +318,16 @@ export async function runAssistantTurn(
       outboundId: outboundPending.id,
     });
   }
+
+  // Register a per-turn AbortController so a user Stop (NOTIFY → the runner's
+  // cancel listener → abortTurn) can halt this turn's LLM generation. The tool
+  // loop reads the signal via currentTurnAbortSignal(); we inspect
+  // `.signal.aborted` after the loop to tell a stop from a real error. Retired at
+  // every exit below (success + the catch). No streamId ⇒ no stop affordance.
+  const abortController = options?.streamId ? registerTurnAbort(options.streamId, ownerId) : null;
+  const retireAbort = () => {
+    if (options?.streamId) unregisterTurnAbort(options.streamId);
+  };
 
   const attachedSkills = await resolveAgentSkills(ownerId, agent.skillSlugs ?? []);
   // Current-time / timezone / locale context so the assistant can resolve
@@ -619,27 +631,40 @@ export async function runAssistantTurn(
       });
     }
   } catch (err) {
-    // The turn could not produce a reply (the model errored and any image retry
-    // also failed). Flip the pending outbound row to 'failed' so the durable
-    // record + a reload + the non-blocking client all reflect it, emit the
-    // terminal error event, then re-throw — the workflow lands in ERROR and the
-    // blocking route's getResult() still rejects (unchanged failure surface).
-    const msg = err instanceof Error ? err.message : String(err);
-    await runDurableStep('fail_outbound', () =>
-      updateAssistantMessageOutcome({
-        ownerId,
-        id: outboundPending.id,
-        status: 'failed',
-        error: msg,
-      }),
-    ).catch((e) => console.error('[assistant] could not mark turn failed:', e));
-    if (options?.streamId) {
-      emitTurnLifecycle(options.streamId, ownerId, 'error', { message: msg });
+    // A user Stop normally surfaces gracefully (the streaming adapter returns its
+    // partial reply → the success path), but the one-shot/backup path can throw
+    // an AbortError instead. If this turn was aborted, treat it as a stop, not a
+    // failure: synthesize an empty outcome and let the success path finalize the
+    // (possibly partial-less) turn 'complete'.
+    if (abortController?.signal.aborted) {
+      loopOutcome = { reply: '', artifacts: [], iterations: 0, toolCalls: [] } as unknown as Awaited<
+        ReturnType<typeof runLoop>
+      >;
+    } else {
+      // Real failure: flip the pending outbound row to 'failed' so the durable
+      // record + a reload + the non-blocking client all reflect it, emit the
+      // terminal error event, then re-throw — the workflow lands in ERROR and the
+      // blocking route's getResult() still rejects (unchanged failure surface).
+      const msg = err instanceof Error ? err.message : String(err);
+      await runDurableStep('fail_outbound', () =>
+        updateAssistantMessageOutcome({
+          ownerId,
+          id: outboundPending.id,
+          status: 'failed',
+          error: msg,
+        }),
+      ).catch((e) => console.error('[assistant] could not mark turn failed:', e));
+      if (options?.streamId) {
+        emitTurnLifecycle(options.streamId, ownerId, 'error', { message: msg });
+      }
+      retireAbort();
+      throw err;
     }
-    throw err;
   }
+  // A user Stop ends the turn with whatever partial reply streamed (often empty).
+  const stopped = abortController?.signal.aborted === true;
   let rawReply = loopOutcome.reply;
-  if (!rawReply.trim()) {
+  if (!stopped && !rawReply.trim()) {
     // The tool loop already retried an empty final response once (see
     // retryEmptyReply in tool-loop.ts). Double-empty is rare enough that
     // failing the whole turn (a 500 after the inbound row persisted) is
@@ -689,7 +714,10 @@ export async function runAssistantTurn(
     .catch(() => {});
 
   // done: the durable outbound row is final — the client reconciles to it (the
-  // streamed buffer was advisory). No-op unless the turn is streamed.
+  // streamed buffer was advisory). A stopped turn finalizes the same way (its
+  // partial reply is the durable answer), so the client ends the turn cleanly.
+  // No-op unless the turn is streamed.
+  retireAbort();
   if (options?.streamId) {
     emitTurnLifecycle(options.streamId, ownerId, 'done', { outboundId: outboundPending.id });
   }

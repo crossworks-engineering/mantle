@@ -660,12 +660,22 @@ async function openrouterChatStream(
   };
 
   const startedAt = Date.now();
+  // The user already hit Stop before we even sent — don't spend the request.
+  if (opts.signal?.aborted) {
+    return { text: '', model: opts.model };
+  }
   let sent: AsyncIterable<OrStreamChunk>;
   try {
-    sent = (await client.chat.send({
-      chatRequest: chatRequest as unknown as Parameters<typeof client.chat.send>[0]['chatRequest'],
-    })) as unknown as AsyncIterable<OrStreamChunk>;
+    sent = (await client.chat.send(
+      {
+        chatRequest: chatRequest as unknown as Parameters<typeof client.chat.send>[0]['chatRequest'],
+      },
+      // Thread the cancellation signal into the underlying fetch so a Stop aborts
+      // the HTTP stream — halting upstream token generation, not just our reading.
+      ...(opts.signal ? [{ signal: opts.signal }] : []),
+    )) as unknown as AsyncIterable<OrStreamChunk>;
   } catch (err) {
+    if (opts.signal?.aborted) return { text: '', model: opts.model };
     throw enrichOpenRouterError(err, opts.model, Date.now() - startedAt);
   }
 
@@ -679,6 +689,9 @@ async function openrouterChatStream(
 
   try {
     for await (const chunk of sent) {
+      // User hit Stop — stop reading and keep whatever streamed so far. Breaking
+      // the iterator also closes the underlying stream (belt to the fetch signal).
+      if (opts.signal?.aborted) break;
       if (chunk.error) {
         throw new Error(
           `openrouter-chat stream error ${chunk.error.code ?? ''}: ${chunk.error.message ?? 'unknown'}`.trim(),
@@ -710,7 +723,22 @@ async function openrouterChatStream(
       }
     }
   } catch (err) {
-    throw enrichOpenRouterError(err, opts.model, Date.now() - startedAt);
+    // A user Stop aborts the underlying fetch, which surfaces here as an
+    // AbortError — that's not a failure: fall through and return the partial
+    // reply assembled so far. Any other error is a real stream fault.
+    if (!opts.signal?.aborted) throw enrichOpenRouterError(err, opts.model, Date.now() - startedAt);
+  }
+
+  // Stopped: return just the visible text assembled so far (drop any half-formed
+  // tool-call fragments, which would dispatch a malformed tool). The turn loop
+  // sees text + no tools and finalizes it as the — partial — answer.
+  if (opts.signal?.aborted) {
+    return {
+      text: text.trim(),
+      model,
+      tokensIn: usage?.promptTokens ?? usage?.prompt_tokens,
+      tokensOut: usage?.completionTokens ?? usage?.completion_tokens,
+    };
   }
 
   const toolCalls: ChatToolCall[] = [...toolAccum.entries()]

@@ -13,5 +13,10 @@
  * `@mantle/agent-runtime` — can import it without an import cycle.
  */
 
-export { TURN_EVENT_SCHEMA_VERSION, TURN_STREAM_CHANNEL } from './channel';
-export { publishTurnEvent, type TurnStreamEnvelope } from './publish';
+export { TURN_EVENT_SCHEMA_VERSION, TURN_STREAM_CHANNEL, TURN_CANCEL_CHANNEL } from './channel';
+export {
+  publishTurnEvent,
+  publishTurnCancel,
+  type TurnStreamEnvelope,
+  type TurnCancelEnvelope,
+} from './publish';

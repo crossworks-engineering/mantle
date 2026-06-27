@@ -16,6 +16,7 @@ import {
   MicOff,
   Paperclip,
   Send,
+  Square,
   X,
 } from 'lucide-react';
 import { formatDateTime } from '@/lib/format-datetime';
@@ -145,6 +146,9 @@ export function AssistantClient({
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  // True from the moment the user hits Stop until the turn settles — so the Stop
+  // button reflects "stopping…" and can't be double-fired.
+  const [stopping, setStopping] = useState(false);
   // Live "what's the agent doing" label. The stream (keyed on the in-flight
   // turn's id) pushes status the instant each step starts; the poll is the
   // fallback while streaming is off or before the socket connects. Stream wins.
@@ -351,9 +355,24 @@ export function AssistantClient({
   // no backlog, so a reconnect mid-turn could drop it).
   const endActiveTurn = useCallback(() => {
     setSending(false);
+    setStopping(false);
     setActiveTurnId(null);
     pendingTurnRef.current = null;
   }, []);
+
+  // Stop the in-flight turn: ask the runner to abort generation. The turn then
+  // finalizes with whatever partial reply streamed and fires `done`, so the
+  // normal completion path (phase effect / safety poll) reconciles it — no
+  // special teardown here. Fire-and-forget; a dropped cancel just means the turn
+  // runs a little longer.
+  const stopTurn = useCallback(() => {
+    const turnId = activeTurnId;
+    if (!turnId || stopping) return;
+    setStopping(true);
+    void apiFetch(`/api/assistant/turn/${turnId}/cancel`, { method: 'POST' }).catch(() => {
+      /* the done/poll path still reconciles; nothing to surface */
+    });
+  }, [activeTurnId, stopping]);
 
   const reconcileDone = useCallback(
     async (optimisticId: string) => {
@@ -671,6 +690,7 @@ export function AssistantClient({
       // Drop the optimistic row on error so the user can retry without dupes.
       setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
       setSending(false);
+      setStopping(false);
       setActiveTurnId(null);
       pendingTurnRef.current = null;
     }
@@ -1084,19 +1104,34 @@ export function AssistantClient({
                   }
                 }}
               />
-              <button
-                type="submit"
-                aria-label="Send"
-                title="Send (Enter)"
-                disabled={!agentReady || sending || (!draft.trim() && !attachedFile)}
-                className="flex w-12 shrink-0 items-center justify-center self-stretch rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
-              >
-                {sending ? (
-                  <Loader2 className="size-4 animate-spin" aria-hidden />
-                ) : (
+              {sending ? (
+                // Mid-turn the send button becomes a Stop button — one click aborts
+                // generation and keeps whatever partial reply has streamed.
+                <button
+                  type="button"
+                  onClick={stopTurn}
+                  aria-label="Stop"
+                  title="Stop generating"
+                  disabled={!activeTurnId || stopping}
+                  className="flex w-12 shrink-0 items-center justify-center self-stretch rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-40"
+                >
+                  {stopping ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                  ) : (
+                    <Square className="size-3.5 fill-current" aria-hidden />
+                  )}
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  aria-label="Send"
+                  title="Send (Enter)"
+                  disabled={!agentReady || (!draft.trim() && !attachedFile)}
+                  className="flex w-12 shrink-0 items-center justify-center self-stretch rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+                >
                   <CornerDownLeft className="size-4" aria-hidden />
-                )}
-              </button>
+                </button>
+              )}
             </div>
             {error && <p className="text-xs text-destructive">{error}</p>}
           </div>

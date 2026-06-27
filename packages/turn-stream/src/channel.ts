@@ -17,3 +17,14 @@ export const TURN_EVENT_SCHEMA_VERSION = 1;
  * `pg_notify`.
  */
 export const TURN_STREAM_CHANNEL = 'turn_stream';
+
+/**
+ * The Postgres `NOTIFY` channel that carries a user's request to CANCEL an
+ * in-flight turn from `apps/web` (the cancel route) to `apps/api` (the runner
+ * executing the turn). Payload is `{ ownerId, turnId }` — the runner aborts the
+ * matching turn's `AbortController`, halting LLM generation mid-stream. Separate
+ * from `turn_stream` (which flows the other way: runner → browser).
+ *
+ * A plain string literal — safe to pass to `pg_notify`.
+ */
+export const TURN_CANCEL_CHANNEL = 'turn_cancel';

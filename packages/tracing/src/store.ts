@@ -170,6 +170,54 @@ function nextTurnSeq(turnId: string): number {
   return n;
 }
 
+// ─── Per-turn abort registry (stop a streamed turn mid-flight) ───────────────
+//
+// A turn's LLM streaming call needs to be cancellable across the process
+// boundary: the user hits Stop in `apps/web`, which NOTIFYs `apps/api`, which
+// must abort the in-flight generation. The runner registers an AbortController
+// per turn (keyed by the streamId/turnId); the cancel listener calls `abortTurn`
+// and the chat dispatcher threads the signal into the adapter via
+// `currentTurnAbortSignal()` (read off the current trace's turnId, so delegated
+// sub-agents — which inherit the turnId — abort with the root turn too).
+const turnAbortControllers = new Map<string, { controller: AbortController; ownerId: string }>();
+
+/** Register an AbortController for `turnId`. The runner calls this at turn start
+ *  and {@link unregisterTurnAbort} in a finally. Returns the controller so the
+ *  runner can inspect `.signal.aborted` after the loop (a user stop vs. a real
+ *  error). */
+export function registerTurnAbort(turnId: string, ownerId: string): AbortController {
+  const controller = new AbortController();
+  turnAbortControllers.set(turnId, { controller, ownerId });
+  return controller;
+}
+
+/** Abort the in-flight turn `turnId` iff it belongs to `ownerId` (the isolation
+ *  check — a turnId guessed from another owner won't match). Returns whether a
+ *  matching live turn was found + aborted. NEVER throws. */
+export function abortTurn(ownerId: string, turnId: string): boolean {
+  const entry = turnAbortControllers.get(turnId);
+  if (!entry || entry.ownerId !== ownerId) return false;
+  try {
+    entry.controller.abort();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Drop a turn's controller (the turn ended). */
+export function unregisterTurnAbort(turnId: string): void {
+  turnAbortControllers.delete(turnId);
+}
+
+/** The AbortSignal for the CURRENT turn (read off the active trace's turnId), or
+ *  undefined outside a registered turn. The chat dispatcher passes this to the
+ *  streaming adapter so a Stop halts generation. */
+export function currentTurnAbortSignal(): AbortSignal | undefined {
+  const t = currentTrace();
+  return t?.turnId ? turnAbortControllers.get(t.turnId)?.controller.signal : undefined;
+}
+
 let stepObserver: StepObserver | null = null;
 
 /**

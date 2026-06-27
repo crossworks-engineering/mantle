@@ -25,7 +25,13 @@
  * providers (Anthropic, OR-via-Anthropic).
  */
 
-import { currentTrace, step, isTurnStreaming, emitTurnDelta } from '@mantle/tracing';
+import {
+  currentTrace,
+  step,
+  isTurnStreaming,
+  emitTurnDelta,
+  currentTurnAbortSignal,
+} from '@mantle/tracing';
 import {
   dispatchTool,
   getBuiltinRedactFields,
@@ -65,10 +71,13 @@ const DEFAULT_MAX_ITERATIONS = 6;
  * durable result. `round` tags each delta so the client can scope the live reply.
  */
 function dispatchChat(adapter: ChatDispatcher, opts: ChatOptions, round: number): Promise<ChatResult> {
+  // Thread the current turn's cancellation signal into every LLM call so a user
+  // Stop aborts generation (the streaming adapter returns its partial reply).
+  const withSignal = { ...opts, signal: currentTurnAbortSignal() };
   if (isTurnStreaming() && typeof adapter.chatStream === 'function') {
-    return adapter.chatStream(opts, (d) => emitTurnDelta(round, d.type, d.text));
+    return adapter.chatStream(withSignal, (d) => emitTurnDelta(round, d.type, d.text));
   }
-  return adapter.chat(opts);
+  return adapter.chat(withSignal);
 }
 
 /** Tools that return content authored by third parties (a fetched web page,

@@ -366,6 +366,12 @@ export interface ChatOptions {
    *  box behind NAT. Honoured by the `local-chat` adapter; inert when no proxy
    *  is configured. */
   viaTailnet?: boolean;
+  /** Cancellation signal for the request — wired by the tool loop so a user can
+   *  STOP an in-flight streamed turn. A streaming adapter passes it to the
+   *  underlying fetch and, on abort, stops reading and returns the partial reply
+   *  assembled so far (rather than throwing). Adapters that don't honour it just
+   *  run to completion. */
+  signal?: AbortSignal;
 }
 
 /** A user-visible delta surfaced by `chatStream` as the model produces output.
