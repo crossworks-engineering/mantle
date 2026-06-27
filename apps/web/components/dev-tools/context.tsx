@@ -96,7 +96,7 @@ export function DevToolsProvider({
   initialAgentTools,
   children,
 }: {
-  initialAgentTools: AgentToolInfo[];
+  initialAgentTools?: AgentToolInfo[];
   children: React.ReactNode;
 }) {
   const [environments, setEnvironments] = usePersistedState<Environment[]>(
@@ -126,7 +126,12 @@ export function DevToolsProvider({
   const sendSeq = useRef(0);
 
   const [mcp, setMcp] = useState<McpState>({ status: 'idle' });
-  const [agentTools, setAgentTools] = useState<AgentToolInfo[]>(initialAgentTools);
+  // Default to [] defensively: the provider self-fetches /api/tools on mount, so
+  // a missing/!array seed must never leave agentTools undefined (the sidebar
+  // calls .filter on it).
+  const [agentTools, setAgentTools] = useState<AgentToolInfo[]>(
+    Array.isArray(initialAgentTools) ? initialAgentTools : [],
+  );
   const [assistOpen, setAssistOpen] = useState(false);
 
   const activeEnv = useMemo(

@@ -14,9 +14,13 @@ import type { AgentToolInfo } from '@/lib/dev-tools/types';
  * /api/dev-tools/* routes inside the provider.
  */
 export function DevToolsClient() {
+  // Unwrap to the array — the ['tools'] cache is shared with settings/tools and
+  // settings/tool-groups, which both store `r.tools` (the array). Returning the
+  // wrapper object here would mean whichever screen filled the cache first wins,
+  // and the other reads the wrong shape (the bug that crashed this console).
   const toolsQuery = useQuery({
     queryKey: ['tools'],
-    queryFn: () => apiFetch<{ tools: AgentToolInfo[] }>('/api/tools'),
+    queryFn: () => apiFetch<{ tools: AgentToolInfo[] }>('/api/tools').then((r) => r.tools),
   });
 
   if (toolsQuery.isPending) {
@@ -37,5 +41,5 @@ export function DevToolsClient() {
     );
   }
 
-  return <DevToolsShell initialAgentTools={toolsQuery.data.tools} />;
+  return <DevToolsShell initialAgentTools={toolsQuery.data} />;
 }
