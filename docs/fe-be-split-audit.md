@@ -66,11 +66,12 @@ action. Two `<form action={serverAction}>` submits remain (`settings/calendar/ca
 `add-form.tsx:23`). **8 `revalidatePath` calls** (calendar/config/embedding/backups actions) — no
 meaning for a detached client.
 
-### C. The app shell reads the DB on every route
-`app/(app)/layout.tsx` calls `loadProfilePreferences` + `countPending` (+ `isOnboarded`) in-process
-and props them into `<AppShell>`. So *every* navigation hits the DB server-side even on converted
-screens. Needs a `GET /api/profile/me` + `GET /api/pending/count` (or reuse existing) fetched
-client-side (the `UsageCard` already does this correctly — `ownerId` prop, self-fetch).
+### C. The app shell reads the DB on every route — ✅ FIXED (v0.65.1)
+~~`app/(app)/layout.tsx` calls `loadProfilePreferences` + `countPending` (+ `isOnboarded`)
+in-process.~~ The layout is now data-free (auth + collapse cookies only); the avatar, the
+pending-approvals badge, and the onboarding gate are fetched client-side by `AppShell` via a new
+`GET /api/shell`, and the onboarding redirect moved into `AppShell`. The `UsageCard` already
+self-fetched (`ownerId` prop).
 
 ### D. Detached-client blockers (Electron / cross-origin / DB-less)
 - **Redirect-instead-of-401:** ~138/162 `/api` routes gate via `requireOwner`/`requireOwnerWithSource`,
@@ -104,7 +105,9 @@ proven 9-step recipe) plus a handful of *systemic* infra fixes (B server-action 
    `/api/**`.~~ ✅ **DONE (v0.65.0).** Middleware 401s unauthenticated `/api` + opt-in CORS
    (`MANTLE_API_CORS_ORIGINS`); all 138 routes gate via `getOwnerOr401`. (Bearer kind stays
    mobile-only — the documented Electron/DB-less reuse path; revisit at Task 5 token issuance.)
-2. **App shell (C):** make `(app)/layout.tsx` data-free (client-fetch avatar + pending count).
+2. ~~**App shell (C):** make `(app)/layout.tsx` data-free.~~ ✅ **DONE (v0.65.1)** — new
+   `GET /api/shell`; layout is auth + cookies only; `AppShell` fetches chrome + owns the
+   onboarding redirect.
 3. **Server actions (B):** for each of the 9 action files, add the `/api` endpoint + convert the
    client to `apiSend`; delete the action + its `revalidatePath`. Pairs naturally with (A) since
    they're the same screens (calendar/config/network/embedding/updates/keys/backups/docs/onboarding).
