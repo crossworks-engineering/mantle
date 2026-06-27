@@ -208,8 +208,9 @@ summarizer fed by ground truth, emitting `status` events on the same bus. Not a 
 > entry, the full AI-workers Settings form). Its **system prompt is the user-tunable verbosity dial**
 > (terse phrase → sentence → short paragraph; `max_tokens` is the length control). `narrateStatus`
 > resolves the `narrator` worker first and falls back to `summarizer` + the built-in concise prompt
-> on brains that don't have one (zero regression). Optional ⇒ fresh-onboarding only; adopt onto an
-> existing brain via Settings → AI workers. Still fire-and-forget, off the turn's critical path, tool
+> on brains that don't have one (zero regression). A **required baseline worker** ⇒ auto-seeds on fresh
+> onboarding AND reaches existing brains on the next upgrade (the reconcile's `requiredOnly` pass). Still
+> fire-and-forget, off the turn's critical path, tool
 > steps only; "Thinking…" stays plain (no narrator spend). The ground-truth-only / never-predict rule
 > above still holds — the narrator only restyles a real status line.
 

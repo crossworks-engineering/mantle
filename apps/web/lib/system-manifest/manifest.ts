@@ -829,11 +829,14 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
   { kind: 'search', name: 'Web search', required: false, provider: 'openrouter', model: 'perplexity/sonar' },
   { kind: 'search_advanced', name: 'Deep web search', required: false, provider: 'openrouter', model: 'perplexity/sonar-pro' },
   // Narrator — restyles the live turn "thought trail" status into the assistant's
-  // voice. Optional (the feature is flag-gated and the runtime falls back to the
-  // summarizer when absent), and the same cheap/fast workhorse model. The
-  // verbosity (phrase → sentence → paragraph) is tuned via the worker's system
-  // prompt + max_tokens in Settings → AI workers, not here.
-  { kind: 'narrator', name: 'Narrator', required: false, provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
+  // voice. A BASELINE worker: required so it auto-seeds on fresh onboarding AND
+  // reaches existing brains on upgrade (the reconcile's requiredOnly pass). Same
+  // cheap/fast workhorse model as the indexing workers. It isn't part of the
+  // indexing pipeline, and if it's ever missing the runtime falls back to the
+  // summarizer — so narration degrades gracefully. Verbosity (phrase → sentence →
+  // paragraph) is tuned via the worker's system prompt + max_tokens in Settings →
+  // AI workers, not here.
+  { kind: 'narrator', name: 'Narrator', required: true, provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
 ];
 
 // ── Derived selectors (single computation; kills the duplication) ────────────

@@ -114,10 +114,14 @@ See [`docs/live-turn-streaming.md`](live-turn-streaming.md) §5–§7, §9. In s
   AI-workers Settings form, `CAPABILITY_FOR_KIND`). `narrateStatus` resolves the `narrator` worker first and
   honours its `systemPrompt` (the **verbosity dial** — phrase vs sentence vs paragraph) + `temperature`/
   `max_tokens`; brains without one fall back to `summarizer` + the built-in concise prompt (zero
-  regression). The narrator is **optional** ⇒ seeded on fresh onboarding only — an existing brain gets one
-  via Settings → AI workers → *Add* or `/settings/config` → *Adopt from template*. The one-line `tidy` cap
-  was relaxed 80→400 so a longer setting isn't truncated. Verified end-to-end on the local brain (concise
-  fallback vs a full paragraph once a tuned narrator worker is the default).
+  regression). The narrator is a **required baseline worker** ⇒ auto-seeds on fresh onboarding AND reaches
+  existing brains on the next upgrade (the reconcile's `requiredOnly` pass), same `gemini-3.1-flash-lite` as
+  the indexing workers. It isn't part of the indexing pipeline, so the health checks were de-coupled from
+  "indexing degraded" wording (config-diff message generic; integrity §8 → "Baseline workers", ready-list
+  derived from the required kinds). The one-line `tidy` cap was relaxed 80→400 so a longer setting isn't
+  truncated. Verified end-to-end on the local brain (concise fallback vs a full paragraph once a tuned
+  narrator worker is the default) and the `requiredOnly` reconcile path (seeds the narrator onto an existing
+  brain).
 - **Cross-reload persistence** of the thought record (survive a hard refresh): store a compact trail on the
   outbound `assistant_messages.data`, or derive it from the turn's trace on read. Currently session-scoped.
 - **Narrate "Thinking…" too?** Skipped today to save spend; revisit if the voice should be continuous.
