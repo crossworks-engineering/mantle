@@ -178,12 +178,47 @@ async function getBearerUser(): Promise<SessionUser | null> {
 
 export { SESSION_COOKIE_NAME };
 
+/**
+ * DB-less dev identity. When the frontend is detached (pointed at a remote API
+ * via `NEXT_PUBLIC_MANTLE_API_BASE` with a `NEXT_PUBLIC_MANTLE_API_TOKEN`
+ * bearer), the browser fetches all data straight from the remote — so the local
+ * Next server has no Postgres and the usual `authUsers` lookup would crash. This
+ * stands in for that lookup: it *decodes* (does NOT verify — the token is signed
+ * by the remote, not us) the bearer to learn which user the detached client acts
+ * as, so the local page auth gate agrees with the remote data the client sees.
+ *
+ * Triple-gated and impossible in production: returns null unless
+ * `NODE_ENV !== 'production'` AND both detached-mode env vars are set. See
+ * docs/db-less-dev.md. Email isn't in the token; `MANTLE_DEV_EMAIL` overrides
+ * the placeholder for the few surfaces that show it.
+ */
+function detachedDevUser(): SessionUser | null {
+  if (process.env.NODE_ENV === 'production') return null;
+  const base = process.env.NEXT_PUBLIC_MANTLE_API_BASE?.trim();
+  const token = process.env.NEXT_PUBLIC_MANTLE_API_TOKEN?.trim();
+  if (!base || !token) return null;
+  try {
+    const dot = token.lastIndexOf('.');
+    const payload = dot > 0 ? token.slice(0, dot) : token;
+    const data = JSON.parse(b64urlDecode(payload).toString('utf8'));
+    if (typeof data.uid !== 'string') return null;
+    return { id: data.uid, email: process.env.MANTLE_DEV_EMAIL?.trim() || 'dev@localhost' };
+  } catch {
+    return null;
+  }
+}
+
 /** Resolve the current user AND how they authenticated. Cookie first ('web'),
  *  then a mobile bearer ('mobile'). Returns null when neither resolves. The
  *  source is what lets a turn be tagged with the right ConversationChannel. */
 export async function getSessionUserWithSource(): Promise<
   { user: SessionUser; source: AuthSource } | null
 > {
+  // DB-less dev: a detached frontend has no local Postgres, so the configured
+  // remote identity stands in for the cookie→authUsers lookup. No-op in prod.
+  const dev = detachedDevUser();
+  if (dev) return { user: dev, source: 'web' };
+
   const c = (await cookies()).get(SESSION_COOKIE_NAME);
   if (c) {
     const data = verify(c.value);

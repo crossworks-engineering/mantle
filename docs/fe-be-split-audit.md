@@ -97,10 +97,14 @@ self-fetched (`ownerId` prop).
 - **Middleware bearer is mobile-only.** `middleware.ts` accepts only `k:'m'` tokens; a general
   detached token kind won't pass the Edge gate.
 
-### E. DB-less seam built but unadopted
-`lib/remote-data.ts` (`isRemoteData`/`remoteGet`) + `docs/db-less-dev.md` are correct, but only
-`lib/data/email-accounts.ts` (→ `settings/accounts`) adopts it. Every other screen errors in remote
-mode. Adoption shares work with the client-fetch conversion (A) — do them together via `lib/data/*`.
+### E. DB-less dev — ✅ DONE (item #6)
+The original server-side seam (`lib/remote-data.ts` + `lib/data/email-accounts.ts`) was **superseded
+by #4 and removed**: once every screen is client-fetched, the browser talks straight to the remote via
+`apiFetch`'s `NEXT_PUBLIC_MANTLE_API_BASE`/`_TOKEN` support, so no server-rendered DB read needs a
+seam. The only residual server-side DB read on a data-free page — the auth gate — is handled by
+`detachedDevUser()` (`lib/auth.ts`): in detached mode it decodes the bearer for the identity instead
+of querying `authUsers`. Triple-gated (impossible in prod). Rewritten: `docs/db-less-dev.md`. NOT
+runtime-verified (needs a live remote + minted token; a 2nd dev server collides with the running stack).
 
 ## Is it well implemented? 
 
@@ -133,8 +137,10 @@ proven 9-step recipe) plus a handful of *systemic* infra fixes (B server-action 
 5. ~~**SSE (D):** fetch-based reader honoring base-URL + bearer, so `/api/realtime` works detached.~~
    ✅ **DONE.** New `apiEventStream` in `lib/api-fetch.ts`; `useRealtime` uses it instead of
    `EventSource`. Follow-ups: raw-asset `src`s + assistant turn/stream still browser-native.
-6. **DB-less (E):** route the converted pages through `lib/data/*`; expand `docs/db-less-dev.md`
-   coverage as screens land.
+6. ~~**DB-less (E):** route the converted pages through `lib/data/*`.~~ ✅ **DONE.** Superseded by #4 —
+   the client-fetch path (`apiFetch` + `NEXT_PUBLIC_MANTLE_API_BASE`) *is* the DB-less mechanism;
+   removed the orphaned `lib/remote-data.ts` + `lib/data/*` seam and made the local auth gate DB-less
+   via `detachedDevUser()`. `docs/db-less-dev.md` rewritten.
 7. **Cosmetic:** relocate the 3 type-only `@mantle/db` client imports (persona-notes-editor,
    calendar-row, drives-list) into `@mantle/client-types`.
 

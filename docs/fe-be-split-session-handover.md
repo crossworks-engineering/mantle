@@ -12,9 +12,9 @@ recipe).
 
 ---
 
-## Where things stand: #1–#5 are CLOSED. #6/#7 remain.
+## Where things stand: #1–#6 are CLOSED. Only #7 (cosmetic) remains.
 
-The remediation list (full detail in the audit doc) is a 7-item plan. The first five are **done**:
+The remediation list (full detail in the audit doc) is a 7-item plan. The first six are **done**:
 
 | # | What | Status |
 |---|------|--------|
@@ -23,7 +23,7 @@ The remediation list (full detail in the audit doc) is a 7-item plan. The first 
 | #3 | Eliminated **all 9** `'use server'` files (config, backups, updates, calendar, network, docs, embedding, keys, onboarding); `revalidatePath` gone | ✅ v0.66.0 |
 | #4 | **Every dynamic `(app)` screen is now client-fetched** (24 screens, v0.66.1–0.66.20) | ✅ v0.66.20 |
 | #5 | SSE bearer for `/api/realtime` — new fetch-based `apiEventStream` (base-URL + bearer) replaces `EventSource` in `useRealtime` | ✅ v0.66.21 (raw-asset `src`s + assistant stream internals remain) |
-| #6 | DB-less seam adoption (`lib/remote-data.ts`) | ⬜ TODO |
+| #6 | DB-less dev — superseded by #4; client-fetch path is the mechanism, local auth gate made DB-less (`detachedDevUser`), orphaned seam removed | ✅ v0.66.22 |
 | #7 | Cosmetic: relocate 3 type-only `@mantle/db` client imports | ⬜ TODO |
 
 **Verification sweep (v0.66.20) is clean:** the only non-type `@/lib`/`@mantle` data imports left in
@@ -75,7 +75,7 @@ Per screen (mirrors `docs/client-data-fetching.md`):
 
 ---
 
-## Remaining work (priority order)
+## Work log + remaining (#7 is all that's left)
 
 ### #5 — SSE bearer for `/api/realtime` ✅ DONE (v0.66.21)
 - **Route side was already fine:** `app/api/realtime/route.ts` gates via `getOwnerOr401()`, so it
@@ -93,11 +93,17 @@ Per screen (mirrors `docs/client-data-fetching.md`):
   (cookie) today; a fully detached client needs a token-in-query or signed-URL approach for the asset
   `src`s and an `apiFetch`/`apiEventStream` pass over the assistant transport.
 
-### #6 — DB-less seam adoption
-`lib/remote-data.ts` (`isRemoteData`/`remoteGet`) is built but adopted by exactly one module
-(`lib/data/email-accounts.ts`). Now that every screen is client-fetched, the cleanest path may be to
-lean on the pure client-fetch path rather than retrofit `lib/data/*` everywhere — decide per screen.
-See `docs/db-less-dev.md`. NOT runtime-verified (needs a live remote + minted token).
+### #6 — DB-less dev ✅ DONE (v0.66.22)
+Resolved by **pivoting to the client-fetch path** (decision: #4 made the original server seam
+obsolete). The seam (`lib/remote-data.ts` + `lib/data/email-accounts.ts`) was already orphaned — its
+one adopter, `/settings/accounts`, became client-fetched in #4 — so it was **removed**. The DB-less
+mechanism is now simply `apiFetch` + `NEXT_PUBLIC_MANTLE_API_BASE`/`_TOKEN`: the browser fetches the
+remote directly, so the local Next server needs no DB for screen data. The only residual server-side
+DB read on a data-free page — the auth gate (`requireOwner`→`getSessionUser`→`authUsers`) — is now
+handled by `detachedDevUser()` (`lib/auth.ts`), which **decodes** (not verifies) the bearer for the
+identity instead of querying the DB. Triple-gated: `NODE_ENV!=='production'` AND both detached env
+vars set → impossible in prod. `docs/db-less-dev.md` rewritten to this model. NOT runtime-verified
+(needs a live remote + minted token; 2nd dev server collides with the running stack).
 
 ### #7 — cosmetic
 Relocate the 3 type-only `@mantle/db` client imports (`persona-notes-editor`, `calendar-row`,
@@ -168,7 +174,7 @@ highest-value things to eyeball:
   **don't tag** (tag-push is the publish event). **Push** updates PR #1 — the user has been fine with
   continuous pushing this arc but **offer/confirm** rather than assume.
 - This arc's version history: #1 → 0.65.0 · #2 → 0.65.1 · #3 → 0.66.0 · #4 → 0.66.1…0.66.20 ·
-  #5 → **0.66.21**.
+  #5 → 0.66.21 · #6 → **0.66.22**.
 
 ## Key files / reference points
 

@@ -1,11 +1,13 @@
 /**
- * Client-side fetch helper for the `/api/**` surface — the browser counterpart
- * to the server `remote-data` seam (Phase 2 · Task 4).
+ * Client-side fetch helper for the `/api/**` surface — the single data transport
+ * for the detached frontend (Phase 2 · Task 4 / DB-less dev).
  *
  * Same-origin by default: relative URL + cookie auth, exactly as today. When
  * `NEXT_PUBLIC_MANTLE_API_BASE` is set (Electron, or a detached/DB-less browser
  * client) it targets that origin and attaches the `NEXT_PUBLIC_MANTLE_API_TOKEN`
- * bearer — since cross-origin requests can't rely on the session cookie.
+ * bearer — since cross-origin requests can't rely on the session cookie. In that
+ * detached mode the browser talks straight to the remote API, so the local Next
+ * server needs no database (see `detachedDevUser` in lib/auth + docs/db-less-dev.md).
  *
  * Throws an `ApiError` carrying the endpoint's `{ error }` message on non-2xx so
  * TanStack Query surfaces it in `error` / `onError`.
