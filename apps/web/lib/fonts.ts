@@ -10,13 +10,16 @@ import localFont from 'next/font/local';
 export const fontSans = localFont({
   variable: '--font-sans',
   display: 'swap',
-  // woff2 (not ttf): ~349KB/385KB vs ~875KB/905KB — small enough to load within
-  // the window, so the earlier "preloaded but not used within a few seconds"
-  // warning (a slow ~875KB .ttf finishing after the window's load event) is
-  // resolved and preload can stay on. To regenerate: download the upstream Inter
-  // variable .ttf (rsms/inter) and run `woff2_compress <file>.ttf` (brew install
-  // woff2), then drop the .woff2 into /public/Inter.
-  preload: true,
+  // No <link rel=preload>: next/font preloads EVERY src entry, and the italic
+  // face is rarely rendered within the window's load event, so preloading it
+  // trips "preloaded but not used within a few seconds" on nearly every page.
+  // next/font has no per-src preload toggle, and splitting normal/italic into two
+  // localFont calls would break real italic (font-style:italic would fall back to
+  // faux-synthesised slant). The faces are woff2 (~349KB/385KB, converted from
+  // the .ttf with `woff2_compress` — brew install woff2), small enough that the
+  // swap is quick without preload. Regenerate: woff2_compress on the upstream
+  // Inter variable .ttf (rsms/inter), then drop the .woff2 into /public/Inter.
+  preload: false,
   fallback: [
     'ui-sans-serif',
     'system-ui',
