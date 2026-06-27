@@ -19,6 +19,7 @@ import { startAgentRuntime, stopAgentRuntime } from './agent/runtime';
 // runs at import, before launch).
 import './workflows/ping';
 import './workflows/assistant-turn';
+import { enqueueTelegramTurn } from './workflows/telegram-turn';
 
 async function main(): Promise<void> {
   configureDBOS();
@@ -33,7 +34,10 @@ async function main(): Promise<void> {
   // Absorbed agent runtime: wires up the Telegram responder + background ticks
   // in this same process. Returns once its listeners + timers are live; the
   // process is kept alive by DBOS. A boot failure here is fatal (same as DBOS).
-  await startAgentRuntime();
+  // The Telegram responder turn runs as a durable DBOS workflow — we inject the
+  // enqueuer (registered above) to keep runtime.ts free of a workflow import
+  // cycle (the workflow imports handleTelegramMessage from runtime.ts).
+  await startAgentRuntime({ enqueueTelegramTurn });
 
   let shuttingDown = false;
   const shutdown = (sig: string) => {

@@ -1,10 +1,15 @@
 /**
- * Mantle agent. Listens on Postgres for `telegram_message_inserted` notifies
- * and replies via OpenRouter.
+ * Mantle agent runtime — absorbed into apps/api (was the standalone apps/agent
+ * service). Listens on Postgres for `telegram_message_inserted` notifies and
+ * replies via OpenRouter, plus the summarize/extract/heartbeat listeners and the
+ * reflector/heartbeat/extract-sweep ticks. `startAgentRuntime()` wires it all up
+ * in the runner process; the process is kept alive by DBOS.
  *
  *   pg_notify (from migration 0009 trigger; only inbound rows now)
  *      ↓
- *   handleMessage(messageId)
+ *   enqueueTelegramTurn(messageId)  → durable DBOS workflow (telegram-turn.ts)
+ *      ↓
+ *   handleTelegramMessage(messageId)  — runs under withDurableSteps
  *      ↓
  *   resolve responder agent from `agents` (highest-priority enabled row)
  *      ↓
@@ -62,7 +67,7 @@ import {
   type TtsParams,
 } from '@mantle/db';
 import { resolveEmbeddingConfig } from '@mantle/embeddings';
-import { maxImageBytesFor, modelSupportsVision, recordIngest, refreshModelCatalog, startTrace, step } from '@mantle/tracing';
+import { maxImageBytesFor, modelSupportsVision, recordIngest, refreshModelCatalog, runDurableStep, startTrace, step } from '@mantle/tracing';
 import {
   buildChatMessages,
   buildAttachmentContextText,
@@ -225,7 +230,17 @@ function toConversationAttachments(
   return out;
 }
 
-async function handleMessage(messageId: string): Promise<void> {
+/**
+ * Run one Telegram responder turn for an inbound message. Exported so the
+ * durable runner (apps/api/src/workflows/telegram-turn.ts) can execute it as a
+ * DBOS workflow under `withDurableSteps`: every @mantle/tracing `step()` here
+ * (download/extract, transcribe, the tool loop, send_telegram, persist_outbound)
+ * plus the two `runDurableStep` boundaries below (the atomic claim + the inbound
+ * recordTurn) becomes a journaled step, so a crash mid-turn resumes from the
+ * last completed step — no re-sent Telegram message, no duplicate rows. Outside
+ * a workflow (e.g. a direct call), step()/runDurableStep are pure passthrough.
+ */
+export async function handleTelegramMessage(messageId: string): Promise<void> {
   const [row] = await db
     .select({
       id: telegramMessages.id,
@@ -304,12 +319,18 @@ async function handleMessage(messageId: string): Promise<void> {
   // surface. Hot-reload-driven duplicates were the original symptom. Doing
   // it here (before the download) also stops a duplicate notify from
   // double-ingesting the attachment.
-  const claim = await db
-    .update(telegramMessages)
-    .set({ processed: true, processedAt: new Date() })
-    .where(and(eq(telegramMessages.id, row.id), eq(telegramMessages.processed, false)))
-    .returning({ id: telegramMessages.id });
-  if (claim.length === 0) return;
+  // Journaled so a crash-resume doesn't re-run the claim and short-circuit:
+  // on replay this returns the original `true` (the row is now processed, so a
+  // bare re-run would see 0 rows and wrongly abandon the turn mid-flight).
+  const claimed = await runDurableStep('claim_message', async () => {
+    const claim = await db
+      .update(telegramMessages)
+      .set({ processed: true, processedAt: new Date() })
+      .where(and(eq(telegramMessages.id, row.id), eq(telegramMessages.processed, false)))
+      .returning({ id: telegramMessages.id });
+    return claim.length > 0;
+  });
+  if (!claimed) return;
 
   // Ingest the attachment (if any) into a file node + inline extraction BEFORE
   // the responder runs. The save fires the extractor (durable metadata); this
@@ -651,19 +672,23 @@ async function handleMessage(messageId: string): Promise<void> {
         // record. Done HERE (not at poll time) because the responder agent is
         // only resolved now; the atomic processed-claim above guarantees this
         // runs exactly once per inbound. See docs/conversation.md.
-        const convInbound = await recordTurn({
-          ownerId: USER_ID!,
-          agentId: agent.id,
-          direction: 'inbound',
-          text: row.text,
-          channel: 'telegram',
-          attachments: toConversationAttachments(row.attachments, attachmentContext?.nodeId ?? null),
-          externalRef: {
-            accountId: row.accountId,
-            chatId: row.telegramChatId,
-            ...(row.telegramMessageId ? { messageId: row.telegramMessageId } : {}),
-          },
-        });
+        // Journaled (like the web /assistant path) so a crash-resume doesn't
+        // insert a duplicate inbound conversation row.
+        const convInbound = await runDurableStep('record_inbound', () =>
+          recordTurn({
+            ownerId: USER_ID!,
+            agentId: agent.id,
+            direction: 'inbound',
+            text: row.text,
+            channel: 'telegram',
+            attachments: toConversationAttachments(row.attachments, attachmentContext?.nodeId ?? null),
+            externalRef: {
+              accountId: row.accountId,
+              chatId: row.telegramChatId,
+              ...(row.telegramMessageId ? { messageId: row.telegramMessageId } : {}),
+            },
+          }),
+        );
         // Telegram is reminder-capable, so messaging a bot makes Telegram the
         // reminder destination (until the user next messages from the app).
         // Best-effort — must never break the inbound. See reminder-delivery-routing.md.
@@ -679,7 +704,9 @@ async function handleMessage(messageId: string): Promise<void> {
                 inboundText: row.text,
                 // Exclude the inbound we just recorded; only look before it.
                 excludeMessageId: convInbound.id,
-                before: convInbound.createdAt,
+                // `new Date(...)` because on a crash-resume replay the journaled
+                // record_inbound row deserializes createdAt to an ISO string.
+                before: new Date(convInbound.createdAt),
               });
               h.setOutput({
                 turnCount: ctx.history.length,
@@ -1208,7 +1235,9 @@ async function handleMessage(messageId: string): Promise<void> {
   }
 }
 
-async function drainPending(): Promise<void> {
+async function drainPending(
+  enqueueTelegramTurn: (messageId: string) => Promise<unknown>,
+): Promise<void> {
   // Self-heal: inbound rows that already have an outbound reply but were
   // never marked processed (typically because a previous run crashed or
   // was hot-reloaded between sending Telegram and the final DB UPDATE).
@@ -1242,8 +1271,10 @@ async function drainPending(): Promise<void> {
     return;
   }
   console.log(`[agent] drain: ${rows.length} pending message(s)`);
+  // Enqueue durable workflows (idempotent on message id) rather than running
+  // inline; the queue's concurrency cap throttles the backlog.
   for (const r of rows) {
-    await handleMessage(r.id);
+    await enqueueTelegramTurn(r.id);
   }
 }
 
@@ -1460,7 +1491,14 @@ async function ensureCoreToolsOnConversationalAgents(ownerId: string): Promise<s
   return updated;
 }
 
-export async function startAgentRuntime() {
+/** Options for the absorbed agent runtime. `enqueueTelegramTurn` is injected by
+ *  apps/api (it owns the DBOS workflow registration) to avoid an import cycle
+ *  between this module and the workflow that wraps `handleTelegramMessage`. */
+export interface AgentRuntimeOptions {
+  enqueueTelegramTurn: (messageId: string) => Promise<unknown>;
+}
+
+export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   const pg = postgres(DATABASE_URL!, { max: 2 });
   console.log('[agent] starting — config from agents table');
 
@@ -1501,8 +1539,11 @@ export async function startAgentRuntime() {
 
   await pg.listen('telegram_message_inserted', (payload: string) => {
     if (!payload) return;
-    handleMessage(payload).catch((err) =>
-      console.error('[agent] handle error:', err instanceof Error ? err.message : err),
+    // Enqueue a durable DBOS workflow (workflowID = message id → idempotent: a
+    // duplicate notify dedups to the same run) instead of running the turn
+    // inline, so it survives a process restart via DBOS auto-recovery.
+    opts.enqueueTelegramTurn(payload).catch((err) =>
+      console.error('[agent] enqueue telegram turn error:', err instanceof Error ? err.message : err),
     );
   });
   console.log('[agent] LISTENing on telegram_message_inserted');
@@ -1635,7 +1676,7 @@ export async function startAgentRuntime() {
   console.log(`[agent] extract sweep every ${SWEEP_INTERVAL_MS / 1000}s (missed-event safety net)`);
 
   await assertEmbeddingModelConsistency();
-  await drainPending();
+  await drainPending(opts.enqueueTelegramTurn);
   await drainUnextractedNodes();
 
   // Listeners + timers are now live; return so the host process (apps/api)
