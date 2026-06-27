@@ -5,11 +5,13 @@ import { apiEventStream } from '@/lib/api-fetch';
 import { isTurnStreamingEnabledClient } from '@/lib/turn-streaming';
 import type { TurnEvent } from '@mantle/client-types';
 
-/** One grounded step in a turn's thought trail (a `status` event, kept). */
+/** One step in a turn's thought trail (a `status` event, kept). */
 export interface ThoughtEvent {
+  /** Stable step id — lets a later narrated event replace this line in place. */
+  stepId?: string;
   /** Coarse bucket for the icon/theme (thinking | web | brain | delegate | tool). */
   kind: string;
-  /** The user-facing line ("Searching your brain for “Pinnacle”…"). */
+  /** The user-facing line ("Let me dig through your notes on cars…"). */
   label: string;
 }
 
@@ -47,12 +49,24 @@ export function useTurnStream(turnId: string | null): TurnStream {
         try {
           const ev = JSON.parse(data) as TurnEvent;
           if (ev && ev.type === 'status' && typeof ev.data?.label === 'string') {
-            const next: ThoughtEvent = { kind: ev.data.kind ?? 'tool', label: ev.data.label };
+            const stepId = ev.data.stepId;
+            const incoming: ThoughtEvent = { stepId, kind: ev.data.kind ?? 'tool', label: ev.data.label };
             setTrail((prev) => {
-              // Collapse consecutive duplicates (e.g. Thinking… → Thinking…).
+              // Upgrade in place: a later narrated event for the same step
+              // replaces the grounded line rather than appending a duplicate.
+              if (stepId) {
+                const i = prev.findIndex((t) => t.stepId === stepId);
+                if (i >= 0) {
+                  if (prev[i]!.label === incoming.label) return prev;
+                  const copy = prev.slice();
+                  copy[i] = { ...copy[i]!, label: incoming.label, kind: incoming.kind };
+                  return copy;
+                }
+              }
+              // Append, collapsing a consecutive duplicate label (Thinking… ×3).
               const last = prev[prev.length - 1];
-              if (last && last.label === next.label) return prev;
-              return [...prev, next];
+              if (last && last.label === incoming.label) return prev;
+              return [...prev, incoming];
             });
           }
         } catch {

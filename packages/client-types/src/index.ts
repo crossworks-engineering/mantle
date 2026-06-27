@@ -437,11 +437,16 @@ export interface TurnStartData {
   model: string | null;
 }
 
-/** A short, grounded "what it's doing now" line ("Searching your brain…").
- *  `kind` is an optional coarse bucket the UI can theme/iconify. */
+/** A short "what it's doing now" line ("Searching your brain…"). `kind` is an
+ *  optional coarse bucket the UI can theme/iconify. `stepId` ties together the
+ *  grounded line and its later narrated upgrade for the SAME step, so the client
+ *  replaces the line in place rather than appending a duplicate. */
 export interface TurnStatusData {
   label: string;
   kind?: string;
+  /** Stable id for the step this status describes. Two events sharing a stepId
+   *  are the same step (grounded → narrated); the client upserts by it. */
+  stepId?: string;
 }
 
 /** A tool round began. `summary` is an optional one-line, secret-free preview. */

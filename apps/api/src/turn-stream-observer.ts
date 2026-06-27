@@ -17,27 +17,45 @@
  */
 
 import { setStepObserver, type StepObserverEvent } from '@mantle/tracing';
-import { stageLabelForStep } from '@mantle/assistant-runtime';
+import { stageLabelForStep, type StageLabel } from '@mantle/assistant-runtime';
 import { publishTurnEvent, TURN_EVENT_SCHEMA_VERSION } from '@mantle/turn-stream';
 import type { TurnEvent } from '@mantle/client-types';
+import { isTurnNarrationEnabled, narrateStatus } from './turn-narration';
+
+/** Build a `status` event for one step. `stepId` ties the grounded line to its
+ *  later narrated upgrade so the client replaces it in place. */
+function statusEvent(e: StepObserverEvent, label: string, stage: StageLabel, stepId: string): TurnEvent {
+  return {
+    v: TURN_EVENT_SCHEMA_VERSION,
+    turnId: e.turnId,
+    seq: e.seq,
+    round: 0, // tool-loop round — populated in a later phase
+    type: 'status',
+    data: { label, kind: stage.kind, stepId },
+  };
+}
 
 export function installTurnStreamObserver(): void {
   setStepObserver((e: StepObserverEvent) => {
-    // Step 1: narrate on step entry. (End events drive tool-end/token phases.)
+    // Narrate on step entry. (End events drive tool-end/token phases later.)
     if (e.phase !== 'start') return;
     const stage = stageLabelForStep(e.name, e.input);
     if (!stage) return; // unrecognised step (e.g. load_context) → no status line
 
-    const event: TurnEvent = {
-      v: TURN_EVENT_SCHEMA_VERSION,
-      turnId: e.turnId,
-      seq: e.seq,
-      round: 0, // tool-loop round — unused by Step-1 status; populated later
-      type: 'status',
-      data: { label: stage.label, kind: stage.kind },
-    };
-    // Fire-and-forget; publishTurnEvent never throws (a dropped status is
-    // cosmetic — the poll fallback covers it).
-    void publishTurnEvent(e.ownerId, event);
+    const stepId = String(e.seq); // unique per step-start within a turn
+
+    // 1) Grounded line, published INSTANTLY so the trail never waits on the LLM.
+    //    publishTurnEvent never throws (a dropped status is cosmetic).
+    void publishTurnEvent(e.ownerId, statusEvent(e, stage.label, stage, stepId));
+
+    // 2) Narrated upgrade — Step 2. Only for tool actions (skip 'thinking' to
+    //    save spend), strictly OFF the critical path (not awaited), gated by the
+    //    narration flag. On success it replaces line `stepId` in the trail; on
+    //    failure the grounded line simply stays.
+    if (isTurnNarrationEnabled() && stage.kind !== 'thinking') {
+      void narrateStatus(e.ownerId, stage.label).then((narrated) => {
+        if (narrated) void publishTurnEvent(e.ownerId, statusEvent(e, narrated, stage, stepId));
+      });
+    }
   });
 }
