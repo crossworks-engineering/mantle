@@ -48,8 +48,20 @@ substrate. Incorporated here:
   instead of blanket response validation).
 - **Endpoint follows the proven route recipe**: `const user = await getOwnerOr401(); if (user
   instanceof Response) return user;` (global `Response`, no `NextResponse` import).
-- **Same scaling boundary as the rate limiter**: the in-process bus is fine until `apps/api` scales
-  horizontally — the exact point the handover flags for the per-process rate limiter.
+- **⚠️ The in-process `EventEmitter` bus is INVALID — corrected to Postgres `NOTIFY` from day one.**
+  An earlier draft of §2 assumed a single instance could bridge the producer and the SSE socket
+  with an in-process emitter. It can't: **`apps/api` (the DBOS runner, no HTTP) and `apps/web` (which
+  serves every `/api/**` route incl. SSE) are ALWAYS separate processes**, in dev and prod alike. The
+  turn executes in `apps/api`; the browser's socket is held by `apps/web`. The FE/BE split *causes*
+  this separation rather than removing it. So the bus is Postgres `LISTEN/NOTIFY` (the existing
+  `lib/realtime` bridge) from the very first commit — not a scale-out concern. See the corrected §2.
+
+> **Implementation status (Step 0 — done):** the cross-client contract (`TurnEvent` in
+> `@mantle/client-types`), the server transport (`@mantle/turn-stream`: `TURN_STREAM_CHANNEL` +
+> `publishTurnEvent` via `pg_notify`), the web subscribe side (`subscribeTurnStream` in
+> `apps/web/lib/realtime.ts`), and the flagged bearer SSE endpoint
+> (`GET /api/assistant/turn/[turnId]/stream`, gated by `MANTLE_TURN_STREAMING`) are built and
+> typecheck-clean. No producer is wired, so the surface is dark — zero behaviour change.
 
 ---
 
@@ -110,41 +122,46 @@ reuses the existing **Postgres `LISTEN/NOTIFY` bridge** in `lib/realtime` — th
 behind the `conversation_changed` channel today. Note its current limit: **no backlog**, so a
 reconnect can miss deltas — the §2 buffer is what adds `Last-Event-ID` replay on top.
 
+**Two server processes, always.** This is the crux the implementation made concrete: the turn runs
+in **`apps/api`** (DBOS runner, no HTTP surface) and the browser's SSE socket is held by **`apps/web`**
+(which serves every `/api/**` route). They never share memory — Postgres `NOTIFY` is the bridge.
+
 ```
-browser / flutter            apps/api (backend, post-split)
-   │                          │
-   ├─ POST  /turn ───────────▶ enqueue DBOS workflow → returns { turnId } immediately
-   │                          │
-   ├─ GET   /turn/:id/stream ─▶ SSE handler: subscribe(bus, turnId), replay from Last-Event-ID
-   │   (SSE; Last-Event-ID)    │
-   │                          │   ┌─ workflow (durable) ───────────────────────┐
-   │◀─ status ────────────────┼───┤ narrator worker / trace tap → publish      │ ephemeral
-   │◀─ text-delta ────────────┼───┤ LLM step: chatStream()                     │ ephemeral
-   │◀─ text-delta ────────────┼───┤   ├─ accumulate full text                  │
-   │                          │   │   └─ return final ChatResult ─────────────▶│ DURABLE (journal)
-   │◀─ done ──────────────────┼───┤ flip assistant_messages pending→complete   │
-   │                          │   └─────────────────────────────────────────────┘
-   │
+browser / flutter      apps/web (Next, /api/**)          apps/api (DBOS runner)
+   │                      │                                  │
+   ├─ POST /assistant/turn ─▶ enqueue DBOS workflow ─────────▶ runs the turn (durable)
+   │                      │   (today: awaits result;          │
+   │                      │    Phase 3: returns turnId)        │   ┌─ workflow ─────────────────┐
+   │                      │                                    │   │ LLM step: chatStream()      │
+   ├─ GET …/turn/:id/stream ─▶ subscribeTurnStream(owner,turn) │   │  ├─ accumulate full text     │
+   │   (SSE via apiEventStream) │      ▲                       │   │  ├─ publishTurnEvent() ──┐   │ ephemeral
+   │                      │   LISTEN  │  Postgres NOTIFY        │   │  │   pg_notify('turn_   │   │
+   │◀─ status / text-delta ──┤   'turn_stream' ◀───────────────┼───┼──┘   stream', envelope) ┘   │
+   │                      │                                    │   │  └─ return ChatResult ─────▶│ DURABLE (journal)
+   │◀─ done ──────────────┤   (assistant_messages: pending→complete, fired by DB trigger) │      │
+   │                      │                                    │   └────────────────────────────┘
    └─ reconcile reply text against the durable assistant_messages row
 ```
 
-**Transport abstraction.** Hide the bus behind a tiny interface so topology never leaks into
-feature code:
+**The bus, as built (Step 0).** Not a swappable interface with an in-process option — the process
+split rules that out. Two concrete halves over one Postgres channel:
 
 ```ts
-interface TurnBus {
-  publish(turnId: string, event: TurnEvent): void;          // fire-and-forget, never throws
-  subscribe(turnId: string, fromSeq: number,
-            onEvent: (e: TurnEvent) => void): () => void;    // returns unsubscribe
-}
+// producer side — @mantle/turn-stream (imported by the apps/api runner)
+publishTurnEvent(ownerId: string, event: TurnEvent): Promise<void>  // pg_notify; fire-and-forget, never throws
+
+// consumer side — apps/web/lib/realtime.ts (the SSE route subscribes)
+subscribeTurnStream(ownerId, turnId, (event: TurnEvent) => void): Promise<() => void>  // owner-filtered; returns unsubscribe
 ```
 
-- **Single `apps/api` instance (near-term):** back it with an in-process `EventEmitter`. No new
-  infra. The FE/BE split is what makes this possible — workflow + SSE socket now share a process.
-- **Multiple replicas (later):** back it with the existing pg `LISTEN/NOTIFY` bridge. Caveat:
-  `NOTIFY` payloads cap ~8 KB, so use it as a **wakeup** — write deltas to a short-lived buffer
-  (Redis or a `turn_stream_buffer` table keyed by `(turnId, seq)` with TTL) and have the SSE
-  handler drain the buffer. The buffer also powers `Last-Event-ID` replay for free.
+The NOTIFY payload is a `{ ownerId, event }` envelope; `ownerId` is the cross-tenant filter and is
+stripped before the event reaches the browser. **`NOTIFY` caps payloads at ~8 KB**, so deltas stay
+tiny — long output streams as many small `text-delta`s, never one batched blob.
+
+- **Replay (Step 4, mobile-grade):** `NOTIFY` has no backlog, so a reconnect can miss deltas. The
+  fix is a short-TTL **buffer** — a `turn_stream_buffer` table keyed by `(turnId, seq)` (NOTIFY
+  becomes a wakeup; the SSE handler drains the buffer) — which also powers `Last-Event-ID` replay.
+  Until then, reconnect is best-effort and the durable message row covers the final answer (§6).
 
 Swapping implementations must not touch the workflow or either client.
 
@@ -270,16 +287,18 @@ could also render, it's modelled wrong. The web client must not get a private si
 
 ## 9. Rollout sequence
 
-1. **Contract first.** Land the `TurnEvent` types + `TurnBus` interface (in-process impl) + the
-   `GET /turn/:id/stream` SSE endpoint, behind a flag. No behaviour change yet.
-2. **Phase 1.** Emit `status`/`tool-*` from the trace tap; enrich labels with args; web consumes
+0. **Contract first — ✅ DONE.** `TurnEvent` (`@mantle/client-types`) + the Postgres-`NOTIFY` bus
+   (`@mantle/turn-stream` publish / `subscribeTurnStream` in `lib/realtime`) + the flagged bearer
+   `GET /api/assistant/turn/[turnId]/stream` endpoint. No producer wired — zero behaviour change.
+1. **Phase 1.** Emit `status`/`tool-*` from the trace tap; enrich labels with args; web consumes
    the stream (poll stays as fallback).
-3. **Phase 2.** Narrator worker on local Ollama, fire-and-forget, styling `status` events.
-4. **Phase 3.** `chatStream()` on OpenRouter then Anthropic; `text-delta`/`reasoning-delta`; flip
+2. **Phase 2.** Narrator worker on local Ollama, fire-and-forget, styling `status` events.
+3. **Phase 3.** `chatStream()` on OpenRouter then Anthropic; `text-delta`/`reasoning-delta`; flip
    the web route to return `turnId` + stream instead of awaiting `getResult()`; wire `status`
    reconciliation.
-5. **Mobile.** Companion consumes the same endpoint; add the replay buffer for resume.
-6. **Scale-out (only when needed).** Swap the in-process bus for the pg `NOTIFY` + buffer impl.
+4. **Mobile.** Companion consumes the same endpoint; add the `turn_stream_buffer` for replay/resume.
+5. **Scale-out (only if needed).** The `NOTIFY` bus already crosses processes, so no transport swap
+   is required — only the buffer (step 4) and the per-process rate limiter remain as scale concerns.
 
 Each step is independently shippable and degrades gracefully to the one before it.
 
@@ -292,5 +311,6 @@ Each step is independently shippable and degrades gracefully to the one before i
 - **Narrator model:** which local Ollama model balances latency vs phrasing quality.
 - **Reasoning exposure:** show `reasoning-delta` to end users (collapsible) or only feed it to the
   narrator? Privacy/UX call — default to narrator-only first.
-- **Endpoint home:** lives on `apps/api` post-split (co-located with the workflow). Pre-split, a
-  temporary `apps/web` shim is possible but discouraged — wait for the split per the stated plan.
+- **Endpoint home — RESOLVED:** the SSE endpoint lives in **`apps/web`** (all `/api/**` routes do;
+  `apps/api` has no HTTP surface). It can't be "co-located with the workflow" — that's exactly why
+  the bus is Postgres `NOTIFY` (§2). The producer (`publishTurnEvent`) runs in `apps/api`.

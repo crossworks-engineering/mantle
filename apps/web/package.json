@@ -1,6 +1,6 @@
 {
   "name": "@mantle/web",
-  "version": "0.66.41",
+  "version": "0.67.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -80,6 +80,7 @@
     "@mantle/telegram": "workspace:*",
     "@mantle/tools": "workspace:*",
     "@mantle/tracing": "workspace:*",
+    "@mantle/turn-stream": "workspace:*",
     "@mantle/voice": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@napi-rs/canvas": "~0.1.100",
