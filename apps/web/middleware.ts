@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { PUBLIC_PATHS, SESSION_COOKIE_NAME } from '@/lib/auth-constants';
+import { PUBLIC_PATHS, SESSION_COOKIE_NAME, isDetachedDev } from '@/lib/auth-constants';
 
 /**
  * Lightweight session-cookie check in the Edge runtime. Uses Web Crypto
@@ -150,7 +150,12 @@ export async function middleware(req: NextRequest) {
   }
 
   const cookie = req.cookies.get(SESSION_COOKIE_NAME)?.value;
-  if (cookie && (await verify(cookie, secret))) return withCors(NextResponse.next());
+  // A session cookie must be a real cookie, not a mobile bearer token reused as
+  // one — that would dodge mobile-token revocation (enforced only on the bearer
+  // path). Mirror lib/auth's verify(), which rejects `k:'m'` on the cookie path.
+  if (cookie && (await verify(cookie, secret)) && !isMobileToken(cookie)) {
+    return withCors(NextResponse.next());
+  }
 
   // Mobile companion / detached client: Authorization: Bearer <mobile-token>.
   // Signed with the same secret; we additionally require the mobile kind marker
@@ -170,6 +175,15 @@ export async function middleware(req: NextRequest) {
   // client follows an HTML redirect silently and misreads it as success); only a
   // page navigation gets the login redirect.
   if (isApi) return withCors(unauthorized());
+
+  // DB-less detached dev: there's no local session cookie (login never happened)
+  // and a top-level page navigation can't carry a bearer header, so without this
+  // every page nav would 307 to /login BEFORE the page render's requireOwner()
+  // could resolve the identity via detachedDevUser() — an infinite redirect
+  // loop. Let page navs render; the page gate does the rest. Dev-only and never
+  // in production (isDetachedDev). API requests still 401 — the client's data
+  // fetches target the REMOTE API, not this local server.
+  if (isDetachedDev()) return withCors(NextResponse.next());
 
   const url = new URL('/login', req.url);
   url.searchParams.set('next', path);

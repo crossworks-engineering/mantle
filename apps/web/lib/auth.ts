@@ -5,7 +5,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { db, authUsers, mobileTokens, countUsers } from '@mantle/db';
-import { SESSION_COOKIE_NAME } from './auth-constants';
+import { SESSION_COOKIE_NAME, isDetachedDev } from './auth-constants';
 
 /**
  * Single-user session cookie auth. Cookie value: `<payload>.<sig>` where
@@ -25,6 +25,10 @@ const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
  * single-user gate server-side; this is only the UI hint.
  */
 export async function isFirstRun(): Promise<boolean> {
+  // Detached dev has no local DB — never the first-run path, and querying would
+  // throw. (Pages should resolve identity via detachedDevUser before reaching
+  // here; this is belt-and-suspenders so /login can't 500 in remote mode.)
+  if (isDetachedDev()) return false;
   return (await countUsers()) === 0;
 }
 
@@ -69,6 +73,13 @@ function verify(token: string): { uid: string; exp: number } | null {
   if (!timingSafeEqual(got, expected)) return null;
   try {
     const data = JSON.parse(b64urlDecode(payload).toString('utf8'));
+    // A session cookie must NOT be a mobile bearer token. Mobile tokens carry
+    // `k:'m'` and the same `{uid,exp}` payload, so without this a (signed,
+    // valid) mobile token placed in the session cookie would authenticate via
+    // this DB-lookup path — which never checks mobile_tokens.revoked_at — and
+    // thereby survive a mobile-logout revocation. Reject it here; bearers go
+    // through verifyMobileToken (which enforces the row + revocation).
+    if (data.k === 'm') return null;
     if (typeof data.uid !== 'string' || typeof data.exp !== 'number') return null;
     if (Date.now() / 1000 > data.exp) return null;
     return { uid: data.uid, exp: data.exp };
@@ -187,16 +198,18 @@ export { SESSION_COOKIE_NAME };
  * by the remote, not us) the bearer to learn which user the detached client acts
  * as, so the local page auth gate agrees with the remote data the client sees.
  *
- * Triple-gated and impossible in production: returns null unless
- * `NODE_ENV !== 'production'` AND both detached-mode env vars are set. See
- * docs/db-less-dev.md. Email isn't in the token; `MANTLE_DEV_EMAIL` overrides
- * the placeholder for the few surfaces that show it.
+ * Because it trusts a decoded-but-unverified token, the activation gate is a
+ * SERVER-ONLY flag (`isDetachedDev` → `MANTLE_DETACHED_DEV`, never a
+ * `NEXT_PUBLIC_` var an attacker could set from a client bundle) AND it is
+ * hard-disabled in production. So this can never grant access in a prod build.
+ * The companion bypass in `middleware.ts` gates on the same `isDetachedDev()`.
+ * See docs/db-less-dev.md. Email isn't in the token; `MANTLE_DEV_EMAIL`
+ * overrides the placeholder for the few surfaces that show it.
  */
 function detachedDevUser(): SessionUser | null {
-  if (process.env.NODE_ENV === 'production') return null;
-  const base = process.env.NEXT_PUBLIC_MANTLE_API_BASE?.trim();
+  if (!isDetachedDev()) return null;
   const token = process.env.NEXT_PUBLIC_MANTLE_API_TOKEN?.trim();
-  if (!base || !token) return null;
+  if (!token) return null;
   try {
     const dot = token.lastIndexOf('.');
     const payload = dot > 0 ? token.slice(0, dot) : token;

@@ -103,9 +103,17 @@ mechanism is now simply `apiFetch` + `NEXT_PUBLIC_MANTLE_API_BASE`/`_TOKEN`: the
 remote directly, so the local Next server needs no DB for screen data. The only residual server-side
 DB read on a data-free page — the auth gate (`requireOwner`→`getSessionUser`→`authUsers`) — is now
 handled by `detachedDevUser()` (`lib/auth.ts`), which **decodes** (not verifies) the bearer for the
-identity instead of querying the DB. Triple-gated: `NODE_ENV!=='production'` AND both detached env
-vars set → impossible in prod. `docs/db-less-dev.md` rewritten to this model. NOT runtime-verified
-(needs a live remote + minted token; 2nd dev server collides with the running stack).
+identity instead of querying the DB. `docs/db-less-dev.md` describes this model.
+
+**Post-audit fix (v0.66.24):** a deep audit found the first cut was *runtime-broken* despite being
+typecheck-clean — the Edge `middleware.ts` 307'd every page nav to `/login` BEFORE the page render's
+`requireOwner()`→`detachedDevUser()` could run (no local cookie; a nav can't carry a bearer) → an
+infinite redirect loop, and `/login` then hit `countUsers()`. Fixes: (1) middleware now lets page
+navs render when `isDetachedDev()`; (2) the activation gate moved to a **server-only** master switch
+`MANTLE_DETACHED_DEV` (new `isDetachedDev()` in `lib/auth-constants.ts`; never a `NEXT_PUBLIC_` var)
+that is hard-disabled in production — so the decode-without-verify bypass can't activate in a prod
+build; (3) `isFirstRun()` short-circuits in detached mode so `/login` can't 500. **Still only
+typecheck-verified — smoke it before relying on it** (see `docs/db-less-dev.md` "Not runtime-verified").
 
 ### #7 — cosmetic ✅ DONE (v0.66.23)
 Relocated the type-only `@mantle/db` client imports into `@mantle/client-types`:

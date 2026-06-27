@@ -17,15 +17,27 @@ Next server never queries a database for screen data.
 > which was built for server-rendered pages reading the DB during render. After
 > Task 4 nothing rendered server-side anymore, so that seam was removed.
 
-The one thing left that touched Postgres on a data-free page was the **auth
-gate** — `requireOwner()` → `getSessionUser()` → an `authUsers` lookup. In
-detached mode that's replaced by `detachedDevUser()` (`apps/web/lib/auth.ts`),
-which *decodes* (does not verify — the token is signed by the remote) the
-`NEXT_PUBLIC_MANTLE_API_TOKEN` bearer to learn which user the detached client is
-acting as. So the local page gate agrees with the remote data the client sees,
-with no DB. It is **triple-gated and impossible in production**: it returns null
-unless `NODE_ENV !== 'production'` AND both `NEXT_PUBLIC_MANTLE_API_BASE` and
-`NEXT_PUBLIC_MANTLE_API_TOKEN` are set.
+Two things still touched Postgres on a data-free page, both handled in detached
+mode and gated by `isDetachedDev()` (`apps/web/lib/auth-constants.ts`):
+
+1. **The page auth gate** — `requireOwner()` → `getSessionUser()` → an `authUsers`
+   lookup. In detached mode that's replaced by `detachedDevUser()`
+   (`apps/web/lib/auth.ts`), which *decodes* (does not verify — the token is
+   signed by the remote) the `NEXT_PUBLIC_MANTLE_API_TOKEN` bearer to learn which
+   user the detached client is acting as, so the local page gate agrees with the
+   remote data the client sees, with no DB.
+2. **The Edge middleware** — it runs *before* the page render and would 307 every
+   page navigation to `/login` (no local session cookie exists; a top-level nav
+   can't carry a bearer header), so `detachedDevUser()` would never run — an
+   infinite redirect loop. `middleware.ts` now lets page navs through when
+   `isDetachedDev()`; the page gate resolves the identity. (API requests still
+   401 — the client's data fetches target the *remote* API, not this server.)
+
+**The master switch is `MANTLE_DETACHED_DEV` — a server-only flag** (never a
+`NEXT_PUBLIC_` var, so it can't be flipped on from a shipped client bundle) and
+`isDetachedDev()` is **hard-disabled in production** (`NODE_ENV === 'production'`
+returns false). So the bypass can never activate in a prod build, no matter how
+the public API vars are set.
 
 ## Setup
 
@@ -41,6 +53,7 @@ unless `NODE_ENV !== 'production'` AND both `NEXT_PUBLIC_MANTLE_API_BASE` and
 2. **Point local dev at the remote** — in `apps/web/.env.local`:
 
    ```
+   MANTLE_DETACHED_DEV=1                       # master switch (server-only; off in prod)
    NEXT_PUBLIC_MANTLE_API_BASE=https://YOUR-REMOTE
    NEXT_PUBLIC_MANTLE_API_TOKEN=<token from step 1>
    # Optional — the placeholder shown on the few surfaces that display the email:
@@ -49,7 +62,8 @@ unless `NODE_ENV !== 'production'` AND both `NEXT_PUBLIC_MANTLE_API_BASE` and
    SESSION_SECRET=<any >=32 chars; required by lib/auth even in detached mode>
    ```
 
-   No separate dev-uid var is needed — the identity is read from the token.
+   `MANTLE_DETACHED_DEV` must be set or nothing below activates. No separate
+   dev-uid var is needed — the identity is read from the token.
 
 3. **Run the frontend only** (not the worker/agent fleet, which need a DB):
 
@@ -81,8 +95,17 @@ unless `NODE_ENV !== 'production'` AND both `NEXT_PUBLIC_MANTLE_API_BASE` and
 
 ## Not runtime-verified
 
-This path is typecheck-verified only. A second `next dev` collides with a running
-prod stack on `.next` (see project memory `no-concurrent-next-builds`), so it
-hasn't been browser-smoked against a live remote + minted token. First smoke
-after a dev restart: set the two env vars, open `/` and a list screen, confirm
-data loads from the remote and the auth gate doesn't 500 on a missing DB.
+This path is typecheck-verified only and has **not** been browser-smoked against a
+live remote (a second `next dev` collides with a running prod stack on `.next` —
+see project memory `no-concurrent-next-builds`).
+
+> **History:** the first cut of this (the `detachedDevUser` page shim alone)
+> looked done but was runtime-broken — a deep audit found the middleware would
+> 307 every page nav to `/login` before the shim ran (infinite loop), and
+> `/login` then hit `countUsers()`. Both are fixed above (middleware page-nav
+> bypass + `isFirstRun` short-circuit), but the fix is itself only typecheck-
+> verified. **Smoke it before relying on it.**
+
+First smoke after a dev restart: set the env vars (incl. `MANTLE_DETACHED_DEV=1`),
+open `/` then a list screen — confirm it does **not** redirect-loop or 500, data
+loads from the remote, and the auth gate doesn't touch a local DB.
