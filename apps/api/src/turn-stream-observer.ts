@@ -16,11 +16,23 @@
  * nothing — the gate is in the tracing layer).
  */
 
-import { setStepObserver, type StepObserverEvent } from '@mantle/tracing';
+import {
+  setStepObserver,
+  setTurnDeltaObserver,
+  type StepObserverEvent,
+  type TurnDeltaEvent,
+} from '@mantle/tracing';
 import { stageLabelForStep, type StageLabel } from '@mantle/assistant-runtime';
 import { publishTurnEvent, TURN_EVENT_SCHEMA_VERSION } from '@mantle/turn-stream';
 import type { TurnEvent } from '@mantle/client-types';
 import { isTurnNarrationEnabled, narrateStatus } from './turn-narration';
+
+/** Token streaming (Phase 3) is opt-in: installing the delta observer is what
+ *  makes the tool-loop stream (`isTurnStreaming()`), so gate it on its own flag
+ *  to roll it out independently of the status stream. */
+export function isTurnTokenStreamingEnabled(): boolean {
+  return !!process.env.MANTLE_TURN_TOKENS?.trim();
+}
 
 /** Build a `status` event for one step. `stepId` ties the grounded line to its
  *  later narrated upgrade so the client replaces it in place. */
@@ -35,7 +47,31 @@ function statusEvent(e: StepObserverEvent, label: string, stage: StageLabel, ste
   };
 }
 
+/** Map one streamed token delta → a `text-delta` / `reasoning-delta` turn event.
+ *  `seq` shares the trace's monotonic cursor with status events, so the client
+ *  orders the whole stream (status + tokens) on one sequence. */
+function deltaEvent(e: TurnDeltaEvent): TurnEvent {
+  return {
+    v: TURN_EVENT_SCHEMA_VERSION,
+    turnId: e.turnId,
+    seq: e.seq,
+    round: e.round,
+    type: e.kind === 'reasoning' ? 'reasoning-delta' : 'text-delta',
+    data: { text: e.text },
+  };
+}
+
 export function installTurnStreamObserver(): void {
+  // Phase 3: token deltas. Installing this observer is ALSO what flips
+  // `isTurnStreaming()` true in the tool-loop, so the turn only streams (uses the
+  // adapter's chatStream + streaming HTTP) when this flag is set. Each delta
+  // publishes over the SAME NOTIFY bus as status — fire-and-forget, never throws.
+  if (isTurnTokenStreamingEnabled()) {
+    setTurnDeltaObserver((e: TurnDeltaEvent) => {
+      void publishTurnEvent(e.ownerId, deltaEvent(e));
+    });
+  }
+
   setStepObserver((e: StepObserverEvent) => {
     // Narrate on step entry. (End events drive tool-end/token phases later.)
     if (e.phase !== 'start') return;

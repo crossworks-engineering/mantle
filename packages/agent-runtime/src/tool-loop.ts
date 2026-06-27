@@ -25,7 +25,7 @@
  * providers (Anthropic, OR-via-Anthropic).
  */
 
-import { currentTrace, step } from '@mantle/tracing';
+import { currentTrace, step, isTurnStreaming, emitTurnDelta } from '@mantle/tracing';
 import {
   dispatchTool,
   getBuiltinRedactFields,
@@ -44,6 +44,8 @@ import type { ToolArtifact } from '@mantle/tools';
 import {
   getChatAdapter,
   type ChatDispatcher,
+  type ChatOptions,
+  type ChatResult,
   type ChatToolDefinition,
 } from '@mantle/voice';
 import { recordChatUsage } from './llm-usage';
@@ -53,6 +55,21 @@ import { fenceRetrieved } from './messages';
 import { parseToolArgs } from './tool-args';
 
 const DEFAULT_MAX_ITERATIONS = 6;
+
+/**
+ * Run one chat round, streaming live token deltas when the runner has turn
+ * streaming active (`isTurnStreaming()`) AND this route's adapter supports it.
+ * Falls back to the one-shot `chat()` otherwise — the resolved `ChatResult` is
+ * identical either way (text + toolCalls + usage), so the loop's tool-dispatch
+ * logic doesn't care which path ran. Streaming is pure decoration around the
+ * durable result. `round` tags each delta so the client can scope the live reply.
+ */
+function dispatchChat(adapter: ChatDispatcher, opts: ChatOptions, round: number): Promise<ChatResult> {
+  if (isTurnStreaming() && typeof adapter.chatStream === 'function') {
+    return adapter.chatStream(opts, (d) => emitTurnDelta(round, d.type, d.text));
+  }
+  return adapter.chat(opts);
+}
 
 /** Tools that return content authored by third parties (a fetched web page,
  *  a web-search answer + its source snippets). Their successful results are
@@ -372,13 +389,13 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           ...(typeof args.params.max_retries === 'number' ? { maxRetries: args.params.max_retries } : {}),
         };
         try {
-          const r = await active.adapter.chat({
+          const r = await dispatchChat(active.adapter, {
             apiKey: active.apiKey,
             model: active.model,
             ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
             ...(active.viaTailnet ? { viaTailnet: true } : {}),
             ...chatOpts,
-          });
+          }, iter);
           recordChatUsage(h, r, active.model);
           return r;
         } catch (err) {
@@ -399,13 +416,13 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
             viaTailnet: args.backup.viaTailnet ?? false,
           };
           failedOver = true;
-          const r = await active.adapter.chat({
+          const r = await dispatchChat(active.adapter, {
             apiKey: active.apiKey,
             model: active.model,
             ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
             ...(active.viaTailnet ? { viaTailnet: true } : {}),
             ...chatOpts,
-          });
+          }, iter);
           recordChatUsage(h, r, active.model);
           return r;
         }
@@ -774,7 +791,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       },
     },
     async (h) => {
-      const r = await active.adapter.chat({
+      const r = await dispatchChat(active.adapter, {
         apiKey: active.apiKey,
         model: active.model,
         ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
@@ -787,7 +804,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         toolChoice: 'none',
         cacheControl: { systemPrompt: true },
         ...(typeof args.params.max_retries === 'number' ? { maxRetries: args.params.max_retries } : {}),
-      });
+      }, maxIters);
       recordChatUsage(h, r, active.model);
       return r;
     },

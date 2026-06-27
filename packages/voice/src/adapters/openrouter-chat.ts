@@ -36,6 +36,8 @@ import type {
   ChatModelInfo,
   ChatOptions,
   ChatResult,
+  ChatStreamDelta,
+  ChatStreamSink,
   ChatToolCall,
 } from './types';
 import type { DiscoveryResult } from '../discover';
@@ -582,10 +584,178 @@ async function openrouterDiscover(
   }
 }
 
+/** Loose shape of one OpenRouter SSE chunk (the SDK parses to camelCase). Kept
+ *  local + defensive (snake_case fallbacks) so this adapter doesn't depend on the
+ *  SDK's internal streaming model exports. */
+type OrStreamChunk = {
+  model?: string;
+  error?: { code?: number; message?: string };
+  usage?: {
+    promptTokens?: number;
+    prompt_tokens?: number;
+    completionTokens?: number;
+    completion_tokens?: number;
+    cost?: number;
+    promptTokensDetails?: { cachedTokens?: number; cacheWriteTokens?: number };
+    prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
+  };
+  choices?: Array<{
+    finishReason?: string | null;
+    finish_reason?: string | null;
+    delta?: {
+      content?: string | null;
+      reasoning?: string | null;
+      toolCalls?: OrStreamToolCallFragment[];
+      tool_calls?: OrStreamToolCallFragment[];
+    };
+  }>;
+};
+type OrStreamToolCallFragment = {
+  index: number;
+  id?: string;
+  function?: { name?: string; arguments?: string };
+};
+
+/**
+ * Streaming counterpart of `openrouterChat`. Sets `stream: true` (and
+ * `usage: { include: true }` so the terminal chunk still carries token counts +
+ * `cost` for `recordChatUsage`), iterates the SDK's `EventStream`, fires the
+ * caller's `onDelta` per visible text / reasoning chunk, accumulates tool-call
+ * argument FRAGMENTS by index, and resolves to the same `ChatResult` shape
+ * `openrouterChat` returns. The deltas are decoration; this returned result is the
+ * durable answer.
+ *
+ * No empty-body retry here (unlike the one-shot path): a stream that fails mid-
+ * flight can't be cleanly resumed, so we surface the error and let the caller
+ * fall back to the one-shot `chat()` on the backup route.
+ */
+async function openrouterChatStream(
+  opts: ChatOptions,
+  onDelta: ChatStreamSink,
+): Promise<ChatResult> {
+  if (!opts.apiKey) throw new Error('openrouter-chat: apiKey required');
+  if (!opts.model) throw new Error('openrouter-chat: model required');
+
+  const client = new OpenRouter({
+    apiKey: opts.apiKey,
+    httpReferer: 'https://mantle.crossworks.network',
+    appTitle: 'Mantle',
+  });
+
+  const messages = buildMessages(opts.messages, opts.cacheControl);
+  const tools = buildTools(opts);
+  const chatRequest = {
+    model: opts.model,
+    messages,
+    stream: true,
+    // Ask OR to fold the usage block into the final chunk — without this a
+    // streamed call reports no tokens and cost tracking silently breaks.
+    usage: { include: true },
+    ...(tools ? { tools } : {}),
+    ...(opts.toolChoice && tools ? { toolChoice: opts.toolChoice } : {}),
+    ...(typeof opts.temperature === 'number' ? { temperature: opts.temperature } : {}),
+    ...(typeof opts.maxTokens === 'number' ? { maxTokens: opts.maxTokens } : {}),
+    ...(typeof opts.topP === 'number' ? { topP: opts.topP } : {}),
+    ...(opts.extra ?? {}),
+  };
+
+  const startedAt = Date.now();
+  let sent: AsyncIterable<OrStreamChunk>;
+  try {
+    sent = (await client.chat.send({
+      chatRequest: chatRequest as unknown as Parameters<typeof client.chat.send>[0]['chatRequest'],
+    })) as unknown as AsyncIterable<OrStreamChunk>;
+  } catch (err) {
+    throw enrichOpenRouterError(err, opts.model, Date.now() - startedAt);
+  }
+
+  let text = '';
+  let reasoning = '';
+  let model = opts.model;
+  let usage: OrStreamChunk['usage'];
+  // Tool-call fragments accumulate by index: id+name land first, arguments arrive
+  // in pieces. Assembled into ChatToolCall[] after the stream closes.
+  const toolAccum = new Map<number, { id: string; name: string; args: string }>();
+
+  try {
+    for await (const chunk of sent) {
+      if (chunk.error) {
+        throw new Error(
+          `openrouter-chat stream error ${chunk.error.code ?? ''}: ${chunk.error.message ?? 'unknown'}`.trim(),
+        );
+      }
+      if (chunk.model) model = chunk.model;
+      if (chunk.usage) usage = chunk.usage;
+      const choice = chunk.choices?.[0];
+      const delta = choice?.delta;
+      if (!delta) continue;
+      if (typeof delta.content === 'string' && delta.content.length > 0) {
+        text += delta.content;
+        safeDelta(onDelta, { type: 'text', text: delta.content });
+      }
+      if (typeof delta.reasoning === 'string' && delta.reasoning.length > 0) {
+        reasoning += delta.reasoning;
+        safeDelta(onDelta, { type: 'reasoning', text: delta.reasoning });
+      }
+      const frags = delta.toolCalls ?? delta.tool_calls;
+      if (Array.isArray(frags)) {
+        for (const f of frags) {
+          if (typeof f?.index !== 'number') continue;
+          const cur = toolAccum.get(f.index) ?? { id: '', name: '', args: '' };
+          if (f.id) cur.id = f.id;
+          if (f.function?.name) cur.name = f.function.name;
+          if (typeof f.function?.arguments === 'string') cur.args += f.function.arguments;
+          toolAccum.set(f.index, cur);
+        }
+      }
+    }
+  } catch (err) {
+    throw enrichOpenRouterError(err, opts.model, Date.now() - startedAt);
+  }
+
+  const toolCalls: ChatToolCall[] = [...toolAccum.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, c]) => c)
+    .filter((c) => c.name)
+    .map((c) => ({
+      id: c.id || `call_${c.name}`,
+      type: 'function' as const,
+      function: { name: c.name, arguments: c.args || '{}' },
+    }));
+
+  const cost = usage?.cost;
+  const reportedCostUsd = cost != null && Number.isFinite(cost) ? cost : undefined;
+  const cacheRead =
+    usage?.promptTokensDetails?.cachedTokens ?? usage?.prompt_tokens_details?.cached_tokens;
+  const cacheWrite =
+    usage?.promptTokensDetails?.cacheWriteTokens ?? usage?.prompt_tokens_details?.cache_write_tokens;
+
+  return {
+    text: text.trim(),
+    model,
+    ...(toolCalls.length > 0 ? { toolCalls } : {}),
+    tokensIn: usage?.promptTokens ?? usage?.prompt_tokens,
+    tokensOut: usage?.completionTokens ?? usage?.completion_tokens,
+    cacheReadTokens: cacheRead ?? undefined,
+    cacheWriteTokens: cacheWrite ?? undefined,
+    reportedCostUsd,
+  };
+}
+
+/** Call the delta sink without ever letting it break the stream loop. */
+function safeDelta(onDelta: ChatStreamSink, delta: ChatStreamDelta): void {
+  try {
+    onDelta(delta);
+  } catch (err) {
+    console.warn('[openrouter-chat] delta sink threw (ignored):', err instanceof Error ? err.message : err);
+  }
+}
+
 export const openrouterChatAdapter: ChatDispatcher = {
   providerId: 'openrouter',
   adapterName: 'openrouter-chat',
   chat: openrouterChat,
+  chatStream: openrouterChatStream,
   discoverModels: openrouterDiscover,
   staticCatalog: () => OPENROUTER_CHAT_MODELS,
 };

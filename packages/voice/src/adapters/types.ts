@@ -368,11 +368,31 @@ export interface ChatOptions {
   viaTailnet?: boolean;
 }
 
+/** A user-visible delta surfaced by `chatStream` as the model produces output.
+ *  Deliberately minimal: only the visible reply text and the model's reasoning
+ *  stream. Tool-call argument fragments are accumulated INTERNALLY by the adapter
+ *  (so the resolved `ChatResult.toolCalls` is fully assembled, identical to
+ *  `chat()`) — they're machinery, not something the user reads, so they're not
+ *  surfaced here. */
+export type ChatStreamDelta =
+  | { type: 'text'; text: string }
+  | { type: 'reasoning'; text: string };
+
+/** Sink the caller passes to `chatStream` to receive deltas as they arrive. The
+ *  adapter calls it synchronously per chunk and never awaits it — the caller
+ *  fans it onto the ephemeral live bus and must not let it throw back into the
+ *  stream loop. */
+export type ChatStreamSink = (delta: ChatStreamDelta) => void;
+
 export interface ChatDispatcher extends AdapterMeta {
-  /** One-shot chat completion. Streaming is intentionally NOT on the
-   *  interface — none of Mantle's current callers stream, and adding
-   *  streaming later is a non-breaking expansion. */
+  /** One-shot chat completion. */
   chat(opts: ChatOptions): Promise<ChatResult>;
+  /** Streaming variant of `chat`: emits text/reasoning deltas to `onDelta` as
+   *  they arrive AND resolves to the same fully-assembled `ChatResult` `chat()`
+   *  would return (text, toolCalls, usage) — so it's a drop-in. The ChatResult is
+   *  the durable answer; the deltas are ephemeral decoration. Optional + additive:
+   *  a provider that can't stream omits it and callers fall back to `chat()`. */
+  chatStream?(opts: ChatOptions, onDelta: ChatStreamSink): Promise<ChatResult>;
   /** Live-discover available chat models. Adapter does the cross-
    *  reference between provider's /v1/models response and its own
    *  static catalog. */

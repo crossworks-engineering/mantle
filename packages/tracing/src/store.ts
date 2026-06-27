@@ -187,6 +187,52 @@ function notifyStepObserver(
   }
 }
 
+// ─── Turn token-delta observer (Phase 3 streaming) ───────────────────────────
+
+/** One streamed token delta for the current turn. `seq` shares the trace's
+ *  monotonic `streamSeq` with status events, so a client orders BOTH on one
+ *  cursor. */
+export type TurnDeltaEvent = {
+  turnId: string;
+  ownerId: string;
+  seq: number;
+  round: number;
+  kind: 'text' | 'reasoning';
+  text: string;
+};
+export type TurnDeltaObserver = (e: TurnDeltaEvent) => void;
+
+let turnDeltaObserver: TurnDeltaObserver | null = null;
+
+/** Register the global turn-delta observer (the runner installs one to publish
+ *  tokens to the live bus). Unset everywhere else — token streaming costs nothing
+ *  until a runner installs it, and installing it is ALSO the gate that turns
+ *  streaming on (see `isTurnStreaming`). */
+export function setTurnDeltaObserver(fn: TurnDeltaObserver | null): void {
+  turnDeltaObserver = fn;
+}
+
+/** True iff token streaming is active for the current turn: an observer is
+ *  installed AND this is a streamed trace (carries a `turnId`). The tool-loop
+ *  checks this to choose `adapter.chatStream()` over `adapter.chat()`. */
+export function isTurnStreaming(): boolean {
+  return turnDeltaObserver !== null && !!currentTrace()?.turnId;
+}
+
+/** Emit one streamed token delta for the current turn. No-op unless streaming is
+ *  active. Shares the trace's `streamSeq` so deltas + status events interleave on
+ *  one monotonic cursor. NEVER throws — a publish fault must not break the turn. */
+export function emitTurnDelta(round: number, kind: 'text' | 'reasoning', text: string): void {
+  const obs = turnDeltaObserver;
+  const trace = currentTrace();
+  if (!obs || !trace?.turnId) return;
+  try {
+    obs({ turnId: trace.turnId, ownerId: trace.ownerId, seq: trace.streamSeq++, round, kind, text });
+  } catch (err) {
+    logErr('turn delta observer', err);
+  }
+}
+
 /**
  * Attribute LLM usage (tokens + cost) to the *currently running* step and
  * its trace from OUTSIDE the step body — for helpers that run several layers

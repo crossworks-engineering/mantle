@@ -570,3 +570,98 @@ describe('openrouter-chat empty-body retry', () => {
     expect(sendCalls.length).toBe(1); // no retry
   });
 });
+
+// ── chatStream (Phase 3 token streaming) ─────────────────────────────────────
+//
+// The mocked SDK `send` returns whatever `mockSendImpl` yields; for streaming we
+// hand back an async generator of chunk objects (an EventStream is just an async
+// iterable at the call site). These lock down: deltas surface to onDelta, the
+// resolved ChatResult is assembled identically to chat(), tool-call FRAGMENTS
+// concatenate by index, and `stream`/`usage.include` ride the request.
+
+/** Build an async-iterable of stream chunks (stands in for the SDK EventStream). */
+function streamOf(chunks: unknown[]): AsyncIterable<unknown> {
+  return (async function* () {
+    for (const c of chunks) yield c;
+  })();
+}
+
+describe('openrouter-chat chatStream', () => {
+  it('sets stream + usage.include on the request and assembles text from deltas', async () => {
+    mockSendImpl = async () =>
+      streamOf([
+        { model: 'openai/gpt-4o', choices: [{ delta: { content: 'Hel' } }] },
+        { choices: [{ delta: { content: 'lo' } }] },
+        { choices: [{ delta: { content: ' there' }, finishReason: 'stop' }] },
+        { usage: { promptTokens: 7, completionTokens: 3, cost: 0.0004 } },
+      ]);
+    const deltas: Array<{ type: string; text: string }> = [];
+    const r = await openrouterChatAdapter.chatStream!(
+      { apiKey: 'sk-test', model: 'openai/gpt-4o', messages: [{ role: 'user', content: 'hi' }] },
+      (d) => deltas.push(d),
+    );
+    const req = sendCalls[0]!.chatRequest;
+    expect(req.stream).toBe(true);
+    expect(req.usage).toEqual({ include: true });
+    expect(deltas).toEqual([
+      { type: 'text', text: 'Hel' },
+      { type: 'text', text: 'lo' },
+      { type: 'text', text: ' there' },
+    ]);
+    expect(r.text).toBe('Hello there');
+    expect(r.tokensIn).toBe(7);
+    expect(r.tokensOut).toBe(3);
+    expect(r.reportedCostUsd).toBe(0.0004);
+    expect(r.toolCalls).toBeUndefined();
+  });
+
+  it('assembles tool calls from streamed argument fragments (by index)', async () => {
+    mockSendImpl = async () =>
+      streamOf([
+        { choices: [{ delta: { toolCalls: [{ index: 0, id: 'call_1', function: { name: 'search', arguments: '{"q":' } }] } }] },
+        { choices: [{ delta: { toolCalls: [{ index: 0, function: { arguments: '"cats"}' } }] } }] },
+        { choices: [{ delta: {}, finishReason: 'tool_calls' }] },
+        { usage: { promptTokens: 12, completionTokens: 8 } },
+      ]);
+    const r = await openrouterChatAdapter.chatStream!(
+      { apiKey: 'sk-test', model: 'openai/gpt-4o', messages: [{ role: 'user', content: 'find cats' }] },
+      () => {},
+    );
+    expect(r.text).toBe('');
+    expect(r.toolCalls).toEqual([
+      { id: 'call_1', type: 'function', function: { name: 'search', arguments: '{"q":"cats"}' } },
+    ]);
+  });
+
+  it('surfaces reasoning deltas separately from text', async () => {
+    mockSendImpl = async () =>
+      streamOf([
+        { choices: [{ delta: { reasoning: 'thinking…' } }] },
+        { choices: [{ delta: { content: 'answer' }, finishReason: 'stop' }] },
+      ]);
+    const deltas: Array<{ type: string; text: string }> = [];
+    const r = await openrouterChatAdapter.chatStream!(
+      { apiKey: 'sk-test', model: 'openai/gpt-4o', messages: [{ role: 'user', content: 'q' }] },
+      (d) => deltas.push(d),
+    );
+    expect(deltas).toEqual([
+      { type: 'reasoning', text: 'thinking…' },
+      { type: 'text', text: 'answer' },
+    ]);
+    expect(r.text).toBe('answer');
+  });
+
+  it('throws when a chunk carries an error envelope', async () => {
+    mockSendImpl = async () =>
+      streamOf([
+        { choices: [{ delta: { content: 'par' } }] },
+        { error: { code: 502, message: 'upstream boom' } },
+      ]);
+    await expect(
+      openrouterChatAdapter.chatStream!(
+        { apiKey: 'sk-test', model: 'openai/gpt-4o', messages: [{ role: 'user', content: 'hi' }] },
+        () => {},
+      ),
+    ).rejects.toThrow(/upstream boom/);
+  });
+});

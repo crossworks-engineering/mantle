@@ -7,6 +7,9 @@ export {
   currentTrace,
   currentStep,
   setStepObserver,
+  setTurnDeltaObserver,
+  isTurnStreaming,
+  emitTurnDelta,
   type TraceKind,
   type TraceStepKind,
   type StepStatus,
@@ -17,6 +20,8 @@ export {
   type StepPhase,
   type StepObserver,
   type StepObserverEvent,
+  type TurnDeltaEvent,
+  type TurnDeltaObserver,
 } from './store';
 
 export {
