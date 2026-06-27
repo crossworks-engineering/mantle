@@ -92,18 +92,24 @@ function isAssetPath(path: string): boolean {
 // a BEARER token, never cookies, so we deliberately DO NOT emit
 // Access-Control-Allow-Credentials: reflecting an origin WITHOUT credentials is
 // safe (no cookie is ever sent cross-origin, so no CSRF surface; an unauthorized
-// request still 401s). Applies to every /api/** response, including the public
-// ones (a cross-origin client must be able to reach /api/auth to log in).
+// request still 401s). Applies to every /api/** response — but the '*' wildcard
+// is refused on /api/auth (those routes return a bearer token in the body), so a
+// cross-origin client must be EXPLICITLY allowlisted to reach login. See corsOrigin.
 const CORS_ORIGINS = (process.env.MANTLE_API_CORS_ORIGINS ?? '')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
 
-function corsOrigin(req: NextRequest): string | null {
+function corsOrigin(req: NextRequest, path: string): string | null {
   if (CORS_ORIGINS.length === 0) return null;
   const origin = req.headers.get('origin');
   if (!origin) return null; // same-origin / non-browser — no CORS needed
-  if (CORS_ORIGINS.includes('*')) return origin;
+  // The `*` wildcard reflects any origin — convenient for the bearer-only data
+  // API, but a foot-gun on the auth surface (`/api/auth/login` etc. return a
+  // bearer token in the body), so the wildcard NEVER applies there: auth routes
+  // require an explicit allowlist entry. Non-auth /api keeps the wildcard.
+  const isAuth = path === '/api/auth' || path.startsWith('/api/auth/');
+  if (CORS_ORIGINS.includes('*') && !isAuth) return origin;
   return CORS_ORIGINS.includes(origin) ? origin : null;
 }
 
@@ -129,7 +135,7 @@ function unauthorized(): NextResponse {
 export async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
   const isApi = path === '/api' || path.startsWith('/api/');
-  const origin = isApi ? corsOrigin(req) : null;
+  const origin = isApi ? corsOrigin(req, path) : null;
   const withCors = (res: NextResponse) => (origin ? applyCors(res, origin) : res);
 
   // CORS preflight is answered before auth — a preflight carries no credentials
