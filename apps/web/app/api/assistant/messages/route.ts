@@ -17,10 +17,14 @@ export async function GET(req: NextRequest) {
   if (user instanceof Response) return user;
   const { searchParams } = new URL(req.url);
 
-  const before = searchParams.get('before');
-  if (!before || Number.isNaN(Date.parse(before))) {
-    return NextResponse.json({ error: 'valid `before` timestamp required' }, { status: 400 });
+  // `before` is the load-older pagination cursor. Absent means "the latest page"
+  // (syncLatest on mount / after a foreign turn), so default to now; only a
+  // PRESENT-but-unparseable value is a 400.
+  const beforeParam = searchParams.get('before');
+  if (beforeParam && Number.isNaN(Date.parse(beforeParam))) {
+    return NextResponse.json({ error: 'invalid `before` timestamp' }, { status: 400 });
   }
+  const before = beforeParam ?? new Date().toISOString();
   const limitParam = Number.parseInt(searchParams.get('limit') ?? '', 10);
   const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 200) : PAGE;
   const slug = searchParams.get('agent') ?? undefined;
