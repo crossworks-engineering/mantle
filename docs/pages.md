@@ -6,7 +6,7 @@
 >
 > Companion docs: [`architecture.md`](./architecture.md) (the `nodes`
 > abstraction + extractor), [`memory.md`](./memory.md) (the six memory layers
-> + `content_chunks`), [`content.md`](./content.md) (the lighter notes / todos
+> + `content_chunks`), [`content.md`](./content.md) (the lighter notes / tasks
 > / events surfaces).
 
 ---

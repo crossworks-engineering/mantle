@@ -109,11 +109,11 @@ Keep the existing 19 groups. **Change/add:**
 | `page-admin` *(new)* | `page_delete`, `page_update` | Pages agent |
 | `table-admin` *(new)* | `table_delete` | not granted by default |
 | `contacts-admin` *(new)* | `contact_delete` | deliberate-only; not on the persona |
-| `lifelog-admin` *(new)* | `lifelog_delete` | deliberate-only; not on the persona |
+| `journal-admin` *(new)* | `journal_delete` | deliberate-only; not on the persona |
 
 These cover the orphan tools surfaced by the audit (`secret_create`,
 `process_extraction`, `page_update`, `page_delete`, `table_delete`, `contact_delete`,
-`lifelog_delete`, plus `recall_window`/`find_window` and `page_share`/`page_unshare`).
+`journal_delete`, plus `recall_window`/`find_window` and `page_share`/`page_unshare`).
 After this, **every grantable builtin lives in ≥1 group.**
 
 ### Runtime affordances (NOT groups, NOT stored grants)
@@ -136,8 +136,8 @@ These are injected by the loop based on context — keep them out of stored gran
 Author each `MANIFEST_AGENTS` entry with explicit `toolGroupSlugs` (drop the flat
 `toolSlugs`/`extraToolSlugs`/`DEFAULT_ASSISTANT` sentinel for grants):
 
-- **assistant (persona):** `memory-core, files, notes, events, todos, contacts,
-  lifelog, recall, email, persona, media-workers, delegation, messaging, secrets,
+- **assistant (persona):** `memory-core, files, notes, events, tasks, contacts,
+  journal, recall, email, persona, media-workers, delegation, messaging, secrets,
   ingest, tool-results, page-share`
   (NOT `pages`/`page-admin`/`tables` — delegated; NOT the `*-admin` deletes; NOT
   `terminal`/`research`/`federation`/`recall-search`.)
@@ -149,7 +149,7 @@ Author each `MANIFEST_AGENTS` entry with explicit `toolGroupSlugs` (drop the fla
 
 Verify each agent's effective set (`⋃ group tools`) ⊇ its current effective set
 (the expansions are the only additions). The persona intentionally **loses**
-`contact_delete`/`lifelog_delete` (now `*-admin`, deliberate-only) — flag that as
+`contact_delete`/`journal_delete` (now `*-admin`, deliberate-only) — flag that as
 the one capability removal.
 
 ## File-by-file plan
@@ -165,7 +165,7 @@ to authoring-only (no overlap). (2) heartbeat tools = **runtime-inject** (purer)
 `hasActiveHeartbeatsOnSurface`; the seed flat-grant is gone. (3)
 `DEFAULT_ASSISTANT_TOOL_SLUGS`/`ASSISTANT_TOOL_DENY` **kept** (vestigial) — P6b
 cleanup. The self-heal grants `CORE_AUTO_GRANT_GROUP_SLUGS`
-(`persona,todos,contacts,lifelog,notes,email,page-share`), coverage-aware.
+(`persona,tasks,contacts,journal,notes,email,page-share`), coverage-aware.
 
 Steps that were executed:
 1. `manifest.ts`: add the new groups + redefine `recall`; author all 6 agents with

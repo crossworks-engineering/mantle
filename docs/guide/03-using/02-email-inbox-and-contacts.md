@@ -9,7 +9,7 @@ keeping, and the assistant for sending.
 ## The golden rule: only people you know come in
 
 Mantle **never ingests mail you didn't ask for.** Connecting a mailbox doesn't dump
-your inbox into the brain. Instead, **your [Contacts](05-todos-events-contacts-secrets.md)
+your inbox into the brain. Instead, **your [Contacts](05-tasks-events-contacts-secrets.md)
 are the gate**: a message is ingested only if it's *from* someone in your
 contacts — or from one of your own account addresses. Everything else is silently
 ignored. The same contacts list also decides who the assistant may *email*, so

@@ -81,7 +81,7 @@ have drifted.
 
 ### 2e. Inconsistent confirm-gating on destructive tools (HIGH)
 
-- `event_delete` / `todo_delete` ride the **default** responder tool groups
+- `event_delete` / `task_delete` ride the **default** responder tool groups
   ([`apps/web/lib/system-manifest/manifest.ts:198,204`](../apps/web/lib/system-manifest/manifest.ts))
   with `requiresConfirm` defaulting false
   ([`packages/tools/src/seed.ts`](../packages/tools/src/seed.ts) — "confirm
@@ -89,7 +89,7 @@ have drifted.
 - Deleting a node fires the migration-0059/0058 reapers — **hard-deleting**
   derived episodic/factual facts and edges. So an injected "delete the
   dentist appointment" erases the node *and its memory* in one ungated call.
-- Contrast: `page_delete`, `table_delete`, `lifelog_delete`, `telegram_send`
+- Contrast: `page_delete`, `table_delete`, `journal_delete`, `telegram_send`
   ARE gated; `contact_delete` was deliberately moved to a non-default group.
   The policy is inconsistent, not absent.
 
@@ -104,7 +104,7 @@ sketches plus interactions worth honoring:
    it; extract only what the document *states*. Escape/neutralize candidate
    text interpolated into `CLASSIFIER_PROMPT_TEMPLATE` the same way.
 2. **Provenance on facts.** Stamp an origin tier at extraction time —
-   derivable from the source node type/channel: `user` (notes, lifelogs,
+   derivable from the source node type/channel: `user` (notes, journals,
    pages the user wrote), `agent` (note_create etc. — check trace context),
    `external` (email, telegram from non-owner, files from watched dirs).
    Either a real column on `facts` (migration) or `data.origin` jsonb;

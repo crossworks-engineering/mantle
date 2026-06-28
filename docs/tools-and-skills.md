@@ -114,11 +114,11 @@ The seed taxonomy is pre-drawn: the `*_TOOLS` arrays in
 | `files` | `file_*` + `folder_*` | source-file read/list/get |
 | `notes` | `NOTE_TOOLS` | |
 | `events` | `EVENT_TOOLS` | calendar CRUD |
-| `todos` | `TODO_TOOLS` | |
+| `tasks` | `TASK_TOOLS` | |
 | `pages` | `PAGE_TOOLS` | authoring subset (no `page_delete`) — decision 3; delete rides the escape hatch where intended |
 | `tables` | `TABLE_TOOLS` | |
 | `contacts` | `CONTACT_TOOLS` | the email gate ([contacts.md](contacts.md)) |
-| `lifelog` | `LIFELOG_TOOLS` | identity |
+| `journal` | `JOURNAL_TOOLS` | identity |
 | `recall` | `RECALL_TOOLS` | `find_window`, `recall_window` |
 | `research` | `RESEARCH_TOOLS` | `web_search` |
 | `email` | `EMAIL_TOOLS` | send/list/get |
@@ -231,8 +231,8 @@ makes the cutover a no-op.
 ### Phase 5 — Make it durable + the editor — ✅ SHIPPED
 Two surfaces still spoke the pre-group language, so the decomposition didn't
 *stick* and the agent editor told the old story.
-- ✅ **Group/auto-grant alignment:** the `contacts` and `lifelog` groups are now
-  the no-delete subsets (= `CONTACT`/`LIFELOG_AUTO_GRANT_SLUGS`), matching the
+- ✅ **Group/auto-grant alignment:** the `contacts` and `journal` groups are now
+  the no-delete subsets (= `CONTACT`/`JOURNAL_AUTO_GRANT_SLUGS`), matching the
   pages/tables authoring-subset pattern (decision 3). `*_delete` rides the escape
   hatch. This lets an auto-granted conversational agent qualify for the *whole*
   group instead of carrying ~9 tools flat forever.
@@ -291,7 +291,7 @@ agent editor, the Tools manager, and the Studio graph all draw it the same way.
    divides the source of truth. P6 makes tool groups the SOLE grant and drops
    `agent.tool_slugs` + the editor's "Direct tools" section. See the handover.
 3. **Authoring-subset groups** (confirmed + extended): `pages`/`tables` — and, in
-   P6, `contacts`/`lifelog` — groups exclude the destructive `*_delete`; deletes
+   P6, `contacts`/`journal` — groups exclude the destructive `*_delete`; deletes
    live in deliberate `*-admin` groups, granted on purpose, never auto.
 
 ## Phase 6 — groups as the sole tool-grant (✅ SHIPPED)
@@ -313,13 +313,13 @@ Shipped in two commits (approach A — coarse groups, specialists expand):
   `toolGroupSlugs` list (`toolSlugs: []`); taxonomy completed so every grantable
   builtin lives in ≥1 group — `recall` split into `recall`/`recall-search`,
   `pages` trimmed, and `page-admin`/`page-share`/`table-admin`/`contacts-admin`/
-  `lifelog-admin`/`secrets`/`ingest` added. Heartbeat-responder tools became a
+  `journal-admin`/`secrets`/`ingest` added. Heartbeat-responder tools became a
   per-turn **affordance** (injected in `assistant.ts`/`main.ts` when
   `hasActiveHeartbeatsOnSurface`), not a stored grant. The boot self-heal
   (`ensureCoreToolsOnConversationalAgents`) grants the core floor as **groups**
   (`CORE_AUTO_GRANT_GROUP_SLUGS`). Onboarding seeds the persona from
   `PERSONA_TOOL_GROUP_SLUGS`. Dev brain re-granted (5 specialists + both operator
-  personas); the persona loses `contact_delete`/`lifelog_delete` (now
+  personas); the persona loses `contact_delete`/`journal_delete` (now
   deliberate-only `*-admin`).
 - ✅ **P6b** (`0.19.31`): migration `0083` drops `agents.tool_slugs`;
   `effectiveToolSlugs(groupToolSlugs)` is group-only; the 4 runtime callers pass

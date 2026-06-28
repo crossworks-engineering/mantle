@@ -70,7 +70,7 @@ for each other, brains that talk to brains. It's the endgame, not the opening.)
 
 ## Who it's for
 
-**One person, one life.** Your inbox, your files, your journal, your todo
+**One person, one life.** Your inbox, your files, your journal, your task
 list, your contacts, your secrets (sealed — the AI physically cannot read
 them) — finally in one place that answers questions. *"When does Sarah's
 passport expire?" "What did the electrician quote in March?" "What did we
@@ -153,7 +153,7 @@ A standing integrity audit watches the corpus for drift (half-indexed nodes,
 stale backups, dead-lettered jobs) and says exactly how to heal each one.
 
 **It knows who you are — because you told it.** The learned personality
-above is one half; **Life Logs** are the other: short first-person entries
+above is one half; **Journal** entries are the other: short first-person entries
 about who you are, what you do, how you feel, distilled into an always-on
 identity block every agent reads on every turn. What it observes, it learns;
 what you declare, it never has to guess.
@@ -191,7 +191,7 @@ Full walkthrough (local dev, email, Telegram, production deploy):
 
 | Surface | What it gives you |
 |---|---|
-| **Web app** | chat with attachments + voice, inbox, files, notes, pages, tables, todos, events, contacts, life logs, secrets, traces, settings |
+| **Web app** | chat with attachments + voice, inbox, files, notes, pages, tables, tasks, events, contacts, journal entries, secrets, traces, settings |
 | **Telegram** | your assistant in your pocket — text, voice notes (transcribed + spoken replies), photos, documents |
 | **MCP** | ~30 tools exposing the whole brain to Claude or any MCP client — search, graph traversal, files, email, pending-approval flows |
 | **Share links** | revocable read-only links to any page, note, file, or event |
@@ -212,7 +212,7 @@ Full walkthrough (local dev, email, Telegram, production deploy):
 - [`recall.md`](./docs/recall.md) — Remy: lossless time-windowed replay of past conversation.
 - [`recall-eval.md`](./docs/recall-eval.md) — the retrieval eval harness; every ranking knob has a measured number behind it.
 - [`conversation.md`](./docs/conversation.md) — one conversation stream across every channel.
-- [`lifelog.md`](./docs/lifelog.md) — Life Logs and the always-on identity block.
+- [`journal.md`](./docs/journal.md) — Journal and the always-on identity block.
 - [`journey.md`](./docs/journey.md) — the Activity → Reaction map: every way content enters, and what reacts.
 
 **Content & surfaces**

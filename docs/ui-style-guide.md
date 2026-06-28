@@ -253,7 +253,7 @@ rules below). Use `scrollbar-thin` on scroll areas (`scrollbar-hidden` also
 exists; both are utilities in `globals.css`).
 
 ### Master-detail — THE pattern for list+editor screens
-Used by **Notes, Traces, Secrets, Events, Todos**, and every settings list
+Used by **Notes, Traces, Secrets, Events, Tasks**, and every settings list
 screen: **Accounts, Agents, AI workers, Heartbeats, Skills, Tools, API keys.**
 Left = scrollable list of **accent cards**; right = detail/form for the selected
 item. Proven scaffold (double-scrollbar-free):
@@ -322,7 +322,7 @@ Rules:
   tools), still let it be selected and show the fields **read-only** (disabled
   inputs / muted blocks); only send the editable subset on save.
 - **Search / filter / pagination are URL-driven (SSR), not client-side.** The
-  reference is `/pages`; `/todos`, `/events`, `/secrets` follow it. The server
+  reference is `/pages`; `/tasks`, `/events`, `/secrets` follow it. The server
   page reads `q` / `page` / filters from `searchParams`, calls
   `list({ …filters, limit, offset })` + a `count*()`, and passes
   `rows / total / page / pageSize / query / filters` to the client. The client

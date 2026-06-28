@@ -62,7 +62,7 @@ to seed this site. Its structure maps one-to-one onto landing sections:
    one Postgres, no zoo → **builds a personality around you / never
    forgets** → **context that targets the question** → engineered to be
    cheap → agents with jobs → nothing happens without a trace → it knows
-   who you are (Life Logs).
+   who you are (Journal).
 5. **Quick start** — the 5-line snippet, CTA to the GitHub repo.
 6. **The doorways** — web / Telegram / MCP / share links / federation.
 7. **Footer** — license (see §6) + Cross Works Engineering.

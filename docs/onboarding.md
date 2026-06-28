@@ -3,7 +3,7 @@
 > A fresh Mantle clone boots into a working brain with **no SQL and no env
 > editing**: clone → `pnpm start` → open the browser → create an account → walk a
 > nine-step wizard that adds model keys, provisions the assistant + AI workers,
-> runs a sanity check, captures who you are as Life Logs, and shapes the
+> runs a sanity check, captures who you are as Journal entries, and shapes the
 > assistant's personality. Everything it sets up is editable later under
 > Settings.
 
@@ -63,7 +63,7 @@ stepper is `onboarding-client.tsx`.
 | 3 | **Voice** | works by default on the OpenRouter key (grok voice ara); optionally add a dedicated **xAI** key for a smoother voice route |
 | 4 | **Set up** | `provisionDefaults(ownerId)` — creates the assistant + AI workers + the specialist stack (Pages/Ledger/Remy/Researcher/Coder, wired into Saskia's `delegate_to`) from the keys present |
 | 5 | **Check** | `runSanityChecks()` — green/red list of the **vitals**: OpenRouter probe, xAI probe if added, embeddings, the assistant, **assistant capabilities** (tools + can-delegate + grounding/voice skills), **memory workers** (extractor/summarizer/reflector/document), **specialists & delegation** (Pages/Ledger/Remy/Researcher seeded + wired into `delegate_to` + their skills), **editor assistants** (`resolveAssistAgentSlug` for /pages + /tables), voice/images |
-| 6 | **About you** | ~9 questions → one Life Log each (`createLifelog`); feeds the always-on identity block |
+| 6 | **About you** | ~9 questions → one Journal entry each (`createJournal`); feeds the always-on identity block |
 | 7 | **Personality** | preset bank × gender (voice) + name + creativity slider → `savePersonaAgent` |
 | 8 | **Telegram** | optional/skippable — BotFather instructions + token via the shared `<TelegramBotSection>` (`connectAgentTelegram`) bound to the assistant agent. **Identical to the `/settings/agents` flow** (same component), so it can be done here or any time later in Settings → Agents. Needs the assistant to exist (step 4) first |
 
@@ -101,7 +101,7 @@ indexing workers, document reading, and vision alike.
 
 The **assistant** is one `agents` row (slug `assistant`, role `responder` — serves
 both web `/assistant` and Telegram), model `anthropic/claude-sonnet-4.6`, with
-`inject_lifelog: true`. It's created with the Warm/Saskia default and refined by
+`inject_journal: true`. It's created with the Warm/Saskia default and refined by
 the personality step (`savePersonaAgent`: rebuilds the system prompt from the
 chosen preset, sets the name + temperature, points the TTS voice at the gender).
 
@@ -180,7 +180,7 @@ wizard's Set-up step (`ProvisionResult.seededSpecialists`).
 Browser-safe presets derived from Saskia's real persona — **Warm** (the
 default), **Professional**, **Playful**, **Concise** — each available
 female/male. `buildPersonaPrompt(preset, { assistantName, gender })` renders the
-system prompt; the user's name comes from the always-on Life Log identity block,
+system prompt; the user's name comes from the always-on Journal identity block,
 so the prompt stays name-agnostic. Voice maps to gender (female `ara`, male
 `rex`, matching prod). The creativity slider is the same `temperature` control
 as the agent editor.
@@ -191,11 +191,11 @@ as the agent editor.
 
 ~9 ordered questions (name, nickname, partner, family, work, faith, health,
 interests, goals, free catch-all). `composeBody` turns each answer into a
-first-person Life Log under a life-area category; the nickname (or first name)
+first-person Journal entry under a life-area category; the nickname (or first name)
 also becomes `preferences.displayName`. Those entries feed
-`buildIdentityContext` → the `# About the user (Life Log)` block injected into
+`buildIdentityContext` → the `# About the user (Journal)` block injected into
 every agent turn, so the assistant knows who you are from the first message. See
-[`lifelog.md`](./lifelog.md).
+[`journal.md`](./journal.md).
 
 ---
 

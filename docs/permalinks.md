@@ -1,7 +1,7 @@
 # Item permalinks — deep links to any node
 
-A single, type-agnostic URL that opens any item — note, page, todo, table,
-app, event, file, contact, life-log entry — straight at its surface. Companion
+A single, type-agnostic URL that opens any item — note, page, task, table,
+app, event, file, contact, journal entry — straight at its surface. Companion
 to [`content.md`](./content.md) (the node model), [`sharing.md`](./sharing.md)
 (public `/s/[token]` links), and [`conversation.md`](./conversation.md) (how
 responder replies render).
@@ -26,13 +26,13 @@ edits or displays it:
 | --- | --- |
 | `note` | `/notes?selected=<id>` |
 | `page` | `/pages/<id>` |
-| `task` | `/todos?selected=<id>` |
+| `task` | `/tasks?selected=<id>` |
 | `table` | `/tables?selected=<id>` |
 | `app` | `/apps/<id>` |
 | `event` | `/events/<id>` |
 | `file` | `/files?file=<id>` |
 | `contact` | `/contacts?id=<id>` |
-| `lifelog` | `/lifelog?selected=<id>` |
+| `journal` | `/journal?selected=<id>` |
 | anything else | `/nodes/<id>/history` (universal node biography) |
 
 Keeping the type→surface map in this one route means **callers never need to
@@ -63,7 +63,7 @@ markdown `[title](url)`:
 
 - `search_nodes` — every hit carries `url` (the main discovery path).
 - `node_read` — universal reader returns `url`.
-- `note_get`, `page_get`, `todo_get`, `table_get`, `event_get` — each returns
+- `note_get`, `page_get`, `task_get`, `table_get`, `event_get` — each returns
   `url` alongside the row.
 
 Because the tool descriptions carry the instruction, it propagates to **every
@@ -96,7 +96,7 @@ fixes that: on each selection it rewrites `?selected=` via
 state), no scroll reset, and no back-stack entry (Back leaves the surface rather
 than stepping through every item you clicked).
 
-Wired into **notes**, **lifelog**, and **todos** (the surfaces whose detail is
+Wired into **notes**, **journal**, and **tasks** (the surfaces whose detail is
 held client-side). **Tables** and **contacts** are left as-is — their detail
 loads server-side on select, so they genuinely need `useListNav().go`
 navigation, and already reflect the selection in the URL.

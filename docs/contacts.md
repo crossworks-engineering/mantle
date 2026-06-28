@@ -54,7 +54,7 @@ nodes
 > `isPlausibleEmailOrDomain`) live in `contacts-format.ts`.
 
 **No specialized table.** Fields are small/textual and fit `data` cleanly,
-matching notes/todos/events. The brain auto-indexes (the `nodes` INSERT
+matching notes/tasks/events. The brain auto-indexes (the `nodes` INSERT
 trigger fires the extractor); future fields just add keys.
 
 ### 1a. Title precedence
@@ -231,14 +231,14 @@ You → Saskia: "mail Modular and ask about 2020 profiles"
   navigates to it. Drafts are inert from every gate's POV — no email ⇒ not in
   `contactEmails` ⇒ no gate engagement; no recipient match ⇒ no counter bumps.
 - **Save** is a divider-topped footer floated right, labelled
-  **"Save contact"** — matching the todo/event form pattern.
+  **"Save contact"** — matching the task/event form pattern.
 - **Save-time validation:** at least one of `first_name`, `last_name`, or
   `company` is required (`hasIdentity` in `contacts-format.ts`). Email and
   cell alone aren't enough — they're channels, not identities. Client
   pre-checks instantly via the leaf module; server enforces independently in
   `updateContact` as the authoritative guard.
 - **Delete** is a top-right ghost button (`<Trash2 /> Delete`) with an
-  `AlertDialog` confirm — matching events/notes/todos.
+  `AlertDialog` confirm — matching events/notes/tasks.
 
 REST endpoints under [`apps/web/app/api/contacts/`](../apps/web/app/api/contacts/):
 `GET /` list, `POST /` create, `GET /[id]`, `PATCH /[id]`, `DELETE /[id]`.

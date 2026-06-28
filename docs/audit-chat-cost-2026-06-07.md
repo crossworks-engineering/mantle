@@ -91,7 +91,7 @@ growing tail.
 
 1. **Large fixed context (~22K tok/turn)** before any tool runs: system prompt +
    composed skills + ~68 tool definitions + retrieved context (facts,
-   content_hits, chunkHits, relations, digests, identity/lifelog block). See
+   content_hits, chunkHits, relations, digests, identity/journal block). See
    `packages/agent-runtime/src/conversation.ts` (`loadConversationContext`) +
    `messages.ts` (`buildChatMessages`).
 2. **Multi-step tool loops** (3–11 `llm_call`s/turn), each re-sending the whole,

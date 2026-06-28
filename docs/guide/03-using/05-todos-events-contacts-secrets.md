@@ -1,14 +1,14 @@
-# Todos, Events, Contacts & Secrets
+# Tasks, Events, Contacts & Secrets
 
 Four structured surfaces for the practical bits of life. Each is a first-class part
 of the brain (searchable, citable), and the assistant can create and manage all of
 them for you.
 
-## Todos
+## Tasks
 
-Tasks with **status**, **priority**, and an optional **due date**. Use the **Todos**
-screen, or just tell the assistant: "add a todo to renew the car licence, high
-priority." Mark them done in the UI or by asking. Todos are indexed, so "what's
+Tasks with **status**, **priority**, and an optional **due date**. Use the **Tasks**
+screen, or just tell the assistant: "add a task to renew the car licence, high
+priority." Mark them done in the UI or by asking. Tasks are indexed, so "what's
 outstanding for the church project?" works.
 
 ## Events

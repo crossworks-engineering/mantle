@@ -32,7 +32,7 @@ wizard → a fully working assistant on **a single OpenRouter key**.
     interview → personality → Telegram → done. Resumable via `onboardingStep`.
   - Content modules (browser-safe leaves):
     `packages/content/src/persona-bank.ts` (presets × gender) +
-    `onboarding-questions.ts` (interview → Life Logs → identity block).
+    `onboarding-questions.ts` (interview → Journal → identity block).
 
 - **Phase 2 — one OpenRouter key for everything.**
   - New adapters `packages/voice/src/adapters/openrouter-{tts,stt,image}.ts`

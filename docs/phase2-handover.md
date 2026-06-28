@@ -26,8 +26,8 @@ for the original why + full task list.
 **Settings (all done):** skills · tools · tool-groups · ai-workers · agents · heartbeats ·
 profile · discover · microsoft · accounts.
 
-**Content (done):** pages (+`[id]`) · notes (+`[id]`) · todos · events (+`[id]`) ·
-contacts · tables (+`[id]`) · lifelog.
+**Content (done):** pages (+`[id]`) · notes (+`[id]`) · tasks · events (+`[id]`) ·
+contacts · tables (+`[id]`) · journal.
 
 **`/inbox` is now done too** (v0.63.11) — the whole `(app)` surface is client-fetched. How it
 went: `sanitizeEmailHtml` moved into `GET /api/email/messages/[id]` (returns `bodyHtmlSafe`);
@@ -42,7 +42,7 @@ Data layer = **TanStack Query v5**. Full pattern + the accumulated per-archetype
 
 1. **Extend the list GET** if needed: most list endpoints only took `q`/`tag`. Add `sort` +
    `page`/`limit`/`offset` and return `{ items, total, page, pageSize, tags? }`, replicating the
-   old server page's logic (incl. defaults — see the todos status-default gotcha below).
+   old server page's logic (incl. defaults — see the tasks status-default gotcha below).
 2. **Page → data-free**: `await requireOwner()` then render the client component with NO data
    props. Wrap in `<Suspense fallback={<Spinner/>}>` whenever the client uses `useSearchParams`
    or `useListNav` (it uses useSearchParams) — else `next build` errors with a CSR bailout.
@@ -71,13 +71,13 @@ Data layer = **TanStack Query v5**. Full pattern + the accumulated per-archetype
 
 - **`useSearchParams` needs `<Suspense>`** around the client component in the server page, or
   `next build` fails (CSR bailout). Every URL-driven screen here is wrapped.
-- **Local optimistic list** (todos, events): don't rip out the local `useState` list — seed it from
+- **Local optimistic list** (tasks, events): don't rip out the local `useState` list — seed it from
   the query in a `useEffect` keyed on `listQuery.data` (+ deep-linked row), keep the optimistic
   `setX`, and `invalidate` on mutate (refetch re-runs the seed effect to reconcile).
-- **Status/filter default mismatch** (todos): the page defaulted `status='open'` while the GET
+- **Status/filter default mismatch** (tasks): the page defaulted `status='open'` while the GET
   defaults to `'all'` — the client must send `status` explicitly.
 - **Extracting a list filter to `const opts = {…}`** drops call-site contextual typing → annotate
-  narrowed union vars (`status: TodoStatus | 'all'`) or the spread re-widens them to `string`.
+  narrowed union vars (`status: TaskStatus | 'all'`) or the spread re-widens them to `string`.
 - **JSON dates**: row `Date` columns arrive as ISO strings over HTTP. `formatDateTime` accepts
   strings. Watch components typed `internalDate: Date` (e.g. `EmailRow`) — convert with `new Date()`
   or loosen the prop.
@@ -106,7 +106,7 @@ CSV Import; switching tables since the selected table is its own query).
 - Shared wire types: `packages/client-types/src/index.ts` (Skill/Tool/ToolGroup/AiWorker/Agent/
   Heartbeat DTOs + server aliases for drift).
 - Worked examples: `/pages` (URL-driven list + outer-gate editor), `/notes` (deep-link secondary
-  query), `/todos` (local optimistic list), `/tables` (master-detail shell + separate detail query).
+  query), `/tasks` (local optimistic list), `/tables` (master-detail shell + separate detail query).
 - UI conventions (MUST read before UI work): `apps/web/CLAUDE.md`, `docs/ui-style-guide.md`.
 - Project memory: `api-service-phase2.md`, `commit-and-version-cadence.md`,
   `no-concurrent-next-builds.md`, `prod-db-dev-workflow.md`.
@@ -191,5 +191,5 @@ Reads the URL (`account`/`folder`/`tab`/`email`) via `useSearchParams`. Wrap the
 - **Push** updates PR #1. The user has been fine with continuous pushing this session; still, offer
   rather than assume on a fresh start.
 - The user runs everything on **dev** and is fine with screens being disrupted mid-development.
-- Versions this arc: settings 0.62.0–0.63.4 · pages 0.63.5 · notes 0.63.6 · todos 0.63.7 ·
-  events 0.63.8 · contacts+tables 0.63.9 · lifelog 0.63.10. `/inbox` → 0.63.11.
+- Versions this arc: settings 0.62.0–0.63.4 · pages 0.63.5 · notes 0.63.6 · tasks 0.63.7 ·
+  events 0.63.8 · contacts+tables 0.63.9 · journal 0.63.10. `/inbox` → 0.63.11.

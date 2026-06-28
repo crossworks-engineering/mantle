@@ -5,7 +5,7 @@ nothing leaks by accident.
 
 ## Sharing — read-only public links
 
-Any **page, note, todo, event, or file** can be turned into a read-only public link
+Any **page, note, task, event, or file** can be turned into a read-only public link
 that anyone with the URL can open — no login. Use it to share a write-up, a plan, or
 a document.
 

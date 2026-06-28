@@ -86,8 +86,8 @@ HTTP boundary as a *contract* and a frontend that consumes it.
   meaning for a detached client.
 
 **Shared packages (the backend logic, already extracted):**
-`@mantle/db` (Drizzle schema + client), `@mantle/content` (notes/events/todos/
-pages/tables/contacts/lifelog/peers), `@mantle/search`, `@mantle/files`,
+`@mantle/db` (Drizzle schema + client), `@mantle/content` (notes/events/tasks/
+pages/tables/contacts/journal/peers), `@mantle/search`, `@mantle/files`,
 `@mantle/tools`, `@mantle/agent-runtime`, `@mantle/assistant-runtime`,
 `@mantle/email`, `@mantle/microsoft`, `@mantle/calendar`, `@mantle/heartbeats`,
 `@mantle/tracing`, `@mantle/api-keys`, `@mantle/storage`, `@mantle/embeddings`.

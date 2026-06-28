@@ -7,7 +7,7 @@ concepts; this page is how to manage them.
 ## Settings → Tools
 
 Tools are the concrete actions agents can take — search memory, read a file, create
-a note/todo/event, send email, generate an image, search the web, and many more.
+a note/task/event, send email, generate an image, search the web, and many more.
 Some are built-in; you can also add your own (e.g. an HTTP call to a service you
 run).
 

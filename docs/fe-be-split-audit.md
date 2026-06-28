@@ -23,13 +23,13 @@ Litmus tests are from `docs/frontend-backend-split.md` §9 (definition of done).
 ## What is genuinely well implemented (don't re-do this)
 
 - **The converted core is clean and consistent.** The 17 screens + `/inbox` named in the handover
-  (content: pages/notes/todos/events/contacts/tables/lifelog; settings:
+  (content: pages/notes/tasks/events/contacts/tables/journal; settings:
   skills/tools/tool-groups/ai-workers/agents/heartbeats/profile/discover/microsoft/accounts) all
   follow the same shape: data-free server page (auth gate only) → client component → `apiFetch`/
   `useQuery` → `/api/**`. Cross-verified, no leaks.
 - **The client bundle is pure.** Zero client components value-import server-only code. Every
   `@mantle/*` import in a `'use client'` file is either `import type` (erased) or a deliberately
-  browser-safe subpath (`@mantle/voice/client`, `@mantle/content/{contacts-format,lifelog-options,
+  browser-safe subpath (`@mantle/voice/client`, `@mantle/content/{contacts-format,journal-options,
   table-model,page-diff,page-toc,markdown,…}`) whose transitive graph never reaches Postgres /
   drizzle / `node:*` / Buffer. No Node built-ins, no `server-only`, no private `process.env` in
   client code.

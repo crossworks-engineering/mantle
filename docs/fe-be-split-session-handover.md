@@ -69,7 +69,7 @@ browser-smoked." All of that is now addressed:
   DTO (raw `bodyHtml`/ids/headers no longer cross the wire). **§9 grep is now EMPTY.**
 - **#5 cleanups** (v0.66.31; `dfdf6c7d`): 4 stale `requireOwner` comments → `getOwnerOr401`;
   `useRealtime` documented best-effort. Rate-limiter left as-is (intentional single-instance).
-- **#3a content DTO unification** (v0.66.32; `4a16f11f`): todo/event/lifelog/pages re-export the
+- **#3a content DTO unification** (v0.66.32; `4a16f11f`): task/event/journal/pages re-export the
   canonical `@mantle/content` `*Row` (fixed real drift — event was missing `timezone`, pages `width`);
   drift is now a compile error. **#3b decided:** no blanket response validation (first-party producers
   + compile-time drift checks suffice).

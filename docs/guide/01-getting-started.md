@@ -45,7 +45,7 @@ Anything you add becomes part of the brain. The easiest starting points:
 - **Write a note** — go to **Notes**, jot something down (e.g. a project idea).
 - **Upload a file** — drag a PDF or document into **Files**.
 - **Just tell the assistant** — "Make a note that the gate code is 4821" or "Add a
-  todo to renew the car licence" and she'll create it for you.
+  task to renew the car licence" and she'll create it for you.
 
 Within moments, the system reads what you added: it writes a short summary,
 indexes it for search, pulls out key facts, and notes the people/places/projects
@@ -77,7 +77,7 @@ To make Mantle genuinely useful, connect a few sources:
 ## Where things live
 
 - Things you create and the assistant: **Assistant**, **Notes**, **Pages**,
-  **Tables**, **Todos**, **Events**, **Contacts**, **Secrets**, **Files**.
+  **Tables**, **Tasks**, **Events**, **Contacts**, **Secrets**, **Files**.
 - Incoming email: **Inbox**.
 - Configuration: everything under **Settings**.
 - "What did the system just do?": **Traces** and **Debug** (for the curious).

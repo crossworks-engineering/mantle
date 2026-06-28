@@ -31,7 +31,7 @@ talking about right now" out to "the full archive":
 | Layer | What it holds |
 |---|---|
 | **Persona** | Who the assistant is, and what she's learned about *you* — your preferences, how you like replies, recurring people and projects. |
-| **Identity (Life Logs)** | Who *you* are, in your own words — distilled from your [Life Logs](../03-using/04-pages-tables-notes-docs.md) and carried into every conversation, so you never have to re-explain yourself. |
+| **Identity (Journal)** | Who *you* are, in your own words — distilled from your [Journal](../03-using/04-pages-tables-notes-docs.md) and carried into every conversation, so you never have to re-explain yourself. |
 | **Recent turns** | The last stretch of your conversation, verbatim. |
 | **Conversation digests** | Older conversations, compressed into summaries so nothing important is lost as chats age. |
 | **Profile (facts)** | Durable, deduplicated facts about you and your world. |

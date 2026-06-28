@@ -115,8 +115,8 @@ There are **three** writers of `agents.tool_group_slugs`, plus the editor:
    exists with **empty** `toolGroupSlugs` (the new "toolless" signal).
 3. **Boot self-heal** — `apps/agent/src/main.ts:ensureCoreToolsOnConversationalAgents`
    (~`:1420`). For every enabled `responder`/`assistant` agent, grants any missing
-   **core floor group** (`CORE_AUTO_GRANT_GROUP_SLUGS` = `persona, todos, contacts,
-   lifelog, notes, email, page-share`), unless already held or fully covered by
+   **core floor group** (`CORE_AUTO_GRANT_GROUP_SLUGS` = `persona, tasks, contacts,
+   journal, notes, email, page-share`), unless already held or fully covered by
    another granted group. **This is what keeps OPERATOR personas alive** —
    `telegram-default` (Saskia) and `apostle-paul` are NOT manifest slugs, so the
    manifest never grants them; the self-heal floors them. Writes `tool_group_slugs`.
@@ -132,8 +132,8 @@ into line by **throwaway scripts that have since been deleted** (see §7 R9/R10)
 ## 5. The taxonomy (27 tool groups) + agent→group map
 
 Groups (`MANIFEST_TOOL_GROUPS`, `apps/web/lib/system-manifest/manifest.ts:~170`):
-`memory-core, files, notes, events, todos, pages, page-admin, page-share, tables,
-table-admin, contacts, contacts-admin, lifelog, lifelog-admin, recall,
+`memory-core, files, notes, events, tasks, pages, page-admin, page-share, tables,
+table-admin, contacts, contacts-admin, journal, journal-admin, recall,
 recall-search, research, email, persona, secrets, ingest, media-workers,
 delegation, messaging, tool-results, terminal, federation`.
 
@@ -142,7 +142,7 @@ Design rules to verify:
   affordances (`heartbeat_*`) live OUTSIDE `BUILTIN_TOOLS` and intentionally
   belong to no group.
 - **Destructive ops are isolated** in `*-admin` groups (`page-admin`,
-  `table-admin`, `contacts-admin`, `lifelog-admin`) so a delete is only ever
+  `table-admin`, `contacts-admin`, `journal-admin`) so a delete is only ever
   granted deliberately, never as a side effect of an authoring grant.
 - **No overlap** between `pages` (authoring), `page-admin` (delete/overwrite),
   `page-share` (share toggles).
@@ -150,8 +150,8 @@ Design rules to verify:
   Remy only) so the persona can replay without the specialist search.
 
 Agent → groups (`MANIFEST_AGENTS`):
-- **assistant** (persona): `memory-core, files, notes, events, todos, contacts,
-  lifelog, recall, email, persona, media-workers, delegation, messaging, secrets,
+- **assistant** (persona): `memory-core, files, notes, events, tasks, contacts,
+  journal, recall, email, persona, media-workers, delegation, messaging, secrets,
   ingest, tool-results, page-share` (17 groups → 54 tools). NOT `pages`/`tables`/
   `*-admin`/`terminal`/`research`/`federation`/`recall-search`.
 - **pages**: `pages, page-admin, page-share, files, memory-core`
@@ -176,9 +176,9 @@ The auditor will see these as deltas vs the pre-refactor state. They are deliber
    behavior-identical** for specialists. (Verify the additions are exactly the
    coarse-group members and nothing dangerous, e.g. no specialist accidentally
    gained `run_terminal` or a `*_delete`.)
-2. **The persona lost `contact_delete` and `lifelog_delete`.** Moved to the
-   deliberate-only `contacts-admin`/`lifelog-admin` groups. (Verify no flow
-   assumed the generalist could delete a contact/life-log inline.)
+2. **The persona lost `contact_delete` and `journal_delete`.** Moved to the
+   deliberate-only `contacts-admin`/`journal-admin` groups. (Verify no flow
+   assumed the generalist could delete a contact/journal inline.)
 3. **`apostle-paul` lost `run_terminal`, `peer_*` (federation), `contact_delete`.**
    This dev operator persona was re-granted the generalist group list in P6a,
    stripping capabilities it previously held flat. **Judgment call on a dev-only

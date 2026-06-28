@@ -1,27 +1,27 @@
 # Public sharing — read-only links to any content
 
 > **Status: BUILT.** Read-only public sharing ships for all five types
-> (page, note, todo, event, file): the `shares` table + tokens, the public
+> (page, note, task, event, file): the `shares` table + tokens, the public
 > `/s/[token]` route + scoped asset route, the server page renderer, per-type
 > presenters, and the owner `<ShareControl>` wired into every detail surface.
 > **Deferred (schema-ready):** per-link expiry UI and per-link indexability
 > opt-in (`expires_at` / `settings` columns exist; no UI yet).
 >
-> Share any **page, note, todo, event, or file** with anyone who has the URL.
+> Share any **page, note, task, event, or file** with anyone who has the URL.
 > The link opens a clean, auth-free page tailored to the content — files in a
 > proper media viewer, pages in their full formatting — centered and quiet, with
 > nothing from the owner's account exposed beyond that one item.
 >
 > Companion docs: [`pages.md`](./pages.md) (the page schema this renders),
 > [`files.md`](./files.md) (the file pipeline assets are served from),
-> [`content.md`](./content.md) (note/todo/event shapes), [`architecture.md`](./architecture.md)
+> [`content.md`](./content.md) (note/task/event shapes), [`architecture.md`](./architecture.md)
 > (the `nodes` model).
 
 ---
 
 ## 1. Scope + decisions
 
-**Shareable** node types: `page`, `note`, `task` (todos), `event`, `file`.
+**Shareable** node types: `page`, `note`, `task`, `event`, `file`.
 **Never shareable:** `secret`, `email` / `email_thread`, `contact` (sensitive) —
 the share API rejects them.
 
@@ -145,7 +145,7 @@ Clean, centered, media-appropriate (`apps/web/components/share/`):
 | **Page** | `renderPageDoc` HTML; centered reading column (respect `data.width`), title + icon. Full formatting (callouts/columns/tables/code/math/images). |
 | **Note** | Markdown via `ReactMarkdown` + `remarkGfm` + `prose`, centered. |
 | **File** | Switch on `mimeType`: image (centered, zoom) · pdf (embedded viewer) · video/audio (`<video>`/`<audio controls>`) · text/markdown/code (rendered / lowlight) · else download card (icon, name, size). |
-| **Todo** | Card: title, status badge, priority, due date, body markdown. |
+| **Task** | Card: title, status badge, priority, due date, body markdown. |
 | **Event** | Card: title, formatted date/time range, location, body, **"Add to calendar" (.ics)**. |
 
 All themed via tokens. *(Note: the in-app file view only handles text today — the
@@ -156,7 +156,7 @@ media presenters are net-new here.)*
 ## 7. Owner-side UX
 
 A reusable **`<ShareControl>`** (`components/share/share-control.tsx`) on every
-detail screen (pages, notes, todos, events, files): a *"Anyone with the link can
+detail screen (pages, notes, tasks, events, files): a *"Anyone with the link can
 view"* toggle → mint token → show URL + **Copy** → **Revoke** (and, P4, expiry +
 "allow search engines"). API (owner-scoped via `requireOwner`):
 
@@ -194,7 +194,7 @@ real host. `email_page`'s `includeLink` option reuses `page_share` to add a
    shares API. Wire the control into page + note detail.
 2. **Files** — media presenters + the scoped public **asset route** (the
    meatiest piece). Wire into the files screen.
-3. **Todos & Events** — card presenters + `.ics`. Wire in.
+3. **Tasks & Events** — card presenters + `.ics`. Wire in.
 4. **Polish** — revoke/expiry mgmt UI, view counts, OG/social cards, rate
    limiting, per-link indexability opt-in.
 

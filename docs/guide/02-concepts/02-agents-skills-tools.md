@@ -29,7 +29,7 @@ images. You don't talk to them; they keep the brain fed. They're configured unde
 ## Tools — what an agent can do
 
 By itself an agent can only talk. **Tools** let it *act*: search your memory, read
-a file, create a note or todo, schedule an event, send an email, generate an
+a file, create a note or task, schedule an event, send an email, generate an
 image, look something up on the web, and more.
 
 You control which tools each agent may use (its allowlist), and tools you consider

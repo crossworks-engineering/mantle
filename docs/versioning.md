@@ -10,7 +10,7 @@ Pre-1.0, the parts mean:
 
 - **minor** (`0.19`) tracks **major feature milestones shipped** (ingest + tiered
   memory, knowledge graph, embeddings, pages, tables, contacts, email in/out,
-  recall, researcher, federation, telegram, lifelogs, heartbeats, chat failover,
+  recall, researcher, federation, telegram, journals, heartbeats, chat failover,
   tailscale inference, documentation, unified conversation, onboarding, …).
 - **patch** (`.0`) — fixes/iterations within a milestone; resets each minor.
 - **`-alpha`** — the system runs in production and is used daily, but it's

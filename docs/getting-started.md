@@ -27,7 +27,7 @@ mantle/
 │   ├── search/          # full-text + vector search helpers
 │   ├── embeddings/      # embedding dispatch + cache + re-embed
 │   ├── agent-runtime/   # tool loop + prompt assembly (shared by all surfaces)
-│   ├── content/         # notes, todos, events, lifelogs, backups, …
+│   ├── content/         # notes, tasks, events, journals, backups, …
 │   └── rules/           # ingest rules engine
 ├── scripts/             # dev convenience (up.sh, db-dump.sh, …)
 ├── docker-compose.dev.yml   # Postgres + MinIO + Tika for local dev (embedder = your local Ollama)
@@ -95,7 +95,7 @@ signup, available only while `auth.users` is empty). After signup, the
 **onboarding wizard** walks you through everything the brain needs to run: a
 model key (OpenRouter), optional voice/image (xAI) and transcription/vision
 (OpenAI) keys, then it provisions your assistant + the background AI workers,
-runs a sanity check, captures who you are as Life Logs, and lets you shape the
+runs a sanity check, captures who you are as Journal entries, and lets you shape the
 assistant's personality. See [`onboarding.md`](./onboarding.md).
 
 > `ALLOWED_USER_ID` is **optional** — left blank, the workers and MCP server
@@ -193,7 +193,7 @@ can read and reply.
 ## Connecting Claude (Desktop / Code)
 
 Claude Desktop and Claude Code can drive your Mantle directly — search,
-mail, todos, the knowledge graph, Telegram — through the bundled stdio MCP
+mail, tasks, the knowledge graph, Telegram — through the bundled stdio MCP
 server (`apps/mcp`). It's a one-time config per client machine: Claude
 spawns the server on demand (locally, or inside the `mantle_web` container
 over SSH for a remote install) and your SSH key is the entire auth layer.

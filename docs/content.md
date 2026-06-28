@@ -1,7 +1,7 @@
-# Notes, Todos, Events
+# Notes, Tasks, Events
 
 > Three small content surfaces that share a shape. Notes are markdown,
-> todos have status / priority / due, events have start time + reminders.
+> tasks have status / priority / due, events have start time + reminders.
 > All three ride on the `nodes` table, all three flow through the
 > extractor, and all three are addressable from MCP so the assistant can
 > create / update / delete them on your behalf.
@@ -10,7 +10,7 @@
 > the heavier [`pages.md`](./pages.md) surface — a TipTap editor with a
 > draft/commit model. Notes remain the lightweight markdown quick-capture.
 > For first-person self-knowledge (who you are, how you feel) that also feeds
-> the assistant's always-on identity context, see [`lifelog.md`](./lifelog.md)
+> the assistant's always-on identity context, see [`journal.md`](./journal.md)
 > — a fourth `nodes.data` sibling that rides this same shape.
 >
 > Any of the three can be shared read-only via a public link (`/s/[token]`) —
@@ -24,10 +24,10 @@ The three are 80% the same. Each is:
 
 - A `nodes` row with a specific `type` (`note`, `task`, `event`).
 - A jsonb `data` blob carrying the type-specific fields.
-- A lazy-created top-level ltree branch (`notes`, `todos`, `events`).
+- A lazy-created top-level ltree branch (`notes`, `tasks`, `events`).
 - Indexed by the extractor on insert + on every meaningful update.
-- Exposed via REST (`/api/{notes,todos,events}`), a web UI (`/notes`,
-  `/todos`, `/events`), and MCP tools (`{note,todo,event}_{list,get,
+- Exposed via REST (`/api/{notes,tasks,events}`), a web UI (`/notes`,
+  `/tasks`, `/events`), and MCP tools (`{note,task,event}_{list,get,
   create,update,delete}`).
 
 All the shared logic lives in `packages/content/`. Web + MCP both import
@@ -53,7 +53,7 @@ data = {
 The editor renders content as Markdown + GFM (tables, strikethrough,
 task lists). Search is substring against title / body / summary.
 
-### Todos (`type='task'`)
+### Tasks (`type='task'`)
 
 ```ts
 data = {
@@ -65,12 +65,12 @@ data = {
 ```
 
 List sort order is `open` first, then `due_at` ascending (nulls last),
-then `updated_at` descending. The `/todos` screen is **master-detail**
+then `updated_at` descending. The `/tasks` screen is **master-detail**
 (see [`ui-style-guide.md`](./ui-style-guide.md) §8): a filterable list
 on the left (search + status + priority; a checkbox toggles done
 optimistically) and a create / edit / detail pane on the right. Search,
 filters, and pagination are URL-driven (SSR) — same for `/events` and
-`/secrets` — via `listTodos`/`countTodos` (and the `events`/`secrets`
+`/secrets` — via `listTasks`/`countTasks` (and the `events`/`secrets`
 equivalents) with `limit`/`offset`.
 
 ### Events (`type='event'`)
@@ -167,7 +167,7 @@ the new tools (apps/mcp/src/server.ts):
 | Surface | Tools                                                            |
 |---------|------------------------------------------------------------------|
 | notes   | `note_list`, `note_get`, `note_create`, `note_update`, `note_delete` |
-| todos   | `todo_list`, `todo_get`, `todo_create`, `todo_update`, `todo_delete` |
+| tasks   | `task_list`, `task_get`, `task_create`, `task_update`, `task_delete` |
 | events  | `event_list`, `event_get`, `event_create`, `event_update`, `event_delete` |
 
 Typical flows the assistant can now do without any custom plumbing:
@@ -175,13 +175,13 @@ Typical flows the assistant can now do without any custom plumbing:
 - *"Remind me of my meeting at 10am"* →
   `event_create({title: 'meeting', startsAt: '…T10:00:00…', remindMinutesBefore: 0})`.
   The reminder fires at 10am, the worker pings your Telegram DM.
-- *"Add a todo to renew my passport, due end of month, high priority"* →
-  `todo_create({title: 'renew passport', priority: 'high', dueAt: '…'})`.
+- *"Add a task to renew my passport, due end of month, high priority"* →
+  `task_create({title: 'renew passport', priority: 'high', dueAt: '…'})`.
 - *"What notes do I have about the printer project?"* →
   `searchNodes` (semantic) brings back the relevant note rows; the
   assistant follow-ups with `note_get` for full content.
-- *"Mark the secrets feature todo as done"* → `todo_list` (find it),
-  then `todo_update({id, status: 'done'})`.
+- *"Mark the secrets feature task as done"* → `task_list` (find it),
+  then `task_update({id, status: 'done'})`.
 
 Same owner-scoping as the rest of the MCP surface
 (`OWNER_ID = process.env.ALLOWED_USER_ID`).

@@ -48,7 +48,7 @@ After that, just message her. Reminders from your **Events** also arrive here.
 Because she has memory **and** tools, you can ask her to *act*, not just answer:
 
 - **Recall** — "what did the plumber quote?", "find my note about the gate code."
-- **Capture** — "make a note…", "add a todo to…", "save this as a contact."
+- **Capture** — "make a note…", "add a task to…", "save this as a contact."
 - **Schedule** — "remind me to call Don Friday at 3pm" → creates an event and pings you.
 - **Write** — "turn this into a polished page", "summarise this thread."
 - **Email** — "draft a reply and send it" (from your own mailbox; see

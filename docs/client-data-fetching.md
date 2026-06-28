@@ -88,11 +88,11 @@ by default.
 | `/settings/accounts` | ✅ converted (endpoints existed; URL-driven master-detail → client; IMAP test/save + folder picker as mutations) |
 | `/pages` (+ `/pages/[id]`) | ✅ converted (first content screen; mutations were already client-fetch — wired the initial loads + extended the list GET + backlinks endpoint) |
 | `/notes` (+ `/notes/[id]`) | ✅ converted (same shape as /pages; extended the list GET; deep-linked note via a secondary `enabled` query; `[id]` is just a redirect) |
-| `/todos` | ✅ converted (status/priority filters; kept the local optimistic list, seeded from the query; extended the list GET with pagination) |
-| `/events` (+ `/events/[id]`) | ✅ converted (window filter; local optimistic list like /todos; the `useRealtime` callback → invalidate; small `[id]` outer-gate) |
+| `/tasks` | ✅ converted (status/priority filters; kept the local optimistic list, seeded from the query; extended the list GET with pagination) |
+| `/events` (+ `/events/[id]`) | ✅ converted (window filter; local optimistic list like /tasks; the `useRealtime` callback → invalidate; small `[id]` outer-gate) |
 | `/contacts` | ✅ converted (inline master-detail; list row IS the detail; deep-link `?id=` via secondary query; `go({})` refresh → invalidate) |
 | `/tables` (+ `/tables/[id]`) | ✅ converted (master-detail shell; selected `TableDetail` is a separate query; grid editor's commit/import refresh → invalidate; `[id]` was already a redirect) |
-| `/lifelog` | ✅ converted (same shape as /notes; mood/category/tag filters; deep-link via secondary query) |
+| `/journal` | ✅ converted (same shape as /notes; mood/category/tag filters; deep-link via secondary query) |
 | `/inbox` | ✅ converted (the last screen; moved `sanitizeEmailHtml` into the message GET as `bodyHtmlSafe`; `ReadingPane` → client with PATCH star/read mutations; new `InboxClient` 3-pane orchestrator + `GET /api/email/contact-gate`) |
 
 Convert more by following the reference; order by Electron priority.
@@ -182,13 +182,13 @@ Notes from the conversions so far:
   it must mount only after the fetch); its out-of-band AI refresh becomes
   `invalidateQueries(['pages', id])`, which re-renders the inner with fresh `initial`
   and triggers the existing remount effect.
-- **Screen with a local optimistic list** (`/todos` prepends-on-create, optimistic toggle):
+- **Screen with a local optimistic list** (`/tasks` prepends-on-create, optimistic toggle):
   don't rip out the local `useState` list — seed it from the query in a `useEffect` keyed on
-  `listQuery.data` (+ the deep-linked row), keep the optimistic `setTodos`, and swap
-  `router.refresh()` for `invalidateQueries(['todos'])` (the refetch re-runs the seed effect to
+  `listQuery.data` (+ the deep-linked row), keep the optimistic `setTasks`, and swap
+  `router.refresh()` for `invalidateQueries(['tasks'])` (the refetch re-runs the seed effect to
   reconcile). Two traps: (1) the page defaulted `status='open'` while the GET defaults to `'all'`,
   so the client must send `status` explicitly; (2) extracting a list filter to `const opts = {…}`
-  drops call-site contextual typing — annotate the narrowed union vars (`status: TodoStatus |
+  drops call-site contextual typing — annotate the narrowed union vars (`status: TaskStatus |
   'all'`) or the spread re-widens them to `string`.
 - **Server-only sanitisation at a security boundary** (`/inbox` `ReadingPane` rendered the
   email body via `sanitizeEmailHtml`, a VALUE from server pkg `@mantle/email`, into a sandboxed

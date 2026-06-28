@@ -57,11 +57,11 @@ Companion docs:
   rolls it up, and `/assistant` renders all of it. Channels are transports
   (`recordTurn` / `loadConversationContext` in `@mantle/agent-runtime`); read
   this before touching how a surface persists or loads conversation turns.
-- [`lifelog.md`](./lifelog.md) — "Life Logs": the note-like `lifelog` content
+- [`journal.md`](./journal.md) — "Journal": the note-like `journal` content
   type — short first-person entries (mood + life-area category) that teach
   agents who the user is. Indexed like notes **and** distilled into an
   always-on identity block (`buildIdentityContext`) injected into every agent
-  turn (opt-out via `AgentMemoryConfig.inject_lifelog`). Deterministic, no LLM.
+  turn (opt-out via `AgentMemoryConfig.inject_journal`). Deterministic, no LLM.
 - [`recall.md`](./recall.md) — "Remy", the memory-recall agent: time-windowed
   replay of past conversations (`find_window` → `recall_window`) via the
   `invoke_agent` delegation path. Lossless paging vs. lossy digests.
@@ -137,7 +137,7 @@ flowchart LR
     CC[/"Claude Desktop<br/>/ Claude Code"/]:::ext
 
     %% Web
-    Web["apps/web<br/>Next.js 15 (Turbopack)<br/>middleware (HMAC cookie gate)<br/>/inbox /assistant /files<br/>/notes /lifelog /pages /tables<br/>/todos /events /contacts<br/>/secrets /traces /debug /pending"]:::proc
+    Web["apps/web<br/>Next.js 15 (Turbopack)<br/>middleware (HMAC cookie gate)<br/>/inbox /assistant /files<br/>/notes /journal /pages /tables<br/>/tasks /events /contacts<br/>/secrets /traces /debug /pending"]:::proc
     Browser -- HTTPS --> Web
 
     %% MCP
@@ -289,7 +289,7 @@ backend only over HTTP `/api/**`**.
 
 What changed:
 
-- **Every screen converted to client data-fetching.** Pages, notes, todos, events,
+- **Every screen converted to client data-fetching.** Pages, notes, tasks, events,
   contacts, tables, files, the whole `/settings/*` surface, the dashboard, traces,
   `/inbox`, `/assistant` — all moved from `await getData()` in an RSC to
   **[TanStack Query](https://tanstack.com/query)** fetches against `/api`. Server
@@ -484,12 +484,12 @@ nodes (
 
 A row is one of 17 types: `branch`, `email`, `email_thread`, `file`, `note`,
 `page` (see [`pages.md`](./pages.md)), `table` (see [`tables.md`](./tables.md)),
-`documentation`, `lifelog` (see [`lifelog.md`](./lifelog.md)),
+`documentation`, `journal` (see [`journal.md`](./journal.md)),
 `sermon`, `contact`, `secret`, `task`, `event`, `printer_project`,
 `telegram_message`, `mantle_peer`. The polymorphic specialisations that need
 extra columns live in dedicated tables (`emails`, `email_attachments`,
 `telegram_messages`, `pages`, `tables`, …) with a `node_id` FK back to `nodes`;
-the lighter types (`note`, `task`, `event`, `contact`, `lifelog`) keep their
+the lighter types (`note`, `task`, `event`, `contact`, `journal`) keep their
 payload entirely in the `nodes.data` jsonb with no sidecar.
 
 Why one table:
@@ -1595,7 +1595,7 @@ result) is legitimate and dispatches both times. Only same-response
 duplicates are suppressed.
 
 **Catches every mutating tool.** `page_create`, `note_create`,
-`todo_create`, `event_create`, `file_create`, `contact_create`,
+`task_create`, `event_create`, `file_create`, `contact_create`,
 `telegram_send`, future ones. The guard is tool-agnostic — it doesn't
 look at the slug, just at byte-equal args. Non-mutating tools (`file_list`,
 `search`) gain the same protection from wasted dispatch but the
@@ -1717,7 +1717,7 @@ mantle/
 │   ├── api-keys/        # Encrypted credential vault
 │   ├── rules/           # Ingest rule engine (tag, route, suppress, …)
 │   ├── search/          # Hybrid search (FTS + vectors + ltree)
-│   ├── content/         # Notes, todos, events, secrets surfaces
+│   ├── content/         # Notes, tasks, events, secrets surfaces
 │   ├── files/           # Filesystem + DB hybrid file store
 │   ├── tools/           # Builtin tool defs + dispatch + invoke_agent
 │   ├── agent-runtime/   # Tool-loop + chat helpers + delegation bridge

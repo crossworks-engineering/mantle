@@ -34,7 +34,7 @@ Non-negotiables (full detail in the guide):
   pass `beforeEnable` to publish first — pages pass `commit`). See [`docs/sharing.md`](../../docs/sharing.md).
 - **List search/filter/pagination is URL-driven (SSR)** — server page reads `q`/`page`/filters,
   calls `list({…,limit,offset})` + `count*()`; client uses `useListNav()` (`go(patch)`) +
-  `<ListPager>`. Don't client-filter a loaded list. Reference: `/pages` (mirrored by todos/events/secrets).
+  `<ListPager>`. Don't client-filter a loaded list. Reference: `/pages` (mirrored by tasks/events/secrets).
 - **Public surface (`/s/[token]`)** lives outside the `(app)` group — no app shell, and it
   must scroll itself (`h-dvh overflow-y-auto`) because globals.css pins `html/body` to
   `overflow:hidden` for the shell. Pages render via the server `renderPageDoc` (sanitized

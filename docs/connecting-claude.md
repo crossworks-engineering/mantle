@@ -1,7 +1,7 @@
 # Connecting Claude to your Mantle (MCP)
 
 How to wire Claude Desktop or Claude Code onto your Mantle so Claude can
-search your brain, read mail, manage todos/notes/events, walk the entity
+search your brain, read mail, manage tasks/notes/events, walk the entity
 graph, and answer Telegram — using the bundled MCP server. One-time setup
 per client machine; after that the tools are simply present every launch.
 
@@ -13,9 +13,9 @@ author/test/deploy new agent tools on your own subscription instead of
 Mantle's metered key. See [`toolsmith.md`](./toolsmith.md). A conversation you have in Claude Desktop does *not* enter the
 unified conversation stream ([`conversation.md`](./conversation.md)) — your
 in-app assistant won't "remember" the chat itself. But everything Claude
-*writes* through it (a note, a todo, a life log) is a real brain write: the
+*writes* through it (a note, a task, a memory) is a real brain write: the
 extractor ingests, embeds, and indexes it like any other content. Logging a
-`lifelog` from Claude Desktop literally teaches your in-app assistant who you
+`journal` from Claude Desktop literally teaches your in-app assistant who you
 are.
 
 ## The security model — read this first
@@ -138,7 +138,7 @@ If instead you see `No account yet` — sign up in the web app first. If
 | Search | `search` (hybrid semantic+keyword), `search_chunks` (passage-level), `tree_list` |
 | Email | `email_list`, `email_get` |
 | Files | `folder_*`, `file_*` (list/read/upload/delete) |
-| Content | `note_*`, `todo_*`, `event_*`, `lifelog_*` (full CRUD), `page_*` / `table_*` (read-only) |
+| Content | `note_*`, `task_*`, `event_*`, `journal_*` (full CRUD), `page_*` / `table_*` (read-only) |
 | Knowledge graph | `entity_search`, `entity_facts`, `entity_neighbors`, `entity_mentions`, `graph_path` |
 | Telegram | `telegram_pending`, `telegram_send` (allowlisted chats only), `telegram_react`, `telegram_edit`, `telegram_pair` |
 | Operator | `pending_list` / `pending_get` / `pending_approve` / `pending_reject` |
@@ -146,13 +146,13 @@ If instead you see `No account yet` — sign up in the web app first. If
 
 Things to try: *"search my Mantle for …"*, *"any unanswered Telegram
 messages? draft replies"*, *"what do I know about \<person\>?"*, *"log a
-lifelog: …"*, *"approve the pending tool calls if they look sane"*.
+memory: …"*, *"approve the pending tool calls if they look sane"*.
 
 ## Caveats
 
 - **Cold spawn** takes a few seconds (tsx compiles on first request after
   launch); each call over SSH adds a network round trip. Fine for chat.
-- **Writes are real.** There is no sandbox: a `todo_create` from Claude
+- **Writes are real.** There is no sandbox: a `task_create` from Claude
   Desktop is the same row the web app shows, and the extractor will index
   whatever Claude writes.
 - **One config per client machine.** stdio means there's nothing to

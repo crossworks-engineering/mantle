@@ -25,7 +25,7 @@ wired, and tests for the load-bearing pure helpers. Specifically:
 | `conversation_digest` | summarizer (live, fires on `summarize_due`) | responder, assistant | Live |
 | `profile` (facts) | extractor (live, ADD/UPDATE/DELETE/NOOP classifier) | responder, assistant via vector search | Live |
 | `content_index` | extractor (summary + entities + embedding per node) | responder, assistant, MCP `search_nodes` | Live |
-| `content_store` | telegram, email, files watcher, web UI, MCP | by-id lookup only | Live for emails, telegram, files, notes, todos, events, secrets |
+| `content_store` | telegram, email, files watcher, web UI, MCP | by-id lookup only | Live for emails, telegram, files, notes, tasks, events, secrets |
 
 A seventh capability — **agent delegation** via the `invoke_agent`
 builtin — sits beside memory rather than in it: it lets a responder
@@ -75,7 +75,7 @@ flowchart TD
     TG["Telegram poll<br/>(telegram-poll worker)"]:::source
     EM["IMAP sync<br/>(email-sync worker)"]:::source
     FW["Files watcher<br/>(chokidar on disk)"]:::source
-    WEB["Web UI<br/>(/notes /todos /events<br/>/secrets /files)"]:::source
+    WEB["Web UI<br/>(/notes /tasks /events<br/>/secrets /files)"]:::source
     MCP["MCP server<br/>(Claude Desktop tools)"]:::source
 
     %% Persist
@@ -263,7 +263,7 @@ This grouping isn't a 7th layer — it's the mental model behind the six.
 | `note` | `/notes` | — | `data.content` (markdown) |
 | `page` | `/pages` | `pages` (TipTap doc) | `pages.doc_text` (derived plaintext) — see [pages.md](./pages.md) |
 | `file` | `/files` | — (bytes on disk under `MANTLE_FILES_ROOT`) | text files inline; `.pdf` via pdf-parse |
-| `task` | `/todos` | — | title + status + priority + due_at + body |
+| `task` | `/tasks` | — | title + status + priority + due_at + body |
 | `event` | `/events` | — | title + starts_at + ends_at + location + body (IANA tz preserved for reminder display) |
 | `secret` | `/secrets` | `secrets` (sealed bytea) | title + description + tags **only** — sealed payload never reaches the LLM |
 | `email` / `email_thread` | inbox / IMAP sync | `emails` + `email_attachments` | subject + bodyText (head+tail truncation at 24K chars) |
@@ -1026,11 +1026,11 @@ section passages to cover a long procedure/standard without forcing a full
 file read every turn; a per-agent override still wins.
 
 - **Identity (always-on "who you are")** — alongside the always-injected
-  preferences, `buildIdentityContext` distils the user's **Life Logs** (the
-  `lifelog` node type — see [`lifelog.md`](./lifelog.md)) into a compact
+  preferences, `buildIdentityContext` distils the user's **Journal** (the
+  `journal` node type — see [`journal.md`](./journal.md)) into a compact
   `# About the user` block prepended to the cached system prompt on every turn.
   Deterministic (no LLM), bounded + category-grouped, empty when there are no
-  life logs, and opt-out per agent via `memory_config.inject_lifelog`. This is
+  journal entries, and opt-out per agent via `memory_config.inject_journal`. This is
   the user telling the brain who they are in the first person, rather than the
   extractor inferring it — the strongest, most durable signal in Tier-1.
 
