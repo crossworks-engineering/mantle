@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { apiUrl, withAuth } from '@/lib/api-fetch';
 
 /**
  * Poll the assistant's current stage label while a turn is in flight.
@@ -24,7 +25,7 @@ export function useTurnStage(active: boolean): string | null {
 
     const poll = async () => {
       try {
-        const res = await fetch('/api/assistant/turn/stage', { cache: 'no-store' });
+        const res = await fetch(apiUrl('/api/assistant/turn/stage'), withAuth({ cache: 'no-store' }));
         if (!cancelled && res.ok) {
           const data = (await res.json()) as { label?: string | null };
           setLabel(data.label ?? null);

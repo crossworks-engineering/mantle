@@ -9,7 +9,7 @@ import { ChevronDown, Loader2, MessageSquare, Send, Sparkles, X } from 'lucide-r
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { apiEventStream } from '@/lib/api-fetch';
+import { apiEventStream, apiUrl, withAuth } from '@/lib/api-fetch';
 import type { TurnEvent } from '@mantle/client-types';
 import { useTurnStage } from './use-turn-stage';
 
@@ -158,7 +158,7 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
         attempt += 1;
         let res: Response | null = null;
         try {
-          res = await fetch('/api/assistant/turn', { method: 'POST', headers, body: input.body });
+          res = await fetch(apiUrl('/api/assistant/turn'), withAuth({ method: 'POST', headers, body: input.body }));
         } catch {
           // Network drop / connection reset mid-turn — the turn is still
           // running server-side; fall through to re-attach by key.
