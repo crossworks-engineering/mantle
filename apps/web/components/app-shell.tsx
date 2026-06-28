@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { PanelLeft, PanelLeftClose } from 'lucide-react';
@@ -201,9 +201,16 @@ export function AppShell({
         {/* Right live-activity column */}
         <LiveColumn collapsed={activityCollapsed} onToggle={toggleActivity} />
 
-        {/* Content area */}
+        {/* Content area. Own Suspense boundary: a page (children) that suspends
+            during SSR would otherwise bubble to the route boundary, wrapping the
+            whole shell — header included — in a streaming boundary that's absent
+            at client hydration, which shifts every radix `useId` in the header
+            and trips a hydration-id mismatch (intermittent: only when the server
+            is slow enough to stream). Containing it here, below the header, keeps
+            the header's tree-context symmetric. Same rationale as UsageCard's
+            boundary in layout.tsx. */}
         <main className="fixed inset-0 top-16 overflow-y-auto scrollbar-thin transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[var(--activity-w)]">
-          {children}
+          <Suspense fallback={null}>{children}</Suspense>
         </main>
 
         {/* App-wide docks: a bottom-right stack so uploads + chat never
