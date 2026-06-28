@@ -11,10 +11,14 @@ durable process that survives navigation/backgrounding (the route returns **202 
 drops back into the composer for correction); the responder writes portable standard Markdown; and a dropped
 SSE socket now **resumes via `Last-Event-ID`** — the runner buffers every event to `turn_stream_buffer` and the
 route replays what a reconnecting client missed (gap-free + duplicate-free), closing the documented reconnect
-gap for web AND laying the foundation the companion's background/foreground resume needs. **Next up: the
-Flutter companion consumes the same stream** (separate repo `~/Projects/mantle-companion`; it just mints the
-`turnId`, subscribes before POSTing, and sends `Last-Event-ID` on resume — no new endpoint). This file is the
-resume point; read it top-to-bottom, then the design doc §8 for the companion detail.
+gap for web AND laying the foundation the companion's background/foreground resume needs. **The Flutter
+companion consumer is now BUILT + unit-tested** (separate repo `~/Projects/mantle-companion`, `main` commit
+`ee16e88`, v1.3.0+10, **UNPUSHED**) — it consumes the same `GET /api/assistant/turn/:id/stream` (bearer, no new
+endpoint): live token streaming into the bubble, stream-driven stage labels, server-side Stop, and
+`Last-Event-ID` resume, all degrading gracefully to the legacy blocking path when the server flags are dark.
+**It has NOT yet been device-smoked** against a live server with the flags on — that's the remaining
+verification (§10). This file is the resume point; read it top-to-bottom, then the design doc §8 for the
+companion detail.
 
 ---
 
@@ -320,13 +324,31 @@ API key for live tests, so they're covered by `chat-stream.test.ts` instead.
   replayed the whole turn from seq 0; `turn_stream_buffer` held all 31 events; the durable outbound row was
   `complete` with the full reply. Dark-mode gating + the TTL sweep are covered by `publish.test.ts`.
   **⚠️ Still unproven on a real backgrounding mobile client** — that's the companion's job (next).
-- **REMAINING — the Flutter companion** (`~/Projects/mantle-companion`, [[mantle-companion]]) consumes the
-  SAME `GET /api/assistant/turn/:id/stream` — it's **bearer-authed from day one** (header, not cookie), so no
-  new endpoint. It mints the `turnId` and subscribes before POSTing, exactly like the web client, and sends
-  `Last-Event-ID` on resume to drain the buffer.
-- Reconcile against the durable row the same way web does — on foreground, read `assistant_messages.status`
-  (`pending`/`complete`/`failed`); the web client's 3s safety poll is the reference. Push relay
-  ([[mantle-push]]) covers fully-backgrounded turns.
+- ✅ **BUILT + unit-tested — the Flutter companion consumer** (`~/Projects/mantle-companion`,
+  [[mantle-companion]], `main` commit `ee16e88`, v1.3.0+10, **UNPUSHED**). Consumes the SAME
+  `GET /api/assistant/turn/:id/stream` (bearer from day one → no new endpoint). New `lib/data/chat/turn_event.dart`
+  (TurnEvent + pure SSE parser, mirrors `@mantle/client-types`); `chat_api.dart` `sendTurn` returns a sealed
+  `SendTurnResponse` — **202 `TurnAccepted{turnId}` vs legacy `TurnCompleted`, branched on the body shape** so it
+  degrades when the server flags are dark — plus `streamTurn()` (SSE generator, reconnect + `Last-Event-ID`, ends
+  on done/error/404) and `cancelTurn()` (swallows 404). `chat_controller.dart` gained `ActiveTurn` live state:
+  it **subscribes AFTER the 202** (the replay buffer covers the pre-subscribe window — no subscribe-before dance),
+  accumulates `text-delta` round-aware (a new round resets the buffer → only the final answer types out),
+  reconciles to the durable rows on `done` (carrying the local image preview), and `stopTurn()` aborts
+  server-side + restores the prompt (+ a 4s backstop); **`ref.mounted` guards** make a mid-turn navigation-away
+  tear down cleanly (the turn still completes durably + reconciles on return). UI: a live reply bubble
+  (`MantleMarkdown`; partial markdown is fine — `MarkdownBody` re-parses each build) + dots; the typing label now
+  rides the stream (the ~900ms `turnStage` poll is the legacy fallback, stands down when `active != null`);
+  composer Stop → `stopTurn()`. **92 companion tests green + `flutter analyze` clean** (new `turn_event_test.dart`;
+  `chat_api_test.dart` updated for the sealed return + 202/cancel; 2 new streaming controller tests — happy-path
+  reconcile + server-Stop).
+- **REMAINING — device/TestFlight smoke.** The unit tests don't exercise a real SSE socket or backgrounding.
+  Smoke it on a device against the local dev server (handover §8) with `MANTLE_TURN_STREAMING` +
+  `MANTLE_TURN_TOKENS` on: confirm the reply types out, Stop keeps the partial, and a background→foreground
+  resume drains the buffer. Reconcile is via `assistant_messages.status` (`pending`/`complete`/`failed`) — the
+  web client's 3s safety poll is the reference; the companion currently relies on its lifecycle/`_onRemoteTurn`
+  reconcile + the stream's own reconnect. Push relay ([[mantle-push]]) covers fully-backgrounded turns.
+- **Release gotcha:** bump the NotificationService-extension build number to match `+10` or ASC rejects the
+  upload ([[mantle-companion-ios-versioning]]).
 
 **Smaller / open:**
 - **Cross-reload persistence of the thought trail** — survive a hard refresh (store a compact trail on
