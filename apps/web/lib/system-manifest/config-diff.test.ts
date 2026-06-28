@@ -142,6 +142,19 @@ describe('diffConfig — persona structure', () => {
     expect(deleg.removed).toEqual(['pages']);
   });
 
+  it('surfaces a RETIRED default skill still attached (the rich_writing case) as modified + adoptable', () => {
+    // Persona carries rich_writing, which the manifest no longer assigns to it.
+    const live = inSyncLive();
+    live.agents[0]!.skillSlugs = ['tool_grounding', 'voice_reply', 'rich_writing'];
+    const persona = find(diffConfig(live, MANIFEST), 'persona', 'assistant');
+    expect(persona.status).toBe('modified');
+    const skills = persona.fields.find((f) => f.field === 'skillSlugs')!;
+    expect(skills.added).toEqual(['rich_writing']); // live has it, template doesn't
+    expect(skills.removed).toEqual([]);
+    // Adopt-from-template is offered; adopting converges (detaches rich_writing).
+    expect(persona.adoptable).toBe(true);
+  });
+
   it('reports missing when there is no persona at all', () => {
     const live = inSyncLive();
     live.agents = live.agents.filter((a) => a.slug !== 'assistant'); // pages is role custom, not a responder

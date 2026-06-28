@@ -225,6 +225,17 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
   },
 ];
 
+/**
+ * Every slug the manifest OWNS — the product-owned skill universe. The reconcile
+ * uses it to converge an agent's skill links: a slug in here that an agent no
+ * longer carries in the manifest is a RETIRED default (detach it), while a slug
+ * NOT in here is operator-authored (never touched). See reconcile-util's
+ * convergeManifestSkills + ./CLAUDE.md.
+ */
+export const MANIFEST_SKILL_SLUGS: ReadonlySet<string> = new Set(
+  MANIFEST_SKILLS.map((s) => s.slug),
+);
+
 // ── Seeded HTTP API tools ────────────────────────────────────────────────────
 //
 // Shipped, ready-to-use HTTP tools (the install-seed counterpart to the

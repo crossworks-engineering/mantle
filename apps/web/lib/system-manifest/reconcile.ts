@@ -21,8 +21,14 @@
  *      `only:[]` still means NO specialist agents are created/overwritten (no OpenRouter
  *      key required) and the persona's own prompt is untouched; skillMode scopes the
  *      overwrite to MANIFEST_SKILLS, so operator-AUTHORED skills are never touched.
- *   3. Union the manifest persona's default tool groups onto enabled responders —
- *      ADD only, never remove (see missingPersonaGroups).
+ *      In overwrite this also CONVERGES the persona's skill LINKS — detaching a
+ *      manifest-owned skill the persona no longer carries (e.g. rich_writing after
+ *      the chat_writing split). Operator-authored skill links are left attached.
+ *   3. Reconcile the manifest persona's default capabilities onto enabled
+ *      responders — BY ROLE, so an operator persona (Saskia/telegram-default) is
+ *      reached, not just the `assistant` slug. Tool groups UNION (add-only); skill
+ *      links CONVERGE (add new + drop a retired manifest skill like rich_writing;
+ *      operator-authored skills kept). See reconcilePersonaCapabilitiesByRole.
  *   4. Provision any specialist agent that this version of the manifest ships but
  *      the brain is MISSING (e.g. `appsmith` in 0.31) — create-only, and wire the
  *      persona's delegation to it. This closes the same gap step 1 closes for
@@ -42,12 +48,17 @@
  */
 import { and, eq, inArray } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
-import { db, agents, type AgentParams } from '@mantle/db';
+import { db, agents, skills, type AgentParams } from '@mantle/db';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
 import { APP_VERSION } from '@/lib/version';
 import { applyManifest, seedToolCapabilities, seedManifestWorkers } from './seed';
-import { MANIFEST_AGENTS, PERSONA_TOOL_GROUP_SLUGS } from './manifest';
-import { missingPersonaGroups } from './reconcile-util';
+import {
+  MANIFEST_AGENTS,
+  MANIFEST_SKILL_SLUGS,
+  PERSONA_MANIFEST,
+  PERSONA_TOOL_GROUP_SLUGS,
+} from './manifest';
+import { convergeManifestSkills, missingPersonaGroups } from './reconcile-util';
 
 let ranThisProcess = false;
 
@@ -62,10 +73,25 @@ async function resolveOwnerId(): Promise<string | null> {
   return rows.length === 1 ? (rows[0]!.id as string) : null;
 }
 
-/** Union the manifest persona's default groups onto every enabled responder. */
-async function grantPersonaGroupsByRole(ownerId: string): Promise<string[]> {
+/**
+ * Reconcile the manifest persona's default CAPABILITIES onto every enabled
+ * responder — the canonical `assistant` AND an operator persona (telegram-default
+ * / Saskia), keyed by ROLE so a renamed responder is still reached. Tool groups
+ * UNION (add-only); skill links CONVERGE — attach new manifest skills AND drop a
+ * manifest-owned skill the persona no longer carries (e.g. `rich_writing` after
+ * the chat_writing split), while operator-authored skills stay attached. The
+ * by-ROLE reach (not just the `assistant` slug) is what lets a default-behaviour
+ * change land on an operator-persona box WITHOUT a manual SQL detach. Returns the
+ * `slug:+added -removed` strings changed.
+ */
+async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promise<string[]> {
   const responders = await db
-    .select({ id: agents.id, slug: agents.slug, groups: agents.toolGroupSlugs })
+    .select({
+      id: agents.id,
+      slug: agents.slug,
+      groups: agents.toolGroupSlugs,
+      skills: agents.skillSlugs,
+    })
     .from(agents)
     .where(
       and(
@@ -74,29 +100,51 @@ async function grantPersonaGroupsByRole(ownerId: string): Promise<string[]> {
         inArray(agents.role, ['responder', 'assistant']),
       ),
     );
-  const granted: string[] = [];
+  // Persona skills safe to ATTACH: manifest persona skills whose row exists + is
+  // enabled. (The DROP side needs no existence check.)
+  const wantSkills = PERSONA_MANIFEST.skillSlugs;
+  const present = wantSkills.length
+    ? await db
+        .select({ slug: skills.slug })
+        .from(skills)
+        .where(
+          and(eq(skills.ownerId, ownerId), eq(skills.enabled, true), inArray(skills.slug, wantSkills)),
+        )
+    : [];
+  const addable = present.map((p) => p.slug);
+  const changes: string[] = [];
   for (const a of responders) {
-    const missing = missingPersonaGroups(a.groups, PERSONA_TOOL_GROUP_SLUGS);
-    if (missing.length === 0) continue;
-    await db
-      .update(agents)
-      .set({ toolGroupSlugs: [...(a.groups ?? []), ...missing], updatedAt: new Date() })
-      .where(eq(agents.id, a.id));
-    granted.push(`${a.slug}:+${missing.join(',')}`);
+    const missingGroups = missingPersonaGroups(a.groups, PERSONA_TOOL_GROUP_SLUGS);
+    const curSkills = a.skills ?? [];
+    const nextSkills = convergeManifestSkills(curSkills, wantSkills, MANIFEST_SKILL_SLUGS, addable);
+    const skillsChanged =
+      nextSkills.length !== curSkills.length || nextSkills.some((s, i) => s !== curSkills[i]);
+    if (missingGroups.length === 0 && !skillsChanged) continue;
+    const set: Record<string, unknown> = { updatedAt: new Date() };
+    if (missingGroups.length) set.toolGroupSlugs = [...(a.groups ?? []), ...missingGroups];
+    if (skillsChanged) set.skillSlugs = nextSkills;
+    await db.update(agents).set(set).where(eq(agents.id, a.id));
+    const added = [...missingGroups, ...nextSkills.filter((s) => !curSkills.includes(s))];
+    const removed = curSkills.filter((s) => !nextSkills.includes(s));
+    changes.push(
+      `${a.slug}:${added.length ? `+${added.join(',')}` : ''}${removed.length ? ` -${removed.join(',')}` : ''}`,
+    );
   }
-  return granted;
+  return changes;
 }
 
 /**
- * Union each manifest specialist's default tool groups AND skill links onto the
- * EXISTING specialist agent — additive, never removes (mirrors
- * grantPersonaGroupsByRole). Closes the gap where a NEW group or skill added to
- * an existing specialist (e.g. Appsmith gaining `research`, or a new skill wired
- * to a specialist) never reaches an already-provisioned brain:
+ * Reconcile each manifest specialist's product-owned capability links onto the
+ * EXISTING specialist agent: UNION tool groups (additive — operator group adds
+ * survive) and CONVERGE skills (add new manifest skills AND drop a manifest-owned
+ * skill the specialist no longer carries in the manifest, while operator-authored
+ * skills are untouched — mirrors syncPersonaSkills). Closes the gap where a NEW
+ * group/skill added to an existing specialist (e.g. Appsmith gaining `research`)
+ * — or a RETIRED default skill — never reaches an already-provisioned brain:
  * provisionMissingSpecialists only CREATES absent agents, and reconcile's
  * applyManifest runs with only:[] so it touches no existing specialist. Keyed on
  * enabled — a disabled specialist is an opt-out and is left alone. Returns the
- * `slug:+added` strings granted.
+ * `slug:+added -removed` strings changed.
  */
 async function grantSpecialistCapabilities(ownerId: string): Promise<string[]> {
   const rows = await db
@@ -104,21 +152,28 @@ async function grantSpecialistCapabilities(ownerId: string): Promise<string[]> {
     .from(agents)
     .where(and(eq(agents.ownerId, ownerId), eq(agents.enabled, true)));
   const bySlug = new Map(rows.map((r) => [r.slug, r] as const));
-  const granted: string[] = [];
+  const changes: string[] = [];
   for (const a of MANIFEST_AGENTS) {
     if (a.isPersona) continue;
     const row = bySlug.get(a.slug);
     if (!row) continue; // absent (or disabled) → provisionMissingSpecialists owns it
     const missingGroups = missingPersonaGroups(row.groups, a.toolGroupSlugs ?? []);
-    const missingSkills = missingPersonaGroups(row.skills, a.skillSlugs);
-    if (missingGroups.length === 0 && missingSkills.length === 0) continue;
+    const curSkills = row.skills ?? [];
+    const nextSkills = convergeManifestSkills(curSkills, a.skillSlugs, MANIFEST_SKILL_SLUGS);
+    const skillsChanged =
+      nextSkills.length !== curSkills.length || nextSkills.some((s, i) => s !== curSkills[i]);
+    if (missingGroups.length === 0 && !skillsChanged) continue;
     const set: Record<string, unknown> = { updatedAt: new Date() };
     if (missingGroups.length) set.toolGroupSlugs = [...(row.groups ?? []), ...missingGroups];
-    if (missingSkills.length) set.skillSlugs = [...(row.skills ?? []), ...missingSkills];
+    if (skillsChanged) set.skillSlugs = nextSkills;
     await db.update(agents).set(set).where(eq(agents.id, row.id));
-    granted.push(`${a.slug}:+${[...missingGroups, ...missingSkills].join(',')}`);
+    const added = [...missingGroups, ...nextSkills.filter((s) => !curSkills.includes(s))];
+    const removed = curSkills.filter((s) => !nextSkills.includes(s));
+    changes.push(
+      `${a.slug}:${added.length ? `+${added.join(',')}` : ''}${removed.length ? ` -${removed.join(',')}` : ''}`,
+    );
   }
-  return granted;
+  return changes;
 }
 
 /**
@@ -235,7 +290,7 @@ export async function reconcileManifestOnBoot(): Promise<void> {
 
     await seedToolCapabilities(ownerId, 'overwrite');
     await applyManifest(ownerId, { only: [], mode: 'gap-fill', skillMode: 'overwrite' });
-    const granted = await grantPersonaGroupsByRole(ownerId);
+    const personaChanges = await reconcilePersonaCapabilitiesByRole(ownerId);
     const provisioned = await provisionMissingSpecialists(ownerId);
     const specialistGrants = await grantSpecialistCapabilities(ownerId);
     const defsSynced = await syncSpecialistDefs(ownerId);
@@ -248,9 +303,9 @@ export async function reconcileManifestOnBoot(): Promise<void> {
 
     console.log(
       `[reconcile] synced manifest to v${APP_VERSION}` +
-        (granted.length ? `; persona +${granted.join('; ')}` : ' (persona grants current)') +
+        (personaChanges.length ? `; persona ${personaChanges.join('; ')}` : ' (persona current)') +
         (provisioned.length ? `; provisioned ${provisioned.join(', ')}` : '') +
-        (specialistGrants.length ? `; specialists +${specialistGrants.join('; ')}` : '') +
+        (specialistGrants.length ? `; specialists ${specialistGrants.join('; ')}` : '') +
         (defsSynced.length ? `; defs synced ${defsSynced.join(', ')}` : '') +
         (workersCreated.length ? `; workers +${workersCreated.map((w) => w.kind).join(',')}` : ''),
     );

@@ -37,6 +37,7 @@ import {
   MANIFEST_AGENTS,
   MANIFEST_HTTP_TOOLS,
   MANIFEST_SKILLS,
+  MANIFEST_SKILL_SLUGS,
   MANIFEST_TOOL_GROUPS,
   MANIFEST_WORKERS,
   PERSONA_SLUG,
@@ -47,6 +48,7 @@ import {
   type ManifestSkill,
   type ManifestToolGroup,
 } from './manifest';
+import { convergeManifestSkills } from './reconcile-util';
 import { resolveWorkerRoute } from './worker-route';
 import { resolveEffectivePersona } from './persona';
 
@@ -343,26 +345,49 @@ async function wireDelegation(ownerId: string, delegateSlugs: string[]): Promise
   }
 }
 
-/** Attach the persona's manifest skills to the persona agent (additive). */
-async function attachPersonaSkills(ownerId: string): Promise<void> {
+/**
+ * Sync the persona's manifest skill links to the persona agent.
+ *
+ * - gap-fill (onboarding / per-agent CLI seeds): ADD-only — attach the persona's
+ *   manifest skills, never remove (a stale-but-attached skill is left alone).
+ * - overwrite (boot reconcile / operator "adopt from template"): CONVERGE — also
+ *   DROP a manifest-owned skill the persona no longer carries in the manifest
+ *   (e.g. `rich_writing` after the chat_writing split). Operator-authored skills
+ *   (not in MANIFEST_SKILL_SLUGS) are never touched.
+ *
+ * Either way, only skills whose row exists + is enabled are attached.
+ */
+async function syncPersonaSkills(
+  ownerId: string,
+  skillMode: ApplyMode = 'gap-fill',
+  targetSlug: string = PERSONA_SLUG,
+): Promise<void> {
   const persona = MANIFEST_AGENTS.find((a) => a.isPersona);
-  if (!persona || persona.skillSlugs.length === 0) return;
+  if (!persona) return;
   const [row] = await db
     .select({ id: agents.id, skillSlugs: agents.skillSlugs })
     .from(agents)
-    .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, PERSONA_SLUG)))
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, targetSlug)))
     .limit(1);
   if (!row) return; // persona created by onboarding-provision; absent on operator brains
   // Only attach skills whose row exists + is enabled.
-  const present = await db
-    .select({ slug: skills.slug })
-    .from(skills)
-    .where(
-      and(eq(skills.ownerId, ownerId), eq(skills.enabled, true), inArray(skills.slug, persona.skillSlugs)),
-    );
-  const merged = union(row.skillSlugs ?? [], present.map((p) => p.slug));
-  if (merged.length === (row.skillSlugs ?? []).length) return;
-  await db.update(agents).set({ skillSlugs: merged, updatedAt: new Date() }).where(eq(agents.id, row.id));
+  const present = persona.skillSlugs.length
+    ? await db
+        .select({ slug: skills.slug })
+        .from(skills)
+        .where(
+          and(eq(skills.ownerId, ownerId), eq(skills.enabled, true), inArray(skills.slug, persona.skillSlugs)),
+        )
+    : [];
+  const addable = present.map((p) => p.slug);
+  const next =
+    skillMode === 'overwrite'
+      ? convergeManifestSkills(row.skillSlugs, persona.skillSlugs, MANIFEST_SKILL_SLUGS, addable)
+      : union(row.skillSlugs ?? [], addable);
+  const current = row.skillSlugs ?? [];
+  const changed = next.length !== current.length || next.some((s, i) => s !== current[i]);
+  if (!changed) return;
+  await db.update(agents).set({ skillSlugs: next, updatedAt: new Date() }).where(eq(agents.id, row.id));
 }
 
 /**
@@ -423,8 +448,10 @@ export async function applyManifest(
     agentDefs.filter((a) => a.isDelegate).map((a) => a.slug),
   );
 
-  // 5. The persona's shared behaviour skills.
-  await attachPersonaSkills(ownerId);
+  // 5. The persona's shared behaviour skills — converge in overwrite (reconcile)
+  //    so a default skill REMOVED from the persona (e.g. rich_writing) detaches;
+  //    add-only in gap-fill (onboarding / CLI).
+  await syncPersonaSkills(ownerId, skillMode);
 
   return { seededSkills: skillDefs.map((s) => s.slug), seededAgents };
 }
@@ -435,10 +462,11 @@ export async function applyManifest(
 // writes the boot reconcile makes on a version bump, but for a single item the
 // operator picked. Semantics match reconcile exactly (see ./CLAUDE.md):
 //   - skill / tool-group: overwrite the body / membership to the manifest.
-//   - specialist agent: MERGE — overwrite prompt/model/params, UNION groups +
-//     skills (operator additions survive); a missing one is created + wired.
-//   - persona: STRUCTURE only — union default groups + delegation, attach skills;
-//     never the prompt/model/params (operator-owned).
+//   - specialist agent: MERGE — overwrite prompt/model/params, UNION groups,
+//     CONVERGE skills (add manifest skills + drop a retired one; operator skills
+//     survive); a missing one is created + wired.
+//   - persona: STRUCTURE only — union default groups + delegation, CONVERGE skills
+//     (detaches a retired default like rich_writing); never the prompt/model/params.
 //   - worker: create the missing one, or re-model an existing one to the route
 //     (an explicit click MAY overwrite an operator-tuned model).
 
@@ -464,7 +492,8 @@ async function adoptSpecialist(ownerId: string, def: ManifestAgent): Promise<voi
       systemPrompt: def.systemPrompt ?? '',
       model,
       params: def.params as AgentParams,
-      skillSlugs: union(row.skills ?? [], def.skillSlugs),
+      // Skills converge (drop a retired manifest skill); groups stay additive.
+      skillSlugs: convergeManifestSkills(row.skills, def.skillSlugs, MANIFEST_SKILL_SLUGS),
       toolGroupSlugs: union(row.groups ?? [], def.toolGroupSlugs ?? []),
       enabled: true,
       updatedAt: new Date(),
@@ -504,7 +533,10 @@ async function adoptPersonaStructure(ownerId: string): Promise<void> {
       updatedAt: new Date(),
     })
     .where(eq(agents.id, row.id));
-  await attachPersonaSkills(ownerId);
+  // Explicit operator "adopt" → converge (also detaches retired manifest skills).
+  // Target the EFFECTIVE persona (an operator persona like Saskia, not necessarily
+  // the `assistant` slug) so adopt actually clears what /settings/config flagged.
+  await syncPersonaSkills(ownerId, 'overwrite', persona.slug);
 }
 
 /** Create the missing worker, or re-model an existing one to its manifest route. */

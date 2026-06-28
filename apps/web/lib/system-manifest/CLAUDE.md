@@ -37,10 +37,11 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
 |---|---|---|
 | Tool-group membership | ✅ overwrite | `seedToolCapabilities` |
 | Skill **body** (`SKILL_INSTRUCTIONS`) | ✅ overwrite | `applyManifest` `skillMode` |
-| New skill linked to the **persona** | ✅ union | `attachPersonaSkills` |
-| Persona default tool groups | ✅ union (add-only) | `grantPersonaGroupsByRole` |
+| **Persona** skill links (by ROLE — reaches operator personas too) | ✅ **converge** — add new + **drop a retired** manifest skill (e.g. `rich_writing`); operator skills kept | `reconcilePersonaCapabilitiesByRole` |
+| Persona default tool groups (by ROLE) | ✅ union (add-only) | `reconcilePersonaCapabilitiesByRole` |
 | New **specialist** agent | ✅ create + wire delegation | `provisionMissingSpecialists` |
-| Specialist tool groups **and** skill links | ✅ union (add-only) | `grantSpecialistCapabilities` |
+| Specialist tool groups | ✅ union (add-only) | `grantSpecialistCapabilities` |
+| Specialist skill links | ✅ **converge** — add new + **drop a retired** manifest skill; operator skills kept | `grantSpecialistCapabilities` |
 | Specialist prompt / model / params | ✅ overwrite | `syncSpecialistDefs` |
 | New **required** worker | ✅ create | `seedManifestWorkers({requiredOnly})` |
 
@@ -48,9 +49,14 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
 - Persona **prompt / model / params** — operator-owned; never touched.
 - An existing **worker's model/provider** — operator cost choice; never overwritten.
 - New **optional** workers — fresh onboarding only.
-- **Removals** — every grant is additive (union). Removing a group/skill from the
-  manifest does NOT remove it from existing brains. Disable to opt out; remove by
-  operator action.
+- **Removals** — mostly additive, with ONE exception: an agent's **skill links**
+  converge, so dropping a skill from an agent's manifest `skillSlugs` (e.g.
+  `rich_writing` off the persona) DOES detach it on upgrade — but only for skills
+  the manifest owns; operator-authored skill links are never touched. Everything
+  else is still add-only: removing a tool group from an agent, removing a skill/
+  group/agent **row** entirely (the row lives on — disable to opt out, delete by
+  operator action), and a default group an operator deliberately dropped (it
+  reappears).
 - **Operator-authored** skills/agents (not in the manifest) — never seen, never
   clobbered. (Named operator personas like `telegram-default`/Saskia are NOT
   manifest slugs.)
@@ -62,6 +68,11 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
 - **Add a new skill:** add a `MANIFEST_SKILLS` entry (+ its `SKILL_INSTRUCTIONS`
   body), then attach it via `skillSlugs` on the persona and/or specialists in
   `MANIFEST_AGENTS`. Both the body and the agent links now propagate.
+- **Detach a default skill from an agent:** remove its slug from that agent's
+  `skillSlugs` in `MANIFEST_AGENTS`. The reconcile **converges** skill links, so it
+  detaches on existing brains too (the `rich_writing` → `chat_writing` move is the
+  reference case). Leave the `MANIFEST_SKILLS` entry if another agent still uses it
+  (e.g. `rich_writing` stays for Pages). Operator-authored links are never touched.
 - **Add/change a specialist:** edit its `MANIFEST_AGENTS` entry (+ `AGENT_PROMPTS`).
   Prompt/model/params force-sync; groups + skills union; a brand-new specialist is
   auto-provisioned with delegation wired.
