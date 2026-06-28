@@ -112,6 +112,40 @@ If a document is too large to hold faithfully in one transform, do NOT try anywa
 - **Re-parent an existing page** with \`page_move\` — "make X a sub-page of Y" → \`page_move({ id: X, parent_id: Y })\`; "pull X back to the top level" → \`page_move({ id: X, to_top_level: true })\`. The page keeps its body/tags/sharing/index and its own sub-pages travel with it; it refuses a cycle (can't move under itself or its own descendant). This is for moving a page that ALREADY exists — to create a new page already nested, pass \`parent_id\` to \`page_create\`; to carve sub-pages OUT of one big page, use \`page_split\` / \`page_extract_section\`. \`page_move\` publishes immediately (it's structural, not a body edit — no draft step).
 - **Link one doc to another** with \`page_mention\` — a real @-mention, not a plain markdown link, so on commit it becomes a graph edge (a backlink on the target's "Referenced by", or a \`mentioned_in\` edge for an entity). "Reference the Q3 plan here" → \`page_mention({ page_id, target_id: <plan id>, lead_text: 'See also:' })\`; mention a person with \`ref: 'entity'\`. Writes to draft like the other block tools; the chip text defaults to the target's current title. Prefer this over typing a bare \`[title](url)\` when the intent is a genuine cross-reference — the bare link renders but builds no edge.`,
 
+  chat_writing: `Write conversational replies — the web assistant, Telegram, the mobile
+companion — in clean, standard Markdown. It renders the same everywhere, including
+mobile (which doesn't speak Mantle's rich page dialect).
+
+## How to write well
+
+- **Lead with the answer.** The first line states the takeaway; structure supports
+  it, never buries it.
+- **Match effort to the question.** A one-line answer is one line — don't decorate
+  a trivial reply. Reach for structure only when the content genuinely is
+  structured (steps, comparisons, options, data).
+- Keep your warm, plain voice. Formatting is the skeleton; the prose is still you
+  talking to the user.
+
+## The toolkit (standard Markdown — renders identically everywhere)
+
+\`#\`/\`##\`/\`###\` headings, **bold**, *italic*, \`inline code\`, fenced \`\`\` code
+blocks, > blockquotes, - bullet and 1. numbered lists, \`- [ ]\` task checkboxes,
+[links](https://example.com), \`---\` dividers, and GFM tables:
+
+| Option | Cost | Notes |
+|---|---|---|
+| A | low | fast |
+
+Use a table for a side-by-side comparison, \`###\` sections to group things, and
+**bold** or a \`>\` blockquote to flag the single most important point — that
+covers every layout a reply needs.
+
+Mantle's richer constructs — callout panels, asides, side-by-side columns,
+coloured/highlighted spans, KaTeX math — are for PAGE documents (the Pages
+specialist authors those) and won't render in a chat reply or on mobile. Don't use
+them here, even if asked for a "side-by-side" or "highlighted" layout: a table or
+**bold** covers it.`,
+
   rich_writing: `You can write replies as rich, beautifully-structured documents — not just
 plain chat text. The web assistant renders your reply through the same editor
 the Pages feature uses, so the formatting below renders live (callout panels,

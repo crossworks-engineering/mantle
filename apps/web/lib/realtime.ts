@@ -2,6 +2,8 @@ import postgres from 'postgres';
 import { eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
+import { TURN_STREAM_CHANNEL, type TurnStreamEnvelope } from '@mantle/turn-stream';
+import type { TurnEvent } from '@mantle/client-types';
 
 /**
  * Realtime bridge (server-only). A single app-wide Postgres LISTENer on the
@@ -28,9 +30,16 @@ export type ConversationChange = {
 };
 type ConvSubscriber = (c: ConversationChange) => void;
 
+/** A live turn event landed (status / tool / reasoning / token delta) — drives
+ *  the live "what the agent is doing" UI. Payload is a `TurnStreamEnvelope` from
+ *  the `turn_stream` NOTIFY (`publishTurnEvent` in @mantle/turn-stream); the
+ *  owner id is used to filter per subscriber and never reaches the browser. */
+type TurnStreamSubscriber = (env: TurnStreamEnvelope) => void;
+
 type Bridge = {
   subs: Set<Subscriber>;
   convSubs: Set<ConvSubscriber>;
+  turnSubs: Set<TurnStreamSubscriber>;
   starting: Promise<void> | null;
   stop: (() => Promise<void>) | null;
 };
@@ -45,12 +54,14 @@ const bridge: Bridge =
   globalThis.__mantleRealtime ?? {
     subs: new Set<Subscriber>(),
     convSubs: new Set<ConvSubscriber>(),
+    turnSubs: new Set<TurnStreamSubscriber>(),
     starting: null,
     stop: null,
   };
-// A bridge persisted from before this field existed (dev HMR re-eval) won't
-// have convSubs — backfill it so subscribeConversations can't hit `undefined`.
+// A bridge persisted from before a field existed (dev HMR re-eval) won't have
+// it — backfill so subscribe* can't hit `undefined`.
 bridge.convSubs ??= new Set<ConvSubscriber>();
+bridge.turnSubs ??= new Set<TurnStreamSubscriber>();
 globalThis.__mantleRealtime = bridge;
 
 async function ensureListening(): Promise<void> {
@@ -89,12 +100,25 @@ async function ensureListening(): Promise<void> {
         /* malformed payload — drop it rather than crash the listener */
       }
     });
+    // Live turn events (status / tool / token deltas) — payload is a JSON
+    // {ownerId, event} envelope; broadcast to the per-(owner,turn) subscribers.
+    const subTurnStream = await sql.listen(TURN_STREAM_CHANNEL, (payload) => {
+      try {
+        const env = JSON.parse(payload) as TurnStreamEnvelope;
+        if (env && env.ownerId && env.event && typeof env.event.turnId === 'string') {
+          broadcastTurnStream(env);
+        }
+      } catch {
+        /* malformed payload — drop it rather than crash the listener */
+      }
+    });
     bridge.stop = async () => {
       try {
         await subIngested.unlisten();
         await subIndexed.unlisten();
         await subPending.unlisten();
         await subConversation.unlisten();
+        await subTurnStream.unlisten();
       } catch {
         /* ignore */
       }
@@ -147,6 +171,18 @@ function broadcastConversation(change: ConversationChange): void {
   }
 }
 
+/** Push a turn-stream envelope to every turn subscriber (each one self-filters
+ *  by owner + turn). One bad subscriber must not break the rest. */
+function broadcastTurnStream(env: TurnStreamEnvelope): void {
+  for (const cb of bridge.turnSubs) {
+    try {
+      cb(env);
+    } catch {
+      /* one bad subscriber shouldn't break the rest */
+    }
+  }
+}
+
 /** Subscribe to node changes. Lazily starts the shared listener on first use.
  *  Returns an unsubscribe fn. */
 export async function subscribeRealtime(cb: Subscriber): Promise<() => void> {
@@ -172,5 +208,33 @@ export async function subscribeConversations(cb: ConvSubscriber): Promise<() => 
   }
   return () => {
     bridge.convSubs.delete(cb);
+  };
+}
+
+/**
+ * Subscribe to live turn events for ONE (owner, turn). The owner filter is the
+ * cross-tenant isolation boundary: a caller only ever receives events whose
+ * envelope owner matches the authenticated session, so a `turnId` guessed from
+ * another owner yields nothing. The callback receives the bare `TurnEvent` (the
+ * envelope's owner id is stripped). Shares the one LISTEN connection; returns an
+ * unsubscribe fn. */
+export async function subscribeTurnStream(
+  ownerId: string,
+  turnId: string,
+  cb: (event: TurnEvent) => void,
+): Promise<() => void> {
+  const wrapped: TurnStreamSubscriber = (env) => {
+    if (env.ownerId !== ownerId) return;
+    if (env.event.turnId !== turnId) return;
+    cb(env.event);
+  };
+  bridge.turnSubs.add(wrapped);
+  try {
+    await ensureListening();
+  } catch (err) {
+    console.error('[realtime] listener start failed:', err);
+  }
+  return () => {
+    bridge.turnSubs.delete(wrapped);
   };
 }

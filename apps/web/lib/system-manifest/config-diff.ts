@@ -322,8 +322,10 @@ function diffWorker(w: ManifestWorker, live: LiveConfig): EntityDiffCore {
       ...base,
       status: 'missing',
       // A required worker missing is a real problem; optional just isn't provisioned.
+      // (Not every required worker indexes — the narrator falls back to the
+      // summarizer — so keep the message generic, not "indexing degraded".)
       severity: w.required ? 'high' : 'low',
-      summary: w.required ? 'no default+enabled worker (indexing degraded)' : 'not provisioned (optional)',
+      summary: w.required ? 'no default+enabled worker' : 'not provisioned (optional)',
       fields: [],
     };
   }

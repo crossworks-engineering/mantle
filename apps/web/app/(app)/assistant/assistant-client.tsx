@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useAssistantDock } from '@/components/assistant/assistant-dock';
 import { useTurnStage } from '@/components/assistant/use-turn-stage';
+import { useTurnStream, type ThoughtEvent } from '@/components/assistant/use-turn-stream';
+import { ThoughtTrail } from '@/components/assistant/thought-trail';
 import {
+  ArrowDown,
   CornerDownLeft,
   FileText,
   Image as ImageIcon,
@@ -13,12 +16,16 @@ import {
   MicOff,
   Paperclip,
   Send,
+  Square,
   X,
 } from 'lucide-react';
 import { formatDateTime } from '@/lib/format-datetime';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { RichText } from '@/components/assistant/rich-text';
+import { CopyButton } from '@/components/assistant/copy-button';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { apiFetch } from '@/lib/api-fetch';
 import { assetUrl } from '@/lib/asset-url';
 
@@ -58,6 +65,9 @@ type StoredAttachment = {
 /** Page size for the initial load and each scroll-up fetch. */
 const PAGE_SIZE = 100;
 
+/** Within this many px of the bottom counts as "stuck" for autoscroll-follow. */
+const NEAR_BOTTOM_PX = 24;
+
 type Message = {
   id: string;
   direction: 'inbound' | 'outbound';
@@ -77,6 +87,22 @@ type Message = {
   artifacts?: Artifact[];
   /** Optimistic flag while we wait for the server reply. */
   pending?: boolean;
+  /** Durable execution state (migration 0105). Outbound rows are 'pending' while
+   *  the runner works, 'complete' when the reply lands, 'failed' on error — so a
+   *  reload mid-turn renders the right state. Undefined on optimistic rows. */
+  status?: 'pending' | 'complete' | 'failed';
+  /** Failure reason for a 'failed' turn; null/undefined otherwise. */
+  error?: string | null;
+  /** The grounded status steps streamed during this turn, frozen onto the reply
+   *  as a persistent "thought" record. Outbound only; session-scoped (the
+   *  durable record is the trace). */
+  thoughts?: ThoughtEvent[];
+  /** Real output-token total for the turn, from the `done` event — shown on the
+   *  frozen thought-trail summary. Session-scoped (not persisted). */
+  tokens?: number;
+  /** Wall-clock duration of the turn (ms), measured client-side from the live
+   *  stream — shown on the frozen thought-trail summary. Session-scoped. */
+  durationMs?: number;
 };
 
 /** A conversational turn: the user's prompt and Saskia's response. The
@@ -127,9 +153,52 @@ export function AssistantClient({
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
-  // Live "what's the agent doing" label, polled from the running trace while a
-  // turn is in flight — shown next to the typing dots.
-  const stageLabel = useTurnStage(sending);
+  // True from the moment the user hits Stop until the turn settles — so the Stop
+  // button reflects "stopping…" and can't be double-fired.
+  const [stopping, setStopping] = useState(false);
+  // Live "what's the agent doing" label. The stream (keyed on the in-flight
+  // turn's id) pushes status the instant each step starts; the poll is the
+  // fallback while streaming is off or before the socket connects. Stream wins.
+  const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
+  const {
+    label: streamLabel,
+    trail: streamTrail,
+    reply: streamReply,
+    phase: streamPhase,
+    outboundId: streamOutboundId,
+    error: streamError,
+    startedAt: streamStartedAt,
+    tokens: streamTokens,
+    tokensApprox: streamTokensApprox,
+  } = useTurnStream(activeTurnId);
+  const polledLabel = useTurnStage(sending);
+  const stageLabel = streamLabel ?? polledLabel;
+  // Mirror the live trail + the durable outbound id into refs so the completion
+  // reconciler (which runs async, off the stream's `done`) reads fresh values
+  // rather than stale closure captures.
+  const trailRef = useRef<ThoughtEvent[]>([]);
+  useEffect(() => {
+    trailRef.current = streamTrail;
+  }, [streamTrail]);
+  const outboundIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    outboundIdRef.current = streamOutboundId;
+  }, [streamOutboundId]);
+  // Mirror the final token count + the turn's start time so reconcileDone (async,
+  // stable callback) can stamp the real "duration · tokens" onto the frozen trail.
+  const streamTokensRef = useRef<number | null>(null);
+  useEffect(() => {
+    streamTokensRef.current = streamTokens;
+  }, [streamTokens]);
+  const streamStartedAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    streamStartedAtRef.current = streamStartedAt;
+  }, [streamStartedAt]);
+  // The in-flight non-blocking turn awaiting reconciliation (set by `submit`
+  // when the route returns 202; consumed by the phase effect on done/error).
+  // `startedAt` lets the safety poll find the turn's outbound row even if the
+  // `turn-start` event (which carries the id) was missed.
+  const pendingTurnRef = useRef<{ optimisticId: string; turnId: string; startedAt: string } | null>(null);
   const [error, setError] = useState<string>();
   // ── Voice-in state ──
   const [recording, setRecording] = useState(false);
@@ -143,6 +212,13 @@ export function AssistantClient({
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [attachedPreviewUrl, setAttachedPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // The text of the in-flight turn's prompt, so a Stop can drop it back into the
+  // composer for correction.
+  const lastPromptRef = useRef('');
+  // Set when a Stop restores the prompt — focus the composer once it re-enables
+  // (the textarea is disabled while `sending`, so we can't focus immediately).
+  const focusAfterStopRef = useRef(false);
 
   // ── Share-location toggle ──
   // Sticky opt-in (persisted): when on, each send attaches a fresh browser
@@ -162,6 +238,26 @@ export function AssistantClient({
 
   const scrollerRef = useRef<HTMLDivElement>(null);
 
+  // ── Stick-to-bottom autoscroll ──
+  // Follow new content (a landing reply, streamed tokens, a growing trail) ONLY
+  // while the user is parked at the bottom. The moment they scroll up to read, we
+  // stop yanking them down and offer a jump-to-bottom button instead. `atBottom`
+  // is a ref (the truth read by the scroll effects, no stale closures); `showJump`
+  // is state (drives the button). A small threshold so a deliberate scroll-up
+  // un-sticks but sub-pixel rounding doesn't.
+  const atBottomRef = useRef(true);
+  const [showJump, setShowJump] = useState(false);
+  const scrollToBottom = useCallback((smooth: boolean) => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+  }, []);
+  const jumpToBottom = useCallback(() => {
+    atBottomRef.current = true;
+    setShowJump(false);
+    scrollToBottom(true);
+  }, [scrollToBottom]);
+
   // ── Scroll-up lazy loading of older messages ──
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasMore, setHasMore] = useState(initialMessages.length >= PAGE_SIZE);
@@ -171,18 +267,29 @@ export function AssistantClient({
 
   const turns = useMemo(() => groupTurns(messages), [messages]);
 
-  // Scroll management: after a prepend, restore position (no jump);
-  // otherwise pin to the bottom (initial load + new send/reply).
+  // Scroll management: after a prepend, restore position (no jump); otherwise pin
+  // to the bottom ONLY when the user is parked there (initial load + a send force
+  // `atBottom` true). A reply that lands while they've scrolled up doesn't yank
+  // them — the jump button appears instead.
   useLayoutEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
     if (pendingPrepend.current) {
       el.scrollTop = el.scrollHeight - pendingPrepend.current.prevHeight + pendingPrepend.current.prevTop;
       pendingPrepend.current = null;
-    } else {
+    } else if (atBottomRef.current) {
       el.scrollTop = el.scrollHeight;
+    } else {
+      setShowJump(true);
     }
   }, [messages, sending]);
+
+  // Follow live streaming content (the reply typing out, the trail growing) while
+  // stuck to the bottom. Fires per token/step; a no-op once the user scrolls up.
+  useLayoutEffect(() => {
+    if (atBottomRef.current) scrollToBottom(false);
+    else setShowJump(true);
+  }, [streamReply, streamTrail, scrollToBottom]);
 
   const loadOlder = useCallback(async () => {
     if (loadingRef.current || !hasMore) return;
@@ -228,15 +335,186 @@ export function AssistantClient({
       );
       const latest = data.messages ?? [];
       setMessages((prev) => {
-        const have = new Set(prev.map((m) => m.id));
-        const additions = latest.filter((m) => !have.has(m.id));
-        if (additions.length === 0) return prev;
-        return [...prev, ...additions].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        // Merge by id: ADD rows we don't have, and UPDATE ones whose durable
+        // fields changed (a 'pending' row finalizing to 'complete'/'failed' —
+        // its text/status/error flip server-side). Client-only fields (live
+        // `artifacts`, frozen `thoughts`, the optimistic local preview) are
+        // preserved. Returns `prev` unchanged when nothing moved (safe no-op).
+        const byId = new Map(prev.map((m) => [m.id, m]));
+        let changed = false;
+        for (const row of latest) {
+          const existing = byId.get(row.id);
+          if (!existing) {
+            byId.set(row.id, row);
+            changed = true;
+          } else if (
+            existing.text !== row.text ||
+            existing.status !== row.status ||
+            existing.error !== row.error ||
+            existing.model !== row.model
+          ) {
+            byId.set(row.id, {
+              ...existing,
+              text: row.text,
+              status: row.status,
+              error: row.error,
+              model: row.model,
+              channel: row.channel ?? existing.channel,
+              attachments: row.attachments ?? existing.attachments,
+            });
+            changed = true;
+          }
+        }
+        if (!changed) return prev;
+        return [...byId.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       });
     } catch {
       /* network blip — the next turn or a reload will reconcile */
     }
   }, [agentSlug]);
+
+  // ── Non-blocking turn completion ──
+  // The streaming route returns 202 immediately; the live stream then drives the
+  // reply, and these reconcile the transcript to the DURABLE row when the turn
+  // ends (the streamed buffer was advisory). `done` → pull the canonical rows
+  // and freeze the thought trail onto the reply; `error` → surface it. A short
+  // safety poll backs them up in case the terminal event is missed (NOTIFY has
+  // no backlog, so a reconnect mid-turn could drop it).
+  const endActiveTurn = useCallback(() => {
+    setSending(false);
+    setStopping(false);
+    setActiveTurnId(null);
+    pendingTurnRef.current = null;
+  }, []);
+
+  // Stop the in-flight turn: ask the runner to abort generation. The turn then
+  // finalizes with whatever partial reply streamed and fires `done`, so the
+  // normal completion path (phase effect / safety poll) reconciles it — no
+  // special teardown here. Fire-and-forget; a dropped cancel just means the turn
+  // runs a little longer.
+  const stopTurn = useCallback(() => {
+    const turnId = activeTurnId;
+    if (!turnId || stopping) return;
+    setStopping(true);
+    void apiFetch(`/api/assistant/turn/${turnId}/cancel`, { method: 'POST' }).catch(() => {
+      /* the done/poll path still reconciles; nothing to surface */
+    });
+    // Drop the stopped turn's prompt back into the composer so the user can
+    // correct it and resend. Only when the box is empty — if they'd started
+    // typing the next message while this one streamed, don't clobber it.
+    const prompt = lastPromptRef.current;
+    if (prompt) {
+      setDraft((cur) => (cur.trim() ? cur : prompt));
+      focusAfterStopRef.current = true; // focus once the turn settles + box re-enables
+    }
+  }, [activeTurnId, stopping]);
+
+  // After a Stop restores the prompt, focus the composer + cursor-to-end the
+  // moment the turn settles (the box is disabled while `sending`).
+  useEffect(() => {
+    if (sending || !focusAfterStopRef.current) return;
+    focusAfterStopRef.current = false;
+    const el = textareaRef.current;
+    if (!el) return;
+    el.focus();
+    const end = el.value.length;
+    el.setSelectionRange(end, end);
+  }, [sending]);
+
+  const reconcileDone = useCallback(
+    async (optimisticId: string) => {
+      const trail = trailRef.current;
+      const outboundId = outboundIdRef.current;
+      const tokens = streamTokensRef.current;
+      const startedAt = streamStartedAtRef.current;
+      const durationMs = startedAt != null ? Date.now() - startedAt : undefined;
+      await syncLatest(); // pulls the canonical inbound + (now 'complete') outbound
+      setMessages((prev) => {
+        // Drop the optimistic user bubble (the canonical inbound is now present),
+        // and freeze the live thought trail (+ its duration / token total) onto
+        // the durable outbound row.
+        let next = prev.filter((m) => m.id !== optimisticId);
+        if (outboundId && trail.length) {
+          next = next.map((m) =>
+            m.id === outboundId && !m.thoughts
+              ? {
+                  ...m,
+                  thoughts: [...trail],
+                  ...(tokens != null && tokens > 0 ? { tokens } : {}),
+                  ...(durationMs != null ? { durationMs } : {}),
+                }
+              : m,
+          );
+        }
+        return next;
+      });
+      endActiveTurn();
+    },
+    [syncLatest, endActiveTurn],
+  );
+
+  const failActiveTurn = useCallback(
+    (optimisticId: string, message: string) => {
+      setError(message);
+      setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+      endActiveTurn();
+    },
+    [endActiveTurn],
+  );
+
+  // React to the live terminal events for the in-flight non-blocking turn.
+  useEffect(() => {
+    const pending = pendingTurnRef.current;
+    if (!pending) return;
+    if (streamPhase === 'done') {
+      void reconcileDone(pending.optimisticId);
+    } else if (streamPhase === 'error') {
+      failActiveTurn(pending.optimisticId, streamError ?? 'The turn failed.');
+    }
+  }, [streamPhase, streamError, reconcileDone, failActiveTurn]);
+
+  // Safety net: if no terminal event arrives (a dropped reconnect), poll the
+  // durable rows. Once the in-flight turn's outbound row reports a terminal
+  // status, reconcile the same way the stream would have. Only runs while a
+  // non-blocking turn is in flight; stops the moment it settles.
+  useEffect(() => {
+    if (!sending || !pendingTurnRef.current) return;
+    let stopped = false;
+    const tick = async () => {
+      const pending = pendingTurnRef.current;
+      if (stopped || !pending) return;
+      try {
+        const qs = new URLSearchParams({ limit: String(PAGE_SIZE) });
+        if (agentSlug) qs.set('agent', agentSlug);
+        const data = await apiFetch<{ messages: Message[] }>(
+          `/api/assistant/messages?${qs.toString()}`,
+          { cache: 'no-store' },
+        );
+        const outboundId = outboundIdRef.current;
+        const rows = data.messages ?? [];
+        // Prefer the exact row id (from turn-start); fall back to the newest
+        // outbound row created at/after this turn started, so a missed
+        // turn-start can't leave the turn hung.
+        const row = outboundId
+          ? rows.find((m) => m.id === outboundId && m.direction === 'outbound')
+          : rows
+              .filter((m) => m.direction === 'outbound' && m.createdAt >= pending.startedAt)
+              .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+              .pop();
+        if (stopped || !pendingTurnRef.current) return;
+        if (row?.status === 'complete') void reconcileDone(pending.optimisticId);
+        else if (row?.status === 'failed') failActiveTurn(pending.optimisticId, row.error ?? 'The turn failed.');
+      } catch {
+        /* transient — try again next tick */
+      }
+    };
+    // First poll after a grace period (the stream usually wins), then every 3s.
+    const t = setInterval(tick, 3000);
+    return () => {
+      stopped = true;
+      clearInterval(t);
+    };
+  }, [sending, agentSlug, reconcileDone, failActiveTurn]);
 
   // A turn for THIS agent is running that this page didn't start (you navigated
   // back mid-flight, or it's a dock reply). Drives a "working" indicator, and
@@ -259,7 +537,11 @@ export function AssistantClient({
 
   const onScroll = useCallback(() => {
     const el = scrollerRef.current;
-    if (el && el.scrollTop < 120) void loadOlder();
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= NEAR_BOTTOM_PX;
+    atBottomRef.current = nearBottom;
+    setShowJump(!nearBottom);
+    if (el.scrollTop < 120) void loadOlder();
   }, [loadOlder]);
 
   const clearAttachment = () => {
@@ -331,6 +613,8 @@ export function AssistantClient({
     // prompt server-side when text is empty.
     if ((!text && !attachedFile) || sending) return;
     setError(undefined);
+    // Remember this turn's prompt so a Stop can drop it back into the composer.
+    lastPromptRef.current = text;
 
     const hasFile = attachedFile != null;
     const isImage = hasFile && attachedFile.type.startsWith('image/');
@@ -363,8 +647,15 @@ export function AssistantClient({
         : {}),
       pending: true,
     };
+    // A send always re-sticks to the bottom — the user wants to watch their own
+    // message + the reply, even if they'd scrolled up to read history.
+    atBottomRef.current = true;
+    setShowJump(false);
     setMessages((prev) => [...prev, optimistic]);
     setDraft('');
+    // Open the live status stream for this turn (same uuid the server keys it
+    // on) the instant we start — before the POST — so we catch the early steps.
+    setActiveTurnId(idempotencyKey);
     setSending(true);
 
     try {
@@ -389,6 +680,13 @@ export function AssistantClient({
         body = JSON.stringify({ text, agentSlug, ...(location ? { location } : {}) });
         isJson = true;
       }
+      type BlockingTurn = {
+        inbound: { id: string; text: string; createdAt: string; artifacts?: Artifact[] };
+        outbound: { id: string; text: string; model: string | null; createdAt: string };
+        artifacts?: Artifact[];
+        warnings?: string[];
+      };
+      type NonBlockingTurn = { turnId: string; warnings?: string[] };
       const data = (await runTurn({
         agentSlug,
         agentName: agentName ?? 'Assistant',
@@ -396,53 +694,65 @@ export function AssistantClient({
         displayText: optimistic.text,
         body,
         isJson,
-      })) as {
-        inbound: { id: string; text: string; createdAt: string; artifacts?: Artifact[] };
-        outbound: { id: string; text: string; model: string | null; createdAt: string };
-        artifacts?: Artifact[];
-        warnings?: string[];
-      };
-      setMessages((prev) => [
-        ...prev.filter((m) => m.id !== optimisticId),
-        {
-          id: data.inbound.id,
-          direction: 'inbound',
-          text: data.inbound.text,
-          createdAt: data.inbound.createdAt,
-          // Keep the optimistic artifacts (local object-URL preview) — the
-          // server no longer echoes the image base64 back, so the browser
-          // renders from the bytes it already has. Falls back to the server
-          // metadata if there was no local preview.
-          artifacts: optimistic.artifacts ?? data.inbound.artifacts ?? [],
-        },
-        {
-          id: data.outbound.id,
-          direction: 'outbound',
-          text: data.outbound.text,
-          model: data.outbound.model,
-          createdAt: data.outbound.createdAt,
-          artifacts: data.artifacts ?? [],
-        },
-      ]);
-      if (data.warnings?.length) {
-        // Soft-fail warnings (e.g. vision worker missing) get
-        // surfaced as a non-blocking notice rather than a red error.
-        setError(data.warnings.join(' · '));
-      }
-      // Reset the input WITHOUT revoking the object URL — it now backs the
-      // sent message's preview (revoking would blank it). It's released when
-      // the page reloads; image sends are infrequent enough that the
-      // retained URL is negligible.
+      })) as BlockingTurn | NonBlockingTurn;
+
+      // The send was accepted — clear the composer attachment either way. Reset
+      // WITHOUT revoking the object URL: it now backs the sent bubble's preview
+      // (revoking would blank it); it's released on the next page load.
       setAttachedFile(null);
       setAttachedPreviewUrl(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
+
+      if ('outbound' in data) {
+        // BLOCKING result (streaming off): the full reply is already here — swap
+        // the optimistic rows for the durable ones now and end the turn.
+        setMessages((prev) => [
+          ...prev.filter((m) => m.id !== optimisticId),
+          {
+            id: data.inbound.id,
+            direction: 'inbound',
+            text: data.inbound.text,
+            createdAt: data.inbound.createdAt,
+            // Keep the optimistic artifacts (local object-URL preview) — the
+            // server no longer echoes the image base64 back, so the browser
+            // renders from the bytes it already has.
+            artifacts: optimistic.artifacts ?? data.inbound.artifacts ?? [],
+          },
+          {
+            id: data.outbound.id,
+            direction: 'outbound',
+            text: data.outbound.text,
+            model: data.outbound.model,
+            createdAt: data.outbound.createdAt,
+            status: 'complete',
+            artifacts: data.artifacts ?? [],
+            // Freeze the live status trail onto the reply as a persistent record.
+            ...(trailRef.current.length ? { thoughts: [...trailRef.current] } : {}),
+          },
+        ]);
+        if (data.warnings?.length) setError(data.warnings.join(' · '));
+        setSending(false);
+        setActiveTurnId(null);
+      } else {
+        // NON-BLOCKING (202): the live stream now types the reply out; the phase
+        // effect (and the safety poll) reconcile to the durable row on
+        // done/error. Hand them the turn — keep the optimistic bubble + spinner.
+        pendingTurnRef.current = {
+          optimisticId,
+          turnId: idempotencyKey,
+          startedAt: optimistic.createdAt,
+        };
+        if (data.warnings?.length) setError(data.warnings.join(' · '));
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
       // Drop the optimistic row on error so the user can retry without dupes.
       setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
-    } finally {
       setSending(false);
+      setStopping(false);
+      setActiveTurnId(null);
+      pendingTurnRef.current = null;
     }
   };
 
@@ -519,7 +829,8 @@ export function AssistantClient({
 
   return (
     <>
-      <div ref={scrollerRef} onScroll={onScroll} className="flex-1 overflow-y-auto scrollbar-thin px-6 py-6">
+      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div ref={scrollerRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-6 py-6">
         {turns.length === 0 ? (
           <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/30 px-4 py-10 text-center">
             {agentAvatar ? (
@@ -587,6 +898,28 @@ export function AssistantClient({
                     {/* MAIN CANVAS: Saskia's reply as a rich document. */}
                     <div className="min-w-0 lg:col-start-1 lg:row-start-1">
                       {turn.response ? (
+                        turn.response.status === 'failed' ? (
+                          // Durable failed turn (reloaded after an error).
+                          <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                            <span>{turn.response.error || 'This turn failed.'}</span>
+                          </div>
+                        ) : turn.response.status === 'pending' ? (
+                          // Durable pending turn (reloaded mid-flight) — the runner
+                          // is still working; show a thinking bubble.
+                          <div
+                            className="inline-flex items-center gap-2 rounded-2xl px-3.5 py-3"
+                            style={{ backgroundColor: accent.soft }}
+                          >
+                            <span className="flex items-center gap-1" aria-hidden>
+                              <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.3s]" />
+                              <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.15s]" />
+                              <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60" />
+                            </span>
+                            <span className="text-xs text-current opacity-70">
+                              {agentName ?? 'Assistant'} is working…
+                            </span>
+                          </div>
+                        ) : (
                         <article>
                           <div className="mb-2 flex items-center gap-2">
                             <span className="text-sm font-medium text-muted-foreground">
@@ -594,6 +927,15 @@ export function AssistantClient({
                             </span>
                             <ChannelBadge channel={turn.response.channel} />
                           </div>
+                          {turn.response.thoughts && turn.response.thoughts.length > 0 && (
+                            <ThoughtTrail
+                              steps={turn.response.thoughts}
+                              tokens={turn.response.tokens ?? null}
+                              durationMs={turn.response.durationMs ?? null}
+                              timestamp={turn.response.createdAt}
+                              className="mb-3 max-w-xl"
+                            />
+                          )}
                           <div>
                             <RichText markdown={turn.response.text} />
                             {turn.response.attachments && turn.response.attachments.length > 0 && (
@@ -610,35 +952,76 @@ export function AssistantClient({
                                 ))}
                               </div>
                             )}
-                            <div className="mt-1.5 flex items-baseline gap-2 text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover/turn:opacity-100">
-                              <span title={formatDateTime(turn.response.createdAt)}>
-                                {new Date(turn.response.createdAt).toLocaleTimeString()}
-                              </span>
-                              {turn.response.model && (
-                                <code className="font-mono">{turn.response.model}</code>
-                              )}
+                            <div className="mt-1.5 flex items-center justify-between gap-2 pointer-events-none opacity-0 transition-opacity group-hover/turn:pointer-events-auto group-hover/turn:opacity-100">
+                              <div className="flex items-baseline gap-2 text-[10px] text-muted-foreground">
+                                <span title={formatDateTime(turn.response.createdAt)}>
+                                  {new Date(turn.response.createdAt).toLocaleTimeString()}
+                                </span>
+                                {turn.response.model && (
+                                  <code className="font-mono">{turn.response.model}</code>
+                                )}
+                              </div>
+                              <CopyButton text={turn.response.text} />
                             </div>
                           </div>
                         </article>
+                        )
                       ) : showTyping ? (
-                        <div
-                          className="inline-flex items-center gap-2 rounded-2xl px-3.5 py-3"
-                          style={{ backgroundColor: accent.soft }}
-                        >
-                          <span className="sr-only">
-                            {agentName ?? 'Assistant'} is {stageLabel ?? 'typing'}
-                          </span>
-                          <span className="flex items-center gap-1" aria-hidden>
-                            <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.3s]" />
-                            <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.15s]" />
-                            <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60" />
-                          </span>
-                          {stageLabel && (
-                            <span className="text-xs text-current opacity-70" aria-hidden>
-                              {stageLabel}
+                        // Once status events arrive, the typing dots give way to
+                        // the live thought trail building in place, and — when
+                        // token streaming is on — the reply itself typing out
+                        // below it. Before any of that (or on the poll fallback)
+                        // keep the classic dots. The streamed reply is advisory:
+                        // when the durable turn.response lands above, this whole
+                        // branch is replaced by the authoritative <article>.
+                        streamTrail.length > 0 || streamReply ? (
+                          <div className="max-w-xl">
+                            <span className="sr-only">
+                              {agentName ?? 'Assistant'} is {stageLabel ?? 'typing'}
                             </span>
-                          )}
-                        </div>
+                            {streamTrail.length > 0 && (
+              <ThoughtTrail
+                steps={streamTrail}
+                live
+                startedAt={streamStartedAt}
+                tokens={streamTokens}
+                tokensApprox={streamTokensApprox}
+              />
+            )}
+                            {streamReply && (
+                              // Live buffer: a lightweight ReactMarkdown render, NOT the
+                              // TipTap RichText editor — the editor's setContent() runs
+                              // flushSync and collides with React mid-render when the buffer
+                              // changes every token. The durable reply below swaps in RichText.
+                              <div
+                                className={`prose dark:prose-invert max-w-none [&>:first-child]:mt-0 [&>:last-child]:mb-0 ${
+                                  streamTrail.length > 0 ? 'mt-3' : ''
+                                }`}
+                              >
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamReply}</ReactMarkdown>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div
+                            className="inline-flex items-center gap-2 rounded-2xl px-3.5 py-3"
+                            style={{ backgroundColor: accent.soft }}
+                          >
+                            <span className="sr-only">
+                              {agentName ?? 'Assistant'} is {stageLabel ?? 'typing'}
+                            </span>
+                            <span className="flex items-center gap-1" aria-hidden>
+                              <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.3s]" />
+                              <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.15s]" />
+                              <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60" />
+                            </span>
+                            {stageLabel && (
+                              <span className="text-xs text-current opacity-70" aria-hidden>
+                                {stageLabel}
+                              </span>
+                            )}
+                          </div>
+                        )
                       ) : null}
                     </div>
                   </li>
@@ -652,6 +1035,17 @@ export function AssistantClient({
               )}
             </ul>
           </>
+        )}
+      </div>
+        {showJump && (
+          <button
+            type="button"
+            onClick={jumpToBottom}
+            aria-label="Jump to latest"
+            className="absolute bottom-4 left-1/2 z-10 flex size-9 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-md transition hover:bg-accent hover:text-accent-foreground"
+          >
+            <ArrowDown className="size-4" aria-hidden />
+          </button>
         )}
       </div>
 
@@ -764,6 +1158,7 @@ export function AssistantClient({
                 )}
               </div>
               <textarea
+                ref={textareaRef}
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder={
@@ -787,19 +1182,34 @@ export function AssistantClient({
                   }
                 }}
               />
-              <button
-                type="submit"
-                aria-label="Send"
-                title="Send (Enter)"
-                disabled={!agentReady || sending || (!draft.trim() && !attachedFile)}
-                className="flex w-12 shrink-0 items-center justify-center self-stretch rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
-              >
-                {sending ? (
-                  <Loader2 className="size-4 animate-spin" aria-hidden />
-                ) : (
+              {sending ? (
+                // Mid-turn the send button becomes a Stop button — one click aborts
+                // generation and keeps whatever partial reply has streamed.
+                <button
+                  type="button"
+                  onClick={stopTurn}
+                  aria-label="Stop"
+                  title="Stop generating"
+                  disabled={!activeTurnId || stopping}
+                  className="flex w-12 shrink-0 items-center justify-center self-stretch rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-40"
+                >
+                  {stopping ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                  ) : (
+                    <Square className="size-3.5 fill-current" aria-hidden />
+                  )}
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  aria-label="Send"
+                  title="Send (Enter)"
+                  disabled={!agentReady || (!draft.trim() && !attachedFile)}
+                  className="flex w-12 shrink-0 items-center justify-center self-stretch rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+                >
                   <CornerDownLeft className="size-4" aria-hidden />
-                )}
-              </button>
+                </button>
+              )}
             </div>
             {error && <p className="text-xs text-destructive">{error}</p>}
           </div>

@@ -9,6 +9,8 @@ import { ChevronDown, Loader2, MessageSquare, Send, Sparkles, X } from 'lucide-r
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { apiEventStream } from '@/lib/api-fetch';
+import type { TurnEvent } from '@mantle/client-types';
 import { useTurnStage } from './use-turn-stage';
 
 /**
@@ -25,6 +27,14 @@ export type TurnResponse = {
   warnings?: string[];
 };
 
+/** What the turn POST resolves to. The legacy blocking route returns the full
+ *  {@link TurnResponse}; the non-blocking (streaming) route returns just the
+ *  turn id (202) — the reply then arrives over the live stream, and the caller
+ *  reconciles to the durable row. The dock drives its own mini-chat off the
+ *  stream in that case; the /assistant page reconciles its transcript. */
+export type TurnAck = { turnId: string; warnings?: string[] };
+export type TurnPostResult = TurnResponse | TurnAck;
+
 export type RunTurnInput = {
   agentSlug?: string;
   agentName: string;
@@ -39,9 +49,10 @@ export type RunTurnInput = {
 type DockMsg = { id: string; role: 'user' | 'assistant'; text: string; pending?: boolean; error?: boolean };
 
 type AssistantDockApi = {
-  /** Run a turn through the persistent fetch. Resolves with the server result
-   *  (or throws), while also driving the floating dock. */
-  runTurn: (input: RunTurnInput) => Promise<TurnResponse>;
+  /** Run a turn through the persistent fetch. Resolves with the server result —
+   *  the full reply (blocking route) or a turn-id ack (streaming route, where the
+   *  reply lands over the live stream) — or throws. Also drives the floating dock. */
+  runTurn: (input: RunTurnInput) => Promise<TurnPostResult>;
   // ── dock view state (consumed by <AssistantDock/>) ──
   messages: DockMsg[];
   busy: boolean;
@@ -59,7 +70,57 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   const [agentName, setAgentName] = useState('Assistant');
   const agentRef = useRef<string | undefined>(undefined);
 
-  const runTurn = useCallback(async (input: RunTurnInput): Promise<TurnResponse> => {
+  // Drive the floating mini-chat's bot bubble off the live stream (non-blocking
+  // route). Types the reply out as text-deltas arrive, then settles on
+  // done/error. Fire-and-forget — the provider is mounted app-wide, so the
+  // subscription survives navigation and self-terminates when the turn ends.
+  const subscribeDockTurn = useCallback((turnId: string, botId: string) => {
+    let replyBuf = '';
+    let round = -1;
+    let settled = false;
+    const stop = apiEventStream(
+      `/api/assistant/turn/${turnId}/stream`,
+      (raw) => {
+        if (settled) return;
+        let ev: TurnEvent;
+        try {
+          ev = JSON.parse(raw) as TurnEvent;
+        } catch {
+          return;
+        }
+        if (ev.type === 'text-delta' && typeof ev.data?.text === 'string') {
+          const r = typeof ev.round === 'number' ? ev.round : 0;
+          if (r > round) {
+            round = r;
+            replyBuf = ev.data.text;
+          } else {
+            replyBuf += ev.data.text;
+          }
+          setMessages((prev) => prev.map((m) => (m.id === botId ? { ...m, text: replyBuf } : m)));
+          return;
+        }
+        if (ev.type === 'done') {
+          settled = true;
+          stop();
+          setMessages((prev) => prev.map((m) => (m.id === botId ? { ...m, pending: false } : m)));
+          return;
+        }
+        if (ev.type === 'error') {
+          settled = true;
+          stop();
+          const message =
+            ev.data && typeof ev.data.message === 'string' ? ev.data.message : 'The turn failed.';
+          setMessages((prev) =>
+            prev.map((m) => (m.id === botId ? { ...m, text: message, pending: false, error: true } : m)),
+          );
+          return;
+        }
+      },
+      { onError: () => {} },
+    );
+  }, []);
+
+  const runTurn = useCallback(async (input: RunTurnInput): Promise<TurnPostResult> => {
     const switched = agentRef.current !== input.agentSlug;
     agentRef.current = input.agentSlug;
     setAgentSlug(input.agentSlug);
@@ -106,10 +167,17 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
 
         if (res) {
           if (res.ok) {
-            const data = (await res.json()) as TurnResponse;
-            setMessages((prev) =>
-              prev.map((m) => (m.id === botId ? { ...m, text: data.outbound.text, pending: false } : m)),
-            );
+            const data = (await res.json()) as TurnPostResult;
+            if ('outbound' in data) {
+              // Blocking reply (streaming off) — fill it now.
+              setMessages((prev) =>
+                prev.map((m) => (m.id === botId ? { ...m, text: data.outbound.text, pending: false } : m)),
+              );
+              return data;
+            }
+            // Non-blocking (202): the reply lands over the live stream. Keep the
+            // bot bubble pending and let the stream type it out + settle it.
+            subscribeDockTurn(data.turnId, botId);
             return data;
           }
           // Our route only emits 400/500 as real outcomes — surface those. A
@@ -138,7 +206,7 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       );
       throw err;
     }
-  }, []);
+  }, [subscribeDockTurn]);
 
   const clear = useCallback(() => setMessages([]), []);
 
@@ -251,11 +319,13 @@ export function AssistantDock() {
                       m.error && 'border-destructive/40 text-destructive',
                     )}
                   >
-                    {m.pending ? (
+                    {m.pending && !m.text ? (
                       <span className="flex items-center gap-1.5 text-muted-foreground">
                         <Loader2 className="size-3 animate-spin" aria-hidden /> {stageLabel ?? 'thinking…'}
                       </span>
                     ) : (
+                      // Once tokens arrive (m.text non-empty) we render the reply
+                      // live even while still pending — the stream types it out.
                       <div className="prose prose-sm dark:prose-invert max-w-none break-words text-xs [&_p]:my-1 [&_pre]:my-1 [&_ul]:my-1">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown>
                       </div>

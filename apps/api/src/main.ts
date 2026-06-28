@@ -15,6 +15,8 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { configureDBOS, RUNNER_QUEUE, runnerConcurrency } from './config';
 import { startAgentRuntime, stopAgentRuntime } from './agent/runtime';
+import { installTurnStreamObserver } from './turn-stream-observer';
+import { startTurnCancelListener, stopTurnCancelListener } from './turn-cancel';
 // Import workflow modules for their registration side-effects (registerWorkflow
 // runs at import, before launch).
 import './workflows/ping';
@@ -23,6 +25,15 @@ import { enqueueTelegramTurn } from './workflows/telegram-turn';
 
 async function main(): Promise<void> {
   configureDBOS();
+  // Bridge trace steps → live turn-status events for streamed turns. Pure
+  // registration (no I/O); harmless when MANTLE_TURN_STREAMING is off, since
+  // the web SSE endpoint that relays these events is itself flag-gated.
+  installTurnStreamObserver();
+  // LISTEN for user "stop" requests so an in-flight streamed turn can be aborted
+  // (apps/web publishes the cancel; this process runs the turn). Best-effort.
+  await startTurnCancelListener().catch((err) =>
+    console.error('[api] turn-cancel listener failed to start (Stop will no-op):', err),
+  );
   await DBOS.launch();
   // The shared runner queue — concurrency caps total in-flight runs across all
   // apps/api processes (LLM-provider backpressure).
@@ -46,9 +57,13 @@ async function main(): Promise<void> {
     DBOS.logger.info(`[api] ${sig} — shutting down`);
     // Drain the extractor queue first (finish in-flight pg-boss jobs), then
     // stop DBOS, then exit.
-    void stopAgentRuntime()
-      .catch((err) => console.error('[api] stopAgentRuntime failed:', err))
-      .finally(() => DBOS.shutdown().finally(() => process.exit(0)));
+    void stopTurnCancelListener()
+      .catch((err) => console.error('[api] stopTurnCancelListener failed:', err))
+      .finally(() =>
+        stopAgentRuntime()
+          .catch((err) => console.error('[api] stopAgentRuntime failed:', err))
+          .finally(() => DBOS.shutdown().finally(() => process.exit(0))),
+      );
   };
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));

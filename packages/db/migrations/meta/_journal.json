@@ -743,6 +743,20 @@
       "when": 1783900800000,
       "tag": "0105_assistant_message_status",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1783987200000,
+      "tag": "0106_ai_worker_kind_narrator",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1784073600000,
+      "tag": "0107_turn_stream_buffer",
+      "breakpoints": true
     }
   ]
 }

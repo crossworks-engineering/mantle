@@ -25,7 +25,13 @@
  * providers (Anthropic, OR-via-Anthropic).
  */
 
-import { currentTrace, step } from '@mantle/tracing';
+import {
+  currentTrace,
+  step,
+  isTurnStreaming,
+  emitTurnDelta,
+  currentTurnAbortSignal,
+} from '@mantle/tracing';
 import {
   dispatchTool,
   getBuiltinRedactFields,
@@ -44,6 +50,8 @@ import type { ToolArtifact } from '@mantle/tools';
 import {
   getChatAdapter,
   type ChatDispatcher,
+  type ChatOptions,
+  type ChatResult,
   type ChatToolDefinition,
 } from '@mantle/voice';
 import { recordChatUsage } from './llm-usage';
@@ -53,6 +61,24 @@ import { fenceRetrieved } from './messages';
 import { parseToolArgs } from './tool-args';
 
 const DEFAULT_MAX_ITERATIONS = 6;
+
+/**
+ * Run one chat round, streaming live token deltas when the runner has turn
+ * streaming active (`isTurnStreaming()`) AND this route's adapter supports it.
+ * Falls back to the one-shot `chat()` otherwise — the resolved `ChatResult` is
+ * identical either way (text + toolCalls + usage), so the loop's tool-dispatch
+ * logic doesn't care which path ran. Streaming is pure decoration around the
+ * durable result. `round` tags each delta so the client can scope the live reply.
+ */
+function dispatchChat(adapter: ChatDispatcher, opts: ChatOptions, round: number): Promise<ChatResult> {
+  // Thread the current turn's cancellation signal into every LLM call so a user
+  // Stop aborts generation (the streaming adapter returns its partial reply).
+  const withSignal = { ...opts, signal: currentTurnAbortSignal() };
+  if (isTurnStreaming() && typeof adapter.chatStream === 'function') {
+    return adapter.chatStream(withSignal, (d) => emitTurnDelta(round, d.type, d.text));
+  }
+  return adapter.chat(withSignal);
+}
 
 /** Tools that return content authored by third parties (a fetched web page,
  *  a web-search answer + its source snippets). Their successful results are
@@ -118,6 +144,11 @@ export type ToolLoopResult = {
    *  delivers them through the tool's own send path and ignores this
    *  field. Empty array when no tools ran or none emitted artifacts. */
   artifacts: ToolArtifact[];
+  /** Total output tokens generated across every LLM round of this turn (the
+   *  model's own usage, summed; 0 when no provider reported usage). The web
+   *  /assistant surfaces it in the turn's `done` event so the live status
+   *  footer can show the real count once the turn lands. */
+  tokensOut: number;
 };
 
 export type ToolLoopArgs = {
@@ -269,6 +300,12 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   };
   let failedOver = false;
 
+  // Running output-token total for the whole turn (summed across every LLM
+  // round, including failover / empty-reply / force-final passes). Returned in
+  // the ToolLoopResult so the turn's `done` event can carry the real token count
+  // the live status footer reconciles its streamed estimate to.
+  let tokensOut = 0;
+
   // Tool-volume guards (see constants above). Turn-scoped: the budget is
   // cumulative across rounds; per-tool counts catch single-tool fixation even
   // when the model varies the args to slip past the in-response dedup.
@@ -334,6 +371,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           ...(typeof args.params.max_retries === 'number' ? { maxRetries: args.params.max_retries } : {}),
         });
         recordChatUsage(h, r, active.model);
+        tokensOut += r.tokensOut ?? 0;
         if (!r.text.trim()) h.setMeta({ still_empty: true });
         return r.text;
       },
@@ -372,14 +410,15 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           ...(typeof args.params.max_retries === 'number' ? { maxRetries: args.params.max_retries } : {}),
         };
         try {
-          const r = await active.adapter.chat({
+          const r = await dispatchChat(active.adapter, {
             apiKey: active.apiKey,
             model: active.model,
             ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
             ...(active.viaTailnet ? { viaTailnet: true } : {}),
             ...chatOpts,
-          });
+          }, iter);
           recordChatUsage(h, r, active.model);
+          tokensOut += r.tokensOut ?? 0;
           return r;
         } catch (err) {
           // Fail over to the backup once per turn, only on a route-DOWN /
@@ -399,14 +438,15 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
             viaTailnet: args.backup.viaTailnet ?? false,
           };
           failedOver = true;
-          const r = await active.adapter.chat({
+          const r = await dispatchChat(active.adapter, {
             apiKey: active.apiKey,
             model: active.model,
             ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
             ...(active.viaTailnet ? { viaTailnet: true } : {}),
             ...chatOpts,
-          });
+          }, iter);
           recordChatUsage(h, r, active.model);
+          tokensOut += r.tokensOut ?? 0;
           return r;
         }
       },
@@ -419,7 +459,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       let text = result.text;
       if (!text.trim()) text = await retryEmptyReply('final_round_empty');
       messages.push({ role: 'assistant', content: text });
-      return { reply: text, messages, iterations: iter + 1, toolCalls, pendingIds, artifacts };
+      return { reply: text, messages, iterations: iter + 1, toolCalls, pendingIds, artifacts, tokensOut };
     }
 
     // Push the assistant message verbatim so the next LLM call sees its
@@ -774,7 +814,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       },
     },
     async (h) => {
-      const r = await active.adapter.chat({
+      const r = await dispatchChat(active.adapter, {
         apiKey: active.apiKey,
         model: active.model,
         ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
@@ -787,13 +827,14 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         toolChoice: 'none',
         cacheControl: { systemPrompt: true },
         ...(typeof args.params.max_retries === 'number' ? { maxRetries: args.params.max_retries } : {}),
-      });
+      }, maxIters);
       recordChatUsage(h, r, active.model);
+      tokensOut += r.tokensOut ?? 0;
       return r;
     },
   );
   let text = finalResult.text;
   if (!text.trim()) text = await retryEmptyReply('force_final_empty');
   messages.push({ role: 'assistant', content: text });
-  return { reply: text, messages, iterations: maxIters + 1, toolCalls, pendingIds, artifacts };
+  return { reply: text, messages, iterations: maxIters + 1, toolCalls, pendingIds, artifacts, tokensOut };
 }

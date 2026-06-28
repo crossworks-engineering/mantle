@@ -146,6 +146,8 @@ export {
   type ChatModelInfo,
   type ChatOptions,
   type ChatResult,
+  type ChatStreamDelta,
+  type ChatStreamSink,
   type ChatToolCall,
   type ChatToolDefinition,
   type ChatSystemContentPart,

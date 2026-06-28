@@ -115,6 +115,8 @@ const PROVIDER_FOR_KIND: Record<AiWorkerKind, string> = {
   // Web search is Perplexity Sonar via OpenRouter — provider fixed to openrouter.
   search: 'openrouter',
   search_advanced: 'openrouter',
+  // Narrator runs on the cheap/fast OpenRouter workhorse by default.
+  narrator: 'openrouter',
 };
 
 /** Suggested model per kind, used as the placeholder. */
@@ -204,6 +206,8 @@ const MODEL_HINT_FOR_KIND: Record<AiWorkerKind, string> = {
   embedding: 'embeddinggemma:latest',
   search: 'perplexity/sonar',
   search_advanced: 'perplexity/sonar-pro',
+  // Cheap + fast — it runs once per tool step, off the critical path.
+  narrator: 'google/gemini-3.1-flash-lite',
 };
 
 export function WorkerForm({
@@ -298,7 +302,8 @@ export function WorkerForm({
   // worker's provider is one we have a chat adapter for — currently
   // xAI and Hugging Face. OpenRouter chat doesn't go through this
   // registry; the user types model ids by hand for OpenRouter.
-  const chatShaped = kind === 'reflector' || kind === 'extractor' || kind === 'summarizer';
+  const chatShaped =
+    kind === 'reflector' || kind === 'extractor' || kind === 'summarizer' || kind === 'narrator';
   // Whether to show a model dropdown (vs. free-text) is gated on the SAME
   // wired-provider table that drives the "not wired yet" hint — WIRED_PROVIDERS
   // from @mantle/voice (the static mirror of the adapter registry). One source
@@ -357,7 +362,12 @@ export function WorkerForm({
       if (forProvider === 'huggingface') return [...HUGGINGFACE_IMAGE_MODELS];
       return [...OPENAI_IMAGE_MODELS];
     }
-    if (forKind === 'reflector' || forKind === 'extractor' || forKind === 'summarizer') {
+    if (
+      forKind === 'reflector' ||
+      forKind === 'extractor' ||
+      forKind === 'summarizer' ||
+      forKind === 'narrator'
+    ) {
       if (forProvider === 'xai') return [...XAI_CHAT_MODELS];
       if (forProvider === 'huggingface') return [...HUGGINGFACE_CHAT_MODELS];
       if (forProvider === 'anthropic') return [...ANTHROPIC_CHAT_MODELS];
@@ -851,6 +861,7 @@ export function WorkerForm({
           {kind === 'reflector' && 'Reflector settings'}
           {kind === 'extractor' && 'Extractor settings'}
           {kind === 'summarizer' && 'Summarizer settings'}
+          {kind === 'narrator' && 'Narrator settings'}
           {kind === 'embedding' && 'Embedding settings'}
         </h2>
 
@@ -869,6 +880,7 @@ export function WorkerForm({
         {kind === 'reflector' && <LlmWorkerFields params={params} systemPrompt={worker?.systemPrompt} kind="reflector" provider={provider} />}
         {kind === 'extractor' && <LlmWorkerFields params={params} systemPrompt={worker?.systemPrompt} kind="extractor" provider={provider} />}
         {kind === 'summarizer' && <LlmWorkerFields params={params} systemPrompt={worker?.systemPrompt} kind="summarizer" provider={provider} />}
+        {kind === 'narrator' && <LlmWorkerFields params={params} systemPrompt={worker?.systemPrompt} kind="narrator" provider={provider} />}
         {kind === 'embedding' && (
           <EmbeddingFields
             model={model}
@@ -2028,11 +2040,20 @@ function LlmWorkerFields({
 }: {
   params: Record<string, unknown>;
   systemPrompt: string | null | undefined;
-  kind: 'reflector' | 'extractor' | 'summarizer';
+  kind: 'reflector' | 'extractor' | 'summarizer' | 'narrator';
   provider: string;
 }) {
   return (
     <div className="space-y-4">
+      {kind === 'narrator' && (
+        <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          The narrator restyles the live “thought trail” into your assistant’s voice. The{' '}
+          <strong>system prompt below is the verbosity dial</strong> — tell it to reply with a terse
+          phrase, a full sentence, or a short paragraph, and it follows. Raise <strong>Max tokens</strong>{' '}
+          if you ask for more words. It runs once per tool step, off the turn’s critical path; if it’s
+          slow or fails, the plain grounded line stays.
+        </p>
+      )}
       <div className="space-y-1.5">
         <Label htmlFor="systemPrompt">System prompt</Label>
         <textarea
@@ -2040,11 +2061,17 @@ function LlmWorkerFields({
           name="systemPrompt"
           defaultValue={systemPrompt ?? ''}
           rows={8}
-          placeholder="(default prompt is used if blank)"
+          placeholder={
+            kind === 'narrator'
+              ? 'e.g. "Rewrite this status as ONE warm first-person sentence, present tense, ending with an ellipsis…" — blank uses the built-in concise default.'
+              : '(default prompt is used if blank)'
+          }
           className="flex min-h-[120px] w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm font-mono shadow-sm"
         />
         <p className="text-xs text-muted-foreground">
-          Leave blank to use the built-in default for this worker kind.
+          {kind === 'narrator'
+            ? 'Leave blank for the built-in concise voice (a short phrase). Write your own to control how much it says.'
+            : 'Leave blank to use the built-in default for this worker kind.'}
         </p>
       </div>
       <div className="grid grid-cols-2 gap-4">

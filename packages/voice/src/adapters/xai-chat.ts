@@ -20,12 +20,15 @@ import type {
   ChatModelInfo,
   ChatOptions,
   ChatResult,
+  ChatStreamSink,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
+import { chatAbortSignal } from './sse';
 import type { DiscoveryResult } from '../discover';
 import { XAI_BASE_URL, XAI_CHAT_MODELS } from '../catalogs/xai';
 import {
   extractOpenAICompatToolCalls,
+  streamOpenAICompatChat,
   toOpenAICompatMessages,
   type OpenAICompatChatResponse,
 } from './openai-compat';
@@ -70,7 +73,7 @@ async function xaiChat(opts: ChatOptions): Promise<ChatResult> {
       'content-type': 'application/json',
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60_000),
+    signal: chatAbortSignal(opts.signal, 60_000),
   });
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
@@ -130,10 +133,26 @@ async function xaiDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInf
   }
 }
 
+/** Streaming xAI chat — OpenAI-compatible SSE via the shared streamer. */
+function xaiChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Promise<ChatResult> {
+  if (!opts.apiKey) throw new Error('xai-chat: apiKey required');
+  if (!opts.model) throw new Error('xai-chat: model required');
+  return streamOpenAICompatChat(
+    opts,
+    {
+      url: `${XAI_BASE_URL}/chat/completions`,
+      headers: { Authorization: `Bearer ${opts.apiKey}`, 'content-type': 'application/json' },
+      provider: 'xai',
+    },
+    onDelta,
+  );
+}
+
 export const xaiChatAdapter: ChatDispatcher = {
   providerId: 'xai',
   adapterName: 'xai-chat',
   chat: xaiChat,
+  chatStream: xaiChatStream,
   discoverModels: xaiDiscover,
   staticCatalog: () => XAI_CHAT_MODELS,
 };

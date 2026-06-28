@@ -119,7 +119,8 @@ export type AiWorkerKind =
   | 'image_gen'
   | 'embedding'
   | 'search'
-  | 'search_advanced';
+  | 'search_advanced'
+  | 'narrator';
 
 /** An AI worker as returned by `GET /api/ai-workers`. `params` is jsonb (shape
  *  varies by kind) — kept loose here; the form narrows per kind. */
@@ -403,3 +404,120 @@ export interface HeartbeatDTO {
   createdAt: string;
   updatedAt: string;
 }
+
+// ── Live turn streaming ─────────────────────────────────────────────────────────
+
+/**
+ * The cross-client contract for live "what the agent is doing" updates during a
+ * turn — consumed identically by the web client and the Flutter companion (see
+ * `docs/live-turn-streaming.md`). One event stream unifies coarse status, tool
+ * activity, reasoning, and token deltas.
+ *
+ * This is the wire shape ONLY (zero-runtime, per this package's invariant): the
+ * server-side channel + publisher + schema-version constant live in
+ * `@mantle/turn-stream`; the producer stamps `v`/`seq`/`round`.
+ *
+ * Evolution rule: new `type`s and new `data` fields are additive (non-breaking) —
+ * a client ignores a `type` it doesn't recognise. A breaking change to an
+ * existing event's shape bumps `v` (`TURN_EVENT_SCHEMA_VERSION`).
+ */
+export type TurnEventType =
+  | 'turn-start'
+  | 'status'
+  | 'tool-start'
+  | 'tool-end'
+  | 'reasoning-delta'
+  | 'text-delta'
+  | 'done'
+  | 'error';
+
+/** A pending outbound message now exists; the client can bind UI to `turnId`. */
+export interface TurnStartData {
+  agentSlug: string;
+  /** Resolved model id, when known at turn start (else null). */
+  model: string | null;
+  /** Durable `assistant_messages` id of the inbound (user) row, persisted before
+   *  the model runs. Lets a client swap its optimistic user bubble for the
+   *  canonical row without waiting on the POST. Optional (additive): a client
+   *  that predates this field ignores it. */
+  inboundId?: string;
+  /** Durable `assistant_messages` id of the outbound (reply) row, inserted
+   *  `pending` at turn start. This is the turn's authoritative reconciliation
+   *  handle — the client binds the reply bubble to it and, on `done`, reads the
+   *  final text from this row (vs. the advisory streamed buffer). Optional. */
+  outboundId?: string;
+}
+
+/** A short "what it's doing now" line ("Searching your brain…"). `kind` is an
+ *  optional coarse bucket the UI can theme/iconify. `stepId` ties together the
+ *  grounded line and its later narrated upgrade for the SAME step, so the client
+ *  replaces the line in place rather than appending a duplicate. */
+export interface TurnStatusData {
+  label: string;
+  kind?: string;
+  /** Stable id for the step this status describes. Two events sharing a stepId
+   *  are the same step (grounded → narrated); the client upserts by it. */
+  stepId?: string;
+}
+
+/** A tool round began. `summary` is an optional one-line, secret-free preview. */
+export interface TurnToolStartData {
+  name: string;
+  summary?: string;
+}
+
+/** A tool round finished (`ok=false` = it errored — the turn may still recover). */
+export interface TurnToolEndData {
+  name: string;
+  ok: boolean;
+}
+
+/** A chunk of the model's reasoning stream (raw; may be curated before display). */
+export interface TurnReasoningDeltaData {
+  text: string;
+}
+
+/** A chunk of the visible reply text. */
+export interface TurnTextDeltaData {
+  text: string;
+}
+
+/** Terminal success. The client now reconciles against the durable message row;
+ *  the streamed text is advisory, the DB row is authoritative. */
+export interface TurnDoneData {
+  status: 'complete';
+  /** Real output-token total for the whole turn (summed across rounds). The
+   *  client shows a streamed char-based estimate while the reply types out, then
+   *  swaps it for this exact figure on `done`. Optional + additive: absent when
+   *  no provider reported usage, or from a producer that predates the field. */
+  tokensOut?: number;
+}
+
+/** Terminal failure. */
+export interface TurnErrorData {
+  status: 'failed';
+  message: string;
+}
+
+/** Fields every turn event carries. */
+export interface TurnEventBase {
+  /** Schema version (`TURN_EVENT_SCHEMA_VERSION` at emit time). */
+  v: number;
+  /** Durable turn id = the outbound `assistant_messages` id. Stable for the turn. */
+  turnId: string;
+  /** Monotonic per-turn sequence — the SSE `id:` field and the resume cursor. */
+  seq: number;
+  /** Tool-loop round this event belongs to (0 = before the first round). */
+  round: number;
+}
+
+/** One live turn event. Discriminated on `type`; `data` is the matching payload. */
+export type TurnEvent =
+  | (TurnEventBase & { type: 'turn-start'; data: TurnStartData })
+  | (TurnEventBase & { type: 'status'; data: TurnStatusData })
+  | (TurnEventBase & { type: 'tool-start'; data: TurnToolStartData })
+  | (TurnEventBase & { type: 'tool-end'; data: TurnToolEndData })
+  | (TurnEventBase & { type: 'reasoning-delta'; data: TurnReasoningDeltaData })
+  | (TurnEventBase & { type: 'text-delta'; data: TurnTextDeltaData })
+  | (TurnEventBase & { type: 'done'; data: TurnDoneData })
+  | (TurnEventBase & { type: 'error'; data: TurnErrorData });

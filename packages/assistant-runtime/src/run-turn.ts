@@ -45,6 +45,7 @@ import {
   resolveAgentTools,
   resolveBackupAdapter,
   runToolLoop,
+  updateAssistantMessageOutcome,
   type UserImage,
 } from '@mantle/agent-runtime';
 import { registerAgentInvoker, type ToolArtifact } from '@mantle/tools';
@@ -69,6 +70,9 @@ import {
   startTrace,
   step,
   runDurableStep,
+  emitTurnLifecycle,
+  registerTurnAbort,
+  unregisterTurnAbort,
   modelSupportsVision,
   maxImageBytesFor,
   refreshModelCatalog,
@@ -205,6 +209,12 @@ export type RunAssistantTurnOptions = {
    *  rows so proactive delivery can follow the last channel used. Defaults to
    *  'web'. */
   channel?: ConversationChannel;
+  /** Client-minted per-turn correlation id (the same uuid sent as the request's
+   *  Idempotency-Key). When set, this turn's trace steps are published as live
+   *  `status`/token events keyed by it, so the client can narrate the turn as it
+   *  runs (see docs/live-turn-streaming.md). Omit → no live stream; the poll
+   *  fallback still works. */
+  streamId?: string;
 };
 
 export async function runAssistantTurn(
@@ -277,6 +287,47 @@ export async function runAssistantTurn(
   // here must never sink the turn. Only mobile/telegram are reminder-capable;
   // noteInboundChannel no-ops for web (a browser can't receive a push).
   void noteInboundChannel(ownerId, channel);
+
+  // Insert the OUTBOUND row 'pending' (empty text) right now — before the LLM
+  // runs — so the turn has a stable durable id from the very start. This is the
+  // durable "thinking…" bubble: a client (or a reload mid-turn) can bind to it,
+  // it survives navigation, and the non-blocking route reconciles to it on
+  // 'done'. Finalized below to 'complete' (text filled) or 'failed' (error set).
+  // History loading filters status='complete', so this empty row never leaks
+  // into a later turn's prompt. Journaled so a crash-resume reuses the same id.
+  const outboundPending = await runDurableStep('record_outbound_pending', () =>
+    recordTurn({
+      ownerId,
+      agentId: agent.id,
+      direction: 'outbound',
+      text: '',
+      channel,
+      model: agent.model,
+      status: 'pending',
+    }),
+  );
+  // turn-start: both durable rows now exist. Carries their ids so the client can
+  // swap its optimistic bubbles for the canonical rows without waiting on the
+  // POST. No-op unless this turn is streamed (streamId set) AND the runner has
+  // installed the lifecycle observer. See docs/live-turn-streaming.md §6.
+  if (options?.streamId) {
+    emitTurnLifecycle(options.streamId, ownerId, 'turn-start', {
+      agentSlug: agent.slug,
+      model: agent.model,
+      inboundId: inbound.id,
+      outboundId: outboundPending.id,
+    });
+  }
+
+  // Register a per-turn AbortController so a user Stop (NOTIFY → the runner's
+  // cancel listener → abortTurn) can halt this turn's LLM generation. The tool
+  // loop reads the signal via currentTurnAbortSignal(); we inspect
+  // `.signal.aborted` after the loop to tell a stop from a real error. Retired at
+  // every exit below (success + the catch). No streamId ⇒ no stop affordance.
+  const abortController = options?.streamId ? registerTurnAbort(options.streamId, ownerId) : null;
+  const retireAbort = () => {
+    if (options?.streamId) unregisterTurnAbort(options.streamId);
+  };
 
   const attachedSkills = await resolveAgentSkills(ownerId, agent.skillSlugs ?? []);
   // Current-time / timezone / locale context so the assistant can resolve
@@ -481,6 +532,9 @@ export async function runAssistantTurn(
       {
         kind: 'responder_turn',
         ownerId,
+        // When the client minted a stream id, key this turn's live status/token
+        // events on it (no-op when absent — the trace just isn't streamed).
+        turnId: options?.streamId,
         subjectId: inbound.id,
         subjectKind: 'assistant_message',
         agentId: agent.id,
@@ -557,26 +611,60 @@ export async function runAssistantTurn(
   // picture. The failed first attempt stays its own 'error' trace; the
   // retry is a separate 'success' trace flagged image_retry_after_error.
   let loopOutcome: Awaited<ReturnType<typeof runLoop>>;
-  if (canSeeImage) {
-    try {
-      loopOutcome = await runLoop(buildMessages(userImage, trimmed), { image_attached: true });
-    } catch (err) {
-      console.warn(
-        '[assistant] responder failed with image attached; retrying text-only:',
-        err instanceof Error ? err.message : err,
-      );
+  try {
+    if (canSeeImage) {
+      try {
+        loopOutcome = await runLoop(buildMessages(userImage, trimmed), { image_attached: true });
+      } catch (err) {
+        console.warn(
+          '[assistant] responder failed with image attached; retrying text-only:',
+          err instanceof Error ? err.message : err,
+        );
+        loopOutcome = await runLoop(buildMessages(undefined, textWithTranscript), {
+          image_attached: false,
+          image_retry_after_error: true,
+        });
+      }
+    } else {
       loopOutcome = await runLoop(buildMessages(undefined, textWithTranscript), {
         image_attached: false,
-        image_retry_after_error: true,
       });
     }
-  } else {
-    loopOutcome = await runLoop(buildMessages(undefined, textWithTranscript), {
-      image_attached: false,
-    });
+  } catch (err) {
+    // A user Stop normally surfaces gracefully (the streaming adapter returns its
+    // partial reply → the success path), but the one-shot/backup path can throw
+    // an AbortError instead. If this turn was aborted, treat it as a stop, not a
+    // failure: synthesize an empty outcome and let the success path finalize the
+    // (possibly partial-less) turn 'complete'.
+    if (abortController?.signal.aborted) {
+      loopOutcome = { reply: '', artifacts: [], iterations: 0, toolCalls: [], tokensOut: 0 } as unknown as Awaited<
+        ReturnType<typeof runLoop>
+      >;
+    } else {
+      // Real failure: flip the pending outbound row to 'failed' so the durable
+      // record + a reload + the non-blocking client all reflect it, emit the
+      // terminal error event, then re-throw — the workflow lands in ERROR and the
+      // blocking route's getResult() still rejects (unchanged failure surface).
+      const msg = err instanceof Error ? err.message : String(err);
+      await runDurableStep('fail_outbound', () =>
+        updateAssistantMessageOutcome({
+          ownerId,
+          id: outboundPending.id,
+          status: 'failed',
+          error: msg,
+        }),
+      ).catch((e) => console.error('[assistant] could not mark turn failed:', e));
+      if (options?.streamId) {
+        emitTurnLifecycle(options.streamId, ownerId, 'error', { message: msg });
+      }
+      retireAbort();
+      throw err;
+    }
   }
+  // A user Stop ends the turn with whatever partial reply streamed (often empty).
+  const stopped = abortController?.signal.aborted === true;
   let rawReply = loopOutcome.reply;
-  if (!rawReply.trim()) {
+  if (!stopped && !rawReply.trim()) {
     // The tool loop already retried an empty final response once (see
     // retryEmptyReply in tool-loop.ts). Double-empty is rare enough that
     // failing the whole turn (a 500 after the inbound row persisted) is
@@ -598,16 +686,22 @@ export async function runAssistantTurn(
   // branch point where voice-mode reply would skip the strip.
   const reply = stripAudioTags(rawReply).text;
 
-  const outbound = await runDurableStep('record_outbound', () =>
-    recordTurn({
+  // Finalize the pending outbound row: fill the composed reply + flip the status
+  // to 'complete'. Journaled, so a crash-resume re-applies it idempotently.
+  const finalized = await runDurableStep('finalize_outbound', () =>
+    updateAssistantMessageOutcome({
       ownerId,
-      agentId: agent.id,
-      direction: 'outbound',
+      id: outboundPending.id,
+      status: 'complete',
       text: reply,
-      channel,
       model: agent.model,
     }),
   );
+  // The row was inserted this same turn, so it should always still be there;
+  // fall back to the pending row with the reply folded in if it somehow vanished
+  // (e.g. a concurrent delete) so the turn still returns a coherent result.
+  const outbound: AssistantMessage =
+    finalized ?? { ...outboundPending, text: reply, model: agent.model, status: 'complete' };
 
   void db
     .update(agents)
@@ -618,6 +712,20 @@ export async function runAssistantTurn(
     })
     .where(eq(agents.id, agent.id))
     .catch(() => {});
+
+  // done: the durable outbound row is final — the client reconciles to it (the
+  // streamed buffer was advisory). A stopped turn finalizes the same way (its
+  // partial reply is the durable answer), so the client ends the turn cleanly.
+  // No-op unless the turn is streamed.
+  retireAbort();
+  if (options?.streamId) {
+    emitTurnLifecycle(options.streamId, ownerId, 'done', {
+      outboundId: outboundPending.id,
+      // Real output-token total for the turn — the client swaps its streamed
+      // estimate for this once `done` lands (0 when no provider reported usage).
+      tokensOut: loopOutcome.tokensOut,
+    });
+  }
 
   return { inbound, outbound, reply, artifacts: loopOutcome.artifacts };
 }

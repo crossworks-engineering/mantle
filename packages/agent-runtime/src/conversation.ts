@@ -194,6 +194,11 @@ export async function recordTurn(args: {
   model?: string | null;
   attachments?: ConversationAttachment[];
   externalRef?: ConversationExternalRef | null;
+  /** Execution-state projection (migration 0105). Defaults to 'complete' — the
+   *  synchronous write path. The durable runner inserts an outbound row 'pending'
+   *  at turn start (a stable id before any text) and later flips it via
+   *  {@link updateAssistantMessageOutcome}; see docs/live-turn-streaming.md §6. */
+  status?: 'pending' | 'complete' | 'failed';
   /** Free-form per-turn metadata persisted on `assistant_messages.data` —
    *  currently the device `{ location }` ping the companion app attaches to
    *  inbound turns. Omitted ⇒ left at the column default. */
@@ -212,11 +217,44 @@ export async function recordTurn(args: {
       model: args.model ?? null,
       attachments: args.attachments ?? [],
       externalRef: args.externalRef ?? null,
+      ...(args.status ? { status: args.status } : {}),
       ...(args.data != null ? { data: args.data } : {}),
     })
     .returning();
   if (!row) throw new Error('recordTurn: insert returned no row');
   return row;
+}
+
+/**
+ * Finalize a 'pending' outbound row written at turn start (see
+ * {@link recordTurn}) — fill the reply text + model and flip the status to
+ * 'complete', or record a 'failed' turn's error. Idempotent on replay (the
+ * durable runner journals the call), and owner-scoped so a turn can only
+ * finalize its own row. Returns the updated row, or null if it vanished.
+ */
+export async function updateAssistantMessageOutcome(args: {
+  ownerId: string;
+  id: string;
+  status: 'complete' | 'failed';
+  /** The composed reply text — set on success; left as-is on failure. */
+  text?: string;
+  model?: string | null;
+  /** Human-readable failure reason for a 'failed' turn. */
+  error?: string | null;
+  tx?: Executor;
+}): Promise<AssistantMessage | null> {
+  const exec = args.tx ?? db;
+  const [row] = await exec
+    .update(assistantMessages)
+    .set({
+      status: args.status,
+      ...(args.text != null ? { text: args.text } : {}),
+      ...(args.model !== undefined ? { model: args.model } : {}),
+      ...(args.error !== undefined ? { error: args.error } : {}),
+    })
+    .where(and(eq(assistantMessages.id, args.id), eq(assistantMessages.ownerId, args.ownerId)))
+    .returning();
+  return row ?? null;
 }
 
 /**
@@ -549,9 +587,15 @@ export async function loadConversationContext(args: {
     .filter((d) => d.summary.length > 0);
 
   // ─── Raw recent turns (all channels, per agent) ─────────────────────────
+  // Only 'complete' turns are real conversation: the durable runner writes the
+  // outbound row 'pending' (empty text) at turn start and may end it 'failed'
+  // (no usable reply). Either would otherwise leak into a later turn's prompt as
+  // an empty/garbage assistant message. Inbound rows are always 'complete', so
+  // this filter keeps every user turn. See docs/live-turn-streaming.md §6.
   const histConds = [
     eq(assistantMessages.ownerId, ownerId),
     eq(assistantMessages.agentId, agent.id),
+    eq(assistantMessages.status, 'complete'),
   ];
   if (args.excludeMessageId) histConds.push(ne(assistantMessages.id, args.excludeMessageId));
   if (args.before) histConds.push(lt(assistantMessages.createdAt, args.before));

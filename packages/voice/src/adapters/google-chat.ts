@@ -24,9 +24,11 @@ import type {
   ChatModelInfo,
   ChatOptions,
   ChatResult,
+  ChatStreamSink,
   ChatToolCall,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
+import { chatAbortSignal, readSSE, safeDelta } from './sse';
 import type { DiscoveryResult } from '../discover';
 import { GOOGLE_BASE_URL, GOOGLE_CHAT_MODELS } from '../catalogs/google';
 
@@ -278,10 +280,14 @@ function extractGoogleToolCalls(
   return calls.length > 0 ? calls : undefined;
 }
 
-async function googleChat(opts: ChatOptions): Promise<ChatResult> {
-  if (!opts.apiKey) throw new Error('google-chat: apiKey required');
-  if (!opts.model) throw new Error('google-chat: model required');
-
+/**
+ * Build the Gemini `generateContent` request body (system/contents split +
+ * generationConfig + tools + toolConfig). Shared by the one-shot
+ * {@link googleChat} and the streaming {@link googleChatStream} so they never
+ * drift — streaming uses the same body against the `:streamGenerateContent`
+ * endpoint.
+ */
+function buildGoogleBody(opts: ChatOptions): Record<string, unknown> {
   const { systemInstruction, contents } = splitSystemAndContents(opts.messages);
 
   // Gemini packs generation knobs into a nested object — temperature,
@@ -303,7 +309,7 @@ async function googleChat(opts: ChatOptions): Promise<ChatResult> {
       ? { functionCallingConfig: { mode: 'NONE' as const } }
       : undefined;
 
-  const body: Record<string, unknown> = {
+  return {
     contents,
     ...(systemInstruction ? { systemInstruction } : {}),
     ...(tools ? { tools } : {}),
@@ -311,6 +317,13 @@ async function googleChat(opts: ChatOptions): Promise<ChatResult> {
     ...(Object.keys(generationConfig).length > 0 ? { generationConfig } : {}),
     ...(opts.extra ?? {}),
   };
+}
+
+async function googleChat(opts: ChatOptions): Promise<ChatResult> {
+  if (!opts.apiKey) throw new Error('google-chat: apiKey required');
+  if (!opts.model) throw new Error('google-chat: model required');
+
+  const body = buildGoogleBody(opts);
 
   const res = await fetch(
     `${GOOGLE_BASE_URL}/models/${opts.model}:generateContent`,
@@ -321,7 +334,7 @@ async function googleChat(opts: ChatOptions): Promise<ChatResult> {
         'content-type': 'application/json',
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60_000),
+      signal: chatAbortSignal(opts.signal, 60_000),
     },
   );
   if (!res.ok) {
@@ -393,10 +406,93 @@ async function googleDiscover(apiKey: string): Promise<DiscoveryResult<ChatModel
   }
 }
 
+/**
+ * Streaming Gemini chat — `:streamGenerateContent?alt=sse`. Reuses
+ * {@link buildGoogleBody}, fires `onDelta` per incremental text part, collects
+ * whole `functionCall` parts (Gemini delivers them complete, not fragmented like
+ * OpenAI), and resolves to the same `ChatResult`. Honours `opts.signal`: threaded
+ * into the fetch, and on abort it returns the partial reply without throwing.
+ */
+async function googleChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Promise<ChatResult> {
+  if (!opts.apiKey) throw new Error('google-chat: apiKey required');
+  if (!opts.model) throw new Error('google-chat: model required');
+
+  const body = buildGoogleBody(opts);
+  if (opts.signal?.aborted) return { text: '', model: opts.model };
+
+  const res = await fetch(
+    `${GOOGLE_BASE_URL}/models/${opts.model}:streamGenerateContent?alt=sse`,
+    {
+      method: 'POST',
+      headers: { 'x-goog-api-key': opts.apiKey, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      ...(opts.signal ? { signal: opts.signal } : {}),
+    },
+  );
+  if (!res.ok || !res.body) {
+    const errBody = await res.text().catch(() => '');
+    throw new ChatHttpError({ provider: 'google', status: res.status, body: errBody, retryAfterMs: parseRetryAfterMs(res.headers) });
+  }
+
+  let text = '';
+  let model = opts.model;
+  let tokensIn: number | undefined;
+  let tokensOut: number | undefined;
+  let cacheRead: number | undefined;
+  // Gemini streams complete functionCall parts (not arg fragments), so collect
+  // them and run the same extractor the one-shot path uses.
+  const fnParts: GeminiPart[] = [];
+
+  try {
+    for await (const payload of readSSE(res.body, opts.signal)) {
+      if (opts.signal?.aborted) break;
+      let chunk: GeminiResponse;
+      try {
+        chunk = JSON.parse(payload) as GeminiResponse;
+      } catch {
+        continue;
+      }
+      if (chunk.modelVersion) model = chunk.modelVersion;
+      if (chunk.usageMetadata) {
+        // Cumulative across the stream — last chunk's totals win.
+        tokensIn = chunk.usageMetadata.promptTokenCount ?? tokensIn;
+        tokensOut = chunk.usageMetadata.candidatesTokenCount ?? tokensOut;
+        cacheRead = chunk.usageMetadata.cachedContentTokenCount ?? cacheRead;
+      }
+      const parts = chunk.candidates?.[0]?.content?.parts ?? [];
+      for (const p of parts) {
+        if ('text' in p && typeof p.text === 'string' && p.text.length > 0) {
+          text += p.text;
+          safeDelta(onDelta, { type: 'text', text: p.text });
+        } else if ('functionCall' in p) {
+          fnParts.push(p);
+        }
+      }
+    }
+  } catch (err) {
+    if (!opts.signal?.aborted) throw err;
+  }
+
+  if (opts.signal?.aborted) {
+    return { text: text.trim(), model, tokensIn, tokensOut, cacheReadTokens: cacheRead };
+  }
+
+  const toolCalls = extractGoogleToolCalls(fnParts);
+  return {
+    text: text.trim(),
+    model,
+    ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
+    tokensIn,
+    tokensOut,
+    cacheReadTokens: cacheRead,
+  };
+}
+
 export const googleChatAdapter: ChatDispatcher = {
   providerId: 'google',
   adapterName: 'google-chat',
   chat: googleChat,
+  chatStream: googleChatStream,
   discoverModels: googleDiscover,
   staticCatalog: () => GOOGLE_CHAT_MODELS,
 };

@@ -14,34 +14,19 @@
  * on — thinking, searching, delegating — and fall back to plain dots otherwise.
  */
 import { db, traces, traceSteps, and, eq, gt, desc } from '@mantle/db';
+import { stageLabelForStep as sharedStageLabel } from '@mantle/assistant-runtime';
 
 /** Only surface stages for turns started recently — guards against a zombie
  *  trace left `status='running'` (a past failure mode) showing a stale stage. */
 const FRESH_WINDOW_MS = 2 * 60 * 1000;
 
-/** Map a trace_step `name` to a coarse, user-facing stage label. Step names
- *  come from the tool loop (packages/agent-runtime/src/tool-loop.ts):
- *    - `<adapter>_chat`, `<adapter>_chat[2]`, `..._chat[force_final]`
- *        → an LLM call            → "Thinking…"
- *    - `tool: <slug>`             → a tool dispatch        → bucketed by slug
- *    - `spill_result: <slug>`     → result paging          → "Working on it…"
- *  Returns null for names we don't surface (caller shows plain dots). */
-export function stageLabelForStep(name: string): string | null {
-  if (!name) return null;
-  // LLM calls: the adapter step name always ends in `_chat` or `_chat[…]`.
-  if (/_chat(\[|$)/.test(name)) return 'Thinking…';
-
-  const tool = /^tool:\s*(.+)$/.exec(name);
-  if (tool) {
-    const slug = tool[1]!.trim();
-    if (slug === 'invoke_agent') return 'Delegating to a specialist…';
-    if (slug === 'web_search') return 'Searching the web…';
-    if (/^(search|find|recall|entity_|graph_|peer_)/.test(slug))
-      return 'Searching your brain…';
-    return 'Working on it…';
-  }
-  if (/^spill_result:/.test(name)) return 'Working on it…';
-  return null;
+/** Poll-facing wrapper over the shared labeler (`@mantle/assistant-runtime`),
+ *  reduced to the display string — the poll has no use for the `kind` bucket.
+ *  Passes the step's input so the poll enriches with args ("…for “Pinnacle
+ *  SLA”") exactly like the live stream pushes. Returns null for names we don't
+ *  surface (caller shows plain dots). */
+export function stageLabelForStep(name: string, input?: Record<string, unknown>): string | null {
+  return sharedStageLabel(name, input)?.label ?? null;
 }
 
 /** The owner's current in-flight assistant stage, or null when idle. Two tiny
@@ -68,13 +53,13 @@ export async function currentTurnStageLabel(ownerId: string): Promise<string | n
     // The most-recently-started step is the activity in flight. Ordinals reset
     // per parent (nested steps), so order by startedAt, not ordinal.
     const [stepRow] = await db
-      .select({ name: traceSteps.name })
+      .select({ name: traceSteps.name, input: traceSteps.input })
       .from(traceSteps)
       .where(eq(traceSteps.traceId, trace.id))
       .orderBy(desc(traceSteps.startedAt))
       .limit(1);
     if (!stepRow) return null;
-    return stageLabelForStep(stepRow.name);
+    return stageLabelForStep(stepRow.name, (stepRow.input ?? undefined) as Record<string, unknown> | undefined);
   } catch {
     return null;
   }

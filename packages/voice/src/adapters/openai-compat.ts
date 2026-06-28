@@ -22,7 +22,9 @@
  * brittle name-mapping. Keep them separate.
  */
 
-import type { ChatOptions, ChatToolCall } from './types';
+import type { ChatOptions, ChatResult, ChatStreamSink, ChatToolCall } from './types';
+import { ChatHttpError, parseRetryAfterMs } from './retry';
+import { readSSE, safeDelta } from './sse';
 
 // ─── Wire types ──────────────────────────────────────────────────────────────
 
@@ -177,4 +179,173 @@ export function extractOpenAICompatToolCalls(
       arguments: c.function.arguments ?? '{}',
     },
   }));
+}
+
+// ─── Streaming ────────────────────────────────────────────────────────────────
+
+/** One streamed OpenAI-compat chunk. `delta.content` is the visible text;
+ *  `delta.reasoning_content` is the (DeepSeek-style) reasoning channel;
+ *  `delta.tool_calls` arrive as fragments accumulated by `index`. Usage rides
+ *  the final chunk when `stream_options.include_usage` is set. */
+type OpenAICompatStreamChunk = {
+  model?: string;
+  choices?: Array<{
+    delta?: {
+      content?: string | null;
+      reasoning_content?: string | null;
+      tool_calls?: Array<{
+        index?: number;
+        id?: string;
+        function?: { name?: string; arguments?: string };
+      }>;
+    };
+  }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    prompt_tokens_details?: { cached_tokens?: number };
+  };
+};
+
+/** Per-call configuration for {@link streamOpenAICompatChat}: the provider's
+ *  completions URL, request headers, a provider tag for error reporting, and any
+ *  provider-specific body fields (xAI's `reasoning_effort` rides `opts.extra`, so
+ *  most adapters need none). */
+export type OpenAICompatStreamConfig = {
+  url: string;
+  headers: Record<string, string>;
+  provider: string;
+  bodyExtra?: Record<string, unknown>;
+  /** Override the fetch implementation (e.g. the local adapter's `tailnetFetch`
+   *  to reach a NAT'd box). Defaults to global `fetch`. */
+  fetchImpl?: typeof fetch;
+};
+
+/**
+ * Streaming counterpart of an OpenAI-compat `chat()` — sets `stream:true` (+
+ * `stream_options.include_usage` so the terminal chunk still carries token
+ * counts), fires `onDelta` per text/reasoning chunk, accumulates tool-call
+ * argument fragments by index, and resolves to the same `ChatResult` shape the
+ * one-shot call returns. Shared by every OpenAI-compatible adapter (xAI, HF,
+ * DeepSeek, local).
+ *
+ * Honours `opts.signal`: it's threaded into the fetch (so a user Stop aborts the
+ * HTTP stream), and on abort the reader stops and we return the PARTIAL reply
+ * (dropping half-formed tool-call fragments) instead of throwing — so the turn
+ * finalizes with whatever streamed.
+ */
+export async function streamOpenAICompatChat(
+  opts: ChatOptions,
+  cfg: OpenAICompatStreamConfig,
+  onDelta: ChatStreamSink,
+): Promise<ChatResult> {
+  const tools = opts.tools && opts.tools.length > 0 ? opts.tools : undefined;
+  const body: Record<string, unknown> = {
+    model: opts.model,
+    messages: toOpenAICompatMessages(opts.messages),
+    stream: true,
+    stream_options: { include_usage: true },
+    ...(tools ? { tools } : {}),
+    ...(opts.toolChoice && tools ? { tool_choice: opts.toolChoice } : {}),
+    ...(typeof opts.temperature === 'number' ? { temperature: opts.temperature } : {}),
+    ...(typeof opts.maxTokens === 'number' ? { max_tokens: opts.maxTokens } : {}),
+    ...(typeof opts.topP === 'number' ? { top_p: opts.topP } : {}),
+    ...(cfg.bodyExtra ?? {}),
+    ...(opts.extra ?? {}),
+  };
+
+  // Stopped before we even sent — don't spend the request.
+  if (opts.signal?.aborted) return { text: '', model: opts.model };
+
+  const doFetch = cfg.fetchImpl ?? fetch;
+  const res = await doFetch(cfg.url, {
+    method: 'POST',
+    headers: cfg.headers,
+    body: JSON.stringify(body),
+    ...(opts.signal ? { signal: opts.signal } : {}),
+  });
+  if (!res.ok || !res.body) {
+    const errBody = await res.text().catch(() => '');
+    throw new ChatHttpError({
+      provider: cfg.provider,
+      status: res.status,
+      body: errBody,
+      retryAfterMs: parseRetryAfterMs(res.headers),
+    });
+  }
+
+  let text = '';
+  let reasoning = '';
+  let model = opts.model;
+  let usage: OpenAICompatStreamChunk['usage'];
+  const toolAccum = new Map<number, { id: string; name: string; args: string }>();
+
+  try {
+    for await (const payload of readSSE(res.body, opts.signal)) {
+      if (opts.signal?.aborted) break;
+      if (payload === '[DONE]') break;
+      let chunk: OpenAICompatStreamChunk;
+      try {
+        chunk = JSON.parse(payload) as OpenAICompatStreamChunk;
+      } catch {
+        continue; // a keep-alive or malformed frame — skip it
+      }
+      if (chunk.model) model = chunk.model;
+      if (chunk.usage) usage = chunk.usage;
+      const delta = chunk.choices?.[0]?.delta;
+      if (!delta) continue;
+      if (typeof delta.content === 'string' && delta.content.length > 0) {
+        text += delta.content;
+        safeDelta(onDelta, { type: 'text', text: delta.content });
+      }
+      if (typeof delta.reasoning_content === 'string' && delta.reasoning_content.length > 0) {
+        reasoning += delta.reasoning_content;
+        safeDelta(onDelta, { type: 'reasoning', text: delta.reasoning_content });
+      }
+      if (Array.isArray(delta.tool_calls)) {
+        for (const f of delta.tool_calls) {
+          const idx = typeof f?.index === 'number' ? f.index : 0;
+          const cur = toolAccum.get(idx) ?? { id: '', name: '', args: '' };
+          if (f.id) cur.id = f.id;
+          if (f.function?.name) cur.name = f.function.name;
+          if (typeof f.function?.arguments === 'string') cur.args += f.function.arguments;
+          toolAccum.set(idx, cur);
+        }
+      }
+    }
+  } catch (err) {
+    // A user Stop aborts the fetch → an AbortError surfaces here; that's not a
+    // failure, so fall through and return the partial. Anything else is real.
+    if (!opts.signal?.aborted) throw err;
+  }
+
+  // Stopped: return the visible text so far (drop half-formed tool fragments —
+  // the turn loop sees text + no tools and finalizes it as the partial answer).
+  if (opts.signal?.aborted) {
+    return {
+      text: text.trim(),
+      model,
+      tokensIn: usage?.prompt_tokens,
+      tokensOut: usage?.completion_tokens,
+    };
+  }
+
+  const toolCalls: ChatToolCall[] = [...toolAccum.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, c]) => c)
+    .filter((c) => c.name)
+    .map((c) => ({
+      id: c.id || `call_${c.name}`,
+      type: 'function' as const,
+      function: { name: c.name, arguments: c.args || '{}' },
+    }));
+
+  return {
+    text: text.trim(),
+    model,
+    ...(toolCalls.length > 0 ? { toolCalls } : {}),
+    tokensIn: usage?.prompt_tokens,
+    tokensOut: usage?.completion_tokens,
+    cacheReadTokens: usage?.prompt_tokens_details?.cached_tokens,
+  };
 }

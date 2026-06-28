@@ -176,9 +176,15 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     instructions: SKILL_INSTRUCTIONS['page_editing']!,
   },
   {
+    slug: 'chat_writing',
+    name: 'Chat writing',
+    description: 'Standard Markdown for conversational replies — portable to web, mobile, and voice; no rich page dialect.',
+    instructions: SKILL_INSTRUCTIONS['chat_writing']!,
+  },
+  {
     slug: 'rich_writing',
     name: 'Rich writing',
-    description: 'The rich Mantle dialect: callouts, asides, columns, tables, task lists, KaTeX.',
+    description: 'The rich Mantle dialect (callouts, asides, columns, KaTeX) for authoring PAGE documents — the Pages specialist.',
     instructions: SKILL_INSTRUCTIONS['rich_writing']!,
   },
   {
@@ -624,7 +630,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'profile',
       'export',
     ],
-    skillSlugs: ['tool_grounding', 'voice_reply', 'rich_writing', 'location_awareness', 'navigation', 'integrations'],
+    skillSlugs: ['tool_grounding', 'voice_reply', 'chat_writing', 'location_awareness', 'navigation', 'integrations'],
     params: { temperature: 0.7, max_tokens: 16000 },
     // Context budgets for the generalist responder. Onboarding seeds these
     // verbatim; the persona's PROMPT stays an overlay (persona bank + the
@@ -828,6 +834,15 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
   // `web_search` uses the cheap/fast tier; `web_search_pro` the stronger one.
   { kind: 'search', name: 'Web search', required: false, provider: 'openrouter', model: 'perplexity/sonar' },
   { kind: 'search_advanced', name: 'Deep web search', required: false, provider: 'openrouter', model: 'perplexity/sonar-pro' },
+  // Narrator — restyles the live turn "thought trail" status into the assistant's
+  // voice. A BASELINE worker: required so it auto-seeds on fresh onboarding AND
+  // reaches existing brains on upgrade (the reconcile's requiredOnly pass). Same
+  // cheap/fast workhorse model as the indexing workers. It isn't part of the
+  // indexing pipeline, and if it's ever missing the runtime falls back to the
+  // summarizer — so narration degrades gracefully. Verbosity (phrase → sentence →
+  // paragraph) is tuned via the worker's system prompt + max_tokens in Settings →
+  // AI workers, not here.
+  { kind: 'narrator', name: 'Narrator', required: true, provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
 ];
 
 // ── Derived selectors (single computation; kills the duplication) ────────────

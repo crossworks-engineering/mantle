@@ -23,6 +23,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getOwnerOr401WithSource } from '@/lib/auth';
 import { getDbosClient } from '@/lib/dbos-client';
+import { isTurnStreamingEnabled } from '@/lib/turn-streaming';
 import {
   ASSISTANT_TURN_WORKFLOW,
   RUNNER_QUEUE,
@@ -284,6 +285,11 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
     const options: RunAssistantTurnOptions = {
       agentSlug,
       channel: source,
+      // The client mints one uuid per submit and sends it as the Idempotency-Key
+      // (it's also the workflow id). Reuse it as the live-stream correlation id
+      // so the producer publishes this turn's status on the same id the client
+      // already subscribed to — no extra wire field.
+      ...(idempotencyKey ? { streamId: idempotencyKey } : {}),
       ...(location ? { location } : {}),
       ...(attachment
         ? {
@@ -316,6 +322,27 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
       },
       input,
     );
+
+    // Non-blocking delivery. When live streaming is on AND the client minted a
+    // turn id (the idempotency-key — both the workflow id and the live-stream
+    // correlation id), return 202 immediately with just that id. The turn keeps
+    // running in apps/api; the client types the reply out off the live stream and
+    // reconciles to the durable row on `done`/`error`. This frees the request
+    // from holding a minutes-long connection and lets a turn truly survive
+    // navigation/backgrounding. The durable outbound row (inserted 'pending' by
+    // the runner) is the source of truth. See docs/live-turn-streaming.md §6-§7.
+    if (isTurnStreamingEnabled() && idempotencyKey) {
+      return {
+        status: 202,
+        body: {
+          turnId: idempotencyKey,
+          ...(attachment?.note ? { warnings: [attachment.note] } : {}),
+        },
+      };
+    }
+
+    // Legacy blocking path (streaming off, or no idempotency-key): await the
+    // result and relay the same response shape the in-process turn returned.
     const { inbound, outbound, reply, artifacts } = await handle.getResult();
     // Forward inbound image METADATA (no base64) — the client already holds
     // the bytes and renders them from a local object URL, so echoing the full

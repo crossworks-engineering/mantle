@@ -247,9 +247,10 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
     });
   }
 
-  // 8. Memory workers — a default, enabled worker for each required kind.
+  // 8. Baseline workers — a default, enabled worker for each required kind.
   {
     const defaultEnabledKinds = new Set(workers.filter((w) => w.enabled && w.isDefault).map((w) => w.kind));
+    const requiredKinds = MANIFEST_WORKERS.filter((w) => w.required).map((w) => w.kind);
     const samples: SystemSample[] = [];
     for (const w of MANIFEST_WORKERS) {
       if (w.required && !defaultEnabledKinds.has(w.kind)) {
@@ -258,10 +259,12 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
     }
     checks.push({
       key: 'workers',
-      label: 'Memory workers',
+      label: 'Baseline workers',
       severity: 'high',
       ok: samples.length === 0,
-      detail: samples.length === 0 ? 'extractor · summarizer · reflector · document ready' : `${samples.length} required worker(s) missing`,
+      // Derive the ready list from the required kinds so it never drifts as the
+      // baseline set grows (e.g. the narrator).
+      detail: samples.length === 0 ? `${requiredKinds.join(' · ')} ready` : `${samples.length} required worker(s) missing`,
       samples,
     });
   }

@@ -54,6 +54,13 @@ export const aiWorkerKind = pgEnum('ai_worker_kind', [
   // env var. See migration 0086/0087.
   'search',
   'search_advanced',
+  // Narrator — rephrases the live turn "thought trail" status lines into the
+  // assistant's warm first-person voice ("Searching your brain for X" → "Let me
+  // dig through your notes on X…"). A cheap, fast chat model, fire-and-forget off
+  // the turn's critical path. Its system_prompt is the VERBOSITY knob: tune it for
+  // a terse phrase, a full sentence, or a short paragraph. Optional; when absent
+  // the runtime falls back to the summarizer worker. See migration 0106.
+  'narrator',
 ]);
 
 export type AiWorkerKind = (typeof aiWorkerKind.enumValues)[number];
@@ -198,6 +205,12 @@ export type SummarizerParams = ChatLlmParams & {
   target_length_tokens?: number;
 };
 
+/** Params for `kind='narrator'`. The narrator rephrases live status lines into
+ *  the assistant's voice. Plain chat knobs — there's no extra state. The verbosity
+ *  (phrase vs sentence vs paragraph) is governed by the worker's `system_prompt`
+ *  plus `max_tokens` (raise both to let it say more). */
+export type NarratorParams = ChatLlmParams;
+
 /** Params for `kind='embedding'`. Deliberately tiny — embedding is a pure
  *  text→vector transformation; there's no system_prompt, no temperature,
  *  no max_tokens, no streaming choice to make. Just the model (which lives
@@ -232,6 +245,7 @@ export type AiWorkerParams =
   | ReflectorParams
   | ExtractorParams
   | SummarizerParams
+  | NarratorParams
   | EmbeddingParams
   | SearchParams;
 

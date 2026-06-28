@@ -278,6 +278,31 @@ describe('runToolLoop — happy paths', () => {
     expect(last).toEqual({ role: 'assistant', content: 'hello back' });
   });
 
+  it('sums tokensOut across every LLM round of the turn', async () => {
+    // Tool round (5 out) → final answer (5 out) = 10. The fake adapter reports
+    // tokensOut: 5 per call.
+    const { adapter } = makeFakeAdapter([
+      {
+        type: 'toolCalls',
+        toolCalls: [
+          { id: 'call_1', type: 'function', function: { name: 'fake_tool', arguments: '{}' } },
+        ],
+      },
+      { type: 'text', text: 'final answer' },
+    ]);
+    const result = await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'hi' }],
+      tools: [fakeTool()],
+    });
+    expect(result.iterations).toBe(2);
+    expect(result.tokensOut).toBe(10);
+  });
+
   it('does not send the tools field when args.tools is empty', async () => {
     const { adapter, calls } = makeFakeAdapter([{ type: 'text', text: 'ok' }]);
     await runToolLoop({

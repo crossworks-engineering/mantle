@@ -29,12 +29,15 @@ import type {
   ChatModelInfo,
   ChatOptions,
   ChatResult,
+  ChatStreamSink,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
+import { chatAbortSignal } from './sse';
 import type { DiscoveryResult } from '../discover';
 import { DEEPSEEK_BASE_URL, DEEPSEEK_CHAT_MODELS } from '../catalogs/deepseek';
 import {
   extractOpenAICompatToolCalls,
+  streamOpenAICompatChat,
   toOpenAICompatMessages,
   type OpenAICompatChatResponse,
 } from './openai-compat';
@@ -82,7 +85,7 @@ async function deepseekChat(opts: ChatOptions): Promise<ChatResult> {
       'content-type': 'application/json',
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60_000),
+    signal: chatAbortSignal(opts.signal, 60_000),
   });
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
@@ -144,10 +147,28 @@ async function deepseekDiscover(
   }
 }
 
+/** Streaming DeepSeek chat — OpenAI-compatible SSE (its reasoning models also
+ *  stream a `reasoning_content` channel, which the shared streamer forwards as
+ *  reasoning deltas). */
+function deepseekChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Promise<ChatResult> {
+  if (!opts.apiKey) throw new Error('deepseek-chat: apiKey required');
+  if (!opts.model) throw new Error('deepseek-chat: model required');
+  return streamOpenAICompatChat(
+    opts,
+    {
+      url: `${DEEPSEEK_BASE_URL}/chat/completions`,
+      headers: { Authorization: `Bearer ${opts.apiKey}`, 'content-type': 'application/json' },
+      provider: 'deepseek',
+    },
+    onDelta,
+  );
+}
+
 export const deepseekChatAdapter: ChatDispatcher = {
   providerId: 'deepseek',
   adapterName: 'deepseek-chat',
   chat: deepseekChat,
+  chatStream: deepseekChatStream,
   discoverModels: deepseekDiscover,
   staticCatalog: () => DEEPSEEK_CHAT_MODELS,
 };

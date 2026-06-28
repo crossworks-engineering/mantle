@@ -42,6 +42,9 @@ export type StepStatus = 'running' | 'success' | 'error' | 'skipped';
 export type StartTraceInit = {
   kind: TraceKind;
   ownerId: string;
+  /** When set, this trace's steps are published as live turn events keyed by
+   *  this id (the responder turn). Omit for background traces — they pay nothing. */
+  turnId?: string;
   subjectId?: string;
   subjectKind?: string;
   agentId?: string | null;
@@ -54,6 +57,34 @@ export type StartStepInit = {
   input?: Record<string, unknown>;
 };
 
+/** Lifecycle phase of a step, for the optional step observer. */
+export type StepPhase = 'start' | 'end';
+
+/**
+ * A step lifecycle event handed to a registered observer. Fired ONLY for traces
+ * opened with a `turnId` (the live-streamed responder turn), so generic
+ * background traces pay nothing. This is the generic tap the runner uses to turn
+ * trace steps into live `status`/tool events — tracing itself knows nothing
+ * about turn streaming beyond carrying the id and calling back.
+ */
+export type StepObserverEvent = {
+  traceId: string;
+  ownerId: string;
+  /** The turn correlation id this trace was opened with. */
+  turnId: string;
+  /** Monotonic per-turn sequence across all observed step events. */
+  seq: number;
+  name: string;
+  kind: TraceStepKind;
+  phase: StepPhase;
+  /** For `end`: did the step succeed (success|skipped)? Always true for `start`. */
+  ok: boolean;
+  /** The step's input args — carried on `start` only, for label enrichment. */
+  input?: Record<string, unknown>;
+};
+
+export type StepObserver = (e: StepObserverEvent) => void;
+
 export type TokenDelta = {
   input?: number;
   output?: number;
@@ -64,6 +95,15 @@ export type TokenDelta = {
 export type TraceContext = {
   readonly id: string;
   readonly ownerId: string;
+  /** Live-streaming correlation id; null for un-streamed (background) traces.
+   *  A delegated child inherits the parent's `turnId` (see startTrace) so its
+   *  steps surface in the SAME live stream. */
+  readonly turnId: string | null;
+  /** True only for the trace that INTRODUCED the turnId (the top-level turn);
+   *  false for delegated children that inherited it. The token-delta (reply text)
+   *  stream is gated to the root so a sub-agent's output never pollutes the
+   *  visible reply — children still surface their STATUS in the trail. */
+  readonly isStreamRoot: boolean;
   startedAtMs: number;
   ordinalCounter: number; // next root-step ordinal
   childOrdinals: Map<string, number>; // parent step id -> next child ordinal
@@ -113,6 +153,209 @@ export function currentTrace(): TraceContext | null {
 
 export function currentStep(): ActiveStep | null {
   return stepStore.getStore() ?? null;
+}
+
+// ─── Per-turn live sequence cursor ───────────────────────────────────────────
+//
+// The stream's `seq` must be monotonic across the WHOLE turn, including any
+// delegated sub-agents — each of which runs in its OWN trace (for cost) but
+// INHERITS the turn's `turnId`. A per-trace counter would restart at 0 inside
+// each child and collide; this per-turnId registry keeps one cursor for status
+// + token events from the root turn and every descendant. The root trace deletes
+// its entry when it finishes (all children have settled by then).
+const turnSeqCounters = new Map<string, number>();
+function nextTurnSeq(turnId: string): number {
+  const n = turnSeqCounters.get(turnId) ?? 0;
+  turnSeqCounters.set(turnId, n + 1);
+  return n;
+}
+
+// ─── Per-turn abort registry (stop a streamed turn mid-flight) ───────────────
+//
+// A turn's LLM streaming call needs to be cancellable across the process
+// boundary: the user hits Stop in `apps/web`, which NOTIFYs `apps/api`, which
+// must abort the in-flight generation. The runner registers an AbortController
+// per turn (keyed by the streamId/turnId); the cancel listener calls `abortTurn`
+// and the chat dispatcher threads the signal into the adapter via
+// `currentTurnAbortSignal()` (read off the current trace's turnId, so delegated
+// sub-agents — which inherit the turnId — abort with the root turn too).
+const turnAbortControllers = new Map<string, { controller: AbortController; ownerId: string }>();
+
+/** Register an AbortController for `turnId`. The runner calls this at turn start
+ *  and {@link unregisterTurnAbort} in a finally. Returns the controller so the
+ *  runner can inspect `.signal.aborted` after the loop (a user stop vs. a real
+ *  error). */
+export function registerTurnAbort(turnId: string, ownerId: string): AbortController {
+  const controller = new AbortController();
+  turnAbortControllers.set(turnId, { controller, ownerId });
+  return controller;
+}
+
+/** Abort the in-flight turn `turnId` iff it belongs to `ownerId` (the isolation
+ *  check — a turnId guessed from another owner won't match). Returns whether a
+ *  matching live turn was found + aborted. NEVER throws. */
+export function abortTurn(ownerId: string, turnId: string): boolean {
+  const entry = turnAbortControllers.get(turnId);
+  if (!entry || entry.ownerId !== ownerId) return false;
+  try {
+    entry.controller.abort();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Drop a turn's controller (the turn ended). */
+export function unregisterTurnAbort(turnId: string): void {
+  turnAbortControllers.delete(turnId);
+}
+
+/** The AbortSignal for the CURRENT turn (read off the active trace's turnId), or
+ *  undefined outside a registered turn. The chat dispatcher passes this to the
+ *  streaming adapter so a Stop halts generation. */
+export function currentTurnAbortSignal(): AbortSignal | undefined {
+  const t = currentTrace();
+  return t?.turnId ? turnAbortControllers.get(t.turnId)?.controller.signal : undefined;
+}
+
+let stepObserver: StepObserver | null = null;
+
+/**
+ * Register a single global step observer (or clear it with null). The runner
+ * (apps/api) installs one to publish live turn events; every other process
+ * leaves it unset and pays nothing. Generic by design — tracing only ever hands
+ * back the step's identity + the trace's `turnId`/`ownerId`.
+ */
+export function setStepObserver(fn: StepObserver | null): void {
+  stepObserver = fn;
+}
+
+/** Fire the observer for a step lifecycle transition. NEVER throws — an observer
+ *  fault must not break the traced work. No-op unless an observer is registered
+ *  AND this trace carries a `turnId` (so background traces stay free). */
+function notifyStepObserver(
+  trace: TraceContext,
+  e: { name: string; kind: TraceStepKind; phase: StepPhase; ok: boolean; input?: Record<string, unknown> },
+): void {
+  const obs = stepObserver;
+  if (!obs || !trace.turnId) return;
+  try {
+    obs({
+      traceId: trace.id,
+      ownerId: trace.ownerId,
+      turnId: trace.turnId,
+      seq: nextTurnSeq(trace.turnId),
+      name: e.name,
+      kind: e.kind,
+      phase: e.phase,
+      ok: e.ok,
+      input: e.input,
+    });
+  } catch (err) {
+    logErr('step observer', err);
+  }
+}
+
+// ─── Turn token-delta observer (Phase 3 streaming) ───────────────────────────
+
+/** One streamed token delta for the current turn. `seq` shares the trace's
+ *  monotonic `streamSeq` with status events, so a client orders BOTH on one
+ *  cursor. */
+export type TurnDeltaEvent = {
+  turnId: string;
+  ownerId: string;
+  seq: number;
+  round: number;
+  kind: 'text' | 'reasoning';
+  text: string;
+};
+export type TurnDeltaObserver = (e: TurnDeltaEvent) => void;
+
+let turnDeltaObserver: TurnDeltaObserver | null = null;
+
+/** Register the global turn-delta observer (the runner installs one to publish
+ *  tokens to the live bus). Unset everywhere else — token streaming costs nothing
+ *  until a runner installs it, and installing it is ALSO the gate that turns
+ *  streaming on (see `isTurnStreaming`). */
+export function setTurnDeltaObserver(fn: TurnDeltaObserver | null): void {
+  turnDeltaObserver = fn;
+}
+
+/** True iff token streaming is active for the current turn: an observer is
+ *  installed AND this is a streamed trace (carries a `turnId`). The tool-loop
+ *  checks this to choose `adapter.chatStream()` over `adapter.chat()`. */
+export function isTurnStreaming(): boolean {
+  return turnDeltaObserver !== null && !!currentTrace()?.turnId;
+}
+
+/** Emit one streamed token delta for the current turn. No-op unless streaming is
+ *  active. Shares the trace's `streamSeq` so deltas + status events interleave on
+ *  one monotonic cursor. NEVER throws — a publish fault must not break the turn. */
+export function emitTurnDelta(round: number, kind: 'text' | 'reasoning', text: string): void {
+  const obs = turnDeltaObserver;
+  const trace = currentTrace();
+  // Only the ROOT turn streams reply text — a delegated sub-agent's tokens are
+  // intermediate (its result is folded back into the persona's own reply), so
+  // they must not append to the visible reply buffer. Sub-agent STATUS still
+  // surfaces via the step observer above.
+  if (!obs || !trace?.turnId || !trace.isStreamRoot) return;
+  try {
+    obs({ turnId: trace.turnId, ownerId: trace.ownerId, seq: nextTurnSeq(trace.turnId), round, kind, text });
+  } catch (err) {
+    logErr('turn delta observer', err);
+  }
+}
+
+// ─── Turn lifecycle observer (Phase 3c: turn-start + terminal events) ─────────
+
+/** Lifecycle transition of a whole turn (vs. one step): `turn-start` once the
+ *  durable rows exist, `done`/`error` once the outbound row is finalized. */
+export type TurnLifecyclePhase = 'turn-start' | 'done' | 'error';
+
+/** A turn lifecycle event. Unlike status/token events these are driven
+ *  EXPLICITLY by the runtime — not by the trace — so their timing tracks the
+ *  durable `assistant_messages` row (turn-start after the rows exist; done/error
+ *  after the outbound text is committed), and they may fire OUTSIDE the trace
+ *  context (the outbound row is finalized after the responder trace closes).
+ *  `seq` shares the per-turn cursor with status + token events. */
+export type TurnLifecycleEvent = {
+  turnId: string;
+  ownerId: string;
+  seq: number;
+  phase: TurnLifecyclePhase;
+  /** Phase-specific payload — row ids for `turn-start`, the message for `error`. */
+  data: Record<string, unknown>;
+};
+export type TurnLifecycleObserver = (e: TurnLifecycleEvent) => void;
+
+let turnLifecycleObserver: TurnLifecycleObserver | null = null;
+
+/** Register the global turn-lifecycle observer (the runner installs one to
+ *  publish turn-start/done/error to the live bus). Unset everywhere else, so the
+ *  runtime's `emitTurnLifecycle` calls are free no-ops outside the runner. */
+export function setTurnLifecycleObserver(fn: TurnLifecycleObserver | null): void {
+  turnLifecycleObserver = fn;
+}
+
+/** Emit a turn lifecycle event for `turnId`. Allocates `seq` from the per-turn
+ *  cursor; on a TERMINAL phase (done/error) it also retires that cursor — so the
+ *  terminal event owns end-of-turn cleanup (startTrace defers to it; see there).
+ *  NEVER throws — a publish fault must not break the turn. */
+export function emitTurnLifecycle(
+  turnId: string,
+  ownerId: string,
+  phase: TurnLifecyclePhase,
+  data: Record<string, unknown> = {},
+): void {
+  const obs = turnLifecycleObserver;
+  if (!obs) return;
+  try {
+    obs({ turnId, ownerId, seq: nextTurnSeq(turnId), phase, data });
+  } catch (err) {
+    logErr('turn lifecycle observer', err);
+  } finally {
+    if (phase === 'done' || phase === 'error') turnSeqCounters.delete(turnId);
+  }
 }
 
 /**
@@ -169,9 +412,17 @@ export async function startTrace<T>(
   fn: () => Promise<T>,
 ): Promise<T> {
   const id = genId();
+  // Inherit the live-stream identity from a parent trace (a delegated sub-agent
+  // opens its own trace but should stream into the SAME turn). A trace is the
+  // stream ROOT only when it introduces the turnId itself.
+  const parentTurnId = currentTrace()?.turnId ?? null;
+  const turnId = init.turnId ?? parentTurnId;
+  const isStreamRoot = !!init.turnId && !parentTurnId;
   const ctx: TraceContext = {
     id,
     ownerId: init.ownerId,
+    turnId,
+    isStreamRoot,
     startedAtMs: Date.now(),
     ordinalCounter: 0,
     childOrdinals: new Map(),
@@ -224,6 +475,14 @@ export async function startTrace<T>(
       ctx.failedError = err instanceof Error ? err.message : String(err);
       throw err;
     } finally {
+      // The root turn owns the per-turn seq cursor. When a lifecycle observer is
+      // installed (the runner), the terminal `done`/`error` event — which fires
+      // AFTER this trace closes, once the outbound row is finalized — retires the
+      // cursor instead, so its seq stays monotonic past the trace boundary. Only
+      // clean up here when nothing downstream will (no runner wired).
+      if (isStreamRoot && turnId && turnLifecycleObserver === null) {
+        turnSeqCounters.delete(turnId);
+      }
       const duration = Date.now() - ctx.startedAtMs;
       db.update(traces)
         .set({
@@ -305,6 +564,11 @@ export async function step<T>(
     logErr('open step', err);
   }
 
+  // Live turn streaming tap: announce the step's start (no-op unless this trace
+  // carries a turnId and an observer is installed). Input rides along for label
+  // enrichment ("Searching your brain for …").
+  notifyStepObserver(trace, { name: init.name, kind: init.kind, phase: 'start', ok: true, input: init.input });
+
   const handle: StepHandle = {
     id,
     traceId: trace.id,
@@ -371,6 +635,14 @@ export async function step<T>(
         })
         .where(eq(traceSteps.id, id))
         .catch((e) => logErr('finish step', e));
+      // Announce the step's end (Step-1 status ignores this; tool-end/token
+      // phases consume it later). Carries no input.
+      notifyStepObserver(trace, {
+        name: init.name,
+        kind: init.kind,
+        phase: 'end',
+        ok: status === 'success' || status === 'skipped',
+      });
     }
   });
 }

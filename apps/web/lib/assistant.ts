@@ -34,6 +34,13 @@ export type AssistantTimelineRow = {
    *  'web' for native /assistant turns; 'telegram' (etc.) for turns that came
    *  in on another surface and now show in the unified stream. */
   channel: string;
+  /** Execution state (migration 0105). 'complete' for every historical/inbound
+   *  row; an outbound row is 'pending' while the durable runner works and
+   *  'failed' if it errored — so a reload mid-turn renders a live "thinking…"
+   *  bubble (or the error) instead of nothing. See docs/live-turn-streaming.md. */
+  status: 'pending' | 'complete' | 'failed';
+  /** Human-readable failure reason for a 'failed' turn; null otherwise. */
+  error: string | null;
   /** Persisted media (images, voice notes, docs) so the turn renders its
    *  attachments on load — no bytes, just node/file references. */
   attachments: ConversationAttachment[];
@@ -59,6 +66,8 @@ export async function recentAssistantMessages(
       text: assistantMessages.text,
       model: assistantMessages.model,
       channel: assistantMessages.channel,
+      status: assistantMessages.status,
+      error: assistantMessages.error,
       attachments: assistantMessages.attachments,
       createdAt: assistantMessages.createdAt,
     })
@@ -76,6 +85,8 @@ export async function recentAssistantMessages(
       text: r.text,
       model: r.model,
       channel: r.channel,
+      status: r.status,
+      error: r.error,
       attachments: r.attachments ?? [],
       createdAt: r.createdAt.toISOString(),
     }));
@@ -100,6 +111,8 @@ export async function assistantMessagesBefore(
       text: assistantMessages.text,
       model: assistantMessages.model,
       channel: assistantMessages.channel,
+      status: assistantMessages.status,
+      error: assistantMessages.error,
       attachments: assistantMessages.attachments,
       createdAt: assistantMessages.createdAt,
     })
@@ -121,6 +134,8 @@ export async function assistantMessagesBefore(
       text: r.text,
       model: r.model,
       channel: r.channel,
+      status: r.status,
+      error: r.error,
       attachments: r.attachments ?? [],
       createdAt: r.createdAt.toISOString(),
     }));

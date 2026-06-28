@@ -14,6 +14,7 @@ export {
   type AssistantTurnResult,
   type RunAssistantTurnOptions,
 } from './run-turn';
+export { stageLabelForStep, type StageLabel } from './stage-label';
 export {
   pickWebDefaultAgent,
   ROLE_TIEBREAK,

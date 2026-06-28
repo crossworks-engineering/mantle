@@ -35,6 +35,9 @@ importers:
       '@mantle/assistant-runtime':
         specifier: workspace:*
         version: link:../../packages/assistant-runtime
+      '@mantle/client-types':
+        specifier: workspace:*
+        version: link:../../packages/client-types
       '@mantle/content':
         specifier: workspace:*
         version: link:../../packages/content
@@ -62,6 +65,9 @@ importers:
       '@mantle/tracing':
         specifier: workspace:*
         version: link:../../packages/tracing
+      '@mantle/turn-stream':
+        specifier: workspace:*
+        version: link:../../packages/turn-stream
       '@mantle/voice':
         specifier: workspace:*
         version: link:../../packages/voice
@@ -211,6 +217,9 @@ importers:
       '@mantle/tracing':
         specifier: workspace:*
         version: link:../../packages/tracing
+      '@mantle/turn-stream':
+        specifier: workspace:*
+        version: link:../../packages/turn-stream
       '@mantle/voice':
         specifier: workspace:*
         version: link:../../packages/voice
@@ -1024,6 +1033,25 @@ importers:
 
   packages/tracing:
     dependencies:
+      '@mantle/db':
+        specifier: workspace:*
+        version: link:../db
+      drizzle-orm:
+        specifier: ^0.38.3
+        version: 0.38.4(@types/react@19.2.14)(pg@8.20.0)(postgres@3.4.9)(react@19.2.6)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.19
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
+  packages/turn-stream:
+    dependencies:
+      '@mantle/client-types':
+        specifier: workspace:*
+        version: link:../client-types
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
