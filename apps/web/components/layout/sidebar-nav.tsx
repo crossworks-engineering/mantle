@@ -37,6 +37,7 @@ import {
   Palette,
   Radio,
   Search,
+  ServerCog,
   Settings,
   Sparkles,
   Table2,
@@ -143,6 +144,7 @@ export function SidebarNav({
       items: [
         { name: 'Studio', href: '/studio', icon: Waypoints },
         { name: 'API Console', href: '/dev-tools', icon: TerminalSquare },
+        { name: 'Runners', href: '/runners', icon: ServerCog },
         { name: 'Traces', href: '/traces', icon: Workflow },
         { name: 'Debug', href: '/debug', icon: Activity },
       ],
