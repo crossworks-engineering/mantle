@@ -61,6 +61,16 @@ export type ProfilePreferences = {
    *  the assistant's real knowledge of the user comes from the Journal identity
    *  block; this is for greetings/UI. */
   displayName?: string;
+  /** Free-text "what this brain is for" — captured at onboarding, editable in
+   *  Settings → Profile. Injected as the "# Purpose of this brain" section of the
+   *  always-on identity block (identity-context.ts), so every agent knows the
+   *  brain's mission. */
+  purpose?: string;
+  /** The brain's speciality archetype key (see onboarding-questions.ts
+   *  PURPOSE_ARCHETYPES — 'personal' | 'analytics' | 'research' | 'robotics' |
+   *  'team' | 'custom'). Descriptive for now; the seam a later phase can branch
+   *  default provisioning on. */
+  purposeArchetype?: string;
   /** ISO instant onboarding was completed. Unset ⇒ the onboarding wizard runs
    *  on next login; the (app) shell redirects there. Set ⇒ shell renders normally. */
   onboardedAt?: string;
@@ -169,6 +179,12 @@ export async function loadProfilePreferences(
     displayName:
       typeof prefs.displayName === 'string' && prefs.displayName.length > 0
         ? prefs.displayName
+        : undefined,
+    purpose:
+      typeof prefs.purpose === 'string' && prefs.purpose.length > 0 ? prefs.purpose : undefined,
+    purposeArchetype:
+      typeof prefs.purposeArchetype === 'string' && prefs.purposeArchetype.length > 0
+        ? prefs.purposeArchetype
         : undefined,
     onboardedAt:
       typeof prefs.onboardedAt === 'string' && prefs.onboardedAt.length > 0
@@ -327,6 +343,8 @@ export async function updateProfilePreferences(
     reminderAgentSlug: merged.reminderAgentSlug || undefined,
     reminderChannel: isReminderChannel(merged.reminderChannel) ? merged.reminderChannel : undefined,
     displayName: merged.displayName || undefined,
+    purpose: merged.purpose || undefined,
+    purposeArchetype: merged.purposeArchetype || undefined,
     onboardedAt: merged.onboardedAt || undefined,
     onboardingStep: merged.onboardingStep || undefined,
     pagesAssistAgentSlug: merged.pagesAssistAgentSlug || undefined,

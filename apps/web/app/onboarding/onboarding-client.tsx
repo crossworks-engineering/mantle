@@ -14,7 +14,10 @@ import {
 // Import the browser-safe LEAVES directly, NOT the @mantle/content barrel —
 // the barrel pulls identity-context → @mantle/db (postgres) into the client
 // bundle. Same discipline as contacts-format / journal-options.
-import { ONBOARDING_QUESTIONS } from '@mantle/content/onboarding-questions';
+import {
+  PURPOSE_ARCHETYPES,
+  type PurposeArchetype,
+} from '@mantle/content/onboarding-questions';
 import {
   PERSONA_PRESETS,
   DEFAULT_PERSONA_NAMES,
@@ -57,7 +60,7 @@ type StepKey =
   | 'voice'
   | 'provision'
   | 'sanity'
-  | 'interview'
+  | 'purpose'
   | 'personality'
   | 'telegram'
   | 'done';
@@ -68,7 +71,7 @@ const STEPS: { key: StepKey; title: string }[] = [
   { key: 'voice', title: 'Voice' },
   { key: 'provision', title: 'Set up' },
   { key: 'sanity', title: 'Check' },
-  { key: 'interview', title: 'About you' },
+  { key: 'purpose', title: 'Purpose' },
   { key: 'personality', title: 'Personality' },
   { key: 'telegram', title: 'Telegram' },
   { key: 'done', title: 'Done' },
@@ -148,9 +151,12 @@ function Wizard({
   const router = useRouter();
   const toast = useToast();
 
+  // Back-compat: a wizard resumed mid-flight may carry the old 'interview' step
+  // marker — land it on the renamed 'purpose' step.
+  const resumeStep = initialStep === 'interview' ? 'purpose' : initialStep;
   const startIndex = Math.max(
     0,
-    STEPS.findIndex((s) => s.key === initialStep),
+    STEPS.findIndex((s) => s.key === resumeStep),
   );
   const [index, setIndex] = useState(startIndex === -1 ? 0 : startIndex);
   const step = STEPS[index]!.key;
@@ -159,6 +165,9 @@ function Wizard({
   // Step 1 — profile
   const [timezone, setTimezone] = useState(initialTimezone);
   const [locale, setLocale] = useState(initialLocale);
+  // Optional "what should the assistant call you" — replaces the old interview's
+  // name questions; drives the displayName preference.
+  const [userName, setUserName] = useState('');
   useEffect(() => {
     // Prefill from the browser when still on defaults.
     try {
@@ -185,8 +194,9 @@ function Wizard({
   // Step 6 — sanity
   const [sanity, setSanity] = useState<SanityCheck[] | null>(null);
 
-  // Step 7 — interview
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  // Step 7 — purpose: the brain's speciality + a free-text description.
+  const [archetype, setArchetype] = useState<string>(PURPOSE_ARCHETYPES[0]!.key);
+  const [purposeText, setPurposeText] = useState('');
 
   // Step 8 — personality
   const [presetKey, setPresetKey] = useState<PersonaPresetKey>('warm');
@@ -250,18 +260,19 @@ function Wizard({
     }
   }
 
-  async function onSaveInterview() {
-    const fullName = (answers['full_name'] ?? '').trim();
-    const nickname = (answers['nickname'] ?? '').trim();
-    if (!fullName || !nickname) {
-      toast.error('Your name and what to call you are needed.');
+  async function onSavePurpose() {
+    if (!purposeText.trim()) {
+      toast.error('Tell your assistant what this brain is for.');
       return;
     }
     setBusy(true);
     try {
-      const res = await onboardingPost<{ ok: boolean; created: number; error?: string }>('interview', { answers });
+      const res = await onboardingPost<{ ok: boolean; error?: string }>('purpose', {
+        archetype,
+        purpose: purposeText,
+      });
       if (!res.ok) return toast.error(res.error ?? 'Could not save.');
-      toast.success(`Saved ${res.created} thing${res.created === 1 ? '' : 's'} about you.`);
+      toast.success('Purpose saved.');
       go(index + 1);
     } finally {
       setBusy(false);
@@ -314,13 +325,18 @@ function Wizard({
             title="Welcome to Mantle"
             blurb="This is your own AI brain — private, self-hosted, and it remembers. A few quick steps and it’s yours."
           >
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Timezone" hint="So “tomorrow at 3pm” means the right thing.">
-                <Input value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="Africa/Johannesburg" />
+            <div className="space-y-4">
+              <Field label="Your name" hint="Optional — what your assistant should call you.">
+                <Input value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="e.g. Alex" />
               </Field>
-              <Field label="Locale" hint="How dates and numbers are formatted.">
-                <Input value={locale} onChange={(e) => setLocale(e.target.value)} placeholder="en-GB" />
-              </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Timezone" hint="So “tomorrow at 3pm” means the right thing.">
+                  <Input value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="Africa/Johannesburg" />
+                </Field>
+                <Field label="Locale" hint="How dates and numbers are formatted.">
+                  <Input value={locale} onChange={(e) => setLocale(e.target.value)} placeholder="en-GB" />
+                </Field>
+              </div>
             </div>
           </StepShell>
         )}
@@ -448,34 +464,42 @@ function Wizard({
           </StepShell>
         )}
 
-        {step === 'interview' && (
+        {step === 'purpose' && (
           <StepShell
-            title="Tell your assistant about you"
-            blurb="Each answer becomes part of who your assistant knows you to be — used in every conversation. The first two are needed; the rest are optional."
+            title="What is this brain for?"
+            blurb="Pick the speciality that fits best, then describe what it’s mainly going to be used for. This grounds your assistant in the brain’s purpose from the first message."
           >
-            <div className="space-y-4">
-              {ONBOARDING_QUESTIONS.map((q) => (
-                <Field
-                  key={q.key}
-                  label={q.prompt + (q.optional ? '' : ' *')}
-                  hint={q.hint}
-                >
-                  {q.multiline ? (
-                    <Textarea
-                      rows={2}
-                      placeholder={q.placeholder}
-                      value={answers[q.key] ?? ''}
-                      onChange={(e) => setAnswers((a) => ({ ...a, [q.key]: e.target.value }))}
-                    />
-                  ) : (
-                    <Input
-                      placeholder={q.placeholder}
-                      value={answers[q.key] ?? ''}
-                      onChange={(e) => setAnswers((a) => ({ ...a, [q.key]: e.target.value }))}
-                    />
-                  )}
-                </Field>
-              ))}
+            <div className="space-y-5">
+              <RadioGroup
+                value={archetype}
+                onValueChange={setArchetype}
+                className="grid gap-2 sm:grid-cols-2"
+              >
+                {PURPOSE_ARCHETYPES.map((a: PurposeArchetype) => (
+                  <label
+                    key={a.key}
+                    className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-foreground/[0.04]"
+                  >
+                    <RadioGroupItem value={a.key} className="mt-0.5" />
+                    <span>
+                      <span className="block text-sm font-medium">{a.label}</span>
+                      <span className="block text-xs text-muted-foreground">{a.blurb}</span>
+                    </span>
+                  </label>
+                ))}
+              </RadioGroup>
+
+              <Field
+                label="Description *"
+                hint="A sentence or two on what this brain is mainly going to do."
+              >
+                <Textarea
+                  rows={3}
+                  placeholder="e.g. Analyse RBI inspection reports and answer questions about asset integrity for the NATREF refinery."
+                  value={purposeText}
+                  onChange={(e) => setPurposeText(e.target.value)}
+                />
+              </Field>
             </div>
           </StepShell>
         )}
@@ -621,7 +645,7 @@ function Wizard({
                 label: 'Continue',
                 onClick: async () => {
                   setBusy(true);
-                  const res = await onboardingPost<{ ok: boolean; error?: string }>('profile', { timezone, locale });
+                  const res = await onboardingPost<{ ok: boolean; error?: string }>('profile', { timezone, locale, displayName: userName });
                   setBusy(false);
                   if (!res.ok) return toast.error(res.error ?? 'Could not save.');
                   go(index + 1);
@@ -644,8 +668,8 @@ function Wizard({
               return { label: 'Continue', disabled: !provision, onClick: () => go(index + 1) };
             case 'sanity':
               return { label: 'Continue', onClick: () => go(index + 1) };
-            case 'interview':
-              return { label: 'Save & continue', onClick: onSaveInterview };
+            case 'purpose':
+              return { label: 'Save & continue', onClick: onSavePurpose };
             case 'personality':
               return { label: 'Save & continue', onClick: onSavePersona };
             case 'telegram':

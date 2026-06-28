@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { renderIdentityBlock, type IdentityEntry } from './identity-context';
+import {
+  renderIdentityBlock,
+  renderPurposeBlock,
+  type IdentityEntry,
+} from './identity-context';
 
 const e = (
   body: string,
@@ -9,6 +13,37 @@ const e = (
 
 /** Count rendered bullet lines (each entry is one `- ` line). */
 const bulletCount = (block: string) => block.split('\n').filter((l) => l.startsWith('- ')).length;
+
+describe('renderPurposeBlock', () => {
+  it('returns an empty string for a blank purpose', () => {
+    expect(renderPurposeBlock('', 'Personal brain')).toBe('');
+    expect(renderPurposeBlock('   ', null)).toBe('');
+  });
+
+  it('renders the header and the purpose text', () => {
+    const block = renderPurposeBlock('Analyse RBI inspection reports.', null);
+    expect(block).toContain('# Purpose of this brain');
+    expect(block).toContain('Analyse RBI inspection reports.');
+  });
+
+  it('includes a Speciality line when an archetype label is given', () => {
+    const block = renderPurposeBlock('Analyse data.', 'Data / RBI analytics');
+    expect(block).toContain('**Speciality:** Data / RBI analytics');
+  });
+
+  it('omits the Speciality line when the label is null', () => {
+    const block = renderPurposeBlock('Analyse data.', null);
+    expect(block).not.toContain('**Speciality:**');
+  });
+
+  it('collapses whitespace and truncates a very long purpose with an ellipsis', () => {
+    const block = renderPurposeBlock('word '.repeat(400).trim(), null);
+    expect(block).toContain('…');
+    // 600-char cap on the purpose body itself.
+    const body = block.split('\n').pop()!;
+    expect(body.length).toBeLessThanOrEqual(600);
+  });
+});
 
 describe('renderIdentityBlock', () => {
   it('returns an empty string when there are no entries', () => {

@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import {
   DEFAULT_PREFERENCES,
+  isPurposeArchetype,
   isReminderChannel,
   loadProfilePreferences,
   updateProfilePreferences,
@@ -44,6 +45,9 @@ const Body = z.object({
   // Empty = "most recent chat" (unset).
   reminderAgentSlug: z.string().max(120).optional(),
   reminderChannel: z.string().max(32).optional(),
+  // The brain's purpose + speciality archetype (editable post-onboarding).
+  purpose: z.string().max(2000).optional(),
+  purposeArchetype: z.string().max(64).optional(),
 });
 
 export async function PUT(req: Request) {
@@ -53,8 +57,16 @@ export async function PUT(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid input.' }, { status: 400 });
   }
-  const { timezone, locale, avatarStyle, avatarSeed, reminderAgentSlug, reminderChannel } =
-    parsed.data;
+  const {
+    timezone,
+    locale,
+    avatarStyle,
+    avatarSeed,
+    reminderAgentSlug,
+    reminderChannel,
+    purpose,
+    purposeArchetype,
+  } = parsed.data;
   const tz = (timezone ?? '').trim();
   const loc = (locale ?? '').trim();
   if (!tz && !loc) {
@@ -63,6 +75,8 @@ export async function PUT(req: Request) {
       { status: 400 },
     );
   }
+  const purposeTrimmed = (purpose ?? '').trim();
+  const archetype = (purposeArchetype ?? '').trim();
   try {
     const preferences = await updateProfilePreferences(user.id, {
       ...(tz ? { timezone: tz } : {}),
@@ -73,6 +87,10 @@ export async function PUT(req: Request) {
       ...(isReminderChannel((reminderChannel ?? '').trim())
         ? { reminderChannel: (reminderChannel ?? '').trim() as 'telegram' | 'mobile' }
         : {}),
+      // purpose is sent on every save (empty = cleared); archetype only sticks
+      // when it's a known key.
+      ...(purpose !== undefined ? { purpose: purposeTrimmed.slice(0, 600) } : {}),
+      ...(isPurposeArchetype(archetype) ? { purposeArchetype: archetype } : {}),
     });
     return NextResponse.json({ preferences });
   } catch (err) {

@@ -1,160 +1,88 @@
 /**
- * The first-run "get to know you" interview.
+ * The first-run "what is this brain for" capture.
  *
  * Browser-safe leaf (NO `@mantle/db` import) so the onboarding wizard client can
- * render the questions and the server action can compose the bodies from the
- * same source. Each answer becomes a Journal entry (`type='journal'`) under a
- * life-area category, which feeds the always-on identity block
- * (`identity-context.ts`) — so the assistant knows who the user is from turn one.
+ * render the archetypes and the server action can validate the chosen key from
+ * the same source. The chosen archetype + a free-text description are persisted
+ * as profile preferences (`purposeArchetype` + `purpose`, see
+ * profile-preferences.ts) — first-class, settings-editable, and the seam a later
+ * phase can branch provisioning on. The purpose then feeds the always-on
+ * identity block (`identity-context.ts`) as a "# Purpose of this brain" section,
+ * so every agent knows the brain's mission from turn one.
  *
- * Distinct from the passive `seed-get-to-know-user` heartbeat (which keeps
- * harvesting facts during normal chat): this is the deliberate, structured
- * capture at first run.
+ * This replaced the old multi-question personal interview: a brain is now as
+ * often a specialist (data/RBI analytics, robotics, …) as it is a personal one,
+ * so we capture the brain's PURPOSE rather than the operator's life story. The
+ * passive `seed-get-to-know-user` heartbeat still harvests personal facts during
+ * normal chat for the brains where that matters.
  */
-import type { CategoryKey } from './journal-options';
 
-export type OnboardingQuestion = {
-  /** Stable key — used as the form field name + resume marker. */
+/** A brain "speciality" the operator picks at first run. Purely descriptive in
+ *  this phase (persisted + injected); a later phase can map a key to a
+ *  provisioning profile (which specialists/tool-groups to emphasise). */
+export type PurposeArchetype = {
+  /** Stable key — persisted as `purposeArchetype`; never shown to the user. */
   key: string;
-  /** Life-area category the answer is filed under (drives the identity block grouping). */
-  category: CategoryKey;
-  /** The prompt shown to the user. */
-  prompt: string;
-  /** A short helper line / example under the prompt. */
-  hint: string;
-  /** Placeholder for the input. */
-  placeholder: string;
-  /** Optional questions can be left blank and skipped. The first two are required. */
-  optional: boolean;
-  /** Whether the answer wants a multi-line textarea (vs a single line). */
-  multiline: boolean;
-  /** A short lead-in prepended to the answer to make a natural first-person body.
-   *  Empty string ⇒ the answer is stored verbatim (it's already first-person). */
-  lead: string;
+  /** Short label shown in the picker + the identity block's "Speciality:" line. */
+  label: string;
+  /** One-line description of what this kind of brain is for. */
+  blurb: string;
 };
 
 /**
- * The ~9-question set. Order matters — name first (drives the display name and
- * the assistant's sense of who it's talking to), then the people closest, then
- * the wider picture. The last is a free catch-all.
+ * The archetype set. `personal` leads (the most common starting point); `custom`
+ * trails as the description-only escape hatch. Order is the display order.
  */
-export const ONBOARDING_QUESTIONS: OnboardingQuestion[] = [
+export const PURPOSE_ARCHETYPES: PurposeArchetype[] = [
   {
-    key: 'full_name',
-    category: 'identity',
-    prompt: "What's your name?",
-    hint: 'First and surname — what should the system know you as.',
-    placeholder: 'e.g. Alex Carter',
-    optional: false,
-    multiline: false,
-    lead: 'My name is',
+    key: 'personal',
+    label: 'Personal brain',
+    blurb: 'A second brain for your life — notes, journal, tasks, people, and memory.',
   },
   {
-    key: 'nickname',
-    category: 'identity',
-    prompt: 'What do you like to be called?',
-    hint: 'The name your assistant should actually use day to day.',
-    placeholder: 'e.g. Alex, or Al',
-    optional: false,
-    multiline: false,
-    lead: 'I like to be called',
+    key: 'analytics',
+    label: 'Data / RBI analytics',
+    blurb: 'A specialist for analysing data, documents, and reports (RBI, NATREF, and similar).',
   },
   {
-    key: 'partner',
-    category: 'family',
-    prompt: 'Do you have a partner or spouse?',
-    hint: 'Their name and anything worth remembering. Leave blank if not.',
-    placeholder: 'e.g. My wife, Saskia — married since 2014',
-    optional: true,
-    multiline: false,
-    lead: 'My partner/spouse:',
+    key: 'research',
+    label: 'Research',
+    blurb: 'Gathering, reading, and synthesising sources into findings.',
   },
   {
-    key: 'family',
-    category: 'family',
-    prompt: 'Who else is close family — children, parents, who’s at home?',
-    hint: 'Names and ages help your assistant keep them straight.',
-    placeholder: 'e.g. Two kids — Mia (8) and Sam (5); my mom Ann lives nearby',
-    optional: true,
-    multiline: true,
-    lead: 'My close family:',
+    key: 'robotics',
+    label: 'Robotics',
+    blurb: 'Sensing, control, and operational data for a robot or device.',
   },
   {
-    key: 'work',
-    category: 'work',
-    prompt: 'What do you do?',
-    hint: 'Work, role, the projects that fill your days.',
-    placeholder: 'e.g. I run a small engineering firm and tinker with 3D printers',
-    optional: false,
-    multiline: true,
-    lead: 'What I do:',
+    key: 'team',
+    label: 'Team / org knowledge',
+    blurb: 'Shared knowledge for a team — docs, decisions, and context in one place.',
   },
   {
-    key: 'faith',
-    category: 'faith',
-    prompt: 'Is faith or a worldview part of your life?',
-    hint: 'Only if you’d like your assistant to be mindful of it. Optional.',
-    placeholder: 'e.g. Christian — active in my local church',
-    optional: true,
-    multiline: false,
-    lead: 'My faith / worldview:',
-  },
-  {
-    key: 'health',
-    category: 'health',
-    prompt: 'Anything about your health worth knowing?',
-    hint: 'Allergies, conditions, things to be mindful of. Optional — kept private.',
-    placeholder: 'e.g. Type-2 diabetic; allergic to penicillin',
-    optional: true,
-    multiline: true,
-    lead: 'Health worth knowing:',
-  },
-  {
-    key: 'interests',
-    category: 'reflection',
-    prompt: 'What are you into — how do you spend your time?',
-    hint: 'Hobbies, interests, what you care about outside work.',
-    placeholder: 'e.g. 3D printing, hiking, reading theology, building things',
-    optional: false,
-    multiline: true,
-    lead: "What I'm into:",
-  },
-  {
-    key: 'goals',
-    category: 'goal',
-    prompt: 'What are you working toward right now?',
-    hint: 'Goals, projects, things you want your assistant to help you push on.',
-    placeholder: 'e.g. Ship Mantle, finish the gantry rebuild, get fitter',
-    optional: true,
-    multiline: true,
-    lead: "What I'm working toward:",
-  },
-  {
-    key: 'anything',
-    category: 'identity',
-    prompt: 'Anything else your assistant should always know about you?',
-    hint: 'How you like to be talked to, pet peeves, context — anything.',
-    placeholder: 'e.g. Be direct with me; I prefer South African spelling; no fluff',
-    optional: true,
-    multiline: true,
-    lead: '',
+    key: 'custom',
+    label: 'Something else',
+    blurb: 'Describe it yourself below.',
   },
 ];
 
-/** Compose a first-person Journal body from a question + the user's answer.
- *  Trims, and prepends the question's lead unless the lead is empty (free-text
- *  answers are stored verbatim). Returns '' for a blank answer so the caller can
- *  skip it. */
-export function composeBody(question: Pick<OnboardingQuestion, 'lead'>, answer: string): string {
-  const a = (answer ?? '').trim();
-  if (!a) return '';
-  const lead = question.lead.trim();
-  if (!lead) return a;
-  return `${lead} ${a}`;
+export const PURPOSE_ARCHETYPE_KEYS: readonly string[] = PURPOSE_ARCHETYPES.map((a) => a.key);
+
+/** Narrow an unknown value to a known archetype key. */
+export function isPurposeArchetype(key: unknown): boolean {
+  return typeof key === 'string' && PURPOSE_ARCHETYPE_KEYS.includes(key);
 }
 
-/** Derive a short display name (first name) from a full-name answer. Falls back
- *  to the whole trimmed string when there's no whitespace. */
+/** Archetype key → human label, tolerant of unknown values (returns null so the
+ *  identity block can simply omit the "Speciality:" line). */
+export function purposeArchetypeLabel(key: string | null | undefined): string | null {
+  if (!key) return null;
+  return PURPOSE_ARCHETYPES.find((a) => a.key === key)?.label ?? null;
+}
+
+/** Derive a short display name (first name) from a name answer. Falls back to the
+ *  whole trimmed string when there's no whitespace. Kept from the old interview —
+ *  the optional "Your name" field on the welcome step still uses it. */
 export function deriveDisplayName(fullName: string): string {
   const flat = (fullName ?? '').replace(/\s+/g, ' ').trim();
   if (!flat) return '';

@@ -3,12 +3,7 @@ import { z } from 'zod';
 import {
   loadProfilePreferences,
   updateProfilePreferences,
-  createJournal,
-  listJournals,
-  deleteJournal,
-  composeBody,
-  deriveDisplayName,
-  ONBOARDING_QUESTIONS,
+  isPurposeArchetype,
 } from '@mantle/content';
 import { setApiKey, listApiKeys } from '@mantle/api-keys';
 import { resolveEmbeddingConfig, probeEmbeddingRoute } from '@mantle/embeddings';
@@ -35,7 +30,9 @@ export const dynamic = 'force-dynamic';
  */
 
 export type SanityCheck = { label: string; ok: boolean; detail: string };
-const ONBOARDING_JOURNAL_TAG = 'onboarding';
+/** Mirror of identity-context's MAX_PURPOSE_CHARS — trim at the edge so the
+ *  stored value never exceeds what the injected block would render anyway. */
+const MAX_PURPOSE_CHARS = 600;
 
 // The only onboarding action that took an unchecked `body as SavePersonaInput`
 // cast — and savePersonaAgent does `input.assistantName.trim()` with no guard,
@@ -140,34 +137,27 @@ async function runSanityChecks(userId: string): Promise<SanityCheck[]> {
   return checks;
 }
 
-async function saveInterview(
+async function savePurpose(
   userId: string,
-  answers: Record<string, string>,
-): Promise<{ ok: boolean; created: number; error?: string }> {
-  if (!(answers['full_name'] ?? '').trim() || !(answers['nickname'] ?? '').trim()) {
-    return { ok: false, created: 0, error: 'Your name and what to call you are required.' };
+  archetype: string,
+  purpose: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const p = (purpose ?? '').trim();
+  if (!p) {
+    return { ok: false, error: 'Describe what this brain is for.' };
   }
+  // Unknown/blank archetype falls back to 'custom' — the description is the
+  // load-bearing field; the archetype is a (validated) hint.
+  const key = isPurposeArchetype(archetype) ? archetype : 'custom';
   try {
-    // Idempotent: clear the journal entries a previous run created (tagged
-    // `onboarding`) before recreating — never touches the user's own entries.
-    const prior = await listJournals(userId, { tag: ONBOARDING_JOURNAL_TAG });
-    for (const p of prior) await deleteJournal(userId, p.id);
-    let created = 0;
-    for (const q of ONBOARDING_QUESTIONS) {
-      const body = composeBody(q, answers[q.key] ?? '');
-      if (!body) continue;
-      await createJournal(userId, { body, category: q.category, tags: [ONBOARDING_JOURNAL_TAG] });
-      created++;
-    }
-    const displayName =
-      (answers['nickname'] ?? '').trim() || deriveDisplayName(answers['full_name'] ?? '');
     await updateProfilePreferences(userId, {
-      ...(displayName ? { displayName } : {}),
+      purpose: p.slice(0, MAX_PURPOSE_CHARS),
+      purposeArchetype: key,
       onboardingStep: 'personality',
     });
-    return { ok: true, created };
+    return { ok: true };
   } catch (err) {
-    return { ok: false, created: 0, error: err instanceof Error ? err.message : 'Could not save.' };
+    return { ok: false, error: err instanceof Error ? err.message : 'Could not save.' };
   }
 }
 
@@ -185,9 +175,13 @@ export async function POST(req: Request) {
     }
     case 'profile': {
       try {
+        // Optional "Your name" — what the assistant should call the operator
+        // (replaces the old interview's name questions). Stored verbatim.
+        const displayName = String(body.displayName ?? '').trim();
         await updateProfilePreferences(user.id, {
           timezone: String(body.timezone ?? ''),
           locale: String(body.locale ?? ''),
+          ...(displayName ? { displayName } : {}),
           onboardingStep: 'openrouter',
         });
         return NextResponse.json({ ok: true });
@@ -224,9 +218,9 @@ export async function POST(req: Request) {
     }
     case 'sanity':
       return NextResponse.json(await runSanityChecks(user.id));
-    case 'interview':
+    case 'purpose':
       return NextResponse.json(
-        await saveInterview(user.id, (body.answers ?? {}) as Record<string, string>),
+        await savePurpose(user.id, String(body.archetype ?? ''), String(body.purpose ?? '')),
       );
     case 'persona': {
       const parsed = PersonaInput.safeParse(body);

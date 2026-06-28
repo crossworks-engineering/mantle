@@ -470,10 +470,12 @@ export {
 export { buildIdentityContext } from './identity-context';
 
 export {
-  ONBOARDING_QUESTIONS,
-  composeBody,
+  PURPOSE_ARCHETYPES,
+  PURPOSE_ARCHETYPE_KEYS,
+  isPurposeArchetype,
+  purposeArchetypeLabel,
   deriveDisplayName,
-  type OnboardingQuestion,
+  type PurposeArchetype,
 } from './onboarding-questions';
 
 export {

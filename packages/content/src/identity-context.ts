@@ -18,16 +18,43 @@ import { and, eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { CATEGORIES, categoryLabel } from './journal-options';
 import { journalSortSql } from './journal';
+import { loadProfilePreferences } from './profile-preferences';
+import { purposeArchetypeLabel } from './onboarding-questions';
 
 /** Hard caps so the block can never balloon, however many entries exist. */
 const MAX_PER_CATEGORY = 6;
 const MAX_TOTAL = 30;
 const MAX_ENTRY_CHARS = 280;
+/** Cap the injected purpose so a runaway paste can't bloat every turn's prompt. */
+const MAX_PURPOSE_CHARS = 600;
 
 /** One journal entry, reduced to what the identity block needs. Entries should be
  *  passed newest-first (the DB query orders them); within a category that order
  *  is preserved. */
 export type IdentityEntry = { body: string; mood: string | null; category: string | null };
+
+/**
+ * Pure renderer: turn the brain's purpose into the `# Purpose of this brain`
+ * block. Deterministic and DB-free (unit-tested). Returns '' for a blank
+ * purpose. The optional archetype label renders as a "Speciality:" line.
+ */
+export function renderPurposeBlock(
+  purpose: string,
+  archetypeLabel: string | null,
+): string {
+  const raw = (purpose ?? '').replace(/\s+/g, ' ').trim();
+  if (!raw) return '';
+  const p =
+    raw.length > MAX_PURPOSE_CHARS ? `${raw.slice(0, MAX_PURPOSE_CHARS - 1).trimEnd()}…` : raw;
+  const lines: string[] = [
+    'What this brain is configured for. Treat it as the brain’s mission — what it',
+    'exists to help with — and let it shape what you prioritise, what you pay',
+    'attention to, and the tone you take. Do not recite it back unprompted.',
+  ];
+  if (archetypeLabel) lines.push('', `**Speciality:** ${archetypeLabel}`);
+  lines.push('', p);
+  return `# Purpose of this brain\n\n${lines.join('\n')}`;
+}
 
 /**
  * Pure renderer: turn journal entries into the `# About the user` block.
@@ -94,19 +121,26 @@ export function renderIdentityBlock(entries: IdentityEntry[]): string {
 }
 
 /**
- * Build the identity context block for an owner. Returns '' when the user has
- * no journal entries (so the caller's concat is a clean no-op and the prompt is
- * unchanged). Thin DB wrapper over the pure `renderIdentityBlock`.
+ * Build the identity context block for an owner: the brain's purpose (from
+ * profile preferences) followed by the "About the user" block distilled from the
+ * Journal. Returns '' when neither is set (so the caller's concat is a clean
+ * no-op). Thin DB wrapper over the pure `renderPurposeBlock` + `renderIdentityBlock`.
  */
 export async function buildIdentityContext(ownerId: string): Promise<string> {
-  const rows = await db
-    .select({ data: nodes.data })
-    .from(nodes)
-    .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'journal')))
-    .orderBy(journalSortSql())
-    .limit(200);
+  const [prefs, rows] = await Promise.all([
+    loadProfilePreferences(ownerId),
+    db
+      .select({ data: nodes.data })
+      .from(nodes)
+      .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'journal')))
+      .orderBy(journalSortSql())
+      .limit(200),
+  ]);
 
-  if (rows.length === 0) return '';
+  const purposeBlock = renderPurposeBlock(
+    prefs.purpose ?? '',
+    purposeArchetypeLabel(prefs.purposeArchetype),
+  );
 
   const entries: IdentityEntry[] = rows.map((r) => {
     const d = (r.data ?? {}) as Record<string, unknown>;
@@ -116,6 +150,7 @@ export async function buildIdentityContext(ownerId: string): Promise<string> {
       category: typeof d.category === 'string' ? d.category : null,
     };
   });
+  const journalBlock = renderIdentityBlock(entries);
 
-  return renderIdentityBlock(entries);
+  return [purposeBlock, journalBlock].filter(Boolean).join('\n\n');
 }

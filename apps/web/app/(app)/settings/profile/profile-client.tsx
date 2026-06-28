@@ -22,6 +22,7 @@ import { SubmitButton } from '@/components/ui/submit-button';
 import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -33,6 +34,10 @@ import {
 import { useToast } from '@/components/ui/toast';
 import { apiFetch, apiSend } from '@/lib/api-fetch';
 import { AvatarPicker, type AvatarValue } from '@/components/avatar-picker';
+// Import the value from the browser-safe LEAF, not the @mantle/content barrel —
+// the barrel pulls backup.ts (node:os) + identity-context (@mantle/db) into the
+// client bundle. The type is erased, so it's safe from the barrel.
+import { PURPOSE_ARCHETYPES } from '@mantle/content/onboarding-questions';
 import type { ProfilePreferences } from '@mantle/content';
 
 /** Sentinel for "no pinned responder" — Radix Select can't use an empty-string
@@ -94,6 +99,10 @@ function ProfileForm({ data }: { data: ProfileData }) {
   const [avatar, setAvatar] = useState<AvatarValue | null>(
     defaults.avatarStyle ? { style: defaults.avatarStyle, seed: defaults.avatarSeed || userId } : null,
   );
+  const [purpose, setPurpose] = useState(defaults.purpose ?? '');
+  const [archetype, setArchetype] = useState(
+    defaults.purposeArchetype ?? PURPOSE_ARCHETYPES[0]!.key,
+  );
   const [error, setError] = useState<string | null>(null);
 
   // Live "now in your settings" preview from the chosen tz/locale — same output
@@ -141,6 +150,8 @@ function ProfileForm({ data }: { data: ProfileData }) {
       avatarSeed: avatar?.seed ?? '',
       reminderAgentSlug: reminderAgent === REMINDER_AUTO ? '' : reminderAgent,
       reminderChannel,
+      purpose,
+      purposeArchetype: archetype,
     });
   };
 
@@ -160,6 +171,40 @@ function ProfileForm({ data }: { data: ProfileData }) {
           A geometric avatar generated from a style + seed. Shows in the header
           and across the app; clear it to fall back to your initials.
         </p>
+      </section>
+
+      <section className="space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="purposeArchetype">Speciality</Label>
+          <Select value={archetype} onValueChange={setArchetype}>
+            <SelectTrigger id="purposeArchetype">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PURPOSE_ARCHETYPES.map((a) => (
+                <SelectItem key={a.key} value={a.key}>
+                  {a.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <input type="hidden" name="purposeArchetype" value={archetype} />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="purpose">What this brain is for</Label>
+          <Textarea
+            id="purpose"
+            name="purpose"
+            rows={3}
+            value={purpose}
+            onChange={(e) => setPurpose(e.target.value)}
+            placeholder="A sentence or two on what this brain is mainly used for."
+          />
+          <p className="text-xs text-muted-foreground">
+            Grounds every assistant in the brain&apos;s mission — injected at the top of
+            each conversation. Leave blank to clear it.
+          </p>
+        </div>
       </section>
 
       <section className="space-y-4">
