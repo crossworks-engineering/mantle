@@ -757,6 +757,20 @@
       "when": 1784073600000,
       "tag": "0107_turn_stream_buffer",
       "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1784160000000,
+      "tag": "0108_rename_todos_to_tasks",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1784246400000,
+      "tag": "0109_rename_lifelog_to_journal",
+      "breakpoints": true
     }
   ]
 }
