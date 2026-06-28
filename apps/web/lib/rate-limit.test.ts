@@ -92,16 +92,34 @@ describe('clientIp', () => {
     return new Request('http://example/', { headers });
   }
 
-  it('returns the first entry of x-forwarded-for', async () => {
-    const { clientIp } = await freshLimiter();
-    const req = makeReq({ 'x-forwarded-for': '203.0.113.5, 10.0.0.2, 10.0.0.3' });
-    expect(clientIp(req)).toBe('203.0.113.5');
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
-  it('trims whitespace around the first entry', async () => {
+  // X-Forwarded-For is `client, proxy1, …, ourProxy`. The leftmost entry is
+  // client-supplied and forgeable, so clientIp keys on the entry our nearest
+  // trusted proxy (Caddy) appended — the RIGHTMOST, counting MANTLE_TRUSTED_PROXIES
+  // hops (default 1). NOTE: asserting the leftmost here would only "pass" by
+  // reverting clientIp to the spoofable behavior — i.e. re-opening a login/signup
+  // rate-limit bypass. These assertions must stay on the rightmost entry.
+  it('uses the rightmost (trusted-proxy) entry, not the spoofable leftmost', async () => {
     const { clientIp } = await freshLimiter();
-    const req = makeReq({ 'x-forwarded-for': '  198.51.100.10  ,10.0.0.1' });
+    const req = makeReq({ 'x-forwarded-for': '203.0.113.5, 10.0.0.2, 10.0.0.3' });
+    expect(clientIp(req)).toBe('10.0.0.3');
+  });
+
+  it('trims whitespace around the chosen entry', async () => {
+    const { clientIp } = await freshLimiter();
+    const req = makeReq({ 'x-forwarded-for': '10.0.0.1,  198.51.100.10  ' });
     expect(clientIp(req)).toBe('198.51.100.10');
+  });
+
+  it('honours MANTLE_TRUSTED_PROXIES to count more hops from the right', async () => {
+    vi.stubEnv('MANTLE_TRUSTED_PROXIES', '2');
+    const { clientIp } = await freshLimiter();
+    const req = makeReq({ 'x-forwarded-for': '203.0.113.5, 10.0.0.2, 10.0.0.3' });
+    // Two trusted hops → second entry from the right.
+    expect(clientIp(req)).toBe('10.0.0.2');
   });
 
   it('falls back to x-real-ip if x-forwarded-for is absent', async () => {
