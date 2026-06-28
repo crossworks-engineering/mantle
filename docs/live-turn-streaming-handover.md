@@ -307,8 +307,12 @@ API key for live tests, so they're covered by `chat-stream.test.ts` instead.
   v0.77.0): `Last-Event-ID` replay is built and the web client exercises it. NOTIFY has no backlog, so the
   runner buffers recent events per turn keyed by `seq`; on reconnect with `Last-Event-ID: <seq>` the route
   replays `seq > N` then live-tails (gap-free via subscribe-first/queue/drain; dup-free via the seq guard).
-  `apiEventStream` now sends the header on reconnect. **⚠️ Unproven on a real backgrounding mobile client** —
-  validated by unit tests + (pending) a web SSE drop/reconnect smoke; the companion is the real exercise.
+  `apiEventStream` now sends the header on reconnect. **Verified end-to-end** (migration `0107` applied to
+  local, runner restarted, live SSE smoke): a turn posted (202), stream dropped mid-flight at seq 5, reconnect
+  with `Last-Event-ID: 5` resumed at seq 6 — gap-free + dup-free — through `done`; a fresh header-less connect
+  replayed the whole turn from seq 0; `turn_stream_buffer` held all 31 events; the durable outbound row was
+  `complete` with the full reply. Dark-mode gating + the TTL sweep are covered by `publish.test.ts`.
+  **⚠️ Still unproven on a real backgrounding mobile client** — that's the companion's job (next).
 - **REMAINING — the Flutter companion** (`~/Projects/mantle-companion`, [[mantle-companion]]) consumes the
   SAME `GET /api/assistant/turn/:id/stream` — it's **bearer-authed from day one** (header, not cookie), so no
   new endpoint. It mints the `turnId` and subscribes before POSTing, exactly like the web client, and sends
