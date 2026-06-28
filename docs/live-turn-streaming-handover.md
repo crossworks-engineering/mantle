@@ -1,6 +1,6 @@
 # Chat System / Live Turn Streaming — Session Handover
 
-**Branch:** `feat/live-turn-streaming` · **Version:** v0.76.0 · **Untagged, unpushed** (default-branch + tag +
+**Branch:** `feat/live-turn-streaming` · **Version:** v0.77.0 · **Untagged, unpushed** (default-branch + tag +
 deploy are Jason's call). **Design doc:** [`docs/live-turn-streaming.md`](live-turn-streaming.md).
 **Conversation model:** [`docs/conversation.md`](conversation.md).
 
@@ -244,6 +244,13 @@ Local DB is **Docker Desktop** (`mantle_pg`/`mantle_minio`/`mantle_tika`); app D
 
 The four flags are already in `.env.local` (gitignored): `MANTLE_TURN_STREAMING=1`,
 `NEXT_PUBLIC_MANTLE_TURN_STREAMING=1`, `MANTLE_TURN_NARRATION=1`, `MANTLE_TURN_TOKENS=1`.
+
+**Migration `0107` is ALREADY applied to this local DB** — and `pnpm db:migrate` is currently **blocked by the
+auto-mode classifier** (it can't prove the target isn't the prod DB reachable over Tailscale). It was applied
+via `docker exec mantle_pg psql < packages/db/migrations/0107_turn_stream_buffer.sql` + a hand-inserted
+`drizzle.__drizzle_migrations` ledger row (`created_at=1784073600000`), so a future `pnpm db:migrate` correctly
+**skips** 0107 (the ledger gates by `created_at`). Don't re-apply it. Inspect the replay buffer with:
+`docker exec mantle_pg psql -U postgres -d postgres -c "select turn_id,seq,event->>'type' from turn_stream_buffer order by created_at desc limit 20;"`
 
 ```bash
 # 1. web — preview tooling (mcp preview_start "web") OR: pnpm --filter @mantle/web dev --port 3001
