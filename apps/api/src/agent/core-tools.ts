@@ -5,7 +5,7 @@
  *
  * P6 — tool GROUPS are the sole grant (docs/tools-and-skills.md). The floor is a
  * set of GROUP slugs the self-heal idempotently grants to every enabled
- * responder/assistant so "be more professional" / "add a todo" / "what did I tell
+ * responder/assistant so "be more professional" / "add a task" / "what did I tell
  * you yesterday?" all work without manual /settings/tool-groups setup. This is
  * what keeps OPERATOR-owned personas (telegram-default, apostle-paul — not
  * manifest slugs, so never seeded from the manifest) able to act from message one.
@@ -37,9 +37,9 @@
  */
 export const CORE_AUTO_GRANT_GROUP_SLUGS: readonly string[] = [
   'persona',
-  'todos',
+  'tasks',
   'contacts',
-  'lifelog',
+  'journal',
   'notes',
   'email',
   'page-share',

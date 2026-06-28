@@ -11,7 +11,7 @@ import { DateTimePicker } from '@/components/ui/date-time-picker';
 export const PRIORITIES = ['low', 'normal', 'high'] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
-export type TodoFormValues = {
+export type TaskFormValues = {
   title: string;
   body: string;
   priority: Priority;
@@ -19,7 +19,7 @@ export type TodoFormValues = {
   tags: string[];
 };
 
-export type TodoPayload = {
+export type TaskPayload = {
   title: string;
   body: string;
   priority: Priority;
@@ -27,7 +27,7 @@ export type TodoPayload = {
   tags: string[];
 };
 
-export const emptyTodoForm = (): TodoFormValues => ({
+export const emptyTaskForm = (): TaskFormValues => ({
   title: '',
   body: '',
   priority: 'normal',
@@ -35,13 +35,13 @@ export const emptyTodoForm = (): TodoFormValues => ({
   tags: [],
 });
 
-export function todoToForm(t: {
+export function taskToForm(t: {
   title: string;
   body: string;
   priority: Priority;
   dueAt: string | null;
   tags: string[];
-}): TodoFormValues {
+}): TaskFormValues {
   return {
     title: t.title,
     body: t.body,
@@ -52,24 +52,24 @@ export function todoToForm(t: {
 }
 
 /**
- * Shared todo editor body — used by the master-detail "create" pane and the
- * TodoDetail "edit" mode. Owns its field state; the parent POSTs/PATCHes the
+ * Shared task editor body — used by the master-detail "create" pane and the
+ * TaskDetail "edit" mode. Owns its field state; the parent POSTs/PATCHes the
  * normalized payload in `onSubmit` and switches view on success.
  */
-export function TodoForm({
+export function TaskForm({
   initial,
   submitLabel,
   submitting,
   onSubmit,
   onCancel,
 }: {
-  initial: TodoFormValues;
+  initial: TaskFormValues;
   submitLabel: string;
   submitting?: boolean;
-  onSubmit: (payload: TodoPayload) => void | Promise<void>;
+  onSubmit: (payload: TaskPayload) => void | Promise<void>;
   onCancel: () => void;
 }) {
-  const [form, setForm] = useState<TodoFormValues>(initial);
+  const [form, setForm] = useState<TaskFormValues>(initial);
   const [error, setError] = useState<string | null>(null);
 
   const submit = async (e: React.FormEvent) => {
@@ -88,9 +88,9 @@ export function TodoForm({
   return (
     <form onSubmit={submit} className="space-y-4">
       <div className="space-y-1.5">
-        <Label htmlFor="todo-title">Title</Label>
+        <Label htmlFor="task-title">Title</Label>
         <Input
-          id="todo-title"
+          id="task-title"
           value={form.title}
           onChange={(e) => setForm({ ...form, title: e.target.value })}
           placeholder="What needs doing?"
@@ -101,9 +101,9 @@ export function TodoForm({
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <Label htmlFor="todo-priority">Priority</Label>
+          <Label htmlFor="task-priority">Priority</Label>
           <select
-            id="todo-priority"
+            id="task-priority"
             value={form.priority}
             onChange={(e) => setForm({ ...form, priority: e.target.value as Priority })}
             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -116,9 +116,9 @@ export function TodoForm({
           </select>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="todo-due">Due (optional)</Label>
+          <Label htmlFor="task-due">Due (optional)</Label>
           <DateTimePicker
-            id="todo-due"
+            id="task-due"
             value={form.due}
             onChange={(due) => setForm({ ...form, due })}
             placeholder="No due date"
@@ -133,9 +133,9 @@ export function TodoForm({
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="todo-body">Notes</Label>
+        <Label htmlFor="task-body">Notes</Label>
         <textarea
-          id="todo-body"
+          id="task-body"
           value={form.body}
           onChange={(e) => setForm({ ...form, body: e.target.value })}
           rows={5}

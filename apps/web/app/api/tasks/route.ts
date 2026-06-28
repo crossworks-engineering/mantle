@@ -2,22 +2,22 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import {
-  TODO_PRIORITIES,
-  TODO_STATUSES,
-  countTodos,
-  createTodo,
-  listTodos,
-  type TodoStatus,
-  type TodoPriority,
-} from '@/lib/todos';
+  TASK_PRIORITIES,
+  TASK_STATUSES,
+  countTasks,
+  createTask,
+  listTasks,
+  type TaskStatus,
+  type TaskPriority,
+} from '@/lib/tasks';
 
 const PAGE_SIZE = 50;
 
 const CreateBody = z.object({
   title: z.string().min(1).max(200),
   body: z.string().max(50_000).optional().default(''),
-  status: z.enum(TODO_STATUSES).optional(),
-  priority: z.enum(TODO_PRIORITIES).optional(),
+  status: z.enum(TASK_STATUSES).optional(),
+  priority: z.enum(TASK_PRIORITIES).optional(),
   dueAt: z.string().datetime().nullable().optional(),
   tags: z.array(z.string().max(40)).max(20).optional().default([]),
 });
@@ -28,15 +28,15 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const statusParam = url.searchParams.get('status');
   const priorityParam = url.searchParams.get('priority');
-  const status: TodoStatus | 'all' =
-    statusParam && statusParam !== 'all' && (TODO_STATUSES as readonly string[]).includes(statusParam)
-      ? (statusParam as TodoStatus)
+  const status: TaskStatus | 'all' =
+    statusParam && statusParam !== 'all' && (TASK_STATUSES as readonly string[]).includes(statusParam)
+      ? (statusParam as TaskStatus)
       : 'all';
-  const priority: TodoPriority | 'all' =
+  const priority: TaskPriority | 'all' =
     priorityParam &&
     priorityParam !== 'all' &&
-    (TODO_PRIORITIES as readonly string[]).includes(priorityParam)
-      ? (priorityParam as TodoPriority)
+    (TASK_PRIORITIES as readonly string[]).includes(priorityParam)
+      ? (priorityParam as TaskPriority)
       : 'all';
   const page = Math.max(1, Number.parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
   const opts = {
@@ -45,11 +45,11 @@ export async function GET(req: Request) {
     priority,
     tag: url.searchParams.get('tag') ?? undefined,
   };
-  const [todos, total] = await Promise.all([
-    listTodos(user.id, { ...opts, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
-    countTodos(user.id, opts),
+  const [tasks, total] = await Promise.all([
+    listTasks(user.id, { ...opts, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+    countTasks(user.id, opts),
   ]);
-  return NextResponse.json({ todos, total, page, pageSize: PAGE_SIZE });
+  return NextResponse.json({ tasks, total, page, pageSize: PAGE_SIZE });
 }
 
 export async function POST(req: Request) {
@@ -63,6 +63,6 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const row = await createTodo(user.id, parsed.data);
-  return NextResponse.json({ todo: row }, { status: 201 });
+  const row = await createTask(user.id, parsed.data);
+  return NextResponse.json({ task: row }, { status: 201 });
 }

@@ -1,15 +1,14 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { deleteLifelog, getLifelog, updateLifelog } from '@/lib/lifelog';
+import { TASK_PRIORITIES, TASK_STATUSES, deleteTask, getTask, updateTask } from '@/lib/tasks';
 
 const PatchBody = z.object({
-  body: z.string().max(20_000).optional(),
-  title: z.string().max(200).optional(),
-  // Empty string clears the field (mood/category/entryDate are optional).
-  mood: z.string().max(40).optional(),
-  category: z.string().max(40).optional(),
-  entryDate: z.string().max(40).optional(),
+  title: z.string().min(1).max(200).optional(),
+  body: z.string().max(50_000).optional(),
+  status: z.enum(TASK_STATUSES).optional(),
+  priority: z.enum(TASK_PRIORITIES).optional(),
+  dueAt: z.string().datetime().nullable().optional(),
   tags: z.array(z.string().max(40)).max(20).optional(),
 });
 
@@ -17,9 +16,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await ctx.params;
-  const row = await getLifelog(user.id, id);
+  const row = await getTask(user.id, id);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  return NextResponse.json({ lifelog: row });
+  return NextResponse.json({ task: row });
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -34,24 +33,16 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       { status: 400 },
     );
   }
-  let row;
-  try {
-    row = await updateLifelog(user.id, id, parsed.data);
-  } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'invalid input' },
-      { status: 400 },
-    );
-  }
+  const row = await updateTask(user.id, id, parsed.data);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  return NextResponse.json({ lifelog: row });
+  return NextResponse.json({ task: row });
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await ctx.params;
-  const ok = await deleteLifelog(user.id, id);
+  const ok = await deleteTask(user.id, id);
   if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

@@ -76,10 +76,10 @@ function header(name: string, gender: PersonaGender, descriptor: string): string
   );
 }
 
-// "About the user (Life Log)" is injected ahead of this prompt every turn, so we
+// "About the user (Journal)" is injected ahead of this prompt every turn, so we
 // can lean on it instead of hard-coding the user's name.
 const USES_IDENTITY =
-  "You're given an \"About the user\" block (their Life Log) at the top of every " +
+  "You're given an \"About the user\" block (their Journal) at the top of every " +
   'conversation — treat it as durable truth about who you\'re talking to, and use ' +
   "their name and details naturally. Don't recite it back unprompted.";
 

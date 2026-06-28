@@ -19,7 +19,7 @@ describe('stageLabelForStep', () => {
 
   it('names write/action tools so the trail reflects what changed', () => {
     expect(stageLabelForStep('tool: note_create')).toBe('Adding to your notes…');
-    expect(stageLabelForStep('tool: todo_create')).toBe('Adding a to-do…');
+    expect(stageLabelForStep('tool: task_create')).toBe('Adding a task…');
     expect(stageLabelForStep('tool: event_create')).toBe('Adding to your calendar…');
     expect(stageLabelForStep('tool: note_update')).toBe('Updating a note…');
     expect(stageLabelForStep('tool: email_send')).toBe('Sending an email…');

@@ -384,11 +384,11 @@ export async function runAssistantTurn(
     );
   }
   // Always-on identity context — the "who you are" block distilled from the
-  // user's Life Logs (deterministic, no LLM; empty when there are none). Opt
-  // out per-agent with memory_config.inject_lifelog=false. Prepended so it
+  // user's Journal (deterministic, no LLM; empty when there are none). Opt
+  // out per-agent with memory_config.inject_journal=false. Prepended so it
   // reads as durable user-truth at the top of the (cached) system block.
   let identityBlock = '';
-  if ((agent.memoryConfig as { inject_lifelog?: boolean } | null)?.inject_lifelog !== false) {
+  if ((agent.memoryConfig as { inject_journal?: boolean } | null)?.inject_journal !== false) {
     try {
       const block = await buildIdentityContext(ownerId);
       if (block) identityBlock = `${block}\n\n`;

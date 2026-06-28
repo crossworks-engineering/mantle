@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveTitle } from './lifelog';
+import { deriveTitle } from './journal';
 
 describe('deriveTitle', () => {
   it('takes the first sentence when the body has several', () => {
@@ -12,9 +12,9 @@ describe('deriveTitle', () => {
     expect(deriveTitle('  multiple   spaces\n  here  ')).toBe('multiple spaces here');
   });
 
-  it('falls back to "Life log" for empty / whitespace-only bodies', () => {
-    expect(deriveTitle('')).toBe('Life log');
-    expect(deriveTitle('   \n  ')).toBe('Life log');
+  it('falls back to "Journal entry" for empty / whitespace-only bodies', () => {
+    expect(deriveTitle('')).toBe('Journal entry');
+    expect(deriveTitle('   \n  ')).toBe('Journal entry');
   });
 
   it('truncates a long first sentence (>60 chars) with an ellipsis', () => {

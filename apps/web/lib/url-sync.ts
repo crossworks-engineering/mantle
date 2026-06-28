@@ -1,7 +1,7 @@
 /**
  * Reflect a master-detail selection in the URL bar WITHOUT a Next navigation.
  *
- * Surfaces like notes / todos / lifelog hold the whole item in client state, so
+ * Surfaces like notes / tasks / journal hold the whole item in client state, so
  * selecting one is a pure state change — no server round-trip needed. But we
  * still want the address bar to point at the current item, so the URL is
  * copy-/bookmark-/share-able and lines up with the `?selected=<id>` deep link

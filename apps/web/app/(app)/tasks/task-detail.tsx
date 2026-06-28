@@ -18,15 +18,15 @@ import {
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
 import { ShareControl } from '@/components/share/share-control';
-import { TodoForm, todoToForm, type Priority, type TodoPayload } from './todo-form';
-import type { TodoRow } from '@mantle/content';
+import { TaskForm, taskToForm, type Priority, type TaskPayload } from './task-form';
+import type { TaskRow } from '@mantle/content';
 
 export type Status = 'open' | 'done';
 
-// Wire shape is the GET /api/todos mapper's output — single source of truth.
+// Wire shape is the GET /api/tasks mapper's output — single source of truth.
 // Re-exported so the list client keeps importing it from here; a drift between
 // the @mantle/content row and what this screen renders is now a compile error.
-export type { TodoRow };
+export type { TaskRow };
 
 const PRIORITY_BADGE: Record<Priority, string> = {
   low: 'bg-muted text-muted-foreground',
@@ -35,33 +35,33 @@ const PRIORITY_BADGE: Record<Priority, string> = {
 };
 
 /**
- * Presentational todo detail — the client owns the todos list + all fetches and
+ * Presentational task detail — the client owns the tasks list + all fetches and
  * passes the fresh row + callbacks, so a status toggle from the list card and an
  * edit here stay in sync. Manages only its own edit-mode flag.
  */
-export function TodoDetail({
-  todo,
+export function TaskDetail({
+  task,
   onToggleStatus,
   onSave,
   onDelete,
 }: {
-  todo: TodoRow;
+  task: TaskRow;
   onToggleStatus: () => void;
-  onSave: (payload: TodoPayload) => Promise<boolean>;
+  onSave: (payload: TaskPayload) => Promise<boolean>;
   onDelete: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const done = todo.status === 'done';
-  const overdue = !!todo.dueAt && new Date(todo.dueAt) < new Date() && !done;
+  const done = task.status === 'done';
+  const overdue = !!task.dueAt && new Date(task.dueAt) < new Date() && !done;
 
   if (editing) {
     return (
       <div className="space-y-4 p-6">
-        <h2 className="text-lg font-semibold">Edit todo</h2>
-        <TodoForm
-          initial={todoToForm(todo)}
-          submitLabel="Save todo"
+        <h2 className="text-lg font-semibold">Edit task</h2>
+        <TaskForm
+          initial={taskToForm(task)}
+          submitLabel="Save task"
           onSubmit={async (payload) => {
             if (await onSave(payload)) setEditing(false);
           }}
@@ -90,10 +90,10 @@ export function TodoDetail({
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex items-start justify-between gap-3">
             <h2 className={cn('min-w-0 text-xl font-semibold', done && 'text-muted-foreground line-through')}>
-              {todo.title}
+              {task.title}
             </h2>
             <div className="flex shrink-0 items-center gap-2">
-              <ShareControl nodeId={todo.id} iconOnly />
+              <ShareControl nodeId={task.id} iconOnly />
               <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
                 <Pencil /> Edit
               </Button>
@@ -109,21 +109,21 @@ export function TodoDetail({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5', PRIORITY_BADGE[todo.priority])}>
-              <Flag className="size-3" /> {todo.priority}
+            <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5', PRIORITY_BADGE[task.priority])}>
+              <Flag className="size-3" /> {task.priority}
             </span>
             <span className="text-muted-foreground">{done ? 'Done' : 'Open'}</span>
-            {todo.dueAt && (
+            {task.dueAt && (
               <span className={cn(overdue ? 'font-medium text-destructive' : 'text-muted-foreground')}>
-                · due {formatDateTime(todo.dueAt)}
+                · due {formatDateTime(task.dueAt)}
                 {overdue && ' · overdue'}
               </span>
             )}
           </div>
 
-          {todo.tags.length > 0 && (
+          {task.tags.length > 0 && (
             <div className="flex flex-wrap gap-1">
-              {todo.tags.map((t) => (
+              {task.tags.map((t) => (
                 <span key={t} className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                   {t}
                 </span>
@@ -133,17 +133,17 @@ export function TodoDetail({
         </div>
       </div>
 
-      {todo.body && (
+      {task.body && (
         <article className="prose prose-sm dark:prose-invert max-w-none prose-accent rounded-md border border-border bg-card p-4">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{todo.body}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{task.body}</ReactMarkdown>
         </article>
       )}
-      {todo.summary && <p className="text-xs italic text-muted-foreground">Indexed: {todo.summary}</p>}
+      {task.summary && <p className="text-xs italic text-muted-foreground">Indexed: {task.summary}</p>}
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete “{todo.title}”?</AlertDialogTitle>
+            <AlertDialogTitle>Delete “{task.title}”?</AlertDialogTitle>
             <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

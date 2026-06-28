@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { categoryLabel, moodDisplay, normalizeEntryDate } from './lifelog-options';
+import { categoryLabel, moodDisplay, normalizeEntryDate } from './journal-options';
 
 describe('normalizeEntryDate', () => {
   it('passes through a full ISO timestamp (canonicalised)', () => {

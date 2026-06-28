@@ -90,7 +90,7 @@ export function SidebarNav({
       label: 'Workspace',
       items: [
         { name: 'Dashboard', href: '/', icon: LayoutDashboard, exact: true },
-        { name: 'Life Logs', href: '/lifelog', icon: NotebookPen },
+        { name: 'Journal', href: '/journal', icon: NotebookPen },
         { name: 'Email', href: '/inbox', icon: Inbox },
         { name: 'Assistant', href: '/assistant', icon: MessageCircle },
         { name: 'Files', href: '/files', icon: FolderTree },
@@ -98,7 +98,7 @@ export function SidebarNav({
         { name: 'Pages', href: '/pages', icon: BookText },
         { name: 'Tables', href: '/tables', icon: Table2 },
         { name: 'Apps', href: '/apps', icon: AppWindow },
-        { name: 'Todos', href: '/todos', icon: CheckSquare },
+        { name: 'Tasks', href: '/tasks', icon: CheckSquare },
         { name: 'Events', href: '/events', icon: CalendarDays },
         { name: 'Contacts', href: '/contacts', icon: Contact },
         { name: 'Secrets', href: '/secrets', icon: Lock },

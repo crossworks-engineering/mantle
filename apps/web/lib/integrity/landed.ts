@@ -3,7 +3,7 @@
  * integrity probe.
  *
  * `listLanded` pulls the most-recent real content nodes the user added (notes,
- * pages, todos, events, contacts, secrets, files, email) together with their
+ * pages, tasks, events, contacts, secrets, files, email) together with their
  * structural footprint (summary · embedding dims · tsv · fact/entity counts ·
  * the TS equivalent of `scripts/trace-node.sh`, batched into one query) and the
  * latest `extractor_run`. `evaluateLanded` turns each

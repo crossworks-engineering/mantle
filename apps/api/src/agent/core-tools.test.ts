@@ -14,9 +14,9 @@ import { CORE_AUTO_GRANT_GROUP_SLUGS, computeFloorGroupAdditions } from './core-
  *  the tools the assertions care about are listed; that's all the logic reads. */
 const GROUP_TOOLS = new Map<string, readonly string[]>([
   ['persona', ['update_persona']],
-  ['todos', ['todo_list', 'todo_get', 'todo_create', 'todo_update', 'todo_delete']],
+  ['tasks', ['task_list', 'task_get', 'task_create', 'task_update', 'task_delete']],
   ['contacts', ['contact_create', 'contact_find', 'contact_get', 'contact_list', 'contact_update']],
-  ['lifelog', ['lifelog_create', 'lifelog_get', 'lifelog_list', 'lifelog_update']],
+  ['journal', ['journal_create', 'journal_get', 'journal_list', 'journal_update']],
   ['notes', ['note_create', 'note_list', 'note_get']],
   ['email', ['email_send', 'email_page', 'email_list', 'email_get']],
   ['page-share', ['page_share', 'page_unshare']],
@@ -64,9 +64,9 @@ describe('computeFloorGroupAdditions', () => {
   });
 
   it('adds only the missing floor groups', () => {
-    const have = new Set(['persona', 'todos', 'memory-core', 'delegation']);
+    const have = new Set(['persona', 'tasks', 'memory-core', 'delegation']);
     const add = computeFloorGroupAdditions(have, GROUP_TOOLS);
-    expect(add).toEqual(['contacts', 'lifelog', 'notes', 'email', 'page-share']);
+    expect(add).toEqual(['contacts', 'journal', 'notes', 'email', 'page-share']);
   });
 
   it('skips a floor group whose tools are already fully covered by another grant', () => {
@@ -76,7 +76,7 @@ describe('computeFloorGroupAdditions', () => {
     const have = new Set(['my-notes-superset']);
     const add = computeFloorGroupAdditions(have, tools);
     expect(add).not.toContain('notes');
-    expect(add).toContain('todos'); // still missing, still added
+    expect(add).toContain('tasks'); // still missing, still added
   });
 
   it('skips a floor group that is missing/disabled (no enabled row in the map)', () => {

@@ -3,7 +3,7 @@
  * notification round-trip end to end — the live sidebar/list badge AND the
  * interactive Telegram card (sendApprovalCard → tap → approve/reject →
  * card edit). It inserts a real `pending_tool_calls` row for a harmless,
- * read-only tool (default `todo_list`) and fires the same notifyPendingCreated
+ * read-only tool (default `task_list`) and fires the same notifyPendingCreated
  * hook the agent tool-loop uses, so the path under test is the real one.
  *
  * Gated to non-production: in prod this would let any authenticated request
@@ -27,7 +27,7 @@ const Body = z.object({
     .min(1)
     .max(120)
     .regex(/^[a-z0-9_-]+$/)
-    .default('todo_list'),
+    .default('task_list'),
   input: z.record(z.string(), z.unknown()).default({}),
 });
 

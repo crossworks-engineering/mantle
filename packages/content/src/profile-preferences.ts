@@ -58,7 +58,7 @@ export type ProfilePreferences = {
    *  (backward-compatible). See docs/reminder-delivery-routing.md. */
   reminderChannel?: ReminderChannel;
   /** What the user likes to be called (captured during onboarding). Cosmetic —
-   *  the assistant's real knowledge of the user comes from the Life Log identity
+   *  the assistant's real knowledge of the user comes from the Journal identity
    *  block; this is for greetings/UI. */
   displayName?: string;
   /** ISO instant onboarding was completed. Unset ⇒ the onboarding wizard runs

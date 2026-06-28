@@ -1,5 +1,5 @@
 /**
- * Todos surface. A todo is a `nodes` row with type='task':
+ * Tasks surface. A task is a `nodes` row with type='task':
  *
  *   nodes.title       short imperative
  *   nodes.data.body   freeform notes (extractor reads this)
@@ -7,25 +7,28 @@
  *   nodes.data.priority 'low' | 'normal' | 'high'
  *   nodes.data.due_at ISO timestamp (optional)
  *
- * Under the `todos` ltree root. Lazy-created on first write. The
- * extractor's special case in apps/agent/src/extractor.ts:readNodeBodyRaw
+ * Under the `tasks` ltree root. Lazy-created on first write. The
+ * extractor's special case in apps/api/src/agent/extractor.ts:readNodeBodyRaw
  * surfaces status + priority + due_at into the body it summarises.
  */
 import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
 
-export const TODOS_ROOT_LABEL = 'todos';
-export const TODO_STATUSES = ['open', 'done'] as const;
-export const TODO_PRIORITIES = ['low', 'normal', 'high'] as const;
-export type TodoStatus = (typeof TODO_STATUSES)[number];
-export type TodoPriority = (typeof TODO_PRIORITIES)[number];
+// ltree root label for the Tasks branch. Existing brains were re-pathed to it by
+// migration 0108; queries filter by `type='task'` (below),
+// so this label is purely organizational.
+export const TASKS_ROOT_LABEL = 'tasks';
+export const TASK_STATUSES = ['open', 'done'] as const;
+export const TASK_PRIORITIES = ['low', 'normal', 'high'] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 
-export type TodoRow = {
+export type TaskRow = {
   id: string;
   title: string;
   body: string;
-  status: TodoStatus;
-  priority: TodoPriority;
+  status: TaskStatus;
+  priority: TaskPriority;
   dueAt: string | null;
   tags: string[];
   summary: string | null;
@@ -33,16 +36,16 @@ export type TodoRow = {
   updatedAt: string;
 };
 
-function rowOf(n: Node): TodoRow {
+function rowOf(n: Node): TaskRow {
   const d = (n.data ?? {}) as Record<string, unknown>;
   const status =
-    typeof d.status === 'string' && (TODO_STATUSES as readonly string[]).includes(d.status)
-      ? (d.status as TodoStatus)
+    typeof d.status === 'string' && (TASK_STATUSES as readonly string[]).includes(d.status)
+      ? (d.status as TaskStatus)
       : 'open';
   const priority =
     typeof d.priority === 'string' &&
-    (TODO_PRIORITIES as readonly string[]).includes(d.priority)
-      ? (d.priority as TodoPriority)
+    (TASK_PRIORITIES as readonly string[]).includes(d.priority)
+      ? (d.priority as TaskPriority)
       : 'normal';
   return {
     id: n.id,
@@ -64,10 +67,10 @@ async function ensureRoot(ownerId: string): Promise<void> {
     .values({
       ownerId,
       type: 'branch',
-      title: 'Todos',
-      slug: TODOS_ROOT_LABEL,
-      path: TODOS_ROOT_LABEL,
-      data: { description: 'Tasks and todos.' },
+      title: 'Tasks',
+      slug: TASKS_ROOT_LABEL,
+      path: TASKS_ROOT_LABEL,
+      data: { description: 'Tasks.' },
     })
     .onConflictDoNothing({
       target: [nodes.ownerId, nodes.path],
@@ -75,15 +78,15 @@ async function ensureRoot(ownerId: string): Promise<void> {
     });
 }
 
-type ListTodosOpts = {
+type ListTasksOpts = {
   query?: string;
-  status?: TodoStatus | 'all';
-  priority?: TodoPriority | 'all';
+  status?: TaskStatus | 'all';
+  priority?: TaskPriority | 'all';
   tag?: string;
 };
 
-/** Shared WHERE conditions for todo list/count queries. */
-function todoConds(ownerId: string, opts: ListTodosOpts) {
+/** Shared WHERE conditions for task list/count queries. */
+function taskConds(ownerId: string, opts: ListTasksOpts) {
   const conds = [eq(nodes.ownerId, ownerId), eq(nodes.type, 'task')];
   if (opts.query?.trim()) {
     const q = `%${opts.query.trim()}%`;
@@ -104,15 +107,15 @@ function todoConds(ownerId: string, opts: ListTodosOpts) {
   return conds;
 }
 
-export async function listTodos(
+export async function listTasks(
   ownerId: string,
-  opts: ListTodosOpts & { limit?: number; offset?: number } = {},
-): Promise<TodoRow[]> {
+  opts: ListTasksOpts & { limit?: number; offset?: number } = {},
+): Promise<TaskRow[]> {
   // Sort by status (open first), then by due_at nulls last, then by updated_at desc.
   const rows = await db
     .select()
     .from(nodes)
-    .where(and(...todoConds(ownerId, opts)))
+    .where(and(...taskConds(ownerId, opts)))
     .orderBy(
       // Direction must precede the null-ordering: `<expr> asc nulls last`.
       // Don't wrap in asc()/desc() — they append the direction AFTER the
@@ -126,16 +129,16 @@ export async function listTodos(
   return rows.map(rowOf);
 }
 
-/** Total todos matching the same filters as `listTodos` (drives pagination). */
-export async function countTodos(ownerId: string, opts: ListTodosOpts = {}): Promise<number> {
+/** Total tasks matching the same filters as `listTasks` (drives pagination). */
+export async function countTasks(ownerId: string, opts: ListTasksOpts = {}): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(nodes)
-    .where(and(...todoConds(ownerId, opts)));
+    .where(and(...taskConds(ownerId, opts)));
   return row?.n ?? 0;
 }
 
-export async function getTodo(ownerId: string, id: string): Promise<TodoRow | null> {
+export async function getTask(ownerId: string, id: string): Promise<TaskRow | null> {
   const [row] = await db
     .select()
     .from(nodes)
@@ -144,16 +147,16 @@ export async function getTodo(ownerId: string, id: string): Promise<TodoRow | nu
   return row ? rowOf(row) : null;
 }
 
-export type CreateTodoInput = {
+export type CreateTaskInput = {
   title: string;
   body?: string;
-  status?: TodoStatus;
-  priority?: TodoPriority;
+  status?: TaskStatus;
+  priority?: TaskPriority;
   dueAt?: string | null;
   tags?: string[];
 };
 
-export async function createTodo(ownerId: string, input: CreateTodoInput): Promise<TodoRow> {
+export async function createTask(ownerId: string, input: CreateTaskInput): Promise<TaskRow> {
   await ensureRoot(ownerId);
   const data: Record<string, unknown> = {
     body: input.body ?? '',
@@ -167,22 +170,22 @@ export async function createTodo(ownerId: string, input: CreateTodoInput): Promi
       ownerId,
       type: 'task',
       title: input.title.trim().slice(0, 200) || 'Untitled task',
-      path: TODOS_ROOT_LABEL,
+      path: TASKS_ROOT_LABEL,
       data,
       tags: dedupeTags(input.tags ?? []),
     })
     .returning();
-  if (!row) throw new Error('createTodo: insert returned no row');
+  if (!row) throw new Error('createTask: insert returned no row');
   return rowOf(row);
 }
 
-export type UpdateTodoInput = Partial<CreateTodoInput>;
+export type UpdateTaskInput = Partial<CreateTaskInput>;
 
-export async function updateTodo(
+export async function updateTask(
   ownerId: string,
   id: string,
-  input: UpdateTodoInput,
-): Promise<TodoRow | null> {
+  input: UpdateTaskInput,
+): Promise<TaskRow | null> {
   const [node] = await db
     .select()
     .from(nodes)
@@ -225,14 +228,14 @@ export async function updateTodo(
     })
     .where(eq(nodes.id, id))
     .returning();
-  if (!updated) throw new Error('updateTodo: update returned no row');
+  if (!updated) throw new Error('updateTask: update returned no row');
   if (contentChanged) {
     await notifyNodeIngested(id);
   }
   return rowOf(updated);
 }
 
-export async function deleteTodo(ownerId: string, id: string): Promise<boolean> {
+export async function deleteTask(ownerId: string, id: string): Promise<boolean> {
   const [row] = await db
     .select({ id: nodes.id })
     .from(nodes)

@@ -1,5 +1,5 @@
 /**
- * Life Logs surface. A life log is a `nodes` row with type='lifelog':
+ * Journal surface. A journal entry is a `nodes` row with type='journal':
  *
  *   nodes.title          short display title (auto-derived from body if blank)
  *   nodes.data.body      the entry — a short plain-text paragraph
@@ -8,19 +8,19 @@
  *   nodes.data.entry_date  optional ISO date the entry is "about" (defaults to created_at)
  *   nodes.tags           freeform tags
  *
- * All under the `lifelog` ltree root. Lazy-created on first write. `lifelog`
+ * All under the `journal` ltree root. Lazy-created on first write. `journal`
  * is in the extractor's `DEFAULT_EXTRACT_TYPES`, so summary + 768-dim
  * embedding + facts land automatically on the next pg_notify('node_ingested').
  *
- * Unlike notes, life logs are also distilled into the always-on "who you are"
+ * Unlike notes, journal entries are also distilled into the always-on "who you are"
  * identity block injected into every agent turn — see ./identity-context.ts.
- * That's the whole point: a life log teaches agents who the user is.
+ * That's the whole point: a journal entry teaches agents who the user is.
  */
 import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
 import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
-import { normalizeEntryDate } from './lifelog-options';
+import { normalizeEntryDate } from './journal-options';
 
-export const LIFELOG_ROOT_LABEL = 'lifelog';
+export const JOURNAL_ROOT_LABEL = 'journal';
 
 // Mood + category option lists live in a browser-safe leaf (no @mantle/db) so
 // the client editor/filters can import them without bundling postgres.
@@ -35,19 +35,19 @@ export {
   normalizeEntryDate,
   type MoodKey,
   type CategoryKey,
-} from './lifelog-options';
+} from './journal-options';
 
 /**
- * Sort key for life logs: the "about" date when set, else the row's update
+ * Sort key for journal entries: the "about" date when set, else the row's update
  * time, newest first. The cast is **crash-proof** — only values that look
  * date-like (`YYYY-MM-DD…`) are cast to `timestamptz`; anything else falls
  * through to `updated_at`. Input validation (`normalizeEntryDate`) already
  * guarantees stored `entry_date` is canonical ISO, so this guard only ever
  * matters for legacy / direct-DB-written rows — but without it a single bad
  * value would throw and break the ENTIRE list + identity block. Shared by
- * `listLifelogs` and `buildIdentityContext` so the two never drift.
+ * `listJournals` and `buildIdentityContext` so the two never drift.
  */
-export function lifelogSortSql(): SQL {
+export function journalSortSql(): SQL {
   return sql`coalesce(
     case when ${nodes.data}->>'entry_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
       then (${nodes.data}->>'entry_date')::timestamptz end,
@@ -55,7 +55,7 @@ export function lifelogSortSql(): SQL {
   ) desc`;
 }
 
-export type LifelogRow = {
+export type JournalRow = {
   id: string;
   title: string;
   body: string;
@@ -73,7 +73,7 @@ function str(d: Record<string, unknown>, k: string): string | null {
   return typeof v === 'string' && v.trim().length > 0 ? v.trim() : null;
 }
 
-function rowOf(n: Node): LifelogRow {
+function rowOf(n: Node): JournalRow {
   const d = (n.data ?? {}) as Record<string, unknown>;
   return {
     id: n.id,
@@ -95,12 +95,12 @@ async function ensureRoot(ownerId: string): Promise<void> {
     .values({
       ownerId,
       type: 'branch',
-      title: 'Life Logs',
-      slug: LIFELOG_ROOT_LABEL,
-      path: LIFELOG_ROOT_LABEL,
+      title: 'Journal',
+      slug: JOURNAL_ROOT_LABEL,
+      path: JOURNAL_ROOT_LABEL,
       data: {
         description:
-          'A personal life log — who I am, what I do, how I feel. Indexed, embedded, and distilled into the assistant’s identity context.',
+          'My journal — who I am, what I do, how I feel. Indexed, embedded, and distilled into the assistant’s identity context.',
       },
     })
     .onConflictDoNothing({
@@ -114,22 +114,22 @@ async function ensureRoot(ownerId: string): Promise<void> {
  *  Exported for unit tests. */
 export function deriveTitle(body: string): string {
   const flat = body.replace(/\s+/g, ' ').trim();
-  if (!flat) return 'Life log';
+  if (!flat) return 'Journal entry';
   const firstSentence = flat.split(/(?<=[.!?])\s/)[0] ?? flat;
   const base = firstSentence.length <= 60 ? firstSentence : `${flat.slice(0, 57).trimEnd()}…`;
   return base.slice(0, 200);
 }
 
-type ListLifelogsOpts = {
+type ListJournalsOpts = {
   query?: string;
   mood?: string;
   category?: string;
   tag?: string;
 };
 
-/** Shared WHERE conditions for lifelog list/count queries. */
-function lifelogConds(ownerId: string, opts: ListLifelogsOpts) {
-  const conds = [eq(nodes.ownerId, ownerId), eq(nodes.type, 'lifelog')];
+/** Shared WHERE conditions for journal list/count queries. */
+function journalConds(ownerId: string, opts: ListJournalsOpts) {
+  const conds = [eq(nodes.ownerId, ownerId), eq(nodes.type, 'journal')];
   if (opts.query?.trim()) {
     const q = `%${opts.query.trim()}%`;
     const c = or(
@@ -145,41 +145,41 @@ function lifelogConds(ownerId: string, opts: ListLifelogsOpts) {
   return conds;
 }
 
-export async function listLifelogs(
+export async function listJournals(
   ownerId: string,
-  opts: ListLifelogsOpts & { limit?: number; offset?: number } = {},
-): Promise<LifelogRow[]> {
+  opts: ListJournalsOpts & { limit?: number; offset?: number } = {},
+): Promise<JournalRow[]> {
   const rows = await db
     .select()
     .from(nodes)
-    .where(and(...lifelogConds(ownerId, opts)))
+    .where(and(...journalConds(ownerId, opts)))
     // Newest first by the "about" date when set, else by update time.
-    .orderBy(lifelogSortSql())
+    .orderBy(journalSortSql())
     .limit(opts.limit ?? 500)
     .offset(opts.offset ?? 0);
   return rows.map(rowOf);
 }
 
-/** Total life logs matching the same filters as `listLifelogs`. */
-export async function countLifelogs(
+/** Total journal entries matching the same filters as `listJournals`. */
+export async function countJournals(
   ownerId: string,
-  opts: ListLifelogsOpts = {},
+  opts: ListJournalsOpts = {},
 ): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(nodes)
-    .where(and(...lifelogConds(ownerId, opts)));
+    .where(and(...journalConds(ownerId, opts)));
   return row?.n ?? 0;
 }
 
-/** All distinct tags across the user's life logs with usage counts. */
-export async function listLifelogTags(
+/** All distinct tags across the user's journal entries with usage counts. */
+export async function listJournalTags(
   ownerId: string,
 ): Promise<{ tag: string; count: number }[]> {
   const rows = await db
     .select({ tags: nodes.tags })
     .from(nodes)
-    .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'lifelog')));
+    .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'journal')));
   const counts = new Map<string, number>();
   for (const r of rows) {
     for (const t of r.tags ?? []) counts.set(t, (counts.get(t) ?? 0) + 1);
@@ -189,16 +189,16 @@ export async function listLifelogTags(
     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
 }
 
-export async function getLifelog(ownerId: string, id: string): Promise<LifelogRow | null> {
+export async function getJournal(ownerId: string, id: string): Promise<JournalRow | null> {
   const [row] = await db
     .select()
     .from(nodes)
-    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'lifelog')))
+    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'journal')))
     .limit(1);
   return row ? rowOf(row) : null;
 }
 
-export type CreateLifelogInput = {
+export type CreateJournalInput = {
   body: string;
   title?: string;
   mood?: string;
@@ -207,10 +207,10 @@ export type CreateLifelogInput = {
   tags?: string[];
 };
 
-export async function createLifelog(
+export async function createJournal(
   ownerId: string,
-  input: CreateLifelogInput,
-): Promise<LifelogRow> {
+  input: CreateJournalInput,
+): Promise<JournalRow> {
   await ensureRoot(ownerId);
   const body = (input.body ?? '').trim();
   const data: Record<string, unknown> = { body };
@@ -229,28 +229,28 @@ export async function createLifelog(
     .insert(nodes)
     .values({
       ownerId,
-      type: 'lifelog',
-      title: title.slice(0, 200) || 'Life log',
-      path: LIFELOG_ROOT_LABEL,
+      type: 'journal',
+      title: title.slice(0, 200) || 'Journal entry',
+      path: JOURNAL_ROOT_LABEL,
       data,
       tags: dedupeTags(input.tags ?? []),
     })
     .returning();
-  if (!row) throw new Error('createLifelog: insert returned no row');
+  if (!row) throw new Error('createJournal: insert returned no row');
   return rowOf(row);
 }
 
-export type UpdateLifelogInput = Partial<CreateLifelogInput>;
+export type UpdateJournalInput = Partial<CreateJournalInput>;
 
-export async function updateLifelog(
+export async function updateJournal(
   ownerId: string,
   id: string,
-  input: UpdateLifelogInput,
-): Promise<LifelogRow | null> {
+  input: UpdateJournalInput,
+): Promise<JournalRow | null> {
   const [node] = await db
     .select()
     .from(nodes)
-    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'lifelog')))
+    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'journal')))
     .limit(1);
   if (!node) return null;
   const oldData = (node.data ?? {}) as Record<string, unknown>;
@@ -306,18 +306,18 @@ export async function updateLifelog(
     })
     .where(eq(nodes.id, id))
     .returning();
-  if (!updated) throw new Error('updateLifelog: update returned no row');
+  if (!updated) throw new Error('updateJournal: update returned no row');
   if (bodyChanged) {
     await notifyNodeIngested(id);
   }
   return rowOf(updated);
 }
 
-export async function deleteLifelog(ownerId: string, id: string): Promise<boolean> {
+export async function deleteJournal(ownerId: string, id: string): Promise<boolean> {
   const [row] = await db
     .select({ id: nodes.id })
     .from(nodes)
-    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'lifelog')))
+    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'journal')))
     .limit(1);
   if (!row) return false;
   await db.delete(nodes).where(eq(nodes.id, id));

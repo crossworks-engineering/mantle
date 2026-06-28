@@ -40,11 +40,11 @@ export {
   type ResultHandlingConfig,
 } from './tool-results';
 export { PERSONA_TOOLS, PERSONA_TOOL_SLUGS } from './builtins-persona';
-export { TODO_TOOLS, TODO_TOOL_SLUGS } from './builtins-todos';
+export { TASK_TOOLS, TASK_TOOL_SLUGS } from './builtins-tasks';
 export { TERMINAL_TOOLS, TERMINAL_TOOL_SLUGS } from './builtins-terminal';
 export { CONTACT_TOOLS, CONTACT_AUTO_GRANT_SLUGS } from './builtins-contacts';
 export { TOOLSMITH_TOOLS, TOOLSMITH_TOOL_SLUGS } from './builtins-toolsmith';
-export { LIFELOG_TOOLS, LIFELOG_TOOL_SLUGS, LIFELOG_AUTO_GRANT_SLUGS } from './builtins-lifelog';
+export { JOURNAL_TOOLS, JOURNAL_TOOL_SLUGS, JOURNAL_AUTO_GRANT_SLUGS } from './builtins-journal';
 export { LOCATION_TOOLS, LOCATION_TOOL_SLUGS } from './builtins-locations';
 export { PROFILE_TOOLS, PROFILE_TOOL_SLUGS } from './builtins-profile';
 export { seedBuiltinTools } from './seed';

@@ -48,7 +48,7 @@ describe('write/action tool labels', () => {
 
   it('buckets each action under a fitting icon kind', () => {
     expect(stageLabelForStep('tool: note_create')?.kind).toBe('write');
-    expect(stageLabelForStep('tool: todo_update')?.kind).toBe('write');
+    expect(stageLabelForStep('tool: task_update')?.kind).toBe('write');
     expect(stageLabelForStep('tool: event_create')?.kind).toBe('calendar');
     expect(stageLabelForStep('tool: telegram_send')?.kind).toBe('message');
     expect(stageLabelForStep('tool: email_get')?.kind).toBe('message');

@@ -4,7 +4,7 @@ import { resolveActiveShareByToken, recordShareView, loadShareView } from '@/lib
 import { PagePresenter } from '@/components/share/page-presenter';
 import { NotePresenter } from '@/components/share/note-presenter';
 import { FilePresenter } from '@/components/share/file-presenter';
-import { TodoPresenter } from '@/components/share/todo-presenter';
+import { TaskPresenter } from '@/components/share/task-presenter';
 import { EventPresenter } from '@/components/share/event-presenter';
 
 // Always dynamic — resolves a DB token per request; never statically cached
@@ -49,8 +49,8 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
       return <NotePresenter view={view} />;
     case 'file':
       return <FilePresenter view={view} assetUrl={assetUrl} />;
-    case 'todo':
-      return <TodoPresenter view={view} />;
+    case 'task':
+      return <TaskPresenter view={view} />;
     case 'event':
       return <EventPresenter view={view} />;
     default:

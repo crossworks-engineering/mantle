@@ -93,7 +93,7 @@ const HARD_SKIP_TYPES = new Set(['branch']);
  *  `task` and `event` are first-class content: title + body + metadata
  *  (status, due_at, starts_at, location, …) all become part of the body
  *  the extractor summarises and embeds. */
-const DEFAULT_EXTRACT_TYPES = ['note', 'page', 'table', 'file', 'email', 'email_thread', 'secret', 'task', 'event', 'contact', 'documentation', 'lifelog', 'location'];
+const DEFAULT_EXTRACT_TYPES = ['note', 'page', 'table', 'file', 'email', 'email_thread', 'secret', 'task', 'event', 'contact', 'documentation', 'journal', 'location'];
 
 /** Max characters of body text we feed the summarizer in one shot.
  *  Long emails / PDFs get truncated to keep the prompt bounded and the
@@ -336,7 +336,7 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
     if (!row) return node.title;
     return [row.subject, row.bodyText].filter(Boolean).join('\n\n');
   }
-  // ─── Tasks (todos) — body + structured metadata ──────────────────────
+  // ─── Tasks — body + structured metadata ──────────────────────
   // The extractor needs to know status/priority/due_at to write a useful
   // summary ("DONE: ship the secrets feature" vs "OPEN, due 2026-05-25").
   if (node.type === 'task') {
@@ -385,12 +385,12 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
     ];
     return lines.join('\n');
   }
-  // ─── Life logs — first-person identity statement + mood/category ─────
-  // A life log is the user describing who they are / what they do / how they
+  // ─── Journal — first-person identity statement + mood/category ─────
+  // A journal entry is the user describing who they are / what they do / how they
   // feel. The body carries the semantic payload; mood + category give the
   // extractor framing so the summary + facts read as durable self-knowledge
   // ("works as …", "values …", "felt anxious about …") rather than an event.
-  if (node.type === 'lifelog') {
+  if (node.type === 'journal') {
     const d = (node.data ?? {}) as Record<string, unknown>;
     const body = typeof d.body === 'string' ? d.body : '';
     const lines = [

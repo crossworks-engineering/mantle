@@ -5,7 +5,7 @@ import { useTransition } from 'react';
 
 /**
  * URL-driven list navigation for SSR search + pagination (the /pages pattern,
- * shared by /todos, /events, /secrets). `go(patch)` merges a patch into the
+ * shared by /tasks, /events, /secrets). `go(patch)` merges a patch into the
  * current query string — `null`/`''` deletes a key — and pushes, so the server
  * page re-renders with the new filters/page. `pending` drives a busy state.
  */

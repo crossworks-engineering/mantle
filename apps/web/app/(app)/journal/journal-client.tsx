@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { NotebookPen, Pencil, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
-import { MOODS, CATEGORIES, moodDisplay, categoryLabel } from '@mantle/content/lifelog-options';
+import { MOODS, CATEGORIES, moodDisplay, categoryLabel } from '@mantle/content/journal-options';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -33,19 +33,19 @@ import { TagPill } from '@/components/tag-pill';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
 import { syncSelectionParam } from '@/lib/url-sync';
-import { LifelogEditor, type LifelogRow } from './lifelog-editor';
+import { JournalEditor, type JournalRow } from './journal-editor';
 
 const ALL = '__all__';
 
-type LifelogListResponse = {
-  lifelogs: LifelogRow[];
+type JournalListResponse = {
+  journals: JournalRow[];
   total: number;
   page: number;
   pageSize: number;
   tags: { tag: string; count: number }[];
 };
 
-export function LifelogClient() {
+export function JournalClient() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -59,7 +59,7 @@ export function LifelogClient() {
   const activeTag = searchParams.get('tag')?.trim() || null;
 
   const listQuery = useQuery({
-    queryKey: ['lifelog', { q: query, mood: activeMood, category: activeCategory, tag: activeTag, page }],
+    queryKey: ['journal', { q: query, mood: activeMood, category: activeCategory, tag: activeTag, page }],
     queryFn: () => {
       const qs = new URLSearchParams();
       if (query) qs.set('q', query);
@@ -68,12 +68,12 @@ export function LifelogClient() {
       if (activeTag) qs.set('tag', activeTag);
       if (page > 1) qs.set('page', String(page));
       const s = qs.toString();
-      return apiFetch<LifelogListResponse>(`/api/lifelog${s ? `?${s}` : ''}`);
+      return apiFetch<JournalListResponse>(`/api/journal${s ? `?${s}` : ''}`);
     },
     placeholderData: (prev) => prev,
   });
 
-  const entries = listQuery.data?.lifelogs ?? [];
+  const entries = listQuery.data?.journals ?? [];
   const total = listQuery.data?.total ?? 0;
   const pageSize = listQuery.data?.pageSize ?? 50;
   const tags = listQuery.data?.tags ?? [];
@@ -84,18 +84,18 @@ export function LifelogClient() {
   const [editing, setEditing] = useState<boolean>(searchParams.get('edit') === '1');
   const [creating, setCreating] = useState(false);
   const [dirty, setDirty] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<LifelogRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<JournalRow | null>(null);
   const [discard, setDiscard] = useState<{ run: () => void } | null>(null);
   const [searchInput, setSearchInput] = useState(query);
 
   // A deep-linked entry outside the current slice → fetch it directly.
   const selectedEntryQuery = useQuery({
-    queryKey: ['lifelog', selectedId],
-    queryFn: () => apiFetch<{ lifelog: LifelogRow }>(`/api/lifelog/${selectedId}`).then((r) => r.lifelog),
+    queryKey: ['journal', selectedId],
+    queryFn: () => apiFetch<{ journal: JournalRow }>(`/api/journal/${selectedId}`).then((r) => r.journal),
     enabled: !!selectedId && !entries.some((n) => n.id === selectedId),
   });
 
-  const selected = useMemo<LifelogRow | null>(() => {
+  const selected = useMemo<JournalRow | null>(() => {
     if (selectedId) {
       return (
         entries.find((n) => n.id === selectedId) ??
@@ -137,11 +137,11 @@ export function LifelogClient() {
     setEditing(true);
   };
 
-  const onSaved = (saved: LifelogRow) => {
+  const onSaved = (saved: JournalRow) => {
     exitEdit();
     setSelectedId(saved.id);
     syncSelectionParam('selected', saved.id);
-    void queryClient.invalidateQueries({ queryKey: ['lifelog'] });
+    void queryClient.invalidateQueries({ queryKey: ['journal'] });
   };
 
   // Debounced search → URL.
@@ -157,20 +157,20 @@ export function LifelogClient() {
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     try {
-      await apiSend(`/api/lifelog/${deleteTarget.id}`, 'DELETE');
+      await apiSend(`/api/journal/${deleteTarget.id}`, 'DELETE');
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
-      toast.error(e instanceof Error ? e.message : 'Could not delete life log');
+      toast.error(e instanceof Error ? e.message : 'Could not delete journal entry');
       return;
     }
-    toast.success('Life log deleted');
+    toast.success('Journal entry deleted');
     if (selected?.id === deleteTarget.id) exitEdit();
     if (selectedId === deleteTarget.id) {
       setSelectedId(null);
       syncSelectionParam('selected', null);
     }
     setDeleteTarget(null);
-    void queryClient.invalidateQueries({ queryKey: ['lifelog'] });
+    void queryClient.invalidateQueries({ queryKey: ['journal'] });
   };
 
   if (listQuery.isPending) {
@@ -184,7 +184,7 @@ export function LifelogClient() {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm">
         <p className="text-muted-foreground">
-          {listQuery.error instanceof Error ? listQuery.error.message : 'Failed to load life logs.'}
+          {listQuery.error instanceof Error ? listQuery.error.message : 'Failed to load journal entries.'}
         </p>
         <Button variant="outline" size="sm" onClick={() => listQuery.refetch()}>
           Retry
@@ -204,7 +204,7 @@ export function LifelogClient() {
               <Input
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Search life logs…"
+                placeholder="Search journal entries…"
                 className="pl-8"
               />
             </div>
@@ -284,8 +284,8 @@ export function LifelogClient() {
           {entries.length === 0 ? (
             <div className="rounded-md border border-dashed border-border bg-muted/30 px-6 py-12 text-center text-sm text-muted-foreground">
               {query || activeMood || activeCategory || activeTag
-                ? 'No life logs match your search or filters.'
-                : 'No life logs yet. Click “New” to record who you are, or let your assistant log a thought.'}
+                ? 'No journal entries match your search or filters.'
+                : 'No journal entries yet. Click “New” to record who you are, or let your assistant log a thought.'}
             </div>
           ) : (
             entries.map((n) => {
@@ -341,21 +341,21 @@ export function LifelogClient() {
       {/* ── Right: preview / editor ─────────────────────────────────── */}
       <div className="md:h-full md:min-h-0 md:overflow-hidden">
         {editing ? (
-          <LifelogEditor
+          <JournalEditor
             entry={creating ? null : selected}
             onSaved={onSaved}
             onCancel={() => guard(exitEdit)}
             onDirtyChange={setDirty}
           />
         ) : selected ? (
-          <LifelogPreview
+          <JournalPreview
             entry={selected}
             onEdit={startEdit}
             onDelete={() => setDeleteTarget(selected)}
           />
         ) : (
           <div className="flex h-full items-center justify-center p-10 text-center text-sm text-muted-foreground">
-            Select a life log, or click <span className="mx-1 font-medium text-foreground">New</span> to start one.
+            Select a journal entry, or click <span className="mx-1 font-medium text-foreground">New</span> to start one.
           </div>
         )}
       </div>
@@ -366,7 +366,7 @@ export function LifelogClient() {
           <AlertDialogHeader>
             <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
             <AlertDialogDescription>
-              This life log has edits that haven’t been saved. Leaving now will lose them.
+              This journal entry has edits that haven’t been saved. Leaving now will lose them.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -409,12 +409,12 @@ export function LifelogClient() {
 }
 
 /** Right-pane read view. */
-function LifelogPreview({
+function JournalPreview({
   entry,
   onEdit,
   onDelete,
 }: {
-  entry: LifelogRow;
+  entry: JournalRow;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -450,7 +450,7 @@ function LifelogPreview({
             size="sm"
             className="text-muted-foreground hover:text-destructive"
             onClick={onDelete}
-            aria-label="Delete life log"
+            aria-label="Delete journal entry"
           >
             <Trash2 />
           </Button>

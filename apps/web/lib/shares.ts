@@ -27,7 +27,7 @@ export function buildShareUrl(origin: string, token: string): string {
 export type ShareView =
   | { kind: 'page'; title: string; icon: string | null; width: 'narrow' | 'wide'; doc: Record<string, unknown> }
   | { kind: 'note'; title: string; content: string }
-  | { kind: 'todo'; title: string; body: string; status: string; priority: string; dueAt: string | null }
+  | { kind: 'task'; title: string; body: string; status: string; priority: string; dueAt: string | null }
   | {
       kind: 'event';
       title: string;
@@ -68,7 +68,7 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
       if (!n) return null;
       const d = (n.data ?? {}) as Record<string, unknown>;
       return {
-        kind: 'todo',
+        kind: 'task',
         title: n.title,
         body: typeof d.body === 'string' ? d.body : '',
         status: typeof d.status === 'string' ? d.status : 'open',

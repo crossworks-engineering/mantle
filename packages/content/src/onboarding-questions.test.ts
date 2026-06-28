@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CATEGORY_KEYS } from './lifelog-options';
+import { CATEGORY_KEYS } from './journal-options';
 import {
   ONBOARDING_QUESTIONS,
   composeBody,
@@ -13,7 +13,7 @@ describe('ONBOARDING_QUESTIONS', () => {
     expect(keys.length).toBeGreaterThanOrEqual(9);
   });
 
-  it('only files answers under real Life Log categories', () => {
+  it('only files answers under real Journal categories', () => {
     for (const q of ONBOARDING_QUESTIONS) {
       expect(CATEGORY_KEYS).toContain(q.category);
     }

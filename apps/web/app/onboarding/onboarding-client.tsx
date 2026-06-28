@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 // Import the browser-safe LEAVES directly, NOT the @mantle/content barrel —
 // the barrel pulls identity-context → @mantle/db (postgres) into the client
-// bundle. Same discipline as contacts-format / lifelog-options.
+// bundle. Same discipline as contacts-format / journal-options.
 import { ONBOARDING_QUESTIONS } from '@mantle/content/onboarding-questions';
 import {
   PERSONA_PRESETS,

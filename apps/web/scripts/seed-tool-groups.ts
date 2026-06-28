@@ -24,7 +24,7 @@ import { MANIFEST_TOOL_GROUPS } from '../lib/system-manifest/manifest';
 
 export async function seedToolGroups(ownerId: string): Promise<void> {
   // Overwrite: sync the group ROWS to the canonical manifest membership (so an
-  // existing brain picks up redefinitions, e.g. the P5 no-delete contacts/lifelog
+  // existing brain picks up redefinitions, e.g. the P5 no-delete contacts/journal
   // groups). Empty agent/skill filters mean this touches ONLY tool groups (+
   // idempotent builtin tools) — never an agent or skill.
   await applyManifest(ownerId, { only: [], onlySkills: [], mode: 'overwrite' });

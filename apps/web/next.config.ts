@@ -164,6 +164,19 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  // The Journal screen was renamed from Life Logs (briefly "Memories"). Keep old
+  // bookmarks/deep-links working; `?selected=` and other query params pass through
+  // automatically.
+  async redirects() {
+    return [
+      { source: '/lifelog', destination: '/journal', permanent: true },
+      { source: '/memories', destination: '/journal', permanent: true },
+      // Todos screen renamed to Tasks (node type `task` + /api/todos keep the
+      // internal name). Old bookmarks/deep-links keep working; query params pass
+      // through automatically.
+      { source: '/todos', destination: '/tasks', permanent: true },
+    ];
+  },
 };
 
 export default nextConfig;

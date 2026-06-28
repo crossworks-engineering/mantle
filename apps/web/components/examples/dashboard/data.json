@@ -64,7 +64,7 @@
   },
   {
     "id": 8,
-    "header": "Recall last week’s todos",
+    "header": "Recall last week’s tasks",
     "type": "Summarize",
     "status": "Done",
     "target": "5304",
@@ -217,7 +217,7 @@
   },
   {
     "id": 25,
-    "header": "Create todo from message",
+    "header": "Create task from message",
     "type": "Ingest",
     "status": "Done",
     "target": "7125",

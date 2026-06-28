@@ -8,10 +8,10 @@
   "exports": {
     ".": "./src/index.ts",
     "./notes": "./src/notes.ts",
-    "./todos": "./src/todos.ts",
+    "./tasks": "./src/tasks.ts",
     "./events": "./src/events.ts",
-    "./lifelog": "./src/lifelog.ts",
-    "./lifelog-options": "./src/lifelog-options.ts",
+    "./journal": "./src/journal.ts",
+    "./journal-options": "./src/journal-options.ts",
     "./persona-bank": "./src/persona-bank.ts",
     "./onboarding-questions": "./src/onboarding-questions.ts",
     "./peers": "./src/peers.ts",

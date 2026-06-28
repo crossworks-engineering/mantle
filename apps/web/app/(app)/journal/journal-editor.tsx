@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import { MOODS, CATEGORIES } from '@mantle/content/lifelog-options';
+import { MOODS, CATEGORIES } from '@mantle/content/journal-options';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
@@ -18,32 +18,32 @@ import {
 import { DateTimePicker } from '@/components/ui/date-time-picker';
 import { TagInput } from '@/components/tag-input';
 import { useToast } from '@/components/ui/toast';
-import type { LifelogRow } from '@mantle/content';
+import type { JournalRow } from '@mantle/content';
 
-// Wire shape is the GET /api/lifelog mapper's output — single source of truth.
+// Wire shape is the GET /api/journal mapper's output — single source of truth.
 // Re-exported so the list client keeps importing it from here; drift is a
 // compile error.
-export type { LifelogRow };
+export type { JournalRow };
 
 // Radix Select forbids an empty-string item value, so "no selection" rides a
 // sentinel that maps to '' on save (clears the field).
 const NONE = '__none__';
 
 /**
- * Life Log entry editor — a small, plain-text paragraph plus mood + category.
+ * Journal entry editor — a small, plain-text paragraph plus mood + category.
  * No markdown editor by design: entries are short and atomic so they chunk
  * cleanly into the identity context. Handles create (`entry=null` → POST) and
  * edit (PATCH). ⌘/Ctrl+S saves, Esc cancels. Reports `dirty` up so the host
  * can guard against discarding unsaved changes.
  */
-export function LifelogEditor({
+export function JournalEditor({
   entry,
   onSaved,
   onCancel,
   onDirtyChange,
 }: {
-  entry: LifelogRow | null;
-  onSaved: (saved: LifelogRow) => void;
+  entry: JournalRow | null;
+  onSaved: (saved: JournalRow) => void;
   onCancel: () => void;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
@@ -96,7 +96,7 @@ export function LifelogEditor({
         category,
         entryDate: entryDate ? entryDate.toISOString() : '',
       };
-      const res = await fetch(creating ? '/api/lifelog' : `/api/lifelog/${entry!.id}`, {
+      const res = await fetch(creating ? '/api/journal' : `/api/journal/${entry!.id}`, {
         method: creating ? 'POST' : 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...payload, tags }),
@@ -106,8 +106,8 @@ export function LifelogEditor({
         toast.error(j.error ?? `Save failed (${res.status})`);
         return;
       }
-      const { lifelog: saved } = (await res.json()) as { lifelog: LifelogRow };
-      toast.success(creating ? 'Life log saved' : 'Saved');
+      const { journal: saved } = (await res.json()) as { journal: JournalRow };
+      toast.success(creating ? 'Journal entry saved' : 'Saved');
       onSaved(saved);
     } finally {
       setSaving(false);
@@ -142,14 +142,14 @@ export function LifelogEditor({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Title (optional)"
-          aria-label="Life log title"
+          aria-label="Journal entry title"
           className="h-9 flex-1 border-0 bg-transparent px-0 text-lg font-semibold shadow-none focus-visible:ring-0"
         />
         <Button type="button" variant="outline" size="sm" onClick={onCancel}>
           <X /> Cancel
         </Button>
         <SubmitButton pending={saving} size="sm">
-          {creating ? 'Save life log' : 'Save life log'}
+          {creating ? 'Save journal entry' : 'Save journal entry'}
         </SubmitButton>
       </header>
 
@@ -164,9 +164,9 @@ export function LifelogEditor({
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor="lifelog-mood">Mood</Label>
+            <Label htmlFor="journal-mood">Mood</Label>
             <Select value={mood || NONE} onValueChange={(v) => setMood(v === NONE ? '' : v)}>
-              <SelectTrigger id="lifelog-mood">
+              <SelectTrigger id="journal-mood">
                 <SelectValue placeholder="How did it feel?" />
               </SelectTrigger>
               <SelectContent>
@@ -181,12 +181,12 @@ export function LifelogEditor({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="lifelog-category">Area of life</Label>
+            <Label htmlFor="journal-category">Area of life</Label>
             <Select
               value={category || NONE}
               onValueChange={(v) => setCategory(v === NONE ? '' : v)}
             >
-              <SelectTrigger id="lifelog-category">
+              <SelectTrigger id="journal-category">
                 <SelectValue placeholder="What is this about?" />
               </SelectTrigger>
               <SelectContent>
@@ -202,9 +202,9 @@ export function LifelogEditor({
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="lifelog-date">When (optional)</Label>
+          <Label htmlFor="journal-date">When (optional)</Label>
           <DateTimePicker
-            id="lifelog-date"
+            id="journal-date"
             value={entryDate}
             onChange={setEntryDate}
             placeholder="Defaults to now"

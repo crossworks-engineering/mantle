@@ -122,12 +122,12 @@ export const API_CATALOG: CatalogGroup[] = [
     { n: 'Import spreadsheet', m: 'POST', p: '/api/tables/{id}/import', d: 'multipart/form-data .xlsx/.xls/.csv; first sheet replaces this table as draft.' },
   ]),
 
-  group('todos', 'Todos', '', [
-    { n: 'List todos', m: 'GET', p: '/api/todos', q: [ { key: 'q' }, { key: 'status' }, { key: 'priority' }, { key: 'tag' } ] },
-    { n: 'Create todo', m: 'POST', p: '/api/todos', b: '{\n  "title": "Finish report",\n  "priority": "high",\n  "dueAt": "2026-06-30T17:00:00Z",\n  "tags": []\n}' },
-    { n: 'Get todo', m: 'GET', p: '/api/todos/{id}' },
-    { n: 'Update todo', m: 'PATCH', p: '/api/todos/{id}', b: '{\n  "status": "done"\n}' },
-    { n: 'Delete todo', m: 'DELETE', p: '/api/todos/{id}' },
+  group('tasks', 'Tasks', '', [
+    { n: 'List tasks', m: 'GET', p: '/api/tasks', q: [ { key: 'q' }, { key: 'status' }, { key: 'priority' }, { key: 'tag' } ] },
+    { n: 'Create task', m: 'POST', p: '/api/tasks', b: '{\n  "title": "Finish report",\n  "priority": "high",\n  "dueAt": "2026-06-30T17:00:00Z",\n  "tags": []\n}' },
+    { n: 'Get task', m: 'GET', p: '/api/tasks/{id}' },
+    { n: 'Update task', m: 'PATCH', p: '/api/tasks/{id}', b: '{\n  "status": "done"\n}' },
+    { n: 'Delete task', m: 'DELETE', p: '/api/tasks/{id}' },
   ]),
 
   group('events', 'Events', '', [
@@ -146,12 +146,12 @@ export const API_CATALOG: CatalogGroup[] = [
     { n: 'Delete contact', m: 'DELETE', p: '/api/contacts/{id}' },
   ]),
 
-  group('lifelog', 'Life logs', '', [
-    { n: 'List entries', m: 'GET', p: '/api/lifelog', q: [ { key: 'q' }, { key: 'mood' }, { key: 'category' }, { key: 'tag' } ] },
-    { n: 'Create entry', m: 'POST', p: '/api/lifelog', b: '{\n  "title": "Morning run",\n  "body": "5k in the park",\n  "mood": "energized",\n  "category": "fitness",\n  "tags": []\n}' },
-    { n: 'Get entry', m: 'GET', p: '/api/lifelog/{id}' },
-    { n: 'Update entry', m: 'PATCH', p: '/api/lifelog/{id}', b: '{\n  "mood": "calm"\n}' },
-    { n: 'Delete entry', m: 'DELETE', p: '/api/lifelog/{id}' },
+  group('journal', 'Journal', '', [
+    { n: 'List entries', m: 'GET', p: '/api/journal', q: [ { key: 'q' }, { key: 'mood' }, { key: 'category' }, { key: 'tag' } ] },
+    { n: 'Create entry', m: 'POST', p: '/api/journal', b: '{\n  "title": "Morning run",\n  "body": "5k in the park",\n  "mood": "energized",\n  "category": "fitness",\n  "tags": []\n}' },
+    { n: 'Get entry', m: 'GET', p: '/api/journal/{id}' },
+    { n: 'Update entry', m: 'PATCH', p: '/api/journal/{id}', b: '{\n  "mood": "calm"\n}' },
+    { n: 'Delete entry', m: 'DELETE', p: '/api/journal/{id}' },
   ]),
 
   group('files', 'Files', 'The mirrored filesystem (folders + files).', [

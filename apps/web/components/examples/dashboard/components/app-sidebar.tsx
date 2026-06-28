@@ -102,7 +102,7 @@ const data = {
       icon: CalendarIcon,
     },
     {
-      name: "Todos",
+      name: "Tasks",
       url: "#",
       icon: CheckSquareIcon,
     },

@@ -26,7 +26,7 @@ export function ShareControl({
   iconOnly?: boolean;
   /** Run before a link is first created — e.g. a page commits its draft so the
    *  shared copy reflects what the owner currently sees (pages publish on
-   *  commit; notes/todos/events/files save live and don't pass this). */
+   *  commit; notes/tasks/events/files save live and don't pass this). */
   beforeEnable?: () => Promise<void> | void;
 }) {
   const toast = useToast();

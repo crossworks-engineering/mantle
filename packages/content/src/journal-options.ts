@@ -1,11 +1,11 @@
 /**
- * Browser-safe leaf for Life Log option lists (moods + categories).
+ * Browser-safe leaf for Journal option lists (moods + categories).
  *
  * These constants are needed both server-side (CRUD, extractor framing, the
- * identity-context distiller) and client-side (the /lifelog editor + filters).
+ * identity-context distiller) and client-side (the /journal editor + filters).
  * They live in their own module — with NO `@mantle/db` import — so a client
  * component can pull them in without dragging `postgres` into the browser
- * bundle. Same pattern as `contacts-format.ts`. `lifelog.ts` re-exports these.
+ * bundle. Same pattern as `contacts-format.ts`. `journal.ts` re-exports these.
  */
 
 /** Curated mood palette (emoji + label). Stored as the bare key string in

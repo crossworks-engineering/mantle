@@ -189,7 +189,7 @@ export interface AgentMemoryConfigDTO {
   fact_limit?: number;
   content_hit_limit?: number;
   chunk_limit?: number;
-  inject_lifelog?: boolean;
+  inject_journal?: boolean;
   summarize_threshold?: number;
   summarize_batch?: number;
   extract_types?: string[];

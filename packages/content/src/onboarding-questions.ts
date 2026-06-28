@@ -3,7 +3,7 @@
  *
  * Browser-safe leaf (NO `@mantle/db` import) so the onboarding wizard client can
  * render the questions and the server action can compose the bodies from the
- * same source. Each answer becomes a Life Log entry (`type='lifelog'`) under a
+ * same source. Each answer becomes a Journal entry (`type='journal'`) under a
  * life-area category, which feeds the always-on identity block
  * (`identity-context.ts`) — so the assistant knows who the user is from turn one.
  *
@@ -11,7 +11,7 @@
  * harvesting facts during normal chat): this is the deliberate, structured
  * capture at first run.
  */
-import type { CategoryKey } from './lifelog-options';
+import type { CategoryKey } from './journal-options';
 
 export type OnboardingQuestion = {
   /** Stable key — used as the form field name + resume marker. */
@@ -141,7 +141,7 @@ export const ONBOARDING_QUESTIONS: OnboardingQuestion[] = [
   },
 ];
 
-/** Compose a first-person Life Log body from a question + the user's answer.
+/** Compose a first-person Journal body from a question + the user's answer.
  *  Trims, and prepends the question's lead unless the lead is empty (free-text
  *  answers are stored verbatim). Returns '' for a blank answer so the caller can
  *  skip it. */

@@ -328,7 +328,7 @@ function ContactForm({ contact }: { contact: ContactRow }) {
             Added {formatDateTime(contact.createdAt)}
           </p>
         </div>
-        {/* Match the events/notes/todos pattern: ghost + destructive text +
+        {/* Match the events/notes/tasks pattern: ghost + destructive text +
             an explicit "Delete" label after the icon (icon-only was the
             inconsistent bit). */}
         <Button
@@ -477,7 +477,7 @@ function ContactForm({ contact }: { contact: ContactRow }) {
       </div>
 
       {/* Footer row: divider on top, Save floats right — same shape as the
-          todo/event forms (`flex justify-end gap-2 border-t pt-3`). */}
+          task/event forms (`flex justify-end gap-2 border-t pt-3`). */}
       <div className="flex justify-end gap-2 border-t border-border pt-3">
         <Button onClick={onSave} disabled={pending}>
           {pending ? 'Saving…' : 'Save contact'}

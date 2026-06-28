@@ -245,7 +245,7 @@ export async function updateLocation(
   if (input.raw !== undefined) newData.raw = input.raw;
 
   // title/address feed the embedding — invalidate the prior summary so the
-  // extractor re-runs (mirrors lifelog/notes).
+  // extractor re-runs (mirrors journal/notes).
   if (textChanged) {
     delete newData.summary;
     delete newData.summary_model;

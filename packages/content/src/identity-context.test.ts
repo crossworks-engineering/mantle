@@ -21,7 +21,7 @@ describe('renderIdentityBlock', () => {
 
   it('renders the header, a category heading, the bullet, and inline mood', () => {
     const block = renderIdentityBlock([e('I value honesty.', 'identity', 'reflective')]);
-    expect(block).toContain('# About the user (Life Log)');
+    expect(block).toContain('# About the user (Journal)');
     expect(block).toContain('## Identity');
     expect(block).toContain('- I value honesty. _(felt: reflective)_');
   });

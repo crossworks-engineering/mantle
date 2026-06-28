@@ -1,6 +1,6 @@
 /**
- * @mantle/content — CRUD for the content surfaces: notes, todos, events,
- * and pages. Notes/todos/events store their payload in `nodes.data` (jsonb);
+ * @mantle/content — CRUD for the content surfaces: notes, tasks, events,
+ * and pages. Notes/tasks/events store their payload in `nodes.data` (jsonb);
  * pages keep the TipTap document in a `pages` sidecar with a derived
  * plaintext rendering. All live under dedicated ltree roots and the
  * extractor picks them up via the `node_ingested` pg_notify trigger.
@@ -21,21 +21,21 @@ export {
 } from './notes';
 
 export {
-  TODOS_ROOT_LABEL,
-  TODO_STATUSES,
-  TODO_PRIORITIES,
-  listTodos,
-  countTodos,
-  getTodo,
-  createTodo,
-  updateTodo,
-  deleteTodo,
-  type TodoRow,
-  type TodoStatus,
-  type TodoPriority,
-  type CreateTodoInput,
-  type UpdateTodoInput,
-} from './todos';
+  TASKS_ROOT_LABEL,
+  TASK_STATUSES,
+  TASK_PRIORITIES,
+  listTasks,
+  countTasks,
+  getTask,
+  createTask,
+  updateTask,
+  deleteTask,
+  type TaskRow,
+  type TaskStatus,
+  type TaskPriority,
+  type CreateTaskInput,
+  type UpdateTaskInput,
+} from './tasks';
 
 export {
   EVENTS_ROOT_LABEL,
@@ -418,21 +418,21 @@ export {
   normalizeEntryDate,
   type MoodKey,
   type CategoryKey,
-} from './lifelog-options';
+} from './journal-options';
 
 export {
-  LIFELOG_ROOT_LABEL,
-  listLifelogs,
-  countLifelogs,
-  listLifelogTags,
-  getLifelog,
-  createLifelog,
-  updateLifelog,
-  deleteLifelog,
-  type LifelogRow,
-  type CreateLifelogInput,
-  type UpdateLifelogInput,
-} from './lifelog';
+  JOURNAL_ROOT_LABEL,
+  listJournals,
+  countJournals,
+  listJournalTags,
+  getJournal,
+  createJournal,
+  updateJournal,
+  deleteJournal,
+  type JournalRow,
+  type CreateJournalInput,
+  type UpdateJournalInput,
+} from './journal';
 
 export {
   LOCATIONS_ROOT_LABEL,

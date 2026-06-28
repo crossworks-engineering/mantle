@@ -812,13 +812,13 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
           );
         }
         // Always-on identity context — the "who you are" block distilled from
-        // the user's Life Logs (deterministic, no LLM; empty when there are
-        // none). Opt out per-agent with memory_config.inject_lifelog=false.
+        // the user's Journal (deterministic, no LLM; empty when there are
+        // none). Opt out per-agent with memory_config.inject_journal=false.
         // Prepended so it reads as durable user-truth at the top of the
         // (cached) system block. Mirrors the web /assistant path exactly.
         let identityBlock = '';
         if (
-          (agent.memoryConfig as { inject_lifelog?: boolean } | null)?.inject_lifelog !== false
+          (agent.memoryConfig as { inject_journal?: boolean } | null)?.inject_journal !== false
         ) {
           try {
             const block = await buildIdentityContext(USER_ID!);
@@ -1522,9 +1522,9 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
     );
   }
 
-  // Grant the core capability FLOOR (persona self-edit + todo CRUD etc., as
+  // Grant the core capability FLOOR (persona self-edit + task CRUD etc., as
   // tool GROUPS) to the conversational agents so "be more professional" / "add
-  // a todo" work without manual /settings/tools setup. Idempotent (P6).
+  // a task" work without manual /settings/tools setup. Idempotent (P6).
   try {
     const granted = await ensureCoreToolsOnConversationalAgents(USER_ID!);
     if (granted.length > 0) {

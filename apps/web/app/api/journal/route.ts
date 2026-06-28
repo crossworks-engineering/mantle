@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { countLifelogs, createLifelog, listLifelogTags, listLifelogs } from '@/lib/lifelog';
+import { countJournals, createJournal, listJournalTags, listJournals } from '@/lib/journal';
 import { recordIngest } from '@mantle/tracing';
 
 const PAGE_SIZE = 50;
@@ -26,12 +26,12 @@ export async function GET(req: Request) {
     category: url.searchParams.get('category') ?? undefined,
     tag: url.searchParams.get('tag') ?? undefined,
   };
-  const [lifelogs, total, tags] = await Promise.all([
-    listLifelogs(user.id, { ...opts, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
-    countLifelogs(user.id, opts),
-    listLifelogTags(user.id),
+  const [journals, total, tags] = await Promise.all([
+    listJournals(user.id, { ...opts, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+    countJournals(user.id, opts),
+    listJournalTags(user.id),
   ]);
-  return NextResponse.json({ lifelogs, total, page, pageSize: PAGE_SIZE, tags });
+  return NextResponse.json({ journals, total, page, pageSize: PAGE_SIZE, tags });
 }
 
 export async function POST(req: Request) {
@@ -50,7 +50,7 @@ export async function POST(req: Request) {
   }
   let row;
   try {
-    row = await createLifelog(user.id, parsed.data);
+    row = await createJournal(user.id, parsed.data);
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'invalid input' },
@@ -58,10 +58,10 @@ export async function POST(req: Request) {
     );
   }
   void recordIngest({
-    source: 'lifelog_create',
+    source: 'journal_create',
     ownerId: user.id,
     nodeId: row.id,
-    summary: `Life log created: ${row.title.slice(0, 80)}`,
+    summary: `Journal entry created: ${row.title.slice(0, 80)}`,
     payload: {
       title: row.title,
       mood: row.mood,
@@ -72,5 +72,5 @@ export async function POST(req: Request) {
     },
     snippet: parsed.data.body,
   });
-  return NextResponse.json({ lifelog: row }, { status: 201 });
+  return NextResponse.json({ journal: row }, { status: 201 });
 }

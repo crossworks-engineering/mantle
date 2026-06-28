@@ -2,19 +2,19 @@ import { Suspense } from 'react';
 import { requireOwner } from '@/lib/auth';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { Spinner } from '@/components/ui/spinner';
-import { TodosClient } from './todos-client';
+import { TasksClient } from './tasks-client';
 
 /**
- * /todos — auth gate only. The list (paginated/filtered by status+priority) and
- * the deep-linked selected todo are client-fetched via `/api/todos(/[id])`
- * (Phase 2 · Task 4), keyed off the URL params which `TodosClient` reads with
+ * /tasks — auth gate only. The list (paginated/filtered by status+priority) and
+ * the deep-linked selected task are client-fetched via `/api/tasks(/[id])`
+ * (Phase 2 · Task 4), keyed off the URL params which `TasksClient` reads with
  * useSearchParams — hence the Suspense boundary.
  */
-export default async function TodosPage() {
+export default async function TasksPage() {
   await requireOwner();
   return (
     <>
-      <SetPageTitle title="Todos" />
+      <SetPageTitle title="Tasks" />
       <Suspense
         fallback={
           <div className="flex h-full items-center justify-center">
@@ -22,7 +22,7 @@ export default async function TodosPage() {
           </div>
         }
       >
-        <TodosClient />
+        <TasksClient />
       </Suspense>
     </>
   );

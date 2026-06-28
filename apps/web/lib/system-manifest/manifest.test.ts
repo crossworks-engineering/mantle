@@ -111,7 +111,7 @@ describe('system manifest integrity', () => {
     expect(grant.has('page_delete'), 'page delete is delegated to the Pages specialist').toBe(false);
     expect(grant.has('table_from_text'), 'grid work is delegated to the Ledger specialist').toBe(false);
     expect(grant.has('contact_delete'), 'destructive contact delete is deliberate-only').toBe(false);
-    expect(grant.has('lifelog_delete'), 'destructive lifelog delete is deliberate-only').toBe(false);
+    expect(grant.has('journal_delete'), 'destructive journal delete is deliberate-only').toBe(false);
     expect(grant.has('invoke_agent'), 'persona must be able to delegate').toBe(true);
     expect(grant.has('page_share'), 'persona keeps page sharing').toBe(true);
     // Files: the persona CAN rename/update (non-destructive — closes the audit

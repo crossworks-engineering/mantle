@@ -19,7 +19,7 @@
 export interface StageLabel {
   /** User-facing line ("Searching your brain for “Pinnacle SLA”…"). */
   label: string;
-  /** Coarse bucket the UI themes/iconifies. `write` (notes/todos/pages),
+  /** Coarse bucket the UI themes/iconifies. `write` (notes/tasks/pages),
    *  `calendar` (events), `message` (telegram/email sends), and `file` give the
    *  common write actions their own glyph instead of a generic tool wrench. */
   kind: 'thinking' | 'web' | 'brain' | 'delegate' | 'tool' | 'write' | 'calendar' | 'message' | 'file';
@@ -97,13 +97,13 @@ const ACTION_LABELS: Record<string, string> = {
   note_create: 'Adding to your notes…',
   note_update: 'Updating a note…',
   note_delete: 'Deleting a note…',
-  todo_create: 'Adding a to-do…',
-  todo_update: 'Updating a to-do…',
-  todo_delete: 'Removing a to-do…',
+  task_create: 'Adding a task…',
+  task_update: 'Updating a task…',
+  task_delete: 'Removing a task…',
   event_create: 'Adding to your calendar…',
   event_update: 'Updating an event…',
   event_delete: 'Removing an event…',
-  lifelog_create: 'Saving to your lifelog…',
+  journal_create: 'Saving to your journal…',
   folder_create: 'Creating a folder…',
   file_upload: 'Saving a file…',
   file_read: 'Reading a file…',
@@ -121,8 +121,8 @@ const ACTION_LABELS: Record<string, string> = {
 const CREATE_NOUN: Record<string, string> = {
   note: 'to your notes',
   event: 'to your calendar',
-  todo: 'to your to-dos',
-  lifelog: 'to your lifelog',
+  task: 'to your tasks',
+  journal: 'to your journal',
   folder: 'as a folder',
   file: 'to your files',
   page: 'as a page',
@@ -135,7 +135,7 @@ function actionKind(slug: string): StageLabel['kind'] {
   if (slug.startsWith('event')) return 'calendar';
   if (slug.startsWith('file')) return 'file';
   if (slug.startsWith('telegram') || slug.startsWith('email')) return 'message';
-  if (/^(note|todo|lifelog|page|folder|table)/.test(slug)) return 'write';
+  if (/^(note|task|journal|page|folder|table)/.test(slug)) return 'write';
   return 'tool';
 }
 

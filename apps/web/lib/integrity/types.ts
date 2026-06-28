@@ -3,7 +3,7 @@
  *
  * Two read-only views, no synthetic fixtures:
  *   • Live (`landed.ts`) — observes the *real* content you add (notes, pages,
- *     todos, events, contacts, secrets, files, email) as it lands in the brain,
+ *     tasks, events, contacts, secrets, files, email) as it lands in the brain,
  *     and reports its per-type footprint (L6 node · L5 summary/embedding/tsv ·
  *     L4 facts · graph edges · the extractor_run trace). Honest by design: a
  *     secret keeps its sealed body out of the LLM, a scanned image with no

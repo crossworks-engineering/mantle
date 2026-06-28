@@ -3,7 +3,7 @@
  *
  * Deep-linkable from anywhere (file detail pages, /traces rows where
  * subject_kind='node', /debug, MCP responses). Works for every node
- * type — files, notes, todos, events, telegram_messages — because
+ * type — files, notes, tasks, events, telegram_messages — because
  * the biography is built from generic node + traces joins, not
  * type-specific queries.
  *

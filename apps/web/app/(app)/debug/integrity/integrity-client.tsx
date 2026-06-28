@@ -250,7 +250,7 @@ function LiveView() {
         <div>
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Live brain activity</h2>
           <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
-            The real content you add — notes, pages, todos, events, contacts, secrets, files, email — as it lands in
+            The real content you add — notes, pages, tasks, events, contacts, secrets, files, email — as it lands in
             the brain, newest first. Each row shows whether the extractor indexed it (L5 summary · 768-dim embedding ·
             tsv · L4 facts · graph). <strong>Green</strong> = fully indexed; <strong>skipped</strong> shows a correct
             non-index with its reason; <strong>fail</strong> flags a real gap (success but no summary, dimension drift,

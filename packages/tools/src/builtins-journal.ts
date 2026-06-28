@@ -1,29 +1,29 @@
 /**
- * Life Log builtins — the user's personal life log: short first-person entries
+ * Journal builtins — the user's personal journal: short first-person entries
  * about who they are, what they do, and how they feel, each with an optional
  * mood + life-area category.
  *
- * Why agents get these: Life Logs are the source of the always-on "who you are"
+ * Why agents get these: Journal entries are the source of the always-on "who you are"
  * identity block (see @mantle/content buildIdentityContext). Letting the
  * assistant *add* to them means a user can say "remember that I just started a
  * new job as a teacher" or "log that I'm feeling anxious about the move" and
  * have it become durable self-knowledge that grounds every future turn.
  *
- * All `nodes` of type='lifelog'; create/update goes through @mantle/content
+ * All `nodes` of type='journal'; create/update goes through @mantle/content
  * which fires the extractor, so each entry is summarised + embedded + its
  * facts land in the brain (search_nodes finds them too). Entries also feed the
  * identity context. Delete is left OFF the auto-grant (destructive).
  */
 
 import {
-  createLifelog,
-  deleteLifelog,
-  getLifelog,
-  listLifelogs,
-  updateLifelog,
+  createJournal,
+  deleteJournal,
+  getJournal,
+  listJournals,
+  updateJournal,
   MOOD_KEYS,
   CATEGORY_KEYS,
-  type LifelogRow,
+  type JournalRow,
 } from '@mantle/content';
 import type { BuiltinToolDef } from './types';
 
@@ -38,7 +38,7 @@ function num(v: unknown, dflt: number): number {
 }
 
 /** Compact projection — light context, everything an agent needs to reason. */
-function compact(n: LifelogRow) {
+function compact(n: JournalRow) {
   return {
     id: n.id,
     title: n.title,
@@ -58,11 +58,11 @@ const CATEGORY_DESC = `Optional life area. Prefer one of: ${CATEGORY_KEYS.join('
 
 // ─── read ──────────────────────────────────────────────────────────────────
 
-const lifelog_list: BuiltinToolDef = {
-  slug: 'lifelog_list',
-  name: 'List life logs',
+const journal_list: BuiltinToolDef = {
+  slug: 'journal_list',
+  name: 'List journal entries',
   description:
-    "Browse the user's Life Log — their own notes about who they are, their work, family, faith, health, goals, and feelings, newest first. Use to recall what the user has told you about themselves. Optional `mood` / `category` / `query` narrow the list. For a topic search across everything, `search_nodes` is broader.",
+    "Browse the user's Journal — their own notes about who they are, their work, family, faith, health, goals, and feelings, newest first. Use to recall what the user has told you about themselves. Optional `mood` / `category` / `query` narrow the list. For a topic search across everything, `search_nodes` is broader.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -76,7 +76,7 @@ const lifelog_list: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const limit = Math.min(num(input.limit, 30), 100);
     const offset = Math.max(0, num(input.offset, 0));
-    const rows = await listLifelogs(ctx.ownerId, {
+    const rows = await listJournals(ctx.ownerId, {
       query: strOpt(input.query),
       mood: strOpt(input.mood),
       category: strOpt(input.category),
@@ -84,14 +84,14 @@ const lifelog_list: BuiltinToolDef = {
       offset,
     });
     ctx.step?.setOutput({ count: rows.length });
-    return { ok: true, output: { count: rows.length, lifelogs: rows.map(compact) } };
+    return { ok: true, output: { count: rows.length, journals: rows.map(compact) } };
   },
 };
 
-const lifelog_get: BuiltinToolDef = {
-  slug: 'lifelog_get',
-  name: 'Read a life log',
-  description: 'Fetch one life log entry by its node id. Returns the full entry.',
+const journal_get: BuiltinToolDef = {
+  slug: 'journal_get',
+  name: 'Read a journal entry',
+  description: 'Fetch one journal entry by its node id. Returns the full entry.',
   inputSchema: {
     type: 'object',
     properties: { id: { type: 'string', format: 'uuid' } },
@@ -100,20 +100,20 @@ const lifelog_get: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
-    const row = await getLifelog(ctx.ownerId, id);
-    if (!row) return { ok: false, error: 'life log not found' };
+    const row = await getJournal(ctx.ownerId, id);
+    if (!row) return { ok: false, error: 'journal entry not found' };
     return { ok: true, output: compact(row) };
   },
 };
 
 // ─── write ─────────────────────────────────────────────────────────────────
 
-const lifelog_create: BuiltinToolDef = {
-  slug: 'lifelog_create',
-  name: 'Add a life log',
+const journal_create: BuiltinToolDef = {
+  slug: 'journal_create',
+  name: 'Add a journal entry',
   description:
-    "Record a short, first-person entry in the user's Life Log — something durable about who they are, what they're doing, or how they feel (e.g. \"I started a new role as a maths teacher\", \"feeling anxious about the move next month\", \"I value honesty above almost everything\"). Keep `body` to a short paragraph. This becomes part of the assistant's always-on understanding of the user, so write it in the user's voice. " +
-    'Use when the user shares something about themselves and asks you to remember it, or clearly wants it on the record — not for transient task/calendar items (use todo_create / event_create) or secrets (secret_create).',
+    "Record a short, first-person entry in the user's Journal — something durable about who they are, what they're doing, or how they feel (e.g. \"I started a new role as a maths teacher\", \"feeling anxious about the move next month\", \"I value honesty above almost everything\"). Keep `body` to a short paragraph. This becomes part of the assistant's always-on understanding of the user, so write it in the user's voice. " +
+    'Use when the user shares something about themselves and asks you to remember it, or clearly wants it on the record — not for transient task/calendar items (use task_create / event_create) or secrets (secret_create).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -133,7 +133,7 @@ const lifelog_create: BuiltinToolDef = {
     const body = str(input.body).trim();
     if (!body) return { ok: false, error: 'body is required' };
     try {
-      const row = await createLifelog(ctx.ownerId, {
+      const row = await createJournal(ctx.ownerId, {
         body,
         title: strOpt(input.title),
         mood: strOpt(input.mood),
@@ -151,11 +151,11 @@ const lifelog_create: BuiltinToolDef = {
   },
 };
 
-const lifelog_update: BuiltinToolDef = {
-  slug: 'lifelog_update',
-  name: 'Update a life log',
+const journal_update: BuiltinToolDef = {
+  slug: 'journal_update',
+  name: 'Update a journal entry',
   description:
-    'Patch a life log entry — only the fields you pass change (omit to keep stored value). Pass an empty string for `mood`/`category`/`entry_date` to clear it. Use when the user corrects or refines something about themselves.',
+    'Patch a journal entry — only the fields you pass change (omit to keep stored value). Pass an empty string for `mood`/`category`/`entry_date` to clear it. Use when the user corrects or refines something about themselves.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -173,7 +173,7 @@ const lifelog_update: BuiltinToolDef = {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     try {
-      const row = await updateLifelog(ctx.ownerId, id, {
+      const row = await updateJournal(ctx.ownerId, id, {
         body: typeof input.body === 'string' ? input.body : undefined,
         title: typeof input.title === 'string' ? input.title : undefined,
         mood: typeof input.mood === 'string' ? input.mood : undefined,
@@ -183,7 +183,7 @@ const lifelog_update: BuiltinToolDef = {
           ? (input.tags as unknown[]).filter((t): t is string => typeof t === 'string')
           : undefined,
       });
-      if (!row) return { ok: false, error: 'life log not found' };
+      if (!row) return { ok: false, error: 'journal entry not found' };
       ctx.step?.setOutput({ id: row.id, title: row.title });
       return { ok: true, output: compact(row) };
     } catch (err) {
@@ -192,11 +192,11 @@ const lifelog_update: BuiltinToolDef = {
   },
 };
 
-const lifelog_delete: BuiltinToolDef = {
-  slug: 'lifelog_delete',
-  name: 'Delete a life log',
+const journal_delete: BuiltinToolDef = {
+  slug: 'journal_delete',
+  name: 'Delete a journal entry',
   description:
-    'Remove a life log entry by id. Use only when the user explicitly asks to delete it. Returns ok=true on success; ok=false if not found.',
+    'Remove a journal entry by id. Use only when the user explicitly asks to delete it. Returns ok=true on success; ok=false if not found.',
   requiresConfirm: true,
   inputSchema: {
     type: 'object',
@@ -206,28 +206,28 @@ const lifelog_delete: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
-    const ok = await deleteLifelog(ctx.ownerId, id);
-    if (!ok) return { ok: false, error: 'life log not found' };
+    const ok = await deleteJournal(ctx.ownerId, id);
+    if (!ok) return { ok: false, error: 'journal entry not found' };
     ctx.step?.setOutput({ id });
     return { ok: true, output: { id } };
   },
 };
 
-export const LIFELOG_TOOLS: BuiltinToolDef[] = [
-  lifelog_list,
-  lifelog_get,
-  lifelog_create,
-  lifelog_update,
-  lifelog_delete,
+export const JOURNAL_TOOLS: BuiltinToolDef[] = [
+  journal_list,
+  journal_get,
+  journal_create,
+  journal_update,
+  journal_delete,
 ];
 
-export const LIFELOG_TOOL_SLUGS: readonly string[] = LIFELOG_TOOLS.map((t) => t.slug);
+export const JOURNAL_TOOL_SLUGS: readonly string[] = JOURNAL_TOOLS.map((t) => t.slug);
 
 /** Subset auto-granted to conversational agents (responder/assistant) at boot.
  *  Read + add/update — NOT delete (destructive ops are explicit grants). */
-export const LIFELOG_AUTO_GRANT_SLUGS: readonly string[] = [
-  'lifelog_list',
-  'lifelog_get',
-  'lifelog_create',
-  'lifelog_update',
+export const JOURNAL_AUTO_GRANT_SLUGS: readonly string[] = [
+  'journal_list',
+  'journal_get',
+  'journal_create',
+  'journal_update',
 ];

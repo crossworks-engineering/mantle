@@ -39,7 +39,7 @@ import type { BuiltinToolDef } from './types';
 import { WORKER_DELEGATION_TOOLS } from './builtins-workers';
 import { EVENT_TOOLS } from './builtins-events';
 import { PROFILE_TOOLS } from './builtins-profile';
-import { TODO_TOOLS } from './builtins-todos';
+import { TASK_TOOLS } from './builtins-tasks';
 import { PERSONA_TOOLS } from './builtins-persona';
 import { TERMINAL_TOOLS } from './builtins-terminal';
 import { RECALL_TOOLS } from './builtins-recall';
@@ -51,7 +51,7 @@ import { APP_TOOLS } from './builtins-apps';
 import { TABLE_TOOLS } from './builtins-tables';
 import { TOOL_RESULT_TOOLS } from './builtins-tool-results';
 import { CONTACT_TOOLS } from './builtins-contacts';
-import { LIFELOG_TOOLS } from './builtins-lifelog';
+import { JOURNAL_TOOLS } from './builtins-journal';
 import { PEER_TOOLS } from './builtins-peers';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import { LOCATION_TOOLS } from './builtins-locations';
@@ -86,10 +86,10 @@ const search_nodes: BuiltinToolDef = {
   slug: 'search_nodes',
   name: 'Search nodes',
   description:
-    "Hybrid full-text + semantic search across the user's entire Mantle (notes, files, emails, events, todos, pages, telegram messages — everything). **Ranked by relevance, NOT by date.** " +
+    "Hybrid full-text + semantic search across the user's entire Mantle (notes, files, emails, events, tasks, pages, telegram messages — everything). **Ranked by relevance, NOT by date.** " +
     "Use for topic/content questions — 'find emails about the Lister contract', 'notes mentioning the printer', 'anything about Ashley's passport'. " +
     'This finds whole NODES (returns their spine — title/tags/summary). To pull the relevant *passages* from inside long documents — the cheaper move for a "what does X say about Y" question, and the one that avoids reading whole files into context — use `search_chunks`. ' +
-    "For **time-windowed** questions ('what arrived today', 'last 5 days of email', 'this week's events') use the dedicated list tools — `email_list`, `event_list`, `todo_list`, `note_list`, `page_list`, `file_list` — which ARE date-sorted and accept `since` / `window`. " +
+    "For **time-windowed** questions ('what arrived today', 'last 5 days of email', 'this week's events') use the dedicated list tools — `email_list`, `event_list`, `task_list`, `note_list`, `page_list`, `file_list` — which ARE date-sorted and accept `since` / `window`. " +
     "For past **conversation** recall (replaying what was actually said) use `find_window` + `recall_window`. For the **public web** use `web_search`. " +
     "Optional `branch` (ltree prefix, e.g. 'files.work') scopes; `type` filters to one node kind; `tags` narrows further. " +
     'Each hit carries a `url` permalink — when you surface an item to the user, link it as a markdown `[title](url)` so they can click straight through to it.',
@@ -115,7 +115,7 @@ const search_nodes: BuiltinToolDef = {
           'printer_project',
           'telegram_message',
           'documentation',
-          'lifelog',
+          'journal',
         ],
       },
       tags: { type: 'array', items: { type: 'string' } },
@@ -465,7 +465,7 @@ const node_read: BuiltinToolDef = {
   name: 'Read a node',
   description:
     "Universal reader — read the full content of any node by id. Returns title, type, tags, path, summary, and the full `data` blob (markdown body for notes, body+location+starts_at for events, status+due_at for tasks, etc.). " +
-    "**Prefer type-specific readers when available** — `note_get` / `event_get` / `todo_get` / `page_get` / `email_get` — they return cleaner shapes for their type. " +
+    "**Prefer type-specific readers when available** — `note_get` / `event_get` / `task_get` / `page_get` / `email_get` — they return cleaner shapes for their type. " +
     "For nodes of `type='file'` the body lives in object storage — use `file_read` instead. This tool is the fallback that works for any node type (incl. secret, sermon, contact, telegram_message). " +
     'Returns a `url` permalink — link the item as a markdown `[title](url)` when you reference it to the user.',
   inputSchema: {
@@ -1107,9 +1107,9 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // operator choice; flip per-row in the tools table if you want
   // approval gates.
   ...EVENT_TOOLS,
-  // Todo CRUD — mirrors the MCP todo tools so Saskia can capture and
+  // Task CRUD — mirrors the MCP task tools so Saskia can capture and
   // manage tasks from chat. None require_confirm (trivially reversible).
-  ...TODO_TOOLS,
+  ...TASK_TOOLS,
   // Persona self-edit — lets Saskia adjust her own style/relationship
   // notes when the user explicitly asks ("be more professional").
   // Scoped resolution + soft-retire; pure logic in @mantle/db.
@@ -1152,10 +1152,10 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Contacts list IS the email allowlist; adding a contact extends reach.
   // Saskia adds/edits only when explicitly asked (tool descriptions emphasise).
   ...CONTACT_TOOLS,
-  // Life Logs — the user's first-person self-knowledge (who they are, work,
+  // Journal — the user's first-person self-knowledge (who they are, work,
   // family, feelings). Source of the always-on identity context. Saskia can
   // add/refine entries when the user shares something durable about themselves.
-  ...LIFELOG_TOOLS,
+  ...JOURNAL_TOOLS,
   // Federation — query other people's Mantles for data they've shared with
   // you. Outbound half of docs/federation.md; reads only what a peer granted.
   ...PEER_TOOLS,

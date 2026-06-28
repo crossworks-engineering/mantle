@@ -3,9 +3,9 @@ import { z } from 'zod';
 import {
   loadProfilePreferences,
   updateProfilePreferences,
-  createLifelog,
-  listLifelogs,
-  deleteLifelog,
+  createJournal,
+  listJournals,
+  deleteJournal,
   composeBody,
   deriveDisplayName,
   ONBOARDING_QUESTIONS,
@@ -29,13 +29,13 @@ export const dynamic = 'force-dynamic';
 /**
  * Onboarding wizard backend — the first-run flow's reads (GET) + every step's
  * mutation (POST, dispatched by `action`). Each step persists immediately
- * through existing primitives (keys, workers, agents, life logs, preferences)
+ * through existing primitives (keys, workers, agents, journal entries, preferences)
  * so a refresh resumes from `preferences.onboardingStep`. Consolidated to one
  * route because it's a single internal flow (replaces app/onboarding/actions.ts).
  */
 
 export type SanityCheck = { label: string; ok: boolean; detail: string };
-const ONBOARDING_LIFELOG_TAG = 'onboarding';
+const ONBOARDING_JOURNAL_TAG = 'onboarding';
 
 // The only onboarding action that took an unchecked `body as SavePersonaInput`
 // cast — and savePersonaAgent does `input.assistantName.trim()` with no guard,
@@ -148,15 +148,15 @@ async function saveInterview(
     return { ok: false, created: 0, error: 'Your name and what to call you are required.' };
   }
   try {
-    // Idempotent: clear the life logs a previous run created (tagged
+    // Idempotent: clear the journal entries a previous run created (tagged
     // `onboarding`) before recreating — never touches the user's own entries.
-    const prior = await listLifelogs(userId, { tag: ONBOARDING_LIFELOG_TAG });
-    for (const p of prior) await deleteLifelog(userId, p.id);
+    const prior = await listJournals(userId, { tag: ONBOARDING_JOURNAL_TAG });
+    for (const p of prior) await deleteJournal(userId, p.id);
     let created = 0;
     for (const q of ONBOARDING_QUESTIONS) {
       const body = composeBody(q, answers[q.key] ?? '');
       if (!body) continue;
-      await createLifelog(userId, { body, category: q.category, tags: [ONBOARDING_LIFELOG_TAG] });
+      await createJournal(userId, { body, category: q.category, tags: [ONBOARDING_JOURNAL_TAG] });
       created++;
     }
     const displayName =

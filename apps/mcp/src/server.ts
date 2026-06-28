@@ -73,37 +73,37 @@ import {
 } from '@mantle/tools';
 import { authUsers, resolveSingleOwnerId } from '@mantle/db';
 import {
-  TODO_PRIORITIES,
-  TODO_STATUSES,
+  TASK_PRIORITIES,
+  TASK_STATUSES,
   createEvent,
   createNote,
-  createTodo,
+  createTask,
   deleteEvent,
   deleteNote,
-  deleteTodo,
-  createLifelog,
-  deleteLifelog,
+  deleteTask,
+  createJournal,
+  deleteJournal,
   getEvent,
-  getLifelog,
+  getJournal,
   getNote,
   getPage,
   getTable,
-  getTodo,
+  getTask,
   listEvents,
-  listLifelogs,
+  listJournals,
   listNotes,
   listPages,
   listTables,
   listRows,
   ensureTableDoc,
-  listTodos,
+  listTasks,
   listPeers,
   queryPeer,
   getPeerNode,
   updateEvent,
-  updateLifelog,
+  updateJournal,
   updateNote,
-  updateTodo,
+  updateTask,
 } from '@mantle/content';
 import { and, asc, desc, eq } from 'drizzle-orm';
 
@@ -928,7 +928,7 @@ server.tool(
   },
 );
 
-// ─── Notes / Todos / Events ────────────────────────────────────────────────
+// ─── Notes / Tasks / Events ────────────────────────────────────────────────
 //
 // Three content surfaces the assistant can drive. All three are jsonb on
 // `nodes` (no dedicated tables) and all three flow through the extractor
@@ -1003,42 +1003,42 @@ server.tool(
   },
 );
 
-// ─── Life Logs ─────────────────────────────────────────────────────────────
+// ─── Journal ─────────────────────────────────────────────────────────────
 //
-// The owner's first-person self-knowledge (type='lifelog'): short entries with
+// The owner's first-person self-knowledge (type='journal'): short entries with
 // an optional mood + life-area category. These feed the always-on "who you are"
 // identity context injected into every agent turn — so logging from Claude
 // Desktop teaches the in-app assistant who the user is. Full CRUD, mirroring
 // notes (the upstream-ingest surface is where self-facts naturally get added).
 
 server.tool(
-  'lifelog_list',
-  "List the owner's Life Log — their notes about who they are, their work, family, faith, health, goals, and feelings, newest first. Optional `query` substring-matches title/body/summary; `mood` / `category` filter.",
+  'journal_list',
+  "List the owner's Journal — their notes about who they are, their work, family, faith, health, goals, and feelings, newest first. Optional `query` substring-matches title/body/summary; `mood` / `category` filter.",
   {
     query: z.string().optional(),
     mood: z.string().optional(),
     category: z.string().optional(),
   },
   async ({ query, mood, category }) => {
-    const rows = await listLifelogs(OWNER_ID!, { query, mood, category });
+    const rows = await listJournals(OWNER_ID!, { query, mood, category });
     return jsonReply(rows);
   },
 );
 
 server.tool(
-  'lifelog_get',
-  'Get a single life log entry by id.',
+  'journal_get',
+  'Get a single journal entry by id.',
   { id: z.string() },
   async ({ id }) => {
-    const row = await getLifelog(OWNER_ID!, id);
+    const row = await getJournal(OWNER_ID!, id);
     if (!row) return { content: [{ type: 'text', text: 'not found' }] };
     return jsonReply(row);
   },
 );
 
 server.tool(
-  'lifelog_create',
-  "Record a short first-person Life Log entry — something durable about who the user is, what they're doing, or how they feel. `body` is a short paragraph; `mood` and `category` are optional. Becomes part of the assistant's always-on understanding of the user.",
+  'journal_create',
+  "Record a short first-person journal entry — something durable about who the user is, what they're doing, or how they feel. `body` is a short paragraph; `mood` and `category` are optional. Becomes part of the assistant's always-on understanding of the user.",
   {
     body: z.string().min(1).max(20_000),
     title: z.string().max(200).optional(),
@@ -1048,7 +1048,7 @@ server.tool(
     tags: z.array(z.string()).optional(),
   },
   async ({ body, title, mood, category, entryDate, tags }) => {
-    const row = await createLifelog(OWNER_ID!, {
+    const row = await createJournal(OWNER_ID!, {
       body,
       title,
       mood,
@@ -1061,8 +1061,8 @@ server.tool(
 );
 
 server.tool(
-  'lifelog_update',
-  'Update a life log entry. Pass only the fields you want changed; an empty string clears mood/category/entryDate.',
+  'journal_update',
+  'Update a journal entry. Pass only the fields you want changed; an empty string clears mood/category/entryDate.',
   {
     id: z.string(),
     body: z.string().max(20_000).optional(),
@@ -1073,7 +1073,7 @@ server.tool(
     tags: z.array(z.string()).optional(),
   },
   async ({ id, body, title, mood, category, entryDate, tags }) => {
-    const row = await updateLifelog(OWNER_ID!, id, {
+    const row = await updateJournal(OWNER_ID!, id, {
       body,
       title,
       mood,
@@ -1087,11 +1087,11 @@ server.tool(
 );
 
 server.tool(
-  'lifelog_delete',
-  'Delete a life log entry by id.',
+  'journal_delete',
+  'Delete a journal entry by id.',
   { id: z.string() },
   async ({ id }) => {
-    const ok = await deleteLifelog(OWNER_ID!, id);
+    const ok = await deleteJournal(OWNER_ID!, id);
     return { content: [{ type: 'text', text: ok ? 'deleted' : 'not found' }] };
   },
 );
@@ -1182,16 +1182,16 @@ server.tool(
 );
 
 server.tool(
-  'todo_list',
-  'List todos. `status` filters open/done; `priority` filters low/normal/high; `query` substring-matches title/body/summary. Default sort: open first, soonest due, then most-recently updated.',
+  'task_list',
+  'List tasks. `status` filters open/done; `priority` filters low/normal/high; `query` substring-matches title/body/summary. Default sort: open first, soonest due, then most-recently updated.',
   {
     query: z.string().optional(),
-    status: z.enum([...TODO_STATUSES, 'all'] as ['open', 'done', 'all']).optional(),
-    priority: z.enum([...TODO_PRIORITIES, 'all'] as ['low', 'normal', 'high', 'all']).optional(),
+    status: z.enum([...TASK_STATUSES, 'all'] as ['open', 'done', 'all']).optional(),
+    priority: z.enum([...TASK_PRIORITIES, 'all'] as ['low', 'normal', 'high', 'all']).optional(),
     tag: z.string().optional(),
   },
   async ({ query, status, priority, tag }) => {
-    const rows = await listTodos(OWNER_ID!, {
+    const rows = await listTasks(OWNER_ID!, {
       query,
       status: status ?? 'all',
       priority: priority ?? 'all',
@@ -1202,29 +1202,29 @@ server.tool(
 );
 
 server.tool(
-  'todo_get',
-  'Get a single todo by id.',
+  'task_get',
+  'Get a single task by id.',
   { id: z.string() },
   async ({ id }) => {
-    const row = await getTodo(OWNER_ID!, id);
+    const row = await getTask(OWNER_ID!, id);
     if (!row) return { content: [{ type: 'text', text: 'not found' }] };
     return jsonReply(row);
   },
 );
 
 server.tool(
-  'todo_create',
-  'Create a todo. Title is required. `dueAt` is an ISO 8601 timestamp (e.g. "2026-05-25T17:00:00Z").',
+  'task_create',
+  'Create a task. Title is required. `dueAt` is an ISO 8601 timestamp (e.g. "2026-05-25T17:00:00Z").',
   {
     title: z.string().min(1).max(200),
     body: z.string().max(50_000).optional(),
-    status: z.enum(TODO_STATUSES).optional(),
-    priority: z.enum(TODO_PRIORITIES).optional(),
+    status: z.enum(TASK_STATUSES).optional(),
+    priority: z.enum(TASK_PRIORITIES).optional(),
     dueAt: z.string().datetime().nullable().optional(),
     tags: z.array(z.string()).optional(),
   },
   async ({ title, body, status, priority, dueAt, tags }) => {
-    const row = await createTodo(OWNER_ID!, {
+    const row = await createTask(OWNER_ID!, {
       title,
       body,
       status,
@@ -1237,30 +1237,30 @@ server.tool(
 );
 
 server.tool(
-  'todo_update',
-  'Update a todo. Use this to flip status to "done", change priority, push the due date, etc.',
+  'task_update',
+  'Update a task. Use this to flip status to "done", change priority, push the due date, etc.',
   {
     id: z.string(),
     title: z.string().min(1).max(200).optional(),
     body: z.string().max(50_000).optional(),
-    status: z.enum(TODO_STATUSES).optional(),
-    priority: z.enum(TODO_PRIORITIES).optional(),
+    status: z.enum(TASK_STATUSES).optional(),
+    priority: z.enum(TASK_PRIORITIES).optional(),
     dueAt: z.string().datetime().nullable().optional(),
     tags: z.array(z.string()).optional(),
   },
   async ({ id, ...rest }) => {
-    const row = await updateTodo(OWNER_ID!, id, rest);
+    const row = await updateTask(OWNER_ID!, id, rest);
     if (!row) return { content: [{ type: 'text', text: 'not found' }] };
     return jsonReply(row);
   },
 );
 
 server.tool(
-  'todo_delete',
-  'Delete a todo by id.',
+  'task_delete',
+  'Delete a task by id.',
   { id: z.string() },
   async ({ id }) => {
-    const ok = await deleteTodo(OWNER_ID!, id);
+    const ok = await deleteTask(OWNER_ID!, id);
     return { content: [{ type: 'text', text: ok ? 'deleted' : 'not found' }] };
   },
 );

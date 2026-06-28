@@ -11,7 +11,7 @@ import { requireOwner } from '@/lib/auth';
  * The node row carries its own `type`, so a single route disambiguates every
  * kind: it loads the node owner-scoped, then redirects to the surface that
  * actually edits/displays it. Surfaces that already deep-link by id
- * (notes/tables/todos/lifelog via `?selected`, pages/apps/events via `/<id>`,
+ * (notes/tables/tasks/journal via `?selected`, pages/apps/events via `/<id>`,
  * files via `?file=`, contacts via `?id=`) are reused as-is; anything without a
  * dedicated editor falls back to the universal `/nodes/<id>/history` biography,
  * which renders for every node type. Keeping the type→surface map HERE means
@@ -39,7 +39,7 @@ export default async function NodePermalink({
     case 'page':
       redirect(`/pages/${enc}`);
     case 'task':
-      redirect(`/todos?selected=${enc}`);
+      redirect(`/tasks?selected=${enc}`);
     case 'table':
       redirect(`/tables?selected=${enc}`);
     case 'app':
@@ -50,8 +50,8 @@ export default async function NodePermalink({
       redirect(`/files?file=${enc}`);
     case 'contact':
       redirect(`/contacts?id=${enc}`);
-    case 'lifelog':
-      redirect(`/lifelog?selected=${enc}`);
+    case 'journal':
+      redirect(`/journal?selected=${enc}`);
     default:
       // email, secret, location, telegram_message, sermon, documentation,
       // mantle_peer, printer_project, branch — no dedicated editor; the

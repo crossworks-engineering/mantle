@@ -33,7 +33,7 @@ import {
   APP_TOOL_SLUGS,
   TABLE_TOOL_SLUGS,
   CONTACT_AUTO_GRANT_SLUGS,
-  LIFELOG_AUTO_GRANT_SLUGS,
+  JOURNAL_AUTO_GRANT_SLUGS,
   LOCATION_TOOL_SLUGS,
   PROFILE_TOOL_SLUGS,
   TOOLSMITH_TOOL_SLUGS,
@@ -105,7 +105,7 @@ export type ManifestAgent = {
   assistSurface?: 'pages' | 'tables' | 'apps' | 'dev-tools';
   params: { temperature: number; max_tokens?: number };
   /** Persisted verbatim to agents.memory_config. Carries the persona's context
-   *  budgets (history/digest/fact limits, inject_lifelog) and a specialist's
+   *  budgets (history/digest/fact limits, inject_journal) and a specialist's
    *  `max_iterations`; `delegate_to` lets a SPECIALIST delegate to another
    *  specialist (wireDelegation only wires the persona) — e.g. Appsmith →
    *  toolsmith for data-tool authoring. */
@@ -350,7 +350,7 @@ export const MANIFEST_HTTP_TOOL_SLUGS: readonly string[] = MANIFEST_HTTP_TOOLS.m
 // KNOWN_TOOL_SLUGS and that every grantable builtin lives in ≥1 group.
 //
 // Destructive ops live in dedicated `*-admin` groups (`page-admin`,
-// `table-admin`, `contacts-admin`, `lifelog-admin`) so they're granted only by
+// `table-admin`, `contacts-admin`, `journal-admin`) so they're granted only by
 // deliberate group membership, never as a side effect of an authoring grant.
 // The `pages`/`tables` groups carry the AUTHORING subsets only.
 
@@ -400,10 +400,10 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['event_list', 'event_get', 'event_create', 'event_update', 'event_delete'],
   },
   {
-    slug: 'todos',
-    name: 'To-dos',
-    description: 'To-do CRUD.',
-    toolSlugs: ['todo_list', 'todo_get', 'todo_create', 'todo_update', 'todo_delete'],
+    slug: 'tasks',
+    name: 'Tasks',
+    description: 'Task CRUD.',
+    toolSlugs: ['task_list', 'task_get', 'task_create', 'task_update', 'task_delete'],
   },
   {
     slug: 'pages',
@@ -473,19 +473,19 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['contact_delete'],
   },
   {
-    slug: 'lifelog',
-    name: 'Life logs',
+    slug: 'journal',
+    name: 'Journal',
     description: "First-person self-knowledge — the identity context's source. No delete (escape hatch).",
-    // No-delete subset (decision 3 pattern); lifelog_delete rides the
-    // `lifelog-admin` group. Matches CORE_AUTO_GRANT exactly so auto-granted
+    // No-delete subset (decision 3 pattern); journal_delete rides the
+    // `journal-admin` group. Matches CORE_AUTO_GRANT exactly so auto-granted
     // agents qualify for the group.
-    toolSlugs: [...LIFELOG_AUTO_GRANT_SLUGS],
+    toolSlugs: [...JOURNAL_AUTO_GRANT_SLUGS],
   },
   {
-    slug: 'lifelog-admin',
-    name: 'Life-log admin',
-    description: 'Delete a life-log entry — deliberate-only; not on the persona.',
-    toolSlugs: ['lifelog_delete'],
+    slug: 'journal-admin',
+    name: 'Journal admin',
+    description: 'Delete a journal entry — deliberate-only; not on the persona.',
+    toolSlugs: ['journal_delete'],
   },
   {
     slug: 'recall',
@@ -618,15 +618,15 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // `page-share` so it can publish. NOT granted: the `*-admin` deletes
     // (deliberate-only), `recall-search`/`research`/`terminal`/`federation`
     // (specialist). Versus the pre-P6 set this drops `contact_delete` +
-    // `lifelog_delete` (now deliberate-only) — the one intentional removal.
+    // `journal_delete` (now deliberate-only) — the one intentional removal.
     toolGroupSlugs: [
       'memory-core',
       'files',
       'notes',
       'events',
-      'todos',
+      'tasks',
       'contacts',
-      'lifelog',
+      'journal',
       'recall',
       'email',
       'persona',
@@ -656,7 +656,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       // with the larger ~2.75k-char chunks, 8 ≈ 22k chars of real coverage.
       // Kept in sync with the runtime CHUNK_LIMIT_DEFAULT.
       chunk_limit: 8,
-      inject_lifelog: true,
+      inject_journal: true,
       delegate_to: [],
       // The generalist isn't only a read-then-reply chat agent: real tasks are
       // "read N source docs → compile → author a page/note", which needs more

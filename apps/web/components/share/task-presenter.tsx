@@ -3,8 +3,8 @@ import remarkGfm from 'remark-gfm';
 import { Check, Circle } from 'lucide-react';
 import { formatDateTime } from '@/lib/format-datetime';
 
-/** Public todo render — a clean status card. */
-export function TodoPresenter({
+/** Public task render — a clean status card. */
+export function TaskPresenter({
   view,
 }: {
   view: { title: string; body: string; status: string; priority: string; dueAt: string | null };

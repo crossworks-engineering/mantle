@@ -2,19 +2,19 @@ import { Suspense } from 'react';
 import { requireOwner } from '@/lib/auth';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { Spinner } from '@/components/ui/spinner';
-import { LifelogClient } from './lifelog-client';
+import { JournalClient } from './journal-client';
 
 /**
- * /lifelog — auth gate only. The list (paginated/filtered by mood/category/tag/
+ * /journal — auth gate only. The list (paginated/filtered by mood/category/tag/
  * search), tag facets, and the deep-linked selected entry are client-fetched via
- * `/api/lifelog(/[id])` (Phase 2 · Task 4), keyed off the URL params which
- * `LifelogClient` reads with useSearchParams — hence the Suspense boundary.
+ * `/api/journal(/[id])` (Phase 2 · Task 4), keyed off the URL params which
+ * `JournalClient` reads with useSearchParams — hence the Suspense boundary.
  */
-export default async function LifelogPage() {
+export default async function JournalPage() {
   await requireOwner();
   return (
     <>
-      <SetPageTitle title="Life Logs" />
+      <SetPageTitle title="Journal" />
       <Suspense
         fallback={
           <div className="flex h-full items-center justify-center">
@@ -22,7 +22,7 @@ export default async function LifelogPage() {
           </div>
         }
       >
-        <LifelogClient />
+        <JournalClient />
       </Suspense>
     </>
   );
