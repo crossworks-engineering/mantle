@@ -9,10 +9,14 @@ import type { TurnEvent } from '@mantle/client-types';
 export interface ThoughtEvent {
   /** Stable step id — lets a later narrated event replace this line in place. */
   stepId?: string;
-  /** Coarse bucket for the icon/theme (thinking | web | brain | delegate | tool). */
+  /** Coarse bucket for the icon/theme (thinking | web | brain | delegate | tool …). */
   kind: string;
   /** The user-facing line ("Let me dig through your notes on cars…"). */
   label: string;
+  /** Elapsed ms into the turn when this step started (client-stamped on arrival).
+   *  Shown beside the step so the user can follow the flow's timing. Preserved
+   *  across a grounded→narrated upgrade (the step's start time doesn't change). */
+  elapsedMs?: number;
 }
 
 /** Lifecycle of the subscribed turn, driven by the terminal bus events. */
@@ -40,6 +44,23 @@ export interface TurnStream {
   inboundId: string | null;
   /** Failure reason once `phase === 'error'`; null otherwise. */
   error: string | null;
+  /** Epoch ms when the live subscription opened — the anchor for the elapsed
+   *  timer in the status footer. Null when idle. */
+  startedAt: number | null;
+  /** Output tokens so far: a char-based ESTIMATE (≈chars/4) of the streamed
+   *  reply + reasoning while the turn runs, replaced by the REAL `tokensOut`
+   *  from the `done` event when the turn lands. Null before any output. */
+  tokens: number | null;
+  /** True while `tokens` is the streamed estimate; false once it's the real
+   *  count from `done`. Lets the footer mark the live number as approximate. */
+  tokensApprox: boolean;
+}
+
+/** Rough output-token estimate from a running character count. ~4 chars/token
+ *  is the standard English heuristic — good enough for a live readout that the
+ *  real `tokensOut` from `done` supersedes the moment the turn finishes. */
+function estimateTokens(chars: number): number {
+  return Math.max(1, Math.round(chars / 4));
 }
 
 /**
@@ -59,10 +80,17 @@ export function useTurnStream(turnId: string | null): TurnStream {
   const [outboundId, setOutboundId] = useState<string | null>(null);
   const [inboundId, setInboundId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [tokens, setTokens] = useState<number | null>(null);
+  const [tokensApprox, setTokensApprox] = useState(true);
   // Ref accumulator for the reply so appends are deterministic (the setState
   // updater stays a pure set-to-same-string, safe under StrictMode double-invoke).
   const replyRef = useRef('');
   const replyRoundRef = useRef(-1);
+  // Running character count of all streamed output (visible reply + reasoning),
+  // converted to the token estimate. Kept in a ref so it accumulates across
+  // rounds independently of the round-scoped reply buffer.
+  const outCharsRef = useRef(0);
 
   useEffect(() => {
     if (!turnId || !isTurnStreamingEnabledClient()) {
@@ -72,14 +100,25 @@ export function useTurnStream(turnId: string | null): TurnStream {
       setOutboundId(null);
       setInboundId(null);
       setError(null);
+      setStartedAt(null);
+      setTokens(null);
+      setTokensApprox(true);
       replyRef.current = '';
       replyRoundRef.current = -1;
+      outCharsRef.current = 0;
       return;
     }
     replyRef.current = '';
     replyRoundRef.current = -1;
+    outCharsRef.current = 0;
     setPhase('streaming');
     setError(null);
+    setTokens(null);
+    setTokensApprox(true);
+    // Captured in-closure so each status event can stamp its elapsed time off the
+    // same anchor the footer timer uses.
+    const startedAtMs = Date.now();
+    setStartedAt(startedAtMs);
     let stopped = false;
     const stop = apiEventStream(
       `/api/assistant/turn/${turnId}/stream`,
@@ -98,6 +137,17 @@ export function useTurnStream(turnId: string | null): TurnStream {
               replyRef.current += ev.data.text;
             }
             setReply(replyRef.current);
+            // Token estimate counts ALL streamed output across rounds (not just
+            // the latest round's visible buffer), so it tracks total generation.
+            outCharsRef.current += ev.data.text.length;
+            setTokens(estimateTokens(outCharsRef.current));
+            return;
+          }
+          if (ev && ev.type === 'reasoning-delta' && typeof ev.data?.text === 'string') {
+            // Reasoning tokens count toward the model's output total — fold them
+            // into the estimate (but not the visible reply buffer).
+            outCharsRef.current += ev.data.text.length;
+            setTokens(estimateTokens(outCharsRef.current));
             return;
           }
           if (ev && ev.type === 'turn-start') {
@@ -107,6 +157,12 @@ export function useTurnStream(turnId: string | null): TurnStream {
             return;
           }
           if (ev && ev.type === 'done') {
+            // Swap the streamed estimate for the real output-token total when the
+            // runner reports it (>0); otherwise keep the estimate.
+            if (typeof ev.data?.tokensOut === 'number' && ev.data.tokensOut > 0) {
+              setTokens(ev.data.tokensOut);
+              setTokensApprox(false);
+            }
             setPhase('done');
             return;
           }
@@ -117,10 +173,16 @@ export function useTurnStream(turnId: string | null): TurnStream {
           }
           if (ev && ev.type === 'status' && typeof ev.data?.label === 'string') {
             const stepId = ev.data.stepId;
-            const incoming: ThoughtEvent = { stepId, kind: ev.data.kind ?? 'tool', label: ev.data.label };
+            const incoming: ThoughtEvent = {
+              stepId,
+              kind: ev.data.kind ?? 'tool',
+              label: ev.data.label,
+              elapsedMs: Date.now() - startedAtMs,
+            };
             setTrail((prev) => {
               // Upgrade in place: a later narrated event for the same step
               // replaces the grounded line rather than appending a duplicate.
+              // Keep the original elapsedMs — the step started when it first arrived.
               if (stepId) {
                 const i = prev.findIndex((t) => t.stepId === stepId);
                 if (i >= 0) {
@@ -152,8 +214,12 @@ export function useTurnStream(turnId: string | null): TurnStream {
       setOutboundId(null);
       setInboundId(null);
       setError(null);
+      setStartedAt(null);
+      setTokens(null);
+      setTokensApprox(true);
       replyRef.current = '';
       replyRoundRef.current = -1;
+      outCharsRef.current = 0;
     };
   }, [turnId]);
 
@@ -165,5 +231,8 @@ export function useTurnStream(turnId: string | null): TurnStream {
     outboundId,
     inboundId,
     error,
+    startedAt,
+    tokens,
+    tokensApprox,
   };
 }

@@ -3858,3 +3858,60 @@
     stroke-dasharray: 70 150;
   }
 }
+
+/* ============================================================================
+   Live thought trail (components/assistant/thought-trail.tsx). The narrator
+   line shimmers warmly while the turn runs (a highlight sweeps the text);
+   completed steps fade in beneath it. Theme-safe (uses --foreground /
+   --muted-foreground) and honours reduced-motion.
+   ========================================================================== */
+.mantle-shimmer-text {
+  /* Text stays solid (--foreground is the base); a lighter glint sweeps across
+     it — a shine over solid letters, not the letters dimming in and out. */
+  background-image: linear-gradient(
+    100deg,
+    var(--foreground) 35%,
+    var(--muted-foreground) 50%,
+    var(--foreground) 65%
+  );
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: mantle-shimmer 2.4s linear infinite;
+}
+@keyframes mantle-shimmer {
+  0% {
+    background-position: 150% 0;
+  }
+  100% {
+    background-position: -150% 0;
+  }
+}
+.mantle-trail-step {
+  animation: mantle-trail-in 0.35s ease-out both;
+}
+@keyframes mantle-trail-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mantle-shimmer-text {
+    animation: none;
+    background-image: none;
+    -webkit-background-clip: border-box;
+    background-clip: border-box;
+    -webkit-text-fill-color: var(--foreground);
+    color: var(--foreground);
+  }
+  .mantle-trail-step {
+    animation: none;
+  }
+}

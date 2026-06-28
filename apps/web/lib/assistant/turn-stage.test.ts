@@ -17,9 +17,25 @@ describe('stageLabelForStep', () => {
     expect(stageLabelForStep('tool: entity_facts')).toBe('Searching your brain…');
   });
 
-  it('buckets other tools as a generic working label', () => {
-    expect(stageLabelForStep('tool: note_create')).toBe('Working on it…');
-    expect(stageLabelForStep('tool: email_send')).toBe('Working on it…');
+  it('names write/action tools so the trail reflects what changed', () => {
+    expect(stageLabelForStep('tool: note_create')).toBe('Adding to your notes…');
+    expect(stageLabelForStep('tool: todo_create')).toBe('Adding a to-do…');
+    expect(stageLabelForStep('tool: event_create')).toBe('Adding to your calendar…');
+    expect(stageLabelForStep('tool: note_update')).toBe('Updating a note…');
+    expect(stageLabelForStep('tool: email_send')).toBe('Sending an email…');
+    expect(stageLabelForStep('tool: file_upload')).toBe('Saving a file…');
+  });
+
+  it('enriches a create with the subject title when present', () => {
+    expect(
+      stageLabelForStep('tool: note_create', { slug: 'note_create', args: { title: 'Q3 plan' } }),
+    ).toBe('Saving “Q3 plan” to your notes…');
+  });
+
+  it('falls back to a verb guess for unknown tools, generic for spill', () => {
+    expect(stageLabelForStep('tool: widget_delete')).toBe('Removing that…');
+    expect(stageLabelForStep('tool: gizmo_send')).toBe('Sending that…');
+    expect(stageLabelForStep('tool: mystery_tool')).toBe('Working on it…');
     expect(stageLabelForStep('spill_result: web_search')).toBe('Working on it…');
   });
 

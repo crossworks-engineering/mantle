@@ -23,6 +23,7 @@ import { formatDateTime } from '@/lib/format-datetime';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { RichText } from '@/components/assistant/rich-text';
+import { CopyButton } from '@/components/assistant/copy-button';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { apiFetch } from '@/lib/api-fetch';
@@ -96,6 +97,12 @@ type Message = {
    *  as a persistent "thought" record. Outbound only; session-scoped (the
    *  durable record is the trace). */
   thoughts?: ThoughtEvent[];
+  /** Real output-token total for the turn, from the `done` event — shown on the
+   *  frozen thought-trail summary. Session-scoped (not persisted). */
+  tokens?: number;
+  /** Wall-clock duration of the turn (ms), measured client-side from the live
+   *  stream — shown on the frozen thought-trail summary. Session-scoped. */
+  durationMs?: number;
 };
 
 /** A conversational turn: the user's prompt and Saskia's response. The
@@ -160,6 +167,9 @@ export function AssistantClient({
     phase: streamPhase,
     outboundId: streamOutboundId,
     error: streamError,
+    startedAt: streamStartedAt,
+    tokens: streamTokens,
+    tokensApprox: streamTokensApprox,
   } = useTurnStream(activeTurnId);
   const polledLabel = useTurnStage(sending);
   const stageLabel = streamLabel ?? polledLabel;
@@ -174,6 +184,16 @@ export function AssistantClient({
   useEffect(() => {
     outboundIdRef.current = streamOutboundId;
   }, [streamOutboundId]);
+  // Mirror the final token count + the turn's start time so reconcileDone (async,
+  // stable callback) can stamp the real "duration · tokens" onto the frozen trail.
+  const streamTokensRef = useRef<number | null>(null);
+  useEffect(() => {
+    streamTokensRef.current = streamTokens;
+  }, [streamTokens]);
+  const streamStartedAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    streamStartedAtRef.current = streamStartedAt;
+  }, [streamStartedAt]);
   // The in-flight non-blocking turn awaiting reconciliation (set by `submit`
   // when the route returns 202; consumed by the phase effect on done/error).
   // `startedAt` lets the safety poll find the turn's outbound row even if the
@@ -405,14 +425,25 @@ export function AssistantClient({
     async (optimisticId: string) => {
       const trail = trailRef.current;
       const outboundId = outboundIdRef.current;
+      const tokens = streamTokensRef.current;
+      const startedAt = streamStartedAtRef.current;
+      const durationMs = startedAt != null ? Date.now() - startedAt : undefined;
       await syncLatest(); // pulls the canonical inbound + (now 'complete') outbound
       setMessages((prev) => {
         // Drop the optimistic user bubble (the canonical inbound is now present),
-        // and freeze the live thought trail onto the durable outbound row.
+        // and freeze the live thought trail (+ its duration / token total) onto
+        // the durable outbound row.
         let next = prev.filter((m) => m.id !== optimisticId);
         if (outboundId && trail.length) {
           next = next.map((m) =>
-            m.id === outboundId && !m.thoughts ? { ...m, thoughts: [...trail] } : m,
+            m.id === outboundId && !m.thoughts
+              ? {
+                  ...m,
+                  thoughts: [...trail],
+                  ...(tokens != null && tokens > 0 ? { tokens } : {}),
+                  ...(durationMs != null ? { durationMs } : {}),
+                }
+              : m,
           );
         }
         return next;
@@ -897,7 +928,13 @@ export function AssistantClient({
                             <ChannelBadge channel={turn.response.channel} />
                           </div>
                           {turn.response.thoughts && turn.response.thoughts.length > 0 && (
-                            <ThoughtTrail steps={turn.response.thoughts} className="mb-3 max-w-xl" />
+                            <ThoughtTrail
+                              steps={turn.response.thoughts}
+                              tokens={turn.response.tokens ?? null}
+                              durationMs={turn.response.durationMs ?? null}
+                              timestamp={turn.response.createdAt}
+                              className="mb-3 max-w-xl"
+                            />
                           )}
                           <div>
                             <RichText markdown={turn.response.text} />
@@ -915,13 +952,16 @@ export function AssistantClient({
                                 ))}
                               </div>
                             )}
-                            <div className="mt-1.5 flex items-baseline gap-2 text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover/turn:opacity-100">
-                              <span title={formatDateTime(turn.response.createdAt)}>
-                                {new Date(turn.response.createdAt).toLocaleTimeString()}
-                              </span>
-                              {turn.response.model && (
-                                <code className="font-mono">{turn.response.model}</code>
-                              )}
+                            <div className="mt-1.5 flex items-center justify-between gap-2 pointer-events-none opacity-0 transition-opacity group-hover/turn:pointer-events-auto group-hover/turn:opacity-100">
+                              <div className="flex items-baseline gap-2 text-[10px] text-muted-foreground">
+                                <span title={formatDateTime(turn.response.createdAt)}>
+                                  {new Date(turn.response.createdAt).toLocaleTimeString()}
+                                </span>
+                                {turn.response.model && (
+                                  <code className="font-mono">{turn.response.model}</code>
+                                )}
+                              </div>
+                              <CopyButton text={turn.response.text} />
                             </div>
                           </div>
                         </article>
@@ -939,7 +979,15 @@ export function AssistantClient({
                             <span className="sr-only">
                               {agentName ?? 'Assistant'} is {stageLabel ?? 'typing'}
                             </span>
-                            {streamTrail.length > 0 && <ThoughtTrail steps={streamTrail} live />}
+                            {streamTrail.length > 0 && (
+              <ThoughtTrail
+                steps={streamTrail}
+                live
+                startedAt={streamStartedAt}
+                tokens={streamTokens}
+                tokensApprox={streamTokensApprox}
+              />
+            )}
                             {streamReply && (
                               // Live buffer: a lightweight ReactMarkdown render, NOT the
                               // TipTap RichText editor — the editor's setContent() runs
