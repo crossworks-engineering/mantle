@@ -637,7 +637,7 @@ export async function runAssistantTurn(
     // failure: synthesize an empty outcome and let the success path finalize the
     // (possibly partial-less) turn 'complete'.
     if (abortController?.signal.aborted) {
-      loopOutcome = { reply: '', artifacts: [], iterations: 0, toolCalls: [] } as unknown as Awaited<
+      loopOutcome = { reply: '', artifacts: [], iterations: 0, toolCalls: [], tokensOut: 0 } as unknown as Awaited<
         ReturnType<typeof runLoop>
       >;
     } else {
@@ -719,7 +719,12 @@ export async function runAssistantTurn(
   // No-op unless the turn is streamed.
   retireAbort();
   if (options?.streamId) {
-    emitTurnLifecycle(options.streamId, ownerId, 'done', { outboundId: outboundPending.id });
+    emitTurnLifecycle(options.streamId, ownerId, 'done', {
+      outboundId: outboundPending.id,
+      // Real output-token total for the turn — the client swaps its streamed
+      // estimate for this once `done` lands (0 when no provider reported usage).
+      tokensOut: loopOutcome.tokensOut,
+    });
   }
 
   return { inbound, outbound, reply, artifacts: loopOutcome.artifacts };

@@ -87,7 +87,14 @@ function lifecycleEvent(e: TurnLifecycleEvent): TurnEvent {
       data: { status: 'failed', message: typeof e.data.message === 'string' ? e.data.message : 'turn failed' },
     };
   }
-  return { ...base, type: 'done', data: { status: 'complete' } };
+  return {
+    ...base,
+    type: 'done',
+    data: {
+      status: 'complete',
+      ...(typeof e.data.tokensOut === 'number' ? { tokensOut: e.data.tokensOut } : {}),
+    },
+  };
 }
 
 export function installTurnStreamObserver(): void {
@@ -112,7 +119,9 @@ export function installTurnStreamObserver(): void {
   setStepObserver((e: StepObserverEvent) => {
     // Narrate on step entry. (End events drive tool-end/token phases later.)
     if (e.phase !== 'start') return;
-    const stage = stageLabelForStep(e.name, e.input);
+    // Seed the thinking-phrase rotation with the step's seq so each LLM round
+    // shows a different phrase (stable for that step — never flickers mid-step).
+    const stage = stageLabelForStep(e.name, e.input, e.seq);
     if (!stage) return; // unrecognised step (e.g. load_context) → no status line
 
     const stepId = String(e.seq); // unique per step-start within a turn

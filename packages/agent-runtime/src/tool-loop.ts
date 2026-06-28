@@ -144,6 +144,11 @@ export type ToolLoopResult = {
    *  delivers them through the tool's own send path and ignores this
    *  field. Empty array when no tools ran or none emitted artifacts. */
   artifacts: ToolArtifact[];
+  /** Total output tokens generated across every LLM round of this turn (the
+   *  model's own usage, summed; 0 when no provider reported usage). The web
+   *  /assistant surfaces it in the turn's `done` event so the live status
+   *  footer can show the real count once the turn lands. */
+  tokensOut: number;
 };
 
 export type ToolLoopArgs = {
@@ -295,6 +300,12 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   };
   let failedOver = false;
 
+  // Running output-token total for the whole turn (summed across every LLM
+  // round, including failover / empty-reply / force-final passes). Returned in
+  // the ToolLoopResult so the turn's `done` event can carry the real token count
+  // the live status footer reconciles its streamed estimate to.
+  let tokensOut = 0;
+
   // Tool-volume guards (see constants above). Turn-scoped: the budget is
   // cumulative across rounds; per-tool counts catch single-tool fixation even
   // when the model varies the args to slip past the in-response dedup.
@@ -360,6 +371,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           ...(typeof args.params.max_retries === 'number' ? { maxRetries: args.params.max_retries } : {}),
         });
         recordChatUsage(h, r, active.model);
+        tokensOut += r.tokensOut ?? 0;
         if (!r.text.trim()) h.setMeta({ still_empty: true });
         return r.text;
       },
@@ -406,6 +418,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
             ...chatOpts,
           }, iter);
           recordChatUsage(h, r, active.model);
+          tokensOut += r.tokensOut ?? 0;
           return r;
         } catch (err) {
           // Fail over to the backup once per turn, only on a route-DOWN /
@@ -433,6 +446,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
             ...chatOpts,
           }, iter);
           recordChatUsage(h, r, active.model);
+          tokensOut += r.tokensOut ?? 0;
           return r;
         }
       },
@@ -445,7 +459,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       let text = result.text;
       if (!text.trim()) text = await retryEmptyReply('final_round_empty');
       messages.push({ role: 'assistant', content: text });
-      return { reply: text, messages, iterations: iter + 1, toolCalls, pendingIds, artifacts };
+      return { reply: text, messages, iterations: iter + 1, toolCalls, pendingIds, artifacts, tokensOut };
     }
 
     // Push the assistant message verbatim so the next LLM call sees its
@@ -815,11 +829,12 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         ...(typeof args.params.max_retries === 'number' ? { maxRetries: args.params.max_retries } : {}),
       }, maxIters);
       recordChatUsage(h, r, active.model);
+      tokensOut += r.tokensOut ?? 0;
       return r;
     },
   );
   let text = finalResult.text;
   if (!text.trim()) text = await retryEmptyReply('force_final_empty');
   messages.push({ role: 'assistant', content: text });
-  return { reply: text, messages, iterations: maxIters + 1, toolCalls, pendingIds, artifacts };
+  return { reply: text, messages, iterations: maxIters + 1, toolCalls, pendingIds, artifacts, tokensOut };
 }

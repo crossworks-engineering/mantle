@@ -486,6 +486,11 @@ export interface TurnTextDeltaData {
  *  the streamed text is advisory, the DB row is authoritative. */
 export interface TurnDoneData {
   status: 'complete';
+  /** Real output-token total for the whole turn (summed across rounds). The
+   *  client shows a streamed char-based estimate while the reply types out, then
+   *  swaps it for this exact figure on `done`. Optional + additive: absent when
+   *  no provider reported usage, or from a producer that predates the field. */
+  tokensOut?: number;
 }
 
 /** Terminal failure. */
