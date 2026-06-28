@@ -158,10 +158,14 @@ The NOTIFY payload is a `{ ownerId, event }` envelope; `ownerId` is the cross-te
 stripped before the event reaches the browser. **`NOTIFY` caps payloads at ~8 KB**, so deltas stay
 tiny — long output streams as many small `text-delta`s, never one batched blob.
 
-- **Replay (Step 4, mobile-grade):** `NOTIFY` has no backlog, so a reconnect can miss deltas. The
-  fix is a short-TTL **buffer** — a `turn_stream_buffer` table keyed by `(turnId, seq)` (NOTIFY
-  becomes a wakeup; the SSE handler drains the buffer) — which also powers `Last-Event-ID` replay.
-  Until then, reconnect is best-effort and the durable message row covers the final answer (§6).
+- **Replay (Step 4, mobile-grade) — ✅ BUILT (v0.77.0):** `NOTIFY` has no backlog, so a reconnect
+  can miss deltas. The fix is a short-TTL **buffer** — the `turn_stream_buffer` table keyed by
+  `(turn_id, seq)`. `publishTurnEvent` writes each event there (gated on `MANTLE_TURN_STREAMING`,
+  `ON CONFLICT DO NOTHING`, lazy TTL sweep on turn-start) in ADDITION to the live `NOTIFY`; on
+  reconnect with `Last-Event-ID: <seq>` the SSE route replays `seq > N` from the buffer, then
+  live-tails. Gap-free + duplicate-free via `makeReplayMerger` (subscribe-first / drain-backlog /
+  dedup-by-seq, in `@mantle/turn-stream`). `apiEventStream` sends the header on reconnect
+  (EventSource parity). The durable message row still covers the final answer regardless (§6).
 
 Swapping implementations must not touch the workflow or either client.
 
@@ -276,10 +280,10 @@ existing `conversation_changed` realtime ping — no special case.
   where `apiEventStream` is today** — `LISTEN/NOTIFY` has no backlog, so reconnect-gap deltas are
   lost (a documented split gap). Durable-row reconciliation (§6) makes that invisible for the *final
   answer*; pair with `refetchInterval` only on a screen that must not miss an intermediate event.
-- **Replayable (mobile-grade, add when the buffer exists):** the §2 buffer + `seq`/`Last-Event-ID`
-  lets a reconnecting client replay missed deltas from its last cursor. This is the concrete fix for
-  the documented replay gap. Worth it specifically because the companion backgrounds and rides flaky
-  networks.
+- **Replayable (mobile-grade) — ✅ BUILT (v0.77.0):** the §2 buffer + `seq`/`Last-Event-ID` lets a
+  reconnecting client replay missed deltas from its last cursor — the concrete fix for the documented
+  replay gap. The web client exercises it (its `apiEventStream` resends the header on reconnect);
+  the companion is the real exercise, since it backgrounds and rides flaky networks.
 
 ---
 
@@ -319,7 +323,8 @@ could also render, it's modelled wrong. The web client must not get a private si
 3. **Phase 3.** `chatStream()` on OpenRouter then Anthropic; `text-delta`/`reasoning-delta`; flip
    the web route to return `turnId` + stream instead of awaiting `getResult()`; wire `status`
    reconciliation.
-4. **Mobile.** Companion consumes the same endpoint; add the `turn_stream_buffer` for replay/resume.
+4. **Mobile.** `turn_stream_buffer` + `Last-Event-ID` replay — ✅ DONE (v0.77.0); the web client
+   exercises it. REMAINING: the Flutter companion consumes the same endpoint and sends the header on resume.
 5. **Scale-out (only if needed).** The `NOTIFY` bus already crosses processes, so no transport swap
    is required — only the buffer (step 4) and the per-process rate limiter remain as scale concerns.
 

@@ -4,13 +4,17 @@
 deploy are Jason's call). **Design doc:** [`docs/live-turn-streaming.md`](live-turn-streaming.md).
 **Conversation model:** [`docs/conversation.md`](conversation.md).
 
-**Status — Step 3 (token streaming) is COMPLETE.** The web `/assistant` chat now: streams the reply token by
-token over a live thought trail; runs the turn in a separate durable process that survives
-navigation/backgrounding (the route returns **202 immediately**); lets the user **Stop** mid-flight on **any
-provider** (generation actually halts, the partial reply is kept, and the prompt drops back into the composer
-for correction); and the responder writes portable standard Markdown. **Next up: Phase 4 — the Flutter
-companion consumes the same stream + a replay buffer.** This file is the resume point; read it top-to-bottom,
-then the design doc §8 for Phase-4 detail.
+**Status — Step 3 (token streaming) is COMPLETE; Phase 4's REPLAY BUFFER (backend) is COMPLETE.** The web
+`/assistant` chat now: streams the reply token by token over a live thought trail; runs the turn in a separate
+durable process that survives navigation/backgrounding (the route returns **202 immediately**); lets the user
+**Stop** mid-flight on **any provider** (generation actually halts, the partial reply is kept, and the prompt
+drops back into the composer for correction); the responder writes portable standard Markdown; and a dropped
+SSE socket now **resumes via `Last-Event-ID`** — the runner buffers every event to `turn_stream_buffer` and the
+route replays what a reconnecting client missed (gap-free + duplicate-free), closing the documented reconnect
+gap for web AND laying the foundation the companion's background/foreground resume needs. **Next up: the
+Flutter companion consumes the same stream** (separate repo `~/Projects/mantle-companion`; it just mints the
+`turnId`, subscribes before POSTing, and sends `Last-Event-ID` on resume — no new endpoint). This file is the
+resume point; read it top-to-bottom, then the design doc §8 for the companion detail.
 
 ---
 
@@ -46,6 +50,7 @@ A turn is **two processes bridged by Postgres NOTIFY**:
 
 | Commit | Ver | What |
 |---|---|---|
+| `56292c21` | 0.77.0 | **Phase 4 replay buffer (backend)** — `turn_stream_buffer` (migration `0107`); `publishTurnEvent` buffers each event (gated on `MANTLE_TURN_STREAMING`, `ON CONFLICT DO NOTHING`, lazy TTL sweep on turn-start); new `replay.ts` (`getBufferedTurnEvents` + pure `makeReplayMerger`); SSE route replays `seq > Last-Event-ID` before live-tailing (gap-free + dup-free); `apiEventStream` tracks `id:` + resends `Last-Event-ID` (EventSource parity). |
 | `f4dbfdd1` | — | docs: Phase 3b. |
 | `445cd098` | 0.76.0 | **Phase 3b + all-provider streaming + Stop** — `chatStream()` on all 6 remaining adapters (Anthropic/Google native SSE; xAI/HF/DeepSeek/local via a shared OpenAI-compat streamer), each abort-aware. New `adapters/sse.ts`. |
 | `0e65c7a4` | 0.75.1 | **Stop restores the prompt** to the composer (focus + cursor-to-end) for correction. |
@@ -80,8 +85,9 @@ Zero-runtime typed DTO (no zod); the producer stamps `v`/`seq`/`round`. **Every 
 
 `seq` is monotonic per turn across the root turn AND delegated sub-agents (one `turnId→counter` registry).
 `TURN_EVENT_SCHEMA_VERSION = 1`; bump only on a breaking change to an existing event's shape (new types/fields
-are additive). The SSE frame is `id: <seq>\ndata: <event JSON>\n\n` — `id:` is the future `Last-Event-ID`
-resume cursor (no backlog yet → see Phase 4).
+are additive). The SSE frame is `id: <seq>\ndata: <event JSON>\n\n` — `id:` is the `Last-Event-ID`
+resume cursor. NOTIFY itself has no backlog, but the runner now buffers every event to `turn_stream_buffer`
+and the route replays `seq > Last-Event-ID` on reconnect (Phase 4, below) — gap-free + duplicate-free.
 
 ## 4. File map (where everything lives)
 
@@ -89,8 +95,14 @@ resume cursor (no backlog yet → see Phase 4).
 - `packages/client-types/src/index.ts` — `TurnEvent` union + `TurnEventType` + per-type data interfaces.
 - `packages/turn-stream/src/` — server transport. `channel.ts` (`TURN_STREAM_CHANNEL='turn_stream'`,
   `TURN_CANCEL_CHANNEL='turn_cancel'`, `TURN_EVENT_SCHEMA_VERSION`); `publish.ts`
-  (`publishTurnEvent(ownerId,event)`, `publishTurnCancel(ownerId,turnId)`, the `TurnStreamEnvelope` /
-  `TurnCancelEnvelope` types). Both fire-and-forget; never throw.
+  (`publishTurnEvent(ownerId,event)` — now ALSO buffers each event to `turn_stream_buffer` before the notify,
+  gated on `MANTLE_TURN_STREAMING`, `ON CONFLICT DO NOTHING`, with a lazy TTL sweep on turn-start;
+  `publishTurnCancel(ownerId,turnId)`, the `TurnStreamEnvelope` / `TurnCancelEnvelope` types). Both
+  fire-and-forget; never throw. **`replay.ts`** (new) — `getBufferedTurnEvents(ownerId,turnId,sinceSeq)`
+  (replay read) + `makeReplayMerger(sinceSeq,emit)` (the pure subscribe-first / drain-backlog / dedup-by-seq
+  state machine; tested in `replay.test.ts`). `publish.test.ts` covers the gated buffer write + sweep.
+- `packages/db/src/schema/turn-stream-buffer.ts` — the `turn_stream_buffer` table (migration `0107`): PK
+  `(turn_id, seq)`, `event jsonb`, `created_at` (+ index for the sweep). Ephemeral replay backlog, NOT durable.
 
 **Runner (`apps/api`)**
 - `src/main.ts` — boot: `installTurnStreamObserver()` + `startTurnCancelListener()` before `DBOS.launch()`.
@@ -140,6 +152,9 @@ resume cursor (no backlog yet → see Phase 4).
   `status`/`error`).
 
 **Client (`apps/web/.../assistant/` + `components/assistant/`)**
+- `lib/api-fetch.ts` — `apiEventStream(path, onMessage)` is the EventSource-replacement SSE reader (bearer +
+  base-URL). Now tracks each frame's `id:` and resends `Last-Event-ID` on reconnect → BOTH consumers
+  (`useTurnStream` + the dock) resume gap-free/dup-free with no change to either.
 - `components/assistant/use-turn-stream.ts` — `useTurnStream(turnId)` →
   `{ label, trail, reply, phase, outboundId, inboundId, error }`. Subscribes via `apiEventStream`; accumulates
   `text-delta` (latest round, ref accumulator); captures ids from `turn-start`; flips `phase` on `done`/`error`.
@@ -264,6 +279,11 @@ API key for live tests, so they're covered by `chat-stream.test.ts` instead.
   RichText (its `setContent` is microtask-deferred).
 - **Two SSE subscribers per turn is normal** (the page's `useTurnStream` + the dock's `subscribeDockTurn`).
   `subscribeTurnStream` fans out to a Set — verified both receive every delta. Don't "fix" it.
+- **Replay dedup hinges on an ACCURATE `Last-Event-ID`.** The route replays `seq > N` *strictly*, and the
+  client's `text-delta` accumulation is *append-based* — so a wrong/stale cursor would re-append text on a
+  reconnect. `apiEventStream` tracks the `id:` per frame and resends it precisely; don't swap in a raw
+  `EventSource` (it can't carry the bearer anyway). The route's `makeReplayMerger` adds a second guard
+  (drops `seq <= maxSeq`), so overlap is safe even if a cursor is slightly off.
 - **The MCP preview console buffer does NOT clear** on reload/`console.clear()` — only a fresh `preview_start`.
   Mid-edit transient parse errors get captured and look scary but are stale; trust `tsc` + a fresh load.
 - **DOM-assert carefully:** the assistant SPA drifts to `/` a beat after a hard nav to `/assistant`
@@ -282,14 +302,17 @@ API key for live tests, so they're covered by `chat-stream.test.ts` instead.
 
 ## 10. Remaining work
 
-**Phase 4 — mobile companion + replay** (design doc §8; the main remaining build):
-- The Flutter companion (`~/Projects/mantle-companion`, [[mantle-companion]]) consumes the SAME
-  `GET /api/assistant/turn/:id/stream` — it's **bearer-authed from day one** (header, not cookie), so no new
-  endpoint. It mints the `turnId` and subscribes before POSTing, exactly like the web client.
-- Add a **`turn_stream_buffer` table** for `Last-Event-ID` replay/resume: NOTIFY has no backlog, so a mobile
-  client that backgrounds + reconnects misses events. Buffer recent events per turn keyed by `seq`; on
-  reconnect with `Last-Event-ID: <seq>`, replay `seq > N` then live-tail. The SSE frame already carries
-  `id: <seq>`.
+**Phase 4 — mobile companion + replay** (design doc §8):
+- ✅ **DONE — the `turn_stream_buffer` replay foundation** (commits `5e37dca5`/`52926c94`/`56292c21`,
+  v0.77.0): `Last-Event-ID` replay is built and the web client exercises it. NOTIFY has no backlog, so the
+  runner buffers recent events per turn keyed by `seq`; on reconnect with `Last-Event-ID: <seq>` the route
+  replays `seq > N` then live-tails (gap-free via subscribe-first/queue/drain; dup-free via the seq guard).
+  `apiEventStream` now sends the header on reconnect. **⚠️ Unproven on a real backgrounding mobile client** —
+  validated by unit tests + (pending) a web SSE drop/reconnect smoke; the companion is the real exercise.
+- **REMAINING — the Flutter companion** (`~/Projects/mantle-companion`, [[mantle-companion]]) consumes the
+  SAME `GET /api/assistant/turn/:id/stream` — it's **bearer-authed from day one** (header, not cookie), so no
+  new endpoint. It mints the `turnId` and subscribes before POSTing, exactly like the web client, and sends
+  `Last-Event-ID` on resume to drain the buffer.
 - Reconcile against the durable row the same way web does — on foreground, read `assistant_messages.status`
   (`pending`/`complete`/`failed`); the web client's 3s safety poll is the reference. Push relay
   ([[mantle-push]]) covers fully-backgrounded turns.
@@ -317,10 +340,14 @@ API key for live tests, so they're covered by `chat-stream.test.ts` instead.
   `update agents set skill_slugs = array_remove(skill_slugs,'rich_writing') where owner_id=<id> and slug='<responder persona slug>'`
   (slug may be `assistant` OR an operator persona like `telegram-default`/Saskia). Done on local; **prod
   pending.** See [[responder-chat-writing-split]].
-- **Migration `0106`** (narrator worker enum) ships with the branch — `pg_dump` prod first
-  ([[backup-before-live-migration]]); enum-adds aren't reversible. The narrator worker auto-seeds to existing
-  brains on the version-bump reconcile (it's `required`). **Phases 3a–3c + Stop + 3b add NO new migration** —
-  they write `assistant_messages.status`/`error`, which already exist (migration `0105`).
+- **Migrations `0106` + `0107`** ship with the branch — `pg_dump` prod first ([[backup-before-live-migration]]).
+  `0106` (narrator worker enum) is an enum-add (NOT reversible); the narrator worker auto-seeds to existing
+  brains on the version-bump reconcile (it's `required`). `0107` (`turn_stream_buffer`) is plain DDL —
+  reversible (`DROP TABLE`), no backfill, no seed. **Phases 3a–3c + Stop + 3b add NO migration** — they write
+  `assistant_messages.status`/`error`, which already exist (migration `0105`).
+- **The replay buffer is gated on `MANTLE_TURN_STREAMING`** (see §9 / `publish.ts`): with the flag dark,
+  nothing is written to `turn_stream_buffer` even though `0107` creates it. So shipping the migration is safe
+  ahead of enabling the flag.
 - **Prod flags** (all dark by default): decide `MANTLE_TURN_STREAMING` (+ `NEXT_PUBLIC_…`), `MANTLE_TURN_TOKENS`,
   `MANTLE_TURN_NARRATION`. Note that `MANTLE_TURN_STREAMING` now *also* flips the route non-blocking, so enable
   the server + public client flags together.
