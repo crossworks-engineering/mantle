@@ -76,11 +76,77 @@ export function checkDelegationAllowed(
     };
   }
   if (!allowlist.includes(targetSlug)) {
+    // Help the LLM self-correct WITHOUT dumping the whole roster (see the
+    // "does not leak the full allowlist" test): suggest only the single
+    // closest entry, and only when it's a confident near-match (the slug the
+    // model almost typed — e.g. 'pages-specialist' → 'pages'). An unrelated
+    // miss gets no suggestion, so the authorised list stays unrevealed.
+    const suggestion = closestSlug(targetSlug, allowlist);
     return {
       ok: false,
       reason:
-        `target agent '${targetSlug}' is not in the parent's delegation allowlist`,
+        `target agent '${targetSlug}' is not in the parent's delegation allowlist` +
+        (suggestion ? `. Did you mean '${suggestion}'?` : ''),
     };
   }
   return { ok: true };
+}
+
+/**
+ * Pick the allowlist entry the caller most likely intended, or null when
+ * nothing is a confident match. Deliberately conservative: it returns at
+ * most ONE slug, and only on a strong signal — a containment match (one is a
+ * substring of the other, e.g. 'pages' ⊂ 'pages-specialist') or a small edit
+ * distance (typos). This lets an LLM recover from a near-miss without turning
+ * the refusal into a directory listing of every authorised agent.
+ */
+function closestSlug(
+  target: string,
+  allowlist: readonly string[],
+): string | null {
+  const t = target.toLowerCase();
+
+  // Strong signal: containment in either direction. Prefer the longest such
+  // entry (most specific overlap).
+  const contained = allowlist
+    .filter((s) => {
+      const x = s.toLowerCase();
+      return x.includes(t) || t.includes(x);
+    })
+    .sort((a, b) => b.length - a.length);
+  const top = contained[0];
+  if (top) return top;
+
+  // Otherwise: closest by edit distance, accepted only when it's small
+  // relative to the slug length (so 'resercher' → 'researcher' suggests, but
+  // 'rogue' → 'researcher' does not).
+  let best: string | null = null;
+  let bestDist = Infinity;
+  for (const s of allowlist) {
+    const d = levenshtein(t, s.toLowerCase());
+    if (d < bestDist) {
+      bestDist = d;
+      best = s;
+    }
+  }
+  const threshold = Math.max(2, Math.floor(t.length / 3));
+  return best !== null && bestDist <= threshold ? best : null;
+}
+
+/** Iterative Levenshtein edit distance — small, dependency-free, two-row. */
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  let curr = new Array<number>(b.length + 1);
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1]! + 1, prev[j]! + 1, prev[j - 1]! + cost);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[b.length]!;
 }

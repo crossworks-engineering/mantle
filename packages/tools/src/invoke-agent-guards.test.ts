@@ -128,12 +128,48 @@ describe('checkDelegationAllowed', () => {
     // Defence-in-depth: error strings are sent back to the LLM as
     // tool_result. Leaking the list of authorised agents is fine
     // in single-user Mantle but would matter if this surface ever
-    // grows multi-tenant. Keep the message minimal.
+    // grows multi-tenant. Keep the message minimal — an unrelated miss
+    // gets NO "did you mean", so no authorised slug is revealed.
     const r = checkDelegationAllowed('responder', 'rogue', [
       'secret_internal_agent',
       'admin_console',
     ]);
     if (!r.ok) {
+      expect(r.reason).not.toContain('secret_internal_agent');
+      expect(r.reason).not.toContain('admin_console');
+      expect(r.reason).not.toMatch(/did you mean/i);
+    }
+  });
+
+  it('suggests the closest slug on a confident near-miss (the real bug)', () => {
+    // The exact failure that broke Ashley's turn: the model invented
+    // 'pages-specialist' for the agent whose slug is 'pages'. Containment
+    // match → suggest 'pages' so the LLM retries correctly next round.
+    const r = checkDelegationAllowed('responder', 'pages-specialist', [
+      'pages',
+      'tables',
+      'researcher',
+    ]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toContain("Did you mean 'pages'?");
+    }
+  });
+
+  it('suggests on a small typo (edit distance)', () => {
+    const r = checkDelegationAllowed('responder', 'resercher', ['researcher']);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/did you mean 'researcher'/i);
+  });
+
+  it('reveals only ONE slug — the near-match — not the rest of the roster', () => {
+    const r = checkDelegationAllowed('responder', 'page', [
+      'pages',
+      'secret_internal_agent',
+      'admin_console',
+    ]);
+    if (!r.ok) {
+      expect(r.reason).toContain("Did you mean 'pages'?");
       expect(r.reason).not.toContain('secret_internal_agent');
       expect(r.reason).not.toContain('admin_console');
     }
