@@ -1,7 +1,16 @@
 # Live turn streaming & status (Phase 1–3)
 
+> ✅ **BUILT & MERGED (v0.78.0).** Web streaming (status + token-by-token reply),
+> Stop-on-every-provider, the non-blocking 202 route, the narrator worker, and
+> `Last-Event-ID` replay all shipped; the Flutter companion consumer is built +
+> unit-tested. This file is now both the **design** and a **status record** (each
+> section carries an inline "Implementation status" note). Session record:
+> [`live-turn-streaming-handover.md`](./live-turn-streaming-handover.md);
+> condensed summary in
+> [`architecture.md` §3a.3](./architecture.md#3a-durable-runners-the-febe-split-and-live-turn-streaming).
+
 **Branch:** `feat/live-turn-streaming`
-**Status:** design — implementation starts after the FE/BE split lands & is audited.
+**Status:** ✅ shipped v0.78.0 (was: design — implementation starts after the FE/BE split lands & is audited).
 **Goal:** show, live, what an agent is doing during a turn — from a coarse status line
 ("Searching your brain…") all the way to token-by-token streaming of the reply — and do
 it so **both the web client and the Flutter companion** consume the same contract.

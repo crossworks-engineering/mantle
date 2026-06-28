@@ -21,6 +21,21 @@ Companion docs:
   graph: the CI drift-test, the `applyManifest` seeder (gap-fill vs overwrite),
   and the standing `checkSystemIntegrity` checker (`/debug/integrity` → System
   config + onboarding's Check step). Read before adding a specialist/skill/tool.
+- [`frontend-backend-split.md`](./frontend-backend-split.md) +
+  [`fe-be-split-session-handover.md`](./fe-be-split-session-handover.md) — the
+  **client/server split**: `apps/web` became a pure client that talks to the
+  backend only over HTTP `/api/**` (no `@mantle/db` in the browser bundle),
+  client data-fetching via TanStack Query, bearer-auth + CORS for detached
+  clients, and DB-less local dev. The first is the design/Phase-2 plan; the
+  second is the completion record (what shipped, merged at ~v0.66.x). The
+  per-screen conversion recipe is [`client-data-fetching.md`](./client-data-fetching.md).
+- [`live-turn-streaming.md`](./live-turn-streaming.md) — **live turn streaming**:
+  showing what an agent is doing during a turn, from a grounded status line
+  ("Searching your brain…") to token-by-token streaming of the reply, over one
+  client-agnostic event contract (`TurnEvent`) that web AND the Flutter companion
+  both consume. The durability-vs-liveness split (the DBOS journal never carries
+  tokens), the Postgres-`NOTIFY` bus, Stop-mid-flight, and `Last-Event-ID` replay.
+  Session record: [`live-turn-streaming-handover.md`](./live-turn-streaming-handover.md).
 - [`files.md`](./files.md) — the host-mirrored filesystem layer:
   folders + files on disk under `MANTLE_FILES_ROOT`, the editor, the
   ingestion handoff, and the MCP tools.
@@ -176,26 +191,187 @@ processes orchestrated by `concurrently`).
 
 ## 3. The processes
 
-`pnpm dev` (`package.json:11`) runs seven concurrent workers, named `web`,
-`mcp`, `worker`, `tg`, `files`, `events`, and `agent`. Plus Postgres and
+`pnpm dev` (`package.json:11`) runs eight concurrent lanes, named `web`,
+`api`, `mcp`, `worker`, `tg`, `files`, `docs`, and `events`. Plus Postgres and
 MinIO from docker-compose. That's it.
+
+> **`apps/agent` is gone (absorbed into `apps/api`, v0.64.0).** The old `agent`
+> lane — the Telegram responder, extractor, summarizer, reflector, and heartbeat
+> loops — now lives inside the dedicated `apps/api` runner, where the Telegram
+> turn runs as a **durable DBOS workflow** (see [§3a](#3a-durable-runners-the-febe-split-and-live-turn-streaming)).
+> Several sections below still cite `apps/agent/src/main.ts`; those files moved
+> to `apps/api/src/agent/` but the behaviour they describe is unchanged.
 
 | Process            | What it does                                                                  |
 |--------------------|-------------------------------------------------------------------------------|
 | `postgres` (Docker)| Source of truth. Holds every row. Healthchecked, restart on failure.          |
 | `minio` (Docker)   | Object store for attachment bytes. Healthchecked.                             |
-| `web`              | Next.js dev server (Turbopack). Serves UI, API routes, server actions. Hosts the `/assistant` chat surface (POST `/api/assistant/turn`). |
+| `web`              | Next.js dev server (Turbopack). Serves the UI **and every `/api/**` route** (incl. SSE) — but is now a **pure client/API host**: the browser bundle fetches its data over `/api` and no longer imports `@mantle/db` (see [§3a](#3a-durable-runners-the-febe-split-and-live-turn-streaming)). Hosts the `/assistant` chat surface, which **enqueues** the turn onto the `api` runner (POST `/api/assistant/turn` returns `202` immediately) and renders the live stream. |
+| `api`              | **The durable runner** (`apps/api/src/main.ts`). Runs assistant + Telegram turns and all background agent work (extractor, summarizer, reflector, heartbeats) as **durable [DBOS](https://docs.dbos.dev/) workflows** journaled to a Postgres system DB. No HTTP surface of its own — it's reached by enqueue (web) and reaches clients by publishing turn events over the Postgres `NOTIFY` bus. Absorbed the old `apps/agent` (v0.64.0). |
 | `mcp`              | MCP server (`apps/mcp/src/server.ts`). Speaks stdio JSON-RPC to Claude Code.  |
 | `worker` (email)   | `apps/web/workers/email-sync.ts`. pg-boss queue consumer, runs IMAP syncs.    |
 | `tg`               | `apps/web/workers/telegram-poll.ts`. Long-polls Telegram for new DMs.         |
 | `files`            | `apps/web/workers/files-watch.ts`. chokidar on `MANTLE_FILES_ROOT`; mirrors external edits (vim, Syncthing, host `cp`) back into the DB. Loop-safe via `syncFileFromDisk`, which never re-writes bytes. |
 | `events`           | `apps/web/workers/events-reminders.ts`. Polls every 30s for events whose `remind_at` has passed and `reminder_sent_at` is null; sends a Telegram DM via `@mantle/telegram`. A **recurring** event (`data.recur` = daily/weekly/monthly/yearly, optional `data.recur_until`) rolls its single row forward to the next occurrence and re-arms instead of marking sent — `rollForwardRecurrence` in `@mantle/content/events`. The tick also hosts two piggybacked housekeeping jobs: the tool-result spill sweep (`maybeSweep`, §9m) and the **scheduled-backup check** (`maybeRunScheduledBackups` — [`backups.md`](./backups.md), configured at /settings/backups). |
-| `agent`            | `apps/agent/src/main.ts`. LISTENs on `telegram_message_inserted`, replies via OpenRouter. Shares prompt-build + LLM helpers with the web `/assistant` via `@mantle/agent-runtime`. |
+| `docs`             | `apps/web/workers/docs-sync.ts`. Mirrors the `docs/` collection into the brain as `documentation` nodes (the disk-watcher counterpart for docs). |
+
+> The Telegram responder loop is **no longer a `pnpm dev` lane of its own** — it
+> moved into the `api` runner (above). It still LISTENs on
+> `telegram_message_inserted` and replies via the adapter framework, sharing
+> prompt-build + LLM helpers with the web `/assistant` through `@mantle/agent-runtime`;
+> it just runs durably inside `apps/api` now.
 
 The workers live under `apps/web/workers/` (not in their own app) because they
 share `.env.local` and `@mantle/*` imports with the web. In production they'd
 be split into their own container; for dev, one process tree keeps things
 simple.
+
+---
+
+## 3a. Durable runners, the FE/BE split, and live turn streaming
+
+Three connected changes (mid-2026, v0.59→v0.78) reshaped how a turn runs and how
+the browser talks to the backend. They build on each other in order: a turn first
+became **durable** (runs on a dedicated process, survives a crash), then the web
+app became a **pure client** (no DB in the browser), and finally the turn became
+**live** (you watch it happen). Deep dives:
+[`frontend-backend-split.md`](./frontend-backend-split.md) +
+[`fe-be-split-session-handover.md`](./fe-be-split-session-handover.md) (the split)
+and [`live-turn-streaming.md`](./live-turn-streaming.md) (streaming).
+
+### 3a.1 Durable runners — `apps/api` + DBOS
+
+The problem: LLM/agent work used to run **in the web request**. Navigate away,
+reload, or restart the web process mid-turn and the work died with the request.
+
+The fix: a dedicated, always-on Node service — **`apps/api`** — runs each turn as
+a **durable [DBOS](https://docs.dbos.dev/) workflow**. DBOS journals a workflow's
+steps to a Postgres **system database** (`mantle_dbos_sys`, provisioned by the
+one-shot `migrate` service); on a crash or restart it **replays from the journal**
+and resumes from the last completed step rather than re-running the whole turn.
+Per-step idempotency is proven by a crash-recovery harness
+([`apps/api/src/crash-test.ts`](../apps/api/src/crash-test.ts)).
+
+How it's wired (the cross-process contract):
+
+- **`@mantle/assistant-runtime`** holds the turn-execution code (lifted out of
+  `apps/web/lib/assistant.ts`) so any process can run a turn: `runAssistantTurn`,
+  `resolveAssistantAgent`, and the runner **contract**
+  ([`contract.ts`](../packages/assistant-runtime/src/contract.ts):
+  `ASSISTANT_TURN_WORKFLOW`, `RUNNER_QUEUE`, `AssistantTurnInput`,
+  `resolveSystemDatabaseUrl`).
+- **`@mantle/tracing` durable seam** ([`durable.ts`](../packages/tracing/src/durable.ts))
+  — an AsyncLocalStorage-injected executor that turns existing `step()` boundaries
+  into durable journal points **when a workflow is active**, and is an inert
+  passthrough otherwise. So the same tracing code is durable inside `apps/api` and
+  free outside it.
+- **The web route enqueues; the runner executes.** `POST /api/assistant/turn`
+  enqueues the workflow via a cached **`DBOSClient`**
+  ([`apps/web/lib/dbos-client.ts`](../apps/web/lib/dbos-client.ts)). `apps/api` has
+  **no HTTP surface** — it's reached by enqueue and reaches clients back over the
+  Postgres `NOTIFY` bus (§3a.3).
+- **`apps/agent` was absorbed** (v0.64.0): the Telegram responder loop is now a
+  durable workflow inside `apps/api`, and the extractor/summarizer/reflector/
+  heartbeat runners moved with it. One runner for all background agent work.
+
+Schema: migration **0105** added durable turn state (`status pending|complete|failed`
++ `error`) to `assistant_messages` — the row the runner owns from turn-start, which
+is also what makes liveness reconnection clean (§3a.3).
+
+### 3a.2 The FE/BE split — `apps/web` is now a pure client
+
+The goal: a **desktop (Electron) client** that reuses the same UI, and **DB-less
+local dev**. The blocker was that `apps/web` was a *full-stack* app — it
+server-rendered against the database in-process (React Server Components + Server
+Actions), so even "just the UI" needed DB credentials and there was no client
+bundle a shell could load. The split makes the browser bundle **talk to the
+backend only over HTTP `/api/**`**.
+
+What changed:
+
+- **Every screen converted to client data-fetching.** Pages, notes, todos, events,
+  contacts, tables, files, the whole `/settings/*` surface, the dashboard, traces,
+  `/inbox`, `/assistant` — all moved from `await getData()` in an RSC to
+  **[TanStack Query](https://tanstack.com/query)** fetches against `/api`. Server
+  actions were removed; mutations go through endpoints. The conversion recipe is
+  [`client-data-fetching.md`](./client-data-fetching.md).
+- **`apiFetch` / `apiSend` / `apiEventStream`** ([`apps/web/lib/api-fetch.ts`](../apps/web/lib/api-fetch.ts))
+  are the client transport: they inject the API base-URL + bearer token, bounce to
+  `/login` on 401, and (for SSE) carry the bearer + reconnect with backoff — so the
+  same components work same-origin in the browser **and** detached in Electron / a
+  remote-API dev session.
+- **Bearer-auth + CORS across `/api`.** Every route gates on `getOwnerOr401()` and
+  returns a clean **401** (not a login redirect) when unauthenticated, with opt-in
+  CORS for a separate origin. The mobile bearer token (`k:'m'`) and a desktop token
+  (`k:'a'`) ride the `Authorization` header; the cookie path now *rejects* kinded
+  tokens, so detached clients never depend on cookies.
+- **No `@mantle/db` in the browser bundle** — the §9 definition-of-done. Shared
+  **wire types live in `@mantle/client-types`** (agents, AI-workers, tools,
+  tool-groups, content rows, the `TurnEvent`…), so producer↔client drift is a
+  **compile error** — the deliberate alternative to runtime response validation.
+- **DB-less dev falls out for free:** run the UI against a deployed/remote API with
+  just a bearer token; no local Postgres. Merged via PR #1 (a merge commit, history
+  preserved) at ~v0.66.x; scored ~9/10 for the same-origin web app, with the
+  true-Electron path the remaining future work.
+
+### 3a.3 Live turn streaming — watch the turn happen
+
+Once a turn is durable and the client is detached, the last piece is **liveness**:
+showing what the agent is doing, live, to both the web client and the Flutter
+companion off **one contract**. The governing principle:
+
+> **Durability and liveness travel separate paths.** Correctness — the final
+> assembled reply — is journaled by DBOS to `assistant_messages` (exactly-once,
+> survives a crash). Liveness — the stream of status/token deltas — rides an
+> **ephemeral** side channel *around* the journal and is allowed to be lost. The
+> journal **never carries tokens**: if the runner crashes mid-stream the partial
+> tokens are thrown away, DBOS re-runs the step, and the user never loses the
+> answer because the answer was never *in* the stream.
+
+The moving parts:
+
+- **One client-agnostic event contract** — `TurnEvent` in `@mantle/client-types`:
+  `{ v, turnId, seq, round, type, data }` with types `turn-start` / `status` /
+  `tool-start` / `tool-end` / `reasoning-delta` / `text-delta` / `done` / `error`.
+  Web React and Dart both subscribe; `seq` is the resume cursor.
+- **Transport = Postgres `LISTEN/NOTIFY`, not an in-process bus.** This is the
+  crux: the turn runs in **`apps/api`** but the browser's SSE socket is held by
+  **`apps/web`** — always two processes. So the producer
+  (`publishTurnEvent` in **`@mantle/turn-stream`**, called from the runner via
+  `pg_notify`) and the consumer (`subscribeTurnStream` in
+  [`apps/web/lib/realtime.ts`](../apps/web/lib/realtime.ts), behind the bearer SSE
+  route `GET /api/assistant/turn/[turnId]/stream`) are bridged by a Postgres
+  channel from day one. `NOTIFY` caps payloads at ~8 KB, so long output streams as
+  many small `text-delta`s, never one blob.
+- **Grounded status, never a guess.** Labels are built from the agent's **real**
+  tool calls + args ("Reading note *Q3 plan*"). A configurable **`narrator`** AI
+  worker (its own kind, migration **0106**) restyles a *real* status line into the
+  agent's voice — fed only the grounded event, fire-and-forget off the critical
+  path, with its system prompt as the verbosity dial. It auto-seeds as a required
+  baseline worker and falls back to a built-in concise label on brains without one.
+- **Token streaming on every provider.** `chatStream()` on the OpenRouter adapter
+  (the common path, incl. `anthropic/claude-*`) and Anthropic-native; anything that
+  won't stream degrades to a single render. A tracing **delta observer**
+  (`emitTurnDelta`, sibling of the step observer) publishes `text-delta` /
+  `reasoning-delta`; usage still lands on the final chunk so cost tracking holds.
+  **Delegated sub-agents stream into the same turn** (child traces inherit the
+  parent `turnId`; an `isStreamRoot` flag keeps reply text on the top-level turn).
+- **Non-blocking route + Stop.** `POST /api/assistant/turn` returns **202**
+  immediately and the client drives off the live stream, so a turn survives
+  navigation / reload / backgrounding. **Stop** halts generation on any provider,
+  keeps the partial reply, and drops the prompt back into the composer.
+- **`Last-Event-ID` replay (migration 0107).** `NOTIFY` has no backlog, so a
+  reconnect can miss deltas. `publishTurnEvent` also writes each event to the
+  short-TTL **`turn_stream_buffer`** table keyed by `(turn_id, seq)`; on reconnect
+  with `Last-Event-ID: <seq>` the SSE route replays `seq > N` then live-tails —
+  gap-free + duplicate-free via `makeReplayMerger`. The durable message row still
+  covers the final answer regardless.
+
+The contract is deliberately client-neutral: the **Flutter companion** consumes the
+same `GET /api/assistant/turn/:id/stream` (bearer, no cookie), reconciles against
+the durable row on resume, and leans on the existing push relay for the background
+case. *If a change can't be expressed as a JSON event the companion could also
+render, it's modelled wrong.*
 
 ---
 
@@ -1519,11 +1695,16 @@ chokepoint.
 ```
 mantle/
 ├── apps/
-│   ├── web/             # Next.js 15 (App Router + RSC + server actions)
-│   │   ├── app/         # Routes (login, settings, attachment proxy, /api/auth)
-│   │   ├── lib/         # auth.ts, auth-constants.ts
-│   │   ├── workers/     # email-sync.ts, telegram-poll.ts
-│   │   └── components/  # shadcn-style UI primitives
+│   ├── web/             # Next.js 15 — now a pure CLIENT + the /api host
+│   │   ├── app/         # Routes + every /api/** handler (the HTTP contract)
+│   │   ├── lib/         # auth.ts, api-fetch.ts (apiFetch/apiSend/apiEventStream),
+│   │   │                # dbos-client.ts (enqueue), realtime.ts (turn-stream sub)
+│   │   ├── workers/     # email-sync.ts, telegram-poll.ts, files-watch.ts,
+│   │   │                # docs-sync.ts, events-reminders.ts, …
+│   │   └── components/  # shadcn-style UI primitives (client data-fetching)
+│   ├── api/             # The durable runner — DBOS workflows (assistant + Telegram
+│   │                    # turns, extractor/summarizer/reflector/heartbeats). No HTTP.
+│   │                    # Absorbed the old apps/agent (v0.64.0).
 │   └── mcp/             # MCP server (stdio transport)
 ├── packages/
 │   ├── db/              # Drizzle schema + raw SQL migrations + client
@@ -1540,7 +1721,10 @@ mantle/
 │   ├── files/           # Filesystem + DB hybrid file store
 │   ├── tools/           # Builtin tool defs + dispatch + invoke_agent
 │   ├── agent-runtime/   # Tool-loop + chat helpers + delegation bridge
-│   ├── tracing/         # AsyncLocalStorage tracing
+│   ├── assistant-runtime/ # runAssistantTurn + the DBOS runner contract
+│   ├── client-types/    # Shared wire DTOs (browser↔server; TurnEvent lives here)
+│   ├── turn-stream/     # publishTurnEvent over pg_notify + Last-Event-ID replay
+│   ├── tracing/         # AsyncLocalStorage tracing (+ durable-step seam for DBOS)
 │   ├── embeddings/      # OpenRouter embedding wrapper + cache
 │   └── voice/           # AI provider adapters (TTS / STT / chat)
 │                        # + per-provider catalogs + registry. NOTE:
@@ -1586,10 +1770,11 @@ package; `pnpm-workspace.yaml` declares them.
 5. `pnpm -C packages/db migrate` — applies any new Drizzle migrations.
 6. `pnpm -C apps/web pgboss:init` — creates the `pgboss` schema deterministically
    so workers don't race on the first start.
-7. `exec pnpm dev` — `concurrently` starts web + mcp + email + telegram
-   workers. A `predev` preflight hook checks infra is healthy first and refuses
-   politely if not (so `pnpm dev` against down infra never crashes into
-   `ECONNREFUSED`).
+7. `exec pnpm dev` — `concurrently` starts all eight lanes (`web`, `api`, `mcp`,
+   `worker`, `tg`, `files`, `docs`, `events`). A `predev` preflight hook checks
+   infra is healthy first and refuses politely if not (so `pnpm dev` against down
+   infra never crashes into `ECONNREFUSED`). **The `api` runner must be up for the
+   assistant to work** — turns are enqueued onto it, not run in the web request.
 
 > ⚠️ **Not `pnpm up`.** That's pnpm's built-in alias for `pnpm update` (it
 > updates dependencies and exits) — it silently shadows any script with the

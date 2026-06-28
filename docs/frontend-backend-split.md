@@ -1,7 +1,16 @@
 # Frontend / Backend Split — Status & Phase 2 Handover
 
-Status: **Phase 1 complete** (durable runners). **Phase 2 not started** (the actual
-FE/BE separation). This doc is the handover for Phase 2.
+> ✅ **DONE & MERGED (v0.66.x, PR #1).** Both phases shipped: Phase 1 (durable
+> runners) and Phase 2 (the FE/BE separation — `apps/web` is now a pure client,
+> no `@mantle/db` in the browser bundle). This file is preserved as the **design
+> + plan**; for what actually shipped and what remains (mostly Electron-scoped),
+> read the completion record
+> [`fe-be-split-session-handover.md`](./fe-be-split-session-handover.md). A
+> current, condensed summary lives in
+> [`architecture.md` §3a](./architecture.md#3a-durable-runners-the-febe-split-and-live-turn-streaming).
+
+Status (as written): **Phase 1 complete** (durable runners). **Phase 2 not
+started** (the actual FE/BE separation). This doc is the handover for Phase 2.
 
 Branch for Phase 1: `feat/dedicated-api-runners`. Project memory:
 `api-service-phase1.md`.
