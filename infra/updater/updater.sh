@@ -7,7 +7,12 @@
 # ports, no network surface). This script polls for that request and performs
 # exactly one fixed operation:
 #
-#   docker compose pull && docker compose up -d
+#   docker compose pull && docker compose up -d <every service EXCEPT updater>
+#
+# The updater excludes ITSELF from the `up`: recreating its own container
+# mid-command would SIGKILL this script before the rollout finishes, leaving
+# the rest of the stack stuck in "Created" (site down). Its image is pinned and
+# updater.sh is bind-mounted, so it never needs an in-band recreate anyway.
 #
 # against the host's compose project (MANTLE_STACK_DIR must be the stack
 # directory's HOST-ABSOLUTE path; the compose file mounts the stack at that
@@ -87,9 +92,22 @@ while true; do
     write_status pulling "$TARGET" "$STARTED" "" null ""
     if docker compose --project-directory "$STACK" pull >> "$SIG/update.log" 2>&1; then
       write_status rolling "$TARGET" "$STARTED" "" null ""
-      # Plain `up -d` (not --wait): this very container's siblings — including
-      # the web app showing the progress UI — get recreated mid-command.
-      if docker compose --project-directory "$STACK" up -d --remove-orphans >> "$SIG/update.log" 2>&1; then
+      # Recreate every service EXCEPT this updater. A bare `up -d` would recreate
+      # `updater` too, SIGKILLing this script mid-rollout: the remaining services
+      # never start (stuck "Created", site down) and the status freezes at
+      # "rolling". Enumerate services and drop ourselves. Nothing depends_on the
+      # updater, so omitting it is clean; `--remove-orphans` still only prunes
+      # services absent from the compose file (the updater isn't one).
+      # Plain `up -d` (not --wait): the app containers — including the web app
+      # showing the progress UI — get recreated mid-command, which is expected.
+      SERVICES=$(docker compose --project-directory "$STACK" config --services 2>/dev/null | grep -vx updater | tr '\n' ' ')
+      if [ -z "$(printf '%s' "$SERVICES" | tr -d '[:space:]')" ]; then
+        write_status error "$TARGET" "$STARTED" "$(now)" false "could not enumerate services to recreate"
+        echo "[updater] ERROR: empty service list; aborting to avoid self-recreate" | tee -a "$SIG/update.log"
+        continue
+      fi
+      # shellcheck disable=SC2086  # word-splitting $SERVICES into args is intended
+      if docker compose --project-directory "$STACK" up -d --remove-orphans $SERVICES >> "$SIG/update.log" 2>&1; then
         write_status done "$TARGET" "$STARTED" "$(now)" true ""
         echo "[updater] done → $TARGET" | tee -a "$SIG/update.log"
       else
