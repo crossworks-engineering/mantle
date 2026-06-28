@@ -5,8 +5,10 @@
  *
  * The cross-client event SHAPE lives in `@mantle/client-types` (`TurnEvent`,
  * zero-runtime). This package owns the SERVER half: the Postgres `NOTIFY`
- * channel, the schema-version constant the producer stamps, and the publisher.
- * The subscribe half is the web realtime bridge (`apps/web/lib/realtime.ts`).
+ * channel, the schema-version constant the producer stamps, the publisher, and
+ * the short-TTL replay buffer (`turn_stream_buffer`) + the merge/dedup helper
+ * that powers `Last-Event-ID` resume. The subscribe half is the web realtime
+ * bridge (`apps/web/lib/realtime.ts`); the SSE route drives the replay.
  *
  * Deliberately low in the dependency graph (only `@mantle/db` +
  * `@mantle/client-types`) so the eventual producer — the tool-loop in
@@ -20,3 +22,4 @@ export {
   type TurnStreamEnvelope,
   type TurnCancelEnvelope,
 } from './publish';
+export { getBufferedTurnEvents, makeReplayMerger, type ReplayMerger } from './replay';
