@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getBufferedTurnEvents, makeReplayMerger } from '@mantle/turn-stream';
 import { getOwnerOr401 } from '@/lib/auth';
 import { subscribeTurnStream } from '@/lib/realtime';
 import { isTurnStreamingEnabled } from '@/lib/turn-streaming';
@@ -23,9 +24,10 @@ import { isTurnStreamingEnabled } from '@/lib/turn-streaming';
  * yet, so the surface stays dark — zero behaviour change.
  *
  * Each frame is `id: <seq>` + `data: <TurnEvent JSON>`. The `id:` carries the
- * per-turn sequence for a future `Last-Event-ID` resume; today the bridge has no
- * backlog, so reconnect is best-effort and the durable message row remains the
- * source of truth for the final answer.
+ * per-turn sequence: a reconnecting client sends `Last-Event-ID: <seq>` and we
+ * replay what it missed from the `turn_stream_buffer` (NOTIFY itself has no
+ * backlog) before live-tailing — gap-free and duplicate-free via the merger. The
+ * durable message row stays the source of truth for the final answer regardless.
  */
 export const dynamic = 'force-dynamic';
 
@@ -68,10 +70,34 @@ export async function GET(
       };
       // Open immediately so the client's reader fires `open`.
       enc(': connected\n\n');
-      unsubscribe = await subscribeTurnStream(owner.id, turnId, (event) => {
-        // `id:` = the per-turn resume cursor; `data:` = the event JSON.
+
+      // Resume cursor: a reconnecting client sends `Last-Event-ID: <seq>` so we
+      // replay only what it missed during the drop (NOTIFY has no backlog).
+      // Absent/NaN → -1 → replay the whole buffer for this turn (seq starts at 0;
+      // normally empty on the pre-POST subscribe, so this is a no-op there).
+      const header = req.headers.get('last-event-id');
+      const sinceSeq = header !== null && Number.isFinite(Number(header)) ? Number(header) : -1;
+
+      // The merger guarantees NO gap (live events arriving during the backlog read
+      // are queued, then drained) and NO duplicate (dedup by seq) — see
+      // @mantle/turn-stream. `id:` = the resume cursor; `data:` = the event JSON.
+      const merger = makeReplayMerger(sinceSeq, (event) => {
         enc(`id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`);
       });
+
+      // Subscribe to the live stream FIRST so an event landing in the async window
+      // before the backlog is read is queued, not lost.
+      unsubscribe = await subscribeTurnStream(owner.id, turnId, (event) => merger.live(event));
+
+      // Then replay the backlog and flush the queued live events, going fully live.
+      try {
+        merger.replay(await getBufferedTurnEvents(owner.id, turnId, sinceSeq));
+      } catch {
+        // Replay is best-effort — switch the merger to live (drain the queue); the
+        // live tail + the durable assistant_messages row still cover the answer.
+        merger.replay([]);
+      }
+
       // Keep-alive comment so idle connections aren't reaped by proxies/cellular.
       heartbeat = setInterval(() => enc(': ping\n\n'), 25_000);
     },
