@@ -50,14 +50,28 @@ function phraseFor(kind: string) {
   return KIND_PHRASE[kind] ?? kind;
 }
 
+/** Drop a trailing ellipsis ("…" or "...") and any trailing space, so a label
+ *  reads as a clean phrase rather than a cut-off fragment. */
+function stripTrailingEllipsis(s: string): string {
+  return s.replace(/\s*(?:…|\.\.\.)\s*$/u, '').trimEnd();
+}
+
+/** Tidy the active narrator label for display: drop the quotes that wrap a tool
+ *  argument and any trailing ellipsis, so 'Searching the web for "broccoli…"…'
+ *  reads as 'Searching the web for broccoli'. */
+function cleanLabel(label: string): string {
+  return stripTrailingEllipsis(label.replace(/[“”"]/g, '')).trim();
+}
+
 /** The detail to show in the trail's third column. The category column already
  *  states the action ("searching web"), so when the label wraps its real
  *  argument in quotes ("Searching the web for “broccoli…”") we show just the
- *  argument, unquoted — no redundant "Searching the web for" lead-in. Labels
- *  with no quoted argument (narrated sentences) are shown in full. */
+ *  argument, unquoted and without the trailing ellipsis — no redundant
+ *  "Searching the web for" lead-in. Labels with no quoted argument (narrated
+ *  sentences) are shown in full, just trimmed of any trailing ellipsis. */
 function detailFor(label: string): string {
   const m = label.match(/[“"']\s*([^“”"']+?)\s*[”"']/);
-  return m ? m[1]! : label;
+  return stripTrailingEllipsis(m ? m[1]! : label).trim();
 }
 
 /** Tick `Date.now()` once a second while `active`, so the elapsed timer in the
@@ -125,7 +139,7 @@ function StatusFooter({
       <div className="flex items-start gap-2">
         <Sparkles className="mt-[3px] size-4 shrink-0 animate-pulse text-foreground/50" aria-hidden />
         <p className="mantle-shimmer-text min-w-0 break-words text-[0.95rem] font-medium leading-relaxed">
-          {label}
+          {cleanLabel(label)}
         </p>
       </div>
       {meta.length > 0 && (
