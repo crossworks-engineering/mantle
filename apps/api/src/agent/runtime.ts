@@ -343,6 +343,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
         nodeId: string | null;
         bytes: Buffer;
         mimeType: string;
+        filename: string | null;
       }
     | null = null;
   if (fileAttachment) {
@@ -471,6 +472,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
           nodeId,
           bytes: downloaded.bytes,
           mimeType,
+          filename: baseName,
         };
       },
     );
@@ -879,6 +881,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
               transcript: attachmentContext.transcript,
               note: attachmentContext.note,
               nodeId: attachmentContext.nodeId,
+              filename: attachmentContext.filename,
             });
           }
         }

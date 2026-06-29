@@ -121,6 +121,9 @@ export function buildAttachmentContextText(
     transcript?: string | null;
     note?: string | null;
     nodeId?: string | null;
+    /** The attachment's filename — lets the hint route a SPREADSHEET to the
+     *  Tables path (auto-imported on ingest) instead of the page-import hint. */
+    filename?: string | null;
   },
 ): string {
   const base = userText.trim();
@@ -128,15 +131,22 @@ export function buildAttachmentContextText(
   const noun = kind === 'file' ? 'file' : 'image';
   const Noun = kind === 'file' ? 'File' : 'Image';
   const label = kind === 'file' ? 'Extracted text' : 'Vision analysis';
+  const isSpreadsheet = kind === 'file' && /\.(xlsx|xls|csv)$/i.test(opts.filename ?? '');
   // The reference hint lists EVERY tool the attached node_id slots into,
   // so the model can pick the right one based on the user's intent
   // (read / inspect vs. import). Pre-page_from_file the marker pinned
   // `file_read` for documents, which steered the model toward
   // file_read → re-emit-body → page_create on import requests — the
   // truncation path Phase 1 (page_from_file) was built to replace.
+  // A spreadsheet is auto-imported into Tables on ingest, so its hint points at
+  // the grid (read to discuss) rather than page import — and deliberately does
+  // NOT push table_from_file, which would create a SECOND table beside the
+  // auto-import (use it only when the user asks for a fresh/custom import).
   const toolHint =
     kind === 'file'
-      ? 'call file_read with that node_id to inspect the full content, or page_from_file with that node_id to import it as a page'
+      ? isSpreadsheet
+        ? 'its rows are auto-imported into Tables (one typed grid per sheet) — read it with file_read or read_section to discuss the data, and point the user to /tables for the grid'
+        : 'call file_read with that node_id to inspect the full content, or page_from_file with that node_id to import it as a page'
       : 'call extract_from_image with that node_id to look closer';
   const ref = opts.nodeId ? ` (saved as file node ${opts.nodeId} — ${toolHint})` : '';
   const transcript = opts.transcript?.trim();
