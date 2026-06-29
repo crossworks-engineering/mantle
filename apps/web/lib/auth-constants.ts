@@ -25,10 +25,17 @@ export const PUBLIC_PATHS = [
   '/api/federation',
   '/api/version',
   '/app-runtime',
-  // PHASE 0 SPIKE: the remote MCP endpoint self-authenticates (hardcoded bearer
-  // now, OAuth later) so it must bypass the session-cookie gate. See
-  // apps/web/app/api/mcp/route.ts and the plan's Phase 4.
+  // The remote MCP endpoint self-authenticates with an OAuth bearer, so it must
+  // bypass the session-cookie gate. See apps/web/app/api/mcp/route.ts.
   '/api/mcp',
+  // OAuth 2.1 authorization server for the MCP connector. register + token
+  // self-authenticate; authorize is the exception — it USES the session but must
+  // still bypass the middleware (it's a browser navigation that does its OWN
+  // login redirect, where the gate would otherwise return 401 JSON). The
+  // discovery docs are public metadata. See apps/web/lib/mcp-oauth.ts.
+  '/api/oauth',
+  '/.well-known/oauth-authorization-server',
+  '/.well-known/oauth-protected-resource',
 ];
 
 /**

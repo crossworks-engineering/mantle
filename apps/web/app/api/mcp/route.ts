@@ -4,47 +4,36 @@
  * the stdio server exposes, from the shared builder (`@mantle/mcp-core`), so the
  * two transports never drift.
  *
- * AUTH IS A PLACEHOLDER (Phase 1): gated by a hardcoded bearer and scoped to the
- * single local owner via `resolveSingleOwnerId`. Phase 2 replaces both with
- * OAuth — the bearer becomes an access token that resolves to its owner, and
- * `registerMantleTools(server, ownerId)` is called with THAT owner. The session
- * middleware already lets `/api/mcp` through (PUBLIC_PATHS) so this
- * self-authenticates.
+ * Auth: an OAuth 2.1 access token (see apps/web/lib/mcp-oauth.ts). An absent or
+ * invalid token gets a 401 carrying `WWW-Authenticate: Bearer resource_metadata=…`
+ * (RFC 9728) so a fresh claude.ai connector discovers the authorization server
+ * and runs the sign-in + consent flow. A valid token resolves to its owner, and
+ * the server is built scoped to THAT owner.
  *
  * `runtime = 'nodejs'`: the tool handlers use node-only deps (pg, drizzle,
  * file/storage). The adapter runs the SDK's Streamable HTTP transport
- * statelessly (no Redis / session store needed).
+ * statelessly (no Redis / session store).
  */
 import { createMcpHandler } from 'mcp-handler';
-import { resolveSingleOwnerId } from '@mantle/db';
 import { registerMantleTools } from '@mantle/mcp-core';
+import { ownerFromBearer, wwwAuthenticateHeader } from '@/lib/mcp-oauth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// PHASE 1 PLACEHOLDER — replaced by an OAuth access token in Phase 2.
-const PLACEHOLDER_TOKEN = 'spike-secret';
-
-function authed(req: Request): boolean {
-  return req.headers.get('authorization') === `Bearer ${PLACEHOLDER_TOKEN}`;
+function unauthorized(): Response {
+  return new Response(JSON.stringify({ error: 'unauthorized' }), {
+    status: 401,
+    headers: {
+      'content-type': 'application/json',
+      'WWW-Authenticate': wwwAuthenticateHeader(),
+    },
+  });
 }
 
 async function handler(req: Request): Promise<Response> {
-  if (!authed(req)) {
-    return new Response(JSON.stringify({ error: 'unauthorized' }), {
-      status: 401,
-      headers: { 'content-type': 'application/json' },
-    });
-  }
-
-  // PHASE 2: resolve the owner from the validated OAuth bearer instead.
-  const ownerId = await resolveSingleOwnerId();
-  if (!ownerId) {
-    return new Response(JSON.stringify({ error: 'no account' }), {
-      status: 503,
-      headers: { 'content-type': 'application/json' },
-    });
-  }
+  const ownerId = await ownerFromBearer(req);
+  if (!ownerId) return unauthorized();
 
   const mcpHandler = createMcpHandler(
     (server) => registerMantleTools(server, ownerId),

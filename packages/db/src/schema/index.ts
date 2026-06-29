@@ -1,6 +1,7 @@
 export * from './api-keys';
 export * from './auth-users';
 export * from './mobile-tokens';
+export * from './oauth';
 export * from './assistant-read-cursors';
 export * from './push';
 export * from './profiles';
