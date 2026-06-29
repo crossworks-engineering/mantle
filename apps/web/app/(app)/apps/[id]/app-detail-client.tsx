@@ -1,14 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Hammer, Rocket, Undo2, Sparkles, SquareDashedMousePointer, X, Save, WandSparkles } from 'lucide-react';
+import { Hammer, Rocket, Undo2, SquareDashedMousePointer, X, Save, WandSparkles } from 'lucide-react';
 import { apiFetch, apiSend } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
-import { Textarea } from '@/components/ui/textarea';
-import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
 import { SetPageTitle } from '@/components/layout/page-title';
@@ -17,8 +15,7 @@ import { ShareControl } from '@/components/share/share-control';
 import { AppSandbox } from '@/components/app-sandbox/app-sandbox';
 import { CodeEditor } from '@/components/app-sandbox/code-editor';
 import { FileTree } from '@/components/app-sandbox/file-tree';
-import { useAssistStage, SpecialistWorking } from '@/components/specialist-working';
-import { ChatBubble } from '@/components/chat-bubble';
+import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
 import type { AppDetail } from '@mantle/content';
 
 type BuildMsg = { text: string; location: { file: string; line: number; column: number } | null };
@@ -68,16 +65,12 @@ function AppDetailView({ app }: { app: AppDetail }) {
   const paths = useMemo(() => Object.keys(files).sort(), [files]);
   const [activePath, setActivePath] = useState(source.entry);
   const [reloadKey, setReloadKey] = useState(0);
-  const [busy, setBusy] = useState<null | 'build' | 'publish' | 'discard' | 'assist' | 'save' | 'format'>(null);
+  const [busy, setBusy] = useState<null | 'build' | 'publish' | 'discard' | 'save' | 'format'>(null);
   const [buildErrors, setBuildErrors] = useState<BuildMsg[]>([]);
-  const [prompt, setPrompt] = useState('');
-  const [reply, setReply] = useState<string | null>(null);
   // Inspect-to-focus: the region the user locked in the preview, and whether
   // select mode is active. Both reset whenever the app reloads (rebuild/publish).
   const [inspect, setInspect] = useState(false);
   const [focusRegion, setFocusRegion] = useState<string | null>(null);
-  // Live "what is Appsmith doing" label, polled while an assist run is in flight.
-  const assistStage = useAssistStage('/api/assist/stage?surface=apps', busy === 'assist');
 
   const activeContent = files[activePath] ?? files[source.entry] ?? '';
   const canFormat = FORMATTABLE.has(extOf(activePath));
@@ -148,32 +141,29 @@ function AppDetailView({ app }: { app: AppDetail }) {
     }
   }
 
-  async function runAssist(e: React.FormEvent) {
-    e.preventDefault();
-    if (!prompt.trim()) return;
-    setBusy('assist');
-    setReply(null);
-    setBuildErrors([]);
-    try {
-      const data = await apiSend<{ reply?: string; build?: { errors?: BuildMsg[] } }>(
-        `/api/apps/${app.id}/ai-assist`,
-        'POST',
-        {
-          prompt: prompt.trim(),
-          ...(focusRegion ? { focusRegionIds: [focusRegion] } : {}),
-        },
-      );
-      setReply(data.reply ?? '');
-      setBuildErrors(data.build?.errors ?? []);
-      setPrompt('');
-      await queryClient.invalidateQueries({ queryKey: ['apps', app.id] });
-      setReloadKey((k) => k + 1);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Appsmith couldn’t run.');
-    } finally {
-      setBusy(null);
-    }
-  }
+  // Wire the global assistant overlay to this app: arm the Appsmith specialist,
+  // pin this app as context, fold the inspect-selected region into a focus
+  // directive, and rebuild the preview when Appsmith edits the draft. Replaces
+  // the old in-builder Appsmith panel; the draft/Publish flow is unchanged.
+  const focusDirective = useMemo(
+    () =>
+      focusRegion
+        ? `FOCUS REGION — the user selected the region "${focusRegion}" in the live ` +
+          `preview. Scope your change to that region and leave the rest of the app ` +
+          `unchanged unless explicitly asked.`
+        : null,
+    [focusRegion],
+  );
+  const onAppEdited = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ['apps', app.id] });
+    setReloadKey((k) => k + 1);
+  }, [queryClient, app.id]);
+  useSurfaceAssist({
+    surface: 'apps',
+    node: { id: app.id, kind: 'app', label: app.title },
+    focusDirective,
+    onEdited: onAppEdited,
+  });
 
   // Persist the edited file tree to the draft. Returns true on success so the
   // Build action can save-then-build when there are unsaved edits.
@@ -252,13 +242,12 @@ function AppDetailView({ app }: { app: AppDetail }) {
           </TabsList>
         </div>
 
-        {/* Builder — open two-column: live preview + Appsmith assist. */}
-        <TabsContent
-          value="builder"
-          className="mt-0 grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px]"
-        >
-          <div className="flex min-h-0 flex-col overflow-y-auto border-r border-border p-3">
-            <div className="mb-2 flex items-center gap-2">
+        {/* Builder — the live preview. Ask Appsmith to edit the app via the
+            global assistant (⌘I), auto-armed for this app; "Select element"
+            focuses it on one region. */}
+        <TabsContent value="builder" className="mt-0 flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
               <Button
                 size="sm"
                 variant={inspect ? 'default' : 'outline'}
@@ -271,6 +260,22 @@ function AppDetailView({ app }: { app: AppDetail }) {
               {inspect && (
                 <span className="text-xs text-muted-foreground">
                   Hover a region, click to focus it.
+                </span>
+              )}
+              {focusRegion && (
+                <span className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1.5 text-xs text-card-foreground">
+                  <SquareDashedMousePointer className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 max-w-[16rem] truncate">
+                    Focusing <span className="font-medium">{focusRegion}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setFocusRegion(null)}
+                    className="shrink-0 rounded text-muted-foreground hover:text-foreground"
+                    aria-label="Clear focus"
+                  >
+                    <X className="size-3.5" />
+                  </button>
                 </span>
               )}
             </div>
@@ -294,59 +299,6 @@ function AppDetailView({ app }: { app: AppDetail }) {
                     </li>
                   ))}
                 </ul>
-              </div>
-            )}
-          </div>
-
-          <div className="flex min-h-0 flex-col overflow-y-auto bg-sidebar p-3">
-            <p className="flex items-center gap-1.5 text-sm font-medium">
-              <Sparkles className="size-4" />
-              Appsmith
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Describe a change and Appsmith edits the app. Use <span className="font-medium">Select
-              element</span> to point it at one region. Changes land in the draft — review the
-              preview, then Publish.
-            </p>
-            <Separator className="my-3" />
-            {focusRegion && (
-              <div className="mb-2 flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1.5 text-xs text-card-foreground">
-                <SquareDashedMousePointer className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate">
-                  Focusing <span className="font-medium">{focusRegion}</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setFocusRegion(null)}
-                  className="shrink-0 rounded text-muted-foreground hover:text-foreground"
-                  aria-label="Clear focus"
-                >
-                  <X className="size-3.5" />
-                </button>
-              </div>
-            )}
-            <form onSubmit={runAssist} className="flex flex-col gap-2">
-              <Textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="e.g. show a 5-day forecast in a grid"
-                rows={3}
-                disabled={busy === 'assist'}
-              />
-              <Button type="submit" size="sm" disabled={busy !== null || !prompt.trim()}>
-                {busy === 'assist' ? 'Working…' : 'Send to Appsmith'}
-              </Button>
-            </form>
-            {busy === 'assist' && (
-              <div className="mt-3">
-                <SpecialistWorking stage={assistStage} agentName="Appsmith" />
-              </div>
-            )}
-            {busy !== 'assist' && reply && (
-              <div className="mt-3">
-                <ChatBubble role="assistant" agentName="Appsmith">
-                  {reply}
-                </ChatBubble>
               </div>
             )}
           </div>

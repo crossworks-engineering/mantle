@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Editor, JSONContent } from '@tiptap/react';
@@ -12,9 +12,9 @@ import {
   GitCompareArrows,
   Highlighter,
   Loader2,
-  Sparkles,
   StretchHorizontal,
   Trash2,
+  Undo2,
 } from 'lucide-react';
 import { computeDiffOverlay, type DiffOverlay } from '@mantle/content/page-diff';
 import { Button } from '@/components/ui/button';
@@ -28,7 +28,8 @@ import { SetPageTitle } from '@/components/layout/page-title';
 import { PageEditor } from '@/components/page-editor/page-editor';
 import { PageOutline } from '@/components/page-editor/page-outline';
 import { PageBacklinks } from '@/components/page-editor/page-backlinks';
-import { AiAssistPanel } from '@/components/page-editor/ai-assist-panel';
+import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
+import { buildFocusDirective } from '@/lib/focus-directive';
 import type { Backlink } from '@/lib/pages';
 import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import { Spinner } from '@/components/ui/spinner';
@@ -354,11 +355,7 @@ function PageDetailEditor({
     }
   };
 
-  // AI assist panel state. Toggled on/off by the Sparkles button in the
-  // toolbar.
-  const [aiOpen, setAiOpen] = useState(false);
   const [editorKey, setEditorKey] = useState(0);
-  const [aiPending, setAiPending] = useState(false);
 
   // ── Focus marker ────────────────────────────────────────────────────
   // `markerMode` turns the editor's left gutter into a section-marking strip;
@@ -577,6 +574,41 @@ function PageDetailEditor({
     void queryClient.invalidateQueries({ queryKey: ['pages', initial.id] });
   }, [queryClient, initial.id]);
 
+  // Wire the global assistant overlay to this page: arm the Pages specialist,
+  // pin this page as context, fold the gutter marks into a focus directive, and
+  // refresh the editor into review mode when Pages edits the draft. Replaces the
+  // old in-page AI-assist panel; the draft/Commit flow is unchanged.
+  const focusDirective = useMemo(
+    () => (marks.length ? buildFocusDirective(marks) : null),
+    [marks],
+  );
+  const onPagesEdited = useCallback(() => onAiChanged([]), [onAiChanged]);
+  const { busy: aiPending } = useSurfaceAssist({
+    surface: 'pages',
+    node: { id: initial.id, kind: 'page', label: title || 'Untitled page' },
+    focusDirective,
+    onEdited: onPagesEdited,
+  });
+
+  // Revert the entire draft to the last commit (Pages' edits AND any unsaved
+  // typing) — the whole-draft escape hatch the assist panel used to host. Leaves
+  // review mode; the draft watcher remounts the editor on the fresh draft.
+  const [reverting, setReverting] = useState(false);
+  const revertDraft = useCallback(async () => {
+    if (reverting) return;
+    setReverting(true);
+    try {
+      await apiSend(`/api/pages/${initial.id}/discard-draft`, 'POST');
+      toast.success('Draft reverted to last commit');
+      onAiChanged();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      toast.error(e instanceof Error ? e.message : 'Could not revert draft');
+    } finally {
+      setReverting(false);
+    }
+  }, [reverting, initial.id, onAiChanged, toast]);
+
   const confirmDelete = async () => {
     deletedRef.current = true; // suppress flush
     try {
@@ -670,16 +702,18 @@ function PageDetailEditor({
               </Button>
             </div>
           )}
-          <Button
-            size="sm"
-            variant={aiOpen ? 'default' : 'outline'}
-            onClick={() => setAiOpen((v) => !v)}
-            aria-pressed={aiOpen}
-            aria-label="Toggle AI assist panel"
-            title="Ask Pages to edit this page"
-          >
-            <Sparkles /> AI assist
-          </Button>
+          {docDirty && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-muted-foreground hover:text-destructive"
+              onClick={() => void revertDraft()}
+              disabled={reverting}
+              title="Revert the entire draft to the last commit (Pages' edits and any unsaved typing)"
+            >
+              <Undo2 /> {reverting ? 'Reverting…' : 'Revert'}
+            </Button>
+          )}
           <Button
             size="sm"
             variant={width === 'wide' ? 'default' : 'outline'}
@@ -703,11 +737,11 @@ function PageDetailEditor({
         </div>
       </div>
 
-      {/* Side-by-side when the AI panel is open: editor scrolls in its own
-          pane, panel docks to the right. Min-h-0 on the wrapper is required
-          per ui-style-guide.md so neither pane hijacks the page scroll. */}
-      <div className={cn('flex min-h-0 flex-1', aiOpen ? 'flex-row' : 'flex-col')}>
-        <div className={cn('min-w-0 flex-1 overflow-y-auto', aiOpen && 'border-r border-border')}>
+      {/* The editor scrolls in its own pane. Min-h-0 on the wrapper is required
+          per ui-style-guide.md so it doesn't hijack the page scroll. Pages-assist
+          now lives in the global assistant overlay (auto-armed for this page). */}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="min-w-0 flex-1 overflow-y-auto">
           {/* Header band — page chrome (name + tags). A themed strip with a
               bottom border so the title reads as a label ABOUT the page, not as
               the document's first line. Full-width bg; content stays centred. */}
@@ -715,7 +749,7 @@ function PageDetailEditor({
             <div
               className={cn(
                 'mx-auto w-full px-6 py-3',
-                aiOpen || width !== 'wide' ? 'max-w-3xl' : 'max-w-none',
+                width !== 'wide' ? 'max-w-3xl' : 'max-w-none',
               )}
             >
               {/* Icon — click to pick (or remove). Saves with the title/tags
@@ -756,10 +790,9 @@ function PageDetailEditor({
             </div>
           </header>
 
-          {/* Document body — outline rail (left, wide screens) + centred content.
-              The rail is hidden while the AI panel is open (no room). */}
+          {/* Document body — outline rail (left, wide screens) + centred content. */}
           <div className="flex w-full gap-6 px-6 py-8">
-            {!aiOpen && toc.length > 0 && (
+            {toc.length > 0 && (
               <aside className="hidden w-56 shrink-0 xl:block">
                 <div className="sticky top-6 max-h-[calc(100vh-9rem)] overflow-y-auto scrollbar-thin">
                   <PageOutline entries={toc} onJump={jumpToBlock} />
@@ -770,10 +803,7 @@ function PageDetailEditor({
               <div
                 className={cn(
                   'mx-auto w-full',
-                  // When the AI panel is open the editor area is already narrowed
-                  // by the right-side panel; force narrow content so it doesn't
-                  // sprawl into an awkward two-thirds line length.
-                  aiOpen || width !== 'wide' ? 'max-w-3xl' : 'max-w-none',
+                  width !== 'wide' ? 'max-w-3xl' : 'max-w-none',
                 )}
               >
                 <PageEditor
@@ -801,8 +831,8 @@ function PageDetailEditor({
                   <p className="mt-3 pl-10 text-xs italic text-muted-foreground">
                     Marker on — drag down the left gutter to mark sections (click a marked
                     row to unmark)
-                    {marks.length > 0 ? `; ${marks.length} marked` : ''}. Then open AI assist
-                    and tell Pages what to do with them.
+                    {marks.length > 0 ? `; ${marks.length} marked` : ''}. Then ask Pages in the
+                    assistant (⌘I) what to do with them.
                   </p>
                 )}
                 <PageBacklinks backlinks={backlinks} />
@@ -810,21 +840,6 @@ function PageDetailEditor({
             </div>
           </div>
         </div>
-        {aiOpen && (
-          // `min-h-0` here lets the inner aside's `flex-1 min-h-0`
-          // scroller actually constrain — without it, the panel grows
-          // with content and pushes the input form off-screen.
-          <div className="hidden w-[380px] min-h-0 shrink-0 md:flex md:flex-col">
-            <AiAssistPanel
-              pageId={initial.id}
-              focusBlockIds={marks}
-              onChanged={onAiChanged}
-              onClearMarks={() => setMarks([])}
-              onClose={() => setAiOpen(false)}
-              onPendingChange={setAiPending}
-            />
-          </div>
-        )}
       </div>
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>

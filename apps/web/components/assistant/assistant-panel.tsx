@@ -19,7 +19,7 @@ import { useAssistantDock } from './assistant-dock';
  * stream survive a minimise/restore without a re-fetch. `Esc` minimises.
  */
 export function AssistantPanel() {
-  const { panel, activeAgentSlug, minimize } = useAssistantDock();
+  const { panel, effectiveAgentSlug, minimize } = useAssistantDock();
 
   // Esc minimises while open.
   useEffect(() => {
@@ -42,7 +42,7 @@ export function AssistantPanel() {
       )}
       aria-hidden={panel !== 'open'}
     >
-      <AssistantThreadClient slugHint={activeAgentSlug} />
+      <AssistantThreadClient slugHint={effectiveAgentSlug} />
     </div>
   );
 }

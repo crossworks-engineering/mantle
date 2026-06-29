@@ -138,6 +138,7 @@ const CONTEXT_KIND_LABEL: Record<ContextKind, string> = {
   journal: 'journal entry',
   task: 'task',
   event: 'event',
+  app: 'app',
 };
 
 /** Render marked nodes as a reference block appended to the sent message. The
@@ -177,10 +178,19 @@ export function AssistantClient({
     busy: dockBusy,
     agentSlug: dockAgentSlug,
     pendingContext,
+    pinnedContext,
+    extraDirective,
     removeContext,
     clearContext,
     startPicking,
   } = useAssistantDock();
+  // Everything that rides this turn as context: the screen-pinned node (the open
+  // page/table/app) PLUS any pick-mode chips, deduped. Pinned nodes survive a
+  // send (they stay attached while you're on the screen); pick-mode chips clear.
+  const allContext = useMemo(() => {
+    const seen = new Set(pinnedContext.map((r) => r.id));
+    return [...pinnedContext, ...pendingContext.filter((r) => !seen.has(r.id))];
+  }, [pinnedContext, pendingContext]);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -657,11 +667,15 @@ export function AssistantClient({
     // Remember this turn's prompt so a Stop can drop it back into the composer.
     lastPromptRef.current = text;
 
-    // Marker context — the nodes the user picked ride along as a reference
-    // preamble appended to the SENT text (the bubble still shows what was typed).
-    // The agent reads them with its tools (file_read / note_get / page_get / …),
-    // so no turn-route change is needed.
-    const sentText = pendingContext.length ? text + buildContextPreamble(pendingContext) : text;
+    // Context — the screen-pinned node + any picked nodes ride along as a
+    // reference preamble appended to the SENT text (the bubble still shows what
+    // was typed). The agent reads them with its tools (file_read / page_get / …).
+    // A surface focus directive (Pages marks, the Apps inspect region) follows,
+    // so the specialist narrows the same way the old in-screen panels did.
+    const sentText =
+      text +
+      (allContext.length ? buildContextPreamble(allContext) : '') +
+      (extraDirective ? `\n\n${extraDirective}` : '');
 
     const hasFile = attachedFile != null;
     const isImage = hasFile && attachedFile.type.startsWith('image/');
@@ -1141,28 +1155,45 @@ export function AssistantClient({
                 </button>
               </div>
             )}
-            {/* Marker context chips — nodes picked via pick mode. Sent with the
-                next turn as a reference preamble, then cleared. */}
-            {pendingContext.length > 0 && (
+            {/* Context chips. The screen-pinned node (the open page/table/app)
+                shows first with a pin glyph and no remove — it's managed by the
+                screen and rides every turn. Pick-mode chips follow and clear
+                after a send. */}
+            {allContext.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
-                {pendingContext.map((c) => (
-                  <span
-                    key={c.id}
-                    className="inline-flex max-w-[16rem] items-center gap-1.5 rounded-md border border-border bg-muted/40 py-1 pl-2 pr-1 text-xs"
-                  >
-                    <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                    <span className="truncate font-medium">{c.label}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeContext(c.id)}
-                      className="rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground"
-                      title="Remove"
-                      aria-label={`Remove ${c.label}`}
+                {allContext.map((c) => {
+                  const pinned = pinnedContext.some((r) => r.id === c.id);
+                  return (
+                    <span
+                      key={c.id}
+                      className={
+                        'inline-flex max-w-[16rem] items-center gap-1.5 rounded-md border py-1 pl-2 text-xs ' +
+                        (pinned
+                          ? 'border-primary/40 bg-primary/10 pr-2 text-foreground'
+                          : 'border-border bg-muted/40 pr-1')
+                      }
+                      title={pinned ? 'On this screen — sent with every message' : undefined}
                     >
-                      <X className="size-3" aria-hidden />
-                    </button>
-                  </span>
-                ))}
+                      {pinned ? (
+                        <MapPin className="size-3.5 shrink-0 text-primary" aria-hidden />
+                      ) : (
+                        <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                      )}
+                      <span className="truncate font-medium">{c.label}</span>
+                      {!pinned && (
+                        <button
+                          type="button"
+                          onClick={() => removeContext(c.id)}
+                          className="rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                          title="Remove"
+                          aria-label={`Remove ${c.label}`}
+                        >
+                          <X className="size-3" aria-hidden />
+                        </button>
+                      )}
+                    </span>
+                  );
+                })}
               </div>
             )}
             <div className="flex gap-2">

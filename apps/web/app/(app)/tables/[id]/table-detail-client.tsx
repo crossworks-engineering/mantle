@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { Check, GitCommitHorizontal, Loader2, Sparkles, Trash2, Undo2, Upload } from 'lucide-react';
+import { Check, GitCommitHorizontal, Loader2, Trash2, Undo2, Upload } from 'lucide-react';
 import { BackLink } from '@/components/layout/back-link';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { Button } from '@/components/ui/button';
@@ -21,13 +21,10 @@ import {
 } from '@/components/ui/alert-dialog';
 import { ExportButton } from '@/components/export/export-button';
 import { TableGrid } from '@/components/table-grid/table-grid';
-import { TableAssistPanel } from '@/components/table-grid/table-assist-panel';
+import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
 import { ensureTableDoc, type TableDoc } from '@mantle/content/table-model';
 import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import type { TableDetail } from '@/lib/tables';
-
-/** Display name of the table specialist (agent slug stays `tables`). */
-const ASSIST_AGENT_NAME = 'Ledger';
 
 const DRAFT_DEBOUNCE_MS = 1200;
 const META_DEBOUNCE_MS = 800;
@@ -45,7 +42,6 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
   const [draftSaving, setDraftSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [assistOpen, setAssistOpen] = useState(false);
 
   const docRef = useRef(doc);
   docRef.current = doc;
@@ -153,6 +149,27 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
     toast.success('Draft discarded');
   }, [initial.id, toast]);
 
+  // Wire the global assistant overlay to this table: arm the Ledger specialist
+  // and pin this table as context. When Ledger edits the draft (server-side), pull
+  // it back into the grid and mark it saved so the autosave doesn't re-PUT it.
+  // Replaces the old in-table Assist panel; the draft/Commit flow is unchanged.
+  const onTableEdited = useCallback(async () => {
+    try {
+      const { table } = await apiFetch<{ table: TableDetail }>(`/api/tables/${initial.id}`);
+      const fresh = ensureTableDoc(table.draft ?? table.data);
+      setDoc(fresh);
+      draftSavedRef.current = JSON.stringify(fresh);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      // re-read failed; the edit still landed server-side — a reload reconciles.
+    }
+  }, [initial.id]);
+  const { busy: assistBusy } = useSurfaceAssist({
+    surface: 'tables',
+    node: { id: initial.id, kind: 'table', label: title || 'Untitled table' },
+    onEdited: onTableEdited,
+  });
+
   // ── Import a spreadsheet into the draft. ──
   const onImportFile = useCallback(
     async (file: File) => {
@@ -242,14 +259,6 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
         </div>
         <div className="flex items-center gap-2 justify-self-end">
           <StatusIndicator committing={committing} draftSaving={draftSaving} dirty={dirty} />
-          <Button
-            size="sm"
-            variant={assistOpen ? 'secondary' : 'outline'}
-            onClick={() => setAssistOpen((o) => !o)}
-            aria-pressed={assistOpen}
-          >
-            <Sparkles /> Assist
-          </Button>
           <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={importing}>
             {importing ? <Loader2 className="animate-spin" /> : <Upload />} Import
           </Button>
@@ -268,22 +277,22 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        {/* Lock the grid while Ledger is editing the draft so a stray edit can't
+            race the specialist's server-side write (it lands in draft_data). */}
+        <div
+          className={
+            'min-h-0 flex-1 overflow-hidden' +
+            (assistBusy ? ' pointer-events-none opacity-60' : '')
+          }
+        >
           <TableGrid doc={doc} onChange={setDoc} />
         </div>
-        {assistOpen && (
-          <TableAssistPanel
-            tableId={initial.id}
-            agentName={ASSIST_AGENT_NAME}
-            onApplied={(d) => {
-              setDoc(d);
-              // The agent already persisted this to the draft server-side; mark
-              // it saved so the autosave effect doesn't re-PUT the same doc.
-              draftSavedRef.current = JSON.stringify(d);
-            }}
-            onClose={() => setAssistOpen(false)}
-          />
+        {assistBusy && (
+          <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm shadow-sm">
+            <Loader2 className="size-4 shrink-0 animate-spin text-primary" aria-hidden />
+            <span className="font-medium text-foreground">Ledger is editing this table…</span>
+          </div>
         )}
       </div>
 
