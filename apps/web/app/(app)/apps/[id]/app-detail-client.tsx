@@ -13,6 +13,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { BackLink } from '@/components/layout/back-link';
+import { ShareControl } from '@/components/share/share-control';
 import { AppSandbox } from '@/components/app-sandbox/app-sandbox';
 import { CodeEditor } from '@/components/app-sandbox/code-editor';
 import { FileTree } from '@/components/app-sandbox/file-tree';
@@ -107,6 +108,7 @@ function AppDetailView({ app }: { app: AppDetail }) {
       setBuildErrors(data.errors ?? []);
       if (data.buildOk) {
         toast.success('Build succeeded.');
+        await queryClient.invalidateQueries({ queryKey: ['apps', app.id] });
         setReloadKey((k) => k + 1);
       } else {
         toast.error(`Build failed (${data.errors?.length ?? 0} error(s)).`);
@@ -236,6 +238,9 @@ function AppDetailView({ app }: { app: AppDetail }) {
             <Rocket />
             Publish
           </Button>
+          {/* Share the published app at a public full-screen /s/<token> URL.
+              Only once there's a published build to point the link at. */}
+          {app.publishedBuild?.ok && <ShareControl nodeId={app.id} />}
         </div>
       </div>
 

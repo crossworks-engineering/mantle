@@ -7,7 +7,7 @@
  */
 import { and, eq } from 'drizzle-orm';
 import { db, nodes, type Share } from '@mantle/db';
-import { getPage, referencedFileIds } from '@mantle/content';
+import { getPage, getApp, referencedFileIds } from '@mantle/content';
 import { fileById } from '@/lib/files';
 
 export {
@@ -36,7 +36,8 @@ export type ShareView =
       endsAt: string | null;
       location: string | null;
     }
-  | { kind: 'file'; fileId: string; filename: string; mimeType: string; size: number };
+  | { kind: 'file'; fileId: string; filename: string; mimeType: string; size: number }
+  | { kind: 'app'; appId: string; title: string };
 
 async function loadNode(ownerId: string, nodeId: string) {
   const [row] = await db
@@ -93,6 +94,12 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
       const f = await fileById({ ownerId, fileId: nodeId });
       if (!f) return null;
       return { kind: 'file', fileId: nodeId, filename: f.filename, mimeType: f.mimeType, size: f.sizeBytes };
+    }
+    case 'app': {
+      // Only a PUBLISHED app is shareable — never expose a draft build publicly.
+      const app = await getApp(ownerId, nodeId);
+      if (!app || !app.publishedBuild?.ok) return null;
+      return { kind: 'app', appId: nodeId, title: app.title };
     }
     default:
       return null;
