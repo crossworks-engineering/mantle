@@ -61,7 +61,15 @@ export type ContextKind =
   | 'table'
   | 'journal'
   | 'task'
-  | 'event';
+  | 'event'
+  | 'app';
+
+/** A turn has settled (succeeded or failed). Surface hooks subscribe to refresh
+ *  the open editor when a specialist edited the node they're showing. `nodeId`
+ *  is the on-screen node the turn rode with as pinned context (null for a plain
+ *  turn), captured at send time so a late completion still resolves correctly. */
+export type TurnSettled = { agentSlug?: string; nodeId: string | null; status: 'done' | 'error' };
+type TurnSettledListener = (detail: TurnSettled) => void;
 
 /** A node the user marked to send to the assistant as context. */
 export type ContextRef = { id: string; kind: ContextKind; label: string };
@@ -93,6 +101,31 @@ type AssistantDockApi = {
    *  `mantle_assistant_agent` cookie). */
   activeAgentSlug?: string;
   setActiveAgentSlug: (slug?: string) => void;
+  /** The effective agent the panel talks to: a screen's route override
+   *  (e.g. the Pages/Ledger/Appsmith specialist) wins while you're on that
+   *  screen; otherwise your sticky pick. Drives the panel's thread + the agentSlug
+   *  sent with each turn. */
+  effectiveAgentSlug?: string;
+  /** Arm a specialist for the current screen WITHOUT touching the sticky cookie
+   *  (pass undefined on leave to revert to the sticky pick). */
+  setRouteAgent: (slug?: string) => void;
+  // ── surface-pinned context (the open page/table/app rides every turn) ──
+  /** A node pinned by the current screen — sent with EVERY turn (survives a send,
+   *  unlike pick-mode chips) so the specialist always knows what you're editing. */
+  pinnedContext: ContextRef[];
+  /** Replace the pinned set (the surface hook owns this; cleared on leave). */
+  setPinnedContext: (refs: ContextRef[]) => void;
+  /** An extra directive (e.g. Pages focus marks, the Apps inspect region) folded
+   *  into the sent text after the context preamble. Null when nothing's focused. */
+  extraDirective: string | null;
+  setExtraDirective: (directive: string | null) => void;
+  /** The on-screen node id the in-flight turn is editing (null when idle or when
+   *  no surface node is pinned) — lets a screen lock its editor only while ITS
+   *  node is being worked on. */
+  activeContextNodeId: string | null;
+  /** Subscribe to turn-settled events; returns an unsubscribe. A surface hook
+   *  uses this to refresh its editor when a turn that edited its node completes. */
+  registerTurnListener: (fn: TurnSettledListener) => () => void;
   // ── marker context-pick (consumed by <PickMode/>, the composer, the bubbles) ──
   /** Nodes marked to ride along with the next turn as context. */
   pendingContext: ContextRef[];
@@ -126,10 +159,46 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   // ── Global panel UI state ──
   const [panel, setPanel] = useState<AssistantPanelState>('closed');
   const [activeAgentSlug, setActiveAgentSlugState] = useState<string | undefined>(undefined);
+  // Route-armed specialist (set by the current screen's surface hook; never
+  // written to the cookie). When set it overrides the sticky pick for the panel.
+  const [routeAgentSlug, setRouteAgentSlug] = useState<string | undefined>(undefined);
+  const effectiveAgentSlug = routeAgentSlug ?? activeAgentSlug;
 
   // ── Marker context-pick state ──
   const [pendingContext, setPendingContext] = useState<ContextRef[]>([]);
   const [picking, setPicking] = useState(false);
+  // ── Surface-pinned context + focus directive (owned by the surface hook) ──
+  const [pinnedContext, setPinnedContextState] = useState<ContextRef[]>([]);
+  const [extraDirective, setExtraDirectiveState] = useState<string | null>(null);
+  // The node the in-flight turn rode with as pinned context — set when a turn
+  // starts, cleared when it settles. Drives a screen's editor lock.
+  const [activeContextNodeId, setActiveContextNodeId] = useState<string | null>(null);
+  // Latest pinned set, read synchronously by runTurn to stamp the turn's target
+  // node (state would be a stale closure inside the long-lived callback).
+  const pinnedContextRef = useRef<ContextRef[]>([]);
+  pinnedContextRef.current = pinnedContext;
+  // Turn-settled subscribers (surface hooks). A Set so register/unsubscribe is O(1).
+  const turnListenersRef = useRef<Set<TurnSettledListener>>(new Set());
+  const registerTurnListener = useCallback((fn: TurnSettledListener) => {
+    turnListenersRef.current.add(fn);
+    return () => {
+      turnListenersRef.current.delete(fn);
+    };
+  }, []);
+  const fireTurnSettled = useCallback((detail: TurnSettled) => {
+    setActiveContextNodeId(null);
+    for (const fn of turnListenersRef.current) {
+      try {
+        fn(detail);
+      } catch {
+        /* a listener throwing must not break the others or the turn */
+      }
+    }
+  }, []);
+
+  const setPinnedContext = useCallback((refs: ContextRef[]) => setPinnedContextState(refs), []);
+  const setExtraDirective = useCallback((d: string | null) => setExtraDirectiveState(d), []);
+  const setRouteAgent = useCallback((slug?: string) => setRouteAgentSlug(slug), []);
 
   const attachContext = useCallback((ref: ContextRef) => {
     setPendingContext((prev) => {
@@ -165,6 +234,9 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
 
   const setActiveAgentSlug = useCallback((slug?: string) => {
     setActiveAgentSlugState(slug);
+    // A deliberate pick overrides any screen-armed specialist for the rest of
+    // this visit — re-entering the screen re-arms it via the surface hook.
+    setRouteAgentSlug(undefined);
     if (slug) {
       document.cookie = `${AGENT_COOKIE}=${encodeURIComponent(slug)}; path=/; max-age=${ONE_YEAR_SECONDS}; samesite=lax`;
     }
@@ -189,7 +261,11 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   // route). Types the reply out as text-deltas arrive, then settles on
   // done/error. Fire-and-forget — the provider is mounted app-wide, so the
   // subscription survives navigation and self-terminates when the turn ends.
-  const subscribeDockTurn = useCallback((turnId: string, botId: string) => {
+  const subscribeDockTurn = useCallback((
+    turnId: string,
+    botId: string,
+    target: { agentSlug?: string; nodeId: string | null },
+  ) => {
     let replyBuf = '';
     let round = -1;
     let settled = false;
@@ -218,6 +294,7 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
           settled = true;
           stop();
           setMessages((prev) => prev.map((m) => (m.id === botId ? { ...m, pending: false } : m)));
+          fireTurnSettled({ agentSlug: target.agentSlug, nodeId: target.nodeId, status: 'done' });
           return;
         }
         if (ev.type === 'error') {
@@ -228,18 +305,26 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
           setMessages((prev) =>
             prev.map((m) => (m.id === botId ? { ...m, text: message, pending: false, error: true } : m)),
           );
+          fireTurnSettled({ agentSlug: target.agentSlug, nodeId: target.nodeId, status: 'error' });
           return;
         }
       },
       { onError: () => {} },
     );
-  }, []);
+  }, [fireTurnSettled]);
 
   const runTurn = useCallback(async (input: RunTurnInput): Promise<TurnPostResult> => {
     const switched = agentRef.current !== input.agentSlug;
     agentRef.current = input.agentSlug;
     setAgentSlug(input.agentSlug);
     setAgentName(input.agentName);
+
+    // The on-screen node this turn rides with (the surface's pinned context, if
+    // any). Captured here so a screen can lock its editor while ITS node is being
+    // worked on, and so the turn-settled event refreshes the right editor.
+    const targetNodeId = pinnedContextRef.current[0]?.id ?? null;
+    const target = { agentSlug: input.agentSlug, nodeId: targetNodeId };
+    setActiveContextNodeId(targetNodeId);
 
     const userId = `u-${input.idempotencyKey}`;
     const botId = `a-${input.idempotencyKey}`;
@@ -288,11 +373,12 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
               setMessages((prev) =>
                 prev.map((m) => (m.id === botId ? { ...m, text: data.outbound.text, pending: false } : m)),
               );
+              fireTurnSettled({ agentSlug: target.agentSlug, nodeId: target.nodeId, status: 'done' });
               return data;
             }
             // Non-blocking (202): the reply lands over the live stream. Keep the
             // bot bubble pending and let the stream type it out + settle it.
-            subscribeDockTurn(data.turnId, botId);
+            subscribeDockTurn(data.turnId, botId, target);
             return data;
           }
           // Our route only emits 400/500 as real outcomes — surface those. A
@@ -319,9 +405,10 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       setMessages((prev) =>
         prev.map((m) => (m.id === botId ? { ...m, text: message, pending: false, error: true } : m)),
       );
+      fireTurnSettled({ agentSlug: target.agentSlug, nodeId: target.nodeId, status: 'error' });
       throw err;
     }
-  }, [subscribeDockTurn]);
+  }, [subscribeDockTurn, fireTurnSettled]);
 
   const clear = useCallback(() => setMessages([]), []);
 
@@ -342,10 +429,18 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       toggle,
       activeAgentSlug,
       setActiveAgentSlug,
+      effectiveAgentSlug,
+      setRouteAgent,
       pendingContext,
       attachContext,
       removeContext,
       clearContext,
+      pinnedContext,
+      setPinnedContext,
+      extraDirective,
+      setExtraDirective,
+      activeContextNodeId,
+      registerTurnListener,
       picking,
       startPicking,
       stopPicking,
@@ -365,10 +460,18 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       toggle,
       activeAgentSlug,
       setActiveAgentSlug,
+      effectiveAgentSlug,
+      setRouteAgent,
       pendingContext,
       attachContext,
       removeContext,
       clearContext,
+      pinnedContext,
+      setPinnedContext,
+      extraDirective,
+      setExtraDirective,
+      activeContextNodeId,
+      registerTurnListener,
       picking,
       startPicking,
       stopPicking,
