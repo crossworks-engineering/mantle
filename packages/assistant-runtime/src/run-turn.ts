@@ -55,10 +55,13 @@ import {
   buildLocationContextLine,
   buildTimeContextLine,
   loadProfilePreferences,
+  isStreamThoughtsEnabled,
+  isPersistThoughtsEnabled,
   noteInboundChannel,
   applyAutoTimezone,
   type LocationPing,
 } from '@mantle/content';
+import { stageLabelForStep } from './stage-label';
 import {
   buildOpenHeartbeatContext,
   HEARTBEAT_RESPONDER_TOOLS,
@@ -78,6 +81,31 @@ import {
   refreshModelCatalog,
 } from '@mantle/tracing';
 import { pickWebDefaultAgent } from './select';
+
+/** Rebuild the persistable thought trail from a turn's tool calls — the same
+ *  grounded action labels the live trail shows (search/write/delegate), via the
+ *  shared `stageLabelForStep`. Thinking rounds aren't tool calls, so the result
+ *  is exactly the "real actions" set the record displays. Returns [] when no
+ *  call maps to a recognised stage. */
+function buildPersistedTrail(
+  toolCalls: ReadonlyArray<{ slug: string; argsJson: string; durationMs: number }>,
+): Array<{ kind: string; label: string; elapsedMs?: number }> {
+  const out: Array<{ kind: string; label: string; elapsedMs?: number }> = [];
+  toolCalls.forEach((tc, i) => {
+    let parsed: Record<string, unknown> = {};
+    try {
+      const p = JSON.parse(tc.argsJson) as unknown;
+      if (p && typeof p === 'object') parsed = p as Record<string, unknown>;
+    } catch {
+      /* unparseable args — the label just won't be enriched */
+    }
+    const stage = stageLabelForStep(`tool: ${tc.slug}`, { args: parsed }, i);
+    if (stage && stage.kind !== 'thinking') {
+      out.push({ kind: stage.kind, label: stage.label, elapsedMs: tc.durationMs });
+    }
+  });
+  return out;
+}
 
 /** Decoded byte size of a base64 string (tolerates a leading data-URL
  *  prefix). Used to size-check an inline image before sending it to a
@@ -688,6 +716,14 @@ export async function runAssistantTurn(
 
   // Finalize the pending outbound row: fill the composed reply + flip the status
   // to 'complete'. Journaled, so a crash-resume re-applies it idempotently.
+  // Persist the thought trail (grounded action labels rebuilt from this turn's
+  // tool calls) onto the row so the record survives a reload — only when the
+  // brain has live streaming AND persistence on (Settings → Profile). A turn
+  // with no recognised actions persists nothing (no empty record).
+  const persistedThoughts =
+    isStreamThoughtsEnabled(prefs) && isPersistThoughtsEnabled(prefs)
+      ? buildPersistedTrail(loopOutcome.toolCalls)
+      : [];
   const finalized = await runDurableStep('finalize_outbound', () =>
     updateAssistantMessageOutcome({
       ownerId,
@@ -695,6 +731,7 @@ export async function runAssistantTurn(
       status: 'complete',
       text: reply,
       model: agent.model,
+      ...(persistedThoughts.length ? { thoughts: persistedThoughts } : {}),
     }),
   );
   // The row was inserted this same turn, so it should always still be there;

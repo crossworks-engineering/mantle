@@ -241,6 +241,9 @@ export async function updateAssistantMessageOutcome(args: {
   model?: string | null;
   /** Human-readable failure reason for a 'failed' turn. */
   error?: string | null;
+  /** Reconstructed thought trail (grounded step labels) to persist onto the
+   *  row's `data` jsonb so the record survives a reload. Merged, not replaced. */
+  thoughts?: Array<{ kind: string; label: string; elapsedMs?: number }>;
   tx?: Executor;
 }): Promise<AssistantMessage | null> {
   const exec = args.tx ?? db;
@@ -251,6 +254,11 @@ export async function updateAssistantMessageOutcome(args: {
       ...(args.text != null ? { text: args.text } : {}),
       ...(args.model !== undefined ? { model: args.model } : {}),
       ...(args.error !== undefined ? { error: args.error } : {}),
+      ...(args.thoughts != null
+        ? {
+            data: sql`${assistantMessages.data} || ${JSON.stringify({ thoughts: args.thoughts })}::jsonb`,
+          }
+        : {}),
     })
     .where(and(eq(assistantMessages.id, args.id), eq(assistantMessages.ownerId, args.ownerId)))
     .returning();

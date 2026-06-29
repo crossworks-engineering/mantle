@@ -121,6 +121,7 @@ function StatusFooter({
 export function ThoughtTrail({
   steps,
   live = false,
+  mode = 'list',
   className,
   startedAt,
   tokens,
@@ -130,6 +131,10 @@ export function ThoughtTrail({
 }: {
   steps: ThoughtEvent[];
   live?: boolean;
+  /** Live display: 'list' stacks completed actions above the active line
+   *  (default); 'replace' shows ONLY the active line, each step replacing the
+   *  last. No effect on the frozen record view. */
+  mode?: 'list' | 'replace';
   className?: string;
   /** Live only: epoch ms the turn started, for the elapsed timer. */
   startedAt?: number | null;
@@ -150,8 +155,9 @@ export function ThoughtTrail({
   if (live) {
     // Only real actions (searches, writes, delegations) persist as history —
     // "thinking" is transient, shown solely as the live footer line, so the
-    // varied thinking phrases never pile up into a stack of filler.
-    const past = steps.slice(0, -1).filter((s) => s.kind !== 'thinking');
+    // varied thinking phrases never pile up into a stack of filler. In 'replace'
+    // mode we drop the stack entirely and show only the active line.
+    const past = mode === 'replace' ? [] : steps.slice(0, -1).filter((s) => s.kind !== 'thinking');
     const active = steps[steps.length - 1]!;
     return (
       <div

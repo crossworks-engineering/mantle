@@ -173,6 +173,16 @@ export function AssistantClient({
   } = useTurnStream(activeTurnId);
   const polledLabel = useTurnStage(sending);
   const stageLabel = streamLabel ?? polledLabel;
+  // Live trail display mode (Settings → Profile). Fetched once on mount; the
+  // trail renders 'list' (stacking, default) until it loads.
+  const [trailMode, setTrailMode] = useState<'list' | 'replace'>('list');
+  useEffect(() => {
+    void apiFetch<{ preferences?: { thoughtTrailMode?: string } }>('/api/profile')
+      .then((d) => {
+        if (d.preferences?.thoughtTrailMode === 'replace') setTrailMode('replace');
+      })
+      .catch(() => {});
+  }, []);
   // Mirror the live trail + the durable outbound id into refs so the completion
   // reconciler (which runs async, off the stream's `done`) reads fresh values
   // rather than stale closure captures.
@@ -983,6 +993,7 @@ export function AssistantClient({
               <ThoughtTrail
                 steps={streamTrail}
                 live
+                mode={trailMode}
                 startedAt={streamStartedAt}
                 tokens={streamTokens}
                 tokensApprox={streamTokensApprox}

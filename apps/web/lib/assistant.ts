@@ -44,8 +44,23 @@ export type AssistantTimelineRow = {
   /** Persisted media (images, voice notes, docs) so the turn renders its
    *  attachments on load — no bytes, just node/file references. */
   attachments: ConversationAttachment[];
+  /** Persisted thought trail (grounded action labels), present on an outbound
+   *  row when the brain has trail-persistence on — lets the "Thought process"
+   *  record survive a reload. Undefined when not persisted. */
+  thoughts?: Array<{ kind: string; label: string; elapsedMs?: number }>;
   createdAt: string;
 };
+
+/** Pull a persisted thought trail out of a row's `data` jsonb, defensively. */
+function thoughtsFromData(data: unknown): AssistantTimelineRow['thoughts'] {
+  const t = (data as { thoughts?: unknown } | null)?.thoughts;
+  if (!Array.isArray(t) || t.length === 0) return undefined;
+  return t
+    .filter((s): s is { kind: string; label: string; elapsedMs?: number } =>
+      Boolean(s) && typeof (s as { label?: unknown }).label === 'string',
+    )
+    .map((s) => ({ kind: String(s.kind ?? 'tool'), label: s.label, elapsedMs: s.elapsedMs }));
+}
 
 /**
  * Recent transcript for one (owner, agent) thread, chronological
@@ -69,6 +84,7 @@ export async function recentAssistantMessages(
       status: assistantMessages.status,
       error: assistantMessages.error,
       attachments: assistantMessages.attachments,
+      data: assistantMessages.data,
       createdAt: assistantMessages.createdAt,
     })
     .from(assistantMessages)
@@ -88,6 +104,7 @@ export async function recentAssistantMessages(
       status: r.status,
       error: r.error,
       attachments: r.attachments ?? [],
+      ...(thoughtsFromData(r.data) ? { thoughts: thoughtsFromData(r.data) } : {}),
       createdAt: r.createdAt.toISOString(),
     }));
 }
@@ -114,6 +131,7 @@ export async function assistantMessagesBefore(
       status: assistantMessages.status,
       error: assistantMessages.error,
       attachments: assistantMessages.attachments,
+      data: assistantMessages.data,
       createdAt: assistantMessages.createdAt,
     })
     .from(assistantMessages)
@@ -137,6 +155,7 @@ export async function assistantMessagesBefore(
       status: r.status,
       error: r.error,
       attachments: r.attachments ?? [],
+      ...(thoughtsFromData(r.data) ? { thoughts: thoughtsFromData(r.data) } : {}),
       createdAt: r.createdAt.toISOString(),
     }));
 }

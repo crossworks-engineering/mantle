@@ -50,6 +50,9 @@ const Body = z.object({
   purposeArchetype: z.string().max(64).optional(),
   // Live turn streaming (thinking trail + token typing). Default on.
   streamThoughts: z.boolean().optional(),
+  // Live trail display mode + whether the trail persists across refresh.
+  thoughtTrailMode: z.enum(['list', 'replace']).optional(),
+  persistThoughts: z.boolean().optional(),
 });
 
 export async function PUT(req: Request) {
@@ -69,6 +72,8 @@ export async function PUT(req: Request) {
     purpose,
     purposeArchetype,
     streamThoughts,
+    thoughtTrailMode,
+    persistThoughts,
   } = parsed.data;
   const tz = (timezone ?? '').trim();
   const loc = (locale ?? '').trim();
@@ -95,6 +100,8 @@ export async function PUT(req: Request) {
       ...(purpose !== undefined ? { purpose: purposeTrimmed.slice(0, 600) } : {}),
       ...(isPurposeArchetype(archetype) ? { purposeArchetype: archetype } : {}),
       ...(streamThoughts !== undefined ? { streamThoughts } : {}),
+      ...(thoughtTrailMode !== undefined ? { thoughtTrailMode } : {}),
+      ...(persistThoughts !== undefined ? { persistThoughts } : {}),
     });
     return NextResponse.json({ preferences });
   } catch (err) {

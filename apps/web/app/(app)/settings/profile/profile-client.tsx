@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
 import { apiFetch, apiSend } from '@/lib/api-fetch';
+import { cn } from '@/lib/utils';
 import { AvatarPicker, type AvatarValue } from '@/components/avatar-picker';
 // Import the value from the browser-safe LEAF, not the @mantle/content barrel —
 // the barrel pulls backup.ts (node:os) + identity-context (@mantle/db) into the
@@ -108,6 +109,14 @@ function ProfileForm({ data }: { data: ProfileData }) {
   const [streamThoughts, setStreamThoughts] = useState<boolean>(
     defaults.streamThoughts !== false,
   );
+  // Switch on = 'replace' (single line); off = 'list' (stacking, default).
+  const [replaceTrail, setReplaceTrail] = useState<boolean>(
+    defaults.thoughtTrailMode === 'replace',
+  );
+  // Default ON: persist the trail so it survives refresh.
+  const [persistThoughts, setPersistThoughts] = useState<boolean>(
+    defaults.persistThoughts !== false,
+  );
   const [error, setError] = useState<string | null>(null);
 
   // Live "now in your settings" preview from the chosen tz/locale — same output
@@ -158,6 +167,8 @@ function ProfileForm({ data }: { data: ProfileData }) {
       purpose,
       purposeArchetype: archetype,
       streamThoughts,
+      thoughtTrailMode: replaceTrail ? 'replace' : 'list',
+      persistThoughts,
     });
   };
 
@@ -346,6 +357,45 @@ function ProfileForm({ data }: { data: ProfileData }) {
           as it&apos;s written. Turn off for a static thinking indicator with the reply
           appearing all at once when it&apos;s done.
         </p>
+
+        {/* Sub-options — only meaningful while streaming is on. */}
+        <div className="ml-3 mt-2 space-y-3 border-l border-border/50 pl-4">
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="replaceTrail" className={cn(!streamThoughts && 'opacity-50')}>
+                Replace steps in place
+              </Label>
+              <Switch
+                id="replaceTrail"
+                checked={replaceTrail}
+                onCheckedChange={setReplaceTrail}
+                disabled={!streamThoughts}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Show only the current action, each one replacing the last. Off stacks
+              completed steps in a list above the live line.
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="persistThoughts" className={cn(!streamThoughts && 'opacity-50')}>
+                Keep the trail after refresh
+              </Label>
+              <Switch
+                id="persistThoughts"
+                checked={persistThoughts}
+                onCheckedChange={setPersistThoughts}
+                disabled={!streamThoughts}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Save the thought trail onto each reply so it&apos;s still there after a
+              page reload. Off keeps it only until you refresh.
+            </p>
+          </div>
+        </div>
       </section>
 
       {error && (

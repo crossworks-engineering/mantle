@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { isReminderChannel, isStreamThoughtsEnabled } from './profile-preferences';
+import {
+  isReminderChannel,
+  isStreamThoughtsEnabled,
+  isPersistThoughtsEnabled,
+  resolveThoughtTrailMode,
+} from './profile-preferences';
 
 // Live turn streaming defaults ON: only an explicit `false` disables it, so a
 // brain that never touched the toggle (undefined) streams. The server gates
@@ -16,6 +21,30 @@ describe('isStreamThoughtsEnabled', () => {
 
   it('is off ONLY for an explicit false', () => {
     expect(isStreamThoughtsEnabled({ streamThoughts: false })).toBe(false);
+  });
+});
+
+// Persistence defaults ON (the trail survives a reload unless turned off); the
+// display mode defaults to 'list' (stacking) unless explicitly 'replace'.
+describe('isPersistThoughtsEnabled', () => {
+  it('defaults on when unset', () => {
+    expect(isPersistThoughtsEnabled({})).toBe(true);
+    expect(isPersistThoughtsEnabled({ persistThoughts: undefined })).toBe(true);
+  });
+  it('is off ONLY for an explicit false', () => {
+    expect(isPersistThoughtsEnabled({ persistThoughts: false })).toBe(false);
+    expect(isPersistThoughtsEnabled({ persistThoughts: true })).toBe(true);
+  });
+});
+
+describe('resolveThoughtTrailMode', () => {
+  it("defaults to 'list' when unset or anything but 'replace'", () => {
+    expect(resolveThoughtTrailMode({})).toBe('list');
+    expect(resolveThoughtTrailMode({ thoughtTrailMode: undefined })).toBe('list');
+  });
+  it("is 'replace' only when explicitly set", () => {
+    expect(resolveThoughtTrailMode({ thoughtTrailMode: 'replace' })).toBe('replace');
+    expect(resolveThoughtTrailMode({ thoughtTrailMode: 'list' })).toBe('list');
   });
 });
 

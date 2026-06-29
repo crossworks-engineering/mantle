@@ -123,7 +123,21 @@ export type ProfilePreferences = {
    *  (env off wins). Read by the web turn route (202 vs blocking + the SSE gate)
    *  via `isStreamThoughtsEnabled`. */
   streamThoughts?: boolean;
+  /** How the LIVE thinking trail renders during a turn: 'list' stacks completed
+   *  actions above the active line (default); 'replace' shows only the current
+   *  action, each one replacing the last (compact, single line). The frozen
+   *  record view (after the turn) is unaffected. */
+  thoughtTrailMode?: ThoughtTrailMode;
+  /** Persist the thought trail onto the finished message so it survives a page
+   *  refresh — reconstructed from the turn's tool actions and stored on the
+   *  durable row, so it reloads on web AND the companion. **Defaults ON**; set
+   *  false to keep it ephemeral (in-memory only; clears on reload). See
+   *  `isPersistThoughtsEnabled`. */
+  persistThoughts?: boolean;
 };
+
+/** Live thinking-trail display modes. */
+export type ThoughtTrailMode = 'list' | 'replace';
 
 /** Resolve the live-streaming preference to a definite boolean — ON unless the
  *  user explicitly turned it off. Use this everywhere instead of reading the
@@ -132,6 +146,22 @@ export function isStreamThoughtsEnabled(
   prefs: Pick<ProfilePreferences, 'streamThoughts'>,
 ): boolean {
   return prefs.streamThoughts !== false;
+}
+
+/** Resolve the trail display mode to a definite value — 'list' unless explicitly
+ *  set to 'replace'. */
+export function resolveThoughtTrailMode(
+  prefs: Pick<ProfilePreferences, 'thoughtTrailMode'>,
+): ThoughtTrailMode {
+  return prefs.thoughtTrailMode === 'replace' ? 'replace' : 'list';
+}
+
+/** Whether the thought trail is persisted onto the finished message — ON unless
+ *  the user explicitly turned it off. */
+export function isPersistThoughtsEnabled(
+  prefs: Pick<ProfilePreferences, 'persistThoughts'>,
+): boolean {
+  return prefs.persistThoughts !== false;
 }
 
 export const DEFAULT_PREFERENCES: ProfilePreferences = {
@@ -231,6 +261,8 @@ export async function loadProfilePreferences(
     heartbeatEgressGate: prefs.heartbeatEgressGate === true,
     // Default ON: only an explicit `false` disables (matches isStreamThoughtsEnabled).
     streamThoughts: prefs.streamThoughts !== false,
+    thoughtTrailMode: prefs.thoughtTrailMode === 'replace' ? 'replace' : 'list',
+    persistThoughts: prefs.persistThoughts !== false,
     lastReconciledVersion:
       typeof prefs.lastReconciledVersion === 'string' && prefs.lastReconciledVersion.length > 0
         ? prefs.lastReconciledVersion
@@ -373,6 +405,8 @@ export async function updateProfilePreferences(
     toolsmithRequireApproval: merged.toolsmithRequireApproval === true,
     heartbeatEgressGate: merged.heartbeatEgressGate === true,
     streamThoughts: merged.streamThoughts !== false,
+    thoughtTrailMode: merged.thoughtTrailMode === 'replace' ? 'replace' : 'list',
+    persistThoughts: merged.persistThoughts !== false,
     lastReconciledVersion: merged.lastReconciledVersion || undefined,
   };
 }
