@@ -47,6 +47,12 @@ export type SkillBackrefs = Record<string, HeartbeatRef[]>;
  * `ToolSummary = ToolDTO`, so if db's union ever diverges from this one, that
  * package fails to compile.
  */
+export interface RecipeStep {
+  tool: string;
+  input?: Record<string, unknown>;
+  as?: string;
+}
+
 export type ToolHandler =
   | { kind: 'builtin'; ref: string }
   | {
@@ -60,7 +66,8 @@ export type ToolHandler =
       authRef?: string | null;
       timeoutMs?: number;
     }
-  | { kind: 'shell'; cmd: string };
+  | { kind: 'shell'; cmd: string }
+  | { kind: 'recipe'; steps: RecipeStep[]; output?: unknown };
 
 /** A tool as returned by `GET /api/tools`. */
 export interface ToolDTO {

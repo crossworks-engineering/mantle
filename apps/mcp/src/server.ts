@@ -1470,6 +1470,7 @@ const TOOLSMITH_WRITE_SLUGS = new Set([
   'api_tool_create',
   'api_tool_update',
   'api_tool_delete',
+  'recipe_tool_create',
   'tool_group_ensure',
   'agent_grant_tool_group',
 ]);

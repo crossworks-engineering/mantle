@@ -20,6 +20,13 @@ import {
   scrubSecrets,
 } from './http-template';
 import { safeFetch } from './safe-fetch';
+import {
+  classifyRecipeStepTool,
+  MAX_RECIPE_DEPTH,
+  recipeVerdictReason,
+  resolveTemplateValue,
+  type RecipeScope,
+} from './recipe';
 import type { ToolHandlerContext, ToolHandlerResult } from './types';
 
 /** Look up a tool by slug for a given owner. Returns null if missing/disabled. */
@@ -55,6 +62,8 @@ export async function dispatchTool(
   tool: Tool,
   input: Record<string, unknown>,
   ctx: ToolHandlerContext,
+  /** Internal: recipe-in-recipe nesting depth. Callers leave this 0. */
+  depth = 0,
 ): Promise<ToolHandlerResult> {
   const h = tool.handler as ToolHandler;
   if (h.kind === 'builtin') {
@@ -77,7 +86,76 @@ export async function dispatchTool(
   if (h.kind === 'shell') {
     return dispatchShell(h, input, ctx);
   }
+  if (h.kind === 'recipe') {
+    return dispatchRecipe(h, input, ctx, depth);
+  }
   return { ok: false, error: `unknown handler kind` };
+}
+
+/**
+ * Run a recipe handler: each step calls an existing tool, with `{param}` /
+ * `$ref` templating threading the recipe input and prior step outputs between
+ * calls — all server-side, so values never cross the LLM. The recipe's result
+ * is its `output` template (when set) or the last step's output.
+ *
+ * The safety envelope is re-checked here (not just at authoring time): a step
+ * may not call a shell tool, a confirm-gated tool, or a forbidden privilege
+ * builtin even if the recipe row was authored before such a tool existed or
+ * was later edited. Sub-calls run with NO trace step (so they don't clobber the
+ * recipe's own step meta) but keep ownerId + agent context.
+ */
+async function dispatchRecipe(
+  h: Extract<ToolHandler, { kind: 'recipe' }>,
+  input: Record<string, unknown>,
+  ctx: ToolHandlerContext,
+  depth: number,
+): Promise<ToolHandlerResult> {
+  if (depth >= MAX_RECIPE_DEPTH) {
+    return { ok: false, error: `recipe nesting too deep (max ${MAX_RECIPE_DEPTH})` };
+  }
+  const scope: RecipeScope = { input, steps: {} };
+  const subCtx: ToolHandlerContext = { ownerId: ctx.ownerId, agent: ctx.agent };
+  const trace: { tool: string; ms: number }[] = [];
+
+  for (let i = 0; i < h.steps.length; i++) {
+    const step = h.steps[i]!;
+    const row = await resolveTool(ctx.ownerId, step.tool);
+    const verdict = classifyRecipeStepTool({
+      slug: step.tool,
+      exists: !!row,
+      kind: row?.handler.kind,
+      requiresConfirm: row?.requiresConfirm,
+    });
+    if (verdict !== 'ok' || !row) {
+      return { ok: false, error: `recipe step ${i}: ${recipeVerdictReason(step.tool, verdict)}` };
+    }
+
+    let stepInput: Record<string, unknown>;
+    try {
+      const resolved = resolveTemplateValue(step.input ?? {}, scope);
+      stepInput = (resolved && typeof resolved === 'object' && !Array.isArray(resolved)
+        ? resolved
+        : {}) as Record<string, unknown>;
+    } catch (err) {
+      return { ok: false, error: `recipe step ${i} ('${step.tool}'): ${err instanceof Error ? err.message : String(err)}` };
+    }
+
+    const t0 = performance.now();
+    const res = await dispatchTool(row, stepInput, subCtx, depth + 1);
+    trace.push({ tool: step.tool, ms: Math.round(performance.now() - t0) });
+    if (!res.ok) {
+      return { ok: false, error: `recipe step ${i} ('${step.tool}') failed: ${res.error}` };
+    }
+    scope.steps[String(i)] = res.output;
+    if (step.as) scope.steps[step.as] = res.output;
+  }
+
+  const output =
+    h.output !== undefined
+      ? resolveTemplateValue(h.output, scope)
+      : scope.steps[String(h.steps.length - 1)];
+  ctx.step?.setMeta({ recipe_steps: trace, step_count: h.steps.length });
+  return { ok: true, output };
 }
 
 const SHELL_TIMEOUT_MS = 30_000;

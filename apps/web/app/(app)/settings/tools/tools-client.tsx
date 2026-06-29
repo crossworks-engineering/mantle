@@ -206,6 +206,12 @@ export function ToolsClient() {
 
   const editTool = editing?.mode === 'edit' ? editing.tool : null;
   const isBuiltin = editTool?.handler.kind === 'builtin';
+  const isRecipe = editTool?.handler.kind === 'recipe';
+  // Recipe + builtin handlers aren't editable via this form (a recipe is a
+  // step chain authored by the Toolsmith — delete + recreate to change it);
+  // only Enabled / Requires-confirm toggle. Recipes stay deletable (they're
+  // user-defined), so the Delete button keys off !isBuiltin, not !isReadOnly.
+  const isReadOnly = isBuiltin || isRecipe;
   const selectedId = editTool?.id ?? null;
   const settingsBusy = settingsQuery.isPending || settingsMutation.isPending;
 
@@ -228,7 +234,10 @@ export function ToolsClient() {
     // Built-in: only the editable metadata is sent (handler/slug/schema are
     // code-backed and immutable). Everything else uses the full body.
     let body: Record<string, unknown>;
-    if (editing.mode === 'edit' && editing.tool.handler.kind === 'builtin') {
+    if (
+      editing.mode === 'edit' &&
+      (editing.tool.handler.kind === 'builtin' || editing.tool.handler.kind === 'recipe')
+    ) {
       body = {
         requiresConfirm: form.requiresConfirm,
         enabled: form.enabled,
@@ -429,9 +438,11 @@ export function ToolsClient() {
                 <p className="text-xs text-muted-foreground">
                   {isBuiltin
                     ? 'Built-in (code-backed). Name, description, and schema are defined in code (read-only) — toggle Enabled and Requires-confirm here.'
-                    : editing.mode === 'create'
-                      ? 'A new HTTP or shell tool. Slug is immutable after creation.'
-                      : 'Update the tool. Slug + kind are immutable.'}
+                    : isRecipe
+                      ? 'Recipe (a chain of existing tools, authored by the Toolsmith). Read-only here — delete and recreate to change the steps; toggle Enabled and Requires-confirm.'
+                      : editing.mode === 'create'
+                        ? 'A new HTTP or shell tool. Slug is immutable after creation.'
+                        : 'Update the tool. Slug + kind are immutable.'}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-3">
@@ -472,7 +483,7 @@ export function ToolsClient() {
                     }
                     required
                     autoFocus
-                    disabled={isBuiltin}
+                    disabled={isReadOnly}
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -499,20 +510,39 @@ export function ToolsClient() {
                   onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                   placeholder="What this tool does, when to use it"
                   required
-                  disabled={isBuiltin}
+                  disabled={isReadOnly}
                 />
               </div>
 
-              {isBuiltin && editTool ? (
+              {isReadOnly && editTool ? (
                 <div className="space-y-1.5">
                   <Label>Handler</Label>
-                  <div className="rounded-md border border-input bg-muted/40 px-3 py-2 font-mono text-xs">
-                    builtin · {editTool.handler.kind === 'builtin' ? editTool.handler.ref : ''}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Code-backed; the implementation is fixed. Edit it in{' '}
-                    <code>packages/tools/src/builtins*.ts</code>.
-                  </p>
+                  {editTool.handler.kind === 'recipe' ? (
+                    <>
+                      <div className="space-y-1 rounded-md border border-input bg-muted/40 px-3 py-2 font-mono text-xs">
+                        {editTool.handler.steps.map((s, i) => (
+                          <div key={i} className="truncate">
+                            <span className="text-muted-foreground">{i}.</span> {s.tool}
+                            {s.as ? <span className="text-muted-foreground"> → ${s.as}</span> : null}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        A chain of {editTool.handler.steps.length} existing tools; data flows between
+                        steps server-side. Delete and recreate via the Toolsmith to change it.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="rounded-md border border-input bg-muted/40 px-3 py-2 font-mono text-xs">
+                        builtin · {editTool.handler.kind === 'builtin' ? editTool.handler.ref : ''}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Code-backed; the implementation is fixed. Edit it in{' '}
+                        <code>packages/tools/src/builtins*.ts</code>.
+                      </p>
+                    </>
+                  )}
                 </div>
               ) : (
                 <>
@@ -631,16 +661,16 @@ export function ToolsClient() {
                   id="schema"
                   value={form.inputSchemaJson}
                   onChange={(e) => setForm((f) => ({ ...f, inputSchemaJson: e.target.value }))}
-                  rows={isBuiltin ? 10 : 6}
-                  readOnly={isBuiltin}
+                  rows={isReadOnly ? 10 : 6}
+                  readOnly={isReadOnly}
                   className={cn(
                     'w-full rounded-md border border-input px-3 py-2 text-sm font-mono',
-                    isBuiltin ? 'bg-muted/40 text-muted-foreground' : 'bg-background',
+                    isReadOnly ? 'bg-muted/40 text-muted-foreground' : 'bg-background',
                   )}
                 />
                 <p className="text-xs text-muted-foreground">
-                  {isBuiltin
-                    ? 'What the model passes to this built-in (read-only).'
+                  {isReadOnly
+                    ? 'What the model passes to this tool (read-only).'
                     : 'Sent verbatim to the model so it knows what to pass.'}
                 </p>
               </div>
