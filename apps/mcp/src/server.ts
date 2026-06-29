@@ -72,6 +72,7 @@ import {
   CONTACT_TOOLS,
   WORKER_DELEGATION_TOOLS,
   EXPORT_TOOLS,
+  PAGE_TOOLS,
   TOOLSMITH_TOOLS,
 } from '@mantle/tools';
 import type { BuiltinToolDef } from '@mantle/tools';
@@ -1129,6 +1130,18 @@ server.tool(
     return jsonReply(row);
   },
 );
+
+// ─── Pages (write) ───────────────────────────────────────────────────────────
+// The rich-document authoring surface — create pages (blank / from a file,
+// note(s), or journal), edit metadata + draft body, and do block-level edits
+// (list/get/update/insert/delete/split/extract/move blocks) plus mention/share.
+// Bridged from the in-app PAGE_TOOLS so an MCP client authors with the exact
+// same tested handlers the `pages` agent uses. page_list/page_get are skipped:
+// they're already hand-wired above (those return the raw ProseMirror document;
+// the builtin read tools return plaintext + block ids — left as the read path
+// for the in-app agent to avoid changing the existing MCP read shape).
+const PAGE_READ_SLUGS = new Set(['page_list', 'page_get']);
+registerBuiltinTools(PAGE_TOOLS, { skip: (def) => PAGE_READ_SLUGS.has(def.slug) });
 
 // ─── Tables (read-only) ────────────────────────────────────────────────────
 //
