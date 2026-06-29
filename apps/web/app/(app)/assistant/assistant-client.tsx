@@ -177,6 +177,7 @@ export function AssistantClient({
     runTurn,
     busy: dockBusy,
     agentSlug: dockAgentSlug,
+    panel,
     pendingContext,
     pinnedContext,
     extraDirective,
@@ -341,6 +342,21 @@ export function AssistantClient({
     if (atBottomRef.current) scrollToBottom(false);
     else setShowJump(true);
   }, [streamReply, streamTrail, scrollToBottom]);
+
+  // Re-pin to the bottom when the panel opens. The transcript warms in the
+  // background while the overlay is display:none (so it's instant on open) — but
+  // a hidden element has no scrollHeight, so the initial-load scroll-to-bottom
+  // above ran as a no-op and left the scroller at the top of the lazy-loaded
+  // history. Now that the subtree is visible (scrollHeight is real), land on the
+  // latest message. Respects a deliberate scroll-up — a minimise→restore keeps
+  // your spot — by only jumping when you were parked at the bottom.
+  useLayoutEffect(() => {
+    if (panel !== 'open') return;
+    const el = scrollerRef.current;
+    if (!el) return;
+    if (atBottomRef.current) el.scrollTop = el.scrollHeight;
+    else setShowJump(true);
+  }, [panel]);
 
   const loadOlder = useCallback(async () => {
     if (loadingRef.current || !hasMore) return;
