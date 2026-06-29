@@ -75,7 +75,7 @@ vi.mock('@mantle/db', () => ({
 }));
 
 // Import AFTER mocks so the loop picks up the mocked deps.
-import { runToolLoop } from './tool-loop';
+import { runToolLoop, buildToolsForModel } from './tool-loop';
 import type {
   ChatDispatcher,
   ChatOptions,
@@ -1185,5 +1185,56 @@ describe('runToolLoop — tool-volume guards', () => {
       result.toolCalls.slice(20).every((c) => c.error === 'too_many_calls_in_response'),
     ).toBe(true);
     expect(result.messages.filter((m) => m.role === 'tool')).toHaveLength(22);
+  });
+});
+
+describe('buildToolsForModel — invoke_agent delegate enum', () => {
+  const invokeAgent = {
+    slug: 'invoke_agent',
+    name: 'Delegate',
+    description: 'Hand off to another agent.',
+    inputSchema: {
+      type: 'object',
+      required: ['agent_slug', 'prompt'],
+      properties: {
+        agent_slug: { type: 'string', description: 'Slug of the target agent.' },
+        prompt: { type: 'string' },
+      },
+    },
+  } as unknown as Tool;
+
+  const agentSlugSchema = (defs: ReturnType<typeof buildToolsForModel>) =>
+    (defs[0]!.function.parameters as any).properties.agent_slug as Record<string, unknown>;
+
+  it('constrains agent_slug to an enum of the delegate list', () => {
+    const defs = buildToolsForModel([invokeAgent], ['pages', 'researcher']);
+    const slug = agentSlugSchema(defs);
+    expect(slug.enum).toEqual(['pages', 'researcher']);
+    expect(slug.description).toContain('pages, researcher');
+  });
+
+  it('does not mutate the shared singleton inputSchema', () => {
+    buildToolsForModel([invokeAgent], ['pages']);
+    // The module-level builtin schema must stay enum-free for the next agent.
+    expect((invokeAgent.inputSchema as any).properties.agent_slug.enum).toBeUndefined();
+  });
+
+  it('leaves agent_slug untouched when the agent has no delegate list', () => {
+    const defs = buildToolsForModel([invokeAgent], []);
+    expect(agentSlugSchema(defs).enum).toBeUndefined();
+    const defs2 = buildToolsForModel([invokeAgent]);
+    expect(agentSlugSchema(defs2).enum).toBeUndefined();
+  });
+
+  it('only enriches invoke_agent, not other tools', () => {
+    const other = {
+      slug: 'note_create',
+      name: 'Note',
+      description: 'Create a note.',
+      inputSchema: { type: 'object', properties: { text: { type: 'string' } } },
+    } as unknown as Tool;
+    const defs = buildToolsForModel([other], ['pages']);
+    expect((defs[0]!.function.parameters as any).properties.text).toBeDefined();
+    expect((defs[0]!.function.parameters as any).properties.agent_slug).toBeUndefined();
   });
 });

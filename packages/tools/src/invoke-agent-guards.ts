@@ -64,7 +64,9 @@ export function checkDelegationAllowed(
   if (targetSlug === parentAgentSlug) {
     return {
       ok: false,
-      reason: `an agent cannot invoke itself ('${parentAgentSlug}')`,
+      reason:
+        `an agent cannot invoke itself ('${parentAgentSlug}') — do this work directly ` +
+        `in your own turn, or delegate to a DIFFERENT specialist from your allowlist`,
     };
   }
   if (!Array.isArray(allowlist) || allowlist.length === 0) {

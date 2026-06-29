@@ -90,6 +90,15 @@ describe('checkDelegationAllowed', () => {
     if (!r.ok) expect(r.reason).toMatch(/cannot invoke itself/);
   });
 
+  it('nudges a self-invoke toward handling it directly or picking another specialist', () => {
+    const r = checkDelegationAllowed('assistant', 'assistant', ['pages', 'assistant']);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toMatch(/cannot invoke itself/);
+      expect(r.reason).toMatch(/directly|different specialist/i);
+    }
+  });
+
   it('refuses delegation when the allowlist is missing', () => {
     const r = checkDelegationAllowed('responder', 'researcher', undefined);
     expect(r.ok).toBe(false);
