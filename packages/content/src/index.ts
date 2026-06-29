@@ -277,6 +277,7 @@ export {
 } from './table-list';
 
 export { markdownToDoc } from './markdown-to-doc';
+export { docToMarkdown } from './doc-to-markdown';
 
 export { ensureBlockIds, repairTableRows, allBlocksHaveIds, BLOCK_NODE_TYPES } from './block-ids';
 
