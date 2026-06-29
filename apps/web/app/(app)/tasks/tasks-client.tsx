@@ -295,6 +295,9 @@ export function TasksClient() {
                   <button
                     type="button"
                     onClick={() => setSel({ mode: 'view', id: t.id })}
+                    data-mark-id={t.id}
+                    data-mark-kind="task"
+                    data-mark-label={t.title}
                     className="min-w-0 flex-1 text-left"
                   >
                     <div className="flex items-baseline gap-2">

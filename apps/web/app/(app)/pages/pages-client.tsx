@@ -577,6 +577,9 @@ export function PagesClient() {
                   <button
                     key={p.id}
                     onClick={() => setSelectedId(p.id)}
+                    data-mark-id={p.id}
+                    data-mark-kind="page"
+                    data-mark-label={p.title}
                     className={cn(
                       'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-3 text-left transition-colors hover:bg-muted/50',
                       selected?.id === p.id && 'border-l-primary',
@@ -818,6 +821,9 @@ function TreeRow({
       <button
         type="button"
         onClick={onSelect}
+        data-mark-id={row.id}
+        data-mark-kind="page"
+        data-mark-label={row.title}
         className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left"
       >
         <span className="size-4 shrink-0 text-center text-sm leading-4" aria-hidden>

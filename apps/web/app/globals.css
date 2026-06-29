@@ -3915,3 +3915,20 @@
     animation: none;
   }
 }
+
+/*
+ * Marker pick mode. While the assistant is in pick mode the shell sets
+ * `data-picking` on <body>; every markable row (data-mark-id) then shows a
+ * dashed primary outline + copy cursor, so it's obvious what can be sent to the
+ * assistant. Inert otherwise — the attributes carry no styling on their own.
+ */
+body[data-picking='true'] [data-mark-id] {
+  outline: 2px dashed var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+  cursor: copy;
+}
+body[data-picking='true'] [data-mark-id]:hover {
+  outline-color: var(--ring);
+  background-color: color-mix(in oklch, var(--primary) 12%, transparent);
+}

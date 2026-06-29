@@ -295,6 +295,9 @@ export function JournalClient() {
                 <button
                   key={n.id}
                   onClick={() => selectEntry(n.id)}
+                  data-mark-id={n.id}
+                  data-mark-kind="journal"
+                  data-mark-label={n.title}
                   className={cn(
                     'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-3 text-left transition-colors hover:bg-muted/50',
                     selected?.id === n.id && !creating && 'border-l-primary',

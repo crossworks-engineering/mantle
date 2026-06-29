@@ -514,6 +514,9 @@ function FilesView({
                         <td className="px-3 py-2">
                           <button
                             onClick={() => openFile(f.id)}
+                            data-mark-id={f.id}
+                            data-mark-kind="file"
+                            data-mark-label={f.filename}
                             className="flex items-center gap-2 text-left hover:underline"
                           >
                             <FileText className="size-4 shrink-0 text-muted-foreground" />
@@ -963,6 +966,9 @@ function ChildFolders({
           <li key={f.id}>
             <button
               onClick={() => onNavigate(f.path)}
+              data-mark-id={f.id}
+              data-mark-kind="folder"
+              data-mark-label={f.slug}
               className="flex w-full items-start gap-2 rounded-md border border-border px-3 py-2 text-left hover:bg-muted/40"
             >
               <Folder className="mt-0.5 size-4 shrink-0 text-muted-foreground" />

@@ -170,6 +170,9 @@ export function EventsClient() {
         key={e.id}
         type="button"
         onClick={() => setSel({ mode: 'view', id: e.id })}
+        data-mark-id={e.id}
+        data-mark-kind="event"
+        data-mark-label={e.title}
         className={cn(
           'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
           isSel && 'border-l-primary',

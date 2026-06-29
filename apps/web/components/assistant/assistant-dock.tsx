@@ -1,8 +1,9 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Sparkles } from 'lucide-react';
+import { Loader2, Sparkles, SquareDashedMousePointer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { apiEventStream, apiUrl, withAuth } from '@/lib/api-fetch';
 import type { TurnEvent } from '@mantle/client-types';
 
@@ -49,6 +50,24 @@ type DockMsg = { id: string; role: 'user' | 'assistant'; text: string; pending?:
  *  `closed` is the initial/dismissed state — both render the bubble. */
 export type AssistantPanelState = 'closed' | 'open' | 'min';
 
+/** The content surfaces a marker pick can attach as assistant context. Every
+ *  one is a graph node addressed by `id`; `kind` only drives the chip icon +
+ *  the wording of the reference preamble the agent reads. */
+export type ContextKind =
+  | 'file'
+  | 'folder'
+  | 'page'
+  | 'note'
+  | 'table'
+  | 'journal'
+  | 'task'
+  | 'event';
+
+/** A node the user marked to send to the assistant as context. */
+export type ContextRef = { id: string; kind: ContextKind; label: string };
+
+const MAX_CONTEXT = 10;
+
 type AssistantDockApi = {
   /** Run a turn through the persistent fetch. Resolves with the server result —
    *  the full reply (blocking route) or a turn-id ack (streaming route, where the
@@ -74,6 +93,23 @@ type AssistantDockApi = {
    *  `mantle_assistant_agent` cookie). */
   activeAgentSlug?: string;
   setActiveAgentSlug: (slug?: string) => void;
+  // ── marker context-pick (consumed by <PickMode/>, the composer, the bubbles) ──
+  /** Nodes marked to ride along with the next turn as context. */
+  pendingContext: ContextRef[];
+  /** Add a marked node (deduped by id, capped). */
+  attachContext: (ref: ContextRef) => void;
+  /** Drop one marked node. */
+  removeContext: (id: string) => void;
+  /** Clear all marked nodes (called after a successful send). */
+  clearContext: () => void;
+  /** True while in pick mode — the screen behind highlights markable rows. */
+  picking: boolean;
+  /** Enter pick mode (also minimises an open panel so the screen is navigable). */
+  startPicking: () => void;
+  /** Leave pick mode. */
+  stopPicking: () => void;
+  /** picking ⇄ not — what the marker bubble toggles. */
+  togglePicking: () => void;
 };
 
 const Ctx = createContext<AssistantDockApi | null>(null);
@@ -90,6 +126,35 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   // ── Global panel UI state ──
   const [panel, setPanel] = useState<AssistantPanelState>('closed');
   const [activeAgentSlug, setActiveAgentSlugState] = useState<string | undefined>(undefined);
+
+  // ── Marker context-pick state ──
+  const [pendingContext, setPendingContext] = useState<ContextRef[]>([]);
+  const [picking, setPicking] = useState(false);
+
+  const attachContext = useCallback((ref: ContextRef) => {
+    setPendingContext((prev) => {
+      if (prev.some((r) => r.id === ref.id)) return prev; // already marked
+      if (prev.length >= MAX_CONTEXT) return prev; // cap — silently ignore extras
+      return [...prev, ref];
+    });
+  }, []);
+  const removeContext = useCallback(
+    (id: string) => setPendingContext((prev) => prev.filter((r) => r.id !== id)),
+    [],
+  );
+  const clearContext = useCallback(() => setPendingContext([]), []);
+
+  const startPicking = useCallback(() => {
+    setPicking(true);
+    setPanel((p) => (p === 'open' ? 'min' : p)); // free the screen to navigate + click rows
+  }, []);
+  const stopPicking = useCallback(() => setPicking(false), []);
+  const togglePicking = useCallback(() => {
+    setPicking((on) => {
+      if (!on) setPanel((p) => (p === 'open' ? 'min' : p));
+      return !on;
+    });
+  }, []);
 
   // Seed the selected agent from the cookie the picker writes, so the panel
   // opens on your last-used agent without a URL param.
@@ -108,13 +173,17 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   const openAssistant = useCallback(
     (slug?: string) => {
       if (slug) setActiveAgentSlug(slug);
+      setPicking(false); // opening the full chat ends any in-progress pick
       setPanel('open');
     },
     [setActiveAgentSlug],
   );
   const minimize = useCallback(() => setPanel((p) => (p === 'open' ? 'min' : p)), []);
   const close = useCallback(() => setPanel('closed'), []);
-  const toggle = useCallback(() => setPanel((p) => (p === 'open' ? 'min' : 'open')), []);
+  const toggle = useCallback(() => {
+    setPanel((p) => (p === 'open' ? 'min' : 'open'));
+    setPicking(false); // showing the chat (or minimising it) ends pick mode
+  }, []);
 
   // Drive the floating mini-chat's bot bubble off the live stream (non-blocking
   // route). Types the reply out as text-deltas arrive, then settles on
@@ -273,6 +342,14 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       toggle,
       activeAgentSlug,
       setActiveAgentSlug,
+      pendingContext,
+      attachContext,
+      removeContext,
+      clearContext,
+      picking,
+      startPicking,
+      stopPicking,
+      togglePicking,
     }),
     [
       runTurn,
@@ -288,6 +365,14 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       toggle,
       activeAgentSlug,
       setActiveAgentSlug,
+      pendingContext,
+      attachContext,
+      removeContext,
+      clearContext,
+      picking,
+      startPicking,
+      stopPicking,
+      togglePicking,
     ],
   );
 
@@ -364,6 +449,42 @@ export function AssistantBubble() {
             className="absolute right-1 top-1 size-2.5 rounded-full bg-destructive ring-2 ring-background"
             aria-hidden
           />
+        )}
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * Marker bubble — the "pick context first" entry point, sitting beside the chat
+ * bubble. Toggles pick mode (<PickMode/> highlights markable rows on the screen
+ * behind); a badge shows how many nodes are marked. Like the chat bubble, it's
+ * hidden only while the full panel owns the screen.
+ */
+export function MarkerBubble() {
+  const { panel, picking, togglePicking, pendingContext } = useAssistantDock();
+  if (panel === 'open') return null;
+  const count = pendingContext.length;
+
+  return (
+    <div className="pointer-events-auto self-end">
+      <Button
+        onClick={togglePicking}
+        size="icon"
+        variant={picking ? 'default' : 'secondary'}
+        className={cn('relative size-12 rounded-full shadow-lg', picking && 'ring-2 ring-ring ring-offset-2 ring-offset-background')}
+        aria-pressed={picking}
+        aria-label={picking ? 'Stop picking context' : 'Pick content to send to the assistant'}
+        title={picking ? 'Picking — click a row to attach (Esc when done)' : 'Mark content to send to the assistant'}
+      >
+        <SquareDashedMousePointer className="size-5" aria-hidden />
+        {count > 0 && (
+          <span
+            className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-semibold tabular-nums text-primary-foreground ring-2 ring-background"
+            aria-hidden
+          >
+            {count}
+          </span>
         )}
       </Button>
     </div>

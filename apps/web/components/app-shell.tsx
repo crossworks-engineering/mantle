@@ -15,8 +15,9 @@ import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { ToastProvider } from '@/components/ui/toast';
 import { PageTitleProvider } from '@/components/layout/page-title';
 import { UploadProvider, UploadDock } from '@/components/uploads/upload-provider';
-import { AssistantDockProvider, AssistantBubble } from '@/components/assistant/assistant-dock';
+import { AssistantDockProvider, AssistantBubble, MarkerBubble } from '@/components/assistant/assistant-dock';
 import { AssistantPanel } from '@/components/assistant/assistant-panel';
+import { PickMode } from '@/components/assistant/pick-mode';
 
 /**
  * App shell — three fixed regions (header, left sidebar, right live
@@ -218,6 +219,10 @@ export function AppShell({
             <main>, above every route, summoned from anywhere by the bubble/⌘I. */}
         <AssistantPanel />
 
+        {/* Marker pick mode — highlights markable rows + intercepts their clicks
+            while picking; renders nothing otherwise. */}
+        <PickMode />
+
         {/* App-wide docks: a bottom-right stack so uploads + chat never
             overlap. Inside the shell so it inherits --activity-w (sits left of
             the activity rail) and persists across route changes.
@@ -225,7 +230,11 @@ export function AppShell({
             re-enables its own. */}
         <div className="pointer-events-none fixed bottom-4 right-4 z-40 flex w-96 max-w-[calc(100vw-2rem)] flex-col items-stretch gap-3 lg:right-[calc(var(--activity-w)+1rem)]">
           <UploadDock />
-          <AssistantBubble />
+          {/* Marker + chat bubbles, side by side (marker first → pick before opening chat). */}
+          <div className="flex items-end justify-end gap-2">
+            <MarkerBubble />
+            <AssistantBubble />
+          </div>
         </div>
       </div>
       </AssistantDockProvider>

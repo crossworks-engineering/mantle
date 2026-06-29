@@ -266,6 +266,9 @@ export function TablesShell() {
                 <button
                   key={t.id}
                   onClick={() => selectTable(t.id)}
+                  data-mark-id={t.id}
+                  data-mark-kind="table"
+                  data-mark-label={t.title}
                   aria-busy={pendingId === t.id}
                   className={cn(
                     'group flex w-full items-start gap-2 rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { AssistantThreadClient } from '@/app/(app)/assistant/assistant-thread-client';
 import { useAssistantDock } from './assistant-dock';
@@ -12,16 +12,14 @@ import { useAssistantDock } from './assistant-dock';
  * it lives above every route, so it's available everywhere and minimises to the
  * bubble.
  *
- * Once opened it stays mounted and is merely hidden (display:none) when not
- * `open`, so the transcript, scroll position, and any live turn stream survive a
- * minimise/restore without a re-fetch. `Esc` minimises.
+ * It mounts in the background on page load (hidden via display:none until
+ * `open`), so the thread warms immediately, the composer exists from the start
+ * (a marker selection always has somewhere to land), and opening is instant.
+ * It then stays mounted, so the transcript, scroll position, and any live turn
+ * stream survive a minimise/restore without a re-fetch. `Esc` minimises.
  */
 export function AssistantPanel() {
   const { panel, activeAgentSlug, minimize } = useAssistantDock();
-
-  // Latch: don't mount the (heavy) chat until first opened, then keep it.
-  const everOpened = useRef(false);
-  if (panel === 'open') everOpened.current = true;
 
   // Esc minimises while open.
   useEffect(() => {
@@ -35,8 +33,6 @@ export function AssistantPanel() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [panel, minimize]);
-
-  if (!everOpened.current) return null;
 
   return (
     <div

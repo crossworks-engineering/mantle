@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useAssistantDock } from '@/components/assistant/assistant-dock';
+import { useAssistantDock, type ContextRef, type ContextKind } from '@/components/assistant/assistant-dock';
 import { useTurnStage } from '@/components/assistant/use-turn-stage';
 import { useTurnStream, type ThoughtEvent } from '@/components/assistant/use-turn-stream';
 import { ThoughtTrail } from '@/components/assistant/thought-trail';
@@ -17,6 +17,7 @@ import {
   Paperclip,
   Send,
   Square,
+  SquareDashedMousePointer,
   X,
 } from 'lucide-react';
 import { formatDateTime } from '@/lib/format-datetime';
@@ -127,6 +128,28 @@ function groupTurns(messages: Message[]): Turn[] {
   return turns;
 }
 
+/** Human-readable noun per context kind — used in chips and the preamble. */
+const CONTEXT_KIND_LABEL: Record<ContextKind, string> = {
+  file: 'file',
+  folder: 'folder',
+  page: 'page',
+  note: 'note',
+  table: 'table',
+  journal: 'journal entry',
+  task: 'task',
+  event: 'event',
+};
+
+/** Render marked nodes as a reference block appended to the sent message. The
+ *  agent reads them via its tools (file_read / note_get / page_get / …) — node
+ *  ids are enough; we never inline content here. */
+function buildContextPreamble(refs: ContextRef[]): string {
+  const lines = refs.map(
+    (r) => `- ${CONTEXT_KIND_LABEL[r.kind]} "${r.label}" (node ${r.id})`,
+  );
+  return `\n\n---\nAttached context (read these with your tools as needed):\n${lines.join('\n')}`;
+}
+
 export function AssistantClient({
   initialMessages,
   agentReady,
@@ -149,7 +172,15 @@ export function AssistantClient({
   const initials = agentInitials(agentName ?? 'Assistant');
   // Turns run through the app-wide dock provider, so a long turn keeps going
   // (and stays visible in the floating dock) when you navigate away mid-answer.
-  const { runTurn, busy: dockBusy, agentSlug: dockAgentSlug } = useAssistantDock();
+  const {
+    runTurn,
+    busy: dockBusy,
+    agentSlug: dockAgentSlug,
+    pendingContext,
+    removeContext,
+    clearContext,
+    startPicking,
+  } = useAssistantDock();
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -626,6 +657,12 @@ export function AssistantClient({
     // Remember this turn's prompt so a Stop can drop it back into the composer.
     lastPromptRef.current = text;
 
+    // Marker context — the nodes the user picked ride along as a reference
+    // preamble appended to the SENT text (the bubble still shows what was typed).
+    // The agent reads them with its tools (file_read / note_get / page_get / …),
+    // so no turn-route change is needed.
+    const sentText = pendingContext.length ? text + buildContextPreamble(pendingContext) : text;
+
     const hasFile = attachedFile != null;
     const isImage = hasFile && attachedFile.type.startsWith('image/');
     // Idempotency key for this submit — lets the server replay (not re-run)
@@ -680,14 +717,14 @@ export function AssistantClient({
       let isJson: boolean;
       if (hasFile) {
         const formData = new FormData();
-        if (text) formData.set('text', text);
+        if (sentText) formData.set('text', sentText);
         if (agentSlug) formData.set('agentSlug', agentSlug);
         formData.set(isImage ? 'image' : 'file', attachedFile);
         if (location) formData.set('location', JSON.stringify(location));
         body = formData;
         isJson = false;
       } else {
-        body = JSON.stringify({ text, agentSlug, ...(location ? { location } : {}) });
+        body = JSON.stringify({ text: sentText, agentSlug, ...(location ? { location } : {}) });
         isJson = true;
       }
       type BlockingTurn = {
@@ -712,6 +749,8 @@ export function AssistantClient({
       setAttachedFile(null);
       setAttachedPreviewUrl(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
+      // The marked context went out with this turn — clear the chips.
+      clearContext();
 
       if ('outbound' in data) {
         // BLOCKING result (streaming off): the full reply is already here — swap
@@ -1102,6 +1141,30 @@ export function AssistantClient({
                 </button>
               </div>
             )}
+            {/* Marker context chips — nodes picked via pick mode. Sent with the
+                next turn as a reference preamble, then cleared. */}
+            {pendingContext.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {pendingContext.map((c) => (
+                  <span
+                    key={c.id}
+                    className="inline-flex max-w-[16rem] items-center gap-1.5 rounded-md border border-border bg-muted/40 py-1 pl-2 pr-1 text-xs"
+                  >
+                    <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                    <span className="truncate font-medium">{c.label}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeContext(c.id)}
+                      className="rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                      title="Remove"
+                      aria-label={`Remove ${c.label}`}
+                    >
+                      <X className="size-3" aria-hidden />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="flex gap-2">
               <input
                 ref={fileInputRef}
@@ -1122,6 +1185,17 @@ export function AssistantClient({
                   title="Attach image or document"
                 >
                   <Paperclip className="h-4 w-4" />
+                </button>
+                {/* Marker — enter pick mode (minimises the chat) to attach
+                    files, pages, notes… as context for the next turn. */}
+                <button
+                  type="button"
+                  onClick={startPicking}
+                  disabled={!agentReady || sending}
+                  className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"
+                  title="Pick content to attach (files, pages, notes…)"
+                >
+                  <SquareDashedMousePointer className="h-4 w-4" />
                 </button>
                 {/* Share-location toggle — sticky opt-in. When on, each send
                     attaches a fresh browser geolocation fix so the assistant
