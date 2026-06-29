@@ -5,16 +5,16 @@ import { TURN_STREAM_CHANNEL, TURN_CANCEL_CHANNEL } from './channel';
 
 /**
  * Buffering is gated on the SAME master flag as the SSE route + the non-blocking
- * POST (`MANTLE_TURN_STREAMING`). It MUST be gated: `streamId`→`turnId` is set on
- * the trace unconditionally whenever a turn carries an idempotency-key (see
- * run-turn.ts), so `publishTurnEvent` already fires for status/lifecycle on every
- * web turn even when the feature is dark — and we don't want a dark feature
- * writing to the buffer table on every turn. The runner reads apps/web/.env.local,
- * so it sees the flag. (The `pg_notify` below stays unconditional — it's harmless
- * when no consumer is subscribed, and that's the pre-existing behaviour.)
+ * POST (`MANTLE_TURN_STREAMING`) — and mirrors its **on-by-default** stance
+ * (see apps/web/lib/turn-streaming.ts): the buffer fills unless the flag is
+ * explicitly `0`/`false`/`off`/`no`. Keep these two defaults in lockstep — a
+ * producer that buffers while the SSE route is dark (or vice versa) is the kind
+ * of split-brain that made this hard to reason about before. (The `pg_notify`
+ * below stays unconditional — harmless when no consumer is subscribed.)
  */
 function isBufferingEnabled(): boolean {
-  return !!process.env.MANTLE_TURN_STREAMING?.trim();
+  const v = process.env.MANTLE_TURN_STREAMING?.trim().toLowerCase();
+  return v !== '0' && v !== 'false' && v !== 'off' && v !== 'no';
 }
 
 /** How long a turn's buffered events live before the lazy sweep reaps them — a

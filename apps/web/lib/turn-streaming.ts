@@ -1,21 +1,37 @@
 /**
- * Live turn streaming feature flag (server-side).
+ * Live turn streaming feature flags.
  *
- * Phase 1–3 of `docs/live-turn-streaming.md` lands behind this so the SSE
- * surface stays dark until a producer is wired — zero behaviour change while
- * unset. Enable with `MANTLE_TURN_STREAMING=1` (any non-empty value). The stream
- * endpoint 404s when off, exactly as if the feature didn't exist.
+ * The feature (SSE status trail + token streaming, see
+ * `docs/live-turn-streaming.md`) is **on by default**. It used to be dark-by-
+ * default behind `MANTLE_TURN_STREAMING=1`, but that put the on-switch in an
+ * env var that has to be set at BUILD time on the client (a `NEXT_PUBLIC_*`
+ * inline) — easy to forget, invisible once wrong, and the reason a deployed box
+ * could silently show only the static thinking bubble. So the default flipped:
+ * the env vars are now an *off* switch (a backup), and a server that wants the
+ * feature dark sets `MANTLE_TURN_STREAMING=0`. The stream route 404s when off;
+ * the client treats that 404 as a clean fallback (no reconnect loop), so the
+ * server stays the single source of truth even though the client flag is baked
+ * at build.
  */
-export function isTurnStreamingEnabled(): boolean {
-  return !!process.env.MANTLE_TURN_STREAMING?.trim();
+
+/** A flag is ON unless explicitly disabled with 0/false/off/no (case-insensitive).
+ *  Unset → on. */
+function flagOn(raw: string | undefined): boolean {
+  const v = raw?.trim().toLowerCase();
+  return v !== '0' && v !== 'false' && v !== 'off' && v !== 'no';
 }
 
-/**
- * Client-visible twin of the flag, inlined into the browser bundle at build via
- * `NEXT_PUBLIC_MANTLE_TURN_STREAMING`. The client checks this before opening the
- * SSE stream so that, while the feature is off, it never hits the (404'ing)
- * endpoint and never enters a reconnect loop. Enable BOTH vars together.
- */
+/** Server-side master gate: the SSE/cancel routes exist and the POST turn route
+ *  goes non-blocking. Off only when `MANTLE_TURN_STREAMING` is explicitly falsy. */
+export function isTurnStreamingEnabled(): boolean {
+  return flagOn(process.env.MANTLE_TURN_STREAMING);
+}
+
+/** Client-side twin, compiled into the browser bundle. Defaults on (an unset
+ *  `NEXT_PUBLIC_MANTLE_TURN_STREAMING` → on), so the browser opens the stream;
+ *  if the server has it off the GET route 404s and the client falls back
+ *  cleanly. Set `NEXT_PUBLIC_MANTLE_TURN_STREAMING=0` at build to compile it
+ *  out entirely. */
 export function isTurnStreamingEnabledClient(): boolean {
-  return !!process.env.NEXT_PUBLIC_MANTLE_TURN_STREAMING?.trim();
+  return flagOn(process.env.NEXT_PUBLIC_MANTLE_TURN_STREAMING);
 }

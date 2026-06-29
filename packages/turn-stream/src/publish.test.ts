@@ -1,10 +1,9 @@
 /**
  * `publishTurnEvent` persists each event to the replay buffer (for `Last-Event-ID`
- * resume) AND fires the live `pg_notify`. The buffer write is GATED on
- * `MANTLE_TURN_STREAMING` — it must be, because `streamId`→`turnId` is set
- * unconditionally (run-turn.ts), so the producer fires on every web turn even when
- * the feature is dark, and a dark feature must not write to the table. We mock
- * `@mantle/db` (like tracing/store.test.ts) to capture what's written.
+ * resume) AND fires the live `pg_notify`. The buffer write is gated on
+ * `MANTLE_TURN_STREAMING`, which is now **on by default** — the buffer fills
+ * unless the flag is explicitly disabled (0/false/off/no), mirroring the SSE
+ * route. We mock `@mantle/db` (like tracing/store.test.ts) to capture writes.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TurnEvent } from '@mantle/client-types';
@@ -71,8 +70,15 @@ describe('publishTurnEvent — replay buffer', () => {
     expect(h.notifies).toBe(1);
   });
 
-  it('does NOT write to the buffer when the feature is dark (flag unset)', async () => {
+  it('writes to the buffer when the flag is unset (on by default)', async () => {
     delete process.env[FLAG];
+    await publishTurnEvent('owner-1', ev('text-delta', 1));
+    expect(h.inserts).toHaveLength(1);
+    expect(h.notifies).toBe(1);
+  });
+
+  it('does NOT write when the flag is explicitly disabled (0)', async () => {
+    process.env[FLAG] = '0';
     await publishTurnEvent('owner-1', ev('text-delta', 1));
     expect(h.inserts).toHaveLength(0);
     // The notify stays unconditional (pre-existing behaviour; harmless when dark).

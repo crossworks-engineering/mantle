@@ -12,8 +12,9 @@
  * regression. Either way the model lives in the manifest, never hardcoded here.
  *
  * Always off the critical path: the caller fires this WITHOUT awaiting, and a
- * failure/empty result just leaves the grounded line in place (graceful). Gated
- * by `MANTLE_TURN_NARRATION` so the per-step LLM spend is opt-in.
+ * failure/empty result just leaves the grounded line in place (graceful). On by
+ * default; set `MANTLE_TURN_NARRATION=0` to suppress the per-step narration LLM
+ * spend (the grounded status lines still stream).
  */
 
 import { getDefaultWorker, type NarratorParams } from '@mantle/db';
@@ -28,7 +29,9 @@ Examples:
 "Working on it…" -> On it…`;
 
 export function isTurnNarrationEnabled(): boolean {
-  return !!process.env.MANTLE_TURN_NARRATION?.trim();
+  // On unless explicitly disabled (0/false/off/no). Unset → on.
+  const v = process.env.MANTLE_TURN_NARRATION?.trim().toLowerCase();
+  return v !== '0' && v !== 'false' && v !== 'off' && v !== 'no';
 }
 
 /** Strip wrapping quotes, collapse whitespace onto one line, cap length. The cap

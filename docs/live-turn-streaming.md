@@ -1,5 +1,14 @@
 # Live turn streaming & status (Phase 1–3)
 
+> 🟢 **ON BY DEFAULT (v0.83.0).** The four flags below flipped from opt-in to
+> opt-out: streaming, narration, and token typing now run unless explicitly
+> disabled (`MANTLE_TURN_STREAMING=0` / `MANTLE_TURN_NARRATION=0` /
+> `MANTLE_TURN_TOKENS=0`; the client master is build-time, so the server flag is
+> the per-box runtime control). Reason: the on-switch lived in a build-time
+> `NEXT_PUBLIC_*` var, so a deployed box could silently show only the static
+> thinking bubble. The client now treats a 404 from the stream route as a clean
+> fallback, so the server flag is the single source of truth.
+
 > ✅ **BUILT & MERGED (v0.78.0).** Web streaming (status + token-by-token reply),
 > Stop-on-every-provider, the non-blocking 202 route, the narrator worker, and
 > `Last-Event-ID` replay all shipped; the Flutter companion consumer is built +
