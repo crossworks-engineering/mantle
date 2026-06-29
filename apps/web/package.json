@@ -21,6 +21,7 @@
     "worker:calendar:dev": "tsx --watch --env-file-if-exists=./.env.local workers/calendar-sync.ts",
     "worker:push:dev": "tsx --watch --env-file-if-exists=./.env.local workers/push-notify.ts",
     "pgboss:init": "tsx --env-file-if-exists=./.env.local scripts/pgboss-init.ts",
+    "apps:push": "tsx --env-file-if-exists=./.env.local scripts/apps-push.ts",
     "seed:telegram": "tsx --env-file-if-exists=./.env.local scripts/seed-telegram.ts",
     "seed:heartbeat-demo": "tsx --env-file-if-exists=./.env.local scripts/seed-get-to-know-user.ts",
     "seed:coder": "tsx --env-file-if-exists=./.env.local scripts/seed-coder-agent.ts",
