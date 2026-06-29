@@ -15,12 +15,14 @@ import {
   updateAppMeta,
   writeDraftFile,
   deleteDraftFile,
+  saveDraftSource,
   setManifest,
   setDraftBuild,
   publishApp,
   deleteApp,
   workingSource,
   CannotDeleteEntryError,
+  AppSourceLimitError,
   NoGreenBuildError,
   type AppDetail,
 } from '@mantle/content';
@@ -203,6 +205,66 @@ const app_file_delete: BuiltinToolDef = {
       return { ok: true, output: { id, path, deleted: true, file_count: Object.keys(next.files).length } };
     } catch (err) {
       if (err instanceof CannotDeleteEntryError) return { ok: false, error: err.message };
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+const app_source_set: BuiltinToolDef = {
+  slug: 'app_source_set',
+  name: 'Set a mini app\'s whole source tree',
+  description:
+    "Replace the app's ENTIRE draft source tree in one call — pass the whole virtual file set at once instead of many app_file_write calls. `entry` is the entry file path (must `export default function App()`) and MUST be a key in `files`; `files` maps every path to its full contents. The published app is untouched until app_publish. After setting, call app_build to compile. Use this when you authored the app's files locally and want to upload them atomically. " +
+    SOURCE_HINT,
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: 'app node id' },
+      entry: { type: 'string', description: "entry file path, e.g. 'App.tsx' — must be a key in `files`" },
+      files: {
+        type: 'object',
+        description:
+          'Map of file path → full file contents (TSX/TS strings). Must include the entry file. Max 50 files, 256 KB each.',
+        additionalProperties: { type: 'string' },
+      },
+    },
+    required: ['id', 'entry', 'files'],
+  },
+  handler: async (input, ctx) => {
+    const id = str(input.id).trim();
+    const entry = str(input.entry).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    if (!entry) return { ok: false, error: 'entry is required' };
+    const filesIn = input.files;
+    if (!filesIn || typeof filesIn !== 'object' || Array.isArray(filesIn)) {
+      return { ok: false, error: 'files must be an object mapping path → contents' };
+    }
+    const files: Record<string, string> = {};
+    for (const [path, content] of Object.entries(filesIn as Record<string, unknown>)) {
+      if (typeof content !== 'string') {
+        return { ok: false, error: `file '${path}' contents must be a string` };
+      }
+      files[path] = content;
+    }
+    if (!(entry in files)) {
+      return { ok: false, error: `entry '${entry}' must be one of the files (${Object.keys(files).join(', ') || 'none'})` };
+    }
+    try {
+      const ok = await saveDraftSource(ctx.ownerId, id, { entry, files });
+      if (!ok) return { ok: false, error: `app ${id} not found` };
+      ctx.step?.setOutput({ id, entry, file_count: Object.keys(files).length });
+      return {
+        ok: true,
+        output: {
+          id,
+          entry,
+          file_count: Object.keys(files).length,
+          draft_saved: true,
+          hint: 'Run app_build to compile this draft and surface any errors.',
+        },
+      };
+    } catch (err) {
+      if (err instanceof AppSourceLimitError) return { ok: false, error: err.message };
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   },
@@ -428,6 +490,7 @@ export const APP_TOOLS: BuiltinToolDef[] = [
   app_get,
   app_file_write,
   app_file_delete,
+  app_source_set,
   app_build,
   app_tools_set,
   app_db_schema_set,

@@ -74,6 +74,7 @@ import {
   EXPORT_TOOLS,
   PAGE_TOOLS,
   TABLE_TOOLS,
+  APP_TOOLS,
   TOOLSMITH_TOOLS,
 } from '@mantle/tools';
 import type { BuiltinToolDef } from '@mantle/tools';
@@ -1568,6 +1569,16 @@ registerBuiltinTools(WORKER_DELEGATION_TOOLS, {
 // Renders a page/note → .docx or a table → .xlsx into /files/exports and returns
 // the new file's id/path. Pure (no surface, no artifact) — bridges as-is.
 registerBuiltinTools(EXPORT_TOOLS);
+
+// ─── Apps (mini-app builder) ──────────────────────────────────────────────────
+// Author Mantle mini-apps end-to-end from an MCP client: create, write the TSX
+// source tree (app_file_write per file or app_source_set for the whole tree at
+// once), declare the data tools the app may broker (app_tools_set) + per-app
+// SQLite schema (app_db_schema_set), compile server-side via esbuild (app_build
+// returns file/line/column diagnostics to iterate on), preview, and publish.
+// The app reaches owner data only through its declared tool allowlist — pair
+// this with the Toolsmith tools below to mint the data-access tools an app needs.
+registerBuiltinTools(APP_TOOLS);
 
 // ─── Toolsmith ───────────────────────────────────────────────────────────────
 // Writes gated behind MANTLE_MCP_TOOLSMITH_WRITE (see TOOLSMITH_WRITE_SLUGS).
