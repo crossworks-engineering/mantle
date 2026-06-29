@@ -31,7 +31,6 @@ import {
   KeyRound,
   Key,
   Lock,
-  MessageCircle,
   Network,
   NotebookPen,
   Palette,
@@ -63,11 +62,6 @@ type NavItem = {
   badge?: number;
   /** Exact-match only (used for "/" so it doesn't match every route). */
   exact?: boolean;
-  /** When set, the item is a button that runs this instead of navigating
-   *  (e.g. the Assistant item summons the global overlay). */
-  onSelect?: () => void;
-  /** Active state for an action item (which has no route to match `pathname`). */
-  active?: boolean;
 };
 
 type NavGroup = { label: string; items: NavItem[] };
@@ -85,7 +79,9 @@ export function SidebarNav({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { openAssistant, panel } = useAssistantDock();
+  // Navigating away from an open assistant minimises it, so the screen you
+  // picked is actually visible behind the bubble.
+  const { minimize } = useAssistantDock();
   const [query, setQuery] = useState('');
   // Live pending-approval badge: when a tool call is queued/approved/rejected
   // anywhere (a chat turn, a heartbeat fire, a Telegram tap), the realtime
@@ -99,13 +95,6 @@ export function SidebarNav({
         { name: 'Dashboard', href: '/', icon: LayoutDashboard, exact: true },
         { name: 'Journal', href: '/journal', icon: NotebookPen },
         { name: 'Email', href: '/inbox', icon: Inbox },
-        {
-          name: 'Assistant',
-          href: '/assistant',
-          icon: MessageCircle,
-          onSelect: () => openAssistant(),
-          active: panel === 'open',
-        },
         { name: 'Files', href: '/files', icon: FolderTree },
         { name: 'Notes', href: '/notes', icon: FileText },
         { name: 'Pages', href: '/pages', icon: BookText },
@@ -179,7 +168,7 @@ export function SidebarNav({
           .filter((g) => g.items.length > 0);
 
   const renderItem = (item: NavItem) => {
-    const active = item.onSelect ? !!item.active : isActive(item);
+    const active = isActive(item);
     const Icon = item.icon;
     const hasBadge = item.badge != null && item.badge > 0;
     const className = cn(
@@ -214,26 +203,14 @@ export function SidebarNav({
       </>
     );
 
-    // Action items (e.g. Assistant) summon a global surface instead of routing.
-    const trigger = item.onSelect ? (
-      <button
-        key={item.href}
-        type="button"
-        onClick={() => {
-          item.onSelect!();
-          onNavigate?.();
-        }}
-        aria-current={active ? 'page' : undefined}
-        title={collapsed ? undefined : item.name}
-        className={cn(className, 'w-full text-left')}
-      >
-        {inner}
-      </button>
-    ) : (
+    const trigger = (
       <Link
         key={item.href}
         href={item.href}
-        onClick={onNavigate}
+        onClick={() => {
+          minimize(); // an open assistant steps aside for the screen you chose
+          onNavigate?.();
+        }}
         aria-current={active ? 'page' : undefined}
         title={collapsed ? undefined : item.name}
         className={className}

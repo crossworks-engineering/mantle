@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { Minus, X } from 'lucide-react';
+import { Minus } from 'lucide-react';
 import { apiFetch } from '@/lib/api-fetch';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { Spinner } from '@/components/ui/spinner';
@@ -34,7 +34,7 @@ type ThreadData = {
  * writes the cookie + navigates to ?agent=<slug>, which re-keys this query.
  */
 export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
-  const { minimize, close } = useAssistantDock();
+  const { minimize } = useAssistantDock();
   const threadQuery = useQuery({
     queryKey: ['assistant', 'thread', slugHint ?? ''],
     queryFn: () =>
@@ -117,16 +117,6 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
             aria-label="Minimise assistant"
           >
             <Minus aria-hidden />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-8"
-            onClick={close}
-            title="Close"
-            aria-label="Close assistant"
-          >
-            <X aria-hidden />
           </Button>
         </div>
       </header>
