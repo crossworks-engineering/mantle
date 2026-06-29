@@ -35,6 +35,7 @@ import {
   getActiveShareForNode,
   shareUrlForToken,
   nodeUrl,
+  getNote,
 } from '@mantle/content';
 import { fileById, readFileById } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
@@ -55,7 +56,7 @@ const page_create: BuiltinToolDef = {
   slug: 'page_create',
   name: 'Create a page',
   description:
-    "Create a rich document (a `page` node under /pages) in the user's Mantle from content YOU compose. `title` required; `markdown` is the body in the rich dialect (callouts, columns, tables, task lists, highlights). The page is indexed into the brain — summary, embedding, facts, entities — so it becomes searchable and recallable. To make a SUB-PAGE, pass `parent_id` (an existing page's id, e.g. from page_list / search_nodes) and the new page nests under it; omit for a top-level page. Prefer this over note_create when the content is long-form or structured (a plan, a doc, a comparison) that deserves real formatting; use note_create for quick plain-text captures. **For importing an existing file (Notion export, sermon markdown, etc.) use `page_from_file` instead — re-emitting the file body in this tool's `markdown` arg truncates silently above ~6 K output tokens.**",
+    "Create a rich document (a `page` node under /pages) in the user's Mantle from content YOU compose. `title` required; `markdown` is the body in the rich dialect (callouts, columns, tables, task lists, highlights). The page is indexed into the brain — summary, embedding, facts, entities — so it becomes searchable and recallable. To make a SUB-PAGE, pass `parent_id` (an existing page's id, e.g. from page_list / search_nodes) and the new page nests under it; omit for a top-level page. Prefer this over note_create when the content is long-form or structured (a plan, a doc, a comparison) that deserves real formatting; use note_create for quick plain-text captures. **For importing an existing file (Notion export, sermon markdown, etc.) use `page_from_file` instead — re-emitting the file body in this tool's `markdown` arg truncates silently above ~6 K output tokens.** **When the content already lives in an existing NOTE, use `page_from_note` (pass the note id) — it copies the body server-side instead of you re-typing it.**",
   inputSchema: {
     type: 'object',
     properties: {
@@ -528,6 +529,107 @@ const page_from_file: BuiltinToolDef = {
       };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+const page_from_note: BuiltinToolDef = {
+  slug: 'page_from_note',
+  name: 'Create page from note',
+  description:
+    "Promote an EXISTING note into a rich page — the note's markdown body is copied server-side (`note → markdownToDoc → createPage`) WITHOUT round-tripping through your output. **Always prefer this over note_get + page_create when the user wants a note turned into a page** ('make this note a page', 'add this note to pages', 'turn my note into a doc'). It's effectively instant and byte-faithful no matter how long the note is — you pass the note id, NOT its text, so nothing is re-typed or truncated. Pass `parent_id` (an existing page's id) to nest the new page UNDER it as a sub-page; omit for top-level. Title/tags default to the note's own unless you override. The original note is LEFT IN PLACE (non-destructive) — delete it separately with note_delete if the user wants it gone. Returns the new page's id + title; the body is never echoed back (use page_get to verify). **When delegating a note→page move, hand off the note id + parent id only — never paste the note body into the prompt.**",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      note_id: { type: 'string', format: 'uuid', description: 'id of the note to promote' },
+      parent_id: {
+        type: 'string',
+        format: 'uuid',
+        description:
+          'optional id of an existing page to nest the new page UNDER (makes it a sub-page); omit for top-level',
+      },
+      title: {
+        type: 'string',
+        description: "page title; defaults to the note's title if omitted",
+      },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "page tags; defaults to the note's tags if omitted",
+      },
+      icon: { type: 'string', description: 'optional emoji icon, e.g. "📄"' },
+    },
+    required: ['note_id'],
+  },
+  handler: async (input, ctx) => {
+    const noteId = str(input.note_id).trim();
+    if (!noteId) return { ok: false, error: 'note_id is required' };
+
+    const note = await getNote(ctx.ownerId, noteId);
+    if (!note) {
+      return {
+        ok: false,
+        error: `note ${noteId} not found — pass the id of an existing note (see note_list / search_nodes).`,
+      };
+    }
+
+    const parentId = str(input.parent_id).trim();
+    const titleArg = str(input.title).trim();
+    const title = (titleArg || note.title || 'Untitled').slice(0, 200);
+    const tagsArg = strArr(input.tags);
+    const tags = tagsArg.length ? tagsArg : note.tags;
+    const icon = str(input.icon).trim();
+
+    try {
+      const doc = markdownToDoc(note.content);
+      const page = await createPage(ctx.ownerId, {
+        title,
+        doc,
+        tags,
+        ...(icon ? { icon } : {}),
+        ...(parentId ? { parentId } : {}),
+      });
+      ctx.step?.setOutput({
+        id: page.id,
+        title: page.title,
+        source_note_id: noteId,
+        ...(parentId ? { parent_id: parentId } : {}),
+      });
+      void recordIngest({
+        source: 'agent_tool',
+        ownerId: ctx.ownerId,
+        nodeId: page.id,
+        summary: `Page created from note: ${page.title}`,
+        payload: {
+          via: 'page_from_note_tool',
+          sourceNoteId: noteId,
+          ...(parentId ? { parentId } : {}),
+          tags,
+          ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
+        },
+        snippet: note.content.slice(0, 4000),
+      });
+      return {
+        ok: true,
+        output: {
+          id: page.id,
+          title: page.title,
+          tags: page.tags,
+          source_note_id: noteId,
+          ...(parentId ? { parent_id: parentId } : {}),
+        },
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // createPage throws ParentPageNotFoundError when parent_id isn't one of
+      // the owner's pages — surface that plainly (mirrors page_create).
+      if (parentId && msg.includes('parent page not found')) {
+        return {
+          ok: false,
+          error: `parent_id '${parentId}' is not one of your pages — pass the id of an existing page (see page_list / search_nodes).`,
+        };
+      }
+      return { ok: false, error: msg };
     }
   },
 };
@@ -1172,6 +1274,7 @@ const page_unshare: BuiltinToolDef = {
 export const PAGE_TOOLS: BuiltinToolDef[] = [
   page_create,
   page_from_file,
+  page_from_note,
   page_replace_from_file,
   page_update,
   page_update_draft,
