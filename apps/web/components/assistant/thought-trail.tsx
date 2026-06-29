@@ -124,7 +124,9 @@ function StatusFooter({
           larger than the trail and shimmering while the turn runs. */}
       <div className="flex items-start gap-2">
         <Sparkles className="mt-[3px] size-4 shrink-0 animate-pulse text-foreground/50" aria-hidden />
-        <p className="mantle-shimmer-text text-[0.95rem] font-medium leading-relaxed">{label}</p>
+        <p className="mantle-shimmer-text min-w-0 break-words text-[0.95rem] font-medium leading-relaxed">
+          {label}
+        </p>
       </div>
       {meta.length > 0 && (
         <div className="mt-1 pl-6 text-[11px] tabular-nums text-muted-foreground/70">
@@ -214,11 +216,11 @@ export function ThoughtTrail({
 
   // ── Live: completed ACTIONS stack above one active footer line ────────────
   if (live) {
-    // Only real actions (searches, writes, delegations) persist as history —
-    // "thinking" is transient, shown solely as the live footer line, so the
-    // varied thinking phrases never pile up into a stack of filler. In 'replace'
-    // mode we drop the stack entirely and show only the active line.
-    const past = mode === 'replace' ? [] : steps.slice(0, -1).filter((s) => s.kind !== 'thinking');
+    // Every completed step — thinking rounds AND actions — persists as history,
+    // so the full trail of what the agent did is remembered (not just the few
+    // tool actions). Only the current step lives in the active footer line. In
+    // 'replace' mode we drop the stack entirely and show only the active line.
+    const past = mode === 'replace' ? [] : steps.slice(0, -1);
     const active = steps[steps.length - 1]!;
     return (
       <div
