@@ -34,6 +34,7 @@ import {
   searchEntities,
   searchNodes,
   searchChunks,
+  readSection,
 } from '@mantle/search';
 import { embed } from '@mantle/embeddings';
 import {
@@ -268,6 +269,30 @@ server.tool(
     const embedding = await embed(ownerId, q);
     const hits = await searchChunks({ ownerId: ownerId, embedding, branch, limit: limit ?? 10 });
     return jsonReply(hits);
+  },
+);
+
+server.tool(
+  'read_section',
+  'Read one SECTION of a long document in full and in order — the rung between `search_chunks` (scattered passages) and reading the whole file. Use once you know WHERE the answer lives (search_chunks returns each passage\'s nodeId, heading, ordinal). Pass ONLY `node_id` for the OUTLINE (heading ranges); pass `heading` for every passage under that heading; or `from_ordinal`/`to_ordinal` for a contiguous range. Output is capped (~24k chars) with a `next_ordinal` to continue from. Only read the whole file for short documents or when the outline shows no indexed passages.',
+  {
+    node_id: z.string().uuid(),
+    heading: z.string().optional(),
+    from_ordinal: z.number().int().min(0).optional(),
+    to_ordinal: z.number().int().min(0).optional(),
+    max_chars: z.number().int().min(2000).max(60000).optional(),
+  },
+  async ({ node_id, heading, from_ordinal, to_ordinal, max_chars }) => {
+    const res = await readSection({
+      ownerId,
+      nodeId: node_id,
+      heading,
+      fromOrdinal: from_ordinal,
+      toOrdinal: to_ordinal,
+      maxChars: max_chars,
+    });
+    if ('error' in res) return { content: [{ type: 'text', text: res.error }], isError: true };
+    return jsonReply(res);
   },
 );
 

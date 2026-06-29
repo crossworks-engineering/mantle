@@ -362,6 +362,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: [
       'search_nodes',
       'search_chunks',
+      'read_section',
       'tree_list',
       'node_read',
       'entity_search',

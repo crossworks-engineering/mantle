@@ -8,12 +8,14 @@
  * so the same name surfaces to Claude Code and to in-app agents.
  */
 
-import { and, desc, eq, sql } from 'drizzle-orm';
-import { db, nodes, notifyNodeIngested, secrets, telegramChats } from '@mantle/db';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { contentChunks, db, nodes, notifyNodeIngested, secrets, telegramChats } from '@mantle/db';
 import { seal } from '@mantle/crypto';
 import {
   searchNodes,
   searchChunks,
+  readSection,
+  buildSectionOutline,
   searchEntities,
   entityNeighbors,
   entityFacts,
@@ -173,7 +175,7 @@ const search_chunks: BuiltinToolDef = {
   name: 'Search document passages',
   description:
     'Semantic (vector) search over document passages — finds the most relevant *sections* inside long files, pages, emails, and documentation (not just whole-node hits). **Reach for this FIRST on a content question** ("what does the CoF procedure say about inventory grouping?"): it returns the exact passages, so you answer (and quote) without loading whole files into context. ' +
-    "`branch` scopes by ltree path (e.g. 'files' for uploaded documents, 'pages', 'documentation'). Each hit returns the source node id, its heading, and the passage text. Quote the passage directly; only `file_read` / `node_read` the whole document when the passages are insufficient, or when the user names a specific document or asks for an exhaustive, section-by-section read.",
+    "`branch` scopes by ltree path (e.g. 'files' for uploaded documents, 'pages', 'documentation'). Each hit returns the source node id, its heading, ordinal, and passage text. Quote the passage directly. When you need the WHOLE section in order (a full procedure/clause/table), don't read the entire file — pass the hit's `nodeId` + `heading` (or ordinal) to `read_section`. Only `file_read` / `node_read` the whole document for a short file or an explicit exhaustive review.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -202,12 +204,71 @@ const search_chunks: BuiltinToolDef = {
           nodeTitle: h.nodeTitle,
           nodeType: h.nodeType,
           heading: h.headingPath,
+          ordinal: h.ordinal,
           text: h.text,
         })),
       };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
+  },
+};
+
+const read_section: BuiltinToolDef = {
+  slug: 'read_section',
+  name: 'Read a document section',
+  description:
+    'Read one SECTION of a long document in full and in order — the rung between `search_chunks` (a few scattered passages) and `file_read`/`node_read` (the entire document). Reach for this once you know WHERE the answer lives: `search_chunks` returns each passage\'s `nodeId`, `heading`, and ordinal; feed those here to read the whole procedure / clause / table contiguously, WITHOUT loading the entire file into context. ' +
+    'Three modes: (1) pass ONLY `node_id` → the OUTLINE (heading ranges with their ordinals) so you can see the document\'s structure and pick a section; (2) pass `heading` → every passage whose heading contains that text, in order; (3) pass `from_ordinal`/`to_ordinal` → a contiguous ordinal range. Output is capped (~24k chars) and returns `next_ordinal` to continue from when a section runs long. Only fall back to `file_read` for genuinely short documents, or when the outline says there are no indexed passages.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      node_id: {
+        type: 'string',
+        format: 'uuid',
+        description: "the document node — the `nodeId` from a search_chunks hit, or any file/page id",
+      },
+      heading: {
+        type: 'string',
+        description: 'read all passages whose heading path contains this text (case-insensitive)',
+      },
+      from_ordinal: {
+        type: 'integer',
+        minimum: 0,
+        description: 'start of an ordinal range (inclusive)',
+      },
+      to_ordinal: {
+        type: 'integer',
+        minimum: 0,
+        description: 'end of an ordinal range (inclusive); defaults to from_ordinal',
+      },
+      max_chars: {
+        type: 'integer',
+        minimum: 2000,
+        maximum: 60000,
+        description: 'cap on returned characters (default 24000)',
+      },
+    },
+    required: ['node_id'],
+  },
+  handler: async (input, ctx) => {
+    const nodeId = str(input.node_id);
+    if (!nodeId) return { ok: false, error: 'node_id required' };
+    const res = await readSection({
+      ownerId: ctx.ownerId,
+      nodeId,
+      heading: strOpt(input.heading),
+      fromOrdinal: num(input.from_ordinal),
+      toOrdinal: num(input.to_ordinal),
+      maxChars: num(input.max_chars),
+    });
+    if ('error' in res) return { ok: false, error: res.error };
+    ctx.step?.setOutput(
+      res.mode === 'outline'
+        ? { mode: 'outline', passages: res.totalPassages, sections: res.sections.length }
+        : { mode: 'section', passages: res.passages, chars: res.text.length, truncated: res.truncated },
+    );
+    return { ok: true, output: res };
   },
 };
 
@@ -650,40 +711,103 @@ const secret_create: BuiltinToolDef = {
   },
 };
 
+/** A file's extracted text past this many chars is "large": dumping it whole
+ *  overflows the 32KB tool-result ceiling, spills, and gets re-sent every loop
+ *  iteration (the dominant token sink). Past it, an INDEXED file returns its
+ *  opening + a section outline + a pointer to read_section instead — unless the
+ *  caller forces it with full:true, or there are no chunks to navigate by. */
+const FILE_LARGE_TEXT_CHARS = 24000;
+/** How much of the opening to show when the large-document guard fires. */
+const FILE_HEAD_CHARS = 4000;
+
 const file_read: BuiltinToolDef = {
   slug: 'file_read',
   name: 'Read a file',
   description:
-    "Read a file's content by id. For text files (.md / .txt / .json / .yaml) returns the body as a utf-8 string. For binaries the extractor stores the parsed text (PDF / Word / Excel) as `data.text`, which is returned here — so you can read or quote the document's actual contents, not just its summary. Returns `content: null` only when no text could be extracted (e.g. a scanned image with no OCR). Use `node_read` for notes/events/tasks/secrets.",
+    "Read a file's content by id. For text files (.md / .txt / .json / .yaml) returns the body as a utf-8 string. For binaries the extractor stores the parsed text (PDF / Word / Excel) as `data.text`, returned here so you can read or quote the document's actual contents. Returns `content: null` only when no text could be extracted (e.g. a scanned image with no OCR). " +
+    "**For a LARGE indexed document this returns the opening + a section outline, NOT the whole text** — to read a specific part, use `search_chunks` + `read_section`; pass `full: true` only when you truly need every word. Use `node_read` for notes/events/tasks/secrets.",
   inputSchema: {
     type: 'object',
-    properties: { file_id: { type: 'string', format: 'uuid' } },
+    properties: {
+      file_id: { type: 'string', format: 'uuid' },
+      full: {
+        type: 'boolean',
+        description:
+          'Load the ENTIRE extracted text even when the document is large. Default false: a large, indexed document returns its opening + a section outline + a pointer to read_section (almost always what you want). Set true only when you genuinely need the complete text.',
+      },
+    },
     required: ['file_id'],
   },
   handler: async (input, ctx) => {
     const fileId = str(input.file_id);
     if (!fileId) return { ok: false, error: 'file_id required' };
+    const full = bool(input.full) === true;
     const meta = await fileById({ ownerId: ctx.ownerId, fileId });
     if (!meta) return { ok: false, error: 'file not found' };
+
+    // Resolve the readable text once. Binary (pdf/docx/xlsx): the raw bytes
+    // aren't useful to the LLM, but the extractor persists the parsed text as
+    // data.text. Text files: the utf-8 body.
+    let text: string | null;
     if (!meta.isText) {
-      // Binary (pdf/docx/xlsx). Bytes aren't useful to the LLM, but the
-      // extractor persists the parsed text as data.text — return that so
-      // the assistant can reproduce the document's content.
       const [n] = await db
         .select({ data: nodes.data })
         .from(nodes)
         .where(and(eq(nodes.id, meta.id), eq(nodes.ownerId, ctx.ownerId)))
         .limit(1);
-      const text =
+      text =
         n && typeof (n.data as Record<string, unknown>)?.text === 'string'
           ? ((n.data as Record<string, unknown>).text as string)
           : null;
-      ctx.step?.setOutput({ binary: true, hasExtractedText: !!text, textChars: text?.length ?? 0 });
-      return { ok: true, output: { file: meta, content: text } };
+    } else {
+      const res = await readFileById({ ownerId: ctx.ownerId, fileId });
+      if (!res) return { ok: false, error: 'file not found' };
+      text = res.bytes.toString('utf8');
     }
-    const res = await readFileById({ ownerId: ctx.ownerId, fileId });
-    if (!res) return { ok: false, error: 'file not found' };
-    return { ok: true, output: { file: meta, content: res.bytes.toString('utf8') } };
+
+    // Large-document guard: a big, already-chunked file would spill into the
+    // tool-result store and get re-sent every loop iteration. Return the
+    // opening + a section outline + a pointer to read_section instead — unless
+    // forced with full:true, or there are no chunks to navigate by (then the
+    // full text is the only option, returned as before).
+    if (!full && text && text.length > FILE_LARGE_TEXT_CHARS) {
+      const chunkRows = await db
+        .select({ ordinal: contentChunks.ordinal, heading: contentChunks.headingPath })
+        .from(contentChunks)
+        .where(and(eq(contentChunks.nodeId, meta.id), eq(contentChunks.ownerId, ctx.ownerId)))
+        .orderBy(asc(contentChunks.ordinal));
+      if (chunkRows.length > 0) {
+        const sections = buildSectionOutline(chunkRows);
+        ctx.step?.setOutput({
+          large: true,
+          totalChars: text.length,
+          passages: chunkRows.length,
+          sections: sections.length,
+        });
+        return {
+          ok: true,
+          output: {
+            file: meta,
+            content: text.slice(0, FILE_HEAD_CHARS),
+            truncated: true,
+            total_chars: text.length,
+            indexed_passages: chunkRows.length,
+            sections: sections.slice(0, 100),
+            note:
+              `This document is large (${text.length} chars, ${chunkRows.length} indexed passages); only the opening ${FILE_HEAD_CHARS} chars are shown. ` +
+              `To read a specific part WITHOUT loading the whole file, use search_chunks to find the passage, then read_section(node_id:"${meta.id}", heading|from_ordinal..to_ordinal) to read that section in full. ` +
+              `Call file_read again with full:true ONLY if you genuinely need the entire text.`,
+          },
+        };
+      }
+    }
+
+    ctx.step?.setOutput({
+      binary: !meta.isText,
+      hasExtractedText: !!text,
+      textChars: text?.length ?? 0,
+    });
+    return { ok: true, output: { file: meta, content: text } };
   },
 };
 
@@ -1077,6 +1201,7 @@ const invoke_agent: BuiltinToolDef = {
 export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   search_nodes,
   search_chunks,
+  read_section,
   tree_list,
   entity_search,
   entity_neighbors,

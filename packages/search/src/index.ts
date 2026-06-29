@@ -21,7 +21,18 @@ export {
   type GraphPathResult,
 } from './entities';
 
-export { searchChunks, type ChunkHit, type ChunkSearchOptions } from './chunks';
+export {
+  searchChunks,
+  readSection,
+  buildSectionOutline,
+  selectSectionChunks,
+  assembleSection,
+  type ChunkHit,
+  type ChunkSearchOptions,
+  type SectionRange,
+  type ReadSectionOptions,
+  type ReadSectionResult,
+} from './chunks';
 
 export interface SearchOptions {
   ownerId: string;
