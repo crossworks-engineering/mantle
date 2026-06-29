@@ -134,6 +134,13 @@ export type ProfilePreferences = {
    *  false to keep it ephemeral (in-memory only; clears on reload). See
    *  `isPersistThoughtsEnabled`. */
   persistThoughts?: boolean;
+  /** Whether this box exposes its remote MCP connector (the OAuth-gated
+   *  `/api/mcp` endpoint addable as a claude.ai custom connector). **Defaults
+   *  OFF** — it's an explicit opt-in because it puts the tool surface on the
+   *  public internet (behind OAuth). When off, `/api/mcp` + the OAuth
+   *  authorize/register endpoints 404, so no new client can connect and existing
+   *  tokens stop working. Flip it in Settings → MCP. */
+  remoteMcpEnabled?: boolean;
 };
 
 /** Live thinking-trail display modes. */
@@ -263,6 +270,8 @@ export async function loadProfilePreferences(
     streamThoughts: prefs.streamThoughts !== false,
     thoughtTrailMode: prefs.thoughtTrailMode === 'replace' ? 'replace' : 'list',
     persistThoughts: prefs.persistThoughts !== false,
+    // Default OFF: only an explicit `true` exposes the remote MCP connector.
+    remoteMcpEnabled: prefs.remoteMcpEnabled === true,
     lastReconciledVersion:
       typeof prefs.lastReconciledVersion === 'string' && prefs.lastReconciledVersion.length > 0
         ? prefs.lastReconciledVersion
@@ -407,6 +416,7 @@ export async function updateProfilePreferences(
     streamThoughts: merged.streamThoughts !== false,
     thoughtTrailMode: merged.thoughtTrailMode === 'replace' ? 'replace' : 'list',
     persistThoughts: merged.persistThoughts !== false,
+    remoteMcpEnabled: merged.remoteMcpEnabled === true,
     lastReconciledVersion: merged.lastReconciledVersion || undefined,
   };
 }

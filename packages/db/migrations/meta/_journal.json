@@ -771,6 +771,13 @@
       "when": 1784246400000,
       "tag": "0109_rename_lifelog_to_journal",
       "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1784332800000,
+      "tag": "0110_oauth_remote_mcp",
+      "breakpoints": true
     }
   ]
 }

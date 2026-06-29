@@ -10,17 +10,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mantle/content": "workspace:*",
     "@mantle/db": "workspace:*",
-    "@mantle/embeddings": "workspace:*",
-    "@mantle/files": "workspace:*",
-    "@mantle/search": "workspace:*",
-    "@mantle/storage": "workspace:*",
-    "@mantle/telegram": "workspace:*",
-    "@mantle/tools": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.0.4",
-    "drizzle-orm": "^0.38.3",
-    "zod": "^3.24.1"
+    "@mantle/mcp-core": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "drizzle-orm": "^0.38.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
