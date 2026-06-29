@@ -43,6 +43,8 @@ export { PERSONA_TOOLS, PERSONA_TOOL_SLUGS } from './builtins-persona';
 export { TASK_TOOLS, TASK_TOOL_SLUGS } from './builtins-tasks';
 export { TERMINAL_TOOLS, TERMINAL_TOOL_SLUGS } from './builtins-terminal';
 export { CONTACT_TOOLS, CONTACT_AUTO_GRANT_SLUGS } from './builtins-contacts';
+export { WORKER_DELEGATION_TOOLS } from './builtins-workers';
+export { EXPORT_TOOLS } from './builtins-export';
 export { TOOLSMITH_TOOLS, TOOLSMITH_TOOL_SLUGS } from './builtins-toolsmith';
 export { JOURNAL_TOOLS, JOURNAL_TOOL_SLUGS, JOURNAL_AUTO_GRANT_SLUGS } from './builtins-journal';
 export { LOCATION_TOOLS, LOCATION_TOOL_SLUGS } from './builtins-locations';

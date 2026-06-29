@@ -69,8 +69,15 @@ import {
   getPendingCall,
   listPendingCalls,
   rejectPendingCall,
+  CONTACT_TOOLS,
+  WORKER_DELEGATION_TOOLS,
+  EXPORT_TOOLS,
+  PAGE_TOOLS,
+  TABLE_TOOLS,
+  APP_TOOLS,
   TOOLSMITH_TOOLS,
 } from '@mantle/tools';
+import type { BuiltinToolDef } from '@mantle/tools';
 import { authUsers, resolveSingleOwnerId } from '@mantle/db';
 import {
   TASK_PRIORITIES,
@@ -1126,6 +1133,18 @@ server.tool(
   },
 );
 
+// ─── Pages (write) ───────────────────────────────────────────────────────────
+// The rich-document authoring surface — create pages (blank / from a file,
+// note(s), or journal), edit metadata + draft body, and do block-level edits
+// (list/get/update/insert/delete/split/extract/move blocks) plus mention/share.
+// Bridged from the in-app PAGE_TOOLS so an MCP client authors with the exact
+// same tested handlers the `pages` agent uses. page_list/page_get are skipped:
+// they're already hand-wired above (those return the raw ProseMirror document;
+// the builtin read tools return plaintext + block ids — left as the read path
+// for the in-app agent to avoid changing the existing MCP read shape).
+const PAGE_READ_SLUGS = new Set(['page_list', 'page_get']);
+registerBuiltinTools(PAGE_TOOLS, { skip: (def) => PAGE_READ_SLUGS.has(def.slug) });
+
 // ─── Tables (read-only) ────────────────────────────────────────────────────
 //
 // Typed database grids (type='table'). Read-only over MCP — tables are authored
@@ -1180,6 +1199,17 @@ server.tool(
     return jsonReply(listed);
   },
 );
+
+// ─── Tables (write) ───────────────────────────────────────────────────────────
+// Build + operate typed data grids: create (blank / from a file or text),
+// update metadata, edit rows (add/update/delete + per-cell set), edit columns
+// (add/update/delete), set aggregates + views, query/aggregate over rows, and
+// commit drafts. Bridged from the in-app TABLE_TOOLS so an MCP client uses the
+// same tested handlers the Tables agent uses. table_list/table_get/
+// table_rows_list are skipped — already hand-wired above (read-only) — to keep
+// the existing MCP read shape unchanged.
+const TABLE_READ_SLUGS = new Set(['table_list', 'table_get', 'table_rows_list']);
+registerBuiltinTools(TABLE_TOOLS, { skip: (def) => TABLE_READ_SLUGS.has(def.slug) });
 
 server.tool(
   'task_list',
@@ -1465,6 +1495,38 @@ function zodShapeFromJsonSchema(schema: Record<string, unknown>): Record<string,
   return buildZodShape(schema);
 }
 
+/** Bridge a set of in-app `BuiltinToolDef`s onto the MCP server, reusing the
+ *  exact same handlers the in-app agent runs so the two surfaces never drift.
+ *  Handlers get the minimal context `{ ownerId }` — every other `ctx` field
+ *  (`step`, `surface`, `agent`) is optional and the handler degrades on its
+ *  own (e.g. a worker tool that needs a Telegram chat refuses cleanly here).
+ *  Binary `artifacts` are dropped (MCP results are text/JSON); tools that also
+ *  persist their output to a node — e.g. `generate_image` → /files — still
+ *  surface the node id in `output`. `opts.skip` lets a caller gate writes. */
+function registerBuiltinTools(
+  defs: readonly BuiltinToolDef[],
+  opts?: { skip?: (def: BuiltinToolDef) => boolean },
+) {
+  for (const def of defs) {
+    if (opts?.skip?.(def)) continue;
+    server.tool(
+      def.slug,
+      def.description,
+      zodShapeFromJsonSchema(def.inputSchema),
+      async (args: Record<string, unknown>) => {
+        const result = await def.handler(args ?? {}, { ownerId: OWNER_ID! });
+        if (!result.ok) {
+          return {
+            content: [{ type: 'text' as const, text: `Error: ${result.error}` }],
+            isError: true,
+          };
+        }
+        return jsonReply(result.output);
+      },
+    );
+  }
+}
+
 /** Mutating Toolsmith tools — gated behind MANTLE_MCP_TOOLSMITH_WRITE. */
 const TOOLSMITH_WRITE_SLUGS = new Set([
   'api_tool_create',
@@ -1484,24 +1546,45 @@ if (!toolsmithWriteEnabled) {
   );
 }
 
-for (const def of TOOLSMITH_TOOLS) {
-  if (!toolsmithWriteEnabled && TOOLSMITH_WRITE_SLUGS.has(def.slug)) continue;
-  server.tool(
-    def.slug,
-    def.description,
-    zodShapeFromJsonSchema(def.inputSchema),
-    async (args: Record<string, unknown>) => {
-      const result = await def.handler(args ?? {}, { ownerId: OWNER_ID! });
-      if (!result.ok) {
-        return {
-          content: [{ type: 'text' as const, text: `Error: ${result.error}` }],
-          isError: true,
-        };
-      }
-      return jsonReply(result.output);
-    },
-  );
-}
+// ─── Contacts ────────────────────────────────────────────────────────────────
+// The email allowlist (nodes of type='contact'). Exposing these closes the gap
+// where an MCP client could read the brain but not extend the assistant's reach:
+// contact_create is what lets email_send target a new recipient (and kicks off
+// the 90-day inbound history backfill). Bridged from the in-app CONTACT_TOOLS so
+// both surfaces share one tested handler (incl. the enqueueBackfills side effect).
+registerBuiltinTools(CONTACT_TOOLS);
+
+// ─── Workers (modality delegation) ───────────────────────────────────────────
+// extract_from_image / summarize_text / generate_image run headless: they read
+// from the file store or take inline text and return text (or, for image gen, a
+// file node whose id is in the output — the base64 artifact is dropped over MCP
+// but the saved /files node is retrievable via file_read). synthesize_speech is
+// omitted: it structurally needs a live delivery surface (Telegram chat / web
+// reply stream) the MCP bridge can't supply, so it would only ever error here.
+registerBuiltinTools(WORKER_DELEGATION_TOOLS, {
+  skip: (def) => def.slug === 'synthesize_speech',
+});
+
+// ─── Export (Word / Excel) ───────────────────────────────────────────────────
+// Renders a page/note → .docx or a table → .xlsx into /files/exports and returns
+// the new file's id/path. Pure (no surface, no artifact) — bridges as-is.
+registerBuiltinTools(EXPORT_TOOLS);
+
+// ─── Apps (mini-app builder) ──────────────────────────────────────────────────
+// Author Mantle mini-apps end-to-end from an MCP client: create, write the TSX
+// source tree (app_file_write per file or app_source_set for the whole tree at
+// once), declare the data tools the app may broker (app_tools_set) + per-app
+// SQLite schema (app_db_schema_set), compile server-side via esbuild (app_build
+// returns file/line/column diagnostics to iterate on), preview, and publish.
+// The app reaches owner data only through its declared tool allowlist — pair
+// this with the Toolsmith tools below to mint the data-access tools an app needs.
+registerBuiltinTools(APP_TOOLS);
+
+// ─── Toolsmith ───────────────────────────────────────────────────────────────
+// Writes gated behind MANTLE_MCP_TOOLSMITH_WRITE (see TOOLSMITH_WRITE_SLUGS).
+registerBuiltinTools(TOOLSMITH_TOOLS, {
+  skip: (def) => !toolsmithWriteEnabled && TOOLSMITH_WRITE_SLUGS.has(def.slug),
+});
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
