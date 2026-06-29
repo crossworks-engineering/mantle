@@ -25,6 +25,10 @@ export const PUBLIC_PATHS = [
   '/api/federation',
   '/api/version',
   '/app-runtime',
+  // PHASE 0 SPIKE: the remote MCP endpoint self-authenticates (hardcoded bearer
+  // now, OAuth later) so it must bypass the session-cookie gate. See
+  // apps/web/app/api/mcp/route.ts and the plan's Phase 4.
+  '/api/mcp',
 ];
 
 /**

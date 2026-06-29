@@ -49,6 +49,7 @@ COPY packages/email/package.json packages/email/package.json
 COPY packages/embeddings/package.json packages/embeddings/package.json
 COPY packages/files/package.json packages/files/package.json
 COPY packages/heartbeats/package.json packages/heartbeats/package.json
+COPY packages/mcp-core/package.json packages/mcp-core/package.json
 COPY packages/microsoft/package.json packages/microsoft/package.json
 COPY packages/rules/package.json packages/rules/package.json
 COPY packages/search/package.json packages/search/package.json

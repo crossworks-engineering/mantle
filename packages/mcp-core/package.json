@@ -1,0 +1,26 @@
+{
+  "name": "@mantle/mcp-core",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": {
+    "@mantle/content": "workspace:*",
+    "@mantle/db": "workspace:*",
+    "@mantle/embeddings": "workspace:*",
+    "@mantle/files": "workspace:*",
+    "@mantle/search": "workspace:*",
+    "@mantle/telegram": "workspace:*",
+    "@mantle/tools": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "drizzle-orm": "^0.38.3",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.2"
+  }
+}

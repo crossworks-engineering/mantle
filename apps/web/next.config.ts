@@ -53,6 +53,7 @@ const nextConfig: NextConfig = {
     '@mantle/email',
     '@mantle/embeddings',
     '@mantle/files',
+    '@mantle/mcp-core',
     '@mantle/rules',
     '@mantle/search',
     '@mantle/storage',
