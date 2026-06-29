@@ -73,6 +73,7 @@ import {
   WORKER_DELEGATION_TOOLS,
   EXPORT_TOOLS,
   PAGE_TOOLS,
+  TABLE_TOOLS,
   TOOLSMITH_TOOLS,
 } from '@mantle/tools';
 import type { BuiltinToolDef } from '@mantle/tools';
@@ -1197,6 +1198,17 @@ server.tool(
     return jsonReply(listed);
   },
 );
+
+// ─── Tables (write) ───────────────────────────────────────────────────────────
+// Build + operate typed data grids: create (blank / from a file or text),
+// update metadata, edit rows (add/update/delete + per-cell set), edit columns
+// (add/update/delete), set aggregates + views, query/aggregate over rows, and
+// commit drafts. Bridged from the in-app TABLE_TOOLS so an MCP client uses the
+// same tested handlers the Tables agent uses. table_list/table_get/
+// table_rows_list are skipped — already hand-wired above (read-only) — to keep
+// the existing MCP read shape unchanged.
+const TABLE_READ_SLUGS = new Set(['table_list', 'table_get', 'table_rows_list']);
+registerBuiltinTools(TABLE_TOOLS, { skip: (def) => TABLE_READ_SLUGS.has(def.slug) });
 
 server.tool(
   'task_list',
