@@ -196,7 +196,7 @@ const table_from_file: BuiltinToolDef = {
   slug: 'table_from_file',
   name: 'Create table(s) from a spreadsheet',
   description:
-    "Import a `.xlsx` / `.xls` / `.csv` file into typed grids — bytes go server-side from `files` → SheetJS → typed columns + rows, never round-tripping through your output (scales to large sheets). Column types are inferred (numbers, dates, checkboxes, text). **One table per non-empty sheet:** a multi-sheet workbook yields several tables (the first uses your `title` if given; others are named after their sheet). The grids are committed + indexed immediately. Returns the created table ids. Use this whenever the user hands you a spreadsheet.",
+    "Import a `.xlsx` / `.xls` / `.csv` file into typed grids — bytes go server-side from `files` → SheetJS → typed columns + rows, never round-tripping through your output (scales to large sheets). Column types are inferred (numbers, dates, checkboxes, text). **One table per non-empty sheet:** a multi-sheet workbook yields several tables (the first uses your `title` if given; others are named after their sheet). A very large sheet (beyond ~10k rows) is split into contiguous parts ('… (part 1/N)') so no rows are lost — `part`/`partsTotal` are returned. The grids are committed + indexed immediately. Returns the created table ids. Use this whenever the user hands you a spreadsheet.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -230,20 +230,51 @@ const table_from_file: BuiltinToolDef = {
     const tags = strArr(input.tags);
     const icon = str(input.icon).trim();
     const baseTitle = str(input.title).trim();
-    const created: { id: string; title: string; sheet: string; columns: number; rows: number }[] = [];
+    const created: {
+      id: string;
+      title: string;
+      sheet: string;
+      columns: number;
+      rows: number;
+      part?: number;
+      partsTotal?: number;
+    }[] = [];
     try {
       for (let i = 0; i < sheets.length; i++) {
         const sheet = sheets[i]!;
-        const title = ((i === 0 && baseTitle) || sheet.name || `Sheet ${i + 1}`).slice(0, 200);
+        // A sheet over MAX_GRID_ROWS arrives as several parts (same columns);
+        // suffix the title so the parts are distinguishable.
+        const parted = (sheet.partsTotal ?? 1) > 1;
+        const core = (i === 0 && baseTitle) || sheet.name || `Sheet ${i + 1}`;
+        const title = (parted ? `${core} (part ${sheet.part}/${sheet.partsTotal})` : core).slice(
+          0,
+          200,
+        );
         const data = tableDocFromGrid(sheet);
-        const table = await createTable(ctx.ownerId, { title, data, tags, ...(icon ? { icon } : {}) });
-        created.push({ id: table.id, title: table.title, sheet: sheet.name, columns: data.columns.length, rows: data.rows.length });
+        const table = await createTable(ctx.ownerId, {
+          title,
+          data,
+          tags,
+          sourceFileId: fileId,
+          ...(icon ? { icon } : {}),
+        });
+        created.push({
+          id: table.id,
+          title: table.title,
+          sheet: sheet.name,
+          columns: data.columns.length,
+          rows: data.rows.length,
+          // Surface pagination so the model can tell the user a big sheet was
+          // split across several tables.
+          ...(parted ? { part: sheet.part, partsTotal: sheet.partsTotal } : {}),
+        });
+        const partNote = parted ? ` part ${sheet.part}/${sheet.partsTotal}` : '';
         void recordIngest({
           source: 'agent_tool',
           ownerId: ctx.ownerId,
           nodeId: table.id,
-          summary: `Table imported from ${meta.filename} (${sheet.name}): ${table.title}`,
-          payload: { via: 'table_from_file_tool', sourceFileId: fileId, sheet: sheet.name, ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}) },
+          summary: `Table imported from ${meta.filename} (${sheet.name}${partNote}): ${table.title}`,
+          payload: { via: 'table_from_file_tool', sourceFileId: fileId, sheet: sheet.name, ...(parted ? { part: sheet.part, partsTotal: sheet.partsTotal } : {}), ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}) },
         });
       }
     } catch (err) {

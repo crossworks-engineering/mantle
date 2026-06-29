@@ -284,6 +284,13 @@ async function loadFileBytes(
 /** Spreadsheet extensions that auto-convert to Table(s) on ingest. */
 const AUTO_TABLE_EXTS = new Set(['xlsx', 'xls', 'csv']);
 
+/** Max TABLES a single auto-import will create (sheets × paginated parts). Each
+ *  table is its own indexed node, so a huge or many-sheet workbook would fan out
+ *  into a burst of extractor runs from one upload. Beyond this we create the
+ *  leading tables and log the rest as skipped (the source file stays fully
+ *  searchable). An explicit `table_from_file` is user-initiated, not capped. */
+const MAX_AUTO_TABLE_TABLES = Number(process.env.MANTLE_MAX_AUTO_TABLE_TABLES) || 20;
+
 /**
  * On ingest, turn a spreadsheet file node into typed Table(s) — one per
  * non-empty sheet — published immediately + indexed, so registers land in
@@ -328,22 +335,36 @@ async function maybeAutoTableSpreadsheet(
   }
   if (sheets.length === 0) return;
 
+  // `sheets` is the flat list of grids — one per sheet, plus extra parts for any
+  // sheet paginated over MAX_GRID_ROWS. Cap total tables created from one upload;
+  // leading grids win, the rest are logged as skipped.
+  const toTable = sheets.slice(0, MAX_AUTO_TABLE_TABLES);
+  const skipped = sheets.length - toTable.length;
+  const multiSheet = new Set(sheets.map((s) => s.name)).size > 1;
   const base = loaded.filename.replace(/\.(xlsx|xls|csv)$/i, '').trim() || 'Imported table';
   await step(
     {
       name: 'auto_table',
       kind: 'compute',
-      input: { filename: loaded.filename, sheets: sheets.length, sourceFileId: node.id },
+      input: {
+        filename: loaded.filename,
+        grids: sheets.length,
+        creating: toTable.length,
+        skipped,
+        sourceFileId: node.id,
+      },
     },
     async (h) => {
       const createdIds: string[] = [];
-      for (let i = 0; i < sheets.length; i++) {
-        const sheet = sheets[i]!;
+      let partedTables = 0;
+      for (const sheet of toTable) {
         const grid = tableDocFromGrid(sheet);
-        // Skip a sheet with no usable tabular data (empty / header-only).
+        // Skip a grid with no usable tabular data (empty / header-only).
         if (grid.columns.length === 0 || grid.rows.length === 0) continue;
+        const parted = (sheet.partsTotal ?? 1) > 1;
+        const core = multiSheet ? `${base} — ${sheet.name}` : base;
         const title = (
-          sheets.length === 1 ? base : `${base} — ${sheet.name || `Sheet ${i + 1}`}`
+          parted ? `${core} (part ${sheet.part}/${sheet.partsTotal})` : core
         ).slice(0, 200);
         const table = await createTable(ownerId, {
           title,
@@ -352,15 +373,22 @@ async function maybeAutoTableSpreadsheet(
           sourceFileId: node.id,
         });
         createdIds.push(table.id);
+        if (parted) partedTables += 1;
+        const partNote = parted ? ` part ${sheet.part}/${sheet.partsTotal}` : '';
         void recordIngest({
           source: 'extractor',
           ownerId,
           nodeId: table.id,
-          summary: `Auto-imported table from ${loaded.filename} (${sheet.name}): ${table.title}`,
-          payload: { via: 'auto_table_on_ingest', sourceFileId: node.id, sheet: sheet.name },
+          summary: `Auto-imported table from ${loaded.filename} (${sheet.name}${partNote}): ${table.title}`,
+          payload: {
+            via: 'auto_table_on_ingest',
+            sourceFileId: node.id,
+            sheet: sheet.name,
+            ...(parted ? { part: sheet.part, partsTotal: sheet.partsTotal } : {}),
+          },
         });
       }
-      h.setMeta({ created: createdIds.length, tableIds: createdIds });
+      h.setMeta({ created: createdIds.length, tableIds: createdIds, skipped, partedTables });
       return createdIds;
     },
   );

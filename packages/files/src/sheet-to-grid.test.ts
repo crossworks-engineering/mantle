@@ -32,6 +32,29 @@ describe('parseSheetToGrid', () => {
     expect(sheet!.rows[0]).toEqual(['Widget', 2, 9.5, true, '2026-01-15']);
   });
 
+  it('paginates a sheet over the ceiling into parts (no rows lost)', () => {
+    const cap = Number(process.env.MANTLE_MAX_GRID_ROWS) || 10000;
+    const n = cap + 5;
+    const aoa: unknown[][] = [['Name', 'Value']];
+    for (let i = 0; i < n; i++) aoa.push([`row-${i}`, i]);
+    const parts = parseSheetToGrid(workbook({ Big: aoa }));
+    expect(parts.length).toBe(2);
+    expect(parts.map((p) => p.rows.length)).toEqual([cap, 5]);
+    expect(parts.map((p) => p.part)).toEqual([1, 2]);
+    expect(parts.every((p) => p.partsTotal === 2)).toBe(true);
+    // identical columns across parts; no rows lost; contiguous slices
+    expect(parts[1]!.columns).toEqual(parts[0]!.columns);
+    expect(parts.reduce((sum, p) => sum + p.rows.length, 0)).toBe(n);
+    expect(parts[1]!.rows[0]).toEqual([`row-${cap}`, cap]);
+  });
+
+  it('emits a single un-parted grid for a sheet under the ceiling', () => {
+    const parts = parseSheetToGrid(workbook({ Small: [['A'], [1], [2]] }));
+    expect(parts.length).toBe(1);
+    expect(parts[0]!.part).toBeUndefined();
+    expect(parts[0]!.partsTotal).toBeUndefined();
+  });
+
   it('returns one ParsedSheet per non-empty sheet', () => {
     const buf = workbook({
       Income: [['Source', 'Amount'], ['Salary', 1000]],

@@ -27,9 +27,21 @@ export type ParsedSheet = {
   /** Row values aligned to `columns` (same length, padded with null). Values
    *  are already typed: number | boolean | ISO-date string | text | null. */
   rows: (string | number | boolean | null)[][];
+  /** When a sheet exceeds `MAX_GRID_ROWS` it is PAGINATED into part 1..partsTotal
+   *  (identical columns, contiguous row slices) so no rows are lost. Set only
+   *  when partsTotal > 1; absent for the common single-page case. */
+  part?: number;
+  partsTotal?: number;
 };
 
 const SAMPLE = 50;
+
+/** Max body rows per emitted grid. A typed grid serialises whole into one
+ *  `tables.data` JSONB blob, so an unbounded sheet (a 100k-row export) would
+ *  create a giant row + a heavy index pass. Rather than truncate, a larger sheet
+ *  is split into contiguous pages of this size (part 1..N, same columns) — no
+ *  data lost. Env-tunable for a box that wants bigger single tables. */
+const MAX_GRID_ROWS = Number(process.env.MANTLE_MAX_GRID_ROWS) || 10000;
 
 function isBlank(v: unknown): boolean {
   return v === null || v === undefined || (typeof v === 'string' && v.trim() === '');
@@ -74,10 +86,10 @@ function normalize(v: unknown, type: InferredColumnType): string | number | bool
   return String(v);
 }
 
-function parseSheet(name: string, rowsAoA: unknown[][]): ParsedSheet | null {
+function parseSheet(name: string, rowsAoA: unknown[][]): ParsedSheet[] {
   // Drop fully-empty rows; the first non-empty row is the header.
   const nonEmpty = rowsAoA.filter((r) => r.some((c) => !isBlank(c)));
-  if (nonEmpty.length === 0) return null;
+  if (nonEmpty.length === 0) return [];
 
   const headerRow = nonEmpty[0]!;
   const width = nonEmpty.reduce((w, r) => Math.max(w, r.length), headerRow.length);
@@ -95,15 +107,32 @@ function parseSheet(name: string, rowsAoA: unknown[][]): ParsedSheet | null {
     const bodyBlank = bodyRaw.every((r) => isBlank(r[i]));
     if (!headerBlank || !bodyBlank) keep.push(i);
   }
-  if (keep.length === 0) return null;
+  if (keep.length === 0) return [];
 
   const columns: ParsedColumn[] = keep.map((i) => ({
     name: isBlank(headerRow[i]) ? `Column ${i + 1}` : String(headerRow[i]).trim(),
     type: inferType(bodyRaw.map((r) => r[i])),
   }));
 
-  const rows = bodyRaw.map((r) => keep.map((i, k) => normalize(r[i], columns[k]!.type)));
-  return { name, columns, rows };
+  const allRows = bodyRaw.map((r) => keep.map((i, k) => normalize(r[i], columns[k]!.type)));
+
+  // Common case: the whole sheet fits in one grid.
+  if (allRows.length <= MAX_GRID_ROWS) return [{ name, columns, rows: allRows }];
+
+  // Larger: paginate into part 1..N (identical columns, contiguous slices) so
+  // no rows are lost and no single table exceeds the JSONB ceiling.
+  const partsTotal = Math.ceil(allRows.length / MAX_GRID_ROWS);
+  const pages: ParsedSheet[] = [];
+  for (let p = 0; p < partsTotal; p++) {
+    pages.push({
+      name,
+      columns,
+      rows: allRows.slice(p * MAX_GRID_ROWS, (p + 1) * MAX_GRID_ROWS),
+      part: p + 1,
+      partsTotal,
+    });
+  }
+  return pages;
 }
 
 /**
@@ -123,8 +152,7 @@ export function parseSheetToGrid(buf: Buffer): ParsedSheet[] {
       blankrows: false,
       defval: null,
     });
-    const parsed = parseSheet(name, aoa);
-    if (parsed) out.push(parsed);
+    out.push(...parseSheet(name, aoa));
   }
   return out;
 }
@@ -174,13 +202,11 @@ export function parseTextToGrid(text: string): ParsedSheet[] {
   const t = (text ?? '').trim();
   if (!t) return [];
   if (looksLikeMarkdownTable(t)) {
-    const sheet = parseSheet('Pasted', markdownTableToAoa(t));
-    return sheet ? [sheet] : [];
+    return parseSheet('Pasted', markdownTableToAoa(t));
   }
   if (t.includes('\t')) {
     const aoa = t.split(/\r?\n/).filter((l) => l.length > 0).map((l) => l.split('\t'));
-    const sheet = parseSheet('Pasted', aoa);
-    return sheet ? [sheet] : [];
+    return parseSheet('Pasted', aoa);
   }
   // Default: CSV — SheetJS handles quoting/escapes from a buffer.
   return parseSheetToGrid(Buffer.from(t, 'utf-8'));
