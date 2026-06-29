@@ -69,8 +69,10 @@ import {
   getPendingCall,
   listPendingCalls,
   rejectPendingCall,
+  CONTACT_TOOLS,
   TOOLSMITH_TOOLS,
 } from '@mantle/tools';
+import type { BuiltinToolDef } from '@mantle/tools';
 import { authUsers, resolveSingleOwnerId } from '@mantle/db';
 import {
   TASK_PRIORITIES,
@@ -1465,6 +1467,38 @@ function zodShapeFromJsonSchema(schema: Record<string, unknown>): Record<string,
   return buildZodShape(schema);
 }
 
+/** Bridge a set of in-app `BuiltinToolDef`s onto the MCP server, reusing the
+ *  exact same handlers the in-app agent runs so the two surfaces never drift.
+ *  Handlers get the minimal context `{ ownerId }` — every other `ctx` field
+ *  (`step`, `surface`, `agent`) is optional and the handler degrades on its
+ *  own (e.g. a worker tool that needs a Telegram chat refuses cleanly here).
+ *  Binary `artifacts` are dropped (MCP results are text/JSON); tools that also
+ *  persist their output to a node — e.g. `generate_image` → /files — still
+ *  surface the node id in `output`. `opts.skip` lets a caller gate writes. */
+function registerBuiltinTools(
+  defs: readonly BuiltinToolDef[],
+  opts?: { skip?: (def: BuiltinToolDef) => boolean },
+) {
+  for (const def of defs) {
+    if (opts?.skip?.(def)) continue;
+    server.tool(
+      def.slug,
+      def.description,
+      zodShapeFromJsonSchema(def.inputSchema),
+      async (args: Record<string, unknown>) => {
+        const result = await def.handler(args ?? {}, { ownerId: OWNER_ID! });
+        if (!result.ok) {
+          return {
+            content: [{ type: 'text' as const, text: `Error: ${result.error}` }],
+            isError: true,
+          };
+        }
+        return jsonReply(result.output);
+      },
+    );
+  }
+}
+
 /** Mutating Toolsmith tools — gated behind MANTLE_MCP_TOOLSMITH_WRITE. */
 const TOOLSMITH_WRITE_SLUGS = new Set([
   'api_tool_create',
@@ -1484,24 +1518,19 @@ if (!toolsmithWriteEnabled) {
   );
 }
 
-for (const def of TOOLSMITH_TOOLS) {
-  if (!toolsmithWriteEnabled && TOOLSMITH_WRITE_SLUGS.has(def.slug)) continue;
-  server.tool(
-    def.slug,
-    def.description,
-    zodShapeFromJsonSchema(def.inputSchema),
-    async (args: Record<string, unknown>) => {
-      const result = await def.handler(args ?? {}, { ownerId: OWNER_ID! });
-      if (!result.ok) {
-        return {
-          content: [{ type: 'text' as const, text: `Error: ${result.error}` }],
-          isError: true,
-        };
-      }
-      return jsonReply(result.output);
-    },
-  );
-}
+// ─── Contacts ────────────────────────────────────────────────────────────────
+// The email allowlist (nodes of type='contact'). Exposing these closes the gap
+// where an MCP client could read the brain but not extend the assistant's reach:
+// contact_create is what lets email_send target a new recipient (and kicks off
+// the 90-day inbound history backfill). Bridged from the in-app CONTACT_TOOLS so
+// both surfaces share one tested handler (incl. the enqueueBackfills side effect).
+registerBuiltinTools(CONTACT_TOOLS);
+
+// ─── Toolsmith ───────────────────────────────────────────────────────────────
+// Writes gated behind MANTLE_MCP_TOOLSMITH_WRITE (see TOOLSMITH_WRITE_SLUGS).
+registerBuiltinTools(TOOLSMITH_TOOLS, {
+  skip: (def) => !toolsmithWriteEnabled && TOOLSMITH_WRITE_SLUGS.has(def.slug),
+});
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
