@@ -54,6 +54,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useRealtime } from '@/components/realtime/use-realtime';
+import { useAssistantDock } from '@/components/assistant/assistant-dock';
 
 type NavItem = {
   name: string;
@@ -62,6 +63,11 @@ type NavItem = {
   badge?: number;
   /** Exact-match only (used for "/" so it doesn't match every route). */
   exact?: boolean;
+  /** When set, the item is a button that runs this instead of navigating
+   *  (e.g. the Assistant item summons the global overlay). */
+  onSelect?: () => void;
+  /** Active state for an action item (which has no route to match `pathname`). */
+  active?: boolean;
 };
 
 type NavGroup = { label: string; items: NavItem[] };
@@ -79,6 +85,7 @@ export function SidebarNav({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { openAssistant, panel } = useAssistantDock();
   const [query, setQuery] = useState('');
   // Live pending-approval badge: when a tool call is queued/approved/rejected
   // anywhere (a chat turn, a heartbeat fire, a Telegram tap), the realtime
@@ -92,7 +99,13 @@ export function SidebarNav({
         { name: 'Dashboard', href: '/', icon: LayoutDashboard, exact: true },
         { name: 'Journal', href: '/journal', icon: NotebookPen },
         { name: 'Email', href: '/inbox', icon: Inbox },
-        { name: 'Assistant', href: '/assistant', icon: MessageCircle },
+        {
+          name: 'Assistant',
+          href: '/assistant',
+          icon: MessageCircle,
+          onSelect: () => openAssistant(),
+          active: panel === 'open',
+        },
         { name: 'Files', href: '/files', icon: FolderTree },
         { name: 'Notes', href: '/notes', icon: FileText },
         { name: 'Pages', href: '/pages', icon: BookText },
@@ -166,25 +179,19 @@ export function SidebarNav({
           .filter((g) => g.items.length > 0);
 
   const renderItem = (item: NavItem) => {
-    const active = isActive(item);
+    const active = item.onSelect ? !!item.active : isActive(item);
     const Icon = item.icon;
     const hasBadge = item.badge != null && item.badge > 0;
-    const link = (
-      <Link
-        key={item.href}
-        href={item.href}
-        onClick={onNavigate}
-        aria-current={active ? 'page' : undefined}
-        title={collapsed ? undefined : item.name}
-        className={cn(
-          'relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-          'group-data-[nav-collapsed=true]/shell:justify-center group-data-[nav-collapsed=true]/shell:gap-0 group-data-[nav-collapsed=true]/shell:px-0',
-          active
-            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-            : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
-        )}
-      >
+    const className = cn(
+      'relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+      'group-data-[nav-collapsed=true]/shell:justify-center group-data-[nav-collapsed=true]/shell:gap-0 group-data-[nav-collapsed=true]/shell:px-0',
+      active
+        ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+        : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+    );
+    const inner = (
+      <>
         <Icon className="size-4 shrink-0" aria-hidden />
         <span className="flex-1 truncate group-data-[nav-collapsed=true]/shell:hidden">
           {item.name}
@@ -204,6 +211,34 @@ export function SidebarNav({
             />
           </>
         )}
+      </>
+    );
+
+    // Action items (e.g. Assistant) summon a global surface instead of routing.
+    const trigger = item.onSelect ? (
+      <button
+        key={item.href}
+        type="button"
+        onClick={() => {
+          item.onSelect!();
+          onNavigate?.();
+        }}
+        aria-current={active ? 'page' : undefined}
+        title={collapsed ? undefined : item.name}
+        className={cn(className, 'w-full text-left')}
+      >
+        {inner}
+      </button>
+    ) : (
+      <Link
+        key={item.href}
+        href={item.href}
+        onClick={onNavigate}
+        aria-current={active ? 'page' : undefined}
+        title={collapsed ? undefined : item.name}
+        className={className}
+      >
+        {inner}
       </Link>
     );
 
@@ -211,7 +246,7 @@ export function SidebarNav({
     if (collapsed) {
       return (
         <Tooltip key={item.href}>
-          <TooltipTrigger asChild>{link}</TooltipTrigger>
+          <TooltipTrigger asChild>{trigger}</TooltipTrigger>
           <TooltipContent side="right" className="flex items-center gap-2">
             {item.name}
             {hasBadge && (
@@ -223,7 +258,7 @@ export function SidebarNav({
         </Tooltip>
       );
     }
-    return link;
+    return trigger;
   };
 
   return (

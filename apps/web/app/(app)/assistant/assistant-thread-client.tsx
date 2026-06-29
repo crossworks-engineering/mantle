@@ -1,11 +1,13 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { Minus, X } from 'lucide-react';
 import { apiFetch } from '@/lib/api-fetch';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { Spinner } from '@/components/ui/spinner';
+import { Button } from '@/components/ui/button';
 import { BoringAvatar } from '@/components/boring-avatar';
-import { SetPageTitle } from '@/components/layout/page-title';
+import { useAssistantDock } from '@/components/assistant/assistant-dock';
 import { AssistantClient } from './assistant-client';
 import { AgentSelect } from './agent-select';
 import type { AssistantAgentOption, AssistantTimelineRow } from '@/lib/assistant';
@@ -32,6 +34,7 @@ type ThreadData = {
  * writes the cookie + navigates to ?agent=<slug>, which re-keys this query.
  */
 export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
+  const { minimize, close } = useAssistantDock();
   const threadQuery = useQuery({
     queryKey: ['assistant', 'thread', slugHint ?? ''],
     queryFn: () =>
@@ -62,7 +65,6 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
 
   return (
     <div className="flex h-full flex-col">
-      <SetPageTitle title={agent ? agent.name : 'Assistant'} />
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-6 py-3">
         <div className="flex items-center gap-3">
           {agent && agent.avatar ? (
@@ -104,7 +106,29 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
             </p>
           </div>
         </div>
-        {agentList.length > 0 && <AgentSelect agents={agentList} selected={agent?.slug ?? ''} />}
+        <div className="flex items-center gap-1.5">
+          {agentList.length > 0 && <AgentSelect agents={agentList} selected={agent?.slug ?? ''} />}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            onClick={minimize}
+            title="Minimise (Esc)"
+            aria-label="Minimise assistant"
+          >
+            <Minus aria-hidden />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            onClick={close}
+            title="Close"
+            aria-label="Close assistant"
+          >
+            <X aria-hidden />
+          </Button>
+        </div>
       </header>
 
       <AssistantClient

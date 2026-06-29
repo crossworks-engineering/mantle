@@ -1,24 +1,20 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { ChevronDown, Loader2, MessageSquare, Send, Sparkles, X } from 'lucide-react';
+import { Loader2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
 import { apiEventStream, apiUrl, withAuth } from '@/lib/api-fetch';
 import type { TurnEvent } from '@mantle/client-types';
-import { useTurnStage } from './use-turn-stage';
 
 /**
- * App-wide assistant dock. The /assistant turn fetch runs here (in the
- * persistent shell), so a long turn — research, a big tool loop — keeps going
- * when you navigate away, and a floating mini-chat shows the agent working and
- * her reply, with a box to keep talking. No beforeunload guard needed: the turn
- * route persists + caches by idempotency-key, so even a reload doesn't lose it.
+ * App-wide assistant provider. The turn fetch runs here (in the persistent
+ * shell), so a long turn — research, a big tool loop — keeps going when you
+ * navigate away. No beforeunload guard needed: the turn route persists + caches
+ * by idempotency-key, so even a reload doesn't lose it.
+ *
+ * This provider ALSO owns the global panel UI state: the full assistant opens as
+ * a content-area overlay (<AssistantPanel/>) on any screen and minimises to a
+ * bubble (<AssistantBubble/>), summoned by the bubble or ⌘I.
  */
 export type TurnResponse = {
   inbound: { id: string; text: string; createdAt: string; artifacts?: unknown[] };
@@ -48,27 +44,77 @@ export type RunTurnInput = {
 
 type DockMsg = { id: string; role: 'user' | 'assistant'; text: string; pending?: boolean; error?: boolean };
 
+/** Panel visibility: `open` = full overlay shown; `min`/`closed` = bubble only
+ *  (screen behind is visible + interactive). `min` is "minimised from open",
+ *  `closed` is the initial/dismissed state — both render the bubble. */
+export type AssistantPanelState = 'closed' | 'open' | 'min';
+
 type AssistantDockApi = {
   /** Run a turn through the persistent fetch. Resolves with the server result —
    *  the full reply (blocking route) or a turn-id ack (streaming route, where the
-   *  reply lands over the live stream) — or throws. Also drives the floating dock. */
+   *  reply lands over the live stream) — or throws. Also drives the bubble state. */
   runTurn: (input: RunTurnInput) => Promise<TurnPostResult>;
-  // ── dock view state (consumed by <AssistantDock/>) ──
+  // ── transcript mirror (last-N turns; drives the bubble's unread/busy state) ──
   messages: DockMsg[];
   busy: boolean;
   agentSlug?: string;
   agentName: string;
   clear: () => void;
+  // ── global panel UI state (consumed by <AssistantPanel/> + <AssistantBubble/>) ──
+  panel: AssistantPanelState;
+  /** Show the full panel. Optionally switch to a specific agent first. */
+  openAssistant: (slug?: string) => void;
+  /** Hide the panel to the bubble, keeping the transcript mounted. */
+  minimize: () => void;
+  /** Dismiss the panel (also to the bubble; distinct state for future use). */
+  close: () => void;
+  /** open ⇄ min — what the bubble + ⌘I toggle. */
+  toggle: () => void;
+  /** The agent selected for the panel — source of truth while open (mirrors the
+   *  `mantle_assistant_agent` cookie). */
+  activeAgentSlug?: string;
+  setActiveAgentSlug: (slug?: string) => void;
 };
 
 const Ctx = createContext<AssistantDockApi | null>(null);
 const MAX_DOCK_MSGS = 12;
+const AGENT_COOKIE = 'mantle_assistant_agent';
+const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
 
 export function AssistantDockProvider({ children }: { children: React.ReactNode }) {
   const [messages, setMessages] = useState<DockMsg[]>([]);
   const [agentSlug, setAgentSlug] = useState<string | undefined>(undefined);
   const [agentName, setAgentName] = useState('Assistant');
   const agentRef = useRef<string | undefined>(undefined);
+
+  // ── Global panel UI state ──
+  const [panel, setPanel] = useState<AssistantPanelState>('closed');
+  const [activeAgentSlug, setActiveAgentSlugState] = useState<string | undefined>(undefined);
+
+  // Seed the selected agent from the cookie the picker writes, so the panel
+  // opens on your last-used agent without a URL param.
+  useEffect(() => {
+    const m = document.cookie.match(/(?:^|;\s*)mantle_assistant_agent=([^;]+)/);
+    if (m?.[1]) setActiveAgentSlugState(decodeURIComponent(m[1]));
+  }, []);
+
+  const setActiveAgentSlug = useCallback((slug?: string) => {
+    setActiveAgentSlugState(slug);
+    if (slug) {
+      document.cookie = `${AGENT_COOKIE}=${encodeURIComponent(slug)}; path=/; max-age=${ONE_YEAR_SECONDS}; samesite=lax`;
+    }
+  }, []);
+
+  const openAssistant = useCallback(
+    (slug?: string) => {
+      if (slug) setActiveAgentSlug(slug);
+      setPanel('open');
+    },
+    [setActiveAgentSlug],
+  );
+  const minimize = useCallback(() => setPanel((p) => (p === 'open' ? 'min' : p)), []);
+  const close = useCallback(() => setPanel('closed'), []);
+  const toggle = useCallback(() => setPanel((p) => (p === 'open' ? 'min' : 'open')), []);
 
   // Drive the floating mini-chat's bot bubble off the live stream (non-blocking
   // route). Types the reply out as text-deltas arrive, then settles on
@@ -213,8 +259,36 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   const busy = useMemo(() => messages.some((m) => m.role === 'assistant' && m.pending), [messages]);
 
   const api = useMemo<AssistantDockApi>(
-    () => ({ runTurn, messages, busy, agentSlug, agentName, clear }),
-    [runTurn, messages, busy, agentSlug, agentName, clear],
+    () => ({
+      runTurn,
+      messages,
+      busy,
+      agentSlug,
+      agentName,
+      clear,
+      panel,
+      openAssistant,
+      minimize,
+      close,
+      toggle,
+      activeAgentSlug,
+      setActiveAgentSlug,
+    }),
+    [
+      runTurn,
+      messages,
+      busy,
+      agentSlug,
+      agentName,
+      clear,
+      panel,
+      openAssistant,
+      minimize,
+      close,
+      toggle,
+      activeAgentSlug,
+      setActiveAgentSlug,
+    ],
   );
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
@@ -227,128 +301,71 @@ export function useAssistantDock(): AssistantDockApi {
 }
 
 /**
- * Floating mini-chat. Rendered inside the shell so it inherits `--activity-w`.
- * Hidden on /assistant (the full view owns the conversation there) and when
- * there's nothing to show.
+ * Persistent assistant bubble. Always present (except while the full panel is
+ * open), it summons the panel on click and reflects the engine state: a spinner
+ * while a turn runs, an unread dot when a reply lands while the panel is away.
+ * Owns the global ⌘I / Ctrl+I shortcut (it stays mounted even when the panel is
+ * open, since it only renders null then).
  */
-export function AssistantDock() {
-  const { messages, busy, agentSlug, agentName, clear, runTurn } = useAssistantDock();
-  // Live "what's the agent doing" label, polled from the running trace.
-  const stageLabel = useTurnStage(busy);
-  const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
-  const [draft, setDraft] = useState('');
-  const scrollRef = useRef<HTMLDivElement>(null);
+export function AssistantBubble() {
+  const { panel, busy, toggle, messages } = useAssistantDock();
+  const [seenId, setSeenId] = useState<string | null>(null);
 
-  const onClear = clear;
-  const onReply = (text: string) =>
-    runTurn({
-      agentSlug,
-      agentName,
-      idempotencyKey: crypto.randomUUID(),
-      displayText: text,
-      body: JSON.stringify({ text, agentSlug }),
-      isJson: true,
-    }).catch(() => {
-      /* surfaced inline in the transcript */
-    });
+  // Latest settled assistant reply — what an "unread" badge keys off.
+  const latestReplyId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const m = messages[i];
+      if (m && m.role === 'assistant' && !m.pending) return m.id;
+    }
+    return null;
+  }, [messages]);
 
-  // Pin to the newest message.
+  // Opening the panel marks the latest reply seen.
   useEffect(() => {
-    const el = scrollRef.current;
-    if (el && !collapsed) el.scrollTop = el.scrollHeight;
-  }, [messages, collapsed]);
+    if (panel === 'open' && latestReplyId) setSeenId(latestReplyId);
+  }, [panel, latestReplyId]);
 
-  // The full /assistant view already shows the conversation — no dock there.
-  if (pathname === '/assistant' || messages.length === 0) return null;
+  // ⌘I / Ctrl+I toggles the panel. Skipped while typing so it never steals a
+  // keystroke from an input or the page editor (where ⌘I is italic).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (e.key.toLowerCase() !== 'i') return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
+      e.preventDefault();
+      toggle();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [toggle]);
 
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const text = draft.trim();
-    if (!text || busy) return;
-    setDraft('');
-    onReply(text);
-  };
+  // The open panel owns the screen — no bubble then. Minimise brings it back.
+  if (panel === 'open') return null;
+
+  const unread = !busy && latestReplyId != null && latestReplyId !== seenId;
 
   return (
-    <div className="pointer-events-auto flex max-h-[60vh] w-full flex-col overflow-hidden rounded-lg border border-border bg-card shadow-lg">
-      <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+    <div className="pointer-events-auto self-end">
+      <Button
+        onClick={toggle}
+        size="icon"
+        className="relative size-12 rounded-full shadow-lg"
+        aria-label="Open assistant (⌘I)"
+        title="Assistant (⌘I)"
+      >
         {busy ? (
-          <Loader2 className="size-4 shrink-0 animate-spin text-primary" aria-hidden />
+          <Loader2 className="size-5 animate-spin" aria-hidden />
         ) : (
-          <MessageSquare className="size-4 shrink-0 text-primary" aria-hidden />
+          <Sparkles className="size-5" aria-hidden />
         )}
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">
-          {agentName}
-          {busy && <span className="ml-1 font-normal text-muted-foreground">is working…</span>}
-        </span>
-        <Button asChild variant="ghost" size="icon" className="size-7" title="Open full chat">
-          <Link href={agentSlug ? `/assistant?agent=${agentSlug}` : '/assistant'} aria-label="Open full chat">
-            <Sparkles aria-hidden />
-          </Link>
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7"
-          onClick={() => setCollapsed((v) => !v)}
-          aria-label={collapsed ? 'Expand' : 'Collapse'}
-        >
-          <ChevronDown className={cn('transition-transform', collapsed && '-rotate-90')} aria-hidden />
-        </Button>
-        <Button variant="ghost" size="icon" className="size-7" onClick={onClear} aria-label="Dismiss" disabled={busy}>
-          <X aria-hidden />
-        </Button>
-      </div>
-
-      {!collapsed && (
-        <>
-          <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto scrollbar-thin px-3 py-2.5">
-            {messages.map((m) =>
-              m.role === 'user' ? (
-                <div key={m.id} className="flex justify-end">
-                  <div className="max-w-[85%] rounded-lg rounded-br-sm bg-primary px-2.5 py-1.5 text-xs text-primary-foreground">
-                    {m.text}
-                  </div>
-                </div>
-              ) : (
-                <div key={m.id} className="flex justify-start">
-                  <div
-                    className={cn(
-                      'max-w-[90%] rounded-lg rounded-bl-sm border border-border bg-background px-2.5 py-1.5 text-xs',
-                      m.error && 'border-destructive/40 text-destructive',
-                    )}
-                  >
-                    {m.pending && !m.text ? (
-                      <span className="flex items-center gap-1.5 text-muted-foreground">
-                        <Loader2 className="size-3 animate-spin" aria-hidden /> {stageLabel ?? 'thinking…'}
-                      </span>
-                    ) : (
-                      // Once tokens arrive (m.text non-empty) we render the reply
-                      // live even while still pending — the stream types it out.
-                      <div className="prose prose-sm dark:prose-invert max-w-none break-words text-xs [&_p]:my-1 [&_pre]:my-1 [&_ul]:my-1">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ),
-            )}
-          </div>
-
-          <form onSubmit={submit} className="flex items-center gap-1.5 border-t border-border p-2">
-            <Input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder={busy ? `${agentName} is working…` : `Reply to ${agentName}…`}
-              className="h-8 text-xs"
-            />
-            <Button type="submit" size="icon" className="size-8 shrink-0" disabled={!draft.trim() || busy} aria-label="Send">
-              <Send aria-hidden />
-            </Button>
-          </form>
-        </>
-      )}
+        {unread && (
+          <span
+            className="absolute right-1 top-1 size-2.5 rounded-full bg-destructive ring-2 ring-background"
+            aria-hidden
+          />
+        )}
+      </Button>
     </div>
   );
 }

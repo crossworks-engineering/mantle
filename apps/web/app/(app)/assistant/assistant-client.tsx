@@ -1064,11 +1064,11 @@ export function AssistantClient({
         onSubmit={submit}
         className="border-t border-border bg-background px-6 py-3"
       >
-        {/* The composer aligns under Saskia's response column — same grid as
-            the turns ([1fr_300px]), composer in column 1, margin column empty.
-            Full-width on mobile. */}
-        <div className="mx-auto max-w-5xl lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-x-10">
-          <div className="space-y-2 lg:col-start-1">
+        {/* The composer spans the full conversation width (max-w-5xl) — the same
+            box the turns occupy above (response column + prompt margin) — rather
+            than only the response column. */}
+        <div className="mx-auto max-w-5xl">
+          <div className="space-y-2">
             {/* Attachment preview — shown above the input row so the
                 user sees what they're about to send. Persists across
                 keystrokes and clears on send/dismiss. */}
