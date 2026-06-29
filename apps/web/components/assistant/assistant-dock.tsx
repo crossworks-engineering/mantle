@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { Loader2, Sparkles, SquareDashedMousePointer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -256,6 +257,22 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
     setPanel((p) => (p === 'open' ? 'min' : 'open'));
     setPicking(false); // showing the chat (or minimising it) ends pick mode
   }, []);
+
+  // Any route change steps an open panel aside so the screen you navigated to is
+  // actually visible behind the bubble. This is the single, declarative
+  // guarantee — it covers the left nav, the right activity column (journey
+  // links), header links, and any future navigation, so no individual call site
+  // has to remember to minimise. (In-screen selections that only swap a `?…`
+  // query param don't change the pathname — but those can only happen while the
+  // panel is already minimised, since an open panel covers the content area, so
+  // there's nothing to step aside for.)
+  const pathname = usePathname();
+  const prevPathRef = useRef(pathname);
+  useEffect(() => {
+    if (prevPathRef.current === pathname) return; // initial mount, or no real change
+    prevPathRef.current = pathname;
+    setPanel((p) => (p === 'open' ? 'min' : p));
+  }, [pathname]);
 
   // Drive the floating mini-chat's bot bubble off the live stream (non-blocking
   // route). Types the reply out as text-deltas arrive, then settles on

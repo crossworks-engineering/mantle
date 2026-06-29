@@ -54,7 +54,6 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useRealtime } from '@/components/realtime/use-realtime';
-import { useAssistantDock } from '@/components/assistant/assistant-dock';
 
 type NavItem = {
   name: string;
@@ -80,9 +79,6 @@ export function SidebarNav({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  // Navigating away from an open assistant minimises it, so the screen you
-  // picked is actually visible behind the bubble.
-  const { minimize } = useAssistantDock();
   const [query, setQuery] = useState('');
   // Live pending-approval badge: when a tool call is queued/approved/rejected
   // anywhere (a chat turn, a heartbeat fire, a Telegram tap), the realtime
@@ -209,10 +205,7 @@ export function SidebarNav({
       <Link
         key={item.href}
         href={item.href}
-        onClick={() => {
-          minimize(); // an open assistant steps aside for the screen you chose
-          onNavigate?.();
-        }}
+        onClick={() => onNavigate?.()}
         aria-current={active ? 'page' : undefined}
         title={collapsed ? undefined : item.name}
         className={className}
