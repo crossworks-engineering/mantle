@@ -634,6 +634,140 @@ const page_from_note: BuiltinToolDef = {
   },
 };
 
+const page_from_notes: BuiltinToolDef = {
+  slug: 'page_from_notes',
+  name: 'Create page from several notes',
+  description:
+    "Stitch SEVERAL existing notes into ONE rich page — every note's markdown body is copied server-side and concatenated in the order you give, WITHOUT round-tripping any of it through your output. **Prefer this over reading each note and re-typing it into page_create when the user wants to combine/compile multiple notes into a single doc** ('turn these notes into a page', 'compile my meeting notes into one document', 'merge these into a page under X'). Instant and byte-faithful at any size — you pass the note ids, NOT their text. Each note becomes its own section under an `## ` heading made from the note's title (so the result stays navigable); pass `headings: false` to concatenate the bodies raw with no inserted headings. Pass `parent_id` (an existing page's id) to nest the new page UNDER it as a sub-page. `title` is required (there's no single source note to borrow it from); tags default to the union of all the source notes' tags. The original notes are LEFT IN PLACE (non-destructive). Returns the new page's id + title; the body is never echoed back (use page_get to verify). **When delegating, hand off the note ids + title + parent id only — never paste the note bodies into the prompt.**",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      note_ids: {
+        type: 'array',
+        items: { type: 'string', format: 'uuid' },
+        minItems: 1,
+        description: 'ids of the notes to combine, in the order they should appear in the page',
+      },
+      title: { type: 'string', description: 'title for the combined page (required)' },
+      parent_id: {
+        type: 'string',
+        format: 'uuid',
+        description:
+          'optional id of an existing page to nest the new page UNDER (makes it a sub-page); omit for top-level',
+      },
+      headings: {
+        type: 'boolean',
+        description:
+          "insert each note's title as an `## ` section heading above its body (default true); set false to concatenate bodies raw",
+      },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "page tags; defaults to the union of the source notes' tags if omitted",
+      },
+      icon: { type: 'string', description: 'optional emoji icon, e.g. "📄"' },
+    },
+    required: ['note_ids', 'title'],
+  },
+  handler: async (input, ctx) => {
+    const noteIds = strArr(input.note_ids)
+      .map((id) => id.trim())
+      .filter(Boolean);
+    if (noteIds.length === 0) {
+      return { ok: false, error: 'note_ids is required — pass at least one note id.' };
+    }
+    const title = str(input.title).trim().slice(0, 200);
+    if (!title) {
+      return {
+        ok: false,
+        error: 'title is required when combining multiple notes (no single source note to borrow it from).',
+      };
+    }
+
+    // Fetch all notes up front so a bad id fails the whole call cleanly rather
+    // than producing a half-built page. Order is preserved from note_ids.
+    const fetched = await Promise.all(noteIds.map((id) => getNote(ctx.ownerId, id)));
+    const missing = noteIds.filter((_, i) => !fetched[i]);
+    if (missing.length) {
+      return {
+        ok: false,
+        error: `note(s) not found: ${missing.join(', ')} — pass ids of existing notes (see note_list / search_nodes).`,
+      };
+    }
+    const notes = fetched as NonNullable<(typeof fetched)[number]>[];
+
+    const parentId = str(input.parent_id).trim();
+    const withHeadings = input.headings === undefined ? true : input.headings === true;
+    const tagsArg = strArr(input.tags);
+    const tags = tagsArg.length
+      ? tagsArg
+      : [...new Set(notes.flatMap((n) => n.tags))];
+    const icon = str(input.icon).trim();
+
+    const markdown = notes
+      .map((n) => {
+        const body = n.content.trim();
+        if (!withHeadings) return body;
+        const heading = `## ${(n.title || 'Untitled').trim()}`;
+        return body ? `${heading}\n\n${body}` : heading;
+      })
+      .join('\n\n');
+
+    try {
+      const doc = markdownToDoc(markdown);
+      const page = await createPage(ctx.ownerId, {
+        title,
+        doc,
+        tags,
+        ...(icon ? { icon } : {}),
+        ...(parentId ? { parentId } : {}),
+      });
+      ctx.step?.setOutput({
+        id: page.id,
+        title: page.title,
+        source_note_ids: noteIds,
+        note_count: notes.length,
+        ...(parentId ? { parent_id: parentId } : {}),
+      });
+      void recordIngest({
+        source: 'agent_tool',
+        ownerId: ctx.ownerId,
+        nodeId: page.id,
+        summary: `Page compiled from ${notes.length} notes: ${page.title}`,
+        payload: {
+          via: 'page_from_notes_tool',
+          sourceNoteIds: noteIds,
+          noteCount: notes.length,
+          ...(parentId ? { parentId } : {}),
+          tags,
+          ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
+        },
+        snippet: markdown.slice(0, 4000),
+      });
+      return {
+        ok: true,
+        output: {
+          id: page.id,
+          title: page.title,
+          tags: page.tags,
+          source_note_ids: noteIds,
+          note_count: notes.length,
+          ...(parentId ? { parent_id: parentId } : {}),
+        },
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (parentId && msg.includes('parent page not found')) {
+        return {
+          ok: false,
+          error: `parent_id '${parentId}' is not one of your pages — pass the id of an existing page (see page_list / search_nodes).`,
+        };
+      }
+      return { ok: false, error: msg };
+    }
+  },
+};
+
 const page_blocks_list: BuiltinToolDef = {
   slug: 'page_blocks_list',
   name: 'List the blocks in a page',
@@ -1275,6 +1409,7 @@ export const PAGE_TOOLS: BuiltinToolDef[] = [
   page_create,
   page_from_file,
   page_from_note,
+  page_from_notes,
   page_replace_from_file,
   page_update,
   page_update_draft,
