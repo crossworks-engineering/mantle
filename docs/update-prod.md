@@ -1,34 +1,43 @@
-# Updating production (build-on-VPS)
+# Updating production (registry-pull)
 
-How to push the latest `main` to the Contabo box. This is the **build-on-VPS**
-loop — the one that actually applies here, because the Mac builds **arm64** and
-the VPS is **amd64**, so we never `docker compose pull` a registry image (it'd be
-the wrong arch). deploy.md §5 describes the registry-pull flow; ignore it for
-this box.
+How to ship the latest tagged release to the Contabo prod box. Prod runs the
+**CI-built multi-arch image** and updates by **pulling** it — no build, no rsync,
+no source tree needed on the VPS.
 
-> **Box:** `ssh cwe@mcp.crossworks.network`, install dir `~/mantle`, serves
-> https://jason.crossworks.network. See `reference_prod_box` / deploy.md for the
-> full topology.
+> **Why this changed.** The old loop built the image *on the VPS* because the Mac
+> builds **arm64** and the VPS runs **amd64**. That's retired: the
+> [`release.yml`](../.github/workflows/release.yml) workflow now builds amd64 +
+> arm64 in CI and pushes a single **multi-arch manifest**, so the amd64 VPS pulls
+> the right arch directly. deploy.md §5 (registry-pull) is the authoritative
+> model; this file is the box-specific runbook.
 
-## What an update does
+> **Box:** `ssh mantle-prod` (`cwe@jason.crossworks.network`), install dir
+> `~/mantle`, serves https://jason.crossworks.network. Its `.env` pins
+> `MANTLE_IMAGE_NAMESPACE=titanwest` + `MANTLE_IMAGE_TAG=latest`. See deploy.md §0
+> for the full topology.
 
-1. **rsync** the source from the Mac (`~/Projects/mantle`, `main`) to the VPS
-   `~/mantle` — code only; data, `.env`, secrets are excluded and untouched.
-2. **build** the single image natively on the VPS (`docker compose build web`)
-   — bakes the new code + any new migrations into `titanwest/mantle:latest`.
-3. **up** the stack (`docker compose up -d`) — the one-shot `migrate` service
-   runs **pending DB migrations first** (gated), then web/agent/workers recreate
-   on the new image.
+## What a release + update does
+
+1. **tag & push** (Mac). `pnpm version:bump <patch|minor|major>` (by change
+   extent), commit the `release: vX.Y.Z`, `git tag vX.Y.Z`, `git push origin main
+   vX.Y.Z`. The **tag push is the publish trigger** — nothing ships until it lands.
+2. **CI builds** ([`release.yml`](../.github/workflows/release.yml), fires on
+   `v*`): builds amd64 + arm64 in parallel, pushes one multi-arch manifest tagged
+   **both** `:vX.Y.Z` and `:latest`, then cuts a GitHub Release with generated
+   notes + a `mantle-deploy-vX.Y.Z.tar.gz` bundle (compose, `.env.prod.example`,
+   `infra/`, db scripts). ~5–6 min.
+3. **VPS pull + roll**: `db-dump` → `docker compose pull` → `docker compose up -d
+   --wait`. The one-shot `migrate` service runs pending DB migrations first
+   (gated), then web/api/workers recreate on the new image.
 4. **manifest reconcile** (automatic, in the web image). On boot the web server
    runs `reconcileManifestOnBoot` (apps/web `instrumentation.ts`): once per
    APP_VERSION, on an already-provisioned brain, it syncs new seeded HTTP tools,
    new skills, and **tool-GROUP membership** to the manifest, and unions the
    persona's default groups onto enabled responders. So a release that adds a tool
    to an existing group (e.g. 0.28.0 added `route_map`/`mapbox_directions` to
-   `location`) reaches the live responder with **no manual `seed:*` run** —
-   including for self-hosters who only `docker compose pull && up -d`. Additive
-   (never removes a grant), best-effort (never fails boot), production-only,
-   opt-out via `MANTLE_DISABLE_BOOT_RECONCILE=1`.
+   `location`) reaches the live responder with **no manual `seed:*` run**.
+   Additive (never removes a grant), best-effort (never fails boot),
+   production-only, opt-out via `MANTLE_DISABLE_BOOT_RECONCILE=1`.
 
 Code is forward-and-back; **migrations are forward-only** — always dump first.
 
@@ -37,114 +46,69 @@ Code is forward-and-back; **migrations are forward-only** — always dump first.
 ## Steps
 
 ```bash
-# ── 0. (Mac) make sure main is current ───────────────────────────────────────
-cd ~/Projects/mantle && git checkout main && git pull --ff-only   # if you push
-git log --oneline -1                                              # the sha you're shipping
+# ── 0. (Mac) cut the release — the tag push triggers the CI image build ───────
+cd ~/Projects/mantle && git checkout main
+pnpm version:bump minor                       # patch / minor / major, by extent
+git commit -am "release: v0.91.0"
+git tag v0.91.0 && git push origin main v0.91.0
+gh run watch "$(gh run list -w release -L1 --json databaseId -q '.[0].databaseId')" --exit-status
 
-# ── 1. (VPS) BACK UP THE BRAIN before any migration — cheap insurance ────────
-ssh cwe@mcp.crossworks.network 'cd ~/mantle && bash scripts/db-dump.sh'   # → backups/mantle-<ts>.dump
+# ── 1. (VPS) BACK UP THE BRAIN — cheap insurance, mandatory before a migration ─
+ssh mantle-prod 'cd ~/mantle && bash scripts/db-dump.sh'      # → backups/mantle-<ts>.dump
 
-# ── 2. (Mac) rsync code → VPS (excludes data/.env/secrets/build artifacts) ───
-# ⚠ The data/backups excludes are ROOT-ANCHORED (leading '/'). An unanchored
-#   --exclude 'backups' matches at EVERY depth in rsync and silently dropped
-#   apps/web/app/(app)/settings/backups/ (the Backups settings page) from
-#   every deploy until 2026-06-11. Never exclude a generic noun unanchored.
-rsync -az --delete \
-  --exclude '.git' --exclude 'node_modules' --exclude '.next' \
-  --exclude '.claude' --exclude '/data' --exclude '/backups' \
-  --exclude '/apps/web/data' \
-  --exclude '.env' --exclude '*/.env.local' --exclude '*.dump' --exclude '*.tgz' \
-  ~/Projects/mantle/ cwe@mcp.crossworks.network:~/mantle/
-#   --delete removes files deleted from main; excluded paths (/data, .env, …)
-#   are NEVER touched, so the prod brain + secrets are safe.
+# ── 2. (VPS) pull the new multi-arch image (.env tracks :latest) ──────────────
+ssh mantle-prod 'cd ~/mantle && docker compose pull'
 
-# ── 3. (VPS) rebuild the image natively (amd64). ~5–10 min ───────────────────
-ssh cwe@mcp.crossworks.network 'cd ~/mantle && docker compose build web'
-
-# ── 4. (VPS) roll the stack — migrate runs first, then app services recreate ─
-ssh cwe@mcp.crossworks.network 'cd ~/mantle && docker compose up -d --wait'
-#   NOTE: do NOT stop worker_telegram. As of 2026-06-02 the dev/prod bot split
-#   is done — prod owns `saskianewbot`, dev owns `saskiadevbot` (disjoint tokens,
-#   no 409). The poller must stay UP or production Telegram goes silent. Only the
-#   dev-owned bots (apostle_paulus_bot, brianthecoder_bot, miaschoemanbot) are
-#   disabled on prod; keep them disabled rather than stopping the whole worker.
+# ── 3. (VPS) roll the stack — migrate runs first, then app services recreate ──
+ssh mantle-prod 'cd ~/mantle && docker compose up -d --wait'
+#   Do NOT stop worker_telegram (see Gotchas). For a service rename/add/remove,
+#   see the topology-change gotcha — you need the bundle's compose + --remove-orphans.
 ```
 
 ## Verify
 
 ```bash
-ssh cwe@mcp.crossworks.network 'cd ~/mantle && docker compose ps'        # all up/healthy
-ssh cwe@mcp.crossworks.network 'docker logs mantle_migrate 2>&1 | tail'  # migration applied (or no-op)
-ssh cwe@mcp.crossworks.network 'docker exec mantle_pg psql -U postgres -d postgres -tA -c "select count(*) from nodes"'  # unchanged
-curl -sI https://jason.crossworks.network | head -3                       # 307 → /login, valid cert
-# connections stay flat (~20, not climbing):
-ssh cwe@mcp.crossworks.network 'docker exec mantle_pg psql -U postgres -d postgres -tA -c "select count(*) from pg_stat_activity"'
+ssh mantle-prod 'cd ~/mantle && docker compose ps'                          # all up/healthy
+ssh mantle-prod 'docker exec mantle_web sh -c "grep -m1 version /app/apps/web/package.json"'  # == the shipped vX.Y.Z
+ssh mantle-prod 'docker logs mantle_migrate 2>&1 | tail'                    # migration applied (or no-op)
+ssh mantle-prod 'docker exec mantle_pg psql -U postgres -d postgres -tA -c "select count(*) from nodes"'  # unchanged
+curl -sI https://jason.crossworks.network | head -3                         # 307 → /login, valid cert
+ssh mantle-prod 'docker exec mantle_pg psql -U postgres -d postgres -tA -c "select count(*) from pg_stat_activity"'  # flat ~20, not climbing
 ```
-Then in the browser: `/debug` (System vitals shows the **Embedder** + **Tailnet**
-pills), `/debug/integrity` → Corpus audit (should be low/clean with the policy-aware
-checks), `/settings/network` (the new **Activate Tailscale** card).
+Then smoke-test the surface the release actually changed in the browser (and
+`/debug` System vitals for stack health).
 
 ## Gotchas
 
-- **Caddyfile changes need a Caddy RESTART, not just reload** (learned 2026-06-14
-  shipping the `push.crossworks.network` block). The Caddyfile is bind-mounted as a
-  single **file** (`./infra/caddy/Caddyfile:/etc/caddy/Caddyfile`). rsync (like most
-  editors) writes a new inode and renames it over the path, but Docker resolved the
-  bind mount to the **original inode** at container-start — so the container keeps
-  serving the old file and `caddy reload` reports `config is unchanged`. Fix:
-  `docker restart mantle_caddy` (re-resolves the path → new inode), then the new
-  site block loads and its cert issues on first request. `docker compose up -d` does
-  **not** recreate caddy on a mount-content change, so restart it explicitly.
+- **Topology-change releases** (a renamed / added / removed service in
+  `docker-compose.yml`) need the **release bundle's compose swapped onto the box**
+  before the roll, plus `docker compose up -d --wait --remove-orphans` — otherwise
+  a renamed service's old container keeps running under its former name. Grab the
+  compose from that release's `mantle-deploy-vX.Y.Z.tar.gz`. Both prod and Ashley
+  hit this on the v0.79.0 split (apps/agent → apps/api).
 - **telegram poller**: leave `worker_telegram` RUNNING (`restart: unless-stopped`).
   The dev/prod bot split (2026-06-02) means prod polls only `saskianewbot` and dev
   only `saskiadevbot` — disjoint tokens, no 409. If you ever re-share a token across
   dev+prod you'll get 409s again; the fix is separate bots, not stopping the worker.
   Keep apostle_paulus_bot / brianthecoder_bot / miaschoemanbot **disabled** on prod.
-- **tailscale sidecar now always-up**: this update's compose drops the `tailnet`
-  profile, so `up -d` starts `mantle_tailscale` (pulls `v1.98.4`) — that's
-  intended (powers the new UI activation). It runs unauthenticated until you
-  Activate from `/settings/network`.
-- **migration 0064** (`tailscale_config`) ships in this update — that's why the
-  pre-dump matters.
-- **build cache**: only changed layers rebuild; a code-only change re-runs
-  `next build` but reuses node_modules. First build after a `pnpm-lock` change is
-  slower.
-
-## Alternative — compile on the Mac, pull on the VPS (registry)
-
-The conceptually cleaner "build here → push → pull there" flow. **Catch:** the
-Mac builds **arm64**, the VPS runs **amd64**, so a normal Mac build pushed to
-Docker Hub won't run on the VPS (`exec format error`). You must **cross-build
-for amd64** under QEMU emulation — correct, but slower than building natively on
-the VPS (which is why `build-on-VPS` above is the default).
-
-```bash
-# ── (Mac) cross-build for amd64 + push to Docker Hub ─────────────────────────
-docker login
-docker buildx build --platform linux/amd64 \
-  -t titanwest/mantle:latest --push .
-#   scripts/docker-build-push.sh wraps build+push (set MANTLE_IMAGE_NAMESPACE/
-#   _TAG); it builds the host arch today, so add --platform linux/amd64 for
-#   this arm64-Mac → amd64-VPS hop.
-
-# ── (VPS) pull the new image + roll the stack ────────────────────────────────
-ssh cwe@mcp.crossworks.network 'cd ~/mantle &&
-  bash scripts/db-dump.sh &&                 # backup before any migration
-  docker compose pull &&                     # ← the "pull there" step
-  docker compose up -d --wait &&             # migrate gate → app recreate
-  docker compose stop worker_telegram'       # dev owns the bots
-```
-
-The VPS needs no source tree here — `docker compose pull` replaces the rsync +
-`build web`. The compose `image:` already points at
-`titanwest/mantle:${MANTLE_IMAGE_TAG:-latest}`, so a pull just fetches new
-layers. Recap: **build-on-VPS** = no emulation, no registry login, but the VPS
-keeps the source; **compile-here/pull-there** = a source-free VPS, but every
-build is an emulated amd64 cross-compile. deploy.md §2/§5 cover this model fully.
+- **Caddyfile / infra changes** ride in the release **bundle**, not the image. Copy
+  the updated `infra/caddy/Caddyfile` onto the box, then **restart** caddy
+  (`docker restart mantle_caddy`) — don't just reload. The file is bind-mounted
+  (`./infra/caddy/Caddyfile:/etc/caddy/Caddyfile`); an in-place rewrite lands on a
+  new inode while Docker keeps serving the original, so `caddy reload` reports
+  `config is unchanged`. `docker compose up -d` won't recreate caddy on a
+  mount-content change — restart it explicitly (re-resolves the path → new inode).
+- **migrations are forward-only** — the pre-roll `db-dump` is the only way back.
 
 ## Rollback
 
-Code: re-rsync the previous sha + rebuild + `up -d` (build-on-VPS), or set
-`MANTLE_IMAGE_TAG` back to the prior tag + `docker compose pull && up -d`
-(registry). **Schema is forward-only** — to undo a migration, restore the
-pre-update dump into a fresh DB (deploy.md §3b–c).
+```bash
+# (VPS) pin MANTLE_IMAGE_TAG to the previous version in .env, then:
+ssh mantle-prod 'cd ~/mantle && docker compose pull && docker compose up -d --wait'
+# …and set it back to `latest` once a forward fix ships.
+```
+
+CI publishes every release as `:vX.Y.Z` **and** `:latest`, so a rollback is just
+pinning the prior `vX.Y.Z`. **Code rolls back instantly; schema does not** — a
+migration is forward-only, so to undo one, restore the pre-update dump into a
+fresh DB (deploy.md §3b–c).

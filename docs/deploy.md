@@ -53,7 +53,7 @@ box is not steady state — it's two specific events:
 | Profile | vCPU | RAM | Disk | Notes |
 |---|---|---|---|---|
 | **Minimum** (registry-pull deploys) | 2 | 4 GB | 40 GB | Steady state fits with room for embedding spikes; add 2 GB swap as insurance. Ingest is slower, never wrong. |
-| **Recommended** (build-on-VPS, the default loop in [`update-prod.md`](./update-prod.md)) | 4 | 8 GB | 80 GB | Headroom for `next build`; each build leaves ~3–6 GB of Docker build cache — run `docker builder prune` after deploy bursts (a 5×-in-a-day burst once accumulated 35 GB). |
+| **Recommended** (build-on-VPS — only if you build your own image on the box; see §2) | 4 | 8 GB | 80 GB | Headroom for `next build`; each build leaves ~3–6 GB of Docker build cache — run `docker builder prune` after deploy bursts (a 5×-in-a-day burst once accumulated 35 GB). |
 | **Reference** (author's prod) | 6 | 12 GB | 96 GB | Comfortable; ~27 GB disk in use including images, brain data itself is tiny (~170 MB at ~700 nodes). |
 
 Disk grows with: email/attachment volume (MinIO + Postgres), the nightly

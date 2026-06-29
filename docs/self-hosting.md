@@ -8,7 +8,7 @@ This is the **standard way to run Mantle**. The companion docs serve other
 audiences: [`getting-started.md`](./getting-started.md) is the developer
 checkout, [`deploy.md`](./deploy.md) is the operator reference for building
 *your own* image and migrating data between machines, and
-[`update-prod.md`](./update-prod.md) is the maintainer's build-on-VPS loop.
+[`update-prod.md`](./update-prod.md) is the maintainer's registry-pull update loop.
 
 ## Requirements
 
