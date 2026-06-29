@@ -3866,27 +3866,31 @@
    --muted-foreground) and honours reduced-motion.
    ========================================================================== */
 .mantle-shimmer-text {
-  /* Text stays solid (--foreground is the base); a lighter glint sweeps across
-     it — a shine over solid letters, not the letters dimming in and out. */
+  /* Text stays solid (--foreground is the base); a soft glint sweeps across it —
+     a shine over solid letters, never the letters dimming or disappearing. The
+     gradient is sized 300% so it ALWAYS fully covers the text at every position
+     (0%→100%): no uncovered region can fall back to the transparent color, so
+     the text never blanks out. The glint band is narrow and the sweep slow, so
+     it reads as a subtle, occasional shine rather than a constant wipe. */
   background-image: linear-gradient(
     100deg,
-    var(--foreground) 35%,
+    var(--foreground) 44%,
     var(--muted-foreground) 50%,
-    var(--foreground) 65%
+    var(--foreground) 56%
   );
-  background-size: 220% 100%;
+  background-size: 300% 100%;
   background-repeat: no-repeat;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: mantle-shimmer 2.4s linear infinite;
+  animation: mantle-shimmer 3.6s linear infinite;
 }
 @keyframes mantle-shimmer {
   0% {
-    background-position: 150% 0;
+    background-position: 100% 0;
   }
   100% {
-    background-position: -150% 0;
+    background-position: 0% 0;
   }
 }
 .mantle-trail-step {

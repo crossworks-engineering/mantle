@@ -33,6 +33,33 @@ function iconFor(kind: string) {
   return KIND_ICON[kind] ?? Wrench;
 }
 
+/** Map a status `kind` to a short, scannable category phrase shown in the trail's
+ *  middle column ("searching web"). Unknown kinds fall back to the raw bucket. */
+const KIND_PHRASE: Record<string, string> = {
+  thinking: 'thinking',
+  brain: 'searching brain',
+  web: 'searching web',
+  delegate: 'delegating',
+  tool: 'running tool',
+  write: 'writing',
+  calendar: 'calendar',
+  message: 'messaging',
+  file: 'reading file',
+};
+function phraseFor(kind: string) {
+  return KIND_PHRASE[kind] ?? kind;
+}
+
+/** The detail to show in the trail's third column. The category column already
+ *  states the action ("searching web"), so when the label wraps its real
+ *  argument in quotes ("Searching the web for “broccoli…”") we show just the
+ *  argument, unquoted — no redundant "Searching the web for" lead-in. Labels
+ *  with no quoted argument (narrated sentences) are shown in full. */
+function detailFor(label: string): string {
+  const m = label.match(/[“"']\s*([^“”"']+?)\s*[”"']/);
+  return m ? m[1]! : label;
+}
+
 /** Tick `Date.now()` once a second while `active`, so the elapsed timer in the
  *  live footer advances. Idle (frozen record) pays nothing. */
 function useNow(active: boolean): number {
@@ -108,6 +135,40 @@ function StatusFooter({
   );
 }
 
+/** One history step rendered as three top-aligned columns:
+ *  `time | category | detail`. The detail (the full status label) word-wraps as
+ *  a paragraph — never truncated — while the time and category stay on one line,
+ *  so a long search query reads in full instead of being cut with an ellipsis. */
+function TrailStepRow({ step, animate }: { step: ThoughtEvent; animate?: boolean }) {
+  const Icon = iconFor(step.kind);
+  return (
+    <li
+      className={cn(
+        // A soft divider sits above every row but the first, separating each
+        // historic thought. Equal margin above / padding below the line centres
+        // it between thoughts, independent of the list's own gap.
+        'mt-2.5 border-t border-border/25 pt-2.5 first:mt-0 first:border-t-0 first:pt-0',
+        animate && 'mantle-trail-step',
+      )}
+    >
+      {/* Header line: the category on the left, the elapsed time floated right. */}
+      <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground/50">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <Icon className="size-3.5 shrink-0 opacity-70" aria-hidden />
+          <span className="truncate">{phraseFor(step.kind)}</span>
+        </span>
+        {step.elapsedMs != null && (
+          <span className="shrink-0 tabular-nums">{formatElapsed(step.elapsedMs)}</span>
+        )}
+      </div>
+      {/* Detail on its own line, wrapping in full — no truncation. */}
+      <p className="mt-0.5 break-words text-sm leading-relaxed text-muted-foreground/75">
+        {detailFor(step.label)}
+      </p>
+    </li>
+  );
+}
+
 /**
  * The agent's "thought trail" — the grounded status steps of a turn, shown two
  * ways from one component:
@@ -167,22 +228,10 @@ export function ThoughtTrail({
         )}
       >
         {past.length > 0 && (
-          <ol className="flex flex-col gap-1">
-            {past.map((s, i) => {
-              const Icon = iconFor(s.kind);
-              return (
-                <li
-                  key={`${i}-${s.label}`}
-                  className="mantle-trail-step flex items-center gap-2 text-xs text-muted-foreground/55"
-                >
-                  <Icon className="size-3 shrink-0 opacity-70" aria-hidden />
-                  <span className="min-w-0 flex-1 truncate">{s.label}</span>
-                  {s.elapsedMs != null && (
-                    <span className="shrink-0 tabular-nums opacity-60">{formatElapsed(s.elapsedMs)}</span>
-                  )}
-                </li>
-              );
-            })}
+          <ol className="flex flex-col">
+            {past.map((s, i) => (
+              <TrailStepRow key={`${i}-${s.label}`} step={s} animate />
+            ))}
           </ol>
         )}
         <StatusFooter
@@ -227,19 +276,10 @@ export function ThoughtTrail({
       </button>
 
       {open && (
-        <ol className="flex flex-col gap-1.5 px-3 pb-2.5 pt-0.5">
-          {steps.map((s, i) => {
-            const Icon = iconFor(s.kind);
-            return (
-              <li key={i} className="flex items-center gap-2 text-xs text-muted-foreground/70">
-                <Icon className="size-3 shrink-0 opacity-70" aria-hidden />
-                <span className="min-w-0 flex-1 truncate">{s.label}</span>
-                {s.elapsedMs != null && (
-                  <span className="shrink-0 tabular-nums opacity-60">{formatElapsed(s.elapsedMs)}</span>
-                )}
-              </li>
-            );
-          })}
+        <ol className="flex flex-col px-3 pb-2.5 pt-0.5">
+          {steps.map((s, i) => (
+            <TrailStepRow key={i} step={s} />
+          ))}
         </ol>
       )}
     </div>
