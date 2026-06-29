@@ -18,9 +18,10 @@ import {
   oauthAccessTokens,
   oauthAuthCodes,
   oauthClients,
+  resolveSingleOwnerId,
   type OAuthClient,
 } from '@mantle/db';
-import { publicBaseUrl } from '@mantle/content';
+import { loadProfilePreferences, publicBaseUrl } from '@mantle/content';
 
 export const ACCESS_TTL_SEC = 60 * 60; // 1 hour
 export const REFRESH_TTL_SEC = 60 * 60 * 24 * 30; // 30 days
@@ -63,6 +64,22 @@ export function protectedResourceMetadataUrl(): string {
  *  client at the protected-resource metadata so it can discover the AS. */
 export function wwwAuthenticateHeader(): string {
   return `Bearer resource_metadata="${protectedResourceMetadataUrl()}"`;
+}
+
+/** The connector URL the owner pastes into claude.ai. Same as the resource URL. */
+export function connectorUrl(): string {
+  return mcpResourceUrl();
+}
+
+/** Whether THIS box exposes its remote MCP connector (per the sole owner's
+ *  preference; default OFF). The connector endpoints gate on this so the whole
+ *  surface is invisible (404) until the owner opts in from Settings → MCP.
+ *  Single-owner by design — Mantle is one brain per box. */
+export async function isRemoteMcpEnabled(): Promise<boolean> {
+  const ownerId = await resolveSingleOwnerId();
+  if (!ownerId) return false;
+  const prefs = await loadProfilePreferences(ownerId);
+  return prefs.remoteMcpEnabled === true;
 }
 
 // ── PKCE ─────────────────────────────────────────────────────────────────────

@@ -5,7 +5,8 @@
  * the route layer (Phase 4).
  */
 import { NextResponse } from 'next/server';
-import { isAllowedRedirectUri, registerClient } from '@/lib/mcp-oauth';
+import { isAllowedRedirectUri, isRemoteMcpEnabled, registerClient } from '@/lib/mcp-oauth';
+import { clientIp, rateLimit } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,6 +19,11 @@ function error(status: number, error: string, description?: string) {
 }
 
 export async function POST(req: Request) {
+  const limit = rateLimit(`oauth:register:${clientIp(req)}`, { max: 10, windowMs: 60_000 });
+  if (!limit.ok) return error(429, 'rate_limited');
+  // Don't let clients register against a box that hasn't opted in.
+  if (!(await isRemoteMcpEnabled())) return error(404, 'not_found');
+
   let body: unknown;
   try {
     body = await req.json();

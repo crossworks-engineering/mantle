@@ -16,7 +16,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth';
-import { getClient, mintAuthCode, DEFAULT_SCOPE } from '@/lib/mcp-oauth';
+import { getClient, isRemoteMcpEnabled, mintAuthCode, DEFAULT_SCOPE } from '@/lib/mcp-oauth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -90,6 +90,7 @@ async function validate(p: AuthorizeParams): Promise<{ clientName: string } | Re
 }
 
 export async function GET(req: Request) {
+  if (!(await isRemoteMcpEnabled())) return htmlError('Remote MCP is not enabled on this Mantle.', 404);
   const url = new URL(req.url);
   const p = readParams(url.searchParams);
   const validated = await validate(p);
@@ -109,6 +110,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  if (!(await isRemoteMcpEnabled())) return htmlError('Remote MCP is not enabled on this Mantle.', 404);
   const form = await req.formData();
   const get = (k: string) => {
     const v = form.get(k);

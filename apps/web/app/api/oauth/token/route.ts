@@ -6,6 +6,7 @@
  */
 import { NextResponse } from 'next/server';
 import { exchangeAuthCode, refreshAccessToken, type TokenResponse } from '@/lib/mcp-oauth';
+import { clientIp, rateLimit } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,6 +25,9 @@ function tokenOk(tokens: TokenResponse) {
 }
 
 export async function POST(req: Request) {
+  const limit = rateLimit(`oauth:token:${clientIp(req)}`, { max: 30, windowMs: 60_000 });
+  if (!limit.ok) return oauthError('rate_limited', undefined, 429);
+
   let form: FormData;
   try {
     form = await req.formData();
