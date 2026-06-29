@@ -346,6 +346,7 @@ export {
   isValidTimezone,
   isValidLocale,
   isReminderChannel,
+  isStreamThoughtsEnabled,
   formatInProfile,
   buildTimeContextLine,
   type ProfilePreferences,

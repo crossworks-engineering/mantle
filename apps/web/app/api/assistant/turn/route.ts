@@ -31,7 +31,12 @@ import {
   type AssistantTurnRunResult,
   type RunAssistantTurnOptions,
 } from '@mantle/assistant-runtime';
-import { sanitizeLocationPing, type LocationPing } from '@mantle/content';
+import {
+  sanitizeLocationPing,
+  loadProfilePreferences,
+  isStreamThoughtsEnabled,
+  type LocationPing,
+} from '@mantle/content';
 import { extractAttachmentForTurn } from '@mantle/agent-runtime';
 import {
   ensureDatedUploadFolder,
@@ -282,6 +287,13 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
     // vision-capable responder). The runtime is transcript-default: it folds
     // the text in and only inlines raw pixels when there's no transcript.
     // The persisted inbound row shows the user's own typed text (displayText).
+    // Live streaming is on when the deploy allows it (env, default-on) AND this
+    // brain hasn't turned it off in Settings → Profile. When off we omit the
+    // streamId (so the producer never publishes for this turn) and fall through
+    // to the blocking path below — the chat shows a static thinking bubble.
+    const streamingOn =
+      isTurnStreamingEnabled() && isStreamThoughtsEnabled(await loadProfilePreferences(user.id));
+
     const options: RunAssistantTurnOptions = {
       agentSlug,
       channel: source,
@@ -289,7 +301,7 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
       // (it's also the workflow id). Reuse it as the live-stream correlation id
       // so the producer publishes this turn's status on the same id the client
       // already subscribed to — no extra wire field.
-      ...(idempotencyKey ? { streamId: idempotencyKey } : {}),
+      ...(streamingOn && idempotencyKey ? { streamId: idempotencyKey } : {}),
       ...(location ? { location } : {}),
       ...(attachment
         ? {
@@ -331,7 +343,7 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
     // from holding a minutes-long connection and lets a turn truly survive
     // navigation/backgrounding. The durable outbound row (inserted 'pending' by
     // the runner) is the source of truth. See docs/live-turn-streaming.md §6-§7.
-    if (isTurnStreamingEnabled() && idempotencyKey) {
+    if (streamingOn && idempotencyKey) {
       return {
         status: 202,
         body: {

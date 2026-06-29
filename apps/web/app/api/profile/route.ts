@@ -48,6 +48,8 @@ const Body = z.object({
   // The brain's purpose + speciality archetype (editable post-onboarding).
   purpose: z.string().max(2000).optional(),
   purposeArchetype: z.string().max(64).optional(),
+  // Live turn streaming (thinking trail + token typing). Default on.
+  streamThoughts: z.boolean().optional(),
 });
 
 export async function PUT(req: Request) {
@@ -66,6 +68,7 @@ export async function PUT(req: Request) {
     reminderChannel,
     purpose,
     purposeArchetype,
+    streamThoughts,
   } = parsed.data;
   const tz = (timezone ?? '').trim();
   const loc = (locale ?? '').trim();
@@ -91,6 +94,7 @@ export async function PUT(req: Request) {
       // when it's a known key.
       ...(purpose !== undefined ? { purpose: purposeTrimmed.slice(0, 600) } : {}),
       ...(isPurposeArchetype(archetype) ? { purposeArchetype: archetype } : {}),
+      ...(streamThoughts !== undefined ? { streamThoughts } : {}),
     });
     return NextResponse.json({ preferences });
   } catch (err) {

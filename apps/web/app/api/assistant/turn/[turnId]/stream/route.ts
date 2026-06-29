@@ -3,6 +3,7 @@ import { getBufferedTurnEvents, makeReplayMerger } from '@mantle/turn-stream';
 import { getOwnerOr401 } from '@/lib/auth';
 import { subscribeTurnStream } from '@/lib/realtime';
 import { isTurnStreamingEnabled } from '@/lib/turn-streaming';
+import { loadProfilePreferences, isStreamThoughtsEnabled } from '@mantle/content';
 
 /**
  * GET /api/assistant/turn/[turnId]/stream — Server-Sent Events for ONE in-flight
@@ -44,6 +45,13 @@ export async function GET(
   // clean 401 (not an HTML redirect) rather than an empty event stream.
   const owner = await getOwnerOr401();
   if (owner instanceof NextResponse) return owner;
+
+  // Per-brain gate: if this owner turned live thinking off in Settings → Profile,
+  // the route 404s just like the env-off case. The client treats that as a clean
+  // fallback (no reconnect loop) and shows the static thinking bubble instead.
+  if (!isStreamThoughtsEnabled(await loadProfilePreferences(owner.id))) {
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
 
   const { turnId } = await ctx.params;
   if (!turnId) return NextResponse.json({ error: 'turnId required' }, { status: 400 });

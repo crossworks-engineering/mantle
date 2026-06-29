@@ -115,7 +115,24 @@ export type ProfilePreferences = {
    *  behalf while you're away. Pairs with the interactive Telegram approval
    *  card so a parked egress call can be cleared from a phone. */
   heartbeatEgressGate?: boolean;
+  /** Show the live "thinking" trail + stream the reply token-by-token in the
+   *  /assistant chat (and the companion). **Defaults ON** (undefined → on); set
+   *  false to fall back to a static thinking bubble + the reply appearing whole
+   *  on completion. This is the per-brain runtime control for live turn
+   *  streaming; the `MANTLE_TURN_STREAMING` env var is a deploy-level override
+   *  (env off wins). Read by the web turn route (202 vs blocking + the SSE gate)
+   *  via `isStreamThoughtsEnabled`. */
+  streamThoughts?: boolean;
 };
+
+/** Resolve the live-streaming preference to a definite boolean — ON unless the
+ *  user explicitly turned it off. Use this everywhere instead of reading the
+ *  optional field directly, so "unset" reliably means on. */
+export function isStreamThoughtsEnabled(
+  prefs: Pick<ProfilePreferences, 'streamThoughts'>,
+): boolean {
+  return prefs.streamThoughts !== false;
+}
 
 export const DEFAULT_PREFERENCES: ProfilePreferences = {
   timezone: 'UTC',
@@ -212,6 +229,8 @@ export async function loadProfilePreferences(
         : undefined,
     toolsmithRequireApproval: prefs.toolsmithRequireApproval === true,
     heartbeatEgressGate: prefs.heartbeatEgressGate === true,
+    // Default ON: only an explicit `false` disables (matches isStreamThoughtsEnabled).
+    streamThoughts: prefs.streamThoughts !== false,
     lastReconciledVersion:
       typeof prefs.lastReconciledVersion === 'string' && prefs.lastReconciledVersion.length > 0
         ? prefs.lastReconciledVersion
@@ -353,6 +372,7 @@ export async function updateProfilePreferences(
     devToolsAssistAgentSlug: merged.devToolsAssistAgentSlug || undefined,
     toolsmithRequireApproval: merged.toolsmithRequireApproval === true,
     heartbeatEgressGate: merged.heartbeatEgressGate === true,
+    streamThoughts: merged.streamThoughts !== false,
     lastReconciledVersion: merged.lastReconciledVersion || undefined,
   };
 }

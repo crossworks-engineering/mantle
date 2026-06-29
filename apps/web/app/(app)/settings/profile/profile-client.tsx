@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -103,6 +104,10 @@ function ProfileForm({ data }: { data: ProfileData }) {
   const [archetype, setArchetype] = useState(
     defaults.purposeArchetype ?? PURPOSE_ARCHETYPES[0]!.key,
   );
+  // Default ON: undefined (never set) → on, matching isStreamThoughtsEnabled.
+  const [streamThoughts, setStreamThoughts] = useState<boolean>(
+    defaults.streamThoughts !== false,
+  );
   const [error, setError] = useState<string | null>(null);
 
   // Live "now in your settings" preview from the chosen tz/locale — same output
@@ -152,6 +157,7 @@ function ProfileForm({ data }: { data: ProfileData }) {
       reminderChannel,
       purpose,
       purposeArchetype: archetype,
+      streamThoughts,
     });
   };
 
@@ -323,6 +329,22 @@ function ProfileForm({ data }: { data: ProfileData }) {
           Which assistant&apos;s Telegram bot sends event reminders. Default
           uses whichever bot you last messaged; pin one (e.g. Saskia) so
           reminders always come from the same persona.
+        </p>
+      </section>
+
+      <section className="space-y-1.5">
+        <div className="flex items-center justify-between gap-4">
+          <Label htmlFor="streamThoughts">Live thinking &amp; streaming</Label>
+          <Switch
+            id="streamThoughts"
+            checked={streamThoughts}
+            onCheckedChange={setStreamThoughts}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Show the assistant&apos;s live &ldquo;thinking&rdquo; trail and stream the reply
+          as it&apos;s written. Turn off for a static thinking indicator with the reply
+          appearing all at once when it&apos;s done.
         </p>
       </section>
 
