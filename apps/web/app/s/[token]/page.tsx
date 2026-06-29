@@ -6,6 +6,7 @@ import { NotePresenter } from '@/components/share/note-presenter';
 import { FilePresenter } from '@/components/share/file-presenter';
 import { TaskPresenter } from '@/components/share/task-presenter';
 import { EventPresenter } from '@/components/share/event-presenter';
+import { AppPresenter } from '@/components/share/app-presenter';
 
 // Always dynamic — resolves a DB token per request; never statically cached
 // (a revoked link must 404 immediately).
@@ -53,6 +54,8 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
       return <TaskPresenter view={view} />;
     case 'event':
       return <EventPresenter view={view} />;
+    case 'app':
+      return <AppPresenter view={view} token={token} />;
     default:
       notFound();
   }

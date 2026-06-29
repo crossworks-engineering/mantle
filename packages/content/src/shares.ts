@@ -10,7 +10,7 @@ import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { db, nodes, shares, type Share } from '@mantle/db';
 
 /** Node types that may be shared publicly. Sensitive types are excluded. */
-export const SHAREABLE_TYPES = ['page', 'note', 'task', 'event', 'file'] as const;
+export const SHAREABLE_TYPES = ['page', 'note', 'task', 'event', 'file', 'app'] as const;
 export type ShareableType = (typeof SHAREABLE_TYPES)[number];
 
 export function isShareable(type: string): type is ShareableType {

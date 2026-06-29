@@ -167,3 +167,18 @@ export default function App() {
   surfaces undeclared `host.tools.call(slug)` as a warning. Declare first.
 - **Expecting direct brain access** → there is none. Go through a declared tool.
 - **Destructive SQLite migration** → unsupported. Schema is append-only.
+
+## Sharing an app (and the security rule)
+
+A **published** app can be shared at a public, full-screen URL — the **Share**
+button on the app header (or any node share). The link is unguessable and
+revocable; opening it renders the published build full-screen with no app shell.
+
+**The rule that matters:** a shared app runs under **your** scope. Anyone with
+the link can invoke its **declared tools** (live, with your secrets resolving
+server-side) and **read** its SQLite (writes are blocked on shared links). So an
+app you intend to share must declare **only read-only, narrowly-scoped data
+tools** — e.g. a recipe tool that returns *this team's* compliance rows — never a
+tool with side effects or broad/unscoped data access. The manifest allowlist is
+the gate; you (the author) are responsible for what's in it. Treat the share
+link as a bearer secret and revoke it to cut access instantly.

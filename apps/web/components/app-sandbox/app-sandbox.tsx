@@ -202,6 +202,7 @@ html,body{margin:0;background:var(--background)}#root{padding:0}
 
 export function AppSandbox({
   appId,
+  shareToken,
   reloadKey = 0,
   onError,
   inspect = false,
@@ -210,6 +211,10 @@ export function AppSandbox({
   onInspectChange,
 }: {
   appId: string;
+  /** When set, render in PUBLIC share mode: the bundle + tool/db brokers are
+   *  fetched from /s/<token>/* (token-authed, published build only) instead of
+   *  the session-authed /api/apps/<id>/* routes. */
+  shareToken?: string;
   /** Bump to force a re-fetch + re-render (e.g. after a build/publish). */
   reloadKey?: number;
   onError?: (message: string) => void;
@@ -224,6 +229,9 @@ export function AppSandbox({
   /** The iframe changed inspect state itself (e.g. Esc to exit). */
   onInspectChange?: (on: boolean) => void;
 }) {
+  // Public share mode swaps the session-authed API base for the token-authed
+  // public one; the route suffixes (bundle / tool-broker / db-broker) match.
+  const apiBase = shareToken ? `/s/${shareToken}` : `/api/apps/${appId}`;
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [status, setStatus] = useState<Status>('loading');
   const [height, setHeight] = useState(320);
@@ -277,7 +285,7 @@ export function AppSandbox({
       };
       try {
         if (req.kind === 'tool.call') {
-          const r = await fetch(`/api/apps/${appId}/tool-broker`, {
+          const r = await fetch(`${apiBase}/tool-broker`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ slug: req.slug, input: req.input }),
@@ -297,7 +305,7 @@ export function AppSandbox({
         }
         // db.query | db.exec
         const op = req.kind === 'db.query' ? 'query' : 'exec';
-        const r = await fetch(`/api/apps/${appId}/db-broker`, {
+        const r = await fetch(`${apiBase}/db-broker`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ op, sql: req.sql, params: req.params ?? [] }),
@@ -307,7 +315,7 @@ export function AppSandbox({
         reply({ ok: false, error: err instanceof Error ? err.message : String(err) });
       }
     },
-    [appId],
+    [apiBase],
   );
 
   // Listen for messages from THIS iframe only.
@@ -347,7 +355,7 @@ export function AppSandbox({
   useEffect(() => {
     let cancelled = false;
     setStatus('loading');
-    Promise.all([fetch(`/api/apps/${appId}/bundle`), loadImportMap()])
+    Promise.all([fetch(`${apiBase}/bundle`), loadImportMap()])
       .then(async ([r, importMap]) => {
         if (cancelled) return;
         if (r.status === 404) {
@@ -371,7 +379,7 @@ export function AppSandbox({
     return () => {
       cancelled = true;
     };
-  }, [appId, reloadKey]);
+  }, [apiBase, reloadKey]);
 
   return (
     <div className="relative w-full overflow-hidden rounded-lg border border-border bg-background">
