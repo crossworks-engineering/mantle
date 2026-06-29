@@ -70,6 +70,8 @@ import {
   listPendingCalls,
   rejectPendingCall,
   CONTACT_TOOLS,
+  WORKER_DELEGATION_TOOLS,
+  EXPORT_TOOLS,
   TOOLSMITH_TOOLS,
 } from '@mantle/tools';
 import type { BuiltinToolDef } from '@mantle/tools';
@@ -1525,6 +1527,22 @@ if (!toolsmithWriteEnabled) {
 // the 90-day inbound history backfill). Bridged from the in-app CONTACT_TOOLS so
 // both surfaces share one tested handler (incl. the enqueueBackfills side effect).
 registerBuiltinTools(CONTACT_TOOLS);
+
+// ─── Workers (modality delegation) ───────────────────────────────────────────
+// extract_from_image / summarize_text / generate_image run headless: they read
+// from the file store or take inline text and return text (or, for image gen, a
+// file node whose id is in the output — the base64 artifact is dropped over MCP
+// but the saved /files node is retrievable via file_read). synthesize_speech is
+// omitted: it structurally needs a live delivery surface (Telegram chat / web
+// reply stream) the MCP bridge can't supply, so it would only ever error here.
+registerBuiltinTools(WORKER_DELEGATION_TOOLS, {
+  skip: (def) => def.slug === 'synthesize_speech',
+});
+
+// ─── Export (Word / Excel) ───────────────────────────────────────────────────
+// Renders a page/note → .docx or a table → .xlsx into /files/exports and returns
+// the new file's id/path. Pure (no surface, no artifact) — bridges as-is.
+registerBuiltinTools(EXPORT_TOOLS);
 
 // ─── Toolsmith ───────────────────────────────────────────────────────────────
 // Writes gated behind MANTLE_MCP_TOOLSMITH_WRITE (see TOOLSMITH_WRITE_SLUGS).
