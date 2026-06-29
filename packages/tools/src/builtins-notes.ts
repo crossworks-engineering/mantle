@@ -9,7 +9,7 @@
  * credentials use secret_create; for file-shaped content use file_create.
  */
 
-import { createNote, getNote, listNotes, nodeUrl } from '@mantle/content';
+import { createNote, getNote, getPage, docToMarkdown, listNotes, nodeUrl } from '@mantle/content';
 import { fileById, readFileById } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
@@ -228,4 +228,71 @@ const note_from_file: BuiltinToolDef = {
   },
 };
 
-export const NOTE_TOOLS: BuiltinToolDef[] = [note_create, note_list, note_get, note_from_file];
+const note_from_page: BuiltinToolDef = {
+  slug: 'note_from_page',
+  name: 'Create note from page',
+  description:
+    "Copy an EXISTING page's body into a new editable note — the page's rich doc is serialized to markdown server-side (`page → docToMarkdown → createNote`) WITHOUT round-tripping through your output. The inverse of page_from_note: use it for 'save this page as a note', 'turn this page back into a note', 'make an editable note from this doc'. Faithful to the page's content (headings, lists, tables, callouts, formatting all preserved as markdown). Title + tags default to the page's own unless you override. The original page is LEFT IN PLACE (non-destructive) — delete it separately if the user wants it gone. The new note is auto-indexed into the brain. Returns the new note's id + title; the body is never echoed back (use note_get to verify).",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      page_id: { type: 'string', format: 'uuid', description: 'id of the page to copy into a note' },
+      title: { type: 'string', description: "note title; defaults to the page's title" },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "note tags; default to the page's tags if omitted",
+      },
+    },
+    required: ['page_id'],
+  },
+  handler: async (input, ctx) => {
+    const pageId = str(input.page_id).trim();
+    if (!pageId) return { ok: false, error: 'page_id is required' };
+    const page = await getPage(ctx.ownerId, pageId);
+    if (!page) return { ok: false, error: `page '${pageId}' not found` };
+
+    const title = (strOpt(input.title) ?? page.title ?? 'Untitled').slice(0, 200);
+    const tagsArg = strArr(input.tags);
+    const tags = tagsArg.length ? tagsArg : page.tags;
+
+    try {
+      const content = docToMarkdown(page.doc);
+      const row = await createNote(ctx.ownerId, { title, content, tags });
+      ctx.step?.setOutput({ id: row.id, title: row.title, source_page_id: pageId });
+      void recordIngest({
+        source: 'agent_tool',
+        ownerId: ctx.ownerId,
+        nodeId: row.id,
+        summary: `Note created from page: ${row.title}`,
+        payload: {
+          via: 'note_from_page_tool',
+          sourcePageId: pageId,
+          tags,
+          ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
+        },
+        snippet: content.slice(0, 4000),
+      });
+      return {
+        ok: true,
+        output: {
+          id: row.id,
+          title: row.title,
+          tags: row.tags,
+          url: nodeUrl(row.id),
+          source_page_id: pageId,
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+export const NOTE_TOOLS: BuiltinToolDef[] = [
+  note_create,
+  note_list,
+  note_get,
+  note_from_file,
+  note_from_page,
+];
