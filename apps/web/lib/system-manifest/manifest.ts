@@ -390,8 +390,8 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'notes',
     name: 'Notes',
-    description: 'Create/list/read notes.',
-    toolSlugs: ['note_create', 'note_list', 'note_get'],
+    description: 'Create/list/read notes + import a file as a note.',
+    toolSlugs: ['note_create', 'note_list', 'note_get', 'note_from_file'],
   },
   {
     slug: 'events',

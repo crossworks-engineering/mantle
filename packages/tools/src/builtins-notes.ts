@@ -10,6 +10,7 @@
  */
 
 import { createNote, getNote, listNotes, nodeUrl } from '@mantle/content';
+import { fileById, readFileById } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
 
@@ -18,6 +19,9 @@ function str(v: unknown): string {
 }
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
+}
+function strArr(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((t): t is string => typeof t === 'string') : [];
 }
 
 const note_create: BuiltinToolDef = {
@@ -131,4 +135,97 @@ const note_get: BuiltinToolDef = {
   },
 };
 
-export const NOTE_TOOLS: BuiltinToolDef[] = [note_create, note_list, note_get];
+const note_from_file: BuiltinToolDef = {
+  slug: 'note_from_file',
+  name: 'Create note from file',
+  description:
+    "Create a note by importing a markdown/text file's bytes directly — the bytes go server-side from `files` → `createNote` without round-tripping through your output. The note counterpart of page_from_file: use it for 'make this file a note', 'import this doc as a note I can edit', 'turn this upload into a note'. Prefer it over `file_read` + `note_create` — it scales to arbitrarily large files (no max_tokens cap) and the result is byte-faithful to the source. The new note is auto-indexed into the brain (summary, embedding, facts, entities) like any note. Title defaults to the file's basename without extension if omitted. Only text-like files are accepted (markdown / plain text); binaries (PDF / docx / xlsx) are rejected since their indexed text already lives on the file node. The original file is LEFT IN PLACE (non-destructive). Returns the new note's id + title; the body is never echoed back (use note_get to verify).",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      file_id: { type: 'string', format: 'uuid', description: 'id of the file node to import' },
+      title: {
+        type: 'string',
+        description: 'note title; defaults to the file basename (without extension) if omitted',
+      },
+      tags: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['file_id'],
+  },
+  handler: async (input, ctx) => {
+    const fileId = str(input.file_id).trim();
+    if (!fileId) return { ok: false, error: 'file_id is required' };
+    const meta = await fileById({ ownerId: ctx.ownerId, fileId });
+    if (!meta) return { ok: false, error: `file ${fileId} not found` };
+    if (!meta.isText) {
+      return {
+        ok: false,
+        error:
+          `note_from_file: '${meta.filename}' is a binary file (mime='${meta.mimeType}') ` +
+          `and cannot be imported as a note. The extractor already indexes its parsed text ` +
+          `on the file node; reference it via file_get instead, or convert the source to ` +
+          `markdown first.`,
+      };
+    }
+    const res = await readFileById({ ownerId: ctx.ownerId, fileId });
+    if (!res) return { ok: false, error: 'file bytes unavailable' };
+
+    // Title resolution mirrors page_from_file: explicit arg wins; else recover
+    // the slug from the server's collision-safe upload name
+    // ('<unix-ms>-<slug>-<hex>.<ext>') before falling back to the basename.
+    const titleArg = str(input.title).trim();
+    const baseName = (meta.filename ?? 'Untitled').replace(/\.[^.]+$/, '');
+    const uploadMatch = baseName.match(/^\d{10,}-(.+?)-[a-f0-9]{20,}$/i);
+    const slugSource = uploadMatch ? uploadMatch[1]! : baseName;
+    const derivedTitle =
+      slugSource
+        .replace(/[-_]+/g, ' ')
+        .trim()
+        .replace(/^./, (c) => c.toUpperCase()) || 'Untitled';
+    const title = (titleArg || derivedTitle).slice(0, 200);
+    const tags = strArr(input.tags);
+
+    try {
+      const content = res.bytes.toString('utf8');
+      const row = await createNote(ctx.ownerId, { title, content, tags });
+      ctx.step?.setOutput({
+        id: row.id,
+        title: row.title,
+        source_file_id: fileId,
+        source_byte_size: res.bytes.length,
+      });
+      void recordIngest({
+        source: 'agent_tool',
+        ownerId: ctx.ownerId,
+        nodeId: row.id,
+        summary: `Note imported from file: ${row.title}`,
+        payload: {
+          via: 'note_from_file_tool',
+          sourceFileId: fileId,
+          sourceFilename: meta.filename,
+          sourceByteSize: res.bytes.length,
+          tags,
+          ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
+        },
+        // Cap the snippet so a large import doesn't bloat trace storage — the
+        // full source stays on the file node, retrievable via file_read.
+        snippet: content.slice(0, 4000),
+      });
+      return {
+        ok: true,
+        output: {
+          id: row.id,
+          title: row.title,
+          tags: row.tags,
+          url: nodeUrl(row.id),
+          source_file_id: fileId,
+          source_byte_size: res.bytes.length,
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+export const NOTE_TOOLS: BuiltinToolDef[] = [note_create, note_list, note_get, note_from_file];

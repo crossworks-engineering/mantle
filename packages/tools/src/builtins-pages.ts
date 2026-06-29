@@ -36,6 +36,7 @@ import {
   shareUrlForToken,
   nodeUrl,
   getNote,
+  getJournal,
 } from '@mantle/content';
 import { fileById, readFileById } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
@@ -768,6 +769,140 @@ const page_from_notes: BuiltinToolDef = {
   },
 };
 
+const page_from_journal: BuiltinToolDef = {
+  slug: 'page_from_journal',
+  name: 'Create page from journal entries',
+  description:
+    "Compile SEVERAL existing Journal entries into ONE rich page — every entry's body is copied server-side and concatenated in the order you give, WITHOUT round-tripping any of it through your output. The journal counterpart of page_from_notes: use it for 'turn my journal into a page', 'compile this week's entries into a reflection doc', 'make a page from these journal entries'. Instant and byte-faithful at any size — you pass the journal entry ids (get them from journal_list), NOT their text. Each entry becomes its own section under an `## ` heading made from its date (and title, when it has one), so the result reads as a dated log; pass `headings: false` to concatenate the bodies raw. Pass `parent_id` (an existing page's id) to nest the new page UNDER it. `title` is required; tags default to the union of the source entries' tags. The original entries are LEFT IN PLACE (non-destructive). Returns the new page's id + title; the body is never echoed back (use page_get to verify). **When delegating, hand off the entry ids + title + parent id only — never paste the entry bodies into the prompt.**",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      journal_ids: {
+        type: 'array',
+        items: { type: 'string', format: 'uuid' },
+        minItems: 1,
+        description: 'ids of the journal entries to compile, in the order they should appear (see journal_list)',
+      },
+      title: { type: 'string', description: 'title for the compiled page (required)' },
+      parent_id: {
+        type: 'string',
+        format: 'uuid',
+        description: 'optional id of an existing page to nest the new page UNDER; omit for top-level',
+      },
+      headings: {
+        type: 'boolean',
+        description: "section each entry under a date(+title) `## ` heading (default true); set false to concatenate bodies raw",
+      },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "page tags; defaults to the union of the source entries' tags if omitted",
+      },
+      icon: { type: 'string', description: 'optional emoji icon, e.g. "📔"' },
+    },
+    required: ['journal_ids', 'title'],
+  },
+  handler: async (input, ctx) => {
+    const journalIds = strArr(input.journal_ids)
+      .map((id) => id.trim())
+      .filter(Boolean);
+    if (journalIds.length === 0) {
+      return { ok: false, error: 'journal_ids is required — pass at least one journal entry id.' };
+    }
+    const title = str(input.title).trim().slice(0, 200);
+    if (!title) {
+      return {
+        ok: false,
+        error: 'title is required when compiling journal entries (no single source to borrow it from).',
+      };
+    }
+
+    // Fetch all entries up front so a bad id fails the whole call cleanly
+    // rather than producing a half-built page. Order is preserved from input.
+    const fetched = await Promise.all(journalIds.map((id) => getJournal(ctx.ownerId, id)));
+    const missing = journalIds.filter((_, i) => !fetched[i]);
+    if (missing.length) {
+      return {
+        ok: false,
+        error: `journal entry(ies) not found: ${missing.join(', ')} — pass ids of existing entries (see journal_list / search_nodes).`,
+      };
+    }
+    const entries = fetched as NonNullable<(typeof fetched)[number]>[];
+
+    const parentId = str(input.parent_id).trim();
+    const withHeadings = input.headings === undefined ? true : input.headings === true;
+    const tagsArg = strArr(input.tags);
+    const tags = tagsArg.length ? tagsArg : [...new Set(entries.flatMap((e) => e.tags))];
+    const icon = str(input.icon).trim();
+
+    const markdown = entries
+      .map((e) => {
+        const body = e.body.trim();
+        if (!withHeadings) return body;
+        // Date-first heading (entries are a chronological log); append the
+        // title when it carries more than the auto-derived date would.
+        const date = (e.entryDate ?? e.createdAt ?? '').slice(0, 10);
+        const t = (e.title || '').trim();
+        const heading = `## ${[date, t].filter(Boolean).join(' — ') || 'Entry'}`;
+        return body ? `${heading}\n\n${body}` : heading;
+      })
+      .join('\n\n');
+
+    try {
+      const doc = markdownToDoc(markdown);
+      const page = await createPage(ctx.ownerId, {
+        title,
+        doc,
+        tags,
+        ...(icon ? { icon } : {}),
+        ...(parentId ? { parentId } : {}),
+      });
+      ctx.step?.setOutput({
+        id: page.id,
+        title: page.title,
+        source_journal_ids: journalIds,
+        entry_count: entries.length,
+        ...(parentId ? { parent_id: parentId } : {}),
+      });
+      void recordIngest({
+        source: 'agent_tool',
+        ownerId: ctx.ownerId,
+        nodeId: page.id,
+        summary: `Page compiled from ${entries.length} journal entries: ${page.title}`,
+        payload: {
+          via: 'page_from_journal_tool',
+          sourceJournalIds: journalIds,
+          entryCount: entries.length,
+          ...(parentId ? { parentId } : {}),
+          tags,
+          ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
+        },
+        snippet: markdown.slice(0, 4000),
+      });
+      return {
+        ok: true,
+        output: {
+          id: page.id,
+          title: page.title,
+          tags: page.tags,
+          source_journal_ids: journalIds,
+          entry_count: entries.length,
+          ...(parentId ? { parent_id: parentId } : {}),
+        },
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (parentId && msg.includes('parent page not found')) {
+        return {
+          ok: false,
+          error: `parent_id '${parentId}' is not one of your pages — pass the id of an existing page (see page_list / search_nodes).`,
+        };
+      }
+      return { ok: false, error: msg };
+    }
+  },
+};
+
 const page_blocks_list: BuiltinToolDef = {
   slug: 'page_blocks_list',
   name: 'List the blocks in a page',
@@ -1410,6 +1545,7 @@ export const PAGE_TOOLS: BuiltinToolDef[] = [
   page_from_file,
   page_from_note,
   page_from_notes,
+  page_from_journal,
   page_replace_from_file,
   page_update,
   page_update_draft,
