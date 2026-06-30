@@ -343,6 +343,23 @@ export interface ChatOptions {
   temperature?: number;
   maxTokens?: number;
   topP?: number;
+  /** Thinking enable + budget hint. When > 0, reasoning-capable adapters ask the
+   *  provider to think before answering and stream the reasoning back as
+   *  `reasoning` deltas. The number is a token-budget HINT honoured only by
+   *  providers that still take one (OpenRouter `reasoning.max_tokens`); on
+   *  current Claude models it acts purely as on/off — the native Anthropic
+   *  adapter sends `thinking:{type:'adaptive', display:'summarized'}` (the old
+   *  `budget_tokens` form 400s on Opus 4.7/4.8 + Fable) and drops sampling
+   *  params (also rejected in that mode). Omitted/0 ⇒ no requested thinking (a
+   *  model may still emit incidental reasoning). Intended for the responder turn
+   *  only — background workers leave it unset. Adapters without a reasoning mode
+   *  ignore it.
+   *
+   *  ⚠️ Enabling this on a multi-round tool loop additionally requires echoing
+   *  prior `thinking` blocks back to the provider each iteration (Anthropic 400s
+   *  otherwise) — that capture/replay is NOT yet implemented, so the runner must
+   *  not set this by default until it is. */
+  thinkingBudget?: number;
   /** Retries AFTER the first attempt on transient errors (429/5xx/network/
    *  timeout), with exponential backoff + jitter. Undefined ⇒
    *  DEFAULT_MAX_RETRIES (2); 0 disables. Honored by withChatRetry, which the

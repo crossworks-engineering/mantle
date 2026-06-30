@@ -397,6 +397,21 @@ function buildAnthropicBody(opts: ChatOptions): Record<string, unknown> {
 
   const tools = buildAnthropicTools(opts);
 
+  // Adaptive thinking. Current Claude models (4.6+) reason via
+  // `thinking: {type:'adaptive'}` and the model decides depth — the old
+  // `{type:'enabled', budget_tokens}` form is REJECTED with a 400 on Opus
+  // 4.7/4.8 and Fable 5, so we never send it. `display:'summarized'` is
+  // required to get readable reasoning text in the stream (the default is
+  // 'omitted', which streams empty thinking blocks). Sampling params
+  // (temperature/top_p) are likewise rejected by those models, so we omit them
+  // whenever thinking is on. `thinkingBudget` is treated as an on/off signal
+  // here (its magnitude maps to a token ceiling only on providers — e.g.
+  // OpenRouter — that still accept one). NOTE: enabling thinking on a tool-loop
+  // also requires echoing prior `thinking` blocks back across iterations
+  // (Anthropic 400s otherwise); that capture/replay is not wired yet, so this
+  // stays off by default — see the runner.
+  const wantThinking = typeof opts.thinkingBudget === 'number' && opts.thinkingBudget > 0;
+
   const body: Record<string, unknown> = {
     model: opts.model,
     messages: messagesField,
@@ -405,13 +420,20 @@ function buildAnthropicBody(opts: ChatOptions): Record<string, unknown> {
     max_tokens: opts.maxTokens ?? 4096,
     ...(systemField !== undefined ? { system: systemField } : {}),
     ...(tools ? { tools } : {}),
+    ...(wantThinking ? { thinking: { type: 'adaptive', display: 'summarized' } } : {}),
     // Anthropic's tool_choice supports 'auto' (default) and 'any' (force
     // some tool). We map our 'auto'/'none' carefully:
     //   - 'auto' is the default → omit the field
     //   - 'none' has no direct Anthropic equivalent → omit tools instead.
     // The tool_choice translation needed here today is therefore none.
-    ...(typeof opts.temperature === 'number' ? { temperature: opts.temperature } : {}),
-    ...(typeof opts.topP === 'number' ? { top_p: opts.topP } : {}),
+    // Sampling params are dropped when thinking is on (the API rejects them on
+    // reasoning-capable models); otherwise honour the caller's values.
+    ...(wantThinking
+      ? {}
+      : {
+          ...(typeof opts.temperature === 'number' ? { temperature: opts.temperature } : {}),
+          ...(typeof opts.topP === 'number' ? { top_p: opts.topP } : {}),
+        }),
     ...(opts.extra ?? {}),
   };
 

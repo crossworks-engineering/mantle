@@ -52,6 +52,16 @@ import { StreamingThinkScrubber } from './think-scrubber';
 const RETRY_BASE_DELAY_MS = 500;
 const RETRY_MAX_DELAY_MS = 8_000;
 
+/** OpenRouter's unified `reasoning` param from our `thinkingBudget`. OR routes
+ *  `max_tokens` to the upstream provider's thinking budget (Anthropic) or maps
+ *  it to an effort tier (OpenAI o-series); models without a reasoning mode
+ *  ignore it. Returns undefined when no budget is set so we omit the field. */
+function openRouterReasoning(opts: ChatOptions): { maxTokens: number } | undefined {
+  const budget =
+    typeof opts.thinkingBudget === 'number' && opts.thinkingBudget > 0 ? Math.floor(opts.thinkingBudget) : 0;
+  return budget > 0 ? { maxTokens: budget } : undefined;
+}
+
 /** Text content block. Used for messages that need a cache_control
  *  marker (the array form is required — markers hang off the block,
  *  not the message). */
@@ -411,6 +421,7 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
 
   const messages = buildMessages(opts.messages, opts.cacheControl);
   const tools = buildTools(opts);
+  const reasoningParam = openRouterReasoning(opts);
 
   const chatRequest = {
     model: opts.model,
@@ -426,6 +437,7 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
     ...(typeof opts.temperature === 'number' ? { temperature: opts.temperature } : {}),
     ...(typeof opts.maxTokens === 'number' ? { maxTokens: opts.maxTokens } : {}),
     ...(typeof opts.topP === 'number' ? { topP: opts.topP } : {}),
+    ...(reasoningParam ? { reasoning: reasoningParam } : {}),
     ...(opts.extra ?? {}),
   };
   // Single typed boundary: our structurally-clean builders (OrChatMessage /
@@ -645,6 +657,7 @@ async function openrouterChatStream(
 
   const messages = buildMessages(opts.messages, opts.cacheControl);
   const tools = buildTools(opts);
+  const reasoningParam = openRouterReasoning(opts);
   const chatRequest = {
     model: opts.model,
     messages,
@@ -657,6 +670,7 @@ async function openrouterChatStream(
     ...(typeof opts.temperature === 'number' ? { temperature: opts.temperature } : {}),
     ...(typeof opts.maxTokens === 'number' ? { maxTokens: opts.maxTokens } : {}),
     ...(typeof opts.topP === 'number' ? { topP: opts.topP } : {}),
+    ...(reasoningParam ? { reasoning: reasoningParam } : {}),
     ...(opts.extra ?? {}),
   };
 
