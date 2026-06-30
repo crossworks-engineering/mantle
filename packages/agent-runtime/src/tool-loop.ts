@@ -62,25 +62,43 @@ import { parseToolArgs } from './tool-args';
 
 const DEFAULT_MAX_ITERATIONS = 6;
 
+/** Min thinking budget the reasoning providers accept (Anthropic's
+ *  `thinking.budget_tokens` floor; OpenRouter forwards ours there). Below this a
+ *  positive budget would itself 400, so we drop thinking instead. */
+const MIN_THINKING_BUDGET = 1024;
+
 /**
- * Per-box adaptive-thinking gate. `MANTLE_THINKING_BUDGET` is an integer token
- * hint: > 0 turns thinking ON for tool-loop turns (the responder + delegated
- * specialists), 0 / unset leaves it off. The magnitude is a budget hint honoured
- * by providers that take one (OpenRouter `reasoning.max_tokens`); on current
- * Claude models it acts as on/off (adaptive thinking decides depth). Read per
- * call so a config change takes effect without a restart.
+ * Clamp a requested thinking budget against the agent's `max_tokens`.
  *
- * Shipped OFF by default (dark) like the other turn-stream gates: enabling
- * thinking on a tool loop relies on the reasoning_details echo-back, whose
- * signature round-trip can only be proven against a live OpenRouter+Anthropic
- * call — flip this on per box and smoke-test a thinking+tool turn before
- * trusting it in prod.
+ * The reasoning providers (OpenRouter→Anthropic, Gemini) require the thinking
+ * budget to be strictly less than `max_tokens` and leave room for the answer; a
+ * budget ≥ max_tokens 400s the request. We cap at half the token budget so
+ * thinking never starves the reply, then floor-or-drop at the provider minimum.
+ * `max_tokens` unset ⇒ the provider uses its own (large) default, so the budget
+ * passes through untouched. A 0/negative request stays 0 (off).
  */
-function resolveThinkingBudget(): number {
-  const raw = process.env.MANTLE_THINKING_BUDGET?.trim();
-  if (!raw) return 0;
-  const n = Number.parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : 0;
+export function clampThinkingBudget(requested: number, maxTokens: number | undefined): number {
+  if (requested <= 0) return 0;
+  if (typeof maxTokens !== 'number' || maxTokens <= 0) return requested;
+  const cap = Math.floor(maxTokens / 2);
+  if (cap < MIN_THINKING_BUDGET) return 0;
+  return Math.min(requested, cap);
+}
+
+/**
+ * The max_tokens to send for a turn. Returns the agent's explicit value when set.
+ * When it's unset BUT thinking is on, returns an explicit ceiling above the
+ * budget (budget*2) so the reasoning providers — which require max_tokens > the
+ * thinking budget and may otherwise inject a small default of their own (e.g.
+ * OpenRouter→Anthropic) — can't 400. Unset with thinking off ⇒ undefined (let the
+ * provider use its default, unchanged from before this gate existed).
+ */
+export function resolveMaxTokens(
+  explicit: number | undefined,
+  thinkingBudget: number,
+): number | undefined {
+  if (typeof explicit === 'number') return explicit;
+  return thinkingBudget > 0 ? thinkingBudget * 2 : undefined;
 }
 
 /**
@@ -230,6 +248,15 @@ export type ToolLoopArgs = {
    *  tool result spills to the store vs. inlines. Falls back to env/global
    *  defaults when absent. */
   resultHandling?: ResultHandlingConfig | null;
+  /** Per-turn adaptive-thinking budget in tokens, pre-resolved by the caller
+   *  from the owner's profile prefs (`resolveThinkingBudget` — already gated by
+   *  the live-thinking switch AND a positive budget). > 0 requests thinking on
+   *  this loop's chat rounds; 0 / unset leaves it off. Clamped per-round against
+   *  this agent's `max_tokens` (see `clampThinkingBudget`). Replaced the old
+   *  per-box `MANTLE_THINKING_BUDGET` env gate. Delegated specialists inherit
+   *  this via the invoke_agent tool-context bridge and re-clamp against their
+   *  own max_tokens — see invoke-agent.ts. */
+  thinkingBudget?: number;
   /** Initial messages: system + any history + the new user turn. */
   initialMessages: ChatMessage[];
   /** Tool rows the agent is permitted to use. Empty array → no tools sent. */
@@ -454,12 +481,31 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         },
       },
       async (h) => {
-        // Adaptive thinking on the tool-loop turn (gated per box). When on, the
-        // model reasons before answering and the reasoning streams back as
+        // Adaptive thinking on the tool-loop turn (gated per user — resolved by
+        // the caller from profile prefs: switch ON + positive budget). When on,
+        // the model reasons before answering and the reasoning streams back as
         // `reasoning` deltas + signed `reasoning_details` (echoed across rounds
         // above). Reasoning-capable models reject sampling params, so we drop
         // temperature/top_p whenever thinking is requested.
-        const thinkingBudget = resolveThinkingBudget();
+        //
+        // Clamp the budget against the agent's max_tokens: the reasoning
+        // providers (OpenRouter→Anthropic, Gemini) require the thinking budget to
+        // be < max_tokens AND need room left for the answer, else they 400. Cap
+        // at half the token budget; if that floor is below the 1024 provider
+        // minimum, drop thinking rather than send a doomed request. When
+        // max_tokens is unset the provider uses its own large default, so the
+        // budget passes through. (Anthropic-direct ignores the magnitude — it
+        // treats any >0 as adaptive on/off — so the clamp is a no-op there.)
+        const thinkingBudget = clampThinkingBudget(
+          args.thinkingBudget ?? 0,
+          args.params.max_tokens,
+        );
+        // Effective max_tokens for the request. When thinking is on but the agent
+        // pinned NO max_tokens, send an explicit ceiling above the budget — the
+        // reasoning providers require max_tokens > budget and may inject a small
+        // default of their own (e.g. OpenRouter→Anthropic), which would 400. A
+        // ceiling of budget*2 keeps the same half-budget headroom the clamp uses.
+        const effectiveMaxTokens = resolveMaxTokens(args.params.max_tokens, thinkingBudget);
         const chatOpts = {
           messages,
           ...(sendTools ? { tools: toolsForModel } : {}),
@@ -473,7 +519,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           ...(thinkingBudget === 0 && typeof args.params.temperature === 'number'
             ? { temperature: args.params.temperature }
             : {}),
-          ...(typeof args.params.max_tokens === 'number' ? { maxTokens: args.params.max_tokens } : {}),
+          ...(typeof effectiveMaxTokens === 'number' ? { maxTokens: effectiveMaxTokens } : {}),
           ...(thinkingBudget === 0 && typeof args.params.top_p === 'number'
             ? { topP: args.params.top_p }
             : {}),
@@ -772,6 +818,9 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
                     depth: args.agentDepth ?? 1,
                     delegateTo: args.delegateTo ?? [],
                     parentTraceId: args.parentTraceId ?? null,
+                    // Forward the parent's resolved (pre-clamp) budget so a
+                    // delegated specialist inherits the per-user thinking pref.
+                    ...(args.thinkingBudget ? { thinkingBudget: args.thinkingBudget } : {}),
                   },
                 }
               : {}),

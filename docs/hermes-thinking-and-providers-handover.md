@@ -15,8 +15,9 @@ and shipped two intertwined things on one branch:
 2. **A new direct provider, GitHub Copilot**, with reasoning — modelled on how
    Hermes implements its `copilot` provider.
 
-Seven commits, 325 voice tests green. Default-OFF behind a gate
-(`MANTLE_THINKING_BUDGET`) pending a live smoke test (see §6).
+Seven commits, 325 voice tests green. Default-OFF behind a per-user profile gate
+(live-thinking switch + Thinking budget — superseded the original
+`MANTLE_THINKING_BUDGET` env var; see §6) pending a live smoke test.
 
 ---
 
@@ -155,9 +156,12 @@ All in `packages/voice` (the adapter framework) + `packages/agent-runtime`
   renders a collapsible "Thinking" disclosure. `stage-label.ts` retired the
   20-phrase rotation for a single honest "Thinking…". Reasoning is ephemeral
   (never persisted).
-- **Gate.** `MANTLE_THINKING_BUDGET` (int tokens, >0 = on) in the tool loop,
-  per box. Shipped **dark** — the signature round-trip can only be proven against
-  a live OpenRouter+Anthropic call.
+- **Gate.** Originally `MANTLE_THINKING_BUDGET` (int tokens, >0 = on) in the tool
+  loop, per box. **Superseded** by a per-user profile gate (live-thinking switch +
+  Thinking budget, resolved in the turn runners and threaded into runToolLoop as
+  `args.thinkingBudget`, then clamped vs the agent's max_tokens — see §6). Shipped
+  **dark** — the signature round-trip can only be proven against a live
+  OpenRouter+Anthropic call.
 
 ### 3.2 The GitHub Copilot provider (commit `bb051fb5`)
 
@@ -231,15 +235,24 @@ run thinking-off, which makes the replayed thinking-less history valid.
 
 ## 6. How to enable / operate
 
-**Thinking (per box):**
+**Thinking (per user — Settings → Profile):**
 
-1. Set `MANTLE_THINKING_BUDGET=2000` (any int > 0) in the apps/api environment.
-2. Restart the apps/api runner.
-3. Ask the responder something that triggers a tool call (so it thinks *then*
+> The old per-box `MANTLE_THINKING_BUDGET` env gate was **removed** (branch
+> `feat/thinking-profile-control`). Thinking is now a per-user profile pref:
+> `resolveThinkingBudget(prefs)` in `@mantle/content` requires the live-thinking
+> switch ON **and** a positive **Thinking budget** before any reasoning is
+> requested. Resolved in `run-turn.ts` and threaded into `runToolLoop`
+> (`args.thinkingBudget`). Delegated specialists still run without thinking
+> (fallback — see §7 / invoke-agent.ts).
+
+1. Settings → Profile → turn **Live thinking & streaming** ON, set **Thinking
+   budget** to Low/Medium/High (Off = no thinking). Save.
+2. Ask the responder something that triggers a tool call (so it thinks *then*
    calls a tool → exercises echo-back on round 2).
-4. Confirm: no 400 on round 2, and the live "Thinking" disclosure shows real
+3. Confirm: no 400 on round 2, and the live "Thinking" disclosure shows real
    reasoning text.
-5. Clean → make it the per-box default (and revisit on-by-default).
+4. Streaming carriers stay default-on (`MANTLE_TURN_TOKENS`,
+   `MANTLE_TURN_STREAMING`); the budget only controls the thinking *request*.
 
 **GitHub Copilot worker:**
 
@@ -248,8 +261,8 @@ run thinking-off, which makes the replayed thinking-less history valid.
   that VS Code / the Copilot CLI obtains) — **not** a PAT. Only the OAuth token
   carries the `copilot_internal` scope the token-exchange needs. A pre-minted
   Copilot token (`tid=…`) also works but expires in ~25 min.
-- Thinking on a Copilot worker is controlled by the same `MANTLE_THINKING_BUDGET`
-  gate (it maps to `reasoning_effort`).
+- Thinking on a Copilot worker is controlled by the same per-user profile gate
+  (it maps to `reasoning_effort`).
 
 ---
 
@@ -305,8 +318,8 @@ changes** are needed — only [`anthropic-chat.ts`](../packages/voice/src/adapte
    echo-back.
 
 **Effort:** ~150–250 LOC in that one adapter + types + tests; roughly half a day
-to a day. Low blast radius (can't regress other adapters; still behind
-`MANTLE_THINKING_BUDGET`).
+to a day. Low blast radius (can't regress other adapters; still behind the
+per-user thinking gate — §6).
 
 **Confidence:** high (~90%). The replay contract is documented and is the same
 shape we already ship for OpenRouter. Residual risk is the streaming
@@ -391,7 +404,8 @@ packages/voice/src/catalogs/copilot.ts                  # Copilot static catalog
 packages/voice/src/adapters/anthropic-chat.ts           # adaptive thinking + guard
 packages/voice/src/adapters/openrouter-chat.ts          # reasoning request + reasoning_details round-trip
 packages/voice/src/adapters/google-chat.ts              # Gemini thinkingConfig + thought parts
-packages/agent-runtime/src/tool-loop.ts                 # MANTLE_THINKING_BUDGET gate + reasoning replay
+packages/agent-runtime/src/tool-loop.ts                 # thinkingBudget (per-user, via args) + reasoning replay
+packages/content/src/profile-preferences.ts             # thinkingBudget pref + resolveThinkingBudget gate
 apps/web/components/assistant/use-turn-stream.ts         # accumulate reasoning-delta
 apps/web/components/assistant/thought-trail.tsx          # collapsible "Thinking" trace
 packages/assistant-runtime/src/stage-label.ts            # retired canned phrases

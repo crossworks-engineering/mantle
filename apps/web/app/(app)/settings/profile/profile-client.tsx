@@ -46,6 +46,23 @@ import type { ProfilePreferences } from '@mantle/content';
  *  value, so we map this to '' before submitting. */
 const REMINDER_AUTO = '__auto__';
 
+/** Thinking-budget tiers (token values) the dropdown offers: Off/Low/Medium/High.
+ *  High stays below the default responder's max_tokens (16000) so the stock
+ *  config never needs the turn-time clamp; the clamp still protects agents whose
+ *  max_tokens was edited down. */
+const THINKING_TIERS = [0, 1024, 4096, 8000] as const;
+
+/** Snap a stored budget (which an operator/API may have set off-tier) to the
+ *  nearest dropdown value, so the Select always shows a populated option instead
+ *  of rendering blank for an unlisted number. 0/unset ⇒ Off. */
+function snapThinkingTier(v: number | undefined): number {
+  if (!v || v <= 0) return 0;
+  return THINKING_TIERS.reduce(
+    (best, t) => (Math.abs(t - v) < Math.abs(best - v) ? t : best),
+    0,
+  );
+}
+
 /** `GET /api/profile` payload. */
 type ProfileData = {
   preferences: ProfilePreferences;
@@ -117,6 +134,12 @@ function ProfileForm({ data }: { data: ProfileData }) {
   const [persistThoughts, setPersistThoughts] = useState<boolean>(
     defaults.persistThoughts !== false,
   );
+  // Per-user thinking budget (tokens). 0 = off (default). Select stores the
+  // numeric token value; real thinking needs this > 0 AND the switch on. Snap a
+  // stored off-tier value to the nearest option so the dropdown never blanks.
+  const [thinkingBudget, setThinkingBudget] = useState<number>(
+    snapThinkingTier(defaults.thinkingBudget),
+  );
   const [error, setError] = useState<string | null>(null);
 
   // Live "now in your settings" preview from the chosen tz/locale — same output
@@ -169,6 +192,7 @@ function ProfileForm({ data }: { data: ProfileData }) {
       streamThoughts,
       thoughtTrailMode: replaceTrail ? 'replace' : 'list',
       persistThoughts,
+      thinkingBudget,
     });
   };
 
@@ -393,6 +417,34 @@ function ProfileForm({ data }: { data: ProfileData }) {
             <p className="text-xs text-muted-foreground">
               Save the thought trail onto each reply so it&apos;s still there after a
               page reload. Off keeps it only until you refresh.
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="thinkingBudget" className={cn(!streamThoughts && 'opacity-50')}>
+                Thinking budget
+              </Label>
+              <Select
+                value={String(thinkingBudget)}
+                onValueChange={(v) => setThinkingBudget(Number(v))}
+                disabled={!streamThoughts}
+              >
+                <SelectTrigger id="thinkingBudget" className="w-36">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">Off</SelectItem>
+                  <SelectItem value="1024">Low</SelectItem>
+                  <SelectItem value="4096">Medium</SelectItem>
+                  <SelectItem value="8000">High</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              How hard the model reasons before answering. Needs live thinking on and a
+              budget above Off. Off = no extra thinking. Large budgets are trimmed to
+              leave room for the reply.
             </p>
           </div>
         </div>

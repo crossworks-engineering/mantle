@@ -57,6 +57,7 @@ import {
   loadProfilePreferences,
   isStreamThoughtsEnabled,
   isPersistThoughtsEnabled,
+  resolveThinkingBudget,
   noteInboundChannel,
   applyAutoTimezone,
   type LocationPing,
@@ -616,6 +617,9 @@ export async function runAssistantTurn(
           agentDepth: 1,
           delegateTo: (agent.memoryConfig as { delegate_to?: string[] } | null)?.delegate_to ?? [],
           resultHandling: agent.memoryConfig?.result_handling ?? null,
+          // Per-user adaptive thinking: gated by the live-thinking switch AND a
+          // positive budget (reuse the already-loaded prefs). 0 ⇒ no thinking.
+          thinkingBudget: resolveThinkingBudget(prefs),
           // Honor the agent's per-turn iteration override for the TOP-LEVEL
           // responder turn too (not just delegated children). A heavy
           // gather-then-author task needs more than the runtime default of 6

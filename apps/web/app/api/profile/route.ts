@@ -53,6 +53,11 @@ const Body = z.object({
   // Live trail display mode + whether the trail persists across refresh.
   thoughtTrailMode: z.enum(['list', 'replace']).optional(),
   persistThoughts: z.boolean().optional(),
+  // Per-user thinking budget (tokens). 0 = off. Gated alongside streamThoughts
+  // by resolveThinkingBudget, then clamped vs the agent's max_tokens at turn
+  // time. Ceiling kept comfortably above the UI's High tier but below any
+  // agent's max_tokens so a direct PUT can't persist a guaranteed-400 value.
+  thinkingBudget: z.number().int().min(0).max(24000).optional(),
 });
 
 export async function PUT(req: Request) {
@@ -74,6 +79,7 @@ export async function PUT(req: Request) {
     streamThoughts,
     thoughtTrailMode,
     persistThoughts,
+    thinkingBudget,
   } = parsed.data;
   const tz = (timezone ?? '').trim();
   const loc = (locale ?? '').trim();
@@ -102,6 +108,7 @@ export async function PUT(req: Request) {
       ...(streamThoughts !== undefined ? { streamThoughts } : {}),
       ...(thoughtTrailMode !== undefined ? { thoughtTrailMode } : {}),
       ...(persistThoughts !== undefined ? { persistThoughts } : {}),
+      ...(thinkingBudget !== undefined ? { thinkingBudget } : {}),
     });
     return NextResponse.json({ preferences });
   } catch (err) {
