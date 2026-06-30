@@ -294,7 +294,14 @@ function Wizard({
   async function onFinish() {
     setBusy(true);
     try {
-      await onboardingPost('finish');
+      // The server refuses to finish if there's no enabled assistant yet (no
+      // OpenRouter key / provisioning didn't run). Surface that and keep the
+      // user in the wizard rather than dropping them into a dead app.
+      const res = await onboardingPost<{ ok: boolean; error?: string }>('finish');
+      if (!res.ok) {
+        toast.error(res.error ?? 'Finish the setup step first.');
+        return;
+      }
       router.push('/assistant');
       router.refresh();
     } finally {

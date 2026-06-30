@@ -179,7 +179,8 @@ Hack on it — dev checkout with hot reload:
 git clone https://github.com/crossworks-engineering/mantle && cd mantle
 pnpm install
 cp .env.example apps/web/.env.local   # two generated secrets — see the guide
-ollama pull embeddinggemma            # local dev only; production bundles it
+brew install ollama && brew services start ollama   # dev embedder (prod bundles it)
+ollama pull embeddinggemma            # local, free semantic search
 pnpm start
 ```
 

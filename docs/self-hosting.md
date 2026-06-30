@@ -53,7 +53,9 @@ Telegram are all configured in the interface, not in files.
 Grab the `mantle-deploy-<version>.tar.gz` bundle from the
 [releases page](https://github.com/crossworks-engineering/mantle/releases),
 unpack it, `cp .env.prod.example .env`, fill in the two mandatory secrets
-(each has its `openssl rand` one-liner next to it), and
+(each has its `openssl rand` one-liner next to it), set **`MANTLE_STACK_DIR`** to
+this directory's host-absolute path (`MANTLE_STACK_DIR=$(pwd -P)` — the script
+install does this for you; without it the in-app updater can't run), and
 `docker compose up -d --wait`. The bundle and the image are versioned
 together — a release's compose always matches its image.
 

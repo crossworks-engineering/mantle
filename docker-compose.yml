@@ -119,6 +119,12 @@ x-app-env: &app-env
   # Absent socket → the reader reports "tailnet not running" (never throws).
   MANTLE_TAILSCALE_SOCK: ${MANTLE_TAILSCALE_SOCK:-/var/run/tailscale/tailscaled.sock}
   MANTLE_FILES_ROOT: /data/files
+  # Per-app SQLite databases for the /apps mini-app builder. One file per app
+  # (<root>/<owner>/<app>.sqlite, see packages/content/src/app-broker.ts). MUST be
+  # on a persistent host bind-mount — without this the SQLite files land in the
+  # container's ephemeral cwd and every app loses its data on each redeploy. The
+  # web AND api services mount ${MANTLE_DATA_DIR}/app-dbs here.
+  APP_DB_DIR: /data/app-dbs
   # Scheduled local backups (/settings/backups) write pg_dump archives here;
   # bind-mounted to ${MANTLE_DATA_DIR}/backups on the host so the operator's
   # own offsite sync (rsync/rclone/restic) can pick them up. The web service
@@ -179,6 +185,33 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+
+  # One-shot: create the object-store bucket the app writes to. MinIO ships
+  # empty — `mc ready` (the health gate above) only means the SERVER is up, not
+  # that the bucket exists. Without this, the first upload / app build / file
+  # ingest on a fresh box fails "The specified bucket does not exist" (the app
+  # only HEADs the bucket, never creates it — see packages/storage/src/index.ts).
+  # The dev path (scripts/up.sh) does the same `mc mb`; this is its prod twin.
+  # Idempotent (`--ignore-existing`), so it's a no-op on every later boot. Every
+  # service that writes object bytes depends_on this completing.
+  createbuckets:
+    image: minio/mc:latest
+    container_name: mantle_createbuckets
+    restart: "no"
+    depends_on:
+      minio: { condition: service_healthy }
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minio}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minio12345}
+      S3_BUCKET: ${S3_BUCKET:-mantle}
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -e
+        mc alias set local http://minio:9000 "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY"
+        mc mb --ignore-existing "local/$$S3_BUCKET"
+        mc anonymous set none "local/$$S3_BUCKET"
+        echo "[createbuckets] bucket '$$S3_BUCKET' ready"
 
   # Apache Tika — document-parser fallback for formats our in-process parsers
   # don't cover (.odt / .ods / .odp / .pptx / .ppt / .doc / .rtf / .epub / …).
@@ -312,15 +345,19 @@ services:
     container_name: mantle_web
     restart: unless-stopped
     depends_on:
-      postgres:    { condition: service_healthy }
-      minio:       { condition: service_healthy }
-      migrate:     { condition: service_completed_successfully }
-      ollama_pull: { condition: service_completed_successfully }
+      postgres:      { condition: service_healthy }
+      minio:         { condition: service_healthy }
+      createbuckets: { condition: service_completed_successfully }
+      migrate:       { condition: service_completed_successfully }
+      ollama_pull:   { condition: service_completed_successfully }
     environment:
       <<: *app-env
     volumes:
       - ${MANTLE_DATA_DIR:-./data}/files:/data/files
       - ${MANTLE_DATA_DIR:-./data}/backups:/data/backups
+      # Per-app SQLite (APP_DB_DIR=/data/app-dbs) — persistent so /apps data
+      # survives redeploys.
+      - ${MANTLE_DATA_DIR:-./data}/app-dbs:/data/app-dbs
       # READ-WRITE view of the tailscaled LocalAPI socket. Read drives the
       # /settings/network status tile + peer dropdown; write lets the app log
       # tailscaled in/out from the UI (Activate/Deactivate). RW is the one
@@ -406,13 +443,18 @@ services:
     container_name: mantle_api
     restart: unless-stopped
     depends_on:
-      postgres:    { condition: service_healthy }
-      migrate:     { condition: service_completed_successfully }
-      ollama_pull: { condition: service_completed_successfully }
+      postgres:      { condition: service_healthy }
+      minio:         { condition: service_healthy }
+      createbuckets: { condition: service_completed_successfully }
+      migrate:       { condition: service_completed_successfully }
+      ollama_pull:   { condition: service_completed_successfully }
     environment:
       <<: *app-env
     volumes:
       - ${MANTLE_DATA_DIR:-./data}/files:/data/files
+      # Per-app SQLite (APP_DB_DIR=/data/app-dbs) — the api also serves /apps
+      # (agent app_build + runtime), so it shares the same persistent mount.
+      - ${MANTLE_DATA_DIR:-./data}/app-dbs:/data/app-dbs
 
   worker_email:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
@@ -420,9 +462,10 @@ services:
     container_name: mantle_worker_email
     restart: unless-stopped
     depends_on:
-      postgres: { condition: service_healthy }
-      minio:    { condition: service_healthy }
-      migrate:  { condition: service_completed_successfully }
+      postgres:      { condition: service_healthy }
+      minio:         { condition: service_healthy }
+      createbuckets: { condition: service_completed_successfully }
+      migrate:       { condition: service_completed_successfully }
     environment:
       <<: *app-env
 
@@ -446,9 +489,10 @@ services:
     container_name: mantle_worker_microsoft
     restart: unless-stopped
     depends_on:
-      postgres: { condition: service_healthy }
-      minio:    { condition: service_healthy }
-      migrate:  { condition: service_completed_successfully }
+      postgres:      { condition: service_healthy }
+      minio:         { condition: service_healthy }
+      createbuckets: { condition: service_completed_successfully }
+      migrate:       { condition: service_completed_successfully }
     environment:
       <<: *app-env
 
@@ -460,8 +504,10 @@ services:
     container_name: mantle_worker_files
     restart: unless-stopped
     depends_on:
-      postgres: { condition: service_healthy }
-      migrate:  { condition: service_completed_successfully }
+      postgres:      { condition: service_healthy }
+      minio:         { condition: service_healthy }
+      createbuckets: { condition: service_completed_successfully }
+      migrate:       { condition: service_completed_successfully }
     environment:
       <<: *app-env
     volumes:

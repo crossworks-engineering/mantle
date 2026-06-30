@@ -238,6 +238,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
     case 'finish': {
+      // Integrity gate: never stamp onboarding complete over a dead brain. If no
+      // enabled persona/responder exists (the user skipped the OpenRouter key, or
+      // provisioning no-op'd), refuse — otherwise `onboardedAt` is set, the app
+      // shell stops routing them to the wizard, and every chat turn fails with no
+      // path back to fix it. Mirrors the persona-step guard above.
+      const persona = await getAgentBySlug(user.id, PERSONA_AGENT_SLUG);
+      if (!persona?.enabled) {
+        return NextResponse.json({
+          ok: false,
+          error:
+            'Your brain has no assistant yet — add an OpenRouter API key and run Set up so it can answer, then finish.',
+        });
+      }
       await markOnboarded(user.id);
       return NextResponse.json({ ok: true });
     }
