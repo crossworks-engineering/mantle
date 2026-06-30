@@ -139,3 +139,37 @@ export async function bucketReachable(): Promise<boolean> {
     return false;
   }
 }
+
+export type BucketStatus = {
+  /** The S3_BUCKET name we probed. */
+  bucket: string;
+  /** False only when the object store itself couldn't be reached (network). */
+  reachable: boolean;
+  /** Whether the bucket exists. null = server answered but we can't tell (403 —
+   *  the key lacks HeadBucket perms; the bucket may or may not exist). */
+  exists: boolean | null;
+};
+
+/**
+ * Stricter sibling of `bucketReachable()` for the sanity checker. Where
+ * `bucketReachable()` deliberately reports a 404 as "reachable" (the dashboard
+ * pill only cares that MinIO answered), this DISTINGUISHES a missing bucket
+ * from an unreachable store — because a missing `mantle` bucket is exactly the
+ * silent break that fails every app build / upload while MinIO itself is "up".
+ * Provisioned by `scripts/up.sh` (`mc mb local/mantle`); prod compose does not
+ * create it, so a registry-pull box that never ran up.sh has no bucket.
+ */
+export async function bucketStatus(): Promise<BucketStatus> {
+  const name = bucket();
+  try {
+    await client().send(new HeadBucketCommand({ Bucket: name }));
+    return { bucket: name, reachable: true, exists: true };
+  } catch (err: unknown) {
+    const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
+    const status = e.$metadata?.httpStatusCode;
+    if (e.name === 'NotFound' || status === 404) return { bucket: name, reachable: true, exists: false };
+    // Any other HTTP answer (e.g. 403) → store is up, existence indeterminate.
+    if (typeof status === 'number') return { bucket: name, reachable: true, exists: null };
+    return { bucket: name, reachable: false, exists: null };
+  }
+}
