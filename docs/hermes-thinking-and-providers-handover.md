@@ -15,8 +15,9 @@ and shipped two intertwined things on one branch:
 2. **A new direct provider, GitHub Copilot**, with reasoning — modelled on how
    Hermes implements its `copilot` provider.
 
-Seven commits, 325 voice tests green. Default-OFF behind a gate
-(`MANTLE_THINKING_BUDGET`) pending a live smoke test (see §6).
+Seven commits, 325 voice tests green. Default-OFF behind a per-user profile gate
+(live-thinking switch + Thinking budget — superseded the original
+`MANTLE_THINKING_BUDGET` env var; see §6) pending a live smoke test.
 
 ---
 
@@ -155,9 +156,12 @@ All in `packages/voice` (the adapter framework) + `packages/agent-runtime`
   renders a collapsible "Thinking" disclosure. `stage-label.ts` retired the
   20-phrase rotation for a single honest "Thinking…". Reasoning is ephemeral
   (never persisted).
-- **Gate.** `MANTLE_THINKING_BUDGET` (int tokens, >0 = on) in the tool loop,
-  per box. Shipped **dark** — the signature round-trip can only be proven against
-  a live OpenRouter+Anthropic call.
+- **Gate.** Originally `MANTLE_THINKING_BUDGET` (int tokens, >0 = on) in the tool
+  loop, per box. **Superseded** by a per-user profile gate (live-thinking switch +
+  Thinking budget, resolved in the turn runners and threaded into runToolLoop as
+  `args.thinkingBudget`, then clamped vs the agent's max_tokens — see §6). Shipped
+  **dark** — the signature round-trip can only be proven against a live
+  OpenRouter+Anthropic call.
 
 ### 3.2 The GitHub Copilot provider (commit `bb051fb5`)
 
@@ -314,8 +318,8 @@ changes** are needed — only [`anthropic-chat.ts`](../packages/voice/src/adapte
    echo-back.
 
 **Effort:** ~150–250 LOC in that one adapter + types + tests; roughly half a day
-to a day. Low blast radius (can't regress other adapters; still behind
-`MANTLE_THINKING_BUDGET`).
+to a day. Low blast radius (can't regress other adapters; still behind the
+per-user thinking gate — §6).
 
 **Confidence:** high (~90%). The replay contract is documented and is the same
 shape we already ship for OpenRouter. Residual risk is the streaming

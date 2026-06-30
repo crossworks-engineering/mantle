@@ -3,6 +3,7 @@ import {
   isReminderChannel,
   isStreamThoughtsEnabled,
   isPersistThoughtsEnabled,
+  projectThinkingBudget,
   resolveThinkingBudget,
   resolveThoughtTrailMode,
 } from './profile-preferences';
@@ -35,6 +36,28 @@ describe('isPersistThoughtsEnabled', () => {
   it('is off ONLY for an explicit false', () => {
     expect(isPersistThoughtsEnabled({ persistThoughts: false })).toBe(false);
     expect(isPersistThoughtsEnabled({ persistThoughts: true })).toBe(true);
+  });
+});
+
+// projectThinkingBudget is the SHARED jsonb→typed projection used by both the
+// read (loadProfilePreferences) and return (updateProfilePreferences) paths. It
+// guards the exact round-trip regression the feature was written to prevent: a
+// stored budget being silently stripped on read. Both projections delegate here
+// so they can't drift.
+describe('projectThinkingBudget', () => {
+  it('keeps a positive integer', () => {
+    expect(projectThinkingBudget(4096)).toBe(4096);
+  });
+  it('floors a fractional value', () => {
+    expect(projectThinkingBudget(4096.7)).toBe(4096);
+  });
+  it('maps unset / zero / negative / non-number to undefined', () => {
+    expect(projectThinkingBudget(undefined)).toBeUndefined();
+    expect(projectThinkingBudget(0)).toBeUndefined();
+    expect(projectThinkingBudget(-100)).toBeUndefined();
+    expect(projectThinkingBudget('4096')).toBeUndefined();
+    expect(projectThinkingBudget(null)).toBeUndefined();
+    expect(projectThinkingBudget(NaN)).toBeUndefined();
   });
 });
 

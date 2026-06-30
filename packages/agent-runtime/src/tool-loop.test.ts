@@ -75,7 +75,7 @@ vi.mock('@mantle/db', () => ({
 }));
 
 // Import AFTER mocks so the loop picks up the mocked deps.
-import { runToolLoop, buildToolsForModel } from './tool-loop';
+import { runToolLoop, buildToolsForModel, clampThinkingBudget } from './tool-loop';
 import type {
   ChatDispatcher,
   ChatOptions,
@@ -1236,5 +1236,42 @@ describe('buildToolsForModel — invoke_agent delegate enum', () => {
     const defs = buildToolsForModel([other], ['pages']);
     expect((defs[0]!.function.parameters as any).properties.text).toBeDefined();
     expect((defs[0]!.function.parameters as any).properties.agent_slug).toBeUndefined();
+  });
+});
+
+// The reasoning providers (OpenRouter→Anthropic, Gemini) 400 when the thinking
+// budget is ≥ max_tokens or leaves no room for the answer. clampThinkingBudget
+// caps the per-user budget at half the agent's max_tokens and drops thinking
+// entirely when there isn't room for the 1024-token provider minimum.
+describe('clampThinkingBudget', () => {
+  it('passes the budget through when max_tokens is unset (provider default is large)', () => {
+    expect(clampThinkingBudget(8000, undefined)).toBe(8000);
+  });
+
+  it('keeps a budget that fits under half of max_tokens', () => {
+    // stock responder: max_tokens 16000, High tier 8000 → fits exactly, no clamp.
+    expect(clampThinkingBudget(8000, 16000)).toBe(8000);
+    expect(clampThinkingBudget(4096, 16000)).toBe(4096);
+  });
+
+  it('caps at half of max_tokens so thinking never starves the answer', () => {
+    // A budget ≥ max_tokens would 400 upstream; cap to floor(max/2).
+    expect(clampThinkingBudget(16000, 16000)).toBe(8000);
+    expect(clampThinkingBudget(8000, 8192)).toBe(4096);
+  });
+
+  it('drops thinking (0) when there is no room for the provider minimum', () => {
+    // floor(max/2) < 1024 ⇒ no valid budget exists → off, not a doomed request.
+    expect(clampThinkingBudget(4096, 2000)).toBe(0);
+    expect(clampThinkingBudget(4096, 1024)).toBe(0);
+  });
+
+  it('stays off for a non-positive request regardless of max_tokens', () => {
+    expect(clampThinkingBudget(0, 16000)).toBe(0);
+    expect(clampThinkingBudget(-5, 16000)).toBe(0);
+  });
+
+  it('treats a non-positive max_tokens as unset (passes through)', () => {
+    expect(clampThinkingBudget(8000, 0)).toBe(8000);
   });
 });

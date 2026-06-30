@@ -180,17 +180,27 @@ export function isPersistThoughtsEnabled(
   return prefs.persistThoughts !== false;
 }
 
+/** Project a stored `thinkingBudget` jsonb value to the typed field — a positive
+ *  integer, or undefined for unset/garbage/non-positive. Shared by BOTH the read
+ *  (`loadProfilePreferences`) and return (`updateProfilePreferences`) projections
+ *  so the two can't drift — that drift is exactly what originally dropped the
+ *  field on read and left the feature silently dead. */
+export function projectThinkingBudget(raw: unknown): number | undefined {
+  return typeof raw === 'number' && raw > 0 ? Math.floor(raw) : undefined;
+}
+
 /** Effective per-turn thinking budget in tokens — gated by BOTH the live-thinking
  *  switch (`streamThoughts`) AND a positive `thinkingBudget`. Returns 0 when
  *  either is missing, so real reasoning is requested only when the user has
  *  explicitly opted into both. This is the gate that replaced the per-box
- *  `MANTLE_THINKING_BUDGET` env var. */
+ *  `MANTLE_THINKING_BUDGET` env var. NOTE: the magnitude is further clamped at
+ *  turn time against the agent's `max_tokens` (see tool-loop.ts) so a budget
+ *  ≥ max_tokens can't 400 the reasoning providers. */
 export function resolveThinkingBudget(
   prefs: Pick<ProfilePreferences, 'streamThoughts' | 'thinkingBudget'>,
 ): number {
   if (!isStreamThoughtsEnabled(prefs)) return 0;
-  const b = prefs.thinkingBudget;
-  return typeof b === 'number' && b > 0 ? Math.floor(b) : 0;
+  return projectThinkingBudget(prefs.thinkingBudget) ?? 0;
 }
 
 export const DEFAULT_PREFERENCES: ProfilePreferences = {
@@ -295,10 +305,7 @@ export async function loadProfilePreferences(
     // Clamp defensively — jsonb can hold anything an older/hand write put there.
     // Unset/non-positive ⇒ undefined (no thinking); resolveThinkingBudget also
     // gates on the switch.
-    thinkingBudget:
-      typeof prefs.thinkingBudget === 'number' && prefs.thinkingBudget > 0
-        ? Math.floor(prefs.thinkingBudget)
-        : undefined,
+    thinkingBudget: projectThinkingBudget(prefs.thinkingBudget),
     // Default OFF: only an explicit `true` exposes the remote MCP connector.
     remoteMcpEnabled: prefs.remoteMcpEnabled === true,
     lastReconciledVersion:
@@ -445,10 +452,7 @@ export async function updateProfilePreferences(
     streamThoughts: merged.streamThoughts !== false,
     thoughtTrailMode: merged.thoughtTrailMode === 'replace' ? 'replace' : 'list',
     persistThoughts: merged.persistThoughts !== false,
-    thinkingBudget:
-      typeof merged.thinkingBudget === 'number' && merged.thinkingBudget > 0
-        ? Math.floor(merged.thinkingBudget)
-        : undefined,
+    thinkingBudget: projectThinkingBudget(merged.thinkingBudget),
     remoteMcpEnabled: merged.remoteMcpEnabled === true,
     lastReconciledVersion: merged.lastReconciledVersion || undefined,
   };

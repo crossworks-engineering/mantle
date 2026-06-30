@@ -54,8 +54,10 @@ const Body = z.object({
   thoughtTrailMode: z.enum(['list', 'replace']).optional(),
   persistThoughts: z.boolean().optional(),
   // Per-user thinking budget (tokens). 0 = off. Gated alongside streamThoughts
-  // by resolveThinkingBudget at turn time.
-  thinkingBudget: z.number().int().min(0).max(64000).optional(),
+  // by resolveThinkingBudget, then clamped vs the agent's max_tokens at turn
+  // time. Ceiling kept comfortably above the UI's High tier but below any
+  // agent's max_tokens so a direct PUT can't persist a guaranteed-400 value.
+  thinkingBudget: z.number().int().min(0).max(24000).optional(),
 });
 
 export async function PUT(req: Request) {

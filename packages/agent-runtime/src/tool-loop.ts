@@ -62,6 +62,29 @@ import { parseToolArgs } from './tool-args';
 
 const DEFAULT_MAX_ITERATIONS = 6;
 
+/** Min thinking budget the reasoning providers accept (Anthropic's
+ *  `thinking.budget_tokens` floor; OpenRouter forwards ours there). Below this a
+ *  positive budget would itself 400, so we drop thinking instead. */
+const MIN_THINKING_BUDGET = 1024;
+
+/**
+ * Clamp a requested thinking budget against the agent's `max_tokens`.
+ *
+ * The reasoning providers (OpenRouter→Anthropic, Gemini) require the thinking
+ * budget to be strictly less than `max_tokens` and leave room for the answer; a
+ * budget ≥ max_tokens 400s the request. We cap at half the token budget so
+ * thinking never starves the reply, then floor-or-drop at the provider minimum.
+ * `max_tokens` unset ⇒ the provider uses its own (large) default, so the budget
+ * passes through untouched. A 0/negative request stays 0 (off).
+ */
+export function clampThinkingBudget(requested: number, maxTokens: number | undefined): number {
+  if (requested <= 0) return 0;
+  if (typeof maxTokens !== 'number' || maxTokens <= 0) return requested;
+  const cap = Math.floor(maxTokens / 2);
+  if (cap < MIN_THINKING_BUDGET) return 0;
+  return Math.min(requested, cap);
+}
+
 /**
  * Run one chat round, streaming live token deltas when the runner has turn
  * streaming active (`isTurnStreaming()`) AND this route's adapter supports it.
@@ -446,7 +469,19 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         // `reasoning` deltas + signed `reasoning_details` (echoed across rounds
         // above). Reasoning-capable models reject sampling params, so we drop
         // temperature/top_p whenever thinking is requested.
-        const thinkingBudget = args.thinkingBudget ?? 0;
+        //
+        // Clamp the budget against the agent's max_tokens: the reasoning
+        // providers (OpenRouter→Anthropic, Gemini) require the thinking budget to
+        // be < max_tokens AND need room left for the answer, else they 400. Cap
+        // at half the token budget; if that floor is below the 1024 provider
+        // minimum, drop thinking rather than send a doomed request. When
+        // max_tokens is unset the provider uses its own large default, so the
+        // budget passes through. (Anthropic-direct ignores the magnitude — it
+        // treats any >0 as adaptive on/off — so the clamp is a no-op there.)
+        const thinkingBudget = clampThinkingBudget(
+          args.thinkingBudget ?? 0,
+          args.params.max_tokens,
+        );
         const chatOpts = {
           messages,
           ...(sendTools ? { tools: toolsForModel } : {}),

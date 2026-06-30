@@ -46,6 +46,23 @@ import type { ProfilePreferences } from '@mantle/content';
  *  value, so we map this to '' before submitting. */
 const REMINDER_AUTO = '__auto__';
 
+/** Thinking-budget tiers (token values) the dropdown offers: Off/Low/Medium/High.
+ *  High stays below the default responder's max_tokens (16000) so the stock
+ *  config never needs the turn-time clamp; the clamp still protects agents whose
+ *  max_tokens was edited down. */
+const THINKING_TIERS = [0, 1024, 4096, 8000] as const;
+
+/** Snap a stored budget (which an operator/API may have set off-tier) to the
+ *  nearest dropdown value, so the Select always shows a populated option instead
+ *  of rendering blank for an unlisted number. 0/unset ⇒ Off. */
+function snapThinkingTier(v: number | undefined): number {
+  if (!v || v <= 0) return 0;
+  return THINKING_TIERS.reduce(
+    (best, t) => (Math.abs(t - v) < Math.abs(best - v) ? t : best),
+    0,
+  );
+}
+
 /** `GET /api/profile` payload. */
 type ProfileData = {
   preferences: ProfilePreferences;
@@ -118,9 +135,10 @@ function ProfileForm({ data }: { data: ProfileData }) {
     defaults.persistThoughts !== false,
   );
   // Per-user thinking budget (tokens). 0 = off (default). Select stores the
-  // numeric token value; real thinking needs this > 0 AND the switch on.
+  // numeric token value; real thinking needs this > 0 AND the switch on. Snap a
+  // stored off-tier value to the nearest option so the dropdown never blanks.
   const [thinkingBudget, setThinkingBudget] = useState<number>(
-    defaults.thinkingBudget ?? 0,
+    snapThinkingTier(defaults.thinkingBudget),
   );
   const [error, setError] = useState<string | null>(null);
 
@@ -419,7 +437,7 @@ function ProfileForm({ data }: { data: ProfileData }) {
                   <SelectItem value="0">Off</SelectItem>
                   <SelectItem value="1024">Low</SelectItem>
                   <SelectItem value="4096">Medium</SelectItem>
-                  <SelectItem value="16000">High</SelectItem>
+                  <SelectItem value="8000">High</SelectItem>
                 </SelectContent>
               </Select>
             </div>

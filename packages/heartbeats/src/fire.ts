@@ -43,7 +43,7 @@ import {
   runToolLoop,
   type ChatMessage,
 } from '@mantle/agent-runtime';
-import { loadProfilePreferences, buildTimeContextLine } from '@mantle/content';
+import { loadProfilePreferences, buildTimeContextLine, resolveThinkingBudget } from '@mantle/content';
 import { checkGates } from './gates';
 import { computeNextFireAt } from './schedule';
 import { withHeartbeatContext } from './context';
@@ -277,6 +277,10 @@ async function fireInner(
             agentSlug: agent.slug,
             agentDepth: 1,
             delegateTo: [],
+            // Per-user adaptive thinking on unattended heartbeat runs too (same
+            // profile gate; prefs already loaded above). Clamped vs max_tokens
+            // inside runToolLoop.
+            thinkingBudget: resolveThinkingBudget(prefs),
             initialMessages,
             tools,
             surface:

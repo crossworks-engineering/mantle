@@ -351,6 +351,7 @@ export {
   resolveThoughtTrailMode,
   isPersistThoughtsEnabled,
   resolveThinkingBudget,
+  projectThinkingBudget,
   type ThoughtTrailMode,
   formatInProfile,
   buildTimeContextLine,

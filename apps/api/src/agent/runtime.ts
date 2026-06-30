@@ -46,6 +46,7 @@ import {
   buildIdentityContext,
   buildTimeContextLine,
   loadProfilePreferences,
+  resolveThinkingBudget,
   noteInboundChannel,
 } from '@mantle/content';
 import { ensureDatedUploadFolder, upsertFile } from '@mantle/files';
@@ -966,6 +967,10 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
           delegateTo:
             (agent.memoryConfig as { delegate_to?: string[] } | null)?.delegate_to ?? [],
           resultHandling: agent.memoryConfig?.result_handling ?? null,
+          // Per-user adaptive thinking on the Telegram responder turn too (same
+          // profile gate as web; prefs already loaded above). Clamped vs
+          // max_tokens inside runToolLoop.
+          thinkingBudget: resolveThinkingBudget(prefs),
           initialMessages: messages,
           tools: allowedTools,
           // Surface lets worker-delegation tools (synthesize_speech,
