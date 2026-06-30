@@ -260,7 +260,116 @@ run thinking-off, which makes the replayed thinking-less history valid.
   the rest waits on the smoke test.
 - **Direct-Anthropic / Gemini every-round thinking** — would need their own
   block/signature echo-back (only matters if a box runs a *direct*-provider
-  responder; today the responder is OpenRouter).
+  responder; today the responder is OpenRouter). See the scoped enhancement
+  below.
+
+### 7.1 Future enhancement — native direct-Anthropic thinking-block echo-back
+
+**Status:** documented, UNBUILT. Low priority — only relevant if a box's
+responder is configured to use the **direct** `anthropic` provider instead of
+OpenRouter. Today the direct path thinks on round 0 only (the
+[`thinking-guard`](../packages/voice/src/adapters/thinking-guard.ts) disables
+thinking on tool continuations because we don't replay the signed block). This
+enhancement makes the direct path think on *every* round, matching OpenRouter.
+
+**Why it's now well-understood (the contract is verified, not a guess).** Checked
+against the `claude-api` skill: a thinking-then-tool_use turn must replay the
+prior `thinking` block **exactly as received** on the same model — *the API
+rejects modified blocks, not read ones*. Critically, `display:'summarized'`
+(and even `display:'omitted'`, which yields empty thinking text) still produces a
+**replayable block**: you capture the block with its `signature` and re-send it
+verbatim; the signature validates the block-as-delivered, not the hidden raw
+reasoning. So summarized display and block replay compose cleanly — there is no
+"we only have the summary but the signature wants the full thing" failure mode.
+`redacted_thinking` blocks (encrypted; carry a `data` field instead of text) must
+be captured and replayed the same way.
+
+**Approach — reuse the existing `reasoningDetails` channel; one file.** The
+per-assistant-message `reasoningDetails` carry + replay plumbing already exists
+and is proven by OpenRouter, and `ReasoningDetail`
+(`packages/voice/src/adapters/types.ts`) is loose enough (`type`/`text`/`data`/
+`signature`) to hold native Anthropic blocks. So **no tool-loop or runtime
+changes** are needed — only [`anthropic-chat.ts`](../packages/voice/src/adapters/anthropic-chat.ts):
+1. **Capture (one-shot):** also collect `thinking` (text + `signature`) and
+   `redacted_thinking` (`data`) blocks off `parsed.content` into
+   `ChatResult.reasoningDetails`.
+2. **Capture (streaming):** extend the `blocks` Map to handle `content_block_start`
+   type `thinking`/`redacted_thinking`, accumulate `thinking_delta`, and capture
+   the **`signature_delta`** event (currently ignored by the streamer).
+3. **Replay:** in `splitSystemAndMessages`, when an assistant turn carries
+   `reasoningDetails`, prepend reconstructed `thinking`/`redacted_thinking`
+   blocks **before** the text and `tool_use` blocks (Anthropic requires the
+   signed block first in the turn).
+4. **Guard:** swap `wantGuardedThinking(opts)` → plain `budget > 0` for Anthropic
+   (it now thinks every round); **keep** the guard for Gemini, which still has no
+   echo-back.
+
+**Effort:** ~150–250 LOC in that one adapter + types + tests; roughly half a day
+to a day. Low blast radius (can't regress other adapters; still behind
+`MANTLE_THINKING_BUDGET`).
+
+**Confidence:** high (~90%). The replay contract is documented and is the same
+shape we already ship for OpenRouter. Residual risk is the streaming
+`signature_delta` capture + the block-first ordering rule (both unit-testable, so
+caught before prod), plus one genuine live smoke test (a direct-Anthropic
+thinking+tool turn → no 400 on round 2), the same class of live-only check as the
+OpenRouter echo-back.
+
+**Gemini** is the analogous follow-up (capture + replay its thought signatures so
+it too thinks every round); same pattern, separate block shape.
+
+### 7.2 Provider breadth — what's left from Hermes (audited 2026-06-30)
+
+Compared Hermes' ~26 model-provider plugins against Mantle. Finding: Hermes'
+breadth is mostly **one pattern repeated** — a static-key OpenAI-compatible
+endpoint differing only in base URL + model list (alibaba/DashScope, arcee, gmi,
+kilocode, kimi/Moonshot, novita, nvidia, stepfun, xiaomi, zai/GLM, azure-foundry,
+…). Most of those models are *already reachable* through the existing
+`openrouter` adapter, and the rest collapse into one generic adapter.
+
+**SHIPPED — `custom` (OpenAI-compatible cloud) provider.** One adapter
+([`custom-chat.ts`](../packages/voice/src/adapters/custom-chat.ts)) that takes a
+per-route Base URL + API key and reuses the shared `openai-compat` translation +
+streamer (so it inherits the `<think>` scrubber and `reasoning_content`
+forwarding). Subsumes the entire static-key long tail — point a route at any
+vendor's `/chat/completions`, pick/type the model. Distinct from `local` (keyless
+self-host/tailnet; cosmetic Bearer): `custom` is the **keyed cloud** path —
+Base URL + key both required, no localhost default, no tailnet. Thinking maps
+`thinkingBudget`→`reasoning_effort` (Copilot-consistent), sent only under the
+gate. Wiring: `providers.ts` (`capabilities:['chat']`, aggregator badge) +
+`WIRED_PROVIDERS.chat` + barrel registration; Base URL field surfaced in BOTH the
+agents form and the ai-workers form (the shared `RouteHostFields` generalized to
+`provider: 'local' | 'custom'`, hiding the tailnet toggle for custom). Runtime
+needed **zero** changes — route `baseUrl` already flows for any provider and
+`resolveChatKey` treats only `local` as keyless, so `custom` correctly requires a
+key. Live model discovery returns empty-with-hint (the keyless `/api/models`
+route can't pass the per-route Base URL); the `ModelSelect` free-text
+(`allowCustom`) affordance is the model-entry path. 8 wire tests; full voice suite
+333 green; web/agent-runtime/assistant-runtime typecheck clean. **Not yet
+browser-smoked** (settings forms need a running stack + auth).
+
+**Deliberately NOT built (demand-gated):**
+- **`bedrock`** (AWS) — the only other entry with real standalone value, but it
+  needs SigV4 signing (not a static key) — real adapter work. Build when a
+  customer requires AWS-account billing/compliance.
+- **OAuth/subscription providers** (qwen-oauth, nous device-code, openai-codex
+  Responses API, minimax OAuth, copilot-acp) — each a bespoke token flow like
+  Copilot; niche, per-subscription. Add the specific one a user actually has.
+- Single-vendor static endpoints (zai/GLM, kimi, DashScope, nvidia, novita) — no
+  bespoke adapter needed: reach them via `openrouter`, or now via `custom` with
+  the vendor's base URL + key.
+
+This closes the model audit: the Copilot port covered the one gap that *needed*
+bespoke auth code; `custom` covers the breadth; everything remaining is either
+already reachable or demand-gated.
+
+#### Future enhancement — thread the route Base URL into model discovery
+`discoverModels(apiKey)` has no `baseUrl` param, so a `custom` route can't live-
+list `/models` (operators type the model id via `allowCustom`). Making it
+discover would be an **additive optional** `discoverModels(apiKey, baseUrl?)` on
+the `ChatDispatcher` interface + the `/api/models` route + the form's discovery
+trigger passing the typed Base URL. ~Half a day; low priority (free-text already
+unblocks configuration).
 - **Copilot Responses-API mode** — Hermes switches some models to the OpenAI
   Responses API (`_should_use_copilot_responses_api`); we only implemented chat
   completions. Add if a Copilot model needs it.
