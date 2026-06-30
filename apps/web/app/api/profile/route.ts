@@ -53,6 +53,9 @@ const Body = z.object({
   // Live trail display mode + whether the trail persists across refresh.
   thoughtTrailMode: z.enum(['list', 'replace']).optional(),
   persistThoughts: z.boolean().optional(),
+  // Per-user thinking budget (tokens). 0 = off. Gated alongside streamThoughts
+  // by resolveThinkingBudget at turn time.
+  thinkingBudget: z.number().int().min(0).max(64000).optional(),
 });
 
 export async function PUT(req: Request) {
@@ -74,6 +77,7 @@ export async function PUT(req: Request) {
     streamThoughts,
     thoughtTrailMode,
     persistThoughts,
+    thinkingBudget,
   } = parsed.data;
   const tz = (timezone ?? '').trim();
   const loc = (locale ?? '').trim();
@@ -102,6 +106,7 @@ export async function PUT(req: Request) {
       ...(streamThoughts !== undefined ? { streamThoughts } : {}),
       ...(thoughtTrailMode !== undefined ? { thoughtTrailMode } : {}),
       ...(persistThoughts !== undefined ? { persistThoughts } : {}),
+      ...(thinkingBudget !== undefined ? { thinkingBudget } : {}),
     });
     return NextResponse.json({ preferences });
   } catch (err) {

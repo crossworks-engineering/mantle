@@ -350,6 +350,7 @@ export {
   isStreamThoughtsEnabled,
   resolveThoughtTrailMode,
   isPersistThoughtsEnabled,
+  resolveThinkingBudget,
   type ThoughtTrailMode,
   formatInProfile,
   buildTimeContextLine,

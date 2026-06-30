@@ -117,6 +117,11 @@ function ProfileForm({ data }: { data: ProfileData }) {
   const [persistThoughts, setPersistThoughts] = useState<boolean>(
     defaults.persistThoughts !== false,
   );
+  // Per-user thinking budget (tokens). 0 = off (default). Select stores the
+  // numeric token value; real thinking needs this > 0 AND the switch on.
+  const [thinkingBudget, setThinkingBudget] = useState<number>(
+    defaults.thinkingBudget ?? 0,
+  );
   const [error, setError] = useState<string | null>(null);
 
   // Live "now in your settings" preview from the chosen tz/locale — same output
@@ -169,6 +174,7 @@ function ProfileForm({ data }: { data: ProfileData }) {
       streamThoughts,
       thoughtTrailMode: replaceTrail ? 'replace' : 'list',
       persistThoughts,
+      thinkingBudget,
     });
   };
 
@@ -393,6 +399,33 @@ function ProfileForm({ data }: { data: ProfileData }) {
             <p className="text-xs text-muted-foreground">
               Save the thought trail onto each reply so it&apos;s still there after a
               page reload. Off keeps it only until you refresh.
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="thinkingBudget" className={cn(!streamThoughts && 'opacity-50')}>
+                Thinking budget
+              </Label>
+              <Select
+                value={String(thinkingBudget)}
+                onValueChange={(v) => setThinkingBudget(Number(v))}
+                disabled={!streamThoughts}
+              >
+                <SelectTrigger id="thinkingBudget" className="w-36">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">Off</SelectItem>
+                  <SelectItem value="1024">Low</SelectItem>
+                  <SelectItem value="4096">Medium</SelectItem>
+                  <SelectItem value="16000">High</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              How hard the model reasons before answering. Needs live thinking on and a
+              budget above Off. Off = no extra thinking.
             </p>
           </div>
         </div>

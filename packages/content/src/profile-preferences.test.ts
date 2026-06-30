@@ -3,6 +3,7 @@ import {
   isReminderChannel,
   isStreamThoughtsEnabled,
   isPersistThoughtsEnabled,
+  resolveThinkingBudget,
   resolveThoughtTrailMode,
 } from './profile-preferences';
 
@@ -34,6 +35,32 @@ describe('isPersistThoughtsEnabled', () => {
   it('is off ONLY for an explicit false', () => {
     expect(isPersistThoughtsEnabled({ persistThoughts: false })).toBe(false);
     expect(isPersistThoughtsEnabled({ persistThoughts: true })).toBe(true);
+  });
+});
+
+// Thinking is requested only when BOTH gates are open: the live-thinking switch
+// is ON (streamThoughts !== false) AND the budget is a positive number. Either
+// missing ⇒ 0 (no thinking). This is the per-user replacement for the old
+// MANTLE_THINKING_BUDGET env gate.
+describe('resolveThinkingBudget', () => {
+  it('is 0 when the switch is off, regardless of budget', () => {
+    expect(resolveThinkingBudget({ streamThoughts: false, thinkingBudget: 4096 })).toBe(0);
+  });
+
+  it('is 0 when the switch is on but the budget is unset or non-positive', () => {
+    expect(resolveThinkingBudget({ streamThoughts: true })).toBe(0);
+    expect(resolveThinkingBudget({ streamThoughts: true, thinkingBudget: 0 })).toBe(0);
+    expect(resolveThinkingBudget({ streamThoughts: true, thinkingBudget: -5 })).toBe(0);
+  });
+
+  it('is the budget when the switch is on (incl. default-on) and the budget is positive', () => {
+    expect(resolveThinkingBudget({ streamThoughts: true, thinkingBudget: 4096 })).toBe(4096);
+    // streamThoughts defaults ON when unset, so a positive budget alone activates.
+    expect(resolveThinkingBudget({ thinkingBudget: 1024 })).toBe(1024);
+  });
+
+  it('floors a fractional budget', () => {
+    expect(resolveThinkingBudget({ streamThoughts: true, thinkingBudget: 1024.9 })).toBe(1024);
   });
 });
 

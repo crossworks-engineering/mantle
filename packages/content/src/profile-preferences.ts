@@ -134,6 +134,15 @@ export type ProfilePreferences = {
    *  false to keep it ephemeral (in-memory only; clears on reload). See
    *  `isPersistThoughtsEnabled`. */
   persistThoughts?: boolean;
+  /** Per-user thinking budget in tokens. Real model reasoning is requested only
+   *  when the live-thinking switch is ON (`streamThoughts`) AND this is > 0;
+   *  0 / unset = no thinking. Maps to the provider's knob in the adapters
+   *  (Anthropic adaptive, OpenRouter `reasoning.max_tokens`, Gemini
+   *  `thinkingConfig`, Copilot `reasoning_effort`). This is the per-user
+   *  replacement for the old per-box `MANTLE_THINKING_BUDGET` env gate. Resolve
+   *  via `resolveThinkingBudget` — never read raw, so the switch gate always
+   *  applies. **Defaults unset (off).** */
+  thinkingBudget?: number;
   /** Whether this box exposes its remote MCP connector (the OAuth-gated
    *  `/api/mcp` endpoint addable as a claude.ai custom connector). **Defaults
    *  OFF** — it's an explicit opt-in because it puts the tool surface on the
@@ -169,6 +178,19 @@ export function isPersistThoughtsEnabled(
   prefs: Pick<ProfilePreferences, 'persistThoughts'>,
 ): boolean {
   return prefs.persistThoughts !== false;
+}
+
+/** Effective per-turn thinking budget in tokens — gated by BOTH the live-thinking
+ *  switch (`streamThoughts`) AND a positive `thinkingBudget`. Returns 0 when
+ *  either is missing, so real reasoning is requested only when the user has
+ *  explicitly opted into both. This is the gate that replaced the per-box
+ *  `MANTLE_THINKING_BUDGET` env var. */
+export function resolveThinkingBudget(
+  prefs: Pick<ProfilePreferences, 'streamThoughts' | 'thinkingBudget'>,
+): number {
+  if (!isStreamThoughtsEnabled(prefs)) return 0;
+  const b = prefs.thinkingBudget;
+  return typeof b === 'number' && b > 0 ? Math.floor(b) : 0;
 }
 
 export const DEFAULT_PREFERENCES: ProfilePreferences = {
@@ -270,6 +292,13 @@ export async function loadProfilePreferences(
     streamThoughts: prefs.streamThoughts !== false,
     thoughtTrailMode: prefs.thoughtTrailMode === 'replace' ? 'replace' : 'list',
     persistThoughts: prefs.persistThoughts !== false,
+    // Clamp defensively — jsonb can hold anything an older/hand write put there.
+    // Unset/non-positive ⇒ undefined (no thinking); resolveThinkingBudget also
+    // gates on the switch.
+    thinkingBudget:
+      typeof prefs.thinkingBudget === 'number' && prefs.thinkingBudget > 0
+        ? Math.floor(prefs.thinkingBudget)
+        : undefined,
     // Default OFF: only an explicit `true` exposes the remote MCP connector.
     remoteMcpEnabled: prefs.remoteMcpEnabled === true,
     lastReconciledVersion:
@@ -416,6 +445,10 @@ export async function updateProfilePreferences(
     streamThoughts: merged.streamThoughts !== false,
     thoughtTrailMode: merged.thoughtTrailMode === 'replace' ? 'replace' : 'list',
     persistThoughts: merged.persistThoughts !== false,
+    thinkingBudget:
+      typeof merged.thinkingBudget === 'number' && merged.thinkingBudget > 0
+        ? Math.floor(merged.thinkingBudget)
+        : undefined,
     remoteMcpEnabled: merged.remoteMcpEnabled === true,
     lastReconciledVersion: merged.lastReconciledVersion || undefined,
   };

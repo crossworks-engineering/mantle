@@ -63,27 +63,6 @@ import { parseToolArgs } from './tool-args';
 const DEFAULT_MAX_ITERATIONS = 6;
 
 /**
- * Per-box adaptive-thinking gate. `MANTLE_THINKING_BUDGET` is an integer token
- * hint: > 0 turns thinking ON for tool-loop turns (the responder + delegated
- * specialists), 0 / unset leaves it off. The magnitude is a budget hint honoured
- * by providers that take one (OpenRouter `reasoning.max_tokens`); on current
- * Claude models it acts as on/off (adaptive thinking decides depth). Read per
- * call so a config change takes effect without a restart.
- *
- * Shipped OFF by default (dark) like the other turn-stream gates: enabling
- * thinking on a tool loop relies on the reasoning_details echo-back, whose
- * signature round-trip can only be proven against a live OpenRouter+Anthropic
- * call — flip this on per box and smoke-test a thinking+tool turn before
- * trusting it in prod.
- */
-function resolveThinkingBudget(): number {
-  const raw = process.env.MANTLE_THINKING_BUDGET?.trim();
-  if (!raw) return 0;
-  const n = Number.parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : 0;
-}
-
-/**
  * Run one chat round, streaming live token deltas when the runner has turn
  * streaming active (`isTurnStreaming()`) AND this route's adapter supports it.
  * Falls back to the one-shot `chat()` otherwise — the resolved `ChatResult` is
@@ -230,6 +209,13 @@ export type ToolLoopArgs = {
    *  tool result spills to the store vs. inlines. Falls back to env/global
    *  defaults when absent. */
   resultHandling?: ResultHandlingConfig | null;
+  /** Per-turn adaptive-thinking budget in tokens, pre-resolved by the caller
+   *  from the owner's profile prefs (`resolveThinkingBudget` — already gated by
+   *  the live-thinking switch AND a positive budget). > 0 requests thinking on
+   *  this loop's chat rounds; 0 / unset leaves it off. Replaced the old per-box
+   *  `MANTLE_THINKING_BUDGET` env gate. Delegated specialists currently inherit
+   *  nothing here (fallback: no thinking) — see invoke-agent.ts. */
+  thinkingBudget?: number;
   /** Initial messages: system + any history + the new user turn. */
   initialMessages: ChatMessage[];
   /** Tool rows the agent is permitted to use. Empty array → no tools sent. */
@@ -454,12 +440,13 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         },
       },
       async (h) => {
-        // Adaptive thinking on the tool-loop turn (gated per box). When on, the
-        // model reasons before answering and the reasoning streams back as
+        // Adaptive thinking on the tool-loop turn (gated per user — resolved by
+        // the caller from profile prefs: switch ON + positive budget). When on,
+        // the model reasons before answering and the reasoning streams back as
         // `reasoning` deltas + signed `reasoning_details` (echoed across rounds
         // above). Reasoning-capable models reject sampling params, so we drop
         // temperature/top_p whenever thinking is requested.
-        const thinkingBudget = resolveThinkingBudget();
+        const thinkingBudget = args.thinkingBudget ?? 0;
         const chatOpts = {
           messages,
           ...(sendTools ? { tools: toolsForModel } : {}),

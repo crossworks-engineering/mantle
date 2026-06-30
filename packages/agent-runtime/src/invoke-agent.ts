@@ -169,6 +169,12 @@ export const invokeAgent: AgentInvoker = async ({
         agentDepth: depth,
         delegateTo: (mc?.delegate_to ?? []) as readonly string[],
         resultHandling: mc?.result_handling ?? null,
+        // Delegated specialists run without adaptive thinking for now: the
+        // per-user budget lives on the operator's profile and isn't threaded
+        // through the invoke_agent tool-context bridge yet. Omitting it ⇒
+        // runToolLoop defaults to 0 (no thinking). The responder (top-level
+        // turn) is the path that honours the budget. See
+        // docs/thinking-profile-control-handover.md step 6.
         parentTraceId,
         initialMessages,
         tools: allowedTools,

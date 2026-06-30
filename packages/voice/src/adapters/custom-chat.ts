@@ -25,8 +25,9 @@
  * Thinking: `opts.thinkingBudget` maps to the OpenAI-standard `reasoning_effort`
  * (low/medium/high) — the most widely-honoured reasoning knob across compat
  * endpoints; sampling params are dropped when it's on. It's only set when the
- * per-box gate (`MANTLE_THINKING_BUDGET`) provides a budget (dark by default),
- * so a plain custom route never sends a field a stricter endpoint might reject.
+ * per-user thinking gate (Settings → Profile: live-thinking switch ON + a
+ * positive budget) provides one, so a plain custom route never sends a field a
+ * stricter endpoint might reject.
  * Streamed `reasoning_content` is forwarded by the shared streamer, and inline
  * `<think>` is scrubbed defensively.
  */

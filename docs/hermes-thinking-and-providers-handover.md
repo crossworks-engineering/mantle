@@ -231,15 +231,24 @@ run thinking-off, which makes the replayed thinking-less history valid.
 
 ## 6. How to enable / operate
 
-**Thinking (per box):**
+**Thinking (per user — Settings → Profile):**
 
-1. Set `MANTLE_THINKING_BUDGET=2000` (any int > 0) in the apps/api environment.
-2. Restart the apps/api runner.
-3. Ask the responder something that triggers a tool call (so it thinks *then*
+> The old per-box `MANTLE_THINKING_BUDGET` env gate was **removed** (branch
+> `feat/thinking-profile-control`). Thinking is now a per-user profile pref:
+> `resolveThinkingBudget(prefs)` in `@mantle/content` requires the live-thinking
+> switch ON **and** a positive **Thinking budget** before any reasoning is
+> requested. Resolved in `run-turn.ts` and threaded into `runToolLoop`
+> (`args.thinkingBudget`). Delegated specialists still run without thinking
+> (fallback — see §7 / invoke-agent.ts).
+
+1. Settings → Profile → turn **Live thinking & streaming** ON, set **Thinking
+   budget** to Low/Medium/High (Off = no thinking). Save.
+2. Ask the responder something that triggers a tool call (so it thinks *then*
    calls a tool → exercises echo-back on round 2).
-4. Confirm: no 400 on round 2, and the live "Thinking" disclosure shows real
+3. Confirm: no 400 on round 2, and the live "Thinking" disclosure shows real
    reasoning text.
-5. Clean → make it the per-box default (and revisit on-by-default).
+4. Streaming carriers stay default-on (`MANTLE_TURN_TOKENS`,
+   `MANTLE_TURN_STREAMING`); the budget only controls the thinking *request*.
 
 **GitHub Copilot worker:**
 
@@ -248,8 +257,8 @@ run thinking-off, which makes the replayed thinking-less history valid.
   that VS Code / the Copilot CLI obtains) — **not** a PAT. Only the OAuth token
   carries the `copilot_internal` scope the token-exchange needs. A pre-minted
   Copilot token (`tid=…`) also works but expires in ~25 min.
-- Thinking on a Copilot worker is controlled by the same `MANTLE_THINKING_BUDGET`
-  gate (it maps to `reasoning_effort`).
+- Thinking on a Copilot worker is controlled by the same per-user profile gate
+  (it maps to `reasoning_effort`).
 
 ---
 
@@ -391,7 +400,8 @@ packages/voice/src/catalogs/copilot.ts                  # Copilot static catalog
 packages/voice/src/adapters/anthropic-chat.ts           # adaptive thinking + guard
 packages/voice/src/adapters/openrouter-chat.ts          # reasoning request + reasoning_details round-trip
 packages/voice/src/adapters/google-chat.ts              # Gemini thinkingConfig + thought parts
-packages/agent-runtime/src/tool-loop.ts                 # MANTLE_THINKING_BUDGET gate + reasoning replay
+packages/agent-runtime/src/tool-loop.ts                 # thinkingBudget (per-user, via args) + reasoning replay
+packages/content/src/profile-preferences.ts             # thinkingBudget pref + resolveThinkingBudget gate
 apps/web/components/assistant/use-turn-stream.ts         # accumulate reasoning-delta
 apps/web/components/assistant/thought-trail.tsx          # collapsible "Thinking" trace
 packages/assistant-runtime/src/stage-label.ts            # retired canned phrases
