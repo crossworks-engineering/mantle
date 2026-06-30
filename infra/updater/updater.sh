@@ -46,21 +46,42 @@ write_status() {
     && mv "$SIG/status.json.tmp" "$SIG/status.json"
 }
 
-# ── preflight ────────────────────────────────────────────────────────────────
-if [ -z "$STACK" ] || [ ! -f "$STACK/docker-compose.yml" ]; then
-  echo "[updater] MANTLE_STACK_DIR is not set (or no docker-compose.yml at '$STACK')." \
+# ── config check ─────────────────────────────────────────────────────────────
+# Re-evaluated on every request (not just at boot), so fixing .env and
+# restarting this container — or even fixing .env alone — recovers without a
+# rebuild. Prints the reason it's unconfigured, or nothing when all is well.
+config_error() {
+  if [ -z "$STACK" ] || [ ! -f "$STACK/docker-compose.yml" ]; then
+    printf 'MANTLE_STACK_DIR not set (or no docker-compose.yml at "%s")' "$STACK"
+  elif ! docker compose version >/dev/null 2>&1; then
+    printf 'docker compose plugin unavailable in updater image'
+  fi
+}
+
+# Best-effort read of the persisted phase ("" when no status yet).
+cur_phase() {
+  sed -n 's/.*"phase"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$SIG/status.json" 2>/dev/null | head -1
+}
+
+CFG_ERR=$(config_error)
+if [ -n "$CFG_ERR" ]; then
+  echo "[updater] not configured: $CFG_ERR." \
        "Set MANTLE_STACK_DIR=<absolute stack dir> in .env — install.sh does this automatically." >&2
-  write_status unconfigured "" "" "" false "MANTLE_STACK_DIR not set or compose file missing"
-  # Sleep forever instead of crash-looping; the settings page surfaces the hint.
-  while true; do sleep 3600; done
-fi
-if ! docker compose version >/dev/null 2>&1; then
-  write_status unconfigured "" "" "" false "docker compose plugin unavailable in updater image"
-  while true; do sleep 3600; done
+  write_status unconfigured "" "" "" false "$CFG_ERR"
+else
+  # Init to idle on first boot, AND self-heal a stale 'unconfigured' left over
+  # from a prior misconfiguration now that .env is fixed — otherwise the settings
+  # page would keep showing the old error and hang on the next update.
+  case "$(cur_phase)" in
+    '' | unconfigured) write_status idle "" "" "" null "" ;;
+  esac
+  echo "[updater] ready — stack: $STACK"
 fi
 
-[ -f "$SIG/status.json" ] || write_status idle "" "" "" null ""
-echo "[updater] ready — stack: $STACK"
+# We deliberately do NOT dead-sleep when unconfigured. Staying in the poll loop
+# lets us (a) answer a queued request with a terminal 'error' so the settings UI
+# stops spinning instead of waiting forever, and (b) recover the instant STACK
+# becomes valid.
 
 # ── poll loop ────────────────────────────────────────────────────────────────
 while true; do
@@ -72,6 +93,15 @@ while true; do
     case "$TARGET" in
       *[!A-Za-z0-9._-]*) write_status error "$TARGET" "$(now)" "$(now)" false "invalid tag"; continue ;;
     esac
+
+    # Re-check config at request time. A request that lands while we're
+    # unconfigured gets a terminal 'error' (not an eternal "Working…" in the UI).
+    CFG_ERR=$(config_error)
+    if [ -n "$CFG_ERR" ]; then
+      write_status error "$TARGET" "$(now)" "$(now)" false "updater not configured: $CFG_ERR"
+      echo "[updater] rejected request → $TARGET (not configured: $CFG_ERR)" >&2
+      continue
+    fi
 
     STARTED=$(now)
     : > "$SIG/update.log"
