@@ -87,6 +87,11 @@ const PHASE_LABEL: Record<string, string> = {
   rolling: 'Rolling the stack onto it…',
 };
 
+// If the request sits unconsumed this long, the sidecar isn't running (it polls
+// every 5s). Only enforced while phase is still 'requested' — once it advances to
+// pulling/rolling the web container may be restarting and stalls are expected.
+const PICKUP_TIMEOUT_MS = 60_000;
+
 function UpdatesView({
   initialCheck,
   updaterAvailable,
@@ -112,6 +117,9 @@ function UpdatesView({
       initialStatus?.phase === 'requested',
   );
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // When the current polling run began — used to time out a request the sidecar
+  // never picks up (a dead/parked updater).
+  const pollStartRef = useRef<number>(0);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -120,6 +128,7 @@ function UpdatesView({
 
   useEffect(() => {
     if (!updating) return;
+    pollStartRef.current = Date.now();
     pollRef.current = setInterval(async () => {
       try {
         const res = await fetch('/api/updates/status', { cache: 'no-store' });
@@ -148,6 +157,24 @@ function UpdatesView({
           setUpdating(false);
           stopPolling();
           toast.error(data.status.error ?? 'Update failed — see the log.');
+        } else if (data.status?.phase === 'unconfigured') {
+          // The sidecar can't act (e.g. MANTLE_STACK_DIR missing). It will never
+          // consume the request — surface it instead of spinning on "Working…".
+          setUpdating(false);
+          stopPolling();
+          toast.error(
+            data.status.error
+              ? `Updater not configured: ${data.status.error}`
+              : 'The updater is not configured on this host (set MANTLE_STACK_DIR in .env).',
+          );
+        } else if (
+          data.status?.phase === 'requested' &&
+          Date.now() - pollStartRef.current > PICKUP_TIMEOUT_MS
+        ) {
+          // Request written but never picked up — the sidecar isn't running.
+          setUpdating(false);
+          stopPolling();
+          toast.error("The updater didn't pick up the request — is the sidecar running?");
         }
       } catch {
         // Expected while the web container is being replaced.

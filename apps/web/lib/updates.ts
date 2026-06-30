@@ -211,6 +211,17 @@ export async function requestUpdate(target: string): Promise<{ ok: true } | { ok
     return { ok: false, error: 'updater sidecar not available on this deployment' };
   }
   const status = await readUpdaterStatus();
+  // The sidecar is parked unconfigured (e.g. MANTLE_STACK_DIR missing from .env).
+  // It will never consume the request, so refuse now with the reason rather than
+  // letting the UI spin on a request that can't be picked up.
+  if (status?.phase === 'unconfigured') {
+    return {
+      ok: false,
+      error: status.error
+        ? `updater is not configured: ${status.error}`
+        : 'updater is not configured (set MANTLE_STACK_DIR in .env)',
+    };
+  }
   if (status && (status.phase === 'pulling' || status.phase === 'rolling' || status.phase === 'requested')) {
     return { ok: false, error: 'an update is already in progress' };
   }
