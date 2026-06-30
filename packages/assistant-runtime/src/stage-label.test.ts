@@ -1,29 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { stageLabelForStep, thinkingPhrase, THINKING_PHRASES } from './stage-label';
+import { stageLabelForStep, THINKING_LABEL } from './stage-label';
 
-describe('thinking-phrase rotation', () => {
-  it('ships 20 distinct phrases, each ellipsis-terminated, "Thinking…" first', () => {
-    expect(THINKING_PHRASES).toHaveLength(20);
-    expect(THINKING_PHRASES[0]).toBe('Thinking…');
-    expect(new Set(THINKING_PHRASES).size).toBe(20);
-    expect(THINKING_PHRASES.every((p) => p.endsWith('…'))).toBe(true);
+describe('thinking label', () => {
+  it('is a single honest line (canned rotation retired)', () => {
+    expect(THINKING_LABEL).toBe('Thinking…');
   });
 
-  it('seeds deterministically and wraps around the list', () => {
-    expect(thinkingPhrase(0)).toBe('Thinking…');
-    expect(thinkingPhrase(3)).toBe(THINKING_PHRASES[3]);
-    expect(thinkingPhrase(20)).toBe(THINKING_PHRASES[0]); // wraps
-    expect(thinkingPhrase(23)).toBe(THINKING_PHRASES[3]);
-    expect(thinkingPhrase()).toBe('Thinking…'); // unseeded default
-  });
-
-  it('varies the LLM-call label by the seed (the step seq)', () => {
+  it('labels every LLM-call step "Thinking…", regardless of seed', () => {
     expect(stageLabelForStep('openrouter-chat_chat', undefined, 0)).toEqual({
       label: 'Thinking…',
       kind: 'thinking',
     });
-    expect(stageLabelForStep('openrouter-chat_chat', undefined, 5)?.label).toBe(THINKING_PHRASES[5]);
-    // Unseeded keeps the canonical line (the poll fallback path).
+    // The seed no longer rotates the phrase — same line on every round.
+    expect(stageLabelForStep('openrouter-chat_chat', undefined, 5)?.label).toBe('Thinking…');
     expect(stageLabelForStep('anthropic-chat_chat[2]')?.label).toBe('Thinking…');
   });
 });

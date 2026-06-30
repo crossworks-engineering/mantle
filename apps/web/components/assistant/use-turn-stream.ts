@@ -33,6 +33,12 @@ export interface TurnStream {
    *  final answer typing out). Empty until the model emits text. Advisory: the
    *  durable reply reconciles it on completion. */
   reply: string;
+  /** Accumulated model reasoning from `reasoning-delta` events — the real
+   *  thinking the model surfaced this turn (when thinking is enabled and the
+   *  provider streams `display:'summarized'` text). Empty when the model emits
+   *  no surfaced reasoning. Ephemeral decoration: never persisted, so reloading
+   *  a past turn shows no trace. Accumulates across rounds. */
+  reasoning: string;
   /** Where this turn is in its lifecycle. 'streaming' once subscribed; flips to
    *  'done'/'error' when the terminal bus event lands. The caller reconciles to
    *  the durable row on 'done' and surfaces `error` on 'error'. */
@@ -76,6 +82,7 @@ function estimateTokens(chars: number): number {
 export function useTurnStream(turnId: string | null): TurnStream {
   const [trail, setTrail] = useState<ThoughtEvent[]>([]);
   const [reply, setReply] = useState('');
+  const [reasoning, setReasoning] = useState('');
   const [phase, setPhase] = useState<TurnPhase>('idle');
   const [outboundId, setOutboundId] = useState<string | null>(null);
   const [inboundId, setInboundId] = useState<string | null>(null);
@@ -87,6 +94,9 @@ export function useTurnStream(turnId: string | null): TurnStream {
   // updater stays a pure set-to-same-string, safe under StrictMode double-invoke).
   const replyRef = useRef('');
   const replyRoundRef = useRef(-1);
+  // Reasoning accumulates across ALL rounds (unlike the round-scoped reply) so
+  // the full thinking trace for the turn is visible, not just the last round's.
+  const reasoningRef = useRef('');
   // Running character count of all streamed output (visible reply + reasoning),
   // converted to the token estimate. Kept in a ref so it accumulates across
   // rounds independently of the round-scoped reply buffer.
@@ -96,6 +106,7 @@ export function useTurnStream(turnId: string | null): TurnStream {
     if (!turnId || !isTurnStreamingEnabledClient()) {
       setTrail([]);
       setReply('');
+      setReasoning('');
       setPhase('idle');
       setOutboundId(null);
       setInboundId(null);
@@ -105,11 +116,14 @@ export function useTurnStream(turnId: string | null): TurnStream {
       setTokensApprox(true);
       replyRef.current = '';
       replyRoundRef.current = -1;
+      reasoningRef.current = '';
       outCharsRef.current = 0;
       return;
     }
     replyRef.current = '';
     replyRoundRef.current = -1;
+    reasoningRef.current = '';
+    setReasoning('');
     outCharsRef.current = 0;
     setPhase('streaming');
     setError(null);
@@ -144,8 +158,11 @@ export function useTurnStream(turnId: string | null): TurnStream {
             return;
           }
           if (ev && ev.type === 'reasoning-delta' && typeof ev.data?.text === 'string') {
-            // Reasoning tokens count toward the model's output total — fold them
-            // into the estimate (but not the visible reply buffer).
+            // Surface the real reasoning (collapsible "Thinking" trace) AND count
+            // its tokens toward the output estimate — it's billed output, kept
+            // out of the visible reply buffer.
+            reasoningRef.current += ev.data.text;
+            setReasoning(reasoningRef.current);
             outCharsRef.current += ev.data.text.length;
             setTokens(estimateTokens(outCharsRef.current));
             return;
@@ -210,6 +227,7 @@ export function useTurnStream(turnId: string | null): TurnStream {
       stop();
       setTrail([]);
       setReply('');
+      setReasoning('');
       setPhase('idle');
       setOutboundId(null);
       setInboundId(null);
@@ -219,6 +237,7 @@ export function useTurnStream(turnId: string | null): TurnStream {
       setTokensApprox(true);
       replyRef.current = '';
       replyRoundRef.current = -1;
+      reasoningRef.current = '';
       outCharsRef.current = 0;
     };
   }, [turnId]);
@@ -227,6 +246,7 @@ export function useTurnStream(turnId: string | null): TurnStream {
     label: trail.length ? trail[trail.length - 1]!.label : null,
     trail,
     reply,
+    reasoning,
     phase,
     outboundId,
     inboundId,

@@ -206,6 +206,7 @@ export function AssistantClient({
     label: streamLabel,
     trail: streamTrail,
     reply: streamReply,
+    reasoning: streamReasoning,
     phase: streamPhase,
     outboundId: streamOutboundId,
     error: streamError,
@@ -1097,6 +1098,7 @@ export function AssistantClient({
                 startedAt={streamStartedAt}
                 tokens={streamTokens}
                 tokensApprox={streamTokensApprox}
+                reasoning={streamReasoning}
               />
             )}
                             {streamReply && (

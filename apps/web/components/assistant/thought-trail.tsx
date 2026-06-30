@@ -151,6 +151,40 @@ function StatusFooter({
   );
 }
 
+/** The real model reasoning, surfaced as a collapsible "Thinking" disclosure.
+ *  Source of truth for the thinking phase — the streamed `reasoning-delta` text
+ *  (when thinking is on and the provider sends `display:'summarized'`). Collapsed
+ *  by default so a long trace doesn't dominate the turn; expand to read it. Only
+ *  rendered when there's reasoning to show, so a turn with no surfaced reasoning
+ *  is unaffected. */
+function ThinkingTrace({ reasoning, bordered }: { reasoning: string; bordered: boolean }) {
+  const [open, setOpen] = useState(false);
+  const text = reasoning.trim();
+  if (!text) return null;
+  return (
+    <div className={cn(bordered && 'mt-2.5 border-t border-border/40 pt-2.5')}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-1.5 text-left text-xs text-muted-foreground/70 transition-colors hover:text-muted-foreground"
+      >
+        <Sparkles className="size-3.5 shrink-0 opacity-70" aria-hidden />
+        <span className="font-medium">Thinking</span>
+        <ChevronRight
+          className={cn('size-3.5 shrink-0 transition-transform', open && 'rotate-90')}
+          aria-hidden
+        />
+      </button>
+      {open && (
+        <p className="mt-1.5 max-h-56 overflow-y-auto whitespace-pre-wrap break-words pl-5 text-xs leading-relaxed text-muted-foreground/75">
+          {text}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** One history step rendered as three top-aligned columns:
  *  `time | category | detail`. The detail (the full status label) word-wraps as
  *  a paragraph — never truncated — while the time and category stay on one line,
@@ -205,6 +239,7 @@ export function ThoughtTrail({
   tokensApprox,
   durationMs,
   timestamp,
+  reasoning,
 }: {
   steps: ThoughtEvent[];
   live?: boolean;
@@ -224,6 +259,9 @@ export function ThoughtTrail({
   durationMs?: number | null;
   /** Record only: when the turn landed, shown as a clock time on the summary. */
   timestamp?: string | number | Date | null;
+  /** Live only: the model's streamed reasoning, shown as a collapsible
+   *  "Thinking" disclosure. Ephemeral — absent on the frozen record. */
+  reasoning?: string;
 }) {
   const [open, setOpen] = useState(false);
   if (steps.length === 0) return null;
@@ -257,6 +295,7 @@ export function ThoughtTrail({
           tokensApprox={tokensApprox}
           bordered={past.length > 0}
         />
+        {reasoning ? <ThinkingTrace reasoning={reasoning} bordered /> : null}
       </div>
     );
   }
