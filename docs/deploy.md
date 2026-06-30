@@ -70,11 +70,15 @@ On **both** the build machine and the VPS, create `.env` next to `docker-compose
 cp .env.prod.example .env
 # then fill in:
 #   SESSION_SECRET       openssl rand -base64 48
-#   MANTLE_MASTER_KEY    openssl rand -base64 32   ← MUST be the SAME key you
-#                        encrypted your dev vault with, or stored API keys /
-#                        secrets won't decrypt after the data import.
-#   ALLOWED_USER_ID      the uuid of your auth.users row (same as dev)
+#   MANTLE_MASTER_KEY    openssl rand -base64 32   ← when IMPORTING dev data, this
+#                        MUST be the SAME key you encrypted the dev vault with, or
+#                        stored API keys / secrets won't decrypt. Fresh deploy: new.
+#   ALLOWED_USER_ID      IMPORT ONLY: the uuid of your existing auth.users row
+#                        (same as dev). Leave BLANK for a fresh deploy — you sign
+#                        up in the app and the runtime resolves the sole user.
 #   POSTGRES_PASSWORD, S3_SECRET_KEY, MANTLE_PUBLIC_URL
+#   MANTLE_STACK_DIR     host-absolute path of THIS dir (MANTLE_STACK_DIR=$(pwd -P));
+#                        required for the in-app updater (Settings → Updates)
 #   MANTLE_IMAGE_NAMESPACE=<your docker hub user>
 #   MANTLE_DATA_DIR=/opt/mantle/data   (absolute path on the VPS)
 #   MANTLE_SITE_ADDRESS=mantle.example.com   (Caddy serves this with auto-HTTPS)

@@ -13,123 +13,166 @@ Mantle is **self-hosted** — you run it on your own machine. You have two optio
 > Run it locally to try it out or to develop; run it on a small server for real use.
 
 The authoritative, command-by-command operator runbooks live in the developer docs:
-[deploy](/docs/system/deploy.md) (first-time server deploy) and
-[update-prod](/docs/system/update-prod.md) (updating). This page is the orientation.
+[deploy](../deploy.md) (first-time server deploy) and
+[update-prod](../update-prod.md) (updating). This page is the orientation.
 
 ---
 
 ## What you need
 
-**Both local and server:**
+**For a server (the recommended path):**
 
-- **Docker** (Engine + the Compose plugin). Mantle runs Postgres, object storage,
-  the document parser, and (optionally) the local embedding model as containers —
-  you don't install those individually.
-- **Git** — to get the code.
-- **Node.js 24+ and pnpm** — to run the dev stack locally, and to build the image
-  on a server.
-- **A model provider API key** — an **OpenRouter** key covers the whole text +
-  vision brain (the assistant, extraction, search). Add it in-app later under
-  Settings → API keys. Embeddings (meaning-search) run **locally and free** via a
+- A **Linux server** (a small VPS is plenty) with **Docker** (Engine + the Compose
+  plugin). That's it — Postgres, object storage, the document parser, and the local
+  embedding model all run as containers the installer pulls; you don't install them.
+- A **domain name** with a DNS A record pointing at the server, and ports **80/443**
+  open — *if* you want automatic HTTPS. HTTPS is handled by the bundled **Caddy**
+  reverse proxy (Let's Encrypt); you don't configure certificates by hand. You can
+  also run on plain `http://<ip>` without a domain to try it.
+- A **model provider API key** — an **OpenRouter** key covers the whole text + vision
+  brain (the assistant, extraction, search). You add it during the in-app onboarding
+  wizard, not in a file. Embeddings (meaning-search) run **locally and free** via a
   bundled model, so no key is needed for those.
 
-**For a server (production), additionally:**
+**For local development, additionally:** **Git**, **Node.js 24+ and pnpm**, and
+**[Ollama](https://ollama.com)** (the local embedder for dev — the dev stack doesn't
+bundle it; see below).
 
-- A **Linux server** (a small VPS is plenty). Builds run natively on the box.
-- A **domain name** with a DNS record pointing at the server, and ports **80/443**
-  open. HTTPS is handled automatically by the bundled **Caddy** reverse proxy
-  (Let's Encrypt) — you don't configure certificates by hand.
-
-You do **not** need to install Postgres, pgvector, MinIO, Tika, or Ollama yourself —
-they're part of the Docker stack.
-
----
-
-## Configuration (the `.env` file)
-
-Mantle reads its settings from an env file. Copy the template and fill it in:
-
-```bash
-cp .env.example .env.local      # then edit .env.local
-```
-
-The file is self-documenting; the values that matter most:
-
-- `SESSION_SECRET` — signs your login cookie. Generate: `openssl rand -base64 48`.
-- `MANTLE_MASTER_KEY` — the encryption key for everything sealed at rest (API keys,
-  secrets, mailbox passwords). Generate: `openssl rand -base64 32`. **Back this up
-  and never change it** — losing it means losing the encrypted vault.
-- `ALLOWED_USER_ID` — the UUID of your single user (you create it in the next step).
-- `DATABASE_URL`, `S3_*` — storage connection (defaults match the bundled containers).
-- `MANTLE_FILES_ROOT`, `MANTLE_DOCS_ROOT` — **absolute** paths shared by every
-  process (your files tree and the docs folder).
-- `NEXT_PUBLIC_APP_URL` — where the app is reached (`http://localhost:3000` locally;
-  your `https://…` domain on a server).
-
-> Single-user by design: there is **no signup screen**. You create your one account
-> directly in the database (below), then put its UUID in `ALLOWED_USER_ID`.
-
----
-
-## Running locally
-
-For trying Mantle out or developing it:
-
-```bash
-git clone <your mantle repo> mantle
-cd mantle
-pnpm install
-cp .env.example .env.local        # fill in the secrets above
-pnpm up
-```
-
-`pnpm up` is the one command: it checks Docker, brings up Postgres + object storage,
-creates the storage bucket, runs database migrations, and starts the app + workers.
-Then:
-
-1. **Create your user** — there's no signup, so insert a row into `auth.users` with
-   a bcrypt password hash (via `psql`), and copy its UUID into `ALLOWED_USER_ID`.
-2. **(Recommended) local embeddings** — install [Ollama](https://ollama.com) and
-   pull the embedding model so semantic search runs free and private:
-   `ollama pull embeddinggemma`.
-3. Open **http://localhost:3000** and log in.
-4. Add an **OpenRouter** key under Settings → API keys so the assistant and indexing
-   can run.
-
-That's enough to explore. But remember the laptop caveat above — for email/Telegram
-ingest and reminders to actually keep working, put it on a server.
+You do **not** need to install Postgres, pgvector, MinIO, Tika, or Ollama on a server —
+they're part of the Docker stack the installer brings up.
 
 ---
 
 ## Installing on a Linux server
 
-The production path is the full Docker Compose stack behind Caddy. In outline (the
-exact commands are in the [deploy runbook](/docs/system/deploy.md)):
+### The one-line installer (recommended)
 
-1. **Prepare the box** — install Docker (Engine + Compose plugin) and git; open
-   ports 80/443; point your domain's DNS at the server.
-2. **Get the code** — clone the repo onto the server. Builds run **natively on the
-   server** (don't build on a Mac and ship the image — the architectures differ).
-3. **Configure `.env`** — set the same secrets as above, but with production values:
-   your `https://your-domain` for `NEXT_PUBLIC_APP_URL`, a strong `POSTGRES_PASSWORD`
-   and `S3_SECRET_KEY`, `MANTLE_SITE_ADDRESS` (your domain, which Caddy uses to fetch
-   the TLS certificate), and `MANTLE_DATA_DIR` (where Postgres, object storage, and
-   your files are bind-mounted on disk so they survive container rebuilds).
-   - **If you're migrating from a local install,** reuse the **same**
-     `MANTLE_MASTER_KEY` and `ALLOWED_USER_ID`, or the encrypted data you bring over
-     won't decrypt.
-4. **Bring it up** — `docker compose build` then `docker compose up -d`. A one-shot
-   migration step runs automatically before the app starts; Caddy fetches an HTTPS
-   certificate for your domain on first run.
-5. **Create your user** (same `auth.users` insert as local) and log in at your
-   domain.
-6. **Embeddings** run on the bundled local model out of the box; add an **OpenRouter**
-   key under Settings → API keys for the assistant + extraction.
+On the server, run:
+
+```bash
+# Plain HTTP on the server's IP (quickest):
+curl -fsSL https://raw.githubusercontent.com/crossworks-engineering/mantle/main/install.sh | bash
+
+# …or with automatic HTTPS for a domain (point its DNS A record here + open 80/443 first):
+MANTLE_DOMAIN=mantle.example.com \
+  curl -fsSL https://raw.githubusercontent.com/crossworks-engineering/mantle/main/install.sh | bash
+```
+
+The installer does everything: checks Docker, fetches the deploy bundle
+(`docker-compose.yml`, the Caddy + Postgres init files, the updater script),
+**generates your secrets** (`SESSION_SECRET`, `MANTLE_MASTER_KEY`,
+`POSTGRES_PASSWORD`, `S3_SECRET_KEY`) into a `.env`, writes `MANTLE_STACK_DIR` so the
+in-app updater works, pulls the images, and starts the stack. Migrations run
+automatically before the app comes up, and the embedding model pulls once (~300 MB).
+
+> ⚠ **Back up the generated `.env`.** `MANTLE_MASTER_KEY` encrypts your stored API
+> keys, mailbox passwords, and secrets at rest — lose it and that vault is
+> unrecoverable.
+
+When it finishes it prints your URL. Open it and continue at
+[First run](#first-run-create-your-account) below.
+
+### Manual install (no installer script)
+
+If you'd rather not pipe a script, do what it does by hand: get the deploy bundle
+(clone the repo, or copy `docker-compose.yml`, `.env.prod.example`, and the `infra/`
+directory onto the box), then:
+
+```bash
+cp .env.prod.example .env
+$EDITOR .env
+```
+
+Fill in:
+
+- `SESSION_SECRET` — `openssl rand -base64 48`
+- `MANTLE_MASTER_KEY` — `openssl rand -base64 32` (**back it up; never change it**)
+- `POSTGRES_PASSWORD`, `S3_SECRET_KEY` — strong random values
+- `MANTLE_PUBLIC_URL` — your public origin, e.g. `https://mantle.example.com`
+- `MANTLE_SITE_ADDRESS` — your domain (Caddy fetches the TLS cert for it), or `:80`
+  for plain HTTP
+- `MANTLE_DATA_DIR` — where state is bind-mounted on disk (e.g. `/opt/mantle/data`)
+- **`MANTLE_STACK_DIR`** — the **host-absolute path of this directory** (the one
+  holding `docker-compose.yml` + `.env`): `MANTLE_STACK_DIR=$(pwd -P)`. The installer
+  sets this for you; on a manual install you **must** set it, or the in-app updater
+  (Settings → Updates) parks "unconfigured" and hangs.
+
+Then bring it up:
+
+```bash
+docker compose pull
+docker compose up -d --wait
+```
+
+A one-shot gate runs migrations + creates the object-store bucket before the app
+starts; Caddy fetches an HTTPS certificate on first run. Continue at First run.
+
+> **Leave `ALLOWED_USER_ID` blank for a fresh install** — the runtime auto-resolves
+> your single account once you sign up. Only set it when *importing an existing
+> brain*, in which case reuse the **same** `MANTLE_MASTER_KEY` and `ALLOWED_USER_ID`
+> as the source, or the encrypted data won't decrypt. (See the
+> [deploy runbook](../deploy.md).)
+
+---
+
+## Running locally (for trying it out or developing)
+
+```bash
+git clone <your mantle repo> mantle
+cd mantle
+pnpm install
+cp .env.example apps/web/.env.local      # NOTE: apps/web/.env.local, not the repo root
+$EDITOR apps/web/.env.local              # set the two secrets below
+```
+
+Set in `apps/web/.env.local`:
+
+- `MANTLE_MASTER_KEY` — `openssl rand -base64 32`
+- `SESSION_SECRET` — `openssl rand -base64 48`
+
+`DATABASE_URL` and the `S3_*` values are pre-filled to match the dev containers, so a
+fresh install usually doesn't touch them. Then install the local embedder and start:
+
+```bash
+brew install ollama && brew services start ollama   # dev stack doesn't bundle Ollama
+ollama pull embeddinggemma                           # local, free semantic search
+pnpm start                                           # NOT `pnpm up` — see note
+```
+
+> `pnpm start` is the one command: it checks Docker, brings up Postgres + object
+> storage, **creates the storage bucket**, runs migrations, and starts the app +
+> workers. Use `pnpm start`, **not `pnpm up`** — pnpm treats `up` as its built-in
+> alias for `update` (it would update dependencies, not start the stack).
+
+Open **http://localhost:3000** and continue at First run. Remember the laptop caveat
+above — for email/Telegram ingest and reminders to keep working, put it on a server.
+
+---
+
+## First run: create your account
+
+There is **no manual database step** — Mantle has a real signup flow now.
+
+1. Open your URL. While no account exists yet, the first visit shows **"Create your
+   account."** Sign up. (Signup closes automatically once the first account exists —
+   it's a single-owner brain.)
+2. The **onboarding wizard** takes over: it captures your name and your brain's
+   purpose, takes your **OpenRouter API key**, provisions the assistant + specialists
+   + workers, runs a sanity check, and optionally wires email and Telegram — all in
+   the interface. Completing it leaves a working brain that can answer immediately.
+
+That's it. No `psql`, no `ALLOWED_USER_ID` to fill in.
+
+---
+
+## State & backups
 
 Everything that holds state — the database, object storage, and your files — lives
-under `MANTLE_DATA_DIR` on the host, so **backups are a database dump plus a copy of
-that directory**. Updating later is "pull the code, rebuild, restart" — see the
-[update runbook](/docs/system/update-prod.md).
+under `MANTLE_DATA_DIR` on the host, so **a backup is a database dump plus a copy of
+that directory**. Updating later is `docker compose pull && docker compose up -d
+--wait`, or one click in **Settings → Updates** — see the
+[update runbook](../update-prod.md). (Self-builders who run their own image build on
+the server rebuild instead of pulling; the architectures differ from a Mac build.)
 
 ---
 

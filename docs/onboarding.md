@@ -2,9 +2,9 @@
 
 > A fresh Mantle clone boots into a working brain with **no SQL and no env
 > editing**: clone → `pnpm start` → open the browser → create an account → walk a
-> nine-step wizard that adds model keys, provisions the assistant + AI workers,
-> runs a sanity check, captures who you are as Journal entries, and shapes the
-> assistant's personality. Everything it sets up is editable later under
+> resumable wizard that adds model keys, provisions the assistant + specialists +
+> AI workers, runs a sanity check, captures the brain's **purpose**, and shapes
+> the assistant's personality. Everything it sets up is editable later under
 > Settings.
 
 Shipped 2026-06. Route `/onboarding`; signup at `/login` (first-run mode).
@@ -52,9 +52,10 @@ so the gate can't loop. `preferences.onboardingStep` is a resume marker.
 
 ## 3. The wizard (`apps/web/app/onboarding/`)
 
-Nine resumable steps. Each persists immediately through existing primitives, so
-a refresh resumes from `onboardingStep`. Server work is in `actions.ts`; the
-stepper is `onboarding-client.tsx`.
+Resumable steps. Each persists immediately through existing primitives, so a
+refresh resumes from `onboardingStep`. Server work is in
+`apps/web/app/api/onboarding/route.ts` (a single action-dispatch route — it
+replaced the older `actions.ts`); the stepper is `onboarding-client.tsx`.
 
 | # | Step | What it does |
 |---|------|--------------|
@@ -63,7 +64,7 @@ stepper is `onboarding-client.tsx`.
 | 3 | **Voice** | works by default on the OpenRouter key (grok voice ara); optionally add a dedicated **xAI** key for a smoother voice route |
 | 4 | **Set up** | `provisionDefaults(ownerId)` — creates the assistant + AI workers + the specialist stack (Pages/Ledger/Remy/Researcher/Coder, wired into Saskia's `delegate_to`) from the keys present |
 | 5 | **Check** | `runSanityChecks()` — green/red list of the **vitals**: OpenRouter probe, xAI probe if added, embeddings, the assistant, **assistant capabilities** (tools + can-delegate + grounding/voice skills), **memory workers** (extractor/summarizer/reflector/document), **specialists & delegation** (Pages/Ledger/Remy/Researcher seeded + wired into `delegate_to` + their skills), **editor assistants** (`resolveAssistAgentSlug` for /pages + /tables), voice/images |
-| 6 | **About you** | ~9 questions → one Journal entry each (`createJournal`); feeds the always-on identity block |
+| 6 | **Purpose** | what this brain is for: an archetype + free-text description → `savePurpose` writes `preferences.purpose`/`purposeArchetype`; injected into the always-on identity block (`buildIdentityContext`) |
 | 7 | **Personality** | preset bank × gender (voice) + name + creativity slider → `savePersonaAgent` |
 | 8 | **Telegram** | optional/skippable — BotFather instructions + token via the shared `<TelegramBotSection>` (`connectAgentTelegram`) bound to the assistant agent. **Identical to the `/settings/agents` flow** (same component), so it can be done here or any time later in Settings → Agents. Needs the assistant to exist (step 4) first |
 
@@ -100,26 +101,29 @@ indexing workers, document reading, and vision alike.
 | Memory search | embeddings | local EmbeddingGemma (no key, 768-dim) | always |
 
 The **assistant** is one `agents` row (slug `assistant`, role `responder` — serves
-both web `/assistant` and Telegram), model `anthropic/claude-sonnet-4.6`, with
-`inject_journal: true`. It's created with the Warm/Saskia default and refined by
-the personality step (`savePersonaAgent`: rebuilds the system prompt from the
-chosen preset, sets the name + temperature, points the TTS voice at the gender).
+both web `/assistant` and Telegram). Its model, params, memory config, and tool
+grant all come from `PERSONA_MANIFEST` (the system manifest), not hardcoded here:
+model `anthropic/claude-sonnet-4.6`, granted `PERSONA_TOOL_GROUP_SLUGS`. It's
+created with the Warm/Saskia default and refined by the personality step
+(`savePersonaAgent`: rebuilds the system prompt from the chosen preset, sets the
+name + temperature, points the TTS voice at the gender).
 
-> **Vital linkage — tools + skills (not just rows).** A provisioned agent that
-> has no `tool_slugs` can't act (no search, no capture, no delegation), and one
+> **Vital linkage — tool GROUPS + skills (not just rows).** A provisioned agent
+> with no tool grant can't act (no search, no capture, no delegation), and one
 > without the shared behaviour skills answers from memory instead of the user's
 > data — both look "set up" but are broken. So provisioning also:
-> - seeds the builtin tool **rows** (`seedBuiltinTools`) and grants the assistant
->   `DEFAULT_ASSISTANT_TOOL_SLUGS` (from `@mantle/tools`) — the proven generalist
->   set (broad memory/CRUD + media + `invoke_agent`), minus the specialist/
->   dangerous tools (raw shell, destructive deletes, the `table_*` grid tools →
->   delegate to Ledger, `web_search`/`find_window` → delegate to Researcher/Remy,
->   federation). Re-running the wizard **repairs** a toolless assistant.
+> - seeds the capability **substrate** — the builtin tool rows *and* the tool
+>   **groups** — via `seedToolCapabilities(ownerId)`, then grants the persona its
+>   `toolGroupSlugs: PERSONA_TOOL_GROUP_SLUGS` (P6: groups are the sole grant, so
+>   the groups must exist first or the grant resolves to 0 tools). This is the
+>   proven generalist set (broad memory/CRUD + media + `invoke_agent`), minus the
+>   specialist/dangerous tools (raw shell, destructive deletes, the `table_*` grid
+>   tools → delegate to Ledger, `web_search`/`find_window` → delegate to
+>   Researcher/Remy, federation). Re-running the wizard **repairs** a toolless
+>   assistant (idempotent gap-fill).
 > - attaches the shared behaviour skills (`tool_grounding`, `voice_reply`,
 >   `rich_writing`) to the assistant — done by `applyManifest`'s persona-skill
->   attach (the manifest persona's `skillSlugs`). The CLI `seed:shared-skills`
->   additionally wires Alex's named personas `telegram-default`/`apostle-paul`,
->   which don't exist on a fresh brain.
+>   attach (the manifest persona's `skillSlugs`).
 >
 > Skills attach to **agents only** — `ai_workers` have no skill column; their
 > behaviour is the model + an optional `system_prompt`.
@@ -187,15 +191,16 @@ as the agent editor.
 
 ---
 
-## 6. The interview (`packages/content/src/onboarding-questions.ts`)
+## 6. The purpose step (`packages/content/src/onboarding-questions.ts`)
 
-~9 ordered questions (name, nickname, partner, family, work, faith, health,
-interests, goals, free catch-all). `composeBody` turns each answer into a
-first-person Journal entry under a life-area category; the nickname (or first name)
-also becomes `preferences.displayName`. Those entries feed
-`buildIdentityContext` → the `# About the user (Journal)` block injected into
-every agent turn, so the assistant knows who you are from the first message. See
-[`journal.md`](./journal.md).
+Onboarding captures **what the brain is for**, not a personal interview. The user
+picks a `PURPOSE_ARCHETYPE` (e.g. personal / analytics / research / robotics /
+team / custom) and writes a free-text description; `savePurpose` stores them as
+`preferences.purpose` / `preferences.purposeArchetype`. They feed
+`buildIdentityContext` → the `# Purpose of this brain` section of the always-on
+identity block injected into every agent turn, so every agent knows the brain's
+mission from the first message. The user's preferred name is captured separately
+on the Welcome step (`preferences.displayName`).
 
 ---
 
@@ -206,6 +211,7 @@ every agent turn, so the assistant knows who you are from the first message. See
   `packages/db/src/resolve-owner.ts`, `packages/content/src/persona-bank.ts`,
   `packages/content/src/onboarding-questions.ts` (+ tests).
 - **Modified:** `apps/web/app/login/*` (first-run mode), `apps/web/app/(app)/layout.tsx`
-  (gate), `apps/agent/src/main.ts` + `apps/web/workers/{files-watch,docs-sync}.ts`
-  + `apps/mcp/src/server.ts` (wait-for-owner), `packages/content/src/profile-preferences.ts`
-  (displayName/onboardedAt/onboardingStep), env examples.
+  (server-side onboarding gate), the `apps/api` agent runtime +
+  `apps/web/workers/{files-watch,docs-sync}.ts` + `apps/mcp/src/server.ts`
+  (wait-for-owner), `packages/content/src/profile-preferences.ts`
+  (displayName/purpose/onboardedAt/onboardingStep), env examples.
