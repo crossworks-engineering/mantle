@@ -55,7 +55,8 @@ import {
 import { embed } from '@mantle/embeddings';
 import { diskPathForFile, extOf, mimeForExt, parseDocumentBytes, INGESTABLE_EXTS, parserRouteForExt, extractPdfTextWithPassword, effectiveBrainDepth } from '@mantle/files';
 import { contentKey, getContent } from '@mantle/storage';
-import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
+import { parseSheetToGrid } from '@mantle/files/sheet-to-grid';
+import { currentTrace, recordIngest, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import {
   chatWithFailover,
   documentWorkerPrefersNative,
@@ -73,6 +74,8 @@ import {
   getPdfPasswordCandidates,
   markPdfPasswordUsed,
   normaliseOrgName,
+  createTable,
+  tableDocFromGrid,
 } from '@mantle/content';
 import { isLikelyDifferentPerson } from './person-names';
 
@@ -276,6 +279,119 @@ async function loadFileBytes(
     }
   }
   return null;
+}
+
+/** Spreadsheet extensions that auto-convert to Table(s) on ingest. */
+const AUTO_TABLE_EXTS = new Set(['xlsx', 'xls', 'csv']);
+
+/** Max TABLES a single auto-import will create (sheets × paginated parts). Each
+ *  table is its own indexed node, so a huge or many-sheet workbook would fan out
+ *  into a burst of extractor runs from one upload. Beyond this we create the
+ *  leading tables and log the rest as skipped (the source file stays fully
+ *  searchable). An explicit `table_from_file` is user-initiated, not capped. */
+const MAX_AUTO_TABLE_TABLES = Number(process.env.MANTLE_MAX_AUTO_TABLE_TABLES) || 20;
+
+/**
+ * On ingest, turn a spreadsheet file node into typed Table(s) — one per
+ * non-empty sheet — published immediately + indexed, so registers land in
+ * /tables however the file arrived (Files upload, chat attachment,
+ * email/Telegram). Deduped by `data.sourceFileId`: re-ingesting the same file
+ * node (re-process, external-edit watcher, version reconcile) never creates a
+ * second table. Mirrors the `table_from_file` agent tool's core
+ * (parseSheetToGrid → tableDocFromGrid → createTable) so manual and automatic
+ * imports yield identical grids. Best-effort + isolated: any failure is logged
+ * by the caller and never blocks the text-extraction pass.
+ */
+async function maybeAutoTableSpreadsheet(
+  node: typeof nodes.$inferSelect,
+  ownerId: string,
+): Promise<void> {
+  if (node.type !== 'file') return;
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  const nameForExt = typeof data.filename === 'string' ? data.filename : node.title;
+  if (!AUTO_TABLE_EXTS.has(extOf(nameForExt))) return;
+
+  // Dedupe: if a table already references this file, do nothing (re-ingest safe).
+  const existing = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'table'),
+        sql`${nodes.data}->>'sourceFileId' = ${node.id}`,
+      ),
+    )
+    .limit(1);
+  if (existing.length > 0) return;
+
+  const loaded = await loadFileBytes(node);
+  if (!loaded) return;
+  let sheets: ReturnType<typeof parseSheetToGrid>;
+  try {
+    sheets = parseSheetToGrid(loaded.bytes);
+  } catch {
+    return; // unparseable as a spreadsheet — leave it as a plain file
+  }
+  if (sheets.length === 0) return;
+
+  // `sheets` is the flat list of grids — one per sheet, plus extra parts for any
+  // sheet paginated over MAX_GRID_ROWS. Cap total tables created from one upload;
+  // leading grids win, the rest are logged as skipped.
+  const toTable = sheets.slice(0, MAX_AUTO_TABLE_TABLES);
+  const skipped = sheets.length - toTable.length;
+  const multiSheet = new Set(sheets.map((s) => s.name)).size > 1;
+  const base = loaded.filename.replace(/\.(xlsx|xls|csv)$/i, '').trim() || 'Imported table';
+  await step(
+    {
+      name: 'auto_table',
+      kind: 'compute',
+      input: {
+        filename: loaded.filename,
+        grids: sheets.length,
+        creating: toTable.length,
+        skipped,
+        sourceFileId: node.id,
+      },
+    },
+    async (h) => {
+      const createdIds: string[] = [];
+      let partedTables = 0;
+      for (const sheet of toTable) {
+        const grid = tableDocFromGrid(sheet);
+        // Skip a grid with no usable tabular data (empty / header-only).
+        if (grid.columns.length === 0 || grid.rows.length === 0) continue;
+        const parted = (sheet.partsTotal ?? 1) > 1;
+        const core = multiSheet ? `${base} — ${sheet.name}` : base;
+        const title = (
+          parted ? `${core} (part ${sheet.part}/${sheet.partsTotal})` : core
+        ).slice(0, 200);
+        const table = await createTable(ownerId, {
+          title,
+          data: grid,
+          tags: ['auto-import'],
+          sourceFileId: node.id,
+        });
+        createdIds.push(table.id);
+        if (parted) partedTables += 1;
+        const partNote = parted ? ` part ${sheet.part}/${sheet.partsTotal}` : '';
+        void recordIngest({
+          source: 'extractor',
+          ownerId,
+          nodeId: table.id,
+          summary: `Auto-imported table from ${loaded.filename} (${sheet.name}${partNote}): ${table.title}`,
+          payload: {
+            via: 'auto_table_on_ingest',
+            sourceFileId: node.id,
+            sheet: sheet.name,
+            ...(parted ? { part: sheet.part, partsTotal: sheet.partsTotal } : {}),
+          },
+        });
+      }
+      h.setMeta({ created: createdIds.length, tableIds: createdIds, skipped, partedTables });
+      return createdIds;
+    },
+  );
 }
 
 /**
@@ -1176,6 +1292,17 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
     });
     return;
   }
+
+  // Auto-table a spreadsheet upload into typed Table(s), independent of the
+  // text-extraction allowlist below (registers should reach /tables even if
+  // 'file' isn't in target_types). Best-effort: never let it block or fail the
+  // text-extraction pass. Deduped + published inside the helper.
+  await maybeAutoTableSpreadsheet(node, ownerId).catch((err) =>
+    console.error(
+      '[extractor] auto-table failed:',
+      err instanceof Error ? err.message : err,
+    ),
+  );
 
   // target_types is the new home for the type allowlist. We still
   // accept extract_types for legacy backfilled rows in the same

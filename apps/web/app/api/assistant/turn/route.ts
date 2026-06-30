@@ -77,6 +77,8 @@ type Attachment = {
   extractedText: string;
   note: string | null;
   imageArtifact: ToolArtifact | null;
+  /** Original filename — lets the responder marker route a spreadsheet to Tables. */
+  filename: string;
 };
 
 /**
@@ -168,7 +170,7 @@ async function processUpload(
         }
       : null;
 
-  return { kind, nodeId, extractedText: extract.text, note: extract.note, imageArtifact };
+  return { kind, nodeId, extractedText: extract.text, note: extract.note, imageArtifact, filename: originalName };
 }
 
 type TurnResult = { status: number; body: unknown };
@@ -313,6 +315,7 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
             imageTranscript: attachment.extractedText || undefined,
             imageNote: attachment.note || undefined,
             imageNodeId: attachment.nodeId || undefined,
+            imageFilename: attachment.filename || undefined,
           }
         : {}),
     };

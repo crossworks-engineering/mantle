@@ -175,6 +175,12 @@ export type CreateTableInput = {
   data?: TableDoc;
   tags?: string[];
   icon?: string;
+  /** Provenance: the `file` node this grid was imported from. Stamped on the
+   *  table node's `data.sourceFileId` so an auto-importer can dedupe (don't
+   *  re-create a table for a file that already has one) and the UI can link back
+   *  to the source. Ignored by the table renderer (the grid lives in
+   *  `tables.data`). */
+  sourceFileId?: string;
 };
 
 export async function createTable(
@@ -197,6 +203,7 @@ export async function createTable(
         data: {
           visibility: 'private',
           ...(input.icon ? { icon: input.icon } : {}),
+          ...(input.sourceFileId ? { sourceFileId: input.sourceFileId } : {}),
         },
         tags: dedupeTags(input.tags ?? []),
       })

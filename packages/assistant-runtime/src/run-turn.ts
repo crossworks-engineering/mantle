@@ -225,6 +225,10 @@ export type RunAssistantTurnOptions = {
    *  the model can re-read it (extract_from_image / file_read) on a
    *  follow-up. */
   imageNodeId?: string;
+  /** The attachment's original filename — lets the injected marker route a
+   *  SPREADSHEET (.xlsx/.xls/.csv) to the Tables path (auto-imported on
+   *  ingest) instead of the page-import hint. */
+  imageFilename?: string;
   /** Which agent answers this turn (the /assistant agent selector). Resolved
    *  owner-scoped + enabled; falls back to the default assistant. */
   agentSlug?: string;
@@ -494,6 +498,7 @@ export async function runAssistantTurn(
     transcript: options?.imageTranscript,
     note: options?.imageNote,
     nodeId: options?.imageNodeId,
+    filename: options?.imageFilename,
   });
 
   const buildMessages = (image: UserImage | undefined, userText: string) =>

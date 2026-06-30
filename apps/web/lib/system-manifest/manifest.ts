@@ -452,6 +452,13 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['table_delete'],
   },
   {
+    slug: 'tables-import',
+    name: 'Tables import',
+    description:
+      'Import a spreadsheet (.xlsx/.xls/.csv) into typed Table(s) on request — the responder-facing slice of Tables, so an attached register can be tabled directly without the full grid-authoring kit (which stays with the Ledger specialist). Spreadsheets are already auto-imported on ingest; this covers an explicit "(re)import this as a table" ask.',
+    toolSlugs: ['table_from_file'],
+  },
+  {
     slug: 'export',
     name: 'Document export',
     description:
@@ -641,6 +648,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'location',
       'profile',
       'export',
+      'tables-import',
     ],
     skillSlugs: ['tool_grounding', 'voice_reply', 'chat_writing', 'location_awareness', 'navigation', 'integrations'],
     params: { temperature: 0.7, max_tokens: 16000 },

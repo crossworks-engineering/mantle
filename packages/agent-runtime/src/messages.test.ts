@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { buildChatMessages, type Digest, type ChatMessage } from './messages';
+import {
+  buildChatMessages,
+  buildAttachmentContextText,
+  type Digest,
+  type ChatMessage,
+} from './messages';
 
 const DIGEST: Digest = {
   summary: 'We discussed the Lister rebuild.',
@@ -175,5 +180,46 @@ describe('buildChatMessages — retrieved-content trust fence', () => {
     expect(body).toContain('[marker removed]');
     // Exactly one real closing marker (the one we control), at the end.
     expect(body.match(/\[END RETRIEVED CONTENT\]/g)?.length).toBe(1);
+  });
+});
+
+describe('buildAttachmentContextText attachment hint', () => {
+  const opts = (over: Record<string, unknown>) => ({
+    kind: 'file' as const,
+    nodeId: 'node-123',
+    ...over,
+  });
+
+  it('routes a spreadsheet (.xlsx) to the Tables hint, not page import', () => {
+    const out = buildAttachmentContextText('here', opts({ filename: 'asset-register.xlsx' }));
+    expect(out).toContain('auto-imported into Tables');
+    expect(out).not.toContain('page_from_file');
+  });
+
+  it('routes a .csv the same way', () => {
+    const out = buildAttachmentContextText('here', opts({ filename: 'cmls.CSV' }));
+    expect(out).toContain('auto-imported into Tables');
+  });
+
+  it('keeps the page-import hint for a non-spreadsheet document (.pdf)', () => {
+    const out = buildAttachmentContextText('here', opts({ filename: 'spec.pdf' }));
+    expect(out).toContain('page_from_file');
+    expect(out).not.toContain('auto-imported into Tables');
+  });
+
+  it('falls back to the document hint when no filename is given', () => {
+    const out = buildAttachmentContextText('here', opts({}));
+    expect(out).toContain('page_from_file');
+    expect(out).not.toContain('auto-imported into Tables');
+  });
+
+  it('uses the image hint for images regardless of any filename', () => {
+    const out = buildAttachmentContextText('here', {
+      kind: 'image',
+      nodeId: 'n1',
+      filename: 'chart.xlsx',
+    });
+    expect(out).toContain('extract_from_image');
+    expect(out).not.toContain('auto-imported into Tables');
   });
 });
