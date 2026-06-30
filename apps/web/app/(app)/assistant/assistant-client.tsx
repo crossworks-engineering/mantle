@@ -289,6 +289,9 @@ export function AssistantClient({
   }, []);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
+  // Wraps the scroller's content; watched by a ResizeObserver so we can re-pin to
+  // the bottom as the transcript's height settles after a scroll (see below).
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // ── Stick-to-bottom autoscroll ──
   // Follow new content (a landing reply, streamed tokens, a growing trail) ONLY
@@ -357,6 +360,30 @@ export function AssistantClient({
     if (atBottomRef.current) el.scrollTop = el.scrollHeight;
     else setShowJump(true);
   }, [panel]);
+
+  // Keep the latest message in view as the transcript's height *settles*. The
+  // one-shot scroll-to-bottoms above all fire at a single instant — but the
+  // height isn't stable then: reply bodies render through TipTap (which mounts
+  // and applies its content asynchronously) and attachment / artifact images
+  // carry no fixed dimensions, so each finishes laying out *after* the scroll
+  // has already run. That late growth pushes the bottom down and strands the
+  // scroller partway up the history — the "half scrolled" symptom, worst on
+  // panel-open where everything that warmed under display:none unfolds at once.
+  // A ResizeObserver re-pins on every height change, so we ride the content down
+  // until it's done growing — but only while the user is parked at the bottom
+  // (atBottomRef), so a deliberate scroll-up to read history is never yanked.
+  // Setting scrollTop never resizes the observed node, so there's no feedback
+  // loop. Lives for the component's life (re-created on the agent-switch remount).
+  useEffect(() => {
+    const el = scrollerRef.current;
+    const content = contentRef.current;
+    if (!el || !content || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (atBottomRef.current) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, []);
 
   const loadOlder = useCallback(async () => {
     if (loadingRef.current || !hasMore) return;
@@ -910,6 +937,10 @@ export function AssistantClient({
     <>
       <div className="relative flex min-h-0 flex-1 flex-col">
       <div ref={scrollerRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-6 py-6">
+        {/* Height-tracking wrapper: the ResizeObserver above watches this node so
+            late content growth (TipTap reply bodies, images loading in) re-pins
+            the scroll to the bottom instead of stranding it mid-thread. */}
+        <div ref={contentRef}>
         {turns.length === 0 ? (
           <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/30 px-4 py-10 text-center">
             {agentAvatar ? (
@@ -1116,6 +1147,7 @@ export function AssistantClient({
             </ul>
           </>
         )}
+        </div>
       </div>
         {showJump && (
           <button
