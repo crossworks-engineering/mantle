@@ -36,6 +36,10 @@ export type ToolHandlerContext = {
     delegateTo: readonly string[];
     /** Parent trace id, threaded into the child trace for navigation. */
     parentTraceId?: string | null;
+    /** The parent turn's resolved (pre-clamp) thinking budget, so a delegated
+     *  specialist inherits the operator's per-user thinking preference. The
+     *  child re-clamps it against its OWN max_tokens. Unset/0 ⇒ no thinking. */
+    thinkingBudget?: number;
   };
   /** Which surface this turn is running on. Populated by the agent
    *  runtime so worker-delegation tools can target the right channel

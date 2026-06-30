@@ -1177,6 +1177,8 @@ const invoke_agent: BuiltinToolDef = {
       prompt,
       depth: depth.childDepth,
       parentTraceId: ctx.agent.parentTraceId ?? null,
+      // Inherit the parent turn's thinking budget; the child re-clamps it.
+      ...(ctx.agent.thinkingBudget ? { thinkingBudget: ctx.agent.thinkingBudget } : {}),
     });
     if (!result.ok) {
       return { ok: false, error: `child agent failed: ${result.error}` };

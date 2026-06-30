@@ -33,6 +33,10 @@ export type InvokeAgentInput = {
   /** Parent trace id, so the child trace can store it in `data` for
    *  navigation. Null when the parent isn't traced (manual scripts). */
   parentTraceId: string | null;
+  /** Parent turn's resolved (pre-clamp) thinking budget, so the specialist
+   *  inherits the operator's per-user thinking preference. The child runtime
+   *  re-clamps it against its OWN max_tokens. Omitted/0 ⇒ no thinking. */
+  thinkingBudget?: number;
 };
 
 export type InvokeAgentResult =

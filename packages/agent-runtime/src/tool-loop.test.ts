@@ -75,7 +75,7 @@ vi.mock('@mantle/db', () => ({
 }));
 
 // Import AFTER mocks so the loop picks up the mocked deps.
-import { runToolLoop, buildToolsForModel, clampThinkingBudget } from './tool-loop';
+import { runToolLoop, buildToolsForModel, clampThinkingBudget, resolveMaxTokens } from './tool-loop';
 import type {
   ChatDispatcher,
   ChatOptions,
@@ -1273,5 +1273,24 @@ describe('clampThinkingBudget', () => {
 
   it('treats a non-positive max_tokens as unset (passes through)', () => {
     expect(clampThinkingBudget(8000, 0)).toBe(8000);
+  });
+});
+
+// When an agent pins no max_tokens but thinking is on, the request must still
+// carry an explicit ceiling above the budget — else a provider that injects its
+// own small default (OpenRouter→Anthropic) 400s on budget ≥ max_tokens.
+describe('resolveMaxTokens', () => {
+  it('returns the explicit max_tokens when set (unchanged behavior)', () => {
+    expect(resolveMaxTokens(16000, 8000)).toBe(16000);
+    expect(resolveMaxTokens(4096, 0)).toBe(4096);
+  });
+
+  it('injects budget*2 when max_tokens is unset and thinking is on', () => {
+    expect(resolveMaxTokens(undefined, 8000)).toBe(16000);
+    expect(resolveMaxTokens(undefined, 1024)).toBe(2048);
+  });
+
+  it('stays undefined when max_tokens is unset and thinking is off', () => {
+    expect(resolveMaxTokens(undefined, 0)).toBeUndefined();
   });
 });

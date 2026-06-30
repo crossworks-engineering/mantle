@@ -49,6 +49,7 @@ export const invokeAgent: AgentInvoker = async ({
   prompt,
   depth,
   parentTraceId,
+  thinkingBudget,
 }): Promise<InvokeAgentResult> => {
   if (depth > MAX_AGENT_DEPTH) {
     // Defence in depth: the dispatcher already refused, but a caller
@@ -169,12 +170,10 @@ export const invokeAgent: AgentInvoker = async ({
         agentDepth: depth,
         delegateTo: (mc?.delegate_to ?? []) as readonly string[],
         resultHandling: mc?.result_handling ?? null,
-        // Delegated specialists run without adaptive thinking for now: the
-        // per-user budget lives on the operator's profile and isn't threaded
-        // through the invoke_agent tool-context bridge yet. Omitting it ⇒
-        // runToolLoop defaults to 0 (no thinking). The responder (top-level
-        // turn) is the path that honours the budget. See
-        // docs/thinking-profile-control-handover.md step 6.
+        // Inherit the parent turn's resolved thinking budget (threaded via the
+        // invoke_agent tool-context bridge). The child loop re-clamps it against
+        // THIS agent's own max_tokens. Omitted/0 ⇒ no thinking.
+        ...(thinkingBudget ? { thinkingBudget } : {}),
         parentTraceId,
         initialMessages,
         tools: allowedTools,

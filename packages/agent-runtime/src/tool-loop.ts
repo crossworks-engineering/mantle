@@ -86,6 +86,22 @@ export function clampThinkingBudget(requested: number, maxTokens: number | undef
 }
 
 /**
+ * The max_tokens to send for a turn. Returns the agent's explicit value when set.
+ * When it's unset BUT thinking is on, returns an explicit ceiling above the
+ * budget (budget*2) so the reasoning providers — which require max_tokens > the
+ * thinking budget and may otherwise inject a small default of their own (e.g.
+ * OpenRouter→Anthropic) — can't 400. Unset with thinking off ⇒ undefined (let the
+ * provider use its default, unchanged from before this gate existed).
+ */
+export function resolveMaxTokens(
+  explicit: number | undefined,
+  thinkingBudget: number,
+): number | undefined {
+  if (typeof explicit === 'number') return explicit;
+  return thinkingBudget > 0 ? thinkingBudget * 2 : undefined;
+}
+
+/**
  * Run one chat round, streaming live token deltas when the runner has turn
  * streaming active (`isTurnStreaming()`) AND this route's adapter supports it.
  * Falls back to the one-shot `chat()` otherwise — the resolved `ChatResult` is
@@ -235,9 +251,11 @@ export type ToolLoopArgs = {
   /** Per-turn adaptive-thinking budget in tokens, pre-resolved by the caller
    *  from the owner's profile prefs (`resolveThinkingBudget` — already gated by
    *  the live-thinking switch AND a positive budget). > 0 requests thinking on
-   *  this loop's chat rounds; 0 / unset leaves it off. Replaced the old per-box
-   *  `MANTLE_THINKING_BUDGET` env gate. Delegated specialists currently inherit
-   *  nothing here (fallback: no thinking) — see invoke-agent.ts. */
+   *  this loop's chat rounds; 0 / unset leaves it off. Clamped per-round against
+   *  this agent's `max_tokens` (see `clampThinkingBudget`). Replaced the old
+   *  per-box `MANTLE_THINKING_BUDGET` env gate. Delegated specialists inherit
+   *  this via the invoke_agent tool-context bridge and re-clamp against their
+   *  own max_tokens — see invoke-agent.ts. */
   thinkingBudget?: number;
   /** Initial messages: system + any history + the new user turn. */
   initialMessages: ChatMessage[];
@@ -482,6 +500,12 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           args.thinkingBudget ?? 0,
           args.params.max_tokens,
         );
+        // Effective max_tokens for the request. When thinking is on but the agent
+        // pinned NO max_tokens, send an explicit ceiling above the budget — the
+        // reasoning providers require max_tokens > budget and may inject a small
+        // default of their own (e.g. OpenRouter→Anthropic), which would 400. A
+        // ceiling of budget*2 keeps the same half-budget headroom the clamp uses.
+        const effectiveMaxTokens = resolveMaxTokens(args.params.max_tokens, thinkingBudget);
         const chatOpts = {
           messages,
           ...(sendTools ? { tools: toolsForModel } : {}),
@@ -495,7 +519,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           ...(thinkingBudget === 0 && typeof args.params.temperature === 'number'
             ? { temperature: args.params.temperature }
             : {}),
-          ...(typeof args.params.max_tokens === 'number' ? { maxTokens: args.params.max_tokens } : {}),
+          ...(typeof effectiveMaxTokens === 'number' ? { maxTokens: effectiveMaxTokens } : {}),
           ...(thinkingBudget === 0 && typeof args.params.top_p === 'number'
             ? { topP: args.params.top_p }
             : {}),
@@ -794,6 +818,9 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
                     depth: args.agentDepth ?? 1,
                     delegateTo: args.delegateTo ?? [],
                     parentTraceId: args.parentTraceId ?? null,
+                    // Forward the parent's resolved (pre-clamp) budget so a
+                    // delegated specialist inherits the per-user thinking pref.
+                    ...(args.thinkingBudget ? { thinkingBudget: args.thinkingBudget } : {}),
                   },
                 }
               : {}),

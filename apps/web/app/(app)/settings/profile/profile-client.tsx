@@ -443,7 +443,8 @@ function ProfileForm({ data }: { data: ProfileData }) {
             </div>
             <p className="text-xs text-muted-foreground">
               How hard the model reasons before answering. Needs live thinking on and a
-              budget above Off. Off = no extra thinking.
+              budget above Off. Off = no extra thinking. Large budgets are trimmed to
+              leave room for the reply.
             </p>
           </div>
         </div>
