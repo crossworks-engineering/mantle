@@ -1,0 +1,65 @@
+# CI build-check — validate a change BEFORE it can reach a deploy.
+#
+# Runs typecheck + the full vitest suite + the apps/web PRODUCTION build (the
+# edge-runtime / webpack gate that tsc + vitest miss — see
+# docs/deploy-preflight). This is the durable replacement for building locally
+# or on a worktree: the build runs OFF your machine, on the right tree, before
+# anything is merged or tagged.
+#
+# Triggers:
+#   - push to feat/** — validate a branch as you work, before opening a PR / merge
+#   - pull_request to main — gate the merge
+#   - push to main — re-validate the merge result (the automated "merge then
+#     build" safety net; deploy is still a separate manual tag)
+#
+# Hermetic — no Postgres/MinIO needed: `next build` runs DB-less (same as the
+# Dockerfile image build), and the vitest suite is designed to pass without
+# infra (e.g. resolver.test.ts deletes DATABASE_URL on purpose).
+#
+# Note: this does NOT build or push the Docker image — that's release.yml, which
+# fires on a version tag. This is purely a pre-merge correctness gate.
+
+name: build-check
+
+on:
+  push:
+    branches: ['main', 'feat/**']
+  pull_request:
+    branches: ['main']
+
+# A newer commit on the same ref supersedes an in-flight run.
+concurrency:
+  group: build-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm first, so setup-node's pnpm cache has a binary to key on. Version
+      # matches package.json `packageManager` (pnpm@11.1.2).
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # package.json engines: node >=24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      - name: Test
+        run: pnpm test
+
+      # The real edge/webpack gate. Runs without a DB, same as the image build.
+      - name: Build (apps/web)
+        run: pnpm -C apps/web build
