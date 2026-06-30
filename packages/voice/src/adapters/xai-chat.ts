@@ -32,6 +32,7 @@ import {
   toOpenAICompatMessages,
   type OpenAICompatChatResponse,
 } from './openai-compat';
+import { scrubThinkBlocks } from './think-scrubber';
 
 /** xAI's chat response shape — the shared OpenAI-compat envelope plus
  *  one xAI-specific quirk: some routes return `choices[].text` as a
@@ -84,7 +85,7 @@ async function xaiChat(opts: ChatOptions): Promise<ChatResult> {
   // with a fallback to legacy choices[0].text in case of unusual
   // response routing.
   const message = parsed.choices?.[0]?.message;
-  const text = message?.content ?? parsed.choices?.[0]?.text ?? '';
+  const text = scrubThinkBlocks(message?.content ?? parsed.choices?.[0]?.text ?? '');
   const toolCalls = extractOpenAICompatToolCalls(message);
   return {
     text: text.trim(),

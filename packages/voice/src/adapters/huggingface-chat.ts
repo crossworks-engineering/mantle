@@ -48,6 +48,7 @@ import {
   toOpenAICompatMessages,
   type OpenAICompatChatResponse,
 } from './openai-compat';
+import { scrubThinkBlocks } from './think-scrubber';
 
 /** HF's router speaks the OpenAI-compat wire shape verbatim — no
  *  provider-specific quirks on the response side. Aliasing the shared
@@ -114,7 +115,8 @@ async function hfChat(opts: ChatOptions): Promise<ChatResult> {
   }
   const parsed = (await res.json()) as HfChatResponse;
   const message = parsed.choices?.[0]?.message;
-  const text = message?.content ?? '';
+  // HF serves open reasoning models that inline <think> in content — strip it.
+  const text = scrubThinkBlocks(message?.content ?? '');
   const toolCalls = extractOpenAICompatToolCalls(message);
   return {
     text: text.trim(),

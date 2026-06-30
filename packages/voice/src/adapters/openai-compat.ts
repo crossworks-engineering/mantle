@@ -25,6 +25,7 @@
 import type { ChatOptions, ChatResult, ChatStreamSink, ChatToolCall } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
 import { readSSE, safeDelta } from './sse';
+import { StreamingThinkScrubber, scrubThinkBlocks } from './think-scrubber';
 
 // ─── Wire types ──────────────────────────────────────────────────────────────
 
@@ -279,6 +280,11 @@ export async function streamOpenAICompatChat(
   let model = opts.model;
   let usage: OpenAICompatStreamChunk['usage'];
   const toolAccum = new Map<number, { id: string; name: string; args: string }>();
+  // Some open/local models (DeepSeek-R1, Qwen QwQ, many GGUF builds) inline their
+  // chain-of-thought as `<think>…</think>` in `delta.content` instead of using
+  // the `reasoning_content` channel. Scrub it per-delta so raw reasoning never
+  // reaches the user or the persisted reply. No-op for models that don't.
+  const scrubber = new StreamingThinkScrubber();
 
   try {
     for await (const payload of readSSE(res.body, opts.signal)) {
@@ -295,8 +301,13 @@ export async function streamOpenAICompatChat(
       const delta = chunk.choices?.[0]?.delta;
       if (!delta) continue;
       if (typeof delta.content === 'string' && delta.content.length > 0) {
-        text += delta.content;
-        safeDelta(onDelta, { type: 'text', text: delta.content });
+        // Route inline <think> blocks to the reasoning channel; only the visible
+        // remainder accumulates into `text` and streams as a text delta.
+        const visible = scrubber.feed(delta.content);
+        if (visible) {
+          text += visible;
+          safeDelta(onDelta, { type: 'text', text: visible });
+        }
       }
       if (typeof delta.reasoning_content === 'string' && delta.reasoning_content.length > 0) {
         reasoning += delta.reasoning_content;
@@ -317,6 +328,15 @@ export async function streamOpenAICompatChat(
     // A user Stop aborts the fetch → an AbortError surfaces here; that's not a
     // failure, so fall through and return the partial. Anything else is real.
     if (!opts.signal?.aborted) throw err;
+  }
+
+  // Flush any partial tag the scrubber held at the boundary. If a block was
+  // left unterminated the tail is discarded (leaking partial reasoning is worse
+  // than a slightly truncated answer); otherwise the held prose surfaces.
+  const tail = scrubber.flush();
+  if (tail) {
+    text += tail;
+    safeDelta(onDelta, { type: 'text', text: tail });
   }
 
   // Stopped: return the visible text so far (drop half-formed tool fragments —

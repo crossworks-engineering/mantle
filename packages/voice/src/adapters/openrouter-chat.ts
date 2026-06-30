@@ -46,6 +46,7 @@ import {
   OPENROUTER_CHAT_MODELS,
 } from '../catalogs/openrouter';
 import { DEFAULT_MAX_RETRIES, isEmptyJsonBodyError } from './retry';
+import { StreamingThinkScrubber } from './think-scrubber';
 
 // Backoff for the empty-body retry below — mirrors retry.ts's full-jitter shape.
 const RETRY_BASE_DELAY_MS = 500;
@@ -686,6 +687,9 @@ async function openrouterChatStream(
   // Tool-call fragments accumulate by index: id+name land first, arguments arrive
   // in pieces. Assembled into ChatToolCall[] after the stream closes.
   const toolAccum = new Map<number, { id: string; name: string; args: string }>();
+  // OpenRouter surfaces reasoning in its typed `reasoning` field, but a model can
+  // still inline <think> in content (some open routes do) — scrub it defensively.
+  const scrubber = new StreamingThinkScrubber();
 
   try {
     for await (const chunk of sent) {
@@ -703,8 +707,11 @@ async function openrouterChatStream(
       const delta = choice?.delta;
       if (!delta) continue;
       if (typeof delta.content === 'string' && delta.content.length > 0) {
-        text += delta.content;
-        safeDelta(onDelta, { type: 'text', text: delta.content });
+        const visible = scrubber.feed(delta.content);
+        if (visible) {
+          text += visible;
+          safeDelta(onDelta, { type: 'text', text: visible });
+        }
       }
       if (typeof delta.reasoning === 'string' && delta.reasoning.length > 0) {
         reasoning += delta.reasoning;
@@ -727,6 +734,14 @@ async function openrouterChatStream(
     // AbortError — that's not a failure: fall through and return the partial
     // reply assembled so far. Any other error is a real stream fault.
     if (!opts.signal?.aborted) throw enrichOpenRouterError(err, opts.model, Date.now() - startedAt);
+  }
+
+  // Flush any partial tag held at the boundary (discarded if a block was left
+  // open; otherwise the held prose surfaces).
+  const tail = scrubber.flush();
+  if (tail) {
+    text += tail;
+    safeDelta(onDelta, { type: 'text', text: tail });
   }
 
   // Stopped: return just the visible text assembled so far (drop any half-formed

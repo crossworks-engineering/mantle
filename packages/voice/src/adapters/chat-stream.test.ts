@@ -99,6 +99,28 @@ describe('OpenAI-compat chatStream (xAI / HF / DeepSeek / local)', () => {
     expect(r.text).toBe('answer');
   });
 
+  it('scrubs an inline <think> block from content (split across deltas)', async () => {
+    // A local/open reasoning model that inlines its CoT in `content` instead of
+    // the reasoning_content channel — the scrubber must keep it out of both the
+    // streamed text deltas and the accumulated reply.
+    streamFetch([
+      sse({ choices: [{ delta: { content: '<think>' } }] }),
+      sse({ choices: [{ delta: { content: 'let me reason about this' } }] }),
+      sse({ choices: [{ delta: { content: '</think>' } }] }),
+      sse({ choices: [{ delta: { content: 'The answer is 42.' } }] }),
+      'data: [DONE]\n\n',
+    ]);
+    const deltas: ChatStreamDelta[] = [];
+    const r = await xaiChatAdapter.chatStream!(
+      { apiKey: 'k', model: 'grok-4', messages: [{ role: 'user', content: 'hi' }] },
+      (d) => deltas.push(d),
+    );
+    expect(r.text).toBe('The answer is 42.');
+    // No reasoning prose leaked into any visible text delta.
+    expect(deltas.every((d) => d.type !== 'text' || !d.text.includes('reason'))).toBe(true);
+    expect(deltas).toContainEqual({ type: 'text', text: 'The answer is 42.' });
+  });
+
   it('on a user Stop returns the PARTIAL reply (no throw, tool fragments dropped)', async () => {
     const ac = new AbortController();
     streamFetch([
