@@ -20,7 +20,10 @@ type CheckPayload = {
   latest?: { tag?: string } | null;
 };
 
-const RECHECK_MS = 6 * 60 * 60 * 1000; // matches the server cache TTL
+// Re-poll hourly so a long-open tab surfaces a new release within the hour. The
+// server still gates the actual GitHub call (30min TTL once "no update"), so
+// this only reads the cache; it doesn't add API traffic.
+const RECHECK_MS = 60 * 60 * 1000;
 
 export function UpdateBanner({ onNavigate }: { onNavigate?: () => void }) {
   const [tag, setTag] = useState<string | null>(null);

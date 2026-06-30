@@ -21,7 +21,16 @@ export const RELEASES_REPO = 'crossworks-engineering/mantle';
 export const RELEASES_URL = `https://github.com/${RELEASES_REPO}/releases`;
 
 const SIGNAL_DIR = process.env.MANTLE_UPDATE_SIGNAL_DIR ?? '/signal';
+/** How long a POSITIVE result (a newer release exists) stays cached. Once true
+ *  it stays true until the box updates, so re-checking often buys nothing. */
 const CHECK_TTL_MS = 6 * 60 * 60 * 1000;
+/** How long a NEGATIVE/error result (up-to-date, or the check failed) stays
+ *  cached. Much shorter than the positive TTL so a release published shortly
+ *  after this process last checked surfaces in the banner within minutes
+ *  instead of being suppressed for up to 6h — the exact trap a box hits when it
+ *  restarts just before a release goes out. Still one GitHub call per half-hour
+ *  per process at most, far under the unauthenticated 60-req/h limit. */
+const STALE_TTL_MS = 30 * 60 * 1000;
 
 // ── release check ────────────────────────────────────────────────────────────
 
@@ -60,12 +69,13 @@ export function compareVersions(a: string, b: string): number {
 let cachedCheck: UpdateCheck | null = null;
 
 export async function checkForUpdate(force = false): Promise<UpdateCheck> {
-  if (
-    !force &&
-    cachedCheck &&
-    Date.now() - new Date(cachedCheck.checkedAt).getTime() < CHECK_TTL_MS
-  ) {
-    return cachedCheck;
+  if (!force && cachedCheck) {
+    // A confirmed update gets the long TTL; "no update" or an error gets the
+    // short one, so a freshly published release isn't masked for hours.
+    const ttl = cachedCheck.updateAvailable ? CHECK_TTL_MS : STALE_TTL_MS;
+    if (Date.now() - new Date(cachedCheck.checkedAt).getTime() < ttl) {
+      return cachedCheck;
+    }
   }
   const checkedAt = new Date().toISOString();
   try {
