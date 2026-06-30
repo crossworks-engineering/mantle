@@ -1278,11 +1278,13 @@ export function AgentsClient() {
               )}
             </div>
 
-            {/* Primary route host + tailnet (migration 0063). Only meaningful
-                for the `local` chat adapter — a self-hosted/LAN/tailnet box. */}
-            {form.provider === 'local' && (
+            {/* Primary route host (migration 0063). The `local` adapter (self-
+                hosted/LAN/tailnet box) and the `custom` adapter (cloud OpenAI-
+                compatible endpoint) both need a per-route Base URL. */}
+            {(form.provider === 'local' || form.provider === 'custom') && (
               <RouteHostFields
                 idPrefix="primary"
+                provider={form.provider}
                 baseUrl={form.baseUrl}
                 viaTailnet={form.viaTailnet}
                 peers={tailnetPeers}
@@ -1428,9 +1430,10 @@ export function AgentsClient() {
                       emptyMessage="No matching models in the catalog."
                     />
                   </div>
-                  {form.backupProvider === 'local' && (
+                  {(form.backupProvider === 'local' || form.backupProvider === 'custom') && (
                     <RouteHostFields
                       idPrefix="backup"
+                      provider={form.backupProvider}
                       baseUrl={form.backupBaseUrl}
                       viaTailnet={form.backupViaTailnet}
                       peers={tailnetPeers}
@@ -2171,13 +2174,16 @@ function ContextWindowHint({
   );
 }
 
-/** Per-route host + tailnet controls for a `local` chat route (migration 0063).
- *  `baseUrl` overrides the default localhost host (point it at a LAN/tailnet
- *  box); `viaTailnet` routes the request through the bundled Tailscale proxy so
- *  a MagicDNS name reaches a box behind NAT. Rendered only when the route's
- *  provider is `local` — other providers have fixed endpoints. */
+/** Per-route host controls for a `local` or `custom` chat route (migration
+ *  0063). For `local`, `baseUrl` overrides the localhost default (point it at a
+ *  LAN/tailnet box) and `viaTailnet` routes through the bundled Tailscale proxy.
+ *  For `custom` (a cloud OpenAI-compatible endpoint) the Base URL is REQUIRED and
+ *  there is no localhost default or tailnet routing — so the peer autocomplete
+ *  and the Tailscale toggle are hidden. Rendered only for those two providers;
+ *  every other provider has a fixed endpoint. */
 function RouteHostFields({
   idPrefix,
+  provider,
   baseUrl,
   viaTailnet,
   peers = [],
@@ -2185,6 +2191,7 @@ function RouteHostFields({
   onViaTailnet,
 }: {
   idPrefix: string;
+  provider: 'local' | 'custom';
   baseUrl: string;
   viaTailnet: boolean;
   /** Online tailnet peer MagicDNS names — surfaced as base-URL autocomplete. */
@@ -2192,19 +2199,26 @@ function RouteHostFields({
   onBaseUrl: (v: string) => void;
   onViaTailnet: (v: boolean) => void;
 }) {
+  const isCustom = provider === 'custom';
   const listId = `${idPrefix}-tailnet-peers`;
   return (
     <div className="space-y-3 rounded-md border border-dashed border-border p-3">
       <div className="space-y-1.5">
-        <Label htmlFor={`${idPrefix}BaseUrl`}>Base URL</Label>
+        <Label htmlFor={`${idPrefix}BaseUrl`}>
+          Base URL{isCustom && <span className="text-muted-foreground"> (required)</span>}
+        </Label>
         <Input
           id={`${idPrefix}BaseUrl`}
           value={baseUrl}
           onChange={(e) => onBaseUrl(e.target.value)}
-          placeholder="blank = http://localhost:11434/v1 (Ollama default)"
-          list={peers.length > 0 ? listId : undefined}
+          placeholder={
+            isCustom
+              ? 'https://api.your-provider.com/v1'
+              : 'blank = http://localhost:11434/v1 (Ollama default)'
+          }
+          list={!isCustom && peers.length > 0 ? listId : undefined}
         />
-        {peers.length > 0 && (
+        {!isCustom && peers.length > 0 && (
           // Suggest tailnet peers as `http://<name>:PORT/v1`. Free-text still
           // works; this is just autocomplete when a tailnet is up.
           <datalist id={listId}>
@@ -2213,31 +2227,42 @@ function RouteHostFields({
             ))}
           </datalist>
         )}
-        <p className="text-xs text-muted-foreground">
-          Where this <code>local</code> route&apos;s server lives — e.g.{' '}
-          <code>http://gemma-box:11434/v1</code> (Ollama) or{' '}
-          <code>http://192.168.0.50:1234/v1</code> (LM Studio). Blank uses the{' '}
-          <code>MANTLE_LOCAL_CHAT_URL</code> env / localhost default.
-          {peers.length > 0 && ' Tailnet devices are suggested as you type.'}
-        </p>
-      </div>
-      <div className="flex items-center justify-between gap-3">
-        <div className="space-y-0.5">
-          <Label htmlFor={`${idPrefix}ViaTailnet`} className="cursor-pointer">
-            Reach via Tailscale
-          </Label>
+        {isCustom ? (
           <p className="text-xs text-muted-foreground">
-            Route this request through the bundled Tailscale proxy so the Base URL
-            (a MagicDNS name) reaches a box behind NAT. Inert unless the{' '}
-            <code>tailnet</code> compose profile is up.
+            The provider&apos;s OpenAI-compatible root — e.g.{' '}
+            <code>https://api.z.ai/api/paas/v4</code> (Z.ai/GLM) or{' '}
+            <code>https://api.deepinfra.com/v1/openai</code>. We append{' '}
+            <code>/chat/completions</code>, so include any version segment.
           </p>
-        </div>
-        <Switch
-          id={`${idPrefix}ViaTailnet`}
-          checked={viaTailnet}
-          onCheckedChange={onViaTailnet}
-        />
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Where this <code>local</code> route&apos;s server lives — e.g.{' '}
+            <code>http://gemma-box:11434/v1</code> (Ollama) or{' '}
+            <code>http://192.168.0.50:1234/v1</code> (LM Studio). Blank uses the{' '}
+            <code>MANTLE_LOCAL_CHAT_URL</code> env / localhost default.
+            {peers.length > 0 && ' Tailnet devices are suggested as you type.'}
+          </p>
+        )}
       </div>
+      {!isCustom && (
+        <div className="flex items-center justify-between gap-3">
+          <div className="space-y-0.5">
+            <Label htmlFor={`${idPrefix}ViaTailnet`} className="cursor-pointer">
+              Reach via Tailscale
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Route this request through the bundled Tailscale proxy so the Base URL
+              (a MagicDNS name) reaches a box behind NAT. Inert unless the{' '}
+              <code>tailnet</code> compose profile is up.
+            </p>
+          </div>
+          <Switch
+            id={`${idPrefix}ViaTailnet`}
+            checked={viaTailnet}
+            onCheckedChange={onViaTailnet}
+          />
+        </div>
+      )}
     </div>
   );
 }

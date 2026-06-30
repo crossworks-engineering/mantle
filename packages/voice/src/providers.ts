@@ -39,6 +39,7 @@ export type ProviderId =
   | 'deepgram'
   | 'elevenlabs'
   | 'assemblyai'
+  | 'custom'
   | 'local';
 
 /** What a provider can do. Mapped 1:1 to `ai_workers.kind` plus 'chat'
@@ -197,6 +198,16 @@ export const SUPPORTED_PROVIDERS: readonly Provider[] = [
     capabilities: ['stt'],
     signupUrl: 'https://www.assemblyai.com/dashboard',
     docsUrl: 'https://www.assemblyai.com/docs',
+  },
+  {
+    id: 'custom',
+    label: 'Custom (OpenAI-compatible)',
+    description:
+      'Any cloud provider that speaks the standard OpenAI /chat/completions API — DashScope/Qwen, Z.ai/GLM, Moonshot/Kimi, Nvidia NIM, Together, Fireworks, Groq, DeepInfra, Azure AI Foundry, and more. Set a Base URL and API key per route, then pick or type the model id. (For a self-hosted model on your own hardware, use “Local (self-hosted)” instead.)',
+    capabilities: ['chat'],
+    signupUrl: 'https://platform.openai.com/docs/api-reference/chat',
+    docsUrl: 'https://platform.openai.com/docs/api-reference/chat',
+    isAggregator: true,
   },
   {
     id: 'local',

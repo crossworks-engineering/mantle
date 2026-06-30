@@ -31,6 +31,7 @@
  */
 
 import { activeNotes, noteRef, type PersonaNote } from '@mantle/db';
+import type { ReasoningDetail } from '@mantle/voice';
 
 export type HistoryTurn = { role: 'user' | 'assistant'; text: string };
 
@@ -98,7 +99,18 @@ export type ChatMessage =
             | { type: 'image_url'; imageUrl: { url: string; detail?: 'auto' | 'low' | 'high' } }
           >;
     }
-  | { role: 'assistant'; content: string | null; toolCalls?: ToolCallRequest[] }
+  | {
+      role: 'assistant';
+      content: string | null;
+      toolCalls?: ToolCallRequest[];
+      /** Signed provider reasoning blocks (OpenRouter `reasoning_details`) carried
+       *  on the assistant turn so the next request can echo them back — Anthropic
+       *  (via OpenRouter) 400s a thinking-then-tool_use turn that omits them. The
+       *  tool loop sets this from `ChatResult.reasoningDetails`; the OpenRouter
+       *  adapter re-emits it. Opaque here — only the originating adapter reads it.
+       *  Mirrors {@link import('@mantle/voice').ChatAssistantMessage.reasoningDetails}. */
+      reasoningDetails?: ReasoningDetail[];
+    }
   | { role: 'tool'; toolCallId: string; content: string; isError?: boolean };
 
 /** An image to attach to the new user turn (vision-capable models only). */

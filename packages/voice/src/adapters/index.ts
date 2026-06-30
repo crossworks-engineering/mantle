@@ -33,6 +33,7 @@ import { googleChatAdapter } from './google-chat';
 import { openrouterChatAdapter } from './openrouter-chat';
 import { deepseekChatAdapter } from './deepseek-chat';
 import { copilotChatAdapter } from './copilot-chat';
+import { customChatAdapter } from './custom-chat';
 import { googleTtsAdapter } from './google-tts';
 import { googleSttAdapter } from './google-stt';
 import { xaiTtsAdapter } from './xai-tts';
@@ -82,6 +83,7 @@ registerChatAdapter(googleChatAdapter);
 registerChatAdapter(openrouterChatAdapter);
 registerChatAdapter(deepseekChatAdapter);
 registerChatAdapter(copilotChatAdapter);
+registerChatAdapter(customChatAdapter);
 registerChatAdapter(localChatAdapter);
 registerVisionAdapter(openAiVisionAdapter);
 registerVisionAdapter(anthropicVisionAdapter);
@@ -152,6 +154,7 @@ export {
   type ChatStreamSink,
   type ChatToolCall,
   type ChatToolDefinition,
+  type ReasoningDetail,
   type ChatSystemContentPart,
   type ChatToolLoopMessage,
   type ChatToolMessage,
@@ -212,6 +215,7 @@ export { googleChatAdapter } from './google-chat';
 export { openrouterChatAdapter } from './openrouter-chat';
 export { deepseekChatAdapter } from './deepseek-chat';
 export { copilotChatAdapter } from './copilot-chat';
+export { customChatAdapter } from './custom-chat';
 export { localChatAdapter } from './local-chat';
 export { googleTtsAdapter } from './google-tts';
 export { xaiTtsAdapter } from './xai-tts';
