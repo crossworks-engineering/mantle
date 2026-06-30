@@ -63,6 +63,27 @@ import { parseToolArgs } from './tool-args';
 const DEFAULT_MAX_ITERATIONS = 6;
 
 /**
+ * Per-box adaptive-thinking gate. `MANTLE_THINKING_BUDGET` is an integer token
+ * hint: > 0 turns thinking ON for tool-loop turns (the responder + delegated
+ * specialists), 0 / unset leaves it off. The magnitude is a budget hint honoured
+ * by providers that take one (OpenRouter `reasoning.max_tokens`); on current
+ * Claude models it acts as on/off (adaptive thinking decides depth). Read per
+ * call so a config change takes effect without a restart.
+ *
+ * Shipped OFF by default (dark) like the other turn-stream gates: enabling
+ * thinking on a tool loop relies on the reasoning_details echo-back, whose
+ * signature round-trip can only be proven against a live OpenRouter+Anthropic
+ * call — flip this on per box and smoke-test a thinking+tool turn before
+ * trusting it in prod.
+ */
+function resolveThinkingBudget(): number {
+  const raw = process.env.MANTLE_THINKING_BUDGET?.trim();
+  if (!raw) return 0;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/**
  * Run one chat round, streaming live token deltas when the runner has turn
  * streaming active (`isTurnStreaming()`) AND this route's adapter supports it.
  * Falls back to the one-shot `chat()` otherwise — the resolved `ChatResult` is
@@ -433,6 +454,12 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         },
       },
       async (h) => {
+        // Adaptive thinking on the tool-loop turn (gated per box). When on, the
+        // model reasons before answering and the reasoning streams back as
+        // `reasoning` deltas + signed `reasoning_details` (echoed across rounds
+        // above). Reasoning-capable models reject sampling params, so we drop
+        // temperature/top_p whenever thinking is requested.
+        const thinkingBudget = resolveThinkingBudget();
         const chatOpts = {
           messages,
           ...(sendTools ? { tools: toolsForModel } : {}),
@@ -442,9 +469,14 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           // cache hit). Adapters whose providers don't support cache
           // markers ignore this — see ChatCacheControl docs.
           cacheControl: { systemPrompt: true, lastUserMessage: true },
-          ...(typeof args.params.temperature === 'number' ? { temperature: args.params.temperature } : {}),
+          ...(thinkingBudget > 0 ? { thinkingBudget } : {}),
+          ...(thinkingBudget === 0 && typeof args.params.temperature === 'number'
+            ? { temperature: args.params.temperature }
+            : {}),
           ...(typeof args.params.max_tokens === 'number' ? { maxTokens: args.params.max_tokens } : {}),
-          ...(typeof args.params.top_p === 'number' ? { topP: args.params.top_p } : {}),
+          ...(thinkingBudget === 0 && typeof args.params.top_p === 'number'
+            ? { topP: args.params.top_p }
+            : {}),
           ...(typeof args.params.max_retries === 'number' ? { maxRetries: args.params.max_retries } : {}),
         };
         try {
