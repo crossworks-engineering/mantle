@@ -64,6 +64,12 @@ Every file triggers up to two distinct jobs:
 per-provider size guard (`maxImageBytesFor`) for the responder's raw-pixel
 fallback — the durable index always goes through the vision worker regardless.
 
+**Spreadsheets everywhere** (`.xlsx` / `.xls` / `.csv`) are additionally turned
+into typed Table(s) during the durable index pass (`maybeAutoTableSpreadsheet`):
+one per non-empty sheet, paginated past `MAX_GRID_ROWS`, deduped by source file —
+so a register reaches `/tables` regardless of which upload path it arrived on.
+See [tables.md](tables.md) §3.
+
 ---
 
 ## 3. Shared primitives (the "no duplication" layer)

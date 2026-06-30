@@ -104,11 +104,23 @@ assembles a `TableDoc`. `@mantle/files` stays free of the model — it emits pla
 shapes; the caller (tool / API) builds the doc. **One table per sheet:** a
 multi-sheet workbook yields several tables. (CSV has no real types, so its
 `true`/`false` infer as text — retype in the UI; xlsx booleans infer as checkbox.)
+A sheet larger than `MAX_GRID_ROWS` (10 000; env `MANTLE_MAX_GRID_ROWS`) is
+**paginated** into contiguous parts — same columns, `part`/`partsTotal` set,
+titled "… (part 1/N)" — so no rows are lost and no single grid balloons its
+JSONB blob.
 
 `parseTextToGrid(text)` is the same path for **pasted tabular text** (no file):
 it detects a markdown pipe table, TSV, or CSV (quote-aware) and returns a
 `ParsedSheet`. This powers the `table_from_text` tool — "build a table from these
 results" in one call, instead of the agent adding rows one at a time.
+
+**Auto-import on ingest.** A spreadsheet uploaded *anywhere* (Files screen, chat
+attachment, email, Telegram) is turned into Table(s) automatically by the
+extractor (`maybeAutoTableSpreadsheet` in `apps/api`), using this same core —
+published, indexed, and deduped by `data.sourceFileId` so a re-ingest never
+doubles. The auto path caps total tables per upload (`MAX_AUTO_TABLE_TABLES`, 20)
+to bound fan-out; the explicit `table_from_file` tool is user-initiated and
+uncapped (but stamps `sourceFileId`, so a later auto-import won't double it).
 
 ---
 
