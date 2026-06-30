@@ -1,6 +1,8 @@
 import { Suspense } from 'react';
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { requireOwner } from '@/lib/auth';
+import { isOnboarded } from '@/lib/onboarding';
 import { AppShell } from '@/components/app-shell';
 import { UsageCard } from '@/components/usage-card';
 
@@ -9,14 +11,22 @@ import { UsageCard } from '@/components/usage-card';
  * on the left, live-activity column on the right, content in the middle.
  * Everything under `(app)/` requires a logged-in owner.
  *
- * Data-free: this layout does auth (`requireOwner`) and reads the collapse
- * cookies (request state, not the DB) for a flash-free first paint — nothing
- * else. The avatar, the pending-approvals badge, and the onboarding gate are
- * fetched client-side by `AppShell` via `GET /api/shell`, so the shell renders
- * with no in-process DB access (Electron / DB-less ready).
+ * Near-data-free: this layout does auth (`requireOwner`), one onboarding-gate
+ * read, and the collapse cookies (request state) for a flash-free first paint.
+ * The avatar + pending-approvals badge are still fetched client-side by
+ * `AppShell` via `GET /api/shell`. The onboarding gate is enforced server-side
+ * HERE (not only in AppShell) so an un-provisioned user can't render protected
+ * pages before a client redirect, and so the gate can't fail open if
+ * `/api/shell` errors. AppShell keeps a client redirect too, for the detached
+ * client that renders against a remote API and never executes this server tree.
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireOwner();
+
+  // Server-side onboarding gate: a freshly-signed-up owner who hasn't finished
+  // the wizard has no provisioned brain, so don't render the app over them —
+  // send them to /onboarding (which lives OUTSIDE this (app) group, so no loop).
+  if (!(await isOnboarded(user.id))) redirect('/onboarding');
 
   // Persisted collapse state — read server-side so the shell renders at the
   // right width on first paint (no expand→collapse flash). Toggled client-side
