@@ -503,6 +503,8 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     // Push the assistant message verbatim so the next LLM call sees its
     // own prior tool_calls + the upcoming tool results in the right
     // pairing. content may be empty when the model only wanted to call.
+    // Carry any signed reasoning blocks so the adapter can echo them back —
+    // a thinking-then-tool_use turn is rejected upstream without them.
     messages.push({
       role: 'assistant',
       content: result.text || null,
@@ -511,6 +513,9 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         type: 'function',
         function: { name: c.function.name, arguments: c.function.arguments },
       })),
+      ...(result.reasoningDetails && result.reasoningDetails.length > 0
+        ? { reasoningDetails: result.reasoningDetails }
+        : {}),
     });
 
     // Execute each call, append tool message.

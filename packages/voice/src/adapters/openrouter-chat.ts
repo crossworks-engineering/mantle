@@ -39,6 +39,7 @@ import type {
   ChatStreamDelta,
   ChatStreamSink,
   ChatToolCall,
+  ReasoningDetail,
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import {
@@ -47,6 +48,7 @@ import {
 } from '../catalogs/openrouter';
 import { DEFAULT_MAX_RETRIES, isEmptyJsonBodyError } from './retry';
 import { StreamingThinkScrubber } from './think-scrubber';
+import { ReasoningDetailsAccumulator, normalizeReasoningDetails } from './reasoning-accum';
 
 // Backoff for the empty-body retry below — mirrors retry.ts's full-jitter shape.
 const RETRY_BASE_DELAY_MS = 500;
@@ -97,6 +99,9 @@ type OrChatMessage =
         type: 'function';
         function: { name: string; arguments: string };
       }>;
+      /** Signed reasoning blocks echoed back so a thinking-then-tool_use turn is
+       *  accepted upstream (camelCase here; the SDK emits `reasoning_details`). */
+      reasoningDetails?: ReasoningDetail[];
     }
   | { role: 'tool'; toolCallId: string; content: string | OrChatTextBlock[] };
 
@@ -260,6 +265,11 @@ function buildMessages(
         ...('toolCalls' in m && m.toolCalls
           ? { toolCalls: m.toolCalls.map((c) => ({ id: c.id, type: 'function', function: c.function })) }
           : {}),
+        // Echo signed reasoning blocks back unchanged so Anthropic accepts a turn
+        // that paired thinking with tool_use (it 400s if the block is missing).
+        ...('reasoningDetails' in m && m.reasoningDetails && m.reasoningDetails.length > 0
+          ? { reasoningDetails: m.reasoningDetails }
+          : {}),
       };
     }
     // m.role === 'tool' — only present from the tool-loop path. When this
@@ -335,6 +345,17 @@ function extractToolCalls(message: unknown): ChatToolCall[] | undefined {
       };
     })
     .filter((c): c is ChatToolCall => c !== null);
+}
+
+/** Pull the signed reasoning blocks off a one-shot OR response message
+ *  (`reasoningDetails` camelCase / `reasoning_details` snake), normalised to
+ *  our shape so the tool loop can echo them back next round. */
+function extractReasoningDetails(message: unknown): ReasoningDetail[] | undefined {
+  if (!message || typeof message !== 'object') return undefined;
+  const raw =
+    (message as { reasoningDetails?: unknown }).reasoningDetails ??
+    (message as { reasoning_details?: unknown }).reasoning_details;
+  return normalizeReasoningDetails(raw);
 }
 
 /** Extract the reply text from the OR SDK's chat completion response.
@@ -495,6 +516,7 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
   const choice = result.choices?.[0];
   const text = extractReplyText(choice?.message).trim();
   const toolCalls = extractToolCalls(choice?.message);
+  const reasoningDetails = extractReasoningDetails(choice?.message);
   const usage = result.usage;
   // The SDK's `cost` field is a USD number when OR reports it (always
   // for routes where OR has direct billing visibility). We expose it
@@ -512,6 +534,7 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
     cacheReadTokens: usage?.promptTokensDetails?.cachedTokens ?? undefined,
     cacheWriteTokens: usage?.promptTokensDetails?.cacheWriteTokens ?? undefined,
     reportedCostUsd,
+    ...(reasoningDetails ? { reasoningDetails } : {}),
   };
 }
 
@@ -618,10 +641,26 @@ type OrStreamChunk = {
     delta?: {
       content?: string | null;
       reasoning?: string | null;
+      reasoningDetails?: OrReasoningDetailFragment[];
+      reasoning_details?: OrReasoningDetailFragment[];
       toolCalls?: OrStreamToolCallFragment[];
       tool_calls?: OrStreamToolCallFragment[];
     };
   }>;
+};
+/** One streamed `reasoning_details` fragment. OpenRouter sends these in pieces,
+ *  keyed by `index`; text accumulates and the `signature` lands once per block.
+ *  We carry the assembled blocks back verbatim on the next request so the
+ *  upstream provider (Anthropic) accepts a thinking-then-tool_use turn. */
+type OrReasoningDetailFragment = {
+  type?: string;
+  index?: number;
+  text?: string | null;
+  data?: string | null;
+  summary?: string | null;
+  signature?: string | null;
+  format?: string | null;
+  id?: string | null;
 };
 type OrStreamToolCallFragment = {
   index: number;
@@ -704,6 +743,10 @@ async function openrouterChatStream(
   // OpenRouter surfaces reasoning in its typed `reasoning` field, but a model can
   // still inline <think> in content (some open routes do) — scrub it defensively.
   const scrubber = new StreamingThinkScrubber();
+  // Signed reasoning blocks, reassembled from streamed fragments, so the tool
+  // loop can echo them back on the next request (Anthropic 400s a thinking-then-
+  // tool_use turn that omits them). See ReasoningDetailsAccumulator.
+  const reasoningDetails = new ReasoningDetailsAccumulator();
 
   try {
     for await (const chunk of sent) {
@@ -731,6 +774,7 @@ async function openrouterChatStream(
         reasoning += delta.reasoning;
         safeDelta(onDelta, { type: 'reasoning', text: delta.reasoning });
       }
+      reasoningDetails.add(delta.reasoningDetails ?? delta.reasoning_details);
       const frags = delta.toolCalls ?? delta.tool_calls;
       if (Array.isArray(frags)) {
         for (const f of frags) {
@@ -787,6 +831,7 @@ async function openrouterChatStream(
   const cacheWrite =
     usage?.promptTokensDetails?.cacheWriteTokens ?? usage?.prompt_tokens_details?.cache_write_tokens;
 
+  const details = reasoningDetails.result();
   return {
     text: text.trim(),
     model,
@@ -796,6 +841,7 @@ async function openrouterChatStream(
     cacheReadTokens: cacheRead ?? undefined,
     cacheWriteTokens: cacheWrite ?? undefined,
     reportedCostUsd,
+    ...(details ? { reasoningDetails: details } : {}),
   };
 }
 

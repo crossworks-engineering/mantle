@@ -192,6 +192,13 @@ export interface ChatResult {
    *  providers return `undefined` here; the trace falls back to
    *  `fallbackCostMicroUsd(model, ...)`. */
   reportedCostUsd?: number;
+  /** Provider reasoning blocks from this turn (OpenRouter `reasoning_details`).
+   *  When the model thought before answering, the tool-loop stores these on the
+   *  assistant message it appends so the NEXT request can echo them back —
+   *  required for thinking continuity across a tool round-trip (see
+   *  {@link ChatAssistantMessage.reasoningDetails}). Undefined when the turn
+   *  produced no reasoning. */
+  reasoningDetails?: ReasoningDetail[];
 }
 
 /** A single tool the model can call. Mirrors the OpenAI function-tool
@@ -257,6 +264,30 @@ export type ChatAssistantMessage = {
   /** Null when the model only emitted tool calls (no text turn). */
   content: string | null;
   toolCalls?: ChatToolCall[];
+  /** Provider reasoning blocks carried over from this assistant turn, replayed
+   *  on the NEXT request so thinking continuity survives a tool round-trip.
+   *  Anthropic (via OpenRouter) signs each thinking block and REJECTS a turn
+   *  that contains tool_use but omits the preceding signed block — so when the
+   *  responder thinks AND calls a tool, these must echo back unchanged. Opaque
+   *  to the runtime; only the originating adapter reads them. */
+  reasoningDetails?: ReasoningDetail[];
+};
+
+/** One provider reasoning block (OpenRouter `reasoning_details` element:
+ *  `reasoning.text` | `reasoning.encrypted` | `reasoning.summary`). Kept as a
+ *  loose record so the runtime can carry it verbatim without depending on the
+ *  provider SDK's union; the adapter that produced it is the only thing that
+ *  interprets the shape. The `signature`/`data` fields are integrity-critical —
+ *  echo them back exactly as received. */
+export type ReasoningDetail = {
+  type: string;
+  index?: number;
+  text?: string | null;
+  data?: string | null;
+  summary?: string | null;
+  signature?: string | null;
+  format?: string | null;
+  id?: string | null;
 };
 
 /** A multi-modal user content part. Used when the responder receives
