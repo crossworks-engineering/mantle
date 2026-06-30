@@ -32,6 +32,7 @@ import type {
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
 import { chatAbortSignal, readSSE, safeDelta } from './sse';
+import { wantGuardedThinking } from './thinking-guard';
 import type { DiscoveryResult } from '../discover';
 import {
   ANTHROPIC_API_VERSION,
@@ -406,11 +407,13 @@ function buildAnthropicBody(opts: ChatOptions): Record<string, unknown> {
   // (temperature/top_p) are likewise rejected by those models, so we omit them
   // whenever thinking is on. `thinkingBudget` is treated as an on/off signal
   // here (its magnitude maps to a token ceiling only on providers — e.g.
-  // OpenRouter — that still accept one). NOTE: enabling thinking on a tool-loop
-  // also requires echoing prior `thinking` blocks back across iterations
-  // (Anthropic 400s otherwise); that capture/replay is not wired yet, so this
-  // stays off by default — see the runner.
-  const wantThinking = typeof opts.thinkingBudget === 'number' && opts.thinkingBudget > 0;
+  // OpenRouter — that still accept one).
+  //
+  // We DON'T capture/replay the signed thinking blocks (that's OpenRouter's
+  // reasoning_details path), so `wantGuardedThinking` suppresses thinking on a
+  // tool continuation — otherwise a replayed thinking-less tool_use turn 400s.
+  // First-round thinking (incl. the round that calls a tool) is still on.
+  const wantThinking = wantGuardedThinking(opts);
 
   const body: Record<string, unknown> = {
     model: opts.model,
