@@ -39,6 +39,7 @@ import type {
   ChatStreamDelta,
   ChatStreamSink,
   ChatToolCall,
+  ReasoningDetail,
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import {
@@ -46,10 +47,22 @@ import {
   OPENROUTER_CHAT_MODELS,
 } from '../catalogs/openrouter';
 import { DEFAULT_MAX_RETRIES, isEmptyJsonBodyError } from './retry';
+import { StreamingThinkScrubber } from './think-scrubber';
+import { ReasoningDetailsAccumulator, normalizeReasoningDetails } from './reasoning-accum';
 
 // Backoff for the empty-body retry below — mirrors retry.ts's full-jitter shape.
 const RETRY_BASE_DELAY_MS = 500;
 const RETRY_MAX_DELAY_MS = 8_000;
+
+/** OpenRouter's unified `reasoning` param from our `thinkingBudget`. OR routes
+ *  `max_tokens` to the upstream provider's thinking budget (Anthropic) or maps
+ *  it to an effort tier (OpenAI o-series); models without a reasoning mode
+ *  ignore it. Returns undefined when no budget is set so we omit the field. */
+function openRouterReasoning(opts: ChatOptions): { maxTokens: number } | undefined {
+  const budget =
+    typeof opts.thinkingBudget === 'number' && opts.thinkingBudget > 0 ? Math.floor(opts.thinkingBudget) : 0;
+  return budget > 0 ? { maxTokens: budget } : undefined;
+}
 
 /** Text content block. Used for messages that need a cache_control
  *  marker (the array form is required — markers hang off the block,
@@ -86,6 +99,9 @@ type OrChatMessage =
         type: 'function';
         function: { name: string; arguments: string };
       }>;
+      /** Signed reasoning blocks echoed back so a thinking-then-tool_use turn is
+       *  accepted upstream (camelCase here; the SDK emits `reasoning_details`). */
+      reasoningDetails?: ReasoningDetail[];
     }
   | { role: 'tool'; toolCallId: string; content: string | OrChatTextBlock[] };
 
@@ -249,6 +265,11 @@ function buildMessages(
         ...('toolCalls' in m && m.toolCalls
           ? { toolCalls: m.toolCalls.map((c) => ({ id: c.id, type: 'function', function: c.function })) }
           : {}),
+        // Echo signed reasoning blocks back unchanged so Anthropic accepts a turn
+        // that paired thinking with tool_use (it 400s if the block is missing).
+        ...('reasoningDetails' in m && m.reasoningDetails && m.reasoningDetails.length > 0
+          ? { reasoningDetails: m.reasoningDetails }
+          : {}),
       };
     }
     // m.role === 'tool' — only present from the tool-loop path. When this
@@ -324,6 +345,17 @@ function extractToolCalls(message: unknown): ChatToolCall[] | undefined {
       };
     })
     .filter((c): c is ChatToolCall => c !== null);
+}
+
+/** Pull the signed reasoning blocks off a one-shot OR response message
+ *  (`reasoningDetails` camelCase / `reasoning_details` snake), normalised to
+ *  our shape so the tool loop can echo them back next round. */
+function extractReasoningDetails(message: unknown): ReasoningDetail[] | undefined {
+  if (!message || typeof message !== 'object') return undefined;
+  const raw =
+    (message as { reasoningDetails?: unknown }).reasoningDetails ??
+    (message as { reasoning_details?: unknown }).reasoning_details;
+  return normalizeReasoningDetails(raw);
 }
 
 /** Extract the reply text from the OR SDK's chat completion response.
@@ -410,6 +442,7 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
 
   const messages = buildMessages(opts.messages, opts.cacheControl);
   const tools = buildTools(opts);
+  const reasoningParam = openRouterReasoning(opts);
 
   const chatRequest = {
     model: opts.model,
@@ -425,6 +458,7 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
     ...(typeof opts.temperature === 'number' ? { temperature: opts.temperature } : {}),
     ...(typeof opts.maxTokens === 'number' ? { maxTokens: opts.maxTokens } : {}),
     ...(typeof opts.topP === 'number' ? { topP: opts.topP } : {}),
+    ...(reasoningParam ? { reasoning: reasoningParam } : {}),
     ...(opts.extra ?? {}),
   };
   // Single typed boundary: our structurally-clean builders (OrChatMessage /
@@ -482,6 +516,7 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
   const choice = result.choices?.[0];
   const text = extractReplyText(choice?.message).trim();
   const toolCalls = extractToolCalls(choice?.message);
+  const reasoningDetails = extractReasoningDetails(choice?.message);
   const usage = result.usage;
   // The SDK's `cost` field is a USD number when OR reports it (always
   // for routes where OR has direct billing visibility). We expose it
@@ -499,6 +534,7 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
     cacheReadTokens: usage?.promptTokensDetails?.cachedTokens ?? undefined,
     cacheWriteTokens: usage?.promptTokensDetails?.cacheWriteTokens ?? undefined,
     reportedCostUsd,
+    ...(reasoningDetails ? { reasoningDetails } : {}),
   };
 }
 
@@ -605,10 +641,26 @@ type OrStreamChunk = {
     delta?: {
       content?: string | null;
       reasoning?: string | null;
+      reasoningDetails?: OrReasoningDetailFragment[];
+      reasoning_details?: OrReasoningDetailFragment[];
       toolCalls?: OrStreamToolCallFragment[];
       tool_calls?: OrStreamToolCallFragment[];
     };
   }>;
+};
+/** One streamed `reasoning_details` fragment. OpenRouter sends these in pieces,
+ *  keyed by `index`; text accumulates and the `signature` lands once per block.
+ *  We carry the assembled blocks back verbatim on the next request so the
+ *  upstream provider (Anthropic) accepts a thinking-then-tool_use turn. */
+type OrReasoningDetailFragment = {
+  type?: string;
+  index?: number;
+  text?: string | null;
+  data?: string | null;
+  summary?: string | null;
+  signature?: string | null;
+  format?: string | null;
+  id?: string | null;
 };
 type OrStreamToolCallFragment = {
   index: number;
@@ -644,6 +696,7 @@ async function openrouterChatStream(
 
   const messages = buildMessages(opts.messages, opts.cacheControl);
   const tools = buildTools(opts);
+  const reasoningParam = openRouterReasoning(opts);
   const chatRequest = {
     model: opts.model,
     messages,
@@ -656,6 +709,7 @@ async function openrouterChatStream(
     ...(typeof opts.temperature === 'number' ? { temperature: opts.temperature } : {}),
     ...(typeof opts.maxTokens === 'number' ? { maxTokens: opts.maxTokens } : {}),
     ...(typeof opts.topP === 'number' ? { topP: opts.topP } : {}),
+    ...(reasoningParam ? { reasoning: reasoningParam } : {}),
     ...(opts.extra ?? {}),
   };
 
@@ -686,6 +740,13 @@ async function openrouterChatStream(
   // Tool-call fragments accumulate by index: id+name land first, arguments arrive
   // in pieces. Assembled into ChatToolCall[] after the stream closes.
   const toolAccum = new Map<number, { id: string; name: string; args: string }>();
+  // OpenRouter surfaces reasoning in its typed `reasoning` field, but a model can
+  // still inline <think> in content (some open routes do) — scrub it defensively.
+  const scrubber = new StreamingThinkScrubber();
+  // Signed reasoning blocks, reassembled from streamed fragments, so the tool
+  // loop can echo them back on the next request (Anthropic 400s a thinking-then-
+  // tool_use turn that omits them). See ReasoningDetailsAccumulator.
+  const reasoningDetails = new ReasoningDetailsAccumulator();
 
   try {
     for await (const chunk of sent) {
@@ -703,13 +764,17 @@ async function openrouterChatStream(
       const delta = choice?.delta;
       if (!delta) continue;
       if (typeof delta.content === 'string' && delta.content.length > 0) {
-        text += delta.content;
-        safeDelta(onDelta, { type: 'text', text: delta.content });
+        const visible = scrubber.feed(delta.content);
+        if (visible) {
+          text += visible;
+          safeDelta(onDelta, { type: 'text', text: visible });
+        }
       }
       if (typeof delta.reasoning === 'string' && delta.reasoning.length > 0) {
         reasoning += delta.reasoning;
         safeDelta(onDelta, { type: 'reasoning', text: delta.reasoning });
       }
+      reasoningDetails.add(delta.reasoningDetails ?? delta.reasoning_details);
       const frags = delta.toolCalls ?? delta.tool_calls;
       if (Array.isArray(frags)) {
         for (const f of frags) {
@@ -727,6 +792,14 @@ async function openrouterChatStream(
     // AbortError — that's not a failure: fall through and return the partial
     // reply assembled so far. Any other error is a real stream fault.
     if (!opts.signal?.aborted) throw enrichOpenRouterError(err, opts.model, Date.now() - startedAt);
+  }
+
+  // Flush any partial tag held at the boundary (discarded if a block was left
+  // open; otherwise the held prose surfaces).
+  const tail = scrubber.flush();
+  if (tail) {
+    text += tail;
+    safeDelta(onDelta, { type: 'text', text: tail });
   }
 
   // Stopped: return just the visible text assembled so far (drop any half-formed
@@ -758,6 +831,7 @@ async function openrouterChatStream(
   const cacheWrite =
     usage?.promptTokensDetails?.cacheWriteTokens ?? usage?.prompt_tokens_details?.cache_write_tokens;
 
+  const details = reasoningDetails.result();
   return {
     text: text.trim(),
     model,
@@ -767,6 +841,7 @@ async function openrouterChatStream(
     cacheReadTokens: cacheRead ?? undefined,
     cacheWriteTokens: cacheWrite ?? undefined,
     reportedCostUsd,
+    ...(details ? { reasoningDetails: details } : {}),
   };
 }
 

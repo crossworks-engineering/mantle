@@ -33,6 +33,7 @@ import {
   toOpenAICompatMessages,
   type OpenAICompatChatResponse,
 } from './openai-compat';
+import { scrubThinkBlocks } from './think-scrubber';
 import { tailnetFetch } from './tailnet';
 
 const DEFAULT_BASE_URL = 'http://localhost:11434/v1';
@@ -81,7 +82,8 @@ async function localChat(opts: ChatOptions): Promise<ChatResult> {
   }
   const parsed = (await res.json()) as OpenAICompatChatResponse & { model?: string };
   const message = parsed.choices?.[0]?.message;
-  const text = message?.content ?? '';
+  // Strip any inline <think> block (local GGUF reasoning models emit it in content).
+  const text = scrubThinkBlocks(message?.content ?? '');
   const toolCalls = extractOpenAICompatToolCalls(message);
   return {
     text: text.trim(),

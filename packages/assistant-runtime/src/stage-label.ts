@@ -26,41 +26,15 @@ export interface StageLabel {
 }
 
 /**
- * The "thinking" line varies so a turn doesn't read as a wall of identical
- * "Thinking…"s. The producer seeds the pick with the step's sequence number, so
- * each LLM round shows a different phrase (stable for that step — it never
- * flickers mid-step). Index 0 is "Thinking…" so the unseeded poll fallback keeps
- * the canonical line.
+ * The thinking-phase label. A single honest line — the old rotating "phrases"
+ * ("Mulling it over…", "Connecting the dots…") were theatre: canned text seeded
+ * by step index with no connection to what the model was actually reasoning
+ * about. The real reasoning trace (streamed `reasoning-delta`, rendered as a
+ * collapsible "Thinking" disclosure) is now the source of truth for this phase;
+ * this label is just the header shown while it streams (or on its own when the
+ * model emits no surfaced reasoning).
  */
-export const THINKING_PHRASES = [
-  'Thinking…',
-  'Considering…',
-  'Looking into it…',
-  'Working it out…',
-  'Mulling it over…',
-  'Putting it together…',
-  'Reasoning it through…',
-  'Figuring this out…',
-  'Connecting the dots…',
-  'Weighing it up…',
-  'Sorting this out…',
-  'Making sense of it…',
-  'Digging in…',
-  'Piecing it together…',
-  'Getting there…',
-  'Almost there…',
-  'On it…',
-  'Just a moment…',
-  'Processing…',
-  'Thinking it over…',
-] as const;
-
-/** Pick a thinking phrase by seed (the step's seq). Stable per step, varied
- *  across the turn. Defaults to the canonical "Thinking…". */
-export function thinkingPhrase(seed = 0): string {
-  const i = ((Math.trunc(seed) % THINKING_PHRASES.length) + THINKING_PHRASES.length) % THINKING_PHRASES.length;
-  return THINKING_PHRASES[i]!;
-}
+export const THINKING_LABEL = 'Thinking…';
 
 /** Keys whose name alone marks a value as secret — never echoed into a label. */
 const SENSITIVE = /secret|token|password|passwd|api[-_]?key|auth|bearer|credential/i;
@@ -192,13 +166,13 @@ function toolStage(slug: string, args?: Record<string, unknown>): StageLabel {
 export function stageLabelForStep(
   name: string,
   input?: Record<string, unknown>,
-  /** Seed for the thinking-phrase rotation (the producer passes the step's seq).
-   *  Omit on the poll fallback to keep the canonical "Thinking…". */
-  seed?: number,
+  /** Accepted for call-site compatibility (the producer passes the step's seq);
+   *  no longer used now that the thinking label is a single constant. */
+  _seed?: number,
 ): StageLabel | null {
   if (!name) return null;
   // LLM calls: the adapter step name always ends in `_chat` or `_chat[…]`.
-  if (/_chat(\[|$)/.test(name)) return { label: thinkingPhrase(seed), kind: 'thinking' };
+  if (/_chat(\[|$)/.test(name)) return { label: THINKING_LABEL, kind: 'thinking' };
 
   const tool = /^tool:\s*(.+)$/.exec(name);
   if (tool) return toolStage(tool[1]!.trim(), toolArgs(input));

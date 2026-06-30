@@ -46,7 +46,7 @@ export type WiredCapability = 'chat' | 'tts' | 'stt' | 'vision' | 'image_gen' | 
  * → the drift test fails). Mirror `adapters/index.ts` exactly when editing.
  */
 export const WIRED_PROVIDERS: Record<WiredCapability, ReadonlySet<ProviderId>> = {
-  chat: new Set<ProviderId>(['openrouter', 'anthropic', 'google', 'xai', 'huggingface', 'deepseek', 'local']),
+  chat: new Set<ProviderId>(['openrouter', 'anthropic', 'google', 'xai', 'huggingface', 'deepseek', 'copilot', 'local']),
   tts: new Set<ProviderId>(['openrouter', 'openai', 'elevenlabs', 'xai', 'google']),
   stt: new Set<ProviderId>(['openrouter', 'openai', 'xai', 'elevenlabs', 'deepgram', 'assemblyai', 'google']),
   vision: new Set<ProviderId>(['openai', 'anthropic', 'google', 'xai', 'openrouter']),

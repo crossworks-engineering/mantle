@@ -33,6 +33,7 @@ export type ProviderId =
   | 'xai'
   | 'huggingface'
   | 'deepseek'
+  | 'copilot'
   | 'mistral'
   | 'cohere'
   | 'deepgram'
@@ -144,6 +145,15 @@ export const SUPPORTED_PROVIDERS: readonly Provider[] = [
     capabilities: ['chat'],
     signupUrl: 'https://platform.deepseek.com',
     docsUrl: 'https://api-docs.deepseek.com',
+  },
+  {
+    id: 'copilot',
+    label: 'GitHub Copilot',
+    description:
+      'Frontier models (GPT, Claude, Gemini, o-series) via one Copilot subscription. Reasoning-capable. API key = your GitHub Copilot OAuth token.',
+    capabilities: ['chat'],
+    signupUrl: 'https://github.com/settings/copilot',
+    docsUrl: 'https://docs.github.com/en/copilot',
   },
   {
     id: 'mistral',

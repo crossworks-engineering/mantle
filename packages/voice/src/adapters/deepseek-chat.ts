@@ -41,6 +41,7 @@ import {
   toOpenAICompatMessages,
   type OpenAICompatChatResponse,
 } from './openai-compat';
+import { scrubThinkBlocks } from './think-scrubber';
 
 /** DeepSeek's chat response shape — the shared OpenAI-compat envelope
  *  with the cache-hit fields hung off `usage` as top-level keys
@@ -93,7 +94,9 @@ async function deepseekChat(opts: ChatOptions): Promise<ChatResult> {
   }
   const parsed = (await res.json()) as DeepseekChatResponse;
   const message = parsed.choices?.[0]?.message;
-  const text = message?.content ?? '';
+  // deepseek-reasoner returns reasoning in a separate field, but strip any inline
+  // <think> defensively (some routes/distills emit it in content).
+  const text = scrubThinkBlocks(message?.content ?? '');
   const toolCalls = extractOpenAICompatToolCalls(message);
   return {
     text: text.trim(),

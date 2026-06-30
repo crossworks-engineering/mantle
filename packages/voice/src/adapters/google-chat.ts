@@ -29,15 +29,17 @@ import type {
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
 import { chatAbortSignal, readSSE, safeDelta } from './sse';
+import { wantGuardedThinking } from './thinking-guard';
 import type { DiscoveryResult } from '../discover';
 import { GOOGLE_BASE_URL, GOOGLE_CHAT_MODELS } from '../catalogs/google';
 
 /** A Gemini content part. The runtime emits three kinds:
- *  - text: narrative content
+ *  - text: narrative content (a `thought: true` text part is a thinking summary,
+ *    surfaced as reasoning rather than visible reply — Gemini 2.5+ thinking)
  *  - functionCall: the model's tool-call request (on a model-role content)
  *  - functionResponse: our tool result fed back (on a user-role content) */
 type GeminiPart =
-  | { text: string }
+  | { text: string; thought?: boolean }
   | { inlineData: { mimeType: string; data: string } }
   | { functionCall: { name: string; args: Record<string, unknown> } }
   | { functionResponse: { name: string; response: Record<string, unknown> } };
@@ -297,6 +299,18 @@ function buildGoogleBody(opts: ChatOptions): Record<string, unknown> {
   if (typeof opts.maxTokens === 'number') generationConfig.maxOutputTokens = opts.maxTokens;
   if (typeof opts.topP === 'number') generationConfig.topP = opts.topP;
 
+  // Gemini 2.5+ native thinking: ask the model to reason first and return a
+  // thought summary (`includeThoughts`), surfaced as reasoning deltas. We don't
+  // replay Gemini's thought signatures across tool rounds, so the same guard as
+  // the direct-Anthropic path suppresses thinking on a tool continuation (first
+  // round still thinks). `thinkingBudget` is Gemini's own knob — pass it through.
+  if (wantGuardedThinking(opts) && typeof opts.thinkingBudget === 'number') {
+    generationConfig.thinkingConfig = {
+      thinkingBudget: Math.floor(opts.thinkingBudget),
+      includeThoughts: true,
+    };
+  }
+
   const tools = buildGoogleTools(opts);
 
   // toolConfig.functionCallingConfig.mode:
@@ -345,8 +359,10 @@ async function googleChat(opts: ChatOptions): Promise<ChatResult> {
   // Response shape: candidates[0].content.parts[]. Walk every part:
   // text parts carry narrative; functionCall parts carry tool calls.
   const parts = parsed.candidates?.[0]?.content?.parts ?? [];
+  // Exclude `thought: true` summaries from the visible reply (they're reasoning,
+  // not answer) so thinking never leaks into the text.
   const text = parts
-    .map((p) => ('text' in p ? p.text : ''))
+    .map((p) => ('text' in p && !p.thought ? p.text : ''))
     .filter(Boolean)
     .join('');
   const toolCalls = extractGoogleToolCalls(parts);
@@ -462,8 +478,14 @@ async function googleChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Pro
       const parts = chunk.candidates?.[0]?.content?.parts ?? [];
       for (const p of parts) {
         if ('text' in p && typeof p.text === 'string' && p.text.length > 0) {
-          text += p.text;
-          safeDelta(onDelta, { type: 'text', text: p.text });
+          // A `thought: true` part is a reasoning summary — surface it on the
+          // reasoning channel, keep it out of the visible reply.
+          if (p.thought) {
+            safeDelta(onDelta, { type: 'reasoning', text: p.text });
+          } else {
+            text += p.text;
+            safeDelta(onDelta, { type: 'text', text: p.text });
+          }
         } else if ('functionCall' in p) {
           fnParts.push(p);
         }
