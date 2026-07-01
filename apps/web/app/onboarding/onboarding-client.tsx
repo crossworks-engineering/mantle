@@ -58,6 +58,7 @@ type StepKey =
   | 'profile'
   | 'openrouter'
   | 'voice'
+  | 'embedding'
   | 'provision'
   | 'sanity'
   | 'purpose'
@@ -69,6 +70,7 @@ const STEPS: { key: StepKey; title: string }[] = [
   { key: 'profile', title: 'Welcome' },
   { key: 'openrouter', title: 'Your key' },
   { key: 'voice', title: 'Voice' },
+  { key: 'embedding', title: 'Memory' },
   { key: 'provision', title: 'Set up' },
   { key: 'sanity', title: 'Check' },
   { key: 'purpose', title: 'Purpose' },
@@ -186,6 +188,7 @@ function Wizard({
   const [saved, setSaved] = useState<Set<string>>(new Set(savedServices));
   const [orKey, setOrKey] = useState('');
   const [xaiKey, setXaiKey] = useState('');
+  const [openaiKey, setOpenaiKey] = useState('');
   const [results, setResults] = useState<Record<string, TestApiKeyResult>>({});
 
   // Step 5 — provision
@@ -233,6 +236,23 @@ function Wizard({
       const t = await onboardingPost<TestApiKeyResult>('testKey', { service });
       setResults((r) => ({ ...r, [service]: t }));
       t.ok ? toast.success(`${t.provider} key works.`) : toast.error(t.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  // Embedder step: save the online (OpenAI) key AND point the brain's embedding
+  // config at text-embedding-3-large. Skipping leaves the keyless local fallback.
+  async function onSaveEmbedding() {
+    setBusy(true);
+    try {
+      const res = await onboardingPost<{ saved: boolean; configured?: boolean; test: TestApiKeyResult }>(
+        'embedding',
+        { plaintext: openaiKey },
+      );
+      if (res.saved) setSaved((s) => new Set(s).add('openai'));
+      setResults((r) => ({ ...r, openai: res.test }));
+      if (res.test.ok && res.configured) toast.success('Online embeddings configured.');
+      else if (!res.test.ok) toast.error(res.test.message);
     } finally {
       setBusy(false);
     }
@@ -386,6 +406,30 @@ function Wizard({
               <li>🗣️ Spoken replies (text-to-speech)</li>
               <li>🎙️ Transcribe voice notes (speech-to-text)</li>
             </ul>
+          </StepShell>
+        )}
+
+        {step === 'embedding' && (
+          <StepShell
+            title="Memory search (embeddings)"
+            blurb="Your brain turns everything you add into searchable memory with an embedding model. The default is OpenAI’s text-embedding-3-large — highest recall, nothing to run yourself, and only a thin slice of text is sent per request. Prefer everything on-box? Skip and set up the local embedder later (advanced)."
+          >
+            <KeyFields
+              service="openai"
+              label="OpenAI API key — for embeddings"
+              link="https://platform.openai.com/api-keys"
+              value={openaiKey}
+              onChange={setOpenaiKey}
+              saved={saved.has('openai')}
+              result={results['openai']}
+              onSave={onSaveEmbedding}
+              onRetest={() => onRetest('openai')}
+              busy={busy}
+            />
+            <p className="mt-3 text-xs text-muted-foreground">
+              Skipping keeps memory search on the local embedder — which doesn’t run by
+              default, so semantic search stays off until you set it up in Settings → Embedding.
+            </p>
           </StepShell>
         )}
 
@@ -670,6 +714,8 @@ function Wizard({
               };
             }
             case 'voice':
+              return { label: 'Continue', onClick: () => go(index + 1) };
+            case 'embedding':
               return { label: 'Continue', onClick: () => go(index + 1) };
             case 'provision':
               return { label: 'Continue', disabled: !provision, onClick: () => go(index + 1) };

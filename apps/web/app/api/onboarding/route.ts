@@ -6,7 +6,13 @@ import {
   isPurposeArchetype,
 } from '@mantle/content';
 import { setApiKey, listApiKeys } from '@mantle/api-keys';
-import { resolveEmbeddingConfig, probeEmbeddingRoute } from '@mantle/embeddings';
+import {
+  resolveEmbeddingConfig,
+  probeEmbeddingRoute,
+  DEFAULT_ONLINE_EMBEDDING_MODEL,
+  DEFAULT_ONLINE_EMBEDDING_PROVIDER,
+} from '@mantle/embeddings';
+import { upsertEmbeddingConfig } from '@/lib/embedding-config';
 import { getOwnerOr401 } from '@/lib/auth';
 import { probeApiKey } from '@/lib/api-key-test';
 import {
@@ -201,6 +207,43 @@ export async function POST(req: Request) {
       const row = await setApiKey(user.id, service, 'default', trimmed);
       const test = await probeApiKey(row.id, service);
       return NextResponse.json({ saved: true, test });
+    }
+    case 'embedding': {
+      // Onboarding's embedder step: save the online key, verify it, and point the
+      // brain's single embedding_config at the online default (text-embedding-3-large
+      // @ 768, dimension-reduced to fit the vector(768) columns). This is the shipped
+      // default; skipping leaves the keyless local fallback (opt-in, not run by default).
+      const trimmed = String(body.plaintext ?? '').trim();
+      if (!trimmed) {
+        return NextResponse.json({
+          saved: false,
+          configured: false,
+          test: { ok: false, message: 'Paste a key first.', provider: DEFAULT_ONLINE_EMBEDDING_PROVIDER, adapter: '' },
+        });
+      }
+      const row = await setApiKey(user.id, DEFAULT_ONLINE_EMBEDDING_PROVIDER, 'default', trimmed);
+      const test = await probeApiKey(row.id, DEFAULT_ONLINE_EMBEDDING_PROVIDER);
+      if (!test.ok) {
+        // Key saved but invalid — don't point the brain at a broken route.
+        return NextResponse.json({ saved: true, configured: false, test });
+      }
+      await upsertEmbeddingConfig(user.id, {
+        model: DEFAULT_ONLINE_EMBEDDING_MODEL,
+        primaryProvider: DEFAULT_ONLINE_EMBEDDING_PROVIDER,
+        primaryBaseUrl: null,
+        primaryApiKeyId: row.id,
+        primaryLabel: 'OpenAI',
+        backupEnabled: false,
+        backupProvider: null,
+        backupBaseUrl: null,
+        backupApiKeyId: null,
+        backupLabel: null,
+        extractionConcurrency: null,
+        extractionTimeBudgetMinutes: null,
+        localEmbedBatchSize: null,
+        localEmbedRequestTimeoutMs: null,
+      });
+      return NextResponse.json({ saved: true, configured: true, test });
     }
     case 'testKey': {
       const service = String(body.service ?? '');
