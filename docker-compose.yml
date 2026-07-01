@@ -25,9 +25,11 @@ name: mantle
 #                            resident instead of unloading when idle)
 #
 # Persistent data — bind-mounted on the host so you can see/back up/move it:
-#   MANTLE_DATA_DIR         (default: ./data) — postgres, minio, and files all
-#                            live under here. Back this up (restic/Syncthing) and
-#                            it IS your brain. The DB, though, should be MOVED
+#   MANTLE_DATA_DIR         (default: ./data) — EVERYTHING lives under here:
+#                            postgres, minio, files, backups, app-dbs, caddy
+#                            (certs), ollama, tailscale, update-signal. Back this
+#                            up (restic/Syncthing) and it IS your brain. The DB,
+#                            though, should be MOVED
 #                            between machines via pg_dump (scripts/db-dump.sh),
 #                            not by copying the raw postgres dir. See docs/deploy.md.
 #
@@ -52,27 +54,18 @@ name: mantle
 # the one-shot `migrate` service applies them before any app service starts.
 
 volumes:
-  # Caddy ACME state — Let's Encrypt account + issued certs. PERSIST THIS or
-  # you'll re-request certs on every redeploy and hit LE rate limits.
-  caddy_data:
-  caddy_config:
-  # Ollama model store — the shipped embedder (EmbeddingGemma, ~300MB) is pulled
-  # once into here and persists across restarts/redeploys. A named volume (not a
-  # host bind) because it's a re-pullable cache, not data you need to migrate.
-  mantle_ollama_data:
-  # Tailscale node state (identity + keys) — persists across restarts so the
-  # node doesn't re-auth every boot. Only used by the optional `tailnet` profile.
-  # Named (not bind): a new host wants a fresh tailnet identity anyway.
-  mantle_tailscale_data:
-  # Tailscale runtime socket dir (tailscaled.sock) — shared so the app can read
-  # the LocalAPI (`status`) for the /settings/network status tile + peer
-  # dropdown. Inter-container socket, not user data — stays a named volume.
+  # POLICY: ALL persistent data is bind-mounted to the local drive under
+  # MANTLE_DATA_DIR — postgres, minio, files, backups, app-dbs, caddy (ACME
+  # certs), ollama (model cache), tailscale (node state), and update-signal.
+  # So every byte lives on the mounted data disk, is captured by that disk's
+  # backup/snapshot, and can NEVER be wiped by `docker compose down -v` or a
+  # volume prune. Caddy's certs at ${MANTLE_DATA_DIR}/caddy survive redeploys,
+  # so there's no Let's Encrypt re-issuance / rate-limit risk.
+  #
+  # The ONLY named volume is the tailscaled IPC socket dir below: a live unix
+  # socket shared web↔tailscale (optional `tailnet` profile), not durable data
+  # — a host bind there buys nothing and risks breaking the socket.
   mantle_tailscale_sock:
-  # In-app update signalling — shared ONLY between web and the updater sidecar.
-  # web writes request.json (/settings/updates); the updater writes status.json
-  # + update.log. A private named volume, not a port: the trigger surface is
-  # "can mount this volume", i.e. members of this compose project.
-  mantle_update_signal:
 
 # Shared env block for app services — anchor + alias keeps the app
 # services in lockstep.
@@ -262,7 +255,7 @@ services:
     environment:
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}
     volumes:
-      - mantle_ollama_data:/root/.ollama
+      - ${MANTLE_DATA_DIR:-./data}/ollama:/root/.ollama
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 10s
@@ -311,7 +304,7 @@ services:
       - --socket=/var/run/tailscale/tailscaled.sock
       - --outbound-http-proxy-listen=0.0.0.0:1055
     volumes:
-      - mantle_tailscale_data:/var/lib/tailscale
+      - ${MANTLE_DATA_DIR:-./data}/tailscale:/var/lib/tailscale
       - mantle_tailscale_sock:/var/run/tailscale
     # `tailscale status` exits non-zero while unauthenticated, so health is just
     # "tailscaled is up + the socket is listening" — true whether or not we've
@@ -374,7 +367,7 @@ services:
       # In-app updates: /settings/updates writes request.json here and reads
       # the updater sidecar's status.json / update.log back. Absent in dev →
       # the page degrades to "updater not available".
-      - mantle_update_signal:/signal
+      - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal
     # No public port: Caddy fronts the app and reaches it at web:3000 on the
     # internal network. Bound to localhost only for on-host debugging / ssh
     # tunnels — not reachable from the internet.
@@ -412,8 +405,8 @@ services:
       MANTLE_SITE_ADDRESS: ${MANTLE_SITE_ADDRESS:-:80}
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
+      - ${MANTLE_DATA_DIR:-./data}/caddy/data:/data
+      - ${MANTLE_DATA_DIR:-./data}/caddy/config:/config
 
   # ── Updater sidecar — the execution half of in-app updates ────────────────
   # /settings/updates writes a request file into the shared `mantle_update_signal`
@@ -436,7 +429,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./infra/updater/updater.sh:/updater.sh:ro
       - .:${MANTLE_STACK_DIR:-/opt/mantle-stack}
-      - mantle_update_signal:/signal
+      - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal
 
   # Dedicated durable-runner service: executes assistant/agent LLM work as DBOS
   # workflows (journaled to the mantle_dbos_sys system DB, provisioned in the

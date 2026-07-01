@@ -4,10 +4,6 @@ name: mantle
 # apps/web, apps/mcp, and workers run as native Node via `pnpm dev`.
 # Bring everything up with `pnpm up` (which runs scripts/up.sh).
 
-volumes:
-  mantle_pg_data:
-  mantle_minio_data:
-
 services:
   postgres:
     image: pgvector/pgvector:pg17
@@ -21,7 +17,7 @@ services:
       # 54323 on the host. The .env.local DATABASE_URL must point here.
       - "127.0.0.1:54323:5432"
     volumes:
-      - mantle_pg_data:/var/lib/postgresql/data
+      - ${MANTLE_DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
@@ -41,7 +37,7 @@ services:
       - "127.0.0.1:9000:9000"   # S3 API
       - "127.0.0.1:9001:9001"   # web console
     volumes:
-      - mantle_minio_data:/data
+      - ${MANTLE_DATA_DIR:-./data}/minio:/data
     healthcheck:
       test: ["CMD-SHELL", "mc ready local || exit 1"]
       interval: 10s
