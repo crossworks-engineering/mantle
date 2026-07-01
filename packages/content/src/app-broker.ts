@@ -39,6 +39,13 @@ async function openSqlite(file: string): Promise<SqliteDb> {
   const mod = (await import('node:sqlite')) as unknown as {
     DatabaseSync: new (p: string) => SqliteDb;
   };
+  // Ensure the parent dir exists on EVERY open, not just first-provision. The
+  // registry row persists the absolute storagePath in Postgres, but the file
+  // lives on APP_DB_DIR — if that dir goes missing (a fresh/rotated volume, or
+  // an ephemeral APP_DB_DIR wiped by a container recreate), `new DatabaseSync`
+  // throws "unable to open database file" and the app hangs forever on its
+  // initial load. mkdir-ing here self-heals to a fresh empty DB instead.
+  await mkdir(path.dirname(file), { recursive: true });
   const handle = new mod.DatabaseSync(file);
   // We open/close a handle per request, so two concurrent calls to the same app
   // can collide on the write lock. Wait up to 5s for the lock instead of failing
