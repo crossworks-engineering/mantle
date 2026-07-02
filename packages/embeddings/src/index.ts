@@ -70,6 +70,17 @@ export const DEFAULT_EMBEDDING_MODEL =
   process.env.MANTLE_EMBEDDING_MODEL?.trim() || FALLBACK_MODEL;
 export const EMBEDDING_DIMS = 768;
 
+/**
+ * The default ONLINE embedder offered (and pre-selected) in onboarding. It's
+ * dimension-reduced to {@link EMBEDDING_DIMS} (768) via the provider's
+ * `dimensions` param, so it fits the `vector(768)` columns with no schema
+ * change. This is the shipped default; the keyless {@link LOCAL_FALLBACK_CONFIG}
+ * stays the pre-config fallback so a no-key install still boots, and the local
+ * embedder is an opt-in "advanced" route (not run by default).
+ */
+export const DEFAULT_ONLINE_EMBEDDING_MODEL = 'text-embedding-3-large';
+export const DEFAULT_ONLINE_EMBEDDING_PROVIDER = 'openai';
+
 // ── Per-owner resolver ─────────────────────────────────────────────────────
 //
 // Reads from `ai_workers WHERE kind='embedding'` so the operator picks once
