@@ -39,6 +39,21 @@ export const PUBLIC_PATHS = [
 ];
 
 /**
+ * Whether cookies set on this response should carry the `Secure` attribute.
+ * Decided from the request's actual scheme — NOT from NODE_ENV: production
+ * builds also serve plain-HTTP installs (MANTLE_SITE_ADDRESS=:80 on a bare
+ * IP, the documented no-domain mode), where browsers silently discard Secure
+ * cookies — login "succeeds" but the session never sticks and the user loops
+ * back to /login forever. Caddy sets X-Forwarded-Proto on every proxied
+ * request; the URL scheme covers direct (proxy-less) access.
+ */
+export function secureCookies(req: Request): boolean {
+  const fwd = req.headers.get('x-forwarded-proto');
+  if (fwd) return fwd.split(',')[0]?.trim().toLowerCase() === 'https';
+  return new URL(req.url).protocol === 'https:';
+}
+
+/**
  * DB-less "detached" dev: a local frontend pointed at a remote API
  * (`NEXT_PUBLIC_MANTLE_API_BASE`) with no local Postgres. The dev auth shim in
  * `lib/auth` (`detachedDevUser`) and the page-nav bypass in `middleware.ts` both
