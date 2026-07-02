@@ -20,6 +20,7 @@ import { useListNav } from '@/lib/use-list-nav';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import type { ExplorerModel, ModelSort } from '@/lib/model-explorer';
+import { copyText } from '@/lib/secure-context-fallbacks';
 
 export type ProviderMeta = {
   id: string;
@@ -394,7 +395,7 @@ function ModelDetail({ model, provider }: { model: ExplorerModel; provider?: Pro
 
   const copy = async (text: string, what: string) => {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyText(text);
       toast.success(`Copied ${what}`);
     } catch {
       toast.error('Copy failed');

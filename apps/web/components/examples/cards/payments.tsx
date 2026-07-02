@@ -34,6 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { copyText } from '@/lib/secure-context-fallbacks';
 
 const data: Trace[] = [
   {
@@ -138,7 +139,7 @@ export const columns: ColumnDef<Trace>[] = [
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>Actions</DropdownMenuLabel>
-            <DropdownMenuItem onClick={() => navigator.clipboard.writeText(trace.id)}>
+            <DropdownMenuItem onClick={() => copyText(trace.id)}>
               Copy trace ID
             </DropdownMenuItem>
             <DropdownMenuSeparator />

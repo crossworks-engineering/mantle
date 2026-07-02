@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { copyText } from '@/lib/secure-context-fallbacks';
 
 /**
  * A compact "copy to clipboard" button with inline confirm feedback (the icon +
@@ -34,15 +35,13 @@ export function CopyButton({
   }, []);
 
   const onCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(text);
+    if (await copyText(text)) {
       setCopied(true);
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard blocked (insecure context / denied permission) — leave the
-      // idle state; nothing to recover, the user can select-and-copy manually.
     }
+    // On failure leave the idle state; nothing to recover, the user can
+    // select-and-copy manually.
   }, [text]);
 
   return (
