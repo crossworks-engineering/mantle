@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { lookup as dnsLookup } from 'node:dns/promises';
 import { db, sql } from '@mantle/db';
 import { bucketStatus } from '@mantle/storage';
 import { tikaVersion } from '@mantle/files';
@@ -89,7 +90,79 @@ export async function GET() {
  * uploads, indexing and document parsing would all break — so the client
  * blocks Continue on the Welcome step until they pass.
  */
-async function runInfraChecks(): Promise<SanityCheck[]> {
+/**
+ * Domain & HTTPS — verifies the box's public hostname actually works.
+ * Cheapest, strongest proof first: if the browser is reaching this very
+ * request THROUGH the configured domain, then DNS + certificate + proxy are
+ * all proven by the page being open. Otherwise fall back to a DNS lookup and
+ * a server-side self-fetch of the public URL (which validates TLS end-to-end).
+ * Unset/localhost public URL is informational, not a failure — normal on a
+ * dev box or a deliberately internal deployment.
+ */
+async function checkDomain(browserHost: string | null): Promise<SanityCheck> {
+  const label = 'Domain & HTTPS';
+  const configured = (process.env.MANTLE_PUBLIC_URL ?? '').trim().replace(/\/+$/, '');
+  if (!configured || /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(configured)) {
+    return {
+      label,
+      ok: true,
+      detail: configured
+        ? `public URL is ${configured} (local) — fine for a dev box; set MANTLE_PUBLIC_URL on a deployed one so share links work.`
+        : 'no public URL configured — fine for a dev box; set MANTLE_PUBLIC_URL on a deployed one so share links work.',
+    };
+  }
+
+  let host: string;
+  try {
+    host = new URL(configured).hostname;
+  } catch {
+    return { label, ok: false, detail: `MANTLE_PUBLIC_URL (“${configured}”) is not a valid URL.` };
+  }
+
+  // Proof by usage: the wizard is being served over the configured domain
+  // right now — DNS, certificate, and proxy are all demonstrably working.
+  const browsing = (browserHost ?? '').split(':')[0]?.toLowerCase();
+  if (browsing && browsing === host.toLowerCase()) {
+    return {
+      label,
+      ok: true,
+      detail: `you're reaching ${host} right now — DNS, certificate and proxy all working.`,
+    };
+  }
+
+  // Browsing via a different host (tunnel/IP) — verify the domain separately.
+  try {
+    await dnsLookup(host);
+  } catch {
+    return {
+      label,
+      ok: false,
+      detail: `“${host}” does not resolve in DNS — point an A record at this server, then Re-check.`,
+    };
+  }
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 6_000);
+    const res = await fetch(configured, { signal: ctl.signal, redirect: 'manual' });
+    clearTimeout(timer);
+    void res;
+    return {
+      label,
+      ok: true,
+      detail: `${host} resolves and answers over HTTPS (you're browsing via ${browsing || 'another address'} — links will use ${host}).`,
+    };
+  } catch (err) {
+    return {
+      label,
+      ok: false,
+      detail:
+        `“${host}” resolves but ${configured} isn't answering from this server — check the certificate/proxy (some networks also block a server fetching its own public IP; if ${configured} loads in your browser, treat this as a warning): ` +
+        (err instanceof Error ? err.message : String(err)),
+    };
+  }
+}
+
+async function runInfraChecks(browserHost: string | null): Promise<SanityCheck[]> {
   const checks: SanityCheck[] = [];
 
   // Database — trivially up if this handler runs, but probe explicitly so the
@@ -185,6 +258,8 @@ async function runInfraChecks(): Promise<SanityCheck[]> {
           detail: 'MANTLE_MASTER_KEY or SESSION_SECRET missing — API keys cannot be stored securely.',
         },
   );
+
+  checks.push(await checkDomain(browserHost));
 
   return checks;
 }
@@ -486,7 +561,9 @@ export async function POST(req: Request) {
       return NextResponse.json(result);
     }
     case 'infra':
-      return NextResponse.json(await runInfraChecks());
+      return NextResponse.json(
+        await runInfraChecks(req.headers.get('x-forwarded-host') ?? req.headers.get('host')),
+      );
     case 'sanity':
       return NextResponse.json(await runSanityChecks(user.id));
     case 'purpose':

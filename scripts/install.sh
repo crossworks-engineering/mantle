@@ -165,6 +165,12 @@ ensure SESSION_SECRET    "gen_hex 48"
 ensure S3_ACCESS_KEY     "gen_hex 12"
 ensure S3_SECRET_KEY     "gen_hex 24"
 upsert MANTLE_SITE_ADDRESS "$SITE_ADDRESS"
+# Public origin for share/email links + the onboarding Domain check. Only
+# meaningful when a real hostname is set; on :80 (no domain) links would embed
+# an address that may change, so it stays unset until a domain is added.
+if [[ "$SITE_ADDRESS" != :* ]]; then
+  upsert MANTLE_PUBLIC_URL "https://$SITE_ADDRESS"
+fi
 upsert MANTLE_DATA_DIR     "$DATA_DIR"
 upsert MANTLE_STACK_DIR    "$STACK_DIR"
 upsert MANTLE_IMAGE_TAG    "$IMAGE_TAG"
