@@ -561,15 +561,34 @@ function perMillion(v: unknown): number | undefined {
 }
 
 async function openrouterDiscover(
-  _apiKey: string,
+  apiKey: string,
 ): Promise<DiscoveryResult<ChatModelInfo>> {
-  // OR's /api/v1/models is keyless — we don't need the user's key
-  // (the underscore on the param). We pass it anyway in case OR ever
-  // starts gating; sending an Authorization header against a keyless
-  // endpoint is a no-op.
+  // OR's /api/v1/models is PUBLIC (returns 200 even with a bogus key), so the
+  // catalog fetch alone is NOT an auth probe — probeApiKey relying on it would
+  // pass any garbage key. When a key is supplied, validate it first against
+  // GET /api/v1/key, which does check auth (401 on a bad key). A network
+  // hiccup on that endpoint doesn't fail discovery — only an explicit
+  // 401/403 does, so catalog browsing keeps working offline-ish.
+  if (apiKey) {
+    try {
+      const auth = await fetch(`${OPENROUTER_BASE_URL}/key`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (auth.status === 401 || auth.status === 403) {
+        return {
+          available: [],
+          filtered: false,
+          error: `OpenRouter rejected the key (${auth.status}) — check it at openrouter.ai/keys.`,
+        };
+      }
+    } catch {
+      /* auth endpoint unreachable — fall through to the catalog fetch */
+    }
+  }
   try {
     const res = await fetch(`${OPENROUTER_BASE_URL}/models`, {
-      headers: _apiKey ? { Authorization: `Bearer ${_apiKey}` } : undefined,
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) {

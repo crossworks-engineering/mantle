@@ -1227,12 +1227,16 @@ function KeyFields({
         />
       </Field>
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={onSave} disabled={busy || !value.trim()} size="sm">
-          {busy ? <Loader2 className="animate-spin" /> : null} Save &amp; test
-        </Button>
-        {saved && (
-          <Button variant="ghost" size="sm" onClick={onRetest} disabled={busy}>
-            Test again
+        {/* With a saved key and an empty field, the primary action IS the test
+            — a disabled "Save & test" here just looked broken (you had to spot
+            the ghost "Test again" instead). */}
+        {saved && !value.trim() ? (
+          <Button onClick={onRetest} disabled={busy} size="sm">
+            {busy ? <Loader2 className="animate-spin" /> : null} Test saved key
+          </Button>
+        ) : (
+          <Button onClick={onSave} disabled={busy || !value.trim()} size="sm">
+            {busy ? <Loader2 className="animate-spin" /> : null} Save &amp; test
           </Button>
         )}
         <a
@@ -1252,7 +1256,7 @@ function KeyFields({
       )}
       {!result && saved && (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Check className="size-4" /> Saved — “Test again” to verify.
+          <Check className="size-4" /> Saved — “Test saved key” to verify.
         </p>
       )}
     </div>
