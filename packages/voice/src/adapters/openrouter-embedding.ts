@@ -37,6 +37,22 @@ function isMultimodalModel(model: string): boolean {
   return MULTIMODAL_MODELS.has(model.toLowerCase());
 }
 
+/** OpenAI's text-embedding-3-* family is Matryoshka(MRL)-trained: the API's
+ *  `dimensions` param just truncates the vector and renormalises it, so doing
+ *  the same client-side is mathematically identical. */
+function isMrlTruncatable(model: string): boolean {
+  return /(^|\/)text-embedding-3-(small|large)$/i.test(model);
+}
+
+/** Truncate to `dims` and L2-renormalise — the documented MRL shortening. */
+function mrlTruncate(vec: number[], dims: number): number[] {
+  const cut = vec.slice(0, dims);
+  let norm = 0;
+  for (const v of cut) norm += v * v;
+  norm = Math.sqrt(norm) || 1;
+  return cut.map((v) => v / norm);
+}
+
 /** Translate one EmbedInput into OR's request-element shape. Strings and
  *  `{type:'text'}` become plain strings; binary types become the
  *  provider-specific `{image_url,...}` etc. shape. */
@@ -80,6 +96,11 @@ export const openrouterEmbedding: EmbeddingDispatcher = {
     };
     if (req.dimensions && isMultimodalModel(req.model)) {
       body.output_dimensionality = req.dimensions;
+    } else if (req.dimensions && isMrlTruncatable(req.model)) {
+      // OpenAI-style param — OpenRouter forwards it upstream when supported.
+      // Without this, text-embedding-3-large comes back at its native 3072
+      // dims and can't fit the brain's vector(768) columns.
+      body.dimensions = req.dimensions;
     }
 
     const res = await fetch(ENDPOINT, {
@@ -108,8 +129,18 @@ export const openrouterEmbedding: EmbeddingDispatcher = {
     }
     // Sort by index — defensive even though OR returns ordered.
     const sorted = [...json.data].sort((a, b) => a.index - b.index);
+    let vectors = sorted.map((d) => d.embedding);
+    // Belt-and-suspenders: OR doesn't forward `dimensions` to every upstream,
+    // and an oversized vector would be rejected by the vector(768) columns.
+    // For MRL-trained models, client-side truncation is identical to what the
+    // upstream would have done — so the caller ALWAYS gets the dims it asked
+    // for. Non-MRL models are left untouched (truncation would corrupt them).
+    if (req.dimensions && isMrlTruncatable(req.model)) {
+      const dims = req.dimensions;
+      vectors = vectors.map((v) => (v.length > dims ? mrlTruncate(v, dims) : v));
+    }
     return {
-      vectors: sorted.map((d) => d.embedding),
+      vectors,
       model: json.model ?? req.model,
       tokensIn: json.usage?.prompt_tokens,
     };
