@@ -90,6 +90,7 @@ hd "Preflight"
 command -v docker >/dev/null 2>&1 || die "Docker isn't installed. Install Docker Engine + Compose, then re-run."
 docker info >/dev/null 2>&1 || die "Docker daemon isn't running. Start it, then re-run."
 docker compose version >/dev/null 2>&1 || die "The Docker Compose plugin isn't available (need 'docker compose')."
+command -v openssl >/dev/null 2>&1 || die "openssl isn't installed — it's needed to generate the master key + secrets."
 [[ -f "$STACK_DIR/docker-compose.yml" ]] || die "No docker-compose.yml in $STACK_DIR — run this from the stack directory (or pass --stack-dir)."
 ok "Docker + Compose ready"
 inf "Stack dir: ${B}$STACK_DIR${RS}"
@@ -174,10 +175,12 @@ if [[ $SKIP_UP -eq 1 ]]; then hd "Done (--skip-up)"; inf "Config written; stack 
 
 # ── 4. bring the stack up ────────────────────────────────────────────────────
 hd "Starting the stack"
+COMPOSE=(docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR")
 inf "Pulling images (tag: ${B}$IMAGE_TAG${RS})…"
-docker compose --project-directory "$STACK_DIR" pull -q 2>&1 | sed 's/^/    /' || warn "pull reported issues — continuing"
+"${COMPOSE[@]}" pull -q 2>&1 | sed 's/^/    /' \
+  || warn "Image pull failed. If the image is private, run 'docker login <registry>' and re-run. Continuing so the sanity check can report."
 inf "Bringing services up (waits for migrate + health)…"
-docker compose --project-directory "$STACK_DIR" up -d --wait || warn "up --wait returned non-zero — the sanity check will show what's wrong"
+"${COMPOSE[@]}" up -d --wait || warn "up --wait returned non-zero — the sanity check below will show what's wrong."
 
 # ── 5. sanity check ──────────────────────────────────────────────────────────
 bash "$(dirname "$0")/sanity.sh" || true
