@@ -5,6 +5,7 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { db, countUsers } from '@mantle/db';
 import { buildSessionCookie, SESSION_COOKIE_NAME } from '@/lib/auth';
+import { secureCookies } from '@/lib/auth-constants';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 
 /**
@@ -82,7 +83,7 @@ export async function POST(req: Request) {
   const res = NextResponse.json({ ok: true });
   res.cookies.set(SESSION_COOKIE_NAME, value, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: secureCookies(req),
     sameSite: 'lax',
     path: '/',
     maxAge: maxAgeSec,
