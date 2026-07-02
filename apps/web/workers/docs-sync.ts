@@ -22,6 +22,7 @@ import {
   collectionRoot,
   deleteDocByRelPath,
   ensureDefaultCollections,
+  isHiddenDocRelPath,
   listDocCollections,
   ltreeForDocPath,
   reconcileCollection,
@@ -45,14 +46,19 @@ function isMarkdown(base: string): boolean {
   return /\.(md|markdown)$/i.test(base);
 }
 
-/** Which enabled collection owns this absolute path (longest matching root). */
+/** Which enabled collection owns this absolute path (longest matching root).
+ *  A hidden rel-path (`.`/`_` segment) never matches — it mirrors the reconcile
+ *  walk, which skips hidden segments relative to each collection's OWN root. So
+ *  `docs/_changelog/x.md` belongs to the `changelog` collection (rooted at the
+ *  `_`-dir, rel-path not hidden) and never to `system`, where reconcile would
+ *  just delete it again on the next pass. */
 function collectionForAbsPath(abs: string): { collection: DocCollection; relPath: string } | null {
   let best: { collection: DocCollection; relPath: string } | null = null;
   let bestLen = -1;
   for (const col of enabled.values()) {
     const root = collectionRoot(col);
     const loc = ltreeForDocPath(abs, root);
-    if (loc && root.length > bestLen) {
+    if (loc && !isHiddenDocRelPath(loc.relPath) && root.length > bestLen) {
       best = { collection: col, relPath: loc.relPath };
       bestLen = root.length;
     }

@@ -45,6 +45,7 @@ export {
 
 export {
   DOCS_ROOT_LABEL,
+  CHANGELOG_COLLECTION_KEY,
   docsRoot,
   effectiveBrainDepth,
   collectionRoot,

@@ -2,6 +2,7 @@ import 'server-only';
 
 import path from 'node:path';
 import {
+  CHANGELOG_COLLECTION_KEY,
   collectionRoot,
   isHiddenDocRelPath,
   listDocCollections,
@@ -49,6 +50,9 @@ function isStrictlyNested(inner: string, outer: string): boolean {
  * Files for one collection, with **nested-root subtraction**: drop any file that
  * lives under another collection whose resolved root is strictly nested under this
  * one. Keeps `system` (root = docs/) from duplicating the User Guide (docs/guide).
+ *
+ * Sort is numeric-aware (so `0.20.68` orders before `0.100.0`), and the changelog
+ * collection is reversed — release notes read newest-first, and prev/next follow.
  */
 async function filesForCollection(
   col: DocCollection,
@@ -66,7 +70,9 @@ async function filesForCollection(
   const filtered = nestedPrefixes.length
     ? files.filter((rel) => !nestedPrefixes.some((p) => rel.startsWith(p)))
     : files;
-  return filtered.sort();
+  filtered.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  if (col.key === CHANGELOG_COLLECTION_KEY) filtered.reverse();
+  return filtered;
 }
 
 /** All collections (incl. system + disabled), each with its disk files. */
