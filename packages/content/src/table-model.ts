@@ -19,11 +19,19 @@
  */
 import { evalFormula } from './table-formula';
 
-/** Isomorphic UUID — Web Crypto is available on `globalThis` in modern Node
- *  (18.17+) and every browser, so this module stays a browser-safe leaf the
- *  client grid can import directly (no `node:crypto`, no DB). */
+/** Isomorphic UUID — no `node:crypto`, no DB, so this module stays a
+ *  browser-safe leaf the client grid can import directly. `randomUUID`
+ *  itself only exists in secure contexts (HTTPS/localhost); on a plain-HTTP
+ *  install (bare-IP, no-domain mode) it's absent, so fall back to a v4 built
+ *  from `getRandomValues`, which is available everywhere. */
 function randomUUID(): string {
-  return globalThis.crypto.randomUUID();
+  const c = globalThis.crypto;
+  if (typeof c.randomUUID === 'function') return c.randomUUID();
+  const b = c.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6]! & 0x0f) | 0x40;
+  b[8] = (b[8]! & 0x3f) | 0x80;
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, '0'));
+  return `${h.slice(0, 4).join('')}-${h.slice(4, 6).join('')}-${h.slice(6, 8).join('')}-${h.slice(8, 10).join('')}-${h.slice(10).join('')}`;
 }
 
 export type ColumnType =
