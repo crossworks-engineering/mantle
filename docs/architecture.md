@@ -1786,7 +1786,7 @@ Granular escape hatches in `package.json`:
 |--------------------|------------------------------------------------------------|
 | `pnpm start`       | Full thing (infra + migrations + pg-boss + dev servers)    |
 | `pnpm dev`         | Dev servers only (preflight refuses if infra isn't ready)  |
-| `pnpm stop`        | Stop infra (keeps volumes)                                 |
+| `pnpm stop`        | Stop infra (keeps data)                                    |
 | `pnpm reset`       | Wipe the dev brain + rebuild from scratch (asks first)     |
 | `pnpm infra:up`    | Infra only                                                 |
 | `pnpm infra:logs`  | Tail postgres + minio                                      |
@@ -1814,7 +1814,7 @@ Two migration systems coexist:
 - **Postgres init scripts** own everything before `public.*` —
   extensions and the `auth` schema. They live in `infra/postgres/init/`
   and the Postgres image runs them exactly once, at first cluster init.
-  Re-running compose against the same volume is a no-op.
+  Re-running compose against the same data dir is a no-op.
 
 The boundary is enforced by `drizzle.config.ts:12` (`schemaFilter:
 ['public']`) — Drizzle will never try to create or modify the `auth`
@@ -1843,10 +1843,15 @@ commit between 0008 and 0009.
 
 **State lives in three places:**
 
-- `mantle_pg_data` Docker volume — Postgres cluster files.
-- `mantle_minio_data` Docker volume — object bytes.
+- `${MANTLE_DATA_DIR:-./data}/postgres` bind mount — Postgres cluster files.
+- `${MANTLE_DATA_DIR:-./data}/minio` bind mount — object bytes.
 - `apps/web/.env.local` — secrets (DATABASE_URL, SESSION_SECRET,
   MANTLE_MASTER_KEY, S3 creds, ALLOWED_USER_ID, OPENAI_API_KEY).
+
+(Named Docker volumes until v0.103; both composes now bind-mount everything
+under `MANTLE_DATA_DIR`, so the data is a plain directory you can inspect,
+rsync, and back up. Consequence: `docker compose down -v` no longer deletes
+it — see disaster recovery below.)
 
 Everything else is rebuildable from source + those three.
 
@@ -1877,11 +1882,18 @@ historical snapshots; safe to delete.
 - `MANTLE_MASTER_KEY`: re-encrypt every `_enc` column with the new key.
   No tooling exists for this yet; write a one-off script via `seal/open`.
 
-**Disaster recovery:** `pnpm reset` (asks first, backs up, then wipes the
-volumes + brings everything back up). Or, manually: `docker volume rm
-mantle_mantle_pg_data mantle_mantle_minio_data` nukes the brain; `pnpm start`
-brings up a virgin stack; `pg_restore --data-only` loads the latest backup;
-insert your `auth.users` row by hand. Done.
+**Disaster recovery:** `pnpm reset` (asks first, backs up, then deletes the
+bind-mounted data dirs + brings everything back up). Or, manually:
+
+```bash
+docker compose -f docker-compose.dev.yml down
+rm -rf "${MANTLE_DATA_DIR:-./data}"/{postgres,minio}   # sudo on Linux (container-owned files)
+```
+
+nukes the brain — note `down -v` alone does **not**: bind mounts survive
+volume removal. Then `pnpm start` brings up a virgin stack;
+`pg_restore --data-only` loads the latest backup; insert your `auth.users`
+row by hand. Done.
 
 ---
 

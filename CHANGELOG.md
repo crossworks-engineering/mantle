@@ -4,6 +4,22 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the multi-arch image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.109.2 — 2026-07-02
+
+**`pnpm reset` actually wipes the dev brain again.** Since the v0.103 move
+to bind mounts, `docker compose down -v` stopped deleting the postgres +
+minio data (bind mounts survive volume removal), so `pnpm reset` claimed a
+wipe it no longer performed. `scripts/reset.sh` now deletes
+`${MANTLE_DATA_DIR:-./data}/{postgres,minio}` explicitly (via a container,
+so container-owned files on Linux don't need sudo), shows the resolved data
+dir in the confirmation prompt, and honors a root `.env` the same way
+compose does.
+
+- Docs caught up with the bind-mount reality: `architecture.md` §15 no
+  longer documents the retired `mantle_pg_data` / `mantle_minio_data` named
+  volumes (disaster recovery = `down` + `rm -rf` the data dirs);
+  `deploy.md` §4 exports dev MinIO/files data with a plain `tar` off disk.
+
 ## v0.109.1 — 2026-07-02
 
 **Dev compose can no longer collide with a live prod stack.** The dev
