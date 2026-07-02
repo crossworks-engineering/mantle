@@ -176,16 +176,19 @@ Updating is `docker compose pull && docker compose up -d --wait`. Full guide
 (domains/HTTPS, pinned versions, backups, rollback):
 **[docs/self-hosting.md](./docs/self-hosting.md)**
 
-Hack on it — dev checkout with hot reload:
+Hack on it — dev checkout with hot reload. Prereqs: **Node 24+**, **pnpm**,
+and **Docker** running (`pnpm start` boots Postgres/MinIO/Tika in containers):
 
 ```bash
 git clone https://github.com/crossworks-engineering/mantle && cd mantle
 pnpm install
 cp .env.example apps/web/.env.local   # two generated secrets — see the guide
-brew install ollama && brew services start ollama   # optional: local embedder
-ollama pull embeddinggemma            # opt-in local path (the default embedder is online, chosen in onboarding)
 pnpm start
 ```
+
+Embeddings default to an online model you pick in onboarding; prefer
+everything local? There's an opt-in local embedder — see
+[docs/embeddings.md](./docs/embeddings.md).
 
 Full walkthrough (local dev, email, Telegram, production deploy):
 **[docs/getting-started.md](./docs/getting-started.md)** ·

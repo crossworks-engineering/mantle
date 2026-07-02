@@ -36,6 +36,10 @@ mantle/
 
 ## First-time setup
 
+Prereqs: **Node.js 24+**, **pnpm** (installed in step 1), and **Docker**
+(Desktop or engine) running — `pnpm start` boots Postgres/MinIO/Tika in
+containers.
+
 ```bash
 # 1. Install pnpm
 corepack enable && corepack prepare pnpm@10 --activate

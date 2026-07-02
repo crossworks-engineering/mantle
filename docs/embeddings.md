@@ -93,11 +93,11 @@ All four retrieval indexes are **HNSW** (rebuilt during the migration).
 
 **What this means in practice:**
 
-1. **A model that natively emits 768 dims fits perfectly.** `embeddinggemma:latest` (the shipped default). No truncation, no schema change.
+1. **A model that supports MRL truncation to 768 fits.** `openai/text-embedding-3-large` (native 3072, **the shipped default**), `openai/text-embedding-3-small` (native 1536, the budget pick), and `google/gemini-embedding-001` (native 3072) all honour a request for 768 dims — Mantle's dispatcher sends `dimensions: 768` (the `EMBEDDING_DIMS` constant in [`packages/embeddings/src/index.ts`](../packages/embeddings/src/index.ts)). You get the model's better signal compressed into 768 dims, at the cost of cloud calls.
 
-2. **A model that supports MRL truncation to 768 also fits.** `openai/text-embedding-3-large` (native 3072) and `google/gemini-embedding-001` (native 3072) both honour a request for 768 dims — Mantle's dispatcher sends `dimensions: 768` (the `EMBEDDING_DIMS` constant in [`packages/embeddings/src/index.ts`](../packages/embeddings/src/index.ts)). You get the model's better signal compressed into 768 dims, at the cost of cloud calls.
+2. **A model that natively emits 768 dims also fits perfectly.** `embeddinggemma:latest` (the local opt-in). No truncation, no schema change.
 
-3. **A model that emits something else (1536, 1024, 3072-fixed) DOES NOT fit.** The old `openai/text-embedding-3-small` (1536), Mistral and Cohere (1024 native) would crash on first insert against the 768 column. The **[`/settings/embedding`](#the-one-config-settingsembedding) per-route dim probe** catches this — it embeds a sentinel string against the route and shows the live dimension, with a hard warning when it isn't 768.
+3. **A model that emits something else (1024, 3072-fixed, or an un-truncated 1536) DOES NOT fit.** Mistral and Cohere (1024 native) would crash on first insert against the 768 column. The **[`/settings/embedding`](#the-one-config-settingsembedding) per-route dim probe** catches this — it embeds a sentinel string against the route and shows the live dimension, with a hard warning when it isn't 768.
 
 To switch back to a cloud 1536 model (or a 1024 Cohere/Mistral model), every `vector(N)` column needs an ALTER TABLE to the new dim + an index rebuild + a full re-embed — the same shape as migration `0060`. Doable, not a button.
 
@@ -107,12 +107,13 @@ To switch back to a cloud 1536 model (or a 1024 Cohere/Mistral model), every `ve
 
 Three questions, in order of importance:
 
-### 1. Do you actually need to leave local?
+### 1. Do you actually need to leave the shipped default?
 
-This is the biggest signal-to-effort ratio in the whole decision now that the default is local + free.
+This is the biggest signal-to-effort ratio in the whole decision.
 
-- **Privacy / cost / self-hosting matter to you** → stay on `embeddinggemma:latest`. Nothing leaves the box, every embed is free, and it's genuinely competitive on quality. This is why it's the default.
-- **You have a measurable recall problem AND your corpus is heavily multilingual** → a cloud `gemini-embedding-001` (MRL → 768) is the strongest multilingual option. But weigh it against sending your whole corpus to a cloud provider, which is the thing the local move was meant to avoid.
+- **You just want it to work well** → stay on `openai/text-embedding-3-large` @768. Strongest wired English recall, rides the OpenRouter key you already have, and the token cost is a rounding error at personal scale. This is why it's the default.
+- **Privacy / self-hosting matter more than convenience** → switch to `embeddinggemma:latest` via the `local` provider. Nothing leaves the box, every embed is free, and it's genuinely competitive on quality — at the cost of running the embedder yourself (the `local-embedder` compose profile in prod, or a native Ollama in dev).
+- **You have a measurable recall problem AND your corpus is heavily multilingual** → a cloud `gemini-embedding-001` (MRL → 768) is the strongest multilingual option.
 
 ### 2. How often does retrieval miss for you, today?
 
@@ -152,7 +153,7 @@ For a **dimension-migration repopulation** (every embedding nulled by an ALTER),
 ```
 pnpm -C apps/web re-embed --repopulate --model=embeddinggemma:latest
 ```
-`--model` is required when repopulating — without it the CLI defaults to the resolver's fallback (still a cloud model) and asks the local server for one it doesn't have.
+`--model` is required when repopulating — without it the CLI falls back to the resolver's no-row default (the keyless local config) rather than the model you actually configured.
 
 During rebuild, the UI shows progress per layer. Until it completes, retrieval quality on older items is inconsistent — vectors written under the old model won't cosine-match against queries embedded under the new one.
 
@@ -160,7 +161,7 @@ During rebuild, the UI shows progress per layer. Until it completes, retrieval q
 
 ## The local provider (EmbeddingGemma via Ollama)
 
-The shipped default. Worth knowing how it's wired:
+The **advanced opt-in** (and, as a config, the keyless pre-onboarding fallback). To enable it on a prod box: `docker compose --profile local-embedder up -d` (the embedder does **not** run by default), then select provider `local` in Settings → Embedding. Worth knowing how it's wired:
 
 - **Server:** Ollama on the host, OpenAI-compatible endpoint at `http://localhost:11434/v1`. Base URL is overridable via the `MANTLE_LOCAL_EMBEDDING_URL` env (defaults to that, so no env needed in dev). Keep `ollama serve` running.
 - **Model:** `embeddinggemma:latest` — 768-dim, Gemma license (commercial-OK).
@@ -216,13 +217,14 @@ How it behaves at runtime ([`doEmbed`](../packages/embeddings/src/index.ts)):
 ## Per-provider quirks worth knowing
 
 ### Local (Ollama / LM Studio)
-- Keyless, free, private. The default.
+- Keyless, free, private. The opt-in path for self-host purists.
 - 768 native — fits the column exactly, no MRL games.
 - Requires the local server to be up. If `ollama serve` is down, embedding calls fail (no cloud fallback — embeddings can't fail over across spaces; a 1536 cloud fallback would crash on the 768 column).
 
 ### OpenAI
-- `text-embedding-3-large` honours the `dimensions` parameter for MRL truncation → can be coerced to 768. `text-embedding-3-small` only truncates cleanly to 512, so it does **not** fit 768 without a migration.
+- `text-embedding-3-large` (the shipped default) and `text-embedding-3-small` (the budget pick) both honour the `dimensions` parameter for MRL truncation → coerced to 768.
 - The dispatcher sends `dimensions: 768` for MRL-capable models.
+- Route via **OpenRouter** (default — the same key as chat, slug `openai/text-embedding-3-large`) or an OpenAI key direct.
 
 ### Google (Gemini)
 - `gemini-embedding-001` currently tops the MTEB leaderboard and honours `outputDimensionality` for MRL — coerces to 768. Strongest multilingual option if you must go cloud.
@@ -241,11 +243,11 @@ How it behaves at runtime ([`doEmbed`](../packages/embeddings/src/index.ts)):
 
 ## When NOT to switch
 
-A short list of reasons to leave the local default alone:
+A short list of reasons to leave your current embedder alone:
 
-1. **Privacy is the point.** Switching to a cloud model sends your entire corpus to a third party — the exact thing the local migration removed. That's a real cost, not a benchmark number.
-2. **It's free.** Local embedding has no per-token cost. Cloud does.
-3. **Retrieval already feels solid.** Don't fix what isn't broken — EmbeddingGemma is competitive, and the upgrade headroom on a personal English/German corpus is small.
+1. **You're on the shipped default.** `text-embedding-3-large` @768 is the strongest wired option for English recall — there's little headroom above it, and every switch costs a re-embed.
+2. **You chose local deliberately.** If privacy is the point, switching to a cloud model sends your entire corpus to a third party — the exact thing you opted out of. And local embedding has no per-token cost.
+3. **Retrieval already feels solid.** Don't fix what isn't broken — the upgrade headroom on a personal English/German corpus is small (that goes for EmbeddingGemma too, which is competitive).
 4. **Your corpus is small (< 1000 vectors).** At this scale every model finds everything.
 5. **You haven't tried tuning the retrieval params first.** `top_k`, the similarity threshold, the chunk size — these often matter more than the embedding model. The responder's `memory_config.{fact_limit, content_hit_limit, chunk_limit, digest_limit}` knobs at `/settings/agents`, plus the June-2026 ranking factors (`MANTLE_{SALIENCE_LAMBDA, RECENCY_EPISODIC, RECENCY_CONTENT, RECENCY_TAU_DAYS, QUERY_ENRICH}` env) are where to look first. Ranking is no longer raw cosine — see [`memory.md` §7](./memory.md#7-the-retrieval-order-in-the-prompt) and measure changes with `pnpm -C apps/web eval:recall`.
 
@@ -260,4 +262,4 @@ Embeddings are the cheap memory layer that makes the expensive layers (LLM conte
 
 Compounded across hundreds of queries, this is the difference between a memory system that feels uncannily good and one that feels mid. **But it's not the bottleneck most installs hit first.** Most retrieval misses come from indexing (the wrong things got embedded, or weren't chunked well) or from query phrasing. The embedding model upgrade is the third-most-important lever, not the first.
 
-That's why the recommendation here is "stay on the local default unless you have a reason." The reasons are real when they apply — a measured multilingual recall problem, ambitious memory work — but they're rare, and now they come with a privacy and cost trade-off that the local default was specifically chosen to avoid.
+That's why the recommendation here is "stay on the shipped default unless you have a reason." The reasons are real when they apply — a privacy stance that rules out cloud calls (→ go local), a measured multilingual recall problem (→ Gemini) — but they're rare, and every switch costs a corpus re-embed.

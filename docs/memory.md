@@ -40,16 +40,19 @@ on demand — lossless paging vs. the lossy `conversation_digest`. The
 through digests, `recall_window` pulls the raw turns). See
 [`recall.md`](./recall.md).
 
-> **Embedding dimensions — read before trusting any `1536` below.** As of
-> 2026-05-31 the brain runs on **local EmbeddingGemma-300m (768-dim)** served
-> by Ollama, not cloud `openai/text-embedding-3-small` (1536-dim). Every
-> `vector` column is now `vector(768)` with HNSW indexes. This doc predates
-> that migration in places: where the prose, SQL sketches, or §6.3 still say
-> `1536` / `text-embedding-3-small` as the *current default*, read **768** /
-> **`embeddinggemma:latest`**. The 1536 mentions that remain are either this
-> note's "migrated from" context or native dims of cloud models in the
-> comparison table. [`embeddings.md`](./embeddings.md) is the canonical,
-> up-to-date operator guide.
+> **Embedding dimensions — read before trusting any `1536` below.** Since
+> 2026-05-31 every `vector` column is **`vector(768)`** with HNSW indexes.
+> The shipped **default model** (since v0.103–0.104) is the online
+> `openai/text-embedding-3-large`, MRL-reduced to 768 dims and chosen in the
+> onboarding **Memory** step (via OpenRouter — the same key as chat — or
+> OpenAI direct); local **EmbeddingGemma-300m** via Ollama (768 native,
+> keyless) is the opt-in path and the pre-onboarding fallback. This doc
+> predates those changes in places: where the prose, SQL sketches, or §6.3
+> still say `1536` / an old *current default*, read **768** and the default
+> above. The 1536 mentions that remain are either historical "migrated from"
+> context or native dims of cloud models in the comparison table.
+> [`embeddings.md`](./embeddings.md) is the canonical, up-to-date operator
+> guide.
 
 ---
 
@@ -478,13 +481,14 @@ ORDER BY embedding <=> $query_embedding   -- cosine distance, lower = closer
 LIMIT 10;
 ```
 
-**Which embedding model produces those vectors matters.** The default is
-`embeddinggemma:latest` (768 dims, local via Ollama, $0 — no cloud call),
-solid on English. Other choices unlock multilingual recall or better
-quality at higher cost. See [`docs/embeddings.md`](./embeddings.md) for the
-operator-facing decision guide (Gemma-local vs OpenAI-large vs Gemini
-with benchmark numbers + the 768-dim constraint that shapes the
-choice). The runtime mechanics — how the dispatcher resolves the
+**Which embedding model produces those vectors matters.** The shipped
+default is `openai/text-embedding-3-large` MRL-reduced to 768 dims (online,
+via OpenRouter or OpenAI — chosen in onboarding's Memory step); local
+`embeddinggemma:latest` (768 native, via Ollama, $0 — no cloud call) is the
+opt-in privacy/self-host path. Other choices unlock multilingual recall.
+See [`docs/embeddings.md`](./embeddings.md) for the operator-facing decision
+guide (OpenAI-large vs Gemma-local vs Gemini with benchmark numbers + the
+768-dim constraint that shapes the choice). The runtime mechanics — how the dispatcher resolves the
 worker config, how the cache works, how Rebuild Index re-embeds the
 whole corpus on a model swap — live in
 [`ai-workers.md` §5e](./ai-workers.md#5e-embedding--the-cross-cutting-kind).
@@ -744,8 +748,8 @@ memory, and tool loops:
 
 | Role | Status | Default model | What it does |
 |---|---|---|---|
-| `responder` | ✓ Live | `anthropic/claude-sonnet-4.6` | The user-facing chat agent (Saskia for Telegram). Reads from every layer, composes replies. Heavy reasoning. Supports voice in/out via the TTS/STT workers below. |
-| `assistant` | ✓ Live | `anthropic/claude-sonnet-4.6` | The web-chat counterpart at `/assistant`. Same code path as `responder` via `@mantle/agent-runtime`; same memory, different transport. Falls back to `responder` if no `assistant` row exists. |
+| `responder` | ✓ Live | `anthropic/claude-sonnet-5` | The user-facing chat agent (Saskia for Telegram). Reads from every layer, composes replies. Heavy reasoning. Supports voice in/out via the TTS/STT workers below. |
+| `assistant` | ✓ Live | `anthropic/claude-sonnet-5` | The web-chat counterpart at `/assistant`. Same code path as `responder` via `@mantle/agent-runtime`; same memory, different transport. Falls back to `responder` if no `assistant` row exists. |
 | `custom` | ✓ Live | Whatever you pick | Catch-all for anything else, e.g. `invoke_agent` delegation targets (specialists Saskia hands off to). |
 
 **One-shot AI workers** (table: `ai_workers`, UI: `/settings/ai-workers`,
@@ -795,22 +799,28 @@ agents. Different model type, different endpoint, different scale.
 - **What it does.** Given a piece of text, returns a `vector(768)`
   that can be similarity-searched in pgvector. No reasoning, no system
   prompt, no streaming. Pure transform.
-- **Default model.** `embeddinggemma:latest` (EmbeddingGemma-300m), served
-  **locally by Ollama** on the host. 768 dimensions (matches our column).
-  $0 — the vectors never leave the box, which is the whole point of a
-  self-hosted brain. (Until 2026-05-31 the default was cloud
-  `openai/text-embedding-3-small` at 1536 dims; the migration is recorded in
-  [`handoff-local-embeddings-2026-05-30.md`](./_archive/handoff-local-embeddings-2026-05-30.md).)
-- **API path.** The `local` provider calls Ollama's embeddings endpoint
-  directly (`POST /api/embeddings` on the Ollama host) — no OpenRouter, no
-  API key. Cloud models, if selected, still route via OpenRouter's
+- **Default model.** `openai/text-embedding-3-large`, MRL-reduced to **768
+  dimensions** (matches our column), chosen in the onboarding **Memory** step
+  and routed via **OpenRouter** (the same key as chat) or OpenAI direct. The
+  budget pick is `text-embedding-3-small` @768. (History: until 2026-05-31
+  the default was cloud `openai/text-embedding-3-small` at 1536 dims —
+  recorded in
+  [`handoff-local-embeddings-2026-05-30.md`](./_archive/handoff-local-embeddings-2026-05-30.md) —
+  then local EmbeddingGemma until the v0.103–0.104 flip back to online.)
+- **The local opt-in.** `embeddinggemma:latest` (EmbeddingGemma-300m), served
+  **locally by Ollama** — 768 native, keyless, $0, vectors never leave the
+  box. In the prod compose it sits behind the `local-embedder` profile (off
+  by default); its keyless config is also the pre-onboarding fallback.
+- **API path.** Cloud models route via OpenRouter's
   `POST https://openrouter.ai/api/v1/embeddings` using the existing
-  `openrouter` key in `/settings/keys`.
+  `openrouter` key in `/settings/keys` (or an OpenAI key direct). The `local`
+  provider calls Ollama's embeddings endpoint directly (`POST
+  /api/embeddings` on the Ollama host) — no OpenRouter, no API key.
 - **Alternatives** — the full side-by-side (which models fit 768 natively
   vs. need MRL truncation vs. need a schema migration, with benchmark
   numbers and prices) lives in [`embeddings.md`](./embeddings.md). Short
-  version: `embeddinggemma:latest` (768, local, default),
-  `openai/text-embedding-3-large` (3072 → MRL 768, cloud), and
+  version: `openai/text-embedding-3-large` (3072 → MRL 768, cloud, default),
+  `embeddinggemma:latest` (768, local, opt-in), and
   `google/gemini-embedding-001` (3072 → MRL 768, cloud, top of MTEB) are
   the wired-and-fit options; anything with a different native dim and no
   clean MRL to 768 needs another schema migration to adopt.
@@ -876,9 +886,9 @@ agents. Different model type, different endpoint, different scale.
 
   `MANTLE_EMBEDDING_MODEL` (env) is the single source of truth that keeps
   every side aligned by default; the per-row `embedding_model` fields are
-  *overrides* that all fall back to it. **Today the whole system uses
-  `embeddinggemma:latest` (768-dim, local) uniformly — write and read are
-  aligned.**
+  *overrides* that all fall back to it. **Today the whole system uses the
+  one configured embedder (default `openai/text-embedding-3-large`,
+  MRL-reduced to 768 dims) uniformly — write and read are aligned.**
 
   This is correct but fragile: nothing enforces that the N+1 overrides
   agree. We **deliberately keep** the per-row overrides (reviewed
@@ -930,7 +940,7 @@ Visual map of who writes what, who reads what:
          ▼                           ▼                              │
                   ┌──────────────────────────────────┐              │
                   │   embedding subsystem            │              │
-                  │   (embeddinggemma:latest, local) │              │
+                  │   (text-embedding-3-large @768)  │              │
                   │   utility, not an agent          │              │
                   │   called from anywhere that      │              │
                   │   needs a vector(768)            │              │
