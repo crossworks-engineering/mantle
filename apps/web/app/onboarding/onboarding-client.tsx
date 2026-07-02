@@ -191,6 +191,27 @@ function Wizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Infra pre-flight — probed on mount so a half-started stack (a container
+  // that never came up, a missing bucket, a dead job queue) surfaces on step 1,
+  // BEFORE any time is invested in the wizard. Blocks Continue while red.
+  const [infra, setInfra] = useState<SanityCheck[] | null>(null);
+  const [infraBusy, setInfraBusy] = useState(false);
+  async function checkInfra() {
+    setInfraBusy(true);
+    try {
+      setInfra(await onboardingPost<SanityCheck[]>('infra'));
+    } catch {
+      /* stays null — the panel keeps its checking state */
+    } finally {
+      setInfraBusy(false);
+    }
+  }
+  useEffect(() => {
+    void checkInfra();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const infraDown = infra !== null && infra.some((c) => !c.ok);
+
   // OpenRouter (required) + an optional dedicated xAI key for voice.
   const [saved, setSaved] = useState<Set<string>>(new Set(savedServices));
   const [orKey, setOrKey] = useState('');
@@ -410,6 +431,46 @@ function Wizard({
             blurb="This is your own AI brain — private, self-hosted, and it remembers. A few quick steps and it’s yours."
           >
             <div className="space-y-4">
+              {/* Infra pre-flight — if the stack is half-up there's no point
+                  continuing; failures block the footer's Continue. */}
+              <div className="rounded-lg border border-border p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">System status</p>
+                  <Button variant="ghost" size="sm" onClick={checkInfra} disabled={infraBusy}>
+                    {infraBusy ? <Loader2 className="animate-spin" /> : null} Re-check
+                  </Button>
+                </div>
+                {infra === null ? (
+                  <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" /> Checking that all services are
+                    running…
+                  </p>
+                ) : (
+                  <div className="mt-2 space-y-1.5">
+                    {infra.map((c) => (
+                      <div key={c.label} className="flex items-start gap-2 text-sm">
+                        {c.ok ? (
+                          <Check className="mt-0.5 size-4 shrink-0 text-primary" />
+                        ) : (
+                          <X className="mt-0.5 size-4 shrink-0 text-destructive" />
+                        )}
+                        <span>
+                          <span className="font-medium">{c.label}</span>{' '}
+                          <span className="text-muted-foreground">— {c.detail}</span>
+                        </span>
+                      </div>
+                    ))}
+                    {infraDown && (
+                      <p className="pt-1 text-sm text-destructive">
+                        Some services aren’t running — there’s no point continuing until the stack
+                        is healthy. On the server, run <code>scripts/sanity.sh</code> (or{' '}
+                        <code>docker compose ps</code>) to see what’s down, then Re-check.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <Field label="Your name" hint="Optional — what your assistant should call you.">
                 <Input value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="e.g. Alex" />
               </Field>
@@ -947,6 +1008,9 @@ function Wizard({
             case 'profile':
               return {
                 label: 'Continue',
+                // A red infra panel means the stack is half-up — onboarding
+                // would fail later in confusing ways, so don't let it start.
+                disabled: infraDown,
                 onClick: async () => {
                   setBusy(true);
                   const res = await onboardingPost<{ ok: boolean; error?: string }>('profile', { timezone, locale, displayName: userName });

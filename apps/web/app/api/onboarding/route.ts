@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { db, sql } from '@mantle/db';
+import { bucketStatus } from '@mantle/storage';
+import { tikaVersion } from '@mantle/files';
 import {
   loadProfilePreferences,
   updateProfilePreferences,
@@ -75,6 +78,115 @@ export async function GET() {
     savedServices: [...new Set(keys.map((k) => k.service))],
     assistantAgentId: assistantAgent?.id ?? null,
   });
+}
+
+/**
+ * Pre-flight infra probes for the FIRST wizard step — provision-independent
+ * liveness of the stack the wizard is about to build on (is every container the
+ * deploy should have started actually serving?). The web app has no Docker
+ * socket by design, so each service is probed FUNCTIONALLY instead: can we
+ * query it / reach its endpoint. If these fail there's no point onboarding —
+ * uploads, indexing and document parsing would all break — so the client
+ * blocks Continue on the Welcome step until they pass.
+ */
+async function runInfraChecks(): Promise<SanityCheck[]> {
+  const checks: SanityCheck[] = [];
+
+  // Database — trivially up if this handler runs, but probe explicitly so the
+  // row is an honest measurement, not an assumption.
+  try {
+    await db.execute(sql`select 1`);
+    checks.push({ label: 'Database (PostgreSQL)', ok: true, detail: 'answering' });
+  } catch (err) {
+    checks.push({
+      label: 'Database (PostgreSQL)',
+      ok: false,
+      detail: `not answering: ${err instanceof Error ? err.message : String(err)}`,
+    });
+  }
+
+  // pg-boss schema — the background-job substrate every worker needs. Created
+  // by the migrate one-shot / up.sh; a box that skipped it has dead workers.
+  try {
+    const r = await db.execute(
+      sql`select 1 as ok from information_schema.schemata where schema_name = 'pgboss'`,
+    );
+    const rows = Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? []);
+    checks.push(
+      rows.length > 0
+        ? { label: 'Job queue (pg-boss)', ok: true, detail: 'background-job schema present' }
+        : {
+            label: 'Job queue (pg-boss)',
+            ok: false,
+            detail:
+              'pgboss schema missing — background workers cannot run. The migrate one-shot creates it; bring the stack up via the documented path.',
+          },
+    );
+  } catch (err) {
+    checks.push({
+      label: 'Job queue (pg-boss)',
+      ok: false,
+      detail: `couldn't verify: ${err instanceof Error ? err.message : String(err)}`,
+    });
+  }
+
+  // Object store — reachability AND the bucket (a registry-pull box that never
+  // ran the createbuckets one-shot has MinIO up but no bucket).
+  try {
+    const s = await bucketStatus();
+    if (!s.reachable) {
+      checks.push({
+        label: 'Object storage (MinIO)',
+        ok: false,
+        detail: 'unreachable — is the minio container running? File uploads and app builds will fail.',
+      });
+    } else if (s.exists === false) {
+      checks.push({
+        label: 'Object storage (MinIO)',
+        ok: false,
+        detail: `up, but bucket “${s.bucket}” does not exist — uploads and app builds will fail until it's created.`,
+      });
+    } else {
+      checks.push({
+        label: 'Object storage (MinIO)',
+        ok: true,
+        detail: `bucket “${s.bucket}” reachable`,
+      });
+    }
+  } catch (err) {
+    checks.push({
+      label: 'Object storage (MinIO)',
+      ok: false,
+      detail: `couldn't verify: ${err instanceof Error ? err.message : String(err)}`,
+    });
+  }
+
+  // Tika — the long-tail document parser (office formats, odd PDFs).
+  const tika = await tikaVersion(2_500);
+  checks.push(
+    tika
+      ? { label: 'Document parser (Tika)', ok: true, detail: tika }
+      : {
+          label: 'Document parser (Tika)',
+          ok: false,
+          detail: 'not answering — is the tika container running? Office/PDF parsing will fail.',
+        },
+  );
+
+  // Required secrets — the stack refuses to start without them under compose,
+  // but a hand-rolled env can miss one and break key sealing silently.
+  const secretsOk = !!process.env.MANTLE_MASTER_KEY && !!process.env.SESSION_SECRET;
+  checks.push(
+    secretsOk
+      ? { label: 'Required secrets', ok: true, detail: 'MANTLE_MASTER_KEY + SESSION_SECRET set' }
+      : {
+          label: 'Required secrets',
+          ok: false,
+          detail: 'MANTLE_MASTER_KEY or SESSION_SECRET missing — API keys cannot be stored securely.',
+        },
+  );
+
+  return checks;
 }
 
 async function runSanityChecks(userId: string): Promise<SanityCheck[]> {
@@ -373,6 +485,8 @@ export async function POST(req: Request) {
       await updateProfilePreferences(user.id, { onboardingStep: 'sanity' });
       return NextResponse.json(result);
     }
+    case 'infra':
+      return NextResponse.json(await runInfraChecks());
     case 'sanity':
       return NextResponse.json(await runSanityChecks(user.id));
     case 'purpose':
