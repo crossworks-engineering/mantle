@@ -4,6 +4,18 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the multi-arch image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.109.1 — 2026-07-02
+
+**Login works on plain-HTTP installs.** On a no-domain install
+(`MANTLE_SITE_ADDRESS=:80`, browsing by bare IP) the session cookie was
+marked `Secure`, so browsers silently dropped it — login returned OK but
+bounced straight back to the login screen, forever. Cookies (session +
+Microsoft OAuth handshake) now take the `Secure` flag from the request's
+actual scheme (`X-Forwarded-Proto`), so HTTPS installs behave exactly as
+before and HTTP installs can actually sign in. Found on the first
+Pinnacle machine. HTTPS remains strongly recommended — see
+`docs/installation.md` for pointing a domain at the box.
+
 ## v0.109.0 — 2026-07-02
 
 **One install path.** The curl-able root `install.sh` now only bootstraps
