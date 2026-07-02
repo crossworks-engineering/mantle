@@ -31,17 +31,29 @@ MANTLE_DOMAIN=mantle.example.com bash -c "$(curl -fsSL https://raw.githubusercon
 ```
 
 What it does — and all it does: checks Docker, downloads the deploy bundle
-(compose file, env template, Caddy + Postgres init files, backup scripts)
-into `./mantle`, **generates the secrets** (`SESSION_SECRET`,
-`MANTLE_MASTER_KEY`, DB + object-store passwords) into a mode-600 `.env`,
-then `docker compose pull && docker compose up -d --wait`. First boot
-downloads ~2 GB of images, runs DB migrations (the one-shot `migrate`
-service gates every app service), and pulls the bundled local embedder
-(~300 MB, EmbeddingGemma — semantic search works with no cloud key).
+(compose file, env template, Caddy + Postgres init files, backup + install
+scripts) into `./mantle`, then delegates to the bundled
+**`scripts/install.sh`** — the single configurator. That **generates the
+secrets** (`SESSION_SECRET`, `MANTLE_MASTER_KEY`, DB + object-store
+passwords) into a mode-600 `.env` (re-runs never rotate an existing master
+key), **verifies your domain's DNS points at the box before enabling
+HTTPS**, then `docker compose pull && docker compose up -d --wait` and a
+**per-service sanity check** (every container's health + the app answering).
+First boot downloads ~2 GB of images and runs DB migrations (the one-shot
+`migrate` service gates every app service).
 
 Then open `http://localhost` (or your domain), **create your account**, and
-let the onboarding wizard do the rest — assistant, API keys, email,
-Telegram are all configured in the interface, not in files.
+let the onboarding wizard do the rest — it starts with its own system-status
+check, then walks you through your API key, model choices, voice, and
+memory-search (embeddings) setup. Everything is configured in the
+interface, not in files.
+
+> **Embeddings:** semantic search uses an online embedder by default
+> (`text-embedding-3-large`, chosen in the wizard's Memory step — it can
+> reuse the same OpenRouter key as chat). The fully-local embedder is an
+> opt-in profile for air-gapped setups:
+> `docker compose --profile local-embedder up -d`, then select provider
+> `local` in Settings → Embedding.
 
 > **Back up two things:** the `data/` directory (it IS your brain — DB,
 > object store, files) and the `.env` file (`MANTLE_MASTER_KEY` decrypts
@@ -52,11 +64,19 @@ Telegram are all configured in the interface, not in files.
 
 Grab the `mantle-deploy-<version>.tar.gz` bundle from the
 [releases page](https://github.com/crossworks-engineering/mantle/releases),
-unpack it, `cp .env.prod.example .env`, fill in the two mandatory secrets
-(each has its `openssl rand` one-liner next to it), set **`MANTLE_STACK_DIR`** to
-this directory's host-absolute path (`MANTLE_STACK_DIR=$(pwd -P)` — the script
-install does this for you; without it the in-app updater can't run), and
-`docker compose up -d --wait`. The bundle and the image are versioned
+unpack it, and run the bundled configurator:
+
+```bash
+bash scripts/install.sh              # interactive (asks about a domain)
+bash scripts/install.sh --domain mantle.example.com -y   # scripted
+bash scripts/install.sh --check     # health-check an existing install
+```
+
+Fully by hand instead: `cp .env.prod.example .env`, fill in the two
+mandatory secrets (each has its `openssl rand` one-liner next to it), set
+**`MANTLE_STACK_DIR`** to this directory's host-absolute path
+(`MANTLE_STACK_DIR=$(pwd -P)` — without it the in-app updater can't run),
+and `docker compose up -d --wait`. The bundle and the image are versioned
 together — a release's compose always matches its image.
 
 ## Updating
@@ -77,7 +97,7 @@ gate), so a schema-bearing release applies itself. The whole roll is
 ~a minute of downtime.
 
 **Pinned versions** (recommended once you depend on it): set
-`MANTLE_IMAGE_TAG=v0.20.66` in `.env`, and update by editing the tag +
+`MANTLE_IMAGE_TAG=v0.108.0` in `.env`, and update by editing the tag +
 `pull` + `up -d --wait`. `latest` is convenience; pins are reproducible.
 
 **When release notes say the compose changed** (new service, new mount):
@@ -107,7 +127,20 @@ pre-update dump (`scripts/db-restore.sh`, see [`deploy.md`](./deploy.md)
 ## Adding HTTPS later
 
 Started on localhost and want a domain? Point DNS at the box, open 80/443,
-set in `.env`:
+then re-run the configurator with the domain:
+
+```bash
+cd mantle
+bash scripts/install.sh --domain mantle.example.com -y
+```
+
+It verifies the A record actually points at this server **before** letting
+Caddy request a certificate (so a DNS typo can't burn Let's Encrypt
+attempts), sets `MANTLE_SITE_ADDRESS` + `MANTLE_PUBLIC_URL`, restarts what
+changed, and re-runs the sanity check. Your secrets are untouched — re-runs
+never rotate an existing key.
+
+<details><summary>Manual alternative (edit .env by hand)</summary>
 
 ```
 MANTLE_SITE_ADDRESS=mantle.example.com
@@ -116,14 +149,15 @@ MANTLE_PUBLIC_URL=https://mantle.example.com
 
 then `docker compose up -d caddy web`. Caddy fetches the certificate
 automatically.
+</details>
 
 ## For maintainers — cutting a release
 
 ```bash
 pnpm version:bump patch          # bumps package.json (root + apps/web)
-git commit -am "release: v0.20.67"
-git tag v0.20.67
-git push origin main v0.20.67    # ← the tag push triggers .github/workflows/release.yml
+git commit -am "release: v0.108.1"
+git tag v0.108.1
+git push origin main v0.108.1    # ← the tag push triggers .github/workflows/release.yml
 ```
 
 CI builds the multi-arch image, pushes both tags to Docker Hub, and creates
