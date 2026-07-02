@@ -245,6 +245,10 @@ function Wizard({
 
   // Step 5 — provision
   const [provision, setProvision] = useState<ProvisionResult | null>(null);
+  // The assistant's agent id when provisioning ran THIS session — the
+  // `assistantAgentId` prop is a mount-time snapshot (null on a fresh brain)
+  // and only covers the resume-after-reload path.
+  const [provisionedAgentId, setProvisionedAgentId] = useState<string | null>(null);
 
   // Step 6 — sanity
   const [sanity, setSanity] = useState<SanityCheck[] | null>(null);
@@ -349,8 +353,11 @@ function Wizard({
   async function onProvision() {
     setBusy(true);
     try {
-      const res = await onboardingPost<ProvisionResult>('provision');
+      const res = await onboardingPost<ProvisionResult & { assistantAgentId?: string | null }>(
+        'provision',
+      );
       setProvision(res);
+      setProvisionedAgentId(res.assistantAgentId ?? null);
       toast.success('Your assistant and workers are set up.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Provisioning failed.');
@@ -980,11 +987,11 @@ function Wizard({
               <li>Pick a name and username, then copy the token it gives you.</li>
               <li>Paste the token below and connect — then DM your new bot and approve the pairing request that appears here.</li>
             </ol>
-            {assistantAgentId ? (
+            {(provisionedAgentId ?? assistantAgentId) ? (
               // Same connect → pair → manage flow as /settings/agents, bound to
               // the assistant. The bot starts polling on connect, so a DM shows
               // up as a pending pairing request (this section polls every 10s).
-              <TelegramBotSection agentId={assistantAgentId} />
+              <TelegramBotSection agentId={(provisionedAgentId ?? assistantAgentId)!} />
             ) : (
               <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
                 Finish the setup step first — your assistant needs to exist before a

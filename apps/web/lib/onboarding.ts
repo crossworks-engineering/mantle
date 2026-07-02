@@ -20,6 +20,11 @@ export async function isOnboarded(
 ): Promise<boolean> {
   const p = prefs ?? (await loadProfilePreferences(userId));
   if (p.onboardedAt) return true;
+  // A wizard in flight (step pref saved, not finished) also has an enabled
+  // agent once the provision step ran — the auto-stamp below would bounce a
+  // mid-wizard reload out of onboarding with the later steps unseen. Legacy
+  // installs never wrote `onboardingStep`, so they still take the stamp path.
+  if (p.onboardingStep) return false;
   // Existing installs predate onboarding (no `onboardedAt` was ever stamped).
   // If the user already has an enabled agent, they're clearly set up — treat
   // them as onboarded and stamp it, so the gate never drags a working install

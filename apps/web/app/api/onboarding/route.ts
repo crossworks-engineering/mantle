@@ -558,7 +558,12 @@ export async function POST(req: Request) {
     case 'provision': {
       const result = await provisionDefaults(user.id);
       await updateProfilePreferences(user.id, { onboardingStep: 'sanity' });
-      return NextResponse.json(result);
+      // The wizard's resume-state snapshot predates this agent (fresh brain →
+      // assistantAgentId was null at mount), so hand the id back here for the
+      // Telegram step. Resolved by slug, not from `createdAgent`, so an
+      // idempotent re-run (agent already existed, createdAgent null) works too.
+      const persona = await getAgentBySlug(user.id, PERSONA_AGENT_SLUG);
+      return NextResponse.json({ ...result, assistantAgentId: persona?.id ?? null });
     }
     case 'infra':
       return NextResponse.json(
