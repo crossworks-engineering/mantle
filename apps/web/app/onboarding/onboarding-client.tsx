@@ -278,6 +278,9 @@ function Wizard({
       setResults((r) => ({ ...r, [service]: res.test }));
       if (res.test.ok) toast.success(`${res.test.provider} key works.`);
       else toast.error(res.test.message);
+    } catch (err) {
+      // A thrown request (500 etc.) used to vanish silently — always surface it.
+      toast.error(err instanceof Error ? err.message : 'Saving the key failed.');
     } finally {
       setBusy(false);
     }
@@ -288,6 +291,8 @@ function Wizard({
       const t = await onboardingPost<TestApiKeyResult>('testKey', { service });
       setResults((r) => ({ ...r, [service]: t }));
       t.ok ? toast.success(`${t.provider} key works.`) : toast.error(t.message);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Testing the key failed.');
     } finally {
       setBusy(false);
     }
@@ -311,6 +316,9 @@ function Wizard({
       }
       setModelsSaved(true);
       return true;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Saving model choices failed.');
+      return false;
     } finally {
       setBusy(false);
     }
@@ -331,6 +339,8 @@ function Wizard({
       setEmbConfigured(res.configured);
       if (res.configured) toast.success('Memory search enabled.');
       else if (!res.test.ok) toast.error(res.test.message);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Configuring embeddings failed.');
     } finally {
       setBusy(false);
     }
