@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
+import { copyText } from '@/lib/secure-context-fallbacks';
 
 /** A copy-to-clipboard button that flips to a check for ~1.2s. Used by the
  *  Local Network status page + the Connect-a-device guide. */
@@ -25,11 +26,10 @@ export function CopyButton({
       size="sm"
       className={className ?? 'h-7 gap-1.5 px-2 text-xs'}
       onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(value);
+        if (await copyText(value)) {
           setCopied(true);
           setTimeout(() => setCopied(false), 1200);
-        } catch {
+        } else {
           toast.error('Could not copy to clipboard');
         }
       }}

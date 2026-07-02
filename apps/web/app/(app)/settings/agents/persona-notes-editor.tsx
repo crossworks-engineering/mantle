@@ -11,6 +11,7 @@
  */
 
 import { useMemo, useState } from 'react';
+import { sha256Hex } from '@/lib/secure-context-fallbacks';
 import {
   Check,
   ChevronDown,
@@ -46,14 +47,10 @@ const KIND_BADGE: Record<Kind, string> = {
 };
 
 /** Match the server's noteRef: real id when present, else a short sha256 of
- *  the content (for legacy id-less notes). Uses Web Crypto on the client. */
+ *  the content (for legacy id-less notes). */
 async function refOf(n: PersonaNoteDTO): Promise<string> {
   if (n.id) return n.id;
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(n.content));
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-    .slice(0, 8);
+  return (await sha256Hex(n.content)).slice(0, 8);
 }
 
 function sourceLabel(n: PersonaNoteDTO): string {

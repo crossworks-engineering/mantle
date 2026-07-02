@@ -21,6 +21,7 @@ import { useToast } from '@/components/ui/toast';
 import { apiFetch, apiSend } from '@/lib/api-fetch';
 import { formatDateTime } from '@/lib/format-datetime';
 import { cn } from '@/lib/utils';
+import { copyText } from '@/lib/secure-context-fallbacks';
 
 type ConnectedClient = {
   id: string;
@@ -64,7 +65,7 @@ export function McpSettingsClient() {
 
   async function copyUrl(url: string) {
     try {
-      await navigator.clipboard.writeText(url);
+      await copyText(url);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {

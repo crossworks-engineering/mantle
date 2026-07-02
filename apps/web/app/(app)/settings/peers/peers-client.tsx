@@ -23,6 +23,7 @@ import {
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
+import { copyText } from '@/lib/secure-context-fallbacks';
 
 type Peer = {
   id: string;
@@ -44,7 +45,7 @@ function TokenReveal({ token, onDone }: { token: string; onDone: () => void }) {
   const toast = useToast();
   const [copied, setCopied] = useState(false);
   const copy = async () => {
-    await navigator.clipboard.writeText(token);
+    await copyText(token);
     setCopied(true);
     toast.success('Token copied');
   };

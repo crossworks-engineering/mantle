@@ -44,6 +44,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { copyText } from '@/lib/secure-context-fallbacks';
 
 const PAGE_SIZE = 50;
 const HOURS_OPTIONS: Array<[number, string]> = [
@@ -299,7 +300,7 @@ export function RunnersClient({
                 else setConfirm({ action, run: detail });
               }}
               onCopyId={() => {
-                void navigator.clipboard?.writeText(detail.workflowID);
+                void copyText(detail.workflowID);
                 toast.info('Workflow id copied');
               }}
             />

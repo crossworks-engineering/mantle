@@ -18,6 +18,7 @@ import { useToast } from '@/components/ui/toast';
 import { apiSend, ApiError } from '@/lib/api-fetch';
 import { formatDateTime } from '@/lib/format-datetime';
 import { SecretForm, type Field, type Kind, type SecretBody, type SecretFormValues } from './secret-form';
+import { copyText } from '@/lib/secure-context-fallbacks';
 
 export type SecretRow = {
   id: string;
@@ -100,7 +101,7 @@ export function SecretDetail({
     });
 
   const copyField = async (i: number, value: string) => {
-    await navigator.clipboard.writeText(value);
+    await copyText(value);
     setCopiedIdx(i);
     setTimeout(() => setCopiedIdx((c) => (c === i ? null : c)), 1500);
   };

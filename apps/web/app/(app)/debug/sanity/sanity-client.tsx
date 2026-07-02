@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { apiFetch, ApiError } from '@/lib/api-fetch';
 import type { SanityCheck, SanityReport, SanityStatus } from '@/lib/sanity/types';
+import { copyText } from '@/lib/secure-context-fallbacks';
 
 const STATUS_STYLE: Record<SanityStatus, { badge: string; glyph: string; label: string }> = {
   pass: { badge: 'bg-primary/10 text-primary border-primary/30', glyph: '✓', label: 'PASS' },
@@ -24,7 +25,7 @@ function CopyButton({ text }: { text: string }) {
       variant="ghost"
       size="sm"
       onClick={() => {
-        void navigator.clipboard.writeText(text).then(
+        void copyText(text).then(
           () => toast.success('Copied'),
           () => toast.error('Copy failed'),
         );

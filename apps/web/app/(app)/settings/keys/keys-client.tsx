@@ -31,6 +31,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { SUPPORTED_PROVIDERS, wiredCapabilitiesFor } from '@mantle/voice/client';
+import { copyText } from '@/lib/secure-context-fallbacks';
 
 type KeyRow = {
   id: string;
@@ -418,7 +419,7 @@ export function KeysClient() {
               type="button"
               variant="outline"
               onClick={() => {
-                if (revealed) navigator.clipboard.writeText(revealed.key);
+                if (revealed) copyText(revealed.key);
               }}
             >
               Copy

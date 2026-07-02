@@ -29,6 +29,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { apiFetch } from '@/lib/api-fetch';
 import { assetUrl } from '@/lib/asset-url';
+import { uuid } from '@/lib/secure-context-fallbacks';
 
 /** A sidecar artifact attached to a message. Mirrors @mantle/tools
  *  ToolArtifact, with the discriminated `kind` driving the rendering
@@ -726,7 +727,7 @@ export function AssistantClient({
     // Idempotency key for this submit — lets the server replay (not re-run)
     // the turn if the request is retried, so we never get duplicate file
     // nodes / turns.
-    const idempotencyKey = crypto.randomUUID();
+    const idempotencyKey = uuid();
     const optimisticId = `pending-${Date.now()}`;
     const optimistic: Message = {
       id: optimisticId,
@@ -866,6 +867,12 @@ export function AssistantClient({
   // ── Mic recording ──
   const startRecording = async () => {
     setError(undefined);
+    // Browsers hard-block the mic on insecure (plain-HTTP) origins — there is
+    // no fallback, so fail with a message instead of a TypeError.
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError('Voice input needs a secure (HTTPS) connection.');
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       // Browsers vary in what they accept. webm/opus is the most
