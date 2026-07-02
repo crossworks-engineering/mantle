@@ -3,9 +3,11 @@ import { listApiKeys } from '@mantle/api-keys';
 import {
   buildPersonaPrompt,
   DEFAULT_PERSONA_NAMES,
+  loadProfilePreferences,
   type PersonaGender,
   type PersonaPresetKey,
 } from '@mantle/content';
+import { azureDeploymentName, WORKER_MODEL_KINDS } from '@/lib/system-manifest/model-choices';
 import { updateAiWorker, listAiWorkers } from '@/lib/ai-workers';
 import { createAgent, updateAgent } from '@/lib/agents';
 // Workers, the persona's structure, and the specialist stack are all seeded from
@@ -99,14 +101,45 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
   const openrouter = keys['openrouter'] ?? null;
   const xai = keys['xai'] ?? null;
 
+  // The Models-step overlay (assistant + worker model picks, optionally pinned
+  // to an Azure OpenAI endpoint via the `custom` provider). The manifest stays
+  // the structural template; these overrides are applied AFTER seeding, exactly
+  // like the personality step's persona overlay.
+  const prefs = await loadProfilePreferences(ownerId);
+  const modelOverlay = prefs.onboardingModels;
+  const customKey = keys['custom'] ?? null;
+  const azureRoute =
+    modelOverlay?.route === 'azure' && !!modelOverlay.azureBaseUrl && !!customKey;
+
   // Seed AI workers from the manifest (the single source for models/params +
   // the OpenRouter→xAI voice routing). Idempotent; skips kinds that need a key
   // the user didn't add. The tts default voice is the female preset; the
   // personality step retunes it per chosen gender (savePersonaAgent).
   const { created, skipped } = await seedManifestWorkers(ownerId);
   // The persona wires this worker's id for voice; re-read after seeding.
-  const ttsWorkerId =
-    (await listAiWorkers(ownerId)).find((w) => w.kind === 'tts')?.id ?? null;
+  const allWorkers = await listAiWorkers(ownerId);
+  const ttsWorkerId = allWorkers.find((w) => w.kind === 'tts')?.id ?? null;
+
+  // Models-step overlay: retarget the text-indexing workers to the user's fast
+  // model (and, on the Azure route, to the custom provider + endpoint). Done
+  // here rather than in the seeder so seedManifestWorkers stays manifest-pure.
+  if (modelOverlay?.workerModel) {
+    for (const w of allWorkers) {
+      if (!(WORKER_MODEL_KINDS as readonly string[]).includes(w.kind)) continue;
+      await updateAiWorker(
+        ownerId,
+        w.id,
+        azureRoute
+          ? {
+              model: azureDeploymentName(modelOverlay.workerModel),
+              provider: 'custom',
+              baseUrl: modelOverlay.azureBaseUrl ?? null,
+              apiKeyId: customKey,
+            }
+          : { model: modelOverlay.workerModel },
+      );
+    }
+  }
 
   // Seed the capability SUBSTRATE — the builtin tool ROWS *and* the tool GROUPS —
   // BEFORE the persona is created and granted its groups. P6 makes groups the
@@ -114,7 +147,7 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
   // 0 tools and it can't act. Seeding them first means the grant resolves
   // immediately and never dangles, even if the later specialist-stack seed fails.
   // applyManifest (in seedSpecialistStack) re-runs this idempotently.
-  if (openrouter) {
+  if (openrouter || azureRoute) {
     await seedToolCapabilities(ownerId).catch((err) =>
       console.error('[onboarding] seedToolCapabilities failed:', err),
     );
@@ -125,7 +158,7 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
   // the web /assistant (which falls back responder→) and Telegram. It's seeded
   // with the full generalist tool grant so it can actually act from message one.
   let createdAgent: ProvisionResult['createdAgent'] = null;
-  if (openrouter) {
+  if (openrouter || azureRoute) {
     const [existingAgent] = await db
       .select({ id: agents.id, toolGroupSlugs: agents.toolGroupSlugs })
       .from(agents)
@@ -143,9 +176,14 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
         name,
         description: 'Your personal assistant.',
         role: PERSONA_MANIFEST.role,
-        provider: 'openrouter',
-        model: PERSONA_MANIFEST.model,
-        apiKeyId: openrouter,
+        // Models-step overlay: the user's assistant pick (manifest default when
+        // untouched); the Azure route pins provider `custom` + the endpoint.
+        provider: azureRoute ? 'custom' : 'openrouter',
+        model: azureRoute
+          ? azureDeploymentName(modelOverlay?.assistantModel ?? PERSONA_MANIFEST.model)
+          : (modelOverlay?.assistantModel ?? PERSONA_MANIFEST.model),
+        apiKeyId: azureRoute ? customKey : openrouter,
+        baseUrl: azureRoute ? (modelOverlay?.azureBaseUrl ?? null) : null,
         ttsWorkerId,
         systemPrompt: buildPersonaPrompt('warm', { assistantName: name, gender: 'female' }),
         toolGroupSlugs: [...PERSONA_TOOL_GROUP_SLUGS],

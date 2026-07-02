@@ -13,6 +13,10 @@ import {
   DEFAULT_ONLINE_EMBEDDING_PROVIDER,
 } from '@mantle/embeddings';
 import { upsertEmbeddingConfig } from '@/lib/embedding-config';
+import {
+  ASSISTANT_MODEL_CHOICES,
+  WORKER_MODEL_CHOICES,
+} from '@/lib/system-manifest/model-choices';
 import { getOwnerOr401 } from '@/lib/auth';
 import { probeApiKey } from '@/lib/api-key-test';
 import {
@@ -207,6 +211,68 @@ export async function POST(req: Request) {
       const row = await setApiKey(user.id, service, 'default', trimmed);
       const test = await probeApiKey(row.id, service);
       return NextResponse.json({ saved: true, test });
+    }
+    case 'models': {
+      // Onboarding's Models step. Stores the user's assistant + worker model
+      // picks (validated against the curated lists) as the `onboardingModels`
+      // pref; provisionDefaults() applies them as operator overlay on top of
+      // the manifest seed. Route 'azure' additionally saves the Azure OpenAI
+      // key under service 'custom' and live-probes `{baseUrl}/models` before
+      // accepting the endpoint.
+      const assistantModel = ASSISTANT_MODEL_CHOICES.find((m) => m.id === body.assistantModel)?.id;
+      const workerModel = WORKER_MODEL_CHOICES.find((m) => m.id === body.workerModel)?.id;
+      const route = body.route === 'azure' ? 'azure' : 'openrouter';
+      if (!assistantModel || !workerModel) {
+        return NextResponse.json({ ok: false, message: 'Pick an assistant model and a worker model.' });
+      }
+      if (route === 'azure') {
+        const aOk = ASSISTANT_MODEL_CHOICES.find((m) => m.id === assistantModel)?.azure === true;
+        const wOk = WORKER_MODEL_CHOICES.find((m) => m.id === workerModel)?.azure === true;
+        if (!aOk || !wOk) {
+          return NextResponse.json({ ok: false, message: 'On Azure, pick OpenAI-family models (marked Azure-capable).' });
+        }
+        const azureBaseUrl = String(body.azureBaseUrl ?? '').trim().replace(/\/+$/, '');
+        if (!/^https:\/\/.+/.test(azureBaseUrl)) {
+          return NextResponse.json({ ok: false, message: 'Enter your Azure OpenAI endpoint (an https:// URL).' });
+        }
+        const azureKey = String(body.azureKey ?? '').trim();
+        const existingCustom = (await listApiKeys(user.id)).find((k) => k.service === 'custom');
+        if (!azureKey && !existingCustom) {
+          return NextResponse.json({ ok: false, message: 'Paste your Azure OpenAI API key.' });
+        }
+        if (azureKey) {
+          // Probe the endpoint with the key BEFORE saving anything.
+          try {
+            const ctl = new AbortController();
+            const timer = setTimeout(() => ctl.abort(), 10_000);
+            const res = await fetch(`${azureBaseUrl}/models`, {
+              headers: { Authorization: `Bearer ${azureKey}`, 'api-key': azureKey },
+              signal: ctl.signal,
+            });
+            clearTimeout(timer);
+            if (!res.ok) {
+              return NextResponse.json({
+                ok: false,
+                message: `Azure endpoint answered ${res.status} — check the URL (use the OpenAI-compatible /openai/v1 endpoint) and key.`,
+              });
+            }
+          } catch (err) {
+            return NextResponse.json({
+              ok: false,
+              message: `Couldn't reach the Azure endpoint: ${err instanceof Error ? err.message : String(err)}`,
+            });
+          }
+          await setApiKey(user.id, 'custom', 'default', azureKey);
+        }
+        await updateProfilePreferences(user.id, {
+          onboardingModels: { assistantModel, workerModel, route, azureBaseUrl },
+        });
+        return NextResponse.json({ ok: true, route, assistantModel, workerModel });
+      }
+      await updateProfilePreferences(user.id, {
+        onboardingModels: { assistantModel, workerModel, route },
+      });
+      return NextResponse.json({ ok: true, route, assistantModel, workerModel });
     }
     case 'embedding': {
       // Onboarding's embedder step. The user picks the model (3-large default,
