@@ -5,7 +5,15 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { db, authUsers, mobileTokens, countUsers } from '@mantle/db';
-import { SESSION_COOKIE_NAME, isDetachedDev } from './auth-constants';
+import {
+  SESSION_COOKIE_NAME,
+  isDetachedDev,
+  isReadOnlyAllowed,
+  isAuditSelfLogged,
+  MANTLE_PATH_HEADER,
+  MANTLE_METHOD_HEADER,
+} from './auth-constants';
+import { auditFireAndForget } from './audit';
 
 /**
  * Single-user session cookie auth. Cookie value: `<payload>.<sig>` where
@@ -32,7 +40,27 @@ export async function isFirstRun(): Promise<boolean> {
   return (await countUsers()) === 0;
 }
 
-export type SessionUser = { id: string; email: string };
+/**
+ * The logged-in LOGIN — who is acting. Multi-admin logins (0111) share one
+ * brain: content queries always use the anchor's id, but the actor is what the
+ * audit trail records and what the `readOnly` gate checks.
+ */
+export type Actor = {
+  id: string;
+  email: string;
+  displayName: string | null;
+  readOnly: boolean;
+  isOwner: boolean;
+};
+
+/**
+ * `id`/`email` keep their historical role as "whose data" — `id` is ALWAYS the
+ * anchor account's id (all content is keyed to it), so the 280+ existing
+ * `getOwnerOr401().id` call sites keep querying the one brain no matter who is
+ * logged in. `email` is the ACTOR's (display + audit surfaces). Anything
+ * login-personal (own password, audit attribution) must use `actor.id`.
+ */
+export type SessionUser = { id: string; email: string; actor: Actor };
 
 /** How a request authenticated: a session cookie is the web browser; a mobile
  *  bearer token is the companion app. Maps 1:1 onto the inbound
@@ -206,7 +234,15 @@ export async function getOwnerForAsset(req: Request): Promise<SessionUser | Next
     const claims = verifyAssetToken(at);
     // The signature proves the server minted this for `uid`; the route scopes to
     // it. No DB lookup — the token is short-lived and email isn't needed here.
-    if (claims) return { id: claims.uid, email: '' };
+    // Byte-serving is GET-only, so the synthetic actor never reaches the
+    // mutation/audit choke point.
+    if (claims) {
+      return {
+        id: claims.uid,
+        email: '',
+        actor: { id: claims.uid, email: '', displayName: null, readOnly: false, isOwner: false },
+      };
+    }
   }
   return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 }
@@ -232,7 +268,13 @@ async function getBearerUser(): Promise<SessionUser | null> {
   if (tok.expiresAt.getTime() <= Date.now()) return null;
 
   const [row] = await db
-    .select({ id: authUsers.id, email: authUsers.email })
+    .select({
+      id: authUsers.id,
+      email: authUsers.email,
+      isOwner: authUsers.isOwner,
+      readOnly: authUsers.readOnly,
+      displayName: authUsers.displayName,
+    })
     .from(authUsers)
     .where(eq(authUsers.id, claims.uid))
     .limit(1);
@@ -243,7 +285,7 @@ async function getBearerUser(): Promise<SessionUser | null> {
     .set({ lastUsedAt: new Date() })
     .where(eq(mobileTokens.id, claims.jti));
 
-  return { id: row.id, email: row.email };
+  return sessionUserFor(row);
 }
 
 export { SESSION_COOKIE_NAME };
@@ -274,10 +316,60 @@ function detachedDevUser(): SessionUser | null {
     const payload = dot > 0 ? token.slice(0, dot) : token;
     const data = JSON.parse(b64urlDecode(payload).toString('utf8'));
     if (typeof data.uid !== 'string') return null;
-    return { id: data.uid, email: process.env.MANTLE_DEV_EMAIL?.trim() || 'dev@localhost' };
+    const email = process.env.MANTLE_DEV_EMAIL?.trim() || 'dev@localhost';
+    return {
+      id: data.uid,
+      email,
+      actor: { id: data.uid, email, displayName: null, readOnly: false, isOwner: true },
+    };
   } catch {
     return null;
   }
+}
+
+// ── Actor → anchor mapping ────────────────────────────────────────────────────
+// All brain content is keyed to the ANCHOR account (is_owner). The anchor id is
+// immutable by construction — the row can't be deleted and the partial unique
+// index allows exactly one — so a module-level forever-cache is safe.
+let anchorIdCache: string | null = null;
+
+async function getAnchorId(): Promise<string | null> {
+  if (anchorIdCache) return anchorIdCache;
+  const [row] = await db
+    .select({ id: authUsers.id })
+    .from(authUsers)
+    .where(eq(authUsers.isOwner, true))
+    .limit(1);
+  if (row) anchorIdCache = row.id;
+  return anchorIdCache;
+}
+
+type ActorRow = {
+  id: string;
+  email: string;
+  isOwner: boolean;
+  readOnly: boolean;
+  displayName: string | null;
+};
+
+/** Assemble the SessionUser for a resolved login row: actor = the login,
+ *  id = the anchor the brain's data is keyed to. */
+async function sessionUserFor(row: ActorRow): Promise<SessionUser | null> {
+  const anchorId = row.isOwner ? row.id : await getAnchorId();
+  // A non-anchor login with no anchor in the DB is a corrupt state (0111
+  // guarantees one) — refuse the session rather than mis-scope queries.
+  if (!anchorId) return null;
+  return {
+    id: anchorId,
+    email: row.email,
+    actor: {
+      id: row.id,
+      email: row.email,
+      displayName: row.displayName,
+      readOnly: row.readOnly,
+      isOwner: row.isOwner,
+    },
+  };
 }
 
 /** Resolve the current user AND how they authenticated. Cookie first ('web'),
@@ -296,11 +388,20 @@ export async function getSessionUserWithSource(): Promise<
     const data = verify(c.value);
     if (data) {
       const [row] = await db
-        .select({ id: authUsers.id, email: authUsers.email })
+        .select({
+          id: authUsers.id,
+          email: authUsers.email,
+          isOwner: authUsers.isOwner,
+          readOnly: authUsers.readOnly,
+          displayName: authUsers.displayName,
+        })
         .from(authUsers)
         .where(eq(authUsers.id, data.uid))
         .limit(1);
-      if (row && row.email) return { user: { id: row.id, email: row.email }, source: 'web' };
+      if (row && row.email) {
+        const user = await sessionUserFor(row);
+        if (user) return { user, source: 'web' };
+      }
     }
   }
   // Mobile companion: Authorization: Bearer <mobile-token>.
@@ -345,8 +446,43 @@ export async function requireOwnerWithSource(): Promise<{ user: SessionUser; sou
  * clean 401 instead of a redirect.
  */
 export async function getOwnerOr401(): Promise<SessionUser | NextResponse> {
-  const user = await getSessionUser();
-  return user ?? NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  const res = await getOwnerOr401WithSource();
+  return res instanceof NextResponse ? res : res.user;
+}
+
+/**
+ * Mutation choke point, shared by both `getOwnerOr401` variants — which every
+ * /api/** route calls first. For mutating methods (learned from the
+ * middleware-injected x-mantle-method/-path headers, which clients can't spoof):
+ *  - a read-only login gets a 403 unless the path is allowlisted ("can chat,
+ *    can't edit"), and
+ *  - a generic `api.write` audit row records who did what, unless the route
+ *    logs its own richer event.
+ */
+async function guardMutation(user: SessionUser): Promise<NextResponse | null> {
+  const h = await headers();
+  const method = (h.get(MANTLE_METHOD_HEADER) ?? '').toUpperCase();
+  const path = h.get(MANTLE_PATH_HEADER) ?? '';
+  const mutating = method !== '' && method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
+  if (!mutating) return null;
+  if (user.actor.readOnly && !isReadOnlyAllowed(path)) {
+    return NextResponse.json(
+      { error: 'This account is read-only. Ask an admin to lift the restriction.' },
+      { status: 403 },
+    );
+  }
+  if (!isAuditSelfLogged(path)) {
+    auditFireAndForget({
+      actorId: user.actor.id,
+      actorEmail: user.actor.email,
+      action: 'api.write',
+      method,
+      path,
+      ip: h.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
+      userAgent: h.get('user-agent') || null,
+    });
+  }
+  return null;
 }
 
 /**
@@ -363,7 +499,9 @@ export async function getOwnerOr401WithSource(): Promise<
   { user: SessionUser; source: AuthSource } | NextResponse
 > {
   const res = await getSessionUserWithSource();
-  return res ?? NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  const blocked = await guardMutation(res.user);
+  return blocked ?? res;
 }
 
 /**
