@@ -188,8 +188,19 @@ function Wizard({
   const [saved, setSaved] = useState<Set<string>>(new Set(savedServices));
   const [orKey, setOrKey] = useState('');
   const [xaiKey, setXaiKey] = useState('');
-  const [openaiKey, setOpenaiKey] = useState('');
   const [results, setResults] = useState<Record<string, TestApiKeyResult>>({});
+
+  // Memory step — model + route choices. OpenRouter is pre-selected when its
+  // key was saved a step earlier (it gets reused — no second signup).
+  const [embProvider, setEmbProvider] = useState<'openrouter' | 'openai'>(
+    savedServices.includes('openrouter') ? 'openrouter' : 'openai',
+  );
+  const [embModel, setEmbModel] = useState<'text-embedding-3-large' | 'text-embedding-3-small'>(
+    'text-embedding-3-large',
+  );
+  const [embKey, setEmbKey] = useState('');
+  const [embResult, setEmbResult] = useState<TestApiKeyResult | undefined>(undefined);
+  const [embConfigured, setEmbConfigured] = useState(false);
 
   // Step 5 — provision
   const [provision, setProvision] = useState<ProvisionResult | null>(null);
@@ -240,18 +251,21 @@ function Wizard({
       setBusy(false);
     }
   }
-  // Embedder step: save the online (OpenAI) key AND point the brain's embedding
-  // config at text-embedding-3-large. Skipping leaves the keyless local fallback.
+  // Embedder step: point the brain's embedding config at the chosen model +
+  // route. A pasted key is saved first; with OpenRouter selected and its key
+  // already saved, no key is needed — the server reuses it. The server probes
+  // the route at 768 dims before configuring anything.
   async function onSaveEmbedding() {
     setBusy(true);
     try {
-      const res = await onboardingPost<{ saved: boolean; configured?: boolean; test: TestApiKeyResult }>(
+      const res = await onboardingPost<{ saved: boolean; configured: boolean; test: TestApiKeyResult }>(
         'embedding',
-        { plaintext: openaiKey },
+        { provider: embProvider, model: embModel, plaintext: embKey },
       );
-      if (res.saved) setSaved((s) => new Set(s).add('openai'));
-      setResults((r) => ({ ...r, openai: res.test }));
-      if (res.test.ok && res.configured) toast.success('Online embeddings configured.');
+      if (res.saved && embKey.trim()) setSaved((s) => new Set(s).add(embProvider));
+      setEmbResult(res.test);
+      setEmbConfigured(res.configured);
+      if (res.configured) toast.success('Memory search enabled.');
       else if (!res.test.ok) toast.error(res.test.message);
     } finally {
       setBusy(false);
@@ -412,24 +426,121 @@ function Wizard({
         {step === 'embedding' && (
           <StepShell
             title="Memory search (embeddings)"
-            blurb="Your brain turns everything you add into searchable memory with an embedding model. The default is OpenAI’s text-embedding-3-large — highest recall, nothing to run yourself, and only a thin slice of text is sent per request. Prefer everything on-box? Skip and set up the local embedder later (advanced)."
+            blurb="Everything you add is indexed into searchable memory by an embedding model. Pick the model and where it runs — only thin slices of text are sent per request. Changing the model later means re-indexing everything, so it's worth choosing deliberately."
           >
-            <KeyFields
-              service="openai"
-              label="OpenAI API key — for embeddings"
-              link="https://platform.openai.com/api-keys"
-              value={openaiKey}
-              onChange={setOpenaiKey}
-              saved={saved.has('openai')}
-              result={results['openai']}
-              onSave={onSaveEmbedding}
-              onRetest={() => onRetest('openai')}
-              busy={busy}
-            />
-            <p className="mt-3 text-xs text-muted-foreground">
-              Skipping keeps memory search on the local embedder — which doesn’t run by
-              default, so semantic search stays off until you set it up in Settings → Embedding.
-            </p>
+            <div className="space-y-5">
+              <div className="space-y-1.5">
+                <p className="text-sm font-medium">Model</p>
+                <RadioGroup
+                  value={embModel}
+                  onValueChange={(v) => setEmbModel(v as typeof embModel)}
+                  className="grid gap-2 sm:grid-cols-2"
+                >
+                  <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-foreground/[0.04]">
+                    <RadioGroupItem value="text-embedding-3-large" className="mt-0.5" />
+                    <span>
+                      <span className="block text-sm font-medium">text-embedding-3-large · recommended</span>
+                      <span className="block text-xs text-muted-foreground">
+                        OpenAI’s strongest embedder — noticeably better recall on technical and
+                        multilingual content. ~$0.13 per million tokens; indexing a large document
+                        library costs cents.
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-foreground/[0.04]">
+                    <RadioGroupItem value="text-embedding-3-small" className="mt-0.5" />
+                    <span>
+                      <span className="block text-sm font-medium">text-embedding-3-small · budget</span>
+                      <span className="block text-xs text-muted-foreground">
+                        ~6× cheaper (~$0.02 per million tokens) and faster, with somewhat lower
+                        recall. Fine for lighter, personal use.
+                      </span>
+                    </span>
+                  </label>
+                </RadioGroup>
+              </div>
+
+              <div className="space-y-1.5">
+                <p className="text-sm font-medium">Runs via</p>
+                <RadioGroup
+                  value={embProvider}
+                  onValueChange={(v) => {
+                    setEmbProvider(v as typeof embProvider);
+                    setEmbResult(undefined);
+                    setEmbConfigured(false);
+                  }}
+                  className="grid gap-2 sm:grid-cols-2"
+                >
+                  <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-foreground/[0.04]">
+                    <RadioGroupItem value="openrouter" className="mt-0.5" />
+                    <span>
+                      <span className="block text-sm font-medium">
+                        OpenRouter{saved.has('openrouter') ? ' · uses your saved key' : ''}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {saved.has('openrouter')
+                          ? 'Reuses the OpenRouter key you added a step ago — nothing new to sign up for. One bill for chat and embeddings.'
+                          : 'One key and one bill for chat and embeddings.'}
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-foreground/[0.04]">
+                    <RadioGroupItem value="openai" className="mt-0.5" />
+                    <span>
+                      <span className="block text-sm font-medium">
+                        OpenAI (direct){saved.has('openai') ? ' · uses your saved key' : ''}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        Straight to OpenAI with an OpenAI API key. Pick this if you already run on
+                        OpenAI billing.
+                      </span>
+                    </span>
+                  </label>
+                </RadioGroup>
+              </div>
+
+              {!saved.has(embProvider) && (
+                <Field label={embProvider === 'openrouter' ? 'OpenRouter API key' : 'OpenAI API key'} hint={undefined}>
+                  <Input
+                    type="text"
+                    autoComplete="off"
+                    placeholder="Paste your key"
+                    value={embKey}
+                    onChange={(e) => setEmbKey(e.target.value)}
+                  />
+                </Field>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button onClick={onSaveEmbedding} disabled={busy || (!saved.has(embProvider) && !embKey.trim())} size="sm">
+                  {busy ? <Loader2 className="animate-spin" /> : null} Enable memory search
+                </Button>
+                {!saved.has(embProvider) && (
+                  <a
+                    className="ml-auto flex items-center gap-1 text-xs text-primary underline-offset-2 hover:underline"
+                    href={embProvider === 'openrouter' ? 'https://openrouter.ai/keys' : 'https://platform.openai.com/api-keys'}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Get a key <ExternalLink className="size-3" />
+                  </a>
+                )}
+              </div>
+
+              {embResult && (
+                <p className={'flex items-center gap-2 text-sm ' + (embConfigured ? 'text-primary' : 'text-destructive')}>
+                  {embConfigured ? <Check className="size-4" /> : <X className="size-4" />}
+                  {embConfigured
+                    ? `Memory search enabled — ${embModel} via ${embProvider === 'openrouter' ? 'OpenRouter' : 'OpenAI'}.`
+                    : embResult.message}
+                </p>
+              )}
+
+              <p className="text-xs text-muted-foreground">
+                Skip to leave semantic search off for now — the self-hosted local embedder is an
+                advanced option in Settings → Embedding.
+              </p>
+            </div>
           </StepShell>
         )}
 

@@ -209,30 +209,74 @@ export async function POST(req: Request) {
       return NextResponse.json({ saved: true, test });
     }
     case 'embedding': {
-      // Onboarding's embedder step: save the online key, verify it, and point the
-      // brain's single embedding_config at the online default (text-embedding-3-large
-      // @ 768, dimension-reduced to fit the vector(768) columns). This is the shipped
-      // default; skipping leaves the keyless local fallback (opt-in, not run by default).
+      // Onboarding's embedder step. The user picks the model (3-large default,
+      // 3-small budget) and the route: OpenRouter — reusing the chat key saved a
+      // step earlier, no second signup — or OpenAI direct. A pasted key is saved
+      // and probed first; then the actual embedding route is probed at 768 dims
+      // (MRL reduction) BEFORE the brain's single embedding_config is pointed at
+      // it, so a provider that ignores `dimensions` can never corrupt the index.
+      // Skipping leaves the keyless local fallback (opt-in, not run by default).
+      const provider =
+        body.provider === 'openrouter' ? 'openrouter' : DEFAULT_ONLINE_EMBEDDING_PROVIDER;
+      const model =
+        body.model === 'text-embedding-3-small'
+          ? 'text-embedding-3-small'
+          : DEFAULT_ONLINE_EMBEDDING_MODEL;
+      // OpenRouter namespaces model slugs (`openai/…`); direct providers use the bare id.
+      const slug = provider === 'openrouter' ? `openai/${model}` : model;
       const trimmed = String(body.plaintext ?? '').trim();
-      if (!trimmed) {
+
+      let keyId: string;
+      if (trimmed) {
+        const row = await setApiKey(user.id, provider, 'default', trimmed);
+        const test = await probeApiKey(row.id, provider);
+        if (!test.ok) return NextResponse.json({ saved: true, configured: false, test });
+        keyId = row.id;
+      } else {
+        const existing = (await listApiKeys(user.id)).find((k) => k.service === provider);
+        if (!existing) {
+          return NextResponse.json({
+            saved: false,
+            configured: false,
+            test: { ok: false, message: `No ${provider} key saved yet — paste one first.`, provider, adapter: '' },
+          });
+        }
+        keyId = existing.id;
+      }
+
+      try {
+        const dim = await probeEmbeddingRoute(user.id, { provider, model: slug, apiKeyId: keyId });
+        if (dim !== 768) {
+          return NextResponse.json({
+            saved: true,
+            configured: false,
+            test: {
+              ok: false,
+              message: `The route returned ${dim}-dimension vectors (need 768) — not configured.`,
+              provider,
+              adapter: '',
+            },
+          });
+        }
+      } catch (err) {
         return NextResponse.json({
-          saved: false,
+          saved: true,
           configured: false,
-          test: { ok: false, message: 'Paste a key first.', provider: DEFAULT_ONLINE_EMBEDDING_PROVIDER, adapter: '' },
+          test: {
+            ok: false,
+            message: `Embedding test failed: ${err instanceof Error ? err.message : String(err)}`,
+            provider,
+            adapter: '',
+          },
         });
       }
-      const row = await setApiKey(user.id, DEFAULT_ONLINE_EMBEDDING_PROVIDER, 'default', trimmed);
-      const test = await probeApiKey(row.id, DEFAULT_ONLINE_EMBEDDING_PROVIDER);
-      if (!test.ok) {
-        // Key saved but invalid — don't point the brain at a broken route.
-        return NextResponse.json({ saved: true, configured: false, test });
-      }
+
       await upsertEmbeddingConfig(user.id, {
-        model: DEFAULT_ONLINE_EMBEDDING_MODEL,
-        primaryProvider: DEFAULT_ONLINE_EMBEDDING_PROVIDER,
+        model: slug,
+        primaryProvider: provider,
         primaryBaseUrl: null,
-        primaryApiKeyId: row.id,
-        primaryLabel: 'OpenAI',
+        primaryApiKeyId: keyId,
+        primaryLabel: provider === 'openrouter' ? 'OpenRouter' : 'OpenAI',
         backupEnabled: false,
         backupProvider: null,
         backupBaseUrl: null,
@@ -243,7 +287,11 @@ export async function POST(req: Request) {
         localEmbedBatchSize: null,
         localEmbedRequestTimeoutMs: null,
       });
-      return NextResponse.json({ saved: true, configured: true, test });
+      return NextResponse.json({
+        saved: true,
+        configured: true,
+        test: { ok: true, message: 'Memory search enabled.', provider, adapter: '' },
+      });
     }
     case 'testKey': {
       const service = String(body.service ?? '');
