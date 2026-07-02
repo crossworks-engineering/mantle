@@ -29,14 +29,20 @@ if ! docker info >/dev/null 2>&1; then bad "Docker daemon isn't running."; exit 
 is_oneshot() { case "$1" in *_migrate|*_createbuckets|*_ollama_pull) return 0 ;; *) return 1 ;; esac; }
 
 mapfile -t NAMES < <(docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --format '{{.Names}}' | sort)
-if [[ ${#NAMES[@]} -eq 0 ]]; then bad "No containers found for compose project '$PROJECT'. Is the stack up?"; exit 1; fi
+# Dev machines run the `mantle-dev` compose project (docker-compose.dev.yml);
+# fall back to it when the default prod project is empty and nothing was pinned.
+if [[ ${#NAMES[@]} -eq 0 && -z "${MANTLE_COMPOSE_PROJECT:-}" ]]; then
+  PROJECT="mantle-dev"
+  mapfile -t NAMES < <(docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --format '{{.Names}}' | sort)
+fi
+if [[ ${#NAMES[@]} -eq 0 ]]; then bad "No containers found for compose project 'mantle' (or 'mantle-dev'). Is the stack up?"; exit 1; fi
 
 fail=0; up=0
 for name in "${NAMES[@]}"; do
   read -r state health exitcode < <(docker inspect \
     --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} {{.State.ExitCode}}' \
     "$name" 2>/dev/null)
-  short="${name#mantle_}"
+  short="${name#mantle_dev_}"; short="${short#mantle_}"
   if is_oneshot "$name"; then
     if [[ "$state" == "exited" && "$exitcode" == "0" ]]; then ok "$short ${DIM}(completed)${RS}"; up=$((up+1))
     elif [[ "$state" == "running" ]]; then inf "$short ${DIM}(running…)${RS}"

@@ -42,6 +42,27 @@ EOF
 fi
 
 # ── 3. Bring up infra ------------------------------------------------------
+# One-time migration guard (2026-07): the dev compose moved from project
+# `mantle` to `mantle-dev` (containers mantle_pg → mantle_dev_pg, …) so it can
+# never collide with a live prod stack on the same host. An old dev container
+# still holds host port 54323 and would block the new one. Prod's postgres
+# publishes no host ports, so a `mantle_pg` publishing 127.0.0.1:54323 is
+# unambiguously the OLD dev container — but we still don't remove it ourselves.
+if docker ps --filter "name=mantle_pg" --format '{{.Names}}\t{{.Ports}}' 2>/dev/null \
+   | grep -q $'^mantle_pg\t.*127\.0\.0\.1:54323->'; then
+  cat <<'EOF' >&2
+Found the OLD dev containers (compose project `mantle`, container mantle_pg on
+:54323). The dev compose now uses its own project `mantle-dev`, and the old
+containers would block the ports. Tear them down once, then re-run:
+
+  docker compose -p mantle -f docker-compose.dev.yml down
+
+Your data is safe — it lives in bind mounts under ./data (MANTLE_DATA_DIR) and
+the new containers reuse it as-is.
+EOF
+  exit 1
+fi
+
 echo "→ Bringing up postgres + minio (docker-compose.dev.yml)…"
 docker compose -f docker-compose.dev.yml up -d --wait
 
@@ -54,7 +75,7 @@ S3_SECRET_KEY_VAL=$(grep -E '^S3_SECRET_KEY=' apps/web/.env.local | head -1 | cu
 : "${S3_SECRET_KEY_VAL:=minio12345}"
 
 echo "→ Ensuring MinIO bucket 'mantle' exists…"
-docker run --rm --network mantle_default \
+docker run --rm --network mantle-dev_default \
   -e ACCESS_KEY="$S3_ACCESS_KEY_VAL" \
   -e SECRET_KEY="$S3_SECRET_KEY_VAL" \
   --entrypoint sh \

@@ -18,7 +18,7 @@ cat <<'EOF'
 
 This will:
   • Take a backup of the current dev brain (→ backups/mantle-<ts>.dump)
-  • Stop + remove the dev containers (mantle_pg, mantle_minio, mantle_tika)
+  • Stop + remove the dev containers (mantle_dev_pg, mantle_dev_minio, mantle_dev_tika)
   • DELETE the postgres + minio volumes
     (your dev brain, uploads, embeddings cache — all gone)
   • Re-run `pnpm start` (infra → bucket → migrate → pg-boss → dev servers)
@@ -39,9 +39,9 @@ fi
 # ── 1. Best-effort backup --------------------------------------------------
 echo
 echo "→ Backing up current dev brain (best-effort)…"
-if docker ps --filter "name=mantle_pg" --filter "status=running" --format '{{.Names}}' \
-   | grep -q '^mantle_pg$'; then
-  bash scripts/db-dump.sh
+if docker ps --filter "name=mantle_dev_pg" --filter "status=running" --format '{{.Names}}' \
+   | grep -q '^mantle_dev_pg$'; then
+  MANTLE_PG_CONTAINER=mantle_dev_pg bash scripts/db-dump.sh
 else
   echo "  (skipped — postgres container not running)"
 fi

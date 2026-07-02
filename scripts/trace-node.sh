@@ -12,12 +12,21 @@
 #
 # Companion doc: docs/data-flow-tracing.md
 #
-# Connects via `docker exec` into the dev postgres container by default.
-# Override the container name with MANTLE_PG_CONTAINER if yours differs.
+# Connects via `docker exec` into the running postgres container — mantle_dev_pg
+# on dev machines, mantle_pg on deployed boxes. Override with MANTLE_PG_CONTAINER
+# if yours differs (or if both are running on one host).
 
 set -euo pipefail
 
-PG="${MANTLE_PG_CONTAINER:-mantle_pg}"
+pick_pg() {
+  running() { docker ps --filter "name=$1" --format '{{.Names}}' 2>/dev/null | grep -qx "$1"; }
+  if running mantle_pg && running mantle_dev_pg; then
+    echo "✗ both mantle_pg and mantle_dev_pg are running — set MANTLE_PG_CONTAINER to pick one." >&2
+    return 1
+  fi
+  if running mantle_dev_pg; then echo mantle_dev_pg; else echo mantle_pg; fi
+}
+PG="${MANTLE_PG_CONTAINER:-$(pick_pg)}"
 psql() { docker exec "$PG" psql -U postgres -d postgres "$@"; }
 
 if ! docker exec "$PG" pg_isready -U postgres -d postgres >/dev/null 2>&1; then

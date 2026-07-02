@@ -1,4 +1,10 @@
-name: mantle
+# Project + container names are deliberately DISTINCT from the prod
+# docker-compose.yml (project `mantle`, containers `mantle_pg` etc.). They used
+# to be identical, and on a host that also runs a live prod stack, `docker
+# compose -f docker-compose.dev.yml up` would RECREATE the prod containers and
+# take the live brain down (2026-07-02 dev-box incident). Host ports (54323 /
+# 9000 / 9001 / 9998) are unchanged, so existing .env.local files keep working.
+name: mantle-dev
 
 # Mantle dev infra: just Postgres + MinIO.
 # apps/web, apps/mcp, and workers run as native Node via `pnpm dev`.
@@ -7,7 +13,7 @@ name: mantle
 services:
   postgres:
     image: pgvector/pgvector:pg17
-    container_name: mantle_pg
+    container_name: mantle_dev_pg
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -27,7 +33,7 @@ services:
 
   minio:
     image: minio/minio:latest
-    container_name: mantle_minio
+    container_name: mantle_dev_minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -52,7 +58,7 @@ services:
   # — bytes never leave the VPS. See docs/file-ingestion.md.
   tika:
     image: apache/tika:3.3.0.0
-    container_name: mantle_tika
+    container_name: mantle_dev_tika
     restart: unless-stopped
     environment:
       # Cap JVM heap so Tika can't balloon on a malicious or pathological

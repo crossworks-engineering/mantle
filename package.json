@@ -1,6 +1,6 @@
 {
   "name": "mantle",
-  "version": "0.109.0",
+  "version": "0.109.1",
   "private": true,
   "description": "Mantle — an AI-queryable life tree.",
   "license": "SEE LICENSE IN LICENSE.md",
@@ -44,7 +44,7 @@
     "infra:up": "docker compose -f docker-compose.dev.yml up -d --wait",
     "infra:down": "docker compose -f docker-compose.dev.yml down",
     "infra:logs": "docker compose -f docker-compose.dev.yml logs -f",
-    "infra:psql": "docker exec -it mantle_pg psql -U postgres -d postgres",
+    "infra:psql": "docker exec -it mantle_dev_pg psql -U postgres -d postgres",
     "prod:build-push": "bash scripts/docker-build-push.sh",
     "prod:up": "docker compose up -d --wait",
     "prod:down": "docker compose down",

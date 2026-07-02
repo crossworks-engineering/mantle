@@ -1790,7 +1790,7 @@ Granular escape hatches in `package.json`:
 | `pnpm reset`       | Wipe the dev brain + rebuild from scratch (asks first)     |
 | `pnpm infra:up`    | Infra only                                                 |
 | `pnpm infra:logs`  | Tail postgres + minio                                      |
-| `pnpm infra:psql`  | `docker exec -it mantle_pg psql`                           |
+| `pnpm infra:psql`  | `docker exec -it mantle_dev_pg psql`                           |
 | `pnpm db:migrate`  | Drizzle migrate                                            |
 | `pnpm db:studio`   | Drizzle Studio (DB browser at localhost:4983)              |
 | `pnpm typecheck`   | Recursive tsc across all packages/apps                     |

@@ -4,6 +4,27 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the multi-arch image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.109.1 — 2026-07-02
+
+**Dev compose can no longer collide with a live prod stack.** The dev
+compose (`docker-compose.dev.yml`) gets its own project name (`mantle-dev`)
+and container names (`mantle_dev_pg` / `mantle_dev_minio` / `mantle_dev_tika`).
+Previously it shared project `mantle` and the exact container names with the
+prod `docker-compose.yml`, so bringing dev infra up on a host that also runs
+a prod stack recreated the prod containers and took the live brain down
+(2026-07-02 dev-box incident). Host ports are unchanged (54323 / 9000 / 9001
+/ 9998), so existing `.env.local` files keep working.
+
+- One-time migration on dev machines: old containers block the ports —
+  `pnpm start` detects them and tells you to run
+  `docker compose -p mantle -f docker-compose.dev.yml down` once (data is
+  bind-mounted under `./data` and is reused as-is).
+- `db-dump.sh` / `db-restore.sh` / `trace-node.sh` now autodetect the
+  running container (`mantle_dev_pg` vs `mantle_pg`) and refuse to guess
+  when both exist on one host; `MANTLE_PG_CONTAINER` still overrides.
+- `sanity.sh` falls back to the `mantle-dev` project when the prod project
+  has no containers.
+
 ## v0.109.0 — 2026-07-02
 
 **One install path.** The curl-able root `install.sh` now only bootstraps
