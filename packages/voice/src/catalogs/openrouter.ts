@@ -36,10 +36,19 @@ export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 export const OPENROUTER_CHAT_MODELS: readonly ChatModelInfo[] = [
   // Anthropic — the responder's default lives here.
   {
-    id: 'anthropic/claude-sonnet-4.6',
-    label: 'Claude Sonnet 4.6',
+    id: 'anthropic/claude-sonnet-5',
+    label: 'Claude Sonnet 5',
     description:
       'Anthropic flagship. Strong reasoning + tool use, 1M context. Default for the responder and Saskia. Supports prompt caching (~10× cheaper on cache hits).',
+    contextTokens: 1_000_000,
+    capabilities: ['reasoning', 'function_calling', 'vision'],
+    inputPricePer1M: 2,
+    outputPricePer1M: 10,
+  },
+  {
+    id: 'anthropic/claude-sonnet-4.6',
+    label: 'Claude Sonnet 4.6',
+    description: 'Previous-generation Sonnet. 1M context; supports prompt caching.',
     contextTokens: 1_000_000,
     capabilities: ['reasoning', 'function_calling', 'vision'],
     inputPricePer1M: 3,
@@ -158,9 +167,18 @@ export const OPENROUTER_CHAT_MODELS: readonly ChatModelInfo[] = [
  *  Document worker's `extractDocument` path; gpt-4o is image-only here. */
 export const OPENROUTER_VISION_MODELS: readonly VisionModelInfo[] = [
   {
+    id: 'anthropic/claude-sonnet-5',
+    label: 'Claude Sonnet 5',
+    description: 'Strong document + table reading; native PDF. Great default for invoices.',
+    contextTokens: 1_000_000,
+    inputPricePer1M: 2,
+    outputPricePer1M: 10,
+    tier: 'balanced',
+  },
+  {
     id: 'anthropic/claude-sonnet-4.6',
     label: 'Claude Sonnet 4.6',
-    description: 'Strong document + table reading; native PDF. Great default for invoices.',
+    description: 'Previous-generation Sonnet vision; native PDF.',
     contextTokens: 1_000_000,
     inputPricePer1M: 3,
     outputPricePer1M: 15,

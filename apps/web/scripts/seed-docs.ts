@@ -26,7 +26,7 @@ if (!USER_ID) {
   process.exit(1);
 }
 
-const MODEL = process.env.DOCS_MODEL || 'anthropic/claude-sonnet-4.6';
+const MODEL = process.env.DOCS_MODEL || 'anthropic/claude-sonnet-5';
 
 // P6: capability is granted as tool GROUPS. Docs reads the brain — `memory-core`
 // covers search_nodes / search_chunks / node_read (its needed read tools) plus

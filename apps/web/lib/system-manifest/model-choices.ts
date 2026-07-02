@@ -32,11 +32,11 @@ export type ModelChoice = {
 /** Top-tier choices for the assistant (the persona/responder agent). */
 export const ASSISTANT_MODEL_CHOICES: readonly ModelChoice[] = [
   {
-    id: 'anthropic/claude-sonnet-4.6',
-    name: 'Claude Sonnet 4.6',
+    id: 'anthropic/claude-sonnet-5',
+    name: 'Claude Sonnet 5',
     blurb:
-      'The shipped default — superb reasoning and tool use with dependable long-document work. The best all-round assistant.',
-    price: '$3 · $15 /M',
+      'The shipped default — Anthropic’s newest Sonnet: superb reasoning and tool use, 1M context, and cheaper than the generation before it.',
+    price: '$2 · $10 /M',
     recommended: true,
   },
   {
@@ -47,11 +47,11 @@ export const ASSISTANT_MODEL_CHOICES: readonly ModelChoice[] = [
     price: '$5 · $25 /M',
   },
   {
-    id: 'openai/gpt-5.4',
-    name: 'GPT-5.4',
+    id: 'openai/gpt-5.5',
+    name: 'GPT-5.5',
     blurb:
-      'OpenAI’s mainline flagship — excellent general intelligence. The top-tier pick that can also run from an Azure OpenAI deployment.',
-    price: '$2.50 · $15 /M',
+      'OpenAI’s newest flagship — excellent general intelligence. The top-tier pick that can also run from an Azure OpenAI deployment.',
+    price: '$5 · $30 /M',
     azure: true,
   },
   {

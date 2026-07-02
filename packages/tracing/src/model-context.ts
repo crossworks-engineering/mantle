@@ -19,11 +19,14 @@
 const FALLBACK_CONTEXT_LIMITS: Record<string, number> = {
   // Anthropic via OpenRouter — 4.x sonnet/opus default to a 1M window.
   'anthropic/claude-haiku-4.5': 200_000,
+  'anthropic/claude-sonnet-5': 1_000_000,
   'anthropic/claude-sonnet-4.6': 1_000_000,
   'anthropic/claude-opus-4.7': 1_000_000,
   'anthropic/claude-opus-4.7-fast': 1_000_000,
 
   // OpenAI via OpenRouter
+  'openai/gpt-5.5': 400_000,
+  'openai/gpt-5.4': 400_000,
   'openai/gpt-4o': 128_000,
   'openai/gpt-4o-mini': 128_000,
   'openai/gpt-4-turbo': 128_000,

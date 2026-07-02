@@ -38,10 +38,20 @@ export const ANTHROPIC_CHAT_MODELS: readonly ChatModelInfo[] = [
     outputPricePer1M: 25,
   },
   {
+    id: 'claude-sonnet-5',
+    label: 'Claude Sonnet 5',
+    description:
+      'Best speed/intelligence balance — newer and cheaper than 4.6. 1M context, supports extended thinking. Default choice.',
+    contextTokens: 1_000_000,
+    capabilities: ['vision', 'reasoning', 'function_calling'],
+    inputPricePer1M: 2,
+    outputPricePer1M: 10,
+  },
+  {
     id: 'claude-sonnet-4-6',
     label: 'Claude Sonnet 4.6',
     description:
-      'Best speed/intelligence balance. 1M context, supports extended thinking. Default choice.',
+      'Previous-generation Sonnet. 1M context, supports extended thinking.',
     contextTokens: 1_000_000,
     capabilities: ['vision', 'reasoning', 'function_calling'],
     inputPricePer1M: 3,
@@ -96,10 +106,19 @@ export const ANTHROPIC_VISION_MODELS: readonly VisionModelInfo[] = [
     tier: 'fast',
   },
   {
-    id: 'claude-sonnet-4-6',
-    label: 'Claude Sonnet 4.6',
+    id: 'claude-sonnet-5',
+    label: 'Claude Sonnet 5',
     description:
       'Best balance. Strong on messy handwriting + multi-column layouts. Recommended for note photos.',
+    contextTokens: 1_000_000,
+    inputPricePer1M: 2,
+    outputPricePer1M: 10,
+    tier: 'balanced',
+  },
+  {
+    id: 'claude-sonnet-4-6',
+    label: 'Claude Sonnet 4.6',
+    description: 'Previous-generation Sonnet vision. Still strong on documents.',
     contextTokens: 1_000_000,
     inputPricePer1M: 3,
     outputPricePer1M: 15,

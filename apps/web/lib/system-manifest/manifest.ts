@@ -618,7 +618,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Assistant',
     description: 'The generalist persona — serves web /assistant and Telegram.',
     role: 'responder',
-    model: 'anthropic/claude-sonnet-4.6',
+    model: 'anthropic/claude-sonnet-5',
     isPersona: true,
     // P6: grants are pure tool groups — the generalist's effective set is the
     // union of these bundles. Page/table AUTHORING is delegated to the Pages /
@@ -683,7 +683,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Pages',
     description: 'Document authoring + editing specialist; backs the /pages Assist panel.',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-4.6',
+    model: 'anthropic/claude-sonnet-5',
     envModelVar: 'PAGES_MODEL',
     systemPrompt: AGENT_PROMPTS['pages']!,
     // P6: full page capability via groups — `pages` (authoring) + `page-admin`
@@ -703,7 +703,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Ledger',
     description: 'Typed-grid + data specialist; backs the /tables Assist panel.',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-4.6',
+    model: 'anthropic/claude-sonnet-5',
     envModelVar: 'TABLES_MODEL',
     systemPrompt: AGENT_PROMPTS['tables']!,
     // P6: `tables` is the authoring subset (no `table-admin`/table_delete);
@@ -721,7 +721,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Remy',
     description: 'Memory-recall agent — replays past conversations from the archive.',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-4.6',
+    model: 'anthropic/claude-sonnet-5',
     envModelVar: 'REMY_MODEL',
     systemPrompt: AGENT_PROMPTS['remy']!,
     // P6: `recall` (replay) + `recall-search` (find_window, Remy's specialty) +
@@ -737,7 +737,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Researcher',
     description: 'Live-web research agent (Perplexity Sonar via OpenRouter).',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-4.6',
+    model: 'anthropic/claude-sonnet-5',
     envModelVar: 'RESEARCHER_MODEL',
     systemPrompt: AGENT_PROMPTS['researcher']!,
     // P6: `research` (web_search) + `memory-core` for the node lookups it cites.
@@ -752,7 +752,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Reader',
     description: 'Web page reader — opens a URL and reads its content back as context for the responder.',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-4.6',
+    model: 'anthropic/claude-sonnet-5',
     envModelVar: 'READER_MODEL',
     systemPrompt: AGENT_PROMPTS['reader']!,
     // Just `web-read` (web_fetch) — a focused page reader, deliberately without
@@ -769,7 +769,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Toolsmith',
     description: 'API integration specialist — reads service docs, authors + tests agent-callable HTTP tools; backs the API Console Assist panel.',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-4.6',
+    model: 'anthropic/claude-sonnet-5',
     envModelVar: 'TOOLSMITH_MODEL',
     systemPrompt: AGENT_PROMPTS['toolsmith']!,
     // `toolsmith` (the api_tool_*/group/grant/web_fetch kit) + `research` so it

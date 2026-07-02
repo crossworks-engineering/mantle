@@ -198,7 +198,7 @@ const MODEL_HINT_FOR_KIND: Record<AiWorkerKind, string> = {
   tts: 'gpt-4o-mini-tts',
   stt: 'whisper-1',
   vision: 'openai/gpt-4o',
-  document: 'claude-sonnet-4-6',
+  document: 'claude-sonnet-5',
   image_gen: 'dall-e-3',
   // 768-dim local default (migration 0060), keyless via Ollama — the
   // brain's current column shape. Anything else either matches 768 or
