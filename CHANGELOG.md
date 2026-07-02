@@ -4,6 +4,17 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the multi-arch image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.109.2 — 2026-07-02
+
+**Assistant works on plain-HTTP installs.** Companion fix to v0.109.1:
+browsers also remove `crypto.randomUUID`, `crypto.subtle`, the clipboard
+API, and microphone access on non-HTTPS pages. The assistant composer
+generated its idempotency key with `crypto.randomUUID()` and threw before
+sending — pressing Submit silently did nothing. All client code now goes
+through `lib/secure-context-fallbacks.ts` (UUID, sha256, copy-to-clipboard
+fallbacks); voice input, which browsers hard-block over HTTP, shows a
+clear "needs HTTPS" message instead of failing silently.
+
 ## v0.109.1 — 2026-07-02
 
 **Login works on plain-HTTP installs.** On a no-domain install
