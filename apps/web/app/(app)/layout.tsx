@@ -33,7 +33,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // (AppShell writes the same cookies).
   const cookieStore = await cookies();
   const navCollapsed = cookieStore.get('mantle_nav_collapsed')?.value === '1';
-  const activityCollapsed = cookieStore.get('mantle_activity_collapsed')?.value === '1';
+  // Activity defaults to collapsed — only an explicit '0' (user expanded it) opens it.
+  const activityCollapsed = cookieStore.get('mantle_activity_collapsed')?.value !== '0';
 
   return (
     <AppShell

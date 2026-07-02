@@ -56,7 +56,7 @@ export function AppShell({
   email,
   contextCard,
   initialNavCollapsed = false,
-  initialActivityCollapsed = false,
+  initialActivityCollapsed = true,
   children,
 }: {
   email: string | null;
