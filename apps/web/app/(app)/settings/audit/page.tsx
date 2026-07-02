@@ -9,8 +9,8 @@ const PAGE_SIZE = 50;
  * Audit log: who did what, when. URL-driven SSR per the /pages convention —
  * filters (actor email, action, date range) and page live in the query string;
  * this server page runs the filtered query and hands rows to the client shell.
- * Read-only logins may view it (it's a trail, not a secret); rows are written
- * by lib/audit.ts producers.
+ * Any logged-in admin may view it (it's a trail, not a secret); rows are
+ * written by lib/audit.ts producers.
  */
 export default async function AuditSettingsPage({
   searchParams,

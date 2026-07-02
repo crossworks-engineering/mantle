@@ -2,14 +2,14 @@
 --
 -- Mantle stays a single-brain system: all content remains keyed to the ANCHOR
 -- account (the original user, is_owner = true). Additional auth.users rows are
--- co-admin LOGINS into that same brain — an identity for the audit trail and a
--- per-user read_only flag, never a data scope.
+-- co-admin LOGINS into that same brain — an identity for the audit trail, never
+-- a data scope. (Access tiers are out of scope here — handled by a separate
+-- team-member surface.)
 --
 -- IF NOT EXISTS throughout: fresh installs get these columns from
 -- infra/postgres/init/02-auth-schema.sql before migrations replay.
 
 ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS is_owner boolean NOT NULL DEFAULT false;--> statement-breakpoint
-ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS read_only boolean NOT NULL DEFAULT false;--> statement-breakpoint
 ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS display_name text;--> statement-breakpoint
 ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS last_login_at timestamptz;--> statement-breakpoint
 -- Backfill: the oldest existing account becomes the anchor (no-op on fresh installs,
@@ -33,4 +33,6 @@ CREATE TABLE IF NOT EXISTS "audit_log" (
 );--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "audit_log_created_idx" ON "audit_log" ("created_at" DESC);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "audit_log_actor_idx" ON "audit_log" ("actor_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "audit_log_action_idx" ON "audit_log" ("action");
+CREATE INDEX IF NOT EXISTS "audit_log_action_idx" ON "audit_log" ("action");--> statement-breakpoint
+-- The audit viewer's actor filter reads DISTINCT actor_email on each load.
+CREATE INDEX IF NOT EXISTS "audit_log_actor_email_idx" ON "audit_log" ("actor_email");

@@ -39,24 +39,6 @@ export const PUBLIC_PATHS = [
 ];
 
 /**
- * Mutating API paths a READ-ONLY login may still hit (prefix match). Read-only
- * means "can chat, can't edit": talking to the assistant (send/cancel a turn,
- * mark read, voice transcribe) and registering a push device are allowed; every
- * other non-GET is 403'd by the `getOwnerOr401` choke point. Own password
- * change lives under the public `/api/auth` prefix, outside the choke point.
- */
-export const READ_ONLY_ALLOWED_PATHS = [
-  '/api/assistant/turn',
-  '/api/assistant/read',
-  '/api/assistant/transcribe',
-  '/api/push',
-];
-
-export function isReadOnlyAllowed(path: string): boolean {
-  return READ_ONLY_ALLOWED_PATHS.some((p) => path === p || path.startsWith(p + '/'));
-}
-
-/**
  * Paths whose routes emit their own richer audit events (`user.*`) — the
  * choke point skips its generic `api.write` row for these to avoid doubles.
  */
@@ -67,10 +49,12 @@ export function isAuditSelfLogged(path: string): boolean {
 }
 
 /**
- * Request-context headers injected by the middleware (and stripped from inbound
- * requests there, so they can't be spoofed by a client). They let the Node-side
- * auth gate learn the method/path without threading `Request` through the 280+
- * `getOwnerOr401()` call sites.
+ * Request-context headers injected by the middleware (overwritten there via
+ * Headers.set, so a client-supplied value can't survive on any path middleware
+ * runs on). They let the Node-side auth gate learn the method/path for audit
+ * attribution without threading `Request` through the 280+ `getOwnerOr401()`
+ * call sites. They drive audit labelling only — not an access decision — so a
+ * spoof on a matcher-excluded path can at worst mislabel a row, not grant access.
  */
 export const MANTLE_PATH_HEADER = 'x-mantle-path';
 export const MANTLE_METHOD_HEADER = 'x-mantle-method';

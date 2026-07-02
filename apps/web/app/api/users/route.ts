@@ -2,19 +2,19 @@ import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
-import { db, authUsers, asc } from '@mantle/db';
+import { db, authUsers, asc, sql } from '@mantle/db';
 import { getOwnerOr401 } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 
 /**
  * Co-admin login management (Settings → Users). Logins are NOT tenants: every
  * account operates on the one brain (content stays keyed to the anchor); a row
- * here is an identity for the audit trail plus a read_only flag.
+ * here is just an identity for the audit trail.
  *
- * No permission tiers by design — any non-read-only login may manage users.
- * Read-only logins are blocked by the getOwnerOr401 mutation choke point.
- * These routes emit their own `user.*` audit events (the choke point skips its
- * generic row for /api/users — see AUDIT_SELF_LOGGED_PATHS).
+ * No permission tiers by design — every login is a full admin (access tiers are
+ * a separate team-member surface). These routes emit their own `user.*` audit
+ * events (the choke point skips its generic row for /api/users — see
+ * AUDIT_SELF_LOGGED_PATHS).
  */
 
 export async function GET() {
@@ -26,7 +26,6 @@ export async function GET() {
       id: authUsers.id,
       email: authUsers.email,
       displayName: authUsers.displayName,
-      readOnly: authUsers.readOnly,
       isOwner: authUsers.isOwner,
       createdAt: authUsers.createdAt,
       lastLoginAt: authUsers.lastLoginAt,
@@ -59,6 +58,20 @@ export async function POST(req: Request) {
   const passwordHash = await bcrypt.hash(parsed.data.password, 12);
   const id = randomUUID();
 
+  // Case-insensitive pre-check: login matches on lower(email), but the column's
+  // unique constraint is case-sensitive, so a legacy mixed-case row (e.g.
+  // `Jay@X.com`) wouldn't block inserting `jay@x.com` and would make that login
+  // ambiguous. Reject the collision here. (Same-case dupes still hit the unique
+  // constraint below — the try/catch is the race backstop.)
+  const [clash] = await db
+    .select({ id: authUsers.id })
+    .from(authUsers)
+    .where(sql`lower(${authUsers.email}) = ${email}`)
+    .limit(1);
+  if (clash) {
+    return NextResponse.json({ error: 'A user with that email already exists.' }, { status: 409 });
+  }
+
   try {
     await db.insert(authUsers).values({
       id,
@@ -68,12 +81,16 @@ export async function POST(req: Request) {
       // Never the anchor — that's the first-run signup only.
       isOwner: false,
     });
-  } catch {
-    // Unique violation on email is the only expected failure.
-    return NextResponse.json(
-      { error: 'A user with that email already exists.' },
-      { status: 409 },
-    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // 23505 = unique_violation (concurrent create of the same email).
+    if (msg.includes('duplicate key') || msg.includes('users_email_key')) {
+      return NextResponse.json(
+        { error: 'A user with that email already exists.' },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json({ error: 'Could not create the user.' }, { status: 500 });
   }
 
   auditFireAndForget({

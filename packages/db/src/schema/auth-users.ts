@@ -6,8 +6,8 @@ import { boolean, pgSchema, text, timestamp, uuid } from 'drizzle-orm/pg-core';
  *
  * Since 0111 the table holds co-admin LOGINS into the one brain, not tenants:
  * the ANCHOR row (`is_owner = true`, unique, undeletable) is the account all
- * content is keyed to; other rows are identities for the audit trail plus a
- * per-user `read_only` flag. Nothing else is scoped per user.
+ * content is keyed to; other rows are just identities for the audit trail.
+ * Nothing is scoped per user (access tiers live in a separate team surface).
  *
  * Every public.* table that FKs into here uses the raw `uuid` type with the
  * constraint declared in the SQL migrations (Drizzle can't see cross-schema
@@ -21,7 +21,6 @@ export const authUsers = authSchema.table('users', {
   passwordHash: text('password_hash').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   isOwner: boolean('is_owner').notNull().default(false),
-  readOnly: boolean('read_only').notNull().default(false),
   displayName: text('display_name'),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
 });

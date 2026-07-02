@@ -32,6 +32,7 @@ export const auditLog = pgTable(
     index('audit_log_created_idx').on(t.createdAt.desc()),
     index('audit_log_actor_idx').on(t.actorId),
     index('audit_log_action_idx').on(t.action),
+    index('audit_log_actor_email_idx').on(t.actorEmail),
   ],
 );
 

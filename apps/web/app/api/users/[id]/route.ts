@@ -6,14 +6,9 @@ import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
-const PatchBody = z
-  .object({
-    readOnly: z.boolean().optional(),
-    displayName: z.string().trim().max(120).nullable().optional(),
-  })
-  .refine((d) => d.readOnly !== undefined || d.displayName !== undefined, {
-    message: 'Nothing to update.',
-  });
+const PatchBody = z.object({
+  displayName: z.string().trim().max(120).nullable(),
+});
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
@@ -28,27 +23,14 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const targetId = idParsed.data.id;
 
   const [target] = await db
-    .select({ id: authUsers.id, email: authUsers.email, isOwner: authUsers.isOwner })
+    .select({ id: authUsers.id, email: authUsers.email })
     .from(authUsers)
     .where(eq(authUsers.id, targetId))
     .limit(1);
   if (!target) return NextResponse.json({ error: 'User not found.' }, { status: 404 });
 
-  // The anchor stays a writer, always. Since it also can't be deleted, this
-  // guarantees the system can never be locked out of user management — without
-  // any last-writer counting race.
-  if (parsed.data.readOnly === true && target.isOwner) {
-    return NextResponse.json(
-      { error: 'The original account cannot be made read-only.' },
-      { status: 403 },
-    );
-  }
-
-  const changes: Partial<{ readOnly: boolean; displayName: string | null }> = {};
-  if (parsed.data.readOnly !== undefined) changes.readOnly = parsed.data.readOnly;
-  if (parsed.data.displayName !== undefined) changes.displayName = parsed.data.displayName;
-
-  await db.update(authUsers).set(changes).where(eq(authUsers.id, targetId));
+  const displayName = parsed.data.displayName || null;
+  await db.update(authUsers).set({ displayName }).where(eq(authUsers.id, targetId));
 
   auditFireAndForget({
     actorId: user.actor.id,
@@ -56,7 +38,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     action: 'user.update',
     method: 'PATCH',
     path: `/api/users/${targetId}`,
-    detail: { targetId, targetEmail: target.email, changes },
+    detail: { targetId, targetEmail: target.email, changes: { displayName } },
     ...requestMetaFrom(req),
   });
 

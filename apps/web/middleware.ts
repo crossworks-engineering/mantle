@@ -145,10 +145,9 @@ export async function middleware(req: NextRequest) {
   const withCors = (res: NextResponse) => (origin ? applyCors(res, origin) : res);
 
   // Tell the Node layer what was requested: `getOwnerOr401` reads method+path
-  // from these to gate read-only logins and audit mutations without threading
-  // `Request` through its 280+ call sites. Always set (never merely forwarded),
-  // so a client-supplied value can't spoof the gate into treating a POST as a
-  // GET or mislabel the audit trail.
+  // from these to audit mutations without threading `Request` through its 280+
+  // call sites. Always set (never merely forwarded), so a client-supplied value
+  // can't mislabel the audit trail on any path that passes through middleware.
   const reqHeaders = new Headers(req.headers);
   reqHeaders.set(MANTLE_PATH_HEADER, path);
   reqHeaders.set(MANTLE_METHOD_HEADER, req.method);

@@ -28,7 +28,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { SubmitButton } from '@/components/ui/submit-button';
-import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/ui/toast';
 import { formatDateTime } from '@/lib/format-datetime';
 
@@ -36,17 +35,16 @@ type UserRow = {
   id: string;
   email: string;
   displayName: string | null;
-  readOnly: boolean;
   isOwner: boolean;
   createdAt: string;
   lastLoginAt: string | null;
 };
 
 /**
- * Co-admin logins into the one brain — NOT tenants. Everyone sees the same
- * data; a row here is a login identity for the audit trail plus a read-only
- * flag. The server enforces the invariants (anchor undeletable / never
- * read-only, no self-delete); the UI just mirrors them.
+ * Co-admin logins into the one brain — NOT tenants. Everyone sees the same data
+ * and is a full admin; a row here is a login identity for the audit trail. The
+ * server enforces the invariants (anchor undeletable, no self-delete); the UI
+ * just mirrors them. (Access tiers are a separate team-member surface.)
  */
 export function UsersClient() {
   const toast = useToast();
@@ -114,11 +112,6 @@ export function UsersClient() {
                 {u.isOwner && (
                   <Badge variant="secondary" className="shrink-0">
                     Anchor
-                  </Badge>
-                )}
-                {u.readOnly && (
-                  <Badge variant="outline" className="shrink-0">
-                    Read-only
                   </Badge>
                 )}
               </div>
@@ -194,7 +187,6 @@ function UserDetail({
   const toast = useToast();
   const [displayName, setDisplayName] = useState(user.displayName ?? '');
   const [saving, setSaving] = useState(false);
-  const [togglingReadOnly, setTogglingReadOnly] = useState(false);
 
   const saveDisplayName = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -209,19 +201,6 @@ function UserDetail({
       toast.error(err instanceof ApiError ? err.message : 'Could not save');
     } finally {
       setSaving(false);
-    }
-  };
-
-  const toggleReadOnly = async (readOnly: boolean) => {
-    setTogglingReadOnly(true);
-    try {
-      await apiSend(`/api/users/${user.id}`, 'PATCH', { readOnly });
-      onChanged();
-      toast.success(readOnly ? 'Account set to read-only' : 'Read-only lifted');
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Could not update');
-    } finally {
-      setTogglingReadOnly(false);
     }
   };
 
@@ -240,35 +219,22 @@ function UserDetail({
           </div>
           <p className="text-sm text-muted-foreground">
             {user.isOwner
-              ? 'The original account. The brain is keyed to it, so it can’t be deleted or made read-only.'
+              ? 'The original account. The brain is keyed to it, so it can’t be deleted.'
               : 'Co-admin login into this brain. Same data as everyone; actions are recorded under this identity.'}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Label htmlFor="read-only-switch" className="text-sm text-muted-foreground">
-              Read-only
-            </Label>
-            <Switch
-              id="read-only-switch"
-              checked={user.readOnly}
-              disabled={user.isOwner || togglingReadOnly}
-              onCheckedChange={(v) => void toggleReadOnly(v)}
-            />
-          </div>
-          {!user.isOwner && !isSelf && (
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              className="text-muted-foreground hover:text-destructive"
-              onClick={onRequestDelete}
-              aria-label="Delete user"
-            >
-              <Trash2 />
-            </Button>
-          )}
-        </div>
+        {!user.isOwner && !isSelf && (
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="shrink-0 text-muted-foreground hover:text-destructive"
+            onClick={onRequestDelete}
+            aria-label="Delete user"
+          >
+            <Trash2 />
+          </Button>
+        )}
       </div>
 
       <div className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">

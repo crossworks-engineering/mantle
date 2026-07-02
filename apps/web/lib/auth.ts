@@ -8,7 +8,6 @@ import { db, authUsers, mobileTokens, countUsers } from '@mantle/db';
 import {
   SESSION_COOKIE_NAME,
   isDetachedDev,
-  isReadOnlyAllowed,
   isAuditSelfLogged,
   MANTLE_PATH_HEADER,
   MANTLE_METHOD_HEADER,
@@ -43,13 +42,12 @@ export async function isFirstRun(): Promise<boolean> {
 /**
  * The logged-in LOGIN — who is acting. Multi-admin logins (0111) share one
  * brain: content queries always use the anchor's id, but the actor is what the
- * audit trail records and what the `readOnly` gate checks.
+ * audit trail records.
  */
 export type Actor = {
   id: string;
   email: string;
   displayName: string | null;
-  readOnly: boolean;
   isOwner: boolean;
 };
 
@@ -240,7 +238,7 @@ export async function getOwnerForAsset(req: Request): Promise<SessionUser | Next
       return {
         id: claims.uid,
         email: '',
-        actor: { id: claims.uid, email: '', displayName: null, readOnly: false, isOwner: false },
+        actor: { id: claims.uid, email: '', displayName: null, isOwner: false },
       };
     }
   }
@@ -272,7 +270,6 @@ async function getBearerUser(): Promise<SessionUser | null> {
       id: authUsers.id,
       email: authUsers.email,
       isOwner: authUsers.isOwner,
-      readOnly: authUsers.readOnly,
       displayName: authUsers.displayName,
     })
     .from(authUsers)
@@ -320,7 +317,7 @@ function detachedDevUser(): SessionUser | null {
     return {
       id: data.uid,
       email,
-      actor: { id: data.uid, email, displayName: null, readOnly: false, isOwner: true },
+      actor: { id: data.uid, email, displayName: null, isOwner: true },
     };
   } catch {
     return null;
@@ -348,7 +345,6 @@ type ActorRow = {
   id: string;
   email: string;
   isOwner: boolean;
-  readOnly: boolean;
   displayName: string | null;
 };
 
@@ -366,7 +362,6 @@ async function sessionUserFor(row: ActorRow): Promise<SessionUser | null> {
       id: row.id,
       email: row.email,
       displayName: row.displayName,
-      readOnly: row.readOnly,
       isOwner: row.isOwner,
     },
   };
@@ -392,7 +387,6 @@ export async function getSessionUserWithSource(): Promise<
           id: authUsers.id,
           email: authUsers.email,
           isOwner: authUsers.isOwner,
-          readOnly: authUsers.readOnly,
           displayName: authUsers.displayName,
         })
         .from(authUsers)
@@ -451,38 +445,27 @@ export async function getOwnerOr401(): Promise<SessionUser | NextResponse> {
 }
 
 /**
- * Mutation choke point, shared by both `getOwnerOr401` variants — which every
- * /api/** route calls first. For mutating methods (learned from the
- * middleware-injected x-mantle-method/-path headers, which clients can't spoof):
- *  - a read-only login gets a 403 unless the path is allowlisted ("can chat,
- *    can't edit"), and
- *  - a generic `api.write` audit row records who did what, unless the route
- *    logs its own richer event.
+ * Audit hook, shared by both `getOwnerOr401` variants — which every /api/**
+ * route calls first. For mutating methods (learned from the middleware-injected
+ * x-mantle-method/-path headers, which clients can't spoof) it fire-and-forgets
+ * a generic `api.write` row recording who did what — unless the route logs its
+ * own richer event (`AUDIT_SELF_LOGGED_PATHS`). Reads (GET/HEAD) aren't logged.
  */
-async function guardMutation(user: SessionUser): Promise<NextResponse | null> {
+async function auditMutation(user: SessionUser): Promise<void> {
   const h = await headers();
   const method = (h.get(MANTLE_METHOD_HEADER) ?? '').toUpperCase();
   const path = h.get(MANTLE_PATH_HEADER) ?? '';
   const mutating = method !== '' && method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
-  if (!mutating) return null;
-  if (user.actor.readOnly && !isReadOnlyAllowed(path)) {
-    return NextResponse.json(
-      { error: 'This account is read-only. Ask an admin to lift the restriction.' },
-      { status: 403 },
-    );
-  }
-  if (!isAuditSelfLogged(path)) {
-    auditFireAndForget({
-      actorId: user.actor.id,
-      actorEmail: user.actor.email,
-      action: 'api.write',
-      method,
-      path,
-      ip: h.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
-      userAgent: h.get('user-agent') || null,
-    });
-  }
-  return null;
+  if (!mutating || isAuditSelfLogged(path)) return;
+  auditFireAndForget({
+    actorId: user.actor.id,
+    actorEmail: user.actor.email,
+    action: 'api.write',
+    method,
+    path,
+    ip: h.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
+    userAgent: h.get('user-agent') || null,
+  });
 }
 
 /**
@@ -500,8 +483,8 @@ export async function getOwnerOr401WithSource(): Promise<
 > {
   const res = await getSessionUserWithSource();
   if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  const blocked = await guardMutation(res.user);
-  return blocked ?? res;
+  await auditMutation(res.user);
+  return res;
 }
 
 /**

@@ -10,9 +10,9 @@ const Body = z.object({ newPassword: z.string().min(8).max(1024) });
 
 /**
  * Admin password reset — no old password required (that's what
- * /api/auth/change-password is for). No permission tiers by design: any
- * non-read-only login may reset any account, their own included. The audit
- * event is the accountability mechanism.
+ * /api/auth/change-password is for). No permission tiers by design: any login
+ * may reset any account, their own included. The audit event is the
+ * accountability mechanism.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();

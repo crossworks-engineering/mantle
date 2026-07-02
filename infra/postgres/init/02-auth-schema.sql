@@ -14,9 +14,8 @@ CREATE TABLE IF NOT EXISTS auth.users (
   created_at    timestamptz NOT NULL DEFAULT now(),
   -- Multi-admin logins (0111): the anchor row (is_owner, unique) is the account
   -- all brain content is keyed to; other rows are co-admin identities for the
-  -- audit trail. read_only blocks mutations for that login.
+  -- audit trail. No per-user access scope here (team tiers are a separate surface).
   is_owner      boolean     NOT NULL DEFAULT false,
-  read_only     boolean     NOT NULL DEFAULT false,
   display_name  text,
   last_login_at timestamptz
 );
