@@ -95,13 +95,41 @@ export async function getApiKey(
   return plaintext;
 }
 
-/** Insert a new key. Allocates the id up-front so AAD is known before seal(). */
+/** Set (UPSERT) the key for (user, service, label). "Set" must be idempotent —
+ *  re-saving during onboarding/settings used to 23505 on the unique constraint
+ *  and surface as a silent 500. NOTE the ciphertext is sealed with the row id
+ *  as AAD, so a SQL ON CONFLICT UPDATE would poison the surviving row with a
+ *  ciphertext sealed against a different id — when a row exists we RESEAL
+ *  against its id instead (same as rotateApiKey). Insert allocates the id
+ *  up-front so AAD is known before seal(). */
 export async function setApiKey(
   userId: string,
   service: string,
   label: string,
   plaintext: string,
 ): Promise<ApiKey> {
+  const [existing] = await db
+    .select({ id: apiKeys.id })
+    .from(apiKeys)
+    .where(
+      and(eq(apiKeys.userId, userId), eq(apiKeys.service, service), eq(apiKeys.label, label)),
+    )
+    .limit(1);
+  if (existing) {
+    const { ciphertext, keyVersion } = seal(plaintext, existing.id);
+    const [updated] = await db
+      .update(apiKeys)
+      .set({
+        keyEnc: ciphertext,
+        keyVersion,
+        masked: maskPlaintext(plaintext),
+        updatedAt: new Date(),
+      })
+      .where(eq(apiKeys.id, existing.id))
+      .returning();
+    if (!updated) throw new Error('failed to update api_key');
+    return updated;
+  }
   const id = randomUUID();
   const { ciphertext, keyVersion } = seal(plaintext, id);
   const masked = maskPlaintext(plaintext);
