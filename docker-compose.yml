@@ -134,6 +134,10 @@ x-app-env: &app-env
   # agent's page_share / email_page tools. Falls back to localhost in code if
   # unset, so set it to the real host (https://mantle.crossworks.network).
   MANTLE_PUBLIC_URL: ${MANTLE_PUBLIC_URL:-}
+  # CORS allowlist for detached frontends (comma-separated origins, or '*' for
+  # the non-auth data API). OFF by default — same-origin clients need no CORS.
+  # Set on a box that serves a detached dev frontend (docs/db-less-dev.md).
+  MANTLE_API_CORS_ORIGINS: ${MANTLE_API_CORS_ORIGINS:-}
   # Tika document-parser fallback (.odt / .pptx / .doc / .rtf / …). Reached
   # by service name on the internal docker network. See docs/file-ingestion.md.
   TIKA_URL: http://tika:9998

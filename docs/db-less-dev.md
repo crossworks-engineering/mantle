@@ -39,7 +39,34 @@ mode and gated by `isDetachedDev()` (`apps/web/lib/auth-constants.ts`):
 returns false). So the bypass can never activate in a prod build, no matter how
 the public API vars are set.
 
-## Setup
+## The one-command path: `pnpm dev:fe`
+
+`scripts/dev-frontend.sh` automates all of the setup below. Create
+`apps/web/.env.detached.local` (git-ignored) once:
+
+```
+MANTLE_REMOTE=https://test.crossworks.network
+MANTLE_REMOTE_EMAIL=<login email on that box>
+MANTLE_REMOTE_PASSWORD=<its password>
+```
+
+then `pnpm dev:fe` (extra args pass through to `next dev`, e.g.
+`pnpm dev:fe --port 3001`). The script mints the 1-year bearer via
+`/api/auth/mobile-login`, caches it back into the file, probes it against
+`/api/shell` on every boot (re-mints if the box was reset), exports the
+detached env, and runs `pnpm -C apps/web dev`.
+
+**The remote must allowlist your origin for CORS** — in the box's `.env`:
+
+```
+MANTLE_API_CORS_ORIGINS=http://localhost:3000,http://localhost:3001
+```
+
+(passed through the compose `x-app-env` anchor; `docker compose up -d web` to
+apply). Without it every cross-origin data fetch is blocked by the browser —
+preflights 204 but responses carry no `Access-Control-Allow-Origin`.
+
+## Manual setup (what the script does)
 
 1. **Mint a bearer token against the remote** (no DB access needed — the remote
    mints it from your login):
@@ -93,11 +120,21 @@ the public API vars are set.
 - **`MANTLE_DEV_EMAIL` is cosmetic.** The token payload carries only the user id,
   so the email shown in the shell/settings is the placeholder unless you set it.
 
-## Not runtime-verified
+## Runtime-verified 2026-07-02
 
-This path is typecheck-verified only and has **not** been browser-smoked against a
-live remote (a second `next dev` collides with a running prod stack on `.next` —
-see project memory `no-concurrent-next-builds`).
+Browser-smoked end-to-end against the test box (test.crossworks.network):
+dashboard + tables render live remote data, activity/shell chrome works, no
+local Postgres. Three latent breaks were found and fixed in that pass —
+regressions that had accumulated while the path was dormant:
+
+- **`(app)/layout.tsx` onboarding gate** (`isOnboarded` → profile-prefs DB
+  read) postdated the split and 500'd every page — now skipped when
+  `isDetachedDev()`.
+- **`UsageCard`** reads the DB in-process (spend + agent context) — now dropped
+  (null contextCard) in detached mode rather than 500ing the shell.
+- **`withAuth` sent `credentials: 'include'` cross-origin** — the middleware's
+  CORS deliberately omits `Allow-Credentials` (bearer-only design), so the
+  browser refused every response. Detached mode now sends `credentials: 'omit'`.
 
 > **History:** the first cut of this (the `detachedDevUser` page shim alone)
 > looked done but was runtime-broken — a deep audit found the middleware would

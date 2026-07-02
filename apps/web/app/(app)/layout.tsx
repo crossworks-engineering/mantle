@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { requireOwner } from '@/lib/auth';
+import { isDetachedDev } from '@/lib/auth-constants';
 import { isOnboarded } from '@/lib/onboarding';
 import { AppShell } from '@/components/app-shell';
 import { UsageCard } from '@/components/usage-card';
@@ -26,7 +27,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Server-side onboarding gate: a freshly-signed-up owner who hasn't finished
   // the wizard has no provisioned brain, so don't render the app over them —
   // send them to /onboarding (which lives OUTSIDE this (app) group, so no loop).
-  if (!(await isOnboarded(user.id))) redirect('/onboarding');
+  // Skipped in detached dev (no local DB; the remote brain is already onboarded).
+  const detached = isDetachedDev();
+  if (!detached && !(await isOnboarded(user.id))) redirect('/onboarding');
 
   // Persisted collapse state — read server-side so the shell renders at the
   // right width on first paint (no expand→collapse flash). Toggled client-side
@@ -45,10 +48,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       // boundary that's absent at client hydration — which shifts every radix
       // `useId` in the shell and trips a hydration-id mismatch. Containing it
       // here keeps the rest of the shell's tree-context symmetric.
+      // UsageCard reads the DB in-process (spend + agent context), which a
+      // detached frontend doesn't have — drop it there rather than 500 the shell.
       contextCard={
-        <Suspense fallback={null}>
-          <UsageCard ownerId={user.id} />
-        </Suspense>
+        detached ? null : (
+          <Suspense fallback={null}>
+            <UsageCard ownerId={user.id} />
+          </Suspense>
+        )
       }
       initialNavCollapsed={navCollapsed}
       initialActivityCollapsed={activityCollapsed}
