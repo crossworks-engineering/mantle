@@ -16,11 +16,16 @@ type PricePerToken = {
 const PRICING: Record<string, PricePerToken> = {
   // Anthropic via OpenRouter
   'anthropic/claude-haiku-4.5': { input: 0.0000008, output: 0.000004, cacheRead: 0.00000008 },
+  'anthropic/claude-sonnet-5': { input: 0.000002, output: 0.00001, cacheRead: 0.0000002 },
   'anthropic/claude-sonnet-4.6': { input: 0.000003, output: 0.000015, cacheRead: 0.0000003 },
   'anthropic/claude-opus-4.7': { input: 0.000015, output: 0.000075, cacheRead: 0.0000015 },
   'anthropic/claude-opus-4.7-fast': { input: 0.00003, output: 0.00015, cacheRead: 0.000003 },
 
   // OpenAI via OpenRouter
+  'openai/gpt-5.5': { input: 0.000005, output: 0.00003 },
+  'openai/gpt-5.4': { input: 0.0000025, output: 0.000015 },
+  'openai/gpt-5.4-mini': { input: 0.00000075, output: 0.0000045 },
+  'openai/gpt-5.4-nano': { input: 0.0000002, output: 0.00000125 },
   'openai/gpt-4o': { input: 0.0000025, output: 0.00001 },
   'openai/gpt-4o-mini': { input: 0.00000015, output: 0.0000006 },
   'openai/text-embedding-3-small': { input: 0.00000002, output: 0 },
@@ -39,6 +44,7 @@ const PRICING: Record<string, PricePerToken> = {
   // `anthropic/claude-sonnet-4.6` OpenRouter slug — so key both ways or a
   // direct Claude vision/document worker prices at $0. Same rates as above.
   'claude-haiku-4-5': { input: 0.0000008, output: 0.000004, cacheRead: 0.00000008 },
+  'claude-sonnet-5': { input: 0.000002, output: 0.00001, cacheRead: 0.0000002 },
   'claude-sonnet-4-6': { input: 0.000003, output: 0.000015, cacheRead: 0.0000003 },
   'claude-opus-4-7': { input: 0.000015, output: 0.000075, cacheRead: 0.0000015 },
 

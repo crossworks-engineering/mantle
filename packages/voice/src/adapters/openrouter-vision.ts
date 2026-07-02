@@ -27,7 +27,7 @@ import type {
 import type { DiscoveryResult } from '../discover';
 import { OPENROUTER_BASE_URL, OPENROUTER_VISION_MODELS } from '../catalogs/openrouter';
 
-const DEFAULT_MODEL = 'anthropic/claude-sonnet-4.6';
+const DEFAULT_MODEL = 'anthropic/claude-sonnet-5';
 
 type OrChatResponse = {
   model?: string;

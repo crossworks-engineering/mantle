@@ -50,7 +50,7 @@ export const API_CATALOG: CatalogGroup[] = [
 
   group('agents', 'Agents', 'Agent registry — config, persona, Telegram binding.', [
     { n: 'List agents', m: 'GET', p: '/api/agents' },
-    { n: 'Create agent', m: 'POST', p: '/api/agents', d: '409 if the slug exists. Slug: lowercase letters/digits/dash/underscore.', b: '{\n  "slug": "my-agent",\n  "name": "My Agent",\n  "description": "What this agent is for",\n  "role": "assistant",\n  "provider": "openrouter",\n  "model": "anthropic/claude-sonnet-4.6",\n  "systemPrompt": "You are a helpful assistant.",\n  "skillSlugs": [],\n  "toolGroupSlugs": [],\n  "params": { "temperature": 0.7 },\n  "enabled": true\n}' },
+    { n: 'Create agent', m: 'POST', p: '/api/agents', d: '409 if the slug exists. Slug: lowercase letters/digits/dash/underscore.', b: '{\n  "slug": "my-agent",\n  "name": "My Agent",\n  "description": "What this agent is for",\n  "role": "assistant",\n  "provider": "openrouter",\n  "model": "anthropic/claude-sonnet-5",\n  "systemPrompt": "You are a helpful assistant.",\n  "skillSlugs": [],\n  "toolGroupSlugs": [],\n  "params": { "temperature": 0.7 },\n  "enabled": true\n}' },
     { n: 'Update agent', m: 'PATCH', p: '/api/agents/{id}', d: 'All fields optional; 404 if not found.', b: '{\n  "name": "Renamed agent",\n  "enabled": true\n}' },
     { n: 'Delete agent', m: 'DELETE', p: '/api/agents/{id}' },
     { n: 'Manage persona notes', m: 'POST', p: '/api/agents/{id}/persona', d: 'Add/edit/retire/restore persona notes (style, relationship, correction). Soft-retire only.', b: '{\n  "action": "add",\n  "kind": "style",\n  "content": "Prefers concise replies"\n}' },

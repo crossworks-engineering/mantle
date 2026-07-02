@@ -236,7 +236,7 @@ function defaultsForRole(role: Role): {
     };
   }
   return {
-    model: 'anthropic/claude-sonnet-4.6',
+    model: 'anthropic/claude-sonnet-5',
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     historyLimit: '20',
     digestLimit: '3',
