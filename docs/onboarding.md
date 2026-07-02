@@ -59,14 +59,17 @@ replaced the older `actions.ts`); the stepper is `onboarding-client.tsx`.
 
 | # | Step | What it does |
 |---|------|--------------|
-| 1 | **Welcome** | timezone + locale (prefilled from the browser) → `updateProfilePreferences` |
-| 2 | **OpenRouter key** (required) | the one required key — `setApiKey` + `testApiKeyAction` probe + link |
-| 3 | **Voice** | works by default on the OpenRouter key (grok voice ara); optionally add a dedicated **xAI** key for a smoother voice route |
-| 4 | **Set up** | `provisionDefaults(ownerId)` — creates the assistant + AI workers + the specialist stack (Pages/Ledger/Remy/Researcher/Coder, wired into Saskia's `delegate_to`) from the keys present |
-| 5 | **Check** | `runSanityChecks()` — green/red list of the **vitals**: OpenRouter probe, xAI probe if added, embeddings, the assistant, **assistant capabilities** (tools + can-delegate + grounding/voice skills), **memory workers** (extractor/summarizer/reflector/document), **specialists & delegation** (Pages/Ledger/Remy/Researcher seeded + wired into `delegate_to` + their skills), **editor assistants** (`resolveAssistAgentSlug` for /pages + /tables), voice/images |
-| 6 | **Purpose** | what this brain is for: an archetype + free-text description → `savePurpose` writes `preferences.purpose`/`purposeArchetype`; injected into the always-on identity block (`buildIdentityContext`) |
-| 7 | **Personality** | preset bank × gender (voice) + name + creativity slider → `savePersonaAgent` |
-| 8 | **Telegram** | optional/skippable — BotFather instructions + token via the shared `<TelegramBotSection>` (`connectAgentTelegram`) bound to the assistant agent. **Identical to the `/settings/agents` flow** (same component), so it can be done here or any time later in Settings → Agents. Needs the assistant to exist (step 4) first |
+| 1 | **Welcome** | timezone + locale (prefilled from the browser) → `updateProfilePreferences`, plus a **System status** panel that probes the infrastructure vitals — Postgres, the pg-boss schema, MinIO + the bucket, Tika, the required secrets, and Domain & HTTPS — and **blocks Continue on failure** (so a broken stack surfaces on screen one, not mid-wizard) |
+| 2 | **Your key** (required) | the one required key — OpenRouter. **Save & test** genuinely validates the key against OpenRouter's `/api/v1/key`; with a key already saved the button reads **Test saved key** |
+| 3 | **Models** | curated model cards. Assistant (top-tier): **Claude Sonnet 5** (recommended — $2/$10 per M tokens, 1M ctx), Claude Opus 4.8, GPT-5.5 (Azure-capable), Grok 4.20. Worker (fast): **Gemini 3.1 Flash Lite** (recommended), GPT-5.4 Nano/Mini (Azure-capable), Claude Haiku 4.5. Route: **OpenRouter**, or **Azure OpenAI** via the `custom` provider (endpoint + key) |
+| 4 | **Voice** | works by default on the OpenRouter key (grok voice ara); optionally add a dedicated **xAI** key for a smoother voice route |
+| 5 | **Memory** | embeddings (semantic search). Default: the **online** embedder — `text-embedding-3-large` (or the budget `text-embedding-3-small`), MRL-reduced to **768 dims** to fit the `vector(768)` columns — via **OpenRouter** (default; reuses the chat key, slug `openai/text-embedding-3-large`) or OpenAI direct. **Local EmbeddingGemma** (keyless, via Ollama) is the advanced opt-in — see the callout below |
+| 6 | **Set up** | `provisionDefaults(ownerId)` — creates the assistant + AI workers + the specialist stack (Pages/Ledger/Remy/Researcher/Coder, wired into Saskia's `delegate_to`) from the keys present |
+| 7 | **Check** | `runSanityChecks()` — green/red list of the **vitals**: OpenRouter probe, xAI probe if added, embeddings, the assistant, **assistant capabilities** (tools + can-delegate + grounding/voice skills), **memory workers** (extractor/summarizer/reflector/document), **specialists & delegation** (Pages/Ledger/Remy/Researcher seeded + wired into `delegate_to` + their skills), **editor assistants** (`resolveAssistAgentSlug` for /pages + /tables), voice/images |
+| 8 | **Purpose** | what this brain is for: an archetype + free-text description → `savePurpose` writes `preferences.purpose`/`purposeArchetype`; injected into the always-on identity block (`buildIdentityContext`) |
+| 9 | **Personality** | preset bank × gender (voice) + name + creativity slider → `savePersonaAgent` |
+| 10 | **Telegram** | optional/skippable — BotFather instructions + token via the shared `<TelegramBotSection>` (`connectAgentTelegram`) bound to the assistant agent. **Identical to the `/settings/agents` flow** (same component), so it can be done here or any time later in Settings → Agents. Needs the assistant to exist (step 6) first |
+| 11 | **Done** | marks `preferences.onboardedAt` and drops you into the app |
 
 **Hybrid routing — why.** OpenRouter covers chat, memory indexing, image reading
 (vision), image generation, AND voice (via the `openrouter-{tts,stt}` adapters,
@@ -98,12 +101,12 @@ kind/slug that already exists is left alone):
 All OpenRouter model picks above are operator-verified as working + affordable on
 a single OpenRouter key. `gemini-3.1-flash-lite` is multimodal, so it backs the
 indexing workers, document reading, and vision alike.
-| Memory search | embeddings | local EmbeddingGemma (no key, 768-dim) | always |
+| Memory search | embeddings | chosen in the **Memory** step — online `text-embedding-3-large` @768 via OpenRouter/OpenAI by default; the keyless local EmbeddingGemma config is the pre-onboarding fallback | always |
 
 The **assistant** is one `agents` row (slug `assistant`, role `responder` — serves
 both web `/assistant` and Telegram). Its model, params, memory config, and tool
 grant all come from `PERSONA_MANIFEST` (the system manifest), not hardcoded here:
-model `anthropic/claude-sonnet-4.6`, granted `PERSONA_TOOL_GROUP_SLUGS`. It's
+model `anthropic/claude-sonnet-5`, granted `PERSONA_TOOL_GROUP_SLUGS`. It's
 created with the Warm/Saskia default and refined by the personality step
 (`savePersonaAgent`: rebuilds the system prompt from the chosen preset, sets the
 name + temperature, points the TTS voice at the gender).
@@ -167,15 +170,21 @@ wizard's Set-up step (`ProvisionResult.seededSpecialists`).
 > neither exists (instead of a raw `invokeAgent` 500). So the operator can point
 > Assist at any of their agents, and the panels degrade gracefully pre-seed.
 
-> **Embeddings need a local embedder.** Memory search (vector recall) uses local
-> EmbeddingGemma — no key, but it needs an Ollama serving it. The **prod**
-> compose (`docker-compose.yml`) bundles `ollama` + a one-shot model pull, so a
-> containerized deploy is covered. For **local dev**, `docker-compose.dev.yml`
-> does NOT bundle Ollama — run one (`ollama serve` + `ollama pull embeddinggemma`,
-> or point `MANTLE_LOCAL_EMBEDDING_URL` at an existing instance). The onboarding
-> **sanity check** flags this clearly if the embedder is unreachable. The
-> assistant and the always-on identity block work without it — only semantic
-> search degrades until the embedder is up.
+> **Embeddings — online by default, local as the opt-in.** Memory search
+> (vector recall) defaults to the **online** embedder picked in the Memory step
+> (`text-embedding-3-large` @768 via OpenRouter or OpenAI). The keyless
+> **local** EmbeddingGemma config remains the **pre-onboarding fallback** so a
+> fresh box boots without any key — but the local embedder itself isn't
+> *running* unless you enable it, so semantic search is off until the Memory
+> step (or a local setup) completes. To run local: the **prod** compose
+> (`docker-compose.yml`) bundles `ollama` + a one-shot model pull behind the
+> **`local-embedder` profile** (`docker compose --profile local-embedder up -d`,
+> then select provider `local` in Settings → Embedding). For **local dev**,
+> `docker-compose.dev.yml` does NOT bundle Ollama — run one (`ollama serve` +
+> `ollama pull embeddinggemma`, or point `MANTLE_LOCAL_EMBEDDING_URL` at an
+> existing instance). The onboarding **sanity check** flags this clearly if the
+> embedder is unreachable. The assistant and the always-on identity block work
+> without it — only semantic search degrades until the embedder is up.
 
 ---
 

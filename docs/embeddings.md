@@ -4,14 +4,25 @@ Operator-facing guide for picking + switching the embedding model your Mantle in
 
 For the wider memory architecture, [`memory.md`](./memory.md) is the spine; embeddings are the indexing layer that makes "find me that thing about X" actually work.
 
-> **2026-05-31 — the brain now runs on a LOCAL 768-dim model.** Mantle migrated
-> off cloud `openai/text-embedding-3-small` (1536-dim) to **EmbeddingGemma-300m
+> **2026-05-31 — every vector column became 768-dim.** Mantle migrated off
+> cloud `openai/text-embedding-3-small` (1536-dim) to **EmbeddingGemma-300m
 > (768-dim)** served by Ollama on the host. Every vector column is now
 > `vector(768)` and the indexes are HNSW. The "Mantle-specific constraint" is
-> therefore **768 dims, not 1536** — and the implications invert: the local
-> Gemma model is the one that fits, and the old cloud 1536 models are the ones
-> that now need a schema migration to use. The migration history lives in
+> therefore **768 dims, not 1536**. The migration history lives in
 > [`handoff-local-embeddings-2026-05-30.md`](./_archive/handoff-local-embeddings-2026-05-30.md).
+>
+> **2026-06/07 (v0.103–0.104) — the shipped DEFAULT flipped back to ONLINE.**
+> The product default is now `openai/text-embedding-3-large` **MRL-reduced to
+> 768 dims** (so the columns stay `vector(768)`), chosen in the onboarding
+> **Memory** step and run via **OpenRouter** (default — reuses the chat key,
+> slug `openai/text-embedding-3-large`) or OpenAI direct; the budget pick is
+> `text-embedding-3-small` @768. The **local** EmbeddingGemma path is now the
+> **advanced opt-in**: in the prod compose it sits behind the `local-embedder`
+> profile and does NOT run by default (`docker compose --profile local-embedder
+> up -d`, then select provider `local` in Settings → Embedding). The keyless
+> local config remains the pre-onboarding **fallback**, so a fresh box boots
+> without any key — but semantic search is off until the Memory step (or a
+> local setup) completes.
 
 ---
 
@@ -19,11 +30,12 @@ For the wider memory architecture, [`memory.md`](./memory.md) is the spine; embe
 
 | If you want… | Pick this |
 |---|---|
-| The default — private, free, no cloud calls (the shipped case) | **`embeddinggemma:latest`** via the `local` provider (Ollama, 768-dim) |
-| Maximum English recall and you don't mind cloud + a re-embed | `openai/text-embedding-3-large` truncated to 768 (MRL) |
+| The default — strongest wired recall, no extra key (the shipped case) | **`openai/text-embedding-3-large`** truncated to 768 (MRL), via OpenRouter (reuses the chat key) or OpenAI direct |
+| The budget online pick | `openai/text-embedding-3-small` truncated to 768 (MRL) |
+| Private, free, no cloud calls (self-host purists) | `embeddinggemma:latest` via the `local` provider (Ollama, 768-dim) — the advanced opt-in |
 | Heavily multilingual (German + English emails, French notes, mixed CJK) | `google/gemini-embedding-001` truncated to 768 (MRL) |
 
-**Don't switch unless you have a reason.** The local default works, costs nothing, and never leaves the box — which is the whole point of a self-hosted brain. Re-embedding the corpus to switch isn't free in *time* (semantic search is degraded while the space is mixed), and switching to a model with a different native dim now requires **another** schema migration. Read the rest of this doc before flipping.
+**Don't switch unless you have a reason.** The shipped default (`text-embedding-3-large` @768) is the strongest wired option and rides the OpenRouter key you already have. Re-embedding the corpus to switch isn't free in *time* (semantic search is degraded while the space is mixed), and switching to a model with a different native dim requires **another** schema migration. Read the rest of this doc before flipping.
 
 ---
 
@@ -51,20 +63,20 @@ Benchmark scores come from each model's published reports + MTEB leaderboard sna
 
 | Model | Native dims | Fits 768? | Price ($/1M tokens) | MTEB (Eng) | MIRACL (multi) | Mantle status |
 |---|---|---|---|---|---|---|
-| `embeddinggemma:latest` (local/Ollama) | 768 | ✅ native | **$0 (local)** | ~62% | ~55% | **Default (shipped)** |
-| `openai/text-embedding-3-small` | 1536 | ❌ no clean MRL to 768 | $0.020 | 62.3% | 44.0% | Retired default; needs migration to use again |
-| `openai/text-embedding-3-large` | 3072 | ✅ MRL → 768 | $0.130 | 64.6% | 54.9% | Wired (cloud) |
+| `openai/text-embedding-3-large` | 3072 | ✅ MRL → 768 | $0.130 | 64.6% | 54.9% | **Default (shipped)** — via OpenRouter or OpenAI |
+| `openai/text-embedding-3-small` | 1536 | ✅ MRL → 768 | $0.020 | 62.3% | 44.0% | Wired (cloud) — the budget pick in onboarding |
+| `embeddinggemma:latest` (local/Ollama) | 768 | ✅ native | **$0 (local)** | ~62% | ~55% | Opt-in local (`local-embedder` profile) — also the keyless pre-onboarding fallback |
 | `google/gemini-embedding-001` | 3072 | ✅ MRL → 768 | $0.15 | ~68% | ~62% | Wired (cloud; top of MTEB) |
 | `cohere/embed-multilingual-v3.0` | 1024 | ❌ no MRL | $0.10 | 60% | ~56% | Wired (needs migration) |
 | `mistral/mistral-embed` | 1024 | ❌ no MRL | $0.10 | ~60% | ~50% | Wired (needs migration) |
 
 **Definitions:**
 - **Native dims** — how many numbers each vector contains by default. More = more resolution, more storage.
-- **Fits 768?** — whether the model can write into Mantle's current `vector(768)` columns without a schema change. A model that natively emits 768 (EmbeddingGemma) fits exactly. A model that supports **MRL** (Matryoshka Representation Learning) truncation — OpenAI's `-3-large`, Google's `gemini-embedding-*` — can be asked for a 768-dim vector and still be useful. A model with a fixed non-768 native dim and no MRL (Cohere, Mistral, and `-3-small`, which only truncates cleanly to 512) does **not** fit without a migration.
+- **Fits 768?** — whether the model can write into Mantle's current `vector(768)` columns without a schema change. A model that natively emits 768 (EmbeddingGemma) fits exactly. A model that supports **MRL** (Matryoshka Representation Learning) truncation — OpenAI's `-3-large` and `-3-small`, Google's `gemini-embedding-*` — can be asked for a 768-dim vector and still be useful. A model with a fixed non-768 native dim and no MRL (Cohere, Mistral) does **not** fit without a migration.
 - **MTEB** — Massive Text Embedding Benchmark. English retrieval, classification, clustering. The most widely-cited general score.
 - **MIRACL** — Multilingual retrieval across 18 languages. Most predictive score for non-English corpora.
 
-EmbeddingGemma punches well above its 308M-parameter / 768-dim weight class — competitive with much larger cloud models on MTEB while being free and local. For a single-user personal brain it's the right default by a wide margin.
+EmbeddingGemma punches well above its 308M-parameter / 768-dim weight class — competitive with much larger cloud models on MTEB while being free and local. If privacy or cost rules out cloud calls, it's the right pick by a wide margin — which is why it stays wired as the opt-in local path even though the shipped default is now `-3-large`.
 
 ---
 

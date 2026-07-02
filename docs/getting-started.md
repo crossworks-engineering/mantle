@@ -30,8 +30,8 @@ mantle/
 │   ├── content/         # notes, tasks, events, journals, backups, …
 │   └── rules/           # ingest rules engine
 ├── scripts/             # dev convenience (up.sh, db-dump.sh, …)
-├── docker-compose.dev.yml   # Postgres + MinIO + Tika for local dev (embedder = your local Ollama)
-└── docker-compose.yml       # full production stack (Linux): built app images + bundled embedder (Ollama)
+├── docker-compose.dev.yml   # Postgres + MinIO + Tika for local dev (local embedder = your own Ollama, if you opt in)
+└── docker-compose.yml       # full production stack (Linux): built app images (+ optional local embedder behind the `local-embedder` profile)
 ```
 
 ## First-time setup
@@ -49,12 +49,13 @@ $EDITOR apps/web/.env.local
 #  - MANTLE_MASTER_KEY  → openssl rand -base64 32
 #  - SESSION_SECRET     → openssl rand -base64 48
 
-# 4. Local embedder (macOS / local dev) — the dev stack does NOT bundle it, so
-#    install Ollama and pull the model. Mantle's apps reach it at
-#    http://localhost:11434 by default. (Production bundles this — see below.)
+# 4. (Optional) Local embedder — the product DEFAULT is an online embedder
+#    (text-embedding-3-large @768, chosen in onboarding's Memory step on your
+#    OpenRouter/OpenAI key). Install Ollama only if you want the opt-in local
+#    path; Mantle's apps reach it at http://localhost:11434 by default.
 brew install ollama
 brew services start ollama    # serves on :11434 (or run the menu-bar app)
-ollama pull embeddinggemma    # the 768-dim local embedder Mantle defaults to
+ollama pull embeddinggemma    # the 768-dim local embedder (opt-in)
 
 # 5. Bring up the stack (Docker must be running)
 pnpm start
@@ -65,21 +66,27 @@ pnpm start
 > `pnpm start` to bring the stack up (or `pnpm run up` if you prefer the old
 > name). The collision is documented at <https://pnpm.io/cli/update>.
 
-> **macOS embedder, why step 4.** The dev stack (`docker-compose.dev.yml`) ships
-> only Postgres + MinIO + Tika — **not** the embedder, because on a dev machine
-> you run Ollama natively (faster, uses the Mac GPU). Without a running Ollama
-> serving `embeddinggemma` on `:11434`, the app still boots and chat works, but
-> **embeddings fail** — uploaded content won't index and semantic search returns
-> nothing. On Linux you can install Ollama the same way (`curl -fsSL
-> https://ollama.com/install.sh | sh`) or just use the production stack below.
+> **macOS embedder, why step 4 is optional.** The **default** embedder is
+> online — onboarding's Memory step selects `text-embedding-3-large` (or the
+> budget `text-embedding-3-small`), MRL-reduced to 768 dims, running via
+> OpenRouter (reuses the chat key) or OpenAI direct — so most dev setups need
+> **no Ollama at all**. The keyless **local** config (EmbeddingGemma) is the
+> pre-onboarding fallback, so the app boots and chat works without any key —
+> but until the Memory step completes (or you run Ollama natively and select
+> the `local` provider), embeddings fail: uploaded content won't index and
+> semantic search returns nothing. If you want the local path on a dev machine,
+> run Ollama natively (faster, uses the Mac GPU); on Linux `curl -fsSL
+> https://ollama.com/install.sh | sh`.
 
 > **Dev vs production.** The steps above are the **local dev stack** (`pnpm start`:
 > infra in Docker + the apps hot-reloading on the host + your local Ollama).
 > **Production is meant to run on Linux** via the full `docker-compose.yml`, which
-> builds the app images and **bundles the embedder (Ollama) + a one-shot model
-> pull** — so a fresh deploy needs **no native Ollama** (it works on any Docker
-> host, Linux or macOS, CPU-only where there's no GPU). See
-> [`deploy.md`](./deploy.md).
+> builds the app images. A **local embedder (Ollama + model pull)** is bundled
+> too, but behind the opt-in **`local-embedder` compose profile** — it does NOT
+> run by default (`docker compose --profile local-embedder up -d` to enable,
+> then select provider `local` in Settings → Embedding). The default deploy
+> uses the online embedder chosen in onboarding, so it needs no Ollama at all.
+> See [`deploy.md`](./deploy.md).
 
 `pnpm start` runs `scripts/up.sh`, which:
 
@@ -93,10 +100,10 @@ That's it — **no SQL, no `ALLOWED_USER_ID` to fill in.** Open
 http://localhost:3000 and you'll land on **Create your account** (the first-run
 signup, available only while `auth.users` is empty). After signup, the
 **onboarding wizard** walks you through everything the brain needs to run: a
-model key (OpenRouter), optional voice/image (xAI) and transcription/vision
-(OpenAI) keys, then it provisions your assistant + the background AI workers,
-runs a sanity check, captures who you are as Journal entries, and lets you shape the
-assistant's personality. See [`onboarding.md`](./onboarding.md).
+model key (OpenRouter), your model picks, an optional voice (xAI) key, your
+embedder (the Memory step), then it provisions your assistant + the background
+AI workers, runs a sanity check, captures the brain's purpose, and lets you
+shape the assistant's personality. See [`onboarding.md`](./onboarding.md).
 
 > `ALLOWED_USER_ID` is **optional** — left blank, the workers and MCP server
 > auto-resolve the single `auth.users` row, so a fresh install is zero-config.

@@ -23,20 +23,24 @@ The authoritative, command-by-command operator runbooks live in the developer do
 **For a server (the recommended path):**
 
 - A **Linux server** (a small VPS is plenty) with **Docker** (Engine + the Compose
-  plugin). That's it — Postgres, object storage, the document parser, and the local
-  embedding model all run as containers the installer pulls; you don't install them.
+  plugin). That's it — Postgres, object storage, and the document parser all run as
+  containers the installer pulls; you don't install them. (An optional **local
+  embedding model** is bundled too, behind the `local-embedder` compose profile.)
 - A **domain name** with a DNS A record pointing at the server, and ports **80/443**
   open — *if* you want automatic HTTPS. HTTPS is handled by the bundled **Caddy**
   reverse proxy (Let's Encrypt); you don't configure certificates by hand. You can
   also run on plain `http://<ip>` without a domain to try it.
 - A **model provider API key** — an **OpenRouter** key covers the whole text + vision
   brain (the assistant, extraction, search). You add it during the in-app onboarding
-  wizard, not in a file. Embeddings (meaning-search) run **locally and free** via a
-  bundled model, so no key is needed for those.
+  wizard, not in a file. Embeddings (meaning-search) default to an **online model**
+  chosen in the wizard's Memory step (`text-embedding-3-large`, reduced to 768 dims)
+  and run on that same OpenRouter key (or an OpenAI key, if you prefer direct). A
+  keyless **local** embedder is available as the advanced opt-in for keeping vectors
+  on the box.
 
-**For local development, additionally:** **Git**, **Node.js 24+ and pnpm**, and
-**[Ollama](https://ollama.com)** (the local embedder for dev — the dev stack doesn't
-bundle it; see below).
+**For local development, additionally:** **Git** and **Node.js 24+ and pnpm**.
+**[Ollama](https://ollama.com)** is only needed if you opt into the local embedder
+(the dev stack doesn't bundle it; see below).
 
 You do **not** need to install Postgres, pgvector, MinIO, Tika, or Ollama on a server —
 they're part of the Docker stack the installer brings up.
@@ -63,7 +67,8 @@ The installer does everything: checks Docker, fetches the deploy bundle
 **generates your secrets** (`SESSION_SECRET`, `MANTLE_MASTER_KEY`,
 `POSTGRES_PASSWORD`, `S3_SECRET_KEY`) into a `.env`, writes `MANTLE_STACK_DIR` so the
 in-app updater works, pulls the images, and starts the stack. Migrations run
-automatically before the app comes up, and the embedding model pulls once (~300 MB).
+automatically before the app comes up. (The optional local embedding model — the
+`local-embedder` compose profile — only downloads its ~300 MB model if you enable it.)
 
 > ⚠ **Back up the generated `.env`.** `MANTLE_MASTER_KEY` encrypts your stored API
 > keys, mailbox passwords, and secrets at rest — lose it and that vault is
@@ -131,11 +136,12 @@ Set in `apps/web/.env.local`:
 - `SESSION_SECRET` — `openssl rand -base64 48`
 
 `DATABASE_URL` and the `S3_*` values are pre-filled to match the dev containers, so a
-fresh install usually doesn't touch them. Then install the local embedder and start:
+fresh install usually doesn't touch them. Then start (the local embedder is
+optional — the default embedder is online, chosen in the onboarding Memory step):
 
 ```bash
-brew install ollama && brew services start ollama   # dev stack doesn't bundle Ollama
-ollama pull embeddinggemma                           # local, free semantic search
+brew install ollama && brew services start ollama   # optional: local embedder (opt-in)
+ollama pull embeddinggemma                           # the keyless local path, not the default
 pnpm start                                           # NOT `pnpm up` — see note
 ```
 
@@ -156,9 +162,10 @@ There is **no manual database step** — Mantle has a real signup flow now.
 1. Open your URL. While no account exists yet, the first visit shows **"Create your
    account."** Sign up. (Signup closes automatically once the first account exists —
    it's a single-owner brain.)
-2. The **onboarding wizard** takes over: it captures your name and your brain's
-   purpose, takes your **OpenRouter API key**, provisions the assistant + specialists
-   + workers, runs a sanity check, and optionally wires email and Telegram — all in
+2. The **onboarding wizard** takes over: it takes your **OpenRouter API key**, lets
+   you pick your models and your embedder (the Memory step), provisions the
+   assistant + specialists + workers, runs a sanity check, captures your brain's
+   purpose and your assistant's personality, and optionally wires Telegram — all in
    the interface. Completing it leaves a working brain that can answer immediately.
 
 That's it. No `psql`, no `ALLOWED_USER_ID` to fill in.
@@ -167,9 +174,10 @@ That's it. No `psql`, no `ALLOWED_USER_ID` to fill in.
 
 ## State & backups
 
-Everything that holds state — the database, object storage, and your files — lives
-under `MANTLE_DATA_DIR` on the host, so **a backup is a database dump plus a copy of
-that directory**. Updating later is `docker compose pull && docker compose up -d
+Everything that holds state — the database, object storage, your files, backups,
+mini-app databases, TLS certificates, and (if enabled) the local embedder's models —
+lives under `MANTLE_DATA_DIR` on the host (default `./data`; no named Docker volumes),
+so **a backup is a database dump plus a copy of that directory**. Updating later is `docker compose pull && docker compose up -d
 --wait`, or one click in **Settings → Updates** — see the
 [update runbook](../update-prod.md). (Self-builders who run their own image build on
 the server rebuild instead of pulling; the architectures differ from a Mac build.)

@@ -162,8 +162,27 @@ ensure() {  # KEY GENERATOR-CMD — keep existing (never regenerate), else gener
 }
 ensure MANTLE_MASTER_KEY gen_key          # NEVER rotated on re-run (would orphan secrets)
 ensure SESSION_SECRET    "gen_hex 48"
-ensure S3_ACCESS_KEY     "gen_hex 12"
-ensure S3_SECRET_KEY     "gen_hex 24"
+# POSTGRES_PASSWORD: generate ONLY for a genuinely fresh database. An older
+# install may have no POSTGRES_PASSWORD line yet an initialized data dir
+# (password baked in at initdb) — generating one there would break DB auth.
+if [[ -n "$(getval POSTGRES_PASSWORD)" ]]; then
+  ensure POSTGRES_PASSWORD "gen_hex 16"   # present → kept as-is
+elif [[ ! -d "$DATA_DIR/postgres" && ! -d "$STACK_DIR/data/postgres" ]]; then
+  ensure POSTGRES_PASSWORD "gen_hex 16"   # fresh box → strong generated password
+else
+  warn "POSTGRES_PASSWORD not set but a postgres data dir exists — leaving it on the compose default (matches how the DB was initialised)."
+fi
+# Same fresh-only rule for the object-store credentials (MinIO bakes its root
+# user/password in at first start, exactly like postgres).
+if [[ -n "$(getval S3_SECRET_KEY)" ]]; then
+  ensure S3_ACCESS_KEY   "gen_hex 12"
+  ensure S3_SECRET_KEY   "gen_hex 24"
+elif [[ ! -d "$DATA_DIR/minio" && ! -d "$STACK_DIR/data/minio" ]]; then
+  ensure S3_ACCESS_KEY   "gen_hex 12"
+  ensure S3_SECRET_KEY   "gen_hex 24"
+else
+  warn "S3 keys not set but a minio data dir exists — leaving them on the compose defaults (matches how the object store was initialised)."
+fi
 upsert MANTLE_SITE_ADDRESS "$SITE_ADDRESS"
 # Public origin for share/email links + the onboarding Domain check. Only
 # meaningful when a real hostname is set; on :80 (no domain) links would embed
@@ -179,10 +198,20 @@ ok "Wrote ${B}$ENV_FILE${RS} ${DIM}(chmod 600)${RS}"
 
 if [[ $SKIP_UP -eq 1 ]]; then hd "Done (--skip-up)"; inf "Config written; stack not started. Bring it up with: ${B}docker compose up -d --wait${RS}"; exit 0; fi
 
+# Caddy needs 80/443 (80 also serves the HTTP-01 certificate challenge) — a
+# busy port otherwise surfaces only as an opaque bind error minutes later.
+if command -v ss >/dev/null 2>&1; then
+  for p in 80 443; do
+    if ss -ltnH "( sport = :$p )" 2>/dev/null | grep -q ":$p"; then
+      warn "Port $p is already in use — Caddy needs 80 and 443 to serve (and to obtain certificates)."
+    fi
+  done
+fi
+
 # ── 4. bring the stack up ────────────────────────────────────────────────────
 hd "Starting the stack"
 COMPOSE=(docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR")
-inf "Pulling images (tag: ${B}$IMAGE_TAG${RS})…"
+inf "Pulling images (tag: ${B}$IMAGE_TAG${RS}) — a first install downloads ~2 GB…"
 "${COMPOSE[@]}" pull -q 2>&1 | sed 's/^/    /' \
   || warn "Image pull failed. If the image is private, run 'docker login <registry>' and re-run. Continuing so the sanity check can report."
 inf "Bringing services up (waits for migrate + health)…"

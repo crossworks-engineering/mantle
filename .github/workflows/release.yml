@@ -136,7 +136,7 @@ jobs:
           cp docker-compose.yml .env.prod.example install.sh dist/mantle-deploy/
           cp -R infra dist/mantle-deploy/infra
           mkdir -p dist/mantle-deploy/scripts
-          cp scripts/db-dump.sh scripts/db-restore.sh dist/mantle-deploy/scripts/
+          cp scripts/db-dump.sh scripts/db-restore.sh scripts/install.sh scripts/sanity.sh dist/mantle-deploy/scripts/
           tar -C dist -czf "dist/mantle-deploy-${{ github.ref_name }}.tar.gz" mantle-deploy
           (cd dist && sha256sum "mantle-deploy-${{ github.ref_name }}.tar.gz" > SHA256SUMS)
 

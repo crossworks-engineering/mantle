@@ -94,8 +94,10 @@ is up to you.
 ## Why it's different
 
 **It's genuinely yours.** Self-hosted, single binary of Docker services, no
-SaaS in the runtime path. Embeddings are computed **locally** (bundled
-Ollama; the vectors never leave your box, and they cost $0). Secrets and
+SaaS in the runtime path. Embeddings default to a strong online model
+(`text-embedding-3-large`, reduced to 768 dims, riding the same OpenRouter
+key as chat) — and for boxes where vectors must never leave the machine, a
+bundled **local embedder** (Ollama) is one compose profile away. Secrets and
 credentials are AES-256-GCM sealed; the extractor is structurally unable to
 read a secret's payload. Scheduled backups are built in — point your own
 rsync/restic at one folder and the whole brain is portable.
@@ -132,8 +134,9 @@ answers are sharp, and why turns cost cents. Every ranking knob has a
 measured eval number behind it, not a vibe.
 
 **Engineered to be cheap.** Frontier-model quality where it matters (your
-conversations), economy models for background compression, local embeddings
-for everything vector. Prompt prefixes are kept byte-stable for provider
+conversations), economy models for background compression, cheap embeddings
+for everything vector (online by default; optionally local and $0). Prompt
+prefixes are kept byte-stable for provider
 caching; oversized tool results spill to an addressable store instead of
 re-billing every turn. Measured on the author's production instance: a full
 question-answer turn against the whole brain averages **~$0.09**, and a month
@@ -179,8 +182,8 @@ Hack on it — dev checkout with hot reload:
 git clone https://github.com/crossworks-engineering/mantle && cd mantle
 pnpm install
 cp .env.example apps/web/.env.local   # two generated secrets — see the guide
-brew install ollama && brew services start ollama   # dev embedder (prod bundles it)
-ollama pull embeddinggemma            # local, free semantic search
+brew install ollama && brew services start ollama   # optional: local embedder
+ollama pull embeddinggemma            # opt-in local path (the default embedder is online, chosen in onboarding)
 pnpm start
 ```
 
