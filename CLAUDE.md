@@ -41,6 +41,10 @@ store, so ~seconds), and copies `.env.local`. Tear down with
 
 ## Other guidance
 
+- **Frontend-only dev (no local Docker/DB): `pnpm dev:fe`** — runs the web app
+  detached against a deployed brain (the test box). Setup + troubleshooting:
+  [docs/db-less-dev.md](docs/db-less-dev.md). Plain `pnpm dev` expects a full
+  local stack and will 500 without one.
 - UI conventions: [apps/web/CLAUDE.md](apps/web/CLAUDE.md).
 - What a brain ships with (agents/skills/tool-groups/workers/persona): the system
   manifest is the single source of truth — see

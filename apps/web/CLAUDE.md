@@ -43,7 +43,14 @@ Non-negotiables (full detail in the guide):
   title. Don't add fonts.
 - **Tailwind v4**: no dynamically built class names (use literal-string arrays).
 - **Workflow**: `pnpm --filter @mantle/web run typecheck` before commit; commit on `main`
-  with the `Co-Authored-By` trailer; don't push unless asked.
+  with the `Co-Authored-By` trailer; don't push unless asked. To see changes in a
+  browser without a local stack, run `pnpm dev:fe` (detached mode against the test
+  box — [docs/db-less-dev.md](../../docs/db-less-dev.md)).
+- **Detached mode must keep working**: server-side code in the `(app)` layout, pages,
+  or auth path that reads the DB during render (direct `@mantle/db` or via helpers
+  like `isOnboarded`) breaks `pnpm dev:fe` with a 500 — gate such reads behind
+  `isDetachedDev()` (see docs/db-less-dev.md "How it works"). Client code fetches via
+  `apiFetch`/`apiSend`/`apiEventStream` only (never raw same-origin `fetch` for data).
 
 **Changing what a brain ships with** (default agents, skills, tool groups, workers,
 the persona) — there is ONE source of truth: the system manifest. Read
