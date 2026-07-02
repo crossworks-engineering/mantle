@@ -4,6 +4,12 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the multi-arch image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.109.3 — 2026-07-02
+
+Completes the v0.109.2 sweep: the Tables grid's row/column IDs also used
+`crypto.randomUUID()` bare (via `@mantle/content`'s table model), so table
+editing would fail on plain-HTTP installs. Same fallback applied.
+
 ## v0.109.2 — 2026-07-02
 
 **Assistant works on plain-HTTP installs.** Companion fix to v0.109.1:
