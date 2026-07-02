@@ -77,6 +77,12 @@ export type ProfilePreferences = {
   /** Resume marker for the onboarding wizard — the key of the furthest step the
    *  user has reached. Lets a refreshed/re-entered wizard pick up where it left off. */
   onboardingStep?: string;
+  /** Model choices captured by the onboarding "Models" step — the operator
+   *  overlay `provisionDefaults()` applies on top of the manifest seed (the
+   *  assistant's chat model + the indexing workers' fast model). When
+   *  `route: 'azure'`, those rows are pinned to an Azure OpenAI endpoint via
+   *  the `custom` provider (key stored under service `custom`). */
+  onboardingModels?: OnboardingModelChoices;
   /** Slug of the agent the `/pages` editor "Assist" panel delegates to. Unset →
    *  the route falls back to the default `pages` specialist. Configured on the
    *  /pages surface itself (the Assist panel agent picker), not a global setting. */
@@ -203,6 +209,35 @@ export function resolveThinkingBudget(
   return projectThinkingBudget(prefs.thinkingBudget) ?? 0;
 }
 
+/** The onboarding "Models" step's stored choices. Kept as one object so the
+ *  projection can't half-apply; every field optional so partial saves survive. */
+export interface OnboardingModelChoices {
+  /** OpenRouter slug for the assistant/persona agent (e.g. `anthropic/claude-sonnet-4.6`). */
+  assistantModel?: string;
+  /** OpenRouter slug for the indexing workers (e.g. `google/gemini-3.1-flash-lite`). */
+  workerModel?: string;
+  /** Where the models run: OpenRouter (default) or an Azure OpenAI endpoint. */
+  route?: 'openrouter' | 'azure';
+  /** Azure OpenAI base URL (the OpenAI-compatible v1 endpoint), when route=azure. */
+  azureBaseUrl?: string;
+}
+
+/** Whitelist projection for {@link OnboardingModelChoices} — same contract as
+ *  projectThinkingBudget: read and write MUST share this, or the field gets
+ *  silently dropped on read. */
+export function projectOnboardingModels(raw: unknown): OnboardingModelChoices | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === 'string' && v.length > 0 ? v : undefined);
+  const out: OnboardingModelChoices = {
+    assistantModel: str(o.assistantModel),
+    workerModel: str(o.workerModel),
+    route: o.route === 'azure' ? 'azure' : o.route === 'openrouter' ? 'openrouter' : undefined,
+    azureBaseUrl: str(o.azureBaseUrl),
+  };
+  return out.assistantModel || out.workerModel || out.route ? out : undefined;
+}
+
 export const DEFAULT_PREFERENCES: ProfilePreferences = {
   timezone: 'UTC',
   locale: 'en-GB',
@@ -280,6 +315,7 @@ export async function loadProfilePreferences(
       typeof prefs.onboardingStep === 'string' && prefs.onboardingStep.length > 0
         ? prefs.onboardingStep
         : undefined,
+    onboardingModels: projectOnboardingModels(prefs.onboardingModels),
     pagesAssistAgentSlug:
       typeof prefs.pagesAssistAgentSlug === 'string' && prefs.pagesAssistAgentSlug.length > 0
         ? prefs.pagesAssistAgentSlug
@@ -443,6 +479,7 @@ export async function updateProfilePreferences(
     purposeArchetype: merged.purposeArchetype || undefined,
     onboardedAt: merged.onboardedAt || undefined,
     onboardingStep: merged.onboardingStep || undefined,
+    onboardingModels: projectOnboardingModels(merged.onboardingModels),
     pagesAssistAgentSlug: merged.pagesAssistAgentSlug || undefined,
     tablesAssistAgentSlug: merged.tablesAssistAgentSlug || undefined,
     appsAssistAgentSlug: merged.appsAssistAgentSlug || undefined,

@@ -52,11 +52,17 @@ function onboardingPost<T>(action: string, payload?: Record<string, unknown>): P
 }
 import type { TestApiKeyResult } from '@/lib/api-key-test';
 import type { ProvisionResult } from '@/lib/onboarding-provision';
+import {
+  ASSISTANT_MODEL_CHOICES,
+  WORKER_MODEL_CHOICES,
+  type ModelChoice,
+} from '@/lib/system-manifest/model-choices';
 import { TelegramBotSection } from '@/components/telegram/telegram-bot-section';
 
 type StepKey =
   | 'profile'
   | 'openrouter'
+  | 'models'
   | 'voice'
   | 'embedding'
   | 'provision'
@@ -69,6 +75,7 @@ type StepKey =
 const STEPS: { key: StepKey; title: string }[] = [
   { key: 'profile', title: 'Welcome' },
   { key: 'openrouter', title: 'Your key' },
+  { key: 'models', title: 'Models' },
   { key: 'voice', title: 'Voice' },
   { key: 'embedding', title: 'Memory' },
   { key: 'provision', title: 'Set up' },
@@ -190,6 +197,19 @@ function Wizard({
   const [xaiKey, setXaiKey] = useState('');
   const [results, setResults] = useState<Record<string, TestApiKeyResult>>({});
 
+  // Models step — assistant + worker picks (defaults = the manifest defaults,
+  // flagged `recommended` in the curated lists) and the route they run on.
+  const [mAssistant, setMAssistant] = useState<string>(
+    ASSISTANT_MODEL_CHOICES.find((m) => m.recommended)?.id ?? ASSISTANT_MODEL_CHOICES[0]!.id,
+  );
+  const [mWorker, setMWorker] = useState<string>(
+    WORKER_MODEL_CHOICES.find((m) => m.recommended)?.id ?? WORKER_MODEL_CHOICES[0]!.id,
+  );
+  const [mRoute, setMRoute] = useState<'openrouter' | 'azure'>('openrouter');
+  const [azureBaseUrl, setAzureBaseUrl] = useState('');
+  const [azureKey, setAzureKey] = useState('');
+  const [modelsSaved, setModelsSaved] = useState(false);
+
   // Memory step — model + route choices. OpenRouter is pre-selected when its
   // key was saved a step earlier (it gets reused — no second signup).
   const [embProvider, setEmbProvider] = useState<'openrouter' | 'openai'>(
@@ -247,6 +267,29 @@ function Wizard({
       const t = await onboardingPost<TestApiKeyResult>('testKey', { service });
       setResults((r) => ({ ...r, [service]: t }));
       t.ok ? toast.success(`${t.provider} key works.`) : toast.error(t.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  // Models step: persist the picks (provision applies them). On the Azure route
+  // the server live-probes the endpoint + key before accepting. Returns success
+  // so the footer only advances on a clean save.
+  async function onSaveModels(): Promise<boolean> {
+    setBusy(true);
+    try {
+      const res = await onboardingPost<{ ok: boolean; message?: string }>('models', {
+        assistantModel: mAssistant,
+        workerModel: mWorker,
+        route: mRoute,
+        azureBaseUrl,
+        azureKey,
+      });
+      if (!res.ok) {
+        toast.error(res.message ?? 'Could not save model choices.');
+        return false;
+      }
+      setModelsSaved(true);
+      return true;
     } finally {
       setBusy(false);
     }
@@ -397,6 +440,105 @@ function Wizard({
             onRetest={() => onRetest('openrouter')}
             busy={busy}
           />
+        )}
+
+        {step === 'models' && (
+          <StepShell
+            title="Choose your models"
+            blurb="Two engines power your brain: a top-tier model for the assistant you talk to, and a fast model for the background workers that read and index everything you add. The defaults are excellent — and everything here can be changed later in Settings."
+          >
+            <div className="space-y-6">
+              <ModelChoiceCards
+                label="Assistant — the mind you talk to"
+                choices={ASSISTANT_MODEL_CHOICES}
+                value={mAssistant}
+                onChange={setMAssistant}
+                azureOnly={mRoute === 'azure'}
+              />
+              <ModelChoiceCards
+                label="Workers — fast indexing of everything you add"
+                choices={WORKER_MODEL_CHOICES}
+                value={mWorker}
+                onChange={setMWorker}
+                azureOnly={mRoute === 'azure'}
+              />
+
+              <div className="space-y-1.5">
+                <p className="text-sm font-medium">Runs via</p>
+                <RadioGroup
+                  value={mRoute}
+                  onValueChange={(v) => {
+                    const r = v as 'openrouter' | 'azure';
+                    setMRoute(r);
+                    setModelsSaved(false);
+                    if (r === 'azure') {
+                      // Azure serves OpenAI-family models only — snap any
+                      // non-eligible pick to the first Azure-capable card.
+                      if (!ASSISTANT_MODEL_CHOICES.find((m) => m.id === mAssistant)?.azure) {
+                        setMAssistant(ASSISTANT_MODEL_CHOICES.find((m) => m.azure)!.id);
+                      }
+                      if (!WORKER_MODEL_CHOICES.find((m) => m.id === mWorker)?.azure) {
+                        setMWorker(WORKER_MODEL_CHOICES.find((m) => m.azure)!.id);
+                      }
+                    }
+                  }}
+                  className="grid gap-2 sm:grid-cols-2"
+                >
+                  <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-foreground/[0.04]">
+                    <RadioGroupItem value="openrouter" className="mt-0.5" />
+                    <span>
+                      <span className="block text-sm font-medium">OpenRouter</span>
+                      <span className="block text-xs text-muted-foreground">
+                        Every model above on the key you just added — one key, one bill, automatic
+                        failover between hosts.
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-foreground/[0.04]">
+                    <RadioGroupItem value="azure" className="mt-0.5" />
+                    <span>
+                      <span className="block text-sm font-medium">Azure OpenAI</span>
+                      <span className="block text-xs text-muted-foreground">
+                        Run OpenAI models from your own Azure tenant — prompts stay inside your
+                        Microsoft boundary. OpenAI-family models only.
+                      </span>
+                    </span>
+                  </label>
+                </RadioGroup>
+              </div>
+
+              {mRoute === 'azure' && (
+                <div className="space-y-3">
+                  <Field
+                    label="Azure OpenAI endpoint"
+                    hint="The OpenAI-compatible v1 endpoint — deployments must be named after the model (e.g. gpt-5.4)."
+                  >
+                    <Input
+                      value={azureBaseUrl}
+                      onChange={(e) => setAzureBaseUrl(e.target.value)}
+                      placeholder="https://your-resource.openai.azure.com/openai/v1"
+                    />
+                  </Field>
+                  <Field label="Azure OpenAI API key" hint={undefined}>
+                    <Input
+                      type="text"
+                      autoComplete="off"
+                      placeholder="Paste your Azure key"
+                      value={azureKey}
+                      onChange={(e) => setAzureKey(e.target.value)}
+                    />
+                  </Field>
+                </div>
+              )}
+
+              {modelsSaved && (
+                <p className="flex items-center gap-2 text-sm text-primary">
+                  <Check className="size-4" /> Model choices saved — applied when your assistant is
+                  set up.
+                </p>
+              )}
+            </div>
+          </StepShell>
         )}
 
         {step === 'voice' && (
@@ -824,6 +966,14 @@ function Wizard({
                 onClick: () => go(index + 1),
               };
             }
+            case 'models':
+              return {
+                label: 'Save & continue',
+                disabled: mRoute === 'azure' && !azureBaseUrl.trim(),
+                onClick: async () => {
+                  if (await onSaveModels()) go(index + 1);
+                },
+              };
             case 'voice':
               return { label: 'Continue', onClick: () => go(index + 1) };
             case 'embedding':
@@ -850,6 +1000,69 @@ function Wizard({
 }
 
 // ── presentational helpers ──────────────────────────────────────────────────
+
+/** Curated model cards for the Models step — radio cards with name, price
+ *  class, honest blurb, and Recommended / Azure-capable badges. When the Azure
+ *  route is active, non-eligible cards dim out with a "Not on Azure" badge. */
+function ModelChoiceCards({
+  label,
+  choices,
+  value,
+  onChange,
+  azureOnly,
+}: {
+  label: string;
+  choices: readonly ModelChoice[];
+  value: string;
+  onChange: (id: string) => void;
+  azureOnly: boolean;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-sm font-medium">{label}</p>
+      <RadioGroup value={value} onValueChange={onChange} className="grid gap-2 sm:grid-cols-2">
+        {choices.map((m) => {
+          const blocked = azureOnly && !m.azure;
+          return (
+            <label
+              key={m.id}
+              className={
+                'flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-foreground/[0.04]' +
+                (blocked ? ' pointer-events-none opacity-45' : '')
+              }
+            >
+              <RadioGroupItem value={m.id} className="mt-0.5" disabled={blocked} />
+              <span className="min-w-0 flex-1">
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className="text-sm font-medium">{m.name}</span>
+                  <span className="shrink-0 text-[11px] text-muted-foreground">{m.price}</span>
+                </span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">{m.blurb}</span>
+                <span className="mt-1.5 flex flex-wrap gap-1.5">
+                  {m.recommended && (
+                    <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium text-primary-foreground">
+                      Recommended
+                    </span>
+                  )}
+                  {m.azure && (
+                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+                      Azure-capable
+                    </span>
+                  )}
+                  {blocked && (
+                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+                      Not on Azure
+                    </span>
+                  )}
+                </span>
+              </span>
+            </label>
+          );
+        })}
+      </RadioGroup>
+    </div>
+  );
+}
 
 function Header({ index }: { index: number }) {
   return (
