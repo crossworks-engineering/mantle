@@ -1,5 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { PUBLIC_PATHS, SESSION_COOKIE_NAME, isDetachedDev } from '@/lib/auth-constants';
+import {
+  MANTLE_METHOD_HEADER,
+  MANTLE_PATH_HEADER,
+  PUBLIC_PATHS,
+  SESSION_COOKIE_NAME,
+  isDetachedDev,
+} from '@/lib/auth-constants';
 
 /**
  * Lightweight session-cookie check in the Edge runtime. Uses Web Crypto
@@ -138,6 +144,15 @@ export async function middleware(req: NextRequest) {
   const origin = isApi ? corsOrigin(req, path) : null;
   const withCors = (res: NextResponse) => (origin ? applyCors(res, origin) : res);
 
+  // Tell the Node layer what was requested: `getOwnerOr401` reads method+path
+  // from these to audit mutations without threading `Request` through its 280+
+  // call sites. Always set (never merely forwarded), so a client-supplied value
+  // can't mislabel the audit trail on any path that passes through middleware.
+  const reqHeaders = new Headers(req.headers);
+  reqHeaders.set(MANTLE_PATH_HEADER, path);
+  reqHeaders.set(MANTLE_METHOD_HEADER, req.method);
+  const next = () => NextResponse.next({ request: { headers: reqHeaders } });
+
   // CORS preflight is answered before auth — a preflight carries no credentials
   // and only asks "may I send this request"; gating it would break every
   // cross-origin call.
@@ -146,7 +161,7 @@ export async function middleware(req: NextRequest) {
   }
 
   const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + '/'));
-  if (isPublic) return withCors(NextResponse.next());
+  if (isPublic) return withCors(next());
 
   const secret = process.env.SESSION_SECRET;
   if (!secret || secret.length < 32) {
@@ -168,7 +183,7 @@ export async function middleware(req: NextRequest) {
   // mobile token would dodge revocation, an asset token would grant full session
   // access. Mirror lib/auth's verify(), which rejects any `k` on the cookie path.
   if (cookie && (await verify(cookie, secret)) && tokenKind(cookie) === null) {
-    return withCors(NextResponse.next());
+    return withCors(next());
   }
 
   // Mobile companion / detached client: Authorization: Bearer <mobile-token>.
@@ -178,7 +193,7 @@ export async function middleware(req: NextRequest) {
   const bearer = bearerToken(req);
   if (bearer) {
     if ((await verify(bearer, secret)) && tokenKind(bearer) === 'm') {
-      return withCors(NextResponse.next());
+      return withCors(next());
     }
     // A bearer was presented but is invalid — this is an API client, not a
     // browser, so answer 401 rather than redirect to an HTML login page.
@@ -192,7 +207,7 @@ export async function middleware(req: NextRequest) {
   if (isAssetPath(path) && req.method === 'GET') {
     const at = req.nextUrl.searchParams.get('at');
     if (at && (await verify(at, secret)) && tokenKind(at) === 'a') {
-      return withCors(NextResponse.next());
+      return withCors(next());
     }
   }
 
@@ -208,7 +223,7 @@ export async function middleware(req: NextRequest) {
   // loop. Let page navs render; the page gate does the rest. Dev-only and never
   // in production (isDetachedDev). API requests still 401 — the client's data
   // fetches target the REMOTE API, not this local server.
-  if (isDetachedDev()) return withCors(NextResponse.next());
+  if (isDetachedDev()) return withCors(next());
 
   const url = new URL('/login', req.url);
   url.searchParams.set('next', path);

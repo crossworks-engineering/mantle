@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { db, mobileTokens } from '@mantle/db';
+import { db, authUsers, mobileTokens, eq, sql } from '@mantle/db';
 import { buildMobileToken, loginWithPassword } from '@/lib/auth';
+import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 
 /**
@@ -38,8 +39,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: AUTH_FAILED_MESSAGE }, { status: 401 });
   }
 
-  const userId = await loginWithPassword(parsed.data.email, parsed.data.password);
+  const email = parsed.data.email.trim().toLowerCase();
+  const userId = await loginWithPassword(email, parsed.data.password);
   if (!userId) {
+    auditFireAndForget({
+      actorEmail: email,
+      action: 'auth.login_failed',
+      method: 'POST',
+      path: '/api/auth/mobile-login',
+      detail: { channel: 'mobile' },
+      ...requestMetaFrom(req),
+    });
     return NextResponse.json({ error: AUTH_FAILED_MESSAGE }, { status: 401 });
   }
 
@@ -50,6 +60,19 @@ export async function POST(req: Request) {
     userId,
     label: parsed.data.deviceName ?? 'Mobile device',
     expiresAt,
+  });
+  await db
+    .update(authUsers)
+    .set({ lastLoginAt: sql`now()` })
+    .where(eq(authUsers.id, userId));
+  auditFireAndForget({
+    actorId: userId,
+    actorEmail: email,
+    action: 'auth.login',
+    method: 'POST',
+    path: '/api/auth/mobile-login',
+    detail: { channel: 'mobile', device: parsed.data.deviceName ?? 'Mobile device' },
+    ...requestMetaFrom(req),
   });
 
   return NextResponse.json({ token: value, expiresIn: expiresInSec });

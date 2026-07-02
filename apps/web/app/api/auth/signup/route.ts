@@ -6,6 +6,7 @@ import bcrypt from 'bcryptjs';
 import { db, countUsers } from '@mantle/db';
 import { buildSessionCookie, SESSION_COOKIE_NAME } from '@/lib/auth';
 import { secureCookies } from '@/lib/auth-constants';
+import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 
 /**
@@ -59,9 +60,11 @@ export async function POST(req: Request) {
   // signups with different emails could otherwise both land, breaking the
   // single-user invariant). The conditional INSERT…SELECT is atomic.
   try {
+    // is_owner: the first-run account is the ANCHOR — the identity all brain
+    // content is keyed to. Later co-admin logins (Settings → Users) are not.
     const inserted = await db.execute(sql`
-      INSERT INTO auth.users (id, email, password_hash)
-      SELECT ${id}, ${email}, ${passwordHash}
+      INSERT INTO auth.users (id, email, password_hash, is_owner)
+      SELECT ${id}, ${email}, ${passwordHash}, true
       WHERE NOT EXISTS (SELECT 1 FROM auth.users)
       RETURNING id
     `);
@@ -77,6 +80,16 @@ export async function POST(req: Request) {
       { status: 403 },
     );
   }
+
+  auditFireAndForget({
+    actorId: id,
+    actorEmail: email,
+    action: 'user.create',
+    method: 'POST',
+    path: '/api/auth/signup',
+    detail: { firstRun: true, isOwner: true },
+    ...requestMetaFrom(req),
+  });
 
   // Sign them straight in — onboarding picks up from /onboarding.
   const { value, maxAgeSec } = buildSessionCookie(id);

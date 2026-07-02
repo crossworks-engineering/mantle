@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { db, authUsers, eq, sql } from '@mantle/db';
 import { buildSessionCookie, loginWithPassword, SESSION_COOKIE_NAME } from '@/lib/auth';
 import { secureCookies } from '@/lib/auth-constants';
+import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 
 const LoginBody = z.object({
@@ -36,10 +38,33 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: AUTH_FAILED_MESSAGE }, { status: 401 });
   }
 
-  const userId = await loginWithPassword(parsed.data.email, parsed.data.password);
+  const email = parsed.data.email.trim().toLowerCase();
+  const userId = await loginWithPassword(email, parsed.data.password);
   if (!userId) {
+    // No actor id — the attempted email may not even exist. The 10/min/IP rate
+    // limit above caps how fast this can grow the trail.
+    auditFireAndForget({
+      actorEmail: email,
+      action: 'auth.login_failed',
+      method: 'POST',
+      path: '/api/auth/login',
+      ...requestMetaFrom(req),
+    });
     return NextResponse.json({ error: AUTH_FAILED_MESSAGE }, { status: 401 });
   }
+
+  await db
+    .update(authUsers)
+    .set({ lastLoginAt: sql`now()` })
+    .where(eq(authUsers.id, userId));
+  auditFireAndForget({
+    actorId: userId,
+    actorEmail: email,
+    action: 'auth.login',
+    method: 'POST',
+    path: '/api/auth/login',
+    ...requestMetaFrom(req),
+  });
 
   const { value, maxAgeSec } = buildSessionCookie(userId);
   const res = NextResponse.json({ ok: true });

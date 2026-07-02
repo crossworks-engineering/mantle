@@ -778,6 +778,13 @@
       "when": 1784332800000,
       "tag": "0110_oauth_remote_mcp",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1784419200000,
+      "tag": "0111_multi_admin_users",
+      "breakpoints": true
     }
   ]
 }

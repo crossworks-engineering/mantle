@@ -39,6 +39,27 @@ export const PUBLIC_PATHS = [
 ];
 
 /**
+ * Paths whose routes emit their own richer audit events (`user.*`) — the
+ * choke point skips its generic `api.write` row for these to avoid doubles.
+ */
+export const AUDIT_SELF_LOGGED_PATHS = ['/api/users'];
+
+export function isAuditSelfLogged(path: string): boolean {
+  return AUDIT_SELF_LOGGED_PATHS.some((p) => path === p || path.startsWith(p + '/'));
+}
+
+/**
+ * Request-context headers injected by the middleware (overwritten there via
+ * Headers.set, so a client-supplied value can't survive on any path middleware
+ * runs on). They let the Node-side auth gate learn the method/path for audit
+ * attribution without threading `Request` through the 280+ `getOwnerOr401()`
+ * call sites. They drive audit labelling only — not an access decision — so a
+ * spoof on a matcher-excluded path can at worst mislabel a row, not grant access.
+ */
+export const MANTLE_PATH_HEADER = 'x-mantle-path';
+export const MANTLE_METHOD_HEADER = 'x-mantle-method';
+
+/**
  * Whether cookies set on this response should carry the `Secure` attribute.
  * Decided from the request's actual scheme — NOT from NODE_ENV: production
  * builds also serve plain-HTTP installs (MANTLE_SITE_ADDRESS=:80 on a bare

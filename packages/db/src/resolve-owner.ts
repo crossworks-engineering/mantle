@@ -17,6 +17,7 @@
  * multi-DB setup — and is validated as a UUID so a typo fails loud instead of
  * silently scoping every query to nothing.
  */
+import { eq } from 'drizzle-orm';
 import { db } from './client';
 import { authUsers } from './schema/auth-users';
 
@@ -31,10 +32,13 @@ export async function countUsers(): Promise<number> {
 /**
  * Resolve the owner this process should act for.
  * - `ALLOWED_USER_ID` set ⇒ that id (validated as a UUID; throws on garbage).
- * - else exactly one `auth.users` row ⇒ that id.
- * - else zero rows ⇒ `null` (no account yet — caller should wait).
- * - else more than one row ⇒ throws (single-user invariant violated; set
- *   `ALLOWED_USER_ID` to disambiguate).
+ * - else zero `auth.users` rows ⇒ `null` (no account yet — caller should wait).
+ * - else the ANCHOR row (`is_owner = true`) ⇒ that id. Since 0111 the table can
+ *   hold co-admin logins, but all content stays keyed to the anchor — that's
+ *   whose tree every background process operates on.
+ * - single row without `is_owner` ⇒ that id (pre-0111 DB mid-upgrade).
+ * - multiple rows and no anchor ⇒ throws (corrupt state; 0111's backfill marks
+ *   one, or set `ALLOWED_USER_ID` to disambiguate).
  */
 export async function resolveSingleOwnerId(): Promise<string | null> {
   const env = process.env.ALLOWED_USER_ID?.trim();
@@ -44,12 +48,20 @@ export async function resolveSingleOwnerId(): Promise<string | null> {
     }
     return env;
   }
+  const [anchor] = await db
+    .select({ id: authUsers.id })
+    .from(authUsers)
+    .where(eq(authUsers.isOwner, true))
+    .limit(1);
+  if (anchor) return anchor.id;
+  // No anchor marked — fresh install (0 rows: wait) or a pre-0111 DB mid-upgrade
+  // (1 row: it's the owner). Multiple rows without an anchor is corrupt.
   const rows = await db.select({ id: authUsers.id }).from(authUsers).limit(2);
   if (rows.length === 0) return null;
   if (rows.length > 1) {
     throw new Error(
-      'Multiple rows in auth.users but ALLOWED_USER_ID is not set. Mantle is single-user; ' +
-        'set ALLOWED_USER_ID to choose which one this process serves.',
+      'Multiple rows in auth.users but none is the anchor (is_owner). Run migrations ' +
+        '(0111 backfills the oldest account) or set ALLOWED_USER_ID to disambiguate.',
     );
   }
   return rows[0]!.id;

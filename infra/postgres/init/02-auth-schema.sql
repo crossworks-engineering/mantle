@@ -11,5 +11,13 @@ CREATE TABLE IF NOT EXISTS auth.users (
   id            uuid        PRIMARY KEY,
   email         text        NOT NULL UNIQUE,
   password_hash text        NOT NULL,
-  created_at    timestamptz NOT NULL DEFAULT now()
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  -- Multi-admin logins (0111): the anchor row (is_owner, unique) is the account
+  -- all brain content is keyed to; other rows are co-admin identities for the
+  -- audit trail. No per-user access scope here (team tiers are a separate surface).
+  is_owner      boolean     NOT NULL DEFAULT false,
+  display_name  text,
+  last_login_at timestamptz
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS users_single_owner_idx ON auth.users (is_owner) WHERE is_owner;
