@@ -459,7 +459,13 @@ export async function purgeCollection(ownerId: string, collectionKey: string): P
  * rootPath resolves under it (see `collectionRoot`).
  *   - `system` — the repo's own deep developer docs (all of docs/).
  *   - `guide`  — the user-facing **User Guide** (docs/guide/), shipped in the repo.
+ *   - `changelog` — the per-release notes (docs/_changelog/). Rooting a collection
+ *     AT a `_`-dir is the deliberate escape hatch from the hidden convention:
+ *     segments are checked relative to each collection's own root, so the `system`
+ *     walk still skips `_changelog` and the files exist in exactly one collection.
  */
+export const CHANGELOG_COLLECTION_KEY = 'changelog';
+
 const BUILTIN_COLLECTIONS: ReadonlyArray<{
   key: string;
   label: string;
@@ -469,6 +475,13 @@ const BUILTIN_COLLECTIONS: ReadonlyArray<{
 }> = [
   { key: 'system', label: 'System docs', origin: 'system', rootPath: null, brainDepth: 'retrieval' },
   { key: 'guide', label: 'User Guide', origin: 'user', rootPath: 'guide', brainDepth: 'retrieval' },
+  {
+    key: CHANGELOG_COLLECTION_KEY,
+    label: 'Changelog',
+    origin: 'system',
+    rootPath: '_changelog',
+    brainDepth: 'retrieval',
+  },
 ];
 
 /** Ensure the built-in collections exist (disabled by default). Idempotent —

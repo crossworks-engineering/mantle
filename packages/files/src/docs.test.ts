@@ -121,6 +121,12 @@ describe('listMarkdownRelPaths', () => {
   it('returns [] for a missing root', async () => {
     expect(await listMarkdownRelPaths(path.join(tmp, 'does-not-exist'))).toEqual([]);
   });
+
+  it('walks a root that is ITSELF a `_`-dir (the changelog collection shape)', async () => {
+    // The hidden convention applies to segments relative to the collection root,
+    // not to the root's own name — a collection rooted AT `_changelog` indexes.
+    expect(await listMarkdownRelPaths(path.join(tmp, '_archive'))).toEqual(['old.md']);
+  });
 });
 
 describe('collectionRoot', () => {

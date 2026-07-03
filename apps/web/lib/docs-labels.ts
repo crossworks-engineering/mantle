@@ -7,9 +7,12 @@
 /** Prettify a filename or folder segment for display:
  *  strip a leading `NN-`/`NN_`/`NN.` ordering prefix, drop the `.md` extension,
  *  turn dashes/underscores into spaces, and title-case.
- *  `00-index.md` → "Index", `02-concepts` → "Concepts", `the-brain.md` → "The Brain". */
+ *  `00-index.md` → "Index", `02-concepts` → "Concepts", `the-brain.md` → "The Brain".
+ *  A pure version number (a changelog entry) is kept whole — the ordering-prefix
+ *  strip would otherwise mangle it (`0.100.0` → "100.0"): `0.100.0.md` → "v0.100.0". */
 export function prettifyDocLabel(name: string): string {
   const base = name.replace(/\.(md|markdown)$/i, '');
+  if (/^v?\d+(\.\d+)+$/.test(base)) return base.startsWith('v') ? base : `v${base}`;
   const noPrefix = base.replace(/^\d+[-_.]/, '');
   const spaced = noPrefix.replace(/[-_]+/g, ' ').trim();
   return spaced.replace(/\b\w/g, (c) => c.toUpperCase()) || base;
