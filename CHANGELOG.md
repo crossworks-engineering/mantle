@@ -4,6 +4,12 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the multi-arch image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.113.1 — 2026-07-03
+
+**Centered page title, easier to read.** The floating title in the middle of
+the header now uses the app font (Inter), smaller and bold, so longer titles
+fit without truncating. The Bukhari script face is reserved for the wordmark.
+
 ## v0.113.0 — 2026-07-03
 
 **Name your brain in the header.** A new **Site name** field in
