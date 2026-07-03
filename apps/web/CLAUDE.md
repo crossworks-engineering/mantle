@@ -39,8 +39,8 @@ Non-negotiables (full detail in the guide):
   must scroll itself (`h-dvh overflow-y-auto`) because globals.css pins `html/body` to
   `overflow:hidden` for the shell. Pages render via the server `renderPageDoc` (sanitized
   HTML), not the client editor.
-- **Fonts**: Inter everywhere (auto); `font-logo` (Bukhari) only for the wordmark + centered
-  title. Don't add fonts.
+- **Fonts**: Inter everywhere (auto); `font-logo` (Bukhari) only for the wordmark.
+  Don't add fonts.
 - **Tailwind v4**: no dynamically built class names (use literal-string arrays).
 - **Workflow**: `pnpm --filter @mantle/web run typecheck` before commit; commit on `main`
   with the `Co-Authored-By` trailer; don't push unless asked. To see changes in a
