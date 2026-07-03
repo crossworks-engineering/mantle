@@ -112,8 +112,9 @@ Rules:
 
 - **Sans (everything):** Inter, self-hosted, wired as `--font-sans` on
   `<body>` via `lib/fonts.ts`. Just use default text — don't set font-family.
-- **Logo / wordmark + centered page title only:** Bukhari Script via
-  `font-logo` (`--font-logo`). Do **not** use it for body copy.
+- **Logo / wordmark only:** Bukhari Script via `font-logo` (`--font-logo`).
+  Do **not** use it for anything else — the centered top-bar page title is
+  Inter (`text-lg font-bold text-chart-2`).
 - `--font-serif` / `--font-mono` are fallback strings only (mono is fine for
   code/`font-mono`); no serif font is actually loaded.
 - **Do not add per-theme fonts.** All themes share Inter by design.
