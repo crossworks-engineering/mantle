@@ -93,12 +93,14 @@ Claude preview sessions.
 
 ## Known limitations
 
-- **Non-`apiFetch` transports stay same-origin** (Phase 2 · #5 follow-ups): raw
-  asset `src`s (`/api/files/...?raw=1` in `<img>`/`<iframe>`/downloads, avatars)
-  and the assistant turn/stream internals (`assistant-dock.tsx`) still use
-  browser-native sources / raw same-origin `fetch`, which can't carry the bearer.
-  Those surfaces won't load detached until they move to a token-in-query /
-  signed-URL or `apiFetch` transport.
+- **Every transport is detached-aware, but the asset path is lightly verified.**
+  Data fetches (`apiFetch`/`apiSend`), SSE (`apiEventStream` — realtime + turn
+  streams), and the assistant dock's raw turn POST (`apiUrl`+`withAuth`) all
+  carry the base + bearer. Browser-native asset `src`s (`<img>`/`<iframe>`/
+  downloads) can't carry a header, so `assetUrl()` appends the short-lived
+  `?at=` token the shell mints (`lib/asset-url.ts`); its cross-origin *success*
+  path has had less smoke than the data path — if an image 401s detached,
+  start there.
 - **No usage card.** `UsageCard` (spend + agent context in the sidebar rail)
   reads the DB in-process, so detached mode drops it instead of 500ing.
 - **Mutations hit the remote's data.** You're driving a real deployed brain —
