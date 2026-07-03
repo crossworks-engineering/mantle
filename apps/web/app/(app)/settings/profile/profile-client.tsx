@@ -119,6 +119,7 @@ function ProfileForm({ data }: { data: ProfileData }) {
     defaults.avatarStyle ? { style: defaults.avatarStyle, seed: defaults.avatarSeed || userId } : null,
   );
   const [purpose, setPurpose] = useState(defaults.purpose ?? '');
+  const [siteName, setSiteName] = useState(defaults.siteName ?? '');
   const [archetype, setArchetype] = useState(
     defaults.purposeArchetype ?? PURPOSE_ARCHETYPES[0]!.key,
   );
@@ -161,6 +162,8 @@ function ProfileForm({ data }: { data: ProfileData }) {
     onSuccess: () => {
       toast.success('Preferences saved');
       void queryClient.invalidateQueries({ queryKey: ['profile'] });
+      // The header wordmark reads siteName from the shell payload.
+      void queryClient.invalidateQueries({ queryKey: ['shell'] });
     },
     onError: (err) => setError(err instanceof Error ? err.message : String(err)),
   });
@@ -189,6 +192,7 @@ function ProfileForm({ data }: { data: ProfileData }) {
       reminderChannel,
       purpose,
       purposeArchetype: archetype,
+      siteName,
       streamThoughts,
       thoughtTrailMode: replaceTrail ? 'replace' : 'list',
       persistThoughts,
@@ -215,6 +219,22 @@ function ProfileForm({ data }: { data: ProfileData }) {
       </section>
 
       <section className="space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="siteName">Site name</Label>
+          <Input
+            id="siteName"
+            name="siteName"
+            value={siteName}
+            maxLength={40}
+            onChange={(e) => setSiteName(e.target.value)}
+            placeholder="mantle"
+          />
+          <p className="text-xs text-muted-foreground">
+            Replaces the &ldquo;mantle&rdquo; wordmark in the top-left header — e.g. the
+            site or team name (&ldquo;Natref&rdquo;) — so it&apos;s obvious at a glance
+            which brain you&apos;re on. Leave blank for the default.
+          </p>
+        </div>
         <div className="space-y-1.5">
           <Label htmlFor="purposeArchetype">Speciality</Label>
           <Select value={archetype} onValueChange={setArchetype}>
