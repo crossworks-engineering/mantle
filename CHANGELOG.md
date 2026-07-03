@@ -45,6 +45,34 @@ a prod stack recreated the prod containers and took the live brain down
 - `sanity.sh` falls back to the `mantle-dev` project when the prod project
   has no containers.
 
+## v0.112.0 — 2026-07-03
+
+**Release notes your brain can read.** The changelog joins the documentation
+system as a built-in collection: browsable under /docs and, once enabled
+there, indexed by the brain — so "what changed in v0.99?" is answerable in
+chat. Ships disabled by default; `_`-hidden folders stay out of every other
+collection.
+
+## v0.111.0 — 2026-07-03
+
+**A calmer first screen, and frontend-only development.** The right-hand
+Activity column starts hidden (expand with ⌘J; the choice sticks). New
+`pnpm dev:fe` runs just the web app against a deployed brain — no local
+Docker/Postgres; a box opts in via `MANTLE_API_CORS_ORIGINS` (plumbed through
+compose). Runtime-verifying the detached path fixed three latent breaks
+(layout onboarding gate, UsageCard's in-process DB read, cross-origin
+credentialed fetches). First deployable image carrying v0.110.0.
+
+## v0.110.0 — 2026-07-02
+
+**Multiple admins, one brain** (untagged; ships in the v0.111.0 image).
+Settings → Users manages additional full-admin logins (create / password
+reset / delete) with a complete audit trail — logins, failed logins,
+password changes, user management, and every mutating API call, attributed
+to the acting login and durable past user deletion. Brain content stays
+keyed to the anchor account; the anchor is undeletable, self-delete is
+blocked, owner status is unreachable via the API.
+
 ## v0.109.3 — 2026-07-02
 
 Completes the v0.109.2 sweep: the Tables grid's row/column IDs also used
