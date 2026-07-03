@@ -4,6 +4,14 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the multi-arch image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.113.0 — 2026-07-03
+
+**Name your brain in the header.** A new **Site name** field in
+Settings → Profile replaces the top-left "mantle" wordmark with your own
+label — e.g. "Natref" — so when you run several brains it's obvious at a
+glance which one you're looking at. Leave it blank to keep the Mantle
+wordmark; the header updates immediately after saving.
+
 ## v0.112.1 — 2026-07-03
 
 **Complete release notes, in the app and in the brain.** Every release from
