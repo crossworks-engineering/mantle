@@ -352,6 +352,8 @@ export {
   isPersistThoughtsEnabled,
   resolveThinkingBudget,
   projectThinkingBudget,
+  projectSiteName,
+  SITE_NAME_MAX,
   type ThoughtTrailMode,
   formatInProfile,
   buildTimeContextLine,

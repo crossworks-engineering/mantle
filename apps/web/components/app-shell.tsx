@@ -47,6 +47,8 @@ type ShellData = {
   onboarded: boolean;
   avatar: { style: string; seed: string } | null;
   pendingApprovals: number;
+  /** Custom header wordmark (Settings → Profile → Site name); null ⇒ "mantle". */
+  siteName: string | null;
   /** Short-lived asset-access token for browser-native srcs in detached mode
    *  (see lib/asset-url). Absent/ignored same-origin. */
   assetToken?: string;
@@ -167,7 +169,12 @@ export function AppShell({
           } as React.CSSProperties
         }
       >
-        <Header email={email} userAvatar={userAvatar} onMenuClick={() => setMobileOpen(true)} />
+        <Header
+          email={email}
+          userAvatar={userAvatar}
+          siteName={shellQuery.data?.siteName ?? null}
+          onMenuClick={() => setMobileOpen(true)}
+        />
 
         {/* Desktop sidebar */}
         <aside className="fixed inset-y-0 left-0 z-30 hidden w-[var(--nav-w)] flex-col border-r bg-sidebar pt-16 transition-[width] duration-200 ease-in-out md:flex">

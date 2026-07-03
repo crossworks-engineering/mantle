@@ -17,6 +17,7 @@ import {
   isPurposeArchetype,
   isReminderChannel,
   loadProfilePreferences,
+  SITE_NAME_MAX,
   updateProfilePreferences,
 } from '@mantle/content';
 import { listReminderCapableAgents } from '@/lib/agents';
@@ -48,6 +49,8 @@ const Body = z.object({
   // The brain's purpose + speciality archetype (editable post-onboarding).
   purpose: z.string().max(2000).optional(),
   purposeArchetype: z.string().max(64).optional(),
+  // Custom header wordmark (empty = clear back to "mantle").
+  siteName: z.string().max(120).optional(),
   // Live turn streaming (thinking trail + token typing). Default on.
   streamThoughts: z.boolean().optional(),
   // Live trail display mode + whether the trail persists across refresh.
@@ -76,6 +79,7 @@ export async function PUT(req: Request) {
     reminderChannel,
     purpose,
     purposeArchetype,
+    siteName,
     streamThoughts,
     thoughtTrailMode,
     persistThoughts,
@@ -105,6 +109,8 @@ export async function PUT(req: Request) {
       // when it's a known key.
       ...(purpose !== undefined ? { purpose: purposeTrimmed.slice(0, 600) } : {}),
       ...(isPurposeArchetype(archetype) ? { purposeArchetype: archetype } : {}),
+      // Sent on every save; empty stores '' which projects to unset (= "mantle").
+      ...(siteName !== undefined ? { siteName: siteName.trim().slice(0, SITE_NAME_MAX) } : {}),
       ...(streamThoughts !== undefined ? { streamThoughts } : {}),
       ...(thoughtTrailMode !== undefined ? { thoughtTrailMode } : {}),
       ...(persistThoughts !== undefined ? { persistThoughts } : {}),

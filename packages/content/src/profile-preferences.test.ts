@@ -3,8 +3,10 @@ import {
   isReminderChannel,
   isStreamThoughtsEnabled,
   isPersistThoughtsEnabled,
+  projectSiteName,
   projectThinkingBudget,
   resolveThinkingBudget,
+  SITE_NAME_MAX,
   resolveThoughtTrailMode,
 } from './profile-preferences';
 
@@ -58,6 +60,26 @@ describe('projectThinkingBudget', () => {
     expect(projectThinkingBudget('4096')).toBeUndefined();
     expect(projectThinkingBudget(null)).toBeUndefined();
     expect(projectThinkingBudget(NaN)).toBeUndefined();
+  });
+});
+
+// projectSiteName follows the same shared-projection contract: read and write
+// both delegate here, and unset/blank/garbage means "fall back to the Mantle
+// wordmark" rather than rendering an empty header.
+describe('projectSiteName', () => {
+  it('keeps a plain name, trimmed', () => {
+    expect(projectSiteName('Natref')).toBe('Natref');
+    expect(projectSiteName('  Natref  ')).toBe('Natref');
+  });
+  it('caps at SITE_NAME_MAX chars', () => {
+    expect(projectSiteName('x'.repeat(SITE_NAME_MAX + 10))).toBe('x'.repeat(SITE_NAME_MAX));
+  });
+  it('maps unset / blank / non-string to undefined', () => {
+    expect(projectSiteName(undefined)).toBeUndefined();
+    expect(projectSiteName('')).toBeUndefined();
+    expect(projectSiteName('   ')).toBeUndefined();
+    expect(projectSiteName(42)).toBeUndefined();
+    expect(projectSiteName(null)).toBeUndefined();
   });
 });
 

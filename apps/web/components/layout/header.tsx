@@ -23,10 +23,13 @@ import { VERSION_LABEL, versionDetail } from '@/lib/version';
 export function Header({
   email,
   userAvatar,
+  siteName,
   onMenuClick,
 }: {
   email: string | null;
   userAvatar?: { style: string; seed: string } | null;
+  /** Custom wordmark from prefs; null/undefined ⇒ the "mantle" default. */
+  siteName?: string | null;
   onMenuClick: () => void;
 }) {
   const router = useRouter();
@@ -53,8 +56,14 @@ export function Header({
         <Menu className="size-5" />
       </Button>
 
-      <Link href="/" className="flex items-baseline gap-1.5" aria-label="Mantle home">
-        <span className="font-logo text-3xl leading-none text-primary">mantle</span>
+      <Link
+        href="/"
+        className="flex min-w-0 items-baseline gap-1.5"
+        aria-label={`${siteName || 'Mantle'} home`}
+      >
+        <span className="max-w-[45vw] truncate font-logo text-3xl leading-none text-primary">
+          {siteName || 'mantle'}
+        </span>
         <span
           className="text-[0.65rem] font-medium leading-none text-muted-foreground tabular-nums"
           title={versionDetail()}

@@ -29,5 +29,11 @@ export async function GET() {
   // client appends it via `assetUrl()`; same-origin ignores it (cookie auth). See
   // lib/asset-url.ts + getOwnerForAsset.
   const assetToken = buildAssetToken(user.id);
-  return NextResponse.json({ onboarded, avatar, pendingApprovals, assetToken });
+  return NextResponse.json({
+    onboarded,
+    avatar,
+    pendingApprovals,
+    assetToken,
+    siteName: prefs.siteName ?? null,
+  });
 }

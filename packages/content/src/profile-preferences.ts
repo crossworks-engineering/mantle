@@ -61,6 +61,11 @@ export type ProfilePreferences = {
    *  the assistant's real knowledge of the user comes from the Journal identity
    *  block; this is for greetings/UI. */
   displayName?: string;
+  /** Custom site name rendered as the header wordmark in place of "mantle" —
+   *  a per-box label (e.g. 'Natref') so anyone with several brains can see at
+   *  a glance which one they're on. Cosmetic only; unset ⇒ the Mantle wordmark.
+   *  Read via projectSiteName, never raw. */
+  siteName?: string;
   /** Free-text "what this brain is for" — captured at onboarding, editable in
    *  Settings → Profile. Injected as the "# Purpose of this brain" section of the
    *  always-on identity block (identity-context.ts), so every agent knows the
@@ -195,6 +200,20 @@ export function projectThinkingBudget(raw: unknown): number | undefined {
   return typeof raw === 'number' && raw > 0 ? Math.floor(raw) : undefined;
 }
 
+/** Cap on a stored site name — generous for a wordmark; the header truncates
+ *  visually anyway, this just keeps garbage-length strings out of the row. */
+export const SITE_NAME_MAX = 40;
+
+/** Project a stored `siteName` jsonb value — trimmed, non-empty, capped at
+ *  {@link SITE_NAME_MAX} chars, or undefined for unset/blank/garbage (⇒ the UI
+ *  falls back to the Mantle wordmark). Shared by BOTH the read and write
+ *  projections so they can't drift (the projectThinkingBudget lesson). */
+export function projectSiteName(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim().slice(0, SITE_NAME_MAX);
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 /** Effective per-turn thinking budget in tokens — gated by BOTH the live-thinking
  *  switch (`streamThoughts`) AND a positive `thinkingBudget`. Returns 0 when
  *  either is missing, so real reasoning is requested only when the user has
@@ -301,6 +320,7 @@ export async function loadProfilePreferences(
       typeof prefs.displayName === 'string' && prefs.displayName.length > 0
         ? prefs.displayName
         : undefined,
+    siteName: projectSiteName(prefs.siteName),
     purpose:
       typeof prefs.purpose === 'string' && prefs.purpose.length > 0 ? prefs.purpose : undefined,
     purposeArchetype:
@@ -475,6 +495,7 @@ export async function updateProfilePreferences(
     reminderAgentSlug: merged.reminderAgentSlug || undefined,
     reminderChannel: isReminderChannel(merged.reminderChannel) ? merged.reminderChannel : undefined,
     displayName: merged.displayName || undefined,
+    siteName: projectSiteName(merged.siteName),
     purpose: merged.purpose || undefined,
     purposeArchetype: merged.purposeArchetype || undefined,
     onboardedAt: merged.onboardedAt || undefined,
