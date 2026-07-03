@@ -4,9 +4,13 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the multi-arch image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
-## Unreleased
+## v0.112.1 — 2026-07-03
 
-Dev-tooling fixes (no runtime/image change) — ship with the next tag:
+**Complete release notes, in the app and in the brain.** Every release from
+v0.82.0 onward now has an entry under /docs → Changelog (the 0.82–0.96 era was
+backfilled from git history; 0.103+ notes moved into the per-version files the
+reader and the Changelog collection actually use). Also ships the dev-tooling
+fixes below.
 
 ### `pnpm reset` actually wipes the dev brain again
 
