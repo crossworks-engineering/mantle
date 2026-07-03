@@ -187,12 +187,12 @@ On the **dev** machine:
 # DB → custom-format archive under ./backups
 scripts/db-dump.sh          # writes backups/mantle-<ts>.dump
 
-# File bytes + object store. With the dev compose these are NAMED volumes
-# (mantle_pg_data / mantle_minio_data / mantle_files_data), so export them:
-docker run --rm -v mantle_files_data:/v -v "$PWD/backups":/out alpine \
-  tar czf /out/files.tgz -C /v .
-docker run --rm -v mantle_minio_data:/v -v "$PWD/backups":/out alpine \
-  tar czf /out/minio.tgz -C /v .
+# File bytes + object store. Since v0.103 these are plain bind-mounted dirs
+# (MinIO under ${MANTLE_DATA_DIR:-./data}/minio, the /files mirror at
+# MANTLE_FILES_ROOT), so tar them straight off disk (sudo on Linux if the
+# files are container-owned):
+tar czf backups/files.tgz -C "$MANTLE_FILES_ROOT" .
+tar czf backups/minio.tgz -C "${MANTLE_DATA_DIR:-./data}/minio" .
 ```
 
 Copy `backups/mantle-<ts>.dump`, `files.tgz`, `minio.tgz` to the VPS; untar the

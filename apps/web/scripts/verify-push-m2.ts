@@ -88,7 +88,7 @@ async function main(): Promise<void> {
 
   console.log(`\nall ${passed} checks passed ✅`);
   console.log(`\nseeded for worker test — instance ${instanceId}, routing ${routingToken.slice(0, 8)}…`);
-  console.log(`fire:   docker exec mantle_pg psql -U postgres -d postgres -c "select pg_notify('conversation_changed','{\\"ownerId\\":\\"${OWNER}\\",\\"agentSlug\\":\\"${AGENT_SLUG}\\",\\"direction\\":\\"outbound\\"}')"`);
+  console.log(`fire:   docker exec mantle_dev_pg psql -U postgres -d postgres -c "select pg_notify('conversation_changed','{\\"ownerId\\":\\"${OWNER}\\",\\"agentSlug\\":\\"${AGENT_SLUG}\\",\\"direction\\":\\"outbound\\"}')"`);
   console.log(`then:   pnpm -C apps/web exec tsx scripts/verify-push-m2.ts --cleanup`);
 }
 

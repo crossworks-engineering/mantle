@@ -2,12 +2,24 @@
 # Dump the running Mantle Postgres to a custom-format archive under ./backups.
 # Custom format (-Fc) → restore with scripts/db-restore.sh (pg_restore).
 #
-# Usage:   scripts/db-dump.sh            # dumps mantle_pg → backups/mantle-<ts>.dump
+# Usage:   scripts/db-dump.sh            # dumps the running postgres → backups/mantle-<ts>.dump
 #          MANTLE_PG_CONTAINER=other scripts/db-dump.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-CONTAINER="${MANTLE_PG_CONTAINER:-mantle_pg}"
+# Runs both on dev machines (container `mantle_dev_pg` since the dev compose
+# got its own project) and on deployed boxes (prod compose keeps `mantle_pg`).
+# Explicit MANTLE_PG_CONTAINER wins; otherwise use whichever is running, and
+# refuse to guess when both are (a dev checkout on a box with a live stack).
+pick_pg() {
+  running() { docker ps --filter "name=$1" --format '{{.Names}}' 2>/dev/null | grep -qx "$1"; }
+  if running mantle_pg && running mantle_dev_pg; then
+    echo "✗ both mantle_pg and mantle_dev_pg are running — set MANTLE_PG_CONTAINER to pick one." >&2
+    return 1
+  fi
+  if running mantle_dev_pg; then echo mantle_dev_pg; else echo mantle_pg; fi
+}
+CONTAINER="${MANTLE_PG_CONTAINER:-$(pick_pg)}"
 mkdir -p backups
 TS="$(date +%Y%m%d-%H%M%S)"
 OUT="backups/mantle-${TS}.dump"

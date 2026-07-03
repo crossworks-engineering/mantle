@@ -4,6 +4,47 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the multi-arch image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased
+
+Dev-tooling fixes (no runtime/image change) — ship with the next tag:
+
+### `pnpm reset` actually wipes the dev brain again
+
+**`pnpm reset` actually wipes the dev brain again.** Since the v0.103 move
+to bind mounts, `docker compose down -v` stopped deleting the postgres +
+minio data (bind mounts survive volume removal), so `pnpm reset` claimed a
+wipe it no longer performed. `scripts/reset.sh` now deletes
+`${MANTLE_DATA_DIR:-./data}/{postgres,minio}` explicitly (via a container,
+so container-owned files on Linux don't need sudo), shows the resolved data
+dir in the confirmation prompt, and honors a root `.env` the same way
+compose does.
+
+- Docs caught up with the bind-mount reality: `architecture.md` §15 no
+  longer documents the retired `mantle_pg_data` / `mantle_minio_data` named
+  volumes (disaster recovery = `down` + `rm -rf` the data dirs);
+  `deploy.md` §4 exports dev MinIO/files data with a plain `tar` off disk.
+
+### Dev compose can no longer collide with a live prod stack
+
+**Dev compose can no longer collide with a live prod stack.** The dev
+compose (`docker-compose.dev.yml`) gets its own project name (`mantle-dev`)
+and container names (`mantle_dev_pg` / `mantle_dev_minio` / `mantle_dev_tika`).
+Previously it shared project `mantle` and the exact container names with the
+prod `docker-compose.yml`, so bringing dev infra up on a host that also runs
+a prod stack recreated the prod containers and took the live brain down
+(2026-07-02 dev-box incident). Host ports are unchanged (54323 / 9000 / 9001
+/ 9998), so existing `.env.local` files keep working.
+
+- One-time migration on dev machines: old containers block the ports —
+  `pnpm start` detects them and tells you to run
+  `docker compose -p mantle -f docker-compose.dev.yml down` once (data is
+  bind-mounted under `./data` and is reused as-is).
+- `db-dump.sh` / `db-restore.sh` / `trace-node.sh` now autodetect the
+  running container (`mantle_dev_pg` vs `mantle_pg`) and refuse to guess
+  when both exist on one host; `MANTLE_PG_CONTAINER` still overrides.
+- `sanity.sh` falls back to the `mantle-dev` project when the prod project
+  has no containers.
+
 ## v0.109.3 — 2026-07-02
 
 Completes the v0.109.2 sweep: the Tables grid's row/column IDs also used

@@ -20,15 +20,15 @@ it's showing you.
 
 ## 1. Connecting to the database
 
-The dev stack runs Postgres in a Docker container named `mantle_pg`
+The dev stack runs Postgres in a Docker container named `mantle_dev_pg`
 (db `postgres`, user `postgres`, see `docker-compose.dev.yml`). Two ways in:
 
 ```bash
 # One-shot query (use this for scripted / non-interactive tracing):
-docker exec mantle_pg psql -U postgres -d postgres -c "select count(*) from nodes;"
+docker exec mantle_dev_pg psql -U postgres -d postgres -c "select count(*) from nodes;"
 
 # Interactive shell (pnpm infra:psql uses -it; only works in a real terminal):
-docker exec -it mantle_pg psql -U postgres -d postgres
+docker exec -it mantle_dev_pg psql -U postgres -d postgres
 ```
 
 From the host you can also reach it on `127.0.0.1:54323` if you have a

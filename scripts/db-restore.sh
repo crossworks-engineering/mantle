@@ -16,7 +16,19 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 DUMP="${1:?usage: scripts/db-restore.sh <path-to.dump>}"
-CONTAINER="${MANTLE_PG_CONTAINER:-mantle_pg}"
+# Same container autodetect as db-dump.sh: dev machines run `mantle_dev_pg`,
+# deployed boxes run `mantle_pg`. Explicit MANTLE_PG_CONTAINER wins; refuse to
+# guess when both are running (restoring into the wrong brain is the one
+# mistake this script must never make).
+pick_pg() {
+  running() { docker ps --filter "name=$1" --format '{{.Names}}' 2>/dev/null | grep -qx "$1"; }
+  if running mantle_pg && running mantle_dev_pg; then
+    echo "✗ both mantle_pg and mantle_dev_pg are running — set MANTLE_PG_CONTAINER to pick one." >&2
+    return 1
+  fi
+  if running mantle_dev_pg; then echo mantle_dev_pg; else echo mantle_pg; fi
+}
+CONTAINER="${MANTLE_PG_CONTAINER:-$(pick_pg)}"
 [ -f "$DUMP" ] || { echo "✗ no such dump: $DUMP" >&2; exit 1; }
 
 if ! docker exec "$CONTAINER" pg_isready -U postgres -d postgres >/dev/null 2>&1; then

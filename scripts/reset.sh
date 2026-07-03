@@ -1,16 +1,24 @@
 #!/usr/bin/env bash
 # Wipe the dev brain and rebuild from scratch — one command for "I want to
-# start over." Asks for explicit confirmation (volume deletion is irreversible),
+# start over." Asks for explicit confirmation (data deletion is irreversible),
 # takes a backup first (in case you want anything back), then runs the full
 # bring-up via up.sh.
 #
-# What it does NOT touch: apps/web/.env.local (your keys), the host filesystem,
-# the production stack, or any other docker-compose project.
+# What it does NOT touch: apps/web/.env.local (your keys), the host filesystem
+# outside ${MANTLE_DATA_DIR:-./data}/{postgres,minio}, the production stack, or
+# any other docker-compose project.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-cat <<'EOF'
+# Resolve the data dir the same way compose does: shell env wins, then the
+# root .env (compose reads it for ${VAR} substitution), then ./data.
+if [[ -z "${MANTLE_DATA_DIR:-}" && -f .env ]]; then
+  MANTLE_DATA_DIR="$(grep -E '^MANTLE_DATA_DIR=' .env | tail -1 | cut -d= -f2- || true)"
+fi
+DATA_DIR="${MANTLE_DATA_DIR:-./data}"
+
+cat <<EOF
 
 ──────────────────────────────────────────────────────────────────────
   Mantle dev reset
@@ -18,13 +26,15 @@ cat <<'EOF'
 
 This will:
   • Take a backup of the current dev brain (→ backups/mantle-<ts>.dump)
-  • Stop + remove the dev containers (mantle_pg, mantle_minio, mantle_tika)
-  • DELETE the postgres + minio volumes
+  • Stop + remove the dev containers (mantle_dev_pg, mantle_dev_minio, mantle_dev_tika)
+  • DELETE the bind-mounted data dirs $DATA_DIR/{postgres,minio}
     (your dev brain, uploads, embeddings cache — all gone)
-  • Re-run `pnpm start` (infra → bucket → migrate → pg-boss → dev servers)
+  • Re-run \`pnpm start\` (infra → bucket → migrate → pg-boss → dev servers)
 
 What it KEEPS:
   • apps/web/.env.local (your API keys, master key)
+  • MANTLE_FILES_ROOT (the /files disk mirror), if you've set one —
+    delete it yourself for a truly blank slate
   • production data and containers (untouched)
   • the source tree
 
@@ -39,17 +49,30 @@ fi
 # ── 1. Best-effort backup --------------------------------------------------
 echo
 echo "→ Backing up current dev brain (best-effort)…"
-if docker ps --filter "name=mantle_pg" --filter "status=running" --format '{{.Names}}' \
-   | grep -q '^mantle_pg$'; then
-  bash scripts/db-dump.sh
+if docker ps --filter "name=mantle_dev_pg" --filter "status=running" --format '{{.Names}}' \
+   | grep -q '^mantle_dev_pg$'; then
+  MANTLE_PG_CONTAINER=mantle_dev_pg bash scripts/db-dump.sh
 else
   echo "  (skipped — postgres container not running)"
 fi
 
-# ── 2. Tear down + wipe volumes --------------------------------------------
+# ── 2. Tear down + wipe data ------------------------------------------------
 echo
-echo "→ Tearing down dev infra + removing volumes…"
+echo "→ Tearing down dev infra…"
 docker compose -f docker-compose.dev.yml down -v
+
+# The postgres + minio data are BIND MOUNTS (not named volumes) since v0.103,
+# so `down -v` does NOT delete them — remove the dirs explicitly. Do it from a
+# container: on Linux the postgres files are owned by the container's uid and
+# a plain rm would need sudo.
+if [[ -d "$DATA_DIR" ]]; then
+  ABS_DATA_DIR="$(cd "$DATA_DIR" && pwd)"
+  echo "→ Deleting bind-mounted data ($ABS_DATA_DIR/{postgres,minio})…"
+  docker run --rm -v "$ABS_DATA_DIR:/wipe" alpine \
+    rm -rf /wipe/postgres /wipe/minio
+else
+  echo "→ No data dir at $DATA_DIR — nothing to delete."
+fi
 
 # ── 3. Clear the stale owner pin in .env.local -----------------------------
 # After a wipe, ALLOWED_USER_ID points at a user that no longer exists, which

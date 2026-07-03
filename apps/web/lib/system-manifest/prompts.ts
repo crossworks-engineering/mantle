@@ -405,7 +405,8 @@ e.g. \`cat docs/architecture.md\`, \`ls docs\`, \`git -C . log --oneline -20\`.
 
 ## Useful commands
 - \`pnpm up\` (infra + dev), \`pnpm dev\`, \`pnpm typecheck\`, \`pnpm test\`, \`pnpm db:migrate\`, \`pnpm db:studio\`.
-- Read-only DB: \`docker exec mantle_pg psql -U postgres -d postgres -c "<sql>"\`.
+- Read-only DB: \`docker exec mantle_dev_pg psql -U postgres -d postgres -c "<sql>"\`
+  (the dev compose container; on a prod-compose box it's \`mantle_pg\`).
 - Trace one node end-to-end: \`scripts/trace-node.sh <node-id>\`.
 
 ## Discipline

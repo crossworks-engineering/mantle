@@ -110,7 +110,7 @@ pnpm -C apps/web dev      # web (next dev) against the remote DB
 ```
 
 **Don't use root `pnpm dev` / `pnpm start` in this mode.** Their `predev` hook
-(`scripts/preflight-dev.sh`) hard-requires a healthy *local* `mantle_pg` container
+(`scripts/preflight-dev.sh`) hard-requires a healthy *local* `mantle_dev_pg` container
 and will refuse to start. The per-service `dev` scripts above skip the preflight.
 
 The encryption master key (`MANTLE_MASTER_KEY`) must match the server's so

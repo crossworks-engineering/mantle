@@ -24,8 +24,8 @@ EOF
 fi
 
 # ── 2. Postgres container up + healthy -------------------------------------
-if ! docker ps --filter "name=mantle_pg" --filter "health=healthy" --format '{{.Names}}' \
-     | grep -q '^mantle_pg$'; then
+if ! docker ps --filter "name=mantle_dev_pg" --filter "health=healthy" --format '{{.Names}}' \
+     | grep -q '^mantle_dev_pg$'; then
   cat >&2 <<'EOF'
 
   ✗ Dev infra isn't running (or postgres isn't healthy yet).
@@ -45,7 +45,7 @@ EOF
 fi
 
 # ── 3. Postgres actually accepting connections -----------------------------
-if ! docker exec mantle_pg pg_isready -U postgres -d postgres -q 2>/dev/null; then
+if ! docker exec mantle_dev_pg pg_isready -U postgres -d postgres -q 2>/dev/null; then
   cat >&2 <<'EOF'
 
   ✗ Postgres is running but not accepting connections yet.
@@ -57,7 +57,7 @@ EOF
 fi
 
 # ── 4. pg-boss schema present (the racy first-boot trap) -------------------
-if ! docker exec mantle_pg psql -U postgres -d postgres -tA -c \
+if ! docker exec mantle_dev_pg psql -U postgres -d postgres -tA -c \
      "select 1 from information_schema.schemata where schema_name='pgboss'" \
      2>/dev/null | grep -q '^1$'; then
   cat >&2 <<'EOF'
