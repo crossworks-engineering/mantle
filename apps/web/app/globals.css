@@ -3695,13 +3695,19 @@
 /* h1 — hero gradient sweeping the brand colour into a chart accent. */
 .prose-accent h1 {
   width: fit-content;
+  /* An EMPTY heading (fresh from the editor's slash menu) collapses
+     fit-content to a 0-width box, which leaves the caret nowhere to paint —
+     the cursor only appeared once the first letter gave the box width. One
+     character's worth of floor keeps the caret visible from the start. */
+  min-width: 1ch;
   background-image: linear-gradient(100deg, var(--primary), var(--chart-3));
   -webkit-background-clip: text;
   background-clip: text;
-  color: transparent;
-  /* The transparent color would also hide the text CARET (caret-color follows
-     currentColor), leaving an editable-but-cursorless empty H1 in the Pages
-     editor — pin the caret to the gradient's start colour instead. */
+  /* Gradient text the robust way: keep a REAL color (the caret and anything
+     currentColor-derived follow it) and hide only the glyph FILL, so the
+     gradient shows through without ever leaving the element colorless. */
+  color: var(--primary);
+  -webkit-text-fill-color: transparent;
   caret-color: var(--primary);
   letter-spacing: -0.01em;
 }
