@@ -11,7 +11,9 @@ export async function GET(req: Request) {
   if (!nodeId) return NextResponse.json({ error: 'nodeId required' }, { status: 400 });
   const share = await getActiveShareForNode(user.id, nodeId);
   return NextResponse.json({
-    share: share ? { id: share.id, token: share.token, path: `/s/${share.token}` } : null,
+    share: share
+      ? { id: share.id, token: share.token, path: `/s/${share.token}`, mode: share.mode }
+      : null,
   });
 }
 
@@ -26,7 +28,7 @@ export async function POST(req: Request) {
   try {
     const share = await createShare(user.id, parsed.data.nodeId);
     return NextResponse.json({
-      share: { id: share.id, token: share.token, path: `/s/${share.token}` },
+      share: { id: share.id, token: share.token, path: `/s/${share.token}`, mode: share.mode },
     });
   } catch (err) {
     return NextResponse.json(

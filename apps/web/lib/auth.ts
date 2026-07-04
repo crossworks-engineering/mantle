@@ -217,6 +217,56 @@ function verifyAssetToken(token: string): { uid: string } | null {
   }
 }
 
+// ── Team-visitor cookies (`k:'t'`) ───────────────────────────────────────────
+// Set after a team member enters their contact team token on a TEAM-mode app
+// share (/s/<token>). Payload binds the visitor to ONE share (`sh` = shares.id)
+// and carries WHO they are (`cid` = contact node id) for the audit trail. The
+// cookie is path-scoped to that share's /s/<token> — it authenticates nothing
+// else, and the session-cookie verifier rejects any kinded token, so it can
+// never escalate. Statless signature + expiry here; LIVENESS (is this contact
+// still a team member?) is re-checked against contact_team_tokens on every
+// broker request, so revoking membership kills the session immediately.
+
+export const TEAM_VISITOR_COOKIE = 'mantle_team';
+const TEAM_VISITOR_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days, then re-enter the token.
+
+/** Mint the team-visitor cookie value for a share + contact pair. */
+export function buildTeamVisitorCookie(
+  shareId: string,
+  contactId: string,
+): { value: string; maxAgeSec: number } {
+  const exp = Math.floor(Date.now() / 1000) + TEAM_VISITOR_TTL_SECONDS;
+  const payload = b64urlEncode(
+    Buffer.from(JSON.stringify({ sh: shareId, cid: contactId, exp, k: 't' }), 'utf8'),
+  );
+  return { value: sign(payload), maxAgeSec: TEAM_VISITOR_TTL_SECONDS };
+}
+
+/** Verify a team-visitor cookie value: signature, expiry, kind (`k:'t'`). No DB
+ *  — callers must still confirm the share matches and membership is live. */
+export function verifyTeamVisitorValue(
+  value: string,
+): { shareId: string; contactId: string } | null {
+  const dot = value.lastIndexOf('.');
+  if (dot < 0) return null;
+  const payload = value.slice(0, dot);
+  const expected = createHmac('sha256', secret()).update(payload).digest();
+  const got = b64urlDecode(value.slice(dot + 1));
+  if (got.length !== expected.length) return null;
+  if (!timingSafeEqual(got, expected)) return null;
+  try {
+    const data = JSON.parse(b64urlDecode(payload).toString('utf8'));
+    if (data.k !== 't') return null;
+    if (typeof data.sh !== 'string' || typeof data.cid !== 'string' || typeof data.exp !== 'number') {
+      return null;
+    }
+    if (Date.now() / 1000 > data.exp) return null;
+    return { shareId: data.sh, contactId: data.cid };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Owner gate for the byte-serving asset routes only. Resolves the session
  * (cookie/bearer) first; failing that, accepts a valid `?at=` asset token in the

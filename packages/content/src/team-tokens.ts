@@ -134,6 +134,20 @@ export async function verifyTeamToken(
   return { ownerId: row.ownerId, contactId: row.contactId };
 }
 
+/** Is this contact currently a team member? The live-row check the external
+ *  surfaces run PER REQUEST, so revoking membership kills sessions mid-flight
+ *  (the visitor cookie alone is never enough). */
+export async function isTeamMember(ownerId: string, contactId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: contactTeamTokens.id })
+    .from(contactTeamTokens)
+    .where(
+      and(eq(contactTeamTokens.ownerId, ownerId), eq(contactTeamTokens.contactId, contactId)),
+    )
+    .limit(1);
+  return !!row;
+}
+
 export type TeamStatus = { since: string; lastUsedAt: string | null };
 
 /** Membership status for every team member of this owner, keyed by contact id.

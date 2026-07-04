@@ -9,18 +9,23 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 
-type ShareInfo = { id: string; token: string; path: string } | null;
+type ShareInfo = { id: string; token: string; path: string; mode?: 'public' | 'team' } | null;
 
 /**
  * Owner control for read-only public sharing of a node. A popover with a single
  * toggle ("anyone with the link can view"); when on, shows the link + Copy.
  * Loads the current link lazily on first open. One link per item — toggling on
  * mints (or returns) it, off revokes it (link 404s instantly). See docs/sharing.md.
+ *
+ * `teamMode` (apps) adds a second toggle switching the link between public
+ * admission and team-members-only (visitors must enter their contact team
+ * token; the /s/ brokers enforce it and audit per member).
  */
 export function ShareControl({
   nodeId,
   iconOnly = false,
   beforeEnable,
+  teamMode = false,
 }: {
   nodeId: string;
   iconOnly?: boolean;
@@ -28,6 +33,8 @@ export function ShareControl({
    *  shared copy reflects what the owner currently sees (pages publish on
    *  commit; notes/tasks/events/files save live and don't pass this). */
   beforeEnable?: () => Promise<void> | void;
+  /** Offer the public/team admission toggle (currently app shares only). */
+  teamMode?: boolean;
 }) {
   const toast = useToast();
   const [open, setOpen] = useState(false);
@@ -89,6 +96,21 @@ export function ShareControl({
     }
   };
 
+  const setMode = async (team: boolean) => {
+    if (!share) return;
+    const mode = team ? 'team' : 'public';
+    setBusy(true);
+    try {
+      await apiSend(`/api/shares/${share.id}`, 'PATCH', { mode });
+      setShare({ ...share, mode });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not change who can open the link');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -129,6 +151,24 @@ export function ShareControl({
               >
                 {copied ? <Check /> : <Copy />}
               </Button>
+            </div>
+          )}
+
+          {share && teamMode && (
+            <div className="flex items-start justify-between gap-3 border-t border-border pt-3">
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium">Team members only</p>
+                <p className="text-xs text-muted-foreground">
+                  Visitors must enter their team token. Identified use is audited; public links
+                  are limited to read-only tools.
+                </p>
+              </div>
+              <Switch
+                checked={share.mode === 'team'}
+                disabled={busy}
+                onCheckedChange={(v) => void setMode(v)}
+                aria-label="Require a team token"
+              />
             </div>
           )}
 

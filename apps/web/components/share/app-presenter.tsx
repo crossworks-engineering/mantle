@@ -1,9 +1,11 @@
 'use client';
 
 /**
- * Public presenter for a SHARED mini-app. Renders the app's published build
- * full-width in the sandboxed iframe, in PUBLIC mode (shareToken) so the bundle
- * + tool/db brokers resolve under /s/<token>/* (token-authed) — no owner session.
+ * Public presenter for a SHARED mini-app. The app gets the WHOLE viewport
+ * (h-dvh, no chrome) in share mode (shareToken) so the bundle + tool/db
+ * brokers resolve under /s/<token>/* — no owner session. How the app fills
+ * (or doesn't fill) that space is the app's own business; it owns its
+ * internal layout and scrolling.
  */
 import { AppSandbox } from '@/components/app-sandbox/app-sandbox';
 import type { ShareView } from '@/lib/shares';
@@ -16,8 +18,8 @@ export function AppPresenter({
   token: string;
 }) {
   return (
-    <div className="mx-auto w-full max-w-6xl p-3 sm:p-6">
-      <AppSandbox appId={view.appId} shareToken={token} />
+    <div className="h-dvh w-full">
+      <AppSandbox appId={view.appId} shareToken={token} frame="viewport" />
     </div>
   );
 }

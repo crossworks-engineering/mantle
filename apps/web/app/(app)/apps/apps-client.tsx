@@ -187,8 +187,9 @@ function AppsView({ data, query }: { data: AppsPage; query: string }) {
         <ListPager page={page} total={total} pageSize={pageSize} pending={pending} onGo={(p) => go({ page: p })} />
       </div>
 
-      {/* Right: preview */}
-      <div className="flex min-h-0 flex-col overflow-y-auto">
+      {/* Right: preview — the app gets the full pane (viewport frame) and
+          handles its own scrolling, matching how it renders when shared. */}
+      <div className="flex min-h-0 flex-col">
         {!selected ? (
           <div className="flex flex-1 items-center justify-center p-10 text-center text-sm text-muted-foreground">
             <div className="flex flex-col items-center gap-2">
@@ -197,7 +198,7 @@ function AppsView({ data, query }: { data: AppsPage; query: string }) {
             </div>
           </div>
         ) : (
-          <div className="flex flex-col gap-4 p-4">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="flex items-center gap-2 text-lg font-semibold">
@@ -231,7 +232,9 @@ function AppsView({ data, query }: { data: AppsPage; query: string }) {
                 </Button>
               </div>
             </div>
-            <AppSandbox appId={selected.id} />
+            <div className="min-h-0 flex-1">
+              <AppSandbox appId={selected.id} frame="viewport" />
+            </div>
           </div>
         )}
       </div>

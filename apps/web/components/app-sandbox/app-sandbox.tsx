@@ -150,7 +150,7 @@ const INSPECTOR = `
 })();
 `;
 
-function buildSrcDoc(bundleCode: string, importMapJson: string): string {
+function buildSrcDoc(bundleCode: string, importMapJson: string, viewport: boolean): string {
   const html = document.documentElement;
   const cls = html.className || '';
   const colorTheme = html.dataset.colorTheme ? ` data-color-theme="${html.dataset.colorTheme}"` : '';
@@ -184,13 +184,21 @@ ${styleMarkup}
    gap between the app content and the iframe height showed a white strip. With
    the themed background, any such gap is invisible (matches the app + host). */
 html,body{margin:0;background:var(--background)}#root{padding:0}
-/* The app is embedded in an auto-sized iframe with no real viewport, so
-   viewport-height utilities would inflate it into a tall, mostly-empty box (a
-   small app leaves a big blank area below). Collapse them to content height —
-   the iframe then hugs the actual content. Belt-and-braces with the authoring
-   rule that tells Appsmith not to use these. */
+${
+  viewport
+    ? `/* Viewport frame: the iframe IS the viewport, so viewport-height utilities
+   are real and the app owns its own layout + scrolling. Full-height plumbing
+   so h-full works from the root down. */
+html,body,#root{height:100%}
+body{overflow:auto}`
+    : `/* Card frame: the app is embedded in an auto-sized iframe with no real
+   viewport, so viewport-height utilities would inflate it into a tall,
+   mostly-empty box (a small app leaves a big blank area below). Collapse them
+   to content height — the iframe then hugs the actual content. Belt-and-braces
+   with the authoring rule that tells Appsmith not to use these. */
 .min-h-screen,.min-h-dvh,.min-h-svh,.min-h-lvh{min-height:0!important}
-.h-screen,.h-dvh,.h-svh,.h-lvh{height:auto!important}</style>
+.h-screen,.h-dvh,.h-svh,.h-lvh{height:auto!important}`
+}</style>
 </head>
 <body class="bg-background text-foreground">
 <div id="root"></div>
@@ -203,6 +211,7 @@ html,body{margin:0;background:var(--background)}#root{padding:0}
 export function AppSandbox({
   appId,
   shareToken,
+  frame = 'card',
   reloadKey = 0,
   onError,
   inspect = false,
@@ -211,10 +220,17 @@ export function AppSandbox({
   onInspectChange,
 }: {
   appId: string;
-  /** When set, render in PUBLIC share mode: the bundle + tool/db brokers are
-   *  fetched from /s/<token>/* (token-authed, published build only) instead of
+  /** When set, render in share mode: the bundle + tool/db brokers are
+   *  fetched from /s/<token>/* (share-authed, published build only) instead of
    *  the session-authed /api/apps/<id>/* routes. */
   shareToken?: string;
+  /** How the app is framed.
+   *  'card'     — legacy inline embed: the iframe auto-sizes to the app's
+   *               content inside a bordered card (list previews).
+   *  'viewport' — the iframe fills its parent (give the parent a real height,
+   *               e.g. h-dvh or flex-1 min-h-0); the app owns its internal
+   *               layout + scrolling, and viewport-height utilities are real. */
+  frame?: 'card' | 'viewport';
   /** Bump to force a re-fetch + re-render (e.g. after a build/publish). */
   reloadKey?: number;
   onError?: (message: string) => void;
@@ -329,7 +345,9 @@ export function AppSandbox({
         return;
       }
       if (m.kind === 'resize') {
-        setHeight(Math.max(80, Math.min(4000, Math.ceil(m.height))));
+        // Viewport frames ignore content-height reports — the iframe is sized
+        // by its container and the app scrolls itself.
+        if (frame !== 'viewport') setHeight(Math.max(80, Math.min(4000, Math.ceil(m.height))));
         return;
       }
       if (m.kind === 'error') {
@@ -349,7 +367,7 @@ export function AppSandbox({
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [handleRequest]);
+  }, [handleRequest, frame]);
 
   // Fetch the bundle and (re)render into the iframe.
   useEffect(() => {
@@ -369,7 +387,7 @@ export function AppSandbox({
         }
         const code = await r.text();
         if (cancelled || !iframeRef.current) return;
-        iframeRef.current.srcdoc = buildSrcDoc(code, importMap);
+        iframeRef.current.srcdoc = buildSrcDoc(code, importMap, frame === 'viewport');
       })
       .catch((err) => {
         if (cancelled) return;
@@ -379,17 +397,24 @@ export function AppSandbox({
     return () => {
       cancelled = true;
     };
-  }, [apiBase, reloadKey]);
+  }, [apiBase, reloadKey, frame]);
 
+  const isViewport = frame === 'viewport';
   return (
-    <div className="relative w-full overflow-hidden rounded-lg border border-border bg-background">
+    <div
+      className={
+        isViewport
+          ? 'relative h-full w-full overflow-hidden bg-background'
+          : 'relative w-full overflow-hidden rounded-lg border border-border bg-background'
+      }
+    >
       {status === 'nobuild' && (
-        <div className="flex h-40 items-center justify-center p-6 text-center text-sm text-muted-foreground">
+        <div className={`flex items-center justify-center p-6 text-center text-sm text-muted-foreground ${isViewport ? 'h-full' : 'h-40'}`}>
           This app hasn&apos;t been built yet. Ask Appsmith to build it, or run a build from the editor.
         </div>
       )}
       {status === 'error' && (
-        <div className="flex h-40 items-center justify-center p-6 text-center text-sm text-destructive">
+        <div className={`flex items-center justify-center p-6 text-center text-sm text-destructive ${isViewport ? 'h-full' : 'h-40'}`}>
           Couldn&apos;t load the app preview.
         </div>
       )}
@@ -397,11 +422,11 @@ export function AppSandbox({
         ref={iframeRef}
         title="App preview"
         sandbox="allow-scripts"
-        className={status === 'ready' ? 'block w-full' : 'hidden'}
-        style={{ height, border: '0', width: '100%' }}
+        className={status === 'ready' ? (isViewport ? 'block h-full w-full' : 'block w-full') : 'hidden'}
+        style={isViewport ? { border: '0' } : { height, border: '0', width: '100%' }}
       />
       {status === 'loading' && (
-        <div className="flex h-40 items-center justify-center p-6 text-sm text-muted-foreground">
+        <div className={`flex items-center justify-center p-6 text-sm text-muted-foreground ${isViewport ? 'h-full' : 'h-40'}`}>
           Loading preview…
         </div>
       )}

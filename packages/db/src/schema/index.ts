@@ -3,6 +3,7 @@ export * from './auth-users';
 export * from './audit-log';
 export * from './mobile-tokens';
 export * from './contact-team-tokens';
+export * from './app-access-log';
 export * from './oauth';
 export * from './assistant-read-cursors';
 export * from './push';
