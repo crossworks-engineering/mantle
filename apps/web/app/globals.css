@@ -3699,6 +3699,10 @@
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  /* The transparent color would also hide the text CARET (caret-color follows
+     currentColor), leaving an editable-but-cursorless empty H1 in the Pages
+     editor — pin the caret to the gradient's start colour instead. */
+  caret-color: var(--primary);
   letter-spacing: -0.01em;
 }
 
