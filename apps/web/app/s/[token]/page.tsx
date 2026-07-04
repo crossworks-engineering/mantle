@@ -1,6 +1,9 @@
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { resolveActiveShareByToken, recordShareView, loadShareView } from '@/lib/shares';
+import { resolveShareVisitor } from '@/lib/team-gate';
+import { TeamTokenPrompt } from '@/components/share/team-token-prompt';
 import { PagePresenter } from '@/components/share/page-presenter';
 import { NotePresenter } from '@/components/share/note-presenter';
 import { FilePresenter } from '@/components/share/file-presenter';
@@ -54,8 +57,14 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
       return <TaskPresenter view={view} />;
     case 'event':
       return <EventPresenter view={view} />;
-    case 'app':
+    case 'app': {
+      // Team-mode shares gate on a live team-visitor session; without one the
+      // visitor gets the token prompt instead of the app (and the brokers
+      // would refuse them anyway — this is UX, the brokers are the wall).
+      const visitor = await resolveShareVisitor((await headers()).get('cookie'), share);
+      if (!visitor) return <TeamTokenPrompt shareToken={token} title={view.title} />;
       return <AppPresenter view={view} token={token} />;
+    }
     default:
       notFound();
   }

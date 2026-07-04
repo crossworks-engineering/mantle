@@ -307,9 +307,19 @@ export {
   publicBaseUrl,
   shareUrlForToken,
   nodeUrl,
+  shareModeOf,
+  setShareMode,
+  type ShareMode,
   type ShareableType,
   type ShareSummary,
 } from './shares';
+export {
+  recordAppAccess,
+  listAppAccess,
+  type AppAccessKind,
+  type AppAccessEntry,
+  type AppAccessRow,
+} from './app-access-log';
 
 export {
   renderPageEmail,
@@ -420,6 +430,7 @@ export {
   rotateTeamToken,
   verifyTeamToken,
   teamStatusByContact,
+  isTeamMember,
   generateTeamToken,
   hashTeamToken,
   TEAM_TOKEN_LENGTH,

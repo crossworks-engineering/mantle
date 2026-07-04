@@ -51,6 +51,7 @@ export { LOCATION_TOOLS, LOCATION_TOOL_SLUGS } from './builtins-locations';
 export { PROFILE_TOOLS, PROFILE_TOOL_SLUGS } from './builtins-profile';
 export { seedBuiltinTools } from './seed';
 export { resolveTool, resolveTools, dispatchTool } from './dispatch';
+export { PUBLIC_READONLY_TOOL_SLUGS, isPublicReadOnlyTool } from './readonly-tools';
 export { safeFetch } from './safe-fetch';
 export { guardedFetch, assertFetchableUrl, isBlockedIp } from './ssrf-guard';
 export {

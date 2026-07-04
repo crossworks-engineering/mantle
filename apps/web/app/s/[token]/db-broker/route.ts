@@ -1,14 +1,21 @@
 /**
- * POST /s/[token]/db-broker — a SHARED app's host.db.query(), brokered for an
- * unauthenticated viewer. READ-ONLY: only `query` is allowed; `exec` (writes)
- * are rejected so a public link can't mutate the owner's app database. Runs
- * against the app's own SQLite under the share owner's scope.
+ * POST /s/[token]/db-broker — a SHARED app's host.db calls, brokered for an
+ * external viewer. Admission and capability follow the share's mode:
+ *
+ *   public — anonymous: `query` only; `exec` (writes) rejected so a link
+ *            can't mutate the owner's app database.
+ *   team   — an identified team member (live visitor cookie, membership
+ *            re-checked per request): `query` AND `exec`, every statement
+ *            stamped with their contactId in the app access log.
+ *
+ * Runs against the app's own SQLite under the share owner's scope.
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { resolveActiveShareByToken } from '@/lib/shares';
-import { getApp } from '@mantle/content';
-import { appDbQuery } from '@mantle/content/app-broker';
+import { getApp, recordAppAccess } from '@mantle/content';
+import { appDbQuery, appDbExec } from '@mantle/content/app-broker';
+import { resolveShareVisitor } from '@/lib/team-gate';
 
 export const runtime = 'nodejs';
 
@@ -24,10 +31,19 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   if (!share || share.nodeType !== 'app') {
     return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
   }
+
+  const visitor = await resolveShareVisitor(req.headers.get('cookie'), share);
+  if (!visitor) {
+    return NextResponse.json(
+      { ok: false, error: 'team session required — enter your team token to use this app' },
+      { status: 401 },
+    );
+  }
+
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
 
-  if (parsed.data.op !== 'query') {
+  if (parsed.data.op === 'exec' && visitor.mode === 'public') {
     return NextResponse.json(
       { ok: false, error: 'Shared apps are read-only — database writes are disabled on public links.' },
       { status: 403 },
@@ -39,9 +55,21 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     return NextResponse.json({ ok: false, error: 'app not found' }, { status: 404 });
   }
 
+  recordAppAccess({
+    ownerId: share.ownerId,
+    appNodeId: share.nodeId,
+    shareId: share.id,
+    contactId: visitor.contactId,
+    kind: 'db',
+    detail: { op: parsed.data.op },
+  });
+
   try {
-    const rows = await appDbQuery(share.ownerId, share.nodeId, parsed.data.sql, parsed.data.params, app.manifest.sqlite);
-    return NextResponse.json({ ok: true, output: rows });
+    const output =
+      parsed.data.op === 'query'
+        ? await appDbQuery(share.ownerId, share.nodeId, parsed.data.sql, parsed.data.params, app.manifest.sqlite)
+        : await appDbExec(share.ownerId, share.nodeId, parsed.data.sql, parsed.data.params, app.manifest.sqlite);
+    return NextResponse.json({ ok: true, output });
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },

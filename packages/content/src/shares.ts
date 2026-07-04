@@ -17,11 +17,28 @@ export function isShareable(type: string): type is ShareableType {
   return (SHAREABLE_TYPES as readonly string[]).includes(type);
 }
 
+/**
+ * Who a share admits. Lives in `shares.settings.mode` (absent = 'public', so
+ * every pre-existing share keeps its behavior).
+ *
+ *   public — anyone with the link (the original model).
+ *   team   — the visitor must additionally present a contact team token
+ *            (see @mantle/content/team-tokens); currently meaningful for
+ *            'app' shares, where the /s/ brokers enforce it.
+ */
+export type ShareMode = 'public' | 'team';
+
+/** Read the mode off a raw share row (settings.mode, default public). */
+export function shareModeOf(s: Pick<Share, 'settings'>): ShareMode {
+  return (s.settings as Record<string, unknown>)?.mode === 'team' ? 'team' : 'public';
+}
+
 export type ShareSummary = {
   id: string;
   token: string;
   nodeId: string;
   nodeType: string;
+  mode: ShareMode;
   createdAt: string;
   expiresAt: string | null;
   viewCount: number;
@@ -33,10 +50,26 @@ function toSummary(s: Share): ShareSummary {
     token: s.token,
     nodeId: s.nodeId,
     nodeType: s.nodeType,
+    mode: shareModeOf(s),
     createdAt: s.createdAt.toISOString(),
     expiresAt: s.expiresAt ? s.expiresAt.toISOString() : null,
     viewCount: s.viewCount,
   };
+}
+
+/** Switch a share between public and team admission (owner-scoped). Merges
+ *  into `settings` so other keys survive. Returns false when no such share. */
+export async function setShareMode(
+  ownerId: string,
+  shareId: string,
+  mode: ShareMode,
+): Promise<boolean> {
+  const rows = await db
+    .update(shares)
+    .set({ settings: sql`${shares.settings} || ${JSON.stringify({ mode })}::jsonb` })
+    .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), isNull(shares.revokedAt)))
+    .returning({ id: shares.id });
+  return rows.length > 0;
 }
 
 function genToken(): string {

@@ -230,7 +230,7 @@ function AppDetailView({ app }: { app: AppDetail }) {
           </Button>
           {/* Share the published app at a public full-screen /s/<token> URL.
               Only once there's a published build to point the link at. */}
-          {app.publishedBuild?.ok && <ShareControl nodeId={app.id} />}
+          {app.publishedBuild?.ok && <ShareControl nodeId={app.id} teamMode />}
         </div>
       </div>
 
@@ -246,7 +246,10 @@ function AppDetailView({ app }: { app: AppDetail }) {
             global assistant (⌘I), auto-armed for this app; "Select element"
             focuses it on one region. */}
         <TabsContent value="builder" className="mt-0 flex min-h-0 flex-1 flex-col">
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3">
+          {/* The preview is a real viewport (frame="viewport"): the sandbox
+              fills the pane and the app handles its own scrolling, exactly as
+              it will on the shared /s/ surface. */}
+          <div className="flex min-h-0 flex-1 flex-col p-3">
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <Button
                 size="sm"
@@ -279,15 +282,18 @@ function AppDetailView({ app }: { app: AppDetail }) {
                 </span>
               )}
             </div>
-            <AppSandbox
-              appId={app.id}
-              reloadKey={reloadKey}
-              onError={(m) => toast.error(m)}
-              inspect={inspect}
-              selectedRegionId={focusRegion}
-              onSelect={setFocusRegion}
-              onInspectChange={setInspect}
-            />
+            <div className="min-h-0 flex-1">
+              <AppSandbox
+                appId={app.id}
+                frame="viewport"
+                reloadKey={reloadKey}
+                onError={(m) => toast.error(m)}
+                inspect={inspect}
+                selectedRegionId={focusRegion}
+                onSelect={setFocusRegion}
+                onInspectChange={setInspect}
+              />
+            </div>
             {buildErrors.length > 0 && (
               <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
                 <p className="mb-1 font-medium">Build errors</p>
