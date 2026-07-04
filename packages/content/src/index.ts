@@ -414,6 +414,17 @@ export {
   type EmailEntryKind,
   type UpdateContactInput,
 } from './contacts';
+export {
+  enableTeamMember,
+  disableTeamMember,
+  rotateTeamToken,
+  verifyTeamToken,
+  teamStatusByContact,
+  generateTeamToken,
+  hashTeamToken,
+  TEAM_TOKEN_LENGTH,
+  type TeamStatus,
+} from './team-tokens';
 
 export { loadContactGate, type ContactGate } from './contact-gate';
 
