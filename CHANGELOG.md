@@ -4,6 +4,12 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the multi-arch image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.113.2 — 2026-07-03
+
+**One version, one place.** The version badge next to the header wordmark is
+gone — it duplicated the sidebar changelog link, which stays and now carries
+the full build-identity tooltip (version · git sha · build date).
+
 ## v0.113.1 — 2026-07-03
 
 **Centered page title, easier to read.** The floating title in the middle of
