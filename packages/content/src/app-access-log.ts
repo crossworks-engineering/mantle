@@ -9,8 +9,8 @@
  * hiccup can never take down a working app for a visitor. It must stay a
  * best-effort trail, not a gate.
  */
-import { desc, eq } from 'drizzle-orm';
-import { db, appAccessLog } from '@mantle/db';
+import { and, desc, eq } from 'drizzle-orm';
+import { db, appAccessLog, nodes } from '@mantle/db';
 
 export type AppAccessKind = 'auth' | 'tool' | 'db';
 
@@ -42,30 +42,43 @@ export function recordAppAccess(entry: AppAccessEntry): void {
 export type AppAccessRow = {
   id: string;
   contactId: string | null;
+  /** Resolved contact display name at read time; null for anonymous (public)
+   *  visitors or a since-deleted contact. */
+  contactName: string | null;
   kind: AppAccessKind;
   detail: Record<string, unknown>;
   createdAt: string;
 };
 
-/** Recent external activity for one app, newest first (operator surfaces). */
+/** Recent external activity for one app, newest first (operator surface). The
+ *  owner predicate is IN the WHERE (not a post-filter) so the LIMIT can never
+ *  return fewer of the owner's own rows. Left-joins the contact node for a
+ *  display name. */
 export async function listAppAccess(
   ownerId: string,
   appNodeId: string,
   limit = 100,
 ): Promise<AppAccessRow[]> {
   const rows = await db
-    .select()
+    .select({
+      id: appAccessLog.id,
+      contactId: appAccessLog.contactId,
+      contactName: nodes.title,
+      kind: appAccessLog.kind,
+      detail: appAccessLog.detail,
+      createdAt: appAccessLog.createdAt,
+    })
     .from(appAccessLog)
-    .where(eq(appAccessLog.appNodeId, appNodeId))
+    .leftJoin(nodes, eq(nodes.id, appAccessLog.contactId))
+    .where(and(eq(appAccessLog.ownerId, ownerId), eq(appAccessLog.appNodeId, appNodeId)))
     .orderBy(desc(appAccessLog.createdAt))
     .limit(limit);
-  return rows
-    .filter((r) => r.ownerId === ownerId)
-    .map((r) => ({
-      id: r.id,
-      contactId: r.contactId,
-      kind: r.kind as AppAccessKind,
-      detail: r.detail,
-      createdAt: r.createdAt.toISOString(),
-    }));
+  return rows.map((r) => ({
+    id: r.id,
+    contactId: r.contactId,
+    contactName: r.contactName ?? null,
+    kind: r.kind as AppAccessKind,
+    detail: r.detail,
+    createdAt: r.createdAt.toISOString(),
+  }));
 }

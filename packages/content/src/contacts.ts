@@ -36,7 +36,7 @@ import {
   type CreateContactInput,
   type UpdateContactInput,
 } from './contacts-format';
-import { teamStatusByContact, type TeamStatus } from './team-tokens';
+import { teamStatusByContact, teamStatusFor, type TeamStatus } from './team-tokens';
 
 export const CONTACTS_ROOT_LABEL = 'contacts';
 
@@ -200,15 +200,15 @@ export async function countContacts(
 }
 
 export async function getContact(ownerId: string, id: string): Promise<ContactRow | null> {
-  const [[row], teamMap] = await Promise.all([
+  const [[row], team] = await Promise.all([
     db
       .select()
       .from(nodes)
       .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'contact')))
       .limit(1),
-    teamStatusByContact(ownerId),
+    teamStatusFor(ownerId, id),
   ]);
-  return row ? rowOf(row, teamMap.get(row.id) ?? null) : null;
+  return row ? rowOf(row, team) : null;
 }
 
 /**
@@ -520,7 +520,7 @@ export async function updateContact(
     .where(eq(nodes.id, id))
     .returning();
   if (!updated) throw new Error('updateContact: update returned no row');
-  const team = (await teamStatusByContact(ownerId)).get(id) ?? null;
+  const team = await teamStatusFor(ownerId, id);
   if (visibleChanged) {
     // Re-fire the extractor so summary/embedding/facts catch up. The INSERT
     // trigger only fires on INSERT, so this is the explicit refresh.

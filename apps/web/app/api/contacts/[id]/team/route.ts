@@ -27,6 +27,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     case 'enable': {
       const minted = await enableTeamMember(user.id, id);
       if (!minted) return NextResponse.json({ error: 'not found' }, { status: 404 });
+      // Already a member — enable never silently rotates a live token; the
+      // operator must use 'rotate' for a deliberate re-mint.
+      if ('alreadyMember' in minted) {
+        return NextResponse.json(
+          { error: 'already a team member — use rotate to re-issue their token' },
+          { status: 409 },
+        );
+      }
       return NextResponse.json({ token: minted.token });
     }
     case 'rotate': {

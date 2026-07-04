@@ -56,25 +56,33 @@ async function isOwnContact(ownerId: string, contactId: string): Promise<boolean
 }
 
 /**
- * Grant the team-member role, minting the contact's token. Returns the
- * PLAINTEXT token — the only time it ever leaves this module — or null when
- * the contact doesn't exist / isn't this owner's. Enabling an existing member
- * re-mints their token (same row, new secret) — harmless, but the explicit
- * regenerate path is `rotateTeamToken`, which refuses non-members.
+ * Result of enabling the team-member role:
+ *   { token }            — newly enrolled; the PLAINTEXT token, shown once.
+ *   { alreadyMember }    — the contact was ALREADY a member; NOT re-minted
+ *                          (rotating a live token is `rotateTeamToken`'s job,
+ *                          never a silent side effect of "enable").
+ *   null                 — the contact doesn't exist / isn't this owner's.
+ */
+export type EnableTeamResult = { token: string } | { alreadyMember: true } | null;
+
+/**
+ * Grant the team-member role, minting the contact's token. Idempotent and
+ * non-destructive: enabling an already-enabled member does NOT rotate their
+ * token (which would strand whatever they hold) — it returns `alreadyMember`.
+ * Use `rotateTeamToken` for a deliberate re-mint.
  */
 export async function enableTeamMember(
   ownerId: string,
   contactId: string,
-): Promise<{ token: string } | null> {
+): Promise<EnableTeamResult> {
   if (!(await isOwnContact(ownerId, contactId))) return null;
   const token = generateTeamToken();
-  await db
+  const inserted = await db
     .insert(contactTeamTokens)
     .values({ ownerId, contactId, tokenHash: hashTeamToken(token) })
-    .onConflictDoUpdate({
-      target: contactTeamTokens.contactId,
-      set: { tokenHash: hashTeamToken(token), createdAt: new Date(), lastUsedAt: null },
-    });
+    .onConflictDoNothing({ target: contactTeamTokens.contactId })
+    .returning({ id: contactTeamTokens.id });
+  if (inserted.length === 0) return { alreadyMember: true };
   return { token };
 }
 
@@ -109,8 +117,11 @@ export async function disableTeamMember(ownerId: string, contactId: string): Pro
 }
 
 /**
- * Map a presented token to its team member. Bumps `last_used_at` on success.
- * Callers on unauthenticated surfaces MUST rate-limit before calling this.
+ * Map a presented token to its team member. Does NOT bump `last_used_at` — the
+ * caller does that via `markTeamTokenUsed` only AFTER confirming the token
+ * belongs to the relevant share's owner, so presenting a valid token from
+ * brain A to brain B's link never touches brain A's row. Callers on
+ * unauthenticated surfaces MUST rate-limit before calling this.
  */
 export async function verifyTeamToken(
   token: string,
@@ -119,19 +130,24 @@ export async function verifyTeamToken(
   if (trimmed.length < 6 || trimmed.length > 64) return null;
   const [row] = await db
     .select({
-      id: contactTeamTokens.id,
       ownerId: contactTeamTokens.ownerId,
       contactId: contactTeamTokens.contactId,
     })
     .from(contactTeamTokens)
     .where(eq(contactTeamTokens.tokenHash, hashTeamToken(trimmed)))
     .limit(1);
-  if (!row) return null;
+  return row ? { ownerId: row.ownerId, contactId: row.contactId } : null;
+}
+
+/** Record that a team member just used their token (owner-scoped liveness
+ *  signal for the operator's contact screen). Best-effort. */
+export async function markTeamTokenUsed(ownerId: string, contactId: string): Promise<void> {
   await db
     .update(contactTeamTokens)
     .set({ lastUsedAt: new Date() })
-    .where(eq(contactTeamTokens.id, row.id));
-  return { ownerId: row.ownerId, contactId: row.contactId };
+    .where(
+      and(eq(contactTeamTokens.ownerId, ownerId), eq(contactTeamTokens.contactId, contactId)),
+    );
 }
 
 /** Is this contact currently a team member? The live-row check the external
@@ -149,6 +165,27 @@ export async function isTeamMember(ownerId: string, contactId: string): Promise<
 }
 
 export type TeamStatus = { since: string; lastUsedAt: string | null };
+
+/** Membership status for ONE contact (or null if not a team member). The
+ *  single-row path used by getContact/updateContact — avoids loading the whole
+ *  owner team-map to read one row. */
+export async function teamStatusFor(
+  ownerId: string,
+  contactId: string,
+): Promise<TeamStatus | null> {
+  const [row] = await db
+    .select({ createdAt: contactTeamTokens.createdAt, lastUsedAt: contactTeamTokens.lastUsedAt })
+    .from(contactTeamTokens)
+    .where(
+      and(eq(contactTeamTokens.ownerId, ownerId), eq(contactTeamTokens.contactId, contactId)),
+    )
+    .limit(1);
+  if (!row) return null;
+  return {
+    since: row.createdAt.toISOString(),
+    lastUsedAt: row.lastUsedAt ? row.lastUsedAt.toISOString() : null,
+  };
+}
 
 /** Membership status for every team member of this owner, keyed by contact id.
  *  Used to annotate contact rows in list/get without an N+1. */
