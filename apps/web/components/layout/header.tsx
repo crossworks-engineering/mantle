@@ -18,7 +18,6 @@ import { BoringAvatar } from '@/components/boring-avatar';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { RandomThemeToggle } from '@/components/random-theme-toggle';
 import { usePageTitle } from '@/components/layout/page-title';
-import { VERSION_LABEL, versionDetail } from '@/lib/version';
 
 export function Header({
   email,
@@ -58,17 +57,11 @@ export function Header({
 
       <Link
         href="/"
-        className="flex min-w-0 items-baseline gap-1.5"
+        className="flex min-w-0 items-baseline"
         aria-label={`${siteName || 'Mantle'} home`}
       >
         <span className="max-w-[45vw] truncate font-logo text-3xl leading-none text-primary">
           {siteName || 'mantle'}
-        </span>
-        <span
-          className="text-[0.65rem] font-medium leading-none text-muted-foreground tabular-nums"
-          title={versionDetail()}
-        >
-          {VERSION_LABEL}
         </span>
       </Link>
 

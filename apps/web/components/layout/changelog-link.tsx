@@ -11,6 +11,7 @@ import {
   CHANGELOG_LAST_SEEN_VERSION_KEY,
   CHANGELOG_SEEN_EVENT,
   VERSION_LABEL,
+  versionDetail,
 } from '@/lib/version';
 
 /**
@@ -50,7 +51,9 @@ export function ChangelogLink({ onNavigate }: { onNavigate?: () => void }) {
         href="/changelog"
         onClick={onNavigate}
         aria-current={active ? 'page' : undefined}
-        title={`Version ${APP_VERSION} — changelog`}
+        // Full build identity (version · sha · date) — this is the only place
+        // it surfaces since the header wordmark badge was removed.
+        title={`${versionDetail()} — changelog`}
         className={cn(
           'relative flex items-center gap-3 rounded-md px-3 py-2 text-xs font-medium transition-colors',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
