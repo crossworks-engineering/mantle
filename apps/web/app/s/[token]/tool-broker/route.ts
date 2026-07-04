@@ -5,18 +5,25 @@
  * resolve server-side, the iframe never sees them). Capability follows the
  * share's mode:
  *
- *   public — anonymous: additionally the tool must pass isPublicReadOnlyTool
- *            (builtin + non-mutating + not privacy-tier). This is ENFORCED,
- *            not advisory — a declared write tool 403s on a public link.
+ *   public — anonymous: NO brain tools at all. Every read tool reaches the
+ *            owner's private content (search_chunks returns raw email/journal
+ *            passages, etc.), so a public app is confined to its own SQLite
+ *            (query-only db-broker). isPublicToolAllowed() is the hard gate.
  *   team   — an identified team member (live visitor cookie, membership
- *            re-checked per request): any declared tool, writes included,
- *            every call stamped with their contactId in the app access log.
+ *            re-checked per request): any declared BUILTIN tool, writes
+ *            included, every call stamped with their contactId. http/shell/
+ *            recipe handlers are refused even here — a shared app must not be
+ *            able to hand a contact server-side command exec or SSRF under the
+ *            owner (and dispatchTool doesn't honor requiresConfirm, so a
+ *            destructive builtin also runs un-gated — declaring one is the
+ *            owner's explicit choice, but an arbitrary HTTP/shell call is not
+ *            something we let a share expose).
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { resolveActiveShareByToken } from '@/lib/shares';
 import { getApp, recordAppAccess } from '@mantle/content';
-import { resolveTool, dispatchTool, isPublicReadOnlyTool } from '@mantle/tools';
+import { resolveTool, dispatchTool, isPublicToolAllowed } from '@mantle/tools';
 import { resolveShareVisitor } from '@/lib/team-gate';
 
 export const runtime = 'nodejs';
@@ -41,6 +48,20 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     );
   }
 
+  // Public shares get no brain tools, period — the read tools reach private
+  // owner content by design, and there's no per-node visibility to scope to.
+  if (visitor.mode === 'public' && !isPublicToolAllowed()) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          'This is a public link, which can only use the app’s own data. ' +
+          'Share the app in team mode to let members use your Mantle tools.',
+      },
+      { status: 403 },
+    );
+  }
+
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
 
@@ -62,13 +83,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     return NextResponse.json({ ok: false, error: `tool '${parsed.data.slug}' not found` }, { status: 404 });
   }
 
-  if (visitor.mode === 'public' && !isPublicReadOnlyTool(tool)) {
+  // Even for an identified team member, a share never dispatches an http/shell/
+  // recipe handler: those can reach arbitrary URLs / the shell / composed tools
+  // under the owner. Shared apps may only drive BUILTIN tools.
+  if (tool.handler.kind !== 'builtin') {
     return NextResponse.json(
       {
         ok: false,
-        error:
-          `The tool '${parsed.data.slug}' isn't available on a public link — ` +
-          `only read-only data tools are. Share the app in team mode for full access.`,
+        error: `The tool '${parsed.data.slug}' can't be used from a shared app (only built-in tools are available externally).`,
       },
       { status: 403 },
     );

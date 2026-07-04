@@ -13,6 +13,7 @@ import { SetPageTitle } from '@/components/layout/page-title';
 import { BackLink } from '@/components/layout/back-link';
 import { ShareControl } from '@/components/share/share-control';
 import { AppSandbox } from '@/components/app-sandbox/app-sandbox';
+import { AppAccessLog } from '@/components/app-sandbox/access-log';
 import { CodeEditor } from '@/components/app-sandbox/code-editor';
 import { FileTree } from '@/components/app-sandbox/file-tree';
 import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
@@ -239,6 +240,7 @@ function AppDetailView({ app }: { app: AppDetail }) {
           <TabsList>
             <TabsTrigger value="builder">Builder</TabsTrigger>
             <TabsTrigger value="code">Code</TabsTrigger>
+            <TabsTrigger value="activity">Activity</TabsTrigger>
           </TabsList>
         </div>
 
@@ -295,7 +297,9 @@ function AppDetailView({ app }: { app: AppDetail }) {
               />
             </div>
             {buildErrors.length > 0 && (
-              <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+              // shrink-0 + its own scroll so the flex-1 sandbox above can't
+              // squeeze the errors to zero height in the non-scrolling column.
+              <div className="mt-3 max-h-48 shrink-0 overflow-y-auto rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
                 <p className="mb-1 font-medium">Build errors</p>
                 <ul className="flex flex-col gap-1">
                   {buildErrors.map((e, i) => (
@@ -358,6 +362,11 @@ function AppDetailView({ app }: { app: AppDetail }) {
               className="min-h-0 flex-1"
             />
           </div>
+        </TabsContent>
+
+        {/* Activity — the external access log (who opened/used the shared app). */}
+        <TabsContent value="activity" className="mt-0 min-h-0 flex-1 overflow-y-auto">
+          <AppAccessLog appId={app.id} />
         </TabsContent>
       </Tabs>
     </div>

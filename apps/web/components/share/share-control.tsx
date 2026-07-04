@@ -159,8 +159,9 @@ export function ShareControl({
               <div className="space-y-0.5">
                 <p className="text-sm font-medium">Team members only</p>
                 <p className="text-xs text-muted-foreground">
-                  Visitors must enter their team token. Identified use is audited; public links
-                  are limited to read-only tools.
+                  Visitors must enter their team token, and every action is audited to that
+                  member. Team members can use the app’s Mantle tools and write to its data — a
+                  public link can only read the app’s own data. Grant it to people you trust.
                 </p>
               </div>
               <Switch
