@@ -4,6 +4,13 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the multi-arch image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.113.3 — 2026-07-04
+
+**You can see the cursor in an empty H1 again.** The Pages H1 gradient's
+transparent text colour also hid the caret, so a freshly inserted empty H1
+looked focus-less though typing worked. The caret is now pinned to the
+theme's primary colour.
+
 ## v0.113.2 — 2026-07-03
 
 **One version, one place.** The version badge next to the header wordmark is
