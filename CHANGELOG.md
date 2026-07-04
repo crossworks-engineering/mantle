@@ -4,6 +4,13 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the multi-arch image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.113.4 — 2026-07-04
+
+**The cursor shows the moment an H1 is inserted.** A just-inserted empty H1
+collapsed to a zero-width box, so the (correctly coloured since v0.113.3)
+caret had nowhere to paint until the first letter arrived. The heading now
+keeps a one-character minimum width.
+
 ## v0.113.3 — 2026-07-04
 
 **You can see the cursor in an empty H1 again.** The Pages H1 gradient's
