@@ -48,6 +48,10 @@ export type ContactRow = {
   contactCounts: ContactCounts;
   /** Per-method ISO timestamp of the most recent outbound. Missing keys = never. */
   lastContactedAt: ContactLastAt;
+  /** Team membership (see @mantle/content/team-tokens). Null when the contact
+   *  is not a team member; the plaintext token is NEVER part of this row —
+   *  it's returned once at mint and only its hash is stored. */
+  team: { since: string; lastUsedAt: string | null } | null;
   createdAt: string;
   updatedAt: string;
 };
