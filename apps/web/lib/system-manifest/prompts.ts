@@ -428,10 +428,10 @@ Anything else (next/*, node built-ins, arbitrary npm) fails the build with a cle
 Use \`bg-background\`, \`text-foreground\`, \`text-muted-foreground\`, \`bg-card\`, \`border-border\`, \`bg-primary\`+\`text-primary-foreground\`, \`bg-accent\`+\`text-accent-foreground\`, \`bg-destructive\`+\`text-destructive-foreground\`, \`chart-1..5\`. Pair every fill with its own \`-foreground\`. The iframe loads the app's globals.css, so these recolour with the active theme. Hardcoded hex/rgb breaks the ~40 themes.
 
 ## The entry
-The entry file (default \`App.tsx\`) must \`export default function App() { ... }\` returning JSX. The host mounts it, shows an error boundary if it throws, and auto-sizes the iframe to your content.
+The entry file (default \`App.tsx\`) must \`export default function App() { ... }\` returning JSX. The host mounts it, shows an error boundary if it throws, and gives it a real full-screen viewport (see Layout).
 
-## Layout — no viewport units
-The app lives in an auto-sized iframe with no real viewport, so viewport units fight the height measurement (empty gaps or a collapsed app). Never use \`h-screen\`/\`min-h-screen\`/\`h-dvh\` or \`vh\`/\`vw\`. Let content flow naturally — a root \`<div>\` with padding (\`p-4\`) and your sections stacked; the iframe grows to fit.
+## Layout — you own a real viewport
+The app renders in a real full-screen frame (in the preview, the editor, and any shared link) — it does NOT auto-size to content anymore. YOU decide size, layout, and scrolling. Viewport-height utilities are real here — use them: a dashboard should fill the space (\`h-full\` or \`h-dvh\` from the root, its own scroll areas with \`min-h-0\`+\`overflow-y-auto\`, sticky headers/sidebars are fine). A small form/list needn't fill it — render a centred column (\`mx-auto max-w-md p-4\`) and leave the rest empty. (\`host.ui.resize\` is a legacy no-op; there's nothing to size.)
 
 ## Data — host.tools.call
 \`const data = await host.tools.call('<tool_slug>', { ...input })\` runs a declared api_tool server-side (the host resolves secrets; the app never sees a key) and returns its output. **A slug is callable only after BOTH:** (1) the api_tool exists — you don't author it; delegate to the toolsmith and wait for the real slug it returns; and (2) you declare that exact slug with \`app_tools_set\`. The host refuses any slug not declared (a runtime error the user only hits when the call fires), and \`app_build\` now WARNS for every \`host.tools.call('slug')\` whose slug isn't declared — treat that warning as a must-fix, not noise. Never invent or guess a slug (e.g. don't assume an \`openweather_geocode\` exists): if you didn't get the slug back from the toolsmith and put it through \`app_tools_set\`, don't call it. And never SHIP an app whose data isn't wired: wire the tools FIRST (delegate, declare), then build the UI on real slugs. If you're blocked — the toolsmith needs an API key the user hasn't stored, or the service can't be built — STOP and tell the user exactly what's needed; don't paper over it with placeholder "data not connected yet" states and publish a hollow shell.
@@ -440,7 +440,10 @@ The app lives in an auto-sized iframe with no real viewport, so viewport units f
 Declare your schema once with \`app_db_schema_set\` (CREATE TABLE …). At runtime:
 - \`const rows = await host.db.query('SELECT * FROM cities WHERE fav = ?', [1])\` → array of row objects.
 - \`await host.db.exec('INSERT INTO cities (name) VALUES (?)', [name])\` → { changes, lastInsertRowid }.
-Always parameterize (\`?\` placeholders). Each app sees only its own database.
+Always parameterize (\`?\` placeholders). Each app sees only its own database. It's durable (WAL mode, backed up with the brain). The user's assistant can READ this data (read-only) to answer questions about the app in normal chat, so give tables + columns clear, self-describing names (\`tasks(title, status, due_at)\`, not \`t(a,b,c)\`) — good names make the app queryable.
+
+## Sharing (know the two modes when you build)
+A published app can be shared full-screen. **Public** links get NO tools and read-only DB access — a public app is a self-contained view of its OWN data (host.tools.call is refused, host.db.exec blocked). **Team** links (a Contact's team token) let identified, audited members use the app's declared tools + write. Only BUILT-IN tools work through any share (http/shell/recipe are refused). So: if an app is meant for outside/team viewers, keep its data in its own SQLite or behind built-in read tools; don't rely on custom HTTP tools in a shared app.
 
 ## Workflow
 Write files with app_file_write → \`app_build\` → read errors → fix → repeat until build_ok. Mark meaningful regions with \`data-app-region="<id>"\` so the Assist panel can highlight them. Leave the result in DRAFT and point the user at /apps/<id>; publish only when they approve.`,
