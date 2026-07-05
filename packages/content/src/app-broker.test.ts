@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { assertSafe, assertSafeScript, appDbFiles } from './app-broker';
+import {
+  assertSafe,
+  assertSafeScript,
+  appDbFiles,
+  vacuumIntoStatement,
+  snapshotDestPath,
+} from './app-broker';
 
 /**
  * `assertSafe` is the runtime guard on SQL a sandboxed mini app sends through
@@ -84,5 +90,32 @@ describe('appDbFiles', () => {
       `${base}-wal`,
       `${base}-shm`,
     ]);
+  });
+});
+
+/**
+ * The backup snapshots each app DB with `VACUUM INTO '<dest>'`. The dest path is
+ * server-derived, but the statement builder must still single-quote-escape it so
+ * a path containing a quote can't break the SQL literal.
+ */
+describe('vacuumIntoStatement', () => {
+  it('wraps the destination in a single-quoted literal', () => {
+    expect(vacuumIntoStatement('/backups/o/a.sqlite')).toBe(
+      "VACUUM INTO '/backups/o/a.sqlite'",
+    );
+  });
+
+  it("doubles embedded single quotes so the literal can't be broken out of", () => {
+    expect(vacuumIntoStatement("/b/a'; DROP TABLE t;--.sqlite")).toBe(
+      "VACUUM INTO '/b/a''; DROP TABLE t;--.sqlite'",
+    );
+  });
+});
+
+describe('snapshotDestPath', () => {
+  it('mirrors the live <owner>/<app>.sqlite layout under destDir', () => {
+    expect(snapshotDestPath('/tmp/snap', 'owner-1', 'app-9')).toBe(
+      '/tmp/snap/owner-1/app-9.sqlite',
+    );
   });
 });
