@@ -193,6 +193,83 @@ export async function appDbExec(
   return res;
 }
 
+// ── Backup ───────────────────────────────────────────────────────────────────
+
+export type AppDbSnapshotEntry = { ownerId: string; appNodeId: string; bytes: number };
+export type AppDbSnapshotReport = {
+  snapshotted: AppDbSnapshotEntry[];
+  /** Registry rows whose file is absent — already-lost data, NOT snapshotted. */
+  missing: { ownerId: string; appNodeId: string; storagePath: string }[];
+  /** Rows that errored on open/vacuum (e.g. lock contention past busy_timeout). */
+  failed: { ownerId: string; appNodeId: string; error: string }[];
+};
+
+/** Build the `VACUUM INTO '<file>'` statement with the destination path safely
+ *  single-quote-escaped. The path is server-derived (never app input), but we
+ *  escape defensively so a stray quote can't break out of the literal. */
+export function vacuumIntoStatement(destFile: string): string {
+  return `VACUUM INTO '${destFile.replace(/'/g, "''")}'`;
+}
+
+/** Where an app's snapshot lands under destDir — mirrors the live layout
+ *  (<destDir>/<owner>/<app>.sqlite) so a restore drops straight back into
+ *  APP_DB_DIR without any path rewriting. */
+export function snapshotDestPath(destDir: string, ownerId: string, appNodeId: string): string {
+  return path.join(destDir, ownerId, `${appNodeId}.sqlite`);
+}
+
+/**
+ * Consistent-snapshot EVERY registered per-app SQLite database into destDir via
+ * `VACUUM INTO` — SQLite's online-backup primitive, so each snapshot is a
+ * transactionally consistent, compacted copy even while an app writes
+ * concurrently (no raw-file copy race, no sqlite3 CLI dependency). The per-app
+ * files live on a separate volume from Postgres, so `pg_dump` alone misses
+ * them; this is what folds them into the backup.
+ *
+ * Returns a report so the caller surfaces partial failures LOUDLY — a backup
+ * that silently skips a database is exactly the durability gap this closes. A
+ * registry row whose file is gone is reported as `missing` rather than letting
+ * openSqlite's self-heal mkdir back up a phantom empty DB.
+ */
+export async function snapshotAllAppDatabases(destDir: string): Promise<AppDbSnapshotReport> {
+  const rows = await db
+    .select({
+      ownerId: appDatabases.ownerId,
+      appNodeId: appDatabases.appNodeId,
+      storagePath: appDatabases.storagePath,
+    })
+    .from(appDatabases);
+  const report: AppDbSnapshotReport = { snapshotted: [], missing: [], failed: [] };
+  for (const r of rows) {
+    try {
+      await stat(r.storagePath);
+    } catch {
+      report.missing.push({ ownerId: r.ownerId, appNodeId: r.appNodeId, storagePath: r.storagePath });
+      continue;
+    }
+    const destFile = snapshotDestPath(destDir, r.ownerId, r.appNodeId);
+    try {
+      await mkdir(path.dirname(destFile), { recursive: true });
+      await rm(destFile, { force: true }); // VACUUM INTO refuses an existing target
+      const handle = await openSqlite(r.storagePath);
+      try {
+        handle.exec(vacuumIntoStatement(destFile));
+      } finally {
+        handle.close();
+      }
+      const { size } = await stat(destFile);
+      report.snapshotted.push({ ownerId: r.ownerId, appNodeId: r.appNodeId, bytes: size });
+    } catch (err) {
+      report.failed.push({
+        ownerId: r.ownerId,
+        appNodeId: r.appNodeId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return report;
+}
+
 /** Every on-disk file SQLite may create for one database: the file itself plus
  *  the rollback-journal / WAL sidecars. We clean all of them on delete. */
 export function appDbFiles(storagePath: string): string[] {

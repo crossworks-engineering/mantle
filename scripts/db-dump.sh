@@ -1,28 +1,35 @@
 #!/usr/bin/env bash
-# Dump the running Mantle Postgres to a custom-format archive under ./backups.
-# Custom format (-Fc) → restore with scripts/db-restore.sh (pg_restore).
+# Back up the running Mantle stack under ./backups — BOTH halves of its state:
+#   1. Postgres   → backups/mantle-<ts>.dump         (pg_dump -Fc; restore: db-restore.sh)
+#   2. App SQLite → backups/mantle-app-dbs-<ts>.tgz  (per-app /apps databases;
+#      restore: app-dbs-restore.sh). These live on a SEPARATE volume from
+#      Postgres, so pg_dump alone would silently miss them.
 #
-# Usage:   scripts/db-dump.sh            # dumps the running postgres → backups/mantle-<ts>.dump
-#          MANTLE_PG_CONTAINER=other scripts/db-dump.sh
+# Usage:   scripts/db-dump.sh
+#          MANTLE_PG_CONTAINER=other  MANTLE_APP_CONTAINER=other  scripts/db-dump.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+running() { docker ps --filter "name=$1" --format '{{.Names}}' 2>/dev/null | grep -qx "$1"; }
 
 # Runs both on dev machines (container `mantle_dev_pg` since the dev compose
 # got its own project) and on deployed boxes (prod compose keeps `mantle_pg`).
 # Explicit MANTLE_PG_CONTAINER wins; otherwise use whichever is running, and
 # refuse to guess when both are (a dev checkout on a box with a live stack).
-pick_pg() {
-  running() { docker ps --filter "name=$1" --format '{{.Names}}' 2>/dev/null | grep -qx "$1"; }
-  if running mantle_pg && running mantle_dev_pg; then
-    echo "✗ both mantle_pg and mantle_dev_pg are running — set MANTLE_PG_CONTAINER to pick one." >&2
+pick() { # pick <prod-name> <dev-name> <label> <override>
+  if [ -n "$4" ]; then echo "$4"; return; fi
+  if running "$1" && running "$2"; then
+    echo "✗ both $1 and $2 are running — set the $3 override to pick one." >&2
     return 1
   fi
-  if running mantle_dev_pg; then echo mantle_dev_pg; else echo mantle_pg; fi
+  if running "$2"; then echo "$2"; else echo "$1"; fi
 }
-CONTAINER="${MANTLE_PG_CONTAINER:-$(pick_pg)}"
+CONTAINER="$(pick mantle_pg mantle_dev_pg MANTLE_PG_CONTAINER "${MANTLE_PG_CONTAINER:-}")"
+APP_CONTAINER="$(pick mantle_web mantle_dev_web MANTLE_APP_CONTAINER "${MANTLE_APP_CONTAINER:-}")"
 mkdir -p backups
 TS="$(date +%Y%m%d-%H%M%S)"
 OUT="backups/mantle-${TS}.dump"
+APPDB_OUT="backups/mantle-app-dbs-${TS}.tgz"
 
 if ! docker exec "$CONTAINER" pg_isready -U postgres -d postgres >/dev/null 2>&1; then
   echo "✗ postgres container '$CONTAINER' not reachable — is the stack up?" >&2
@@ -32,6 +39,32 @@ fi
 echo "▶ Dumping '$CONTAINER' (postgres/postgres) → $OUT"
 # --no-owner keeps the dump portable across roles. Custom format is compressed.
 docker exec "$CONTAINER" pg_dump -U postgres -d postgres -Fc --no-owner > "$OUT"
-
 echo "✔ Wrote $(du -h "$OUT" | cut -f1) → $OUT"
-echo "  Restore on the target with:  scripts/db-restore.sh $OUT"
+
+# --- Per-app SQLite ---------------------------------------------------------
+# Snapshot each app DB with VACUUM INTO (consistent even under concurrent
+# writes) inside the app container, then tar the snapshots to the host. Loud on
+# failure but NON-fatal: a hiccup here must not invalidate the Postgres dump —
+# but it must never be silent (that silence is the durability gap we're closing).
+if running "$APP_CONTAINER"; then
+  echo "▶ Snapshotting per-app SQLite via '$APP_CONTAINER' → $APPDB_OUT"
+  if docker exec "$APP_CONTAINER" sh -c '
+        set -e
+        rm -rf /tmp/appdbsnap && mkdir -p /tmp/appdbsnap
+        pnpm -C apps/web exec tsx scripts/backup-app-dbs.ts /tmp/appdbsnap 1>&2
+        tar -C /tmp/appdbsnap -czf - .
+      ' > "$APPDB_OUT"; then
+    docker exec "$APP_CONTAINER" rm -rf /tmp/appdbsnap >/dev/null 2>&1 || true
+    echo "✔ Wrote $(du -h "$APPDB_OUT" | cut -f1) → $APPDB_OUT"
+    echo "  Restore app data with:  scripts/app-dbs-restore.sh $APPDB_OUT"
+  else
+    rm -f "$APPDB_OUT"
+    echo "⚠ app-db snapshot FAILED — per-app SQLite NOT backed up (Postgres dump is intact)." >&2
+    echo "  See the output above; re-run once the app container is healthy." >&2
+  fi
+else
+  echo "⚠ app container '$APP_CONTAINER' not running — per-app SQLite NOT backed up." >&2
+  echo "  Set MANTLE_APP_CONTAINER if it has a different name." >&2
+fi
+
+echo "  Restore Postgres with:  scripts/db-restore.sh $OUT"
