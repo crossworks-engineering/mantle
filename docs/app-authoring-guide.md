@@ -60,6 +60,23 @@ No `axios`, no `date-fns`, no arbitrary npm. Bring helpers as local files.
 The entry file **must** `export default function App() { … }`. Default entry
 path is `App.tsx`.
 
+## Layout — you get a full viewport, you own it
+
+An app now renders in a **real full-screen viewport** (in the `/apps` preview,
+the editor, and a shared link alike) — not the old content-hugging box. **The
+app decides its own size, layout, and scrolling.** So:
+
+- A dashboard should fill the space: `h-full` (or `h-dvh`) from the root, its own
+  internal scroll areas (`min-h-0` + `overflow-y-auto` on panes), sticky headers,
+  sidebars — all fair game now.
+- A small form or list doesn't have to fill it — render a centred column
+  (`mx-auto max-w-md`) and let the rest be empty; that's fine.
+- Viewport-height utilities (`h-dvh`, `min-h-screen`, `vh`/`vw`) are **real** here
+  — use them. (The old guidance to avoid them applied to the previous
+  auto-sizing frame and no longer holds.)
+- `host.ui.resize()` is a legacy no-op — there's nothing to resize; the frame is
+  the viewport.
+
 ## Styling: theme tokens only
 
 Use theme classes so the app follows the user's live theme — **never hardcode
@@ -77,7 +94,7 @@ The app's only window onto the host. `import { host } from '@host'`:
 await host.tools.call(slug, input)   // call a DECLARED tool; returns its result
 await host.db.query(sql, params?)    // read from this app's own SQLite
 await host.db.exec(sql, params?)     // write to this app's own SQLite
-host.ui.resize(heightPx)             // tell the host how tall to make the iframe
+host.ui.resize(heightPx)             // legacy no-op — apps get a real full-screen viewport now (see Layout)
 host.ui.notifyError(message)         // surface an error to the host UI
 host.ui.onAnnotate(fn)               // subscribe to inspector annotations
 ```
@@ -118,6 +135,35 @@ For app-local state (caches, user-entered rows, preferences). Declare DDL via
 DB on first use. At runtime use `host.db.query/exec`. `ATTACH`, `DETACH`,
 `PRAGMA`, and `VACUUM INTO` are blocked. Treat schema as **append-only** — there
 are no destructive migrations; add columns/tables, use views for renames.
+
+Each app gets **one durable SQLite file**, isolated per app — there's no path
+input, so an app can only ever reach its own database. Operationally it's a
+first-class store: it runs in **WAL mode** (concurrent readers don't block a
+writer — matters when an app is shared with several people, or the assistant
+reads it while the app writes), and it's **included in the backup**
+(`scripts/db-dump.sh` snapshots every app DB alongside the Postgres dump with a
+consistent `VACUUM INTO`). App-authored data is real data, and it's protected
+like the rest of the brain.
+
+## Reading app data from the brain (the assistant can query your apps)
+
+The user's **assistant can read any of their apps' databases** — the responder
+holds two read-only tools, `app_db_list` (which apps have a DB + their tables)
+and `app_db_query` (a `SELECT` against one app by id). So data an app stores is
+answerable in normal conversation: *"how many open items in my tracker app?"*,
+*"what's in the inventory table?"* — no extra wiring by you, the author.
+
+Two things follow for how you design an app's schema:
+
+- **Give tables and columns clear, self-describing names.** The assistant reads
+  the live schema (`sqlite_master`) to know what to query, so `tasks(title,
+  status, due_at)` is far more useful to it than `t(a, b, c)`.
+- **It is strictly read-only** — the database is opened read-only, so no query
+  the assistant runs can ever mutate your app's data. (Writes still come only
+  from the app itself via `host.db.exec`.)
+
+This is on by default for all the user's apps — the brain/team is the trust
+boundary, so there's no per-app "make readable" switch.
 
 ## Worked example — "My Notes" app
 
@@ -168,17 +214,48 @@ export default function App() {
 - **Expecting direct brain access** → there is none. Go through a declared tool.
 - **Destructive SQLite migration** → unsupported. Schema is append-only.
 
-## Sharing an app (and the security rule)
+## Sharing an app
 
-A **published** app can be shared at a public, full-screen URL — the **Share**
-button on the app header (or any node share). The link is unguessable and
-revocable; opening it renders the published build full-screen with no app shell.
+A **published** app can be shared at an unguessable, revocable, full-screen URL
+via the **Share** control on the app header. There are two admission modes, and
+they grant very different capability — pick with the "Team members only" toggle:
 
-**The rule that matters:** a shared app runs under **your** scope. Anyone with
-the link can invoke its **declared tools** (live, with your secrets resolving
-server-side) and **read** its SQLite (writes are blocked on shared links). So an
-app you intend to share must declare **only read-only, narrowly-scoped data
-tools** — e.g. a recipe tool that returns *this team's* compliance rows — never a
-tool with side effects or broad/unscoped data access. The manifest allowlist is
-the gate; you (the author) are responsible for what's in it. Treat the share
-link as a bearer secret and revoke it to cut access instantly.
+### Public (anyone with the link)
+
+Anonymous visitors. A public app can use **only its own SQLite database, and
+only for reads** (`host.db.query`). It gets **no brain tools at all** — every
+`host.tools.call` is refused on a public link, and `host.db.exec` (writes) is
+blocked. This is deliberate and enforced server-side: the whole brain is private
+data, and there's no way to expose a *slice* of it safely to the anonymous
+public, so the answer is "none." A public app is a self-contained, read-only
+view over data it already holds (or data baked into its bundle).
+
+> This changed: earlier, a public link could invoke an app's declared tools.
+> It can't anymore — declaring a data tool does nothing for a public share.
+> If your app needs brain data for outside viewers, it needs **team** mode.
+
+### Team (your team members, identified)
+
+Team mode requires the visitor to enter a **team token**. You mint one per
+person by marking a Contact a *team member* (`/contacts` → the "Team member"
+toggle → the token is shown once; regenerate or remove to revoke). Entering a
+valid token identifies the visitor as that Contact, and from then on:
+
+- the app may use its **declared tools** (they run under **your** scope, secrets
+  resolving server-side — the iframe never sees a key) and **write** to its
+  SQLite;
+- every action — token entry, each tool call, each DB write — is **audited to
+  that team member**, visible on the app's **Activity** tab.
+
+Removing or disabling a team member kills their access immediately (membership
+is re-checked on every request, not just at token entry).
+
+**One safety limit even in team mode:** a shared app can drive **built-in tools
+only** — `http`/`shell`/`recipe` tools are refused through a share, so an app
+can never hand a team member arbitrary server-side HTTP or command execution
+under your account. Declare built-in data tools; keep custom HTTP/shell tools
+out of an app you intend to share.
+
+**Rule of thumb:** public = "a read-only view of this app's own data, safe for
+anyone"; team = "identified, audited teammates who may use my tools and write
+data." Treat any share link as a secret; revoke by turning the share off.
