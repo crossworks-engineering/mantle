@@ -49,7 +49,7 @@ import { RESEARCH_TOOLS } from './builtins-research';
 import { NOTE_TOOLS } from './builtins-notes';
 import { EMAIL_TOOLS } from './builtins-email';
 import { PAGE_TOOLS } from './builtins-pages';
-import { APP_TOOLS } from './builtins-apps';
+import { APP_TOOLS, APP_DATA_TOOLS } from './builtins-apps';
 import { TABLE_TOOLS } from './builtins-tables';
 import { TOOL_RESULT_TOOLS } from './builtins-tool-results';
 import { CONTACT_TOOLS } from './builtins-contacts';
@@ -1267,6 +1267,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // declares the api_tools/sqlite they use. app_delete + app_publish are the
   // admin subset; the broker enforces the per-app tool allowlist at runtime.
   ...APP_TOOLS,
+  // App-data reads for the responder — query a mini app's SQLite (read-only).
+  ...APP_DATA_TOOLS,
   // Tables — author + operate typed database grids (CRUD + row/column/cell
   // edits + totals + saved views). Stable row/column ids make "do row X" /
   // "total column Y" addressable; structural edits write to draft_data.

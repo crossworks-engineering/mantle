@@ -439,6 +439,13 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['app_delete', 'app_publish'],
   },
   {
+    slug: 'app-data',
+    name: 'App data (read)',
+    description:
+      "Read a mini app's own SQLite database so the brain can answer from app-stored data. Read-only (the file is opened read-only — no query can mutate). Discovery + query only; no authoring.",
+    toolSlugs: ['app_db_list', 'app_db_query'],
+  },
+  {
     slug: 'tables',
     name: 'Tables toolkit',
     description:
@@ -649,6 +656,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'profile',
       'export',
       'tables-import',
+      'app-data',
     ],
     skillSlugs: ['tool_grounding', 'voice_reply', 'chat_writing', 'location_awareness', 'navigation', 'integrations'],
     params: { temperature: 0.7, max_tokens: 16000 },
