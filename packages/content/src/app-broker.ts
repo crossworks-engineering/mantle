@@ -34,11 +34,15 @@ type SqliteDb = {
   };
   close(): void;
 };
+type SqliteCtor = new (p: string, opts?: { readOnly?: boolean }) => SqliteDb;
+
+async function sqliteCtor(): Promise<SqliteCtor> {
+  const mod = (await import('node:sqlite')) as unknown as { DatabaseSync: SqliteCtor };
+  return mod.DatabaseSync;
+}
 
 async function openSqlite(file: string): Promise<SqliteDb> {
-  const mod = (await import('node:sqlite')) as unknown as {
-    DatabaseSync: new (p: string) => SqliteDb;
-  };
+  const DatabaseSync = await sqliteCtor();
   // Ensure the parent dir exists on EVERY open, not just first-provision. The
   // registry row persists the absolute storagePath in Postgres, but the file
   // lives on APP_DB_DIR — if that dir goes missing (a fresh/rotated volume, or
@@ -46,12 +50,30 @@ async function openSqlite(file: string): Promise<SqliteDb> {
   // throws "unable to open database file" and the app hangs forever on its
   // initial load. mkdir-ing here self-heals to a fresh empty DB instead.
   await mkdir(path.dirname(file), { recursive: true });
-  const handle = new mod.DatabaseSync(file);
+  const handle = new DatabaseSync(file);
   // We open/close a handle per request, so two concurrent calls to the same app
   // can collide on the write lock. Wait up to 5s for the lock instead of failing
   // immediately with SQLITE_BUSY. (Server-side PRAGMA — not app-supplied SQL, so
   // it bypasses the broker's assertSafe guard by design.)
   handle.exec('PRAGMA busy_timeout = 5000');
+  return handle;
+}
+
+/** Open an app's SQLite file READ-ONLY. Any write throws at the ENGINE level
+ *  ("attempt to write a readonly database"), so an agent-facing query tool
+ *  cannot mutate app data no matter what SQL it sends — no SELECT-only regex to
+ *  outsmart (SQLite allows DML inside CTEs; a regex guard would leak). Assumes
+ *  the file exists (callers check) — read-only open never creates it. */
+async function openSqliteReadOnly(file: string): Promise<SqliteDb> {
+  const DatabaseSync = await sqliteCtor();
+  const handle = new DatabaseSync(file, { readOnly: true });
+  // busy_timeout is a connection setting (no file write), fine on a read-only
+  // handle; wrap defensively in case a driver quirk rejects it.
+  try {
+    handle.exec('PRAGMA busy_timeout = 5000');
+  } catch {
+    /* readers rarely block; non-fatal */
+  }
   return handle;
 }
 
@@ -191,6 +213,105 @@ export async function appDbExec(
     /* size tracking is best-effort */
   }
   return res;
+}
+
+// ── Read-only access (agent tools) ──────────────────────────────────────────
+
+export type AppDbSchemaTable = { name: string; sql: string };
+export type AppDbSummary = {
+  appNodeId: string;
+  title: string;
+  sizeBytes: number;
+  updatedAt: string;
+};
+
+/** Owner-scoped registry lookup that creates NOTHING (unlike ensureRegistry).
+ *  Returns null when the app has no database registered for this owner. */
+async function lookupAppDatabase(
+  ownerId: string,
+  appNodeId: string,
+): Promise<{ storagePath: string } | null> {
+  const [row] = await db
+    .select({ storagePath: appDatabases.storagePath })
+    .from(appDatabases)
+    .where(and(eq(appDatabases.appNodeId, appNodeId), eq(appDatabases.ownerId, ownerId)))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Run a READ query against an app's own SQLite for an AGENT (not the app's own
+ * runtime). Opens read-only so no statement can mutate; `assertSafe` still
+ * blocks ATTACH/DETACH/PRAGMA/VACUUM INTO (a read-only ATTACH would still let
+ * the query read ANOTHER file). An app with no database yet (no registry row,
+ * or the file never materialized because nothing was written) returns empty —
+ * NOT an error, and never creates the file.
+ */
+export async function appDbReadQuery(
+  ownerId: string,
+  appNodeId: string,
+  sql: string,
+  params: unknown[] = [],
+): Promise<{ rows: DbRows; empty: boolean }> {
+  assertSafe(sql);
+  const reg = await lookupAppDatabase(ownerId, appNodeId);
+  if (!reg) return { rows: [], empty: true };
+  try {
+    await stat(reg.storagePath);
+  } catch {
+    return { rows: [], empty: true };
+  }
+  const handle = await openSqliteReadOnly(reg.storagePath);
+  try {
+    return { rows: handle.prepare(sql).all(...params) as DbRows, empty: false };
+  } finally {
+    handle.close();
+  }
+}
+
+/** The app's live table/view schema, read from `sqlite_master` (the actual
+ *  applied schema, not the declared DDL — so it can't drift). Empty when the app
+ *  has no database file yet. */
+export async function appDbSchema(ownerId: string, appNodeId: string): Promise<AppDbSchemaTable[]> {
+  const reg = await lookupAppDatabase(ownerId, appNodeId);
+  if (!reg) return [];
+  try {
+    await stat(reg.storagePath);
+  } catch {
+    return [];
+  }
+  const handle = await openSqliteReadOnly(reg.storagePath);
+  try {
+    const rows = handle
+      .prepare(
+        "SELECT name, sql FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL ORDER BY name",
+      )
+      .all() as { name: string; sql: string }[];
+    return rows.map((r) => ({ name: r.name, sql: r.sql }));
+  } finally {
+    handle.close();
+  }
+}
+
+/** Every app of this owner that has a registered database, with its title +
+ *  size — the agent's discovery list for "what can I query". */
+export async function listAppDatabaseSummaries(ownerId: string): Promise<AppDbSummary[]> {
+  const rows = await db
+    .select({
+      appNodeId: appDatabases.appNodeId,
+      sizeBytes: appDatabases.sizeBytes,
+      updatedAt: appDatabases.updatedAt,
+      title: nodes.title,
+    })
+    .from(appDatabases)
+    .innerJoin(nodes, eq(nodes.id, appDatabases.appNodeId))
+    .where(eq(appDatabases.ownerId, ownerId));
+  return rows.map((r) => ({
+    appNodeId: r.appNodeId,
+    title: r.title,
+    sizeBytes: r.sizeBytes,
+    updatedAt: r.updatedAt.toISOString(),
+  }));
 }
 
 // ── Backup ───────────────────────────────────────────────────────────────────

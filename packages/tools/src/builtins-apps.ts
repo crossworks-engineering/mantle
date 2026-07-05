@@ -27,7 +27,12 @@ import {
   type AppDetail,
 } from '@mantle/content';
 import { buildApp } from '@mantle/app-build';
-import { assertSafeScript } from '@mantle/content/app-broker';
+import {
+  assertSafeScript,
+  appDbReadQuery,
+  appDbSchema,
+  listAppDatabaseSummaries,
+} from '@mantle/content/app-broker';
 import { putContent } from '@mantle/storage';
 import { recordIngest } from '@mantle/tracing';
 import { resolveTool } from './dispatch';
@@ -484,6 +489,74 @@ const app_delete: BuiltinToolDef = {
     }
   },
 };
+
+// ── App-data read tools (for the responder — NOT the app-authoring set) ──────
+// These let the brain READ mini-app data. Read-only by construction: the broker
+// opens the SQLite file read-only, so no query can mutate. Kept OUT of APP_TOOLS
+// (the authoring group Appsmith gets) so the responder can be granted reads
+// without create/build/publish/delete.
+
+const app_db_list: BuiltinToolDef = {
+  slug: 'app_db_list',
+  name: 'List app databases',
+  description:
+    "List the user's mini apps that have their OWN database, each with its tables (the CREATE statements reveal the columns). Use this FIRST to discover what app data exists, then `app_db_query` to read rows. Read-only.",
+  inputSchema: { type: 'object', properties: {} },
+  handler: async (_input, ctx) => {
+    try {
+      const apps = await listAppDatabaseSummaries(ctx.ownerId);
+      const out = [];
+      for (const a of apps) {
+        const tables = await appDbSchema(ctx.ownerId, a.appNodeId);
+        out.push({ app_id: a.appNodeId, title: a.title, size_bytes: a.sizeBytes, tables });
+      }
+      ctx.step?.setOutput({ count: out.length });
+      return { ok: true, output: { apps: out } };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+const app_db_query: BuiltinToolDef = {
+  slug: 'app_db_query',
+  name: 'Query an app database',
+  description:
+    "Run a READ-ONLY SQL query against ONE mini app's SQLite database and get rows back. Pass `app_id` (from app_db_list) and a SELECT `sql`; use `?` placeholders with `params` for values. The database is opened read-only — any write is rejected. Discover tables/columns with app_db_list first. Keep answers tight: add LIMIT or aggregate in SQL (large results are truncated).",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      app_id: { type: 'string', description: 'app node id (from app_db_list)' },
+      sql: { type: 'string', description: 'a read-only SELECT query; use ? placeholders for values' },
+      params: { type: 'array', description: 'values bound to the ? placeholders, in order' },
+    },
+    required: ['app_id', 'sql'],
+  },
+  handler: async (input, ctx) => {
+    const appId = str(input.app_id).trim();
+    const sql = str(input.sql).trim();
+    if (!appId) return { ok: false, error: 'app_id is required' };
+    if (!sql) return { ok: false, error: 'sql is required' };
+    const params = Array.isArray(input.params) ? (input.params as unknown[]) : [];
+    try {
+      const { rows, empty } = await appDbReadQuery(ctx.ownerId, appId, sql, params);
+      ctx.step?.setOutput({ rows: rows.length, empty });
+      if (empty) {
+        return {
+          ok: true,
+          output: { rows: [], note: 'This app has no database yet (nothing stored, or no such app).' },
+        };
+      }
+      return { ok: true, output: { rows, row_count: rows.length } };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+/** Read-only app-data tools for the responder (see block comment above). */
+export const APP_DATA_TOOLS: BuiltinToolDef[] = [app_db_list, app_db_query];
+export const APP_DATA_TOOL_SLUGS: string[] = APP_DATA_TOOLS.map((t) => t.slug);
 
 export const APP_TOOLS: BuiltinToolDef[] = [
   app_create,
