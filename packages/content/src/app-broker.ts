@@ -51,10 +51,26 @@ async function openSqlite(file: string): Promise<SqliteDb> {
   // initial load. mkdir-ing here self-heals to a fresh empty DB instead.
   await mkdir(path.dirname(file), { recursive: true });
   const handle = new DatabaseSync(file);
-  // We open/close a handle per request, so two concurrent calls to the same app
-  // can collide on the write lock. Wait up to 5s for the lock instead of failing
-  // immediately with SQLITE_BUSY. (Server-side PRAGMA — not app-supplied SQL, so
-  // it bypasses the broker's assertSafe guard by design.)
+  // Server-side PRAGMAs (not app-supplied SQL, so they bypass assertSafe by
+  // design — the app can't set these itself):
+  //   journal_mode=WAL — readers don't block writers and writers don't block
+  //     readers (only writer-vs-writer serializes). Persistent (stored in the
+  //     db header), so this both provisions new DBs and migrates existing ones
+  //     to WAL on their next write-open; idempotent (a no-op once already WAL).
+  //     Matters now that a single app DB has CONCURRENT users: team-mode shares
+  //     (several members) and the responder's read-only queries running while
+  //     the app writes. In the old rollback-journal mode those blocked each
+  //     other and could hit SQLITE_BUSY; under WAL a reader just sees a
+  //     consistent snapshot. Read-only opens (openSqliteReadOnly) read a WAL db
+  //     fine — verified on the deployed runtime.
+  //   synchronous=NORMAL — the safe+fast pairing WITH WAL: fsync at checkpoints
+  //     rather than every commit. Durable across an app/process crash; only a
+  //     host power/OS crash could lose the last transaction — an acceptable
+  //     trade for app data, and materially faster.
+  //   busy_timeout=5000 — still wait (not instantly fail) on the one lock WAL
+  //     keeps: two concurrent writers to the same app DB.
+  handle.exec('PRAGMA journal_mode = WAL');
+  handle.exec('PRAGMA synchronous = NORMAL');
   handle.exec('PRAGMA busy_timeout = 5000');
   return handle;
 }
