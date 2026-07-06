@@ -36,6 +36,12 @@ export const PUBLIC_PATHS = [
   '/api/oauth',
   '/.well-known/oauth-authorization-server',
   '/.well-known/oauth-protected-resource',
+  // Team Chat: the external member surface (/team page + /api/team/* routes)
+  // self-authenticates with contact team tokens (signed team-chat cookie or
+  // bearer), never the session cookie. The owner's admin view lives inside the
+  // (app) group as /team-admin and stays session-gated.
+  '/team',
+  '/api/team',
 ];
 
 /**

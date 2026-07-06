@@ -21,6 +21,7 @@ import { startTurnCancelListener, stopTurnCancelListener } from './turn-cancel';
 // runs at import, before launch).
 import './workflows/ping';
 import './workflows/assistant-turn';
+import './workflows/team-turn';
 import { enqueueTelegramTurn } from './workflows/telegram-turn';
 
 async function main(): Promise<void> {

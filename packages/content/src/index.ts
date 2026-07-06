@@ -322,6 +322,35 @@ export {
 } from './app-access-log';
 
 export {
+  appendTeamMessage,
+  updateTeamMessageOutcome,
+  countTeamInboundSince,
+  listTeamThread,
+  recentTeamMessages,
+  listTeamMemberActivity,
+  markTeamThreadRead,
+  type AppendTeamMessageInput,
+  type UpdateTeamMessageOutcomeInput,
+  type TeamMemberActivity,
+} from './team-messages';
+
+export {
+  listTeamRequests,
+  notifyTeamRequester,
+  TEAM_REQUEST_TAG,
+  type TeamRequest,
+  type NotifyTeamRequesterResult,
+} from './team-requests';
+
+export {
+  recordTeamAccess,
+  listTeamAccess,
+  type TeamAccessKind,
+  type TeamAccessEntry,
+  type TeamAccessRow,
+} from './team-access-log';
+
+export {
   renderPageEmail,
   cidForPageImage,
   type RenderPageEmailOptions,
@@ -360,6 +389,8 @@ export {
   isStreamThoughtsEnabled,
   resolveThoughtTrailMode,
   isPersistThoughtsEnabled,
+  isTeamPrivateReadsEnabled,
+  TEAM_PRIVATE_READ_SLUGS,
   resolveThinkingBudget,
   projectThinkingBudget,
   projectSiteName,

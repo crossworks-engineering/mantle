@@ -125,6 +125,46 @@ describe('system manifest integrity', () => {
     expect(effectiveTools(pages).has('page_create'), 'Pages agent authors pages').toBe(true);
   });
 
+  it('the team responder is read-only + one write, with the documented exclusions', () => {
+    // The team-responder serves EXTERNAL members — its security boundary is that
+    // team-read grants brain reads + exactly ONE write (team_request_create) and
+    // nothing that writes, deletes, delegates, sends, or bulk-exports. This guard
+    // fails CI if a future edit re-adds a dangerous slug to the group.
+    const team = MANIFEST_AGENTS.find((a) => a.slug === 'team-responder')!;
+    const grant = effectiveTools(team);
+    // The single write path.
+    expect(grant.has('team_request_create'), 'the one write tool').toBe(true);
+    // Deliberate exclusions (see team-read group description).
+    for (const forbidden of [
+      'export_node', // bulk exfiltration ease
+      'recall_window', // replays the OWNER's private conversations
+      'invoke_agent', // no delegation
+      'run_terminal',
+      'email_send',
+      'telegram_send',
+      'page_share',
+      'note_create', // no writes of any kind…
+      'page_create',
+      'table_create',
+      'task_create', // members file requests via team_request_create, not raw tasks
+      'contact_delete',
+      'journal_delete',
+    ]) {
+      expect(grant.has(forbidden), `team-read must NOT grant ${forbidden}`).toBe(false);
+    }
+    // The private-corpus reads ARE in the group but gated at runtime by the
+    // teamPrivateReads switch (run-team-turn.ts). They must stay present here so
+    // the switch has something to gate — a regression that DROPS them would
+    // silently make the switch a no-op.
+    for (const gated of ['email_get', 'email_list', 'journal_get', 'journal_list']) {
+      expect(grant.has(gated), `${gated} stays in team-read (runtime-gated, not removed)`).toBe(true);
+    }
+    // Baseline brain-knowledge reads are always present.
+    for (const read of ['search_chunks', 'read_section', 'file_read', 'page_get', 'table_query']) {
+      expect(grant.has(read), `team member keeps ${read}`).toBe(true);
+    }
+  });
+
   it('seeded HTTP tools are well-formed, declare every placeholder, and use a vault ref', () => {
     const slugs = MANIFEST_HTTP_TOOLS.map((t) => t.slug);
     expect(new Set(slugs).size, 'duplicate HTTP tool slug').toBe(slugs.length);

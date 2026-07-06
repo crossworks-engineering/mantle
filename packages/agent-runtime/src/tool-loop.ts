@@ -266,17 +266,13 @@ export type ToolLoopArgs = {
   /** Which surface this loop is running on. Threaded into every
    *  tool handler's `ctx.surface`. Set by the caller — handleMessage
    *  passes `{kind: 'telegram', telegramChatId, ...}`, the web
-   *  assistant passes `{kind: 'web'}`. Optional because background
+   *  assistant passes `{kind: 'web'}`, the team-chat runner passes
+   *  `{kind: 'team', contactId, ...}`. Optional because background
    *  callers (extractor/reflector/manual scripts) don't have a
    *  surface; worker-delegation tools refuse cleanly when this is
-   *  absent. */
-  surface?:
-    | {
-        kind: 'telegram';
-        telegramChatId: string;
-        replyToTelegramMessageId?: string;
-      }
-    | { kind: 'web' };
+   *  absent. The canonical union lives on ToolHandlerContext
+   *  (@mantle/tools) — this mirrors it so the two can't drift. */
+  surface?: NonNullable<import('@mantle/tools').ToolHandlerContext['surface']>;
 };
 
 /**

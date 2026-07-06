@@ -21,9 +21,18 @@ export {
   type WebDefaultCandidate,
 } from './select';
 export {
+  runTeamTurn,
+  TEAM_RESPONDER_SLUG,
+  type TeamTurnResult,
+  type RunTeamTurnOptions,
+} from './run-team-turn';
+export {
   ASSISTANT_TURN_WORKFLOW,
+  TEAM_TURN_WORKFLOW,
   RUNNER_QUEUE,
   resolveSystemDatabaseUrl,
   type AssistantTurnInput,
   type AssistantTurnRunResult,
+  type TeamTurnInput,
+  type TeamTurnRunResult,
 } from './contract';

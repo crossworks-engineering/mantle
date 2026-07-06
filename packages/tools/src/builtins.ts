@@ -42,6 +42,7 @@ import { WORKER_DELEGATION_TOOLS } from './builtins-workers';
 import { EVENT_TOOLS } from './builtins-events';
 import { PROFILE_TOOLS } from './builtins-profile';
 import { TASK_TOOLS } from './builtins-tasks';
+import { TEAM_TOOLS } from './builtins-team';
 import { PERSONA_TOOLS } from './builtins-persona';
 import { TERMINAL_TOOLS } from './builtins-terminal';
 import { RECALL_TOOLS } from './builtins-recall';
@@ -1237,6 +1238,7 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Task CRUD — mirrors the MCP task tools so Saskia can capture and
   // manage tasks from chat. None require_confirm (trivially reversible).
   ...TASK_TOOLS,
+  ...TEAM_TOOLS,
   // Persona self-edit — lets Saskia adjust her own style/relationship
   // notes when the user explicitly asks ("be more professional").
   // Scoped resolution + soft-retire; pure logic in @mantle/db.

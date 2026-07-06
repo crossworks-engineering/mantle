@@ -37,6 +37,7 @@ import {
   Palette,
   Radio,
   ScrollText,
+  MessagesSquare,
   Search,
   ServerCog,
   Settings,
@@ -111,6 +112,7 @@ export function SidebarNav({
       items: [
         { name: 'Models', href: '/models', icon: Boxes },
         { name: 'Discover', href: '/settings/discover', icon: UserCheck },
+        { name: 'Team', href: '/team-admin', icon: MessagesSquare },
         { name: 'Pending', href: '/pending', icon: ClipboardCheck, badge: pendingApprovals },
       ],
     },

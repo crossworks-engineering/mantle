@@ -799,6 +799,20 @@
       "when": 1784592000000,
       "tag": "0113_app_access_log",
       "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1784678400000,
+      "tag": "0114_team_chat",
+      "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1784764800000,
+      "tag": "0115_team_read_cursors",
+      "breakpoints": true
     }
   ]
 }
