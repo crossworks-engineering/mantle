@@ -97,20 +97,29 @@ If a document is too large to hold faithfully in one transform, do NOT try anywa
 
 2. Recover/rebuild an existing page from a file with \`page_replace_from_file({ page_id, file_id })\` — same deterministic server-side body path, but writes the existing page's draft. Title / tags / icon stay unless you pass replacements.
 
-3. For ALL edits on existing pages, prefer block-level tools over whole-doc:
-   - \`page_blocks_list({ page_id, kinds? })\` — flat TOC (id / kind / preview). HARD RULE: \`kinds\` is MANDATORY for kind-specific tasks ("every blockquote", "the headings", "wrap each quote…") — pass the matching value (e.g. \`['blockquote']\`, \`['heading']\`, \`['callout']\`, \`['bulletList','orderedList']\`). Unfiltered listings on large pages (300+ blocks) spill to the result store and keep a 50–80 KB TOC in context every turn — a real run cost $1.29 to wrap 47 quotes for want of the filter (≈$0.20 with it). For a plain "what's in here" TOC, unfiltered is fine; consider \`max_depth: 1\`.
+3. PICK THE EDIT STRATEGY BY SIZE — this decision is the difference between a clean edit and a stranded half-edited draft:
+   - **Small, targeted edits** (up to ~8–10 blocks: fix a heading, wrap a quote, update one table, tweak a section) → block-level tools (point 4).
+   - **Large restructures** (resequencing or renumbering sections, merging/splitting sections, document-wide corrections — anything touching more than ~10 blocks) → ONE whole-body \`page_update_draft\` pass (point 5). Block-by-block surgery at this scale costs a get + an update per block, exhausts the turn's tool-call budget partway through, and strands the draft half-edited — a real 205-block SOP restructure died mid-delete-batch exactly this way. One whole-body call replaces ~40 block calls.
+
+4. Block-level tools (the small-edit path):
+   - \`page_blocks_list({ page_id, kinds? })\` — flat TOC (id / kind / preview) of the EDITING BASELINE (the uncommitted draft when one exists, else the published doc — \`baseline\` in the output says which). HARD RULE: \`kinds\` is MANDATORY for kind-specific tasks ("every blockquote", "the headings", "wrap each quote…") — pass the matching value (e.g. \`['blockquote']\`, \`['heading']\`, \`['callout']\`, \`['bulletList','orderedList']\`). Unfiltered listings on large pages (300+ blocks) spill to the result store and keep a 50–80 KB TOC in context every turn — a real run cost $1.29 to wrap 47 quotes for want of the filter (≈$0.20 with it). For a plain "what's in here" TOC, unfiltered is fine; consider \`max_depth: 1\`.
    - \`page_block_get\` — read a block before you update it, so you craft the replacement with full knowledge.
    - \`page_block_update\` — replace one block (the new block inherits the target's id, so the next listing still addresses the same slot).
    - \`page_block_insert_after\` / \`page_block_delete\` — add / remove blocks (delete refuses if it would empty a container).
    Output bytes scale with the change, not the document — touching one block at a time also makes the verbatim rule far easier to honour.
 
-4. \`page_update_draft\` is the whole-doc fallback (rare — a genuine "restyle the whole document"). It writes \`draft_doc\` for human review; the published \`doc\` is never touched.
+5. Whole-body \`page_update_draft({ id, markdown })\` (the large-restructure path): read the full current body ONCE (\`page_get\`; note its \`has_draft\` flag — \`content\` is the PUBLISHED version, so when a draft exists reconstruct the current state from \`page_blocks_list\`, which reads the draft), produce the complete revised body as one markdown string — byte-faithful outside the agreed changes — and submit it in ONE call. It writes \`draft_doc\` only; the human reviews + commits. MARKDOWN PITFALLS in whole-body mode (each silently corrupts a block):
+   - EVERY table row needs a LEADING pipe. A header row written \`# | Item | Owner |\` parses as an H1 heading and the rows under it degrade to plain paragraphs (this exact slip corrupted a real SOP's table). Write \`| # | Item | Owner |\`.
+   - A line starting with \`#\`, \`-\`, \`>\`, or \`1.\` begins a heading/list/quote — escape it (\`\\#\`) if you mean literal text.
+   - Re-render your output mentally before submitting: does every block parse as the kind you intended?
 
-5. Partial updates are the default. \`page_update_draft\` takes any subset of { title, markdown, tags, icon }. Fixing the title? Send \`{ id, title }\` only — pass \`markdown\` ONLY when you actually mean to replace the whole body.
+6. Partial updates are the default. \`page_update_draft\` takes any subset of { title, markdown, tags, icon }. Fixing the title? Send \`{ id, title }\` only — pass \`markdown\` ONLY when you actually mean to replace the whole body.
 
-6. Read before you transform — \`page_blocks_list\` (cheap), then \`page_block_get\` the blocks you'll touch. Don't transform from memory or partial context.
+7. Read before you transform — \`page_blocks_list\` (cheap), then \`page_block_get\` the blocks you'll touch. Don't transform from memory or partial context.
 
-7. Never overwrite a published page. \`page_update_draft\` is the only edit path; the live \`doc\` changes only when the human commits the draft.
+8. Never overwrite a published page. \`page_update_draft\` is the only edit path; the live \`doc\` changes only when the human commits the draft.
+
+9. If a turn's tool budget runs out mid-edit anyway, report honestly: state exactly which edits landed (per the tool results) and which remain, and tell the user to send "continue" — the next turn picks up from the draft (\`page_blocks_list\` shows it). Never describe unfinished work as done, and never assert the draft is clean without listing it first.
 
 ## Restructuring the tree + cross-linking
 
@@ -470,7 +479,7 @@ export const AGENT_PROMPTS: Record<string, string> = {
 
 You operate inside Mantle's own page surface. Two attached skills give you everything you need, and you must follow both:
 - **rich_writing** — the dialect: callouts, asides, columns, tables, task lists, highlights, KaTeX math.
-- **page_editing** — how to edit pages safely and at scale: preserve every word and block kind verbatim, prefer block-level tools, import via page_from_file. This is non-negotiable — it's how you avoid silently rewriting or truncating the operator's content.
+- **page_editing** — how to edit pages safely and at scale: preserve every word and block kind verbatim, pick the edit strategy by size (block tools for targeted fixes, ONE whole-body \`page_update_draft\` for large restructures — never block-by-block surgery on a big reorder), import via page_from_file. This is non-negotiable — it's how you avoid silently rewriting or truncating the operator's content, and how you avoid running out of tool budget with a half-edited draft.
 
 Pages render the same way for the operator regardless of which agent authored them, so what you write IS what they see.
 

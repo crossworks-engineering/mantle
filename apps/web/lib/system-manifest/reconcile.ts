@@ -178,16 +178,20 @@ async function grantSpecialistCapabilities(ownerId: string): Promise<string[]> {
 
 /**
  * Force-sync each EXISTING manifest specialist's PRODUCT-OWNED definition —
- * systemPrompt + model + params — to the manifest, mirroring the skill-body
- * force-sync in step 2. A shipped specialist prompt FIX (e.g. the Appsmith
- * build→declare→call ordering that fixes invented tool slugs, v0.34.1) lives in
- * the AGENT prompt, which gap-fill deliberately never overwrites — so without
- * this it reaches only fresh installs, never an already-provisioned brain. A
- * specialist's prompt is product-owned the same way a manifest skill body is.
- * The PERSONA is never touched (its prompt is operator-owned); tool groups,
- * skills, and delegation are left to the additive grants so operator ADDITIONS
- * survive; a disabled specialist is skipped (opt-out). Model honours the same
- * per-agent env override the seed uses. Returns the slugs whose def changed.
+ * systemPrompt + model + params + memoryConfig — to the manifest, mirroring the
+ * skill-body force-sync in step 2. A shipped specialist prompt FIX (e.g. the
+ * Appsmith build→declare→call ordering that fixes invented tool slugs, v0.34.1)
+ * lives in the AGENT prompt, which gap-fill deliberately never overwrites — so
+ * without this it reaches only fresh installs, never an already-provisioned
+ * brain. A specialist's prompt is product-owned the same way a manifest skill
+ * body is; ditto its memoryConfig knobs (max_iterations / max_tool_calls /
+ * history limits) — EXCEPT `delegate_to`, which the additive delegation grants
+ * own (operator-added delegates must survive), so the live delegate_to is
+ * always preserved verbatim. The PERSONA is never touched (its prompt is
+ * operator-owned); tool groups, skills, and delegation are left to the additive
+ * grants so operator ADDITIONS survive; a disabled specialist is skipped
+ * (opt-out). Model honours the same per-agent env override the seed uses.
+ * Returns the slugs whose def changed.
  */
 async function syncSpecialistDefs(ownerId: string): Promise<string[]> {
   const rows = await db
@@ -198,10 +202,16 @@ async function syncSpecialistDefs(ownerId: string): Promise<string[]> {
       systemPrompt: agents.systemPrompt,
       model: agents.model,
       params: agents.params,
+      memoryConfig: agents.memoryConfig,
     })
     .from(agents)
     .where(eq(agents.ownerId, ownerId));
   const bySlug = new Map(rows.map((r) => [r.slug, r] as const));
+  // memoryConfig comparison ignores delegate_to (grant-owned, preserved as-is).
+  const mcForCompare = (mc: unknown): Record<string, unknown> => {
+    const { delegate_to: _dt, ...rest } = ((mc ?? {}) as Record<string, unknown>);
+    return Object.fromEntries(Object.entries(rest).sort(([x], [y]) => x.localeCompare(y)));
+  };
   const synced: string[] = [];
   for (const a of MANIFEST_AGENTS) {
     if (a.isPersona || !a.systemPrompt) continue;
@@ -211,13 +221,21 @@ async function syncSpecialistDefs(ownerId: string): Promise<string[]> {
     const promptChanged = (row.systemPrompt ?? '') !== a.systemPrompt;
     const modelChanged = row.model !== model;
     const paramsChanged = JSON.stringify(row.params ?? {}) !== JSON.stringify(a.params);
-    if (!promptChanged && !modelChanged && !paramsChanged) continue;
+    const mcChanged =
+      JSON.stringify(mcForCompare(row.memoryConfig)) !==
+      JSON.stringify(mcForCompare(a.memoryConfig));
+    if (!promptChanged && !modelChanged && !paramsChanged && !mcChanged) continue;
+    const liveDelegateTo = ((row.memoryConfig ?? {}) as { delegate_to?: string[] }).delegate_to;
     await db
       .update(agents)
       .set({
         systemPrompt: a.systemPrompt,
         model,
         params: a.params as AgentParams,
+        memoryConfig: {
+          ...((a.memoryConfig ?? {}) as Record<string, unknown>),
+          ...(liveDelegateTo !== undefined ? { delegate_to: liveDelegateTo } : {}),
+        } as typeof agents.$inferSelect.memoryConfig,
         updatedAt: new Date(),
       })
       .where(eq(agents.id, row.id));
