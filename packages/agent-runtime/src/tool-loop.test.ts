@@ -1107,18 +1107,27 @@ describe('runToolLoop — tool-volume guards', () => {
   // Grok-4.3 fired page_unshare 1599× in one turn → 286K-token context, $0.73,
   // then crashed). max_iters caps rounds; the dedup catches byte-identical
   // repeats. Neither bounds VOLUME — these caps do.
-  it('breaks single-tool fixation: caps same-slug calls per turn (varying args)', async () => {
+  it('breaks single-tool fixation at BATCH boundaries: a batch that starts over the cap is blocked', async () => {
     const tool = fakeTool({ slug: 'page_unshare' });
-    const N = 18; // > MAX_CALLS_PER_TOOL_PER_TURN (15)
-    // Distinct args each call → the byte-identical dedup does NOT catch these;
-    // only the per-tool fixation cap does.
-    const toolCalls = Array.from({ length: N }, (_, i) => ({
+    // Round 1: 18 same-slug calls in ONE response. The batch STARTS under the
+    // per-tool cap (0 < 15), so it executes in full — caps are enforced at
+    // batch boundaries, never mid-batch (a severed write batch is worse than
+    // a bounded overshoot; the per-response cap of 20 bounds the overshoot).
+    const round1 = Array.from({ length: 18 }, (_, i) => ({
       id: `call_${i}`,
       type: 'function' as const,
       function: { name: 'page_unshare', arguments: `{"pageId":"p${i}"}` },
     }));
+    // Round 2: 3 more calls. This batch STARTS over the cap (18 ≥ 15) → all
+    // blocked with guidance.
+    const round2 = Array.from({ length: 3 }, (_, i) => ({
+      id: `call2_${i}`,
+      type: 'function' as const,
+      function: { name: 'page_unshare', arguments: `{"pageId":"q${i}"}` },
+    }));
     const { adapter } = makeFakeAdapter([
-      { type: 'toolCalls', toolCalls },
+      { type: 'toolCalls', toolCalls: round1 },
+      { type: 'toolCalls', toolCalls: round2 },
       { type: 'text', text: 'done' },
     ]);
     dispatchToolImpl = () => ({ ok: true, output: { ok: 1 } });
@@ -1133,16 +1142,135 @@ describe('runToolLoop — tool-volume guards', () => {
       tools: [tool],
     });
 
-    // Only 15 actually executed; calls 16–18 blocked by the fixation breaker.
-    expect(dispatchToolCalls).toHaveLength(15);
-    expect(result.toolCalls).toHaveLength(N);
-    expect(result.toolCalls.slice(0, 15).every((c) => c.status === 'success')).toBe(true);
+    // Round 1 fully executed (batch atomicity); round 2 fully blocked.
+    expect(dispatchToolCalls).toHaveLength(18);
+    expect(result.toolCalls).toHaveLength(21);
+    expect(result.toolCalls.slice(0, 18).every((c) => c.status === 'success')).toBe(true);
     expect(
-      result.toolCalls.slice(15).every((c) => c.status === 'error' && c.error === 'tool_repeat_limit'),
+      result.toolCalls.slice(18).every((c) => c.status === 'error' && c.error === 'tool_repeat_limit'),
     ).toBe(true);
     // Every call still gets a paired tool message (provider shape requirement).
-    expect(result.messages.filter((m) => m.role === 'tool')).toHaveLength(N);
+    expect(result.messages.filter((m) => m.role === 'tool')).toHaveLength(21);
     expect(result.reply).toBe('done');
+  });
+
+  it('turn budget never severs a batch: a batch that starts under 40 completes, then force-final', async () => {
+    // The NATREF SOP regression shape: rounds of edits approach the budget,
+    // then a WRITE batch (10 deletes) begins just under it. Old behavior cut
+    // the batch at the cap (1 ran, 9 skipped) and left the draft half-edited.
+    // New behavior: the batch runs to completion, THEN the loop force-finals.
+    const tool = (slug: string) => fakeTool({ slug });
+    const batch = (slug: string, n: number, prefix: string) =>
+      Array.from({ length: n }, (_, i) => ({
+        id: `${prefix}_${i}`,
+        type: 'function' as const,
+        function: { name: slug, arguments: `{"i":${i}}` },
+      }));
+    const { adapter, calls } = makeFakeAdapter([
+      { type: 'toolCalls', toolCalls: batch('read_a', 15, 'r1') }, // total 15
+      { type: 'toolCalls', toolCalls: batch('read_b', 15, 'r2') }, // total 30
+      { type: 'toolCalls', toolCalls: batch('update_c', 9, 'r3') }, // total 39 — still under 40
+      { type: 'toolCalls', toolCalls: batch('delete_d', 10, 'r4') }, // starts at 39 < 40 → ALL 10 run (49)
+      { type: 'text', text: 'forced final' }, // the force-final pass
+    ]);
+    dispatchToolImpl = () => ({ ok: true, output: { ok: 1 } });
+
+    const result = await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'restructure the page' }],
+      tools: [tool('read_a'), tool('read_b'), tool('update_c'), tool('delete_d')],
+      maxIterations: 10,
+    });
+
+    // Every call in every batch executed — nothing severed, no skip errors.
+    expect(dispatchToolCalls).toHaveLength(49);
+    expect(result.toolCalls.every((c) => c.status === 'success')).toBe(true);
+    expect(result.reply).toBe('forced final');
+    // The budget nudge travels as a user message so the model reports honestly
+    // (what completed vs what remains) instead of narrating false completion.
+    const nudge = result.messages.find(
+      (m) => m.role === 'user' && typeof m.content === 'string' && m.content.includes('tool-call budget'),
+    );
+    expect(nudge).toBeTruthy();
+    // The force-final pass disables tools.
+    expect(calls[calls.length - 1]?.toolChoice).toBe('none');
+  });
+
+  it('honors per-agent cap overrides (max_tool_calls / max_calls_per_tool plumbing)', async () => {
+    const tool = fakeTool({ slug: 'edit' });
+    const batch = (n: number, prefix: string) =>
+      Array.from({ length: n }, (_, i) => ({
+        id: `${prefix}_${i}`,
+        type: 'function' as const,
+        function: { name: 'edit', arguments: `{"i":${i}}` },
+      }));
+    // Per-tool cap overridden UP to 20: a 18-call batch runs, and a second
+    // batch starting at 18 (< 20) runs too; a third batch (36 ≥ 20) is blocked.
+    const { adapter } = makeFakeAdapter([
+      { type: 'toolCalls', toolCalls: batch(18, 'b1') },
+      { type: 'toolCalls', toolCalls: batch(18, 'b2') },
+      { type: 'toolCalls', toolCalls: batch(2, 'b3') },
+      { type: 'text', text: 'done' },
+    ]);
+    dispatchToolImpl = () => ({ ok: true, output: { ok: 1 } });
+
+    const result = await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: [tool],
+      maxToolCallsPerTurn: 100,
+      maxCallsPerToolPerTurn: 20,
+    });
+
+    expect(dispatchToolCalls).toHaveLength(36);
+    expect(result.toolCalls.slice(0, 36).every((c) => c.status === 'success')).toBe(true);
+    expect(
+      result.toolCalls.slice(36).every((c) => c.status === 'error' && c.error === 'tool_repeat_limit'),
+    ).toBe(true);
+    expect(result.reply).toBe('done');
+  });
+
+  it('clamps cap overrides: non-positive/absurd values fall back or hit the hard ceiling', async () => {
+    const tool = fakeTool({ slug: 'edit' });
+    // Override of 3 for the turn budget: a 4-call batch STARTS under it and
+    // completes (atomicity), then the loop force-finals instead of running
+    // round 2.
+    const { adapter } = makeFakeAdapter([
+      {
+        type: 'toolCalls',
+        toolCalls: Array.from({ length: 4 }, (_, i) => ({
+          id: `c_${i}`,
+          type: 'function' as const,
+          function: { name: 'edit', arguments: `{"i":${i}}` },
+        })),
+      },
+      { type: 'text', text: 'forced' },
+    ]);
+    dispatchToolImpl = () => ({ ok: true, output: { ok: 1 } });
+
+    const result = await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: [tool],
+      maxToolCallsPerTurn: 3,
+      maxCallsPerToolPerTurn: -5, // invalid → falls back to the default (15)
+    });
+
+    expect(dispatchToolCalls).toHaveLength(4); // batch completed despite crossing 3
+    expect(result.toolCalls.every((c) => c.status === 'success')).toBe(true);
+    expect(result.reply).toBe('forced');
   });
 
   it('caps tool calls per single response (drops the overflow)', async () => {

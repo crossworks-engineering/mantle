@@ -94,6 +94,16 @@ export type AgentMemoryConfig = {
    *  force_final eating its update phase. Bounded by the runtime at a
    *  hard ceiling so a misconfigured value can't hang the loop. */
   max_iterations?: number;
+  /** Override the tool-loop's cumulative tool-call budget per turn (default
+   *  40). Batch-edit agents legitimately spend more — a large page restructure
+   *  is read + N updates + M deletes. Bounded by the runtime at a hard ceiling
+   *  (200); caps are enforced at batch boundaries so write batches are never
+   *  severed halfway. */
+  max_tool_calls?: number;
+  /** Override the same-tool fixation cap per turn (default 15). Raise for
+   *  agents whose real workload is many calls of ONE tool (pages block edits).
+   *  Runtime hard ceiling 100. */
+  max_calls_per_tool?: number;
   /** Tool-result handling override (KB units). When a tool returns more than
    *  `inline_max_kb`, the full output is spilled to the tool-result store and
    *  the model gets a handle it pages/greps/queries via `read_result` instead

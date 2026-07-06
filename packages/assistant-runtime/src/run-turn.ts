@@ -625,11 +625,26 @@ export async function runAssistantTurn(
           // gather-then-author task needs more than the runtime default of 6
           // rounds or the loop force_finals mid-read and never authors. Clamp
           // matches invoke-agent: positive ints only, hard-capped at 30.
+          // The tool-volume overrides (max_tool_calls / max_calls_per_tool)
+          // travel raw — runToolLoop validates + clamps them itself.
           ...(() => {
-            const requested = (agent.memoryConfig as { max_iterations?: number } | null)?.max_iterations;
-            return typeof requested === 'number' && requested > 0
-              ? { maxIterations: Math.min(30, Math.floor(requested)) }
-              : {};
+            const mc = agent.memoryConfig as {
+              max_iterations?: number;
+              max_tool_calls?: number;
+              max_calls_per_tool?: number;
+            } | null;
+            const requested = mc?.max_iterations;
+            return {
+              ...(typeof requested === 'number' && requested > 0
+                ? { maxIterations: Math.min(30, Math.floor(requested)) }
+                : {}),
+              ...(typeof mc?.max_tool_calls === 'number'
+                ? { maxToolCallsPerTurn: mc.max_tool_calls }
+                : {}),
+              ...(typeof mc?.max_calls_per_tool === 'number'
+                ? { maxCallsPerToolPerTurn: mc.max_calls_per_tool }
+                : {}),
+            };
           })(),
           initialMessages: messages,
           tools: allowedTools,

@@ -132,11 +132,31 @@ const UNTRUSTED_CONTENT_TOOL_SLUGS = new Set(['web_fetch', 'web_search']);
 // of tool calls, ballooning context + cost — one prod turn fired page_unshare
 // 1599× and burned $0.73 before crashing. max_iters caps ROUNDS, not
 // calls-per-round, and the in-response dedup only catches byte-identical
-// repeats, so volume needs its own caps. Flat globals for now; per-agent
-// overrides can come later.
+// repeats, so volume needs its own caps.
+//
+// Enforcement is at BATCH boundaries: a response that STARTS under its caps
+// executes in full (bounded by MAX_TOOL_CALLS_PER_RESPONSE). Cutting a batch
+// halfway severed a coherent write batch once — 10 page_block_deletes cut at
+// 1-of-10 left a NATREF SOP draft half-edited (2026-07-06) — and a bounded
+// overshoot is strictly better than a half-applied edit. A batch that starts
+// AT/OVER a cap is skipped call-by-call with guidance.
+//
+// The turn/per-tool caps are per-agent overridable via memory_config
+// (`max_tool_calls` / `max_calls_per_tool`) — heavy editors like the pages
+// agent legitimately need more than chat agents; hard ceilings below still
+// bound the blast radius.
 const MAX_TOOL_CALLS_PER_RESPONSE = 20; // calls beyond this in ONE response are dropped
-const MAX_TOOL_CALLS_PER_TURN = 40; // cumulative across rounds → then force a final answer
-const MAX_CALLS_PER_TOOL_PER_TURN = 15; // same-tool fixation breaker (counts even when args vary)
+const MAX_TOOL_CALLS_PER_TURN = 40; // default cumulative budget across rounds → then force a final answer
+const MAX_CALLS_PER_TOOL_PER_TURN = 15; // default same-tool fixation breaker (counts even when args vary)
+const HARD_MAX_TOOL_CALLS_PER_TURN = 200; // ceiling for per-agent overrides
+const HARD_MAX_CALLS_PER_TOOL_PER_TURN = 100; // ceiling for per-agent overrides
+
+/** Resolve a per-agent cap override: positive ints only, floored, clamped to
+ *  the hard ceiling; anything else falls back to the flat default. */
+function resolveCap(requested: number | undefined, fallback: number, ceiling: number): number {
+  if (typeof requested !== 'number' || !Number.isFinite(requested) || requested < 1) return fallback;
+  return Math.min(ceiling, Math.floor(requested));
+}
 
 /** Process-lifetime cache of the resolved `read_result` tool row, keyed by
  *  owner. It's a stable seeded builtin, so resolving it once per owner avoids
@@ -263,6 +283,14 @@ export type ToolLoopArgs = {
   tools: Tool[];
   /** Max LLM round-trips before forcing a final answer. Default 6. */
   maxIterations?: number;
+  /** Per-agent override for the cumulative tool-call budget per turn
+   *  (memory_config.max_tool_calls). Default MAX_TOOL_CALLS_PER_TURN,
+   *  hard-capped at HARD_MAX_TOOL_CALLS_PER_TURN. */
+  maxToolCallsPerTurn?: number;
+  /** Per-agent override for the same-tool fixation cap per turn
+   *  (memory_config.max_calls_per_tool). Default MAX_CALLS_PER_TOOL_PER_TURN,
+   *  hard-capped at HARD_MAX_CALLS_PER_TOOL_PER_TURN. */
+  maxCallsPerToolPerTurn?: number;
   /** Which surface this loop is running on. Threaded into every
    *  tool handler's `ctx.surface`. Set by the caller — handleMessage
    *  passes `{kind: 'telegram', telegramChatId, ...}`, the web
@@ -391,6 +419,16 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // Tool-volume guards (see constants above). Turn-scoped: the budget is
   // cumulative across rounds; per-tool counts catch single-tool fixation even
   // when the model varies the args to slip past the in-response dedup.
+  const maxToolCallsPerTurn = resolveCap(
+    args.maxToolCallsPerTurn,
+    MAX_TOOL_CALLS_PER_TURN,
+    HARD_MAX_TOOL_CALLS_PER_TURN,
+  );
+  const maxCallsPerToolPerTurn = resolveCap(
+    args.maxCallsPerToolPerTurn,
+    MAX_CALLS_PER_TOOL_PER_TURN,
+    HARD_MAX_CALLS_PER_TOOL_PER_TURN,
+  );
   let totalToolCalls = 0;
   const perToolCounts = new Map<string, number>();
   let budgetExhausted = false;
@@ -604,6 +642,12 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     // because models emit deterministic JSON within one response.
     const seenSignatures = new Map<string, string>(); // signature → first call.id
     let responseCallIndex = 0; // non-duplicate calls dispatched THIS response (per-response cap)
+    // Snapshot the per-tool counters at BATCH start: cap decisions inside this
+    // response compare against the snapshot, so a batch that begins under a
+    // cap executes in full instead of being severed halfway (see the guard
+    // constants' comment — a half-applied write batch is worse than a bounded
+    // overshoot; MAX_TOOL_CALLS_PER_RESPONSE bounds the overshoot).
+    const perToolCountsAtBatchStart = new Map(perToolCounts);
     for (const call of calls) {
       const startedAt = Date.now();
       const slug = call.function.name;
@@ -677,28 +721,29 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         );
         continue;
       }
-      if (totalToolCalls >= MAX_TOOL_CALLS_PER_TURN) {
+      if (budgetExhausted) {
+        // Only reachable when the budget tripped BETWEEN batches (defensive —
+        // the post-batch break below normally ends the loop first).
         await skipToolCall(
           call,
           'turn_tool_budget_reached',
-          `This turn reached its tool-call budget (${MAX_TOOL_CALLS_PER_TURN}). ` +
+          `This turn reached its tool-call budget (${maxToolCallsPerTurn}). ` +
             `Stop calling tools and answer with what you already have.`,
         );
-        budgetExhausted = true;
         continue;
       }
-      const priorForTool = perToolCounts.get(slug) ?? 0;
-      if (priorForTool >= MAX_CALLS_PER_TOOL_PER_TURN) {
+      const priorAtBatchStart = perToolCountsAtBatchStart.get(slug) ?? 0;
+      if (priorAtBatchStart >= maxCallsPerToolPerTurn) {
         await skipToolCall(
           call,
           'tool_repeat_limit',
-          `You've called '${slug}' ${priorForTool} times this turn (limit ` +
-            `${MAX_CALLS_PER_TOOL_PER_TURN}); further '${slug}' calls are blocked. ` +
+          `You've called '${slug}' ${perToolCounts.get(slug) ?? priorAtBatchStart} times this turn ` +
+            `(limit ${maxCallsPerToolPerTurn}); further '${slug}' calls are blocked. ` +
             `Stop repeating it — answer, or take a different approach.`,
         );
         continue;
       }
-      perToolCounts.set(slug, priorForTool + 1);
+      perToolCounts.set(slug, (perToolCounts.get(slug) ?? 0) + 1);
       totalToolCalls += 1;
 
       const tool = toolsByName.get(slug);
@@ -909,9 +954,23 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         ...(outcome.ok ? {} : { isError: true as const }),
       });
     }
-    // Per-turn tool budget hit mid-round → stop looping and force a final
-    // answer with what we have (the force-final pass below).
-    if (budgetExhausted) break;
+    // Per-turn tool budget check at the BATCH boundary (never mid-batch —
+    // see the snapshot above). Budget spent → stop looping; the force-final
+    // pass below produces the answer. The explicit nudge tells the model the
+    // budget (not its own judgment) ended the turn, so it reports honestly
+    // what completed vs what remains instead of narrating false completion.
+    if (totalToolCalls >= maxToolCallsPerTurn) budgetExhausted = true;
+    if (budgetExhausted) {
+      messages.push({
+        role: 'user',
+        content:
+          `[system] This turn's tool-call budget (${maxToolCallsPerTurn}) is spent — no more tool calls ` +
+          `will run this turn. Give your final answer now: state plainly what was completed (per the tool ` +
+          `results above) and what remains to be done. Do not claim unfinished work is done. The user can ` +
+          `send another message to continue where you left off.`,
+      });
+      break;
+    }
   }
 
   // Loop exhausted without a final text response. Last message is a
@@ -929,7 +988,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       input: {
         model: active.model,
         provider: active.adapter.providerId,
-        reason: 'max_iters_reached',
+        reason: budgetExhausted ? 'tool_budget_reached' : 'max_iters_reached',
         ...(failedOver ? { failed_over: true } : {}),
       },
     },
