@@ -4,6 +4,95 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the multi-arch image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.117.0 — 2026-07-06
+
+**Team Chat — your team can talk to your brain.** Team members (the same
+Contacts you mint team tokens for) get their own chat at **/team**: they enter
+their token once and can ask the brain anything it knows — project history,
+documents, decisions — with attachments and live streaming, in a private
+thread that remembers them. What they *can't* do is change anything: the team
+responder is strictly read-only, and any "please update / fix / add this"
+becomes a **request** in your review queue, where you (or a specialist) act on
+it and send the reply straight back into their thread.
+
+You stay in full control from the new **Team** screen (`/team-admin`): every
+member's conversation is visible with unread badges, each answer links to its
+full trace, open requests sit under their own tab, and a per-member access log
+records every sign-in, question, and denial. Two guard rails worth knowing:
+your **email and journal are excluded by default** — a clearly-labelled switch
+(with a warning) is required before team answers may draw on them — and each
+member is rate-limited with a daily turn cap, so a leaked token can't run up
+your model bill. Revoking a member (or deleting the contact) cuts their access
+instantly, mid-session.
+
+## v0.116.2 — 2026-07-05
+
+**The app docs caught up with the app platform.** The app-authoring guide (and
+the matching Claude Code builder skill) now covers everything the recent
+releases added: full-screen apps that own their own layout, the two share modes
+and exactly what each one may do, per-app databases as a first-class store
+(concurrent-safe, included in backups), and the assistant's read-only view over
+app data. Release notes for 0.114.0–0.116.1 were also filled in under
+/changelog.
+
+## v0.116.1 — 2026-07-05
+
+**Smoother concurrent access to app data.** App databases now use SQLite's
+write-ahead logging, so reading and writing an app's data at the same time no
+longer block each other. You'll notice it where it matters: a team-shared app
+several people use at once, or the assistant reading an app's data while the app
+itself is updating it — those now proceed without stalls or the occasional
+"database is busy" hiccup.
+
+## v0.116.0 — 2026-07-05
+
+**Your assistant can read your apps' data.** If a mini-app keeps its own
+database — a tracker, an inventory, a log — you can now just ask about it in
+chat: *"how many open items in my tracker app?"*, *"what's in the inventory
+table?"*. The assistant discovers which apps have data and reads it directly to
+answer. It's **read-only** — the assistant can look but never change an app's
+data — and it works across all your apps with no setup. (Apps with clearly named
+tables and columns are the easiest for it to answer from.)
+
+## v0.115.2 — 2026-07-05
+
+**Your app data is now in the backup.** Mini-apps that keep their own database
+(lists, trackers, anything an app stores) were living outside the regular
+Postgres backup. The backup now snapshots every app database alongside it — a
+consistent copy taken safely even while an app is in use — so a restore brings
+your app data back with the rest of the brain. Nothing to do; it's part of the
+standard backup from now on.
+
+## v0.115.1 — 2026-07-04
+
+**Shared apps got safer, and gained an activity log.** Public app links are now
+strictly limited to the app's *own* data — they can no longer reach your notes,
+email, or other brain tools, so a "public" app can never become a window into
+your private information. Team-shared apps stay full-featured for the people you
+name, and every open, tool call, and data write is logged on the app's Activity
+tab so you can see exactly who did what. Also tightened: the token entry screen
+is rate-limited, and shared apps can only use built-in tools (never arbitrary
+web or shell calls).
+
+## v0.115.0 — 2026-07-04
+
+**Share a mini-app with your team, full-screen.** A published app's Share
+control now offers two modes. A **public** link is open to anyone who has it; a
+**team** link asks the visitor for their team token (from their contact) and
+lets in only your team members — every action they take is recorded against
+them, viewable on the app's new Activity tab. Either way the app now opens in a
+real **full-screen** frame, so dashboards and multi-pane layouts get the whole
+window instead of a small embedded box.
+
+## v0.114.0 — 2026-07-04
+
+**Contacts can now be team members.** A new "Team member" toggle on any contact
+mints that person a short access token (shown once — regenerate or remove them
+to revoke it). On its own it changes nothing you'll see day to day; it's the
+foundation for sharing apps with specific people, where the token both lets them
+in and records who they are. Membership is the single source of truth: flip the
+toggle off, or delete the contact, and their token stops working everywhere.
+
 ## v0.113.4 — 2026-07-04
 
 **The cursor shows the moment an H1 is inserted.** A just-inserted empty H1
