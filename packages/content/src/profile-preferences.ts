@@ -161,6 +161,16 @@ export type ProfilePreferences = {
    *  authorize/register endpoints 404, so no new client can connect and existing
    *  tokens stop working. Flip it in Settings → MCP. */
   remoteMcpEnabled?: boolean;
+  /** Whether the external Team Chat responder may read the owner's PRIVATE
+   *  corpus — email + journal — on a team member's behalf. **Defaults OFF**:
+   *  team members always get brain-wide knowledge reads (search, files, notes,
+   *  pages, tables, tasks, contacts, app data), but the owner's personal email
+   *  history and journal stay off-limits unless this is explicitly turned on.
+   *  Enforced at the team turn's tool resolution (`isTeamPrivateReadsEnabled`
+   *  strips `email_*`/`journal_*` when off), independent of the `team-read`
+   *  group grant, so the switch can't be bypassed by a manifest change. Flip it
+   *  from the Team admin surface. */
+  teamPrivateReads?: boolean;
 };
 
 /** Live thinking-trail display modes. */
@@ -189,6 +199,27 @@ export function isPersistThoughtsEnabled(
   prefs: Pick<ProfilePreferences, 'persistThoughts'>,
 ): boolean {
   return prefs.persistThoughts !== false;
+}
+
+/** Builtin read tools that reach the owner's PRIVATE corpus (email + journal).
+ *  The Team Chat responder holds these via the `team-read` group, but they only
+ *  actually reach the model when the owner has opted in (`teamPrivateReads`).
+ *  Stripped from a team turn's tool set otherwise — see run-team-turn.ts. */
+export const TEAM_PRIVATE_READ_SLUGS: readonly string[] = [
+  'email_list',
+  'email_get',
+  'journal_list',
+  'journal_get',
+];
+
+/** Whether the external Team Chat responder may read the owner's private corpus
+ *  (email + journal) for a team member. **Defaults OFF** — an explicit opt-in,
+ *  since it exposes the owner's personal correspondence and journal to an
+ *  external member. Non-private brain-knowledge reads are always allowed. */
+export function isTeamPrivateReadsEnabled(
+  prefs: Pick<ProfilePreferences, 'teamPrivateReads'>,
+): boolean {
+  return prefs.teamPrivateReads === true;
 }
 
 /** Project a stored `thinkingBudget` jsonb value to the typed field — a positive
@@ -364,6 +395,9 @@ export async function loadProfilePreferences(
     thinkingBudget: projectThinkingBudget(prefs.thinkingBudget),
     // Default OFF: only an explicit `true` exposes the remote MCP connector.
     remoteMcpEnabled: prefs.remoteMcpEnabled === true,
+    // Default OFF: team members can't read the owner's email/journal unless
+    // explicitly opted in.
+    teamPrivateReads: prefs.teamPrivateReads === true,
     lastReconciledVersion:
       typeof prefs.lastReconciledVersion === 'string' && prefs.lastReconciledVersion.length > 0
         ? prefs.lastReconciledVersion
@@ -512,6 +546,7 @@ export async function updateProfilePreferences(
     persistThoughts: merged.persistThoughts !== false,
     thinkingBudget: projectThinkingBudget(merged.thinkingBudget),
     remoteMcpEnabled: merged.remoteMcpEnabled === true,
+    teamPrivateReads: merged.teamPrivateReads === true,
     lastReconciledVersion: merged.lastReconciledVersion || undefined,
   };
 }

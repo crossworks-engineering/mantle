@@ -51,6 +51,8 @@ import {
   recentTeamMessages,
   buildTimeContextLine,
   loadProfilePreferences,
+  isTeamPrivateReadsEnabled,
+  TEAM_PRIVATE_READ_SLUGS,
 } from '@mantle/content';
 import {
   startTrace,
@@ -204,7 +206,15 @@ export async function runTeamTurn(
 
   const params = (agent.params ?? {}) as Record<string, unknown>;
   const groupTools = await resolveAgentToolGroups(ownerId, agent.toolGroupSlugs ?? []);
-  const allowedToolSlugs = effectiveToolSlugs(groupTools);
+  let allowedToolSlugs = effectiveToolSlugs(groupTools);
+  // Private-reads switch (default OFF): the owner's email + journal are only
+  // reachable by a team member when explicitly opted in. Enforced HERE, at tool
+  // resolution — independent of the `team-read` group grant, so the switch
+  // can't be bypassed by a manifest change that re-adds the slugs.
+  if (!isTeamPrivateReadsEnabled(prefs)) {
+    const gated = new Set(TEAM_PRIVATE_READ_SLUGS);
+    allowedToolSlugs = allowedToolSlugs.filter((s) => !gated.has(s));
+  }
   const allowedTools = await resolveAgentTools(ownerId, allowedToolSlugs);
 
   const adapter = getChatAdapter(agent.provider);

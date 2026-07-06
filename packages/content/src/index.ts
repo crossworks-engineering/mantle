@@ -379,6 +379,8 @@ export {
   isStreamThoughtsEnabled,
   resolveThoughtTrailMode,
   isPersistThoughtsEnabled,
+  isTeamPrivateReadsEnabled,
+  TEAM_PRIVATE_READ_SLUGS,
   resolveThinkingBudget,
   projectThinkingBudget,
   projectSiteName,

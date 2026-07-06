@@ -619,7 +619,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'team-read',
     name: 'Team Chat (member-facing)',
     description:
-      'The team responder\'s entire tool surface: read-only access across the brain (search, files, notes, pages, tables, events, tasks, contacts, journal, email, app data) plus its ONE write action — filing a team change request into the specialist review queue. Deliberately excludes export_node (bulk exfiltration ease), recall_window (replays the OWNER\'s private conversations), all other writes, delegation, terminal, http, and send tools. Reads are brain-wide BY DESIGN (brain = the trust boundary); the enable-team-chat UI states this.',
+      'The team responder\'s entire tool surface: read-only access across the brain (search, files, notes, pages, tables, events, tasks, contacts, app data) plus its ONE write action — filing a team change request into the specialist review queue. email_*/journal_* are ALSO granted here but gated at runtime by the owner\'s `teamPrivateReads` switch (default OFF — see run-team-turn.ts / TEAM_PRIVATE_READ_SLUGS), so the owner\'s private corpus is off-limits unless explicitly opted in. Deliberately excludes export_node (bulk exfiltration ease), recall_window (replays the OWNER\'s private conversations), all other writes, delegation, terminal, http, and send tools. Non-private reads are brain-wide BY DESIGN (brain = the trust boundary).',
     toolSlugs: [
       // memory-core reads
       'search_nodes',

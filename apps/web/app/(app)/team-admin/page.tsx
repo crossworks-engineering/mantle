@@ -5,8 +5,11 @@ import {
   listTeamMemberActivity,
   listTeamThread,
   listTeamAccess,
+  loadProfilePreferences,
+  isTeamPrivateReadsEnabled,
   type TeamMemberActivity,
 } from '@mantle/content';
+import { PrivateReadsToggle } from '@/components/team-chat/private-reads-toggle';
 import { MessageSquare, ScrollText, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
@@ -100,7 +103,11 @@ export default async function TeamAdminPage({
   const user = await requireOwner();
   const { contact } = await searchParams;
 
-  const members = await listTeamMemberActivity(user.id);
+  const [members, prefs] = await Promise.all([
+    listTeamMemberActivity(user.id),
+    loadProfilePreferences(user.id),
+  ]);
+  const privateReads = isTeamPrivateReadsEnabled(prefs);
   const selectedId =
     contact && members.some((m) => m.contactId === contact)
       ? contact
@@ -127,6 +134,11 @@ export default async function TeamAdminPage({
             >
               Team requests →
             </Link>
+          </div>
+          {/* Surface-wide read posture. Members always get brain-knowledge reads;
+              this gates the owner's PRIVATE corpus (email + journal). Default off. */}
+          <div className="flex items-center justify-between border-b border-border px-4 py-2">
+            <PrivateReadsToggle initial={privateReads} />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
             <MemberList members={members} selectedId={selectedId} />
