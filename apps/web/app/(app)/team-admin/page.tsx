@@ -5,12 +5,16 @@ import {
   listTeamMemberActivity,
   listTeamThread,
   listTeamAccess,
+  listTeamRequests,
+  markTeamThreadRead,
   loadProfilePreferences,
   isTeamPrivateReadsEnabled,
   type TeamMemberActivity,
+  type TeamRequest,
 } from '@mantle/content';
 import { PrivateReadsToggle } from '@/components/team-chat/private-reads-toggle';
-import { MessageSquare, ScrollText, ExternalLink } from 'lucide-react';
+import { RequestReply } from '@/components/team-chat/request-reply';
+import { MessageSquare, ScrollText, ExternalLink, Inbox, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -63,29 +67,24 @@ function MemberList({
           <Link
             href={`/team-admin?contact=${m.contactId}`}
             className={cn(
-              'block rounded-md border border-transparent px-3 py-2 transition-colors',
-              m.contactId === selectedId
-                ? 'bg-accent text-accent-foreground'
-                : 'hover:bg-foreground/[0.06]',
+              // Selection = left accent bar only (the repo's list idiom) — a
+              // bg-accent fill is unreadable in saturated-accent themes.
+              'block rounded-md border border-l-[3px] border-border border-l-border px-3 py-2 transition-colors hover:bg-muted/50',
+              m.contactId === selectedId && 'border-l-primary bg-muted/40',
             )}
           >
             <div className="flex items-baseline justify-between gap-2">
               <span className="truncate text-sm font-medium">{m.contactName}</span>
-              <span
-                className={cn(
-                  'shrink-0 text-xs',
-                  m.contactId === selectedId ? 'text-accent-foreground/80' : 'text-muted-foreground',
-                )}
-              >
+              <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                {m.unread > 0 ? (
+                  <span className="inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
+                    {m.unread}
+                  </span>
+                ) : null}
                 {fmtWhen(m.lastMessageAt)}
               </span>
             </div>
-            <p
-              className={cn(
-                'mt-0.5 truncate text-xs',
-                m.contactId === selectedId ? 'text-accent-foreground/80' : 'text-muted-foreground',
-              )}
-            >
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
               {m.lastMessageText ?? `member since ${fmtWhen(m.memberSince)} — no messages yet`}
             </p>
           </Link>
@@ -95,19 +94,141 @@ function MemberList({
   );
 }
 
+function TeamTabs({
+  active,
+  openRequestCount,
+}: {
+  active: 'chats' | 'requests';
+  openRequestCount: number;
+}) {
+  const tab = (label: string, href: string, isActive: boolean, badge?: number) => (
+    <Link
+      href={href}
+      className={cn(
+        'inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors',
+        isActive
+          ? 'border-primary font-medium text-foreground'
+          : 'border-transparent text-muted-foreground hover:text-foreground',
+      )}
+    >
+      {label}
+      {badge ? (
+        <span className="inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
+          {badge}
+        </span>
+      ) : null}
+    </Link>
+  );
+  return (
+    <div className="flex items-center gap-1 border-b border-border px-3">
+      {tab('Chats', '/team-admin', active === 'chats')}
+      {tab('Requests', '/team-admin?view=requests', active === 'requests', openRequestCount)}
+    </div>
+  );
+}
+
+function RequestsPanel({ requests }: { requests: TeamRequest[] }) {
+  if (requests.length === 0) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-8">
+        <div className="text-center text-sm text-muted-foreground">
+          <Inbox className="mx-auto mb-2 size-6" />
+          <p>No change requests yet. When a team member asks for content to be updated,</p>
+          <p>it lands here for a specialist to review and apply.</p>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+      <div className="mx-auto w-full max-w-3xl space-y-4 p-4">
+        {requests.map((r) => (
+        <div
+          key={r.taskId}
+          className={cn(
+            'rounded-lg border border-border bg-card p-4 text-card-foreground',
+            r.status === 'done' && 'opacity-70',
+          )}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold">{r.title}</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                from {r.contactName ?? 'a team member'} ·{' '}
+                {new Date(r.createdAt).toLocaleDateString()}
+                {r.notifiedAt ? ' · replied' : ''}
+              </p>
+            </div>
+            <span
+              className={cn(
+                'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs',
+                r.status === 'done'
+                  ? 'bg-muted text-muted-foreground'
+                  : 'bg-primary/10 text-primary',
+              )}
+            >
+              {r.status === 'done' ? <CheckCircle2 className="size-3" /> : null}
+              {r.status === 'done' ? 'done' : 'open'}
+            </span>
+          </div>
+          {r.body ? (
+            <div className="prose prose-accent prose-sm mt-2 max-w-none dark:prose-invert">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{r.body}</ReactMarkdown>
+            </div>
+          ) : null}
+          <div className="mt-2 flex gap-3 text-xs">
+            <Link
+              href={`/tasks?selected=${r.taskId}`}
+              className="text-muted-foreground underline-offset-2 hover:underline"
+            >
+              Open task →
+            </Link>
+            {r.contactId ? (
+              <Link
+                href={`/team-admin?contact=${r.contactId}`}
+                className="text-muted-foreground underline-offset-2 hover:underline"
+              >
+                View their chat →
+              </Link>
+            ) : null}
+          </div>
+          {r.contactId ? (
+            <RequestReply taskId={r.taskId} contactName={r.contactName} done={r.status === 'done'} />
+          ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default async function TeamAdminPage({
   searchParams,
 }: {
-  searchParams: Promise<{ contact?: string }>;
+  searchParams: Promise<{ contact?: string; view?: string }>;
 }) {
   const user = await requireOwner();
-  const { contact } = await searchParams;
+  const { contact, view } = await searchParams;
+  const showRequests = view === 'requests';
 
-  const [members, prefs] = await Promise.all([
+  const [members, prefs, openRequestCount] = await Promise.all([
     listTeamMemberActivity(user.id),
     loadProfilePreferences(user.id),
+    listTeamRequests(user.id, { status: 'open' }).then((r) => r.length),
   ]);
   const privateReads = isTeamPrivateReadsEnabled(prefs);
+
+  if (showRequests) {
+    const requests = await listTeamRequests(user.id, { status: 'all', limit: 200 });
+    return (
+      <div className="flex h-full flex-col">
+        <SetPageTitle title="Team" />
+        <TeamTabs active="requests" openRequestCount={openRequestCount} />
+        <RequestsPanel requests={requests} />
+      </div>
+    );
+  }
+
   const selectedId =
     contact && members.some((m) => m.contactId === contact)
       ? contact
@@ -119,21 +240,23 @@ export default async function TeamAdminPage({
         listTeamAccess(user.id, { contactId: selectedId, limit: 15 }),
       ])
     : [[], []];
+  // Viewing a member's thread marks it read up to now; reflect that in this
+  // render so the selected member's unread badge clears immediately (the DB
+  // cursor drives it on the next navigation).
+  if (selectedId && selected) {
+    await markTeamThreadRead(user.id, selectedId);
+    selected.unread = 0;
+  }
 
   return (
-    <>
+    <div className="flex h-full flex-col">
       <SetPageTitle title="Team" />
-      <div className="h-full md:grid md:grid-cols-[340px_1fr]">
+      <TeamTabs active="chats" openRequestCount={openRequestCount} />
+      <div className="min-h-0 flex-1 md:grid md:grid-cols-[340px_1fr]">
         {/* Members */}
         <aside className="flex min-h-0 flex-col border-r border-border">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div className="flex items-center border-b border-border px-4 py-3">
             <h2 className="text-sm font-semibold">Team members</h2>
-            <Link
-              href="/tasks"
-              className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-            >
-              Team requests →
-            </Link>
           </div>
           {/* Surface-wide read posture. Members always get brain-knowledge reads;
               this gates the owner's PRIVATE corpus (email + journal). Default off. */}
@@ -240,6 +363,6 @@ export default async function TeamAdminPage({
           )}
         </section>
       </div>
-    </>
+    </div>
   );
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { TEAM_TOOLS } from './builtins-team';
+import { TEAM_REQUEST_TAG as CONTENT_TEAM_REQUEST_TAG } from '@mantle/content';
+import { TEAM_TOOLS, TEAM_REQUEST_TAG } from './builtins-team';
 import type { ToolHandlerContext } from './types';
 
 /**
@@ -51,4 +52,13 @@ describe('owner-side team tools refuse on the team surface', () => {
       if (!r.ok) expect(r.error).toMatch(/owner-side/i);
     });
   }
+});
+
+describe('team-request tag', () => {
+  it('is the same literal the content requests view filters on (no drift)', () => {
+    // team_request_create tags with this; listTeamRequests filters on it. They
+    // live in different packages, so lock them together.
+    expect(TEAM_REQUEST_TAG).toBe(CONTENT_TEAM_REQUEST_TAG);
+    expect(TEAM_REQUEST_TAG).toBe('team-request');
+  });
 });

@@ -10,6 +10,7 @@ import { and, count, desc, eq, gte, lt, sql as dsql } from 'drizzle-orm';
 import {
   db,
   teamMessages,
+  teamReadCursors,
   contactTeamTokens,
   nodes,
   type ConversationAttachment,
@@ -52,13 +53,11 @@ export async function appendTeamMessage(input: AppendTeamMessageInput): Promise<
       status: input.error ? 'failed' : (input.status ?? 'complete'),
     })
     .returning();
-  return row!;
+  if (!row) throw new Error('appendTeamMessage: insert returned no row');
+  return row;
 }
 
-/** Finalize a pending outbound row (the durable "thinking…" bubble): fill the
- *  reply + flip status, or mark it failed. Mirrors updateAssistantMessageOutcome.
- *  Returns the updated row, or null if it vanished. */
-export async function updateTeamMessageOutcome(args: {
+export type UpdateTeamMessageOutcomeInput = {
   ownerId: string;
   id: string;
   status: 'complete' | 'failed';
@@ -66,7 +65,14 @@ export async function updateTeamMessageOutcome(args: {
   model?: string | null;
   traceId?: string | null;
   error?: string | null;
-}): Promise<TeamMessage | null> {
+};
+
+/** Finalize a pending outbound row (the durable "thinking…" bubble): fill the
+ *  reply + flip status, or mark it failed. Mirrors updateAssistantMessageOutcome.
+ *  Returns the updated row, or null if it vanished. */
+export async function updateTeamMessageOutcome(
+  args: UpdateTeamMessageOutcomeInput,
+): Promise<TeamMessage | null> {
   const [row] = await db
     .update(teamMessages)
     .set({
@@ -148,13 +154,16 @@ export type TeamMemberActivity = {
   lastMessageText: string | null;
   lastMessageDirection: 'inbound' | 'outbound' | null;
   messageCount: number;
+  /** Member inbound messages since the owner last read this thread in
+   *  /team-admin (all inbound when never read). Drives the unread badge. */
+  unread: number;
 };
 
 /**
  * The admin member-index: EVERY current team member (a live
  * contact_team_tokens row is the role), annotated with their thread's last
- * message + size. Members with no thread yet sort last, so a freshly enabled
- * member is still visible in the admin view.
+ * message + size + unread count. Ordered newest-activity-first in SQL, NULLS
+ * LAST so a freshly enabled member with no thread still shows (at the bottom).
  */
 export async function listTeamMemberActivity(ownerId: string): Promise<TeamMemberActivity[]> {
   const rows = await db
@@ -167,6 +176,22 @@ export async function listTeamMemberActivity(ownerId: string): Promise<TeamMembe
       lastMessageText: dsql<string | null>`last_msg.text`,
       lastMessageDirection: dsql<string | null>`last_msg.direction`,
       messageCount: dsql<number>`coalesce(msg_counts.n, 0)::int`,
+      // Inbound (member→brain) messages newer than the owner's read cursor —
+      // a self-contained correlated subquery (no cursor row ⇒ epoch ⇒ all
+      // inbound counts as unread).
+      unread: dsql<number>`(
+        select count(*)
+        from team_messages tmu
+        where tmu.owner_id = ${contactTeamTokens.ownerId}
+          and tmu.contact_id = ${contactTeamTokens.contactId}
+          and tmu.direction = 'inbound'
+          and tmu.created_at > coalesce(
+            (select c.last_read_at from team_read_cursors c
+             where c.owner_id = ${contactTeamTokens.ownerId}
+               and c.contact_id = ${contactTeamTokens.contactId}),
+            'epoch'::timestamptz
+          )
+      )::int`,
     })
     .from(contactTeamTokens)
     .innerJoin(nodes, eq(nodes.id, contactTeamTokens.contactId))
@@ -190,18 +215,34 @@ export async function listTeamMemberActivity(ownerId: string): Promise<TeamMembe
       ) msg_counts`,
       dsql`true`,
     )
-    .where(eq(contactTeamTokens.ownerId, ownerId));
+    .where(eq(contactTeamTokens.ownerId, ownerId))
+    .orderBy(dsql`last_msg.created_at desc nulls last`);
 
-  return rows
-    .map((r) => ({
-      contactId: r.contactId,
-      contactName: r.contactName ?? '(unnamed contact)',
-      memberSince: r.memberSince.toISOString(),
-      tokenLastUsedAt: r.tokenLastUsedAt ? r.tokenLastUsedAt.toISOString() : null,
-      lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt).toISOString() : null,
-      lastMessageText: r.lastMessageText,
-      lastMessageDirection: (r.lastMessageDirection ?? null) as 'inbound' | 'outbound' | null,
-      messageCount: r.messageCount,
-    }))
-    .sort((a, b) => (b.lastMessageAt ?? '').localeCompare(a.lastMessageAt ?? ''));
+  return rows.map((r) => ({
+    contactId: r.contactId,
+    contactName: r.contactName ?? '(unnamed contact)',
+    memberSince: r.memberSince.toISOString(),
+    tokenLastUsedAt: r.tokenLastUsedAt ? r.tokenLastUsedAt.toISOString() : null,
+    lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt).toISOString() : null,
+    lastMessageText: r.lastMessageText,
+    lastMessageDirection: (r.lastMessageDirection ?? null) as 'inbound' | 'outbound' | null,
+    messageCount: r.messageCount,
+    unread: r.unread,
+  }));
+}
+
+/** Mark a member's thread read up to now (owner opened it in /team-admin).
+ *  Upsert on the composite PK. Best-effort — a failed cursor write must never
+ *  break the admin view. */
+export async function markTeamThreadRead(ownerId: string, contactId: string): Promise<void> {
+  await db
+    .insert(teamReadCursors)
+    .values({ ownerId, contactId, lastReadAt: new Date() })
+    .onConflictDoUpdate({
+      target: [teamReadCursors.ownerId, teamReadCursors.contactId],
+      set: { lastReadAt: new Date() },
+    })
+    .catch(() => {
+      /* best-effort — the unread badge is a convenience, not a gate */
+    });
 }

@@ -328,9 +328,19 @@ export {
   listTeamThread,
   recentTeamMessages,
   listTeamMemberActivity,
+  markTeamThreadRead,
   type AppendTeamMessageInput,
+  type UpdateTeamMessageOutcomeInput,
   type TeamMemberActivity,
 } from './team-messages';
+
+export {
+  listTeamRequests,
+  notifyTeamRequester,
+  TEAM_REQUEST_TAG,
+  type TeamRequest,
+  type NotifyTeamRequesterResult,
+} from './team-requests';
 
 export {
   recordTeamAccess,
