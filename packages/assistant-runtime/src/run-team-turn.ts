@@ -106,8 +106,9 @@ async function resolveTeamResponder(ownerId: string): Promise<Agent | null> {
 }
 
 /** Map a team thread window into prompt history. Pending/failed rows and the
- *  empty pending bubble never reach the prompt. */
-function toHistory(rows: TeamMessage[]): HistoryTurn[] {
+ *  empty pending bubble never reach the prompt. Exported for the isolation
+ *  tests. */
+export function teamThreadToHistory(rows: TeamMessage[]): HistoryTurn[] {
   return rows
     .filter((r) => r.status === 'complete' && r.text.trim().length > 0)
     .map((r) => ({ role: r.direction === 'inbound' ? ('user' as const) : ('assistant' as const), text: r.text }));
@@ -150,7 +151,7 @@ export async function runTeamTurn(
     contactId,
     memoryConfig.history_limit ?? 20,
   );
-  const history = toHistory(teamHistoryRows);
+  const history = teamThreadToHistory(teamHistoryRows);
 
   const inbound = await runDurableStep('record_team_inbound', () =>
     appendTeamMessage({

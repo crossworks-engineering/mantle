@@ -13,7 +13,8 @@
  * member locks them out mid-session.
  */
 import { getContact, isTeamMember, verifyTeamToken } from '@mantle/content';
-import { TEAM_CHAT_COOKIE, verifyTeamChatValue } from '@/lib/auth';
+// Relative (not '@/lib/auth') so the co-located vitest run resolves it too.
+import { TEAM_CHAT_COOKIE, verifyTeamChatValue } from './auth';
 import type { TeamChannel } from '@mantle/db';
 
 export type TeamChatCaller = {
