@@ -615,6 +615,70 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'Author/test/group/grant templated HTTP API tools + web_fetch for reading API docs — the Toolsmith specialist (and trusted operators) only: it can mint new capabilities and grant them to agents.',
     toolSlugs: [...TOOLSMITH_TOOL_SLUGS],
   },
+  {
+    slug: 'team-read',
+    name: 'Team Chat (member-facing)',
+    description:
+      'The team responder\'s entire tool surface: read-only access across the brain (search, files, notes, pages, tables, events, tasks, contacts, journal, email, app data) plus its ONE write action — filing a team change request into the specialist review queue. Deliberately excludes export_node (bulk exfiltration ease), recall_window (replays the OWNER\'s private conversations), all other writes, delegation, terminal, http, and send tools. Reads are brain-wide BY DESIGN (brain = the trust boundary); the enable-team-chat UI states this.',
+    toolSlugs: [
+      // memory-core reads
+      'search_nodes',
+      'search_chunks',
+      'read_section',
+      'tree_list',
+      'node_read',
+      'entity_search',
+      'entity_neighbors',
+      'graph_path',
+      'entity_facts',
+      'entity_mentions',
+      // file/folder reads (no create/rename)
+      'folder_list',
+      'folder_get_by_path',
+      'file_list',
+      'file_get',
+      'file_read',
+      'folder_describe',
+      // content-surface reads
+      'note_list',
+      'note_get',
+      'page_list',
+      'page_get',
+      'page_blocks_list',
+      'page_block_get',
+      'table_list',
+      'table_get',
+      'table_query',
+      'table_rows_list',
+      'table_row_get',
+      'table_aggregate',
+      'event_list',
+      'event_get',
+      'task_list',
+      'task_get',
+      'contact_find',
+      'contact_list',
+      'contact_get',
+      'journal_list',
+      'journal_get',
+      'email_list',
+      'email_get',
+      'app_db_list',
+      'app_db_query',
+      // utilities the read loop needs
+      'summarize_text',
+      'read_result',
+      // the single write path: provenance-stamped request task
+      'team_request_create',
+    ],
+  },
+  {
+    slug: 'team-admin',
+    name: 'Team Chat admin',
+    description:
+      "Owner-side view over the Team Chat surface: list members + activity, read any member's thread, read the access log. Granted to the persona so the brain can answer 'what has <member> asked about?' — NEVER to the team responder itself.",
+    toolSlugs: ['team_chat_list', 'team_chat_read', 'team_access_list'],
+  },
 ];
 
 // ── Agents ───────────────────────────────────────────────────────────────────
@@ -657,6 +721,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'export',
       'tables-import',
       'app-data',
+      'team-admin',
     ],
     skillSlugs: ['tool_grounding', 'voice_reply', 'chat_writing', 'location_awareness', 'navigation', 'integrations'],
     params: { temperature: 0.7, max_tokens: 16000 },
@@ -828,6 +893,37 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // Codegen → build → read-errors → fix loops chew iterations. delegate_to
     // toolsmith: Appsmith doesn't author HTTP tools, it delegates that.
     memoryConfig: { max_iterations: 30, delegate_to: ['toolsmith'] },
+    priority: 100,
+  },
+  {
+    slug: 'team-responder',
+    name: 'Team Responder',
+    description:
+      'Permission-limited responder for the external Team Chat surface (/team) — serves team-member contacts, read-only plus filing change requests. Never appears in the owner\'s Conversations inbox and is never a delegate.',
+    role: 'custom',
+    model: 'anthropic/claude-sonnet-5',
+    envModelVar: 'TEAM_RESPONDER_MODEL',
+    systemPrompt: AGENT_PROMPTS['team-responder']!,
+    // `team-read` is its ENTIRE surface (see the group's description for the
+    // exclusion rationale). Not a delegate, no assist surface — it is resolved
+    // explicitly by the team turn pipeline and nothing else.
+    toolGroupSlugs: ['team-read'],
+    skillSlugs: ['tool_grounding', 'chat_writing'],
+    params: { temperature: 0.4, max_tokens: 16000 },
+    // No owner-personal context: inject_journal OFF (the identity context is
+    // the OWNER's self-knowledge), no digests (those summarize the owner's own
+    // conversations). History comes from the member's team thread, loaded by
+    // the team context loader — history_limit budgets that window.
+    memoryConfig: {
+      history_limit: 20,
+      digest_limit: 0,
+      fact_limit: 10,
+      content_hit_limit: 5,
+      chunk_limit: 8,
+      inject_journal: false,
+      delegate_to: [],
+      max_iterations: 15,
+    },
     priority: 100,
   },
 ];

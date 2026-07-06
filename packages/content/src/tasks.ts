@@ -154,11 +154,16 @@ export type CreateTaskInput = {
   priority?: TaskPriority;
   dueAt?: string | null;
   tags?: string[];
+  /** Extra `data` keys merged UNDER the canonical fields (canonical keys
+   *  always win). Used by system callers that must stamp provenance the
+   *  model can't forge — e.g. team_request_create's `teamRequest` block. */
+  extraData?: Record<string, unknown>;
 };
 
 export async function createTask(ownerId: string, input: CreateTaskInput): Promise<TaskRow> {
   await ensureRoot(ownerId);
   const data: Record<string, unknown> = {
+    ...(input.extraData ?? {}),
     body: input.body ?? '',
     status: input.status ?? 'open',
     priority: input.priority ?? 'normal',

@@ -65,7 +65,20 @@ export type ToolHandlerContext = {
          *  not have a natural parent message. */
         replyToTelegramMessageId?: string;
       }
-    | { kind: 'web' };
+    | { kind: 'web' }
+    | {
+        /** Turn came from the external Team Chat surface (/team or
+         *  /api/team/*) — the caller is a team-member CONTACT, not the
+         *  owner. `team_request_create` reads its provenance from here
+         *  (never from model args, which an injected prompt could forge);
+         *  owner-only and send tools must refuse on this surface. */
+        kind: 'team';
+        contactId: string;
+        contactName?: string;
+        /** The inbound team_messages row that started this turn — stamped
+         *  into a request task so the specialist can jump to the ask. */
+        inboundMessageId?: string;
+      };
 };
 
 /** A sidecar artifact a tool produces alongside its JSON output —

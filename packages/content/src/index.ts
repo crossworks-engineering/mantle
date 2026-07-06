@@ -322,6 +322,24 @@ export {
 } from './app-access-log';
 
 export {
+  appendTeamMessage,
+  updateTeamMessageOutcome,
+  listTeamThread,
+  recentTeamMessages,
+  listTeamMemberActivity,
+  type AppendTeamMessageInput,
+  type TeamMemberActivity,
+} from './team-messages';
+
+export {
+  recordTeamAccess,
+  listTeamAccess,
+  type TeamAccessKind,
+  type TeamAccessEntry,
+  type TeamAccessRow,
+} from './team-access-log';
+
+export {
   renderPageEmail,
   cidForPageImage,
   type RenderPageEmailOptions,

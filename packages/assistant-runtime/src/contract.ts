@@ -14,6 +14,9 @@ import type { RunAssistantTurnOptions } from './run-turn';
 /** DBOS workflow name the runner registers under and enqueuers target. */
 export const ASSISTANT_TURN_WORKFLOW = 'assistantTurnWorkflow';
 
+/** Team Chat turn workflow (external team-member surface). */
+export const TEAM_TURN_WORKFLOW = 'teamTurnWorkflow';
+
 /** The shared runner queue. Its concurrency cap (set where the queue is
  *  registered, in apps/api) bounds total in-flight runs across processes — the
  *  LLM-provider backpressure valve. */
@@ -36,6 +39,21 @@ export type AssistantTurnRunResult = {
   outbound: { id: string; text: string; model: string | null; createdAt: string };
   reply: string;
   artifacts: ToolArtifact[];
+};
+
+/** Serializable input for the team turn runner — mirrors runTeamTurn's
+ *  (ownerId, text, options) arguments. */
+export type TeamTurnInput = {
+  ownerId: string;
+  text: string;
+  options: import('./run-team-turn').RunTeamTurnOptions;
+};
+
+/** Serializable team-turn result DTO (dates pre-stringified). */
+export type TeamTurnRunResult = {
+  inbound: { id: string; text: string; createdAt: string };
+  outbound: { id: string; text: string; model: string | null; traceId: string | null; createdAt: string };
+  reply: string;
 };
 
 /**
