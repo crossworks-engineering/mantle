@@ -324,6 +324,7 @@ export {
 export {
   appendTeamMessage,
   updateTeamMessageOutcome,
+  countTeamInboundSince,
   listTeamThread,
   recentTeamMessages,
   listTeamMemberActivity,

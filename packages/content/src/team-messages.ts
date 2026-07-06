@@ -6,7 +6,7 @@
  * owner-side `team_chat_*` tools that make team activity queryable by the
  * brain.
  */
-import { and, desc, eq, lt, sql as dsql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, lt, sql as dsql } from 'drizzle-orm';
 import {
   db,
   teamMessages,
@@ -114,6 +114,27 @@ export async function recentTeamMessages(
   limit = 30,
 ): Promise<TeamMessage[]> {
   return listTeamThread(ownerId, contactId, { limit });
+}
+
+/** Inbound turns this contact has sent since `since` — the daily-cap gate
+ *  (a leaked token must never become a wallet drain). */
+export async function countTeamInboundSince(
+  ownerId: string,
+  contactId: string,
+  since: Date,
+): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(teamMessages)
+    .where(
+      and(
+        eq(teamMessages.ownerId, ownerId),
+        eq(teamMessages.contactId, contactId),
+        eq(teamMessages.direction, 'inbound'),
+        gte(teamMessages.createdAt, since),
+      ),
+    );
+  return row?.n ?? 0;
 }
 
 export type TeamMemberActivity = {
