@@ -59,6 +59,10 @@ export type PageDetail = PageRow & {
   /** Autosaved working copy if uncommitted edits exist, else null. Never
    *  rendered to other surfaces; loaded by the editor to resume work. */
   draft: Record<string, unknown> | null;
+  /** When the draft was last written (ISO), or null when no draft exists.
+   *  Optional: only the `getPage` read path populates it — write paths that
+   *  synthesize a PageDetail from the row they just wrote skip it. */
+  draftUpdatedAt?: string | null;
 };
 
 function rowOf(n: Node): PageRow {
@@ -184,7 +188,7 @@ export async function listPageTags(ownerId: string): Promise<{ tag: string; coun
 
 export async function getPage(ownerId: string, id: string): Promise<PageDetail | null> {
   const [row] = await db
-    .select({ node: nodes, doc: pages.doc, draft: pages.draftDoc })
+    .select({ node: nodes, doc: pages.doc, draft: pages.draftDoc, draftUpdatedAt: pages.draftUpdatedAt })
     .from(nodes)
     .leftJoin(pages, eq(pages.nodeId, nodes.id))
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
@@ -215,7 +219,10 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
     void persistBlockIdBackfill(id, docChanged ? doc : null, draftChanged ? draft : null);
   }
 
-  return detailOf(row.node, doc, draft);
+  return {
+    ...detailOf(row.node, doc, draft),
+    draftUpdatedAt: draft ? (row.draftUpdatedAt?.toISOString() ?? null) : null,
+  };
 }
 
 /**

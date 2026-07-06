@@ -768,7 +768,12 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     isDelegate: true,
     assistSurface: 'pages',
     params: { temperature: 0.3, max_tokens: 32000 },
-    memoryConfig: { max_iterations: 20 },
+    // Real page work is tool-call heavy: a large restructure is read + N block
+    // updates + M deletes, and the flat defaults (40/turn, 15/tool) sever it
+    // mid-edit (NATREF SOP incident, 2026-07-06 — a 205-block SOP restructure
+    // died at the delete phase twice). 100/40 covers a ~30-block edit with
+    // reads included; the runtime hard-caps at 200/100.
+    memoryConfig: { max_iterations: 20, max_tool_calls: 100, max_calls_per_tool: 40 },
     priority: 100,
   },
   {

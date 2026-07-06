@@ -410,6 +410,7 @@ const page_get: BuiltinToolDef = {
     try {
       const page = await getPage(ctx.ownerId, id);
       if (!page) return { ok: false, error: `page ${id} not found` };
+      const hasDraft = page.draft !== null;
       return {
         ok: true,
         output: {
@@ -418,6 +419,16 @@ const page_get: BuiltinToolDef = {
           tags: page.tags,
           summary: page.summary,
           url: nodeUrl(page.id),
+          has_draft: hasDraft,
+          ...(hasDraft && page.draftUpdatedAt ? { draft_updated_at: page.draftUpdatedAt } : {}),
+          ...(hasDraft
+            ? {
+                note:
+                  '`content` below is the PUBLISHED version. This page ALSO has uncommitted draft edits ' +
+                  '(pending user review) — page_blocks_list and the block-edit tools operate on that draft, ' +
+                  'so do not treat differences from `content` as missing work.',
+              }
+            : {}),
           content: docToText(page.doc),
         },
       };
@@ -907,7 +918,7 @@ const page_blocks_list: BuiltinToolDef = {
   slug: 'page_blocks_list',
   name: 'List the blocks in a page',
   description:
-    "Return a TOC-style flat listing of every addressable block in a page — `id`, `kind` (paragraph / heading / callout / table / …), `depth`, and a short text `preview`. Lightweight: the body itself is not returned, so this works regardless of page size. **Use this BEFORE proposing any block-level edit** so you know which blocks exist and can target them by stable id. The ids returned here survive across edits — they are stable per block, not per read. Headings also include `meta.level`, code blocks `meta.language`, callouts `meta.variant`, task items `meta.checked`, images `meta.alt`. **`kinds` is the SCALING knob — pass only the block types you care about** (e.g. `['blockquote']` for 'find every quote', `['heading']` for an outline). A large page can have hundreds of blocks; an unfiltered listing on a 300-block page approaches 80 KB and spills through the tool-result store, costing extra paging turns. `max_depth: 1` is the other compactor — top-level only. Default `preview_chars` is 80; bump only when you genuinely need more context per block.",
+    "Return a TOC-style flat listing of every addressable block in a page — `id`, `kind` (paragraph / heading / callout / table / …), `depth`, and a short text `preview`. Lightweight: the body itself is not returned, so this works regardless of page size. **Lists the SAME baseline the block-edit tools operate on: the uncommitted DRAFT when one exists, else the published doc** — `baseline` in the output tells you which you got, so the ids here are always valid targets for page_block_get/update/delete. **Use this BEFORE proposing any block-level edit** so you know which blocks exist and can target them by stable id. The ids returned here survive across edits — they are stable per block, not per read. Headings also include `meta.level`, code blocks `meta.language`, callouts `meta.variant`, task items `meta.checked`, images `meta.alt`. **`kinds` is the SCALING knob — pass only the block types you care about** (e.g. `['blockquote']` for 'find every quote', `['heading']` for an outline). A large page can have hundreds of blocks; an unfiltered listing on a 300-block page approaches 80 KB and spills through the tool-result store, costing extra paging turns. `max_depth: 1` is the other compactor — top-level only. Default `preview_chars` is 80; bump only when you genuinely need more context per block.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -948,18 +959,35 @@ const page_blocks_list: BuiltinToolDef = {
       ? input.kinds.filter((k): k is string => typeof k === 'string' && k.length > 0)
       : [];
 
-    const blocks = listBlocks(page.doc as Record<string, unknown>, {
+    // List from the SAME baseline the block-edit tools use (draft when one
+    // exists). Listing page.doc here while get/update/delete edited the draft
+    // is exactly how an agent once declared a broken draft "clean" — the
+    // listing hid the draft's state and every id it returned was potentially
+    // stale for the tools that followed (NATREF SOP incident, 2026-07-06).
+    const baseline = pickEditingBaseline(page);
+    const blocks = listBlocks(baseline, {
       ...(maxDepth !== undefined ? { maxDepth } : {}),
       ...(previewChars !== undefined ? { previewChars } : {}),
       ...(kinds.length > 0 ? { kinds } : {}),
     });
 
-    ctx.step?.setOutput({ id: page.id, block_count: blocks.length });
+    const hasDraft = page.draft !== null;
+    ctx.step?.setOutput({ id: page.id, block_count: blocks.length, baseline: hasDraft ? 'draft' : 'published' });
     return {
       ok: true,
       output: {
         id: page.id,
         title: page.title,
+        baseline: hasDraft ? 'draft' : 'published',
+        has_draft: hasDraft,
+        ...(hasDraft && page.draftUpdatedAt ? { draft_updated_at: page.draftUpdatedAt } : {}),
+        ...(hasDraft
+          ? {
+              note:
+                'This page has UNCOMMITTED draft edits — the listing (and all block-edit tools) reflect the draft, ' +
+                'not the published doc. The user sees the draft in the editor and decides to commit or discard.',
+            }
+          : {}),
         block_count: blocks.length,
         blocks,
       },
@@ -1032,7 +1060,7 @@ const page_block_update: BuiltinToolDef = {
   slug: 'page_block_update',
   name: 'Replace one block in a page',
   description:
-    "Replace one block (by id) with new content (markdown). The first new block INHERITS the target's id so the next page_blocks_list still addresses the same logical slot. If your markdown produces multiple blocks (e.g. you wrap a paragraph in a heading + paragraph), they're all spliced in; subsequent blocks get fresh ids. Writes to DRAFT only — the published page is untouched until the user commits. **Output bytes are proportional to the new block, not the whole page** — this is the scalable edit path for large pages. " +
+    "Replace one block (by id) with new content (markdown). The first new block INHERITS the target's id so the next page_blocks_list still addresses the same logical slot. If your markdown produces multiple blocks (e.g. you wrap a paragraph in a heading + paragraph), they're all spliced in; subsequent blocks get fresh ids. Writes to DRAFT only — the published page is untouched until the user commits. **Output bytes are proportional to the new block, not the whole page** — this is the scalable edit path for TARGETED edits on large pages. **For a restructure touching more than ~10 blocks (resequencing / renumbering / merging sections), switch to ONE whole-body `page_update_draft` call instead — block-by-block surgery at that scale exhausts the turn's tool-call budget and strands the draft half-edited.** " +
     "⚠️ **MARKDOWN MUST INCLUDE THE STRUCTURAL PREFIX of the kind you want to keep.** If you're updating an `h2` heading and you submit `markdown: '📖 Title'`, the result is a PARAGRAPH (the heading is gone) — markdown without a `##` prefix parses as a paragraph. To keep block kind on the same edit: heading → `## new text`, h3 → `### new text`, blockquote → `> new text`, info callout → `:::info\\nnew text\\n:::`, bullet list item → `- new text` (wrap in a single-item list), code block → ```\\nnew code\\n```. Pre-flight check before each call: imagine your markdown rendered standalone — does the FIRST block produced match the kind you're replacing? If you intend to CHANGE the kind (e.g. heading → callout), that's a valid use; just be deliberate. If you intend to KEEP the kind, the structural prefix is part of the content.",
   inputSchema: {
     type: 'object',

@@ -178,6 +178,11 @@ export const invokeAgent: AgentInvoker = async ({
         initialMessages,
         tools: allowedTools,
         ...(maxIterations !== undefined ? { maxIterations } : {}),
+        // Tool-volume overrides travel raw; runToolLoop validates + clamps.
+        ...(typeof mc?.max_tool_calls === 'number' ? { maxToolCallsPerTurn: mc.max_tool_calls } : {}),
+        ...(typeof mc?.max_calls_per_tool === 'number'
+          ? { maxCallsPerToolPerTurn: mc.max_calls_per_tool }
+          : {}),
       });
       // Snapshot the running totals before startTrace's finally
       // block flushes them to the DB. Reading from currentTrace
