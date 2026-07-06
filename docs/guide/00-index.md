@@ -71,10 +71,15 @@ opposite way: **memory is the product.**
 
 ## Who it's for
 
-Mantle is a **single-user** system, built for one person who wants a private,
+Mantle is a **single-owner** system, built for one person who wants a private,
 durable, queryable record of their life and work — and an assistant that treats
 that record as its memory. It's self-hosted by design: if you can run a small
 server (or even a spare box at home), you can own your own brain.
+
+One brain can still serve a team: you can mark trusted contacts as **team
+members**, who get a read-only chat with the brain and access to apps you share
+with them — identified, audited, and revocable, while you remain the only
+owner. See [Team Chat](03-using/07-team-chat.md).
 
 ---
 

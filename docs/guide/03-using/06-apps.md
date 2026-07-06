@@ -79,6 +79,19 @@ remembers your items, a calculator remembers your last settings. Each app gets
 its own private storage, isolated from every other app and from the rest of your
 brain — so building a habit tracker doesn't require any setup, it just works.
 
+App data is treated like real data: it's **included in the standard backup**
+(a consistent snapshot, safe to take even while the app is in use), and its
+storage handles several people using a shared app at once without tripping
+over each other.
+
+## Ask the assistant about your app's data
+
+Data an app stores is part of your brain's world: the assistant can **read**
+any of your apps' databases and answer from them in normal chat — *"how many
+open items in my tracker app?"*, *"what's in the inventory table?"*. No wiring
+needed. It's strictly read-only: the assistant can look, but only the app
+itself can ever change its data.
+
 ## The editor — Builder and Code
 
 Open an app from `/apps` for the full editor. The header has **Build** (recompile
@@ -121,9 +134,35 @@ go live.
 - **One app, one job.** Small focused tools build and run more reliably than
   sprawling ones; make two apps rather than one that does everything.
 
+## Sharing an app
+
+A **published** app can be shared at an unguessable, revocable link — it opens
+**full-screen**, so a dashboard gets the whole window. The Share control on the
+app header offers two modes, and they grant very different things:
+
+- **Public** (anyone with the link): the app becomes a self-contained,
+  **read-only** view of its own data. It gets *no brain tools at all* and
+  cannot write — so a public link can never become a window into your notes,
+  email, or anything else in your brain. Good for a read-only dashboard or a
+  reference tool.
+- **Team members only**: the visitor is asked for their **team token** (the
+  one minted when you mark a Contact a [team member](07-team-chat.md)). Once
+  identified, they get the app's full capability — its granted tools and the
+  ability to save data — and **every action is recorded against their name**
+  on the app's **Activity** tab: each open, each tool call, each write.
+  Removing a team member cuts their access immediately, mid-session.
+
+Even in team mode there's a hard limit: a shared app can only use built-in
+data tools — never web-request or shell tools — so a share can't hand anyone
+arbitrary network or command access under your account. Treat any share link
+as a secret; revoke it by turning the share off.
+
 ## Safety
 
 Every app runs in a sealed sandbox: it can render its interface, call the tools
 you've granted it, and use its own storage — and nothing else. It can't read your
 other data, reach the network on its own, or touch another app's database. You
-stay in control of what each app is allowed to do.
+stay in control of what each app is allowed to do — and when you share one, the
+share mode (above) decides how much of that capability travels with the link,
+with public links locked to read-only self-contained apps. The full model is in
+the [security overview](../../security.md).

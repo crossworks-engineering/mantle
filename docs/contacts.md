@@ -123,6 +123,30 @@ unlocks emailing them + ingesting their mail; deleting one revokes both.
 
 ---
 
+## 2a. Team membership — a role a contact can hold
+
+Since v0.114.0 a contact can additionally be a **team member**: a live row in
+`contact_team_tokens` holding the SHA-256 of a short shown-once token (8
+chars, look-alike-free alphabet). The `/contacts` UI mints it via a header
+"Team member" switch (shown-once dialog with copy; regenerate + remove
+confirms; a list badge marks members).
+
+The token is that person's **only credential** on Mantle's external surfaces —
+team-mode app shares (`/s/<token>`, see
+[`app-authoring-guide.md`](./app-authoring-guide.md)) and Team Chat (`/team`,
+see [`team-chat.md`](./team-chat.md)) — and every action on those surfaces is
+audited against the contact. Membership is the single source of truth:
+disabling the toggle or deleting the contact deletes the row, and because
+every request re-checks liveness, access dies immediately, mid-session.
+
+Helpers live in `packages/content/src/team-tokens.ts`
+(`enableTeamMember` / `rotateTeamToken` / `disableTeamMember` /
+`verifyTeamToken` + a status map); `ContactRow` carries
+`team: { since, lastUsedAt } | null`; the API is
+`POST /api/contacts/[id]/team` (`enable | rotate | disable`).
+
+---
+
 ## 3. Activity tracking — per-method counters
 
 After every successful `email_send` / `email_page` the matching contact's

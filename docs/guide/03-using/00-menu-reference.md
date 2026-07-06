@@ -20,7 +20,8 @@ not a click-by-click tour.
 | **Apps** | Build small interactive mini apps by describing them — the Appsmith agent writes the code, which runs sandboxed inside Mantle, themed to match. See [Apps](06-apps.md). |
 | **Tasks** | Tasks with status, priority, and due dates. |
 | **Events** | Calendar events with reminders that ping you on Telegram. Supports recurring events. |
-| **Contacts** | People you know — name, company, one or more emails (or `@domain` wildcards), phone, and an AI-facing description. The allowlist for email in **both** directions: whose mail is ingested *and* who the assistant may email. See [Contacts](05-tasks-events-contacts-secrets.md). |
+| **Contacts** | People you know — name, company, one or more emails (or `@domain` wildcards), phone, and an AI-facing description. The allowlist for email in **both** directions: whose mail is ingested *and* who the assistant may email. Also where you mint **team member** tokens. See [Contacts](05-tasks-events-contacts-secrets.md). |
+| **Team** | Your window into Team Chat — every team member's conversation with the brain, the request review queue, and the per-member access log. See [Team Chat](07-team-chat.md). |
 | **Secrets** | An encrypted vault for passwords, codes, and credentials. The assistant can search descriptions but never sees the sealed values. |
 
 ## Review
