@@ -4,6 +4,30 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the multi-arch image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.118.0 — 2026-07-06
+
+**Big page edits no longer die halfway.** A large SOP restructure on NATREF
+exposed a chain of agent-editing failures, all fixed here:
+
+- **Write batches are atomic.** The tool-loop's volume caps (40 calls/turn,
+  15/tool) used to trip *mid-batch* — a 10-delete batch got cut at 1-of-10 and
+  left the draft half-edited. Caps now enforce at batch boundaries: a batch
+  that starts under its caps always completes; when the budget ends the turn,
+  the model is told explicitly so it reports what's done vs what remains.
+- **`page_blocks_list` no longer lies about drafts.** It listed the published
+  doc while the block-edit tools worked on the draft — so an agent looking at
+  a broken draft saw a clean page and said so. The listing now reads the same
+  editing baseline as the edit tools and flags `has_draft` /
+  `draft_updated_at`; `page_get` flags the draft too.
+- **Right tool for the job.** The pages agent now picks its edit strategy by
+  size: block tools for targeted fixes, one whole-body `page_update_draft`
+  pass for big restructures (with the markdown table pitfalls documented — a
+  `# | …` header row parses as a heading, not a table).
+- **Per-agent tool budgets.** `memory_config.max_tool_calls` /
+  `max_calls_per_tool` override the flat caps; the pages agent ships with
+  100/40. Specialist `memoryConfig` now force-syncs on upgrade (like
+  prompt/model/params), so existing brains get the new budgets.
+
 ## v0.117.0 — 2026-07-06
 
 **Team Chat — your team can talk to your brain.** Team members (the same
