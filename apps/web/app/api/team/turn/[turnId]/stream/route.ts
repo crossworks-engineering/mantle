@@ -16,7 +16,7 @@ import { NextResponse } from 'next/server';
 import { getBufferedTurnEvents, makeReplayMerger } from '@mantle/turn-stream';
 import { subscribeTurnStream } from '@/lib/realtime';
 import { isTurnStreamingEnabled } from '@/lib/turn-streaming';
-import { resolveTeamChatCaller, isTeamTurnId } from '@/lib/team-chat-gate';
+import { resolveTeamChatCaller, contactOfTeamTurnId } from '@/lib/team-chat-gate';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,8 +31,13 @@ export async function GET(
   const caller = await resolveTeamChatCaller(req);
   if (!caller) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
+  // Cross-member isolation: the turn id embeds the contact it belongs to
+  // (minted server-side in the turn route). A member may only tail their OWN
+  // turns — even a leaked id for another member's turn is rejected here, not
+  // just filtered downstream. Owner turn ids (bare uuids) fail the prefix
+  // check, so a member can never tail an owner turn either.
   const { turnId } = await ctx.params;
-  if (!turnId || !isTeamTurnId(turnId)) {
+  if (!turnId || contactOfTeamTurnId(turnId) !== caller.contactId) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
 

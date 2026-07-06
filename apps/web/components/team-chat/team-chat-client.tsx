@@ -151,34 +151,19 @@ export function TeamChatClient() {
     void refetch();
   }, [refetch]);
 
-  const send = async () => {
-    const text = draft.trim();
-    if ((!text && !file) || sending) return;
-    setSendError(null);
-    setSending(true);
-
-    const turnId = `team-${crypto.randomUUID()}`;
-    // Optimistic user bubble.
-    setMessages((m) => [
-      ...m,
-      {
-        id: `optimistic-${turnId}`,
-        direction: 'inbound',
-        text: text || `📎 ${file?.name ?? 'attachment'}`,
-        status: 'complete',
-        error: null,
-        attachments: [],
-        createdAt: new Date().toISOString(),
-      },
-    ]);
-    setDraft('');
-
-    // Pre-subscribe so no early event is missed; harmless 404 when the deploy
-    // has streaming off (we fall back to the blocking response).
-    try {
-      const es = new EventSource(`/api/team/turn/${turnId}/stream`);
+  // Open the live stream for a server-minted turn id. The id embeds the caller's
+  // contact, so the stream route only ever serves this member their own turn.
+  const openStream = useCallback(
+    (turnId: string) => {
+      let es: EventSource;
+      try {
+        es = new EventSource(`/api/team/turn/${turnId}/stream`);
+      } catch {
+        // EventSource unsupported — reconcile against the durable row instead.
+        finishTurn();
+        return;
+      }
       esRef.current = es;
-      setLive({ turnId, status: 'Thinking…', text: '' });
       es.onmessage = (ev) => {
         try {
           const event = JSON.parse(ev.data) as {
@@ -188,7 +173,7 @@ export function TeamChatClient() {
           if (event.type === 'status' && event.data.label) {
             setLive((l) => (l ? { ...l, status: event.data.label ?? l.status } : l));
           } else if (event.type === 'text-delta' && event.data.text) {
-            setLive((l) => (l ? { ...l, status: null, text: l.text + event.data.text } : l));
+            setLive((l) => (l ? { ...l, status: null, text: l.text + (event.data.text ?? '') } : l));
           } else if (event.type === 'done' || event.type === 'error') {
             if (event.type === 'error') setSendError(event.data.message ?? 'The turn failed.');
             finishTurn();
@@ -198,38 +183,79 @@ export function TeamChatClient() {
         }
       };
       es.onerror = () => {
-        // Stream unavailable (flag off / proxy) — the POST below still resolves.
-        es.close();
-        if (esRef.current === es) esRef.current = null;
+        // The connection dropped (proxy idle-timeout, network blip). The reply
+        // is durable server-side, so reconcile by refetching rather than leaving
+        // the turn stuck 'sending' forever. Guard against a close WE initiated.
+        if (esRef.current === es) finishTurn();
       };
-    } catch {
-      /* EventSource unsupported — blocking path covers it */
-    }
+    },
+    [finishTurn],
+  );
+
+  const send = async () => {
+    const text = draft.trim();
+    if ((!text && !file) || sending) return;
+    const outgoingFile = file;
+    setSendError(null);
+    setSending(true);
+    // Show the thinking state immediately; the real turn id arrives from the
+    // POST (minted server-side, contact-scoped) and the stream opens after.
+    setLive({ turnId: '', status: 'Thinking…', text: '' });
+
+    // Optimistic user bubble.
+    setMessages((m) => [
+      ...m,
+      {
+        id: `optimistic-${crypto.randomUUID()}`,
+        direction: 'inbound',
+        text: text || `📎 ${outgoingFile?.name ?? 'attachment'}`,
+        status: 'complete',
+        error: null,
+        attachments: [],
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    setDraft('');
+    setFile(null);
+
+    // A client nonce only for retry dedup — the server uses it as the NONCE half
+    // of a contact-scoped turn id, never as the whole id, so a client can't
+    // address another member's turn.
+    const nonce = crypto.randomUUID();
 
     try {
       let r: Response;
-      if (file) {
+      if (outgoingFile) {
         const form = new FormData();
         if (text) form.set('text', text);
-        form.set('file', file);
+        form.set('file', outgoingFile);
         r = await fetch('/api/team/turn', {
           method: 'POST',
-          headers: { 'idempotency-key': turnId },
+          headers: { 'idempotency-key': nonce },
           body: form,
         });
       } else {
         r = await fetch('/api/team/turn', {
           method: 'POST',
-          headers: { 'content-type': 'application/json', 'idempotency-key': turnId },
+          headers: { 'content-type': 'application/json', 'idempotency-key': nonce },
           body: JSON.stringify({ text }),
         });
       }
-      setFile(null);
       if (r.status === 401) {
+        setLive(null);
+        setSending(false);
         setAuthed(false);
         return;
       }
-      if (r.status === 202) return; // streaming path — finishTurn fires on done/error
+      if (r.status === 202) {
+        // Streaming path: subscribe to the server-minted id; the buffer replays
+        // any events emitted between enqueue and subscribe (no pre-subscribe
+        // race). finishTurn fires on done/error/drop.
+        const body = (await r.json().catch(() => ({}))) as { turnId?: string };
+        if (body.turnId) openStream(body.turnId);
+        else finishTurn(); // no id back — fall back to a refetch
+        return;
+      }
       if (!r.ok) {
         const body = (await r.json().catch(() => ({}))) as { error?: string };
         setSendError(body.error ?? 'Sending failed — try again.');

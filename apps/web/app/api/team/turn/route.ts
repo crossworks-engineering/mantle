@@ -21,7 +21,7 @@ import { z } from 'zod';
 import { getDbosClient } from '@/lib/dbos-client';
 import { isTurnStreamingEnabled } from '@/lib/turn-streaming';
 import { rateLimit } from '@/lib/rate-limit';
-import { resolveTeamChatCaller, teamCallerName, isTeamTurnId } from '@/lib/team-chat-gate';
+import { resolveTeamChatCaller, teamCallerName, mintTeamTurnId } from '@/lib/team-chat-gate';
 import {
   TEAM_TURN_WORKFLOW,
   RUNNER_QUEUE,
@@ -94,7 +94,10 @@ export async function POST(req: Request): Promise<NextResponse> {
     if (contentType.includes('multipart/form-data')) {
       const form = await req.formData().catch(() => null);
       if (!form) return NextResponse.json({ error: 'invalid multipart body' }, { status: 400 });
-      userText = ((form.get('text') as string | null) ?? '').trim();
+      // Clamp to the same bound as the JSON path — the multipart branch would
+      // otherwise accept an unbounded `text` field, defeating the per-turn cost
+      // assumption behind the rate + daily caps.
+      userText = ((form.get('text') as string | null) ?? '').trim().slice(0, 20_000);
       const file = form.get('file') ?? form.get('image');
       if (file instanceof Blob && file.size > 0) {
         if (file.size > MAX_UPLOAD_BYTES) {
@@ -183,13 +186,17 @@ export async function POST(req: Request): Promise<NextResponse> {
       userText = parsed.data.text;
     }
 
-    // Live streaming: env-gated only. The owner's personal stream-thoughts
-    // preference governs THEIR surface, not this one. Team turn ids MUST carry
-    // the team- prefix (see team-chat-gate) — a bare/foreign id never streams.
-    const idempotencyKey = req.headers.get('idempotency-key');
+    // Turn id is minted SERVER-SIDE with the contact baked in, so it can only
+    // ever address THIS member's turn — this is the cross-member isolation
+    // boundary for both the DBOS workflowID (a client-chosen id could otherwise
+    // dedup onto another member's workflow and return their result) and the SSE
+    // stream (which the stream route re-checks against the embedded contact). A
+    // client-supplied Idempotency-Key is used only as the NONCE half, preserving
+    // retry dedup without letting the client control the contact half.
+    const idempotencyKey = req.headers.get('idempotency-key') ?? undefined;
+    const turnId = mintTeamTurnId(contactId, idempotencyKey);
     const streamingOn = isTurnStreamingEnabled();
-    const streamId =
-      streamingOn && idempotencyKey && isTeamTurnId(idempotencyKey) ? idempotencyKey : undefined;
+    const streamId = streamingOn ? turnId : undefined;
 
     const contactName = await teamCallerName(ownerId, contactId);
     const options: RunTeamTurnOptions = {
@@ -215,7 +222,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       {
         workflowName: TEAM_TURN_WORKFLOW,
         queueName: RUNNER_QUEUE,
-        ...(idempotencyKey ? { workflowID: idempotencyKey } : {}),
+        workflowID: turnId,
       },
       input,
     );

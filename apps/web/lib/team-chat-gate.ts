@@ -77,12 +77,36 @@ export async function teamCallerName(
   }
 }
 
-/** Team turn ids are client-minted like owner turn ids, but MUST carry this
- *  prefix. The team stream route only serves prefixed ids, and owner surfaces
- *  never mint them — so a member can never tail an owner turn's live stream by
- *  guessing/obtaining its id. */
+/**
+ * Team turn ids are minted SERVER-SIDE and embed the contact they belong to:
+ * `team-<contactId>.<nonce>`. This is the cross-member isolation boundary — a
+ * member can't construct another member's id (contactId is set from their own
+ * credential), and the stream route re-checks the embedded contact against the
+ * caller, so even a leaked id can't be tailed. The `team-` prefix also keeps
+ * these ids disjoint from owner turn ids (bare uuids), so a member can never
+ * address an owner workflow or stream. Both halves are uuids (no dots), so the
+ * split on the first `.` is unambiguous.
+ */
 export const TEAM_TURN_ID_PREFIX = 'team-';
 
+/** Mint a per-contact turn id. `nonce` (from a client Idempotency-Key, when
+ *  present and sane) preserves retry dedup; the contact half is always
+ *  server-set, so the id can never address another member's turn. */
+export function mintTeamTurnId(contactId: string, nonce?: string): string {
+  const n = nonce && /^[A-Za-z0-9-]{8,64}$/.test(nonce) ? nonce : globalThis.crypto.randomUUID();
+  return `${TEAM_TURN_ID_PREFIX}${contactId}.${n}`;
+}
+
+/** The contact a team turn id belongs to, or null if malformed. The stream
+ *  route rejects when this doesn't equal the authenticated caller. */
+export function contactOfTeamTurnId(id: string): string | null {
+  if (!id.startsWith(TEAM_TURN_ID_PREFIX)) return null;
+  const rest = id.slice(TEAM_TURN_ID_PREFIX.length);
+  const dot = rest.indexOf('.');
+  if (dot <= 0 || dot >= rest.length - 1) return null;
+  return rest.slice(0, dot);
+}
+
 export function isTeamTurnId(id: string): boolean {
-  return id.startsWith(TEAM_TURN_ID_PREFIX) && id.length > TEAM_TURN_ID_PREFIX.length;
+  return contactOfTeamTurnId(id) !== null;
 }
