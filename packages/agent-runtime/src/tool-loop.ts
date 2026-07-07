@@ -41,6 +41,8 @@ import {
   processToolResultForModel,
   resolveResultHandling,
   notifyPendingCreated,
+  validateToolArgs,
+  type ValidateArgsResult,
   type ResultHandlingConfig,
   type ToolCallRecord,
 } from '@mantle/tools';
@@ -150,6 +152,21 @@ const MAX_TOOL_CALLS_PER_TURN = 40; // default cumulative budget across rounds �
 const MAX_CALLS_PER_TOOL_PER_TURN = 15; // default same-tool fixation breaker (counts even when args vary)
 const HARD_MAX_TOOL_CALLS_PER_TURN = 200; // ceiling for per-agent overrides
 const HARD_MAX_CALLS_PER_TOOL_PER_TURN = 100; // ceiling for per-agent overrides
+
+// ── Central arg validation (coerce-then-validate) ──
+// Every tool call's args are checked against the tool's own inputSchema
+// BEFORE dispatch (see @mantle/tools validate-args.ts). Safe repairs
+// (string→number, scalar→array-wrap, …) are applied in 'warn' and 'enforce';
+// schema violations block dispatch with a teaching error only in 'enforce'.
+// 'warn' is the default so a fleet-wide rollout starts as pure telemetry —
+// trace_steps.meta.arg_validation shows exactly what WOULD be rejected —
+// and 'enforce' is flipped per box once the violation rate is understood.
+export type ToolValidationMode = 'off' | 'warn' | 'enforce';
+
+export function resolveToolValidationMode(env: string | undefined = process.env.MANTLE_TOOL_VALIDATION): ToolValidationMode {
+  const raw = (env ?? '').trim().toLowerCase();
+  return raw === 'off' || raw === 'enforce' ? raw : 'warn';
+}
 
 /** Resolve a per-agent cap override: positive ints only, floored, clamped to
  *  the hard ceiling; anything else falls back to the flat default. */
@@ -429,6 +446,9 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     MAX_CALLS_PER_TOOL_PER_TURN,
     HARD_MAX_CALLS_PER_TOOL_PER_TURN,
   );
+  // Resolved once per turn: schemas (and therefore what counts as a
+  // violation) are frozen for the turn, so the mode should be too.
+  const argValidationMode = resolveToolValidationMode();
   let totalToolCalls = 0;
   const perToolCounts = new Map<string, number>();
   let budgetExhausted = false;
@@ -751,8 +771,23 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       // or capture a structured error for the tool_result. See
       // tool-args.ts for the cases (malformed JSON, non-object, etc.).
       const parsedArgs = parseToolArgs(call.function.arguments);
-      const input: Record<string, unknown> = parsedArgs.ok ? parsedArgs.input : {};
+      let input: Record<string, unknown> = parsedArgs.ok ? parsedArgs.input : {};
       const argParseError: string | null = parsedArgs.ok ? null : parsedArgs.error;
+
+      // Central coerce-then-validate against the tool's own inputSchema.
+      // Safe repairs (string→number, "true"→true, scalar→array-wrap, …) are
+      // applied to `input` here so the handler — and, for confirm-gated
+      // tools, the pending queue — always sees the repaired args. Violations
+      // only BLOCK below, inside the step, when the mode is 'enforce'.
+      const argValidation: ValidateArgsResult | null =
+        !argParseError && tool && argValidationMode !== 'off'
+          ? validateToolArgs(
+              (tool.inputSchema as Record<string, unknown> | null) ?? null,
+              input,
+              slug,
+            )
+          : null;
+      if (argValidation) input = argValidation.input;
 
       // Redact sensitive input fields BEFORE they're written to
       // `trace_steps.input`. The `redactedInput` is what we log; the
@@ -785,6 +820,32 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
               ok: false as const,
               error: `tool '${slug}' is not in this agent's allowlist`,
             };
+          }
+          // Arg-validation telemetry + (enforce-mode) rejection. The meta is
+          // written in EVERY mode so /debug can chart repair + violation
+          // rates per tool before anyone flips enforcement on.
+          if (
+            argValidation &&
+            (argValidation.repairs.length > 0 ||
+              argValidation.unknownKeys.length > 0 ||
+              argValidation.violations.length > 0)
+          ) {
+            handle.setMeta({
+              arg_validation: {
+                mode: argValidationMode,
+                ...(argValidation.repairs.length > 0 ? { repairs: argValidation.repairs } : {}),
+                ...(argValidation.unknownKeys.length > 0
+                  ? { unknown_keys: argValidation.unknownKeys }
+                  : {}),
+                ...(argValidation.violations.length > 0
+                  ? { violations: argValidation.violations.map((v) => v.message) }
+                  : {}),
+              },
+            });
+          }
+          if (argValidationMode === 'enforce' && argValidation?.error) {
+            handle.setError(argValidation.error);
+            return { ok: false as const, error: argValidation.error };
           }
           // Confirmation gate: a tool flagged requires_confirm doesn't
           // execute here. Instead we persist a pending_tool_calls row;

@@ -37,7 +37,14 @@ let dispatchToolImpl: (slug: string, input: Record<string, unknown>) =>
 
 const insertedPendingArgs: Array<Record<string, unknown>> = [];
 
-vi.mock('@mantle/tools', () => ({
+vi.mock('@mantle/tools', async () => ({
+  // The validator is pure (no DB/runtime deps), so the loop tests exercise the
+  // REAL implementation — mocking it would let the wiring drift undetected.
+  validateToolArgs: (
+    await vi.importActual<typeof import('../../tools/src/validate-args')>(
+      '../../tools/src/validate-args',
+    )
+  ).validateToolArgs,
   dispatchTool: vi.fn(async (tool: { slug: string }, input: Record<string, unknown>) => {
     dispatchToolCalls.push({ slug: tool.slug, input });
     return dispatchToolImpl(tool.slug, input);
@@ -1313,6 +1320,136 @@ describe('runToolLoop — tool-volume guards', () => {
       result.toolCalls.slice(20).every((c) => c.error === 'too_many_calls_in_response'),
     ).toBe(true);
     expect(result.messages.filter((m) => m.role === 'tool')).toHaveLength(22);
+  });
+});
+
+describe('runToolLoop — central arg validation', () => {
+  const SEARCH_SCHEMA = {
+    type: 'object',
+    properties: {
+      q: { type: 'string', description: 'free-text query' },
+      limit: { type: 'integer', minimum: 1, maximum: 50 },
+    },
+    required: ['q'],
+  };
+
+  afterEach(() => {
+    delete process.env.MANTLE_TOOL_VALIDATION;
+  });
+
+  function searchCall(argsJson: string) {
+    return {
+      type: 'toolCalls' as const,
+      toolCalls: [
+        {
+          id: 'call_v1',
+          type: 'function' as const,
+          function: { name: 'search_nodes', arguments: argsJson },
+        },
+      ],
+    };
+  }
+
+  it('warn mode (default): applies safe repairs before dispatch', async () => {
+    const tool = fakeTool({ slug: 'search_nodes', inputSchema: SEARCH_SCHEMA as never });
+    const { adapter } = makeFakeAdapter([
+      searchCall('{"q":"foo","limit":"25"}'),
+      { type: 'text', text: 'done' },
+    ]);
+    await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: [tool],
+    });
+    // "25" arrived as a string; the handler must see the repaired integer.
+    expect(dispatchToolCalls).toEqual([{ slug: 'search_nodes', input: { q: 'foo', limit: 25 } }]);
+  });
+
+  it('warn mode (default): violations do NOT block dispatch', async () => {
+    const tool = fakeTool({ slug: 'search_nodes', inputSchema: SEARCH_SCHEMA as never });
+    const { adapter } = makeFakeAdapter([
+      searchCall('{"limit":999}'), // q missing + limit out of range
+      { type: 'text', text: 'done' },
+    ]);
+    const result = await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: [tool],
+    });
+    expect(dispatchToolCalls).toHaveLength(1); // telemetry only, still dispatched
+    expect(result.toolCalls[0]).toMatchObject({ slug: 'search_nodes', status: 'success' });
+  });
+
+  it('enforce mode: blocks a violating call with a teaching error the model can act on', async () => {
+    process.env.MANTLE_TOOL_VALIDATION = 'enforce';
+    const tool = fakeTool({ slug: 'search_nodes', inputSchema: SEARCH_SCHEMA as never });
+    const { adapter, calls } = makeFakeAdapter([
+      searchCall('{"limit":999}'),
+      { type: 'text', text: 'recovered' },
+    ]);
+    const result = await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: [tool],
+    });
+    expect(dispatchToolCalls).toHaveLength(0); // never reached the handler
+    expect(result.toolCalls[0]).toMatchObject({ slug: 'search_nodes', status: 'error' });
+    // The tool_result the model sees teaches the fix.
+    const toolMsg = calls[1]!.messages.find((m) => m.role === 'tool');
+    expect(toolMsg?.content).toContain("invalid arguments for 'search_nodes'");
+    expect(toolMsg?.content).toContain("'q' is required");
+    expect(toolMsg?.content).toContain("'limit' must be between 1 and 50");
+    expect(result.reply).toBe('recovered');
+  });
+
+  it('enforce mode: a call that becomes valid after coercion dispatches normally', async () => {
+    process.env.MANTLE_TOOL_VALIDATION = 'enforce';
+    const tool = fakeTool({ slug: 'search_nodes', inputSchema: SEARCH_SCHEMA as never });
+    const { adapter } = makeFakeAdapter([
+      searchCall('{"q":"foo","limit":"10"}'),
+      { type: 'text', text: 'done' },
+    ]);
+    await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: [tool],
+    });
+    expect(dispatchToolCalls).toEqual([{ slug: 'search_nodes', input: { q: 'foo', limit: 10 } }]);
+  });
+
+  it('off mode: args pass through untouched', async () => {
+    process.env.MANTLE_TOOL_VALIDATION = 'off';
+    const tool = fakeTool({ slug: 'search_nodes', inputSchema: SEARCH_SCHEMA as never });
+    const { adapter } = makeFakeAdapter([
+      searchCall('{"q":"foo","limit":"25"}'),
+      { type: 'text', text: 'done' },
+    ]);
+    await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: [tool],
+    });
+    expect(dispatchToolCalls).toEqual([{ slug: 'search_nodes', input: { q: 'foo', limit: '25' } }]);
   });
 });
 
