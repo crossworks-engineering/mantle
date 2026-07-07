@@ -44,6 +44,7 @@ import {
   notifyPendingCreated,
   validateToolArgs,
   sanitizeToolError,
+  getDynamicSchema,
   UNTRUSTED_CONTENT_TOOL_SLUGS,
   type ValidateArgsResult,
   type ResultHandlingConfig,
@@ -362,53 +363,46 @@ export async function resolveAgentTools(
  * translate this OpenAI-compat shape to their native form (Anthropic's
  * `input_schema`, Google's `functionDeclarations`, etc.).
  *
- * `delegateTo` (the parent agent's allowlist) constrains `invoke_agent`'s
- * `agent_slug` to a JSON-schema `enum` of the real targets. Without it the only
- * hint the model has is the prose description, so it guesses slugs that don't
- * exist ('pages-specialist' for 'pages') or its own ('assistant') — both refused
- * by the runtime guard, each costing a wasted (and, with a big context,
- * expensive) round. The enum makes those hallucinations unrepresentable up front;
- * the guard stays as defence-in-depth for adapters that ignore `enum`.
+ * Tools with a registered dynamic-schema hook (@mantle/tools
+ * dynamic-schema.ts) get their schema/description rebuilt against current
+ * reality here — e.g. `invoke_agent` constrains `agent_slug` to an `enum`
+ * of the parent's actual delegation allowlist, making hallucinated slugs
+ * unrepresentable up front (the runtime guard stays as defence-in-depth
+ * for adapters that ignore `enum`). Hooks run once per turn — schemas are
+ * frozen inside a turn, which prompt caching relies on — and a hook
+ * failure falls back to the static schema rather than breaking the turn.
  */
-export function buildToolsForModel(
+export async function buildToolsForModel(
   tools: Tool[],
-  delegateTo?: readonly string[],
-): ChatToolDefinition[] {
-  return tools.map((t) => {
-    let parameters =
-      (t.inputSchema as Record<string, unknown>) ?? { type: 'object', properties: {} };
-    if (t.slug === 'invoke_agent' && delegateTo && delegateTo.length > 0) {
-      parameters = withDelegateEnum(parameters, delegateTo);
-    }
-    return {
-      type: 'function',
-      function: { name: t.slug, description: t.description, parameters },
-    };
-  });
-}
-
-/** Return a COPY of an `invoke_agent` parameter schema with `agent_slug`
- *  constrained to `slugs` (enum + the list spelled into its description). Copies
- *  rather than mutates — the builtin's `inputSchema` is a module singleton shared
- *  across every agent/turn. */
-function withDelegateEnum(
-  schema: Record<string, unknown>,
-  slugs: readonly string[],
-): Record<string, unknown> {
-  const props = (schema.properties as Record<string, unknown> | undefined) ?? {};
-  const agentSlug = (props.agent_slug as Record<string, unknown> | undefined) ?? {};
-  const baseDesc = typeof agentSlug.description === 'string' ? `${agentSlug.description} ` : '';
-  return {
-    ...schema,
-    properties: {
-      ...props,
-      agent_slug: {
-        ...agentSlug,
-        enum: [...slugs],
-        description: `${baseDesc}Must be EXACTLY one of these slugs: ${slugs.join(', ')}. You cannot delegate to yourself — do that work directly.`,
-      },
-    },
-  };
+  ctx: { ownerId: string; delegateTo?: readonly string[] },
+): Promise<ChatToolDefinition[]> {
+  return Promise.all(
+    tools.map(async (t) => {
+      let parameters =
+        (t.inputSchema as Record<string, unknown>) ?? { type: 'object', properties: {} };
+      let description = t.description;
+      const hook = getDynamicSchema(t.slug);
+      if (hook) {
+        try {
+          const patch = await hook(
+            { description, parameters },
+            { ownerId: ctx.ownerId, ...(ctx.delegateTo ? { delegateTo: ctx.delegateTo } : {}) },
+          );
+          if (patch?.parameters) parameters = patch.parameters;
+          if (patch?.description) description = patch.description;
+        } catch (err) {
+          console.warn(
+            `[tool-loop] dynamic-schema hook for '${t.slug}' failed; using static schema:`,
+            err,
+          );
+        }
+      }
+      return {
+        type: 'function' as const,
+        function: { name: t.slug, description, parameters },
+      };
+    }),
+  );
 }
 
 export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
@@ -423,7 +417,10 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     if (rr) loopTools = [...loopTools, rr];
   }
   const toolsByName = new Map(loopTools.map((t) => [t.slug, t]));
-  const toolsForModel = buildToolsForModel(loopTools, args.delegateTo);
+  const toolsForModel = await buildToolsForModel(loopTools, {
+    ownerId: args.ownerId,
+    ...(args.delegateTo ? { delegateTo: args.delegateTo } : {}),
+  });
   const sendTools = toolsForModel.length > 0;
 
   const messages: ChatMessage[] = [...args.initialMessages];

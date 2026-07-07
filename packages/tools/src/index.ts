@@ -28,6 +28,14 @@ export {
 
 export { notFound, sanitizeToolError, type NotFoundResult } from './errors';
 export { UNTRUSTED_CONTENT_TOOL_SLUGS } from './untrusted';
+export {
+  registerDynamicSchema,
+  getDynamicSchema,
+  withDelegateEnum,
+  type DynamicSchemaContext,
+  type DynamicSchemaPatch,
+  type DynamicSchemaFn,
+} from './dynamic-schema';
 
 export { BUILTIN_TOOLS } from './builtins';
 export { PAGE_TOOLS, PAGE_TOOL_SLUGS } from './builtins-pages';

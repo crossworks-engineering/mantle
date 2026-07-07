@@ -52,6 +52,11 @@ vi.mock('@mantle/tools', async () => ({
   UNTRUSTED_CONTENT_TOOL_SLUGS: (
     await vi.importActual<typeof import('../../tools/src/untrusted')>('../../tools/src/untrusted')
   ).UNTRUSTED_CONTENT_TOOL_SLUGS,
+  getDynamicSchema: (
+    await vi.importActual<typeof import('../../tools/src/dynamic-schema')>(
+      '../../tools/src/dynamic-schema',
+    )
+  ).getDynamicSchema,
   dispatchTool: vi.fn(async (tool: { slug: string }, input: Record<string, unknown>) => {
     dispatchToolCalls.push({ slug: tool.slug, input });
     return dispatchToolImpl(tool.slug, input);
@@ -1609,39 +1614,63 @@ describe('buildToolsForModel — invoke_agent delegate enum', () => {
     },
   } as unknown as Tool;
 
-  const agentSlugSchema = (defs: ReturnType<typeof buildToolsForModel>) =>
+  const agentSlugSchema = (defs: Awaited<ReturnType<typeof buildToolsForModel>>) =>
     (defs[0]!.function.parameters as any).properties.agent_slug as Record<string, unknown>;
 
-  it('constrains agent_slug to an enum of the delegate list', () => {
-    const defs = buildToolsForModel([invokeAgent], ['pages', 'researcher']);
+  it('constrains agent_slug to an enum of the delegate list (via the dynamic-schema hook)', async () => {
+    const defs = await buildToolsForModel([invokeAgent], {
+      ownerId: 'owner-1',
+      delegateTo: ['pages', 'researcher'],
+    });
     const slug = agentSlugSchema(defs);
     expect(slug.enum).toEqual(['pages', 'researcher']);
     expect(slug.description).toContain('pages, researcher');
   });
 
-  it('does not mutate the shared singleton inputSchema', () => {
-    buildToolsForModel([invokeAgent], ['pages']);
+  it('does not mutate the shared singleton inputSchema', async () => {
+    await buildToolsForModel([invokeAgent], { ownerId: 'owner-1', delegateTo: ['pages'] });
     // The module-level builtin schema must stay enum-free for the next agent.
     expect((invokeAgent.inputSchema as any).properties.agent_slug.enum).toBeUndefined();
   });
 
-  it('leaves agent_slug untouched when the agent has no delegate list', () => {
-    const defs = buildToolsForModel([invokeAgent], []);
+  it('leaves agent_slug untouched when the agent has no delegate list', async () => {
+    const defs = await buildToolsForModel([invokeAgent], { ownerId: 'owner-1', delegateTo: [] });
     expect(agentSlugSchema(defs).enum).toBeUndefined();
-    const defs2 = buildToolsForModel([invokeAgent]);
+    const defs2 = await buildToolsForModel([invokeAgent], { ownerId: 'owner-1' });
     expect(agentSlugSchema(defs2).enum).toBeUndefined();
   });
 
-  it('only enriches invoke_agent, not other tools', () => {
+  it('only enriches invoke_agent, not other tools', async () => {
     const other = {
       slug: 'note_create',
       name: 'Note',
       description: 'Create a note.',
       inputSchema: { type: 'object', properties: { text: { type: 'string' } } },
     } as unknown as Tool;
-    const defs = buildToolsForModel([other], ['pages']);
+    const defs = await buildToolsForModel([other], { ownerId: 'owner-1', delegateTo: ['pages'] });
     expect((defs[0]!.function.parameters as any).properties.text).toBeDefined();
     expect((defs[0]!.function.parameters as any).properties.agent_slug).toBeUndefined();
+  });
+
+  it('falls back to the static schema when a dynamic hook throws', async () => {
+    const { registerDynamicSchema } = await vi.importActual<
+      typeof import('../../tools/src/dynamic-schema')
+    >('../../tools/src/dynamic-schema');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    registerDynamicSchema('exploding_tool', () => {
+      throw new Error('hook bug');
+    });
+    const tool = fakeTool({
+      slug: 'exploding_tool',
+      inputSchema: { type: 'object', properties: { a: { type: 'string' } } } as never,
+    });
+    const defs = await buildToolsForModel([tool], { ownerId: 'owner-1' });
+    expect((defs[0]!.function.parameters as any).properties.a).toBeDefined();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("dynamic-schema hook for 'exploding_tool' failed"),
+      expect.any(Error),
+    );
+    warn.mockRestore();
   });
 });
 
