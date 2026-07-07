@@ -26,6 +26,7 @@ import {
   type JournalRow,
 } from '@mantle/content';
 import type { BuiltinToolDef } from './types';
+import { notFound } from './errors';
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -101,7 +102,7 @@ const journal_get: BuiltinToolDef = {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     const row = await getJournal(ctx.ownerId, id);
-    if (!row) return { ok: false, error: 'journal entry not found' };
+    if (!row) return notFound('journal entry', id, 'journal_list');
     return { ok: true, output: compact(row) };
   },
 };
@@ -183,7 +184,7 @@ const journal_update: BuiltinToolDef = {
           ? (input.tags as unknown[]).filter((t): t is string => typeof t === 'string')
           : undefined,
       });
-      if (!row) return { ok: false, error: 'journal entry not found' };
+      if (!row) return notFound('journal entry', id, 'journal_list');
       ctx.step?.setOutput({ id: row.id, title: row.title });
       return { ok: true, output: compact(row) };
     } catch (err) {
@@ -207,7 +208,7 @@ const journal_delete: BuiltinToolDef = {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     const ok = await deleteJournal(ctx.ownerId, id);
-    if (!ok) return { ok: false, error: 'journal entry not found' };
+    if (!ok) return notFound('journal entry', id, 'journal_list');
     ctx.step?.setOutput({ id });
     return { ok: true, output: { id } };
   },

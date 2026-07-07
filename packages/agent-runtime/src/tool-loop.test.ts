@@ -38,13 +38,17 @@ let dispatchToolImpl: (slug: string, input: Record<string, unknown>) =>
 const insertedPendingArgs: Array<Record<string, unknown>> = [];
 
 vi.mock('@mantle/tools', async () => ({
-  // The validator is pure (no DB/runtime deps), so the loop tests exercise the
-  // REAL implementation — mocking it would let the wiring drift undetected.
+  // The validator + error sanitizer are pure (no DB/runtime deps), so the
+  // loop tests exercise the REAL implementations — mocking them would let
+  // the wiring drift undetected.
   validateToolArgs: (
     await vi.importActual<typeof import('../../tools/src/validate-args')>(
       '../../tools/src/validate-args',
     )
   ).validateToolArgs,
+  sanitizeToolError: (
+    await vi.importActual<typeof import('../../tools/src/errors')>('../../tools/src/errors')
+  ).sanitizeToolError,
   dispatchTool: vi.fn(async (tool: { slug: string }, input: Record<string, unknown>) => {
     dispatchToolCalls.push({ slug: tool.slug, input });
     return dispatchToolImpl(tool.slug, input);

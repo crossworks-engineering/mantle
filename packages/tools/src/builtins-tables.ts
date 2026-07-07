@@ -55,6 +55,7 @@ import { fileById, readFileById } from '@mantle/files';
 import { parseSheetToGrid, parseTextToGrid } from '@mantle/files/sheet-to-grid';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
+import { notFound } from './errors';
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -121,7 +122,7 @@ async function editDraft(
   fn: (doc: TableDoc) => { doc: TableDoc; output?: Record<string, unknown>; error?: string },
 ): Promise<ToolHandlerResult> {
   const table = await getTable(ownerId, tableId);
-  if (!table) return { ok: false, error: `table ${tableId} not found` };
+  if (!table) return notFound('table', tableId, 'table_list');
   const res = fn(baseline(table));
   if (res.error) return { ok: false, error: res.error };
   const ok = await saveTableDraft(ownerId, tableId, res.doc);
@@ -211,7 +212,7 @@ const table_from_file: BuiltinToolDef = {
     const fileId = str(input.file_id).trim();
     if (!fileId) return { ok: false, error: 'file_id is required' };
     const meta = await fileById({ ownerId: ctx.ownerId, fileId });
-    if (!meta) return { ok: false, error: `file ${fileId} not found` };
+    if (!meta) return notFound('file', fileId, 'file_list / search_nodes');
     const ext = (meta.filename ?? '').toLowerCase().match(/\.(xlsx|xls|csv)$/)?.[1];
     if (!ext) {
       return { ok: false, error: `table_from_file: '${meta.filename}' is not a spreadsheet (need .xlsx/.xls/.csv)` };
@@ -374,7 +375,7 @@ const table_update: BuiltinToolDef = {
     if (Object.keys(patch).length === 0) return { ok: false, error: 'nothing to update — pass title, tags, or icon' };
     try {
       const table = await updateTable(ctx.ownerId, id, patch);
-      if (!table) return { ok: false, error: `table ${id} not found` };
+      if (!table) return notFound('table', id, 'table_list');
       ctx.step?.setOutput({ id: table.id, title: table.title });
       return { ok: true, output: { id: table.id, title: table.title, tags: table.tags } };
     } catch (err) {
@@ -394,7 +395,7 @@ const table_delete: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id is required' };
     try {
       const ok = await deleteTable(ctx.ownerId, id);
-      if (!ok) return { ok: false, error: `table ${id} not found` };
+      if (!ok) return notFound('table', id, 'table_list');
       ctx.step?.setOutput({ id, deleted: true });
       return { ok: true, output: { id, deleted: true } };
     } catch (err) {
@@ -413,7 +414,7 @@ const table_commit: BuiltinToolDef = {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     const table = await getTable(ctx.ownerId, id);
-    if (!table) return { ok: false, error: `table ${id} not found` };
+    if (!table) return notFound('table', id, 'table_list');
     if (!table.draft) return { ok: false, error: 'no draft to commit — the table is already published' };
     try {
       const published = await commitTable(ctx.ownerId, id, table.draft);
@@ -476,7 +477,7 @@ const table_get: BuiltinToolDef = {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     const table = await getTable(ctx.ownerId, id);
-    if (!table) return { ok: false, error: `table ${id} not found` };
+    if (!table) return notFound('table', id, 'table_list');
     const doc = baseline(table);
     const offset = typeof input.offset === 'number' ? Math.max(0, input.offset) : 0;
     const limit = typeof input.limit === 'number' ? input.limit : 50;
@@ -527,7 +528,7 @@ const table_rows_list: BuiltinToolDef = {
     const tableId = str(input.table_id).trim();
     if (!tableId) return { ok: false, error: 'table_id is required' };
     const table = await getTable(ctx.ownerId, tableId);
-    if (!table) return { ok: false, error: `table ${tableId} not found` };
+    if (!table) return notFound('table', tableId, 'table_list');
     const doc = baseline(table);
     const listed = listRows(doc, {
       offset: typeof input.offset === 'number' ? input.offset : 0,
@@ -554,7 +555,7 @@ const table_row_get: BuiltinToolDef = {
     const rowId = str(input.row_id).trim();
     if (!tableId || !rowId) return { ok: false, error: 'table_id and row_id are required' };
     const table = await getTable(ctx.ownerId, tableId);
-    if (!table) return { ok: false, error: `table ${tableId} not found` };
+    if (!table) return notFound('table', tableId, 'table_list');
     const doc = baseline(table);
     const row = findRow(doc, rowId);
     if (!row) return { ok: false, error: `row ${rowId} not found (re-run table_rows_list)` };
@@ -613,7 +614,7 @@ const table_query: BuiltinToolDef = {
     const tableId = str(input.table_id).trim();
     if (!tableId) return { ok: false, error: 'table_id is required' };
     const table = await getTable(ctx.ownerId, tableId);
-    if (!table) return { ok: false, error: `table ${tableId} not found` };
+    if (!table) return notFound('table', tableId, 'table_list');
     const doc = baseline(table);
 
     const ignoredFilters: string[] = [];
@@ -730,7 +731,7 @@ const table_aggregate: BuiltinToolDef = {
     const tableId = str(input.table_id).trim();
     if (!tableId) return { ok: false, error: 'table_id is required' };
     const table = await getTable(ctx.ownerId, tableId);
-    if (!table) return { ok: false, error: `table ${tableId} not found` };
+    if (!table) return notFound('table', tableId, 'table_list');
     const doc = baseline(table);
 
     const groupCols = strArr(input.group_by)

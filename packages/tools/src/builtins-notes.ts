@@ -13,6 +13,7 @@ import { createNote, getNote, getPage, docToMarkdown, listNotes, nodeUrl } from 
 import { fileById, readFileById } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
+import { notFound } from './errors';
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -126,7 +127,7 @@ const note_get: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id is required' };
     try {
       const row = await getNote(ctx.ownerId, id);
-      if (!row) return { ok: false, error: `note '${id}' not found` };
+      if (!row) return notFound('note', id, 'note_list / search_nodes');
       ctx.step?.setOutput({ id: row.id, title: row.title });
       return { ok: true, output: { ...row, url: nodeUrl(row.id) } };
     } catch (err) {
@@ -156,7 +157,7 @@ const note_from_file: BuiltinToolDef = {
     const fileId = str(input.file_id).trim();
     if (!fileId) return { ok: false, error: 'file_id is required' };
     const meta = await fileById({ ownerId: ctx.ownerId, fileId });
-    if (!meta) return { ok: false, error: `file ${fileId} not found` };
+    if (!meta) return notFound('file', fileId, 'file_list / search_nodes');
     if (!meta.isText) {
       return {
         ok: false,
@@ -250,7 +251,7 @@ const note_from_page: BuiltinToolDef = {
     const pageId = str(input.page_id).trim();
     if (!pageId) return { ok: false, error: 'page_id is required' };
     const page = await getPage(ctx.ownerId, pageId);
-    if (!page) return { ok: false, error: `page '${pageId}' not found` };
+    if (!page) return notFound('page', pageId, 'page_list / search_nodes');
 
     const title = (strOpt(input.title) ?? page.title ?? 'Untitled').slice(0, 200);
     const tagsArg = strArr(input.tags);

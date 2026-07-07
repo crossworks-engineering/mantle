@@ -26,6 +26,8 @@ export {
   type UnknownKey,
 } from './validate-args';
 
+export { notFound, sanitizeToolError, type NotFoundResult } from './errors';
+
 export { BUILTIN_TOOLS } from './builtins';
 export { PAGE_TOOLS, PAGE_TOOL_SLUGS } from './builtins-pages';
 export { APP_TOOLS, APP_TOOL_SLUGS, APP_DATA_TOOLS, APP_DATA_TOOL_SLUGS } from './builtins-apps';

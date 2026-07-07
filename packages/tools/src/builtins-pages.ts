@@ -41,6 +41,7 @@ import {
 import { fileById, readFileById } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
+import { notFound } from './errors';
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -141,10 +142,10 @@ const page_replace_from_file: BuiltinToolDef = {
     // Verify the page exists + belongs to this owner BEFORE pulling file
     // bytes — clean 404 instead of an opaque draft-save failure.
     const page = await getPage(ctx.ownerId, pageId);
-    if (!page) return { ok: false, error: `page ${pageId} not found` };
+    if (!page) return notFound('page', pageId, 'page_list / search_nodes');
 
     const meta = await fileById({ ownerId: ctx.ownerId, fileId });
-    if (!meta) return { ok: false, error: `file ${fileId} not found` };
+    if (!meta) return notFound('file', fileId, 'file_list / search_nodes');
     if (!meta.isText) {
       return {
         ok: false,
@@ -237,7 +238,7 @@ const page_update: BuiltinToolDef = {
     }
     try {
       const page = await updatePage(ctx.ownerId, id, patch);
-      if (!page) return { ok: false, error: `page ${id} not found` };
+      if (!page) return notFound('page', id, 'page_list / search_nodes');
       ctx.step?.setOutput({ id: page.id, title: page.title });
       return { ok: true, output: { id: page.id, title: page.title, tags: page.tags } };
     } catch (err) {
@@ -279,7 +280,7 @@ const page_update_draft: BuiltinToolDef = {
     if (Object.keys(metaPatch).length > 0) {
       try {
         const result = await updatePage(ctx.ownerId, id, metaPatch);
-        if (!result) return { ok: false, error: `page ${id} not found` };
+        if (!result) return notFound('page', id, 'page_list / search_nodes');
         metaUpdated = true;
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -294,7 +295,7 @@ const page_update_draft: BuiltinToolDef = {
       try {
         const doc = markdownToDoc(input.markdown);
         const ok = await saveDraft(ctx.ownerId, id, doc);
-        if (!ok) return { ok: false, error: `page ${id} not found` };
+        if (!ok) return notFound('page', id, 'page_list / search_nodes');
         draftSaved = true;
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -346,7 +347,7 @@ const page_delete: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id is required' };
     try {
       const ok = await deletePage(ctx.ownerId, id);
-      if (!ok) return { ok: false, error: `page ${id} not found` };
+      if (!ok) return notFound('page', id, 'page_list / search_nodes');
       ctx.step?.setOutput({ id, deleted: true });
       return { ok: true, output: { id, deleted: true } };
     } catch (err) {
@@ -409,7 +410,7 @@ const page_get: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id is required' };
     try {
       const page = await getPage(ctx.ownerId, id);
-      if (!page) return { ok: false, error: `page ${id} not found` };
+      if (!page) return notFound('page', id, 'page_list / search_nodes');
       const hasDraft = page.draft !== null;
       return {
         ok: true,
@@ -460,7 +461,7 @@ const page_from_file: BuiltinToolDef = {
     const fileId = str(input.file_id).trim();
     if (!fileId) return { ok: false, error: 'file_id is required' };
     const meta = await fileById({ ownerId: ctx.ownerId, fileId });
-    if (!meta) return { ok: false, error: `file ${fileId} not found` };
+    if (!meta) return notFound('file', fileId, 'file_list / search_nodes');
     if (!meta.isText) {
       return {
         ok: false,
@@ -945,7 +946,7 @@ const page_blocks_list: BuiltinToolDef = {
     const pageId = str(input.page_id).trim();
     if (!pageId) return { ok: false, error: 'page_id is required' };
     const page = await getPage(ctx.ownerId, pageId);
-    if (!page) return { ok: false, error: `page ${pageId} not found` };
+    if (!page) return notFound('page', pageId, 'page_list / search_nodes');
 
     const maxDepth =
       typeof input.max_depth === 'number' && input.max_depth >= 1
@@ -1028,7 +1029,7 @@ const page_block_get: BuiltinToolDef = {
     const blockId = str(input.block_id).trim();
     if (!pageId || !blockId) return { ok: false, error: 'page_id and block_id are required' };
     const page = await getPage(ctx.ownerId, pageId);
-    if (!page) return { ok: false, error: `page ${pageId} not found` };
+    if (!page) return notFound('page', pageId, 'page_list / search_nodes');
 
     const baseline = pickEditingBaseline(page);
     const found = findBlock(baseline, blockId);
@@ -1082,7 +1083,7 @@ const page_block_update: BuiltinToolDef = {
     if (!markdown) return { ok: false, error: 'markdown is required (cannot replace with nothing — use page_block_delete)' };
 
     const page = await getPage(ctx.ownerId, pageId);
-    if (!page) return { ok: false, error: `page ${pageId} not found` };
+    if (!page) return notFound('page', pageId, 'page_list / search_nodes');
 
     let parsedBlocks: unknown[];
     try {
@@ -1156,7 +1157,7 @@ const page_block_insert_after: BuiltinToolDef = {
     if (!markdown) return { ok: false, error: 'markdown is required' };
 
     const page = await getPage(ctx.ownerId, pageId);
-    if (!page) return { ok: false, error: `page ${pageId} not found` };
+    if (!page) return notFound('page', pageId, 'page_list / search_nodes');
 
     let parsedBlocks: unknown[];
     try {
@@ -1221,7 +1222,7 @@ const page_block_delete: BuiltinToolDef = {
     if (!pageId || !blockId) return { ok: false, error: 'page_id and block_id are required' };
 
     const page = await getPage(ctx.ownerId, pageId);
-    if (!page) return { ok: false, error: `page ${pageId} not found` };
+    if (!page) return notFound('page', pageId, 'page_list / search_nodes');
 
     const baseline = pickEditingBaseline(page);
     const result = deleteBlock(baseline, blockId);
@@ -1395,7 +1396,7 @@ const page_move: BuiltinToolDef = {
     }
     try {
       const row = await movePage(ctx.ownerId, id, toTop ? null : parentId);
-      if (!row) return { ok: false, error: `page ${id} not found` };
+      if (!row) return notFound('page', id, 'page_list / search_nodes');
       ctx.step?.setOutput({ id, parent_id: row.parentId });
       return {
         ok: true,
@@ -1480,7 +1481,7 @@ const page_mention: BuiltinToolDef = {
         ...(leadText ? { leadText } : {}),
         ...(afterBlockId ? { afterBlockId } : {}),
       });
-      if (!res) return { ok: false, error: `page ${pageId} not found` };
+      if (!res) return notFound('page', pageId, 'page_list / search_nodes');
       ctx.step?.setOutput({ page_id: pageId, target_id: targetId, ref });
       return {
         ok: true,
@@ -1530,7 +1531,7 @@ const page_share: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id is required' };
     try {
       const page = await getPage(ctx.ownerId, id);
-      if (!page) return { ok: false, error: `page ${id} not found` };
+      if (!page) return notFound('page', id, 'page_list / search_nodes');
       const share = await createShare(ctx.ownerId, id);
       const url = shareUrlForToken(share.token);
       ctx.step?.setOutput({ id, url });

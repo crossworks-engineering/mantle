@@ -42,6 +42,7 @@ import {
   resolveResultHandling,
   notifyPendingCreated,
   validateToolArgs,
+  sanitizeToolError,
   type ValidateArgsResult,
   type ResultHandlingConfig,
   type ToolCallRecord,
@@ -969,7 +970,10 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       // path stays a plain inline assignment with zero overhead.
       let payload: string;
       if (!outcome.ok) {
-        payload = JSON.stringify({ error: outcome.error });
+        // Error strings can embed EXTERNAL content (an HTTP body excerpt, a
+        // recipe step's inner error) and bypass the success-path fence below
+        // — sanitize centrally so no handler has to remember to.
+        payload = JSON.stringify({ error: sanitizeToolError(outcome.error) });
       } else {
         let serialized = JSON.stringify(outcome.output);
         // Fence untrusted external content BEFORE the inline/spill decision so

@@ -25,6 +25,7 @@ import {
   type TaskStatus,
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
+import { notFound } from './errors';
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -86,7 +87,7 @@ const task_get: BuiltinToolDef = {
     const id = str(input.id);
     if (!id) return { ok: false, error: 'id required' };
     const row = await getTask(ctx.ownerId, id);
-    if (!row) return { ok: false, error: `task ${id} not found` };
+    if (!row) return notFound('task', id, 'task_list');
     return { ok: true, output: { ...row, url: nodeUrl(row.id) } };
   },
 };
@@ -159,7 +160,7 @@ const task_update: BuiltinToolDef = {
         dueAt: strOpt(input.dueAt),
         tags: strArr(input.tags),
       });
-      if (!row) return { ok: false, error: `task ${id} not found` };
+      if (!row) return notFound('task', id, 'task_list');
       ctx.step?.setMeta({ taskId: id, status: row.status });
       return { ok: true, output: row };
     } catch (err) {
@@ -185,7 +186,7 @@ const task_delete: BuiltinToolDef = {
     ctx.step?.setMeta({ taskId: id, deleted: ok });
     return ok
       ? { ok: true, output: { deleted: true, id } }
-      : { ok: false, error: `task ${id} not found` };
+      : notFound('task', id, 'task_list');
   },
 };
 
