@@ -1,5 +1,8 @@
 # @mantle/tools — authoring guidance
 
+Architecture + ops for the whole reliability layer (validation modes, guards,
+fencing, preconditions): [docs/tool-reliability.md](../../docs/tool-reliability.md).
+
 ## The error style guide
 
 **Every `{ ok: false, error }` must answer "what do I do instead."** The reader

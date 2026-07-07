@@ -4,6 +4,52 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the multi-arch image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.119.0 — 2026-07-07
+
+**Tool calls stop being a wild card.** Until now, most of what kept an
+agent's tool use correct was *prose* — descriptions asking the model to pass
+the right types, call things in the right order, and report honestly. This
+release moves those rules into enforced machinery, end to end (the full
+architecture: [docs/tool-reliability.md](docs/tool-reliability.md)):
+
+- **Every call is validated against the tool's own schema.** Harmless drift
+  is repaired automatically (`"42"`→`42`, a bare value where a list belongs,
+  stringified JSON); real violations produce *teaching errors* that name the
+  field, what was expected, what arrived, and the closest valid alternative
+  ("did you mean 'limit'?"), so the model fixes itself in one retry. Ships in
+  **warn mode** (telemetry only, zero behaviour change); flip
+  `MANTLE_TOOL_VALIDATION=enforce` per box once its violation profile has
+  been reviewed.
+- **Flail loops get cut short.** A call repeated verbatim after failing is
+  warned at the 2nd failure and blocked at the 5th; a call that keeps
+  returning the identical result is blocked as no-progress. Re-reads whose
+  results change are never penalised.
+- **The turn reports what actually happened.** When a turn runs out of tool
+  budget, the model is handed the runtime's own ledger — "17 issued, 14
+  succeeded, 2 failed, 1 queued for approval" — instead of being asked to
+  remember. The same numbers appear under the reply in /assistant, with an
+  always-visible notice when any call failed: the reply can no longer quietly
+  omit a failure, and a queued action is never reported as done.
+- **Outside content is fenced by provenance.** Results from user-authored
+  HTTP tools — and recipes that ran one — are now wrapped in the same
+  data-not-instructions fence as web pages, and error messages are scrubbed
+  of instruction-framing (role tags, fake `[system]` markers) before the
+  model reads them. A hostile API endpoint can no longer inject directives
+  through either path. Fenced content itself is never rewritten — the
+  boundary is the defense.
+- **Outward-facing actions get the approval gate.** `email_send`,
+  `email_page`, `page_share`, and `contact_delete` now default to operator
+  approval on new brains (existing brains keep their settings — tighten
+  per-tool in Settings → Tools).
+- **Wrong-id calls teach instead of confusing.** Pages/tables tools check
+  their ids up front and say exactly what's wrong — including the case no
+  handler used to catch: "that id is a *note*, not a page."
+- **Multi-block page edits are atomic.** New `page_blocks_apply` applies up
+  to 50 block edits in one all-or-nothing call (one draft save; any failure
+  aborts with the failing op named). The half-edited-draft failure mode from
+  the v0.118.0 incident is now structurally impossible, and jobs like
+  "wrap all 47 quotes" cost one call instead of ~95.
+
 ## v0.118.1 — 2026-07-06
 
 **Boot reconcile works on multi-admin brains again.** Since the actor/anchor
