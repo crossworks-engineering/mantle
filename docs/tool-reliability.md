@@ -84,12 +84,17 @@ Every tool call in a turn passes through these stages, in order
 | `enforce` | applied | **block dispatch** with the teaching error | steady state, per box |
 
 Rollout playbook: leave the box on `warn` (the default — no env change
-needed), let real traffic accumulate, then inspect
-`trace_steps.meta.arg_validation` (repairs, unknown keys, violations, per
-tool). When the violation profile looks like model mistakes rather than
-schema bugs, set `MANTLE_TOOL_VALIDATION=enforce` in the stack `.env` and
-restart. Coercion repairs and unknown-key telemetry are recorded in every
-mode, so the data collects itself.
+needed), let real traffic accumulate, then read the telemetry in
+**`/debug` → Tool validation** (v0.119.1): the tab shows the box's active
+mode, flagged-call tallies per tool over a selectable window, and each
+recent flagged call in detail (violation texts, did-you-mean suggestions,
+repair notes) with a link to its trace. When the violation profile looks
+like model mistakes rather than schema bugs, set
+`MANTLE_TOOL_VALIDATION=enforce` in the stack `.env` and restart. Coercion
+repairs and unknown-key telemetry are recorded in every mode, so the data
+collects itself. (Raw source, e.g. for cross-box SQL:
+`trace_steps.meta.arg_validation` on steps where the key is present —
+clean calls write nothing.)
 
 Builtins' top-level schemas are closed (`additionalProperties: false`) at
 seed time — `closeToolInputSchema` in `packages/tools/src/seed.ts`. Dynamic-

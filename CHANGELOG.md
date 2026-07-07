@@ -4,6 +4,19 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the multi-arch image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.119.1 — 2026-07-07
+
+**See what the validator sees.** v0.119.0's argument validation ships in
+warn mode — recording what it *would* correct while changing nothing. The
+new **`/debug` → Tool validation** tab makes that telemetry readable without
+SQL: the box's active mode (with what it means and how to flip it), flagged
+calls per tool over a selectable window (repairs / unknown keys /
+violations, violations highlighted), and each recent flagged call in full
+detail — violation texts, did-you-mean suggestions, repair notes — linked to
+its trace. Violations are the enforce-flip question; a cluster on one tool
+usually means a schema bug to fix first. Clean calls write no telemetry, and
+the page says so, so an empty tab means "nothing flagged", not "no data".
+
 ## v0.119.0 — 2026-07-07
 
 **Tool calls stop being a wild card.** Until now, most of what kept an
