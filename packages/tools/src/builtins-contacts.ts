@@ -268,6 +268,11 @@ const contact_delete: BuiltinToolDef = {
   description:
     "Remove a contact. NOTE: this also removes them from the email allowlist — Saskia can no longer email them after deletion. Returns ok=true on success; ok=false if the contact wasn't found." +
     ONLY_WHEN_ASKED,
+  // Deleting a contact silently severs their email pipeline BOTH ways
+  // (send allowlist + inbound ingest) — a side effect the user can't see
+  // coming from "remove X from my contacts". Low-frequency op, so the gate
+  // costs nothing; the description's warning stays as the model-facing cue.
+  requiresConfirm: true,
   inputSchema: {
     type: 'object',
     properties: { id: { type: 'string', format: 'uuid' } },

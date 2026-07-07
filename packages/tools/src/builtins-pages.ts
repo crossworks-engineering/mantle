@@ -1519,6 +1519,9 @@ const page_share: BuiltinToolDef = {
   name: 'Share a page publicly',
   description:
     "Create (or fetch) a public, read-only link to a page and return its URL. Anyone with the link can view the page — fully formatted, with no login — but nothing else in the user's Mantle. Idempotent: a page has at most one active link, so calling this again returns the same URL. Use when the user asks to share, publish, or get a shareable link for a page. To turn a link off, use page_unshare.",
+  // Publishes brain content to the open web — outward-facing, so gated.
+  // (page_unshare stays open: revoking access is always safe.)
+  requiresConfirm: true,
   inputSchema: {
     type: 'object',
     properties: {
