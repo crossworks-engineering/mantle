@@ -4,6 +4,16 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the multi-arch image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.118.1 — 2026-07-06
+
+**Boot reconcile works on multi-admin brains again.** Since the actor/anchor
+split (v0.111.0), a brain with more than one admin had several `auth.users`
+rows — and the boot reconcile's "single owner" check read that as an
+unprovisioned install and silently skipped. Prompt, skill, and tool-group
+updates stopped reaching those brains on upgrade. Owner resolution now keys on
+the single anchor owner of the brain's content (with the old single-user check
+as the fresh-install fallback), so upgrades propagate everywhere again.
+
 ## v0.118.0 — 2026-07-06
 
 **Big page edits no longer die halfway.** A large SOP restructure on NATREF

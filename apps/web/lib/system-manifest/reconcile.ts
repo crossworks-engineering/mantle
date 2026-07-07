@@ -66,6 +66,21 @@ let ranThisProcess = false;
 async function resolveOwnerId(): Promise<string | null> {
   const fromEnv = process.env.ALLOWED_USER_ID?.trim();
   if (fromEnv) return fromEnv;
+  // Multi-admin (actor/anchor split, v0.111) leaves several rows in auth.users
+  // on a fully-provisioned brain, but ALL content still hangs off ONE anchor
+  // owner — so count distinct owners on `agents` (the cheapest provisioned-
+  // brain marker), not user rows. Counting auth.users here made every
+  // multi-admin brain skip the boot reconcile silently from v0.111 on (caught
+  // on NATREF at v0.118.0: "no single owner" with 4 users / 1 anchor).
+  const agentOwners = (await db.execute(
+    sql`select distinct owner_id as id from agents limit 2`,
+  )) as unknown;
+  const ownerRows = (
+    Array.isArray(agentOwners) ? agentOwners : ((agentOwners as { rows?: unknown[] }).rows ?? [])
+  ) as { id: string }[];
+  if (ownerRows.length === 1) return ownerRows[0]!.id;
+  // No agents yet (fresh install mid-onboarding): a single auth.users row is
+  // still unambiguous. Anything else genuinely can't be resolved.
   const res = (await db.execute(sql`select id from auth.users limit 2`)) as unknown;
   const rows = (Array.isArray(res) ? res : ((res as { rows?: unknown[] }).rows ?? [])) as {
     id: string;
