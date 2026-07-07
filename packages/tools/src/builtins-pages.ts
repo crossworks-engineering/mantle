@@ -42,6 +42,16 @@ import { fileById, readFileById } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
 import { notFound } from './errors';
+import type { ToolPrecondition } from './types';
+
+// Shared referential preconditions (checked centrally in dispatch — see
+// preconditions.ts): the id must name an EXISTING page the owner holds.
+const PAGE_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'page_id', nodeType: 'page', lookup: 'page_list / search_nodes' },
+];
+const PAGE_NODE_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'id', nodeType: 'page', lookup: 'page_list / search_nodes' },
+];
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -119,6 +129,7 @@ const page_create: BuiltinToolDef = {
 
 const page_replace_from_file: BuiltinToolDef = {
   slug: 'page_replace_from_file',
+  preconditions: PAGE_ID_PRE,
   name: 'Replace an existing page from a file',
   description:
     "Rebuild an EXISTING page's body from a markdown/text file's bytes. Writes the new body to `draft_doc` ONLY — the published `doc` is untouched until the operator commits. Like `page_from_file` but updates a target page instead of creating a new one. **The right tool for: 'this page is corrupted, reimport from the source file' / 'I re-exported this page from Notion, refresh it here'.** Bytes go server-side without round-tripping through your output, so this scales to any file size — the deterministic recovery path. Title / tags / icon stay as-is unless you pass replacements. Only text-like files are accepted (markdown / plain text); binaries are rejected.",
@@ -249,6 +260,7 @@ const page_update: BuiltinToolDef = {
 
 const page_update_draft: BuiltinToolDef = {
   slug: 'page_update_draft',
+  preconditions: PAGE_NODE_ID_PRE,
   name: 'Update a page (draft-only)',
   description:
     "Update an existing page WITHOUT publishing. Body changes (`markdown`) go to `draft_doc` — the published `doc` and its brain index are untouched until the operator opens the editor and commits. Metadata (`title` / `tags` / `icon`) updates apply directly (easily reversible if wrong). **The Pages agent uses this instead of `page_update` so a misbehaving transform can never silently overwrite the published page.** Pass ONLY the fields you're changing — every other field is left untouched. Returns a hint telling the user where to review the draft.",
@@ -917,6 +929,7 @@ const page_from_journal: BuiltinToolDef = {
 
 const page_blocks_list: BuiltinToolDef = {
   slug: 'page_blocks_list',
+  preconditions: PAGE_ID_PRE,
   name: 'List the blocks in a page',
   description:
     "Return a TOC-style flat listing of every addressable block in a page — `id`, `kind` (paragraph / heading / callout / table / …), `depth`, and a short text `preview`. Lightweight: the body itself is not returned, so this works regardless of page size. **Lists the SAME baseline the block-edit tools operate on: the uncommitted DRAFT when one exists, else the published doc** — `baseline` in the output tells you which you got, so the ids here are always valid targets for page_block_get/update/delete. **Use this BEFORE proposing any block-level edit** so you know which blocks exist and can target them by stable id. The ids returned here survive across edits — they are stable per block, not per read. Headings also include `meta.level`, code blocks `meta.language`, callouts `meta.variant`, task items `meta.checked`, images `meta.alt`. **`kinds` is the SCALING knob — pass only the block types you care about** (e.g. `['blockquote']` for 'find every quote', `['heading']` for an outline). A large page can have hundreds of blocks; an unfiltered listing on a 300-block page approaches 80 KB and spills through the tool-result store, costing extra paging turns. `max_depth: 1` is the other compactor — top-level only. Default `preview_chars` is 80; bump only when you genuinely need more context per block.",
@@ -1013,6 +1026,7 @@ const DRAFT_REVIEW_HINT = (pageId: string) =>
 
 const page_block_get: BuiltinToolDef = {
   slug: 'page_block_get',
+  preconditions: PAGE_ID_PRE,
   name: 'Get one block from a page',
   description:
     "Read a single addressable block from a page by its id (from `page_blocks_list`). Returns the block's `kind`, depth, text content (plaintext, no formatting), structural `meta` (heading level / callout variant / etc.), and full PM `json` for fidelity-sensitive cases. Cheap: only the one block travels, not the whole page. **Use this BEFORE `page_block_update` so you craft the replacement with full knowledge of the current content.**",
@@ -1059,6 +1073,7 @@ const page_block_get: BuiltinToolDef = {
 
 const page_block_update: BuiltinToolDef = {
   slug: 'page_block_update',
+  preconditions: PAGE_ID_PRE,
   name: 'Replace one block in a page',
   description:
     "Replace one block (by id) with new content (markdown). The first new block INHERITS the target's id so the next page_blocks_list still addresses the same logical slot. If your markdown produces multiple blocks (e.g. you wrap a paragraph in a heading + paragraph), they're all spliced in; subsequent blocks get fresh ids. Writes to DRAFT only — the published page is untouched until the user commits. **Output bytes are proportional to the new block, not the whole page** — this is the scalable edit path for TARGETED edits on large pages. **For a restructure touching more than ~10 blocks (resequencing / renumbering / merging sections), switch to ONE whole-body `page_update_draft` call instead — block-by-block surgery at that scale exhausts the turn's tool-call budget and strands the draft half-edited.** " +
@@ -1134,6 +1149,7 @@ const page_block_update: BuiltinToolDef = {
 
 const page_block_insert_after: BuiltinToolDef = {
   slug: 'page_block_insert_after',
+  preconditions: PAGE_ID_PRE,
   name: 'Insert blocks after a target block',
   description:
     "Insert one or more new blocks (parsed from markdown) directly after the block with the given id. Useful for adding a callout after a quote, or a new section heading after the previous section ends. Writes to DRAFT only. New blocks get fresh ids on save.",
@@ -1205,6 +1221,7 @@ const page_block_insert_after: BuiltinToolDef = {
 
 const page_block_delete: BuiltinToolDef = {
   slug: 'page_block_delete',
+  preconditions: PAGE_ID_PRE,
   name: 'Delete one block from a page',
   description:
     "Remove a single block (by id) from a page. Writes to DRAFT only. **Refuses** when removing the block would leave a container (callout / column / listItem / tableCell) empty — most ProseMirror schemas reject that. In that case, target the container itself instead.",

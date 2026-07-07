@@ -138,6 +138,21 @@ export type BuiltinToolHandler = (
   ctx: ToolHandlerContext,
 ) => Promise<ToolHandlerResult>;
 
+/** A declarative requirement checked centrally BEFORE the handler runs
+ *  (see preconditions.ts): the named input param must reference an existing
+ *  node the owner holds — and of the given type when set. Produces uniform
+ *  teaching errors (malformed id / missing / wrong node type); the
+ *  handler's own checks remain as backstops. */
+export type ToolPrecondition = {
+  kind: 'node_exists';
+  /** Top-level input key holding the node id. Skipped when absent/empty. */
+  param: string;
+  /** Expected node type ('page', 'table', 'note', …). Unset ⇒ any node. */
+  nodeType?: string;
+  /** Lookup tools quoted in the teaching error, e.g. 'page_list / search_nodes'. */
+  lookup: string;
+};
+
 /** A registered built-in: the handler + the definition the seed step
  *  upserts into the `tools` table. */
 export type BuiltinToolDef = {
@@ -149,6 +164,9 @@ export type BuiltinToolDef = {
   inputSchema: Record<string, unknown>;
   /** Whether the tool-call loop should pause for operator approval. */
   requiresConfirm?: boolean;
+  /** Referential requirements checked centrally pre-dispatch — see
+   *  {@link ToolPrecondition}. */
+  preconditions?: readonly ToolPrecondition[];
   /** Handler implementation. */
   handler: BuiltinToolHandler;
   /** Input fields that contain sensitive data and MUST be replaced with

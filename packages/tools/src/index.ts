@@ -6,7 +6,10 @@ export type {
   ToolHandlerResult,
   ToolForModel,
   ToolCallRecord,
+  ToolPrecondition,
 } from './types';
+
+export { checkToolPreconditions, type NodeTypeLookup } from './preconditions';
 
 export {
   registerBuiltin,

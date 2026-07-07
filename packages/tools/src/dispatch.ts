@@ -12,7 +12,8 @@
 import { and, eq } from 'drizzle-orm';
 import { db, tools, type Tool, type ToolHandler } from '@mantle/db';
 import { getApiKey } from '@mantle/api-keys';
-import { getBuiltinHandler } from './registry';
+import { getBuiltin, getBuiltinHandler } from './registry';
+import { checkToolPreconditions } from './preconditions';
 import {
   buildHttpRequest,
   collectSecretRefs,
@@ -76,6 +77,14 @@ export async function dispatchTool(
       };
     }
     try {
+      // Declared referential preconditions run first — a call aimed at a
+      // missing or wrong-type node gets a uniform teaching error before any
+      // handler work (see preconditions.ts).
+      const pre = getBuiltin(h.ref)?.preconditions;
+      if (pre && pre.length > 0) {
+        const failure = await checkToolPreconditions(pre, input, ctx.ownerId);
+        if (failure) return failure;
+      }
       return await fn(input, ctx);
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };

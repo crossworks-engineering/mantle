@@ -56,6 +56,13 @@ import { parseSheetToGrid, parseTextToGrid } from '@mantle/files/sheet-to-grid';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { notFound } from './errors';
+import type { ToolPrecondition } from './types';
+
+// Shared referential precondition (checked centrally in dispatch — see
+// preconditions.ts): table_id must name an EXISTING table the owner holds.
+const TABLE_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'table_id', nodeType: 'table', lookup: 'table_list' },
+];
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -510,6 +517,7 @@ const table_get: BuiltinToolDef = {
 
 const table_rows_list: BuiltinToolDef = {
   slug: 'table_rows_list',
+  preconditions: TABLE_ID_PRE,
   name: 'List rows in a table',
   description:
     "Return a windowed snapshot of a table's rows — each as a stable `id` plus short per-cell text. **Use this BEFORE any row edit** so you can target rows by id. Pages via `offset`/`limit` (default 50). `column_ids` restricts the cell snapshot (the column summary still lists every column). Reads the draft if one exists. The row `id`s are stable across edits — addressable in `table_row_update` / `table_cell_set` / `table_row_delete`.",
@@ -543,6 +551,7 @@ const table_rows_list: BuiltinToolDef = {
 
 const table_row_get: BuiltinToolDef = {
   slug: 'table_row_get',
+  preconditions: TABLE_ID_PRE,
   name: 'Get one row',
   description: "Read a single row by id (from `table_rows_list`). Returns its cells keyed by column name and id, formula columns resolved. Reads the draft if present.",
   inputSchema: {
@@ -825,6 +834,7 @@ const CELLS_HINT =
 
 const table_row_add: BuiltinToolDef = {
   slug: 'table_row_add',
+  preconditions: TABLE_ID_PRE,
   name: 'Add a row',
   description: "Append a new row (or insert after `after_row_id`). Returns the new row id. Writes to DRAFT.",
   inputSchema: {
@@ -856,6 +866,7 @@ const table_row_add: BuiltinToolDef = {
 
 const table_row_update: BuiltinToolDef = {
   slug: 'table_row_update',
+  preconditions: TABLE_ID_PRE,
   name: 'Update a row',
   description: "Patch a row's cells by id (merge — unspecified cells stay). The surgical \"do row X\" tool. Writes to DRAFT.",
   inputSchema: {
@@ -885,6 +896,7 @@ const table_row_update: BuiltinToolDef = {
 
 const table_row_delete: BuiltinToolDef = {
   slug: 'table_row_delete',
+  preconditions: TABLE_ID_PRE,
   name: 'Delete a row',
   description: "Remove a row by id. Writes to DRAFT.",
   inputSchema: {
@@ -939,6 +951,7 @@ const table_cell_set: BuiltinToolDef = {
 
 const table_column_add: BuiltinToolDef = {
   slug: 'table_column_add',
+  preconditions: TABLE_ID_PRE,
   name: 'Add a column',
   description:
     "Add a column. `type` ∈ text|number|currency|percent|date|datetime|checkbox|select|multiselect|url|formula. For currency pass `format.currency` (ISO code); for select/multiselect pass `options` (array of label strings); for a formula column pass `formula` (e.g. \"{Qty} * {Price}\" — references other columns by name). Writes to DRAFT.",
@@ -979,6 +992,7 @@ const table_column_add: BuiltinToolDef = {
 
 const table_column_update: BuiltinToolDef = {
   slug: 'table_column_update',
+  preconditions: TABLE_ID_PRE,
   name: 'Update a column',
   description: "Change a column (by id or name): rename, retype (cells are re-coerced), set format/options/formula. Pass only what changes. Writes to DRAFT.",
   inputSchema: {
@@ -1020,6 +1034,7 @@ const table_column_update: BuiltinToolDef = {
 
 const table_column_delete: BuiltinToolDef = {
   slug: 'table_column_delete',
+  preconditions: TABLE_ID_PRE,
   name: 'Delete a column',
   description: "Remove a column (by id or name) and all its cells. Writes to DRAFT.",
   inputSchema: {
