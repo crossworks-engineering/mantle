@@ -24,6 +24,8 @@ export {
   resolveAgentTools,
   buildToolsForModel,
   summarizeToolOutcomes,
+  resolveToolValidationMode,
+  type ToolValidationMode,
   type ToolOutcomeStats,
   type ToolLoopArgs,
   type ToolLoopResult,

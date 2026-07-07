@@ -520,3 +520,128 @@ export async function factCostCapStats(
     lastAt: r.lastAt instanceof Date ? r.lastAt.toISOString() : String(r.lastAt),
   }));
 }
+
+// ── Tool-call arg-validation telemetry (v0.119.0 warn-mode rollout) ────────
+
+/** Per-tool tallies of calls the central validator flagged. Clean calls
+ *  write no `arg_validation` meta at all, so these are problem counts,
+ *  not rates — an empty result means nothing was flagged, not no calls. */
+export type ToolValidationAgg = {
+  tool: string;
+  flaggedCalls: number;
+  withRepairs: number;
+  withUnknownKeys: number;
+  withViolations: number;
+  lastAt: string;
+};
+
+export type ToolValidationEvent = {
+  stepId: string;
+  traceId: string;
+  tool: string;
+  mode: string;
+  repairs: Array<{ key: string; kind: string; note: string }>;
+  unknownKeys: Array<{ key: string; suggestion: string | null }>;
+  violations: string[];
+  startedAt: string;
+};
+
+/** Flagged-call tallies per tool over the window. `withViolations` is the
+ *  enforce-flip question: each one is a call warn mode let through that
+ *  enforce would bounce with a teaching error. */
+export async function toolValidationByTool(
+  userId: string,
+  daysBack: number,
+): Promise<ToolValidationAgg[]> {
+  const since = new Date(Date.now() - daysBack * 86_400_000);
+  const rows = await db
+    .select({
+      tool: sql<string>`coalesce(${traceSteps.input}->>'slug', '(unknown)')`,
+      flaggedCalls: sql<number>`count(*)::int`,
+      withRepairs: sql<number>`count(*) filter (where ${traceSteps.meta}->'arg_validation' ? 'repairs')::int`,
+      withUnknownKeys: sql<number>`count(*) filter (where ${traceSteps.meta}->'arg_validation' ? 'unknown_keys')::int`,
+      withViolations: sql<number>`count(*) filter (where ${traceSteps.meta}->'arg_validation' ? 'violations')::int`,
+      lastAt: sql<Date>`max(${traceSteps.startedAt})`,
+    })
+    .from(traceSteps)
+    .innerJoin(traces, eq(traceSteps.traceId, traces.id))
+    .where(
+      and(
+        eq(traces.ownerId, userId),
+        gte(traceSteps.startedAt, since),
+        sql`${traceSteps.meta} ? 'arg_validation'`,
+      ),
+    )
+    .groupBy(sql`coalesce(${traceSteps.input}->>'slug', '(unknown)')`)
+    .orderBy(
+      desc(sql`count(*) filter (where ${traceSteps.meta}->'arg_validation' ? 'violations')`),
+      desc(sql`count(*)`),
+    );
+  return rows.map((r) => ({
+    tool: r.tool,
+    flaggedCalls: r.flaggedCalls,
+    withRepairs: r.withRepairs,
+    withUnknownKeys: r.withUnknownKeys,
+    withViolations: r.withViolations,
+    lastAt: r.lastAt instanceof Date ? r.lastAt.toISOString() : String(r.lastAt),
+  }));
+}
+
+/** Most recent flagged calls with full detail, for the drill-down list.
+ *  Each links back to its trace so one click shows the whole turn. */
+export async function toolValidationRecent(
+  userId: string,
+  daysBack: number,
+  limit = 50,
+): Promise<ToolValidationEvent[]> {
+  const since = new Date(Date.now() - daysBack * 86_400_000);
+  const rows = await db
+    .select({
+      stepId: traceSteps.id,
+      traceId: traceSteps.traceId,
+      tool: sql<string>`coalesce(${traceSteps.input}->>'slug', '(unknown)')`,
+      av: sql<unknown>`${traceSteps.meta}->'arg_validation'`,
+      startedAt: traceSteps.startedAt,
+    })
+    .from(traceSteps)
+    .innerJoin(traces, eq(traceSteps.traceId, traces.id))
+    .where(
+      and(
+        eq(traces.ownerId, userId),
+        gte(traceSteps.startedAt, since),
+        sql`${traceSteps.meta} ? 'arg_validation'`,
+      ),
+    )
+    .orderBy(desc(traceSteps.startedAt))
+    .limit(limit);
+  return rows.map((r) => {
+    const av = (r.av ?? {}) as {
+      mode?: unknown;
+      repairs?: unknown;
+      unknown_keys?: unknown;
+      violations?: unknown;
+    };
+    return {
+      stepId: r.stepId,
+      traceId: r.traceId,
+      tool: r.tool,
+      mode: typeof av.mode === 'string' ? av.mode : 'warn',
+      repairs: Array.isArray(av.repairs)
+        ? (av.repairs as Array<{ key?: unknown; kind?: unknown; note?: unknown }>).map((x) => ({
+            key: String(x.key ?? ''),
+            kind: String(x.kind ?? ''),
+            note: String(x.note ?? ''),
+          }))
+        : [],
+      unknownKeys: Array.isArray(av.unknown_keys)
+        ? (av.unknown_keys as Array<{ key?: unknown; suggestion?: unknown }>).map((x) => ({
+            key: String(x.key ?? ''),
+            suggestion: typeof x.suggestion === 'string' ? x.suggestion : null,
+          }))
+        : [],
+      violations: Array.isArray(av.violations) ? (av.violations as unknown[]).map(String) : [],
+      startedAt:
+        r.startedAt instanceof Date ? r.startedAt.toISOString() : String(r.startedAt),
+    };
+  });
+}
