@@ -60,6 +60,8 @@ export type ToolOutcomeStatsRow = {
   succeeded: number;
   failed: number;
   skipped: number;
+  /** Confirm-gated calls parked behind operator approval — not yet run. */
+  queued: number;
   failures: Array<{ slug: string; error: string }>;
 };
 
@@ -85,6 +87,7 @@ function toolStatsFromData(data: unknown): ToolOutcomeStatsRow | undefined {
     succeeded: typeof s.succeeded === 'number' ? s.succeeded : 0,
     failed: typeof s.failed === 'number' ? s.failed : 0,
     skipped: typeof s.skipped === 'number' ? s.skipped : 0,
+    queued: typeof s.queued === 'number' ? s.queued : 0,
     failures: Array.isArray(s.failures)
       ? (s.failures as Array<{ slug?: unknown; error?: unknown }>)
           .filter((f) => typeof f?.slug === 'string')

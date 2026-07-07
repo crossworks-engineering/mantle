@@ -45,10 +45,16 @@ const MAX_ERROR_LEN = 2000;
 const FENCE_MARKER_RE = /\[(?:BEGIN|END) RETRIEVED CONTENT[^\]]*\]/gi;
 
 /** Role/turn-framing tags a crafted error body could use to pose as
- *  conversation structure rather than data. Covers both XML-style
- *  (`<system>`, `</assistant>`) and ChatML pipe-style (`<|im_start|>`). */
+ *  conversation structure rather than data. Covers XML-style (`<system>`,
+ *  `</assistant>`) and ChatML pipe-style (`<|im_start|>`). */
 const ROLE_TAG_RE =
   /<\/?\s*(?:system|user|assistant|tool|human|function_call|system-reminder|im_start|im_end)\b[^>]*>|<\|im_(?:start|end)\|>/gi;
+
+/** Square-bracket role markers. The tool-loop's OWN nudges use a `[system]`
+ *  prefix on injected user messages, so an error body carrying `[system] …`
+ *  is impersonating the runtime's voice — defang rather than delete, so the
+ *  model still sees that the upstream SENT something marker-shaped. */
+const BRACKET_MARKER_RE = /\[\s*(?:system|user|assistant|tool|developer)\s*\]/gi;
 
 /**
  * Sanitise one tool-error string for model consumption: defang fence-marker
@@ -62,6 +68,7 @@ export function sanitizeToolError(msg: string): string {
   let s = msg;
   s = s.replace(FENCE_MARKER_RE, '[marker removed]');
   s = s.replace(ROLE_TAG_RE, '');
+  s = s.replace(BRACKET_MARKER_RE, '[external marker removed]');
   s = s.replace(/```+/g, '');
   s = s.replace(/<!\[CDATA\[|\]\]>/g, '');
   if (s.length > MAX_ERROR_LEN) s = `${s.slice(0, MAX_ERROR_LEN - 1)}…`;

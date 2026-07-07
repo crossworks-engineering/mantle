@@ -252,6 +252,8 @@ export async function updateAssistantMessageOutcome(args: {
     succeeded: number;
     failed: number;
     skipped: number;
+    /** Confirm-gated calls parked behind operator approval — not yet run. */
+    queued: number;
     failures: Array<{ slug: string; error: string }>;
   };
   tx?: Executor;

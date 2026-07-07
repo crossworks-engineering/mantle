@@ -810,6 +810,13 @@ describe('runToolLoop — requires_confirm path', () => {
     expect(toolMsg).toBeDefined();
     expect(toolMsg!.content).toContain('queued_for_approval');
     expect(toolMsg!.content).toContain('pending-1');
+    // The turn record classifies the call as QUEUED — the outcome ledger
+    // must never report a not-yet-run action as succeeded.
+    expect(result.toolCalls[0]).toMatchObject({
+      slug: 'send_email',
+      status: 'skipped',
+      error: 'queued_for_approval',
+    });
   });
 });
 
@@ -1376,15 +1383,16 @@ describe('runToolLoop — tool-volume guards', () => {
 });
 
 describe('summarizeToolOutcomes + force-final outcome ledger', () => {
-  it('classifies success / handler failure / guard skip correctly', async () => {
+  it('classifies success / handler failure / guard skip / queued correctly', async () => {
     const { summarizeToolOutcomes } = await import('./tool-loop');
     const stats = summarizeToolOutcomes([
       { slug: 'a', argsJson: '{}', durationMs: 1, status: 'success' },
       { slug: 'b', argsJson: '{}', durationMs: 1, status: 'error', error: 'row not found' },
       { slug: 'b', argsJson: '{}', durationMs: 0, status: 'error', error: 'tool_repeat_limit' },
       { slug: 'c', argsJson: '{}', durationMs: 0, status: 'error', error: 'no_progress' },
+      { slug: 'd', argsJson: '{}', durationMs: 2, status: 'skipped', error: 'queued_for_approval' },
     ]);
-    expect(stats).toMatchObject({ calls: 4, succeeded: 1, failed: 1, skipped: 2 });
+    expect(stats).toMatchObject({ calls: 5, succeeded: 1, failed: 1, skipped: 2, queued: 1 });
     expect(stats.failures).toEqual([{ slug: 'b', error: 'row not found' }]);
   });
 
@@ -1507,6 +1515,48 @@ describe('runToolLoop — failure-aware guards', () => {
     const toolMsgs = result.messages.filter((m) => m.role === 'tool');
     expect(toolMsgs[5]?.content).toContain('identical result');
     expect(toolMsgs[5]?.content).toContain('result already in context');
+  });
+
+  it('counts encoding variants of the same failing call together (canonical signature)', async () => {
+    const tool = fakeTool({ slug: 'flaky_tool' });
+    // Alternate raw encodings — key order + whitespace differ, semantics
+    // identical. The guard must key on the canonical form, not the bytes.
+    const encodings = [
+      '{"id":"x1","n":1}',
+      '{"n":1,"id":"x1"}',
+      '{ "id": "x1", "n": 1 }',
+      '{"n": 1, "id": "x1"}',
+      '{"id":"x1","n":1}',
+      '{"n":1,"id":"x1"}',
+    ];
+    const rounds = encodings.map((args, i) => ({
+      type: 'toolCalls' as const,
+      toolCalls: [
+        {
+          id: `call_c${i}`,
+          type: 'function' as const,
+          function: { name: 'flaky_tool', arguments: args },
+        },
+      ],
+    }));
+    const { adapter } = makeFakeAdapter([...rounds, { type: 'text', text: 'gave up' }]);
+    dispatchToolImpl = () => ({ ok: false, error: 'boom' });
+
+    const result = await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: [tool],
+      maxIterations: 10,
+    });
+
+    // 5 dispatched failures despite 5 distinct raw encodings; the 6th is
+    // blocked because canonically it's the same call every time.
+    expect(dispatchToolCalls).toHaveLength(5);
+    expect(result.toolCalls[5]).toMatchObject({ status: 'error', error: 'repeated_failure' });
   });
 
   it('never blocks an identical call whose results keep changing (legitimate re-reads)', async () => {

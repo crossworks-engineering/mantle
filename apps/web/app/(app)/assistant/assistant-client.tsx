@@ -116,6 +116,8 @@ type ToolStats = {
   succeeded: number;
   failed: number;
   skipped: number;
+  /** Confirm-gated calls parked behind operator approval — not yet run. */
+  queued: number;
   failures: Array<{ slug: string; error: string }>;
 };
 
@@ -1111,6 +1113,9 @@ export function AssistantClient({
                                   <span
                                     title={
                                       `${turn.response.toolStats.succeeded} succeeded` +
+                                      (turn.response.toolStats.queued > 0
+                                        ? ` · ${turn.response.toolStats.queued} awaiting approval`
+                                        : '') +
                                       (turn.response.toolStats.skipped > 0
                                         ? ` · ${turn.response.toolStats.skipped} blocked by guards`
                                         : '')
@@ -1118,6 +1123,8 @@ export function AssistantClient({
                                   >
                                     {turn.response.toolStats.calls} tool call
                                     {turn.response.toolStats.calls === 1 ? '' : 's'}
+                                    {turn.response.toolStats.queued > 0 &&
+                                      ` · ${turn.response.toolStats.queued} awaiting approval`}
                                   </span>
                                 )}
                               </div>
