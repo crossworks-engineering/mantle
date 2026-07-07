@@ -27,6 +27,7 @@ export {
 } from './validate-args';
 
 export { notFound, sanitizeToolError, type NotFoundResult } from './errors';
+export { UNTRUSTED_CONTENT_TOOL_SLUGS } from './untrusted';
 
 export { BUILTIN_TOOLS } from './builtins';
 export { PAGE_TOOLS, PAGE_TOOL_SLUGS } from './builtins-pages';

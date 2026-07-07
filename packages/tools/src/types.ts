@@ -116,7 +116,19 @@ export type ToolArtifact = {
 };
 
 export type ToolHandlerResult =
-  | { ok: true; output: unknown; artifacts?: ToolArtifact[] }
+  | {
+      ok: true;
+      output: unknown;
+      artifacts?: ToolArtifact[];
+      /** Set by the dispatch layer when the output embeds THIRD-PARTY
+       *  authored content (http tools hit arbitrary endpoints; a recipe may
+       *  run an http/web step mid-chain). The tool-loop fences flagged
+       *  results as data before the model reads them. Builtins never set
+       *  this themselves — the web builtins are fenced by slug, and
+       *  provenance for composed tools is dispatch's call, not the
+       *  handler's. */
+      untrusted?: boolean;
+    }
   | { ok: false; error: string };
 
 /** A built-in handler: pure TS function. Lives in this package or in apps

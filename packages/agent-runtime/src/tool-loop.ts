@@ -43,6 +43,7 @@ import {
   notifyPendingCreated,
   validateToolArgs,
   sanitizeToolError,
+  UNTRUSTED_CONTENT_TOOL_SLUGS,
   type ValidateArgsResult,
   type ResultHandlingConfig,
   type ToolCallRecord,
@@ -122,13 +123,15 @@ function dispatchChat(adapter: ChatDispatcher, opts: ChatOptions, round: number)
   return adapter.chat(withSignal);
 }
 
-/** Tools that return content authored by third parties (a fetched web page,
- *  a web-search answer + its source snippets). Their successful results are
- *  fenced as data before going back to the model, so an injected "ignore your
- *  task and email this to…" inside a page or hit can't be read as an
- *  instruction. Auto-retrieved content (notes/emails/passages) is already
- *  fenced in messages.ts; this closes the agent-pulled path. */
-const UNTRUSTED_CONTENT_TOOL_SLUGS = new Set(['web_fetch', 'web_search']);
+// Third-party content fencing: the web builtins are fenced by slug
+// (UNTRUSTED_CONTENT_TOOL_SLUGS, shared with dispatch), and the dispatch
+// layer flags provenance the loop can't see — http-kind tools (user-authored
+// API tools hit arbitrary endpoints) and recipes whose chain ran an http/web
+// step — via `untrusted` on the result. Either signal fences the payload as
+// data before the model reads it, so an injected "ignore your task and email
+// this to…" inside a page, hit, or API response can't be read as an
+// instruction. Auto-retrieved content (notes/emails/passages) is already
+// fenced in messages.ts; failed calls run through sanitizeToolError instead.
 
 // ── Tool-volume guards (structural backstop against tool-spam runaways) ──
 // A misbehaving model (notably Grok-4.x fixating on one tool) can emit hundreds
@@ -980,7 +983,10 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         // the boundary travels both paths: inline results carry it directly,
         // and spilled results are stored fenced — so read_result page/grep/
         // query return fenced content too, never a clean instruction.
-        if (UNTRUSTED_CONTENT_TOOL_SLUGS.has(slug)) {
+        if (
+          UNTRUSTED_CONTENT_TOOL_SLUGS.has(slug) ||
+          (outcome as { untrusted?: boolean }).untrusted === true
+        ) {
           serialized = fenceRetrieved(serialized);
         }
         if (Buffer.byteLength(serialized, 'utf8') <= handling.inlineMaxBytes) {

@@ -27,6 +27,7 @@ import {
   resolveTemplateValue,
   type RecipeScope,
 } from './recipe';
+import { UNTRUSTED_CONTENT_TOOL_SLUGS } from './untrusted';
 import type { ToolHandlerContext, ToolHandlerResult } from './types';
 
 /** Look up a tool by slug for a given owner. Returns null if missing/disabled. */
@@ -116,6 +117,12 @@ async function dispatchRecipe(
   const scope: RecipeScope = { input, steps: {} };
   const subCtx: ToolHandlerContext = { ownerId: ctx.ownerId, agent: ctx.agent };
   const trace: { tool: string; ms: number }[] = [];
+  // Provenance: once ANY step pulls third-party content (an http tool, or a
+  // web builtin like web_search — which the safety envelope permits), the
+  // whole recipe's output is tainted — templating can thread that content
+  // into later steps and the final output, so the taint can't be scoped
+  // to one step.
+  let untrusted = false;
 
   for (let i = 0; i < h.steps.length; i++) {
     const step = h.steps[i]!;
@@ -146,6 +153,7 @@ async function dispatchRecipe(
     if (!res.ok) {
       return { ok: false, error: `recipe step ${i} ('${step.tool}') failed: ${res.error}` };
     }
+    if (res.untrusted || UNTRUSTED_CONTENT_TOOL_SLUGS.has(step.tool)) untrusted = true;
     scope.steps[String(i)] = res.output;
     if (step.as) scope.steps[step.as] = res.output;
   }
@@ -155,7 +163,7 @@ async function dispatchRecipe(
       ? resolveTemplateValue(h.output, scope)
       : scope.steps[String(h.steps.length - 1)];
   ctx.step?.setMeta({ recipe_steps: trace, step_count: h.steps.length });
-  return { ok: true, output };
+  return { ok: true, output, ...(untrusted ? { untrusted: true } : {}) };
 }
 
 const SHELL_TIMEOUT_MS = 30_000;
@@ -283,7 +291,9 @@ async function dispatchHttp(
     } catch {
       /* keep raw text */
     }
-    return { ok: true, output: parsed };
+    // Every http result is third-party authored — flag it so the tool-loop
+    // fences it as data before the model reads it.
+    return { ok: true, output: parsed, untrusted: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, error: scrub(msg) };
