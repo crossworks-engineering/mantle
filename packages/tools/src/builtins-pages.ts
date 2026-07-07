@@ -1273,6 +1273,158 @@ const page_block_delete: BuiltinToolDef = {
   },
 };
 
+/** Upper bound on ops per batch — big enough for real jobs (the 47-quote
+ *  wrap, a 40-block renumber), small enough that a runaway payload is
+ *  refused with guidance instead of accepted. */
+const MAX_APPLY_OPS = 50;
+
+const page_blocks_apply: BuiltinToolDef = {
+  slug: 'page_blocks_apply',
+  preconditions: PAGE_ID_PRE,
+  name: 'Apply a batch of block edits to a page (atomic)',
+  description:
+    "Apply MANY block edits to one page in a SINGLE atomic call — the batch path between one-off block tools and a whole-body `page_update_draft` rewrite. `ops` is an ordered list of `{ op: 'update' | 'insert_after' | 'delete', block_id, markdown? }` applied sequentially against the editing baseline; the draft is saved ONCE at the end, so the batch is all-or-nothing: if any op fails (unknown block id, bad markdown, refused delete) NOTHING is saved and the error names the failing op's index. " +
+    "**Use this for multi-block targeted edits** — wrap every quote, retitle several sections, delete a scattered set — up to 50 ops. One call replaces up to 50 individual block calls, so it cannot be severed mid-edit by the turn's tool-call budget. For a full restructure (resequencing, merging sections) still prefer ONE `page_update_draft`. " +
+    "`block_id`s come from `page_blocks_list` (the baseline): a block INSERTED by this batch has no addressable id until after save, and a block DELETED earlier in the batch can't be referenced later. Same markdown rules as `page_block_update` — include the structural prefix (`##`, `>`, `:::info`, …) when you mean to KEEP the block's kind; on 'update' the first new block inherits the target's id.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      page_id: { type: 'string', description: 'page node id' },
+      ops: {
+        type: 'array',
+        description: `Ordered edits, applied sequentially (max ${MAX_APPLY_OPS}).`,
+        items: {
+          type: 'object',
+          properties: {
+            op: { type: 'string', enum: ['update', 'insert_after', 'delete'] },
+            block_id: {
+              type: 'string',
+              description:
+                "target block id from page_blocks_list; for 'insert_after' the new blocks land AFTER this block",
+            },
+            markdown: {
+              type: 'string',
+              description:
+                "content for 'update' / 'insert_after' (required there, ignored on 'delete'). Keep the structural prefix to preserve block kind.",
+            },
+          },
+          required: ['op', 'block_id'],
+        },
+      },
+    },
+    required: ['page_id', 'ops'],
+  },
+  handler: async (input, ctx) => {
+    const pageId = str(input.page_id).trim();
+    if (!pageId) return { ok: false, error: 'page_id is required' };
+    const opsIn = Array.isArray(input.ops) ? (input.ops as unknown[]) : null;
+    if (!opsIn || opsIn.length === 0) {
+      return {
+        ok: false,
+        error:
+          "ops is required — a non-empty array of { op: 'update'|'insert_after'|'delete', block_id, markdown? }",
+      };
+    }
+    if (opsIn.length > MAX_APPLY_OPS) {
+      return {
+        ok: false,
+        error:
+          `ops has ${opsIn.length} entries (max ${MAX_APPLY_OPS}). Split into two batches — ` +
+          `or, for a full-document restructure, use ONE page_update_draft call instead.`,
+      };
+    }
+
+    const page = await getPage(ctx.ownerId, pageId);
+    if (!page) return notFound('page', pageId, 'page_list / search_nodes');
+
+    let doc = pickEditingBaseline(page);
+    const counts = { updated: 0, inserted: 0, deleted: 0 };
+    for (let i = 0; i < opsIn.length; i++) {
+      const raw = opsIn[i];
+      const op = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+      const kind = str(op.op).trim();
+      const blockId = str(op.block_id).trim();
+      // Atomicity is the contract: any failure aborts BEFORE saveDraft, so
+      // the teaching error can promise "nothing was saved" truthfully.
+      const fail = (msg: string): { ok: false; error: string } => ({
+        ok: false,
+        error:
+          `op ${i}${kind ? ` ('${kind}'` + (blockId ? ` ${blockId}` : '') + ')' : ''}: ${msg}. ` +
+          `The batch is atomic — NOTHING was saved. Fix this op and re-issue the whole batch.`,
+      });
+      if (!blockId) return fail('block_id is required');
+      if (kind === 'update' || kind === 'insert_after') {
+        const markdown = str(op.markdown);
+        if (!markdown) {
+          return fail(
+            `markdown is required for '${kind}'` +
+              (kind === 'update' ? " (to remove the block use op:'delete')" : ''),
+          );
+        }
+        let parsedBlocks: unknown[];
+        try {
+          const parsed = markdownToDoc(markdown) as { content?: unknown[] };
+          parsedBlocks = Array.isArray(parsed.content) ? parsed.content : [];
+        } catch (err) {
+          return fail(`markdown parse failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        if (parsedBlocks.length === 0) return fail('markdown produced no blocks');
+        const result =
+          kind === 'update'
+            ? replaceBlock(doc, blockId, parsedBlocks as PMBlockNode[])
+            : insertAfterBlock(doc, blockId, parsedBlocks as PMBlockNode[]);
+        if (!result.found) {
+          return fail(
+            `block not found in page ${pageId} — re-run page_blocks_list for current ids ` +
+              `(an earlier delete in this batch removes its id; blocks inserted by this batch ` +
+              `aren't addressable until after save)`,
+          );
+        }
+        doc = result.doc;
+        if (kind === 'update') counts.updated += 1;
+        else counts.inserted += parsedBlocks.length;
+      } else if (kind === 'delete') {
+        const result = deleteBlock(doc, blockId);
+        if (!result.found) {
+          return fail(
+            `block not found in page ${pageId} — re-run page_blocks_list for current ids ` +
+              `(an earlier delete in this batch removes its id)`,
+          );
+        }
+        if (result.refused) {
+          return fail(
+            result.reason ??
+              'delete refused (it would leave a container empty — target the container instead)',
+          );
+        }
+        doc = result.doc;
+        counts.deleted += 1;
+      } else {
+        return fail("op must be one of: 'update', 'insert_after', 'delete'");
+      }
+    }
+
+    try {
+      const ok = await saveDraft(ctx.ownerId, pageId, doc);
+      if (!ok) return { ok: false, error: `page ${pageId} not found (race?)` };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+
+    ctx.step?.setOutput({ ops: opsIn.length, ...counts });
+    return {
+      ok: true,
+      output: {
+        page_id: pageId,
+        ops_applied: opsIn.length,
+        ...counts,
+        draft_saved: true,
+        hint: DRAFT_REVIEW_HINT(pageId),
+      },
+    };
+  },
+};
+
 const page_split: BuiltinToolDef = {
   slug: 'page_split',
   name: 'Split a page into sub-pages',
@@ -1603,6 +1755,7 @@ export const PAGE_TOOLS: BuiltinToolDef[] = [
   page_block_update,
   page_block_insert_after,
   page_block_delete,
+  page_blocks_apply,
   page_split,
   page_extract_section,
   page_move,
