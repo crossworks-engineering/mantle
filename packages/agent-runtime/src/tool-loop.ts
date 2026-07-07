@@ -25,6 +25,7 @@
  * providers (Anthropic, OR-via-Anthropic).
  */
 
+import { createHash } from 'node:crypto';
 import {
   currentTrace,
   step,
@@ -157,6 +158,16 @@ const MAX_CALLS_PER_TOOL_PER_TURN = 15; // default same-tool fixation breaker (c
 const HARD_MAX_TOOL_CALLS_PER_TURN = 200; // ceiling for per-agent overrides
 const HARD_MAX_CALLS_PER_TOOL_PER_TURN = 100; // ceiling for per-agent overrides
 
+// ── Failure-aware guards (outcome-sensitive complements to the caps above) ──
+// The volume caps count calls regardless of what they produced, so a flail
+// loop — the model re-issuing one broken call verbatim, or re-reading state
+// that never changes — burns up to 15 calls before the fixation cap ends it.
+// These two watch OUTCOMES per exact signature (slug + raw args) and step in
+// far earlier. The error payload starts teaching at the 2nd identical
+// failure; at the limit the call is skipped, not dispatched.
+const REPEATED_FAILURE_LIMIT = 5; // identical call failed N times → further attempts blocked
+const NO_PROGRESS_LIMIT = 5; // identical call returned the identical result N times → blocked
+
 // ── Central arg validation (coerce-then-validate) ──
 // Every tool call's args are checked against the tool's own inputSchema
 // BEFORE dispatch (see @mantle/tools validate-args.ts). Safe repairs
@@ -177,6 +188,13 @@ export function resolveToolValidationMode(env: string | undefined = process.env.
 function resolveCap(requested: number | undefined, fallback: number, ceiling: number): number {
   if (typeof requested !== 'number' || !Number.isFinite(requested) || requested < 1) return fallback;
   return Math.min(ceiling, Math.floor(requested));
+}
+
+/** Cheap stable digest of a serialized tool result, for the no-progress
+ *  guard's identical-result comparison. Keeping full payloads per signature
+ *  would hold every large read in memory for the whole turn. */
+function hashToolResult(serialized: string): string {
+  return createHash('sha256').update(serialized).digest('base64').slice(0, 16);
 }
 
 /** Process-lifetime cache of the resolved `read_result` tool row, keyed by
@@ -455,6 +473,9 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   const argValidationMode = resolveToolValidationMode();
   let totalToolCalls = 0;
   const perToolCounts = new Map<string, number>();
+  // Failure-aware guard state, keyed by exact signature (slug + raw args).
+  const exactFailureCounts = new Map<string, number>();
+  const identicalResults = new Map<string, { hash: string; count: number }>();
   let budgetExhausted = false;
 
   // Skip a tool call WITHOUT executing it, still emitting the synthetic
@@ -767,6 +788,38 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         );
         continue;
       }
+      // ── Failure-aware guards (outcome-sensitive, cross-round) ──
+      // The volume caps above count CALLS; these two count what the calls
+      // produced. In-response dedup means a signature appears at most once
+      // per round, so these only trip on genuine cross-round flail loops —
+      // no batch-severing concern. (Pattern from hermes-agent's
+      // tool_guardrails: a call that keeps failing identically, or keeps
+      // returning the identical result, deserves intervention long before
+      // the 15-call fixation cap.)
+      const priorExactFailures = exactFailureCounts.get(signature) ?? 0;
+      if (priorExactFailures >= REPEATED_FAILURE_LIMIT) {
+        await skipToolCall(
+          call,
+          'repeated_failure',
+          `This exact call ('${slug}' with these same arguments) has already failed ` +
+            `${priorExactFailures} times this turn; it was blocked, not re-run — repeating it ` +
+            `verbatim cannot succeed. Change the arguments or the approach, or answer with ` +
+            `what you have.`,
+        );
+        continue;
+      }
+      const priorIdentical = identicalResults.get(signature);
+      if (priorIdentical && priorIdentical.count >= NO_PROGRESS_LIMIT) {
+        await skipToolCall(
+          call,
+          'no_progress',
+          `You've made this exact call ('${slug}' with these same arguments) ` +
+            `${priorIdentical.count} times and received the identical result every time — the ` +
+            `state isn't changing, so it was blocked, not re-run. Use the result already in ` +
+            `context above; if you need different data, change the arguments.`,
+        );
+        continue;
+      }
       perToolCounts.set(slug, (perToolCounts.get(slug) ?? 0) + 1);
       totalToolCalls += 1;
 
@@ -973,12 +1026,40 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       // path stays a plain inline assignment with zero overhead.
       let payload: string;
       if (!outcome.ok) {
+        // Failure-aware guard accounting: identical failing calls escalate —
+        // the payload teaches from the 2nd failure, the guard above blocks
+        // at the limit.
+        const failures = (exactFailureCounts.get(signature) ?? 0) + 1;
+        exactFailureCounts.set(signature, failures);
         // Error strings can embed EXTERNAL content (an HTTP body excerpt, a
         // recipe step's inner error) and bypass the success-path fence below
         // — sanitize centrally so no handler has to remember to.
-        payload = JSON.stringify({ error: sanitizeToolError(outcome.error) });
+        payload = JSON.stringify({
+          error: sanitizeToolError(outcome.error),
+          ...(failures >= 2
+            ? {
+                loop_guard:
+                  `This exact call has now failed ${failures} times this turn with the same ` +
+                  `arguments. Change the arguments or the approach — after ` +
+                  `${REPEATED_FAILURE_LIMIT} identical failures further attempts are blocked.`,
+              }
+            : {}),
+        });
       } else {
         let serialized = JSON.stringify(outcome.output);
+        // No-progress accounting: consecutive identical results for the same
+        // signature. A different result resets the streak — re-reads after
+        // writes legitimately repeat and are never penalised.
+        {
+          const resultHash = hashToolResult(serialized);
+          const prior = identicalResults.get(signature);
+          identicalResults.set(
+            signature,
+            prior && prior.hash === resultHash
+              ? { hash: resultHash, count: prior.count + 1 }
+              : { hash: resultHash, count: 1 },
+          );
+        }
         // Fence untrusted external content BEFORE the inline/spill decision so
         // the boundary travels both paths: inline results carry it directly,
         // and spilled results are stored fenced — so read_result page/grep/

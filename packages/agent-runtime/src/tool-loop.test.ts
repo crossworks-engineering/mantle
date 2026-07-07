@@ -1370,6 +1370,100 @@ describe('runToolLoop — tool-volume guards', () => {
   });
 });
 
+describe('runToolLoop — failure-aware guards', () => {
+  function sameCallRound(n: number) {
+    return {
+      type: 'toolCalls' as const,
+      toolCalls: [
+        {
+          id: `call_f${n}`,
+          type: 'function' as const,
+          function: { name: 'flaky_tool', arguments: '{"id":"x1"}' },
+        },
+      ],
+    };
+  }
+
+  it('blocks the exact same failing call after REPEATED_FAILURE_LIMIT, teaching from the 2nd failure', async () => {
+    const tool = fakeTool({ slug: 'flaky_tool' });
+    const rounds = Array.from({ length: 6 }, (_, i) => sameCallRound(i + 1));
+    const { adapter, calls } = makeFakeAdapter([...rounds, { type: 'text', text: 'gave up' }]);
+    dispatchToolImpl = () => ({ ok: false, error: 'boom' });
+
+    const result = await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: [tool],
+      maxIterations: 10,
+    });
+
+    // 5 failures dispatched; the 6th identical attempt is blocked, not run.
+    expect(dispatchToolCalls).toHaveLength(5);
+    expect(result.toolCalls[5]).toMatchObject({ status: 'error', error: 'repeated_failure' });
+    expect(calls).toHaveLength(7);
+    // Tool messages by ordinal (the loop mutates one shared messages array,
+    // so per-call snapshots all show the final state — index, don't .at(-1)).
+    const toolMsgs = result.messages.filter((m) => m.role === 'tool');
+    // From the 2nd failure the error payload teaches the escalation.
+    expect(toolMsgs[1]?.content).toContain('failed 2 times');
+    expect(toolMsgs[1]?.content).toContain('further attempts are blocked');
+    expect(toolMsgs[4]?.content).toContain('failed 5 times');
+    // The block note tells the model the call was NOT re-run.
+    expect(toolMsgs[5]?.content).toContain('blocked, not re-run');
+    expect(result.reply).toBe('gave up');
+  });
+
+  it('blocks an identical call that keeps returning the identical result (no progress)', async () => {
+    const tool = fakeTool({ slug: 'flaky_tool' });
+    const rounds = Array.from({ length: 6 }, (_, i) => sameCallRound(i + 1));
+    const { adapter, calls } = makeFakeAdapter([...rounds, { type: 'text', text: 'ok' }]);
+    dispatchToolImpl = () => ({ ok: true, output: { rows: [1, 2, 3] } }); // never changes
+
+    const result = await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: [tool],
+      maxIterations: 10,
+    });
+
+    expect(dispatchToolCalls).toHaveLength(5);
+    expect(result.toolCalls[5]).toMatchObject({ status: 'error', error: 'no_progress' });
+    expect(calls).toHaveLength(7);
+    const toolMsgs = result.messages.filter((m) => m.role === 'tool');
+    expect(toolMsgs[5]?.content).toContain('identical result');
+    expect(toolMsgs[5]?.content).toContain('result already in context');
+  });
+
+  it('never blocks an identical call whose results keep changing (legitimate re-reads)', async () => {
+    const tool = fakeTool({ slug: 'flaky_tool' });
+    const rounds = Array.from({ length: 7 }, (_, i) => sameCallRound(i + 1));
+    const { adapter } = makeFakeAdapter([...rounds, { type: 'text', text: 'done' }]);
+    let n = 0;
+    dispatchToolImpl = () => ({ ok: true, output: { version: ++n } }); // changes every time
+
+    await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: [tool],
+      maxIterations: 12,
+    });
+
+    expect(dispatchToolCalls).toHaveLength(7); // all dispatched, streak keeps resetting
+  });
+});
+
 describe('runToolLoop — central arg validation', () => {
   const SEARCH_SCHEMA = {
     type: 'object',
