@@ -30,6 +30,7 @@ import {
 } from '@mantle/content';
 import { enqueueBackfills } from '@mantle/email';
 import type { BuiltinToolDef } from './types';
+import { notFound } from './errors';
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -132,7 +133,7 @@ const contact_get: BuiltinToolDef = {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     const row = await getContact(ctx.ownerId, id);
-    if (!row) return { ok: false, error: 'contact not found' };
+    if (!row) return notFound('contact', id, 'contact_find / contact_list');
     return { ok: true, output: compact(row) };
   },
 };
@@ -251,7 +252,7 @@ const contact_update: BuiltinToolDef = {
     };
     try {
       const result = await updateContact(ctx.ownerId, id, patch);
-      if (!result) return { ok: false, error: 'contact not found' };
+      if (!result) return notFound('contact', id, 'contact_find / contact_list');
       await enqueueBackfills(ctx.ownerId, result.addedEmails);
       ctx.step?.setOutput({ id: result.contact.id, title: result.contact.title });
       return { ok: true, output: compact(result.contact) };
@@ -267,6 +268,11 @@ const contact_delete: BuiltinToolDef = {
   description:
     "Remove a contact. NOTE: this also removes them from the email allowlist — Saskia can no longer email them after deletion. Returns ok=true on success; ok=false if the contact wasn't found." +
     ONLY_WHEN_ASKED,
+  // Deleting a contact silently severs their email pipeline BOTH ways
+  // (send allowlist + inbound ingest) — a side effect the user can't see
+  // coming from "remove X from my contacts". Low-frequency op, so the gate
+  // costs nothing; the description's warning stays as the model-facing cue.
+  requiresConfirm: true,
   inputSchema: {
     type: 'object',
     properties: { id: { type: 'string', format: 'uuid' } },
@@ -276,7 +282,7 @@ const contact_delete: BuiltinToolDef = {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     const ok = await deleteContact(ctx.ownerId, id);
-    if (!ok) return { ok: false, error: 'contact not found' };
+    if (!ok) return notFound('contact', id, 'contact_find / contact_list');
     ctx.step?.setOutput({ id });
     return { ok: true, output: { id } };
   },

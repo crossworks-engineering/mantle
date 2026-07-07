@@ -55,6 +55,14 @@ import { fileById, readFileById } from '@mantle/files';
 import { parseSheetToGrid, parseTextToGrid } from '@mantle/files/sheet-to-grid';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
+import { notFound } from './errors';
+import type { ToolPrecondition } from './types';
+
+// Shared referential precondition (checked centrally in dispatch — see
+// preconditions.ts): table_id must name an EXISTING table the owner holds.
+const TABLE_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'table_id', nodeType: 'table', lookup: 'table_list' },
+];
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -121,7 +129,7 @@ async function editDraft(
   fn: (doc: TableDoc) => { doc: TableDoc; output?: Record<string, unknown>; error?: string },
 ): Promise<ToolHandlerResult> {
   const table = await getTable(ownerId, tableId);
-  if (!table) return { ok: false, error: `table ${tableId} not found` };
+  if (!table) return notFound('table', tableId, 'table_list');
   const res = fn(baseline(table));
   if (res.error) return { ok: false, error: res.error };
   const ok = await saveTableDraft(ownerId, tableId, res.doc);
@@ -211,7 +219,7 @@ const table_from_file: BuiltinToolDef = {
     const fileId = str(input.file_id).trim();
     if (!fileId) return { ok: false, error: 'file_id is required' };
     const meta = await fileById({ ownerId: ctx.ownerId, fileId });
-    if (!meta) return { ok: false, error: `file ${fileId} not found` };
+    if (!meta) return notFound('file', fileId, 'file_list / search_nodes');
     const ext = (meta.filename ?? '').toLowerCase().match(/\.(xlsx|xls|csv)$/)?.[1];
     if (!ext) {
       return { ok: false, error: `table_from_file: '${meta.filename}' is not a spreadsheet (need .xlsx/.xls/.csv)` };
@@ -374,7 +382,7 @@ const table_update: BuiltinToolDef = {
     if (Object.keys(patch).length === 0) return { ok: false, error: 'nothing to update — pass title, tags, or icon' };
     try {
       const table = await updateTable(ctx.ownerId, id, patch);
-      if (!table) return { ok: false, error: `table ${id} not found` };
+      if (!table) return notFound('table', id, 'table_list');
       ctx.step?.setOutput({ id: table.id, title: table.title });
       return { ok: true, output: { id: table.id, title: table.title, tags: table.tags } };
     } catch (err) {
@@ -394,7 +402,7 @@ const table_delete: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id is required' };
     try {
       const ok = await deleteTable(ctx.ownerId, id);
-      if (!ok) return { ok: false, error: `table ${id} not found` };
+      if (!ok) return notFound('table', id, 'table_list');
       ctx.step?.setOutput({ id, deleted: true });
       return { ok: true, output: { id, deleted: true } };
     } catch (err) {
@@ -413,7 +421,7 @@ const table_commit: BuiltinToolDef = {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     const table = await getTable(ctx.ownerId, id);
-    if (!table) return { ok: false, error: `table ${id} not found` };
+    if (!table) return notFound('table', id, 'table_list');
     if (!table.draft) return { ok: false, error: 'no draft to commit — the table is already published' };
     try {
       const published = await commitTable(ctx.ownerId, id, table.draft);
@@ -476,7 +484,7 @@ const table_get: BuiltinToolDef = {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     const table = await getTable(ctx.ownerId, id);
-    if (!table) return { ok: false, error: `table ${id} not found` };
+    if (!table) return notFound('table', id, 'table_list');
     const doc = baseline(table);
     const offset = typeof input.offset === 'number' ? Math.max(0, input.offset) : 0;
     const limit = typeof input.limit === 'number' ? input.limit : 50;
@@ -509,6 +517,7 @@ const table_get: BuiltinToolDef = {
 
 const table_rows_list: BuiltinToolDef = {
   slug: 'table_rows_list',
+  preconditions: TABLE_ID_PRE,
   name: 'List rows in a table',
   description:
     "Return a windowed snapshot of a table's rows — each as a stable `id` plus short per-cell text. **Use this BEFORE any row edit** so you can target rows by id. Pages via `offset`/`limit` (default 50). `column_ids` restricts the cell snapshot (the column summary still lists every column). Reads the draft if one exists. The row `id`s are stable across edits — addressable in `table_row_update` / `table_cell_set` / `table_row_delete`.",
@@ -527,7 +536,7 @@ const table_rows_list: BuiltinToolDef = {
     const tableId = str(input.table_id).trim();
     if (!tableId) return { ok: false, error: 'table_id is required' };
     const table = await getTable(ctx.ownerId, tableId);
-    if (!table) return { ok: false, error: `table ${tableId} not found` };
+    if (!table) return notFound('table', tableId, 'table_list');
     const doc = baseline(table);
     const listed = listRows(doc, {
       offset: typeof input.offset === 'number' ? input.offset : 0,
@@ -542,6 +551,7 @@ const table_rows_list: BuiltinToolDef = {
 
 const table_row_get: BuiltinToolDef = {
   slug: 'table_row_get',
+  preconditions: TABLE_ID_PRE,
   name: 'Get one row',
   description: "Read a single row by id (from `table_rows_list`). Returns its cells keyed by column name and id, formula columns resolved. Reads the draft if present.",
   inputSchema: {
@@ -554,7 +564,7 @@ const table_row_get: BuiltinToolDef = {
     const rowId = str(input.row_id).trim();
     if (!tableId || !rowId) return { ok: false, error: 'table_id and row_id are required' };
     const table = await getTable(ctx.ownerId, tableId);
-    if (!table) return { ok: false, error: `table ${tableId} not found` };
+    if (!table) return notFound('table', tableId, 'table_list');
     const doc = baseline(table);
     const row = findRow(doc, rowId);
     if (!row) return { ok: false, error: `row ${rowId} not found (re-run table_rows_list)` };
@@ -613,7 +623,7 @@ const table_query: BuiltinToolDef = {
     const tableId = str(input.table_id).trim();
     if (!tableId) return { ok: false, error: 'table_id is required' };
     const table = await getTable(ctx.ownerId, tableId);
-    if (!table) return { ok: false, error: `table ${tableId} not found` };
+    if (!table) return notFound('table', tableId, 'table_list');
     const doc = baseline(table);
 
     const ignoredFilters: string[] = [];
@@ -730,7 +740,7 @@ const table_aggregate: BuiltinToolDef = {
     const tableId = str(input.table_id).trim();
     if (!tableId) return { ok: false, error: 'table_id is required' };
     const table = await getTable(ctx.ownerId, tableId);
-    if (!table) return { ok: false, error: `table ${tableId} not found` };
+    if (!table) return notFound('table', tableId, 'table_list');
     const doc = baseline(table);
 
     const groupCols = strArr(input.group_by)
@@ -824,6 +834,7 @@ const CELLS_HINT =
 
 const table_row_add: BuiltinToolDef = {
   slug: 'table_row_add',
+  preconditions: TABLE_ID_PRE,
   name: 'Add a row',
   description: "Append a new row (or insert after `after_row_id`). Returns the new row id. Writes to DRAFT.",
   inputSchema: {
@@ -855,6 +866,7 @@ const table_row_add: BuiltinToolDef = {
 
 const table_row_update: BuiltinToolDef = {
   slug: 'table_row_update',
+  preconditions: TABLE_ID_PRE,
   name: 'Update a row',
   description: "Patch a row's cells by id (merge — unspecified cells stay). The surgical \"do row X\" tool. Writes to DRAFT.",
   inputSchema: {
@@ -884,6 +896,7 @@ const table_row_update: BuiltinToolDef = {
 
 const table_row_delete: BuiltinToolDef = {
   slug: 'table_row_delete',
+  preconditions: TABLE_ID_PRE,
   name: 'Delete a row',
   description: "Remove a row by id. Writes to DRAFT.",
   inputSchema: {
@@ -938,6 +951,7 @@ const table_cell_set: BuiltinToolDef = {
 
 const table_column_add: BuiltinToolDef = {
   slug: 'table_column_add',
+  preconditions: TABLE_ID_PRE,
   name: 'Add a column',
   description:
     "Add a column. `type` ∈ text|number|currency|percent|date|datetime|checkbox|select|multiselect|url|formula. For currency pass `format.currency` (ISO code); for select/multiselect pass `options` (array of label strings); for a formula column pass `formula` (e.g. \"{Qty} * {Price}\" — references other columns by name). Writes to DRAFT.",
@@ -978,6 +992,7 @@ const table_column_add: BuiltinToolDef = {
 
 const table_column_update: BuiltinToolDef = {
   slug: 'table_column_update',
+  preconditions: TABLE_ID_PRE,
   name: 'Update a column',
   description: "Change a column (by id or name): rename, retype (cells are re-coerced), set format/options/formula. Pass only what changes. Writes to DRAFT.",
   inputSchema: {
@@ -1019,6 +1034,7 @@ const table_column_update: BuiltinToolDef = {
 
 const table_column_delete: BuiltinToolDef = {
   slug: 'table_column_delete',
+  preconditions: TABLE_ID_PRE,
   name: 'Delete a column',
   description: "Remove a column (by id or name) and all its cells. Writes to DRAFT.",
   inputSchema: {

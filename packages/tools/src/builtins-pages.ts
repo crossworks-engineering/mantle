@@ -41,6 +41,17 @@ import {
 import { fileById, readFileById } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
+import { notFound } from './errors';
+import type { ToolPrecondition } from './types';
+
+// Shared referential preconditions (checked centrally in dispatch — see
+// preconditions.ts): the id must name an EXISTING page the owner holds.
+const PAGE_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'page_id', nodeType: 'page', lookup: 'page_list / search_nodes' },
+];
+const PAGE_NODE_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'id', nodeType: 'page', lookup: 'page_list / search_nodes' },
+];
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -118,6 +129,7 @@ const page_create: BuiltinToolDef = {
 
 const page_replace_from_file: BuiltinToolDef = {
   slug: 'page_replace_from_file',
+  preconditions: PAGE_ID_PRE,
   name: 'Replace an existing page from a file',
   description:
     "Rebuild an EXISTING page's body from a markdown/text file's bytes. Writes the new body to `draft_doc` ONLY — the published `doc` is untouched until the operator commits. Like `page_from_file` but updates a target page instead of creating a new one. **The right tool for: 'this page is corrupted, reimport from the source file' / 'I re-exported this page from Notion, refresh it here'.** Bytes go server-side without round-tripping through your output, so this scales to any file size — the deterministic recovery path. Title / tags / icon stay as-is unless you pass replacements. Only text-like files are accepted (markdown / plain text); binaries are rejected.",
@@ -141,10 +153,10 @@ const page_replace_from_file: BuiltinToolDef = {
     // Verify the page exists + belongs to this owner BEFORE pulling file
     // bytes — clean 404 instead of an opaque draft-save failure.
     const page = await getPage(ctx.ownerId, pageId);
-    if (!page) return { ok: false, error: `page ${pageId} not found` };
+    if (!page) return notFound('page', pageId, 'page_list / search_nodes');
 
     const meta = await fileById({ ownerId: ctx.ownerId, fileId });
-    if (!meta) return { ok: false, error: `file ${fileId} not found` };
+    if (!meta) return notFound('file', fileId, 'file_list / search_nodes');
     if (!meta.isText) {
       return {
         ok: false,
@@ -237,7 +249,7 @@ const page_update: BuiltinToolDef = {
     }
     try {
       const page = await updatePage(ctx.ownerId, id, patch);
-      if (!page) return { ok: false, error: `page ${id} not found` };
+      if (!page) return notFound('page', id, 'page_list / search_nodes');
       ctx.step?.setOutput({ id: page.id, title: page.title });
       return { ok: true, output: { id: page.id, title: page.title, tags: page.tags } };
     } catch (err) {
@@ -248,6 +260,7 @@ const page_update: BuiltinToolDef = {
 
 const page_update_draft: BuiltinToolDef = {
   slug: 'page_update_draft',
+  preconditions: PAGE_NODE_ID_PRE,
   name: 'Update a page (draft-only)',
   description:
     "Update an existing page WITHOUT publishing. Body changes (`markdown`) go to `draft_doc` — the published `doc` and its brain index are untouched until the operator opens the editor and commits. Metadata (`title` / `tags` / `icon`) updates apply directly (easily reversible if wrong). **The Pages agent uses this instead of `page_update` so a misbehaving transform can never silently overwrite the published page.** Pass ONLY the fields you're changing — every other field is left untouched. Returns a hint telling the user where to review the draft.",
@@ -279,7 +292,7 @@ const page_update_draft: BuiltinToolDef = {
     if (Object.keys(metaPatch).length > 0) {
       try {
         const result = await updatePage(ctx.ownerId, id, metaPatch);
-        if (!result) return { ok: false, error: `page ${id} not found` };
+        if (!result) return notFound('page', id, 'page_list / search_nodes');
         metaUpdated = true;
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -294,7 +307,7 @@ const page_update_draft: BuiltinToolDef = {
       try {
         const doc = markdownToDoc(input.markdown);
         const ok = await saveDraft(ctx.ownerId, id, doc);
-        if (!ok) return { ok: false, error: `page ${id} not found` };
+        if (!ok) return notFound('page', id, 'page_list / search_nodes');
         draftSaved = true;
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -346,7 +359,7 @@ const page_delete: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id is required' };
     try {
       const ok = await deletePage(ctx.ownerId, id);
-      if (!ok) return { ok: false, error: `page ${id} not found` };
+      if (!ok) return notFound('page', id, 'page_list / search_nodes');
       ctx.step?.setOutput({ id, deleted: true });
       return { ok: true, output: { id, deleted: true } };
     } catch (err) {
@@ -409,7 +422,7 @@ const page_get: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id is required' };
     try {
       const page = await getPage(ctx.ownerId, id);
-      if (!page) return { ok: false, error: `page ${id} not found` };
+      if (!page) return notFound('page', id, 'page_list / search_nodes');
       const hasDraft = page.draft !== null;
       return {
         ok: true,
@@ -460,7 +473,7 @@ const page_from_file: BuiltinToolDef = {
     const fileId = str(input.file_id).trim();
     if (!fileId) return { ok: false, error: 'file_id is required' };
     const meta = await fileById({ ownerId: ctx.ownerId, fileId });
-    if (!meta) return { ok: false, error: `file ${fileId} not found` };
+    if (!meta) return notFound('file', fileId, 'file_list / search_nodes');
     if (!meta.isText) {
       return {
         ok: false,
@@ -916,6 +929,7 @@ const page_from_journal: BuiltinToolDef = {
 
 const page_blocks_list: BuiltinToolDef = {
   slug: 'page_blocks_list',
+  preconditions: PAGE_ID_PRE,
   name: 'List the blocks in a page',
   description:
     "Return a TOC-style flat listing of every addressable block in a page — `id`, `kind` (paragraph / heading / callout / table / …), `depth`, and a short text `preview`. Lightweight: the body itself is not returned, so this works regardless of page size. **Lists the SAME baseline the block-edit tools operate on: the uncommitted DRAFT when one exists, else the published doc** — `baseline` in the output tells you which you got, so the ids here are always valid targets for page_block_get/update/delete. **Use this BEFORE proposing any block-level edit** so you know which blocks exist and can target them by stable id. The ids returned here survive across edits — they are stable per block, not per read. Headings also include `meta.level`, code blocks `meta.language`, callouts `meta.variant`, task items `meta.checked`, images `meta.alt`. **`kinds` is the SCALING knob — pass only the block types you care about** (e.g. `['blockquote']` for 'find every quote', `['heading']` for an outline). A large page can have hundreds of blocks; an unfiltered listing on a 300-block page approaches 80 KB and spills through the tool-result store, costing extra paging turns. `max_depth: 1` is the other compactor — top-level only. Default `preview_chars` is 80; bump only when you genuinely need more context per block.",
@@ -945,7 +959,7 @@ const page_blocks_list: BuiltinToolDef = {
     const pageId = str(input.page_id).trim();
     if (!pageId) return { ok: false, error: 'page_id is required' };
     const page = await getPage(ctx.ownerId, pageId);
-    if (!page) return { ok: false, error: `page ${pageId} not found` };
+    if (!page) return notFound('page', pageId, 'page_list / search_nodes');
 
     const maxDepth =
       typeof input.max_depth === 'number' && input.max_depth >= 1
@@ -1012,6 +1026,7 @@ const DRAFT_REVIEW_HINT = (pageId: string) =>
 
 const page_block_get: BuiltinToolDef = {
   slug: 'page_block_get',
+  preconditions: PAGE_ID_PRE,
   name: 'Get one block from a page',
   description:
     "Read a single addressable block from a page by its id (from `page_blocks_list`). Returns the block's `kind`, depth, text content (plaintext, no formatting), structural `meta` (heading level / callout variant / etc.), and full PM `json` for fidelity-sensitive cases. Cheap: only the one block travels, not the whole page. **Use this BEFORE `page_block_update` so you craft the replacement with full knowledge of the current content.**",
@@ -1028,7 +1043,7 @@ const page_block_get: BuiltinToolDef = {
     const blockId = str(input.block_id).trim();
     if (!pageId || !blockId) return { ok: false, error: 'page_id and block_id are required' };
     const page = await getPage(ctx.ownerId, pageId);
-    if (!page) return { ok: false, error: `page ${pageId} not found` };
+    if (!page) return notFound('page', pageId, 'page_list / search_nodes');
 
     const baseline = pickEditingBaseline(page);
     const found = findBlock(baseline, blockId);
@@ -1058,6 +1073,7 @@ const page_block_get: BuiltinToolDef = {
 
 const page_block_update: BuiltinToolDef = {
   slug: 'page_block_update',
+  preconditions: PAGE_ID_PRE,
   name: 'Replace one block in a page',
   description:
     "Replace one block (by id) with new content (markdown). The first new block INHERITS the target's id so the next page_blocks_list still addresses the same logical slot. If your markdown produces multiple blocks (e.g. you wrap a paragraph in a heading + paragraph), they're all spliced in; subsequent blocks get fresh ids. Writes to DRAFT only — the published page is untouched until the user commits. **Output bytes are proportional to the new block, not the whole page** — this is the scalable edit path for TARGETED edits on large pages. **For a restructure touching more than ~10 blocks (resequencing / renumbering / merging sections), switch to ONE whole-body `page_update_draft` call instead — block-by-block surgery at that scale exhausts the turn's tool-call budget and strands the draft half-edited.** " +
@@ -1082,7 +1098,7 @@ const page_block_update: BuiltinToolDef = {
     if (!markdown) return { ok: false, error: 'markdown is required (cannot replace with nothing — use page_block_delete)' };
 
     const page = await getPage(ctx.ownerId, pageId);
-    if (!page) return { ok: false, error: `page ${pageId} not found` };
+    if (!page) return notFound('page', pageId, 'page_list / search_nodes');
 
     let parsedBlocks: unknown[];
     try {
@@ -1133,6 +1149,7 @@ const page_block_update: BuiltinToolDef = {
 
 const page_block_insert_after: BuiltinToolDef = {
   slug: 'page_block_insert_after',
+  preconditions: PAGE_ID_PRE,
   name: 'Insert blocks after a target block',
   description:
     "Insert one or more new blocks (parsed from markdown) directly after the block with the given id. Useful for adding a callout after a quote, or a new section heading after the previous section ends. Writes to DRAFT only. New blocks get fresh ids on save.",
@@ -1156,7 +1173,7 @@ const page_block_insert_after: BuiltinToolDef = {
     if (!markdown) return { ok: false, error: 'markdown is required' };
 
     const page = await getPage(ctx.ownerId, pageId);
-    if (!page) return { ok: false, error: `page ${pageId} not found` };
+    if (!page) return notFound('page', pageId, 'page_list / search_nodes');
 
     let parsedBlocks: unknown[];
     try {
@@ -1204,6 +1221,7 @@ const page_block_insert_after: BuiltinToolDef = {
 
 const page_block_delete: BuiltinToolDef = {
   slug: 'page_block_delete',
+  preconditions: PAGE_ID_PRE,
   name: 'Delete one block from a page',
   description:
     "Remove a single block (by id) from a page. Writes to DRAFT only. **Refuses** when removing the block would leave a container (callout / column / listItem / tableCell) empty — most ProseMirror schemas reject that. In that case, target the container itself instead.",
@@ -1221,7 +1239,7 @@ const page_block_delete: BuiltinToolDef = {
     if (!pageId || !blockId) return { ok: false, error: 'page_id and block_id are required' };
 
     const page = await getPage(ctx.ownerId, pageId);
-    if (!page) return { ok: false, error: `page ${pageId} not found` };
+    if (!page) return notFound('page', pageId, 'page_list / search_nodes');
 
     const baseline = pickEditingBaseline(page);
     const result = deleteBlock(baseline, blockId);
@@ -1248,6 +1266,158 @@ const page_block_delete: BuiltinToolDef = {
         page_id: pageId,
         block_id: blockId,
         deleted: true,
+        draft_saved: true,
+        hint: DRAFT_REVIEW_HINT(pageId),
+      },
+    };
+  },
+};
+
+/** Upper bound on ops per batch — big enough for real jobs (the 47-quote
+ *  wrap, a 40-block renumber), small enough that a runaway payload is
+ *  refused with guidance instead of accepted. */
+const MAX_APPLY_OPS = 50;
+
+const page_blocks_apply: BuiltinToolDef = {
+  slug: 'page_blocks_apply',
+  preconditions: PAGE_ID_PRE,
+  name: 'Apply a batch of block edits to a page (atomic)',
+  description:
+    "Apply MANY block edits to one page in a SINGLE atomic call — the batch path between one-off block tools and a whole-body `page_update_draft` rewrite. `ops` is an ordered list of `{ op: 'update' | 'insert_after' | 'delete', block_id, markdown? }` applied sequentially against the editing baseline; the draft is saved ONCE at the end, so the batch is all-or-nothing: if any op fails (unknown block id, bad markdown, refused delete) NOTHING is saved and the error names the failing op's index. " +
+    "**Use this for multi-block targeted edits** — wrap every quote, retitle several sections, delete a scattered set — up to 50 ops. One call replaces up to 50 individual block calls, so it cannot be severed mid-edit by the turn's tool-call budget. For a full restructure (resequencing, merging sections) still prefer ONE `page_update_draft`. " +
+    "`block_id`s come from `page_blocks_list` (the baseline): a block INSERTED by this batch has no addressable id until after save, and a block DELETED earlier in the batch can't be referenced later. Same markdown rules as `page_block_update` — include the structural prefix (`##`, `>`, `:::info`, …) when you mean to KEEP the block's kind; on 'update' the first new block inherits the target's id.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      page_id: { type: 'string', description: 'page node id' },
+      ops: {
+        type: 'array',
+        description: `Ordered edits, applied sequentially (max ${MAX_APPLY_OPS}).`,
+        items: {
+          type: 'object',
+          properties: {
+            op: { type: 'string', enum: ['update', 'insert_after', 'delete'] },
+            block_id: {
+              type: 'string',
+              description:
+                "target block id from page_blocks_list; for 'insert_after' the new blocks land AFTER this block",
+            },
+            markdown: {
+              type: 'string',
+              description:
+                "content for 'update' / 'insert_after' (required there, ignored on 'delete'). Keep the structural prefix to preserve block kind.",
+            },
+          },
+          required: ['op', 'block_id'],
+        },
+      },
+    },
+    required: ['page_id', 'ops'],
+  },
+  handler: async (input, ctx) => {
+    const pageId = str(input.page_id).trim();
+    if (!pageId) return { ok: false, error: 'page_id is required' };
+    const opsIn = Array.isArray(input.ops) ? (input.ops as unknown[]) : null;
+    if (!opsIn || opsIn.length === 0) {
+      return {
+        ok: false,
+        error:
+          "ops is required — a non-empty array of { op: 'update'|'insert_after'|'delete', block_id, markdown? }",
+      };
+    }
+    if (opsIn.length > MAX_APPLY_OPS) {
+      return {
+        ok: false,
+        error:
+          `ops has ${opsIn.length} entries (max ${MAX_APPLY_OPS}). Split into two batches — ` +
+          `or, for a full-document restructure, use ONE page_update_draft call instead.`,
+      };
+    }
+
+    const page = await getPage(ctx.ownerId, pageId);
+    if (!page) return notFound('page', pageId, 'page_list / search_nodes');
+
+    let doc = pickEditingBaseline(page);
+    const counts = { updated: 0, inserted: 0, deleted: 0 };
+    for (let i = 0; i < opsIn.length; i++) {
+      const raw = opsIn[i];
+      const op = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+      const kind = str(op.op).trim();
+      const blockId = str(op.block_id).trim();
+      // Atomicity is the contract: any failure aborts BEFORE saveDraft, so
+      // the teaching error can promise "nothing was saved" truthfully.
+      const fail = (msg: string): { ok: false; error: string } => ({
+        ok: false,
+        error:
+          `op ${i}${kind ? ` ('${kind}'` + (blockId ? ` ${blockId}` : '') + ')' : ''}: ${msg}. ` +
+          `The batch is atomic — NOTHING was saved. Fix this op and re-issue the whole batch.`,
+      });
+      if (!blockId) return fail('block_id is required');
+      if (kind === 'update' || kind === 'insert_after') {
+        const markdown = str(op.markdown);
+        if (!markdown) {
+          return fail(
+            `markdown is required for '${kind}'` +
+              (kind === 'update' ? " (to remove the block use op:'delete')" : ''),
+          );
+        }
+        let parsedBlocks: unknown[];
+        try {
+          const parsed = markdownToDoc(markdown) as { content?: unknown[] };
+          parsedBlocks = Array.isArray(parsed.content) ? parsed.content : [];
+        } catch (err) {
+          return fail(`markdown parse failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        if (parsedBlocks.length === 0) return fail('markdown produced no blocks');
+        const result =
+          kind === 'update'
+            ? replaceBlock(doc, blockId, parsedBlocks as PMBlockNode[])
+            : insertAfterBlock(doc, blockId, parsedBlocks as PMBlockNode[]);
+        if (!result.found) {
+          return fail(
+            `block not found in page ${pageId} — re-run page_blocks_list for current ids ` +
+              `(an earlier delete in this batch removes its id; blocks inserted by this batch ` +
+              `aren't addressable until after save)`,
+          );
+        }
+        doc = result.doc;
+        if (kind === 'update') counts.updated += 1;
+        else counts.inserted += parsedBlocks.length;
+      } else if (kind === 'delete') {
+        const result = deleteBlock(doc, blockId);
+        if (!result.found) {
+          return fail(
+            `block not found in page ${pageId} — re-run page_blocks_list for current ids ` +
+              `(an earlier delete in this batch removes its id)`,
+          );
+        }
+        if (result.refused) {
+          return fail(
+            result.reason ??
+              'delete refused (it would leave a container empty — target the container instead)',
+          );
+        }
+        doc = result.doc;
+        counts.deleted += 1;
+      } else {
+        return fail("op must be one of: 'update', 'insert_after', 'delete'");
+      }
+    }
+
+    try {
+      const ok = await saveDraft(ctx.ownerId, pageId, doc);
+      if (!ok) return { ok: false, error: `page ${pageId} not found (race?)` };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+
+    ctx.step?.setOutput({ ops: opsIn.length, ...counts });
+    return {
+      ok: true,
+      output: {
+        page_id: pageId,
+        ops_applied: opsIn.length,
+        ...counts,
         draft_saved: true,
         hint: DRAFT_REVIEW_HINT(pageId),
       },
@@ -1395,7 +1565,7 @@ const page_move: BuiltinToolDef = {
     }
     try {
       const row = await movePage(ctx.ownerId, id, toTop ? null : parentId);
-      if (!row) return { ok: false, error: `page ${id} not found` };
+      if (!row) return notFound('page', id, 'page_list / search_nodes');
       ctx.step?.setOutput({ id, parent_id: row.parentId });
       return {
         ok: true,
@@ -1480,7 +1650,7 @@ const page_mention: BuiltinToolDef = {
         ...(leadText ? { leadText } : {}),
         ...(afterBlockId ? { afterBlockId } : {}),
       });
-      if (!res) return { ok: false, error: `page ${pageId} not found` };
+      if (!res) return notFound('page', pageId, 'page_list / search_nodes');
       ctx.step?.setOutput({ page_id: pageId, target_id: targetId, ref });
       return {
         ok: true,
@@ -1518,6 +1688,9 @@ const page_share: BuiltinToolDef = {
   name: 'Share a page publicly',
   description:
     "Create (or fetch) a public, read-only link to a page and return its URL. Anyone with the link can view the page — fully formatted, with no login — but nothing else in the user's Mantle. Idempotent: a page has at most one active link, so calling this again returns the same URL. Use when the user asks to share, publish, or get a shareable link for a page. To turn a link off, use page_unshare.",
+  // Publishes brain content to the open web — outward-facing, so gated.
+  // (page_unshare stays open: revoking access is always safe.)
+  requiresConfirm: true,
   inputSchema: {
     type: 'object',
     properties: {
@@ -1530,7 +1703,7 @@ const page_share: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id is required' };
     try {
       const page = await getPage(ctx.ownerId, id);
-      if (!page) return { ok: false, error: `page ${id} not found` };
+      if (!page) return notFound('page', id, 'page_list / search_nodes');
       const share = await createShare(ctx.ownerId, id);
       const url = shareUrlForToken(share.token);
       ctx.step?.setOutput({ id, url });
@@ -1582,6 +1755,7 @@ export const PAGE_TOOLS: BuiltinToolDef[] = [
   page_block_update,
   page_block_insert_after,
   page_block_delete,
+  page_blocks_apply,
   page_split,
   page_extract_section,
   page_move,

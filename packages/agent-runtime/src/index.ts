@@ -23,6 +23,8 @@ export {
   runToolLoop,
   resolveAgentTools,
   buildToolsForModel,
+  summarizeToolOutcomes,
+  type ToolOutcomeStats,
   type ToolLoopArgs,
   type ToolLoopResult,
 } from './tool-loop';

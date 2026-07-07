@@ -25,6 +25,7 @@
  * providers (Anthropic, OR-via-Anthropic).
  */
 
+import { createHash } from 'node:crypto';
 import {
   currentTrace,
   step,
@@ -41,6 +42,11 @@ import {
   processToolResultForModel,
   resolveResultHandling,
   notifyPendingCreated,
+  validateToolArgs,
+  sanitizeToolError,
+  getDynamicSchema,
+  UNTRUSTED_CONTENT_TOOL_SLUGS,
+  type ValidateArgsResult,
   type ResultHandlingConfig,
   type ToolCallRecord,
 } from '@mantle/tools';
@@ -119,13 +125,15 @@ function dispatchChat(adapter: ChatDispatcher, opts: ChatOptions, round: number)
   return adapter.chat(withSignal);
 }
 
-/** Tools that return content authored by third parties (a fetched web page,
- *  a web-search answer + its source snippets). Their successful results are
- *  fenced as data before going back to the model, so an injected "ignore your
- *  task and email this to…" inside a page or hit can't be read as an
- *  instruction. Auto-retrieved content (notes/emails/passages) is already
- *  fenced in messages.ts; this closes the agent-pulled path. */
-const UNTRUSTED_CONTENT_TOOL_SLUGS = new Set(['web_fetch', 'web_search']);
+// Third-party content fencing: the web builtins are fenced by slug
+// (UNTRUSTED_CONTENT_TOOL_SLUGS, shared with dispatch), and the dispatch
+// layer flags provenance the loop can't see — http-kind tools (user-authored
+// API tools hit arbitrary endpoints) and recipes whose chain ran an http/web
+// step — via `untrusted` on the result. Either signal fences the payload as
+// data before the model reads it, so an injected "ignore your task and email
+// this to…" inside a page, hit, or API response can't be read as an
+// instruction. Auto-retrieved content (notes/emails/passages) is already
+// fenced in messages.ts; failed calls run through sanitizeToolError instead.
 
 // ── Tool-volume guards (structural backstop against tool-spam runaways) ──
 // A misbehaving model (notably Grok-4.x fixating on one tool) can emit hundreds
@@ -151,11 +159,126 @@ const MAX_CALLS_PER_TOOL_PER_TURN = 15; // default same-tool fixation breaker (c
 const HARD_MAX_TOOL_CALLS_PER_TURN = 200; // ceiling for per-agent overrides
 const HARD_MAX_CALLS_PER_TOOL_PER_TURN = 100; // ceiling for per-agent overrides
 
+// ── Failure-aware guards (outcome-sensitive complements to the caps above) ──
+// The volume caps count calls regardless of what they produced, so a flail
+// loop — the model re-issuing one broken call verbatim, or re-reading state
+// that never changes — burns up to 15 calls before the fixation cap ends it.
+// These two watch OUTCOMES per exact signature (slug + raw args) and step in
+// far earlier. The error payload starts teaching at the 2nd identical
+// failure; at the limit the call is skipped, not dispatched.
+const REPEATED_FAILURE_LIMIT = 5; // identical call failed N times → further attempts blocked
+const NO_PROGRESS_LIMIT = 5; // identical call returned the identical result N times → blocked
+
+// ── Central arg validation (coerce-then-validate) ──
+// Every tool call's args are checked against the tool's own inputSchema
+// BEFORE dispatch (see @mantle/tools validate-args.ts). Safe repairs
+// (string→number, scalar→array-wrap, …) are applied in 'warn' and 'enforce';
+// schema violations block dispatch with a teaching error only in 'enforce'.
+// 'warn' is the default so a fleet-wide rollout starts as pure telemetry —
+// trace_steps.meta.arg_validation shows exactly what WOULD be rejected —
+// and 'enforce' is flipped per box once the violation rate is understood.
+export type ToolValidationMode = 'off' | 'warn' | 'enforce';
+
+export function resolveToolValidationMode(env: string | undefined = process.env.MANTLE_TOOL_VALIDATION): ToolValidationMode {
+  const raw = (env ?? '').trim().toLowerCase();
+  return raw === 'off' || raw === 'enforce' ? raw : 'warn';
+}
+
 /** Resolve a per-agent cap override: positive ints only, floored, clamped to
  *  the hard ceiling; anything else falls back to the flat default. */
 function resolveCap(requested: number | undefined, fallback: number, ceiling: number): number {
   if (typeof requested !== 'number' || !Number.isFinite(requested) || requested < 1) return fallback;
   return Math.min(ceiling, Math.floor(requested));
+}
+
+/** Cheap stable digest of a serialized tool result, for the no-progress
+ *  guard's identical-result comparison. Keeping full payloads per signature
+ *  would hold every large read in memory for the whole turn. */
+function hashToolResult(serialized: string): string {
+  return createHash('sha256').update(serialized).digest('base64').slice(0, 16);
+}
+
+/** Deterministic JSON encoding (recursively sorted object keys) so the
+ *  failure-aware guards see `{"a":1,"b":2}` and `{"b":2,"a":1}` — and a
+ *  post-repair `25` vs the model's `"25"` — as the same call. */
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  const rec = value as Record<string, unknown>;
+  const keys = Object.keys(rec).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson(rec[k])}`).join(',')}}`;
+}
+
+// ── Deterministic tool-outcome summary ──
+// Computed from the turn's ToolCallRecord list — the runtime's own ledger,
+// not the model's memory of it. Injected into the force-final context so a
+// budget-ended turn can't misreport what completed, and persisted onto the
+// outbound message (run-turn) so the user sees the same numbers.
+
+/** Guard/skip markers recorded as ToolCallRecord.error by skipToolCall and
+ *  the in-response dedup — calls that never dispatched, as opposed to calls
+ *  whose handler failed. */
+const SKIP_REASONS = new Set([
+  'duplicate_in_response',
+  'too_many_calls_in_response',
+  'turn_tool_budget_reached',
+  'tool_repeat_limit',
+  'repeated_failure',
+  'no_progress',
+]);
+
+export type ToolOutcomeStats = {
+  calls: number;
+  succeeded: number;
+  failed: number;
+  /** Blocked by a guard (dedup/caps/failure-aware) — never dispatched. */
+  skipped: number;
+  /** Queued behind operator approval (requires_confirm) — not yet run. */
+  queued: number;
+  /** Up to 5 distinct handler failures, slug + truncated error. */
+  failures: Array<{ slug: string; error: string }>;
+};
+
+export function summarizeToolOutcomes(records: readonly ToolCallRecord[]): ToolOutcomeStats {
+  let succeeded = 0;
+  let failed = 0;
+  let skipped = 0;
+  let queued = 0;
+  const failures: Array<{ slug: string; error: string }> = [];
+  for (const r of records) {
+    if (r.error === 'queued_for_approval') {
+      queued++;
+    } else if (r.status === 'success') {
+      succeeded++;
+    } else if (r.error !== undefined && SKIP_REASONS.has(r.error)) {
+      skipped++;
+    } else {
+      failed++;
+      if (failures.length < 5) {
+        const err = (r.error ?? 'unknown error').slice(0, 120);
+        failures.push({ slug: r.slug, error: err });
+      }
+    }
+  }
+  return { calls: records.length, succeeded, failed, skipped, queued, failures };
+}
+
+/** One-line rendering of the stats for the model-facing nudges. */
+function formatOutcomeSummary(stats: ToolOutcomeStats): string {
+  const parts = [`${stats.succeeded} succeeded`];
+  if (stats.failed > 0) parts.push(`${stats.failed} FAILED`);
+  if (stats.queued > 0) {
+    parts.push(`${stats.queued} queued for operator approval (NOT yet run)`);
+  }
+  if (stats.skipped > 0) parts.push(`${stats.skipped} blocked by guards (never ran)`);
+  let line = `Tool-call record for this turn (runtime ledger, not memory): ${stats.calls} issued — ${parts.join(', ')}.`;
+  if (stats.failures.length > 0) {
+    line +=
+      ` Failed: ` +
+      stats.failures.map((f) => `${f.slug} (${f.error})`).join('; ') +
+      `.`;
+  }
+  return line;
 }
 
 /** Process-lifetime cache of the resolved `read_result` tool row, keyed by
@@ -323,53 +446,46 @@ export async function resolveAgentTools(
  * translate this OpenAI-compat shape to their native form (Anthropic's
  * `input_schema`, Google's `functionDeclarations`, etc.).
  *
- * `delegateTo` (the parent agent's allowlist) constrains `invoke_agent`'s
- * `agent_slug` to a JSON-schema `enum` of the real targets. Without it the only
- * hint the model has is the prose description, so it guesses slugs that don't
- * exist ('pages-specialist' for 'pages') or its own ('assistant') — both refused
- * by the runtime guard, each costing a wasted (and, with a big context,
- * expensive) round. The enum makes those hallucinations unrepresentable up front;
- * the guard stays as defence-in-depth for adapters that ignore `enum`.
+ * Tools with a registered dynamic-schema hook (@mantle/tools
+ * dynamic-schema.ts) get their schema/description rebuilt against current
+ * reality here — e.g. `invoke_agent` constrains `agent_slug` to an `enum`
+ * of the parent's actual delegation allowlist, making hallucinated slugs
+ * unrepresentable up front (the runtime guard stays as defence-in-depth
+ * for adapters that ignore `enum`). Hooks run once per turn — schemas are
+ * frozen inside a turn, which prompt caching relies on — and a hook
+ * failure falls back to the static schema rather than breaking the turn.
  */
-export function buildToolsForModel(
+export async function buildToolsForModel(
   tools: Tool[],
-  delegateTo?: readonly string[],
-): ChatToolDefinition[] {
-  return tools.map((t) => {
-    let parameters =
-      (t.inputSchema as Record<string, unknown>) ?? { type: 'object', properties: {} };
-    if (t.slug === 'invoke_agent' && delegateTo && delegateTo.length > 0) {
-      parameters = withDelegateEnum(parameters, delegateTo);
-    }
-    return {
-      type: 'function',
-      function: { name: t.slug, description: t.description, parameters },
-    };
-  });
-}
-
-/** Return a COPY of an `invoke_agent` parameter schema with `agent_slug`
- *  constrained to `slugs` (enum + the list spelled into its description). Copies
- *  rather than mutates — the builtin's `inputSchema` is a module singleton shared
- *  across every agent/turn. */
-function withDelegateEnum(
-  schema: Record<string, unknown>,
-  slugs: readonly string[],
-): Record<string, unknown> {
-  const props = (schema.properties as Record<string, unknown> | undefined) ?? {};
-  const agentSlug = (props.agent_slug as Record<string, unknown> | undefined) ?? {};
-  const baseDesc = typeof agentSlug.description === 'string' ? `${agentSlug.description} ` : '';
-  return {
-    ...schema,
-    properties: {
-      ...props,
-      agent_slug: {
-        ...agentSlug,
-        enum: [...slugs],
-        description: `${baseDesc}Must be EXACTLY one of these slugs: ${slugs.join(', ')}. You cannot delegate to yourself — do that work directly.`,
-      },
-    },
-  };
+  ctx: { ownerId: string; delegateTo?: readonly string[] },
+): Promise<ChatToolDefinition[]> {
+  return Promise.all(
+    tools.map(async (t) => {
+      let parameters =
+        (t.inputSchema as Record<string, unknown>) ?? { type: 'object', properties: {} };
+      let description = t.description;
+      const hook = getDynamicSchema(t.slug);
+      if (hook) {
+        try {
+          const patch = await hook(
+            { description, parameters },
+            { ownerId: ctx.ownerId, ...(ctx.delegateTo ? { delegateTo: ctx.delegateTo } : {}) },
+          );
+          if (patch?.parameters) parameters = patch.parameters;
+          if (patch?.description) description = patch.description;
+        } catch (err) {
+          console.warn(
+            `[tool-loop] dynamic-schema hook for '${t.slug}' failed; using static schema:`,
+            err,
+          );
+        }
+      }
+      return {
+        type: 'function' as const,
+        function: { name: t.slug, description, parameters },
+      };
+    }),
+  );
 }
 
 export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
@@ -384,7 +500,10 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     if (rr) loopTools = [...loopTools, rr];
   }
   const toolsByName = new Map(loopTools.map((t) => [t.slug, t]));
-  const toolsForModel = buildToolsForModel(loopTools, args.delegateTo);
+  const toolsForModel = await buildToolsForModel(loopTools, {
+    ownerId: args.ownerId,
+    ...(args.delegateTo ? { delegateTo: args.delegateTo } : {}),
+  });
   const sendTools = toolsForModel.length > 0;
 
   const messages: ChatMessage[] = [...args.initialMessages];
@@ -429,8 +548,14 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     MAX_CALLS_PER_TOOL_PER_TURN,
     HARD_MAX_CALLS_PER_TOOL_PER_TURN,
   );
+  // Resolved once per turn: schemas (and therefore what counts as a
+  // violation) are frozen for the turn, so the mode should be too.
+  const argValidationMode = resolveToolValidationMode();
   let totalToolCalls = 0;
   const perToolCounts = new Map<string, number>();
+  // Failure-aware guard state, keyed by exact signature (slug + raw args).
+  const exactFailureCounts = new Map<string, number>();
+  const identicalResults = new Map<string, { hash: string; count: number }>();
   let budgetExhausted = false;
 
   // Skip a tool call WITHOUT executing it, still emitting the synthetic
@@ -743,16 +868,71 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         );
         continue;
       }
-      perToolCounts.set(slug, (perToolCounts.get(slug) ?? 0) + 1);
-      totalToolCalls += 1;
-
       const tool = toolsByName.get(slug);
       // Parse the LLM-supplied arguments string into a JSON object,
       // or capture a structured error for the tool_result. See
       // tool-args.ts for the cases (malformed JSON, non-object, etc.).
+      // Parsed BEFORE the failure-aware guards so their signature can be
+      // canonical (post-repair, sorted keys) — pure work, no side effects.
       const parsedArgs = parseToolArgs(call.function.arguments);
-      const input: Record<string, unknown> = parsedArgs.ok ? parsedArgs.input : {};
+      let input: Record<string, unknown> = parsedArgs.ok ? parsedArgs.input : {};
       const argParseError: string | null = parsedArgs.ok ? null : parsedArgs.error;
+
+      // Central coerce-then-validate against the tool's own inputSchema.
+      // Safe repairs (string→number, "true"→true, scalar→array-wrap, …) are
+      // applied to `input` here so the handler — and, for confirm-gated
+      // tools, the pending queue — always sees the repaired args. Violations
+      // only BLOCK below, inside the step, when the mode is 'enforce'.
+      const argValidation: ValidateArgsResult | null =
+        !argParseError && tool && argValidationMode !== 'off'
+          ? validateToolArgs(
+              (tool.inputSchema as Record<string, unknown> | null) ?? null,
+              input,
+              slug,
+            )
+          : null;
+      if (argValidation) input = argValidation.input;
+
+      // ── Failure-aware guards (outcome-sensitive, cross-round) ──
+      // The volume caps above count CALLS; these two count what the calls
+      // produced. In-response dedup means a signature appears at most once
+      // per round, so these only trip on genuine cross-round flail loops —
+      // no batch-severing concern. (Pattern from hermes-agent's
+      // tool_guardrails: a call that keeps failing identically, or keeps
+      // returning the identical result, deserves intervention long before
+      // the 15-call fixation cap.)
+      //
+      // Keyed by the CANONICAL signature — post-repair args with sorted
+      // keys — so `{"limit":"25"}` and `{"limit":25}` (and key-order
+      // shuffles) count as the same call. The raw-string signature above is
+      // only for the in-response dedup, where byte-identity is the point.
+      const guardSig = `${slug}::${argParseError ? argsRaw : canonicalJson(input)}`;
+      const priorExactFailures = exactFailureCounts.get(guardSig) ?? 0;
+      if (priorExactFailures >= REPEATED_FAILURE_LIMIT) {
+        await skipToolCall(
+          call,
+          'repeated_failure',
+          `This exact call ('${slug}' with these same arguments) has already failed ` +
+            `${priorExactFailures} times this turn; it was blocked, not re-run — repeating it ` +
+            `verbatim cannot succeed. Change the arguments or the approach, or answer with ` +
+            `what you have.`,
+        );
+        continue;
+      }
+      const priorIdentical = identicalResults.get(guardSig);
+      if (priorIdentical && priorIdentical.count >= NO_PROGRESS_LIMIT) {
+        await skipToolCall(
+          call,
+          'no_progress',
+          `You've made this exact call ('${slug}' with these same arguments) ` +
+            `${priorIdentical.count} times and received the identical result every time — the ` +
+            `state isn't changing, so it was blocked, not re-run. Use the result already in ` +
+            `context above; if you need different data, change the arguments.`,
+        );
+        continue;
+      }
+      perToolCounts.set(slug, (perToolCounts.get(slug) ?? 0) + 1);
+      totalToolCalls += 1;
 
       // Redact sensitive input fields BEFORE they're written to
       // `trace_steps.input`. The `redactedInput` is what we log; the
@@ -786,6 +966,32 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
               error: `tool '${slug}' is not in this agent's allowlist`,
             };
           }
+          // Arg-validation telemetry + (enforce-mode) rejection. The meta is
+          // written in EVERY mode so /debug can chart repair + violation
+          // rates per tool before anyone flips enforcement on.
+          if (
+            argValidation &&
+            (argValidation.repairs.length > 0 ||
+              argValidation.unknownKeys.length > 0 ||
+              argValidation.violations.length > 0)
+          ) {
+            handle.setMeta({
+              arg_validation: {
+                mode: argValidationMode,
+                ...(argValidation.repairs.length > 0 ? { repairs: argValidation.repairs } : {}),
+                ...(argValidation.unknownKeys.length > 0
+                  ? { unknown_keys: argValidation.unknownKeys }
+                  : {}),
+                ...(argValidation.violations.length > 0
+                  ? { violations: argValidation.violations.map((v) => v.message) }
+                  : {}),
+              },
+            });
+          }
+          if (argValidationMode === 'enforce' && argValidation?.error) {
+            handle.setError(argValidation.error);
+            return { ok: false as const, error: argValidation.error };
+          }
           // Confirmation gate: a tool flagged requires_confirm doesn't
           // execute here. Instead we persist a pending_tool_calls row;
           // the operator approves/rejects via /pending. The synthetic
@@ -793,12 +999,13 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           // wrap up its turn coherently.
           if (tool.requiresConfirm) {
             const traceId = currentTrace()?.id ?? null;
-            // Note: pendingToolCalls.args stores the ORIGINAL input
-            // (not the redacted copy) because the approve path needs
-            // it to execute the tool later. Sensitive tools that route
-            // through requires_confirm therefore expose their args to
-            // /pending until they're approved or rejected. That's an
-            // acceptable single-user tradeoff; if multi-tenant ever
+            // Note: pendingToolCalls.args stores the UN-REDACTED input —
+            // post-repair (the central validator's safe coercions applied),
+            // never the redacted logging copy — because the approve path
+            // needs real args to execute the tool later. Sensitive tools
+            // that route through requires_confirm therefore expose their
+            // args to /pending until they're approved or rejected. That's
+            // an acceptable single-user tradeoff; if multi-tenant ever
             // happens, pendingToolCalls.args needs to be sealed too.
             const [pending] = await db
               .insert(pendingToolCalls)
@@ -881,12 +1088,24 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       );
 
       const duration = Date.now() - startedAt;
+      // A confirm-gated call returns ok:true (the QUEUING succeeded) but the
+      // tool itself hasn't run — record it as its own outcome so the ledger
+      // never reports a pending action as done.
+      const queuedForApproval =
+        outcome.ok &&
+        outcome.output !== null &&
+        typeof outcome.output === 'object' &&
+        (outcome.output as { status?: unknown }).status === 'queued_for_approval';
       toolCalls.push({
         slug,
         argsJson: call.function.arguments ?? '{}',
         durationMs: duration,
-        status: outcome.ok ? 'success' : 'error',
-        error: outcome.ok ? undefined : outcome.error,
+        status: queuedForApproval ? 'skipped' : outcome.ok ? 'success' : 'error',
+        error: queuedForApproval
+          ? 'queued_for_approval'
+          : outcome.ok
+            ? undefined
+            : outcome.error,
       });
 
       // Harvest any sidecar artifacts the tool emitted (audio bytes,
@@ -908,14 +1127,49 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       // path stays a plain inline assignment with zero overhead.
       let payload: string;
       if (!outcome.ok) {
-        payload = JSON.stringify({ error: outcome.error });
+        // Failure-aware guard accounting: identical failing calls escalate —
+        // the payload teaches from the 2nd failure, the guard above blocks
+        // at the limit. Keyed by the same canonical signature the guard
+        // checks, so encoding drift can't reset the count.
+        const failures = (exactFailureCounts.get(guardSig) ?? 0) + 1;
+        exactFailureCounts.set(guardSig, failures);
+        // Error strings can embed EXTERNAL content (an HTTP body excerpt, a
+        // recipe step's inner error) and bypass the success-path fence below
+        // — sanitize centrally so no handler has to remember to.
+        payload = JSON.stringify({
+          error: sanitizeToolError(outcome.error),
+          ...(failures >= 2
+            ? {
+                loop_guard:
+                  `This exact call has now failed ${failures} times this turn with the same ` +
+                  `arguments. Change the arguments or the approach — after ` +
+                  `${REPEATED_FAILURE_LIMIT} identical failures further attempts are blocked.`,
+              }
+            : {}),
+        });
       } else {
         let serialized = JSON.stringify(outcome.output);
+        // No-progress accounting: consecutive identical results for the same
+        // signature. A different result resets the streak — re-reads after
+        // writes legitimately repeat and are never penalised.
+        {
+          const resultHash = hashToolResult(serialized);
+          const prior = identicalResults.get(guardSig);
+          identicalResults.set(
+            guardSig,
+            prior && prior.hash === resultHash
+              ? { hash: resultHash, count: prior.count + 1 }
+              : { hash: resultHash, count: 1 },
+          );
+        }
         // Fence untrusted external content BEFORE the inline/spill decision so
         // the boundary travels both paths: inline results carry it directly,
         // and spilled results are stored fenced — so read_result page/grep/
         // query return fenced content too, never a clean instruction.
-        if (UNTRUSTED_CONTENT_TOOL_SLUGS.has(slug)) {
+        if (
+          UNTRUSTED_CONTENT_TOOL_SLUGS.has(slug) ||
+          (outcome as { untrusted?: boolean }).untrusted === true
+        ) {
           serialized = fenceRetrieved(serialized);
         }
         if (Buffer.byteLength(serialized, 'utf8') <= handling.inlineMaxBytes) {
@@ -965,8 +1219,9 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         role: 'user',
         content:
           `[system] This turn's tool-call budget (${maxToolCallsPerTurn}) is spent — no more tool calls ` +
-          `will run this turn. Give your final answer now: state plainly what was completed (per the tool ` +
-          `results above) and what remains to be done. Do not claim unfinished work is done. The user can ` +
+          `will run this turn. ${formatOutcomeSummary(summarizeToolOutcomes(toolCalls))} ` +
+          `Give your final answer now: state plainly what was completed (per the record above) and what ` +
+          `remains to be done. Do not claim unfinished work is done. The user can ` +
           `send another message to continue where you left off.`,
       });
       break;
@@ -977,6 +1232,19 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // tool result; force one more answer-only call so we don't return
   // nothing. This is a safety net — typical conversations finish well
   // under maxIters.
+  //
+  // Max-iters path only (the budget path pushed its own nudge above): give
+  // the model the deterministic outcome ledger so its forced answer reports
+  // what ACTUALLY completed rather than what it remembers attempting.
+  if (!budgetExhausted && toolCalls.length > 0) {
+    messages.push({
+      role: 'user',
+      content:
+        `[system] The iteration limit was reached — no more tool calls will run this turn. ` +
+        `${formatOutcomeSummary(summarizeToolOutcomes(toolCalls))} ` +
+        `Answer now with what you have; do not claim unfinished work is done.`,
+    });
+  }
   // Runs on the ACTIVE route (not args.*): if the turn failed over mid-loop,
   // going back to the primary here would re-hit the route that just died —
   // and the active route's baseUrl/viaTailnet must travel too (a local

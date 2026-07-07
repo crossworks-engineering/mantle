@@ -6,7 +6,10 @@ export type {
   ToolHandlerResult,
   ToolForModel,
   ToolCallRecord,
+  ToolPrecondition,
 } from './types';
+
+export { checkToolPreconditions, type NodeTypeLookup } from './preconditions';
 
 export {
   registerBuiltin,
@@ -16,6 +19,26 @@ export {
   getBuiltinRedactFields,
   redactArgsForLogging,
 } from './registry';
+
+export {
+  validateToolArgs,
+  closestMatch,
+  type ValidateArgsResult,
+  type ArgRepair,
+  type ArgViolation,
+  type UnknownKey,
+} from './validate-args';
+
+export { notFound, sanitizeToolError, type NotFoundResult } from './errors';
+export { UNTRUSTED_CONTENT_TOOL_SLUGS } from './untrusted';
+export {
+  registerDynamicSchema,
+  getDynamicSchema,
+  withDelegateEnum,
+  type DynamicSchemaContext,
+  type DynamicSchemaPatch,
+  type DynamicSchemaFn,
+} from './dynamic-schema';
 
 export { BUILTIN_TOOLS } from './builtins';
 export { PAGE_TOOLS, PAGE_TOOL_SLUGS } from './builtins-pages';
@@ -49,7 +72,7 @@ export { TOOLSMITH_TOOLS, TOOLSMITH_TOOL_SLUGS } from './builtins-toolsmith';
 export { JOURNAL_TOOLS, JOURNAL_TOOL_SLUGS, JOURNAL_AUTO_GRANT_SLUGS } from './builtins-journal';
 export { LOCATION_TOOLS, LOCATION_TOOL_SLUGS } from './builtins-locations';
 export { PROFILE_TOOLS, PROFILE_TOOL_SLUGS } from './builtins-profile';
-export { seedBuiltinTools } from './seed';
+export { seedBuiltinTools, closeToolInputSchema } from './seed';
 export { resolveTool, resolveTools, dispatchTool } from './dispatch';
 export { isPublicToolAllowed } from './readonly-tools';
 export { safeFetch } from './safe-fetch';

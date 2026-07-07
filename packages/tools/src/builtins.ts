@@ -552,7 +552,7 @@ const node_read: BuiltinToolDef = {
       .from(nodes)
       .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ctx.ownerId)))
       .limit(1);
-    if (!row) return { ok: false, error: 'node not found' };
+    if (!row) return { ok: false, error: 'node not found — the id may be stale or mistyped; find it with search_nodes / tree_list, then re-issue.' };
     ctx.step?.setOutput({ type: row.type });
     return {
       ok: true,
@@ -744,7 +744,7 @@ const file_read: BuiltinToolDef = {
     if (!fileId) return { ok: false, error: 'file_id required' };
     const full = bool(input.full) === true;
     const meta = await fileById({ ownerId: ctx.ownerId, fileId });
-    if (!meta) return { ok: false, error: 'file not found' };
+    if (!meta) return { ok: false, error: 'file not found — find the right id with file_list / search_nodes, then re-issue.' };
 
     // Resolve the readable text once. Binary (pdf/docx/xlsx): the raw bytes
     // aren't useful to the LLM, but the extractor persists the parsed text as
@@ -762,7 +762,7 @@ const file_read: BuiltinToolDef = {
           : null;
     } else {
       const res = await readFileById({ ownerId: ctx.ownerId, fileId });
-      if (!res) return { ok: false, error: 'file not found' };
+      if (!res) return { ok: false, error: 'file not found — find the right id with file_list / search_nodes, then re-issue.' };
       text = res.bytes.toString('utf8');
     }
 
@@ -827,7 +827,7 @@ const file_get: BuiltinToolDef = {
     const fileId = str(input.file_id);
     if (!fileId) return { ok: false, error: 'file_id required' };
     const row = await fileById({ ownerId: ctx.ownerId, fileId });
-    if (!row) return { ok: false, error: 'file not found' };
+    if (!row) return { ok: false, error: 'file not found — find the right id with file_list / search_nodes, then re-issue.' };
     return { ok: true, output: row };
   },
 };
@@ -847,7 +847,7 @@ const folder_get_by_path: BuiltinToolDef = {
     const path = str(input.path);
     if (!path) return { ok: false, error: 'path required' };
     const row = await folderByPath({ ownerId: ctx.ownerId, path });
-    if (!row) return { ok: false, error: 'folder not found' };
+    if (!row) return { ok: false, error: 'folder not found — find the right id with folder_list / tree_list, then re-issue.' };
     return { ok: true, output: row };
   },
 };
@@ -930,7 +930,7 @@ const file_rename: BuiltinToolDef = {
     if (!fileId || !newStem) return { ok: false, error: 'file_id + new_stem required' };
     try {
       const row = await renameFileById({ ownerId: ctx.ownerId, fileId, newStem });
-      if (!row) return { ok: false, error: 'file not found' };
+      if (!row) return { ok: false, error: 'file not found — find the right id with file_list / search_nodes, then re-issue.' };
       ctx.step?.setOutput({ fileId: row.id, filename: row.filename });
       return { ok: true, output: row };
     } catch (err) {
@@ -958,7 +958,7 @@ const folder_rename: BuiltinToolDef = {
     if (!folderId || !newName) return { ok: false, error: 'folder_id + new_name required' };
     try {
       const row = await renameFolderById({ ownerId: ctx.ownerId, folderId, newSlug: newName });
-      if (!row) return { ok: false, error: 'folder not found' };
+      if (!row) return { ok: false, error: 'folder not found — find the right id with folder_list / tree_list, then re-issue.' };
       ctx.step?.setOutput({ folderId: row.id, path: row.path });
       return { ok: true, output: row };
     } catch (err) {
@@ -986,7 +986,7 @@ const folder_describe: BuiltinToolDef = {
     if (!folderId) return { ok: false, error: 'folder_id required' };
     try {
       const row = await updateFolderDescription({ ownerId: ctx.ownerId, folderId, description });
-      if (!row) return { ok: false, error: 'folder not found' };
+      if (!row) return { ok: false, error: 'folder not found — find the right id with folder_list / tree_list, then re-issue.' };
       ctx.step?.setOutput({ folderId: row.id });
       return { ok: true, output: row };
     } catch (err) {

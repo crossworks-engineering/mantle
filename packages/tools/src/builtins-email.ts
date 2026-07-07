@@ -134,6 +134,10 @@ const email_send: BuiltinToolDef = {
   name: 'Send an email',
   description:
     "Send an email FROM the user's own mailbox via their provider's SMTP. Provide `to`, `subject`, and a plain-text `body`. Optional `cc`/`bcc`, and `from` to choose which of the user's accounts sends it (defaults to the first send-enabled account). Use only when the user explicitly asks to send or email something. The message goes out under the user's real address, so write it accurately and professionally; when relaying research, include the source links in the body. If no account has SMTP configured the call fails with a clear message.",
+  // Outward-facing under the user's real address — gated like telegram_send.
+  // Operators who trust the flow clear it per-tool in Settings → Tools (the
+  // seed never re-asserts the flag on existing rows).
+  requiresConfirm: true,
   inputSchema: {
     type: 'object',
     properties: {
@@ -209,6 +213,8 @@ const email_page: BuiltinToolDef = {
   name: 'Email a page',
   description:
     "Send one of the user's pages as a richly-formatted HTML email — the page's headings, callouts, columns, tables, lists, highlights, and embedded images all render inline in the recipient's mail client (images are attached inline; a plain-text version is included as a fallback). Provide the page's `pageId` (from page_list) and the recipient `to`. `subject` defaults to the page title. Optional `cc`/`bcc`, `from` (which account sends), and `includeLink` to also mint a public read-only link and add a 'View online' footer. The mail goes out under the user's real address, so only use it when they ask to email or send a page. If no account has SMTP configured the call fails with a clear message.",
+  // Outward-facing under the user's real address — same gate as email_send.
+  requiresConfirm: true,
   inputSchema: {
     type: 'object',
     properties: {

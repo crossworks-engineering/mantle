@@ -31,6 +31,7 @@ import {
   type RecurFreq,
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
+import { notFound } from './errors';
 
 const RECUR_VALUES: readonly RecurFreq[] = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
 
@@ -109,7 +110,7 @@ const event_get: BuiltinToolDef = {
     const id = str(input.id);
     if (!id) return { ok: false, error: 'id required' };
     const row = await getEvent(ctx.ownerId, id);
-    if (!row) return { ok: false, error: `event ${id} not found` };
+    if (!row) return notFound('event', id, 'event_list');
     return { ok: true, output: { ...row, url: nodeUrl(row.id) } };
   },
 };
@@ -249,7 +250,7 @@ const event_update: BuiltinToolDef = {
         recurUntil: strOpt(input.recurUntil),
         tags: strArr(input.tags),
       });
-      if (!row) return { ok: false, error: `event ${id} not found` };
+      if (!row) return notFound('event', id, 'event_list');
       ctx.step?.setMeta({ eventId: id });
       return { ok: true, output: row };
     } catch (err) {
@@ -275,7 +276,7 @@ const event_delete: BuiltinToolDef = {
     ctx.step?.setMeta({ eventId: id, deleted: ok });
     return ok
       ? { ok: true, output: { deleted: true, id } }
-      : { ok: false, error: `event ${id} not found` };
+      : notFound('event', id, 'event_list');
   },
 };
 
