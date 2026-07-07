@@ -198,6 +198,70 @@ function hashToolResult(serialized: string): string {
   return createHash('sha256').update(serialized).digest('base64').slice(0, 16);
 }
 
+// ── Deterministic tool-outcome summary ──
+// Computed from the turn's ToolCallRecord list — the runtime's own ledger,
+// not the model's memory of it. Injected into the force-final context so a
+// budget-ended turn can't misreport what completed, and persisted onto the
+// outbound message (run-turn) so the user sees the same numbers.
+
+/** Guard/skip markers recorded as ToolCallRecord.error by skipToolCall and
+ *  the in-response dedup — calls that never dispatched, as opposed to calls
+ *  whose handler failed. */
+const SKIP_REASONS = new Set([
+  'duplicate_in_response',
+  'too_many_calls_in_response',
+  'turn_tool_budget_reached',
+  'tool_repeat_limit',
+  'repeated_failure',
+  'no_progress',
+]);
+
+export type ToolOutcomeStats = {
+  calls: number;
+  succeeded: number;
+  failed: number;
+  /** Blocked by a guard (dedup/caps/failure-aware) — never dispatched. */
+  skipped: number;
+  /** Up to 5 distinct handler failures, slug + truncated error. */
+  failures: Array<{ slug: string; error: string }>;
+};
+
+export function summarizeToolOutcomes(records: readonly ToolCallRecord[]): ToolOutcomeStats {
+  let succeeded = 0;
+  let failed = 0;
+  let skipped = 0;
+  const failures: Array<{ slug: string; error: string }> = [];
+  for (const r of records) {
+    if (r.status === 'success') {
+      succeeded++;
+    } else if (r.error !== undefined && SKIP_REASONS.has(r.error)) {
+      skipped++;
+    } else {
+      failed++;
+      if (failures.length < 5) {
+        const err = (r.error ?? 'unknown error').slice(0, 120);
+        failures.push({ slug: r.slug, error: err });
+      }
+    }
+  }
+  return { calls: records.length, succeeded, failed, skipped, failures };
+}
+
+/** One-line rendering of the stats for the model-facing nudges. */
+function formatOutcomeSummary(stats: ToolOutcomeStats): string {
+  const parts = [`${stats.succeeded} succeeded`];
+  if (stats.failed > 0) parts.push(`${stats.failed} FAILED`);
+  if (stats.skipped > 0) parts.push(`${stats.skipped} blocked by guards (never ran)`);
+  let line = `Tool-call record for this turn (runtime ledger, not memory): ${stats.calls} issued — ${parts.join(', ')}.`;
+  if (stats.failures.length > 0) {
+    line +=
+      ` Failed: ` +
+      stats.failures.map((f) => `${f.slug} (${f.error})`).join('; ') +
+      `.`;
+  }
+  return line;
+}
+
 /** Process-lifetime cache of the resolved `read_result` tool row, keyed by
  *  owner. It's a stable seeded builtin, so resolving it once per owner avoids
  *  a per-turn DB query on the always-offer path. Misses aren't cached (so it
@@ -1114,8 +1178,9 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         role: 'user',
         content:
           `[system] This turn's tool-call budget (${maxToolCallsPerTurn}) is spent — no more tool calls ` +
-          `will run this turn. Give your final answer now: state plainly what was completed (per the tool ` +
-          `results above) and what remains to be done. Do not claim unfinished work is done. The user can ` +
+          `will run this turn. ${formatOutcomeSummary(summarizeToolOutcomes(toolCalls))} ` +
+          `Give your final answer now: state plainly what was completed (per the record above) and what ` +
+          `remains to be done. Do not claim unfinished work is done. The user can ` +
           `send another message to continue where you left off.`,
       });
       break;
@@ -1126,6 +1191,19 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // tool result; force one more answer-only call so we don't return
   // nothing. This is a safety net — typical conversations finish well
   // under maxIters.
+  //
+  // Max-iters path only (the budget path pushed its own nudge above): give
+  // the model the deterministic outcome ledger so its forced answer reports
+  // what ACTUALLY completed rather than what it remembers attempting.
+  if (!budgetExhausted && toolCalls.length > 0) {
+    messages.push({
+      role: 'user',
+      content:
+        `[system] The iteration limit was reached — no more tool calls will run this turn. ` +
+        `${formatOutcomeSummary(summarizeToolOutcomes(toolCalls))} ` +
+        `Answer now with what you have; do not claim unfinished work is done.`,
+    });
+  }
   // Runs on the ACTIVE route (not args.*): if the turn failed over mid-loop,
   // going back to the primary here would re-hit the route that just died —
   // and the active route's baseUrl/viaTailnet must travel too (a local

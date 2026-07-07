@@ -105,6 +105,18 @@ type Message = {
   /** Wall-clock duration of the turn (ms), measured client-side from the live
    *  stream — shown on the frozen thought-trail summary. Session-scoped. */
   durationMs?: number;
+  /** Deterministic tool-outcome tally persisted at finalize — the runtime's
+   *  own ledger of what ran vs failed this turn, independent of what the
+   *  reply claims. Drives the footer count + the failed-calls notice. */
+  toolStats?: ToolStats;
+};
+
+type ToolStats = {
+  calls: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  failures: Array<{ slug: string; error: string }>;
 };
 
 /** A conversational turn: the user's prompt and Saskia's response. The
@@ -447,7 +459,8 @@ export function AssistantClient({
             existing.text !== row.text ||
             existing.status !== row.status ||
             existing.error !== row.error ||
-            existing.model !== row.model
+            existing.model !== row.model ||
+            (existing.toolStats?.calls ?? 0) !== (row.toolStats?.calls ?? 0)
           ) {
             byId.set(row.id, {
               ...existing,
@@ -457,6 +470,7 @@ export function AssistantClient({
               model: row.model,
               channel: row.channel ?? existing.channel,
               attachments: row.attachments ?? existing.attachments,
+              ...(row.toolStats ? { toolStats: row.toolStats } : {}),
             });
             changed = true;
           }
@@ -1070,6 +1084,21 @@ export function AssistantClient({
                                 ))}
                               </div>
                             )}
+                            {turn.response.toolStats && turn.response.toolStats.failed > 0 && (
+                              // Always visible (not hover-gated): the runtime's own
+                              // ledger says some calls failed, and the reply may not
+                              // admit it. Tooltip lists the failed slugs + errors.
+                              <p
+                                className="mt-1.5 text-[10px] text-destructive"
+                                title={turn.response.toolStats.failures
+                                  .map((f) => `${f.slug}: ${f.error}`)
+                                  .join('\n')}
+                              >
+                                {turn.response.toolStats.failed} of {turn.response.toolStats.calls}{' '}
+                                tool call{turn.response.toolStats.calls === 1 ? '' : 's'} failed this
+                                turn
+                              </p>
+                            )}
                             <div className="mt-1.5 flex items-center justify-between gap-2 pointer-events-none opacity-0 transition-opacity group-hover/turn:pointer-events-auto group-hover/turn:opacity-100">
                               <div className="flex items-baseline gap-2 text-[10px] text-muted-foreground">
                                 <span title={formatDateTime(turn.response.createdAt)}>
@@ -1077,6 +1106,19 @@ export function AssistantClient({
                                 </span>
                                 {turn.response.model && (
                                   <code className="font-mono">{turn.response.model}</code>
+                                )}
+                                {turn.response.toolStats && (
+                                  <span
+                                    title={
+                                      `${turn.response.toolStats.succeeded} succeeded` +
+                                      (turn.response.toolStats.skipped > 0
+                                        ? ` · ${turn.response.toolStats.skipped} blocked by guards`
+                                        : '')
+                                    }
+                                  >
+                                    {turn.response.toolStats.calls} tool call
+                                    {turn.response.toolStats.calls === 1 ? '' : 's'}
+                                  </span>
                                 )}
                               </div>
                               <CopyButton text={turn.response.text} />

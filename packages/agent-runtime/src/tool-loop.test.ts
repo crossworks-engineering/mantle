@@ -1375,6 +1375,68 @@ describe('runToolLoop — tool-volume guards', () => {
   });
 });
 
+describe('summarizeToolOutcomes + force-final outcome ledger', () => {
+  it('classifies success / handler failure / guard skip correctly', async () => {
+    const { summarizeToolOutcomes } = await import('./tool-loop');
+    const stats = summarizeToolOutcomes([
+      { slug: 'a', argsJson: '{}', durationMs: 1, status: 'success' },
+      { slug: 'b', argsJson: '{}', durationMs: 1, status: 'error', error: 'row not found' },
+      { slug: 'b', argsJson: '{}', durationMs: 0, status: 'error', error: 'tool_repeat_limit' },
+      { slug: 'c', argsJson: '{}', durationMs: 0, status: 'error', error: 'no_progress' },
+    ]);
+    expect(stats).toMatchObject({ calls: 4, succeeded: 1, failed: 1, skipped: 2 });
+    expect(stats.failures).toEqual([{ slug: 'b', error: 'row not found' }]);
+  });
+
+  it('injects the deterministic ledger before the max-iters force-final', async () => {
+    const tool = fakeTool({ slug: 'fake_tool' });
+    const round = (n: number) => ({
+      type: 'toolCalls' as const,
+      toolCalls: [
+        {
+          id: `call_m${n}`,
+          type: 'function' as const,
+          function: { name: 'fake_tool', arguments: `{"n":${n}}` },
+        },
+      ],
+    });
+    // 2 tool rounds (maxIterations 2), then the forced final answer.
+    const { adapter, calls } = makeFakeAdapter([
+      round(1),
+      round(2),
+      { type: 'text', text: 'forced answer' },
+    ]);
+    let n = 0;
+    dispatchToolImpl = () =>
+      ++n === 2 ? { ok: false, error: 'disk full' } : { ok: true, output: { ok: n } };
+
+    const result = await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: [tool],
+      maxIterations: 2,
+    });
+
+    expect(result.reply).toBe('forced answer');
+    // The force-final request must carry the runtime's ledger, not rely on
+    // the model's memory: 2 issued, 1 succeeded, 1 FAILED (+ the error).
+    const finalCallMsgs = calls[2]!.messages;
+    const ledger = finalCallMsgs.filter(
+      (m) => m.role === 'user' && String(m.content).includes('Tool-call record'),
+    );
+    expect(ledger).toHaveLength(1);
+    expect(ledger[0]!.content).toContain('2 issued');
+    expect(ledger[0]!.content).toContain('1 succeeded');
+    expect(ledger[0]!.content).toContain('1 FAILED');
+    expect(ledger[0]!.content).toContain('fake_tool (disk full)');
+    expect(ledger[0]!.content).toContain('do not claim unfinished work is done');
+  });
+});
+
 describe('runToolLoop — failure-aware guards', () => {
   function sameCallRound(n: number) {
     return {

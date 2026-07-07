@@ -45,6 +45,7 @@ import {
   resolveAgentTools,
   resolveBackupAdapter,
   runToolLoop,
+  summarizeToolOutcomes,
   updateAssistantMessageOutcome,
   type UserImage,
 } from '@mantle/agent-runtime';
@@ -748,6 +749,12 @@ export async function runAssistantTurn(
     isStreamThoughtsEnabled(prefs) && isPersistThoughtsEnabled(prefs)
       ? buildPersistedTrail(loopOutcome.toolCalls)
       : [];
+  // Deterministic tool-outcome ledger for the turn — persisted whenever any
+  // tool ran, independent of the thoughts-persistence preference: it's what
+  // the UI footer shows so "12 calls, 2 failed" is the runtime's account,
+  // not the reply's.
+  const toolStats =
+    loopOutcome.toolCalls.length > 0 ? summarizeToolOutcomes(loopOutcome.toolCalls) : null;
   const finalized = await runDurableStep('finalize_outbound', () =>
     updateAssistantMessageOutcome({
       ownerId,
@@ -756,6 +763,7 @@ export async function runAssistantTurn(
       text: reply,
       model: agent.model,
       ...(persistedThoughts.length ? { thoughts: persistedThoughts } : {}),
+      ...(toolStats ? { toolStats } : {}),
     }),
   );
   // The row was inserted this same turn, so it should always still be there;

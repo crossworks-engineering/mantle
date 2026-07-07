@@ -48,7 +48,19 @@ export type AssistantTimelineRow = {
    *  row when the brain has trail-persistence on — lets the "Thought process"
    *  record survive a reload. Undefined when not persisted. */
   thoughts?: Array<{ kind: string; label: string; elapsedMs?: number }>;
+  /** Deterministic tool-outcome tally for the turn — the runtime's own
+   *  ledger, persisted at finalize. Drives the "N tool calls · M failed"
+   *  footer so the record is independent of the reply's claims. */
+  toolStats?: ToolOutcomeStatsRow;
   createdAt: string;
+};
+
+export type ToolOutcomeStatsRow = {
+  calls: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  failures: Array<{ slug: string; error: string }>;
 };
 
 /** Pull a persisted thought trail out of a row's `data` jsonb, defensively. */
@@ -60,6 +72,25 @@ function thoughtsFromData(data: unknown): AssistantTimelineRow['thoughts'] {
       Boolean(s) && typeof (s as { label?: unknown }).label === 'string',
     )
     .map((s) => ({ kind: String(s.kind ?? 'tool'), label: s.label, elapsedMs: s.elapsedMs }));
+}
+
+/** Pull the persisted tool-outcome tally out of a row's `data` jsonb. */
+function toolStatsFromData(data: unknown): ToolOutcomeStatsRow | undefined {
+  const t = (data as { toolStats?: unknown } | null)?.toolStats;
+  if (!t || typeof t !== 'object') return undefined;
+  const s = t as Record<string, unknown>;
+  if (typeof s.calls !== 'number' || s.calls <= 0) return undefined;
+  return {
+    calls: s.calls,
+    succeeded: typeof s.succeeded === 'number' ? s.succeeded : 0,
+    failed: typeof s.failed === 'number' ? s.failed : 0,
+    skipped: typeof s.skipped === 'number' ? s.skipped : 0,
+    failures: Array.isArray(s.failures)
+      ? (s.failures as Array<{ slug?: unknown; error?: unknown }>)
+          .filter((f) => typeof f?.slug === 'string')
+          .map((f) => ({ slug: String(f.slug), error: String(f.error ?? '') }))
+      : [],
+  };
 }
 
 /**
@@ -105,6 +136,7 @@ export async function recentAssistantMessages(
       error: r.error,
       attachments: r.attachments ?? [],
       ...(thoughtsFromData(r.data) ? { thoughts: thoughtsFromData(r.data) } : {}),
+      ...(toolStatsFromData(r.data) ? { toolStats: toolStatsFromData(r.data) } : {}),
       createdAt: r.createdAt.toISOString(),
     }));
 }
@@ -156,6 +188,7 @@ export async function assistantMessagesBefore(
       error: r.error,
       attachments: r.attachments ?? [],
       ...(thoughtsFromData(r.data) ? { thoughts: thoughtsFromData(r.data) } : {}),
+      ...(toolStatsFromData(r.data) ? { toolStats: toolStatsFromData(r.data) } : {}),
       createdAt: r.createdAt.toISOString(),
     }));
 }

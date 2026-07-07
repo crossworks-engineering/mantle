@@ -244,9 +244,23 @@ export async function updateAssistantMessageOutcome(args: {
   /** Reconstructed thought trail (grounded step labels) to persist onto the
    *  row's `data` jsonb so the record survives a reload. Merged, not replaced. */
   thoughts?: Array<{ kind: string; label: string; elapsedMs?: number }>;
+  /** Deterministic tool-outcome tally for the turn (the runtime's own ledger,
+   *  from summarizeToolOutcomes) — persisted onto `data` so the UI can show
+   *  what actually ran vs failed, independent of the reply's claims. */
+  toolStats?: {
+    calls: number;
+    succeeded: number;
+    failed: number;
+    skipped: number;
+    failures: Array<{ slug: string; error: string }>;
+  };
   tx?: Executor;
 }): Promise<AssistantMessage | null> {
   const exec = args.tx ?? db;
+  const dataPatch: Record<string, unknown> = {
+    ...(args.thoughts != null ? { thoughts: args.thoughts } : {}),
+    ...(args.toolStats != null ? { toolStats: args.toolStats } : {}),
+  };
   const [row] = await exec
     .update(assistantMessages)
     .set({
@@ -254,9 +268,9 @@ export async function updateAssistantMessageOutcome(args: {
       ...(args.text != null ? { text: args.text } : {}),
       ...(args.model !== undefined ? { model: args.model } : {}),
       ...(args.error !== undefined ? { error: args.error } : {}),
-      ...(args.thoughts != null
+      ...(Object.keys(dataPatch).length > 0
         ? {
-            data: sql`${assistantMessages.data} || ${JSON.stringify({ thoughts: args.thoughts })}::jsonb`,
+            data: sql`${assistantMessages.data} || ${JSON.stringify(dataPatch)}::jsonb`,
           }
         : {}),
     })
