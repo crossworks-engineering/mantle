@@ -5,8 +5,19 @@ main in `40e15564`. The standard lives in `packages/tools/CLAUDE.md` ("The
 description style guide"); the lint is `packages/tools/src/description-lint.test.ts`.
 The first-pass audit found far more than the expected handful — 206 missing
 param descriptions, 20 over-budget descriptions, 45 uncovered node-id params —
-all swept in the same change. This document is kept as the design rationale;
-the two files above are now the source of truth.
+all swept in the same change.
+
+**Audited 2026-07-07** by three independent adversarial reviews (merged as
+`946d922b`): zero truthfulness failures across ~90 code-verified claims; all
+findings applied — a missing `enum` on `table_set_view.filters[].op` (typo'd
+op silently saved a match-all view), numeric default/cap prose stripped in
+favour of schema keywords (the guide + lint now forbid restating them),
+precondition coverage extended to contact/app/email domains and camelCase id
+params (with documented exemptions for dual-form and remote ids), and the
+lint hardened from 6 to 8 checks. Satisfaction score from the audit: 9/10.
+
+This document is kept as the design rationale; the two files above are now
+the source of truth.
 
 Originally scoped 2026-07-07 at the end of the v0.119.x tool-reliability
 session; written for a fresh session to execute without that conversation.
