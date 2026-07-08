@@ -322,6 +322,32 @@ export interface MsDriveDTO {
   enabled: boolean;
   lastSyncAt: string | null;
   lastError: string | null;
+  /** How many scope selections the drive has; 0 = syncing everything. */
+  scopeCount: number;
+}
+
+/** One scope selection on a drive, as stored/returned by
+ *  `GET/PUT /api/microsoft/drives/[id]/scopes`. Folder scopes include the
+ *  whole subtree (path prefix); file scopes match that one item. */
+export interface MsDriveScopeDTO {
+  itemId: string;
+  /** After-`root:` path, always starting with `/` (e.g. `/Reports/2026`). */
+  path: string;
+  isFolder: boolean;
+  name: string | null;
+}
+
+/** One row of a drive-folder listing from
+ *  `GET /api/microsoft/drives/[id]/browse` — the scope picker's navigation
+ *  unit. Selection state is client-derived by matching against the scope set. */
+export interface MsDriveChildDTO {
+  itemId: string;
+  name: string;
+  isFolder: boolean;
+  childCount: number | null;
+  size: number | null;
+  path: string | null;
+  webUrl: string | null;
 }
 
 // ── Email (inbox reading pane) ──────────────────────────────────────────────────

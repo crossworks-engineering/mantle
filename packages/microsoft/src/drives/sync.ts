@@ -14,6 +14,7 @@ import { db, msDriveItems, msDrives, nodes, type MsAccount, type MsDrive } from 
 import { MAX_UPLOAD_BYTES } from '@mantle/files';
 import { getValidAccessToken } from '../token-store';
 import { graphFetchRaw, graphGetAll } from '../client';
+import { inScope, listScopes } from './scope';
 import { storeRemoteFileAsNode } from './store';
 import type { DriveItem } from './types';
 
@@ -85,6 +86,7 @@ export async function syncDrive(account: MsAccount, drive: MsDrive): Promise<Dri
   const start = drive.deltaLink ?? `/drives/${drive.driveId}/root/delta`;
 
   const { items, deltaLink } = await graphGetAll<DriveItem>(ownerId, account.id, start);
+  const scopes = await listScopes(drive.id);
 
   let scanned = 0;
   let ingested = 0;
@@ -99,6 +101,15 @@ export async function syncDrive(account: MsAccount, drive: MsDrive): Promise<Dri
       continue;
     }
     if (item.folder || !item.file) continue; // folders + non-file packages: skipped (flat v1)
+    // Scope gate: with selections saved, only files under a selected folder or
+    // exactly selected sync. Out-of-scope files that were ingested earlier (or
+    // moved out of a scoped folder) are pruned — removeItem no-ops otherwise.
+    // Scope changes clear delta_link, so the full re-walk applies this to
+    // every live item, not just changed ones.
+    if (!inScope(scopes, item)) {
+      removed += await removeItem(drive.id, item.id);
+      continue;
+    }
     // Skip oversized files — they'd load fully into worker memory. Bounded sync
     // only; raise the cap or stream if large media must be ingested.
     if (typeof item.size === 'number' && item.size > MAX_UPLOAD_BYTES) continue;

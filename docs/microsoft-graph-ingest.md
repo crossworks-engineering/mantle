@@ -285,12 +285,21 @@ New worker `apps/web/workers/microsoft-sync.ts`, structured exactly like
 
 ### Access gating
 
-Email has a hard **contact gate** (only approved senders ingested). The drives
-analogue is a **site/folder allow-list** so we don't vacuum a user's entire
-OneDrive on first connect. v1: at connect time the user picks which SharePoint
-sites / OneDrive folders to sync (stored in `ms_accounts.surfaces`/an allow
-table). Default to *nothing* until chosen — opt-in, mirroring the email gate's
-"silently drop everything unapproved" stance.
+Email has a hard **contact gate** (only approved senders ingested). Drives
+have two opt-in layers, mirroring that stance:
+
+1. **Per-drive toggle** — discovery upserts every drive *disabled*; nothing
+   syncs until a drive is switched on.
+2. **Per-drive scopes** (`ms_drive_scopes`) — the "Choose content" picker on
+   an enabled drive. No selections = the whole drive syncs; selections =
+   only files under ticked folders (after-`root:` path prefix) or exactly
+   ticked files sync. Graph only supports delta from the drive **root** on
+   OneDrive for Business/SharePoint, so scoping is a client-side filter over
+   the root delta feed (`drives/scope.ts` — same cursor, no extra API cost).
+   Saving a scope set clears `delta_link`; the next sync full-walks, ingesting
+   newly-in-scope files and pruning ingested files now out of scope. File
+   scopes match by item id (rename-stable); folder scopes by path prefix, so
+   renaming a scoped folder drops its contents until re-selected.
 
 ### Permissions fidelity
 
