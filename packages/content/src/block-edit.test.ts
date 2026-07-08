@@ -114,6 +114,26 @@ describe('replaceBlock', () => {
     expect(blocks[2]!.type).toBe('paragraph'); // original 'two' shifted
   });
 
+  it('overwrites a parse-minted id on the first new block with the target id', () => {
+    // Production path: markdownToDoc runs ensureBlockIds at parse, so new
+    // blocks ALWAYS arrive with fresh ids. Inheritance must still win —
+    // otherwise the target's id churns on every update and the agent's
+    // held address goes stale (and a caller-supplied id could smuggle a
+    // duplicate into the doc).
+    const doc = blocked({
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'old' }] }],
+    });
+    type N = { attrs: { id: string } };
+    const targetId = (doc as { content: N[] }).content[0]!.attrs.id;
+
+    const r = replaceBlock(doc, targetId, [
+      { type: 'paragraph', attrs: { id: 'parse-minted-id' }, content: [{ type: 'text', text: 'new' }] },
+    ]);
+    expect(r.found).toBe(true);
+    expect((r.doc as { content: N[] }).content[0]!.attrs.id).toBe(targetId);
+  });
+
   it('returns found=false on unknown id, leaves doc unchanged', () => {
     const doc = blocked({
       type: 'doc',

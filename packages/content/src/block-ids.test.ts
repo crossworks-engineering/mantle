@@ -166,7 +166,74 @@ describe('ensureBlockIds', () => {
   });
 });
 
+describe('ensureBlockIds — duplicate-id self-heal', () => {
+  // Reproduces the refinery-SOP draft corruption (2026-07-06):
+  // four top-level step paragraphs sharing one id, produced by the editor
+  // copying ids on split/paste. Every later occurrence must be re-minted;
+  // the FIRST keeps the id (that's the block findBlock already resolved
+  // to, so any address the agent holds stays valid).
+  const DUP = 'a7f08640-07b3-44a5-bcb3-4bafb4fe3735';
+  const stepDoc = () => ({
+    type: 'doc',
+    content: [
+      { type: 'heading', attrs: { id: 'h-55', level: 3 }, content: [{ type: 'text', text: '5.5 Service Import' }] },
+      { type: 'paragraph', attrs: { id: DUP }, content: [{ type: 'text', text: 'Step 1' }] },
+      { type: 'paragraph', attrs: { id: DUP }, content: [{ type: 'text', text: 'Step 2' }] },
+      { type: 'paragraph', attrs: { id: DUP }, content: [{ type: 'text', text: 'Step 3' }] },
+      { type: 'paragraph', attrs: { id: 'unique-78' }, content: [{ type: 'text', text: 'Note' }] },
+      { type: 'paragraph', attrs: { id: DUP }, content: [{ type: 'text', text: 'Step 4' }] },
+    ],
+  });
+
+  it('re-mints every duplicate; the first occurrence keeps its id', () => {
+    const out = ensureBlockIds(stepDoc()) as { content: { attrs: { id: string } }[] };
+    const ids = out.content.map((b) => b.attrs.id);
+    expect(new Set(ids).size).toBe(ids.length); // all unique
+    expect(ids[1]).toBe(DUP); // first dup keeps the id
+    expect(ids[0]).toBe('h-55'); // untouched
+    expect(ids[4]).toBe('unique-78'); // untouched
+    for (const later of [ids[2], ids[3], ids[5]]) {
+      expect(later).not.toBe(DUP);
+    }
+  });
+
+  it('heals a duplicate nested inside a container (pre-order: outer first)', () => {
+    const doc = {
+      type: 'doc',
+      content: [
+        { type: 'paragraph', attrs: { id: 'x' }, content: [{ type: 'text', text: 'top' }] },
+        {
+          type: 'callout',
+          attrs: { id: 'c', variant: 'info' },
+          content: [{ type: 'paragraph', attrs: { id: 'x' }, content: [{ type: 'text', text: 'inner' }] }],
+        },
+      ],
+    };
+    const out = ensureBlockIds(doc) as unknown as {
+      content: [{ attrs: { id: string } }, { attrs: { id: string }; content: { attrs: { id: string } }[] }];
+    };
+    expect(out.content[0].attrs.id).toBe('x');
+    expect(out.content[1].content[0]!.attrs.id).not.toBe('x');
+  });
+
+  it('is idempotent after the heal (second pass is a ref-equal no-op)', () => {
+    const healed = ensureBlockIds(stepDoc());
+    expect(ensureBlockIds(healed)).toBe(healed);
+  });
+});
+
 describe('allBlocksHaveIds', () => {
+  it('returns false when two blocks share an id (dup counts as broken)', () => {
+    const doc = {
+      type: 'doc',
+      content: [
+        { type: 'paragraph', attrs: { id: 'same' } },
+        { type: 'paragraph', attrs: { id: 'same' } },
+      ],
+    };
+    expect(allBlocksHaveIds(doc)).toBe(false);
+  });
+
   it('returns true on a fully-id\'d doc', () => {
     const doc = {
       type: 'doc',
