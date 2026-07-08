@@ -190,7 +190,7 @@ const find_window: BuiltinToolDef = {
         minimum: 1,
         maximum: 25,
         default: 8,
-        description: 'Max candidate windows to return. Default 8, cap 25.',
+        description: 'Max candidate windows to return.',
       },
     },
     required: ['topic'],
@@ -293,7 +293,7 @@ const recall_window: BuiltinToolDef = {
         minimum: 1,
         maximum: 500,
         default: 200,
-        description: 'Max turns to return. Default 200, cap 500.',
+        description: 'Max turns to return.',
       },
       include_traces: {
         type: 'boolean',

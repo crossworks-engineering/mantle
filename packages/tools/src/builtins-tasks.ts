@@ -30,7 +30,7 @@ import { notFound } from './errors';
 // Shared referential precondition (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING task the owner holds.
 const TASK_ID_PRE: readonly ToolPrecondition[] = [
-  { kind: 'node_exists', param: 'id', nodeType: 'task', lookup: 'task_list' },
+  { kind: 'node_exists', param: 'id', nodeType: 'task', lookup: 'task_list / search_nodes' },
 ];
 
 function str(v: unknown): string {
@@ -192,7 +192,7 @@ const task_update: BuiltinToolDef = {
         enum: ['low', 'normal', 'high'],
         description: 'New urgency; omit to keep current.',
       },
-      dueAt: { type: 'string', description: 'UTC ISO 8601.' },
+      dueAt: { type: 'string', description: "New due instant (UTC ISO 8601), e.g. '2026-07-10T09:00:00Z'." },
       tags: {
         type: 'array',
         items: { type: 'string' },

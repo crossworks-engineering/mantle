@@ -55,7 +55,14 @@ const NOT_A_TOOL_SLUG = new Set<string>([
  * needs a reason — "handler checks it" is not one (preconditions exist to
  * make the teaching error uniform and central).
  */
-const PRECONDITION_EXEMPT = new Set<string>([]);
+const PRECONDITION_EXEMPT = new Set<string>([
+  // email_get.id deliberately accepts EITHER the emails-row id OR the node id
+  // — a node_exists check would reject legitimate row ids.
+  'email_get.id',
+  // peer_node_get.nodeId names a node on a REMOTE peer — a local node_exists
+  // check would reject every valid id.
+  'peer_node_get.nodeId',
+]);
 
 /** Walk every {path, schema} pair under `properties` (nested objects and
  *  array items included) — every one of these renders to the model. */
@@ -155,7 +162,7 @@ describe('description lint', () => {
       for (const p of paramsOf(def)) {
         if (!Array.isArray(p.schema.enum)) continue;
         const d = String(p.schema.description ?? '');
-        if (/must be one of|one of:/i.test(d)) dupes.push(`${def.slug} → ${p.path}`);
+        if (/must be one of|one of:|∈/i.test(d)) dupes.push(`${def.slug} → ${p.path}`);
       }
     }
     expect(
@@ -164,9 +171,39 @@ describe('description lint', () => {
     ).toEqual([]);
   });
 
+  it('param prose does not restate schema default/maximum numbers', () => {
+    const dupes: string[] = [];
+    for (const def of TOOLS) {
+      for (const p of paramsOf(def)) {
+        const d = String(p.schema.description ?? '');
+        if (p.schema.default !== undefined && /\bdefaults? (to )?\d/i.test(d))
+          dupes.push(`${def.slug} → ${p.path} (default)`);
+        if (p.schema.maximum !== undefined && /\b(cap|max\w*)\s+\d/i.test(d))
+          dupes.push(`${def.slug} → ${p.path} (maximum)`);
+      }
+    }
+    expect(
+      dupes,
+      `numeric bounds restated in prose (the schema keywords render to the model already; prose copies drift):\n  ${dupes.join('\n  ')}`,
+    ).toEqual([]);
+  });
+
+  it('cross-reference allowlist carries no dead weight', () => {
+    const allText = TOOLS.flatMap((def) => [
+      def.description,
+      ...paramsOf(def).map((p) => String(p.schema.description ?? '')),
+    ]).join('\n');
+    const stale = [...NOT_A_TOOL_SLUG].filter((t) => !allText.includes(`\`${t}\``));
+    expect(
+      stale,
+      `no longer referenced anywhere — remove from NOT_A_TOOL_SLUG: ${stale.join(', ')}`,
+    ).toEqual([]);
+  });
+
   it('node-id params are covered by a precondition', () => {
-    const NODE_ID_PARAM = /^(page|table|note|node|journal|task|event|file|folder)_id$/;
-    const DOMAIN_PREFIX = /^(page|table|note|journal|task|event|file|folder)_/;
+    const NODE_ID_PARAM =
+      /^(page|table|note|node|journal|task|event|file|folder|contact|app|email)(_id|Id)$/;
+    const DOMAIN_PREFIX = /^(page|table|note|journal|task|event|file|folder|contact|app|email)_/;
     const uncovered: string[] = [];
     for (const def of TOOLS) {
       const declared = new Set((def.preconditions ?? []).map((p) => p.param));

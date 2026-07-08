@@ -36,7 +36,14 @@ import {
 import { putContent } from '@mantle/storage';
 import { recordIngest } from '@mantle/tracing';
 import { resolveTool } from './dispatch';
-import type { BuiltinToolDef } from './types';
+import type { BuiltinToolDef, ToolPrecondition } from './types';
+
+const APP_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'id', nodeType: 'app', lookup: 'app_list' },
+];
+const APP_DB_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'app_id', nodeType: 'app', lookup: 'app_db_list / app_list' },
+];
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -116,13 +123,14 @@ const app_create: BuiltinToolDef = {
 
 const app_get: BuiltinToolDef = {
   slug: 'app_get',
+  preconditions: APP_ID_PRE,
   name: 'Get a mini app',
   description:
     "Read one app by id: name, manifest (declared tool slugs + sqlite schema), entry file, the list of source files, and build status. Pass `include_source: true` to also return every file's full text (omitted by default to stay small).",
   inputSchema: {
     type: 'object',
     properties: {
-      id: { type: 'string', description: 'app node id' },
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
       include_source: { type: 'boolean', description: 'include each file\'s full text' },
     },
     required: ['id'],
@@ -152,6 +160,7 @@ const app_get: BuiltinToolDef = {
 
 const app_file_write: BuiltinToolDef = {
   slug: 'app_file_write',
+  preconditions: APP_ID_PRE,
   name: 'Write a file in a mini app',
   description:
     "Create or replace one source file (by path) in the app's DRAFT — the published app is untouched until app_publish. After writing, call app_build to compile + see errors. " +
@@ -159,7 +168,7 @@ const app_file_write: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      id: { type: 'string', description: 'app node id' },
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
       path: { type: 'string', description: "file path within the app, e.g. 'App.tsx' or 'lib/fmt.ts'" },
       content: { type: 'string', description: 'full file contents (TSX/TS)' },
     },
@@ -192,13 +201,14 @@ const app_file_write: BuiltinToolDef = {
 
 const app_file_delete: BuiltinToolDef = {
   slug: 'app_file_delete',
+  preconditions: APP_ID_PRE,
   name: 'Delete a file from a mini app',
   description:
     'Remove one source file (by path) from the app DRAFT. Refuses to delete the entry file. Run app_build afterwards.',
   inputSchema: {
     type: 'object',
     properties: {
-      id: { type: 'string', description: 'app node id' },
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
       path: { type: 'string', description: 'file path to delete' },
     },
     required: ['id', 'path'],
@@ -221,6 +231,7 @@ const app_file_delete: BuiltinToolDef = {
 
 const app_source_set: BuiltinToolDef = {
   slug: 'app_source_set',
+  preconditions: APP_ID_PRE,
   name: 'Set a mini app\'s whole source tree',
   description:
     "Replace the app's ENTIRE draft source tree in one call, instead of many `app_file_write` calls — use it when you authored the files elsewhere and want to upload them atomically. The published app is untouched until `app_publish`; call `app_build` afterwards to compile. " +
@@ -228,7 +239,7 @@ const app_source_set: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      id: { type: 'string', description: 'app node id' },
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
       entry: { type: 'string', description: "entry file path, e.g. 'App.tsx' — must be a key in `files`" },
       files: {
         type: 'object',
@@ -281,12 +292,13 @@ const app_source_set: BuiltinToolDef = {
 
 const app_build: BuiltinToolDef = {
   slug: 'app_build',
+  preconditions: APP_ID_PRE,
   name: 'Build a mini app',
   description:
     "Compile the app's DRAFT source with esbuild and stage the bundle for preview. Returns `{ ok, errors[], warnings[], bytes }` — read the errors (each has file/line/column) and fix the offending file, then build again. A failed build does NOT replace the last good preview. This is your compile/feedback loop; iterate until ok=true, then tell the user to review at /apps/<id> and app_publish when they approve.",
   inputSchema: {
     type: 'object',
-    properties: { id: { type: 'string', description: 'app node id' } },
+    properties: { id: { type: 'string', description: "The app's id (UUID) — from `app_list`." } },
     required: ['id'],
   },
   handler: async (input, ctx) => {
@@ -332,13 +344,14 @@ const app_build: BuiltinToolDef = {
 
 const app_tools_set: BuiltinToolDef = {
   slug: 'app_tools_set',
+  preconditions: APP_ID_PRE,
   name: 'Declare a mini app\'s data tools',
   description:
     "Set the list of api_tool slugs this app may call through the host bridge (host.tools.call). This IS the runtime allowlist — the host refuses any slug not declared here. Each slug must be an existing tool you own (build them first via the toolsmith / API Console, or delegate to the `toolsmith` agent). Replaces the current list.",
   inputSchema: {
     type: 'object',
     properties: {
-      id: { type: 'string', description: 'app node id' },
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
       tool_slugs: { type: 'array', items: { type: 'string' }, description: 'api_tool slugs the app may call' },
     },
     required: ['id', 'tool_slugs'],
@@ -368,13 +381,14 @@ const app_tools_set: BuiltinToolDef = {
 
 const app_db_schema_set: BuiltinToolDef = {
   slug: 'app_db_schema_set',
+  preconditions: APP_ID_PRE,
   name: 'Set a mini app\'s SQLite schema',
   description:
     "Declare the app's per-app SQLite schema as DDL (CREATE TABLE …). Stored on the app manifest; the host provisions/migrates the app's own SQLite database from it. The app reads/writes via host.db.query(sql, params) / host.db.exec(sql, params) — each app touches only its own database. Replaces the current schema (bumps the version).",
   inputSchema: {
     type: 'object',
     properties: {
-      id: { type: 'string', description: 'app node id' },
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
       schema_sql: { type: 'string', description: 'DDL, e.g. "CREATE TABLE IF NOT EXISTS cities (name TEXT PRIMARY KEY);"' },
     },
     required: ['id', 'schema_sql'],
@@ -449,12 +463,13 @@ const app_list: BuiltinToolDef = {
 
 const app_publish: BuiltinToolDef = {
   slug: 'app_publish',
+  preconditions: APP_ID_PRE,
   name: 'Publish a mini app',
   description:
     'Publish the app draft: promote the draft source + its build to the live app. Refuses if the draft has no successful build (run app_build until ok first). Use after the user has reviewed the preview and approved.',
   inputSchema: {
     type: 'object',
-    properties: { id: { type: 'string', description: 'app node id' } },
+    properties: { id: { type: 'string', description: "The app's id (UUID) — from `app_list`." } },
     required: ['id'],
   },
   handler: async (input, ctx) => {
@@ -474,13 +489,14 @@ const app_publish: BuiltinToolDef = {
 
 const app_delete: BuiltinToolDef = {
   slug: 'app_delete',
+  preconditions: APP_ID_PRE,
   name: 'Delete a mini app',
   description:
     'Permanently delete a mini app by id — its source, builds, and per-app database. Irreversible; confirm with the user first.',
   requiresConfirm: true,
   inputSchema: {
     type: 'object',
-    properties: { id: { type: 'string', description: 'app node id to delete' } },
+    properties: { id: { type: 'string', description: "The app's id (UUID) — from `app_list`." } },
     required: ['id'],
   },
   handler: async (input, ctx) => {
@@ -527,13 +543,14 @@ const app_db_list: BuiltinToolDef = {
 
 const app_db_query: BuiltinToolDef = {
   slug: 'app_db_query',
+  preconditions: APP_DB_ID_PRE,
   name: 'Query an app database',
   description:
     "Run a READ-ONLY SQL query against ONE mini app's SQLite database and get rows back. Pass `app_id` (from app_db_list) and a SELECT `sql`; use `?` placeholders with `params` for values. The database is opened read-only — any write is rejected. Discover tables/columns with app_db_list first. Keep answers tight: add LIMIT or aggregate in SQL (large results are truncated).",
   inputSchema: {
     type: 'object',
     properties: {
-      app_id: { type: 'string', description: 'app node id (from app_db_list)' },
+      app_id: { type: 'string', description: "The app's id (UUID) — from `app_db_list` / `app_list`." },
       sql: { type: 'string', description: 'a read-only SELECT query; use ? placeholders for values' },
       params: { type: 'array', description: 'values bound to the ? placeholders, in order' },
     },

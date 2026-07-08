@@ -23,7 +23,11 @@ import {
   nodeUrl,
   type TaskPriority,
 } from '@mantle/content';
-import type { BuiltinToolDef, ToolHandlerResult } from './types';
+import type { ToolPrecondition, BuiltinToolDef, ToolHandlerResult } from './types';
+
+const TEAM_CONTACT_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'contactId', nodeType: 'contact', lookup: 'team_chat_list / contact_find' },
+];
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -143,6 +147,7 @@ const team_chat_list: BuiltinToolDef = {
 
 const team_chat_read: BuiltinToolDef = {
   slug: 'team_chat_read',
+  preconditions: TEAM_CONTACT_ID_PRE,
   name: 'Read a team chat thread',
   description:
     "Read a window of one team member's Team Chat thread (ascending; newest window by default, `before` pages older). `contactId` comes from `team_chat_list` or `contact_find`. Use to answer 'what has <member> asked about'.",
@@ -154,7 +159,7 @@ const team_chat_read: BuiltinToolDef = {
         description: "The member's contact id, from `team_chat_list` or `contact_find`.",
       },
       before: { type: 'string', description: 'ISO timestamp cursor — return messages older than this.' },
-      limit: { type: 'number', description: 'Max messages to return. Default 50, cap 200.' },
+      limit: { type: 'integer', minimum: 1, maximum: 200, default: 50, description: 'Max messages to return.' },
     },
     required: ['contactId'],
   },
@@ -188,6 +193,7 @@ const team_chat_read: BuiltinToolDef = {
 
 const team_access_list: BuiltinToolDef = {
   slug: 'team_access_list',
+  preconditions: TEAM_CONTACT_ID_PRE,
   name: 'List team access log',
   description:
     'The Team Chat audit trail, newest first: token auths, turns, API calls, denied attempts — each with the contact and detail. Optional `contactId` narrows to one member.',
@@ -198,7 +204,7 @@ const team_access_list: BuiltinToolDef = {
         type: 'string',
         description: "Narrow the log to one member — a contact id from `team_chat_list` or `contact_find`.",
       },
-      limit: { type: 'number', description: 'Max entries to return. Default 100, cap 500.' },
+      limit: { type: 'integer', minimum: 1, maximum: 500, default: 100, description: 'Max entries to return.' },
     },
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {

@@ -31,7 +31,7 @@ import { notFound } from './errors';
 // Shared referential precondition (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING journal entry the owner holds.
 const JOURNAL_ID_PRE: readonly ToolPrecondition[] = [
-  { kind: 'node_exists', param: 'id', nodeType: 'journal', lookup: 'journal_list' },
+  { kind: 'node_exists', param: 'id', nodeType: 'journal', lookup: 'journal_list / search_nodes' },
 ];
 
 function str(v: unknown): string {
@@ -81,7 +81,7 @@ const journal_list: BuiltinToolDef = {
         minimum: 1,
         maximum: 100,
         default: 30,
-        description: 'Max entries to return. Default 30, cap 100.',
+        description: 'Max entries to return.',
       },
       offset: {
         type: 'integer',
@@ -195,8 +195,8 @@ const journal_update: BuiltinToolDef = {
       },
       body: { type: 'string', description: 'New entry text; omit to keep current.' },
       title: { type: 'string', description: 'New title; omit to keep current.' },
-      mood: { type: 'string', description: MOOD_DESC },
-      category: { type: 'string', description: CATEGORY_DESC },
+      mood: { type: 'string', description: `${MOOD_DESC} Empty string clears it, omit to keep current.` },
+      category: { type: 'string', description: `${CATEGORY_DESC} Empty string clears it, omit to keep current.` },
       entry_date: {
         type: 'string',
         description: 'ISO date the entry is about; empty string clears it, omit to keep current.',

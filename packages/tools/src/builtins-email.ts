@@ -215,10 +215,13 @@ const email_page: BuiltinToolDef = {
     "Send one of the user's pages as a richly-formatted HTML email — the page's headings, callouts, columns, tables, lists, highlights, and embedded images all render inline in the recipient's mail client (images are attached inline; a plain-text version is included as a fallback). Provide the page's `pageId` (from page_list) and the recipient `to`. `subject` defaults to the page title. Optional `cc`/`bcc`, `from` (which account sends), and `includeLink` to also mint a public read-only link and add a 'View online' footer. The mail goes out under the user's real address, so only use it when they ask to email or send a page. If no account has SMTP configured the call fails with a clear message.",
   // Outward-facing under the user's real address — same gate as email_send.
   requiresConfirm: true,
+  preconditions: [
+    { kind: 'node_exists', param: 'pageId', nodeType: 'page', lookup: 'page_list / search_nodes' },
+  ],
   inputSchema: {
     type: 'object',
     properties: {
-      pageId: { type: 'string', description: 'page node id (from page_list / page_create)' },
+      pageId: { type: 'string', description: "The page's id (UUID) — from `page_list` / `search_nodes`." },
       to: { type: 'string', description: 'recipient email (comma-separate for multiple)' },
       subject: { type: 'string', description: 'optional — defaults to the page title' },
       cc: { type: 'string', description: 'optional cc (comma-separate for multiple)' },
@@ -358,7 +361,7 @@ const email_list: BuiltinToolDef = {
         minimum: 1,
         maximum: 200,
         default: 50,
-        description: 'Max results to return. Default 50, cap 200.',
+        description: 'Max results to return.',
       },
     },
   },

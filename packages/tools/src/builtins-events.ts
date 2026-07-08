@@ -36,7 +36,7 @@ import { notFound } from './errors';
 // Shared referential precondition (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING event the owner holds.
 const EVENT_ID_PRE: readonly ToolPrecondition[] = [
-  { kind: 'node_exists', param: 'id', nodeType: 'event', lookup: 'event_list' },
+  { kind: 'node_exists', param: 'id', nodeType: 'event', lookup: 'event_list / search_nodes' },
 ];
 
 const RECUR_VALUES: readonly RecurFreq[] = ['none', 'daily', 'weekly', 'monthly', 'yearly'];

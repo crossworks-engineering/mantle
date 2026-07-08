@@ -589,7 +589,7 @@ const page_from_note: BuiltinToolDef = {
   preconditions: NOTE_ID_PRE,
   name: 'Create page from note',
   description:
-    "Promote an EXISTING note into a rich page — the note's body is copied server-side WITHOUT round-tripping through your output, byte-faithful however long the note is. **Always prefer this over `note_get` + `page_create` when the user wants a note turned into a page** — you pass the note id, NOT its text. Pass `parent_id` to nest the new page UNDER an existing page. Title/tags default to the note's own unless you override. The original note is LEFT IN PLACE (non-destructive). The body is never echoed back (use `page_get` to verify). **When delegating, hand off the note id + parent id only — never paste the note body into the prompt.**",
+    "Promote an EXISTING note into a rich page — the note's body is copied server-side WITHOUT round-tripping through your output, byte-faithful however long the note is. **Always prefer this over `note_get` + `page_create` when the user wants a note turned into a page** — you pass the note id, NOT its text. Pass `parent_id` to nest the new page UNDER an existing page. Title/tags default to the note's own unless you override. The original note is LEFT IN PLACE (non-destructive). Returns the new page's id + title; the body is never echoed back (verify with `page_get`). **When delegating, hand off the note id + parent id only — never paste the note body into the prompt.**",
   inputSchema: {
     type: 'object',
     properties: {
@@ -690,7 +690,7 @@ const page_from_notes: BuiltinToolDef = {
   slug: 'page_from_notes',
   name: 'Create page from several notes',
   description:
-    "Stitch SEVERAL existing notes into ONE rich page — every note's body is copied server-side and concatenated in the order given, WITHOUT round-tripping through your output; byte-faithful at any size. **Prefer this over reading each note and re-typing it into `page_create`** — you pass the note ids, NOT their text. Each note becomes a section under an `## ` heading from its title; `headings: false` concatenates the bodies raw. Pass `parent_id` to nest under an existing page. Tags default to the union of the source notes' tags. The originals are LEFT IN PLACE. The body is never echoed back (verify with `page_get`). **When delegating, hand off note ids + title + parent id only — never paste note bodies.**",
+    "Stitch SEVERAL existing notes into ONE rich page — every note's body is copied server-side and concatenated in the order given, byte-faithful at any size. **Prefer this over `note_get` + re-typing into `page_create`** — you pass the note ids, NOT their text. Each note becomes a section under an `## ` heading from its title; `headings: false` concatenates the bodies raw. Pass `parent_id` to nest under an existing page. Tags default to the union of the source notes' tags. The originals are LEFT IN PLACE. Returns the new page's id + title; the body is never echoed back (verify with `page_get`). **When delegating, hand off note ids + title + parent id only — never paste note bodies.**",
   inputSchema: {
     type: 'object',
     properties: {
@@ -824,7 +824,7 @@ const page_from_journal: BuiltinToolDef = {
   slug: 'page_from_journal',
   name: 'Create page from journal entries',
   description:
-    "Compile SEVERAL Journal entries into ONE page — each entry's body is copied server-side and concatenated in the order given, WITHOUT round-tripping through your output; byte-faithful at any size. The journal counterpart of `page_from_notes` — for 'compile this week's entries into a reflection doc'. You pass entry ids (from `journal_list`), NOT their text. Each entry lands under a date(+title) `## ` heading — a dated log; `headings: false` concatenates raw. Pass `parent_id` to nest under an existing page. Tags default to the union of the source entries'. The originals are LEFT IN PLACE. The body is never echoed back (verify with `page_get`). **When delegating, hand off entry ids + title + parent id only — never paste entry bodies.**",
+    "Compile SEVERAL Journal entries into ONE page — each entry's body is copied server-side and concatenated in the order given, byte-faithful at any size. The journal counterpart of `page_from_notes` — for 'compile this week's entries into a reflection doc'. You pass entry ids (from `journal_list`), NOT their text. Each entry lands under a date(+title) `## ` heading; `headings: false` concatenates raw. Pass `parent_id` to nest under an existing page. Tags default to the union of the source entries'. The originals are LEFT IN PLACE. Returns the new page's id + title; the body is never echoed back (verify with `page_get`). **When delegating, hand off entry ids + title + parent id only — never paste entry bodies.**",
   inputSchema: {
     type: 'object',
     properties: {
