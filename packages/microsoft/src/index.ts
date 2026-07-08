@@ -43,11 +43,12 @@ export { graphGet, graphGetAll, graphFetchRaw, type GraphError } from './client'
 export { discoverDrives } from './drives/discover';
 export { syncDrive, type DriveSyncResult } from './drives/sync';
 export { storeRemoteFileAsNode, type StoredFile } from './drives/store';
-export { discoverForAccount, setDriveEnabled, listDrives } from './drives/manage';
+export { discoverForAccount, setDriveEnabled, listDrives, browseDrive, type DriveChild } from './drives/manage';
+export { listScopes, setDriveScopes, ownedDrive, inScope, itemPathAfterRoot, type ScopeInput } from './drives/scope';
 export { listAccounts, redactMsAccount, type PublicMsAccount } from './accounts';
 // Re-export the row types the settings page renders, so it doesn't reach into
 // @mantle/db directly.
-export type { MsAccount, MsDrive } from '@mantle/db';
+export type { MsAccount, MsDrive, MsDriveScope } from '@mantle/db';
 export type { DriveItem, GraphDrive, GraphSite } from './drives/types';
 
 // ── M2: Outlook mail (reuses the email pipeline via a Graph provider) ───────

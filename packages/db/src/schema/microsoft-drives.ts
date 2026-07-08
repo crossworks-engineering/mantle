@@ -75,7 +75,34 @@ export const msDriveItems = pgTable(
   ],
 );
 
+/**
+ * Optional per-drive sync scope — the "choose what to sync" selections. No
+ * rows = the whole drive syncs (the v1 behaviour, unchanged). Rows = only
+ * files under a selected folder (prefix match on the after-`root:` path) or
+ * exactly-selected files sync; previously-ingested files that fall outside
+ * are pruned on the next full walk. Saving a scope set clears the drive's
+ * `delta_link` so that walk happens on the next sync.
+ */
+export const msDriveScopes = pgTable(
+  'ms_drive_scopes',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    driveDbId: uuid('drive_db_id').notNull().references(() => msDrives.id, { onDelete: 'cascade' }),
+    /** Graph driveItem id of the selected folder/file. */
+    itemId: text('item_id').notNull(),
+    /** Item path after `root:`, always starting with `/` (e.g. `/Reports/2026`). */
+    path: text('path').notNull(),
+    isFolder: boolean('is_folder').notNull(),
+    /** Display name at selection time (paths drift on rename; this is UI-only). */
+    name: text('name'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex('ms_drive_scopes_drive_item_uq').on(t.driveDbId, t.itemId)],
+);
+
 export type MsDrive = typeof msDrives.$inferSelect;
 export type NewMsDrive = typeof msDrives.$inferInsert;
 export type MsDriveItem = typeof msDriveItems.$inferSelect;
 export type NewMsDriveItem = typeof msDriveItems.$inferInsert;
+export type MsDriveScope = typeof msDriveScopes.$inferSelect;
+export type NewMsDriveScope = typeof msDriveScopes.$inferInsert;

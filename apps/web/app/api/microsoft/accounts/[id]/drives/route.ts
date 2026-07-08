@@ -23,6 +23,7 @@ function toDriveDTO(d: Awaited<ReturnType<typeof listDrives>>[number]): MsDriveD
     enabled: d.enabled,
     lastSyncAt: d.lastSyncAt?.toISOString() ?? null,
     lastError: d.lastError,
+    scopeCount: d.scopeCount,
   };
 }
 

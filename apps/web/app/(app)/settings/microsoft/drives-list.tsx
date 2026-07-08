@@ -1,8 +1,10 @@
 'use client';
 
-import { FolderGit2, HardDrive, Loader2, RefreshCw } from 'lucide-react';
+import { useState } from 'react';
+import { FolderGit2, HardDrive, ListTree, Loader2, RefreshCw } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { MsDriveDTO } from '@mantle/client-types';
+import { DriveScopeDialog } from './drive-scope-dialog';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Spinner } from '@/components/ui/spinner';
@@ -18,6 +20,7 @@ import { apiFetch, apiSend } from '@/lib/api-fetch';
 export function DrivesList({ accountId }: { accountId: string }) {
   const queryClient = useQueryClient();
   const toast = useToast();
+  const [picking, setPicking] = useState<MsDriveDTO | null>(null);
   const key = ['microsoft', 'drives', accountId];
 
   const drivesQuery = useQuery({
@@ -94,9 +97,19 @@ export function DrivesList({ accountId }: { accountId: string }) {
                         ? ` · last sync ${formatDateTime(d.lastSyncAt)}`
                         : ' · sync pending'
                       : ' · off'}
+                    {d.enabled
+                      ? d.scopeCount > 0
+                        ? ` · ${d.scopeCount} selection${d.scopeCount === 1 ? '' : 's'}`
+                        : ' · everything'
+                      : ''}
                     {d.lastError ? ` · ⚠ ${d.lastError}` : ''}
                   </div>
                 </div>
+                {d.enabled && (
+                  <Button variant="ghost" size="sm" onClick={() => setPicking(d)}>
+                    <ListTree /> Choose content
+                  </Button>
+                )}
                 <Switch
                   checked={d.enabled}
                   disabled={toggle.isPending}
@@ -107,6 +120,9 @@ export function DrivesList({ accountId }: { accountId: string }) {
             );
           })}
         </ul>
+      )}
+      {picking && (
+        <DriveScopeDialog accountId={accountId} drive={picking} onClose={() => setPicking(null)} />
       )}
       <p className="px-1 text-xs text-muted-foreground">
         Listed here: this account&apos;s OneDrive plus the document libraries of SharePoint sites it{' '}
