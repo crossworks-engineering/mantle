@@ -29,8 +29,12 @@ import {
   type CreateContactInput,
 } from '@mantle/content';
 import { enqueueBackfills } from '@mantle/email';
-import type { BuiltinToolDef } from './types';
+import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { notFound } from './errors';
+
+const CONTACT_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'id', nodeType: 'contact', lookup: 'contact_find / contact_list' },
+];
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -87,7 +91,7 @@ const contact_find: BuiltinToolDef = {
         minimum: 1,
         maximum: 25,
         default: 5,
-        description: 'Max results to return. Default 5, cap 25.',
+        description: 'Max results to return.',
       },
     },
     required: ['query'],
@@ -118,7 +122,7 @@ const contact_list: BuiltinToolDef = {
         minimum: 1,
         maximum: 200,
         default: 50,
-        description: 'Max results to return. Default 50, cap 200.',
+        description: 'Max results to return.',
       },
       offset: {
         type: 'integer',
@@ -139,6 +143,7 @@ const contact_list: BuiltinToolDef = {
 
 const contact_get: BuiltinToolDef = {
   slug: 'contact_get',
+  preconditions: CONTACT_ID_PRE,
   name: 'Read a contact',
   description: "Fetch one contact by its node id. Returns the full record including counters.",
   inputSchema: {
@@ -237,6 +242,7 @@ const contact_create: BuiltinToolDef = {
 
 const contact_update: BuiltinToolDef = {
   slug: 'contact_update',
+  preconditions: CONTACT_ID_PRE,
   name: 'Update a contact',
   description:
     "Patch a contact — only the fields you pass change (omit a field to keep its stored value). Pass `emails` to REPLACE the whole email list (addresses and/or `@domain` wildcards); newly-added entries trigger a 90-day history backfill. Useful when the user says 'their email actually changed to X', 'also accept anything from @acme.com', or 'tag Modular as a supplier'." +
@@ -306,6 +312,7 @@ const contact_update: BuiltinToolDef = {
 
 const contact_delete: BuiltinToolDef = {
   slug: 'contact_delete',
+  preconditions: CONTACT_ID_PRE,
   name: 'Delete a contact',
   description:
     "Remove a contact. NOTE: this also removes them from the email allowlist — Saskia can no longer email them after deletion. Returns ok=true on success; ok=false if the contact wasn't found." +

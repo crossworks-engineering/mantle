@@ -122,13 +122,13 @@ const location_nearby: BuiltinToolDef = {
     properties: {
       latitude: { type: 'number', description: 'latitude of the point to search around, e.g. -33.918' },
       longitude: { type: 'number', description: 'longitude of the point to search around, e.g. 18.423' },
-      radius_meters: { type: 'number', description: 'search radius in metres (default 150)', default: 150 },
+      radius_meters: { type: 'number', description: 'search radius in metres', default: 150 },
       limit: {
         type: 'integer',
         minimum: 1,
         maximum: 50,
         default: 10,
-        description: 'Max results to return. Default 10, cap 50.',
+        description: 'Max results to return.',
       },
     },
     required: ['latitude', 'longitude'],

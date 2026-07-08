@@ -223,7 +223,7 @@ const table_from_file: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      file_id: { type: 'string', format: 'uuid', description: 'id of the spreadsheet file node' },
+      file_id: { type: 'string', format: 'uuid', description: "The spreadsheet file's id — from `file_list` / `search_nodes`." },
       title: { type: 'string', description: 'title for the first sheet; others use their sheet name' },
       tags: {
         type: 'array',
@@ -1038,7 +1038,7 @@ const table_column_add: BuiltinToolDef = {
   preconditions: TABLE_ID_PRE,
   name: 'Add a column',
   description:
-    "Add a column. `type` ∈ text|number|currency|percent|date|datetime|checkbox|select|multiselect|url|formula. For currency pass `format.currency` (ISO code); for select/multiselect pass `options` (array of label strings); for a formula column pass `formula` (e.g. \"{Qty} * {Price}\" — references other columns by name). Writes to DRAFT.",
+    "Add a column. For currency pass `format.currency` (ISO code); for select/multiselect pass `options`; for a formula column pass `formula` (e.g. \"{Qty} * {Price}\" — references other columns by name). Writes to DRAFT.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -1167,7 +1167,7 @@ const table_set_aggregate: BuiltinToolDef = {
   preconditions: TABLE_ID_PRE,
   name: 'Set a column total',
   description:
-    "Set (or clear) a column's footer total — the \"add totals\" tool. `kind` ∈ sum|avg|count|min|max|filled|empty, or `none` to clear. Shows in the totals row and the indexed text. Writes to DRAFT.",
+    "Set (or clear) a column's footer total — the \"add totals\" tool. Shows in the totals row and the indexed text. Writes to DRAFT.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -1204,7 +1204,7 @@ const table_set_view: BuiltinToolDef = {
   preconditions: TABLE_ID_PRE,
   name: 'Save a filter/sort view',
   description:
-    "Create or update a saved view — a named filter + sort over the table. `sort` is an array of `{ column, dir }` (dir asc|desc; column by id/name). `filters` is an array of `{ column, op, value }` (op ∈ eq|neq|contains|gt|lt|gte|lte|empty|notEmpty). Pass `view_id` to update an existing view. Writes to DRAFT.",
+    "Create or update a saved view — a named filter + sort over the table. Pass `view_id` to update an existing view. Writes to DRAFT.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -1230,7 +1230,11 @@ const table_set_view: BuiltinToolDef = {
           type: 'object',
           properties: {
             column: { type: 'string', description: 'column id or name' },
-            op: { type: 'string', description: 'How the cell compares to `value` — same ops as `table_query` filters.' },
+            op: {
+              type: 'string',
+              enum: [...FILTER_OPS],
+              description: 'How the cell compares to `value` — same ops as `table_query` filters.',
+            },
             value: { description: 'compared against the cell (omit for empty/notEmpty)' },
           },
           required: ['column', 'op'],

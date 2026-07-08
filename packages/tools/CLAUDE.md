@@ -79,6 +79,12 @@ Hygiene:
   schema declares types and the validator enforces them; a param description
   restating "a string" wastes budget. Say what the value *means* and show
   one plausible value.
+- **Numbers live in schema keywords, not prose.** A limit param says "Max
+  results to return." — its default and cap belong in the schema's
+  `default`/`minimum`/`maximum`, which render to the model too. If a bound
+  only exists in handler code, add the schema keyword rather than stating
+  the number in prose (the lint rejects prose that restates a declared
+  default/maximum).
 - **Length budget: ~120 words per description.** Exceeding it is allowed
   only for genuine footguns and needs justification — the sanctioned-essay
   allowlist lives in `description-lint.test.ts` with the reason per entry.

@@ -396,7 +396,7 @@ const summarize_text: BuiltinToolDef = {
       text: {
         type: 'string',
         description:
-          'Inline text to summarize. Provide this OR node_id, not both.',
+          'Inline text to summarize. Provide this OR `node_id`, not both.',
       },
       node_id: {
         type: 'string',
