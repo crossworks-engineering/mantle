@@ -344,6 +344,17 @@ cache + `extract_cost_cap_micro_usd`.
   `commitPage`. The editor's `BlockId` TipTap extension preserves the
   attr on every block type so user edits don't strip ids placed by
   the agent.
+  **Ids are UNIQUE per doc, enforced at both ends** (v0.120.1 — a
+  duplicated id makes every later twin unreachable: `findBlock`
+  resolves the first match). Editor side: split/paste no longer copy
+  an id (`keepOnSplit: false` + an `appendTransaction` plugin that
+  mints missing ids and re-mints duplicates in place). Server side:
+  `ensureBlockIds` re-mints any id that repeats an earlier block's
+  (pre-order, first occurrence keeps it), so every read/save pass —
+  including the `getPage` lazy backfill — self-heals docs and drafts
+  corrupted before the fix. `replaceBlock` gives the first new block
+  the target's id unconditionally (parse-minted ids would otherwise
+  win and churn the address on every update).
 - **`page_blocks_list` tool** — ✅ built (Phase 2b foundation).
   Lightweight TOC view: `[{ id, kind, depth, preview, meta? }]` per
   block, body NOT returned. Powers the agent's "what's in this page?"

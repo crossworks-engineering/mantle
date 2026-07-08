@@ -4,6 +4,30 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the multi-arch image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.120.1 — 2026-07-07
+
+**Duplicate block ids fixed + self-healing.** The page editor could mint two
+blocks with one id (Enter-split copied the id; copy-paste re-imported it),
+which made every later twin invisible to the block-level edit tools —
+`page_block_get`/`update`/`delete` resolve the first match, so targeted
+edits could land on the wrong block. The editor now re-mints ids on split
+and paste (a new `appendTransaction` plugin in the `BlockId` extension keeps
+the doc unique-id by construction), and server-side `ensureBlockIds` re-mints
+any duplicate on read or save — first occurrence keeps its id, so held
+addresses stay valid and already-corrupted docs/drafts repair themselves on
+next touch, no migration. Also fixes `replaceBlock` id inheritance (the
+"first new block keeps the target's id" contract was dead in production
+because `markdownToDoc` mints ids at parse — every block update silently
+churned the target's id).
+
+## v0.120.0 — 2026-07-07
+
+**Team Hub.** `/team` lands on a briefing hub — hero, curated briefing
+cards, live brain stats, and Team Chat one tap away. Curation is just
+sharing: the new **Team members only** toggle on a Page share puts it on the
+hub; team-mode links now work for every content kind with automatic member
+recognition from the hub. Full notes: `docs/_changelog/0.120.0.md`.
+
 ## v0.119.1 — 2026-07-07
 
 **See what the validator sees.** v0.119.0's argument validation ships in
