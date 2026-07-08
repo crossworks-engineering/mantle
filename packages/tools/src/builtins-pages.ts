@@ -1312,7 +1312,7 @@ const page_blocks_apply: BuiltinToolDef = {
   description:
     "Apply MANY block edits to one page in a SINGLE atomic call — the batch path between one-off block tools and a whole-body `page_update_draft` rewrite. `ops` is an ordered list of `{ op: 'update' | 'insert_after' | 'delete', block_id, markdown? }` applied sequentially against the editing baseline; the draft is saved ONCE at the end, so the batch is all-or-nothing: if any op fails (unknown block id, bad markdown, refused delete) NOTHING is saved and the error names the failing op's index. " +
     "**Use this for multi-block targeted edits** — wrap every quote, retitle several sections, delete a scattered set — up to 50 ops. One call replaces up to 50 individual block calls, so it cannot be severed mid-edit by the turn's tool-call budget. For a full restructure (resequencing, merging sections) still prefer ONE `page_update_draft`. " +
-    "`block_id`s come from `page_blocks_list` (the baseline): a block INSERTED by this batch has no addressable id until after save, and a block DELETED earlier in the batch can't be referenced later. Same markdown rules as `page_block_update` — include the structural prefix (`##`, `>`, `:::info`, …) when you mean to KEEP the block's kind; on 'update' the first new block inherits the target's id.",
+    "`block_id`s come from `page_blocks_list` (the baseline) — or, when chaining batches, from the PREVIOUS batch's `created_ids` output, which maps each op to the ids of the blocks it created (`deleted_ids` lists what's gone). Anchor follow-up batches on those instead of re-listing; a block deleted earlier in the SAME batch can't be referenced later in it. Same markdown rules as `page_block_update` — include the structural prefix (`##`, `>`, `:::info`, …) when you mean to KEEP the block's kind; on 'update' the first new block inherits the target's id.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -1370,6 +1370,32 @@ const page_blocks_apply: BuiltinToolDef = {
 
     let doc = pickEditingBaseline(page);
     const counts = { updated: 0, inserted: 0, deleted: 0 };
+    // Chaining record: multi-batch jobs died on stale anchors in the wild (a
+    // 2026-07-08 NATREF turn burned 4 batches re-listing after its own earlier
+    // chunks consumed the anchors). markdownToDoc parse-mints ids, so the ids
+    // of every block this batch creates are known BEFORE save — returning
+    // them lets the next batch anchor on this one's output with no re-list.
+    const createdIds: Array<{ op: number; ids: string[] }> = [];
+    const deletedIds: string[] = [];
+    // On a not-found failure, pre-scan the REMAINING ops against the evolved
+    // doc so ALL doomed ids surface in ONE error instead of one per retry.
+    const staleRemainderNote = (from: number): string => {
+      const stale: string[] = [];
+      for (let j = from; j < opsIn.length; j++) {
+        const o = (opsIn[j] && typeof opsIn[j] === 'object' ? opsIn[j] : {}) as Record<
+          string,
+          unknown
+        >;
+        const bid = str(o.block_id).trim();
+        if (bid && !findBlock(doc, bid)) stale.push(`op ${j} (${bid})`);
+      }
+      if (stale.length === 0) return '';
+      return (
+        ` Later ops reference ids ALSO missing from the current baseline and will fail the ` +
+        `same way: ${stale.join(', ')} — refresh every id from ONE new page_blocks_list ` +
+        `(or the previous batch's created_ids) before re-issuing`
+      );
+    };
     for (let i = 0; i < opsIn.length; i++) {
       const raw = opsIn[i];
       const op = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
@@ -1407,11 +1433,20 @@ const page_blocks_apply: BuiltinToolDef = {
         if (!result.found) {
           return fail(
             `block not found in page ${pageId} — re-run page_blocks_list for current ids ` +
-              `(an earlier delete in this batch removes its id; blocks inserted by this batch ` +
-              `aren't addressable until after save)`,
+              `(an earlier delete in this batch removes its id; a previous batch's new ` +
+              `blocks are addressable via its created_ids output).` +
+              staleRemainderNote(i + 1),
           );
         }
         doc = result.doc;
+        // Top-level ids of the spliced fragment (parse-minted). On 'update'
+        // the FIRST block inherits the target's id (replaceBlock invariant),
+        // so only blocks 1..n are newly addressable.
+        const topIds = (parsedBlocks as Array<{ attrs?: { id?: unknown } }>)
+          .map((b) => b?.attrs?.id)
+          .filter((x): x is string => typeof x === 'string');
+        const newIds = kind === 'update' ? topIds.slice(1) : topIds;
+        if (newIds.length > 0) createdIds.push({ op: i, ids: newIds });
         if (kind === 'update') counts.updated += 1;
         else counts.inserted += parsedBlocks.length;
       } else if (kind === 'delete') {
@@ -1419,7 +1454,8 @@ const page_blocks_apply: BuiltinToolDef = {
         if (!result.found) {
           return fail(
             `block not found in page ${pageId} — re-run page_blocks_list for current ids ` +
-              `(an earlier delete in this batch removes its id)`,
+              `(an earlier delete in this batch removes its id).` +
+              staleRemainderNote(i + 1),
           );
         }
         if (result.refused) {
@@ -1429,6 +1465,7 @@ const page_blocks_apply: BuiltinToolDef = {
           );
         }
         doc = result.doc;
+        deletedIds.push(blockId);
         counts.deleted += 1;
       } else {
         return fail("op must be one of: 'update', 'insert_after', 'delete'");
@@ -1449,6 +1486,9 @@ const page_blocks_apply: BuiltinToolDef = {
         page_id: pageId,
         ops_applied: opsIn.length,
         ...counts,
+        // Chaining map: anchor the NEXT batch on these without re-listing.
+        ...(createdIds.length > 0 ? { created_ids: createdIds } : {}),
+        ...(deletedIds.length > 0 ? { deleted_ids: deletedIds } : {}),
         draft_saved: true,
         hint: DRAFT_REVIEW_HINT(pageId),
       },

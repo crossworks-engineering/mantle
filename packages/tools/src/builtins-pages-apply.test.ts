@@ -116,6 +116,100 @@ describe('page_blocks_apply', () => {
     expect(saved.content[0]!.type).toBe('heading');
   });
 
+  it('returns created_ids / deleted_ids so the next batch can chain without re-listing', async () => {
+    const { doc, ids } = makeBaseline();
+    vi.mocked(getPage).mockResolvedValue({ doc, draft: null } as never);
+
+    const res = await apply.handler(
+      {
+        page_id: PAGE_ID,
+        ops: [
+          // 2-block replacement: first inherits the target id, second is NEW.
+          { op: 'update', block_id: ids[0], markdown: '## New title\n\nIntro under it' },
+          { op: 'insert_after', block_id: ids[3], markdown: 'Appendix one\n\nAppendix two' },
+          { op: 'delete', block_id: ids[2] },
+        ],
+      },
+      ctx,
+    );
+
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const out = res.output as {
+      created_ids: Array<{ op: number; ids: string[] }>;
+      deleted_ids: string[];
+    };
+    expect(out.deleted_ids).toEqual([ids[2]]);
+    expect(out.created_ids).toHaveLength(2);
+    expect(out.created_ids[0]).toMatchObject({ op: 0 });
+    expect(out.created_ids[0]!.ids).toHaveLength(1); // block 2 of the replacement only
+    expect(out.created_ids[1]).toMatchObject({ op: 1 });
+    expect(out.created_ids[1]!.ids).toHaveLength(2);
+    // Every reported id must actually exist in the SAVED draft (the whole
+    // point is that the next batch can anchor on them), and be genuinely new.
+    const saved = vi.mocked(saveDraft).mock.calls[0]![2] as { content: Block[] };
+    const savedIds = saved.content.map((b) => b.attrs.id);
+    for (const entry of out.created_ids) {
+      for (const id of entry.ids) {
+        expect(savedIds).toContain(id);
+        expect(ids).not.toContain(id);
+      }
+    }
+  });
+
+  it('a second batch anchored on the previous batch\'s created_ids succeeds without re-listing', async () => {
+    const { doc, ids } = makeBaseline();
+    vi.mocked(getPage).mockResolvedValue({ doc, draft: null } as never);
+
+    const first = await apply.handler(
+      { page_id: PAGE_ID, ops: [{ op: 'insert_after', block_id: ids[3], markdown: 'New section' }] },
+      ctx,
+    );
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const newId = (first.output as { created_ids: Array<{ ids: string[] }> }).created_ids[0]!
+      .ids[0]!;
+
+    // The draft now holds batch 1's result; batch 2 anchors on its new block.
+    const savedDraft = vi.mocked(saveDraft).mock.calls[0]![2];
+    vi.mocked(getPage).mockResolvedValue({ doc, draft: savedDraft } as never);
+
+    const second = await apply.handler(
+      { page_id: PAGE_ID, ops: [{ op: 'insert_after', block_id: newId, markdown: 'Chained onto it' }] },
+      ctx,
+    );
+    expect(second.ok).toBe(true);
+    const saved2 = vi.mocked(saveDraft).mock.calls[1]![2] as { content: Block[] };
+    const texts = saved2.content.map((b) => b.content?.[0]?.text);
+    expect(texts).toContain('Chained onto it');
+  });
+
+  it('one failure reports ALL remaining stale ids, not just the first', async () => {
+    const { doc, ids } = makeBaseline();
+    vi.mocked(getPage).mockResolvedValue({ doc, draft: null } as never);
+
+    const res = await apply.handler(
+      {
+        page_id: PAGE_ID,
+        ops: [
+          { op: 'update', block_id: ids[0], markdown: '## Fine' },
+          { op: 'update', block_id: 'ghost-1111', markdown: 'x' }, // first failure
+          { op: 'insert_after', block_id: 'ghost-2222', markdown: 'y' }, // also doomed
+          { op: 'delete', block_id: ids[2] }, // still valid — must NOT be flagged
+        ],
+      },
+      ctx,
+    );
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toContain("op 1 ('update' ghost-1111)");
+    expect(res.error).toContain('Later ops reference ids ALSO missing');
+    expect(res.error).toContain('op 2 (ghost-2222)');
+    expect(res.error).not.toContain('op 3');
+    expect(saveDraft).not.toHaveBeenCalled();
+  });
+
   it('never produces duplicate block ids across an update + insert batch', async () => {
     // Regression for the refinery-SOP corruption class (2026-07-06):
     // after any insert/replace batch, every block id in the saved draft
