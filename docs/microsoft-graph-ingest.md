@@ -231,6 +231,37 @@ provider branch to the email insert path rather than a parallel table. Add
 `nodes.data.source` — decide in build; node-type is cleaner for provenance
 filtering).
 
+### Drive discovery — the Follow rule
+
+What "Refresh drives" lists (`drives/discover.ts`) is exactly the union of:
+
+1. **The account's own OneDrive** — `GET /me/drive`. Included whenever the
+   account has one provisioned (non-fatal if not).
+2. **Every document library of every SharePoint site the user *follows*** —
+   `GET /me/followedSites`, then `GET /sites/{id}/drives` per site. "Follows"
+   is the star/Follow button on the site in SharePoint — the list under
+   "Following" on the SharePoint start page.
+
+Consequences worth stating plainly (this is the #1 "why isn't my site
+showing?" question):
+
+- **Access alone is not enough.** A site the user can open but doesn't follow
+  is invisible to discovery. The fix is: Follow the site in SharePoint, then
+  hit Refresh drives.
+- **Each followed site contributes ALL of its document libraries**, and most
+  sites have a default library named just "Documents" — several same-named
+  entries means several followed sites (the UI shows `siteName` to
+  disambiguate; the branch label carries a drive-id hash so they never
+  collide).
+- **Not listed, by design:** items merely shared with the user, other people's
+  OneDrives, and sites the user doesn't follow. A manual add-site-by-URL
+  (`GET /sites/{hostname}:/{server-relative-path}`) is the planned escape
+  hatch if follow-based scoping proves too coarse.
+
+Discovery only *catalogs*: every found drive is upserted **disabled**, and
+re-running refreshes display metadata without touching `enabled`/`delta_link`
+— a re-discover never disrupts an active sync.
+
 ### Sync workers (delta queries)
 
 New worker `apps/web/workers/microsoft-sync.ts`, structured exactly like

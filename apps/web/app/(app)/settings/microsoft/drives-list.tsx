@@ -108,6 +108,11 @@ export function DrivesList({ accountId }: { accountId: string }) {
           })}
         </ul>
       )}
+      <p className="px-1 text-xs text-muted-foreground">
+        Listed here: this account&apos;s OneDrive plus the document libraries of SharePoint sites it{' '}
+        <strong>follows</strong>. Missing a site? Follow it in SharePoint (the ☆ Follow button on the
+        site), then Refresh drives. Access alone isn&apos;t enough — unfollowed sites don&apos;t appear.
+      </p>
     </div>
   );
 }
