@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
+import { shareModeOf } from '@mantle/content';
 import { resolveActiveShareByToken, recordShareView, loadShareView } from '@/lib/shares';
 import { resolveShareVisitor } from '@/lib/team-gate';
 import { TeamTokenPrompt } from '@/components/share/team-token-prompt';
@@ -22,7 +23,10 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { token } = await params;
   const share = await resolveActiveShareByToken(token);
-  const view = share ? await loadShareView(share) : null;
+  // Team-mode shares don't leak their title to anonymous crawlers/unfurlers —
+  // metadata renders before the visitor gate, so it must stay generic.
+  const gated = share ? shareModeOf(share) === 'team' : false;
+  const view = share && !gated ? await loadShareView(share) : null;
   const heading = (view ? ('title' in view ? view.title : view.filename) : null) ?? 'Shared';
   // Unlisted by default: tell crawlers not to index shared links, but still
   // emit OG/Twitter tags so a pasted link unfurls nicely in chat apps.
