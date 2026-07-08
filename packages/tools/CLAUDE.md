@@ -41,6 +41,54 @@ Hygiene is centralised — don't duplicate it in handlers:
 - Secrets are scrubbed by `scrubSecrets` on the HTTP path; sensitive *input*
   fields are declared via `redactInputFields` on the tool def.
 
+## The description style guide
+
+A tool description is the prose rung of the reliability ladder: it carries
+ONLY the judgment calls nothing stronger can express. Every description ships
+in the system prompt of every granted agent on every turn, so each sentence
+is paid for on every call the model makes — write for a skimming LLM doing
+tool selection, not for a human reading docs. The mechanical subset of these
+rules is enforced by `src/description-lint.test.ts`.
+
+1. **First sentence = what it does + what it returns.** The opening line does
+   the tool-selection work; the model may read nothing else. Exemplar:
+   `search_nodes` ("Hybrid full-text + semantic search… ranked by relevance,
+   NOT by date").
+2. **Selection boundaries must name the alternative.** Every "when to use"
+   states which tool handles the adjacent case ("for time-windowed email
+   questions use `email_list`"). A boundary without a named alternative
+   teaches hesitation, not selection. This is the highest-value pattern in
+   the codebase — exemplars: `email_list` vs `search_nodes`, `page_from_file`
+   vs `page_create`, the `search_chunks` → `read_section` → `file_read`
+   ladder.
+3. **Side effects and visibility, always.** Say whether the result is a
+   draft or published, outward-facing or internal, reversible or not.
+   Exemplars: the `DRAFT_REVIEW_HINT` pattern in builtins-pages/-tables;
+   `contact_delete`'s allowlist warning.
+4. **Scaling behavior when it matters.** What happens at size — truncation
+   self-announces (`pageMeta`), sheets split into multiple tables
+   (`table_from_file`), batches are atomic (`page_blocks_apply`).
+5. **The ladder check.** Before ANY rule enters prose, ask: can it be a
+   schema constraint (enum/min/max/required), a precondition
+   (`node_exists`), a dynamic-schema hook, or a guard? If yes it goes there
+   and the prose says nothing. Prose duplicating the schema WILL drift.
+
+Hygiene:
+
+- **Param descriptions carry semantics + an example, never type info.** The
+  schema declares types and the validator enforces them; a param description
+  restating "a string" wastes budget. Say what the value *means* and show
+  one plausible value.
+- **Length budget: ~120 words per description.** Exceeding it is allowed
+  only for genuine footguns and needs justification — the sanctioned-essay
+  allowlist lives in `description-lint.test.ts` with the reason per entry.
+- Formatting: backticks for tool/param names; **bold** only for load-bearing
+  rules (if everything is bold, nothing is); phrase boundaries as "Use
+  when… / For X use `y` instead".
+- Cross-references must resolve: any backticked underscore token that looks
+  like a tool slug is checked against the registry by the lint (rename rot
+  — the Todos→Tasks / Lifelogs→Journal renames left stale references once).
+
 ## Schemas
 
 - JSON Schema on a builtin is a CONTRACT, not documentation: the central
