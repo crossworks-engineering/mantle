@@ -22,9 +22,11 @@ export function isShareable(type: string): type is ShareableType {
  * every pre-existing share keeps its behavior).
  *
  *   public — anyone with the link (the original model).
- *   team   — the visitor must additionally present a contact team token
- *            (see @mantle/content/team-tokens); currently meaningful for
- *            'app' shares, where the /s/ brokers enforce it.
+ *   team   — the visitor must additionally present a live team credential
+ *            (see @mantle/content/team-tokens). Enforced for every kind on
+ *            the /s/ surface (page render, asset bytes, app brokers).
+ *            Team-mode PAGE shares double as the /team hub's briefing
+ *            sections (see ./team-hub).
  */
 export type ShareMode = 'public' | 'team';
 

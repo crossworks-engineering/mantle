@@ -1,4 +1,5 @@
 import { resolveActiveShareByToken, isAssetAllowed } from '@/lib/shares';
+import { resolveShareVisitor } from '@/lib/team-gate';
 import { readFileById } from '@/lib/files';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 import { safeDownloadHeaders } from '@/lib/safe-download';
@@ -34,6 +35,10 @@ export async function GET(
 
   const share = await resolveActiveShareByToken(token);
   if (!share) return notFound();
+  // Team-mode shares: asset bytes need a live team session too (same rule as
+  // the page render — assets must not outlive the gate). Uniform 404, not
+  // 401, so an asset URL never reveals that a token exists.
+  if (!(await resolveShareVisitor(req.headers.get('cookie'), share))) return notFound();
   if (!(await isAssetAllowed(share, fileId))) return notFound();
 
   const res = await readFileById({ ownerId: share.ownerId, fileId });

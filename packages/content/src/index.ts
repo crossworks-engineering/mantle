@@ -322,6 +322,14 @@ export {
 } from './app-access-log';
 
 export {
+  listTeamHubSections,
+  teamHubContentCounts,
+  TEAM_HUB_STAT_TYPES,
+  type TeamHubSection,
+  type TeamHubStatType,
+} from './team-hub';
+
+export {
   appendTeamMessage,
   updateTeamMessageOutcome,
   countTeamInboundSince,
