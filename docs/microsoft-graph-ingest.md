@@ -291,7 +291,8 @@ have two opt-in layers, mirroring that stance:
 1. **Per-drive toggle** — discovery upserts every drive *disabled*; nothing
    syncs until a drive is switched on.
 2. **Per-drive scopes** (`ms_drive_scopes`) — the "Choose content" picker on
-   an enabled drive. No selections = the whole drive syncs; selections =
+   any drive, enabled or not (the safe first-connect flow for a big OneDrive
+   is: choose content while the drive is still OFF, then enable). No selections = the whole drive syncs; selections =
    only files under ticked folders (after-`root:` path prefix) or exactly
    ticked files sync. Graph only supports delta from the drive **root** on
    OneDrive for Business/SharePoint, so scoping is a client-side filter over

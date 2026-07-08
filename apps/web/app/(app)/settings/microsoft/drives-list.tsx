@@ -97,19 +97,20 @@ export function DrivesList({ accountId }: { accountId: string }) {
                         ? ` · last sync ${formatDateTime(d.lastSyncAt)}`
                         : ' · sync pending'
                       : ' · off'}
-                    {d.enabled
-                      ? d.scopeCount > 0
-                        ? ` · ${d.scopeCount} selection${d.scopeCount === 1 ? '' : 's'}`
-                        : ' · everything'
-                      : ''}
+                    {d.scopeCount > 0
+                      ? ` · ${d.scopeCount} selection${d.scopeCount === 1 ? '' : 's'}`
+                      : d.enabled
+                        ? ' · everything'
+                        : ''}
                     {d.lastError ? ` · ⚠ ${d.lastError}` : ''}
                   </div>
                 </div>
-                {d.enabled && (
-                  <Button variant="ghost" size="sm" onClick={() => setPicking(d)}>
-                    <ListTree /> Choose content
-                  </Button>
-                )}
+                {/* Available while the drive is OFF on purpose: the safe flow for a
+                    big drive is choose content first, THEN enable — nothing syncs
+                    until the toggle goes on. */}
+                <Button variant="ghost" size="sm" onClick={() => setPicking(d)}>
+                  <ListTree /> Choose content
+                </Button>
                 <Switch
                   checked={d.enabled}
                   disabled={toggle.isPending}

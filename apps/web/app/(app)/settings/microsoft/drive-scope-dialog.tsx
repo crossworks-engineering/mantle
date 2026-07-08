@@ -128,6 +128,8 @@ export function DriveScopeDialog({
           <DialogDescription>
             {drive.siteName ? `${drive.siteName} · ${drive.name}` : drive.name} — tick folders
             (includes everything inside) or single files. Nothing ticked = the whole drive syncs.
+            {!drive.enabled &&
+              ' This drive is off — nothing syncs until you switch it on, so you can choose first.'}
           </DialogDescription>
         </DialogHeader>
 
