@@ -66,7 +66,11 @@ const location_save: BuiltinToolDef = {
       title: { type: 'string', description: "optional label; defaults to the address" },
       source: { type: 'string', description: "provider that resolved it, e.g. 'mapbox'" },
       body: { type: 'string', description: 'optional notes about the place' },
-      tags: { type: 'array', items: { type: 'string' } },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "Labels for organisation and filtering, e.g. ['work'].",
+      },
     },
     required: ['latitude', 'longitude'],
   },
@@ -116,10 +120,16 @@ const location_nearby: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      latitude: { type: 'number' },
-      longitude: { type: 'number' },
+      latitude: { type: 'number', description: 'latitude of the point to search around, e.g. -33.918' },
+      longitude: { type: 'number', description: 'longitude of the point to search around, e.g. 18.423' },
       radius_meters: { type: 'number', description: 'search radius in metres (default 150)', default: 150 },
-      limit: { type: 'integer', minimum: 1, maximum: 50, default: 10 },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 50,
+        default: 10,
+        description: 'Max results to return. Default 10, cap 50.',
+      },
     },
     required: ['latitude', 'longitude'],
   },
@@ -149,10 +159,10 @@ const location_distance: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      from_latitude: { type: 'number' },
-      from_longitude: { type: 'number' },
-      to_latitude: { type: 'number' },
-      to_longitude: { type: 'number' },
+      from_latitude: { type: 'number', description: 'start point latitude, e.g. -33.918' },
+      from_longitude: { type: 'number', description: 'start point longitude, e.g. 18.423' },
+      to_latitude: { type: 'number', description: 'end point latitude, e.g. -34.357' },
+      to_longitude: { type: 'number', description: 'end point longitude, e.g. 18.474' },
     },
     required: ['from_latitude', 'from_longitude', 'to_latitude', 'to_longitude'],
   },

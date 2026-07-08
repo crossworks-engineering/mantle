@@ -49,9 +49,22 @@ import type {
   ToolArtifact,
   ToolHandlerContext,
   ToolHandlerResult,
+  ToolPrecondition,
 } from './types';
 
 // ─── shared helpers ────────────────────────────────────────────────
+
+// Referential preconditions (checked centrally in dispatch — see
+// preconditions.ts). `node_id` is optional on both tools (telegram_file_id /
+// inline text are the alternatives), so the check is skipped when absent.
+// extract_from_image reads image bytes from the file store, so its node must
+// be a file; summarize_text accepts any node that carries content.
+const IMAGE_FILE_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'node_id', nodeType: 'file', lookup: 'file_list / search_nodes' },
+];
+const NODE_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'node_id', lookup: 'search_nodes / tree_list' },
+];
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -245,6 +258,7 @@ const extract_from_image: BuiltinToolDef = {
   name: 'Read text from an image',
   description:
     "Run the owner's default vision worker over an image and return the extracted text. Use when the user asks to re-read a previously-sent photo, OCR a file in their notes, or extract content from a specific image they reference. For photos that JUST arrived in this conversation, the agent's auto-ingest pipeline has already saved the transcript as a note — search_nodes for it before re-extracting.",
+  preconditions: IMAGE_FILE_ID_PRE,
   inputSchema: {
     type: 'object',
     properties: {
@@ -375,6 +389,7 @@ const summarize_text: BuiltinToolDef = {
   name: 'Summarize a note or block of text',
   description:
     "Run the owner's default summarizer worker (a chat-shaped worker tuned for compression) over text — either inline content or a note's body. Use when the user asks for a TLDR, a recap of a long note, or a digest of something they pasted. For automatic chat-history summarization, the background summarizer already runs; don't call this for that.",
+  preconditions: NODE_ID_PRE,
   inputSchema: {
     type: 'object',
     properties: {
@@ -385,7 +400,8 @@ const summarize_text: BuiltinToolDef = {
       },
       node_id: {
         type: 'string',
-        description: "Id of a note node — the note body is fetched and summarized.",
+        description:
+          "The id (UUID) of a node whose content to summarize — from `search_nodes` / `note_list`. Works on any node carrying text content, not just notes. Provide this OR `text`, not both.",
       },
       focus: {
         type: 'string',

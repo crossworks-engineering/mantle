@@ -52,6 +52,12 @@ const PAGE_ID_PRE: readonly ToolPrecondition[] = [
 const PAGE_NODE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'page', lookup: 'page_list / search_nodes' },
 ];
+const FILE_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'file_id', nodeType: 'file', lookup: 'file_list / search_nodes' },
+];
+const NOTE_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'note_id', nodeType: 'note', lookup: 'note_list / search_nodes' },
+];
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -68,13 +74,17 @@ const page_create: BuiltinToolDef = {
   slug: 'page_create',
   name: 'Create a page',
   description:
-    "Create a rich document (a `page` node under /pages) in the user's Mantle from content YOU compose. `title` required; `markdown` is the body in the rich dialect (callouts, columns, tables, task lists, highlights). The page is indexed into the brain — summary, embedding, facts, entities — so it becomes searchable and recallable. To make a SUB-PAGE, pass `parent_id` (an existing page's id, e.g. from page_list / search_nodes) and the new page nests under it; omit for a top-level page. Prefer this over note_create when the content is long-form or structured (a plan, a doc, a comparison) that deserves real formatting; use note_create for quick plain-text captures. **For importing an existing file (Notion export, sermon markdown, etc.) use `page_from_file` instead — re-emitting the file body in this tool's `markdown` arg truncates silently above ~6 K output tokens.** **When the content already lives in an existing NOTE, use `page_from_note` (pass the note id) — it copies the body server-side instead of you re-typing it.**",
+    "Create a rich document (a `page` node under /pages) in the user's Mantle from content YOU compose. The page is indexed into the brain — summary, embedding, facts, entities — so it becomes searchable and recallable. To make a SUB-PAGE, pass `parent_id` (an existing page's id); omit for a top-level page. Prefer this over `note_create` when the content is long-form or structured (a plan, a doc, a comparison); use `note_create` for quick plain-text captures. **For importing an existing file use `page_from_file` instead — re-emitting the file body in `markdown` truncates silently above ~6 K output tokens. When the content already lives in a NOTE, use `page_from_note` — it copies the body server-side.**",
   inputSchema: {
     type: 'object',
     properties: {
       title: { type: 'string', description: 'page title, e.g. "Q3 Launch Plan"' },
       markdown: { type: 'string', description: MARKDOWN_HINT },
-      tags: { type: 'array', items: { type: 'string' } },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "Labels for organisation and filtering, e.g. ['work'].",
+      },
       icon: { type: 'string', description: 'optional emoji icon, e.g. "📄"' },
       parent_id: {
         type: 'string',
@@ -129,7 +139,7 @@ const page_create: BuiltinToolDef = {
 
 const page_replace_from_file: BuiltinToolDef = {
   slug: 'page_replace_from_file',
-  preconditions: PAGE_ID_PRE,
+  preconditions: [...PAGE_ID_PRE, ...FILE_ID_PRE],
   name: 'Replace an existing page from a file',
   description:
     "Rebuild an EXISTING page's body from a markdown/text file's bytes. Writes the new body to `draft_doc` ONLY — the published `doc` is untouched until the operator commits. Like `page_from_file` but updates a target page instead of creating a new one. **The right tool for: 'this page is corrupted, reimport from the source file' / 'I re-exported this page from Notion, refresh it here'.** Bytes go server-side without round-tripping through your output, so this scales to any file size — the deterministic recovery path. Title / tags / icon stay as-is unless you pass replacements. Only text-like files are accepted (markdown / plain text); binaries are rejected.",
@@ -223,16 +233,21 @@ const page_replace_from_file: BuiltinToolDef = {
 const page_update: BuiltinToolDef = {
   slug: 'page_update',
   name: 'Update a page',
+  preconditions: PAGE_NODE_ID_PRE,
   description:
-    "Update an existing page by id. **Pass ONLY the fields you're changing — every other field is left untouched.** Fixing the title? Pass `{ id, title }`, nothing else. Re-tagging? Pass `{ id, tags }`. Pass `markdown` ONLY when you intend to replace the whole body — re-emitting it just to bundle a metadata fix is wasted output tokens (a 5K-token body adds 5K tokens of cost + risks truncation). `markdown` REPLACES the body in one shot (re-converted, page re-indexed); use page_get first if you need to read the current content before crafting a replacement. **For styling/restyling/reformatting an existing page (callouts, columns, restructure), DELEGATE to the `pages` agent via `invoke_agent` instead — the pages agent writes to draft_doc only and won't silently overwrite the live page on a bad transform.**",
+    "Update an existing page by id. **Pass ONLY the fields you're changing — every other field is left untouched.** Fixing the title? Pass `{ id, title }`, nothing else. Pass `markdown` ONLY when you intend to REPLACE the whole body in one shot (re-converted, page re-indexed) — re-emitting it just to bundle a metadata fix is wasted output tokens and risks truncation. Use `page_get` first if you need the current content before crafting a replacement. **For styling/restyling/reformatting an existing page (callouts, columns, restructure), DELEGATE to the `pages` agent via `invoke_agent` instead — the pages agent writes to draft_doc only and won't silently overwrite the live page on a bad transform.**",
   inputSchema: {
     type: 'object',
     properties: {
       id: { type: 'string', description: 'page node id (from page_list / page_create)' },
-      title: { type: 'string' },
+      title: { type: 'string', description: 'new page title; replaces the current one' },
       markdown: { type: 'string', description: `Replacement body. ${MARKDOWN_HINT}` },
-      tags: { type: 'array', items: { type: 'string' } },
-      icon: { type: 'string' },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "Labels for organisation and filtering, e.g. ['work']. Replaces the current tag set.",
+      },
+      icon: { type: 'string', description: 'new emoji icon, e.g. "📄"' },
     },
     required: ['id'],
   },
@@ -268,13 +283,17 @@ const page_update_draft: BuiltinToolDef = {
     type: 'object',
     properties: {
       id: { type: 'string', description: 'page node id' },
-      title: { type: 'string' },
+      title: { type: 'string', description: 'new page title; replaces the current one (applies directly, not via draft)' },
       markdown: {
         type: 'string',
         description: `Replacement body — written to draft_doc, NOT the published doc. ${MARKDOWN_HINT}`,
       },
-      tags: { type: 'array', items: { type: 'string' } },
-      icon: { type: 'string' },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "Labels for organisation and filtering, e.g. ['work']. Replaces the current tag set (applies directly, not via draft).",
+      },
+      icon: { type: 'string', description: 'new emoji icon, e.g. "📄" (applies directly, not via draft)' },
     },
     required: ['id'],
   },
@@ -341,6 +360,7 @@ const page_update_draft: BuiltinToolDef = {
 
 const page_delete: BuiltinToolDef = {
   slug: 'page_delete',
+  preconditions: PAGE_NODE_ID_PRE,
   name: 'Delete a page',
   description:
     'Permanently delete a page by id. This is irreversible — the document and its index entries are removed. Confirm with the user before calling.',
@@ -378,7 +398,7 @@ const page_list: BuiltinToolDef = {
     type: 'object',
     properties: {
       query: { type: 'string', description: 'substring match over title/body/summary' },
-      tag: { type: 'string' },
+      tag: { type: 'string', description: 'Only return items carrying this tag.' },
       limit: { type: 'number', description: 'max rows (default 50)' },
     },
   },
@@ -407,6 +427,7 @@ const page_list: BuiltinToolDef = {
 
 const page_get: BuiltinToolDef = {
   slug: 'page_get',
+  preconditions: PAGE_NODE_ID_PRE,
   name: 'Get a page',
   description:
     "Read one page by id. Returns the title, tags, summary, and the document as plaintext (`content`). To edit metadata only (title / tags / icon), use `page_update`. **For body styling or restyling on an existing page, delegate to the `pages` agent via `invoke_agent` — it writes to draft_doc only (preserves the live page) and is configured with the right model + safety rules for whole-doc transforms.** For block-level structure (which blocks exist, addressable by id) use `page_blocks_list` instead — lighter, no body returned. Returns a `url` permalink — link the page as a markdown `[title](url)` when you reference it to the user.",
@@ -453,6 +474,7 @@ const page_get: BuiltinToolDef = {
 
 const page_from_file: BuiltinToolDef = {
   slug: 'page_from_file',
+  preconditions: FILE_ID_PRE,
   name: 'Create page from file',
   description:
     "Create a page by importing a markdown/text file's bytes directly — the bytes go server-side from `files` → `markdownToDoc` → `createPage` without round-tripping through your output. **Always prefer this over `file_read` + `page_create` for file → page operations.** It scales to arbitrarily large files (a 100 KB Notion export imports in one tool call instead of choking on your max_tokens cap) and the result is byte-faithful to the source. Returns the new page's id + title; the body is never echoed back to you (use page_get if you need to verify content). Title defaults to the file's basename without extension if you omit it. Only text-like files are accepted (markdown / plain text) — binaries (PDF / docx / xlsx) are rejected with a clear error since their indexed text already lives on the file node and can't be losslessly converted to a page.",
@@ -464,7 +486,11 @@ const page_from_file: BuiltinToolDef = {
         type: 'string',
         description: 'page title; defaults to the file basename (without extension) if omitted',
       },
-      tags: { type: 'array', items: { type: 'string' } },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "Labels for organisation and filtering, e.g. ['work'].",
+      },
       icon: { type: 'string', description: 'optional emoji icon, e.g. "📄"' },
     },
     required: ['file_id'],
@@ -560,9 +586,10 @@ const page_from_file: BuiltinToolDef = {
 
 const page_from_note: BuiltinToolDef = {
   slug: 'page_from_note',
+  preconditions: NOTE_ID_PRE,
   name: 'Create page from note',
   description:
-    "Promote an EXISTING note into a rich page — the note's markdown body is copied server-side (`note → markdownToDoc → createPage`) WITHOUT round-tripping through your output. **Always prefer this over note_get + page_create when the user wants a note turned into a page** ('make this note a page', 'add this note to pages', 'turn my note into a doc'). It's effectively instant and byte-faithful no matter how long the note is — you pass the note id, NOT its text, so nothing is re-typed or truncated. Pass `parent_id` (an existing page's id) to nest the new page UNDER it as a sub-page; omit for top-level. Title/tags default to the note's own unless you override. The original note is LEFT IN PLACE (non-destructive) — delete it separately with note_delete if the user wants it gone. Returns the new page's id + title; the body is never echoed back (use page_get to verify). **When delegating a note→page move, hand off the note id + parent id only — never paste the note body into the prompt.**",
+    "Promote an EXISTING note into a rich page — the note's body is copied server-side WITHOUT round-tripping through your output, byte-faithful however long the note is. **Always prefer this over `note_get` + `page_create` when the user wants a note turned into a page** — you pass the note id, NOT its text. Pass `parent_id` to nest the new page UNDER an existing page. Title/tags default to the note's own unless you override. The original note is LEFT IN PLACE (non-destructive). The body is never echoed back (use `page_get` to verify). **When delegating, hand off the note id + parent id only — never paste the note body into the prompt.**",
   inputSchema: {
     type: 'object',
     properties: {
@@ -663,7 +690,7 @@ const page_from_notes: BuiltinToolDef = {
   slug: 'page_from_notes',
   name: 'Create page from several notes',
   description:
-    "Stitch SEVERAL existing notes into ONE rich page — every note's markdown body is copied server-side and concatenated in the order you give, WITHOUT round-tripping any of it through your output. **Prefer this over reading each note and re-typing it into page_create when the user wants to combine/compile multiple notes into a single doc** ('turn these notes into a page', 'compile my meeting notes into one document', 'merge these into a page under X'). Instant and byte-faithful at any size — you pass the note ids, NOT their text. Each note becomes its own section under an `## ` heading made from the note's title (so the result stays navigable); pass `headings: false` to concatenate the bodies raw with no inserted headings. Pass `parent_id` (an existing page's id) to nest the new page UNDER it as a sub-page. `title` is required (there's no single source note to borrow it from); tags default to the union of all the source notes' tags. The original notes are LEFT IN PLACE (non-destructive). Returns the new page's id + title; the body is never echoed back (use page_get to verify). **When delegating, hand off the note ids + title + parent id only — never paste the note bodies into the prompt.**",
+    "Stitch SEVERAL existing notes into ONE rich page — every note's body is copied server-side and concatenated in the order given, WITHOUT round-tripping through your output; byte-faithful at any size. **Prefer this over reading each note and re-typing it into `page_create`** — you pass the note ids, NOT their text. Each note becomes a section under an `## ` heading from its title; `headings: false` concatenates the bodies raw. Pass `parent_id` to nest under an existing page. Tags default to the union of the source notes' tags. The originals are LEFT IN PLACE. The body is never echoed back (verify with `page_get`). **When delegating, hand off note ids + title + parent id only — never paste note bodies.**",
   inputSchema: {
     type: 'object',
     properties: {
@@ -797,7 +824,7 @@ const page_from_journal: BuiltinToolDef = {
   slug: 'page_from_journal',
   name: 'Create page from journal entries',
   description:
-    "Compile SEVERAL existing Journal entries into ONE rich page — every entry's body is copied server-side and concatenated in the order you give, WITHOUT round-tripping any of it through your output. The journal counterpart of page_from_notes: use it for 'turn my journal into a page', 'compile this week's entries into a reflection doc', 'make a page from these journal entries'. Instant and byte-faithful at any size — you pass the journal entry ids (get them from journal_list), NOT their text. Each entry becomes its own section under an `## ` heading made from its date (and title, when it has one), so the result reads as a dated log; pass `headings: false` to concatenate the bodies raw. Pass `parent_id` (an existing page's id) to nest the new page UNDER it. `title` is required; tags default to the union of the source entries' tags. The original entries are LEFT IN PLACE (non-destructive). Returns the new page's id + title; the body is never echoed back (use page_get to verify). **When delegating, hand off the entry ids + title + parent id only — never paste the entry bodies into the prompt.**",
+    "Compile SEVERAL Journal entries into ONE page — each entry's body is copied server-side and concatenated in the order given, WITHOUT round-tripping through your output; byte-faithful at any size. The journal counterpart of `page_from_notes` — for 'compile this week's entries into a reflection doc'. You pass entry ids (from `journal_list`), NOT their text. Each entry lands under a date(+title) `## ` heading — a dated log; `headings: false` concatenates raw. Pass `parent_id` to nest under an existing page. Tags default to the union of the source entries'. The originals are LEFT IN PLACE. The body is never echoed back (verify with `page_get`). **When delegating, hand off entry ids + title + parent id only — never paste entry bodies.**",
   inputSchema: {
     type: 'object',
     properties: {
@@ -932,7 +959,7 @@ const page_blocks_list: BuiltinToolDef = {
   preconditions: PAGE_ID_PRE,
   name: 'List the blocks in a page',
   description:
-    "Return a TOC-style flat listing of every addressable block in a page — `id`, `kind` (paragraph / heading / callout / table / …), `depth`, and a short text `preview`. Lightweight: the body itself is not returned, so this works regardless of page size. **Lists the SAME baseline the block-edit tools operate on: the uncommitted DRAFT when one exists, else the published doc** — `baseline` in the output tells you which you got, so the ids here are always valid targets for page_block_get/update/delete. **Use this BEFORE proposing any block-level edit** so you know which blocks exist and can target them by stable id. The ids returned here survive across edits — they are stable per block, not per read. Headings also include `meta.level`, code blocks `meta.language`, callouts `meta.variant`, task items `meta.checked`, images `meta.alt`. **`kinds` is the SCALING knob — pass only the block types you care about** (e.g. `['blockquote']` for 'find every quote', `['heading']` for an outline). A large page can have hundreds of blocks; an unfiltered listing on a 300-block page approaches 80 KB and spills through the tool-result store, costing extra paging turns. `max_depth: 1` is the other compactor — top-level only. Default `preview_chars` is 80; bump only when you genuinely need more context per block.",
+    "Return a TOC-style flat listing of every addressable block in a page — `id`, `kind`, `depth`, a short text `preview`, and structural `meta`. Lightweight: the body itself is not returned. **Lists the SAME baseline the block-edit tools operate on: the uncommitted DRAFT when one exists, else the published doc** — `baseline` in the output says which, so the ids are always valid targets for `page_block_get`/update/delete. **Use this BEFORE proposing any block-level edit**; ids are stable per block and survive across edits. **`kinds` is the SCALING knob — pass only the block types you care about** (e.g. `['heading']` for an outline): an unfiltered 300-block listing approaches 80 KB and costs extra paging turns. `max_depth: 1` is the other compactor.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -1296,7 +1323,11 @@ const page_blocks_apply: BuiltinToolDef = {
         items: {
           type: 'object',
           properties: {
-            op: { type: 'string', enum: ['update', 'insert_after', 'delete'] },
+            op: {
+              type: 'string',
+              enum: ['update', 'insert_after', 'delete'],
+              description: "the edit to perform at `block_id`; 'update' and 'insert_after' also need `markdown`",
+            },
             block_id: {
               type: 'string',
               description:
@@ -1427,6 +1458,7 @@ const page_blocks_apply: BuiltinToolDef = {
 
 const page_split: BuiltinToolDef = {
   slug: 'page_split',
+  preconditions: PAGE_ID_PRE,
   name: 'Split a page into sub-pages',
   description:
     "Break a long page into sub-pages along its headings — the SCALING LEVER for documents too big to restyle or hold faithfully in one transform. Walks the page and turns every heading of the chosen level into a child page (heading text → child title; the blocks under it → child body), then replaces THIS page's body with a table-of-contents of links to the new children. **Byte-faithful: every word + block is preserved, just redistributed — nothing is rewritten or summarised.** Writes the TOC to DRAFT only (the published page is untouched until the user commits); each child page is created + indexed immediately, so they're independently searchable and each is small enough to restyle with the block tools afterwards. **When a 'restyle/reformat this whole document' request is too large to do faithfully in one pass, PROPOSE this instead of attempting a doomed full-document transform.**",
@@ -1481,6 +1513,7 @@ const page_split: BuiltinToolDef = {
 
 const page_extract_section: BuiltinToolDef = {
   slug: 'page_extract_section',
+  preconditions: PAGE_ID_PRE,
   name: 'Promote a section to a sub-page',
   description:
     "Lift ONE section out of a page into its own sub-page. Given a heading's block id (from page_blocks_list), moves that heading + everything under it (until the next heading of equal-or-higher level) into a new child page — heading text → child title, the blocks under it → child body — and drops a link card (childPage) where the section was. Byte-faithful (blocks moved, not rewritten). The surgical cousin of `page_split`: use it to peel off ONE oversized or self-contained section (e.g. 'pull the Appendix out into its own page') rather than splitting the whole document. Writes the parent's new body to DRAFT only; the child is created + indexed immediately.",
@@ -1524,9 +1557,10 @@ const page_extract_section: BuiltinToolDef = {
 
 const page_move: BuiltinToolDef = {
   slug: 'page_move',
+  preconditions: PAGE_NODE_ID_PRE,
   name: 'Move a page (re-parent)',
   description:
-    "Move an EXISTING page to a new spot in the /pages tree — nest it UNDER another page (making it a sub-page) or promote it back to the top level. Pass `parent_id` = the id of the page to nest under, OR `to_top_level: true` to move it to the top level (give exactly one). The page keeps everything — its body, tags, sharing link, draft, and brain index are all untouched; only its position changes, and any sub-pages it already has move along with it. Publishes immediately: this is a structural move, not a body edit, so there is no draft/commit step. Refuses to create a cycle (you can't move a page under itself or under one of its own descendants). **Use when the user says 'move X under Y', 'make X a sub-page of Y', 'nest these', or 'pull X back out to the top level'.** This is the tool for RE-PARENTING an existing page; to create a NEW page already nested, pass `parent_id` to page_create instead, and to carve sub-pages OUT of one page use page_split / page_extract_section.",
+    "Move an EXISTING page to a new spot in the /pages tree — nest it UNDER another page or promote it back to the top level. Pass `parent_id` OR `to_top_level: true` (exactly one). The page keeps everything — body, tags, sharing link, draft, brain index — and its sub-pages move with it. **Publishes immediately: a structural move, not a body edit, so there is no draft/commit step.** Refuses to create a cycle (a page can't move under itself or its own descendants). Use when the user says 'move X under Y'. To create a NEW page already nested, pass `parent_id` to `page_create`; to carve sub-pages OUT of one page use `page_split` / `page_extract_section`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -1597,9 +1631,10 @@ const page_move: BuiltinToolDef = {
 
 const page_mention: BuiltinToolDef = {
   slug: 'page_mention',
+  preconditions: PAGE_ID_PRE,
   name: 'Mention another doc/entity in a page',
   description:
-    "Drop a real @-mention link into a page — the programmatic version of typing `@Target`. Unlike a plain markdown `[text](url)` link, a mention is a first-class reference: once the page is committed it becomes a graph edge (a backlink to the target page/note, or a `mentioned_in` edge to an entity), so it shows up in the target's 'Referenced by' panel and the brain's graph. **Use when the user asks to 'link this page to X', 'reference the Q3 plan here', 'mention Sarah in this doc', or to cross-link related pages.** `target_id` is the page/note id (ref='node', the default) or entity id (ref='entity'). The chip text is the target's current title unless you pass `label`. Adds a `[lead_text ]@Target` paragraph at the END of the page, or right after `after_block_id` (a block id from page_blocks_list). Writes to DRAFT only — the published page is untouched until the user commits; the edge is built on commit.",
+    "Drop a real @-mention link into a page — the programmatic version of typing `@Target`. Unlike a plain markdown `[text](url)` link, a mention is a first-class reference: once the page is committed it becomes a graph edge (a backlink to the target page/note, or a `mentioned_in` edge to an entity), so it shows up in the target's 'Referenced by' panel and the brain's graph. **Use when the user asks to 'link this page to X', 'mention Sarah in this doc', or to cross-link related pages.** Adds a `[lead_text ]@Target` paragraph at the END of the page, or right after `after_block_id`. Writes to DRAFT only — the published page is untouched until the user commits; the edge is built on commit.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -1685,6 +1720,7 @@ const page_mention: BuiltinToolDef = {
 
 const page_share: BuiltinToolDef = {
   slug: 'page_share',
+  preconditions: PAGE_NODE_ID_PRE,
   name: 'Share a page publicly',
   description:
     "Create (or fetch) a public, read-only link to a page and return its URL. Anyone with the link can view the page — fully formatted, with no login — but nothing else in the user's Mantle. Idempotent: a page has at most one active link, so calling this again returns the same URL. Use when the user asks to share, publish, or get a shareable link for a page. To turn a link off, use page_unshare.",
@@ -1716,6 +1752,7 @@ const page_share: BuiltinToolDef = {
 
 const page_unshare: BuiltinToolDef = {
   slug: 'page_unshare',
+  preconditions: PAGE_NODE_ID_PRE,
   name: 'Stop sharing a page',
   description:
     "Revoke a page's public link. The existing URL stops working immediately. No-op (still succeeds) if the page wasn't shared. Use when the user asks to unshare, unpublish, or make a page private again.",

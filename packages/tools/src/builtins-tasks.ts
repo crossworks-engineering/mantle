@@ -24,8 +24,14 @@ import {
   type TaskPriority,
   type TaskStatus,
 } from '@mantle/content';
-import type { BuiltinToolDef, ToolHandlerResult } from './types';
+import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './types';
 import { notFound } from './errors';
+
+// Shared referential precondition (checked centrally in dispatch — see
+// preconditions.ts): the id must name an EXISTING task the owner holds.
+const TASK_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'id', nodeType: 'task', lookup: 'task_list' },
+];
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -48,10 +54,18 @@ const task_list: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      status: { type: 'string', enum: ['open', 'done', 'all'] },
-      priority: { type: 'string', enum: ['low', 'normal', 'high', 'all'] },
+      status: {
+        type: 'string',
+        enum: ['open', 'done', 'all'],
+        description: 'Filter by completion state; omit to include everything.',
+      },
+      priority: {
+        type: 'string',
+        enum: ['low', 'normal', 'high', 'all'],
+        description: 'Filter by urgency; omit to include everything.',
+      },
       query: { type: 'string', description: 'Optional substring filter against title/body.' },
-      tag: { type: 'string' },
+      tag: { type: 'string', description: 'Only return tasks carrying this tag.' },
     },
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
@@ -80,9 +94,15 @@ const task_get: BuiltinToolDef = {
     'Returns a `url` permalink — link the task as a markdown `[title](url)` when you reference it to the user.',
   inputSchema: {
     type: 'object',
-    properties: { id: { type: 'string' } },
+    properties: {
+      id: {
+        type: 'string',
+        description: "The task's id (UUID) — from `task_list` / `search_nodes`.",
+      },
+    },
     required: ['id'],
   },
+  preconditions: TASK_ID_PRE,
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const id = str(input.id);
     if (!id) return { ok: false, error: 'id required' };
@@ -100,14 +120,27 @@ const task_create: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      title: { type: 'string', minLength: 1, maxLength: 200 },
+      title: {
+        type: 'string',
+        minLength: 1,
+        maxLength: 200,
+        description: "Short imperative title, e.g. 'Renew passport'.",
+      },
       body: { type: 'string', description: 'Optional details / notes.' },
-      priority: { type: 'string', enum: ['low', 'normal', 'high'] },
+      priority: {
+        type: 'string',
+        enum: ['low', 'normal', 'high'],
+        description: "How urgent it is; defaults to 'normal' when omitted.",
+      },
       dueAt: {
         type: 'string',
         description: "Optional UTC ISO 8601 due date, e.g. '2026-06-01T09:00:00Z'.",
       },
-      tags: { type: 'array', items: { type: 'string' } },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "Labels for organisation and filtering, e.g. ['work'].",
+      },
     },
     required: ['title'],
   },
@@ -138,16 +171,37 @@ const task_update: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      id: { type: 'string' },
-      title: { type: 'string', minLength: 1, maxLength: 200 },
-      body: { type: 'string' },
-      status: { type: 'string', enum: ['open', 'done'] },
-      priority: { type: 'string', enum: ['low', 'normal', 'high'] },
+      id: {
+        type: 'string',
+        description: "The task's id (UUID) — from `task_list` / `search_nodes`.",
+      },
+      title: {
+        type: 'string',
+        minLength: 1,
+        maxLength: 200,
+        description: 'New title; omit to keep current.',
+      },
+      body: { type: 'string', description: 'New details / notes; omit to keep current.' },
+      status: {
+        type: 'string',
+        enum: ['open', 'done'],
+        description: 'New completion state; omit to keep current.',
+      },
+      priority: {
+        type: 'string',
+        enum: ['low', 'normal', 'high'],
+        description: 'New urgency; omit to keep current.',
+      },
       dueAt: { type: 'string', description: 'UTC ISO 8601.' },
-      tags: { type: 'array', items: { type: 'string' } },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "Replaces the whole tag list, e.g. ['work']; omit to keep current.",
+      },
     },
     required: ['id'],
   },
+  preconditions: TASK_ID_PRE,
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const id = str(input.id);
     if (!id) return { ok: false, error: 'id required' };
@@ -176,9 +230,15 @@ const task_delete: BuiltinToolDef = {
     "Delete a task by id. Prefer task_update with status='done' to complete a task; only delete when the user explicitly wants it gone. Confirm first unless they named this specific task.",
   inputSchema: {
     type: 'object',
-    properties: { id: { type: 'string' } },
+    properties: {
+      id: {
+        type: 'string',
+        description: "The task's id (UUID) — from `task_list` / `search_nodes`.",
+      },
+    },
     required: ['id'],
   },
+  preconditions: TASK_ID_PRE,
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const id = str(input.id);
     if (!id) return { ok: false, error: 'id required' };

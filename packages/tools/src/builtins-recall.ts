@@ -185,7 +185,13 @@ const find_window: BuiltinToolDef = {
       },
       from: { type: 'string', description: 'optional rough lower bound (YYYY-MM-DD or ISO)' },
       to: { type: 'string', description: 'optional rough upper bound (YYYY-MM-DD or ISO)' },
-      limit: { type: 'integer', minimum: 1, maximum: 25, default: 8 },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 25,
+        default: 8,
+        description: 'Max candidate windows to return. Default 8, cap 25.',
+      },
     },
     required: ['topic'],
   },
@@ -270,7 +276,7 @@ const recall_window: BuiltinToolDef = {
   slug: 'recall_window',
   name: 'Recall a conversation window',
   description:
-    "Replay the actual raw turns of past conversations within a date range, chronological and lossless (the real words, not a summary). Use after `find_window` has pinned a window, or directly when the user gives a date ('what did we say on Tuesday?'). `from`/`to` accept a bare date (YYYY-MM-DD, widened to the whole day) or a full ISO datetime. `surface` filters to 'telegram', 'web', or 'all' (default). If the window is larger than `limit` the result is truncated — narrow the range or pull it in sub-ranges and reason over each. Set `include_traces` to also see what the system actually did in that window (tools run + their results) — useful when the dialogue references work whose details aren't in the words themselves.",
+    "Replay the actual raw turns of past conversations within a date range, chronological and lossless (the real words, not a summary). Use after `find_window` has pinned a window, or directly when the user gives a date ('what did we say on Tuesday?'). `from`/`to` accept a bare date (YYYY-MM-DD, widened to the whole day) or a full ISO datetime. If the window is larger than `limit` the result is truncated — narrow the range or pull it in sub-ranges and reason over each. Set `include_traces` to also see what the system actually did in that window (tools run + their results) — useful when the dialogue references work whose details aren't in the words themselves.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -282,7 +288,13 @@ const recall_window: BuiltinToolDef = {
         default: 'all',
         description: 'which conversation surface to pull from',
       },
-      limit: { type: 'integer', minimum: 1, maximum: 500, default: 200 },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 500,
+        default: 200,
+        description: 'Max turns to return. Default 200, cap 500.',
+      },
       include_traces: {
         type: 'boolean',
         default: false,

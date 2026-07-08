@@ -12,8 +12,20 @@
 import { createNote, getNote, getPage, docToMarkdown, listNotes, nodeUrl } from '@mantle/content';
 import { fileById, readFileById } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
-import type { BuiltinToolDef } from './types';
+import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { notFound } from './errors';
+
+// Shared referential preconditions (checked centrally in dispatch — see
+// preconditions.ts): the id must name an EXISTING node of the right type.
+const NOTE_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'id', nodeType: 'note', lookup: 'note_list / search_nodes' },
+];
+const FILE_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'file_id', nodeType: 'file', lookup: 'file_list / search_nodes' },
+];
+const PAGE_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'page_id', nodeType: 'page', lookup: 'page_list / search_nodes' },
+];
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -35,7 +47,11 @@ const note_create: BuiltinToolDef = {
     properties: {
       title: { type: 'string', description: 'short title, e.g. "Research: best e-bike under R30k"' },
       content: { type: 'string', description: 'markdown body (include sources/links where relevant)' },
-      tags: { type: 'array', items: { type: 'string' } },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "Labels for organisation and filtering, e.g. ['research'].",
+      },
     },
     required: ['title'],
   },
@@ -118,10 +134,14 @@ const note_get: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      id: { type: 'string', description: 'uuid of the note node' },
+      id: {
+        type: 'string',
+        description: "The note's id (UUID) — from `note_list` / `search_nodes`.",
+      },
     },
     required: ['id'],
   },
+  preconditions: NOTE_ID_PRE,
   handler: async (input, ctx) => {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
@@ -140,19 +160,28 @@ const note_from_file: BuiltinToolDef = {
   slug: 'note_from_file',
   name: 'Create note from file',
   description:
-    "Create a note by importing a markdown/text file's bytes directly — the bytes go server-side from `files` → `createNote` without round-tripping through your output. The note counterpart of page_from_file: use it for 'make this file a note', 'import this doc as a note I can edit', 'turn this upload into a note'. Prefer it over `file_read` + `note_create` — it scales to arbitrarily large files (no max_tokens cap) and the result is byte-faithful to the source. The new note is auto-indexed into the brain (summary, embedding, facts, entities) like any note. Title defaults to the file's basename without extension if omitted. Only text-like files are accepted (markdown / plain text); binaries (PDF / docx / xlsx) are rejected since their indexed text already lives on the file node. The original file is LEFT IN PLACE (non-destructive). Returns the new note's id + title; the body is never echoed back (use note_get to verify).",
+    "Import a markdown/text file's bytes into a new editable note, server-side — nothing round-trips through your output, so it scales to arbitrarily large files and the note is byte-faithful to the source. Prefer it over `file_read` + `note_create`; the note counterpart of `page_from_file`. Use for 'make this file a note' / 'import this doc as a note I can edit'. Only text-like files are accepted; binaries (PDF / docx / xlsx) are rejected — their extracted text already lives on the file node (`file_get`). The new note is auto-indexed into the brain like any note. The original file is LEFT IN PLACE (non-destructive). Returns the new note's id + title; the body is never echoed back (verify with `note_get`).",
   inputSchema: {
     type: 'object',
     properties: {
-      file_id: { type: 'string', format: 'uuid', description: 'id of the file node to import' },
+      file_id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The source file's id (UUID) — from `file_list` / `search_nodes`.",
+      },
       title: {
         type: 'string',
         description: 'note title; defaults to the file basename (without extension) if omitted',
       },
-      tags: { type: 'array', items: { type: 'string' } },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "Labels for organisation and filtering, e.g. ['research'].",
+      },
     },
     required: ['file_id'],
   },
+  preconditions: FILE_ID_PRE,
   handler: async (input, ctx) => {
     const fileId = str(input.file_id).trim();
     if (!fileId) return { ok: false, error: 'file_id is required' };
@@ -233,11 +262,15 @@ const note_from_page: BuiltinToolDef = {
   slug: 'note_from_page',
   name: 'Create note from page',
   description:
-    "Copy an EXISTING page's body into a new editable note — the page's rich doc is serialized to markdown server-side (`page → docToMarkdown → createNote`) WITHOUT round-tripping through your output. The inverse of page_from_note: use it for 'save this page as a note', 'turn this page back into a note', 'make an editable note from this doc'. Faithful to the page's content (headings, lists, tables, callouts, formatting all preserved as markdown). Title + tags default to the page's own unless you override. The original page is LEFT IN PLACE (non-destructive) — delete it separately if the user wants it gone. The new note is auto-indexed into the brain. Returns the new note's id + title; the body is never echoed back (use note_get to verify).",
+    "Copy an EXISTING page's body into a new editable note — the page's rich doc is serialized to markdown server-side, WITHOUT round-tripping through your output. The inverse of `page_from_note`: use it for 'save this page as a note' or 'make an editable note from this doc'. Headings, lists, tables, callouts and formatting are all preserved as markdown. The original page is LEFT IN PLACE (non-destructive) — delete it separately if the user wants it gone. The new note is auto-indexed into the brain. Returns the new note's id + title; the body is never echoed back (verify with `note_get`).",
   inputSchema: {
     type: 'object',
     properties: {
-      page_id: { type: 'string', format: 'uuid', description: 'id of the page to copy into a note' },
+      page_id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The source page's id (UUID) — from `page_list` / `search_nodes`.",
+      },
       title: { type: 'string', description: "note title; defaults to the page's title" },
       tags: {
         type: 'array',
@@ -247,6 +280,7 @@ const note_from_page: BuiltinToolDef = {
     },
     required: ['page_id'],
   },
+  preconditions: PAGE_ID_PRE,
   handler: async (input, ctx) => {
     const pageId = str(input.page_id).trim();
     if (!pageId) return { ok: false, error: 'page_id is required' };

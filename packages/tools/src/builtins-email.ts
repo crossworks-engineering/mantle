@@ -142,7 +142,7 @@ const email_send: BuiltinToolDef = {
     type: 'object',
     properties: {
       to: { type: 'string', description: 'recipient email (comma-separate for multiple)' },
-      subject: { type: 'string' },
+      subject: { type: 'string', description: 'subject line, e.g. "Quote request: aluminium profiles"' },
       body: { type: 'string', description: 'plain-text body' },
       cc: { type: 'string', description: 'optional cc (comma-separate for multiple)' },
       bcc: { type: 'string', description: 'optional bcc (comma-separate for multiple)' },
@@ -341,8 +341,7 @@ const email_list: BuiltinToolDef = {
     "Recent emails newest-first (sorted by `internal_date` desc, NOT by ingest time). " +
     "**Use this for any time-windowed email question** — 'what came in today / last 5 days', " +
     "'any new mail from X', 'this week's billing', 'anything urgent recently'. Pass `since` " +
-    "(ISO date or datetime) for a window; `accountId` to filter to one mailbox; `limit` defaults " +
-    "to 50 (max 200). " +
+    "for a window; `accountId` to filter to one mailbox. " +
     "For topic/keyword searches across emails ('emails about the Lister contract') use " +
     "`search_nodes` with `type='email'` — that's similarity-ranked, not date-sorted, and won't " +
     "respect a time window. For a single email's full body/headers use `email_get`.",
@@ -354,7 +353,13 @@ const email_list: BuiltinToolDef = {
         type: 'string',
         description: "ISO date or datetime (e.g. '2026-05-21' or '2026-05-21T00:00:00Z') — returns emails with internal_date ≥ this",
       },
-      limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 200,
+        default: 50,
+        description: 'Max results to return. Default 50, cap 200.',
+      },
     },
   },
   handler: async (input, ctx) => {

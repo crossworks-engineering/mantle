@@ -317,7 +317,7 @@ const api_tool_get: BuiltinToolDef = {
     'Full definition of one tool by slug: description, input schema, and handler (url/method/headers/query/body templates for http tools).',
   inputSchema: {
     type: 'object',
-    properties: { slug: { type: 'string' } },
+    properties: { slug: { type: 'string', description: 'slug of the tool to inspect, e.g. mapbox_geocode' } },
     required: ['slug'],
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
@@ -350,7 +350,7 @@ const api_tool_create: BuiltinToolDef = {
     type: 'object',
     properties: {
       slug: { type: 'string', description: 'lowercase letters/digits/dash/underscore — the function name models call' },
-      name: { type: 'string' },
+      name: { type: 'string', description: 'display name shown in tool pickers and Settings → Tools, e.g. "Mapbox geocode"' },
       description: { type: 'string', description: 'what it does + when to use it — models read this' },
       input_schema: {
         type: 'object',
@@ -422,18 +422,18 @@ const api_tool_update: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      slug: { type: 'string' },
-      name: { type: 'string' },
-      description: { type: 'string' },
-      input_schema: { type: 'object' },
-      url: { type: 'string' },
-      method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
-      headers: { type: 'object' },
-      query: { type: 'object' },
-      body: { type: ['string', 'null'] },
-      timeout_ms: { type: 'number' },
+      slug: { type: 'string', description: 'slug of the tool to update — the slug itself cannot be changed' },
+      name: { type: 'string', description: 'replacement display name; omit to keep the current one' },
+      description: { type: 'string', description: 'replacement description — what it does + when to use it, as in `api_tool_create`' },
+      input_schema: { type: 'object', description: 'replacement JSON Schema for the tool input (the whole schema, not a merge). Declare every {param} the templates use.' },
+      url: { type: 'string', description: 'replacement http(s) URL template, may contain {param}' },
+      method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], description: 'replacement HTTP method; omit to keep the current one' },
+      headers: { type: 'object', description: 'replacement header → value template map — replaces the whole map ({} clears it)' },
+      query: { type: 'object', description: 'replacement query key → value template map — replaces the whole map ({} clears it)' },
+      body: { type: ['string', 'null'], description: 'replacement body template; null clears it so unconsumed input is sent as JSON' },
+      timeout_ms: { type: 'number', description: 'replacement timeout, 100–120000 ms' },
       requires_confirm: { type: 'boolean', description: 'toggle the confirm gate. When the owner requires approval for agent-built tools, you can only tighten it (clearing is operator-only, in Settings → Tools).' },
-      enabled: { type: 'boolean' },
+      enabled: { type: 'boolean', description: 'set false to disable the tool without deleting it; true re-enables' },
     },
     required: ['slug'],
   },
@@ -515,7 +515,7 @@ const api_tool_delete: BuiltinToolDef = {
     'Delete a user-defined (http/shell) tool by slug. Built-ins cannot be deleted. Check tool_group_list first — deleting a tool other agents use breaks them silently.',
   inputSchema: {
     type: 'object',
-    properties: { slug: { type: 'string' } },
+    properties: { slug: { type: 'string', description: 'slug of the user-defined tool to delete' } },
     required: ['slug'],
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
@@ -541,7 +541,7 @@ const api_tool_test: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      slug: { type: 'string' },
+      slug: { type: 'string', description: 'slug of the http tool to run' },
       input: { type: 'object', description: 'tool input matching its input_schema' },
     },
     required: ['slug'],
@@ -647,25 +647,23 @@ const tool_catalog: BuiltinToolDef = {
 };
 
 const RECIPE_DOC =
-  'A recipe chains existing tools so data flows between them server-side (never through the model). ' +
-  'Each step is { tool: <slug>, input: {…}, as?: <name> }. In a step\'s input, an EXACT "{param}" pulls the recipe\'s own input value (any type), ' +
-  'and an EXACT "$0" / "$name" / "$name.field" pulls a prior step\'s output (by index or by its `as` name, dotted into the result). ' +
-  'Embedded tokens in a larger string ("{first} {last}", "${note.title} — draft") are substituted as text. ' +
-  'The recipe returns its `output` template if given, else the last step\'s output. Browse tool_catalog for callable step slugs.';
+  'A recipe chains existing tools server-side — data flows between steps, never through the model. ' +
+  'In a step\'s input an EXACT "{param}" pulls the recipe\'s own input value (any type) and an EXACT "$0" / "$name" / "$name.field" pulls a prior step\'s output; ' +
+  'embedded in a longer string ("{first} {last}") they substitute as text.';
 
 const recipe_tool_create: BuiltinToolDef = {
   slug: 'recipe_tool_create',
   name: 'Create a recipe tool',
   description:
     `Author a NEW tool by composing EXISTING tools — no external service, no code change. ${RECIPE_DOC} ` +
-    'Use this to fill a local-capability gap (e.g. "turn a note into a page" = note_get → page_create) so the chain becomes one reusable, agent-callable tool. ' +
-    'Steps may only call composable tools (see tool_catalog): no shell, no confirm-gated, no terminal/secrets/delegation/tool-authoring. ' +
-    'Declare every {param} in input_schema.properties. Always recipe_tool_test after creating, then tool_group_ensure + agent_grant_tool_group to hand it to an agent.',
+    'Use it to fill a local-capability gap (e.g. "turn a note into a page" = `note_get` → `page_create`) as one reusable, agent-callable tool. ' +
+    'Steps may only call composable tools — browse `tool_catalog`; shell, confirm-gated, and terminal/secrets/delegation/tool-authoring tools are refused. ' +
+    'Always `recipe_tool_test` after creating, then `tool_group_ensure` + `agent_grant_tool_group` to grant it.',
   inputSchema: {
     type: 'object',
     properties: {
       slug: { type: 'string', description: 'lowercase letters/digits/dash/underscore — the function name models call' },
-      name: { type: 'string' },
+      name: { type: 'string', description: 'display name shown in tool pickers and Settings → Tools, e.g. "Note to page"' },
       description: { type: 'string', description: 'what it does + when to use it — models read this' },
       input_schema: {
         type: 'object',
@@ -780,7 +778,7 @@ const recipe_tool_test: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      slug: { type: 'string' },
+      slug: { type: 'string', description: 'slug of the recipe tool to run' },
       input: { type: 'object', description: 'tool input matching its input_schema' },
     },
     required: ['slug'],
@@ -853,8 +851,8 @@ const tool_group_ensure: BuiltinToolDef = {
     properties: {
       slug: { type: 'string', description: 'group slug, e.g. mapbox-tools' },
       name: { type: 'string', description: 'display name (required when creating)' },
-      description: { type: 'string' },
-      tool_slugs: { type: 'array', items: { type: 'string' } },
+      description: { type: 'string', description: 'what the bundle is for, e.g. "Mapbox geocoding + routing"; omit to keep the existing one' },
+      tool_slugs: { type: 'array', items: { type: 'string' }, description: 'slugs of the tools the group should contain — http/recipe tools only, e.g. ["mapbox_geocode"]' },
       mode: { type: 'string', enum: ['add', 'replace'], description: "default 'add'" },
     },
     required: ['slug', 'tool_slugs'],
@@ -973,8 +971,8 @@ const agent_grant_tool_group: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      agent_slug: { type: 'string' },
-      group_slug: { type: 'string' },
+      agent_slug: { type: 'string', description: 'agent receiving the grant — must differ from the calling agent (self-grants are refused); list candidates with `agent_list`' },
+      group_slug: { type: 'string', description: 'tool group to grant; must already exist — create it with `tool_group_ensure`' },
     },
     required: ['agent_slug', 'group_slug'],
   },

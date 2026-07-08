@@ -30,8 +30,14 @@ import {
   updateEvent,
   type RecurFreq,
 } from '@mantle/content';
-import type { BuiltinToolDef, ToolHandlerResult } from './types';
+import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './types';
 import { notFound } from './errors';
+
+// Shared referential precondition (checked centrally in dispatch — see
+// preconditions.ts): the id must name an EXISTING event the owner holds.
+const EVENT_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'id', nodeType: 'event', lookup: 'event_list' },
+];
 
 const RECUR_VALUES: readonly RecurFreq[] = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
 
@@ -75,7 +81,7 @@ const event_list: BuiltinToolDef = {
         type: 'string',
         description: 'Optional substring filter against title/body/location.',
       },
-      tag: { type: 'string' },
+      tag: { type: 'string', description: 'Only return events carrying this tag.' },
     },
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
@@ -103,9 +109,15 @@ const event_get: BuiltinToolDef = {
     'Returns a `url` permalink — link the event as a markdown `[title](url)` when you reference it to the user.',
   inputSchema: {
     type: 'object',
-    properties: { id: { type: 'string' } },
+    properties: {
+      id: {
+        type: 'string',
+        description: "The event's id (UUID) — from `event_list` / `search_nodes`.",
+      },
+    },
     required: ['id'],
   },
+  preconditions: EVENT_ID_PRE,
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const id = str(input.id);
     if (!id) return { ok: false, error: 'id required' };
@@ -123,7 +135,12 @@ const event_create: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      title: { type: 'string', minLength: 1, maxLength: 200 },
+      title: {
+        type: 'string',
+        minLength: 1,
+        maxLength: 200,
+        description: "Short event title as shown in lists and reminders, e.g. 'Dentist appointment'.",
+      },
       startsAt: {
         type: 'string',
         description: "UTC ISO 8601 instant. e.g. '2026-05-20T15:00:00Z'.",
@@ -136,7 +153,11 @@ const event_create: BuiltinToolDef = {
         type: 'string',
         description: 'Optional details / description / notes for the event.',
       },
-      location: { type: 'string', maxLength: 200 },
+      location: {
+        type: 'string',
+        maxLength: 200,
+        description: "Where it happens — free text, e.g. 'Cape Town office' or a meeting link.",
+      },
       remindMinutesBefore: {
         type: 'integer',
         minimum: 0,
@@ -208,18 +229,39 @@ const event_update: BuiltinToolDef = {
   slug: 'event_update',
   name: 'Update a calendar event',
   description:
-    "Update an existing event. Any field omitted stays unchanged. If you move `startsAt` or `remindMinutesBefore` forward and the new reminder time is still in the future, a previously-sent reminder fires again. `startsAt` / `endsAt` are UTC ISO 8601 instants. Set `recur` to make it repeat (or 'none' to stop repeating); `recurUntil` caps the series.",
+    "Update an existing event. Omitted fields stay unchanged EXCEPT `endsAt` and `location`, which are CLEARED when omitted — re-pass their current values to keep them. If you move `startsAt` or `remindMinutesBefore` and the new reminder time lands in the future, a previously-sent reminder fires again. `startsAt` / `endsAt` are UTC ISO 8601 instants. Set `recur` to make it repeat (or 'none' to stop repeating); `recurUntil` caps the series.",
   inputSchema: {
     type: 'object',
     properties: {
-      id: { type: 'string' },
-      title: { type: 'string', minLength: 1, maxLength: 200 },
+      id: {
+        type: 'string',
+        description: "The event's id (UUID) — from `event_list` / `search_nodes`.",
+      },
+      title: {
+        type: 'string',
+        minLength: 1,
+        maxLength: 200,
+        description: 'New title; omit to keep current.',
+      },
       startsAt: { type: 'string', description: 'UTC ISO 8601.' },
-      endsAt: { type: 'string', description: 'UTC ISO 8601.' },
-      body: { type: 'string' },
-      location: { type: 'string', maxLength: 200 },
-      remindMinutesBefore: { type: 'integer', minimum: 0, maximum: 60 * 24 * 30 },
-      timezone: { type: 'string' },
+      endsAt: { type: 'string', description: 'UTC ISO 8601. Cleared when omitted.' },
+      body: { type: 'string', description: 'New details / notes; omit to keep current.' },
+      location: {
+        type: 'string',
+        maxLength: 200,
+        description: 'Free-text place or meeting link. Cleared when omitted — re-pass to keep.',
+      },
+      remindMinutesBefore: {
+        type: 'integer',
+        minimum: 0,
+        maximum: 60 * 24 * 30,
+        description:
+          'Minutes before startsAt to fire the Telegram reminder; omit to keep current.',
+      },
+      timezone: {
+        type: 'string',
+        description: 'IANA timezone for display in the reminder; omit to keep current.',
+      },
       recur: {
         type: 'string',
         enum: ['none', 'daily', 'weekly', 'monthly', 'yearly'],
@@ -229,10 +271,15 @@ const event_update: BuiltinToolDef = {
         type: 'string',
         description: 'Optional UTC ISO 8601 end-of-series cutoff.',
       },
-      tags: { type: 'array', items: { type: 'string' } },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "Replaces the whole tag list, e.g. ['work']; omit to keep current.",
+      },
     },
     required: ['id'],
   },
+  preconditions: EVENT_ID_PRE,
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const id = str(input.id);
     if (!id) return { ok: false, error: 'id required' };
@@ -266,9 +313,15 @@ const event_delete: BuiltinToolDef = {
     "Delete an event by id. Pending reminders won't fire. Confirm with the user before calling unless they explicitly asked to delete this specific event — the action is mostly-reversible (you can recreate from memory) but the original id and any deeplinks are gone.",
   inputSchema: {
     type: 'object',
-    properties: { id: { type: 'string' } },
+    properties: {
+      id: {
+        type: 'string',
+        description: "The event's id (UUID) — from `event_list` / `search_nodes`.",
+      },
+    },
     required: ['id'],
   },
+  preconditions: EVENT_ID_PRE,
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const id = str(input.id);
     if (!id) return { ok: false, error: 'id required' };

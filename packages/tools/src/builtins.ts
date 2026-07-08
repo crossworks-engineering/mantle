@@ -37,7 +37,7 @@ import {
 } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import { nodeUrl } from '@mantle/content';
-import type { BuiltinToolDef } from './types';
+import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { WORKER_DELEGATION_TOOLS } from './builtins-workers';
 import { EVENT_TOOLS } from './builtins-events';
 import { PROFILE_TOOLS } from './builtins-profile';
@@ -83,6 +83,20 @@ function strArr(v: unknown): string[] | undefined {
   return out.length > 0 ? out : undefined;
 }
 
+// Shared referential preconditions (checked centrally in dispatch — see
+// preconditions.ts): the id must name an EXISTING node the owner holds.
+// Folders are `type='branch'` nodes; the "any node" variant leaves nodeType
+// unset so universal readers keep working across every kind.
+const NODE_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'node_id', lookup: 'search_nodes / tree_list' },
+];
+const FILE_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'file_id', nodeType: 'file', lookup: 'file_list / search_nodes' },
+];
+const FOLDER_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'folder_id', nodeType: 'branch', lookup: 'folder_list / tree_list' },
+];
+
 // ─── search / tree ────────────────────────────────────────────────────────
 
 const search_nodes: BuiltinToolDef = {
@@ -121,8 +135,18 @@ const search_nodes: BuiltinToolDef = {
           'journal',
         ],
       },
-      tags: { type: 'array', items: { type: 'string' } },
-      limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "only nodes carrying at least one of these tags, e.g. ['work']",
+      },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 50,
+        default: 20,
+        description: 'Max results to return. Default 20, cap 50.',
+      },
     },
   },
   handler: async (input, ctx) => {
@@ -182,7 +206,13 @@ const search_chunks: BuiltinToolDef = {
     properties: {
       q: { type: 'string', description: 'free-text query' },
       branch: { type: 'string', description: "ltree prefix scope, e.g. 'files' or 'documentation'" },
-      limit: { type: 'integer', minimum: 1, maximum: 50, default: 10 },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 50,
+        default: 10,
+        description: 'Max results to return. Default 10, cap 50.',
+      },
     },
     required: ['q'],
   },
@@ -219,8 +249,9 @@ const read_section: BuiltinToolDef = {
   slug: 'read_section',
   name: 'Read a document section',
   description:
-    'Read one SECTION of a long document in full and in order — the rung between `search_chunks` (a few scattered passages) and `file_read`/`node_read` (the entire document). Reach for this once you know WHERE the answer lives: `search_chunks` returns each passage\'s `nodeId`, `heading`, and ordinal; feed those here to read the whole procedure / clause / table contiguously, WITHOUT loading the entire file into context. ' +
-    'Three modes: (1) pass ONLY `node_id` → the OUTLINE (heading ranges with their ordinals) so you can see the document\'s structure and pick a section; (2) pass `heading` → every passage whose heading contains that text, in order; (3) pass `from_ordinal`/`to_ordinal` → a contiguous ordinal range. Output is capped (~24k chars) and returns `next_ordinal` to continue from when a section runs long. Only fall back to `file_read` for genuinely short documents, or when the outline says there are no indexed passages.',
+    'Read one SECTION of a long document in full and in order — the rung between `search_chunks` (scattered passages) and `file_read`/`node_read` (the entire document). Reach for this once you know WHERE the answer lives: feed a `search_chunks` hit\'s `nodeId` plus its `heading` (or an ordinal range) here to read the whole procedure / clause / table contiguously, WITHOUT loading the entire file into context. ' +
+    'Pass ONLY `node_id` to get the OUTLINE (heading ranges with their ordinals) and pick a section from the document\'s structure. Output is capped (~24k chars) and returns `next_ordinal` to continue from when a section runs long. Only fall back to `file_read` for genuinely short documents, or when the outline says there are no indexed passages.',
+  preconditions: NODE_ID_PRE,
   inputSchema: {
     type: 'object',
     properties: {
@@ -283,7 +314,13 @@ const tree_list: BuiltinToolDef = {
     type: 'object',
     properties: {
       path: { type: 'string', description: 'parent ltree path; omit for top-level' },
-      limit: { type: 'integer', minimum: 1, maximum: 200, default: 100 },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 200,
+        default: 100,
+        description: 'Max results to return. Default 100, cap 200.',
+      },
     },
   },
   handler: async (input, ctx) => {
@@ -319,7 +356,13 @@ const entity_search: BuiltinToolDef = {
         description: 'optional kind filter',
         enum: ['person', 'project', 'place', 'org', 'event'],
       },
-      limit: { type: 'integer', minimum: 1, maximum: 50, default: 10 },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 50,
+        default: 10,
+        description: 'Max results to return. Default 10, cap 50.',
+      },
     },
     required: ['q'],
   },
@@ -345,11 +388,33 @@ const entity_neighbors: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      entity_id: { type: 'string', format: 'uuid' },
-      relation: { type: 'string' },
-      direction: { type: 'string', enum: ['in', 'out', 'both'], default: 'both' },
-      current_only: { type: 'boolean', default: false },
-      limit: { type: 'integer', minimum: 1, maximum: 100, default: 25 },
+      entity_id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The entity's id (UUID) — from `entity_search`.",
+      },
+      relation: {
+        type: 'string',
+        description: "only follow edges with this relation verb, e.g. 'employed_by'; omit for all",
+      },
+      direction: {
+        type: 'string',
+        enum: ['in', 'out', 'both'],
+        default: 'both',
+        description: "'out' = edges where this entity is the subject, 'in' = where it is the object",
+      },
+      current_only: {
+        type: 'boolean',
+        default: false,
+        description: 'only relationships still current — exclude ones that have ended (superseded edges)',
+      },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 100,
+        default: 25,
+        description: "Max results to return. Default 25, cap 100 (split across directions on 'both').",
+      },
     },
     required: ['entity_id'],
   },
@@ -383,14 +448,31 @@ const graph_path: BuiltinToolDef = {
         format: 'uuid',
         description: 'Optional target entity id — returns shortest path(s) to it.',
       },
-      max_depth: { type: 'integer', minimum: 1, maximum: 6, default: 3 },
+      max_depth: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 6,
+        default: 3,
+        description: 'How many hops out to traverse. Default 3, cap 6.',
+      },
       relations: {
         type: 'array',
         items: { type: 'string' },
         description: "Only follow these relation verbs, e.g. ['employed_by','owns'].",
       },
-      directed: { type: 'boolean', default: false },
-      limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+      directed: {
+        type: 'boolean',
+        default: false,
+        description:
+          'Follow edges subject→object only. Default false treats edges as undirected — the right setting for "how are X and Y connected" questions.',
+      },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 200,
+        default: 50,
+        description: 'Max results to return. Default 50, cap 200.',
+      },
     },
     required: ['from_id'],
   },
@@ -427,9 +509,23 @@ const entity_facts: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      entity_id: { type: 'string', format: 'uuid' },
-      include_retired: { type: 'boolean', default: false },
-      limit: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
+      entity_id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The entity's id (UUID) — from `entity_search`.",
+      },
+      include_retired: {
+        type: 'boolean',
+        default: false,
+        description: 'also return superseded facts (the history), not just currently-valid ones',
+      },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 100,
+        default: 50,
+        description: 'Max results to return. Default 50, cap 100.',
+      },
     },
     required: ['entity_id'],
   },
@@ -456,8 +552,18 @@ const entity_mentions: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      entity_id: { type: 'string', format: 'uuid' },
-      limit: { type: 'integer', minimum: 1, maximum: 100, default: 25 },
+      entity_id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The entity's id (UUID) — from `entity_search`.",
+      },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 100,
+        default: 25,
+        description: 'Max results to return. Default 25, cap 100.',
+      },
     },
     required: ['entity_id'],
   },
@@ -485,8 +591,16 @@ const folder_list: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      parent: { type: 'string' },
-      tree: { type: 'boolean', default: false },
+      parent: {
+        type: 'string',
+        description:
+          "ltree path of the folder whose immediate sub-folders to list, e.g. 'files.work'; defaults to the 'files' root",
+      },
+      tree: {
+        type: 'boolean',
+        default: false,
+        description: 'return every folder under the root (the whole tree) instead of one level',
+      },
     },
   },
   handler: async (input, ctx) => {
@@ -510,7 +624,13 @@ const file_list: BuiltinToolDef = {
     "For sub-folders within that folder use `folder_list`; for a file's actual content use `file_read`; for searching files by content/topic across the whole tree use `search_nodes` with `type='file'` (or `search_chunks` to pull the relevant passages from inside them).",
   inputSchema: {
     type: 'object',
-    properties: { parent_path: { type: 'string' } },
+    properties: {
+      parent_path: {
+        type: 'string',
+        description:
+          "ltree path of the folder whose files to list, e.g. 'files.work.lister-printer' — from `folder_list`",
+      },
+    },
     required: ['parent_path'],
   },
   handler: async (input, ctx) => {
@@ -530,9 +650,16 @@ const node_read: BuiltinToolDef = {
     "**Prefer type-specific readers when available** — `note_get` / `event_get` / `task_get` / `page_get` / `email_get` — they return cleaner shapes for their type. " +
     "For nodes of `type='file'` the body lives in object storage — use `file_read` instead. This tool is the fallback that works for any node type (incl. secret, sermon, contact, telegram_message). " +
     'Returns a `url` permalink — link the item as a markdown `[title](url)` when you reference it to the user.',
+  preconditions: NODE_ID_PRE,
   inputSchema: {
     type: 'object',
-    properties: { node_id: { type: 'string', format: 'uuid' } },
+    properties: {
+      node_id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The node's id (UUID) — from `search_nodes` / `tree_list` or any list tool.",
+      },
+    },
     required: ['node_id'],
   },
   handler: async (input, ctx) => {
@@ -586,7 +713,7 @@ const secret_create: BuiltinToolDef = {
   slug: 'secret_create',
   name: 'Capture a secret',
   description:
-    "Capture a sensitive value — password, PIN, API key, recovery code, anything the user explicitly says is private — into the encrypted /secrets store. ALWAYS prefer this over `note_create` or `file_create` when the user dictates a credential or asks you to remember something private; saving secrets as notes leaves them in plaintext where any future tool call can read them, while this tool seals the value with AES-256-GCM behind a key only the owner's browser session can unlock. The value is REDACTED in trace logs — never echo it back to the user; confirm by title only ('saved your safe PIN'). For multi-field secrets (e.g. a server with both username and password), the /secrets UI is still the right path; this tool handles the common one-value case.",
+    "Capture a sensitive value — password, PIN, API key, recovery code, anything the user explicitly says is private — into the encrypted /secrets store. ALWAYS prefer this over `note_create` or `file_create` for a dictated credential: a note stores it in plaintext where any future tool call can read it, while this seals the value behind a key only the owner's browser session can unlock. The value is REDACTED in trace logs — never echo it back to the user; confirm by title only ('saved your safe PIN'). For multi-field secrets (e.g. a server with both username and password) the /secrets UI is still the right path; this handles the common one-value case.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -612,7 +739,11 @@ const secret_create: BuiltinToolDef = {
         type: 'string',
         description: 'optional plaintext metadata visible to search (do NOT include the value here)',
       },
-      tags: { type: 'array', items: { type: 'string' } },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "labels for organisation and filtering, e.g. ['work']",
+      },
     },
     required: ['title', 'value', 'kind'],
   },
@@ -727,10 +858,15 @@ const file_read: BuiltinToolDef = {
   description:
     "Read a file's content by id. For text files (.md / .txt / .json / .yaml) returns the body as a utf-8 string. For binaries the extractor stores the parsed text (PDF / Word / Excel) as `data.text`, returned here so you can read or quote the document's actual contents. Returns `content: null` only when no text could be extracted (e.g. a scanned image with no OCR). " +
     "**For a LARGE indexed document this returns the opening + a section outline, NOT the whole text** — to read a specific part, use `search_chunks` + `read_section`; pass `full: true` only when you truly need every word. Use `node_read` for notes/events/tasks/secrets.",
+  preconditions: FILE_ID_PRE,
   inputSchema: {
     type: 'object',
     properties: {
-      file_id: { type: 'string', format: 'uuid' },
+      file_id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The file's id (UUID) — from `file_list` / `search_nodes`.",
+      },
       full: {
         type: 'boolean',
         description:
@@ -818,9 +954,16 @@ const file_get: BuiltinToolDef = {
   description:
     "Fetch a file's metadata (filename, mime type, size, sha) — no bytes. Use to confirm size/type before deciding to read a large/binary file. " +
     "For the actual file content use `file_read`; for listing files in a folder use `file_list`.",
+  preconditions: FILE_ID_PRE,
   inputSchema: {
     type: 'object',
-    properties: { file_id: { type: 'string', format: 'uuid' } },
+    properties: {
+      file_id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The file's id (UUID) — from `file_list` / `search_nodes`.",
+      },
+    },
     required: ['file_id'],
   },
   handler: async (input, ctx) => {
@@ -840,7 +983,12 @@ const folder_get_by_path: BuiltinToolDef = {
     "For listing what's IN the folder use `folder_list` (sub-folders) or `file_list` (files).",
   inputSchema: {
     type: 'object',
-    properties: { path: { type: 'string' } },
+    properties: {
+      path: {
+        type: 'string',
+        description: "the folder's full ltree path, e.g. 'files.work.lister-printer'",
+      },
+    },
     required: ['path'],
   },
   handler: async (input, ctx) => {
@@ -864,8 +1012,16 @@ const file_create: BuiltinToolDef = {
     properties: {
       parent_path: { type: 'string', description: "ltree path of the parent folder" },
       filename: { type: 'string', description: 'with extension, e.g. notes.md' },
-      content: { type: 'string' },
-      overwrite: { type: 'boolean', default: false },
+      content: {
+        type: 'string',
+        description: "the file's full text — becomes the entire body (replaces, never appends)",
+      },
+      overwrite: {
+        type: 'boolean',
+        default: false,
+        description:
+          'replace the existing file of the same name; default false errors on a name collision',
+      },
     },
     required: ['parent_path', 'filename', 'content'],
   },
@@ -916,10 +1072,15 @@ const file_rename: BuiltinToolDef = {
   name: 'Rename a file',
   description:
     "Rename a file in place — its folder and extension are kept, only the basename changes. `new_stem` is the new name WITHOUT the extension (e.g. rename `huntsman-report.xlsx` → stem `customerx-report`). Find the file id with `file_list` / `file_get` first. To change a file's CONTENTS use `file_create` with overwrite=true; to rename a FOLDER use `folder_rename`.",
+  preconditions: FILE_ID_PRE,
   inputSchema: {
     type: 'object',
     properties: {
-      file_id: { type: 'string', format: 'uuid' },
+      file_id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The file's id (UUID) — from `file_list` / `file_get`.",
+      },
       new_stem: { type: 'string', description: 'new basename, no extension' },
     },
     required: ['file_id', 'new_stem'],
@@ -944,11 +1105,19 @@ const folder_rename: BuiltinToolDef = {
   name: 'Rename a folder',
   description:
     "Rename a folder in place. `new_name` is lowercased and sanitised automatically. Every file and sub-folder inside moves with it (their paths update), so this is safe for a folder full of content. Find the folder id with `folder_list` / `folder_get_by_path` first. The root `files` folder can't be renamed. To change a folder's DESCRIPTION use `folder_describe`.",
+  preconditions: FOLDER_ID_PRE,
   inputSchema: {
     type: 'object',
     properties: {
-      folder_id: { type: 'string', format: 'uuid' },
-      new_name: { type: 'string' },
+      folder_id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The folder's id (UUID) — from `folder_list` / `folder_get_by_path`.",
+      },
+      new_name: {
+        type: 'string',
+        description: "new display name, e.g. 'lister contracts' — lowercased and slugified automatically",
+      },
     },
     required: ['folder_id', 'new_name'],
   },
@@ -972,11 +1141,20 @@ const folder_describe: BuiltinToolDef = {
   name: 'Update a folder description',
   description:
     "Set or update a folder's free-text description (what the folder is for). Find the folder id with `folder_list` / `folder_get_by_path` first. This does NOT rename the folder — use `folder_rename` for that.",
+  preconditions: FOLDER_ID_PRE,
   inputSchema: {
     type: 'object',
     properties: {
-      folder_id: { type: 'string', format: 'uuid' },
-      description: { type: 'string' },
+      folder_id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The folder's id (UUID) — from `folder_list` / `folder_get_by_path`.",
+      },
+      description: {
+        type: 'string',
+        description:
+          "what the folder is for, e.g. 'Signed Lister contracts and quotes' — replaces any existing description",
+      },
     },
     required: ['folder_id', 'description'],
   },
@@ -1006,6 +1184,7 @@ const process_extraction: BuiltinToolDef = {
   name: 'Kick the extractor',
   description:
     "Re-fires the pg_notify('node_ingested') signal for any nodes missing data.summary or embedding. Optional `node_id` to target a single node; optional `types` to restrict by node kind; optional `limit` to cap (default 100). Idempotent — already-extracted nodes are short-circuited by the extractor.",
+  preconditions: NODE_ID_PRE,
   inputSchema: {
     type: 'object',
     properties: {
@@ -1015,7 +1194,13 @@ const process_extraction: BuiltinToolDef = {
         items: { type: 'string' },
         description: 'optional node-type filter (e.g. ["file","note"])',
       },
-      limit: { type: 'integer', minimum: 1, maximum: 1000, default: 100 },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 1000,
+        default: 100,
+        description: 'Max nodes to re-signal in one sweep. Default 100, cap 1000.',
+      },
     },
   },
   handler: async (input, ctx) => {
@@ -1062,9 +1247,17 @@ const telegram_send: BuiltinToolDef = {
     type: 'object',
     properties: {
       chat_id: { type: 'string', description: "Telegram's numeric chat id (as string)" },
-      text: { type: 'string', minLength: 1 },
+      text: {
+        type: 'string',
+        minLength: 1,
+        description: 'the message body to send — plain text unless `markdown` is set',
+      },
       reply_to: { type: 'string', description: "optional telegram_message_id to thread under" },
-      markdown: { type: 'boolean', default: false },
+      markdown: {
+        type: 'boolean',
+        default: false,
+        description: 'render the text as Telegram MarkdownV2 instead of plain text',
+      },
     },
     required: ['chat_id', 'text'],
   },

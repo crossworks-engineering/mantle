@@ -58,10 +58,16 @@ import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { notFound } from './errors';
 import type { ToolPrecondition } from './types';
 
-// Shared referential precondition (checked centrally in dispatch — see
-// preconditions.ts): table_id must name an EXISTING table the owner holds.
+// Shared referential preconditions (checked centrally in dispatch — see
+// preconditions.ts): the id must name an EXISTING node of the right type.
 const TABLE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'table_id', nodeType: 'table', lookup: 'table_list' },
+];
+const TABLE_NODE_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'id', nodeType: 'table', lookup: 'table_list' },
+];
+const FILE_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'file_id', nodeType: 'file', lookup: 'file_list / search_nodes' },
 ];
 
 function str(v: unknown): string {
@@ -154,13 +160,21 @@ const table_create: BuiltinToolDef = {
         items: {
           type: 'object',
           properties: {
-            name: { type: 'string' },
-            type: { type: 'string', enum: [...COLUMN_TYPES] },
+            name: { type: 'string', description: 'Column header, e.g. "Price".' },
+            type: {
+              type: 'string',
+              enum: [...COLUMN_TYPES],
+              description: 'Cell type — governs coercion, sorting, and totals. Defaults to text.',
+            },
           },
           required: ['name'],
         },
       },
-      tags: { type: 'array', items: { type: 'string' } },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "Labels for organisation and filtering, e.g. ['work'].",
+      },
       icon: { type: 'string', description: 'optional emoji icon, e.g. "📊"' },
     },
     required: ['title'],
@@ -202,6 +216,7 @@ const table_create: BuiltinToolDef = {
 
 const table_from_file: BuiltinToolDef = {
   slug: 'table_from_file',
+  preconditions: FILE_ID_PRE,
   name: 'Create table(s) from a spreadsheet',
   description:
     "Import a `.xlsx` / `.xls` / `.csv` file into typed grids — bytes go server-side from `files` → SheetJS → typed columns + rows, never round-tripping through your output (scales to large sheets). Column types are inferred (numbers, dates, checkboxes, text). **One table per non-empty sheet:** a multi-sheet workbook yields several tables (the first uses your `title` if given; others are named after their sheet). A very large sheet (beyond ~10k rows) is split into contiguous parts ('… (part 1/N)') so no rows are lost — `part`/`partsTotal` are returned. The grids are committed + indexed immediately. Returns the created table ids. Use this whenever the user hands you a spreadsheet.",
@@ -210,8 +225,12 @@ const table_from_file: BuiltinToolDef = {
     properties: {
       file_id: { type: 'string', format: 'uuid', description: 'id of the spreadsheet file node' },
       title: { type: 'string', description: 'title for the first sheet; others use their sheet name' },
-      tags: { type: 'array', items: { type: 'string' } },
-      icon: { type: 'string' },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "Labels for organisation and filtering, e.g. ['work']. Applied to every created table.",
+      },
+      icon: { type: 'string', description: 'Optional emoji icon, e.g. "📊". Applied to every created table.' },
     },
     required: ['file_id'],
   },
@@ -307,7 +326,11 @@ const table_from_text: BuiltinToolDef = {
         description:
           'the tabular text. CSV, TSV, or a markdown table (| col | col |\\n|---|---|\\n| … |). The first row is treated as the header.',
       },
-      tags: { type: 'array', items: { type: 'string' } },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "Labels for organisation and filtering, e.g. ['work'].",
+      },
       icon: { type: 'string', description: 'optional emoji icon' },
     },
     required: ['data'],
@@ -359,16 +382,21 @@ const table_from_text: BuiltinToolDef = {
 
 const table_update: BuiltinToolDef = {
   slug: 'table_update',
+  preconditions: TABLE_NODE_ID_PRE,
   name: 'Update table metadata',
   description:
     "Update a table's metadata (title / tags / icon) — NOT its grid. Pass only the fields you're changing. For grid edits use the row/column tools (they write to draft); for the data structure never use this. Returns the updated row.",
   inputSchema: {
     type: 'object',
     properties: {
-      id: { type: 'string' },
-      title: { type: 'string' },
-      tags: { type: 'array', items: { type: 'string' } },
-      icon: { type: 'string' },
+      id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
+      title: { type: 'string', description: 'New title, e.g. "Q3 stock list".' },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "Labels for organisation and filtering, e.g. ['work']. Replaces the existing set.",
+      },
+      icon: { type: 'string', description: 'Emoji icon shown beside the title, e.g. "📊".' },
     },
     required: ['id'],
   },
@@ -393,10 +421,15 @@ const table_update: BuiltinToolDef = {
 
 const table_delete: BuiltinToolDef = {
   slug: 'table_delete',
+  preconditions: TABLE_NODE_ID_PRE,
   name: 'Delete a table',
   description: 'Permanently delete a table by id. Irreversible — the grid and its index entries are removed. Confirm with the user first.',
   requiresConfirm: true,
-  inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+  inputSchema: {
+    type: 'object',
+    properties: { id: { type: 'string', description: "The table's id (UUID) — from `table_list`." } },
+    required: ['id'],
+  },
   handler: async (input, ctx) => {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
@@ -413,10 +446,15 @@ const table_delete: BuiltinToolDef = {
 
 const table_commit: BuiltinToolDef = {
   slug: 'table_commit',
+  preconditions: TABLE_NODE_ID_PRE,
   name: 'Commit a table draft',
   description:
     "Publish a table's pending draft as canonical and re-index it into the brain. Use after a batch of row/column edits when the user has confirmed they want the changes live (or asked you to 'save'/'publish'). No-op error if there's no draft. Usually you LEAVE the draft for the user to review + commit in the UI — only commit yourself when explicitly asked.",
-  inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+  inputSchema: {
+    type: 'object',
+    properties: { id: { type: 'string', description: "The table's id (UUID) — from `table_list`." } },
+    required: ['id'],
+  },
   handler: async (input, ctx) => {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
@@ -444,8 +482,8 @@ const table_list: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      query: { type: 'string' },
-      tag: { type: 'string' },
+      query: { type: 'string', description: 'Substring match over title/body/summary, e.g. "inventory".' },
+      tag: { type: 'string', description: 'Return only tables carrying this tag.' },
       limit: { type: 'number', description: 'max rows (default 50)' },
     },
   },
@@ -468,14 +506,15 @@ const table_list: BuiltinToolDef = {
 
 const table_get: BuiltinToolDef = {
   slug: 'table_get',
+  preconditions: TABLE_NODE_ID_PRE,
   name: 'Get a table',
   description:
     "Read one table by id: its columns (id, name, type), a window of rows (default 50; page with `offset`), the total row count, and any column totals (aggregates). Reads the in-flight draft if one exists, else the published grid. **For just the rows addressable by id, `table_rows_list` is lighter.** Large grids page via `offset`/`limit`; the full result spills to the read_result store automatically. Returns a `url` permalink — link the table as a markdown `[title](url)` when you reference it to the user.",
   inputSchema: {
     type: 'object',
     properties: {
-      id: { type: 'string' },
-      offset: { type: 'number' },
+      id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
+      offset: { type: 'number', description: "Rows to skip for paging — pass the previous call's `next_offset`." },
       limit: { type: 'number', description: 'rows per page (default 50, max 500)' },
     },
     required: ['id'],
@@ -524,8 +563,8 @@ const table_rows_list: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      table_id: { type: 'string' },
-      offset: { type: 'number' },
+      table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
+      offset: { type: 'number', description: "Rows to skip for paging — pass the previous call's `next_offset`." },
       limit: { type: 'number', description: 'default 50, max 500' },
       column_ids: { type: 'array', items: { type: 'string' }, description: 'restrict the cell snapshot to these column ids' },
       view_id: { type: 'string', description: 'optional saved view (filter+sort) to apply first' },
@@ -556,7 +595,10 @@ const table_row_get: BuiltinToolDef = {
   description: "Read a single row by id (from `table_rows_list`). Returns its cells keyed by column name and id, formula columns resolved. Reads the draft if present.",
   inputSchema: {
     type: 'object',
-    properties: { table_id: { type: 'string' }, row_id: { type: 'string' } },
+    properties: {
+      table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
+      row_id: { type: 'string', description: "The row's stable id — from `table_rows_list` / `table_query`." },
+    },
     required: ['table_id', 'row_id'],
   },
   handler: async (input, ctx) => {
@@ -576,13 +618,14 @@ const table_row_get: BuiltinToolDef = {
 
 const table_query: BuiltinToolDef = {
   slug: 'table_query',
+  preconditions: TABLE_ID_PRE,
   name: 'Query rows by value',
   description:
-    "Find the rows that match a filter — the structured-lookup tool, the right way to answer a question about a specific record or subset of a big grid. `filters` is an array of `{ column, op, value }` (column by name OR id; op ∈ eq|neq|contains|gt|lt|gte|lte|empty|notEmpty), AND-ed by default — pass `match: \"any\"` to OR them. Optional `sort` ([{ column, dir }]) and `columns` (return just these columns). Returns ONLY the matching rows (id + cells keyed by column name, formula columns resolved) plus `total_matches`, so you can answer \"what's the design pressure for circuit 17-P08-D17003\" or \"which CMLs are below their retirement thickness\" directly instead of paging the whole table. Pass `aggregate` ([{ column, kind }], kind ∈ sum|avg|count|min|max|filled|empty) to compute totals over the WHOLE matched set in one call — e.g. max design pressure among CS circuits — without reading the rows back. **`rows` is capped at 500 per call; `total_matches` is exact and unbounded — use it for COUNTS, and `offset` to page the rest (the response sets `truncated`/`next_offset` when clipped).** Read-only — nothing is saved (unlike `table_set_view`). Reads the draft if one exists. For grouped breakdowns (\"count by metallurgy\") use `table_aggregate`.",
+    "Find the rows matching `filters` — the structured-lookup tool for questions about a specific record or subset of a big grid. Returns ONLY the matching rows (id + cells keyed by column name, formula columns resolved) plus `total_matches`, so \"what's the design pressure for circuit 17-P08-D17003\" is one call, not a page-through. Filters AND by default — pass `match: \"any\"` to OR them. Pass `aggregate` to compute totals over the WHOLE matched set without reading the rows back. **`rows` caps at 500 per call; `total_matches` is exact — use it for COUNTS, and page with `offset` (`truncated`/`next_offset` announce clipping).** Read-only — nothing is saved (unlike `table_set_view`). Reads the draft if one exists. For grouped breakdowns (\"count by metallurgy\") use `table_aggregate`.",
   inputSchema: {
     type: 'object',
     properties: {
-      table_id: { type: 'string' },
+      table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
       filters: {
         type: 'array',
         description: 'predicates over columns; AND-ed unless match="any"',
@@ -590,7 +633,12 @@ const table_query: BuiltinToolDef = {
           type: 'object',
           properties: {
             column: { type: 'string', description: 'column id or name' },
-            op: { type: 'string', enum: [...FILTER_OPS] },
+            op: {
+              type: 'string',
+              enum: [...FILTER_OPS],
+              description:
+                'How the cell compares to `value`. contains is case-insensitive; ordered comparisons never match empty cells.',
+            },
             value: { description: 'compared against the cell (omit for empty/notEmpty)' },
           },
           required: ['column', 'op'],
@@ -599,7 +647,15 @@ const table_query: BuiltinToolDef = {
       match: { type: 'string', enum: ['all', 'any'], description: "combine filters with AND ('all', default) or OR ('any')" },
       sort: {
         type: 'array',
-        items: { type: 'object', properties: { column: { type: 'string' }, dir: { type: 'string', enum: ['asc', 'desc'] } }, required: ['column'] },
+        description: 'Order the matched rows before paging, e.g. [{ "column": "Price", "dir": "desc" }].',
+        items: {
+          type: 'object',
+          properties: {
+            column: { type: 'string', description: 'Column to sort by (id or name).' },
+            dir: { type: 'string', enum: ['asc', 'desc'], description: 'Sort direction — defaults to ascending.' },
+          },
+          required: ['column'],
+        },
       },
       columns: { type: 'array', items: { type: 'string' }, description: 'restrict returned cells to these columns (id or name)' },
       aggregate: {
@@ -609,12 +665,17 @@ const table_query: BuiltinToolDef = {
           type: 'object',
           properties: {
             column: { type: 'string', description: 'column id or name' },
-            kind: { type: 'string', enum: AGGREGATE_KINDS.filter((k) => k !== 'none') },
+            kind: {
+              type: 'string',
+              enum: AGGREGATE_KINDS.filter((k) => k !== 'none'),
+              description:
+                'The summary to compute. Numeric kinds skip non-numeric cells; filled/empty count cells.',
+            },
           },
           required: ['column', 'kind'],
         },
       },
-      offset: { type: 'number' },
+      offset: { type: 'number', description: "Matching rows to skip for paging — pass the previous call's `next_offset`." },
       limit: { type: 'number', description: 'max matching rows to return (default 50, max 500)' },
     },
     required: ['table_id'],
@@ -697,13 +758,14 @@ const table_query: BuiltinToolDef = {
 
 const table_aggregate: BuiltinToolDef = {
   slug: 'table_aggregate',
+  preconditions: TABLE_ID_PRE,
   name: 'Group + summarise rows',
   description:
-    "Summarise a table by category — the GROUP BY tool. `group_by` is one or more columns (id or name); rows are bucketed by their combined value and each group returns its row `count` plus any `metrics` you ask for (`[{ column, kind }]`, kind ∈ sum|avg|count|min|max|filled|empty). Optional `filters` (same `{ column, op, value }` shape as table_query) restrict the rows first, `match` ANDs/ORs them, `sort` ({ by, dir } — by = 'count', a group column, or a metric column) orders the groups (default: most populous first), and `limit`/`offset` page the groups. Answers \"how many circuits per metallurgy\", \"max design pressure by service\", or \"what distinct damage types exist\" (group_by alone) in ONE call — no row paging. Read-only; reads the draft if present.",
+    "Summarise a table by category — the GROUP BY tool. Rows are bucketed by their combined `group_by` value(s); each group returns its row `count` plus any `metrics` you ask for. Optional `filters` restrict the rows first, `sort` orders the groups (default: most populous first), and `limit`/`offset` page the groups. Answers \"how many circuits per metallurgy\", \"max design pressure by service\", or \"what distinct damage types exist\" (`group_by` alone) in ONE call — no row paging. For the matching rows themselves use `table_query`. Read-only; reads the draft if present.",
   inputSchema: {
     type: 'object',
     properties: {
-      table_id: { type: 'string' },
+      table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
       group_by: { type: 'array', items: { type: 'string' }, description: 'column(s) to group by (id or name)' },
       metrics: {
         type: 'array',
@@ -712,7 +774,12 @@ const table_aggregate: BuiltinToolDef = {
           type: 'object',
           properties: {
             column: { type: 'string', description: 'column id or name' },
-            kind: { type: 'string', enum: AGGREGATE_KINDS.filter((k) => k !== 'none') },
+            kind: {
+              type: 'string',
+              enum: AGGREGATE_KINDS.filter((k) => k !== 'none'),
+              description:
+                'The summary to compute. Numeric kinds skip non-numeric cells; filled/empty count cells.',
+            },
           },
           required: ['column', 'kind'],
         },
@@ -722,16 +789,29 @@ const table_aggregate: BuiltinToolDef = {
         description: 'restrict rows before grouping (AND-ed unless match="any")',
         items: {
           type: 'object',
-          properties: { column: { type: 'string' }, op: { type: 'string', enum: [...FILTER_OPS] }, value: {} },
+          properties: {
+            column: { type: 'string', description: 'column id or name' },
+            op: {
+              type: 'string',
+              enum: [...FILTER_OPS],
+              description:
+                'How the cell compares to `value`. contains is case-insensitive; ordered comparisons never match empty cells.',
+            },
+            value: { description: 'compared against the cell (omit for empty/notEmpty)' },
+          },
           required: ['column', 'op'],
         },
       },
       match: { type: 'string', enum: ['all', 'any'], description: "combine filters with AND ('all', default) or OR ('any')" },
       sort: {
         type: 'object',
-        properties: { by: { type: 'string', description: "'count', a group column, or a metric column" }, dir: { type: 'string', enum: ['asc', 'desc'] } },
+        description: 'How to order the groups — defaults to most populous first.',
+        properties: {
+          by: { type: 'string', description: "'count', a group column, or a metric column" },
+          dir: { type: 'string', enum: ['asc', 'desc'], description: 'Sort direction — defaults to descending.' },
+        },
       },
-      offset: { type: 'number' },
+      offset: { type: 'number', description: "Groups to skip for paging — pass the previous call's `next_offset`." },
       limit: { type: 'number', description: 'max groups to return (default 50, max 500)' },
     },
     required: ['table_id', 'group_by'],
@@ -840,7 +920,7 @@ const table_row_add: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      table_id: { type: 'string' },
+      table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
       cells: { type: 'object', description: CELLS_HINT, additionalProperties: true },
       after_row_id: { type: 'string', description: 'optional — insert after this row instead of appending' },
     },
@@ -872,8 +952,8 @@ const table_row_update: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      table_id: { type: 'string' },
-      row_id: { type: 'string' },
+      table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
+      row_id: { type: 'string', description: "The row's stable id — from `table_rows_list` / `table_query`." },
       cells: { type: 'object', description: CELLS_HINT, additionalProperties: true },
     },
     required: ['table_id', 'row_id', 'cells'],
@@ -901,7 +981,10 @@ const table_row_delete: BuiltinToolDef = {
   description: "Remove a row by id. Writes to DRAFT.",
   inputSchema: {
     type: 'object',
-    properties: { table_id: { type: 'string' }, row_id: { type: 'string' } },
+    properties: {
+      table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
+      row_id: { type: 'string', description: "The row's stable id — from `table_rows_list` / `table_query`." },
+    },
     required: ['table_id', 'row_id'],
   },
   handler: async (input, ctx) => {
@@ -919,13 +1002,14 @@ const table_row_delete: BuiltinToolDef = {
 
 const table_cell_set: BuiltinToolDef = {
   slug: 'table_cell_set',
+  preconditions: TABLE_ID_PRE,
   name: 'Set one cell',
   description: "Set a single cell — row by id, column by id or name. Writes to DRAFT.",
   inputSchema: {
     type: 'object',
     properties: {
-      table_id: { type: 'string' },
-      row_id: { type: 'string' },
+      table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
+      row_id: { type: 'string', description: "The row's stable id — from `table_rows_list` / `table_query`." },
       column: { type: 'string', description: 'column id or name' },
       value: { description: 'new value (coerced to the column type); null/"" clears' },
     },
@@ -958,9 +1042,13 @@ const table_column_add: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      table_id: { type: 'string' },
-      name: { type: 'string' },
-      type: { type: 'string', enum: [...COLUMN_TYPES] },
+      table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
+      name: { type: 'string', description: 'Column header, e.g. "Unit price".' },
+      type: {
+        type: 'string',
+        enum: [...COLUMN_TYPES],
+        description: 'Cell type — governs coercion, sorting, and totals.',
+      },
       format: { type: 'object', description: 'e.g. { "currency": "USD", "decimals": 2 }', additionalProperties: true },
       options: { type: 'array', items: { type: 'string' }, description: 'select/multiselect choices' },
       formula: { type: 'string', description: 'for type=formula, e.g. "{Qty} * {Price}"' },
@@ -998,13 +1086,28 @@ const table_column_update: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      table_id: { type: 'string' },
+      table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
       column: { type: 'string', description: 'column id or name' },
-      name: { type: 'string' },
-      type: { type: 'string', enum: [...COLUMN_TYPES] },
-      format: { type: 'object', additionalProperties: true },
-      options: { type: 'array', items: { type: 'string' } },
-      formula: { type: 'string' },
+      name: { type: 'string', description: 'New column header (rename).' },
+      type: {
+        type: 'string',
+        enum: [...COLUMN_TYPES],
+        description: 'New cell type — existing cells are re-coerced to it.',
+      },
+      format: {
+        type: 'object',
+        description: 'Display format, e.g. { "currency": "USD", "decimals": 2 }.',
+        additionalProperties: true,
+      },
+      options: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Choice labels for select/multiselect columns — replaces the existing set.',
+      },
+      formula: {
+        type: 'string',
+        description: 'Formula expression, e.g. "{Qty} * {Price}" — references other columns by name.',
+      },
     },
     required: ['table_id', 'column'],
   },
@@ -1039,7 +1142,10 @@ const table_column_delete: BuiltinToolDef = {
   description: "Remove a column (by id or name) and all its cells. Writes to DRAFT.",
   inputSchema: {
     type: 'object',
-    properties: { table_id: { type: 'string' }, column: { type: 'string', description: 'column id or name' } },
+    properties: {
+      table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
+      column: { type: 'string', description: 'column id or name' },
+    },
     required: ['table_id', 'column'],
   },
   handler: async (input, ctx) => {
@@ -1058,15 +1164,20 @@ const table_column_delete: BuiltinToolDef = {
 
 const table_set_aggregate: BuiltinToolDef = {
   slug: 'table_set_aggregate',
+  preconditions: TABLE_ID_PRE,
   name: 'Set a column total',
   description:
     "Set (or clear) a column's footer total — the \"add totals\" tool. `kind` ∈ sum|avg|count|min|max|filled|empty, or `none` to clear. Shows in the totals row and the indexed text. Writes to DRAFT.",
   inputSchema: {
     type: 'object',
     properties: {
-      table_id: { type: 'string' },
+      table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
       column: { type: 'string', description: 'column id or name' },
-      kind: { type: 'string', enum: [...AGGREGATE_KINDS] },
+      kind: {
+        type: 'string',
+        enum: [...AGGREGATE_KINDS],
+        description: "The total to show ('none' clears it). Numeric kinds skip non-numeric cells.",
+      },
     },
     required: ['table_id', 'column', 'kind'],
   },
@@ -1090,17 +1201,41 @@ const table_set_aggregate: BuiltinToolDef = {
 
 const table_set_view: BuiltinToolDef = {
   slug: 'table_set_view',
+  preconditions: TABLE_ID_PRE,
   name: 'Save a filter/sort view',
   description:
     "Create or update a saved view — a named filter + sort over the table. `sort` is an array of `{ column, dir }` (dir asc|desc; column by id/name). `filters` is an array of `{ column, op, value }` (op ∈ eq|neq|contains|gt|lt|gte|lte|empty|notEmpty). Pass `view_id` to update an existing view. Writes to DRAFT.",
   inputSchema: {
     type: 'object',
     properties: {
-      table_id: { type: 'string' },
-      name: { type: 'string' },
+      table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
+      name: { type: 'string', description: 'View name shown in the UI, e.g. "Open items".' },
       view_id: { type: 'string', description: 'omit to create a new view' },
-      sort: { type: 'array', items: { type: 'object', properties: { column: { type: 'string' }, dir: { type: 'string', enum: ['asc', 'desc'] } }, required: ['column'] } },
-      filters: { type: 'array', items: { type: 'object', properties: { column: { type: 'string' }, op: { type: 'string' }, value: {} }, required: ['column', 'op'] } },
+      sort: {
+        type: 'array',
+        description: 'Sort order the view applies, e.g. [{ "column": "Due", "dir": "asc" }].',
+        items: {
+          type: 'object',
+          properties: {
+            column: { type: 'string', description: 'Column to sort by (id or name).' },
+            dir: { type: 'string', enum: ['asc', 'desc'], description: 'Sort direction — defaults to ascending.' },
+          },
+          required: ['column'],
+        },
+      },
+      filters: {
+        type: 'array',
+        description: 'Predicates a row must match to appear in the view.',
+        items: {
+          type: 'object',
+          properties: {
+            column: { type: 'string', description: 'column id or name' },
+            op: { type: 'string', description: 'How the cell compares to `value` — same ops as `table_query` filters.' },
+            value: { description: 'compared against the cell (omit for empty/notEmpty)' },
+          },
+          required: ['column', 'op'],
+        },
+      },
     },
     required: ['table_id', 'name'],
   },

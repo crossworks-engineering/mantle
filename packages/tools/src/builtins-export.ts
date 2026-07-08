@@ -9,7 +9,15 @@
 import { resolveExport } from '@mantle/content';
 import { ensureDatedUploadFolder, readFileById, upsertFile } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
-import type { BuiltinToolDef } from './types';
+import type { BuiltinToolDef, ToolPrecondition } from './types';
+
+// Referential precondition (checked centrally in dispatch — see
+// preconditions.ts): the id must name an existing node the owner holds.
+// No nodeType — exportable nodes span pages, notes, and tables; the
+// handler's resolveExport rejects non-exportable types itself.
+const NODE_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'node_id', lookup: 'search_nodes / tree_list' },
+];
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -20,6 +28,7 @@ const export_node: BuiltinToolDef = {
   name: 'Export to Word / Excel',
   description:
     "Render a page or note to a Word (.docx) document, or a table to an Excel (.xlsx) spreadsheet, and save it under /files/exports/<date>. The format is chosen automatically from the node type — pages/notes → Word, tables → Excel. Pages keep their headings, lists, tables, callouts and images; tables export typed cells (currency/number/percent/checkbox) plus the totals row. Returns the new file's id, name, and path. Use this when the user asks to download, export, or 'get a Word/Excel copy' of a page, note, or table.",
+  preconditions: NODE_ID_PRE,
   inputSchema: {
     type: 'object',
     properties: {
