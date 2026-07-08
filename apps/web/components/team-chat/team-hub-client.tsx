@@ -10,7 +10,7 @@
  * authenticated wrapper); a 401 anywhere flips back to the token gate.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, ArrowUpRight, MessageCircle } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, ExternalLink, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { TeamChatClient } from '@/components/team-chat/team-chat-client';
 import { TokenGate } from '@/components/team-chat/token-gate';
@@ -59,7 +59,7 @@ function formatDate(iso: string): string {
 export function TeamHubShell() {
   const [data, setData] = useState<HubData | null>(null);
   const [authed, setAuthed] = useState<boolean | null>(null); // null = resolving
-  const [view, setView] = useState<'hub' | 'chat'>('hub');
+  const [view, setView] = useState<'hub' | 'chat' | { briefing: HubSection }>('hub');
 
   const refetch = useCallback(async () => {
     try {
@@ -106,6 +106,37 @@ export function TeamHubShell() {
           </Button>
         </div>
         <TeamChatClient />
+      </div>
+    );
+  }
+
+  if (typeof view === 'object') {
+    // In-hub reader: the briefing renders in a same-origin iframe of its /s
+    // page (auth rides the team cookie), so members read without leaving the
+    // hub. Same-origin means no sandbox gymnastics and full share styling.
+    const s = view.briefing;
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex items-center justify-between gap-2 border-b border-border/60 px-2 py-1.5">
+          <Button variant="ghost" size="sm" onClick={() => setView('hub')}>
+            <ArrowLeft />
+            Back to the hub
+          </Button>
+          <p className="min-w-0 truncate text-sm font-medium">
+            {s.icon ? <span className="mr-1.5">{s.icon}</span> : null}
+            {s.title}
+          </p>
+          <Button variant="ghost" size="sm" asChild aria-label="Open in a new tab">
+            <a href={`/s/${s.token}`} target="_blank" rel="noreferrer">
+              <ExternalLink />
+            </a>
+          </Button>
+        </div>
+        <iframe
+          src={`/s/${s.token}`}
+          title={s.title}
+          className="min-h-0 w-full flex-1 border-0 bg-background"
+        />
       </div>
     );
   }
@@ -161,8 +192,13 @@ export function TeamHubShell() {
                 <a
                   key={s.token}
                   href={`/s/${s.token}`}
-                  target="_blank"
-                  rel="noreferrer"
+                  onClick={(e) => {
+                    // Plain click opens the in-hub reader; modified clicks
+                    // (new tab / window) keep native anchor behaviour.
+                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                    e.preventDefault();
+                    setView({ briefing: s });
+                  }}
                   className="group rounded-lg border border-border bg-card p-5 text-card-foreground transition-colors hover:border-primary/50"
                 >
                   <div className="flex items-start justify-between gap-3">
