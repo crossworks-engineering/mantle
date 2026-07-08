@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 import { exchangeCode, fetchMe, resolveOAuthConfig, upsertAccountFromTokens } from '@mantle/microsoft';
 import { getOwnerOr401 } from '@/lib/auth';
+import { requestOrigin } from '@/lib/auth-constants';
 
 /**
  * OAuth callback: validate state against the cookie, exchange the code (+ PKCE
@@ -23,7 +24,7 @@ function msBranchPath(upn: string): string {
 }
 
 function settingsRedirect(req: NextRequest, params: Record<string, string>): NextResponse {
-  const url = new URL('/settings/microsoft', req.url);
+  const url = new URL('/settings/microsoft', requestOrigin(req));
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   const res = NextResponse.redirect(url);
   // One-shot cookies — clear regardless of outcome.

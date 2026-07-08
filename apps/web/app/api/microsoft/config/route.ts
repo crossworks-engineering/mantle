@@ -7,15 +7,7 @@ import {
   saveConfig,
 } from '@mantle/microsoft';
 import { getOwnerOr401 } from '@/lib/auth';
-
-/** App origin from the request, so the suggested redirect URI matches the host
- *  the user actually reaches Mantle on. Mirrors the old page server logic. */
-function requestOrigin(req: Request): string {
-  const h = req.headers;
-  const host = h.get('x-forwarded-host') ?? h.get('host') ?? 'localhost:3000';
-  const proto = h.get('x-forwarded-proto') ?? (host.startsWith('localhost') ? 'http' : 'https');
-  return `${proto}://${host}`;
-}
+import { requestOrigin } from '@/lib/auth-constants';
 
 /** Current Azure-app config status + the redirect URI to suggest (host-derived). */
 export async function GET(req: Request) {

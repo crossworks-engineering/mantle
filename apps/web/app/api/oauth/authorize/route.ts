@@ -16,6 +16,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth';
+import { requestOrigin } from '@/lib/auth-constants';
 import { getClient, isRemoteMcpEnabled, mintAuthCode, DEFAULT_SCOPE } from '@/lib/mcp-oauth';
 
 export const runtime = 'nodejs';
@@ -100,7 +101,7 @@ export async function GET(req: Request) {
   if (!user) {
     // Bounce through login, then return to this exact authorize request.
     const next = encodeURIComponent(url.pathname + url.search);
-    return NextResponse.redirect(new URL(`/login?next=${next}`, req.url));
+    return NextResponse.redirect(new URL(`/login?next=${next}`, requestOrigin(req)));
   }
 
   const token = consentToken(user.id, p);

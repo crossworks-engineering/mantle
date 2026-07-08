@@ -81,6 +81,23 @@ export function secureCookies(req: Request): boolean {
 }
 
 /**
+ * Origin the user's browser actually reached the app on, derived from proxy
+ * headers. NEVER build a user-facing absolute URL from `req.url` in a route
+ * handler: Next's standalone server constructs it from the container's bind
+ * address, so `new URL('/path', req.url)` redirects the browser to a dead
+ * https://0.0.0.0:3000. First value wins on comma-joined multi-proxy headers.
+ */
+export function requestOrigin(req: Request): string {
+  const first = (v: string | null) => v?.split(',')[0]?.trim() || undefined;
+  const host =
+    first(req.headers.get('x-forwarded-host')) ?? first(req.headers.get('host')) ?? 'localhost:3000';
+  const proto =
+    first(req.headers.get('x-forwarded-proto'))?.toLowerCase() ??
+    (host.startsWith('localhost') ? 'http' : 'https');
+  return `${proto}://${host}`;
+}
+
+/**
  * DB-less "detached" dev: a local frontend pointed at a remote API
  * (`NEXT_PUBLIC_MANTLE_API_BASE`) with no local Postgres. The dev auth shim in
  * `lib/auth` (`detachedDevUser`) and the page-nav bypass in `middleware.ts` both

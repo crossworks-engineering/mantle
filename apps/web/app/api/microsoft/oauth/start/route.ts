@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { buildAuthorizeUrl, createPkce, createState, resolveOAuthConfig } from '@mantle/microsoft';
 import { getOwnerOr401 } from '@/lib/auth';
-import { secureCookies } from '@/lib/auth-constants';
+import { requestOrigin, secureCookies } from '@/lib/auth-constants';
 
 /**
  * Kick off the delegated OAuth flow: resolve this brain's Azure app config
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
 
   const cfg = await resolveOAuthConfig(user.id);
   if (!cfg) {
-    return NextResponse.redirect(new URL('/settings/microsoft?error=not_configured', req.url));
+    return NextResponse.redirect(new URL('/settings/microsoft?error=not_configured', requestOrigin(req)));
   }
 
   const { verifier, challenge } = createPkce();
