@@ -10,7 +10,18 @@
  * authenticated wrapper); a 401 anywhere flips back to the token gate.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, ArrowUpRight, ExternalLink, MessageCircle } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  BookOpen,
+  Cloud,
+  ExternalLink,
+  FileCheck2,
+  FolderTree,
+  MessageCircle,
+  ShieldCheck,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { TeamChatClient } from '@/components/team-chat/team-chat-client';
 import { TokenGate } from '@/components/team-chat/token-gate';
@@ -30,6 +41,66 @@ type HubData = {
   sections: HubSection[];
   counts: Record<string, number>;
 };
+
+/** The "What's new" strip — the latest platform improvements, in simple terms.
+ *  Curated by hand alongside releases; every entry ships in the running build.
+ *  Class strings are literal (Tailwind v4 — no dynamic class construction). */
+const WHATS_NEW: {
+  icon: typeof Cloud;
+  title: string;
+  blurb: string;
+  chip: string;
+  delay: string;
+}[] = [
+  {
+    icon: Cloud,
+    title: 'SharePoint connection',
+    blurb:
+      'Connect a Microsoft account and the document libraries of the SharePoint sites you follow flow straight into the brain\u2019s memory.',
+    chip: 'bg-chart-1/15 text-chart-1',
+    delay: '[animation-delay:0ms]',
+  },
+  {
+    icon: FolderTree,
+    title: 'OneDrive browser',
+    blurb:
+      'Browse OneDrive and SharePoint drives from inside Mantle and tick exactly which folders and files sync \u2014 nothing more.',
+    chip: 'bg-chart-2/15 text-chart-2',
+    delay: '[animation-delay:80ms]',
+  },
+  {
+    icon: SlidersHorizontal,
+    title: 'Brain rules (fine-tuning)',
+    blurb:
+      'Teach the brain your team\u2019s standards \u2014 standing rules that tune how it answers, writes, and works for you.',
+    chip: 'bg-chart-3/15 text-chart-3',
+    delay: '[animation-delay:160ms]',
+  },
+  {
+    icon: BookOpen,
+    title: 'Read without leaving',
+    blurb:
+      'Briefings on this hub now open in place \u2014 read the document and tap straight back, no new tabs.',
+    chip: 'bg-chart-4/15 text-chart-4',
+    delay: '[animation-delay:240ms]',
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Checked tool use',
+    blurb:
+      'Every action the assistant takes is validated before it runs \u2014 checked, bounded, and reported truthfully.',
+    chip: 'bg-chart-5/15 text-chart-5',
+    delay: '[animation-delay:320ms]',
+  },
+  {
+    icon: FileCheck2,
+    title: 'Self-healing page edits',
+    blurb:
+      'Assistant edits land exactly on the paragraph they meant \u2014 and documents repair themselves if anything drifts.',
+    chip: 'bg-chart-1/15 text-chart-1',
+    delay: '[animation-delay:400ms]',
+  },
+];
 
 /** Stat tiles, in display order — zero counts are hidden, not shown as 0. */
 const STAT_LABELS: [key: string, label: string][] = [
@@ -174,6 +245,42 @@ export function TeamHubShell() {
               <MessageCircle />
               Ask the brain
             </Button>
+          </div>
+        </section>
+
+        {/* What's new */}
+        <section className="py-8">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex size-2" aria-hidden>
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+              <span className="relative inline-flex size-2 rounded-full bg-primary" />
+            </span>
+            <h2 className="bg-gradient-to-r from-foreground to-foreground/55 bg-clip-text text-sm font-medium uppercase tracking-widest text-transparent">
+              What&rsquo;s new
+            </h2>
+          </div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {WHATS_NEW.map((f) => (
+              <div
+                key={f.title}
+                className={`group relative animate-in fade-in slide-in-from-bottom-3 fill-mode-both overflow-hidden rounded-xl border border-border bg-card p-5 text-card-foreground duration-700 transition-[transform,box-shadow,border-color] hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg ${f.delay}`}
+              >
+                <div
+                  className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+                  aria-hidden
+                />
+                <div className="flex items-start justify-between gap-3">
+                  <span className={`inline-flex size-9 items-center justify-center rounded-lg ${f.chip}`}>
+                    <f.icon className="size-4.5" aria-hidden />
+                  </span>
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
+                    New
+                  </span>
+                </div>
+                <h3 className="mt-3 font-medium">{f.title}</h3>
+                <p className="mt-1.5 text-sm text-muted-foreground">{f.blurb}</p>
+              </div>
+            ))}
           </div>
         </section>
 
