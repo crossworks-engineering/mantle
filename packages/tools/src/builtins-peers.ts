@@ -63,7 +63,12 @@ const peer_query: BuiltinToolDef = {
         items: { type: 'string' },
         description: "Optional node-type filter, e.g. ['file','note','contact'].",
       },
-      limit: { type: 'integer', minimum: 1, maximum: 100 },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 100,
+        description: 'Max results to return. Default 20, cap 100.',
+      },
     },
     required: ['peer'],
   },

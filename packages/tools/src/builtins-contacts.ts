@@ -82,7 +82,13 @@ const contact_find: BuiltinToolDef = {
     type: 'object',
     properties: {
       query: { type: 'string', description: 'name, surname, or email fragment' },
-      limit: { type: 'integer', minimum: 1, maximum: 25, default: 5 },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 25,
+        default: 5,
+        description: 'Max results to return. Default 5, cap 25.',
+      },
     },
     required: ['query'],
   },
@@ -107,8 +113,19 @@ const contact_list: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
-      offset: { type: 'integer', minimum: 0, default: 0 },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 200,
+        default: 50,
+        description: 'Max results to return. Default 50, cap 200.',
+      },
+      offset: {
+        type: 'integer',
+        minimum: 0,
+        default: 0,
+        description: 'Rows to skip for paging.',
+      },
     },
   },
   handler: async (input, ctx) => {
@@ -126,7 +143,13 @@ const contact_get: BuiltinToolDef = {
   description: "Fetch one contact by its node id. Returns the full record including counters.",
   inputSchema: {
     type: 'object',
-    properties: { id: { type: 'string', format: 'uuid' } },
+    properties: {
+      id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The contact's id (UUID) — from `contact_find` / `contact_list`.",
+      },
+    },
     required: ['id'],
   },
   handler: async (input, ctx) => {
@@ -152,13 +175,13 @@ const contact_create: BuiltinToolDef = {
   slug: 'contact_create',
   name: 'Add a contact',
   description:
-    "Save someone or some organisation as a contact in the user's Mantle. At least one of `first_name`/`last_name`/`emails`/`cell` is required. `emails` is a list — each entry is a full address (`alex@example.com`) OR a `@domain` wildcard (`@example.com`, which trusts ALL mail from that domain inbound). The `description` is the natural-language note the AI reads — say who this person is, the relationship, what they do; it's indexed into the brain (summary, embedding, facts) so future searches like 'who supplies aluminium profiles?' find this contact. **Contacts are the email allowlist in BOTH directions:** adding one enables Saskia to email those addresses AND lets their mail be ingested into the brain (a 90-day history backfill kicks off automatically)." +
+    "Save a person or organisation as a contact in the user's Mantle. **Contacts are the email allowlist in BOTH directions:** adding one enables Saskia to email those addresses AND lets their inbound mail be ingested into the brain (a 90-day history backfill kicks off automatically)." +
     ONLY_WHEN_ASKED,
   inputSchema: {
     type: 'object',
     properties: {
-      first_name: { type: 'string' },
-      last_name: { type: 'string' },
+      first_name: { type: 'string', description: 'Given name, e.g. "Alex".' },
+      last_name: { type: 'string', description: 'Family name, e.g. "Botha".' },
       company: {
         type: 'string',
         description:
@@ -168,16 +191,21 @@ const contact_create: BuiltinToolDef = {
         type: 'array',
         items: { type: 'string' },
         description:
-          'Email addresses and/or `@domain` wildcards. e.g. ["alex@example.com", "@example.com"].',
+          'Full addresses and/or `@domain` wildcards, e.g. ["alex@example.com", "@example.com"]. A wildcard trusts ALL inbound mail from that domain; outbound send still needs a full address.',
       },
       email: { type: 'string', description: 'Deprecated single-email shorthand; prefer `emails`.' },
       country_code: { type: 'string', description: 'E.g. "+27"; required if cell is set' },
       cell: { type: 'string', description: 'Digits only or any format; non-digits are stripped' },
       description: {
         type: 'string',
-        description: "Who this is, for the AI. Free-form text.",
+        description:
+          "Who this is, for the AI — the relationship, what they do. Indexed into the brain so future searches like 'who supplies aluminium profiles?' find this contact.",
       },
-      tags: { type: 'array', items: { type: 'string' } },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "Labels for organisation and filtering, e.g. ['work'].",
+      },
     },
   },
   handler: async (input, ctx) => {
@@ -216,10 +244,14 @@ const contact_update: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      id: { type: 'string', format: 'uuid' },
-      first_name: { type: 'string' },
-      last_name: { type: 'string' },
-      company: { type: 'string' },
+      id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The contact's id (UUID) — from `contact_find` / `contact_list`.",
+      },
+      first_name: { type: 'string', description: 'Given name, e.g. "Alex".' },
+      last_name: { type: 'string', description: 'Family name, e.g. "Botha".' },
+      company: { type: 'string', description: 'Organisation name, e.g. "Modular".' },
       emails: {
         type: 'array',
         items: { type: 'string' },
@@ -227,10 +259,20 @@ const contact_update: BuiltinToolDef = {
           'Replaces the email list. Each entry is an address or a `@domain` wildcard.',
       },
       email: { type: 'string', description: 'Deprecated single-email shorthand; prefer `emails`.' },
-      country_code: { type: 'string' },
-      cell: { type: 'string' },
-      description: { type: 'string' },
-      tags: { type: 'array', items: { type: 'string' } },
+      country_code: { type: 'string', description: 'Dialling code, e.g. "+27"; required if `cell` is set.' },
+      cell: {
+        type: 'string',
+        description: 'Cell number in any format — non-digits are stripped, stored with `country_code`.',
+      },
+      description: {
+        type: 'string',
+        description: 'Who this is, for the AI — the relationship, what they do. Indexed into the brain for search.',
+      },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "Labels for organisation and filtering, e.g. ['work']. Replaces the whole list.",
+      },
     },
     required: ['id'],
   },
@@ -275,7 +317,13 @@ const contact_delete: BuiltinToolDef = {
   requiresConfirm: true,
   inputSchema: {
     type: 'object',
-    properties: { id: { type: 'string', format: 'uuid' } },
+    properties: {
+      id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The contact's id (UUID) — from `contact_find` / `contact_list`.",
+      },
+    },
     required: ['id'],
   },
   handler: async (input, ctx) => {

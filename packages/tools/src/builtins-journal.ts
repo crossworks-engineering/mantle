@@ -25,8 +25,14 @@ import {
   CATEGORY_KEYS,
   type JournalRow,
 } from '@mantle/content';
-import type { BuiltinToolDef } from './types';
+import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { notFound } from './errors';
+
+// Shared referential precondition (checked centrally in dispatch — see
+// preconditions.ts): the id must name an EXISTING journal entry the owner holds.
+const JOURNAL_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'id', nodeType: 'journal', lookup: 'journal_list' },
+];
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
@@ -70,8 +76,19 @@ const journal_list: BuiltinToolDef = {
       query: { type: 'string', description: 'substring match on title/body' },
       mood: { type: 'string', description: `filter by mood (${MOOD_KEYS.join(', ')})` },
       category: { type: 'string', description: `filter by area (${CATEGORY_KEYS.join(', ')})` },
-      limit: { type: 'integer', minimum: 1, maximum: 100, default: 30 },
-      offset: { type: 'integer', minimum: 0, default: 0 },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 100,
+        default: 30,
+        description: 'Max entries to return. Default 30, cap 100.',
+      },
+      offset: {
+        type: 'integer',
+        minimum: 0,
+        default: 0,
+        description: 'Rows to skip for paging.',
+      },
     },
   },
   handler: async (input, ctx) => {
@@ -95,9 +112,16 @@ const journal_get: BuiltinToolDef = {
   description: 'Fetch one journal entry by its node id. Returns the full entry.',
   inputSchema: {
     type: 'object',
-    properties: { id: { type: 'string', format: 'uuid' } },
+    properties: {
+      id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The entry's id (UUID) — from `journal_list` / `search_nodes`.",
+      },
+    },
     required: ['id'],
   },
+  preconditions: JOURNAL_ID_PRE,
   handler: async (input, ctx) => {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
@@ -126,7 +150,11 @@ const journal_create: BuiltinToolDef = {
         type: 'string',
         description: 'optional ISO date the entry is about (defaults to now)',
       },
-      tags: { type: 'array', items: { type: 'string' } },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "Labels for organisation and filtering, e.g. ['health'].",
+      },
     },
     required: ['body'],
   },
@@ -160,16 +188,28 @@ const journal_update: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      id: { type: 'string', format: 'uuid' },
-      body: { type: 'string' },
-      title: { type: 'string' },
+      id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The entry's id (UUID) — from `journal_list` / `search_nodes`.",
+      },
+      body: { type: 'string', description: 'New entry text; omit to keep current.' },
+      title: { type: 'string', description: 'New title; omit to keep current.' },
       mood: { type: 'string', description: MOOD_DESC },
       category: { type: 'string', description: CATEGORY_DESC },
-      entry_date: { type: 'string' },
-      tags: { type: 'array', items: { type: 'string' } },
+      entry_date: {
+        type: 'string',
+        description: 'ISO date the entry is about; empty string clears it, omit to keep current.',
+      },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "Replaces the whole tag list, e.g. ['health']; omit to keep current.",
+      },
     },
     required: ['id'],
   },
+  preconditions: JOURNAL_ID_PRE,
   handler: async (input, ctx) => {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
@@ -201,9 +241,16 @@ const journal_delete: BuiltinToolDef = {
   requiresConfirm: true,
   inputSchema: {
     type: 'object',
-    properties: { id: { type: 'string', format: 'uuid' } },
+    properties: {
+      id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The entry's id (UUID) — from `journal_list` / `search_nodes`.",
+      },
+    },
     required: ['id'],
   },
+  preconditions: JOURNAL_ID_PRE,
   handler: async (input, ctx) => {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };

@@ -72,7 +72,11 @@ const app_create: BuiltinToolDef = {
       name: { type: 'string', description: 'app name, e.g. "Weather"' },
       description: { type: 'string', description: 'one-line summary for the app list' },
       icon: { type: 'string', description: 'optional emoji icon, e.g. "🌤️"' },
-      tags: { type: 'array', items: { type: 'string' } },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: "Labels for organisation and filtering, e.g. ['work'].",
+      },
     },
     required: ['name'],
   },
@@ -219,7 +223,7 @@ const app_source_set: BuiltinToolDef = {
   slug: 'app_source_set',
   name: 'Set a mini app\'s whole source tree',
   description:
-    "Replace the app's ENTIRE draft source tree in one call — pass the whole virtual file set at once instead of many app_file_write calls. `entry` is the entry file path (must `export default function App()`) and MUST be a key in `files`; `files` maps every path to its full contents. The published app is untouched until app_publish. After setting, call app_build to compile. Use this when you authored the app's files locally and want to upload them atomically. " +
+    "Replace the app's ENTIRE draft source tree in one call, instead of many `app_file_write` calls — use it when you authored the files elsewhere and want to upload them atomically. The published app is untouched until `app_publish`; call `app_build` afterwards to compile. " +
     SOURCE_HINT,
   inputSchema: {
     type: 'object',
@@ -414,8 +418,11 @@ const app_list: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      query: { type: 'string' },
-      tag: { type: 'string' },
+      query: {
+        type: 'string',
+        description: "Substring matched against app name, source text, and summary, e.g. 'weather'.",
+      },
+      tag: { type: 'string', description: "Return only apps carrying this exact tag, e.g. 'work'." },
       limit: { type: 'number', description: 'max rows (default 50)' },
     },
   },

@@ -47,13 +47,22 @@ const team_request_create: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      title: { type: 'string', minLength: 1, maxLength: 200 },
+      title: {
+        type: 'string',
+        minLength: 1,
+        maxLength: 200,
+        description: "Short imperative summary of the requested change, e.g. 'Update RBI report 30257 with revised inspection dates'.",
+      },
       body: {
         type: 'string',
         description:
           'The full request: what to change, where (with node links), and why — written so a specialist can act without reading the chat.',
       },
-      priority: { type: 'string', enum: ['low', 'normal', 'high'] },
+      priority: {
+        type: 'string',
+        enum: ['low', 'normal', 'high'],
+        description: "How urgently the specialists should review it; defaults to 'normal'.",
+      },
     },
     required: ['title', 'body'],
   },
@@ -140,9 +149,12 @@ const team_chat_read: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      contactId: { type: 'string' },
+      contactId: {
+        type: 'string',
+        description: "The member's contact id, from `team_chat_list` or `contact_find`.",
+      },
       before: { type: 'string', description: 'ISO timestamp cursor — return messages older than this.' },
-      limit: { type: 'number' },
+      limit: { type: 'number', description: 'Max messages to return. Default 50, cap 200.' },
     },
     required: ['contactId'],
   },
@@ -182,8 +194,11 @@ const team_access_list: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      contactId: { type: 'string' },
-      limit: { type: 'number' },
+      contactId: {
+        type: 'string',
+        description: "Narrow the log to one member — a contact id from `team_chat_list` or `contact_find`.",
+      },
+      limit: { type: 'number', description: 'Max entries to return. Default 100, cap 500.' },
     },
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {

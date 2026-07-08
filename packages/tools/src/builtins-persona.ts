@@ -41,9 +41,9 @@ const update_persona: BuiltinToolDef = {
   slug: 'update_persona',
   name: 'Update persona',
   description:
-    "Adjust how YOU (the assistant) behave with this user, when they explicitly ask you to change your style, tone, or how you address them — or to drop a standing preference. Use it for durable changes like 'be more professional', 'stop using bullet lists', 'call me Jay', 'you can be more casual from now on'. " +
-    'When the new preference contradicts a persona note already shown in your context, pass that note\'s [ref] tag in `supersede_refs` so the stale one is retired instead of left to conflict (you can list several refs if it contradicts more than one). Use `remove_refs` to drop a behaviour without replacing it. ' +
-    'Do NOT use this for facts about the user or their world — those are remembered automatically. Do NOT use it for one-off, in-the-moment requests ("just for this reply, be brief") — only when the change should persist across future conversations. After calling it, acknowledge the change to the user in your reply.',
+    "Adjust how YOU (the assistant) behave with this user — style, tone, how you address them — ONLY when they explicitly ask for a durable change ('be more professional', 'call me Jay', 'stop using bullet lists'). " +
+    'When the new preference contradicts a persona note already in your context, pass its [ref] in `supersede_refs` so the stale note is retired rather than left to conflict; `remove_refs` drops a behaviour without replacing it. ' +
+    'NOT for facts about the user or their world (remembered automatically), and NOT for one-off requests ("just for this reply, be brief") — only changes that should persist across conversations. Acknowledge the change in your reply.',
   inputSchema: {
     type: 'object',
     properties: {
