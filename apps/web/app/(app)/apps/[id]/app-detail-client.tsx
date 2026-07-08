@@ -231,7 +231,13 @@ function AppDetailView({ app }: { app: AppDetail }) {
           </Button>
           {/* Share the published app at a public full-screen /s/<token> URL.
               Only once there's a published build to point the link at. */}
-          {app.publishedBuild?.ok && <ShareControl nodeId={app.id} teamMode />}
+          {app.publishedBuild?.ok && (
+            <ShareControl
+              nodeId={app.id}
+              teamMode
+              teamHint="Visitors must enter their team token, and every action is audited to that member. Team members can use the app’s Mantle tools and write to its data — a public link can only read the app’s own data. Grant it to people you trust."
+            />
+          )}
         </div>
       </div>
 

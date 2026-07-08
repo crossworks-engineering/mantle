@@ -108,6 +108,14 @@ them through without a session cookie.
 - `noindex` by default; rate-limit public + asset routes (reuse
   [`lib/rate-limit.ts`](../apps/web/lib/rate-limit.ts)); secrets/emails/contacts
   excluded at the API.
+- **Team mode** (`settings.mode = 'team'`, toggle in `<ShareControl teamMode>`):
+  the link additionally requires a **live team credential** — the share-scoped
+  visitor cookie (minted at the link's own token prompt) or the brain-level
+  `/team` hub cookie. Enforced uniformly on the `/s/` surface: the page render,
+  the asset-bytes route, and the app brokers all resolve
+  `resolveShareVisitor` and re-check membership liveness per request
+  (revocation is instant). Team-mode **page** shares double as the `/team`
+  hub's briefing sections (`@mantle/content/team-hub`).
 
 ---
 

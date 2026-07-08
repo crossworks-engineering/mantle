@@ -724,7 +724,7 @@ function PageDetailEditor({
             <StretchHorizontal /> Full width
           </Button>
           <ExportButton nodeId={initial.id} label="Word" />
-          <ShareControl nodeId={initial.id} beforeEnable={commit} />
+          <ShareControl nodeId={initial.id} beforeEnable={commit} teamMode />
           <Button
             size="sm"
             variant="ghost"

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
+import { shareModeOf } from '@mantle/content';
 import { resolveActiveShareByToken, recordShareView, loadShareView } from '@/lib/shares';
 import { resolveShareVisitor } from '@/lib/team-gate';
 import { TeamTokenPrompt } from '@/components/share/team-token-prompt';
@@ -22,7 +23,10 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { token } = await params;
   const share = await resolveActiveShareByToken(token);
-  const view = share ? await loadShareView(share) : null;
+  // Team-mode shares don't leak their title to anonymous crawlers/unfurlers —
+  // metadata renders before the visitor gate, so it must stay generic.
+  const gated = share ? shareModeOf(share) === 'team' : false;
+  const view = share && !gated ? await loadShareView(share) : null;
   const heading = (view ? ('title' in view ? view.title : view.filename) : null) ?? 'Shared';
   // Unlisted by default: tell crawlers not to index shared links, but still
   // emit OG/Twitter tags so a pasted link unfurls nicely in chat apps.
@@ -42,6 +46,16 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
   const view = await loadShareView(share);
   if (!view) notFound();
 
+  // Team-mode shares (any kind) gate on a live team session — the share's own
+  // visitor cookie or the brain-level /team hub cookie; without one the
+  // visitor gets the token prompt instead of the content. For apps this is
+  // UX (the brokers are the wall); for pages/notes/files it IS the wall.
+  const visitor = await resolveShareVisitor((await headers()).get('cookie'), share);
+  if (!visitor) {
+    const title = 'title' in view ? view.title : view.filename;
+    return <TeamTokenPrompt shareToken={token} title={title} />;
+  }
+
   void recordShareView(share.id); // fire-and-forget view counter
 
   const assetUrl = (fileId: string) => `/s/${token}/a/${fileId}`;
@@ -57,14 +71,8 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
       return <TaskPresenter view={view} />;
     case 'event':
       return <EventPresenter view={view} />;
-    case 'app': {
-      // Team-mode shares gate on a live team-visitor session; without one the
-      // visitor gets the token prompt instead of the app (and the brokers
-      // would refuse them anyway — this is UX, the brokers are the wall).
-      const visitor = await resolveShareVisitor((await headers()).get('cookie'), share);
-      if (!visitor) return <TeamTokenPrompt shareToken={token} title={view.title} />;
+    case 'app':
       return <AppPresenter view={view} token={token} />;
-    }
     default:
       notFound();
   }

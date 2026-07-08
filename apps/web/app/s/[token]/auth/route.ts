@@ -1,22 +1,29 @@
 /**
  * POST /s/[token]/auth — exchange a contact TEAM TOKEN for a team-visitor
- * cookie on a team-mode app share.
+ * cookie on a team-mode share (any kind — page, app, file, …).
  *
  * Rate-limited per IP AND per share (an unauthenticated endpoint taking a
  * short secret gets both). On success: sets the signed `mantle_team` cookie,
  * PATH-SCOPED to this share's /s/<token> so it authenticates nothing else,
- * marks the token used (audit liveness) and writes an 'auth' row to the app
- * access log — the audit trail's "who paired" record.
+ * marks the token used (audit liveness) and writes an 'auth' row to the
+ * audit trail — the app access log for app shares (the "who paired" record),
+ * the team access log for every other kind.
  *
  * Every non-rate-limit failure is a uniform 401 'invalid token' — a missing
- * share, a non-app share, a public-mode share, a wrong token, and a token from
- * another brain all return the same response, so nothing about which case
- * applies can be enumerated.
+ * share, a public-mode share, a wrong token, and a token from another brain
+ * all return the same response, so nothing about which case applies can be
+ * enumerated.
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { resolveActiveShareByToken } from '@/lib/shares';
-import { shareModeOf, verifyTeamToken, markTeamTokenUsed, recordAppAccess } from '@mantle/content';
+import {
+  shareModeOf,
+  verifyTeamToken,
+  markTeamTokenUsed,
+  recordAppAccess,
+  recordTeamAccess,
+} from '@mantle/content';
 import { buildTeamVisitorCookie, TEAM_VISITOR_COOKIE } from '@/lib/auth';
 import { secureCookies } from '@/lib/auth-constants';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
@@ -47,7 +54,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   }
 
   const share = await resolveActiveShareByToken(shareToken);
-  if (!share || share.nodeType !== 'app') return invalid();
+  if (!share) return invalid();
 
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
@@ -61,13 +68,22 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   // touches brain A's row.
   await markTeamTokenUsed(share.ownerId, member.contactId);
 
-  recordAppAccess({
-    ownerId: share.ownerId,
-    appNodeId: share.nodeId,
-    shareId: share.id,
-    contactId: member.contactId,
-    kind: 'auth',
-  });
+  if (share.nodeType === 'app') {
+    recordAppAccess({
+      ownerId: share.ownerId,
+      appNodeId: share.nodeId,
+      shareId: share.id,
+      contactId: member.contactId,
+      kind: 'auth',
+    });
+  } else {
+    recordTeamAccess({
+      ownerId: share.ownerId,
+      contactId: member.contactId,
+      kind: 'auth',
+      detail: { surface: 'share', shareId: share.id, nodeType: share.nodeType },
+    });
+  }
 
   const cookie = buildTeamVisitorCookie(share.id, member.contactId);
   const res = NextResponse.json({ ok: true });

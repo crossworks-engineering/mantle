@@ -17,15 +17,18 @@ type ShareInfo = { id: string; token: string; path: string; mode?: 'public' | 't
  * Loads the current link lazily on first open. One link per item — toggling on
  * mints (or returns) it, off revokes it (link 404s instantly). See docs/sharing.md.
  *
- * `teamMode` (apps) adds a second toggle switching the link between public
- * admission and team-members-only (visitors must enter their contact team
- * token; the /s/ brokers enforce it and audit per member).
+ * `teamMode` adds a second toggle switching the link between public admission
+ * and team-members-only (visitors must enter their contact team token; the
+ * /s/ surface enforces it). `teamHint` tailors the toggle's explanation —
+ * apps pass their tools/data warning; content kinds use the default.
+ * Team-shared PAGES also appear on the /team hub as briefing cards.
  */
 export function ShareControl({
   nodeId,
   iconOnly = false,
   beforeEnable,
   teamMode = false,
+  teamHint = 'Visitors must enter their team token to open the link. Team-shared pages appear on the Team Hub.',
 }: {
   nodeId: string;
   iconOnly?: boolean;
@@ -33,8 +36,10 @@ export function ShareControl({
    *  shared copy reflects what the owner currently sees (pages publish on
    *  commit; notes/tasks/events/files save live and don't pass this). */
   beforeEnable?: () => Promise<void> | void;
-  /** Offer the public/team admission toggle (currently app shares only). */
+  /** Offer the public/team admission toggle. */
   teamMode?: boolean;
+  /** Explanation under the team toggle (kind-specific consequences). */
+  teamHint?: string;
 }) {
   const toast = useToast();
   const [open, setOpen] = useState(false);
@@ -158,11 +163,7 @@ export function ShareControl({
             <div className="flex items-start justify-between gap-3 border-t border-border pt-3">
               <div className="space-y-0.5">
                 <p className="text-sm font-medium">Team members only</p>
-                <p className="text-xs text-muted-foreground">
-                  Visitors must enter their team token, and every action is audited to that
-                  member. Team members can use the app’s Mantle tools and write to its data — a
-                  public link can only read the app’s own data. Grant it to people you trust.
-                </p>
+                <p className="text-xs text-muted-foreground">{teamHint}</p>
               </div>
               <Switch
                 checked={share.mode === 'team'}

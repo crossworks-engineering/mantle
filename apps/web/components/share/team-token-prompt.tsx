@@ -1,10 +1,11 @@
 'use client';
 
 /**
- * Token-entry gate for a TEAM-mode app share. Renders instead of the app when
- * the visitor has no live team session; a valid contact team token sets the
- * path-scoped visitor cookie (POST /s/<token>/auth) and a router.refresh()
- * re-runs the server page, which now sees the cookie and mounts the app.
+ * Token-entry gate for a TEAM-mode share (any kind — page, app, file, …).
+ * Renders instead of the content when the visitor has no live team session; a
+ * valid contact team token sets the path-scoped visitor cookie
+ * (POST /s/<token>/auth) and a router.refresh() re-runs the server page, which
+ * now sees the cookie and renders the content.
  *
  * Public surface — no app shell, no toast provider — so feedback is inline.
  * Raw fetch on purpose: apiFetch is the app shell's authenticated wrapper.
@@ -55,7 +56,7 @@ export function TeamTokenPrompt({ shareToken, title }: { shareToken: string; tit
           <KeyRound className="mx-auto size-8 text-muted-foreground" aria-hidden />
           <h1 className="text-lg font-semibold text-card-foreground">{title}</h1>
           <p className="text-sm text-muted-foreground">
-            This app is shared with team members only. Enter your team token to continue.
+            This link is shared with team members only. Enter your team token to continue.
           </p>
         </div>
         <form
@@ -81,7 +82,7 @@ export function TeamTokenPrompt({ shareToken, title }: { shareToken: string; tit
             {error && <p className="text-xs text-destructive">{error}</p>}
           </div>
           <Button type="submit" className="w-full" disabled={pending || !token.trim()}>
-            {pending ? 'Checking…' : 'Open app'}
+            {pending ? 'Checking…' : 'Continue'}
           </Button>
         </form>
       </div>
