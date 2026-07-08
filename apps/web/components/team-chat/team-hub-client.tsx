@@ -72,7 +72,7 @@ const WHATS_NEW: {
     icon: SlidersHorizontal,
     title: 'Brain rules (fine-tuning)',
     blurb:
-      'Teach the brain your team\u2019s standards \u2014 standing rules that tune how it answers, writes, and works for you.',
+      'Every tool the brain uses now carries precise rules for when and how to use it \u2014 a deep tuning pass that makes its actions dramatically more dependable.',
     chip: 'bg-chart-3/15 text-chart-3',
     delay: '[animation-delay:160ms]',
   },
