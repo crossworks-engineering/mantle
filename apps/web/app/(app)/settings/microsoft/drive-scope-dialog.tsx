@@ -60,20 +60,19 @@ export function DriveScopeDialog({
   const queryClient = useQueryClient();
   const toast = useToast();
   const [crumbs, setCrumbs] = useState<Crumb[]>([{ itemId: null, name: drive.name }]);
-  const [scopes, setScopes] = useState<MsDriveScopeDTO[] | null>(null); // null until loaded
+  // Unsaved edits; null = untouched, showing the saved set. The component
+  // unmounts on close, so edits never leak across opens.
+  const [edits, setEdits] = useState<MsDriveScopeDTO[] | null>(null);
   const cwd = crumbs[crumbs.length - 1]!;
 
-  useQuery({
+  const savedQuery = useQuery({
     queryKey: ['microsoft', 'scopes', drive.id],
-    queryFn: async () => {
-      const r = await apiFetch<{ scopes: MsDriveScopeDTO[] }>(
-        `/api/microsoft/drives/${drive.id}/scopes`,
-      );
-      setScopes((prev) => prev ?? r.scopes); // don't clobber in-progress edits
-      return r.scopes;
-    },
-    staleTime: Infinity,
+    queryFn: () =>
+      apiFetch<{ scopes: MsDriveScopeDTO[] }>(`/api/microsoft/drives/${drive.id}/scopes`).then(
+        (r) => r.scopes,
+      ),
   });
+  const scopes: MsDriveScopeDTO[] | null = edits ?? savedQuery.data ?? null;
 
   const childrenQuery = useQuery({
     queryKey: ['microsoft', 'browse', drive.id, cwd.itemId ?? 'root'],
@@ -88,12 +87,12 @@ export function DriveScopeDialog({
       apiSend<{ scopes: MsDriveScopeDTO[] }>(`/api/microsoft/drives/${drive.id}/scopes`, 'PUT', {
         scopes: next,
       }),
-    onSuccess: () => {
+    onSuccess: (_res, next) => {
       queryClient.invalidateQueries({ queryKey: ['microsoft', 'drives', accountId] });
       queryClient.invalidateQueries({ queryKey: ['microsoft', 'scopes', drive.id] });
       toast.success(
-        scopes && scopes.length > 0
-          ? `Selection saved — only ${scopes.length} selection${scopes.length === 1 ? '' : 's'} will sync.`
+        next.length > 0
+          ? `Selection saved — only ${next.length} selection${next.length === 1 ? '' : 's'} will sync.`
           : 'Selection cleared — the whole drive will sync.',
       );
       onClose();
@@ -103,8 +102,8 @@ export function DriveScopeDialog({
 
   const toggleScope = (child: MsDriveChildDTO, checked: boolean) => {
     if (child.path === null) return;
-    setScopes((prev) => {
-      const cur = prev ?? [];
+    setEdits((prev) => {
+      const cur = prev ?? savedQuery.data ?? [];
       if (!checked) return cur.filter((s) => s.itemId !== child.itemId);
       // Selecting a folder subsumes any existing selections inside it — drop
       // them so the saved set stays minimal (and "covered" locks read right).
@@ -217,7 +216,7 @@ export function DriveScopeDialog({
                 : `${count} selection${count === 1 ? '' : 's'} — only these sync.`}
             </span>
             {count > 0 && (
-              <Button variant="ghost" size="sm" onClick={() => setScopes([])}>
+              <Button variant="ghost" size="sm" onClick={() => setEdits([])}>
                 Clear all
               </Button>
             )}
