@@ -60,7 +60,10 @@ export function Header({
         className="flex min-w-0 items-baseline"
         aria-label={`${siteName || 'Mantle'} home`}
       >
-        <span className="max-w-[45vw] truncate font-logo text-3xl leading-none text-primary">
+        {/* Bukhari's swashes overshoot the em box; the truncate overflow box needs
+            padding (clip happens at the padding edge) or the ink gets shaved. The
+            negative x-margin cancels the layout shift so the wordmark stays aligned. */}
+        <span className="-mx-2 max-w-[45vw] truncate px-2 py-1 font-logo text-2xl text-primary">
           {siteName || 'mantle'}
         </span>
       </Link>
