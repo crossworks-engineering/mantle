@@ -52,8 +52,8 @@ describe('isNameSubset (person review tier)', () => {
     expect(isNameSubset('C. Schoeman', 'Jason Schoeman')).toBe(false);
     expect(isNameSubset('Sacks', 'David Sacks')).toBe(false); // surname-only — too ambiguous to suggest
   });
-  it('rejects a middle-name-only match ("Ann" → "Ashley Ann Schoeman")', () => {
-    expect(isNameSubset('Ann', 'Ashley Ann Schoeman')).toBe(false);
+  it('rejects a middle-name-only match ("Ann" → "Alice Ann Carter")', () => {
+    expect(isNameSubset('Ann', 'Alice Ann Carter')).toBe(false);
   });
   it('rejects equal or longer names (not a strict subset)', () => {
     expect(isNameSubset('Jason Schoeman', 'Jason Schoeman')).toBe(false);

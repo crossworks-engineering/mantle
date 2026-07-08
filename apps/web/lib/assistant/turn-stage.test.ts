@@ -51,8 +51,8 @@ describe('stageLabelForStep', () => {
   });
 
   it('enriches the label with a safe query arg when present', () => {
-    expect(stageLabelForStep('tool: web_search', { query: 'Pinnacle SLA' })).toBe(
-      'Searching the web for “Pinnacle SLA”…',
+    expect(stageLabelForStep('tool: web_search', { query: 'Acme SLA' })).toBe(
+      'Searching the web for “Acme SLA”…',
     );
     expect(stageLabelForStep('tool: search_nodes', { q: 'invoice' })).toBe(
       'Searching your brain for “invoice”…',

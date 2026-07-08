@@ -1221,7 +1221,7 @@ describe('runToolLoop — tool-volume guards', () => {
   });
 
   it('turn budget never severs a batch: a batch that starts under 40 completes, then force-final', async () => {
-    // The NATREF SOP regression shape: rounds of edits approach the budget,
+    // The SOP-restructure regression shape: rounds of edits approach the budget,
     // then a WRITE batch (10 deletes) begins just under it. Old behavior cut
     // the batch at the cap (1 ran, 9 skipped) and left the draft half-edited.
     // New behavior: the batch runs to completion, THEN the loop force-finals.

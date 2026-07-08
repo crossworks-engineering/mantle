@@ -12,7 +12,7 @@
  * hooks too.
  *
  * First consumer: `invoke_agent` — after a hallucinated delegate slug once
- * ballooned a turn to 456K tokens (Ashley, v0.82.2), the parent's
+ * ballooned a turn to 456K tokens (production incident, v0.82.2), the parent's
  * delegation allowlist is injected as a JSON-schema `enum`, making bad
  * slugs unrepresentable rather than merely discouraged. The runtime guards
  * in invoke-agent-guards stay as defence-in-depth for adapters that ignore

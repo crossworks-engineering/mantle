@@ -100,7 +100,7 @@ outcome is a mislabeled task in a human-reviewed queue.
 
 Owner-side, a `team-admin` tool group on the persona adds
 `team_chat_list` / `team_chat_read` / `team_access_list`, so the *owner's*
-assistant can answer "what has Rea asked about this week?" from the audit
+assistant can answer "what has Sam asked about this week?" from the audit
 trail.
 
 ## 6. Private reads — email + journal are off by default

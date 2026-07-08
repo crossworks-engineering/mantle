@@ -22,7 +22,7 @@ const FRESH_WINDOW_MS = 2 * 60 * 1000;
 
 /** Poll-facing wrapper over the shared labeler (`@mantle/assistant-runtime`),
  *  reduced to the display string — the poll has no use for the `kind` bucket.
- *  Passes the step's input so the poll enriches with args ("…for “Pinnacle
+ *  Passes the step's input so the poll enriches with args ("…for “Acme
  *  SLA”") exactly like the live stream pushes. Returns null for names we don't
  *  surface (caller shows plain dots). */
 export function stageLabelForStep(name: string, input?: Record<string, unknown>): string | null {

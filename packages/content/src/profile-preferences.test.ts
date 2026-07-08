@@ -68,8 +68,8 @@ describe('projectThinkingBudget', () => {
 // wordmark" rather than rendering an empty header.
 describe('projectSiteName', () => {
   it('keeps a plain name, trimmed', () => {
-    expect(projectSiteName('Natref')).toBe('Natref');
-    expect(projectSiteName('  Natref  ')).toBe('Natref');
+    expect(projectSiteName('Refinery')).toBe('Refinery');
+    expect(projectSiteName('  Refinery  ')).toBe('Refinery');
   });
   it('caps at SITE_NAME_MAX chars', () => {
     expect(projectSiteName('x'.repeat(SITE_NAME_MAX + 10))).toBe('x'.repeat(SITE_NAME_MAX));

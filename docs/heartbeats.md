@@ -348,7 +348,7 @@ T+~7h    Alex replies with what he wants to share (family / role /
          Status → 'completed', next_fire_at → null. Never fires again.
 
          Meanwhile, in the background:
-         - Extractor creates entities (Mia, Benji, Bella, …) +
+         - Extractor creates entities (Mia, Ben, Zoe, …) +
            facts ("Alex lives in Barrydale", …) from the message
          - Reflector eventually appends persona_notes summarising
            the relationship

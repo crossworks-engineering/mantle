@@ -231,7 +231,7 @@ function ProfileForm({ data }: { data: ProfileData }) {
           />
           <p className="text-xs text-muted-foreground">
             Replaces the &ldquo;mantle&rdquo; wordmark in the top-left header — e.g. the
-            site or team name (&ldquo;Natref&rdquo;) — so it&apos;s obvious at a glance
+            site or team name (&ldquo;Refinery&rdquo;) — so it&apos;s obvious at a glance
             which brain you&apos;re on. Leave blank for the default.
           </p>
         </div>

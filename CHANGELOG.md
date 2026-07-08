@@ -75,7 +75,7 @@ as the fresh-install fallback), so upgrades propagate everywhere again.
 
 ## v0.118.0 — 2026-07-06
 
-**Big page edits no longer die halfway.** A large SOP restructure on NATREF
+**Big page edits no longer die halfway.** A large SOP restructure on a production brain
 exposed a chain of agent-editing failures, all fixed here:
 
 - **Write batches are atomic.** The tool-loop's volume caps (40 calls/turn,
@@ -216,7 +216,7 @@ fit without truncating. The Bukhari script face is reserved for the wordmark.
 
 **Name your brain in the header.** A new **Site name** field in
 Settings → Profile replaces the top-left "mantle" wordmark with your own
-label — e.g. "Natref" — so when you run several brains it's obvious at a
+label — e.g. "Refinery" — so when you run several brains it's obvious at a
 glance which one you're looking at. Leave it blank to keep the Mantle
 wordmark; the header updates immediately after saving.
 
@@ -319,7 +319,7 @@ bounced straight back to the login screen, forever. Cookies (session +
 Microsoft OAuth handshake) now take the `Secure` flag from the request's
 actual scheme (`X-Forwarded-Proto`), so HTTPS installs behave exactly as
 before and HTTP installs can actually sign in. Found on the first
-Pinnacle machine. HTTPS remains strongly recommended — see
+plain-HTTP field install. HTTPS remains strongly recommended — see
 `docs/installation.md` for pointing a domain at the box.
 
 ## v0.109.0 — 2026-07-02

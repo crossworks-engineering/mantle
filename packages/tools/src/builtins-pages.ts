@@ -1004,7 +1004,7 @@ const page_blocks_list: BuiltinToolDef = {
     // exists). Listing page.doc here while get/update/delete edited the draft
     // is exactly how an agent once declared a broken draft "clean" — the
     // listing hid the draft's state and every id it returned was potentially
-    // stale for the tools that followed (NATREF SOP incident, 2026-07-06).
+    // stale for the tools that followed (SOP-restructure incident, 2026-07-06).
     const baseline = pickEditingBaseline(page);
     const blocks = listBlocks(baseline, {
       ...(maxDepth !== undefined ? { maxDepth } : {}),

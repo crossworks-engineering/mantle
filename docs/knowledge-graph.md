@@ -167,8 +167,8 @@ builtin tools (Saskia) and MCP tools (Claude Desktop/Code):
   The cheap "what's directly connected to X?".
 - **`graph_path`** — multi-hop via a recursive CTE. `from_id` only → everything
   reachable within `max_depth`; `from_id` + `to_id` → shortest path(s) between
-  two entities ("how is Ashley connected to Nedbank?" →
-  `Ashley → employed_by → Cross-Works → banks_with → Nedbank`). Cycle-safe,
+  two entities ("how is Alice connected to Nedbank?" →
+  `Alice → employed_by → Cross-Works → banks_with → Nedbank`). Cycle-safe,
   relation-filterable, undirected by default for connectivity.
 
 > **Driver note (so the next person doesn't lose an hour):** the recursive CTE

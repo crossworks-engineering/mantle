@@ -84,7 +84,7 @@ Then smoke-test the surface the release actually changed in the browser (and
   `docker-compose.yml`) need the **release bundle's compose swapped onto the box**
   before the roll, plus `docker compose up -d --wait --remove-orphans` — otherwise
   a renamed service's old container keeps running under its former name. Grab the
-  compose from that release's `mantle-deploy-vX.Y.Z.tar.gz`. Both prod and Ashley
+  compose from that release's `mantle-deploy-vX.Y.Z.tar.gz`. Both production boxes
   hit this on the v0.79.0 split (apps/agent → apps/api).
 - **telegram poller**: leave `worker_telegram` RUNNING (`restart: unless-stopped`).
   The dev/prod bot split (2026-06-02) means prod polls only `saskianewbot` and dev

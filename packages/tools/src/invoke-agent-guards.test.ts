@@ -151,7 +151,7 @@ describe('checkDelegationAllowed', () => {
   });
 
   it('suggests the closest slug on a confident near-miss (the real bug)', () => {
-    // The exact failure that broke Ashley's turn: the model invented
+    // The exact production failure shape: the model invented
     // 'pages-specialist' for the agent whose slug is 'pages'. Containment
     // match → suggest 'pages' so the LLM retries correctly next round.
     const r = checkDelegationAllowed('responder', 'pages-specialist', [

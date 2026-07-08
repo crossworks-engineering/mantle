@@ -97,7 +97,7 @@ function nameTokens(name: string): string[] {
  *  `longer`'s FIRST (given-name) token. The first-token requirement is the
  *  safety rule: it accepts "Alex" ⊂ "Alex Carter" but REJECTS the dangerous
  *  surname-only collision "C. Carter" → "Alex Carter" (different given
- *  name, same surname) and "Ann" → "Ashley Ann Carter" (middle name). Used
+ *  name, same surname) and "Ann" → "Alice Ann Carter" (middle name). Used
  *  for the person REVIEW tier — surname-only matches are too ambiguous to even
  *  suggest. */
 export function isNameSubset(shorter: string, longer: string): boolean {

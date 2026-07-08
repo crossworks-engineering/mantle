@@ -11,7 +11,7 @@
  *
  * `team_chat_list` / `team_chat_read` / `team_access_list` — OWNER-side admin
  * tools (granted via the `team-admin` group to the persona, never to the team
- * responder). They make team activity queryable by the brain: "what has Rea
+ * responder). They make team activity queryable by the brain: "what has Sam
  * asked about this week?".
  */
 

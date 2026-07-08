@@ -104,7 +104,7 @@ const search_nodes: BuiltinToolDef = {
   name: 'Search nodes',
   description:
     "Hybrid full-text + semantic search across the user's entire Mantle (notes, files, emails, events, tasks, pages, telegram messages — everything). **Ranked by relevance, NOT by date.** " +
-    "Use for topic/content questions — 'find emails about the Lister contract', 'notes mentioning the printer', 'anything about Ashley's passport'. " +
+    "Use for topic/content questions — 'find emails about the Lister contract', 'notes mentioning the printer', 'anything about Alice's passport'. " +
     'This finds whole NODES (returns their spine — title/tags/summary). To pull the relevant *passages* from inside long documents — the cheaper move for a "what does X say about Y" question, and the one that avoids reading whole files into context — use `search_chunks`. ' +
     "For **time-windowed** questions ('what arrived today', 'last 5 days of email', 'this week's events') use the dedicated list tools — `email_list`, `event_list`, `task_list`, `note_list`, `page_list`, `file_list` — which ARE date-sorted and accept `since` / `window`. " +
     "For past **conversation** recall (replaying what was actually said) use `find_window` + `recall_window`. For the **public web** use `web_search`. " +

@@ -7,7 +7,7 @@
  * speak with one voice. Granularity is deliberately coarse — a handful of stages
  * a user actually waits on (thinking, searching, delegating, writing). When the
  * step's input carries a safe, query-ish field we enrich the label with it
- * ("Searching your brain for “Pinnacle SLA”…", "Saving “Q3 plan” to your
+ * ("Searching your brain for “Acme SLA”…", "Saving “Q3 plan” to your
  * notes…"); otherwise we use the bucket.
  *
  * Step names come from the tool loop (packages/agent-runtime/src/tool-loop.ts):
@@ -17,7 +17,7 @@
  */
 
 export interface StageLabel {
-  /** User-facing line ("Searching your brain for “Pinnacle SLA”…"). */
+  /** User-facing line ("Searching your brain for “Acme SLA”…"). */
   label: string;
   /** Coarse bucket the UI themes/iconifies. `write` (notes/tasks/pages),
    *  `calendar` (events), `message` (telegram/email sends), and `file` give the

@@ -19,7 +19,7 @@ const bySlug = Object.fromEntries(TEAM_TOOLS.map((t) => [t.slug, t]));
 const ownerCtx: ToolHandlerContext = { ownerId: 'owner-1', surface: { kind: 'web' } };
 const teamCtx: ToolHandlerContext = {
   ownerId: 'owner-1',
-  surface: { kind: 'team', contactId: 'contact-9', contactName: 'Rea' },
+  surface: { kind: 'team', contactId: 'contact-9', contactName: 'Sam' },
 };
 
 describe('team_request_create surface gate', () => {

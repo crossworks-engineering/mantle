@@ -877,7 +877,7 @@ function Wizard({
               >
                 <Textarea
                   rows={3}
-                  placeholder="e.g. Analyse RBI inspection reports and answer questions about asset integrity for the NATREF refinery."
+                  placeholder="e.g. Analyse RBI inspection reports and answer questions about asset integrity for a refinery."
                   value={purposeText}
                   onChange={(e) => setPurposeText(e.target.value)}
                 />

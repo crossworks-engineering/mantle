@@ -62,7 +62,7 @@ export type ProfilePreferences = {
    *  block; this is for greetings/UI. */
   displayName?: string;
   /** Custom site name rendered as the header wordmark in place of "mantle" —
-   *  a per-box label (e.g. 'Natref') so anyone with several brains can see at
+   *  a per-box label (e.g. 'Refinery') so anyone with several brains can see at
    *  a glance which one they're on. Cosmetic only; unset ⇒ the Mantle wordmark.
    *  Read via projectSiteName, never raw. */
   siteName?: string;

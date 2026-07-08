@@ -184,7 +184,7 @@ function checkPublicUrl(): SanityCheck {
         : `MANTLE_PUBLIC_URL is unset — absolute links in shares and emails fall back to localhost. Fine on a dev box; broken on a deployed one.`,
       fix: {
         summary: `Set MANTLE_PUBLIC_URL to the box's public HTTPS origin so share/email links resolve.`,
-        command: `MANTLE_PUBLIC_URL=https://ashley.crossworks.network`,
+        command: `MANTLE_PUBLIC_URL=https://brain.example.com`,
       },
     };
   }

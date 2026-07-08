@@ -396,52 +396,8 @@ a6c5185 v0.20.7   fix(integrity): surface disabled groups + custom-group tool ga
 Pulled from his pre-wipe brain (in `backups/mantle-20260606-100125.dump`). All
 10 answers, lead-prefix stripped — paste as-is per field.
 
-```
-1. What's your name?
-Jason Schoeman
-
-2. What do you like to be called?
-Jason, JC, Jase
-
-3. Do you have a partner or spouse?
-My wife, Ashley Ann, married for 9 years
-
-4. Who else is close family — children, parents, who's at home?
-Two kids, Benjamin (Benji) 7 years old boy and Isabella (Bella) 3 year old girl.
-My mom lives with us, her name is Jenny Schoeman, I have five brothers, Don,
-Jonathan, Ruben, Christiaan and Adriaan. I also have one sister Jeanine.
-
-5. What do you do?
-I run my own engineering company called Cross Works Engineering that employes
-myself, my wife, my brothers Christiaan Schoeman, Jonathan Schoeman. We are in
-software engineering, reliability analyst (wife RBI engineer) and we also have
-our own designed 3D printer brand called Lister. Also responsible for the design
-of Mantle brain system. I am a also a serving Pastor.
-
-6. Is faith or a worldview part of your life?
-I am a Christian, and a Pastor at the Barrydale Fellowship Church, South Africa,
-Western Cape. I believe in the simple gospel of Jesus Christ, not by works but
-by faith are we saved.
-
-7. Anything about your health worth knowing?
-I am a healthy person, working out at least 4x a week. I am allergic to nothing.
-
-8. What are you into — how do you spend your time?
-Engineering, hiking, working out, writing sermons and preaching, playing with
-my children, doing maintenance around the house, visiting congregation, writing
-software, designing 3d printers.
-
-9. What are you working toward right now?
-Shipping Mantle and getting my gantry 3D printer redesign done. Our biggest
-contractor called ACM Track or ACM Tech is contracting out our abilities to
-engineer fleet manager solutions. I am working on Destiny Fleet Manager and
-Android and iOS mobile apps. I wish to suspend this contract and make enough
-money with Mantle to replace this contract.
-
-10. Anything else your assistant should always know about you?
-Be on my side, protect my interest, be my friend, treat me well and I will
-treat you well.
-```
+_(Personal onboarding answers redacted from the public copy — they live in the
+pre-wipe backup referenced above.)_
 
 **Personality step:** Warm preset, name *Saskia*, female (voice picks accordingly),
 default creativity (~0.7).

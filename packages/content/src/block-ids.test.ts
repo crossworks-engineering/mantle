@@ -215,7 +215,7 @@ describe('repairTableRows', () => {
     const doc = {
       type: 'doc',
       content: [
-        { type: 'table', content: [{ type: 'tableRow', content: [cell('SOP / Procedure'), para('NATREF SOP Rev.0'), para('✅ Complete')] }] },
+        { type: 'table', content: [{ type: 'tableRow', content: [cell('SOP / Procedure'), para('Refinery SOP Rev.0'), para('✅ Complete')] }] },
       ],
     };
     const fixed = repairTableRows(doc) as typeof doc;

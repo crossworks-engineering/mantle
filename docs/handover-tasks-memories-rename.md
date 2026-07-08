@@ -114,7 +114,7 @@ persona `memoryConfig.inject_lifelog` flag.
 
 ## Deploy checklist (when shipping)
 
-Per the "always pg_dump before a live migration" rule, on **prod AND Ashley**:
+Per the "always pg_dump before a live migration" rule, on **both prod boxes**:
 
 1. `pg_dump` both boxes.
 2. `db:migrate` (applies `0108`) — **must run before the app boots / reconciles.**

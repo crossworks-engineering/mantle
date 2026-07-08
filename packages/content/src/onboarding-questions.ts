@@ -42,7 +42,7 @@ export const PURPOSE_ARCHETYPES: PurposeArchetype[] = [
   {
     key: 'analytics',
     label: 'Data / RBI analytics',
-    blurb: 'A specialist for analysing data, documents, and reports (RBI, NATREF, and similar).',
+    blurb: 'A specialist for analysing data, documents, and reports (RBI and similar).',
   },
   {
     key: 'research',

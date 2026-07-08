@@ -175,7 +175,7 @@ gold cases already find their node via content hits, so chunks don't change node
 actual answer text in the prompt. Demonstrated: for "what does the company pay
 for rent and vehicle finance each month", the content hit gives only the summary
 ("This document details the monthly recurring expenses…"); the chunk hits deliver
-the line items — `Ashley Schoeman Salary R 59,960.00…` and the financial
+the line items — the salary rows and the financial
 statement's `STATEMENT OF FINANCIAL POSITION` figures. Without chunks the model
 knows the doc exists; with them it can answer from it.
 

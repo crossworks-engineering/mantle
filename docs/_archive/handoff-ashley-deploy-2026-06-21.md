@@ -1,10 +1,10 @@
-# Handoff — ashley.crossworks.network deploy + four fixes (2026-06-21)
+# Handoff — analyst-box deploy + four fixes (2026-06-21)
 
-Deployed a fresh Mantle instance to **ashley.crossworks.network** (Contabo
-`161.97.98.68`, Ubuntu 24.04, user `cwe`, stack at `/home/cwe/mantle`) via the
+Deployed a fresh Mantle instance to a client analyst box (Contabo VPS,
+Ubuntu 24.04) via the
 published image + `install.sh` with `MANTLE_DOMAIN`. Caddy obtained a production
 Let's Encrypt cert; the onboarding/sign-up page serves. Onboarding (the
-`ashley@crossworks.engineering` account, a batch of `.xlsx` uploads) surfaced
+the owner account, a batch of `.xlsx` uploads) surfaced
 four real bugs — each fixed, tested, documented, and merged to `main`.
 
 | Symptom (what the operator saw) | Root cause | Fix | Commit |
@@ -30,7 +30,7 @@ four real bugs — each fixed, tested, documented, and merged to `main`.
 ## Still open (not blocking)
 
 - The four fixes ship to a running box only on the next `titanwest/mantle` image
-  release. The ~16 backlogged `.xlsx` on ashley drain automatically (the extract
+  release. The ~16 backlogged `.xlsx` on the box drain automatically (the extract
   sweep re-queues them) once that image is pulled.
 - On the box itself, the embedder tile goes green the moment the embedder is saved
   in Settings → Embedding; embedding already works regardless.

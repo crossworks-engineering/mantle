@@ -71,7 +71,7 @@ async function resolveOwnerId(): Promise<string | null> {
   // owner — so count distinct owners on `agents` (the cheapest provisioned-
   // brain marker), not user rows. Counting auth.users here made every
   // multi-admin brain skip the boot reconcile silently from v0.111 on (caught
-  // on NATREF at v0.118.0: "no single owner" with 4 users / 1 anchor).
+  // on a multi-admin production brain at v0.118.0: "no single owner" with 4 users / 1 anchor).
   const agentOwners = (await db.execute(
     sql`select distinct owner_id as id from agents limit 2`,
   )) as unknown;

@@ -145,7 +145,7 @@ function dispatchChat(adapter: ChatDispatcher, opts: ChatOptions, round: number)
 // Enforcement is at BATCH boundaries: a response that STARTS under its caps
 // executes in full (bounded by MAX_TOOL_CALLS_PER_RESPONSE). Cutting a batch
 // halfway severed a coherent write batch once — 10 page_block_deletes cut at
-// 1-of-10 left a NATREF SOP draft half-edited (2026-07-06) — and a bounded
+// 1-of-10 left a production SOP draft half-edited (2026-07-06) — and a bounded
 // overshoot is strictly better than a half-applied edit. A batch that starts
 // AT/OVER a cap is skipped call-by-call with guidance.
 //

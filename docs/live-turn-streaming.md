@@ -195,7 +195,7 @@ Already 80 % built. Today [`turn-stage.ts`](../apps/web/lib/assistant/turn-stage
 running `trace_steps.name` → a label via 900 ms polling. Phase 1:
 
 1. **Enrich** `stageLabelForStep()` to read `trace_steps.input` (tool args) → "Searching your brain
-   for *Pinnacle SLA*", "Reading note *Q3 plan*", "Delegating to *Researcher*".
+   for *Acme SLA*", "Reading note *Q3 plan*", "Delegating to *Researcher*".
 2. **Push, don't poll.** Emit `status` / `tool-start` / `tool-end` events onto the bus as steps
    open/close, replacing the 900 ms poll. The web client keeps polling as a fallback until the
    stream is proven.

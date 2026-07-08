@@ -369,7 +369,7 @@ API key for live tests, so they're covered by `chat-stream.test.ts` instead.
 
 - **Detach `rich_writing` from each existing brain's responder persona.** The boot reconcile is additive-only:
   it creates `chat_writing` + attaches it but won't remove `rich_writing`, so an existing persona keeps the
-  rich dialect and leaks it into chat. One-time per brain (prod, Ashley):
+  rich dialect and leaks it into chat. One-time per brain (each prod box):
   `update agents set skill_slugs = array_remove(skill_slugs,'rich_writing') where owner_id=<id> and slug='<responder persona slug>'`
   (slug may be `assistant` OR an operator persona like `telegram-default`/Saskia). Done on local; **prod
   pending.** See [[responder-chat-writing-split]].
