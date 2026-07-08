@@ -8,11 +8,13 @@
  * parsed PM block nodes and an id. The functions return a NEW doc with the
  * mutation applied; the input is never mutated. Block-id semantics:
  *
- *   - replaceBlock — the first NEW block inherits the TARGET'S id (agent
- *     continuity: "edit block X" → the result is still addressable as X).
- *     Subsequent new blocks get fresh ids on the next saveDraft pass.
- *   - insertAfterBlock — every new block gets a fresh id (the agent didn't
- *     ask to rename anything, just to add).
+ *   - replaceBlock — the first NEW block ALWAYS takes the TARGET'S id
+ *     (agent continuity: "edit block X" → the result is still addressable
+ *     as X), overwriting any id the parsed block arrived with. Subsequent
+ *     new blocks keep their parse-minted ids (or get fresh ones on the
+ *     next saveDraft pass if they have none).
+ *   - insertAfterBlock — every new block keeps its fresh parse-minted id
+ *     (the agent didn't ask to rename anything, just to add).
  *   - deleteBlock — refuses to remove the LAST child of any container
  *     (callout / column / listItem / etc.) because that would leave the
  *     container with empty `content`, which most ProseMirror schemas
@@ -84,10 +86,11 @@ function walk(node: AnyNode, blockId: string): FindResult | null {
 
 /**
  * Return a new doc where the block matching `blockId` is replaced by
- * `newBlocks` (one or more). The first new block inherits the target's
- * id so the agent's next address still points at the same logical slot;
- * any additional new blocks land without ids and get fresh ones on the
- * next ensureBlockIds pass (which saveDraft runs automatically).
+ * `newBlocks` (one or more). The first new block takes the target's id
+ * so the agent's next address still points at the same logical slot;
+ * any additional new blocks keep their parse-minted ids (id-less ones
+ * get fresh ids on the next ensureBlockIds pass, which saveDraft runs
+ * automatically).
  *
  * Returns `{ doc, found: false }` when the id doesn't match anything;
  * the caller distinguishes "not found" from "replaced with empty".
@@ -100,10 +103,14 @@ export function replaceBlock(
   const found = findBlock(doc, blockId);
   if (!found) return { doc, found: false };
 
-  // Inherit the old id on the first new block (agent continuity). If the
-  // caller already set an id (rare), respect it.
+  // Inherit the old id on the first new block (agent continuity) —
+  // UNCONDITIONALLY. Blocks arriving from markdownToDoc already carry
+  // fresh parse-minted ids, so an "only when missing" check would never
+  // fire (the target's id would silently churn on every update), and
+  // respecting an arbitrary caller-set id is how a duplicate could be
+  // smuggled into the doc.
   const first = newBlocks[0];
-  if (first && (!first.attrs || typeof first.attrs.id !== 'string' || !first.attrs.id)) {
+  if (first) {
     newBlocks = [
       { ...first, attrs: { ...(first.attrs ?? {}), id: blockId } },
       ...newBlocks.slice(1),
@@ -119,8 +126,9 @@ export function replaceBlock(
 
 /**
  * Return a new doc with `newBlocks` inserted directly after the block
- * matching `blockId`. New blocks land without ids (fresh ones get
- * assigned on the next ensureBlockIds pass via saveDraft).
+ * matching `blockId`. New blocks keep the fresh ids markdownToDoc minted
+ * at parse (id-less ones get fresh ids on the next ensureBlockIds pass
+ * via saveDraft).
  */
 export function insertAfterBlock(
   doc: Record<string, unknown>,

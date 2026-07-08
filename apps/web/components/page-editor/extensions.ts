@@ -91,9 +91,10 @@ export const pageExtensions: Extensions = [
   // imported in app/layout.tsx.
   Mathematics,
   TableKit.configure({ table: { resizable: true } }),
-  // Stable per-block ids on every block-level node — survives parse/render/
-  // serialize so user edits don't strip ids placed by the agent. Mirrors
-  // server-side ensureBlockIds in @mantle/content. Pure attribute; no UI.
+  // Stable UNIQUE per-block ids on every block-level node — survives parse/
+  // render/serialize so user edits don't strip ids placed by the agent, and
+  // a plugin mints/dedupes ids on split & paste so the doc never holds two
+  // blocks with one id. Mirrors server-side ensureBlockIds in @mantle/content.
   BlockId,
   Placeholder.configure({
     // Only the first empty line shows it (showOnlyWhenEditable defaults true,

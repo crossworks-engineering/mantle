@@ -1,8 +1,17 @@
 /**
  * Block-id injection for ProseMirror docs (Phase 2b — block-addressed
  * editing). Walks a doc tree and adds `attrs.id` (a UUID) to every block
- * node that doesn't already have one, leaving everything else untouched.
+ * node that doesn't already have one, AND re-mints the id of any block
+ * that repeats an id already seen earlier in the same doc (first
+ * occurrence in document order keeps it). Everything else is untouched.
  * Pure, idempotent, no DB.
+ *
+ * Why the dedupe: a duplicated id makes every later occurrence
+ * unaddressable — findBlock resolves to the first match, so block tools
+ * silently edit the wrong block (refinery-SOP incident, 2026-07-06:
+ * four step paragraphs in one section shared one id). The editor used
+ * to copy ids on split/paste (fixed in page-editor/block-id.ts), and any
+ * doc corrupted that way self-heals here on the next read or save.
  *
  * Why this exists: pages today are addressable only by position in the
  * tree ("the 3rd paragraph"). Position breaks on every insert/delete and
@@ -86,36 +95,48 @@ function fallbackId(): string {
 
 /**
  * Walk a ProseMirror JSON node, returning a new tree with `attrs.id` set
- * on every block-type node that's missing one. Existing ids are kept as-is.
- * Non-block nodes (text, inline math, marks) are unchanged.
+ * on every block-type node that's missing one, and a FRESH id on every
+ * block whose id duplicates an earlier block's (pre-order — the first
+ * occurrence keeps the id, which is the block findBlock already resolves
+ * to, so existing tool addresses stay valid). Unique existing ids are
+ * kept as-is. Non-block nodes (text, inline math, marks) are unchanged.
  *
  * Returns the SAME reference when nothing changes (no allocations), so
  * call sites can skip a write when ids were already present.
  */
 export function ensureBlockIds<T extends Record<string, unknown>>(doc: T): T {
-  const result = walk(doc as AnyNode);
+  const result = walk(doc as AnyNode, new Set<string>());
   return result as unknown as T;
 }
 
-function walk(node: AnyNode): AnyNode {
+function walk(node: AnyNode, seen: Set<string>): AnyNode {
   if (!node || typeof node !== 'object') return node;
 
   let next: AnyNode = node;
   const isBlock = node.type !== undefined && BLOCK_TYPES.has(node.type);
-  const needsId = isBlock && (!node.attrs || typeof node.attrs.id !== 'string' || !node.attrs.id);
+  const existingId =
+    isBlock && node.attrs && typeof node.attrs.id === 'string' && node.attrs.id
+      ? node.attrs.id
+      : null;
+  // Mint when the id is missing OR already claimed by an earlier block.
+  const needsId = isBlock && (existingId === null || seen.has(existingId));
 
   if (needsId) {
+    const id = newId();
+    seen.add(id);
     next = {
       ...node,
-      attrs: { ...(node.attrs ?? {}), id: newId() },
+      attrs: { ...(node.attrs ?? {}), id },
     };
+  } else if (existingId !== null) {
+    seen.add(existingId);
   }
 
   if (Array.isArray(node.content) && node.content.length > 0) {
     let childrenChanged = false;
     const nextContent: AnyNode[] = new Array(node.content.length);
     for (let i = 0; i < node.content.length; i++) {
-      const w = walk(node.content[i]!);
+      const w = walk(node.content[i]!, seen);
       nextContent[i] = w;
       if (w !== node.content[i]) childrenChanged = true;
     }
@@ -176,22 +197,26 @@ function repairWalk(node: AnyNode): AnyNode {
 }
 
 /**
- * Check whether a doc has ids on every block — handy for tests + for the
- * lazy-backfill paths that want to skip the rewrite when there's nothing
- * to do. Walks the whole tree; O(N) in nodes.
+ * Check whether a doc has a UNIQUE id on every block — handy for tests +
+ * for the lazy-backfill paths that want to skip the rewrite when there's
+ * nothing to do. Duplicated ids count as "not ok" (they'd be re-minted by
+ * ensureBlockIds), matching what that pass would change. Walks the whole
+ * tree; O(N) in nodes.
  */
 export function allBlocksHaveIds(doc: Record<string, unknown>): boolean {
-  return checkAll(doc as AnyNode);
+  return checkAll(doc as AnyNode, new Set<string>());
 }
 
-function checkAll(node: AnyNode): boolean {
+function checkAll(node: AnyNode, seen: Set<string>): boolean {
   if (!node || typeof node !== 'object') return true;
   if (node.type && BLOCK_TYPES.has(node.type)) {
     if (!node.attrs || typeof node.attrs.id !== 'string' || !node.attrs.id) return false;
+    if (seen.has(node.attrs.id)) return false;
+    seen.add(node.attrs.id);
   }
   if (Array.isArray(node.content)) {
     for (const child of node.content) {
-      if (!checkAll(child)) return false;
+      if (!checkAll(child, seen)) return false;
     }
   }
   return true;
