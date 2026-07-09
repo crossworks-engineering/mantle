@@ -171,6 +171,14 @@ export type ProfilePreferences = {
    *  group grant, so the switch can't be bypassed by a manifest change. Flip it
    *  from the Team admin surface. */
   teamPrivateReads?: boolean;
+  /** Node id of the mini-app designated as this brain's TEAM HUB. When set (and
+   *  the app has a green published build + an active team-mode share), the /team
+   *  shell renders that app full-bleed in place of the built-in hub body; the
+   *  built-in hub remains the fallback for every other state. Resolve via
+   *  `resolveTeamHubApp` (team-hub.ts), never raw — designation is only honoured
+   *  when the whole chain (pref → app → build → share) is intact. Read via
+   *  projectTeamHubAppId, never raw. */
+  teamHubAppId?: string;
 };
 
 /** Live thinking-trail display modes. */
@@ -288,6 +296,17 @@ export function projectOnboardingModels(raw: unknown): OnboardingModelChoices | 
   return out.assistantModel || out.workerModel || out.route ? out : undefined;
 }
 
+/** Project a stored `teamHubAppId` jsonb value — a canonical UUID string, or
+ *  undefined for unset/garbage (⇒ built-in hub). Shared by BOTH the read and
+ *  write projections so they can't drift (the projectThinkingBudget lesson). */
+export function projectTeamHubAppId(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim().toLowerCase();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(trimmed)
+    ? trimmed
+    : undefined;
+}
+
 export const DEFAULT_PREFERENCES: ProfilePreferences = {
   timezone: 'UTC',
   locale: 'en-GB',
@@ -398,6 +417,7 @@ export async function loadProfilePreferences(
     // Default OFF: team members can't read the owner's email/journal unless
     // explicitly opted in.
     teamPrivateReads: prefs.teamPrivateReads === true,
+    teamHubAppId: projectTeamHubAppId(prefs.teamHubAppId),
     lastReconciledVersion:
       typeof prefs.lastReconciledVersion === 'string' && prefs.lastReconciledVersion.length > 0
         ? prefs.lastReconciledVersion
@@ -500,6 +520,15 @@ export async function updateProfilePreferences(
   if (patch.reminderChannel != null && !isReminderChannel(patch.reminderChannel)) {
     throw new Error(`'${patch.reminderChannel}' is not a valid reminder channel ('telegram' | 'mobile').`);
   }
+  // '' is the deliberate "clear designation" write (projects to undefined on
+  // read); anything else must be a UUID so garbage never lands in the row.
+  if (
+    patch.teamHubAppId != null &&
+    patch.teamHubAppId !== '' &&
+    projectTeamHubAppId(patch.teamHubAppId) === undefined
+  ) {
+    throw new Error(`'${patch.teamHubAppId}' is not a valid app id (expected a UUID).`);
+  }
 
   const merge = JSON.stringify(patch);
   const [row] = await db
@@ -547,6 +576,7 @@ export async function updateProfilePreferences(
     thinkingBudget: projectThinkingBudget(merged.thinkingBudget),
     remoteMcpEnabled: merged.remoteMcpEnabled === true,
     teamPrivateReads: merged.teamPrivateReads === true,
+    teamHubAppId: projectTeamHubAppId(merged.teamHubAppId),
     lastReconciledVersion: merged.lastReconciledVersion || undefined,
   };
 }

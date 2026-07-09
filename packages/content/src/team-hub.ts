@@ -11,7 +11,7 @@
  * stat tiles, never content. Callers are team-authenticated routes.
  */
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
-import { db, nodes, shares } from '@mantle/db';
+import { apps, db, nodes, shares } from '@mantle/db';
 
 export type TeamHubSection = {
   /** Share token — the hub links to /s/<token>. */
@@ -53,6 +53,48 @@ export async function listTeamHubSections(ownerId: string): Promise<TeamHubSecti
     summary: typeof r.data?.summary === 'string' ? (r.data.summary as string) : null,
     updatedAt: r.updatedAt.toISOString(),
   }));
+}
+
+export type TeamHubApp = {
+  /** The designated app's node id (== prefs.teamHubAppId). */
+  appNodeId: string;
+  /** Active team-mode share token — the shell's AppSandbox brokers through
+   *  /s/<token>/{bundle,tool-broker,db-broker}. */
+  shareToken: string;
+};
+
+/**
+ * Resolve a brain's designated team-hub app to something the /team shell can
+ * actually render. Honoured only when the WHOLE chain is intact:
+ * pref (caller passes prefs.teamHubAppId) → app exists under this owner →
+ * green PUBLISHED build → active TEAM-mode share. Any broken link ⇒ null ⇒
+ * the built-in hub renders — designation must never produce a blank page.
+ *
+ * Read-only on purpose: share creation happens at designation time
+ * (/team-admin), never as a side effect of a member loading the hub.
+ */
+export async function resolveTeamHubApp(
+  ownerId: string,
+  teamHubAppId: string | undefined,
+): Promise<TeamHubApp | null> {
+  if (!teamHubAppId) return null;
+  const [row] = await db
+    .select({ token: shares.token, publishedBuild: apps.publishedBuild })
+    .from(shares)
+    .innerJoin(apps, eq(apps.nodeId, shares.nodeId))
+    .where(
+      and(
+        eq(shares.ownerId, ownerId),
+        eq(shares.nodeId, teamHubAppId),
+        eq(shares.nodeType, 'app'),
+        sql`${shares.settings}->>'mode' = 'team'`,
+        isNull(shares.revokedAt),
+        or(isNull(shares.expiresAt), gt(shares.expiresAt, new Date())),
+      ),
+    )
+    .limit(1);
+  if (!row || row.publishedBuild?.ok !== true) return null;
+  return { appNodeId: teamHubAppId, shareToken: row.token };
 }
 
 /** Node types surfaced as hub stat tiles, in display order. A whitelist so a

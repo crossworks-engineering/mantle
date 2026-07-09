@@ -23,8 +23,10 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { AppSandbox } from '@/components/app-sandbox/app-sandbox';
 import { TeamChatClient } from '@/components/team-chat/team-chat-client';
 import { TokenGate } from '@/components/team-chat/token-gate';
+import type { HubNavTarget } from '@/lib/app-bridge/protocol';
 
 type HubSection = {
   token: string;
@@ -40,6 +42,10 @@ type HubData = {
   version: string;
   sections: HubSection[];
   counts: Record<string, number>;
+  /** Present when this brain designated a team-hub APP (pref + green published
+   *  build + active team-mode share all intact) — the shell renders it
+   *  full-bleed instead of the built-in hub body below. */
+  hubApp?: { appId: string; shareToken: string } | null;
 };
 
 /** The "What's new" strip — the latest platform improvements, in simple terms.
@@ -131,6 +137,9 @@ export function TeamHubShell() {
   const [data, setData] = useState<HubData | null>(null);
   const [authed, setAuthed] = useState<boolean | null>(null); // null = resolving
   const [view, setView] = useState<'hub' | 'chat' | { briefing: HubSection }>('hub');
+  // The designated hub app's bundle failed to load — fall back to the built-in
+  // hub for the rest of this visit rather than showing members a broken slot.
+  const [hubAppFailed, setHubAppFailed] = useState(false);
 
   const refetch = useCallback(async () => {
     try {
@@ -207,6 +216,45 @@ export function TeamHubShell() {
           src={`/s/${s.token}`}
           title={s.title}
           className="min-h-0 w-full flex-1 border-0 bg-background"
+        />
+      </div>
+    );
+  }
+
+  // Designated hub app — render it full-bleed in place of the built-in hub
+  // body. The shell keeps everything that must be core (the gate above, chat,
+  // the reader); the app reaches those only via validated hub.nav intents. Any
+  // load failure flips to the built-in hub below — designation must never cost
+  // members a working hub.
+  if (data.hubApp && !hubAppFailed) {
+    const { appId, shareToken } = data.hubApp;
+    const onNav = (target: HubNavTarget) => {
+      if (target === 'chat') {
+        setView('chat');
+        return;
+      }
+      // Only open briefings that are REAL hub sections (active team-mode page
+      // shares) — never navigate to an arbitrary token an app hands us.
+      const section = data.sections.find((s) => s.token === target.briefing);
+      if (section) setView({ briefing: section });
+    };
+    return (
+      <div className="min-h-0 flex-1">
+        <AppSandbox
+          appId={appId}
+          shareToken={shareToken}
+          frame="viewport"
+          hub={{
+            getData: () => ({
+              siteName: data.siteName,
+              memberName: data.memberName,
+              version: data.version,
+              sections: data.sections,
+              counts: data.counts,
+            }),
+            onNav,
+          }}
+          onLoadFailure={() => setHubAppFailed(true)}
         />
       </div>
     );

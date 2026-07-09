@@ -12,6 +12,7 @@ import { NextResponse } from 'next/server';
 import {
   listTeamHubSections,
   loadProfilePreferences,
+  resolveTeamHubApp,
   teamHubContentCounts,
 } from '@mantle/content';
 import { resolveTeamChatCaller, teamCallerName } from '@/lib/team-chat-gate';
@@ -30,6 +31,10 @@ export async function GET(req: Request) {
     listTeamHubSections(caller.ownerId),
     teamHubContentCounts(caller.ownerId),
   ]);
+  // Designated team-hub app, honoured only when the whole chain is intact
+  // (pref → app → green published build → active team-mode share) — the shell
+  // falls back to the built-in hub when null.
+  const hubApp = await resolveTeamHubApp(caller.ownerId, prefs.teamHubAppId);
 
   return NextResponse.json({
     memberName: memberName ?? null,
@@ -37,5 +42,6 @@ export async function GET(req: Request) {
     version: APP_VERSION,
     sections,
     counts,
+    hubApp: hubApp ? { appId: hubApp.appNodeId, shareToken: hubApp.shareToken } : null,
   });
 }

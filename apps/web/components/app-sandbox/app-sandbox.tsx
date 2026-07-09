@@ -12,7 +12,13 @@
  * matches the product look (incl. dark mode + colour theme) with no network.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { isFromApp, type BridgeReq } from '@/lib/app-bridge/protocol';
+import {
+  isFromApp,
+  isHubNavTarget,
+  type BridgeReq,
+  type HubData,
+  type HubNavTarget,
+} from '@/lib/app-bridge/protocol';
 
 type Status = 'loading' | 'ready' | 'nobuild' | 'error';
 
@@ -218,6 +224,8 @@ export function AppSandbox({
   selectedRegionId = null,
   onSelect,
   onInspectChange,
+  hub,
+  onLoadFailure,
 }: {
   appId: string;
   /** When set, render in share mode: the bundle + tool/db brokers are
@@ -244,6 +252,20 @@ export function AppSandbox({
   onSelect?: (regionId: string | null) => void;
   /** The iframe changed inspect state itself (e.g. Esc to exit). */
   onInspectChange?: (on: boolean) => void;
+  /** Team-hub host API — passed ONLY by the /team shell. `getData` answers the
+   *  app's `hub.get` locally from the payload the shell already fetched (no new
+   *  server surface); `onNav` handles the app's validated `hub.nav` intents
+   *  (open chat / open a briefing — the SHELL owns those views). When absent,
+   *  `hub.get` is rejected and `hub.nav` ignored, so a hub app rendered on any
+   *  other surface degrades to its local preview. */
+  hub?: {
+    getData: () => HubData;
+    onNav: (target: HubNavTarget) => void;
+  };
+  /** The bundle could not be fetched/rendered (missing build or load error).
+   *  The /team shell uses this to fall back to the built-in hub instead of
+   *  showing members a broken slot. */
+  onLoadFailure?: () => void;
 }) {
   // Public share mode swaps the session-authed API base for the token-authed
   // public one; the route suffixes (bundle / tool-broker / db-broker) match.
@@ -260,8 +282,8 @@ export function AppSandbox({
   // them as deps. Parents pass inline closures (e.g. onError={(m)=>toast(m)})
   // that change identity every render — without this, typing in the Assist box
   // re-ran the bundle-fetch effect below and reloaded the iframe (white flash).
-  const cbRef = useRef({ onError, onSelect, onInspectChange });
-  cbRef.current = { onError, onSelect, onInspectChange };
+  const cbRef = useRef({ onError, onSelect, onInspectChange, hub, onLoadFailure });
+  cbRef.current = { onError, onSelect, onInspectChange, hub, onLoadFailure };
 
   // Push inspect-mode + the locked selection down whenever they change or the
   // app (re)becomes ready, so a fresh iframe inherits the current state.
@@ -300,6 +322,15 @@ export function AppSandbox({
         );
       };
       try {
+        if (req.kind === 'hub.get') {
+          // Answered locally — the /team shell already holds the hub payload.
+          // No hub prop ⇒ not the /team surface ⇒ reject so the app can render
+          // its off-hub preview instead of waiting forever.
+          const hubApi = cbRef.current.hub;
+          if (hubApi) reply({ ok: true, output: hubApi.getData() });
+          else reply({ ok: false, error: 'hub API is only available on the /team surface' });
+          return;
+        }
         if (req.kind === 'tool.call') {
           const r = await fetch(`${apiBase}/tool-broker`, {
             method: 'POST',
@@ -362,6 +393,12 @@ export function AppSandbox({
         cbRef.current.onInspectChange?.(m.on);
         return;
       }
+      if (m.kind === 'hub.nav') {
+        // Validate before navigating — never act on a malformed message from a
+        // (possibly buggy) app bundle. Ignored off the /team surface.
+        if (isHubNavTarget(m.target)) cbRef.current.hub?.onNav(m.target);
+        return;
+      }
       // A request needing a response.
       void handleRequest(m);
     };
@@ -378,11 +415,13 @@ export function AppSandbox({
         if (cancelled) return;
         if (r.status === 404) {
           setStatus('nobuild');
+          cbRef.current.onLoadFailure?.();
           return;
         }
         if (!r.ok) {
           setStatus('error');
           cbRef.current.onError?.(`bundle load failed (${r.status})`);
+          cbRef.current.onLoadFailure?.();
           return;
         }
         const code = await r.text();
@@ -393,6 +432,7 @@ export function AppSandbox({
         if (cancelled) return;
         setStatus('error');
         cbRef.current.onError?.(err instanceof Error ? err.message : String(err));
+        cbRef.current.onLoadFailure?.();
       });
     return () => {
       cancelled = true;
