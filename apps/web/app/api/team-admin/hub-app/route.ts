@@ -20,6 +20,7 @@ import { NextResponse } from 'next/server';
 import {
   createShare,
   getApp,
+  projectTeamHubAppId,
   setShareMode,
   updateProfilePreferences,
 } from '@mantle/content';
@@ -37,9 +38,12 @@ export async function PUT(req: Request) {
   } catch {
     return NextResponse.json({ error: 'invalid body' }, { status: 400 });
   }
-  const appId = (body as { appId?: unknown }).appId;
-  if (typeof appId !== 'string' || appId.length === 0) {
-    return NextResponse.json({ error: 'appId is required' }, { status: 400 });
+  // Normalise + validate up front: a non-UUID would otherwise reach the
+  // node lookup and throw a Postgres cast error (a 500 for a caller typo).
+  // `body` can be JSON `null` — hence the optional access.
+  const appId = projectTeamHubAppId((body as { appId?: unknown } | null)?.appId);
+  if (!appId) {
+    return NextResponse.json({ error: 'appId must be an app UUID' }, { status: 400 });
   }
 
   const app = await getApp(user.id, appId);

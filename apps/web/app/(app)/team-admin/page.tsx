@@ -221,11 +221,15 @@ export default async function TeamAdminPage({
   ]);
   const privateReads = isTeamPrivateReadsEnabled(prefs);
   // Designation candidates: published apps only (the API enforces it too).
-  // Include the current designee even if its build went red, so the owner can
-  // SEE the designation that is currently falling back and clear it.
+  // Include the current designee even if its build went red, LABELLED — the
+  // owner must be able to see that members are currently getting the built-in
+  // fallback, and clear it.
   const hubCandidates = apps
     .filter((a) => a.hasBuild || a.id === prefs.teamHubAppId)
-    .map((a) => ({ id: a.id, title: a.title }));
+    .map((a) => ({
+      id: a.id,
+      title: a.hasBuild ? a.title : `${a.title} (build failed — members see the built-in hub)`,
+    }));
   const hubAppId =
     prefs.teamHubAppId && apps.some((a) => a.id === prefs.teamHubAppId)
       ? prefs.teamHubAppId
@@ -276,9 +280,15 @@ export default async function TeamAdminPage({
           <div className="flex items-center justify-between border-b border-border px-4 py-2">
             <PrivateReadsToggle initial={privateReads} />
           </div>
-          {/* Which app (if any) renders as the members' hub on /team. */}
+          {/* Which app (if any) renders as the members' hub on /team. Keyed by
+              the current designation so a server-side change (another tab, MCP)
+              resyncs the Select on refresh instead of holding stale state. */}
           <div className="border-b border-border px-4 py-3">
-            <HubAppPicker currentAppId={hubAppId} apps={hubCandidates} />
+            <HubAppPicker
+              key={hubAppId ?? 'builtin'}
+              currentAppId={hubAppId}
+              apps={hubCandidates}
+            />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
             <MemberList members={members} selectedId={selectedId} />

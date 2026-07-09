@@ -273,6 +273,9 @@ export function AppSandbox({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [status, setStatus] = useState<Status>('loading');
   const [height, setHeight] = useState(320);
+  // Whether THIS bundle load ever reached ready — distinguishes a boot crash
+  // (error before ready ⇒ load failure) from a runtime error after boot.
+  const everReadyRef = useRef(false);
 
   const postToFrame = useCallback((msg: unknown) => {
     iframeRef.current?.contentWindow?.postMessage(msg, '*');
@@ -373,6 +376,7 @@ export function AppSandbox({
       if (!isFromApp(m)) return;
       if (m.kind === 'ready') {
         setStatus('ready');
+        everReadyRef.current = true;
         return;
       }
       if (m.kind === 'resize') {
@@ -383,6 +387,10 @@ export function AppSandbox({
       }
       if (m.kind === 'error') {
         cbRef.current.onError?.(m.message);
+        // An error BEFORE the app ever became ready is a mount/boot crash (the
+        // kit's ErrorBoundary posts it synchronously during the first render,
+        // ahead of the ready signal) — a load failure, not a runtime hiccup.
+        if (!everReadyRef.current) cbRef.current.onLoadFailure?.();
         return;
       }
       if (m.kind === 'select') {
@@ -406,10 +414,22 @@ export function AppSandbox({
     return () => window.removeEventListener('message', onMessage);
   }, [handleRequest, frame]);
 
+  // Ready watchdog: a bundle that FETCHES fine but never boots (module-level
+  // throw, an import-map chunk failing inside the opaque iframe) leaves status
+  // on 'loading' forever — the fetch error paths below never see it. Give the
+  // app a generous window to post `ready`, then report a load failure so a
+  // hub-surface parent can fall back instead of pinning members on a spinner.
+  useEffect(() => {
+    if (status !== 'loading') return;
+    const t = setTimeout(() => cbRef.current.onLoadFailure?.(), 10_000);
+    return () => clearTimeout(t);
+  }, [status, reloadKey, apiBase]);
+
   // Fetch the bundle and (re)render into the iframe.
   useEffect(() => {
     let cancelled = false;
     setStatus('loading');
+    everReadyRef.current = false;
     Promise.all([fetch(`${apiBase}/bundle`), loadImportMap()])
       .then(async ([r, importMap]) => {
         if (cancelled) return;
@@ -450,24 +470,26 @@ export function AppSandbox({
     >
       {status === 'nobuild' && (
         <div className={`flex items-center justify-center p-6 text-center text-sm text-muted-foreground ${isViewport ? 'h-full' : 'h-40'}`}>
-          This app hasn&apos;t been built yet. Ask Appsmith to build it, or run a build from the editor.
+          {isViewport
+            ? 'This app isn’t available right now.'
+            : 'This app hasn’t been built yet. Ask Appsmith to build it, or run a build from the editor.'}
         </div>
       )}
       {status === 'error' && (
         <div className={`flex items-center justify-center p-6 text-center text-sm text-destructive ${isViewport ? 'h-full' : 'h-40'}`}>
-          Couldn&apos;t load the app preview.
+          {isViewport ? 'Couldn’t load the app.' : 'Couldn’t load the app preview.'}
         </div>
       )}
       <iframe
         ref={iframeRef}
-        title="App preview"
+        title={isViewport ? 'App' : 'App preview'}
         sandbox="allow-scripts"
         className={status === 'ready' ? (isViewport ? 'block h-full w-full' : 'block w-full') : 'hidden'}
         style={isViewport ? { border: '0' } : { height, border: '0', width: '100%' }}
       />
       {status === 'loading' && (
         <div className={`flex items-center justify-center p-6 text-sm text-muted-foreground ${isViewport ? 'h-full' : 'h-40'}`}>
-          Loading preview…
+          {isViewport ? 'Loading…' : 'Loading preview…'}
         </div>
       )}
     </div>

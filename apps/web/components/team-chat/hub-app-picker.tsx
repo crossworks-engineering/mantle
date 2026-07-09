@@ -10,7 +10,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LayoutTemplate } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -71,28 +70,19 @@ export function HubAppPicker({
         <LayoutTemplate className="size-3.5" aria-hidden />
         Hub app
       </Label>
-      <div className="flex items-center gap-2">
-        <Select value={value} onValueChange={(v) => void apply(v)} disabled={pending}>
-          <SelectTrigger id="hubApp" className="h-8 flex-1 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={BUILT_IN}>Built-in hub</SelectItem>
-            {apps.map((a) => (
-              <SelectItem key={a.id} value={a.id}>
-                {a.title}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {value !== BUILT_IN ? (
-          <Button variant="ghost" size="sm" asChild>
-            <a href="/team" target="_blank" rel="noreferrer">
-              View
-            </a>
-          </Button>
-        ) : null}
-      </div>
+      <Select value={value} onValueChange={(v) => void apply(v)} disabled={pending}>
+        <SelectTrigger id="hubApp" className="h-8 w-full text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={BUILT_IN}>Built-in hub</SelectItem>
+          {apps.map((a) => (
+            <SelectItem key={a.id} value={a.id}>
+              {a.title}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       <p className="text-[11px] leading-snug text-muted-foreground">
         A published app rendered as the members&rsquo; hub. Falls back to the built-in hub if the
         app breaks.
