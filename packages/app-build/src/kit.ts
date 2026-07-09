@@ -213,6 +213,16 @@ export const host = {
     notifyError: (msg) => window.parent.postMessage({ v: 1, kind: 'error', message: String(msg) }, '*'),
     onAnnotate: (fn) => { annotateListeners.add(fn); return () => annotateListeners.delete(fn); },
   },
+  // Team-hub surface only. get() rejects everywhere else (owner editor,
+  // ordinary shares) — hub apps catch that and render a local preview. The
+  // nav calls are intent-up: the /team SHELL owns chat + the briefing reader,
+  // the app can only ask to open them.
+  hub: {
+    get: () => post({ kind: 'hub.get' }),
+    openChat: () => window.parent.postMessage({ v: 1, kind: 'hub.nav', target: 'chat' }, '*'),
+    openBriefing: (token) =>
+      window.parent.postMessage({ v: 1, kind: 'hub.nav', target: { briefing: String(token) } }, '*'),
+  },
 };
 
 class ErrorBoundary extends React.Component {

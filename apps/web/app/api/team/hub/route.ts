@@ -12,6 +12,7 @@ import { NextResponse } from 'next/server';
 import {
   listTeamHubSections,
   loadProfilePreferences,
+  resolveTeamHubApp,
   teamHubContentCounts,
 } from '@mantle/content';
 import { resolveTeamChatCaller, teamCallerName } from '@/lib/team-chat-gate';
@@ -24,11 +25,18 @@ export async function GET(req: Request) {
   const caller = await resolveTeamChatCaller(req);
   if (!caller) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  const [memberName, prefs, sections, counts] = await Promise.all([
+  // Designated team-hub app resolution depends only on prefs, so it chains off
+  // the prefs promise and overlaps the sections/counts queries instead of
+  // adding a serial round-trip to the hub's hot path. Honoured only when the
+  // whole chain is intact (pref → app → green published build → active
+  // team-mode share) — the shell falls back to the built-in hub when null.
+  const prefsPromise = loadProfilePreferences(caller.ownerId);
+  const [memberName, prefs, sections, counts, hubApp] = await Promise.all([
     teamCallerName(caller.ownerId, caller.contactId),
-    loadProfilePreferences(caller.ownerId),
+    prefsPromise,
     listTeamHubSections(caller.ownerId),
     teamHubContentCounts(caller.ownerId),
+    prefsPromise.then((p) => resolveTeamHubApp(caller.ownerId, p.teamHubAppId)),
   ]);
 
   return NextResponse.json({
@@ -37,5 +45,6 @@ export async function GET(req: Request) {
     version: APP_VERSION,
     sections,
     counts,
+    hubApp: hubApp ? { appId: hubApp.appNodeId, shareToken: hubApp.shareToken } : null,
   });
 }

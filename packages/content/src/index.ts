@@ -324,9 +324,11 @@ export {
 export {
   listTeamHubSections,
   teamHubContentCounts,
+  resolveTeamHubApp,
   TEAM_HUB_STAT_TYPES,
   type TeamHubSection,
   type TeamHubStatType,
+  type TeamHubApp,
 } from './team-hub';
 
 export {
@@ -402,6 +404,7 @@ export {
   resolveThinkingBudget,
   projectThinkingBudget,
   projectSiteName,
+  projectTeamHubAppId,
   SITE_NAME_MAX,
   type ThoughtTrailMode,
   formatInProfile,

@@ -19,7 +19,15 @@ export const BRIDGE_VERSION = 1 as const;
 export type BridgeReq =
   | { v: 1; id: string; kind: 'tool.call'; slug: string; input: unknown }
   | { v: 1; id: string; kind: 'db.query'; sql: string; params?: unknown[] }
-  | { v: 1; id: string; kind: 'db.exec'; sql: string; params?: unknown[] };
+  | { v: 1; id: string; kind: 'db.exec'; sql: string; params?: unknown[] }
+  // Team-hub surface only: the shell answers from the /api/team/hub payload it
+  // already holds (data-down). Rejected with ok:false anywhere else (owner
+  // editor, ordinary shares) so hub apps degrade to a local preview.
+  | { v: 1; id: string; kind: 'hub.get' };
+
+/** Where a hub app can ask the /team shell to navigate (intent-up: the SHELL
+ *  owns chat and the briefing reader; the app can open them, never embed them). */
+export type HubNavTarget = 'chat' | { briefing: string };
 
 /** Fire-and-forget lifecycle events the app emits (no response expected). */
 export type BridgeEvt =
@@ -30,7 +38,9 @@ export type BridgeEvt =
   // selection (regionId = a data-app-region value, or null when cleared), or
   // exited inspect via Esc (`inspect` with on:false).
   | { v: 1; kind: 'select'; regionId: string | null; label?: string }
-  | { v: 1; kind: 'inspect'; on: boolean };
+  | { v: 1; kind: 'inspect'; on: boolean }
+  // Team-hub surface only; ignored anywhere else.
+  | { v: 1; kind: 'hub.nav'; target: HubNavTarget };
 
 /** Responses the host sends DOWN, correlated to a BridgeReq by `id`. */
 export type BridgeRes =
@@ -54,4 +64,40 @@ export type FromHost = BridgeRes | BridgeCtl;
 
 export function isFromApp(m: unknown): m is FromApp {
   return !!m && typeof m === 'object' && (m as { v?: unknown }).v === BRIDGE_VERSION;
+}
+
+/** The `hub.get` answer on the /team surface — everything the built-in hub
+ *  renders, handed to a designated hub app so it can render the same things its
+ *  own way. Mirrors the /api/team/hub response; every field is member-safe by
+ *  construction (sections are the owner's team-mode page shares, stats are
+ *  whitelisted coarse counts). `memberName` is display-grade — a hub app must
+ *  never build permission logic on it. */
+export type HubData = {
+  /** Brain's site-name pref; null ⇒ the app should fall back to its own label. */
+  siteName: string | null;
+  /** Signed-in member's display name (null when the contact has none). */
+  memberName: string | null;
+  version: string;
+  sections: {
+    token: string;
+    title: string;
+    icon: string | null;
+    summary: string | null;
+    updatedAt: string;
+  }[];
+  /** Whitelisted coarse per-type node counts (zeros included — the app decides
+   *  what to hide). Same shape as the /api/team/hub `counts` field. */
+  counts: Record<string, number>;
+};
+
+/** Narrow an unknown `hub.nav` target to a valid one — the shell must not
+ *  navigate on a malformed message from a (possibly buggy) app bundle. */
+export function isHubNavTarget(t: unknown): t is HubNavTarget {
+  if (t === 'chat') return true;
+  return (
+    !!t &&
+    typeof t === 'object' &&
+    typeof (t as { briefing?: unknown }).briefing === 'string' &&
+    (t as { briefing: string }).briefing.length > 0
+  );
 }

@@ -23,23 +23,21 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { AppSandbox } from '@/components/app-sandbox/app-sandbox';
 import { TeamChatClient } from '@/components/team-chat/team-chat-client';
 import { TokenGate } from '@/components/team-chat/token-gate';
+import type { HubData as BridgeHubData, HubNavTarget } from '@/lib/app-bridge/protocol';
 
-type HubSection = {
-  token: string;
-  title: string;
-  icon: string | null;
-  summary: string | null;
-  updatedAt: string;
-};
+type HubSection = BridgeHubData['sections'][number];
 
-type HubData = {
-  memberName: string | null;
-  siteName: string | null;
-  version: string;
-  sections: HubSection[];
-  counts: Record<string, number>;
+/** The /api/team/hub payload — the bridge `HubData` (what `hub.get` answers a
+ *  hub app with) plus the shell-only designation pointer. Composed from the
+ *  protocol type so the two can't drift. */
+type HubData = BridgeHubData & {
+  /** Present when this brain designated a team-hub APP (pref + green published
+   *  build + active team-mode share all intact) — the shell renders it
+   *  full-bleed instead of the built-in hub body below. */
+  hubApp?: { appId: string; shareToken: string } | null;
 };
 
 /** The "What's new" strip — the latest platform improvements, in simple terms.
@@ -127,10 +125,60 @@ function formatDate(iso: string): string {
   }
 }
 
+/** The live Team Chat as a hub sub-view — shared by the built-in hub and the
+ *  hub-app shell (the app can only OPEN this view via hub.nav, never embed it). */
+function ChatView({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="border-b border-border/60 px-2 py-1.5">
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          <ArrowLeft />
+          Back to the hub
+        </Button>
+      </div>
+      <TeamChatClient />
+    </div>
+  );
+}
+
+/** In-hub briefing reader: the /s page in a same-origin iframe (auth rides the
+ *  team cookie) — members read without leaving the hub. Shared by both hubs. */
+function ReaderView({ section, onBack }: { section: HubSection; onBack: () => void }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex items-center justify-between gap-2 border-b border-border/60 px-2 py-1.5">
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          <ArrowLeft />
+          Back to the hub
+        </Button>
+        <p className="min-w-0 truncate text-sm font-medium">
+          {section.icon ? <span className="mr-1.5">{section.icon}</span> : null}
+          {section.title}
+        </p>
+        <Button variant="ghost" size="sm" asChild aria-label="Open in a new tab">
+          <a href={`/s/${section.token}`} target="_blank" rel="noreferrer">
+            <ExternalLink />
+          </a>
+        </Button>
+      </div>
+      <iframe
+        src={`/s/${section.token}`}
+        title={section.title}
+        className="min-h-0 w-full flex-1 border-0 bg-background"
+      />
+    </div>
+  );
+}
+
 export function TeamHubShell() {
   const [data, setData] = useState<HubData | null>(null);
   const [authed, setAuthed] = useState<boolean | null>(null); // null = resolving
   const [view, setView] = useState<'hub' | 'chat' | { briefing: HubSection }>('hub');
+  // Which designated app's bundle failed to load — fall back to the built-in
+  // hub for THAT app rather than showing members a broken slot. Keyed by app id
+  // so a later designation change (or redeploy under a new app) gets a fresh
+  // chance instead of being pinned to the fallback by an old blip.
+  const [failedAppId, setFailedAppId] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     try {
@@ -167,49 +215,57 @@ export function TeamHubShell() {
     );
   }
 
-  if (view === 'chat') {
+  // Designated hub app — render it full-bleed in place of the built-in hub
+  // body. The shell keeps everything that must be core (the gate above, chat,
+  // the reader); the app reaches those only via validated hub.nav intents. Any
+  // load failure flips to the built-in hub below — designation must never cost
+  // members a working hub. The sandbox stays MOUNTED (hidden) while chat/reader
+  // views are open, so "back to the hub" restores the app instantly with its
+  // scroll position and state intact instead of re-fetching + remounting.
+  if (data.hubApp && data.hubApp.appId !== failedAppId) {
+    const { appId, shareToken } = data.hubApp;
+    const onNav = (target: HubNavTarget) => {
+      if (target === 'chat') {
+        setView('chat');
+        return;
+      }
+      // Only open briefings that are REAL hub sections (active team-mode page
+      // shares) — never navigate to an arbitrary token an app hands us.
+      const section = data.sections.find((s) => s.token === target.briefing);
+      if (section) setView({ briefing: section });
+    };
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="border-b border-border/60 px-2 py-1.5">
-          <Button variant="ghost" size="sm" onClick={() => setView('hub')}>
-            <ArrowLeft />
-            Back to the hub
-          </Button>
+        <div className={view === 'hub' ? 'min-h-0 flex-1' : 'hidden'}>
+          <AppSandbox
+            appId={appId}
+            shareToken={shareToken}
+            frame="viewport"
+            hub={{
+              getData: () => ({
+                siteName: data.siteName,
+                memberName: data.memberName,
+                version: data.version,
+                sections: data.sections,
+                counts: data.counts,
+              }),
+              onNav,
+            }}
+            onLoadFailure={() => setFailedAppId(appId)}
+          />
         </div>
-        <TeamChatClient />
+        {view === 'chat' ? <ChatView onBack={() => setView('hub')} /> : null}
+        {typeof view === 'object' ? (
+          <ReaderView section={view.briefing} onBack={() => setView('hub')} />
+        ) : null}
       </div>
     );
   }
 
+  if (view === 'chat') return <ChatView onBack={() => setView('hub')} />;
+
   if (typeof view === 'object') {
-    // In-hub reader: the briefing renders in a same-origin iframe of its /s
-    // page (auth rides the team cookie), so members read without leaving the
-    // hub. Same-origin means no sandbox gymnastics and full share styling.
-    const s = view.briefing;
-    return (
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex items-center justify-between gap-2 border-b border-border/60 px-2 py-1.5">
-          <Button variant="ghost" size="sm" onClick={() => setView('hub')}>
-            <ArrowLeft />
-            Back to the hub
-          </Button>
-          <p className="min-w-0 truncate text-sm font-medium">
-            {s.icon ? <span className="mr-1.5">{s.icon}</span> : null}
-            {s.title}
-          </p>
-          <Button variant="ghost" size="sm" asChild aria-label="Open in a new tab">
-            <a href={`/s/${s.token}`} target="_blank" rel="noreferrer">
-              <ExternalLink />
-            </a>
-          </Button>
-        </div>
-        <iframe
-          src={`/s/${s.token}`}
-          title={s.title}
-          className="min-h-0 w-full flex-1 border-0 bg-background"
-        />
-      </div>
-    );
+    return <ReaderView section={view.briefing} onBack={() => setView('hub')} />;
   }
 
   const brainName = data.siteName ?? 'this brain';

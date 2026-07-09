@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { requireOwner } from '@/lib/auth';
 import { SetPageTitle } from '@/components/layout/page-title';
 import {
+  listApps,
   listTeamMemberActivity,
   listTeamThread,
   listTeamAccess,
@@ -12,6 +13,7 @@ import {
   type TeamMemberActivity,
   type TeamRequest,
 } from '@mantle/content';
+import { HubAppPicker } from '@/components/team-chat/hub-app-picker';
 import { PrivateReadsToggle } from '@/components/team-chat/private-reads-toggle';
 import { RequestReply } from '@/components/team-chat/request-reply';
 import { MessageSquare, ScrollText, ExternalLink, Inbox, CheckCircle2 } from 'lucide-react';
@@ -211,12 +213,27 @@ export default async function TeamAdminPage({
   const { contact, view } = await searchParams;
   const showRequests = view === 'requests';
 
-  const [members, prefs, openRequestCount] = await Promise.all([
+  const [members, prefs, openRequestCount, apps] = await Promise.all([
     listTeamMemberActivity(user.id),
     loadProfilePreferences(user.id),
     listTeamRequests(user.id, { status: 'open' }).then((r) => r.length),
+    listApps(user.id, { limit: 200 }),
   ]);
   const privateReads = isTeamPrivateReadsEnabled(prefs);
+  // Designation candidates: published apps only (the API enforces it too).
+  // Include the current designee even if its build went red, LABELLED — the
+  // owner must be able to see that members are currently getting the built-in
+  // fallback, and clear it.
+  const hubCandidates = apps
+    .filter((a) => a.hasBuild || a.id === prefs.teamHubAppId)
+    .map((a) => ({
+      id: a.id,
+      title: a.hasBuild ? a.title : `${a.title} (build failed — members see the built-in hub)`,
+    }));
+  const hubAppId =
+    prefs.teamHubAppId && apps.some((a) => a.id === prefs.teamHubAppId)
+      ? prefs.teamHubAppId
+      : null;
 
   if (showRequests) {
     const requests = await listTeamRequests(user.id, { status: 'all', limit: 200 });
@@ -262,6 +279,16 @@ export default async function TeamAdminPage({
               this gates the owner's PRIVATE corpus (email + journal). Default off. */}
           <div className="flex items-center justify-between border-b border-border px-4 py-2">
             <PrivateReadsToggle initial={privateReads} />
+          </div>
+          {/* Which app (if any) renders as the members' hub on /team. Keyed by
+              the current designation so a server-side change (another tab, MCP)
+              resyncs the Select on refresh instead of holding stale state. */}
+          <div className="border-b border-border px-4 py-3">
+            <HubAppPicker
+              key={hubAppId ?? 'builtin'}
+              currentAppId={hubAppId}
+              apps={hubCandidates}
+            />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
             <MemberList members={members} selectedId={selectedId} />

@@ -4,6 +4,7 @@ import {
   isStreamThoughtsEnabled,
   isPersistThoughtsEnabled,
   projectSiteName,
+  projectTeamHubAppId,
   projectThinkingBudget,
   resolveThinkingBudget,
   SITE_NAME_MAX,
@@ -80,6 +81,30 @@ describe('projectSiteName', () => {
     expect(projectSiteName('   ')).toBeUndefined();
     expect(projectSiteName(42)).toBeUndefined();
     expect(projectSiteName(null)).toBeUndefined();
+  });
+});
+
+// projectTeamHubAppId follows the same shared-projection contract: read and
+// write both delegate here. Unset/garbage/'' all mean "no designated hub app"
+// (⇒ the built-in hub) — '' is specifically the deliberate clear write, and a
+// non-UUID must never survive into the typed prefs where the hub route would
+// query with it.
+describe('projectTeamHubAppId', () => {
+  it('keeps a canonical UUID, case-normalised and trimmed', () => {
+    expect(projectTeamHubAppId('4fbc2a5e-9a1d-4f5e-8b3a-0c9d8e7f6a5b')).toBe(
+      '4fbc2a5e-9a1d-4f5e-8b3a-0c9d8e7f6a5b',
+    );
+    expect(projectTeamHubAppId('  4FBC2A5E-9A1D-4F5E-8B3A-0C9D8E7F6A5B  ')).toBe(
+      '4fbc2a5e-9a1d-4f5e-8b3a-0c9d8e7f6a5b',
+    );
+  });
+  it("maps '' (the clear write), garbage, and non-strings to undefined", () => {
+    expect(projectTeamHubAppId('')).toBeUndefined();
+    expect(projectTeamHubAppId('not-a-uuid')).toBeUndefined();
+    expect(projectTeamHubAppId('4fbc2a5e9a1d4f5e8b3a0c9d8e7f6a5b')).toBeUndefined();
+    expect(projectTeamHubAppId(42)).toBeUndefined();
+    expect(projectTeamHubAppId(null)).toBeUndefined();
+    expect(projectTeamHubAppId(undefined)).toBeUndefined();
   });
 });
 
