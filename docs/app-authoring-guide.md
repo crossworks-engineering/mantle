@@ -259,3 +259,18 @@ out of an app you intend to share.
 **Rule of thumb:** public = "a read-only view of this app's own data, safe for
 anyone"; team = "identified, audited teammates who may use my tools and write
 data." Treat any share link as a secret; revoke by turning the share off.
+
+## Team Hub apps (a designated app as the /team hub)
+
+A brain can designate one published app as its **Team Hub**: team members
+visiting `/team` get that app full-screen, while the platform keeps the token
+gate, the live Team Chat, and the briefing reader core. Hub apps get one extra
+namespace — `host.hub.get()` (site name, member name, briefing sections, live
+stats), `host.hub.openChat()`, `host.hub.openBriefing(token)` — and the
+built-in hub renders automatically if the app ever breaks.
+
+Everything else about building one is this guide, plus the hub-specific
+contract, project structure, and content-update patterns (including the
+zero-publish "tiles from a Table" pattern) in
+[team-hub-app-sdk.md](team-hub-app-sdk.md) — read that before building a hub
+app.

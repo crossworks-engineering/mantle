@@ -1,23 +1,39 @@
-# Team Hub App SDK — authoring a custom `/team` hub
+# Team Hub apps — the builder's guide
 
-A brain can designate one published mini-app as its **team hub app**
-(Team admin → "Hub app"). When designated, the `/team` shell renders that app
-full-bleed in place of the built-in hub body. The shell keeps everything that
-must be core — the member token gate, cookie minting/revocation, the
-live-streaming Team Chat, and the in-hub briefing reader — and exposes them to
-the app through a small, enumerated, host-mediated postMessage API.
+How to build, structure, and maintain a **team hub app**: the mini-app a brain
+designates to render as its `/team` hub for external team members. This is the
+canonical reference for hub-app authors (human or agent). It builds on the
+general mini-app reference — read
+[app-authoring-guide.md](app-authoring-guide.md) first for the build loop,
+allowed imports, and styling rules; this document covers what is *specific* to
+hub apps: the `host.hub` SDK, the designation lifecycle, the structure to
+follow, and the content-update patterns.
 
-The built-in hub remains the zero-config default, the fallback for every
-broken state, and the reference implementation of this contract.
+---
 
-The SDK is deliberately **thin**: a hub app is an ordinary `/apps` mini-app
-plus one namespace (`host.hub`). Everything privileged stays in the host; the
-app is presentation + app-local state.
+## 1. What a hub app is
 
-## How designation resolves
+An ordinary `/apps` mini-app plus one namespace. When designated (Team admin →
+"Hub app"), the `/team` shell renders it full-bleed for authenticated team
+members. The shell keeps everything that must stay core:
 
-`/team` renders the app only when the whole chain is intact — otherwise the
-built-in hub renders and nothing is broken for members:
+- the **member token gate** and cookie minting/revocation,
+- the **live Team Chat**,
+- the **in-hub briefing reader** (team-shared pages),
+- per-member **access logging** and membership liveness checks.
+
+The app is presentation + app-local state. It talks to the shell through a
+deliberately **thin, enumerated, host-mediated** API — data flows down, intent
+flows up, and no token or capability handle ever enters the iframe. The
+sandbox is unchanged from ordinary mini-apps: opaque-origin iframe, no
+network, no cookies; the only egress is the postMessage bridge.
+
+**The built-in hub is the safety net.** If the designation chain breaks at any
+link — pref unset, app deleted, build red, share revoked, bundle fails to fetch
+*or* fetches but never boots — members get the built-in hub. Designation can
+never cost a team a working page.
+
+## 2. The designation chain (how `/team` decides what to render)
 
 ```
 prefs.teamHubAppId  →  app exists under this owner
@@ -25,191 +41,231 @@ prefs.teamHubAppId  →  app exists under this owner
                     →  active TEAM-mode share
 ```
 
-Designation (the Team admin picker, or `PUT /api/team-admin/hub-app`) ensures
+Designation (the Team-admin picker, or `PUT /api/team-admin/hub-app`) ensures
 the app's share exists and is team-mode, then sets the pref. Undesignating
-clears the pref only. Members are served the **published build only** — drafts
-never leave the owner editor, and **publish = live**: content and design
-changes ship via `app_source_set → app_build → app_publish` in minutes, with
-no platform release.
+clears the pref only. Members are always served the **published** build —
+drafts never leave the owner editor.
 
-## The sandbox (unchanged)
+Brokered traffic (bundle, tool calls, SQLite) goes through the app's team-mode
+share routes, so the member's identity is re-derived server-side on every call
+and every access is logged per member.
 
-A hub app runs exactly as sandboxed as any mini-app: opaque-origin iframe
-(`sandbox="allow-scripts"`), bundle inlined into srcdoc, `connect-src 'none'`
-(no network of its own), no cookies, no secrets. Its ONLY egress is the
-postMessage bridge. "Trusted app" means **host-mediated** — never unsealed.
-
-Brokered calls go through the app's team-mode share routes, so the member's
-identity is re-derived server-side on every call, membership liveness is
-re-checked, and every access is logged per member.
-
-## Module surface (all of it)
-
-An app may import only the curated runtime — there is no `node_modules` in
-the sandbox:
-
-| Specifier | Provides |
-|---|---|
-| `react`, `react-dom`, `react-dom/client`, `react/jsx-runtime` | the one shared React |
-| `@/components/ui/button` `card` `input` `label` `badge` `separator` | shadcn-style kit |
-| `@/lib/utils` | `cn()` |
-| `lucide-react` | icons (bundled per app, tree-shaken) |
-| `@host` | the bridge — below |
-
-The entry file default-exports the root component; mounting, the error
-boundary, the ready signal and resize wiring are generated.
-
-## `@host` for hub apps
+## 3. The `host.hub` SDK
 
 ```ts
 import { host } from '@host';
 
-// ── Every mini-app has these ────────────────────────────────────────
-host.tools.call(slug, input);  // declared builtin tools only on team surfaces,
-                               // dispatched under the owner, logged per member
-host.db.query(sql, params);    // the app's OWN SQLite (manifest schema)
-host.db.exec(sql, params);     // allowed for team members; logged per member
-host.ui.notifyError(msg);
-host.ui.onAnnotate(fn);
-
-// ── Team-hub surface only ───────────────────────────────────────────
-host.hub.get(): Promise<HubData>;   // REJECTS off the /team surface
-host.hub.openChat(): void;          // shell switches to live Team Chat
-host.hub.openBriefing(token): void; // shell opens the in-hub reader
+host.hub.get(): Promise<HubData>    // REJECTS off the /team surface
+host.hub.openChat(): void           // shell switches to live Team Chat
+host.hub.openBriefing(token): void  // shell opens the in-hub reader
 
 type HubData = {
   siteName: string | null;   // brain's site-name pref
   memberName: string | null; // signed-in member's display name
   version: string;           // platform version (footer chrome)
   sections: Array<{          // = the owner's active team-mode page shares,
-    token: string;           //   share-time ordered (same source as the
-    title: string;           //   built-in hub's briefing cards)
+    token: string;           //   share-time ordered — the briefing cards
+    title: string;
     icon: string | null;
     summary: string | null;
     updatedAt: string;       // ISO
   }>;
   counts: Record<string, number>; // whitelisted coarse content counts,
-                                  // zeros included — the app decides what to hide
+                                  // zeros included — you decide what to hide
 };
 ```
 
-Design rules, binding on any future additions:
+Rules that bind the SDK (and any future addition to it):
 
-- **Enumerated, host-mediated, data-down / intent-up.** The app never receives
-  a capability object, token, or handle — it asks (`hub.get`) or signals
-  intent (`hub.nav`); the shell performs the privileged act. New capabilities
-  are new enumerated kinds in `apps/web/lib/app-bridge/protocol.ts`, mirrored
-  in the `@host` kit string (`packages/app-build/src/kit.ts` — drift tripwire
-  in `kit.test.ts`) — never a generic passthrough.
-- **Chat and the reader stay shell views.** The app can open them, never
-  embed, restyle, or intercept them. That keeps the streaming chat, cookie
-  handling, and share gating out of app reach.
+- **Enumerated, host-mediated, data-down / intent-up.** New capabilities are
+  new enumerated kinds in `apps/web/lib/app-bridge/protocol.ts`, mirrored in
+  the `@host` kit string (`packages/app-build/src/kit.ts`; drift tripwire:
+  `kit.test.ts`) — never a generic passthrough.
+- **Chat and the reader are shell views.** The app opens them; it never
+  embeds, restyles, or intercepts them.
 - **`openBriefing` only opens real sections.** The shell validates the token
-  against the current `sections` list; arbitrary tokens are ignored.
+  against the current `sections`; anything else is ignored. Deep-link by
+  *finding* a section (e.g. by title match), never by hardcoding a token.
 - **`hub.get` is answered locally by the shell** from the `/api/team/hub`
-  payload it already fetched — adding fields to `HubData` means adding them to
-  that route, where they are gated and audited like everything else.
+  payload — extending `HubData` means extending that route, where it is gated
+  and audited.
 
-## Authoring rules
+Call the SDK defensively — `host.hub?.get` — so the same bundle renders on a
+box whose runtime predates the namespace.
 
-- **R1 — Theme tokens only.** Semantic Tailwind classes / `var(--…)` tokens,
-  never hardcoded colours; literal class strings from fixed variant maps
-  (Tailwind v4 — no dynamic class names). The shell pushes light/dark and
-  colour-theme changes live; token-only apps re-theme with zero code.
-- **R2 — Degrade gracefully off-hub.** `host.hub.get()` rejects in the owner
-  editor and on ordinary shares. Catch that and render a labelled preview with
-  representative placeholder data — this keeps the app previewable in `/apps`
-  while it's being authored. Never gate the whole render on `hub.get`.
-- **R3 — Viewport sizing.** The hub slot is a viewport frame: the app owns
-  scroll (`h-full` + `overflow-y-auto` layouts); viewport-height utilities are
-  real; no manual resize calls.
-- **R4 — Member identity is display-grade, not auth-grade.** `memberName` is
-  for greeting and *advisory* attribution in the app's SQLite. Do not build
-  permission or integrity logic on it — the app runs in the member's browser.
-  The tamper-proof audit trail is the host's per-member access log.
-- **R5 — SQLite is for app-local state** (read acknowledgements, poll votes,
-  per-section feedback, layout prefs) via a declared schema
-  (`app_db_schema_set`, versioned DDL). Never mirror brain content into the
-  app db — brain data comes from `hub.get` or declared tools.
-- **R6 — Tools are a last resort.** Prefer `hub.get` (free, audited, no
-  grants). Declare a builtin tool only when the hub genuinely needs data
-  beyond `HubData`; team surfaces refuse non-builtin handlers, calls run under
-  the owner, and destructive builtins run unconfirmed — declaring one is an
-  explicit owner decision.
-- **R7 — Content-in-code is correct here.** The hub app IS the content layer:
-  what's-new tiles, copy, and layout belong in its source, because the source
-  ships via `app_publish` in minutes.
-- **R8 — No side channels.** No fetch/websockets (CSP blocks them anyway), no
-  `window.parent` calls outside `@host`, no secrets or member tokens persisted
-  to the app db. A missing capability is a protocol addition, not a workaround.
+## 4. Project structure
 
-## Skeleton
+A hub app is a virtual file tree (max 50 files / 256 KB each). Follow this
+shape so any agent can pick up any hub app cold:
+
+```
+App.tsx              ← entry: export default function App(). Wiring ONLY:
+                       hub.get + preview fallback + section composition.
+content.ts           ← THE CONTENT LAYER: what's-new tiles, hero copy,
+                       stat labels. Editing this file is the common update;
+                       keep it free of logic so diffs are pure content.
+components/Hero.tsx      ← presentational sections, one file each
+components/WhatsNew.tsx
+components/Briefings.tsx
+components/Stats.tsx
+lib/format.ts        ← helpers (dates, numbers). No side effects.
+```
+
+Conventions:
+
+- **Entry stays thin.** `App.tsx` fetches `HubData`, holds the
+  preview-fallback state, and composes sections. All copy lives in
+  `content.ts`; all markup in `components/`.
+- **One component per section**, taking `(hub, content)` as props — so a
+  restyle touches one file and a content edit touches none of the markup.
+- **`data-app-region` on each section** (`hero`, `whats-new`, `briefings`,
+  `stats`) — the editor's inspect mode and agent annotations key off these.
+- **Off-hub preview is mandatory** (SDK rule R2): `hub.get` rejects in the
+  `/apps` editor — catch it and render labelled placeholder data. Never gate
+  the whole render on `hub.get`.
+- Theme tokens only, literal class strings, `h-full` viewport layout — the
+  general rules from the authoring guide all apply.
+
+(The first hub app was authored single-file for bootstrap speed; multi-file is
+the standard from here. Split on the next substantive edit, not as a special
+task.)
+
+## 5. Content patterns — choose how the hub updates
+
+Three tiers, from simplest to most dynamic. Most hubs should start at Tier 1
+and adopt Tier 2 only for content that changes more often than the layout.
+
+### Tier 1 — content in code (update = publish)
+
+Tiles, copy, and layout live in `content.ts`. An update is
+`app_source_set → app_build → app_publish` — about a minute, no platform
+release. This is deliberately correct for hub apps (the app IS the content
+layer) and it's version-controlled by the app's draft/publish flow.
+
+**Choose this when** updates are occasional (release highlights, reworded
+copy) and made by the owner's agent anyway.
+
+### Tier 2 — tiles from a brain Table (update = edit the table; no publish)
+
+The "what's-new boxes as data" pattern. The app declares one **builtin
+read tool** and renders rows:
+
+1. Create a Table (e.g. "Hub — What's new") with columns:
+   `Title` (text) · `Blurb` (text) · `Icon` (text — a lucide name from a fixed
+   allowlist) · `Accent` (number 1–5) · `Order` (number) · `Active` (checkbox).
+2. Declare the tool: `app_tools_set(id, ['table_rows_list'])`.
+3. In the app:
 
 ```tsx
-import * as React from 'react';
-import { host } from '@host';
-import { MessageCircle } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+const [tiles, setTiles] = useState<Tile[] | null>(null);
+useEffect(() => {
+  host.tools
+    .call('table_rows_list', { table_id: WHATS_NEW_TABLE_ID })
+    .then((r) => setTiles(parseTiles(r)))        // validate + filter Active,
+    .catch(() => setTiles(FALLBACK_TILES));      // sort by Order, cap at N
+}, []);
+```
 
-type Hub = {
-  siteName: string | null; memberName: string | null; version: string;
-  sections: { token: string; title: string; icon: string | null; summary: string | null; updatedAt: string }[];
-  counts: Record<string, number>;
-};
+4. Map `Icon` through a **literal allowlist**
+   (`{ cloud: Cloud, shield: ShieldCheck, … }`) and `Accent` through literal
+   class strings (`['bg-chart-1/15 text-chart-1', …]`) — Tailwind cannot see
+   computed class names, and an allowlist means a typo in the table degrades
+   to a default icon instead of a broken tile.
+5. Updating the boxes is now `table_row_add` / `table_row_update` /
+   `table_cell_set` → `table_commit` — over MCP, by chatting with the brain,
+   or in the product UI. **Live on the next hub load, with no app_publish at
+   all.**
 
-const PREVIEW: Hub = {
-  siteName: 'Acme', memberName: 'Alice', version: 'preview',
-  sections: [{ token: '', title: 'Sample briefing', icon: null, summary: 'Off-hub preview', updatedAt: '' }],
-  counts: { page: 12, table: 3 },
-};
+Notes that keep this safe and honest:
 
-export default function App() {
-  const [hub, setHub] = React.useState<Hub | null>(null);
-  const [preview, setPreview] = React.useState(false);
-  React.useEffect(() => {
-    host.hub.get().then(setHub).catch(() => { setPreview(true); setHub(PREVIEW); });
-  }, []);
-  if (!hub) return null;
-  return (
-    <div className="h-full overflow-y-auto bg-background text-foreground">
-      {preview && (
-        <p className="p-2 text-center text-xs text-muted-foreground">Preview — not on /team</p>
-      )}
-      <header className="mx-auto max-w-5xl p-6">
-        <h1 className="text-2xl font-semibold">{hub.siteName ?? 'Team Hub'}</h1>
-        <p className="text-muted-foreground">
-          {hub.memberName ? `Welcome, ${hub.memberName}.` : 'Welcome.'}
-        </p>
-        <Button className="mt-4" onClick={() => host.hub.openChat()}>
-          <MessageCircle /> Ask the brain
-        </Button>
-      </header>
-      <main className="mx-auto grid max-w-5xl gap-4 p-6 sm:grid-cols-2">
-        {hub.sections.map((s) => (
-          <Card
-            key={s.token}
-            className="cursor-pointer transition-colors hover:border-primary/50"
-            onClick={() => host.hub.openBriefing(s.token)}
-          >
-            <CardHeader><CardTitle>{s.icon ? `${s.icon} ` : ''}{s.title}</CardTitle></CardHeader>
-            {s.summary ? (
-              <CardContent className="text-sm text-muted-foreground">{s.summary}</CardContent>
-            ) : null}
-          </Card>
-        ))}
-      </main>
-    </div>
-  );
+- `table_rows_list` is a **builtin**, so it passes the team broker's
+  builtin-only gate; it runs under the *owner's* scope and is access-logged
+  per member. It reads the **published** table — draft edits stay invisible
+  until commit, which gives table updates the same review step as app
+  publishes.
+- The table id is pinned in `content.ts`. That's fine: ids aren't secrets and
+  the call is broker-validated.
+- Always ship `FALLBACK_TILES` — a broker hiccup must degrade to sensible
+  static content, not an empty section.
+
+**Choose this when** the boxes change weekly or are curated by someone who
+shouldn't need the app tools at all (they just edit a table, or ask the brain
+to).
+
+### Tier 3 — per-app SQLite for member interactivity
+
+Read-acknowledgements, polls, per-section feedback: declare a schema with
+`app_db_schema_set` (idempotent DDL, bump `schemaVersion` on change) and use
+`host.db.query/exec`. Team members' writes are allowed and access-logged.
+
+**The attribution caveat (do not skip):** the app runs in the member's
+browser, so a `memberName` you write into SQLite is *advisory* — display it,
+but never build permission or integrity logic on it. The host's per-member
+access log is the tamper-proof trail. Server-stamped writes (a reserved
+`$member_contact_id` binding substituted by the team db-broker) are the
+planned upgrade; until then treat member-attributed rows as honest-majority.
+
+## 6. The manifest, today and next
+
+A hub app's manifest is the ordinary app manifest:
+
+```ts
+{
+  toolSlugs?: string[];   // brokered tool allowlist (Tier 2). Team surfaces
+                          // additionally refuse non-builtin handlers.
+  sqlite?: { schemaSql: string; schemaVersion: number };  // Tier 3
+  description?: string;
 }
 ```
 
-## Definition of done for a hub app
+There is deliberately **no** `hub` manifest block yet — designation lives in
+the brain pref + share, not in the app, so any app can be tried as a hub and
+reverted with one click. When hub apps need to declare capability requirements
+(e.g. "requires hub.get v2 fields"), that belongs in a future
+`manifest.hub: { requires: [...] }` block that the designation picker checks —
+reserved, not implemented. Propose additions there rather than overloading
+`description`.
 
-1. `app_build` green, `app_publish` done, designated in Team admin.
-2. Renders correctly on `/team` as a real member, in light and dark.
-3. Off-hub preview (R2) renders in the `/apps` editor.
-4. Chat and every briefing open via `host.hub` and "back" returns to the app.
-5. No hardcoded colours; no undeclared tool slugs; versioned SQLite schema.
-6. Revoking the member's token locks them out mid-session (host guarantee —
+## 7. Updating a live hub — the workflows
+
+| Change | Workflow | Live when |
+|---|---|---|
+| Copy / tiles (Tier 1) | edit `content.ts` → `app_build` → `app_publish` | next member page load |
+| Tiles (Tier 2) | edit table → `table_commit` | next hub load — no publish |
+| Layout / new section | edit `components/` → build → publish | next page load |
+| Briefing set / order | share or revoke team-mode pages (share time = order) | next hub load |
+| Revert to built-in hub | Team admin → Hub app → "Built-in hub" | immediately |
+
+Members with `/team` already open see updates on their next load — there is no
+live push to an open tab. The shell keeps the app mounted across chat/reader
+round-trips, so in-app state survives navigation but not a reload; anything
+that must survive a reload goes in SQLite (Tier 3).
+
+## 8. Definition of done
+
+1. Build green, published, designated; renders on `/team` as a real member in
+   light **and** dark.
+2. Off-hub preview renders in the `/apps` editor (labelled, placeholder data).
+3. Chat and every briefing open via `host.hub` and "back" returns to the app.
+4. Tier 2 only: tiles render from the table; a broken/empty table degrades to
+   the fallback set; icon/accent typos degrade to defaults.
+5. No hardcoded colours; no undeclared tool slugs; versioned SQLite schema;
+   no secrets or member tokens in the app db.
+6. Token revocation locks the member out mid-session (host guarantee —
    verify, don't assume).
+
+## 9. Troubleshooting
+
+- **Members see the built-in hub instead of the app** — the chain broke.
+  Check, in order: pref set (Team-admin picker shows the app), published build
+  green (`app_get`), share active and team-mode. The picker labels a
+  designated app whose build went red.
+- **Members see "Loading…" then the built-in hub** — the bundle booted badly
+  (module-level throw) or an import failed; the shell's ready-watchdog fired.
+  Reproduce in the `/apps` editor, fix, republish.
+- **`hub.get` rejects** — you're off the `/team` surface (editor, ordinary
+  share, pre-rollout runtime). That's the R2 preview path, not an error.
+- **A tool call returns 403** — the slug isn't declared via `app_tools_set`,
+  or it's a non-builtin handler (team surfaces refuse those by design).
+- **Tiles don't update after a table edit** — the draft wasn't committed;
+  `table_rows_list` reads published rows only.
