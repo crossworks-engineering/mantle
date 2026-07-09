@@ -5,6 +5,16 @@
  * with live turn streaming (full status labels — plan §15.5) when the deploy
  * has it on.
  *
+ * LOOK & FEEL mirrors the main assistant chat (assistant-client.tsx): each
+ * exchange is a TURN laid out as a two-column grid — the reply as a rich
+ * document on the main (left) canvas, the member's question as a compact
+ * sticky card in the right margin, anchored beside the reply it produced —
+ * with a thin accent divider between turns, a bouncing-dots thinking bubble
+ * carrying the live status labels, hover meta (time + copy) on replies, and a
+ * jump-to-latest pill when scrolled up. Functionality intentionally differs:
+ * members get standard-Markdown replies (no TipTap rich dialect), no thought
+ * trail, no tool ledger — those are owner-surface features.
+ *
  * Public surface: raw fetch/EventSource on purpose (apiFetch is the app
  * shell's authenticated wrapper), inline feedback (no toast provider), and the
  * signed team-chat cookie carries auth on every call. A 401 anywhere flips
@@ -13,9 +23,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Paperclip, SendHorizontal, X } from 'lucide-react';
+import { ArrowDown, Paperclip, SendHorizontal, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { CopyButton } from '@/components/assistant/copy-button';
 import { TokenGate } from '@/components/team-chat/token-gate';
 
 type TeamMessage = {
@@ -34,6 +45,103 @@ type LiveTurn = {
   text: string;
 };
 
+/** One exchange: the member's message and the reply it produced. The API
+ *  returns a flat inbound/outbound list; pairing it into turns is what lets
+ *  the thread render prompt-beside-reply like the main assistant chat. */
+type Turn = {
+  key: string;
+  prompt: TeamMessage | null;
+  response: TeamMessage | null;
+};
+
+function buildTurns(messages: TeamMessage[]): Turn[] {
+  const turns: Turn[] = [];
+  for (const m of messages) {
+    if (m.direction === 'inbound') {
+      turns.push({ key: m.id, prompt: m, response: null });
+    } else {
+      const last = turns[turns.length - 1];
+      if (last && last.response === null) last.response = m;
+      else turns.push({ key: m.id, prompt: null, response: m });
+    }
+  }
+  return turns;
+}
+
+function formatTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleTimeString();
+  } catch {
+    return '';
+  }
+}
+
+// ── Presentational pieces (mirroring the assistant chat's treatment) ─────────
+
+/** The member's message as a compact card in the right margin — sticky so it
+ *  stays beside a long reply while it scrolls. */
+function PromptCard({ message }: { message: TeamMessage }) {
+  const optimistic = message.id.startsWith('optimistic-');
+  return (
+    <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm lg:sticky lg:top-2">
+      <div className="mb-1 flex items-baseline justify-between gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          You
+        </span>
+        <span className="text-[10px] text-muted-foreground">{formatTime(message.createdAt)}</span>
+      </div>
+      {message.text && (
+        <p className="whitespace-pre-wrap break-words text-foreground">{message.text}</p>
+      )}
+      {message.attachments.length > 0 && (
+        <div className="mt-2 flex flex-col gap-1">
+          {message.attachments.map((a, i) => (
+            <span
+              key={`${message.id}-att-${i}`}
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+            >
+              <Paperclip className="size-3" aria-hidden />
+              {a.kind === 'file' ? 'attachment' : a.kind}
+            </span>
+          ))}
+        </div>
+      )}
+      {optimistic && <div className="mt-1 text-[10px] italic text-muted-foreground">sending…</div>}
+    </div>
+  );
+}
+
+/** Bouncing-dots thinking bubble with the live status label — the same
+ *  treatment as the assistant chat, on the theme's primary soft tint. */
+function ThinkingBubble({ label }: { label: string | null }) {
+  return (
+    <div className="inline-flex items-center gap-2 rounded-2xl bg-primary/10 px-3.5 py-3 text-primary">
+      <span className="sr-only">The assistant is {label ?? 'thinking'}</span>
+      <span className="flex items-center gap-1" aria-hidden>
+        <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.3s]" />
+        <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.15s]" />
+        <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60" />
+      </span>
+      {label && (
+        <span className="text-xs text-current opacity-70" aria-hidden>
+          {label}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Markdown reply body. A lightweight ReactMarkdown render on purpose —
+ *  team replies are standard Markdown (chat_writing), never the TipTap rich
+ *  dialect, and the same renderer serves the live stream buffer. */
+function ReplyBody({ markdown }: { markdown: string }) {
+  return (
+    <div className="prose prose-accent max-w-none dark:prose-invert [&>:first-child]:mt-0 [&>:last-child]:mb-0">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
+    </div>
+  );
+}
+
 // ── Chat ──────────────────────────────────────────────────────────────────────
 
 export function TeamChatClient() {
@@ -44,9 +152,14 @@ export function TeamChatClient() {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [live, setLive] = useState<LiveTurn | null>(null);
+  const [showJump, setShowJump] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
   const esRef = useRef<EventSource | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Whether the view is pinned to the bottom. Starts pinned; scrolling up
+  // unpins (reading history must not be yanked away by a streaming reply),
+  // returning near the bottom re-pins.
+  const pinnedRef = useRef(true);
 
   const refetch = useCallback(async (): Promise<boolean> => {
     try {
@@ -70,10 +183,27 @@ export function TeamChatClient() {
     return () => esRef.current?.close();
   }, [refetch]);
 
-  // Pin the thread to the bottom on new content.
+  const jumpToBottom = useCallback(() => {
+    const el = threadRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    pinnedRef.current = true;
+    setShowJump(false);
+  }, []);
+
+  const onScroll = useCallback(() => {
+    const el = threadRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+    pinnedRef.current = nearBottom;
+    setShowJump(!nearBottom);
+  }, []);
+
+  // Keep the thread pinned to the bottom on new content — but only while the
+  // member is actually at the bottom.
   useEffect(() => {
     const el = threadRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight;
   }, [messages, live]);
 
   const finishTurn = useCallback(() => {
@@ -131,6 +261,10 @@ export function TeamChatClient() {
     const outgoingFile = file;
     setSendError(null);
     setSending(true);
+    // A send means the member is at the composer — pin so the reply streams
+    // into view.
+    pinnedRef.current = true;
+    setShowJump(false);
     // Show the thinking state immediately; the real turn id arrives from the
     // POST (minted server-side, contact-scoped) and the stream opens after.
     setLive({ turnId: '', status: 'Thinking…', text: '' });
@@ -211,105 +345,176 @@ export function TeamChatClient() {
   }
   if (!authed) return <TokenGate onAuthed={() => void refetch()} />;
 
+  const turns = buildTurns(messages);
+  const lastTurnIdx = turns.length - 1;
+
   return (
-    <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col">
-      <header className="flex items-center justify-between border-b border-border/60 px-4 py-3">
-        <h1 className="text-sm font-semibold">
-          Team Chat <span className="font-logo lowercase text-muted-foreground">mantle</span>
-        </h1>
-        <p className="text-xs text-muted-foreground">Conversations are visible to the brain admin</p>
+    <div className="flex min-h-0 w-full flex-1 flex-col">
+      <header className="border-b border-border/60 px-6 py-3">
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-between">
+          <h1 className="text-sm font-semibold">
+            Team Chat <span className="font-logo lowercase text-muted-foreground">mantle</span>
+          </h1>
+          <p className="text-xs text-muted-foreground">
+            Conversations are visible to the brain admin
+          </p>
+        </div>
       </header>
 
-      <div ref={threadRef} className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-4 py-4">
-        {messages.length === 0 && !live ? (
-          <p className="py-10 text-center text-sm text-muted-foreground">
-            Ask anything this brain knows. Requests to change content are routed to a specialist
-            for review.
-          </p>
-        ) : null}
-        <div className="flex flex-col gap-3">
-          {messages.map((m) =>
-            m.direction === 'inbound' ? (
-              <div key={m.id} className="ml-auto max-w-[85%] rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground">
-                <p className="whitespace-pre-wrap">{m.text}</p>
-              </div>
-            ) : m.status === 'pending' && live ? null : (
-              <div key={m.id} className="mr-auto w-full max-w-[85%] rounded-lg bg-card px-3 py-2 text-card-foreground">
-                {m.status === 'failed' ? (
-                  <p className="text-sm text-destructive">
-                    That message couldn’t be answered. Try again, or let the brain admin know.
-                  </p>
-                ) : m.status === 'pending' ? (
-                  <p className="text-sm text-muted-foreground">Thinking…</p>
-                ) : (
-                  <div className="prose prose-accent prose-sm max-w-none dark:prose-invert">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown>
-                  </div>
-                )}
-              </div>
-            ),
-          )}
-          {live ? (
-            <div className="mr-auto w-full max-w-[85%] rounded-lg bg-card px-3 py-2 text-card-foreground">
-              {live.text ? (
-                <div className="prose prose-accent prose-sm max-w-none dark:prose-invert">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{live.text}</ReactMarkdown>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">{live.status ?? 'Thinking…'}</p>
-              )}
-              {live.text && live.status ? (
-                <p className="mt-1 text-xs text-muted-foreground">{live.status}</p>
-              ) : null}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div
+          ref={threadRef}
+          onScroll={onScroll}
+          className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-6 py-6"
+        >
+          {turns.length === 0 && !live ? (
+            <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/30 px-4 py-10 text-center">
+              <p className="text-sm text-muted-foreground">
+                Ask anything this brain knows. Requests to change content are routed to a
+                specialist for review.
+              </p>
             </div>
-          ) : null}
+          ) : (
+            <ul className="mx-auto flex w-full max-w-5xl flex-col">
+              {turns.map((turn, idx) => {
+                // The live stream renders in the LAST turn's reply slot — it
+                // supersedes that turn's durable 'pending' placeholder row
+                // until the completed reply lands via refetch.
+                const liveHere = live !== null && idx === lastTurnIdx;
+                return (
+                  <li
+                    key={turn.key}
+                    className={
+                      'group/turn grid gap-x-10 gap-y-3 pb-10 lg:grid-cols-[minmax(0,1fr)_300px]' +
+                      // A thin divider between turns — the assistant chat's
+                      // accent hairline, on the theme's primary tint here.
+                      (idx > 0 ? ' border-t border-primary/15 pt-10' : '')
+                    }
+                  >
+                    {/* RIGHT MARGIN (DOM-first so it stacks above the reply on
+                        mobile): the member's question, anchored beside the
+                        reply it produced. */}
+                    <div className="lg:col-start-2 lg:row-start-1">
+                      {turn.prompt && <PromptCard message={turn.prompt} />}
+                    </div>
+
+                    {/* MAIN CANVAS: the reply as a document. */}
+                    <div className="min-w-0 lg:col-start-1 lg:row-start-1">
+                      {liveHere ? (
+                        live.text ? (
+                          <div>
+                            <div className="mb-2 text-sm font-medium text-muted-foreground">
+                              Assistant
+                            </div>
+                            <ReplyBody markdown={live.text} />
+                            {live.status && (
+                              <p className="mt-1.5 text-xs text-muted-foreground">{live.status}</p>
+                            )}
+                          </div>
+                        ) : (
+                          <ThinkingBubble label={live.status} />
+                        )
+                      ) : turn.response ? (
+                        turn.response.status === 'failed' ? (
+                          <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                            <span>
+                              That message couldn&rsquo;t be answered. Try again, or let the brain
+                              admin know.
+                            </span>
+                          </div>
+                        ) : turn.response.status === 'pending' ? (
+                          // Durable pending turn (reloaded mid-flight) — the
+                          // runner is still working.
+                          <ThinkingBubble label={null} />
+                        ) : (
+                          <article>
+                            <div className="mb-2 text-sm font-medium text-muted-foreground">
+                              Assistant
+                            </div>
+                            <ReplyBody markdown={turn.response.text} />
+                            <div className="mt-1.5 flex items-center justify-between gap-2 pointer-events-none opacity-0 transition-opacity group-hover/turn:pointer-events-auto group-hover/turn:opacity-100">
+                              <span className="text-[10px] text-muted-foreground">
+                                {formatTime(turn.response.createdAt)}
+                              </span>
+                              <CopyButton text={turn.response.text} />
+                            </div>
+                          </article>
+                        )
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
+        {showJump && (
+          <button
+            type="button"
+            onClick={jumpToBottom}
+            aria-label="Jump to latest"
+            className="absolute bottom-4 left-1/2 z-10 flex size-9 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-md transition hover:bg-accent hover:text-accent-foreground"
+          >
+            <ArrowDown className="size-4" aria-hidden />
+          </button>
+        )}
       </div>
 
-      <div className="border-t border-border/60 p-3">
-        {sendError ? <p className="mb-2 text-sm text-destructive">{sendError}</p> : null}
-        {file ? (
-          <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
-            <Paperclip className="size-4" />
-            <span className="truncate">{file.name}</span>
-            <Button variant="ghost" size="sm" onClick={() => setFile(null)} aria-label="Remove attachment">
-              <X />
+      <div className="border-t border-border/60 bg-background px-6 py-3">
+        <div className="mx-auto w-full max-w-5xl">
+          {sendError ? <p className="mb-2 text-sm text-destructive">{sendError}</p> : null}
+          {file ? (
+            <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
+              <Paperclip className="size-4" />
+              <span className="truncate">{file.name}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setFile(null)}
+                aria-label="Remove attachment"
+              >
+                <X />
+              </Button>
+            </div>
+          ) : null}
+          <div className="flex items-end gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={sending}
+              aria-label="Attach a file"
+            >
+              <Paperclip />
+            </Button>
+            <Textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  void send();
+                }
+              }}
+              placeholder="Ask the brain…"
+              rows={2}
+              className="min-h-0 flex-1 resize-none"
+              disabled={sending}
+            />
+            <Button
+              onClick={() => void send()}
+              disabled={sending || (!draft.trim() && !file)}
+              aria-label="Send"
+            >
+              <SendHorizontal />
             </Button>
           </div>
-        ) : null}
-        <div className="flex items-end gap-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            className="hidden"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={sending}
-            aria-label="Attach a file"
-          >
-            <Paperclip />
-          </Button>
-          <Textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                void send();
-              }
-            }}
-            placeholder="Ask the brain…"
-            rows={2}
-            className="min-h-0 flex-1 resize-none"
-            disabled={sending}
-          />
-          <Button onClick={() => void send()} disabled={sending || (!draft.trim() && !file)} aria-label="Send">
-            <SendHorizontal />
-          </Button>
         </div>
       </div>
     </div>
