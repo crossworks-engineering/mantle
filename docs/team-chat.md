@@ -38,7 +38,7 @@ by default (§6).
 
 | Surface | Who | What |
 |---|---|---|
-| `/team` | member | Token gate → forever-thread chat with the brain: composer, attachments, live streaming. Outside the app shell; in `PUBLIC_PATHS`. |
+| `/team` | member | Token gate → forever-thread chat with the brain: composer, attachments, live streaming. Outside the app shell; in `PUBLIC_PATHS`. Since v0.126.0 the thread uses the assistant chat's TURN layout (reply as a left-canvas document, the member's question as a sticky right-margin card, live status labels) — see the header comment in `components/team-chat/team-chat-client.tsx` for what is deliberately NOT ported (rich dialect, thought trail, tool ledger). |
 | `/team-admin` | owner | Sidebar **Team** entry. Chats tab: member index by recent activity with unread badges, read-only thread preview, per-turn `/traces` deep links. Requests tab: open team requests with reply / mark-done. Recent access log. Header switch for private reads (§6). |
 | `/api/team/*` | member (cookie or bearer) | The machine API — the same routes the web surface uses, so a future MS Teams adapter is a thin client, not a rebuild. |
 
