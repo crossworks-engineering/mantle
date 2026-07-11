@@ -1522,12 +1522,30 @@ export function AssistantClient({
   );
 }
 
+/** The machine-appended tail of a sent message — the on-screen context
+ *  preamble and/or the FOCUS SET directive. The durable inbound row stores the
+ *  FULL sent text (that's what the agent read), but the transcript shows just
+ *  what the user typed, with a quiet "context attached" footer whose tooltip
+ *  reveals the appended block. Markers match buildContextPreamble /
+ *  buildFocusDirective exactly. */
+function splitSentContext(text: string): { typed: string; appended: string | null } {
+  const positions = [
+    text.indexOf('\n\n---\nOn screen right now'),
+    text.indexOf('\n\n---\nAttached context'),
+    text.indexOf('\nFOCUS SET —'),
+  ].filter((i) => i >= 0);
+  if (positions.length === 0) return { typed: text, appended: null };
+  const cut = Math.min(...positions);
+  return { typed: text.slice(0, cut).trimEnd(), appended: text.slice(cut).trim() };
+}
+
 /**
  * The user's prompt, rendered as a margin note beside the response it
  * produced. Quiet by design — muted card, small type — so Saskia's
  * document is the visual centre of gravity.
  */
 function PromptCard({ message }: { message: Message }) {
+  const { typed, appended } = splitSentContext(message.text);
   return (
     <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm @3xl/thread:sticky @3xl/thread:top-2">
       <div className="mb-1 flex items-baseline justify-between gap-2">
@@ -1544,8 +1562,17 @@ function PromptCard({ message }: { message: Message }) {
           {new Date(message.createdAt).toLocaleTimeString()}
         </span>
       </div>
-      {message.text && (
-        <p className="whitespace-pre-wrap break-words text-foreground">{message.text}</p>
+      {typed && (
+        <p className="whitespace-pre-wrap break-words text-foreground">{typed}</p>
+      )}
+      {appended && (
+        <p
+          className="mt-1.5 inline-flex cursor-help items-center gap-1 text-[10px] text-muted-foreground"
+          title={appended}
+        >
+          <MapPin className="size-3" aria-hidden />
+          Sent with on-screen context
+        </p>
       )}
       {message.attachments && message.attachments.length > 0 && (
         <div className="mt-2 flex flex-col gap-2">

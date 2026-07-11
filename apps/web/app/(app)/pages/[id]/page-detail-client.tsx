@@ -449,6 +449,11 @@ function PageDetailEditor({
     tocEditor?.state.doc.forEach((node) => {
       const id = node.attrs?.id as string | undefined;
       if (!id || !markSet.has(id)) return;
+      // One chip per mark id: legacy docs can carry duplicate block ids (the
+      // pre-v0.120.1 split/paste mint), and a dup would double the chip count
+      // vs the Mark button. First occurrence wins — same block the id-addressed
+      // page tools resolve.
+      if (items.some((i) => i.id === id)) return;
       items.push({ id, label: blockSnippet(node) });
     });
     // Marks whose block vanished (deleted while marked) still get a chip so the
@@ -669,9 +674,12 @@ function PageDetailEditor({
     <div className="flex h-full min-h-0 flex-col">
       <SetPageTitle title={title || 'Untitled page'} />
 
-      <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-background/80 px-4 py-2 backdrop-blur">
+      {/* flex-wrap: the toolbar must stay fully reachable when the docked
+          assistant column narrows this pane — buttons flow to a second row
+          instead of clipping (Mark/Revert/Share used to fall off the edge). */}
+      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 gap-y-1.5 border-b border-border bg-background/80 px-4 py-2 backdrop-blur">
         <BackLink href="/pages">All pages</BackLink>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 gap-y-1.5">
           <StatusIndicator committing={committing} draftSaving={draftSaving} dirty={docDirty} />
           <Button size="sm" onClick={() => void commit()} disabled={!docDirty || committing}>
             <GitCommitHorizontal /> Commit
