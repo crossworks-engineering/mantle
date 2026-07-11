@@ -75,6 +75,19 @@ type TurnSettledListener = (detail: TurnSettled) => void;
 /** A node the user marked to send to the assistant as context. */
 export type ContextRef = { id: string; kind: ContextKind; label: string };
 
+/** An in-node selection the current screen published — e.g. the Pages gutter
+ *  marks, each with a human-readable snippet of the marked block. Rendered as
+ *  chips in the composer (so it's unambiguous the assistant sees the selection)
+ *  and in the panel's context strip. The surface owns the underlying state;
+ *  `onRemove`/`onClear` mutate it from the chat side. */
+export type SurfaceSelection = {
+  /** What one item is called, singular ("section", "row"). Drives chip copy. */
+  noun: string;
+  items: { id: string; label: string }[];
+  onRemove?: (id: string) => void;
+  onClear?: () => void;
+};
+
 const MAX_CONTEXT = 10;
 
 type AssistantDockApi = {
@@ -98,18 +111,14 @@ type AssistantDockApi = {
   close: () => void;
   /** open ⇄ min — what the bubble + ⌘I toggle. */
   toggle: () => void;
-  /** The agent selected for the panel — source of truth while open (mirrors the
-   *  `mantle_assistant_agent` cookie). */
+  /** The agent selected for the panel — source of truth (mirrors the
+   *  `mantle_assistant_agent` cookie). The panel ALWAYS talks to this sticky
+   *  pick, even on the Pages/Tables/Apps screens: the main responder plans and
+   *  delegates to the surface specialists herself (invoke_agent), so the thread
+   *  never switches out from under the user and composer state survives
+   *  navigation. */
   activeAgentSlug?: string;
   setActiveAgentSlug: (slug?: string) => void;
-  /** The effective agent the panel talks to: a screen's route override
-   *  (e.g. the Pages/Ledger/Appsmith specialist) wins while you're on that
-   *  screen; otherwise your sticky pick. Drives the panel's thread + the agentSlug
-   *  sent with each turn. */
-  effectiveAgentSlug?: string;
-  /** Arm a specialist for the current screen WITHOUT touching the sticky cookie
-   *  (pass undefined on leave to revert to the sticky pick). */
-  setRouteAgent: (slug?: string) => void;
   // ── surface-pinned context (the open page/table/app rides every turn) ──
   /** A node pinned by the current screen — sent with EVERY turn (survives a send,
    *  unlike pick-mode chips) so the specialist always knows what you're editing. */
@@ -120,6 +129,23 @@ type AssistantDockApi = {
    *  into the sent text after the context preamble. Null when nothing's focused. */
   extraDirective: string | null;
   setExtraDirective: (directive: string | null) => void;
+  /** The current screen's in-node selection (Pages gutter marks…), published so
+   *  the composer can show it as chips. Null when the surface has none. */
+  surfaceSelection: SurfaceSelection | null;
+  setSurfaceSelection: (sel: SurfaceSelection | null) => void;
+  /** Count of draft changes pending review on the pinned node (Pages review
+   *  count), for the panel's context strip. Null when unknown/none. */
+  surfaceChanges: number | null;
+  setSurfaceChanges: (n: number | null) => void;
+  /** True while the open panel renders as a docked side column (an editor
+   *  surface is pinned + the user hasn't switched to full overlay + lg viewport
+   *  handled in CSS). The editor stays visible beside the chat, so gutter marks
+   *  and review highlights are seen live. */
+  docked: boolean;
+  /** Whether docking is even available right now (a surface is pinned). */
+  dockAvailable: boolean;
+  /** column ⇄ overlay for surface screens; persisted. */
+  toggleDocked: () => void;
   /** The on-screen node id the in-flight turn is editing (null when idle or when
    *  no surface node is pinned) — lets a screen lock its editor only while ITS
    *  node is being worked on. */
@@ -149,6 +175,7 @@ type AssistantDockApi = {
 const Ctx = createContext<AssistantDockApi | null>(null);
 const MAX_DOCK_MSGS = 12;
 const AGENT_COOKIE = 'mantle_assistant_agent';
+const DOCK_PREF_KEY = 'mantle_assistant_dock';
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
 
 export function AssistantDockProvider({ children }: { children: React.ReactNode }) {
@@ -160,10 +187,6 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   // ── Global panel UI state ──
   const [panel, setPanel] = useState<AssistantPanelState>('closed');
   const [activeAgentSlug, setActiveAgentSlugState] = useState<string | undefined>(undefined);
-  // Route-armed specialist (set by the current screen's surface hook; never
-  // written to the cookie). When set it overrides the sticky pick for the panel.
-  const [routeAgentSlug, setRouteAgentSlug] = useState<string | undefined>(undefined);
-  const effectiveAgentSlug = routeAgentSlug ?? activeAgentSlug;
 
   // ── Marker context-pick state ──
   const [pendingContext, setPendingContext] = useState<ContextRef[]>([]);
@@ -171,6 +194,30 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   // ── Surface-pinned context + focus directive (owned by the surface hook) ──
   const [pinnedContext, setPinnedContextState] = useState<ContextRef[]>([]);
   const [extraDirective, setExtraDirectiveState] = useState<string | null>(null);
+  const [surfaceSelection, setSurfaceSelectionState] = useState<SurfaceSelection | null>(null);
+  const [surfaceChanges, setSurfaceChangesState] = useState<number | null>(null);
+  // Docked-column preference for editor surfaces. Default ON (the old dedicated
+  // assist panels were side columns); the panel header can flip it, persisted.
+  const [dockPref, setDockPref] = useState(true);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(DOCK_PREF_KEY) === '0') setDockPref(false);
+    } catch {
+      /* no storage — keep the default */
+    }
+  }, []);
+  const dockAvailable = pinnedContext.length > 0;
+  const docked = dockPref && dockAvailable;
+  const toggleDocked = useCallback(() => {
+    setDockPref((v) => {
+      try {
+        localStorage.setItem(DOCK_PREF_KEY, v ? '0' : '1');
+      } catch {
+        /* no storage — session-only */
+      }
+      return !v;
+    });
+  }, []);
   // The node the in-flight turn rode with as pinned context — set when a turn
   // starts, cleared when it settles. Drives a screen's editor lock.
   const [activeContextNodeId, setActiveContextNodeId] = useState<string | null>(null);
@@ -199,7 +246,11 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
 
   const setPinnedContext = useCallback((refs: ContextRef[]) => setPinnedContextState(refs), []);
   const setExtraDirective = useCallback((d: string | null) => setExtraDirectiveState(d), []);
-  const setRouteAgent = useCallback((slug?: string) => setRouteAgentSlug(slug), []);
+  const setSurfaceSelection = useCallback(
+    (sel: SurfaceSelection | null) => setSurfaceSelectionState(sel),
+    [],
+  );
+  const setSurfaceChanges = useCallback((n: number | null) => setSurfaceChangesState(n), []);
 
   const attachContext = useCallback((ref: ContextRef) => {
     setPendingContext((prev) => {
@@ -235,9 +286,6 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
 
   const setActiveAgentSlug = useCallback((slug?: string) => {
     setActiveAgentSlugState(slug);
-    // A deliberate pick overrides any screen-armed specialist for the rest of
-    // this visit — re-entering the screen re-arms it via the surface hook.
-    setRouteAgentSlug(undefined);
     if (slug) {
       document.cookie = `${AGENT_COOKIE}=${encodeURIComponent(slug)}; path=/; max-age=${ONE_YEAR_SECONDS}; samesite=lax`;
     }
@@ -446,8 +494,6 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       toggle,
       activeAgentSlug,
       setActiveAgentSlug,
-      effectiveAgentSlug,
-      setRouteAgent,
       pendingContext,
       attachContext,
       removeContext,
@@ -456,6 +502,13 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       setPinnedContext,
       extraDirective,
       setExtraDirective,
+      surfaceSelection,
+      setSurfaceSelection,
+      surfaceChanges,
+      setSurfaceChanges,
+      docked,
+      dockAvailable,
+      toggleDocked,
       activeContextNodeId,
       registerTurnListener,
       picking,
@@ -477,8 +530,6 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       toggle,
       activeAgentSlug,
       setActiveAgentSlug,
-      effectiveAgentSlug,
-      setRouteAgent,
       pendingContext,
       attachContext,
       removeContext,
@@ -487,6 +538,13 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       setPinnedContext,
       extraDirective,
       setExtraDirective,
+      surfaceSelection,
+      setSurfaceSelection,
+      surfaceChanges,
+      setSurfaceChanges,
+      docked,
+      dockAvailable,
+      toggleDocked,
       activeContextNodeId,
       registerTurnListener,
       picking,

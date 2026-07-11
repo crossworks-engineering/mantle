@@ -15,7 +15,12 @@ import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { ToastProvider } from '@/components/ui/toast';
 import { PageTitleProvider } from '@/components/layout/page-title';
 import { UploadProvider, UploadDock } from '@/components/uploads/upload-provider';
-import { AssistantDockProvider, AssistantBubble, MarkerBubble } from '@/components/assistant/assistant-dock';
+import {
+  AssistantDockProvider,
+  AssistantBubble,
+  MarkerBubble,
+  useAssistantDock,
+} from '@/components/assistant/assistant-dock';
 import { AssistantPanel } from '@/components/assistant/assistant-panel';
 import { PickMode } from '@/components/assistant/pick-mode';
 
@@ -54,7 +59,30 @@ type ShellData = {
   assetToken?: string;
 };
 
-export function AppShell({
+export function AppShell(props: {
+  email: string | null;
+  contextCard: React.ReactNode;
+  initialNavCollapsed?: boolean;
+  initialActivityCollapsed?: boolean;
+  children: React.ReactNode;
+}) {
+  // Providers only — the frame itself lives in <ShellFrame/>, which sits INSIDE
+  // AssistantDockProvider so it can read the dock state (the docked assistant
+  // column publishes its width to the frame's CSS vars).
+  return (
+    <ToastProvider>
+      <PageTitleProvider>
+        <UploadProvider>
+          <AssistantDockProvider>
+            <ShellFrame {...props} />
+          </AssistantDockProvider>
+        </UploadProvider>
+      </PageTitleProvider>
+    </ToastProvider>
+  );
+}
+
+function ShellFrame({
   email,
   contextCard,
   initialNavCollapsed = false,
@@ -72,6 +100,12 @@ export function AppShell({
   const [activityCollapsed, setActivityCollapsed] = useState(initialActivityCollapsed);
   const pathname = usePathname();
   const router = useRouter();
+
+  // The docked assistant column's width, published as `--assistant-w` so <main>
+  // (and the bottom-right dock stack) shrink beside the open column. 0 whenever
+  // the panel is minimised/closed or rendering as a full overlay.
+  const { panel: assistantPanel, docked: assistantDocked } = useAssistantDock();
+  const assistantW = assistantPanel === 'open' && assistantDocked ? '30rem' : '0rem';
 
   // Shell chrome — avatar, pending-approvals badge, onboarding gate — fetched
   // client-side so the layout stays data-free. Until it lands the avatar falls
@@ -154,10 +188,6 @@ export function AppShell({
   );
 
   return (
-    <ToastProvider>
-      <PageTitleProvider>
-      <UploadProvider>
-      <AssistantDockProvider>
       <div
         className="group/shell h-screen bg-background"
         data-nav-collapsed={navCollapsed ? 'true' : 'false'}
@@ -166,6 +196,7 @@ export function AppShell({
           {
             '--nav-w': navCollapsed ? '3.5rem' : '16rem',
             '--activity-w': activityCollapsed ? '3.5rem' : '20rem',
+            '--assistant-w': assistantW,
           } as React.CSSProperties
         }
       >
@@ -218,7 +249,7 @@ export function AppShell({
             is slow enough to stream). Containing it here, below the header, keeps
             the header's tree-context symmetric. Same rationale as UsageCard's
             boundary in layout.tsx. */}
-        <main className="fixed inset-0 top-16 overflow-y-auto scrollbar-thin transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[var(--activity-w)]">
+        <main className="fixed inset-0 top-16 overflow-y-auto scrollbar-thin transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[calc(var(--activity-w)+var(--assistant-w))]">
           <Suspense fallback={null}>{children}</Suspense>
         </main>
 
@@ -235,7 +266,7 @@ export function AppShell({
             the activity rail) and persists across route changes.
             pointer-events-none lets clicks fall through the gaps; each dock
             re-enables its own. */}
-        <div className="pointer-events-none fixed bottom-4 right-4 z-40 flex w-96 max-w-[calc(100vw-2rem)] flex-col items-stretch gap-3 lg:right-[calc(var(--activity-w)+1rem)]">
+        <div className="pointer-events-none fixed bottom-4 right-4 z-40 flex w-96 max-w-[calc(100vw-2rem)] flex-col items-stretch gap-3 lg:right-[calc(var(--activity-w)+var(--assistant-w)+1rem)]">
           <UploadDock />
           {/* Marker + chat bubbles, side by side (marker first → pick before opening chat). */}
           <div className="flex items-end justify-end gap-2">
@@ -244,9 +275,5 @@ export function AppShell({
           </div>
         </div>
       </div>
-      </AssistantDockProvider>
-      </UploadProvider>
-      </PageTitleProvider>
-    </ToastProvider>
   );
 }

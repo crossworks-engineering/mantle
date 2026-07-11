@@ -9,6 +9,7 @@ import {
   ArrowDown,
   CornerDownLeft,
   FileText,
+  Highlighter,
   Image as ImageIcon,
   Loader2,
   MapPin,
@@ -156,14 +157,27 @@ const CONTEXT_KIND_LABEL: Record<ContextKind, string> = {
   app: 'app',
 };
 
-/** Render marked nodes as a reference block appended to the sent message. The
+/** Render context nodes as a reference block appended to the sent message. The
  *  agent reads them via its tools (file_read / note_get / page_get / …) — node
- *  ids are enough; we never inline content here. */
-function buildContextPreamble(refs: ContextRef[]): string {
-  const lines = refs.map(
-    (r) => `- ${CONTEXT_KIND_LABEL[r.kind]} "${r.label}" (node ${r.id})`,
-  );
-  return `\n\n---\nAttached context (read these with your tools as needed):\n${lines.join('\n')}`;
+ *  ids are enough; we never inline content here. Pinned nodes (the open
+ *  page/table/app) are phrased as the live on-screen subject — and since the
+ *  responder may delegate the actual editing to a specialist, the preamble
+ *  tells her to pass the node id (and any FOCUS SET) along verbatim. */
+function buildContextPreamble(pinned: ContextRef[], picked: ContextRef[]): string {
+  const line = (r: ContextRef) => `- ${CONTEXT_KIND_LABEL[r.kind]} "${r.label}" (node ${r.id})`;
+  const parts: string[] = [];
+  if (pinned.length > 0) {
+    parts.push(
+      `On screen right now — the user has this open in the editor and means it by "this ${CONTEXT_KIND_LABEL[pinned[0]!.kind]}" (if a specialist does the work, hand it the node id and any focus directive verbatim):\n${pinned
+        .map(line)
+        .join('\n')}`,
+    );
+  }
+  if (picked.length > 0) {
+    parts.push(`Attached context (read these with your tools as needed):\n${picked.map(line).join('\n')}`);
+  }
+  if (parts.length === 0) return '';
+  return `\n\n---\n${parts.join('\n')}`;
 }
 
 export function AssistantClient({
@@ -196,6 +210,7 @@ export function AssistantClient({
     pendingContext,
     pinnedContext,
     extraDirective,
+    surfaceSelection,
     removeContext,
     clearContext,
     startPicking,
@@ -203,12 +218,39 @@ export function AssistantClient({
   // Everything that rides this turn as context: the screen-pinned node (the open
   // page/table/app) PLUS any pick-mode chips, deduped. Pinned nodes survive a
   // send (they stay attached while you're on the screen); pick-mode chips clear.
-  const allContext = useMemo(() => {
+  const pickedContext = useMemo(() => {
     const seen = new Set(pinnedContext.map((r) => r.id));
-    return [...pinnedContext, ...pendingContext.filter((r) => !seen.has(r.id))];
+    return pendingContext.filter((r) => !seen.has(r.id));
   }, [pinnedContext, pendingContext]);
+  const allContext = useMemo(
+    () => [...pinnedContext, ...pickedContext],
+    [pinnedContext, pickedContext],
+  );
   const [messages, setMessages] = useState<Message[]>(initialMessages);
+  // The composer draft survives beyond this component's life: it's mirrored to
+  // sessionStorage per agent, so an agent switch (which remounts this component
+  // by design) or a reload brings your half-typed message back. Hydrated in an
+  // effect (not the initializer) so SSR/hydration stay byte-identical.
+  const draftKey = `mantle_assistant_draft:${agentSlug ?? 'default'}`;
   const [draft, setDraft] = useState('');
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(draftKey);
+      if (saved) setDraft((cur) => (cur ? cur : saved));
+    } catch {
+      /* no storage — draft is session-memory only */
+    }
+    // Hydrate once per mount (the key is fixed for a mount — agent switches remount).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    try {
+      if (draft) sessionStorage.setItem(draftKey, draft);
+      else sessionStorage.removeItem(draftKey);
+    } catch {
+      /* no storage */
+    }
+  }, [draft, draftKey]);
   const [sending, setSending] = useState(false);
   // True from the moment the user hits Stop until the turn settles — so the Stop
   // button reflects "stopping…" and can't be double-fired.
@@ -735,7 +777,7 @@ export function AssistantClient({
     // so the specialist narrows the same way the old in-screen panels did.
     const sentText =
       text +
-      (allContext.length ? buildContextPreamble(allContext) : '') +
+      buildContextPreamble(pinnedContext, pickedContext) +
       (extraDirective ? `\n\n${extraDirective}` : '');
 
     const hasFile = attachedFile != null;
@@ -960,7 +1002,11 @@ export function AssistantClient({
   return (
     <>
       <div className="relative flex min-h-0 flex-1 flex-col">
-      <div ref={scrollerRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-6 py-6">
+      {/* @container/thread: the turn layout (prompt-in-the-margin two-column
+          grid) keys off THIS pane's width, not the viewport — so the docked
+          side column stacks prompts above responses while the full overlay
+          keeps the margin layout. */}
+      <div ref={scrollerRef} onScroll={onScroll} className="@container/thread min-h-0 flex-1 overflow-y-auto scrollbar-thin px-6 py-6">
         {/* Height-tracking wrapper: the ResizeObserver above watches this node so
             late content growth (TipTap reply bodies, images loading in) re-pins
             the scroll to the bottom instead of stranding it mid-thread. */}
@@ -1009,7 +1055,7 @@ export function AssistantClient({
                   <li
                     key={turn.id}
                     className={
-                      'group/turn grid gap-x-10 gap-y-3 pb-10 lg:grid-cols-[minmax(0,1fr)_300px]' +
+                      'group/turn grid gap-x-10 gap-y-3 pb-10 @3xl/thread:grid-cols-[minmax(0,1fr)_300px]' +
                       // A thin divider between turns, in the agent's accent
                       // colour (the accent moved here from the old left border).
                       (idx > 0 ? ' border-t pt-10' : '')
@@ -1023,14 +1069,14 @@ export function AssistantClient({
                     {/* RIGHT MARGIN (DOM-first so it stacks above the
                         response on mobile): the user's prompt, anchored
                         beside the response it produced. */}
-                    <div className="lg:col-start-2 lg:row-start-1">
+                    <div className="@3xl/thread:col-start-2 @3xl/thread:row-start-1">
                       {turn.prompt && (
                         <PromptCard message={turn.prompt} />
                       )}
                     </div>
 
                     {/* MAIN CANVAS: Saskia's reply as a rich document. */}
-                    <div className="min-w-0 lg:col-start-1 lg:row-start-1">
+                    <div className="min-w-0 @3xl/thread:col-start-1 @3xl/thread:row-start-1">
                       {turn.response ? (
                         turn.response.status === 'failed' ? (
                           // Durable failed turn (reloaded after an error).
@@ -1263,9 +1309,11 @@ export function AssistantClient({
             )}
             {/* Context chips. The screen-pinned node (the open page/table/app)
                 shows first with a pin glyph and no remove — it's managed by the
-                screen and rides every turn. Pick-mode chips follow and clear
-                after a send. */}
-            {allContext.length > 0 && (
+                screen and rides every turn. Focused-section chips (the Pages
+                gutter marks, with a snippet of each marked block) follow, so
+                it's unambiguous the assistant sees exactly what you selected.
+                Pick-mode chips come last and clear after a send. */}
+            {(allContext.length > 0 || (surfaceSelection?.items.length ?? 0) > 0) && (
               <div className="flex flex-wrap gap-1.5">
                 {allContext.map((c) => {
                   const pinned = pinnedContext.some((r) => r.id === c.id);
@@ -1300,6 +1348,39 @@ export function AssistantClient({
                     </span>
                   );
                 })}
+                {surfaceSelection?.items.map((s) => (
+                  <span
+                    key={`focus-${s.id}`}
+                    className={
+                      'inline-flex max-w-[16rem] items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 py-1 pl-2 text-xs text-foreground ' +
+                      (surfaceSelection.onRemove ? 'pr-1' : 'pr-2')
+                    }
+                    title={`Focused ${surfaceSelection.noun} — the assistant will work on exactly what you marked`}
+                  >
+                    <Highlighter className="size-3.5 shrink-0 text-primary" aria-hidden />
+                    <span className="truncate font-medium">{s.label}</span>
+                    {surfaceSelection.onRemove && (
+                      <button
+                        type="button"
+                        onClick={() => surfaceSelection.onRemove?.(s.id)}
+                        className="rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                        title="Unmark"
+                        aria-label={`Unmark ${s.label}`}
+                      >
+                        <X className="size-3" aria-hidden />
+                      </button>
+                    )}
+                  </span>
+                ))}
+                {(surfaceSelection?.items.length ?? 0) > 1 && surfaceSelection?.onClear && (
+                  <button
+                    type="button"
+                    onClick={() => surfaceSelection.onClear?.()}
+                    className="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+                  >
+                    Clear {surfaceSelection.items.length} marked
+                  </button>
+                )}
               </div>
             )}
             <div className="flex gap-2">
@@ -1448,7 +1529,7 @@ export function AssistantClient({
  */
 function PromptCard({ message }: { message: Message }) {
   return (
-    <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm lg:sticky lg:top-2">
+    <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm @3xl/thread:sticky @3xl/thread:top-2">
       <div className="mb-1 flex items-baseline justify-between gap-2">
         <span className="flex items-center gap-1.5">
           <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">

@@ -14,8 +14,10 @@ export function buildFocusDirective(focusBlockIds: readonly string[] | undefined
   if (ids.length === 0) return '';
   return (
     `\nFOCUS SET — the user marked specific blocks. Operate ONLY on these ` +
-    `block ids and leave EVERY other block byte-for-byte unchanged. You ` +
-    `ALREADY have the exact target id(s) below, so do NOT call ` +
+    `block ids and leave EVERY other block byte-for-byte unchanged. If you ` +
+    `delegate the edit to a specialist, include this ENTIRE focus set in the ` +
+    `delegation prompt verbatim. Whoever edits ALREADY has the exact target ` +
+    `id(s) below, so do NOT call ` +
     `page_blocks_list — go straight to page_block_get on each id to read it, ` +
     `then page_block_update (only fall back to page_blocks_list if an id is ` +
     `reported not-found). Do not touch, reorder, or restyle any block not in ` +

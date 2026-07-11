@@ -35,4 +35,10 @@ describe('buildFocusDirective', () => {
     const out = buildFocusDirective(['x']);
     expect(out).toContain('do NOT call page_blocks_list');
   });
+
+  it('tells a delegating responder to relay the focus set verbatim', () => {
+    const out = buildFocusDirective(['x']);
+    expect(out).toContain('delegate');
+    expect(out).toContain('verbatim');
+  });
 });
