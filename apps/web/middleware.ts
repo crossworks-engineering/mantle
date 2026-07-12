@@ -123,7 +123,10 @@ function applyCors(res: NextResponse, origin: string): NextResponse {
   res.headers.set('Access-Control-Allow-Origin', origin);
   res.headers.append('Vary', 'Origin');
   res.headers.set('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
-  res.headers.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  // Idempotency-Key rides every assistant/team turn POST (replay-safe retries).
+  // Without it here the browser's preflight rejects the send for detached
+  // clients — same-origin never preflights, so the gap only bit dev:fe/Electron.
+  res.headers.set('Access-Control-Allow-Headers', 'Authorization, Content-Type, Idempotency-Key');
   res.headers.set('Access-Control-Max-Age', '86400');
   return res;
 }

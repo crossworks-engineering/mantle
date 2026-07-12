@@ -29,6 +29,7 @@ import { PageEditor } from '@/components/page-editor/page-editor';
 import { PageOutline } from '@/components/page-editor/page-outline';
 import { PageBacklinks } from '@/components/page-editor/page-backlinks';
 import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
+import type { SurfaceSelection } from '@/components/assistant/assistant-dock';
 import { buildFocusDirective } from '@/lib/focus-directive';
 import type { Backlink } from '@/lib/pages';
 import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
@@ -436,6 +437,40 @@ function PageDetailEditor({
     ? diffOverlay.counts.added + diffOverlay.counts.changed + diffOverlay.counts.removed
     : 0;
 
+  // The marked blocks as human-readable chips for the assistant composer — a
+  // snippet of each block's text (or its kind, for figures), in document order.
+  // This is the feedback loop for the marker: what you drag in the gutter shows
+  // up, verbatim, as "focused section" chips in the chat, so there's never a
+  // question of whether the assistant sees the selection.
+  const assistSelection = useMemo<SurfaceSelection | null>(() => {
+    if (marks.length === 0) return null;
+    const markSet = new Set(marks);
+    const items: { id: string; label: string }[] = [];
+    tocEditor?.state.doc.forEach((node) => {
+      const id = node.attrs?.id as string | undefined;
+      if (!id || !markSet.has(id)) return;
+      // One chip per mark id: legacy docs can carry duplicate block ids (the
+      // pre-v0.120.1 split/paste mint), and a dup would double the chip count
+      // vs the Mark button. First occurrence wins — same block the id-addressed
+      // page tools resolve.
+      if (items.some((i) => i.id === id)) return;
+      items.push({ id, label: blockSnippet(node) });
+    });
+    // Marks whose block vanished (deleted while marked) still get a chip so the
+    // count matches what buildFocusDirective sends.
+    for (const id of marks) {
+      if (!items.some((i) => i.id === id)) items.push({ id, label: 'Removed block' });
+    }
+    return {
+      noun: 'section',
+      items,
+      onRemove: (id: string) => setMarks((prev) => prev.filter((m) => m !== id)),
+      onClear: () => setMarks([]),
+    };
+    // editorKey: re-derive snippets when the editor remounts on a fresh draft.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [marks, tocEditor, editorKey]);
+
   // Recompute the diff overlay (committed baseline vs live doc) while review
   // mode is on — rAF-throttled, re-subscribing when the editor remounts. Off →
   // clear. editedIds (nav targets) tracks the added+changed ids.
@@ -587,6 +622,8 @@ function PageDetailEditor({
     surface: 'pages',
     node: { id: initial.id, kind: 'page', label: title || 'Untitled page' },
     focusDirective,
+    selection: assistSelection,
+    changeCount: reviewChangeCount,
     onEdited: onPagesEdited,
   });
 
@@ -637,9 +674,12 @@ function PageDetailEditor({
     <div className="flex h-full min-h-0 flex-col">
       <SetPageTitle title={title || 'Untitled page'} />
 
-      <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-background/80 px-4 py-2 backdrop-blur">
+      {/* flex-wrap: the toolbar must stay fully reachable when the docked
+          assistant column narrows this pane — buttons flow to a second row
+          instead of clipping (Mark/Revert/Share used to fall off the edge). */}
+      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 gap-y-1.5 border-b border-border bg-background/80 px-4 py-2 backdrop-blur">
         <BackLink href="/pages">All pages</BackLink>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 gap-y-1.5">
           <StatusIndicator committing={committing} draftSaving={draftSaving} dirty={docDirty} />
           <Button size="sm" onClick={() => void commit()} disabled={!docDirty || committing}>
             <GitCommitHorizontal /> Commit
@@ -898,4 +938,21 @@ function StatusIndicator({
       <Check className="size-3.5" aria-hidden /> Committed
     </span>
   );
+}
+
+/** Short human-readable label for a marked top-level block: its text (squashed,
+ *  truncated) or its kind when it has none (figures, dividers). Drives the
+ *  "focused section" chips in the assistant composer. */
+function blockSnippet(node: { textContent: string; type: { name: string } }): string {
+  const text = node.textContent.trim().replace(/\s+/g, ' ');
+  if (text) return text.length > 44 ? `${text.slice(0, 44)}…` : text;
+  const nice: Record<string, string> = {
+    image: 'Image',
+    fileEmbed: 'File embed',
+    horizontalRule: 'Divider',
+    table: 'Table',
+    childPage: 'Sub-page',
+    codeBlock: 'Code block',
+  };
+  return nice[node.type.name] ?? node.type.name;
 }

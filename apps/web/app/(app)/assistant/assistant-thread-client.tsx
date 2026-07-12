@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { Minus } from 'lucide-react';
+import { GitCompareArrows, Highlighter, MapPin, Maximize2, Minus, PanelRight } from 'lucide-react';
 import { apiFetch } from '@/lib/api-fetch';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { Spinner } from '@/components/ui/spinner';
@@ -34,7 +34,8 @@ type ThreadData = {
  * writes the cookie + navigates to ?agent=<slug>, which re-keys this query.
  */
 export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
-  const { minimize } = useAssistantDock();
+  const { minimize, docked, toggleDocked, pinnedContext, surfaceSelection, surfaceChanges } =
+    useAssistantDock();
   const threadQuery = useQuery({
     queryKey: ['assistant', 'thread', slugHint ?? ''],
     queryFn: () =>
@@ -108,6 +109,19 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
         </div>
         <div className="flex items-center gap-1.5">
           {agentList.length > 0 && <AgentSelect agents={agentList} selected={agent?.slug ?? ''} />}
+          {/* Column ⇄ full display, on every screen (lg+; below lg the panel is
+              always the full overlay). The third mode — minimised to the
+              bubble — is the button beside this one. */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden size-8 lg:inline-flex"
+            onClick={toggleDocked}
+            title={docked ? 'Expand to full display' : 'Shrink to a side column'}
+            aria-label={docked ? 'Expand assistant to full display' : 'Shrink assistant to a side column'}
+          >
+            {docked ? <Maximize2 aria-hidden /> : <PanelRight aria-hidden />}
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -120,6 +134,33 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
           </Button>
         </div>
       </header>
+
+      {/* Context strip — one line of truth about what the assistant is working
+          with: the pinned on-screen node, how many sections are focused, and
+          how many draft changes await review. Only when a surface is pinned. */}
+      {pinnedContext.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border bg-muted/30 px-6 py-1.5 text-xs text-muted-foreground">
+          <span className="inline-flex min-w-0 items-center gap-1.5">
+            <MapPin className="size-3.5 shrink-0 text-primary" aria-hidden />
+            <span className="truncate">
+              Working on <span className="font-medium text-foreground">{pinnedContext[0]?.label}</span>
+            </span>
+          </span>
+          {surfaceSelection && surfaceSelection.items.length > 0 && (
+            <span className="inline-flex items-center gap-1.5">
+              <Highlighter className="size-3.5 shrink-0 text-primary" aria-hidden />
+              {surfaceSelection.items.length} {surfaceSelection.noun}
+              {surfaceSelection.items.length === 1 ? '' : 's'} focused
+            </span>
+          )}
+          {surfaceChanges != null && surfaceChanges > 0 && (
+            <span className="inline-flex items-center gap-1.5">
+              <GitCompareArrows className="size-3.5 shrink-0" aria-hidden />
+              {surfaceChanges} draft change{surfaceChanges === 1 ? '' : 's'} to review
+            </span>
+          )}
+        </div>
+      )}
 
       <AssistantClient
         // Force a remount on agent change so the draft input, attachment,
