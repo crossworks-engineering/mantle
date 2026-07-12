@@ -137,14 +137,13 @@ type AssistantDockApi = {
    *  count), for the panel's context strip. Null when unknown/none. */
   surfaceChanges: number | null;
   setSurfaceChanges: (n: number | null) => void;
-  /** True while the open panel renders as a docked side column (an editor
-   *  surface is pinned + the user hasn't switched to full overlay + lg viewport
-   *  handled in CSS). The editor stays visible beside the chat, so gutter marks
-   *  and review highlights are seen live. */
+  /** True while the open panel renders as a docked side column between the
+   *  content and the activity rail (lg viewport handled in CSS). Available on
+   *  every screen — on editor surfaces it's what keeps gutter marks and review
+   *  highlights visible beside the chat. The panel's third state — minimised
+   *  to the bubble — lives on `panel`. */
   docked: boolean;
-  /** Whether docking is even available right now (a surface is pinned). */
-  dockAvailable: boolean;
-  /** column ⇄ overlay for surface screens; persisted. */
+  /** column ⇄ full display; persisted, applies everywhere. */
   toggleDocked: () => void;
   /** The on-screen node id the in-flight turn is editing (null when idle or when
    *  no surface node is pinned) — lets a screen lock its editor only while ITS
@@ -196,8 +195,10 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   const [extraDirective, setExtraDirectiveState] = useState<string | null>(null);
   const [surfaceSelection, setSurfaceSelectionState] = useState<SurfaceSelection | null>(null);
   const [surfaceChanges, setSurfaceChangesState] = useState<number | null>(null);
-  // Docked-column preference for editor surfaces. Default ON (the old dedicated
-  // assist panels were side columns); the panel header can flip it, persisted.
+  // Docked-column preference — a first-class display mode on EVERY screen
+  // (full display ⇄ docked column ⇄ minimised bubble). Default ON (the column
+  // keeps the screen you're working on visible); the panel header flips it,
+  // persisted, and the pick sticks across screens and sessions.
   const [dockPref, setDockPref] = useState(true);
   useEffect(() => {
     try {
@@ -206,8 +207,7 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       /* no storage — keep the default */
     }
   }, []);
-  const dockAvailable = pinnedContext.length > 0;
-  const docked = dockPref && dockAvailable;
+  const docked = dockPref;
   const toggleDocked = useCallback(() => {
     setDockPref((v) => {
       try {
@@ -507,7 +507,6 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       surfaceChanges,
       setSurfaceChanges,
       docked,
-      dockAvailable,
       toggleDocked,
       activeContextNodeId,
       registerTurnListener,
@@ -543,7 +542,6 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       surfaceChanges,
       setSurfaceChanges,
       docked,
-      dockAvailable,
       toggleDocked,
       activeContextNodeId,
       registerTurnListener,

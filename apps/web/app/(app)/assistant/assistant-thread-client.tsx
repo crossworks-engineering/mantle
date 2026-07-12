@@ -34,7 +34,7 @@ type ThreadData = {
  * writes the cookie + navigates to ?agent=<slug>, which re-keys this query.
  */
 export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
-  const { minimize, docked, dockAvailable, toggleDocked, pinnedContext, surfaceSelection, surfaceChanges } =
+  const { minimize, docked, toggleDocked, pinnedContext, surfaceSelection, surfaceChanges } =
     useAssistantDock();
   const threadQuery = useQuery({
     queryKey: ['assistant', 'thread', slugHint ?? ''],
@@ -109,20 +109,19 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
         </div>
         <div className="flex items-center gap-1.5">
           {agentList.length > 0 && <AgentSelect agents={agentList} selected={agent?.slug ?? ''} />}
-          {dockAvailable && (
-            // Column ⇄ full-screen, only meaningful while an editor surface is
-            // pinned behind the chat (lg+; below lg it's always the overlay).
-            <Button
-              variant="ghost"
-              size="icon"
-              className="hidden size-8 lg:inline-flex"
-              onClick={toggleDocked}
-              title={docked ? 'Expand to full screen' : 'Dock beside the editor'}
-              aria-label={docked ? 'Expand assistant to full screen' : 'Dock assistant beside the editor'}
-            >
-              {docked ? <Maximize2 aria-hidden /> : <PanelRight aria-hidden />}
-            </Button>
-          )}
+          {/* Column ⇄ full display, on every screen (lg+; below lg the panel is
+              always the full overlay). The third mode — minimised to the
+              bubble — is the button beside this one. */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden size-8 lg:inline-flex"
+            onClick={toggleDocked}
+            title={docked ? 'Expand to full display' : 'Shrink to a side column'}
+            aria-label={docked ? 'Expand assistant to full display' : 'Shrink assistant to a side column'}
+          >
+            {docked ? <Maximize2 aria-hidden /> : <PanelRight aria-hidden />}
+          </Button>
           <Button
             variant="ghost"
             size="icon"

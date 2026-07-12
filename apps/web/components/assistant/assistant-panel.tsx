@@ -13,12 +13,13 @@ import { useAssistantDock } from './assistant-dock';
  *    like any other screen rather than a floating window — yet it lives above
  *    every route, so it's available everywhere and minimises to the bubble.
  *
- *  - **Docked column** (editor surfaces, lg+): when the open screen pins a node
- *    (a page / table / app is open) the panel docks as a right-hand column and
- *    `<main>` shrinks beside it (the shell publishes `--assistant-w`), so the
- *    editor stays visible while you chat — gutter marks, live edits, and review
- *    highlights are all seen as they happen, like the old dedicated assist
- *    panels. Below lg it falls back to the overlay.
+ *  - **Docked column** (any screen, lg+): the panel docks as a right-hand
+ *    column between the content and the activity rail, and `<main>` shrinks
+ *    beside it (the shell publishes `--assistant-w`) — so the screen stays
+ *    visible and interactive while you chat. On editor surfaces that means
+ *    gutter marks, live edits, and review highlights are seen as they happen,
+ *    like the old dedicated assist panels. Below lg it falls back to the
+ *    overlay. The header toggle flips column ⇄ full display, persisted.
  *
  * It mounts in the background on page load (hidden via display:none until
  * `open`), so the thread warms immediately, the composer exists from the start
