@@ -121,7 +121,9 @@ async function seedCasesNote(): Promise<void> {
       and(
         eq(nodes.ownerId, USER_ID!),
         eq(nodes.type, 'note'),
-        sql`${nodes.tags} @> ${[CASES_TAG]}::text[]`,
+        // Literal array — a JS array bind param is not serialised to a PG
+        // array by the postgres-js driver (see packages/search/src/pg.ts).
+        sql`${nodes.tags} @> ${sql.raw(`'{${CASES_TAG}}'::text[]`)}`,
       ),
     )
     .limit(1);
