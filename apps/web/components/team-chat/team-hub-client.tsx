@@ -3,14 +3,16 @@
 /**
  * The Team Hub — the /team landing for team members. A briefing surface served
  * straight from the brain: hero + "Ask the brain" CTA, the owner's team-shared
- * pages as section cards, live content stats, and the existing chat client one
- * tap away (view switch, no separate route — same token gate, same cookie).
+ * pages as section cards, team-shared apps as launcher cards, live content
+ * stats, and the existing chat client one tap away (view switch, no separate
+ * route — same token gate, same cookie).
  *
  * Public surface: raw fetch on purpose (apiFetch is the app shell's
  * authenticated wrapper); a 401 anywhere flips back to the token gate.
  */
 import { useCallback, useEffect, useState } from 'react';
 import {
+  AppWindow,
   ArrowLeft,
   ArrowUpRight,
   BookOpen,
@@ -30,10 +32,24 @@ import type { HubData as BridgeHubData, HubNavTarget } from '@/lib/app-bridge/pr
 
 type HubSection = BridgeHubData['sections'][number];
 
+/** A launcher card — one of the owner's OTHER team-shared apps (active
+ *  team-mode app share + green published build; the designated hub app is
+ *  excluded server-side). Mirrors @mantle/content `TeamAppCard`. */
+type TeamAppCard = {
+  token: string;
+  title: string;
+  description: string | null;
+  updatedAt: string;
+};
+
 /** The /api/team/hub payload — the bridge `HubData` (what `hub.get` answers a
- *  hub app with) plus the shell-only designation pointer. Composed from the
- *  protocol type so the two can't drift. */
+ *  hub app with) plus the shell-only fields. Composed from the protocol type
+ *  so the two can't drift. */
 type HubData = BridgeHubData & {
+  /** Team-apps launcher cards. Shell-only until the bridge `HubData` grows an
+   *  `apps` field (launcher phase 2) — optional so a cached payload from an
+   *  older server renders fine. */
+  apps?: TeamAppCard[];
   /** Present when this brain designated a team-hub APP (pref + green published
    *  build + active team-mode share all intact) — the shell renders it
    *  full-bleed instead of the built-in hub body below. */
@@ -141,9 +157,14 @@ function ChatView({ onBack }: { onBack: () => void }) {
   );
 }
 
-/** In-hub briefing reader: the /s page in a same-origin iframe (auth rides the
- *  team cookie) — members read without leaving the hub. Shared by both hubs. */
-function ReaderView({ section, onBack }: { section: HubSection; onBack: () => void }) {
+/** What the in-hub reader can open: a briefing section or a team-app launcher
+ *  card — both are just an active team-mode /s/<token> under the hood. */
+type ReaderTarget = { token: string; title: string; icon?: string | null };
+
+/** In-hub reader: the /s page in a same-origin iframe (auth rides the team
+ *  cookie) — members read briefings and open team apps without leaving the
+ *  hub. Shared by both hubs. */
+function ReaderView({ target, onBack }: { target: ReaderTarget; onBack: () => void }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center justify-between gap-2 border-b border-border/60 px-2 py-1.5">
@@ -152,18 +173,18 @@ function ReaderView({ section, onBack }: { section: HubSection; onBack: () => vo
           Back to the hub
         </Button>
         <p className="min-w-0 truncate text-sm font-medium">
-          {section.icon ? <span className="mr-1.5">{section.icon}</span> : null}
-          {section.title}
+          {target.icon ? <span className="mr-1.5">{target.icon}</span> : null}
+          {target.title}
         </p>
         <Button variant="ghost" size="sm" asChild aria-label="Open in a new tab">
-          <a href={`/s/${section.token}`} target="_blank" rel="noreferrer">
+          <a href={`/s/${target.token}`} target="_blank" rel="noreferrer">
             <ExternalLink />
           </a>
         </Button>
       </div>
       <iframe
-        src={`/s/${section.token}`}
-        title={section.title}
+        src={`/s/${target.token}`}
+        title={target.title}
         className="min-h-0 w-full flex-1 border-0 bg-background"
       />
     </div>
@@ -173,7 +194,7 @@ function ReaderView({ section, onBack }: { section: HubSection; onBack: () => vo
 export function TeamHubShell() {
   const [data, setData] = useState<HubData | null>(null);
   const [authed, setAuthed] = useState<boolean | null>(null); // null = resolving
-  const [view, setView] = useState<'hub' | 'chat' | { briefing: HubSection }>('hub');
+  const [view, setView] = useState<'hub' | 'chat' | { reader: ReaderTarget }>('hub');
   // Which designated app's bundle failed to load — fall back to the built-in
   // hub for THAT app rather than showing members a broken slot. Keyed by app id
   // so a later designation change (or redeploy under a new app) gets a fresh
@@ -232,7 +253,7 @@ export function TeamHubShell() {
       // Only open briefings that are REAL hub sections (active team-mode page
       // shares) — never navigate to an arbitrary token an app hands us.
       const section = data.sections.find((s) => s.token === target.briefing);
-      if (section) setView({ briefing: section });
+      if (section) setView({ reader: section });
     };
     return (
       <div className="flex min-h-0 flex-1 flex-col">
@@ -256,7 +277,7 @@ export function TeamHubShell() {
         </div>
         {view === 'chat' ? <ChatView onBack={() => setView('hub')} /> : null}
         {typeof view === 'object' ? (
-          <ReaderView section={view.briefing} onBack={() => setView('hub')} />
+          <ReaderView target={view.reader} onBack={() => setView('hub')} />
         ) : null}
       </div>
     );
@@ -265,7 +286,7 @@ export function TeamHubShell() {
   if (view === 'chat') return <ChatView onBack={() => setView('hub')} />;
 
   if (typeof view === 'object') {
-    return <ReaderView section={view.briefing} onBack={() => setView('hub')} />;
+    return <ReaderView target={view.reader} onBack={() => setView('hub')} />;
   }
 
   const brainName = data.siteName ?? 'this brain';
@@ -360,7 +381,7 @@ export function TeamHubShell() {
                     // (new tab / window) keep native anchor behaviour.
                     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
                     e.preventDefault();
-                    setView({ briefing: s });
+                    setView({ reader: s });
                   }}
                   className="group rounded-lg border border-border bg-card p-5 text-card-foreground transition-colors hover:border-primary/50"
                 >
@@ -389,6 +410,55 @@ export function TeamHubShell() {
             </div>
           )}
         </section>
+
+        {/* Team apps — launcher cards for the owner's other team-shared apps.
+            Share-driven like briefings: an active team-mode app share (with a
+            green published build) lists the app; revoking delists it. Auth
+            rides the /team hub cookie, so /s/<token> opens with no re-prompt. */}
+        {(data.apps ?? []).length > 0 ? (
+          <section className="py-8">
+            <h2 className="text-sm font-medium uppercase tracking-widest text-muted-foreground">
+              Team apps
+            </h2>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              {(data.apps ?? []).map((a) => (
+                <a
+                  key={a.token}
+                  href={`/s/${a.token}`}
+                  onClick={(e) => {
+                    // Plain click opens in the hub; modified clicks (new tab /
+                    // window) keep native anchor behaviour — same as briefings.
+                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                    e.preventDefault();
+                    setView({ reader: a });
+                  }}
+                  className="group rounded-lg border border-border bg-card p-5 text-card-foreground transition-colors hover:border-primary/50"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <AppWindow className="size-4" aria-hidden />
+                      </span>
+                      <h3 className="font-medium">{a.title}</h3>
+                    </div>
+                    <ArrowUpRight
+                      className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+                      aria-hidden
+                    />
+                  </div>
+                  {a.description ? (
+                    <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">
+                      {a.description}
+                    </p>
+                  ) : null}
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Updated {formatDate(a.updatedAt)}
+                  </p>
+                </a>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         {/* Live stats */}
         {stats.length > 0 ? (
