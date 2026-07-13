@@ -86,10 +86,39 @@ Mantle's vector columns are all `vector(768)` (migration `0060`). Every embeddin
 - `nodes.embedding` (the per-document spine)
 - `entities.embedding` (per-person/place/thing)
 - `facts.embedding` (per atomic fact)
-- `content_chunks.embedding` (the ~1500-char passages for long-doc retrieval)
+- `content_chunks.embedding` (the ~2750-char passages for long-doc retrieval)
 - `tool_result_chunks.embedding` (spilled tool-result store)
 
 All four retrieval indexes are **HNSW** (rebuilt during the migration).
+
+### Querying HNSW correctly (`withHnswPool`)
+
+Two traps make a vector query silently miss the index (July 2026, after the
+salience ranking landed):
+
+1. **An adjusted ORDER BY is not index-eligible.** pgvector's HNSW only
+   serves a *bare* `embedding <=> $vec` ordering — add any arithmetic
+   (salience, recency decay) and the planner falls back to a full scan +
+   sort: the exact latency cliff migration 0057 removed. Proven with
+   EXPLAIN: with seq/bitmap scans force-disabled, an adjusted ORDER BY still
+   cannot touch `nodes_embedding_idx`.
+2. **`hnsw.ef_search` caps the scan at 40 rows by default** — a fifth of the
+   200-candidate pools the hybrid ranker asks for.
+
+Every vector arm therefore follows one recipe, wrapped by `withHnswPool`
+(`packages/search/src/hnsw.ts`): inner subquery with the bare-distance ORDER
+BY + `LIMIT pool` (index-eligible) → `SET LOCAL hnsw.ef_search` sized to the
+pool (clamped 40–1000) + `hnsw.iterative_scan = relaxed_order` (pgvector
+≥ 0.8, probed safely) → outer re-rank with the adjustment terms. Applied to
+`searchNodes`, `searchChunks`, and the per-turn fact/content queries in
+`loadConversationContext`. Re-ranking inside a ≥5× pool is a bounded
+approximation (the adjustments only penalise, never promote); at small
+corpora the planner still picks the exact seq scan — which is correct.
+
+One more driver trap while you're here: drizzle's postgres-js driver does
+**not** serialise a JS array bind param into a Postgres array literal — use
+`pgArrayLiteral` (`packages/search/src/pg.ts`) with a `::uuid[]`/`::text[]`
+cast, or an inline literal for constants.
 
 **What this means in practice:**
 
