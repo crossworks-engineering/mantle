@@ -74,7 +74,7 @@ export function SystemVitals() {
           <Pill ok={postgres.up} label="Postgres" />
           <Pill ok={storage.minioUp} label="MinIO" />
           <Pill ok={tika.up} label="Tika" title={tika.version ?? undefined} />
-          <Pill ok={browser.up} label="Browser" title={browser.version ?? undefined} />
+          <Pill ok={browser.up} label="Chromium" title={browser.version ?? undefined} />
           <Pill
             ok={embedder.up}
             label={embedder.scope ? `Embedder · ${embedder.scope}` : 'Embedder'}
