@@ -384,7 +384,7 @@ const app_db_schema_set: BuiltinToolDef = {
   preconditions: APP_ID_PRE,
   name: 'Set a mini app\'s SQLite schema',
   description:
-    "Declare the app's per-app SQLite schema as DDL (CREATE TABLE …). Stored on the app manifest; the host provisions/migrates the app's own SQLite database from it. The app reads/writes via host.db.query(sql, params) / host.db.exec(sql, params) — each app touches only its own database. Replaces the current schema (bumps the version).",
+    "Declare the app's per-app SQLite schema as DDL (CREATE TABLE …). Stored on the app manifest; the host provisions/migrates the app's own SQLite database from it. The app reads/writes via host.db.query(sql, params) / host.db.exec(sql, params) — each app touches only its own database. Replaces the current schema (bumps the version). The DDL is guarded: ATTACH/DETACH/VACUUM INTO/PRAGMA are refused (read-only `PRAGMA table_info(<table>)` excepted), and it only re-runs on a version bump — it will NOT reshape a table that already exists. To add columns to an app with live data, run an idempotent ALTER TABLE migration in app code at startup (pattern in the app_authoring skill).",
   inputSchema: {
     type: 'object',
     properties: {
