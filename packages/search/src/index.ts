@@ -6,6 +6,14 @@ import { pgArrayLiteral } from './pg';
 export { withHnswPool } from './hnsw';
 
 export {
+  goldRank,
+  parseEvalCases,
+  scoreRanks,
+  type RecallEvalCase,
+  type RecallScores,
+} from './eval';
+
+export {
   searchEntities,
   entityNeighbors,
   entityFacts,

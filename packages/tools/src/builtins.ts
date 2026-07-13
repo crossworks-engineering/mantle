@@ -56,6 +56,7 @@ import { TOOL_RESULT_TOOLS } from './builtins-tool-results';
 import { CONTACT_TOOLS } from './builtins-contacts';
 import { JOURNAL_TOOLS } from './builtins-journal';
 import { PEER_TOOLS } from './builtins-peers';
+import { EVAL_TOOLS } from './builtins-eval';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import { LOCATION_TOOLS } from './builtins-locations';
 import { EXPORT_TOOLS } from './builtins-export';
@@ -1497,6 +1498,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Federation — query other people's Mantles for data they've shared with
   // you. Outbound half of docs/federation.md; reads only what a peer granted.
   ...PEER_TOOLS,
+  // Retrieval-quality self-check (recall_eval) — heartbeat-driven monitoring.
+  ...EVAL_TOOLS,
   // Toolsmith — author/test/group/grant templated HTTP API tools (+ web_fetch
   // for reading API docs). Granted to the Toolsmith specialist; mirrored over
   // MCP so Claude Code can drive the same flow. http-only by design.

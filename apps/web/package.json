@@ -48,6 +48,7 @@
     "backfill:digest-embeddings": "tsx --env-file-if-exists=./.env.local scripts/backfill-digest-embeddings.ts",
     "re-embed": "tsx --env-file-if-exists=./.env.local scripts/re-embed.ts",
     "eval:recall": "tsx --env-file-if-exists=./.env.local scripts/eval-recall.ts",
+    "seed:brain-health": "tsx --env-file-if-exists=./.env.local scripts/seed-brain-health.ts",
     "widen:content-hits": "tsx --env-file-if-exists=./.env.local scripts/widen-content-hits.ts",
     "backfill:email-salience": "tsx --env-file-if-exists=./.env.local scripts/backfill-email-salience.ts",
     "classify:backfill": "tsx --env-file-if-exists=./.env.local scripts/classify-backfill.ts",
