@@ -47,7 +47,7 @@ export function AssistantPanel() {
   return (
     <div
       className={cn(
-        'fixed inset-x-0 bottom-0 top-16 z-20 bg-background transition-[left,right,width] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[var(--activity-w)]',
+        'fixed inset-x-0 bottom-[var(--footer-h)] top-16 z-20 bg-background transition-[left,right,width] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[var(--activity-w)]',
         // Docked: a right column beside the visible editor (lg+ only — below lg
         // the overlay geometry above still applies).
         docked && 'lg:left-auto lg:w-[var(--assistant-w)] lg:border-l lg:border-border',

@@ -49,7 +49,7 @@ export function MailClient({
     // Offsets track the shell's collapsible sidebar / live column via the
     // `--nav-w` / `--activity-w` CSS vars, so the mail shell stays flush
     // against the global nav and live-activity column at any collapse state.
-    <div className="fixed inset-x-0 bottom-0 top-16 z-10 overflow-hidden bg-background transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[var(--activity-w)]">
+    <div className="fixed inset-x-0 bottom-[var(--footer-h)] top-16 z-10 overflow-hidden bg-background transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[var(--activity-w)]">
       <TooltipProvider delayDuration={0}>
         <ResizablePanelGroup
           orientation="horizontal"

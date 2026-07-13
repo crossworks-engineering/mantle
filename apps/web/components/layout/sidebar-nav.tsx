@@ -3,69 +3,16 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import {
-  Activity,
-  AppWindow,
-  ArrowUpCircle,
-  BookOpen,
-  BookText,
-  Bot,
-  Boxes,
-  CalendarDays,
-  CheckSquare,
-  DatabaseBackup,
-  ClipboardCheck,
-  Contact,
-  Cpu,
-  Combine,
-  FileText,
-  FolderTree,
-  GitCompare,
-  GitMerge,
-  Cloud,
-  Hammer,
-  Layers,
-  HeartPulse,
-  Inbox,
-  LayoutDashboard,
-  KeyRound,
-  Key,
-  Plug,
-  Lock,
-  Network,
-  NotebookPen,
-  Palette,
-  Radio,
-  ScrollText,
-  MessagesSquare,
-  Search,
-  ServerCog,
-  Settings,
-  Sparkles,
-  Table2,
-  TerminalSquare,
-  User,
-  UserCheck,
-  Users,
-  Waypoints,
-  Workflow,
-  X,
-  type LucideIcon,
-} from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useRealtime } from '@/components/realtime/use-realtime';
+import { NAV_GROUPS, navItemMatches, type NavItem as BaseNavItem } from './nav-items';
 
-type NavItem = {
-  name: string;
-  href: string;
-  icon: LucideIcon;
-  badge?: number;
-  /** Exact-match only (used for "/" so it doesn't match every route). */
-  exact?: boolean;
-};
+/** A rendered nav item may carry a live badge (e.g. Pending approvals). */
+type NavItem = BaseNavItem & { badge?: number };
 
 type NavGroup = { label: string; items: NavItem[] };
 
@@ -88,77 +35,16 @@ export function SidebarNav({
   // bridge pings us and we refetch the server-computed count. No polling.
   useRealtime(['pending_tool_call'], () => router.refresh());
 
-  const groups: NavGroup[] = [
-    {
-      label: 'Workspace',
-      items: [
-        { name: 'Dashboard', href: '/', icon: LayoutDashboard, exact: true },
-        { name: 'Journal', href: '/journal', icon: NotebookPen },
-        { name: 'Email', href: '/inbox', icon: Inbox },
-        { name: 'Files', href: '/files', icon: FolderTree },
-        { name: 'Notes', href: '/notes', icon: FileText },
-        { name: 'Pages', href: '/pages', icon: BookText },
-        { name: 'Tables', href: '/tables', icon: Table2 },
-        { name: 'Apps', href: '/apps', icon: AppWindow },
-        { name: 'Tasks', href: '/tasks', icon: CheckSquare },
-        { name: 'Events', href: '/events', icon: CalendarDays },
-        { name: 'Contacts', href: '/contacts', icon: Contact },
-        { name: 'Secrets', href: '/secrets', icon: Lock },
-        { name: 'Docs', href: '/docs', icon: BookOpen },
-      ],
-    },
-    {
-      label: 'Review',
-      items: [
-        { name: 'Models', href: '/models', icon: Boxes },
-        { name: 'Discover', href: '/settings/discover', icon: UserCheck },
-        { name: 'Team', href: '/team-admin', icon: MessagesSquare },
-        { name: 'Pending', href: '/pending', icon: ClipboardCheck, badge: pendingApprovals },
-      ],
-    },
-    {
-      label: 'Settings',
-      items: [
-        { name: 'Appearance', href: '/settings/appearance', icon: Palette },
-        { name: 'Accounts', href: '/settings/accounts', icon: Settings },
-        { name: 'Microsoft', href: '/settings/microsoft', icon: Cloud },
-        { name: 'Calendars', href: '/settings/calendar', icon: CalendarDays },
-        { name: 'Profile', href: '/settings/profile', icon: User },
-        { name: 'API keys', href: '/settings/keys', icon: Key },
-        { name: 'MCP', href: '/settings/mcp', icon: Plug },
-        { name: 'Agents', href: '/settings/agents', icon: Bot },
-        { name: 'AI workers', href: '/settings/ai-workers', icon: Cpu },
-        { name: 'Embedding', href: '/settings/embedding', icon: Combine },
-        { name: 'Local network', href: '/settings/network', icon: Radio },
-        { name: 'Tools', href: '/settings/tools', icon: Hammer },
-        { name: 'Tool groups', href: '/settings/tool-groups', icon: Layers },
-        { name: 'Skills', href: '/settings/skills', icon: Sparkles },
-        { name: 'Config', href: '/settings/config', icon: GitCompare },
-        { name: 'Heartbeats', href: '/settings/heartbeats', icon: HeartPulse },
-        { name: 'Entities', href: '/settings/entities', icon: GitMerge },
-        { name: 'Peers', href: '/settings/peers', icon: Network },
-        { name: 'PDF passwords', href: '/settings/pdf-passwords', icon: Lock },
-        { name: 'Backups', href: '/settings/backups', icon: DatabaseBackup },
-        { name: 'Updates', href: '/settings/updates', icon: ArrowUpCircle },
-        { name: 'Security', href: '/settings/security', icon: KeyRound },
-        { name: 'Users', href: '/settings/users', icon: Users },
-        { name: 'Audit log', href: '/settings/audit', icon: ScrollText },
-      ],
-    },
-    {
-      label: 'System',
-      items: [
-        { name: 'Studio', href: '/studio', icon: Waypoints },
-        { name: 'API Console', href: '/dev-tools', icon: TerminalSquare },
-        { name: 'Runners', href: '/runners', icon: ServerCog },
-        { name: 'Traces', href: '/traces', icon: Workflow },
-        { name: 'Debug', href: '/debug', icon: Activity },
-      ],
-    },
-  ];
+  // The shared nav list, with the live pending-approvals badge injected onto the
+  // Pending item at render time.
+  const groups: NavGroup[] = NAV_GROUPS.map((g) => ({
+    ...g,
+    items: g.items.map((item) =>
+      item.href === '/pending' ? { ...item, badge: pendingApprovals } : item,
+    ),
+  }));
 
-  const isActive = (item: NavItem) =>
-    item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(item.href + '/');
+  const isActive = (item: NavItem) => navItemMatches(item, pathname);
 
   // Filter by item name (case-insensitive substring), dropping now-empty groups.
   // The filter is an expanded-only affordance — at icon-rail width there's no

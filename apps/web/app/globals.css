@@ -3692,23 +3692,11 @@
    (0,1,0) without `!important`.
    ========================================================================== */
 
-/* h1 — hero gradient sweeping the brand colour into a chart accent. */
+/* h1 — solid brand colour. (Was a primary→chart-3 gradient via background-clip:
+   text, but transparent glyph fill caused headaches with PDF export, editing,
+   and general fragility — a flat colour is robust everywhere.) */
 .prose-accent h1 {
-  width: fit-content;
-  /* An EMPTY heading (fresh from the editor's slash menu) collapses
-     fit-content to a 0-width box, which leaves the caret nowhere to paint —
-     the cursor only appeared once the first letter gave the box width. One
-     character's worth of floor keeps the caret visible from the start. */
-  min-width: 1ch;
-  background-image: linear-gradient(100deg, var(--primary), var(--chart-3));
-  -webkit-background-clip: text;
-  background-clip: text;
-  /* Gradient text the robust way: keep a REAL color (the caret and anything
-     currentColor-derived follow it) and hide only the glyph FILL, so the
-     gradient shows through without ever leaving the element colorless. */
   color: var(--primary);
-  -webkit-text-fill-color: transparent;
-  caret-color: var(--primary);
   letter-spacing: -0.01em;
 }
 
@@ -3794,9 +3782,7 @@
    don't need. All theme-token driven.
    ========================================================================== */
 
-/* Brand-coloured caret + selection. The caret also keeps the gradient h1
-   editable — its text is transparent, so without this the cursor would vanish
-   while typing a heading. */
+/* Brand-coloured caret + selection. */
 .ProseMirror {
   caret-color: var(--primary);
 }

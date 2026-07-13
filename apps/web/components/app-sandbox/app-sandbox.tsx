@@ -190,6 +190,17 @@ ${styleMarkup}
    gap between the app content and the iframe height showed a white strip. With
    the themed background, any such gap is invisible (matches the app + host). */
 html,body{margin:0;background:var(--background)}#root{padding:0}
+/* Themed scrollbars for the WHOLE app. The host only styles scrollbars behind an
+   opt-in .scrollbar-thin class, so an app's own scroll containers otherwise fall
+   back to the default wide OS scrollbar with a white/grey track that clashes with
+   the theme. Apply the thin, theme-token look to every scroller inside the iframe
+   (scoped here, so the host is untouched). Vars resolve from the inlined theme. */
+*{scrollbar-width:thin;scrollbar-color:color-mix(in oklab,var(--muted-foreground) 30%,transparent) transparent}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background-color:color-mix(in oklab,var(--muted-foreground) 30%,transparent);border-radius:6px;border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background-color:color-mix(in oklab,var(--muted-foreground) 50%,transparent);background-clip:padding-box}
+::-webkit-scrollbar-corner{background:transparent}
 ${
   viewport
     ? `/* Viewport frame: the iframe IS the viewport, so viewport-height utilities

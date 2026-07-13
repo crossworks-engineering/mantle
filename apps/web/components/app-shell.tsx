@@ -15,14 +15,12 @@ import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { ToastProvider } from '@/components/ui/toast';
 import { PageTitleProvider } from '@/components/layout/page-title';
 import { UploadProvider, UploadDock } from '@/components/uploads/upload-provider';
-import {
-  AssistantDockProvider,
-  AssistantBubble,
-  MarkerBubble,
-  useAssistantDock,
-} from '@/components/assistant/assistant-dock';
+import { AssistantDockProvider, useAssistantDock } from '@/components/assistant/assistant-dock';
 import { AssistantPanel } from '@/components/assistant/assistant-panel';
 import { PickMode } from '@/components/assistant/pick-mode';
+import { FooterBar } from '@/components/layout/footer-bar';
+import { recordNavVisit } from '@/lib/nav-usage';
+import { matchNavItem } from '@/components/layout/nav-items';
 
 /**
  * App shell — three fixed regions (header, left sidebar, right live
@@ -135,6 +133,14 @@ function ShellFrame({
     setMobileOpen(false);
   }, [pathname]);
 
+  // Tally which primary menu the user landed on, so the footer quick-menu can
+  // rank by actual usage. Attributed to one canonical nav item (sub-routes fold
+  // into their section); unmatched paths are ignored.
+  useEffect(() => {
+    const item = matchNavItem(pathname);
+    if (item) recordNavVisit(item.href);
+  }, [pathname]);
+
   const toggleNav = () =>
     setNavCollapsed((v) => {
       writeCookie(NAV_COOKIE, !v);
@@ -197,6 +203,7 @@ function ShellFrame({
             '--nav-w': navCollapsed ? '3.5rem' : '16rem',
             '--activity-w': activityCollapsed ? '3.5rem' : '20rem',
             '--assistant-w': assistantW,
+            '--footer-h': '2.75rem',
           } as React.CSSProperties
         }
       >
@@ -249,7 +256,7 @@ function ShellFrame({
             is slow enough to stream). Containing it here, below the header, keeps
             the header's tree-context symmetric. Same rationale as UsageCard's
             boundary in layout.tsx. */}
-        <main className="fixed inset-0 top-16 overflow-y-auto scrollbar-thin transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[calc(var(--activity-w)+var(--assistant-w))]">
+        <main className="fixed inset-0 top-16 bottom-[var(--footer-h)] overflow-y-auto scrollbar-thin transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[calc(var(--activity-w)+var(--assistant-w))]">
           <Suspense fallback={null}>{children}</Suspense>
         </main>
 
@@ -261,19 +268,16 @@ function ShellFrame({
             while picking; renders nothing otherwise. */}
         <PickMode />
 
-        {/* App-wide docks: a bottom-right stack so uploads + chat never
-            overlap. Inside the shell so it inherits --activity-w (sits left of
-            the activity rail) and persists across route changes.
-            pointer-events-none lets clicks fall through the gaps; each dock
-            re-enables its own. */}
-        <div className="pointer-events-none fixed bottom-4 right-4 z-40 flex w-96 max-w-[calc(100vw-2rem)] flex-col items-stretch gap-3 lg:right-[calc(var(--activity-w)+var(--assistant-w)+1rem)]">
+        {/* Upload dock — floats just above the footer bar. Inside the shell so it
+            inherits --activity-w (sits left of the activity rail) and persists
+            across route changes. pointer-events-none lets clicks fall through the
+            gaps; the dock re-enables its own. */}
+        <div className="pointer-events-none fixed bottom-[calc(var(--footer-h)+1rem)] right-4 z-40 flex w-96 max-w-[calc(100vw-2rem)] flex-col items-stretch gap-3 lg:right-[calc(var(--activity-w)+var(--assistant-w)+1rem)]">
           <UploadDock />
-          {/* Marker + chat bubbles, side by side (marker first → pick before opening chat). */}
-          <div className="flex items-end justify-end gap-2">
-            <MarkerBubble />
-            <AssistantBubble />
-          </div>
         </div>
+
+        {/* Footer toolbar: quick-menu + Highlight/Assistant launchers. */}
+        <FooterBar />
       </div>
   );
 }

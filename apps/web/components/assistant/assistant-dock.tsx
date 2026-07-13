@@ -15,8 +15,8 @@ import type { TurnEvent } from '@mantle/client-types';
  * by idempotency-key, so even a reload doesn't lose it.
  *
  * This provider ALSO owns the global panel UI state: the full assistant opens as
- * a content-area overlay (<AssistantPanel/>) on any screen and minimises to a
- * bubble (<AssistantBubble/>), summoned by the bubble or ⌘I.
+ * a content-area overlay (<AssistantPanel/>) on any screen, summoned by the
+ * footer <AssistantButton/> or ⌘I.
  */
 export type TurnResponse = {
   inbound: { id: string; text: string; createdAt: string; artifacts?: unknown[] };
@@ -101,7 +101,7 @@ type AssistantDockApi = {
   agentSlug?: string;
   agentName: string;
   clear: () => void;
-  // ── global panel UI state (consumed by <AssistantPanel/> + <AssistantBubble/>) ──
+  // ── global panel UI state (consumed by <AssistantPanel/> + <AssistantButton/>) ──
   panel: AssistantPanelState;
   /** Show the full panel. Optionally switch to a specific agent first. */
   openAssistant: (slug?: string) => void;
@@ -568,11 +568,11 @@ export function useAssistantDock(): AssistantDockApi {
  * Owns the global ⌘I / Ctrl+I shortcut (it stays mounted even when the panel is
  * open, since it only renders null then).
  */
-export function AssistantBubble() {
+export function AssistantButton() {
   const { panel, busy, toggle, messages } = useAssistantDock();
   const [seenId, setSeenId] = useState<string | null>(null);
 
-  // Latest settled assistant reply — what an "unread" badge keys off.
+  // Latest settled assistant reply — what an "unread" dot keys off.
   const latestReplyId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const m = messages[i];
@@ -601,68 +601,57 @@ export function AssistantBubble() {
     return () => window.removeEventListener('keydown', onKey);
   }, [toggle]);
 
-  // The open panel owns the screen — no bubble then. Minimise brings it back.
-  if (panel === 'open') return null;
-
+  const open = panel === 'open';
   const unread = !busy && latestReplyId != null && latestReplyId !== seenId;
 
   return (
-    <div className="pointer-events-auto self-end">
-      <Button
-        onClick={toggle}
-        size="icon"
-        className="relative size-12 rounded-full shadow-lg"
-        aria-label="Open assistant (⌘I)"
-        title="Assistant (⌘I)"
-      >
-        {busy ? (
-          <Loader2 className="size-5 animate-spin" aria-hidden />
-        ) : (
-          <Sparkles className="size-5" aria-hidden />
-        )}
-        {unread && (
-          <span
-            className="absolute right-1 top-1 size-2.5 rounded-full bg-destructive ring-2 ring-background"
-            aria-hidden
-          />
-        )}
-      </Button>
-    </div>
+    <Button
+      onClick={toggle}
+      size="sm"
+      variant={open ? 'default' : 'ghost'}
+      className="relative"
+      aria-pressed={open}
+      aria-label="Toggle assistant (⌘I)"
+      title="Assistant (⌘I)"
+    >
+      {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Sparkles aria-hidden />}
+      <span className="hidden sm:inline">Assistant</span>
+      {unread && (
+        <span
+          className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full bg-destructive ring-2 ring-sidebar"
+          aria-hidden
+        />
+      )}
+    </Button>
   );
 }
 
 /**
- * Marker bubble — the "pick context first" entry point, sitting beside the chat
- * bubble. Toggles pick mode (<PickMode/> highlights markable rows on the screen
- * behind); a badge shows how many nodes are marked. Like the chat bubble, it's
- * hidden only while the full panel owns the screen.
+ * Highlight-content button — the "pick context first" entry point in the footer
+ * toolbar. Toggles pick mode (<PickMode/> highlights markable rows on the screen
+ * behind); a trailing count shows how many nodes are attached.
  */
-export function MarkerBubble() {
-  const { panel, picking, togglePicking, pendingContext } = useAssistantDock();
-  if (panel === 'open') return null;
+export function HighlightButton() {
+  const { picking, togglePicking, pendingContext } = useAssistantDock();
   const count = pendingContext.length;
 
   return (
-    <div className="pointer-events-auto self-end">
-      <Button
-        onClick={togglePicking}
-        size="icon"
-        variant={picking ? 'default' : 'secondary'}
-        className={cn('relative size-12 rounded-full shadow-lg', picking && 'ring-2 ring-ring ring-offset-2 ring-offset-background')}
-        aria-pressed={picking}
-        aria-label={picking ? 'Stop picking context' : 'Pick content to send to the assistant'}
-        title={picking ? 'Picking — click a row to attach (Esc when done)' : 'Mark content to send to the assistant'}
-      >
-        <SquareDashedMousePointer className="size-5" aria-hidden />
-        {count > 0 && (
-          <span
-            className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-semibold tabular-nums text-primary-foreground ring-2 ring-background"
-            aria-hidden
-          >
-            {count}
-          </span>
-        )}
-      </Button>
-    </div>
+    <Button
+      onClick={togglePicking}
+      size="sm"
+      variant={picking ? 'default' : 'ghost'}
+      className={cn('relative', picking && 'ring-2 ring-ring ring-offset-1 ring-offset-sidebar')}
+      aria-pressed={picking}
+      aria-label={picking ? 'Stop highlighting' : 'Highlight content to send to the assistant'}
+      title={picking ? 'Picking — click a row to attach (Esc when done)' : 'Highlight content to send to the assistant'}
+    >
+      <SquareDashedMousePointer aria-hidden />
+      <span className="hidden sm:inline">Highlight content</span>
+      {count > 0 && (
+        <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold tabular-nums text-primary-foreground">
+          {count}
+        </span>
+      )}
+    </Button>
   );
 }
