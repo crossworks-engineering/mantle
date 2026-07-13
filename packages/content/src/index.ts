@@ -155,6 +155,8 @@ export {
   revokePeerShare,
   listPeerShares,
   queryForPeer,
+  searchChunksForPeer,
+  activePeerGrantNodeIds,
   getNodeForPeer,
   markPeerContacted,
   hashToken,
@@ -165,14 +167,17 @@ export {
   type PeerShareRow,
   type PeerQueryOpts,
   type PeerQueryHit,
+  type PeerChunkHit,
   type PeerNodeDetail,
 } from './peers';
 
 export {
   queryPeer,
   getPeerNode,
+  searchPeerChunks,
   type PeerClientResult,
   type PeerQueryResult,
+  type PeerChunkSearchResult,
 } from './peers-client';
 
 export {

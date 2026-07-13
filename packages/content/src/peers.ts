@@ -18,6 +18,7 @@ import {
   type Node,
 } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
+import { searchChunks, searchNodes } from '@mantle/search';
 import { hashToken, mintInboundToken, tokenMatchesHash } from './peers-crypto';
 
 export const PEERS_ROOT_LABEL = 'peers';
@@ -371,11 +372,19 @@ export async function listPeerShares(ownerId: string, peerId: string): Promise<P
 // ── Scoped query (what a peer can actually read) ─────────────────────────────
 
 export type PeerQueryOpts = {
-  /** Free-text — matched against title + summary. Empty = list everything granted. */
+  /** Free-text — ranked semantically when `queryEmbedding` is present, else FTS. Empty = list everything granted. */
   query?: string;
   /** Restrict to these node types. */
   types?: string[];
   limit?: number;
+  /**
+   * Embedding of `query` in the ANSWERING owner's vector space. Computed
+   * server-side by the federation route (`embed(peer.ownerId, query)`) — the
+   * wire request carries text only, so the protocol is unchanged. When present,
+   * ranking is the same hybrid vector+FTS pipeline local search uses; when
+   * absent (no query, or embedder down), ranking degrades to FTS.
+   */
+  queryEmbedding?: number[];
 };
 
 export type PeerQueryHit = {
@@ -388,21 +397,77 @@ export type PeerQueryHit = {
 };
 
 /**
+ * The peer's active grant set — the node ids it is allowed to see, plus the
+ * granting owner. The scoping source for every federation read; searches
+ * filter to a strict subset of it.
+ */
+export async function activePeerGrantNodeIds(
+  peerId: string,
+): Promise<{ ownerId: string | null; nodeIds: string[] }> {
+  const rows = await db
+    .select({ ownerId: peerShares.ownerId, nodeId: peerShares.nodeId })
+    .from(peerShares)
+    .where(and(eq(peerShares.peerId, peerId), isNull(peerShares.revokedAt)));
+  return { ownerId: rows[0]?.ownerId ?? null, nodeIds: rows.map((r) => r.nodeId) };
+}
+
+const toPeerHit = (r: {
+  id: string;
+  type: string;
+  title: string;
+  summary: string | null;
+  tags: string[] | null;
+  createdAt: Date;
+}): PeerQueryHit => ({
+  id: r.id,
+  type: r.type,
+  title: r.title,
+  summary: r.summary,
+  tags: r.tags ?? [],
+  createdAt: r.createdAt.toISOString(),
+});
+
+/**
  * The federation read surface: nodes the peer is allowed to see (active
  * peer_shares) intersected with its query filters. This is the ONLY path a
- * peer's data ever travels — there is no unscoped variant. Bumps the peer's
- * last_contacted/seen accounting is done by the caller (the API route, which
- * also opens the trace).
+ * peer's data ever travels — there is no unscoped variant: with a query the
+ * grant set is passed to `searchNodes` as a hard id-allowlist, without one we
+ * list the grants recency-first. Bumping the peer's last_contacted/seen
+ * accounting is done by the caller (the API route, which also opens the trace).
  */
 export async function queryForPeer(peerId: string, opts: PeerQueryOpts = {}): Promise<PeerQueryHit[]> {
   const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
+
+  // ── Ranked path: search WITHIN the grant set (hybrid when embedded, FTS else).
+  if (opts.query?.trim()) {
+    const { ownerId, nodeIds } = await activePeerGrantNodeIds(peerId);
+    if (!ownerId || nodeIds.length === 0) return [];
+    const found = await searchNodes({
+      ownerId,
+      q: opts.query.trim(),
+      queryEmbedding: opts.queryEmbedding,
+      ids: nodeIds,
+      types: opts.types?.length ? opts.types : undefined,
+      limit,
+    });
+    return found.map((n) =>
+      toPeerHit({
+        id: n.id,
+        type: n.type,
+        title: n.title,
+        summary: typeof (n.data as Record<string, unknown> | null)?.summary === 'string'
+          ? ((n.data as Record<string, unknown>).summary as string)
+          : null,
+        tags: n.tags,
+        createdAt: n.createdAt,
+      }),
+    );
+  }
+
+  // ── List path (no query): everything granted, recency-first. Unchanged.
   const conds = [eq(peerShares.peerId, peerId), isNull(peerShares.revokedAt)];
   if (opts.types && opts.types.length > 0) {
     conds.push(inArray(sql`${nodes.type}::text`, opts.types));
-  }
-  if (opts.query?.trim()) {
-    const q = `%${opts.query.trim()}%`;
-    conds.push(sql`(${nodes.title} ilike ${q} or ${nodes.data}->>'summary' ilike ${q})`);
   }
   const rows = await db
     .select({
@@ -418,14 +483,36 @@ export async function queryForPeer(peerId: string, opts: PeerQueryOpts = {}): Pr
     .where(and(...conds))
     .orderBy(desc(nodes.createdAt))
     .limit(limit);
-  return rows.map((r) => ({
-    id: r.id,
-    type: r.type,
-    title: r.title,
-    summary: r.summary,
-    tags: r.tags ?? [],
-    createdAt: r.createdAt.toISOString(),
-  }));
+  return rows.map(toPeerHit);
+}
+
+// ── Scoped chunk search (passages within the grant set) ──────────────────────
+
+export type PeerChunkHit = {
+  nodeId: string;
+  nodeTitle: string;
+  nodeType: string;
+  ordinal: number;
+  headingPath: string | null;
+  text: string;
+  distance: number;
+};
+
+/**
+ * Passage-level federation read: vector search over `content_chunks` strictly
+ * limited to the peer's granted nodes. Pure vector (no FTS fallback) — the
+ * caller must supply an embedding; without one there is nothing to rank by.
+ * Same no-unscoped-variant rule as `queryForPeer`.
+ */
+export async function searchChunksForPeer(
+  peerId: string,
+  embedding: number[],
+  limit = 10,
+): Promise<PeerChunkHit[]> {
+  const capped = Math.min(Math.max(limit, 1), 50);
+  const { ownerId, nodeIds } = await activePeerGrantNodeIds(peerId);
+  if (!ownerId || nodeIds.length === 0) return [];
+  return searchChunks({ ownerId, embedding, nodeIds, limit: capped });
 }
 
 export type PeerNodeDetail = {

@@ -589,7 +589,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'federation',
     name: 'Federation',
     description: "Query other people's Mantles for data they've shared (docs/federation.md).",
-    toolSlugs: ['peer_list', 'peer_query', 'peer_node_get'],
+    toolSlugs: ['peer_list', 'peer_query', 'peer_search_chunks', 'peer_node_get'],
   },
   {
     slug: 'location',

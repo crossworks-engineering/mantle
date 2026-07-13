@@ -8,6 +8,7 @@
 import { and, asc, eq, isNotNull, sql } from 'drizzle-orm';
 import { contentChunks, db, nodes } from '@mantle/db';
 import { withHnswPool } from './hnsw';
+import { pgArrayLiteral } from './pg';
 
 /** Salience down-weight strength (see @mantle/search index). Tunable via env. */
 const SALIENCE_LAMBDA = Number(process.env.MANTLE_SALIENCE_LAMBDA ?? 0.15);
@@ -33,6 +34,12 @@ export type ChunkSearchOptions = {
    *  auto-context sets this so Mantle's own documentation isn't injected as "your
    *  content"; the explicit search_chunks tool leaves it off (docs are findable). */
   excludeSystemOrigin?: boolean;
+  /**
+   * Hard allowlist of parent node ids — passages are strictly a subset. Used by
+   * the federation surface to search exactly the peer's granted set
+   * (`peer_shares`). An empty array matches nothing (safe default).
+   */
+  nodeIds?: string[];
 };
 
 export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]> {
@@ -43,6 +50,8 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
   const conds = [eq(contentChunks.ownerId, opts.ownerId), isNotNull(contentChunks.embedding)];
   if (opts.branch) conds.push(sql`${nodes.path} <@ ${opts.branch}::ltree`);
   if (opts.excludeSystemOrigin) conds.push(sql`(${nodes.data}->>'origin') is distinct from 'system'`);
+  if (opts.nodeIds)
+    conds.push(sql`${contentChunks.nodeId} = any(${pgArrayLiteral(opts.nodeIds)}::uuid[])`);
 
   // Rank by salience-adjusted distance so a bulk/marketing email's passages
   // can't outrank real content; the returned `distance` stays raw cosine. The
