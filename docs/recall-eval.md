@@ -165,7 +165,7 @@ The newsletters (Earth Day Sale, Prusameters, PiShop) leave the prompt entirely;
 The responder's context used only the coarse per-node summary; the section-level
 `content_chunks` index (~1.5k-char passages, own embeddings) was reachable only
 via the explicit `search_chunks` tool. Now `loadConversationContext` also pulls
-the top passages (`chunk_limit`, default 3; cutoff 0.65; salience-aware,
+the top passages (`chunk_limit`, default 8 today; cutoff 0.65; salience-aware,
 system-docs + telegram excluded) and `buildChatMessages` renders them as a
 "Relevant passages" block. Both surfaces inherit it.
 
@@ -182,7 +182,7 @@ knows the doc exists; with them it can answer from it.
 This is the same lesson as preferences (step c): node-recall is necessary but
 not sufficient — some wins (passage text, preference injection, relationship
 feel) are real and invisible to it. Verify those with a direct context probe, not
-the recall number. Cost: ~3 passages (~4.5k chars) added per turn — tune via
+the recall number. Cost: up to `chunk_limit` passages (~22k chars at today's default of 8) added per turn — tune via
 `memory_config.chunk_limit`.
 
 ## After step (g): recency / time-decay (2026-06-04)
@@ -258,3 +258,33 @@ Six smaller audit items, committed individually:
 Verified: full content/db/agent/agent-runtime suites green; eval no regression
 (0.91 — none of these touch the clean-page gold cases; they target email/graph/
 follow-up/long-doc paths the gold set doesn't exercise).
+
+## Automated eval — `recall_eval` + the brain-health heartbeat (2026-07-13)
+
+The harness above is manual (`pnpm -C apps/web eval:recall`). The automated
+half runs the same idea inside the brain, on a schedule:
+
+- **Golden cases live in the brain**: a note tagged `recall-eval-cases` whose
+  content is a JSON array of `{id, query, expectNodeIds? | expectTitleIncludes?}`
+  (the field name `expectNodeTitleIncludes` from `recall-cases.json` is accepted
+  unchanged). Editable in the UI like any note — add a case the moment a recall
+  miss annoys you.
+- **`recall_eval` (builtin tool)** runs every case through the shipped
+  retrievers (hybrid `search_nodes` + passage `search_chunks`), scores
+  recall@1/3/5/10 + MRR (pure helpers in `packages/search/src/eval.ts`),
+  persists the run as a note tagged `recall-eval-run`, and reports drift vs
+  the previous run — `alert: true` on MRR −0.05 or R@5 −0.10. Run notes are
+  ordinary nodes, so the history is searchable and chartable later.
+- **The `brain_health` heartbeat** (seed: `ALLOWED_USER_ID=… pnpm -C apps/web
+  seed:brain-health`, optional `TG_CHAT_ID`/`AGENT_SLUG`) fires weekly ±6h
+  with quiet hours, calls `brain_capacity` + `recall_eval` via the
+  `brain_health_check` skill, and messages the user **only** when a capacity
+  zone left green or the eval alerted — a green week is silence.
+- **Grants**: the `brain-health` tool group (`brain_capacity`, `recall_eval`)
+  must be granted to the heartbeat's agent at `/settings/agents`.
+
+The capacity half (zones vs the split policy: watch 10k docs / 50k passage
+vectors, split 20k / 100k) is `corpusCapacity` in
+`packages/content/src/capacity.ts`, surfaced as the dashboard's **Brain
+capacity** dial and the `brain_capacity` tool — one source, so the UI and the
+alerts can never disagree.

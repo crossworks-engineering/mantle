@@ -282,7 +282,8 @@ agent-settings chip picker. The Postgres enum holds them inert.
 Layer 5's per-node embedding is the coarse "spine". For long documents a
 single 768-dim vector is a weak primitive, so the extractor also writes
 **section-level chunks** to `content_chunks` (migration 0040): each chunk is a
-~1500-char passage with its heading context and its own embedding.
+~2750-char passage (≈700 tokens) with its heading context and its own
+embedding.
 `chunkDocText` (`packages/content/src/chunk.ts`) does the splitting;
 `searchChunks` (`packages/search/src/chunks.ts`, surfaced as the MCP
 `search_chunks` tool) does cosine search over them. Generalised across all
@@ -1031,9 +1032,9 @@ Two Anthropic cache breakpoints emitted here (persona, digests); the tool-loop
 adds a third, moving one on the latest tail message — three of four total.
 Knobs: `memory_config.{fact_limit, content_hit_limit, chunk_limit,
 digest_limit}`; env `MANTLE_{SALIENCE_LAMBDA,RECENCY_*,QUERY_ENRICH}`.
-`chunk_limit` defaults to 12 (the runtime `CHUNK_LIMIT_DEFAULT`) — enough
-section passages to cover a long procedure/standard without forcing a full
-file read every turn; a per-agent override still wins.
+`chunk_limit` defaults to 8 (the runtime `CHUNK_LIMIT_DEFAULT`, ~22k chars) —
+enough section passages to cover a long procedure/standard without forcing a
+full file read every turn; a per-agent override still wins.
 
 - **Identity (always-on "who you are")** — alongside the always-injected
   preferences, `buildIdentityContext` distils the user's **Journal** (the
@@ -1097,6 +1098,24 @@ Each step delivers value standalone.
 Roughly a weekend per remaining step.
 
 ---
+
+## 8a. Capacity & the split policy
+
+Retrieval quality is protected by never letting any single index get large.
+The policy (from the scaling whitepaper, grounded in the published
+degradation literature): per brain, **watch** at 10k documents / 50k passage
+vectors, **split** at 20k / 100k — a breakout brain is created via federation
+before any index reaches the corpus sizes where flat-RAG degradation has been
+measured (~10⁵–10⁶ passages; the 768-dim geometric ceiling is ~1.7M vectors).
+
+Mechanics: `CAPACITY_POLICY` + `corpusCapacity` in
+`packages/content/src/capacity.ts` (documents = non-branch nodes; passage
+vectors = embedded `content_chunks`); the dashboard **Brain capacity** dial
+reads the worst axis as % of the split budget; the `brain_capacity` tool
+exposes the same numbers to agents, and the weekly `brain_health` heartbeat
+(see [`recall-eval.md`](./recall-eval.md)) alerts when a zone leaves green.
+Meeting/transcript-heavy corpora hit the passage-vector axis first — the
+summarize-before-embed ingest design keeps that axis flat.
 
 ## 9. What we deliberately don't do
 
