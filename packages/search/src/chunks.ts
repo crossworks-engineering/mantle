@@ -7,6 +7,7 @@
  */
 import { and, asc, eq, isNotNull, sql } from 'drizzle-orm';
 import { contentChunks, db, nodes } from '@mantle/db';
+import { withHnswPool } from './hnsw';
 
 /** Salience down-weight strength (see @mantle/search index). Tunable via env. */
 const SALIENCE_LAMBDA = Number(process.env.MANTLE_SALIENCE_LAMBDA ?? 0.15);
@@ -36,27 +37,55 @@ export type ChunkSearchOptions = {
 
 export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]> {
   const vec = JSON.stringify(opts.embedding);
+  const limit = opts.limit ?? 10;
+  // Candidate pool for the salience re-rank, same sizing as searchNodes.
+  const pool = Math.min(Math.max(limit * 5, 50), 200);
   const conds = [eq(contentChunks.ownerId, opts.ownerId), isNotNull(contentChunks.embedding)];
   if (opts.branch) conds.push(sql`${nodes.path} <@ ${opts.branch}::ltree`);
   if (opts.excludeSystemOrigin) conds.push(sql`(${nodes.data}->>'origin') is distinct from 'system'`);
 
-  return db
-    .select({
-      nodeId: contentChunks.nodeId,
-      nodeTitle: nodes.title,
-      nodeType: sql<string>`${nodes.type}`,
-      ordinal: contentChunks.ordinal,
-      headingPath: contentChunks.headingPath,
-      text: contentChunks.text,
-      distance: sql<number>`${contentChunks.embedding} <=> ${vec}::vector`,
-    })
-    .from(contentChunks)
-    .innerJoin(nodes, eq(nodes.id, contentChunks.nodeId))
-    .where(and(...conds))
-    // Rank by salience-adjusted distance so a bulk/marketing email's passages
-    // can't outrank real content; the returned `distance` stays raw cosine.
-    .orderBy(sql`(${contentChunks.embedding} <=> ${vec}::vector) + ${SALIENCE_LAMBDA} * (1 - ${nodes.salience})`)
-    .limit(opts.limit ?? 10);
+  // Rank by salience-adjusted distance so a bulk/marketing email's passages
+  // can't outrank real content; the returned `distance` stays raw cosine. The
+  // adjustment is applied by re-ranking an index-eligible bare-distance pool —
+  // adjusting the scan's ORDER BY itself would disqualify the HNSW index and
+  // full-scan the chunk table at scale (see hnsw.ts). Join filters stay inside
+  // the inner query so iterative scan keeps walking until the pool is full.
+  const rows = (await withHnswPool(pool, (tx) =>
+    tx.execute(sql`
+      select node_id, node_title, node_type, ordinal, heading_path, text, dist from (
+        select ${contentChunks.nodeId} as node_id, ${nodes.title} as node_title,
+               ${nodes.type} as node_type, ${contentChunks.ordinal} as ordinal,
+               ${contentChunks.headingPath} as heading_path, ${contentChunks.text} as text,
+               ${nodes.salience} as salience,
+               ${contentChunks.embedding} <=> ${vec}::vector as dist
+        from ${contentChunks}
+        inner join ${nodes} on ${nodes.id} = ${contentChunks.nodeId}
+        where ${and(...conds)}
+        order by ${contentChunks.embedding} <=> ${vec}::vector
+        limit ${pool}
+      ) c
+      order by dist + ${SALIENCE_LAMBDA} * (1 - salience)
+      limit ${limit}
+    `),
+  )) as unknown as Array<{
+    node_id: string;
+    node_title: string;
+    node_type: string;
+    ordinal: number;
+    heading_path: string | null;
+    text: string;
+    dist: number;
+  }>;
+
+  return rows.map((r) => ({
+    nodeId: r.node_id,
+    nodeTitle: r.node_title,
+    nodeType: r.node_type,
+    ordinal: r.ordinal,
+    headingPath: r.heading_path,
+    text: r.text,
+    distance: r.dist,
+  }));
 }
 
 // ─── Section reading (the rung between a passage and the whole file) ──────────
