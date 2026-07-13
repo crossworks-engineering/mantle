@@ -3,7 +3,6 @@
 import { Suspense, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { PanelLeft, PanelLeftClose } from 'lucide-react';
 import { apiFetch } from '@/lib/api-fetch';
 import { setAssetToken } from '@/lib/asset-url';
 import { Header } from '@/components/layout/header';
@@ -214,26 +213,10 @@ function ShellFrame({
           onMenuClick={() => setMobileOpen(true)}
         />
 
-        {/* Desktop sidebar */}
-        <aside className="fixed inset-y-0 left-0 z-30 hidden w-[var(--nav-w)] flex-col border-r bg-sidebar pt-16 transition-[width] duration-200 ease-in-out md:flex">
+        {/* Desktop sidebar — ends above the footer bar, which now owns the
+            collapse toggle (see <FooterBar/>). */}
+        <aside className="fixed top-0 bottom-[var(--footer-h)] left-0 z-30 hidden w-[var(--nav-w)] flex-col border-r bg-sidebar pt-16 transition-[width] duration-200 ease-in-out md:flex">
           <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">{body(undefined, navCollapsed)}</div>
-          {/* Collapse toggle, pinned at the foot of the rail. */}
-          <div className="shrink-0 border-t border-border p-2">
-            <button
-              type="button"
-              onClick={toggleNav}
-              aria-label={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
-              title={navCollapsed ? 'Expand sidebar (⌘B)' : 'Collapse sidebar (⌘B)'}
-              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-data-[nav-collapsed=true]/shell:justify-center group-data-[nav-collapsed=true]/shell:px-0"
-            >
-              <PanelLeftClose className="size-4 shrink-0 group-data-[nav-collapsed=true]/shell:hidden" aria-hidden />
-              <PanelLeft className="hidden size-4 shrink-0 group-data-[nav-collapsed=true]/shell:block" aria-hidden />
-              <span className="group-data-[nav-collapsed=true]/shell:hidden">Collapse</span>
-              <kbd className="ml-auto rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground group-data-[nav-collapsed=true]/shell:hidden">
-                ⌘B
-              </kbd>
-            </button>
-          </div>
         </aside>
 
         {/* Mobile sidebar drawer — portaled outside the shell root, so it
@@ -276,8 +259,14 @@ function ShellFrame({
           <UploadDock />
         </div>
 
-        {/* Footer toolbar: quick-menu + Highlight/Assistant launchers. */}
-        <FooterBar />
+        {/* Footer toolbar: sidebar collapse · quick-menu · Highlight/Assistant ·
+            activity collapse. Full width, owns every shell collapse control. */}
+        <FooterBar
+          navCollapsed={navCollapsed}
+          onToggleNav={toggleNav}
+          activityCollapsed={activityCollapsed}
+          onToggleActivity={toggleActivity}
+        />
       </div>
   );
 }

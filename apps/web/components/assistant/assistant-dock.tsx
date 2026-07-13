@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { Loader2, Sparkles, SquareDashedMousePointer } from 'lucide-react';
+import { Loader2, Maximize2, PanelRight, Sparkles, SquareDashedMousePointer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { apiEventStream, apiUrl, withAuth } from '@/lib/api-fetch';
@@ -652,6 +652,30 @@ export function HighlightButton() {
           {count}
         </span>
       )}
+    </Button>
+  );
+}
+
+/**
+ * Full-display ⇄ side-column toggle for the footer toolbar. Only meaningful while
+ * the assistant panel is open, and only on lg+ (below lg the panel is always the
+ * full overlay), so it renders nothing otherwise — keeping the footer clean when
+ * the assistant is closed.
+ */
+export function AssistantDockToggle() {
+  const { panel, docked, toggleDocked } = useAssistantDock();
+  if (panel !== 'open') return null;
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="hidden size-8 lg:inline-flex"
+      onClick={toggleDocked}
+      title={docked ? 'Expand to full display' : 'Shrink to a side column'}
+      aria-label={docked ? 'Expand assistant to full display' : 'Shrink assistant to a side column'}
+    >
+      {docked ? <Maximize2 aria-hidden /> : <PanelRight aria-hidden />}
     </Button>
   );
 }

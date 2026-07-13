@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { GitCompareArrows, Highlighter, MapPin, Maximize2, Minus, PanelRight } from 'lucide-react';
+import { GitCompareArrows, Highlighter, MapPin, Minus } from 'lucide-react';
 import { apiFetch } from '@/lib/api-fetch';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { Spinner } from '@/components/ui/spinner';
@@ -34,7 +34,7 @@ type ThreadData = {
  * writes the cookie + navigates to ?agent=<slug>, which re-keys this query.
  */
 export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
-  const { minimize, docked, toggleDocked, pinnedContext, surfaceSelection, surfaceChanges } =
+  const { minimize, pinnedContext, surfaceSelection, surfaceChanges } =
     useAssistantDock();
   const threadQuery = useQuery({
     queryKey: ['assistant', 'thread', slugHint ?? ''],
@@ -109,19 +109,8 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
         </div>
         <div className="flex items-center gap-1.5">
           {agentList.length > 0 && <AgentSelect agents={agentList} selected={agent?.slug ?? ''} />}
-          {/* Column ⇄ full display, on every screen (lg+; below lg the panel is
-              always the full overlay). The third mode — minimised to the
-              bubble — is the button beside this one. */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="hidden size-8 lg:inline-flex"
-            onClick={toggleDocked}
-            title={docked ? 'Expand to full display' : 'Shrink to a side column'}
-            aria-label={docked ? 'Expand assistant to full display' : 'Shrink assistant to a side column'}
-          >
-            {docked ? <Maximize2 aria-hidden /> : <PanelRight aria-hidden />}
-          </Button>
+          {/* Full-display ⇄ side-column now lives in the footer toolbar
+              (<AssistantDockToggle/>); minimise stays here. */}
           <Button
             variant="ghost"
             size="icon"

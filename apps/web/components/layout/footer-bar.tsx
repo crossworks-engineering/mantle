@@ -2,30 +2,87 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { PanelLeft, PanelLeftClose } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { navItemMatches } from './nav-items';
 import { useTopNavItems } from '@/lib/nav-usage';
-import { AssistantButton, HighlightButton } from '@/components/assistant/assistant-dock';
+import { AssistantButton, AssistantDockToggle, HighlightButton } from '@/components/assistant/assistant-dock';
+
+/** Compact icon toggle styled to match the footer's quick-menu links. */
+function ToggleButton({
+  onClick,
+  label,
+  title,
+  className,
+  children,
+}: {
+  onClick: () => void;
+  label: string;
+  title: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={title}
+      className={cn(
+        'flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        className,
+      )}
+    >
+      {children}
+    </button>
+  );
+}
 
 /**
- * Bottom footer toolbar spanning the content area (between the sidebar and the
- * activity rail, bottom-aligned at the Collapse-row level). Centre: the user's
- * five most-used menus (ranked from local usage — see lib/nav-usage). Right: the
- * Highlight-content and Assistant launchers as labelled buttons. The height is
- * published as `--footer-h` on the shell root; <main> and the assistant panel
- * offset against it so nothing hides behind the bar.
+ * Full-width bottom status bar. Groups every shell control in one logical strip:
+ *  - start: the sidebar collapse toggle (sits under the sidebar it controls),
+ *  - centre: the user's five most-used menus (ranked from local usage),
+ *  - end: the Highlight-content + Assistant launchers, then the activity-rail
+ *    collapse toggle (under the activity rail it controls).
+ * The height is published as `--footer-h` on the shell root; every full-height
+ * region (sidebar, activity rail, main, assistant panel, mail, fleet) ends at
+ * `bottom-[var(--footer-h)]` so nothing hides behind the bar.
  */
-export function FooterBar() {
+export function FooterBar({
+  navCollapsed,
+  onToggleNav,
+  activityCollapsed,
+  onToggleActivity,
+}: {
+  navCollapsed: boolean;
+  onToggleNav: () => void;
+  activityCollapsed: boolean;
+  onToggleActivity: () => void;
+}) {
   const pathname = usePathname();
   const top = useTopNavItems(5);
 
   return (
     <footer
-      className="fixed inset-x-0 bottom-0 z-30 flex h-[var(--footer-h)] items-center gap-2 border-t border-border bg-sidebar px-3 transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[var(--activity-w)]"
-      aria-label="Quick actions"
+      className="fixed inset-x-0 bottom-0 z-30 flex h-[var(--footer-h)] items-center gap-2 border-t border-border bg-sidebar px-2"
+      aria-label="Toolbar"
     >
-      {/* Centre: top-used menus, absolutely centred so the button cluster on the
-          right never shifts them off-centre. Hidden on narrow screens. */}
+      {/* Start: sidebar collapse (desktop sidebar is md+). */}
+      <ToggleButton
+        onClick={onToggleNav}
+        label={navCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        title={navCollapsed ? 'Expand sidebar (⌘B)' : 'Collapse sidebar (⌘B)'}
+        className="hidden md:flex"
+      >
+        {navCollapsed ? (
+          <PanelLeft className="size-4" aria-hidden />
+        ) : (
+          <PanelLeftClose className="size-4" aria-hidden />
+        )}
+      </ToggleButton>
+
+      {/* Centre: top-used menus, absolutely centred so the flanking clusters
+          never shift them off-centre. Hidden on narrow screens. */}
       <nav
         className="pointer-events-none absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 md:flex"
         aria-label="Frequent pages"
@@ -53,10 +110,27 @@ export function FooterBar() {
         })}
       </nav>
 
-      {/* Right: the two launchers. */}
+      {/* End: the two launchers, then the activity-rail collapse (rail is lg+). */}
       <div className="ml-auto flex items-center gap-1">
         <HighlightButton />
         <AssistantButton />
+        {/* Full-display ⇄ side-column toggle — only while the assistant is open. */}
+        <AssistantDockToggle />
+        <div className="mx-1 hidden h-5 w-px bg-border lg:block" aria-hidden />
+        <ToggleButton
+          onClick={onToggleActivity}
+          label={activityCollapsed ? 'Expand activity' : 'Collapse activity'}
+          title={activityCollapsed ? 'Expand activity (⌘J)' : 'Collapse activity (⌘J)'}
+          className="hidden lg:flex"
+        >
+          {/* Same glyphs as the sidebar toggle, mirrored horizontally so the two
+              collapse controls read as a symmetric pair. */}
+          {activityCollapsed ? (
+            <PanelLeft className="size-4 -scale-x-100" aria-hidden />
+          ) : (
+            <PanelLeftClose className="size-4 -scale-x-100" aria-hidden />
+          )}
+        </ToggleButton>
       </div>
     </footer>
   );

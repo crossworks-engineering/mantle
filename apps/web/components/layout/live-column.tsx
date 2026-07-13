@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   Loader2,
   PanelRight,
-  PanelRightClose,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatMicroUsd } from '@/lib/traces-format';
@@ -73,7 +72,7 @@ export function LiveColumn({
   const hasAny = active.length + failures.length + recent.length > 0;
 
   return (
-    <aside className="fixed inset-y-0 right-0 z-30 hidden w-[var(--activity-w)] flex-col border-l bg-sidebar pt-16 transition-[width] duration-200 ease-in-out lg:flex">
+    <aside className="fixed top-0 bottom-[var(--footer-h)] right-0 z-30 hidden w-[var(--activity-w)] flex-col border-l bg-sidebar pt-16 transition-[width] duration-200 ease-in-out lg:flex">
       {collapsed ? (
         <CollapsedRail
           active={active.length}
@@ -93,23 +92,12 @@ export function LiveColumn({
               <h2 className="text-sm font-semibold">Activity</h2>
               {live && <span className="text-xs text-emerald-500">{active.length} live</span>}
             </div>
-            <div className="flex items-center gap-1">
-              <Link
-                href="/debug/journey"
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                View all
-              </Link>
-              <button
-                type="button"
-                onClick={onToggle}
-                aria-label="Collapse activity"
-                title="Collapse activity (⌘J)"
-                className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <PanelRightClose className="size-4" aria-hidden />
-              </button>
-            </div>
+            <Link
+              href="/debug/journey"
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              View all
+            </Link>
           </div>
 
           <div className="flex-1 overflow-y-auto scrollbar-thin">
