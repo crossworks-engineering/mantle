@@ -36,7 +36,7 @@ import {
   upsertFile,
 } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
-import { nodeUrl } from '@mantle/content';
+import { corpusCapacity, nodeUrl } from '@mantle/content';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { WORKER_DELEGATION_TOOLS } from './builtins-workers';
 import { EVENT_TOOLS } from './builtins-events';
@@ -577,6 +577,19 @@ const entity_mentions: BuiltinToolDef = {
     });
     ctx.step?.setOutput({ count: rows.length });
     return { ok: true, output: rows };
+  },
+};
+
+const brain_capacity: BuiltinToolDef = {
+  slug: 'brain_capacity',
+  name: 'Check brain capacity',
+  description:
+    "Corpus size vs the split policy: document and passage-vector counts with a zone per axis — 'green' (no action), 'watch' (run recall checks, identify the growing category), 'split' (break the dominant category into a federated breakout brain). Use for capacity/health checks and scheduled monitoring; alert the user when the zone is not green. Read-only.",
+  inputSchema: { type: 'object', properties: {} },
+  handler: async (_input, ctx) => {
+    const capacity = await corpusCapacity(ctx.ownerId);
+    ctx.step?.setMeta({ zone: capacity.zone, pct_of_split: capacity.pctOfSplit });
+    return { ok: true, output: capacity };
   },
 };
 
@@ -1404,6 +1417,7 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   graph_path,
   entity_facts,
   entity_mentions,
+  brain_capacity,
   folder_list,
   folder_get_by_path,
   file_list,

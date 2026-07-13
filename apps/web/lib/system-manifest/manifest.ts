@@ -370,6 +370,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'graph_path',
       'entity_facts',
       'entity_mentions',
+      'brain_capacity',
     ],
   },
   {

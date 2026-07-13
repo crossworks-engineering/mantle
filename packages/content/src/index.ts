@@ -172,6 +172,16 @@ export {
 } from './peers';
 
 export {
+  CAPACITY_POLICY,
+  capacityZone,
+  computeCapacity,
+  corpusCapacity,
+  type BrainCapacity,
+  type CapacityMetric,
+  type CapacityZone,
+} from './capacity';
+
+export {
   queryPeer,
   getPeerNode,
   searchPeerChunks,

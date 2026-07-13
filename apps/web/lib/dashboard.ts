@@ -110,6 +110,8 @@ export type GraphIntegrity = {
   redundantEdgeRows: number;
 };
 
+export { corpusCapacity, type BrainCapacity, type CapacityZone } from '@mantle/content';
+
 export async function graphIntegrity(userId: string): Promise<GraphIntegrity> {
   const result = await db.execute<{ dup_groups: number; redundant_rows: number }>(sql`
     SELECT count(*)::int AS dup_groups,
