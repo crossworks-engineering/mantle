@@ -4,7 +4,7 @@ import si from 'systeminformation';
 import { db, sql } from '@mantle/db';
 import { filesRoot, tikaVersion } from '@mantle/files';
 import { bucketReachable } from '@mantle/storage';
-import { resolveEmbeddingConfig } from '@mantle/embeddings';
+import { resolveEmbeddingConfig, probeEmbeddingRoute } from '@mantle/embeddings';
 import { attachmentBytes } from './dashboard';
 import { getTailnetStatus } from './tailscale';
 import { browserHealth } from './render-pdf';
@@ -75,6 +75,9 @@ export type SystemHealth = {
     provider: string | null;
     model: string | null;
     detail: string | null;
+    /** Where the embedder runs: a self-hosted server ('local') or a cloud
+     *  provider ('remote'). Shown on the dashboard pill label. */
+    scope: 'remote' | 'local' | null;
   };
   /** Tailscale / local network — the optional tailnet that lets a cloud VPS
    *  reach a LAN model box by MagicDNS name. Profile-gated and off by default
@@ -137,17 +140,48 @@ const DEFAULT_LOCAL_EMBED_URL = 'http://localhost:11434/v1';
  *  truth ingest uses — so a fresh install with no `embedding_config` row sees
  *  the bundled local default (LOCAL_FALLBACK_CONFIG) and gets probed, instead
  *  of being reported "not configured" while it is in fact embedding. */
+/** Remote (cloud) embedders are verified with a REAL 1-token embed through the
+ *  configured route (provider + model + stored key) — the same call the
+ *  /settings/embedding "test" button makes. That costs a (tiny) paid API call,
+ *  and the dashboard polls every 10s, so results are cached: 5 min while
+ *  healthy, 60s after a failure (recovery shows within a minute). */
+const REMOTE_EMBED_OK_TTL_MS = 5 * 60_000;
+const REMOTE_EMBED_FAIL_TTL_MS = 60_000;
+const remoteEmbedCache = new Map<string, { at: number; up: boolean; detail: string }>();
+
 async function embedderHealth(userId: string): Promise<SystemHealth['embedder']> {
   const cfg = await resolveEmbeddingConfig(userId);
   const provider = cfg.primary.provider;
   const model = cfg.model;
   if (provider !== 'local') {
-    return { up: null, provider, model, detail: `remote · ${provider}` };
+    const cached = remoteEmbedCache.get(userId);
+    const ttl = cached?.up ? REMOTE_EMBED_OK_TTL_MS : REMOTE_EMBED_FAIL_TTL_MS;
+    if (cached && Date.now() - cached.at < ttl) {
+      return { up: cached.up, provider, model, detail: cached.detail, scope: 'remote' };
+    }
+    try {
+      const t0 = Date.now();
+      await probeEmbeddingRoute(userId, {
+        provider,
+        model,
+        baseUrl: cfg.primary.baseUrl,
+        apiKeyId: cfg.primary.apiKeyId,
+      });
+      const detail = `${provider} · ${model} · ${Date.now() - t0}ms`;
+      remoteEmbedCache.set(userId, { at: Date.now(), up: true, detail });
+      return { up: true, provider, model, detail, scope: 'remote' };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message.slice(0, 120) : 'probe failed';
+      const detail = `${provider} · ${model} · ${msg}`;
+      remoteEmbedCache.set(userId, { at: Date.now(), up: false, detail });
+      return { up: false, provider, model, detail, scope: 'remote' };
+    }
   }
   const base = (cfg.primary.baseUrl || process.env.MANTLE_LOCAL_EMBEDDING_URL || DEFAULT_LOCAL_EMBED_URL).replace(/\/+$/, '');
   try {
     const res = await fetch(`${base}/models`, { signal: AbortSignal.timeout(1_200) });
-    if (!res.ok) return { up: false, provider, model, detail: `unreachable · HTTP ${res.status}` };
+    if (!res.ok)
+      return { up: false, provider, model, detail: `unreachable · HTTP ${res.status}`, scope: 'local' };
     const body = (await res.json()) as { data?: Array<{ id?: string }> };
     const ids = (body.data ?? []).map((m) => m.id).filter((x): x is string => typeof x === 'string');
     // Ollama reports ids like `embeddinggemma:latest`; tolerate the `:latest`
@@ -155,10 +189,10 @@ async function embedderHealth(userId: string): Promise<SystemHealth['embedder']>
     const norm = (s: string) => s.replace(/:latest$/, '');
     const present = ids.some((id) => norm(id) === norm(model));
     return present
-      ? { up: true, provider, model, detail: `${model} · loaded` }
-      : { up: false, provider, model, detail: `${model} not loaded` };
+      ? { up: true, provider, model, detail: `${model} · loaded`, scope: 'local' }
+      : { up: false, provider, model, detail: `${model} not loaded`, scope: 'local' };
   } catch {
-    return { up: false, provider, model, detail: 'unreachable' };
+    return { up: false, provider, model, detail: 'unreachable', scope: 'local' };
   }
 }
 
@@ -234,8 +268,10 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     probe('tika', () => tikaVersion(1_500)),
     // browserHealth (PDF sidecar) is likewise never-throws; wrapper bounds it.
     probe('browser', () => browserHealth(1_500)),
-    // embedderHealth is likewise never-throws; the wrapper just bounds it.
-    probe('embedder', () => embedderHealth(userId)),
+    // embedderHealth is likewise never-throws; the wrapper just bounds it. A
+    // cold remote probe is a real API round-trip, so it gets a longer leash
+    // (cached 5 min after — see remoteEmbedCache).
+    probe('embedder', () => embedderHealth(userId), 6_000),
     // networkHealth (tailnet) also never-throws; the wrapper just bounds it.
     probe('network', () => networkHealth()),
   ]);
@@ -283,7 +319,7 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     // probe() returns null on its own timeout — treat that as sidecar-down
     // (BROWSER_WS_ENDPOINT unset is reported by browserHealth itself as up:null).
     browser: browserH ?? { up: false, version: null },
-    embedder: emb ?? { up: null, provider: null, model: null, detail: null },
+    embedder: emb ?? { up: null, provider: null, model: null, detail: null, scope: null },
     network: net ?? { up: null, detail: null },
     degraded,
   };
