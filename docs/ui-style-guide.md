@@ -239,6 +239,20 @@ root, so it always renders expanded). Shortcuts: **⌘/Ctrl+B** toggles the nav,
 **⌘/Ctrl+J** toggles Activity (suppressed while typing/editing, so ⌘B still bolds
 in the page editor).
 
+### Footer status bar (`--footer-h`)
+A full-width bottom bar (`FooterBar`, `components/layout/footer-bar.tsx`) is the
+shell's single control strip. Height is published as **`--footer-h`** on the
+shell root, and **every full-height fixed region must end at
+`bottom-[var(--footer-h)]`** (not `bottom-0`) so its content never hides behind
+the bar — `main`, the sidebar, the Activity rail, the assistant panel,
+`FleetLayout`, and the mail shell all do. Layout: **start** = sidebar collapse
+toggle (⌘B), **centre** = the five most-used menus (ranked from local usage —
+`lib/nav-usage.ts`, keyed off the shared nav list in `layout/nav-items.ts`),
+**end** = the Highlight-content + Assistant launchers, the full-display ⇄
+side-column dock toggle (only while the assistant is open), then the Activity
+collapse toggle (⌘J). The two collapse toggles live here, not on the rails they
+control — icon-only, mirrored so they read as a symmetric pair.
+
 ### Full-height pages
 The app `<main>` is a fixed, full-height `overflow-y-auto scrollbar-thin`
 region. For full-height screens the **page wrapper returns the client directly**
