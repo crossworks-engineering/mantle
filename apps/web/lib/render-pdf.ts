@@ -52,6 +52,41 @@ export function printOrigin(): string {
 }
 
 /**
+ * Probe the browser sidecar for the system-health dashboard — the analog of
+ * `tikaVersion` in @mantle/files. Never throws.
+ *
+ *   up: null   → BROWSER_WS_ENDPOINT unset (unconfigured — e.g. detached dev);
+ *                rendered as a neutral pill, not a red one.
+ *   up: false  → configured but /meta didn't answer (sidecar down).
+ *   up: true   → sidecar healthy; `version` carries browserless + Chromium.
+ *
+ * The probe converts the websocket endpoint to HTTP (same host/port/token) and
+ * hits browserless's /meta — the same endpoint the compose healthcheck uses.
+ */
+export async function browserHealth(
+  timeoutMs = 1_500,
+): Promise<{ up: boolean | null; version: string | null }> {
+  const endpoint = process.env.BROWSER_WS_ENDPOINT;
+  if (!endpoint) return { up: null, version: null };
+  try {
+    const url = new URL(endpoint.replace(/^ws/, 'http'));
+    url.pathname = '/meta';
+    const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) return { up: false, version: null };
+    const meta = (await res.json()) as { version?: string; chromium?: string };
+    const version = [
+      meta.version ? `browserless ${meta.version}` : null,
+      meta.chromium ? `Chromium ${meta.chromium}` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    return { up: true, version: version || null };
+  } catch {
+    return { up: false, version: null };
+  }
+}
+
+/**
  * Render an app URL (an owner-authed `/print/...` surface) to a PDF Buffer.
  * `cookie` is the caller's raw `Cookie` header, forwarded so the print route —
  * and every image subresource it loads from the authed asset route —
