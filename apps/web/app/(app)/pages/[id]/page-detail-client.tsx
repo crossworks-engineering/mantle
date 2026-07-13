@@ -23,7 +23,7 @@ import { TagInput } from '@/components/tag-input';
 import { EmojiPicker } from '@/components/emoji-picker';
 import { BackLink } from '@/components/layout/back-link';
 import { ShareControl } from '@/components/share/share-control';
-import { ExportButton } from '@/components/export/export-button';
+import { ExportMenu } from '@/components/export/export-menu';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { PageEditor } from '@/components/page-editor/page-editor';
 import { PageOutline } from '@/components/page-editor/page-outline';
@@ -763,7 +763,7 @@ function PageDetailEditor({
           >
             <StretchHorizontal /> Full width
           </Button>
-          <ExportButton nodeId={initial.id} label="Word" />
+          <ExportMenu nodeId={initial.id} />
           <ShareControl nodeId={initial.id} beforeEnable={commit} teamMode />
           <Button
             size="sm"

@@ -9,5 +9,9 @@ packages:
 allowBuilds:
   '@openrouter/sdk': true
   esbuild: true
+  # Runs puppeteer's postinstall so it fetches its Chromium in dev (a no-op once
+  # cached). The Docker build sets PUPPETEER_SKIP_DOWNLOAD=1 and uses the system
+  # Chromium instead — see Dockerfile.
+  puppeteer: true
   sharp: true
   unrs-resolver: true
