@@ -25,6 +25,13 @@
 FROM node:24-slim AS deps
 WORKDIR /app
 
+# Puppeteer (the Pages → PDF export) uses the SYSTEM Chromium installed in the
+# app stage — never its own bundled download. Skip that download during install:
+# it'd be ~150MB, and the `rm -rf /root/.cache` in the install layer below would
+# purge it anyway, leaving puppeteer browser-less. This env persists to the app
+# stage/runtime, where it's harmless (only `pnpm install` reads it).
+ENV PUPPETEER_SKIP_DOWNLOAD=1
+
 # Copy manifests first so the install layer is cached when only source changes.
 # This list MUST contain every workspace package.json (apps/* + packages/*) or
 # `pnpm install --frozen-lockfile` below fails ("missing"/"lockfile mismatch")
@@ -82,6 +89,9 @@ COPY . .
 FROM deps AS app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# The web server listens here (matches the `next start -p 3000` CMD below). The
+# PDF export reads PORT to reach the print route on loopback — see route.ts.
+ENV PORT=3000
 # pg_dump for the scheduled-backup feature (/settings/backups). Must be the
 # pgdg v17 client — bookworm's default postgresql-client is 15, and pg_dump
 # refuses servers newer than itself. curl is installed and purged in the same
@@ -97,6 +107,15 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends postgresql-client-17 \
     && apt-get purge -y curl && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
+# Chromium for the Pages → PDF export (headless print via puppeteer, see
+# apps/web/lib/render-pdf.ts). We use the distro browser + its libs rather than
+# puppeteer's bundled download, so the image ships ONE Chromium that apt keeps
+# security-patched. fonts-liberation + noto-core give sane glyph coverage
+# (em-dashes, accents, common scripts) so PDFs don't render tofu boxes.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends chromium fonts-liberation fonts-noto-core \
+    && rm -rf /var/lib/apt/lists/*
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 # Build identity — surfaced next to the wordmark + at /api/version. `.git` is
 # excluded from the build context (.dockerignore), so next.config.ts can't read
 # the SHA inside the image; the build script (scripts/docker-build-push.sh)

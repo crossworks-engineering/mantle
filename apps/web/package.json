@@ -148,6 +148,7 @@
     "pg-boss": "^10.1.6",
     "postgres": "^3.4.5",
     "prettier": "^3.8.3",
+    "puppeteer": "^25.3.0",
     "radix-ui": "^1.4.3",
     "react": "^19.0.0",
     "react-day-picker": "^9.14.0",
