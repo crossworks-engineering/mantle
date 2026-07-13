@@ -1,8 +1,9 @@
 /**
  * GET /api/team/hub — everything the /team landing (Team Hub) renders:
  * the caller's display name, the brain's site name, the briefing sections
- * (the owner's team-mode page shares — see @mantle/content/team-hub), and
- * coarse per-type content counts for the stat tiles.
+ * (the owner's team-mode page shares — see @mantle/content/team-hub), the
+ * launcher cards (the owner's other team-mode app shares), and coarse
+ * per-type content counts for the stat tiles.
  *
  * Same trust model as the rest of /api/team: self-authenticated via
  * resolveTeamChatCaller (cookie or bearer), membership liveness re-checked on
@@ -10,6 +11,7 @@
  */
 import { NextResponse } from 'next/server';
 import {
+  listTeamApps,
   listTeamHubSections,
   loadProfilePreferences,
   resolveTeamHubApp,
@@ -31,12 +33,17 @@ export async function GET(req: Request) {
   // whole chain is intact (pref → app → green published build → active
   // team-mode share) — the shell falls back to the built-in hub when null.
   const prefsPromise = loadProfilePreferences(caller.ownerId);
-  const [memberName, prefs, sections, counts, hubApp] = await Promise.all([
+  const [memberName, prefs, sections, counts, hubApp, teamApps] = await Promise.all([
     teamCallerName(caller.ownerId, caller.contactId),
     prefsPromise,
     listTeamHubSections(caller.ownerId),
     teamHubContentCounts(caller.ownerId),
     prefsPromise.then((p) => resolveTeamHubApp(caller.ownerId, p.teamHubAppId)),
+    // Launcher cards: the owner's other team-shared apps. Excluded by the PREF
+    // (not the resolved hub) so a designated app never lists itself — and a
+    // red-build designee can't sneak onto the launcher via the fallback path
+    // either, because listTeamApps requires a green published build anyway.
+    prefsPromise.then((p) => listTeamApps(caller.ownerId, p.teamHubAppId)),
   ]);
 
   return NextResponse.json({
@@ -45,6 +52,7 @@ export async function GET(req: Request) {
     version: APP_VERSION,
     sections,
     counts,
+    apps: teamApps,
     hubApp: hubApp ? { appId: hubApp.appNodeId, shareToken: hubApp.shareToken } : null,
   });
 }

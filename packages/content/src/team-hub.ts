@@ -97,6 +97,64 @@ export async function resolveTeamHubApp(
   return { appNodeId: teamHubAppId, shareToken: row.token };
 }
 
+export type TeamAppCard = {
+  /** Share token — the hub launcher opens /s/<token>. */
+  token: string;
+  title: string;
+  /** The app's manifest description, if the author set one. */
+  description: string | null;
+  updatedAt: string;
+};
+
+/**
+ * The owner's team-shared apps — the /team hub's launcher cards. Same
+ * share-is-the-source-of-truth model as briefing sections: an ACTIVE,
+ * TEAM-mode app share lists the app, revoking the share delists it. Ordered
+ * oldest share first (share order = display order, matching briefings).
+ *
+ * Only apps with a green PUBLISHED build are listed — a red build silently
+ * delists rather than handing members a broken app. `excludeAppId` keeps the
+ * designated hub app (prefs.teamHubAppId) off its own launcher.
+ */
+export async function listTeamApps(
+  ownerId: string,
+  excludeAppId?: string,
+): Promise<TeamAppCard[]> {
+  const rows = await db
+    .select({
+      token: shares.token,
+      nodeId: shares.nodeId,
+      title: nodes.title,
+      manifest: apps.manifest,
+      publishedBuild: apps.publishedBuild,
+      updatedAt: nodes.updatedAt,
+    })
+    .from(shares)
+    .innerJoin(nodes, eq(shares.nodeId, nodes.id))
+    .innerJoin(apps, eq(apps.nodeId, shares.nodeId))
+    .where(
+      and(
+        eq(shares.ownerId, ownerId),
+        eq(shares.nodeType, 'app'),
+        sql`${shares.settings}->>'mode' = 'team'`,
+        isNull(shares.revokedAt),
+        or(isNull(shares.expiresAt), gt(shares.expiresAt, new Date())),
+      ),
+    )
+    .orderBy(shares.createdAt);
+  return rows
+    .filter((r) => r.nodeId !== excludeAppId && r.publishedBuild?.ok === true)
+    .map((r) => ({
+      token: r.token,
+      title: r.title,
+      description:
+        typeof r.manifest?.description === 'string' && r.manifest.description.trim() !== ''
+          ? r.manifest.description
+          : null,
+      updatedAt: r.updatedAt.toISOString(),
+    }));
+}
+
 /** Node types surfaced as hub stat tiles, in display order. A whitelist so a
  *  new sensitive node type never leaks into the hub by default. */
 export const TEAM_HUB_STAT_TYPES = [

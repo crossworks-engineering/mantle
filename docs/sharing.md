@@ -115,7 +115,10 @@ them through without a session cookie.
   the asset-bytes route, and the app brokers all resolve
   `resolveShareVisitor` and re-check membership liveness per request
   (revocation is instant). Team-mode **page** shares double as the `/team`
-  hub's briefing sections (`@mantle/content/team-hub`).
+  hub's briefing sections, and team-mode **app** shares (with a green published
+  build) double as the hub's "Team apps" launcher cards — revoking the share,
+  or the build going red, delists them (`@mantle/content/team-hub`). The
+  designated hub app itself never appears on its own launcher.
 
 ---
 

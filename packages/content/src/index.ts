@@ -323,10 +323,12 @@ export {
 
 export {
   listTeamHubSections,
+  listTeamApps,
   teamHubContentCounts,
   resolveTeamHubApp,
   TEAM_HUB_STAT_TYPES,
   type TeamHubSection,
+  type TeamAppCard,
   type TeamHubStatType,
   type TeamHubApp,
 } from './team-hub';
