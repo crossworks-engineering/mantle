@@ -75,7 +75,11 @@ export function SystemVitals() {
           <Pill ok={storage.minioUp} label="MinIO" />
           <Pill ok={tika.up} label="Tika" title={tika.version ?? undefined} />
           <Pill ok={browser.up} label="Browser" title={browser.version ?? undefined} />
-          <Pill ok={embedder.up} label="Embedder" title={embedder.detail ?? undefined} />
+          <Pill
+            ok={embedder.up}
+            label={embedder.scope ? `Embedder · ${embedder.scope}` : 'Embedder'}
+            title={embedder.detail ?? undefined}
+          />
           <Pill ok={network.up} label="Tailnet" title={network.detail ?? undefined} />
           <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
             {data.scope}
