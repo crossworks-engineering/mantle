@@ -62,7 +62,7 @@ export function SystemVitals() {
 
   if (!data) return <SystemVitalsSkeleton />;
 
-  const { host, postgres, storage, tika, embedder, network } = data;
+  const { host, postgres, storage, tika, browser, embedder, network } = data;
   const memValue = host.mem ? `${formatBytes(host.mem.usedBytes)} / ${formatBytes(host.mem.totalBytes)}` : '—';
   const diskValue = host.disk ? `${formatBytes(host.disk.usedBytes)} / ${formatBytes(host.disk.totalBytes)}` : '—';
 
@@ -74,6 +74,7 @@ export function SystemVitals() {
           <Pill ok={postgres.up} label="Postgres" />
           <Pill ok={storage.minioUp} label="MinIO" />
           <Pill ok={tika.up} label="Tika" title={tika.version ?? undefined} />
+          <Pill ok={browser.up} label="Browser" title={browser.version ?? undefined} />
           <Pill ok={embedder.up} label="Embedder" title={embedder.detail ?? undefined} />
           <Pill ok={network.up} label="Tailnet" title={network.detail ?? undefined} />
           <Badge variant="outline" className="text-[10px] uppercase tracking-wide">

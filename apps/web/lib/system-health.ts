@@ -7,6 +7,7 @@ import { bucketReachable } from '@mantle/storage';
 import { resolveEmbeddingConfig } from '@mantle/embeddings';
 import { attachmentBytes } from './dashboard';
 import { getTailnetStatus } from './tailscale';
+import { browserHealth } from './render-pdf';
 
 /**
  * Live system/infra vitals for the dashboard. Server-only — imported ONLY by
@@ -52,6 +53,14 @@ export type SystemHealth = {
    *  formats; in-process parsers (pdf/docx/xlsx/text) keep working. */
   tika: {
     up: boolean;
+    version: string | null;
+  };
+  /** The browser sidecar (browserless/chromium) — the Pages → PDF export
+   *  engine, a sibling docker service like Tika. `up: false` means PDF
+   *  downloads 503 until it's back (Markdown/Word unaffected); `up: null`
+   *  means BROWSER_WS_ENDPOINT isn't configured (e.g. detached dev). */
+  browser: {
+    up: boolean | null;
     version: string | null;
   };
   /** The configured embedding server. For the `local` provider this is the
@@ -212,7 +221,7 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     }
   }
 
-  const [load, mem, disk, pg, attBytes, minioUp, tikaVer, emb, net] = await Promise.all([
+  const [load, mem, disk, pg, attBytes, minioUp, tikaVer, browserH, emb, net] = await Promise.all([
     probe('host.cpu', () => si.currentLoad()),
     probe('host.mem', () => si.mem()),
     probe('host.disk', () => filesDisk()),
@@ -223,6 +232,8 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     // so the probe wrapper is mostly belt-and-braces here — the timeout
     // still applies if the wrapper hangs longer than expected.
     probe('tika', () => tikaVersion(1_500)),
+    // browserHealth (PDF sidecar) is likewise never-throws; wrapper bounds it.
+    probe('browser', () => browserHealth(1_500)),
     // embedderHealth is likewise never-throws; the wrapper just bounds it.
     probe('embedder', () => embedderHealth(userId)),
     // networkHealth (tailnet) also never-throws; the wrapper just bounds it.
@@ -269,6 +280,9 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
       up: typeof tikaVer === 'string' && tikaVer.length > 0,
       version: typeof tikaVer === 'string' ? tikaVer : null,
     },
+    // probe() returns null on its own timeout — treat that as sidecar-down
+    // (BROWSER_WS_ENDPOINT unset is reported by browserHealth itself as up:null).
+    browser: browserH ?? { up: false, version: null },
     embedder: emb ?? { up: null, provider: null, model: null, detail: null },
     network: net ?? { up: null, detail: null },
     degraded,
