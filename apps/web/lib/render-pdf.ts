@@ -1,45 +1,54 @@
 import 'server-only';
-import puppeteer, { type Browser } from 'puppeteer';
+import puppeteer from 'puppeteer-core';
 
 /**
- * Headless-Chromium PDF rendering for Pages. Rather than re-implement the page
- * schema a fourth time (editor / markdownToDoc / renderPageDoc / renderDocx),
- * we point a real browser at the app's OWN owner-authed `/print/pages/<id>`
- * route — forwarding the caller's session cookie — and print-to-PDF. The PDF
- * therefore reuses the live page CSS (callouts, code highlight, KaTeX, images,
- * asides) and looks exactly like the on-screen page.
+ * PDF rendering for Pages via the BROWSER SIDECAR — Mantle's Tika-for-browsers.
  *
- * One browser is shared across requests (a launch is ~hundreds of ms and tens
- * of MB); each request opens its own tab. In prod, PUPPETEER_EXECUTABLE_PATH
- * points at the system Chromium the Docker image installs; in dev, puppeteer
- * falls back to its cached download.
+ * Rather than re-implement the page schema a fourth time (editor /
+ * markdownToDoc / renderPageDoc / renderDocx), a real Chromium loads the app's
+ * OWN owner-authed `/print/pages/<id>` route — with the caller's session cookie
+ * forwarded — and prints it. The PDF therefore reuses the live page CSS
+ * (callouts, code highlight, KaTeX, images, asides) and looks exactly like the
+ * on-screen page.
+ *
+ * The browser is NOT embedded in this process. Like Tika, it runs as its own
+ * stateless container (browserless/chromium — the `browser` compose service)
+ * with its own memory ceiling, session queue, and per-session timeout; we
+ * connect over websocket (BROWSER_WS_ENDPOINT) per request and disconnect when
+ * done — browserless owns the browser lifecycle, so a crashed or leaked
+ * Chromium never takes the web server with it. `puppeteer-core` is the pure
+ * driver (no bundled browser download, ~1 GB off the app image).
+ *
+ * Config:
+ *   BROWSER_WS_ENDPOINT  ws URL incl. token, e.g. ws://browser:3000?token=…
+ *                        dev compose publishes 127.0.0.1:9222 →
+ *                        ws://127.0.0.1:9222?token=mantle
+ *   MANTLE_PRINT_ORIGIN  origin the SIDECAR uses to reach this app.
+ *                        prod compose: http://web:3000 (service DNS).
+ *                        dev default:  http://host.docker.internal:$PORT
+ *                        (the app runs as native node; the sidecar container
+ *                        reaches the host via its host-gateway alias).
  */
-let browserP: Promise<Browser> | null = null;
 
-function launch(): Promise<Browser> {
-  return puppeteer.launch({
-    headless: true,
-    // Prod: system Chromium (Docker installs it). Dev: undefined → puppeteer's
-    // own cached Chromium.
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-    // --no-sandbox: we run as root in the container; the input is our own
-    // server-rendered HTML, not untrusted web content. --disable-dev-shm-usage:
-    // containers cap /dev/shm at 64 MB and Chromium can exceed it mid-render.
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-  });
+/** Thrown when the sidecar isn't configured or can't be reached — the export
+ *  route maps it to a 503 instead of a generic 500. */
+export class PdfRendererUnavailableError extends Error {
+  constructor(detail: string) {
+    super(
+      `PDF renderer unavailable: ${detail}. ` +
+        `The browser sidecar (compose service 'browser') must be running and ` +
+        `BROWSER_WS_ENDPOINT set.`,
+    );
+    this.name = 'PdfRendererUnavailableError';
+  }
 }
 
-async function getBrowser(): Promise<Browser> {
-  if (browserP) {
-    try {
-      const b = await browserP;
-      if (b.connected) return b;
-    } catch {
-      // launch failed earlier — fall through and relaunch.
-    }
-  }
-  browserP = launch();
-  return browserP;
+/** The origin Chromium-in-the-sidecar uses to reach this app's /print route. */
+export function printOrigin(): string {
+  if (process.env.MANTLE_PRINT_ORIGIN) return process.env.MANTLE_PRINT_ORIGIN.replace(/\/+$/, '');
+  // Dev: the app is native node on the host; the sidecar reaches it through the
+  // host-gateway alias baked into docker-compose.dev.yml.
+  return `http://host.docker.internal:${process.env.PORT || '3000'}`;
 }
 
 /**
@@ -49,9 +58,22 @@ async function getBrowser(): Promise<Browser> {
  * authenticates as the owner.
  */
 export async function renderUrlToPdf(url: string, cookie: string): Promise<Buffer> {
-  const browser = await getBrowser();
-  const page = await browser.newPage();
+  const endpoint = process.env.BROWSER_WS_ENDPOINT;
+  if (!endpoint) throw new PdfRendererUnavailableError('BROWSER_WS_ENDPOINT is not set');
+
+  // Connect per request: browserless pools/queues sessions on its side
+  // (CONCURRENT/QUEUED/TIMEOUT), so each connect is a managed, capped session.
+  let browser;
   try {
+    browser = await puppeteer.connect({ browserWSEndpoint: endpoint });
+  } catch (e) {
+    throw new PdfRendererUnavailableError(
+      `could not connect to ${endpoint.replace(/token=[^&]*/, 'token=…')} (${(e as Error).message})`,
+    );
+  }
+
+  try {
+    const page = await browser.newPage();
     if (cookie) await page.setExtraHTTPHeaders({ cookie });
     await page.goto(url, { waitUntil: 'networkidle0', timeout: 30_000 });
     const bytes = await page.pdf({
@@ -61,6 +83,8 @@ export async function renderUrlToPdf(url: string, cookie: string): Promise<Buffe
     });
     return Buffer.from(bytes);
   } finally {
-    await page.close().catch(() => {});
+    // disconnect, never close: the browser belongs to the sidecar, and
+    // browserless reaps the session (and its pages) on disconnect.
+    await browser.disconnect().catch(() => {});
   }
 }

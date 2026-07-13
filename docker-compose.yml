@@ -141,6 +141,14 @@ x-app-env: &app-env
   # Tika document-parser fallback (.odt / .pptx / .doc / .rtf / …). Reached
   # by service name on the internal docker network. See docs/file-ingestion.md.
   TIKA_URL: http://tika:9998
+  # Browser sidecar (PDF export) — same pattern as Tika: reached by service
+  # name on the internal network, driven via puppeteer-core websocket. The
+  # token gates nothing externally (no published port) but browserless
+  # requires one; override with BROWSER_TOKEN in .env if desired.
+  BROWSER_WS_ENDPOINT: ws://browser:3000?token=${BROWSER_TOKEN:-mantle}
+  # Where Chromium-in-the-sidecar fetches /print/pages/<id> — the app itself,
+  # by service DNS, never the public origin (no Caddy/TLS round-trip).
+  MANTLE_PRINT_ORIGIN: http://web:3000
 
 services:
   postgres:
@@ -243,6 +251,33 @@ services:
       timeout: 5s
       retries: 12
       start_period: 30s
+
+  # Browser sidecar (browserless/chromium) — the PDF-export render engine, run
+  # exactly like Tika: a stateless, self-hosted service with its own memory
+  # space, session queue, and per-session hard timeout. apps/web connects with
+  # puppeteer-core over websocket (BROWSER_WS_ENDPOINT) and drives it to print
+  # the owner-authed /print/pages/<id> surface — so the PDF reuses the live
+  # page CSS byte-for-byte. No published ports: only the internal network can
+  # reach it, and a crashed/pathological render dies here, never in web.
+  # See apps/web/lib/render-pdf.ts.
+  browser:
+    image: ghcr.io/browserless/chromium:v2.54.2
+    container_name: mantle_browser
+    restart: unless-stopped
+    environment:
+      TOKEN: ${BROWSER_TOKEN:-mantle}
+      # Two concurrent renders + a small queue covers a team clicking Download;
+      # 60s per-session cap kills stuck renders. Raise CONCURRENT on big boxes
+      # if PDF exports start queueing (503s with 'queue is full').
+      CONCURRENT: "2"
+      QUEUED: "10"
+      TIMEOUT: "60000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/meta?token=$${TOKEN} >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   # Ollama — serves the bundled local embedder (EmbeddingGemma, 768-dim) over an
   # OpenAI-compatible API. CPU-only; a small encoder (~300MB) that fits on the

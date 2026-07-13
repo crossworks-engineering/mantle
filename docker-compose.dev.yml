@@ -92,3 +92,38 @@ services:
       timeout: 5s
       retries: 12
       start_period: 30s
+
+  # Browser sidecar (browserless/chromium) — the PDF-export render engine, run
+  # exactly like Tika: a stateless, self-hosted service with its own memory
+  # space, session queue, and per-session timeout. apps/web connects with
+  # puppeteer-core over websocket and drives it to print the owner-authed
+  # /print/pages/<id> surface. See apps/web/lib/render-pdf.ts.
+  browser:
+    image: ghcr.io/browserless/chromium:v2.54.2
+    container_name: mantle_dev_browser
+    restart: unless-stopped
+    environment:
+      # Dev-only token — the port is loopback-published, so this is a formality
+      # browserless requires, not a security boundary. .env.local's
+      # BROWSER_WS_ENDPOINT must carry the same token.
+      TOKEN: mantle
+      # Two concurrent renders, small queue, 60s per-session hard cap — a stuck
+      # or pathological page render dies in the sidecar, never in apps/web.
+      CONCURRENT: "2"
+      QUEUED: "5"
+      TIMEOUT: "60000"
+    ports:
+      # 9222 on the host. apps/web runs as native Node in dev and connects
+      # here: BROWSER_WS_ENDPOINT=ws://127.0.0.1:9222?token=mantle
+      - "127.0.0.1:9222:3000"
+    extra_hosts:
+      # The render target is the dev server on the HOST (native node, :3000 or
+      # a worktree's :3100) — this alias lets Chromium-in-the-container reach
+      # it. printOrigin() defaults to http://host.docker.internal:$PORT.
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/meta?token=mantle >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s

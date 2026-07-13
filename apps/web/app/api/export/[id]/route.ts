@@ -4,7 +4,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { resolveExport, getPage } from '@mantle/content';
 import { readFileById } from '@/lib/files';
 import { safeDownloadHeaders } from '@/lib/safe-download';
-import { renderUrlToPdf } from '@/lib/render-pdf';
+import { renderUrlToPdf, printOrigin, PdfRendererUnavailableError } from '@/lib/render-pdf';
 
 const IdParams = z.object({ id: z.string().uuid() });
 // Absent ⇒ docx (the original type-driven behavior; existing links keep working).
@@ -39,15 +39,23 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     if (!page) {
       return NextResponse.json({ error: 'not found or not a page' }, { status: 404 });
     }
-    // Navigate Chromium to the app on loopback (same container), NOT the public
-    // origin — that would round-trip out through Caddy/Tailscale + TLS. The
-    // print route is served by this same Next server; we force the caller's
-    // session cookie via a header (below), so host-scoped cookie rules don't
-    // matter. PORT matches how the server was started (Dockerfile ENV / dev).
-    const port = process.env.PORT || '3000';
+    // The browser SIDECAR (not this process) fetches the print route, so the
+    // URL must be reachable from that container: http://web:3000 in prod
+    // (compose DNS), host.docker.internal in dev — never the public origin,
+    // which would round-trip out through Caddy/Tailscale + TLS. The caller's
+    // session cookie is forwarded per request, so host-scoped cookie rules
+    // don't matter.
     const cookie = req.headers.get('cookie') ?? '';
-    const bytes = await renderUrlToPdf(`http://127.0.0.1:${port}/print/pages/${id}`, cookie);
-    return download(bytes, 'application/pdf', `${slugify(page.title)}.pdf`);
+    try {
+      const bytes = await renderUrlToPdf(`${printOrigin()}/print/pages/${id}`, cookie);
+      return download(bytes, 'application/pdf', `${slugify(page.title)}.pdf`);
+    } catch (e) {
+      if (e instanceof PdfRendererUnavailableError) {
+        console.error('[export] pdf renderer unavailable:', e.message);
+        return NextResponse.json({ error: e.message }, { status: 503 });
+      }
+      throw e;
+    }
   }
 
   // md / docx (and xlsx for tables) go through the shared, browser-free resolver.
