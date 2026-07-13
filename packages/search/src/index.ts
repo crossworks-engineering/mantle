@@ -1,5 +1,8 @@
 import { db, nodes, type Node } from '@mantle/db';
 import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { withHnswPool } from './hnsw';
+
+export { withHnswPool } from './hnsw';
 
 export {
   searchEntities,
@@ -101,14 +104,24 @@ export async function searchNodes(opts: SearchOptions): Promise<Node[]> {
   const wVec = opts.semanticWeight ?? 0.7;
   const wFts = 1 - wVec;
 
-  const vectorRows = await db
-    .select({ id: nodes.id })
-    .from(nodes)
-    .where(and(...filters, sql`${nodes.embedding} is not null`))
-    // Salience-adjusted: demote bulk/marketing mail in the vector arm (the
-    // dominant RRF contributor) so it falls in rank.
-    .orderBy(sql`(${nodes.embedding} <=> ${vec}::vector) + ${SALIENCE_LAMBDA} * (1 - ${nodes.salience})`)
-    .limit(pool);
+  // Salience-adjusted: demote bulk/marketing mail in the vector arm (the
+  // dominant RRF contributor) so it falls in rank. The adjustment lives in the
+  // OUTER re-rank, not the scan's ORDER BY — an adjusted ORDER BY is not
+  // HNSW-eligible and forces a full scan + sort at scale (see hnsw.ts).
+  const vectorRows = (await withHnswPool(pool, (tx) =>
+    tx.execute(sql`
+      select id from (
+        select ${nodes.id} as id, ${nodes.salience} as salience,
+               ${nodes.embedding} <=> ${vec}::vector as dist
+        from ${nodes}
+        where ${and(...filters, sql`${nodes.embedding} is not null`)}
+        order by ${nodes.embedding} <=> ${vec}::vector
+        limit ${pool}
+      ) c
+      order by dist + ${SALIENCE_LAMBDA} * (1 - salience)
+      limit ${pool}
+    `),
+  )) as unknown as { id: string }[];
 
   let ftsRows: { id: string }[] = [];
   if (opts.q && opts.q.trim()) {
