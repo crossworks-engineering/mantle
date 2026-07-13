@@ -3,6 +3,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { recentFailures, spendByDay, topErrors } from '@/lib/metrics';
 import {
   brainCounts,
+  corpusCapacity,
   emailStats,
   graphIntegrity,
   heartbeatStats,
@@ -23,7 +24,7 @@ export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
 
-  const [brain, vectors, ingest, spend30, email, telegram, heartbeats, pendingTools, errs, fails, integrity] =
+  const [brain, vectors, ingest, spend30, email, telegram, heartbeats, pendingTools, errs, fails, integrity, capacity] =
     await Promise.all([
       brainCounts(user.id),
       vectorCounts(user.id),
@@ -36,6 +37,7 @@ export async function GET() {
       topErrors(user.id, 7),
       recentFailures(user.id, 10),
       graphIntegrity(user.id),
+      corpusCapacity(user.id),
     ]);
 
   return NextResponse.json({
@@ -43,6 +45,7 @@ export async function GET() {
     vectors,
     ingest,
     spend30,
+    capacity,
     email,
     telegram,
     heartbeats,

@@ -1,8 +1,17 @@
 import { db, nodes, type Node } from '@mantle/db';
 import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { withHnswPool } from './hnsw';
+import { pgArrayLiteral } from './pg';
 
 export { withHnswPool } from './hnsw';
+
+export {
+  goldRank,
+  parseEvalCases,
+  scoreRanks,
+  type RecallEvalCase,
+  type RecallScores,
+} from './eval';
 
 export {
   searchEntities,
@@ -43,9 +52,17 @@ export interface SearchOptions {
   /** Restrict to a branch (ltree prefix, e.g. "printers.suppliers"). */
   branch?: string;
   type?: Node['type'];
+  /** Restrict to these node types (plural OR). Composable with `type`. */
+  types?: string[];
   tags?: string[];
   since?: Date;
   limit?: number;
+  /**
+   * Hard allowlist of node ids — results are strictly a subset. Used by the
+   * federation surface to run hybrid search over exactly the peer's granted
+   * set (`peer_shares`), preserving the "no unscoped variant" invariant.
+   */
+  ids?: string[];
   /**
    * When provided, rank **semantically**: a weighted blend of vector similarity
    * (primary) and full-text rank (a booster for exact-term hits). Without it,
@@ -83,9 +100,14 @@ const SALIENCE_LAMBDA = Number(process.env.MANTLE_SALIENCE_LAMBDA ?? 0.15);
 export async function searchNodes(opts: SearchOptions): Promise<Node[]> {
   const filters: SQL[] = [eq(nodes.ownerId, opts.ownerId)];
   if (opts.type) filters.push(eq(nodes.type, opts.type));
+  if (opts.types?.length)
+    filters.push(sql`${nodes.type}::text = any(${pgArrayLiteral(opts.types)}::text[])`);
   if (opts.branch) filters.push(sql`${nodes.path} <@ ${opts.branch}::ltree`);
   if (opts.tags?.length) filters.push(sql`${nodes.tags} && ${opts.tags}::text[]`);
   if (opts.since) filters.push(sql`${nodes.createdAt} >= ${opts.since}`);
+  // One array-literal param (`= any`) rather than inArray's one-param-per-id —
+  // the federation allowlist can be thousands of granted ids.
+  if (opts.ids) filters.push(sql`${nodes.id} = any(${pgArrayLiteral(opts.ids)}::uuid[])`);
   const limit = opts.limit ?? 50;
 
   // ── Legacy path: no query vector → FTS hard filter, or recency. ──────────

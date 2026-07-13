@@ -104,8 +104,25 @@ Her Mantle (asking)                         Your Mantle (answering)
   records) with revoke. Backed by `/api/peers` (+ `/[id]`, `/[id]/rotate`,
   `/[id]/shares`, `/nodes`). Mirrors the `/settings/keys` reveal-once pattern.
 
+- **Phase 6 — semantic federation search (DONE, 2026-07-13).** `queryForPeer`
+  now ranks with the same hybrid vector+FTS pipeline local search uses: the
+  answering brain embeds the peer's query text in ITS OWN vector space
+  (`embed(peer.ownerId, q)` in the route — the wire still carries text only,
+  so the protocol is unchanged and older peers transparently get better
+  ranking) and `searchNodes` runs with the active grant set as a hard
+  id-allowlist (`ids` in `SearchOptions`) — the no-unscoped-variant invariant
+  is preserved by construction. Embed failure degrades to FTS ranking, never a
+  hard error. New passage endpoint `POST /api/federation/chunks`
+  (`searchChunksForPeer` — vector search over `content_chunks` restricted to
+  granted nodes) + outbound `searchPeerChunks` + `peer_search_chunks` builtin
+  (in the `federation` tool group). Because chunks carry the full extracted
+  text, passage search also closes most of the Phase 3 page-body gap: a peer
+  can now read the relevant *sections* of a granted page. Older peers without
+  the endpoint 404; the tool surfaces that as "use peer_query instead".
+
 **Status: feature complete.** Two sovereign Mantles can now register each other,
-exchange tokens via the UI, grant specific nodes, and query across the border —
-Saskia (or Claude) on one side, the scoped HTTP API on the other, every read
-traced. Remaining nice-to-haves: page-body federation (Phase 3 note), a
-handshake/pairing flow to auto-exchange tokens, and per-peer rate limiting.
+exchange tokens via the UI, grant specific nodes, and query across the border
+semantically — Saskia (or Claude) on one side, the scoped HTTP API on the
+other, every read traced. Remaining nice-to-haves: full page-body federation
+(Phase 3 note; passage search now covers the common case), a handshake/pairing
+flow to auto-exchange tokens, and per-peer rate limiting.

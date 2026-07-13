@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { queryForPeer } from '@mantle/content';
+import { embed } from '@mantle/embeddings';
 import { startTrace, step } from '@mantle/tracing';
 import { authenticatePeer } from '@/lib/federation-auth';
 
@@ -9,6 +10,12 @@ import { authenticatePeer } from '@/lib/federation-auth';
  * Bearer-authed (per-peer token); returns ONLY nodes with an active grant
  * (queryForPeer has no unscoped path). Every call opens a `federation_request`
  * trace under the answering owner, so cross-Mantle reads show on /traces.
+ *
+ * Ranking is semantic: the wire carries text only, and WE embed the query in
+ * this owner's vector space (grants were embedded with the same config) before
+ * running the hybrid pipeline. Embed failure degrades to FTS — same policy as
+ * the local search tool — so a peer query never fails because the embedder is
+ * down. Wire format is unchanged; older peers just get better-ranked results.
  */
 const QueryBody = z.object({
   query: z.string().max(500).optional(),
@@ -44,12 +51,25 @@ export async function POST(req: Request) {
         types: parsed.data.types ?? [],
       },
     },
-    async () =>
-      step({ name: 'query_for_peer', kind: 'db_read', input: parsed.data }, async (h) => {
-        const rows = await queryForPeer(peer.id, parsed.data);
-        h.setMeta({ result_count: rows.length });
-        return rows;
-      }),
+    async () => {
+      let queryEmbedding: number[] | undefined;
+      const q = parsed.data.query?.trim();
+      if (q) {
+        try {
+          queryEmbedding = await embed(peer.ownerId, q);
+        } catch {
+          // Degrade to FTS ranking rather than failing the peer's request.
+        }
+      }
+      return step(
+        { name: 'query_for_peer', kind: 'db_read', input: parsed.data },
+        async (h) => {
+          const rows = await queryForPeer(peer.id, { ...parsed.data, queryEmbedding });
+          h.setMeta({ result_count: rows.length, semantic: Boolean(queryEmbedding) });
+          return rows;
+        },
+      );
+    },
   );
 
   return NextResponse.json({ nodes: hits, count: hits.length });

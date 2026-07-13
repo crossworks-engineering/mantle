@@ -11,8 +11,10 @@ import { SpendChart } from '@/components/dashboard/spend-chart';
 import { IngestChart } from '@/components/dashboard/ingest-chart';
 import { BrainBreakdown } from '@/components/dashboard/brain-breakdown';
 import { BrainStats } from '@/components/dashboard/brain-stats';
+import { CapacityDial } from '@/components/dashboard/capacity-dial';
 import { OpsPanels } from '@/components/dashboard/ops-panels';
 import type {
+  BrainCapacity,
   BrainCounts,
   EmailStats,
   GraphIntegrity,
@@ -35,6 +37,7 @@ type DashboardData = {
   errs: TopError[];
   fails: RecentFailure[];
   integrity: GraphIntegrity;
+  capacity: BrainCapacity;
 };
 
 /** Data-free dashboard body: fetches the brain-health bundle from
@@ -60,7 +63,7 @@ export function DashboardClient() {
     );
   }
 
-  const { brain, vectors, ingest, spend30, email, telegram, heartbeats, pendingTools, errs, fails, integrity } =
+  const { brain, vectors, ingest, spend30, email, telegram, heartbeats, pendingTools, errs, fails, integrity, capacity } =
     dashboardQuery.data;
 
   // 7d vs prior-7d spend for the KPI trend.
@@ -121,6 +124,7 @@ export function DashboardClient() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <CapacityDial capacity={capacity} />
         <BrainBreakdown nodesByType={brain.nodesByType} entitiesByKind={brain.entitiesByKind} />
         <BrainStats vectors={vectors} brain={brain} integrity={integrity} />
       </div>

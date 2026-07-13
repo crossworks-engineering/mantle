@@ -101,6 +101,45 @@ export async function queryPeer(
   };
 }
 
+export type PeerChunkSearchResult = {
+  peer: string;
+  chunks: Array<Record<string, unknown>>;
+  count: number;
+};
+
+/**
+ * Ask a peer for the most relevant PASSAGES inside its granted nodes (semantic
+ * chunk search — the peer embeds the query in its own vector space). Peers on
+ * pre-chunks Mantle versions return 404; surface that as a friendly hint.
+ */
+export async function searchPeerChunks(
+  ownerId: string,
+  ref: string,
+  opts: { query: string; limit?: number },
+): Promise<PeerClientResult<PeerChunkSearchResult>> {
+  const r = await withToken(ownerId, ref);
+  if ('error' in r) return { ok: false, error: r.error };
+  const res = await callPeer(r.peer, r.token, '/api/federation/chunks', {
+    method: 'POST',
+    body: { query: opts.query, limit: opts.limit },
+  });
+  if (!res.ok) {
+    const notSupported = /returned 404/.test(res.error);
+    return {
+      ok: false,
+      error: notSupported
+        ? `${r.peer.displayName} does not support passage search yet (older Mantle version) — use peer_query instead.`
+        : res.error,
+    };
+  }
+  await markPeerContacted(ownerId, r.peer.id);
+  const out = res.json as { chunks?: Array<Record<string, unknown>>; count?: number };
+  return {
+    ok: true,
+    data: { peer: r.peer.displayName, chunks: out.chunks ?? [], count: out.count ?? out.chunks?.length ?? 0 },
+  };
+}
+
 /** Fetch one granted node's full content from a peer. */
 export async function getPeerNode(
   ownerId: string,
