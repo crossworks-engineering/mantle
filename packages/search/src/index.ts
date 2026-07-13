@@ -2,6 +2,8 @@ import { db, nodes, type Node } from '@mantle/db';
 import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { withHnswPool } from './hnsw';
 
+export { withHnswPool } from './hnsw';
+
 export {
   searchEntities,
   entityNeighbors,

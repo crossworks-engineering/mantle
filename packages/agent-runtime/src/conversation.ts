@@ -23,7 +23,7 @@
  * (Phase 2); that's an intended improvement, not a regression.
  */
 
-import { and, desc, eq, gte, isNull, lt, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
 import {
   db,
   agents,
@@ -40,7 +40,7 @@ import {
   type PersonaNote,
 } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
-import { searchChunks, entityRelationsFor } from '@mantle/search';
+import { searchChunks, entityRelationsFor, withHnswPool } from '@mantle/search';
 import type {
   ChunkContextHit,
   ContentHit,
@@ -364,32 +364,45 @@ export async function loadConversationContext(args: {
   // The entities whose facts matched this turn — anchors for graph expansion.
   let anchorEntityIds: string[] = [];
   if (queryVec && factLimit > 0) {
-    const rows = await db
-      .select({
-        content: facts.content,
-        kind: facts.kind,
-        entityId: facts.entityId,
-        entityName: entities.name,
-        dist: sql<number>`${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector`,
-      })
-      .from(facts)
-      .leftJoin(entities, eq(facts.entityId, entities.id))
-      .where(
-        and(
-          eq(facts.ownerId, ownerId),
-          isNull(facts.validTo),
-          sql`${facts.embedding} is not null`,
-        ),
-      )
-      // Rank by cosine + a kind-aware age penalty: episodic memories decay
-      // (recent ones win), factual mildly, semantic/preference not at all (stable
-      // identity). Anchor on valid_from (when the fact became true) → created_at.
-      // The mismatch guard below still filters on raw cosine, so recency reorders
-      // but never surfaces a garbage-space row.
-      .orderBy(
-        sql`(${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector) + (case ${facts.kind} when 'episodic' then ${RECENCY_EPISODIC}::float8 when 'factual' then ${RECENCY_FACTUAL}::float8 else 0::float8 end) * (1 - exp(- extract(epoch from (now() - coalesce(${facts.validFrom}, ${facts.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`,
-      )
-      .limit(factLimit);
+    // Pool → re-rank, in one transaction: the recency-adjusted ORDER BY below is
+    // not an HNSW-eligible shape (any arithmetic on the distance forces a full
+    // scan + sort at scale), so first pull a bare-distance candidate pool through
+    // the index, then apply the adjustment within it (see @mantle/search hnsw.ts).
+    const factPool = Math.min(Math.max(factLimit * 5, 50), 200);
+    const rows = await withHnswPool(factPool, async (tx) => {
+      const pooled = (await tx.execute(
+        sql`select id from ${facts}
+            where ${and(eq(facts.ownerId, ownerId), isNull(facts.validTo), sql`${facts.embedding} is not null`)}
+            order by ${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector
+            limit ${factPool}`,
+      )) as unknown as { id: string }[];
+      if (pooled.length === 0) return [];
+      return tx
+        .select({
+          content: facts.content,
+          kind: facts.kind,
+          entityId: facts.entityId,
+          entityName: entities.name,
+          dist: sql<number>`${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector`,
+        })
+        .from(facts)
+        .leftJoin(entities, eq(facts.entityId, entities.id))
+        .where(
+          inArray(
+            facts.id,
+            pooled.map((r) => r.id),
+          ),
+        )
+        // Rank by cosine + a kind-aware age penalty: episodic memories decay
+        // (recent ones win), factual mildly, semantic/preference not at all (stable
+        // identity). Anchor on valid_from (when the fact became true) → created_at.
+        // The mismatch guard below still filters on raw cosine, so recency reorders
+        // but never surfaces a garbage-space row.
+        .orderBy(
+          sql`(${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector) + (case ${facts.kind} when 'episodic' then ${RECENCY_EPISODIC}::float8 when 'factual' then ${RECENCY_FACTUAL}::float8 else 0::float8 end) * (1 - exp(- extract(epoch from (now() - coalesce(${facts.validFrom}, ${facts.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`,
+        )
+        .limit(factLimit);
+    });
     factRows = rows
       // Mismatch guard: if the query vector and stored fact vectors live in
       // different embedding-model spaces, cosine distances cluster near 1.0.
@@ -459,42 +472,58 @@ export async function loadConversationContext(args: {
   let contentSentSnap: SnapshotItem[] = [];
   let contentDroppedSnap: SnapshotItem[] = [];
   if (queryVec && contentHitLimit > 0) {
-    const rows = await db
-      .select({
-        nodeId: nodes.id,
-        title: nodes.title,
-        type: nodes.type,
-        data: nodes.data,
-        // Salience-adjusted distance: bulk/marketing mail (low salience) is
-        // pushed back so it can't crowd out real content. Non-email nodes have
-        // salience 1.0 → no change.
-        dist: sql<number>`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA} * (1 - ${nodes.salience})`,
-      })
-      .from(nodes)
-      .where(
-        and(
-          eq(nodes.ownerId, ownerId),
-          sql`${nodes.embedding} is not null`,
-          // Digests are covered by the digest layer; raw telegram messages ARE
-          // the conversation itself — neither should surface as a "content hit".
-          sql`not (${nodes.tags} @> ARRAY['conversation-digest']::text[])`,
-          sql`${nodes.type} <> 'telegram_message'`,
-          // System-seeded documentation (Mantle's own docs, origin='system') is a
-          // reference corpus, not personal memory — keep it out of the responder's
-          // content hits so it can't outrank the user's own notes. The audit caught
-          // memory.md winning "3D printer gantry"; there are ~57 such system nodes.
-          sql`(${nodes.data}->>'origin') is distinct from 'system'`,
-        ),
-      )
-      // Order by salience-adjusted distance + a MILD recency penalty. The date
-      // anchor is the content's own date when it has one (an email's send date —
-      // so an old email synced last month reads as old, not fresh), else
-      // created_at. Recency only reorders here; the 0.6 cutoff below stays on the
-      // salience distance, so a relevant-but-old doc is never dropped for age.
-      .orderBy(
-        sql`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA}::float8 * (1 - ${nodes.salience}) + ${RECENCY_CONTENT}::float8 * (1 - exp(- extract(epoch from (now() - coalesce((${nodes.data}->>'internalDate')::timestamptz, ${nodes.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`,
-      )
-      .limit(contentHitLimit);
+    // Same pool → re-rank recipe as the facts block above: bare-distance pool
+    // through the HNSW index first, adjusted ordering applied within the pool.
+    const contentPool = Math.min(Math.max(contentHitLimit * 5, 50), 200);
+    const contentFilters = and(
+      eq(nodes.ownerId, ownerId),
+      sql`${nodes.embedding} is not null`,
+      // Digests are covered by the digest layer; raw telegram messages ARE
+      // the conversation itself — neither should surface as a "content hit".
+      sql`not (${nodes.tags} @> ARRAY['conversation-digest']::text[])`,
+      sql`${nodes.type} <> 'telegram_message'`,
+      // System-seeded documentation (Mantle's own docs, origin='system') is a
+      // reference corpus, not personal memory — keep it out of the responder's
+      // content hits so it can't outrank the user's own notes. The audit caught
+      // memory.md winning "3D printer gantry"; there are ~57 such system nodes.
+      sql`(${nodes.data}->>'origin') is distinct from 'system'`,
+    );
+    const rows = await withHnswPool(contentPool, async (tx) => {
+      const pooled = (await tx.execute(
+        sql`select id from ${nodes}
+            where ${contentFilters}
+            order by ${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector
+            limit ${contentPool}`,
+      )) as unknown as { id: string }[];
+      if (pooled.length === 0) return [];
+      return tx
+        .select({
+          nodeId: nodes.id,
+          title: nodes.title,
+          type: nodes.type,
+          data: nodes.data,
+          // Salience-adjusted distance: bulk/marketing mail (low salience) is
+          // pushed back so it can't crowd out real content. Non-email nodes have
+          // salience 1.0 → no change.
+          dist: sql<number>`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA} * (1 - ${nodes.salience})`,
+        })
+        .from(nodes)
+        .where(
+          inArray(
+            nodes.id,
+            pooled.map((r) => r.id),
+          ),
+        )
+        // Order by salience-adjusted distance + a MILD recency penalty. The date
+        // anchor is the content's own date when it has one (an email's send date —
+        // so an old email synced last month reads as old, not fresh), else
+        // created_at. Recency only reorders here; the 0.6 cutoff below stays on the
+        // salience distance, so a relevant-but-old doc is never dropped for age.
+        .orderBy(
+          sql`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA}::float8 * (1 - ${nodes.salience}) + ${RECENCY_CONTENT}::float8 * (1 - exp(- extract(epoch from (now() - coalesce((${nodes.data}->>'internalDate')::timestamptz, ${nodes.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`,
+        )
+        .limit(contentHitLimit);
+    });
     contentHits = rows
       .filter((r) => (r.dist ?? 1) < 0.6) // salience-adjusted cutoff — drop non-matches + demoted bulk
       .map((r) => {
