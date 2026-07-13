@@ -95,9 +95,23 @@ async function openSqliteReadOnly(file: string): Promise<SqliteDb> {
 
 /** Statements an app must not run through the broker (file/engine escapes). */
 const BLOCKED = /^\s*(attach|detach|vacuum\s+into|pragma)\b/i;
+/**
+ * The one PRAGMA family apps MAY run: read-only schema introspection
+ * (`PRAGMA table_info(<table>)` / `table_xinfo`). Generated apps legitimately
+ * need it for idempotent column migrations ("does this column exist yet?") —
+ * and it reads the schema of the app's OWN db only: no file paths, no engine
+ * settings, so none of the escapes the blanket PRAGMA ban exists for. Anchored
+ * end-to-end (only an optional trailing `;`) so nothing can piggyback after
+ * the closing paren.
+ */
+const INTROSPECTION =
+  /^\s*pragma\s+table_x?info\s*\(\s*(?:"[^"]*"|'[^']*'|`[^`]*`|\[[^\]]*\]|[A-Za-z_][A-Za-z0-9_$]*)\s*\)\s*;?\s*$/i;
 export function assertSafe(sql: string): void {
+  if (INTROSPECTION.test(sql)) return;
   if (BLOCKED.test(sql)) {
-    throw new Error('statement not allowed (ATTACH/DETACH/PRAGMA/VACUUM INTO are blocked)');
+    throw new Error(
+      'statement not allowed (ATTACH/DETACH/PRAGMA/VACUUM INTO are blocked; the one exception is read-only `PRAGMA table_info(<table>)`)',
+    );
   }
 }
 

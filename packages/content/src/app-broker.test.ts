@@ -47,6 +47,33 @@ describe('assertSafe', () => {
     expect(() => assertSafe('SELECT * FROM attachments')).not.toThrow();
     expect(() => assertSafe('SELECT pragmatic FROM notes')).not.toThrow();
   });
+
+  it('allows read-only PRAGMA table_info / table_xinfo (schema introspection)', () => {
+    // The one PRAGMA exception: generated apps need it for idempotent column
+    // migrations. It reads the app's own schema only — no file/engine escape.
+    expect(() => assertSafe('PRAGMA table_info(dcl_items)')).not.toThrow();
+    expect(() => assertSafe('pragma table_xinfo(cities)')).not.toThrow();
+    expect(() => assertSafe('  PRAGMA  TABLE_INFO ( cities ) ; ')).not.toThrow();
+    expect(() => assertSafe('PRAGMA table_info("my table")')).not.toThrow();
+    expect(() => assertSafe("PRAGMA table_info('cities')")).not.toThrow();
+    expect(() => assertSafe('PRAGMA table_info(`cities`)')).not.toThrow();
+    expect(() => assertSafe('PRAGMA table_info([cities])')).not.toThrow();
+  });
+
+  it('still blocks every other PRAGMA and any piggyback after table_info', () => {
+    // The exception is anchored end-to-end — trailing SQL after the closing
+    // paren falls through to the blanket PRAGMA block.
+    expect(() => assertSafe("PRAGMA table_info(t); ATTACH DATABASE '/etc/passwd' AS x")).toThrow(
+      /not allowed/i,
+    );
+    expect(() => assertSafe('PRAGMA table_info(t) -- comment')).toThrow(/not allowed/i);
+    // Assignment form (`= value`) is not introspection — blocked.
+    expect(() => assertSafe('PRAGMA table_info = 1')).toThrow(/not allowed/i);
+    expect(() => assertSafe('PRAGMA writable_schema = ON')).toThrow(/not allowed/i);
+    expect(() => assertSafe('PRAGMA wal_checkpoint(TRUNCATE)')).toThrow(/not allowed/i);
+    expect(() => assertSafe('PRAGMA database_list')).toThrow(/not allowed/i);
+    expect(() => assertSafe('PRAGMA table_list')).toThrow(/not allowed/i);
+  });
 });
 
 /**
@@ -74,6 +101,32 @@ describe('assertSafeScript', () => {
 
   it('tolerates trailing semicolons and blank statements', () => {
     expect(() => assertSafeScript('CREATE TABLE t (x);;\n  ;')).not.toThrow();
+  });
+
+  it('allows the table_info introspection exception mid-script too', () => {
+    expect(() =>
+      assertSafeScript('CREATE TABLE t (x); PRAGMA table_info(t); CREATE TABLE u (y);'),
+    ).not.toThrow();
+  });
+});
+
+/**
+ * The broker runs queries via `prepare(sql).all()` on node:sqlite — verify the
+ * newly-allowed `PRAGMA table_info` actually returns column rows through that
+ * exact call shape (a regression here would pass the guard but die at runtime).
+ */
+describe('PRAGMA table_info through node:sqlite', () => {
+  it('returns one row per column via prepare().all()', () => {
+    // getBuiltinModule keeps vite/vitest from trying to bundle node:sqlite.
+    const { DatabaseSync } = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite');
+    const db = new DatabaseSync(':memory:');
+    try {
+      db.exec('CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)');
+      const rows = db.prepare('PRAGMA table_info(items)').all() as { name: string }[];
+      expect(rows.map((r) => r.name)).toEqual(['id', 'name']);
+    } finally {
+      db.close();
+    }
   });
 });
 

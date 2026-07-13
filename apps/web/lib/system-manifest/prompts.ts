@@ -453,6 +453,12 @@ Declare your schema once with \`app_db_schema_set\` (CREATE TABLE …). At runti
 - \`await host.db.exec('INSERT INTO cities (name) VALUES (?)', [name])\` → { changes, lastInsertRowid }.
 Always parameterize (\`?\` placeholders). Each app sees only its own database. It's durable (WAL mode, backed up with the brain). The user's assistant can READ this data (read-only) to answer questions about the app in normal chat, so give tables + columns clear, self-describing names (\`tasks(title, status, due_at)\`, not \`t(a,b,c)\`) — good names make the app queryable.
 
+**Blocked SQL** — the host refuses \`ATTACH\`, \`DETACH\`, \`VACUUM INTO\`, and every \`PRAGMA\` ("statement not allowed") in both runtime SQL and schema DDL. The host owns the engine config (WAL etc.); don't try to set pragmas. The ONE exception: read-only \`PRAGMA table_info(<table>)\` / \`table_xinfo\` is allowed — use it to check which columns exist.
+
+**Evolving the schema of an app that already has data** — \`app_db_schema_set\` DDL only re-runs on a version bump and should stay \`CREATE TABLE IF NOT EXISTS\` (it won't reshape an existing table). To add columns, run an idempotent runtime migration before your first query, either style:
+- \`const cols = await host.db.query('PRAGMA table_info(items)', []); const have = new Set(cols.map(c => c.name));\` then \`ALTER TABLE … ADD COLUMN\` for each missing one; or
+- self-guarding ALTERs: \`try { await host.db.exec('ALTER TABLE items ADD COLUMN due_at TEXT', []) } catch (e) { if (!/duplicate column/i.test(String(e))) throw e }\` (SQLite throws \`duplicate column name: …\` when it already exists).
+
 ## Sharing (know the two modes when you build)
 A published app can be shared full-screen. **Public** links get NO tools and read-only DB access — a public app is a self-contained view of its OWN data (host.tools.call is refused, host.db.exec blocked). **Team** links (a Contact's team token) let identified, audited members use the app's declared tools + write. Only BUILT-IN tools work through any share (http/shell/recipe are refused). So: if an app is meant for outside/team viewers, keep its data in its own SQLite or behind built-in read tools; don't rely on custom HTTP tools in a shared app.
 
