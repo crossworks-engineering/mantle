@@ -15,6 +15,10 @@ import {
 type Ctx = {
   colorTheme: string;
   setColorTheme: (id: string) => void;
+  /** Apply the server-stored theme (shell load): paints + caches in
+   *  localStorage but never writes back to the server — the DB copy is
+   *  already the source it came from. */
+  adoptServerTheme: (id: string) => void;
   /** When on, the color theme reshuffles to a random one every `intervalMs`. */
   randomTheme: boolean;
   setRandomTheme: (on: boolean) => void;
@@ -68,6 +72,10 @@ export function ColorThemeProvider({ children }: { children: React.ReactNode }) 
   colorThemeRef.current = colorTheme;
 
   React.useEffect(() => {
+    // Owner-stamped surfaces (/s, /team — see OwnerColorTheme) lock the theme
+    // to the BRAIN OWNER's choice; this browser's localStorage reflects the
+    // visitor and must not clobber the stamp on hydration.
+    if (document.documentElement.dataset.colorThemeOwner === '1') return;
     let stored = DEFAULT_COLOR_THEME;
     let random = false;
     let interval = RANDOM_THEME_INTERVAL_MS;
@@ -86,7 +94,7 @@ export function ColorThemeProvider({ children }: { children: React.ReactNode }) 
     apply(stored);
   }, []);
 
-  const setColorTheme = React.useCallback((id: string) => {
+  const adoptServerTheme = React.useCallback((id: string) => {
     setColorThemeState(id);
     apply(id);
     try {
@@ -95,6 +103,21 @@ export function ColorThemeProvider({ children }: { children: React.ReactNode }) 
       // storage blocked — preference won't persist, no-op
     }
   }, []);
+
+  const setColorTheme = React.useCallback(
+    (id: string) => {
+      adoptServerTheme(id);
+      // The DB copy is the cross-browser source of truth (and what member
+      // surfaces brand with); localStorage above is only the before-paint
+      // cache. Fire-and-forget — a failed write costs nothing but the sync.
+      void fetch('/api/profile/color-theme', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ colorTheme: id }),
+      }).catch(() => {});
+    },
+    [adoptServerTheme],
+  );
 
   const setRandomTheme = React.useCallback(
     (on: boolean) => {
@@ -154,6 +177,7 @@ export function ColorThemeProvider({ children }: { children: React.ReactNode }) 
       value={{
         colorTheme,
         setColorTheme,
+        adoptServerTheme,
         randomTheme,
         setRandomTheme,
         intervalMs,

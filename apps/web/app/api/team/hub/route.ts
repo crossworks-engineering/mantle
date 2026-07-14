@@ -49,6 +49,9 @@ export async function GET(req: Request) {
   return NextResponse.json({
     memberName: memberName ?? null,
     siteName: prefs.siteName ?? null,
+    // The OWNER's colour theme — the hub (and a designated hub app, which
+    // mirrors the host <html>) renders in the brain's brand theme for members.
+    colorTheme: prefs.colorTheme ?? null,
     version: APP_VERSION,
     sections,
     counts,

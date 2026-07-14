@@ -5,6 +5,7 @@ import { shareModeOf } from '@mantle/content';
 import { resolveActiveShareByToken, recordShareView, loadShareView } from '@/lib/shares';
 import { resolveShareVisitor } from '@/lib/team-gate';
 import { TeamTokenPrompt } from '@/components/share/team-token-prompt';
+import { OwnerColorTheme } from '@/components/share/owner-color-theme';
 import { PagePresenter } from '@/components/share/page-presenter';
 import { NotePresenter } from '@/components/share/note-presenter';
 import { FilePresenter } from '@/components/share/file-presenter';
@@ -50,30 +51,50 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
   // visitor cookie or the brain-level /team hub cookie; without one the
   // visitor gets the token prompt instead of the content. For apps this is
   // UX (the brokers are the wall); for pages/notes/files it IS the wall.
+  // Brand the whole surface (prompt included) with the OWNER's colour theme —
+  // shared pages and sandboxed apps render in the brain's look, not the
+  // visitor-browser default.
+  const themeStamp = <OwnerColorTheme ownerId={share.ownerId} />;
+
   const visitor = await resolveShareVisitor((await headers()).get('cookie'), share);
   if (!visitor) {
     const title = 'title' in view ? view.title : view.filename;
-    return <TeamTokenPrompt shareToken={token} title={title} />;
+    return (
+      <>
+        {themeStamp}
+        <TeamTokenPrompt shareToken={token} title={title} />
+      </>
+    );
   }
 
   void recordShareView(share.id); // fire-and-forget view counter
 
   const assetUrl = (fileId: string) => `/s/${token}/a/${fileId}`;
 
-  switch (view.kind) {
-    case 'page':
-      return <PagePresenter view={view} assetUrl={assetUrl} />;
-    case 'note':
-      return <NotePresenter view={view} />;
-    case 'file':
-      return <FilePresenter view={view} assetUrl={assetUrl} />;
-    case 'task':
-      return <TaskPresenter view={view} />;
-    case 'event':
-      return <EventPresenter view={view} />;
-    case 'app':
-      return <AppPresenter view={view} token={token} />;
-    default:
-      notFound();
-  }
+  const body = (() => {
+    switch (view.kind) {
+      case 'page':
+        return <PagePresenter view={view} assetUrl={assetUrl} />;
+      case 'note':
+        return <NotePresenter view={view} />;
+      case 'file':
+        return <FilePresenter view={view} assetUrl={assetUrl} />;
+      case 'task':
+        return <TaskPresenter view={view} />;
+      case 'event':
+        return <EventPresenter view={view} />;
+      case 'app':
+        return <AppPresenter view={view} token={token} />;
+      default:
+        return null;
+    }
+  })();
+  if (!body) notFound();
+
+  return (
+    <>
+      {themeStamp}
+      {body}
+    </>
+  );
 }

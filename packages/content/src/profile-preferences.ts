@@ -66,6 +66,12 @@ export type ProfilePreferences = {
    *  a glance which one they're on. Cosmetic only; unset ⇒ the Mantle wordmark.
    *  Read via projectSiteName, never raw. */
   siteName?: string;
+  /** The UI colour-theme id (the header theme toggler / random shuffle). The
+   *  DB copy is the source of truth so the choice follows the owner across
+   *  browsers and brands member-facing surfaces (/s, /team) — localStorage
+   *  stays only as the before-paint fast path. Unset ⇒ the default theme.
+   *  Read via projectColorTheme, never raw. */
+  colorTheme?: string;
   /** Free-text "what this brain is for" — captured at onboarding, editable in
    *  Settings → Profile. Injected as the "# Purpose of this brain" section of the
    *  always-on identity block (identity-context.ts), so every agent knows the
@@ -253,6 +259,17 @@ export function projectSiteName(raw: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+/** Project a stored `colorTheme` jsonb value — a slug-shaped theme id, or
+ *  undefined for unset/garbage (⇒ the default theme). The theme LIST lives in
+ *  the web app (apps/web/lib/themes.ts); the server stores any well-formed id
+ *  and the client falls back to the default for ids it doesn't know, so a
+ *  theme added or removed in the UI never strands the stored preference. */
+export function projectColorTheme(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const t = raw.trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9-]{0,63}$/.test(t) ? t : undefined;
+}
+
 /** Effective per-turn thinking budget in tokens — gated by BOTH the live-thinking
  *  switch (`streamThoughts`) AND a positive `thinkingBudget`. Returns 0 when
  *  either is missing, so real reasoning is requested only when the user has
@@ -371,6 +388,7 @@ export async function loadProfilePreferences(
         ? prefs.displayName
         : undefined,
     siteName: projectSiteName(prefs.siteName),
+    colorTheme: projectColorTheme(prefs.colorTheme),
     purpose:
       typeof prefs.purpose === 'string' && prefs.purpose.length > 0 ? prefs.purpose : undefined,
     purposeArchetype:
@@ -559,6 +577,7 @@ export async function updateProfilePreferences(
     reminderChannel: isReminderChannel(merged.reminderChannel) ? merged.reminderChannel : undefined,
     displayName: merged.displayName || undefined,
     siteName: projectSiteName(merged.siteName),
+    colorTheme: projectColorTheme(merged.colorTheme),
     purpose: merged.purpose || undefined,
     purposeArchetype: merged.purposeArchetype || undefined,
     onboardedAt: merged.onboardedAt || undefined,
