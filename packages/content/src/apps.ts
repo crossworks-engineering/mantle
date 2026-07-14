@@ -16,17 +16,20 @@
  * promotes the draft (source + build) into the published columns.
  */
 import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import {
   db,
   nodes,
   apps,
+  shares,
   notifyNodeIngested,
   type Node,
   type AppSource,
   type AppManifest,
   type BuildRef,
 } from '@mantle/db';
+import { shareModeOf, type ShareMode } from './shares';
+import { loadProfilePreferences } from './profile-preferences';
 
 export const APPS_ROOT_LABEL = 'apps';
 
@@ -88,6 +91,13 @@ export type AppRow = {
   hasBuild: boolean;
   /** Whether an uncommitted draft exists. */
   hasDraft: boolean;
+  /**
+   * The app's exposure: mode of its active share ('public' | 'team'), or null
+   * when it has never been shared / the share is revoked (owner-only).
+   */
+  shareMode: ShareMode | null;
+  /** Whether this app is the designated Team Hub (prefs.teamHubAppId). */
+  isHub: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -106,6 +116,10 @@ type SidecarCols = {
   manifest: AppManifest;
   draftBuild: BuildRef | null;
   publishedBuild: BuildRef | null;
+  /** settings of the node's ACTIVE share, null when unshared/revoked. */
+  shareSettings: Record<string, unknown> | null;
+  /** prefs.teamHubAppId — resolved once per query, compared per row. */
+  hubAppId: string | null;
 };
 
 function rowOf(n: Node, s: Partial<SidecarCols> = {}): AppRow {
@@ -121,6 +135,8 @@ function rowOf(n: Node, s: Partial<SidecarCols> = {}): AppRow {
     toolCount: manifest.toolSlugs?.length ?? 0,
     hasBuild: !!s.publishedBuild?.ok,
     hasDraft: s.draftSource != null,
+    shareMode: s.shareSettings ? shareModeOf({ settings: s.shareSettings }) : null,
+    isHub: s.hubAppId != null && s.hubAppId === n.id,
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
@@ -197,24 +213,34 @@ export async function listApps(
   ownerId: string,
   opts: ListAppsOpts & { limit?: number; offset?: number } = {},
 ): Promise<AppRow[]> {
-  const rows = await db
-    .select({
-      node: nodes,
-      manifest: apps.manifest,
-      draftSource: apps.draftSource,
-      publishedBuild: apps.publishedBuild,
-    })
-    .from(nodes)
-    .leftJoin(apps, eq(apps.nodeId, nodes.id))
-    .where(and(...appConds(ownerId, opts)))
-    .orderBy(appOrderBy(opts.sort))
-    .limit(opts.limit ?? 500)
-    .offset(opts.offset ?? 0);
+  // The active share (unique per node) + the hub designation give each row its
+  // exposure badge: Hub ⊃ Team ⊃ Public ⊃ owner-only.
+  const [rows, prefs] = await Promise.all([
+    db
+      .select({
+        node: nodes,
+        manifest: apps.manifest,
+        draftSource: apps.draftSource,
+        publishedBuild: apps.publishedBuild,
+        shareSettings: shares.settings,
+      })
+      .from(nodes)
+      .leftJoin(apps, eq(apps.nodeId, nodes.id))
+      .leftJoin(shares, and(eq(shares.nodeId, nodes.id), isNull(shares.revokedAt)))
+      .where(and(...appConds(ownerId, opts)))
+      .orderBy(appOrderBy(opts.sort))
+      .limit(opts.limit ?? 500)
+      .offset(opts.offset ?? 0),
+    loadProfilePreferences(ownerId),
+  ]);
+  const hubAppId = prefs.teamHubAppId ?? null;
   return rows.map((r) =>
     rowOf(r.node, {
       manifest: r.manifest ?? {},
       draftSource: r.draftSource ?? null,
       publishedBuild: r.publishedBuild ?? null,
+      shareSettings: r.shareSettings ?? null,
+      hubAppId,
     }),
   );
 }
@@ -241,19 +267,24 @@ export async function listAppTags(ownerId: string): Promise<{ tag: string; count
 }
 
 async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null> {
-  const [row] = await db
-    .select({
-      node: nodes,
-      source: apps.source,
-      draftSource: apps.draftSource,
-      manifest: apps.manifest,
-      draftBuild: apps.draftBuild,
-      publishedBuild: apps.publishedBuild,
-    })
-    .from(nodes)
-    .leftJoin(apps, eq(apps.nodeId, nodes.id))
-    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'app')))
-    .limit(1);
+  const [[row], prefs] = await Promise.all([
+    db
+      .select({
+        node: nodes,
+        source: apps.source,
+        draftSource: apps.draftSource,
+        manifest: apps.manifest,
+        draftBuild: apps.draftBuild,
+        publishedBuild: apps.publishedBuild,
+        shareSettings: shares.settings,
+      })
+      .from(nodes)
+      .leftJoin(apps, eq(apps.nodeId, nodes.id))
+      .leftJoin(shares, and(eq(shares.nodeId, nodes.id), isNull(shares.revokedAt)))
+      .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'app')))
+      .limit(1),
+    loadProfilePreferences(ownerId),
+  ]);
   if (!row) return null;
   return detailOf(row.node, {
     source: row.source ?? emptySource(),
@@ -261,6 +292,8 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
     manifest: row.manifest ?? {},
     draftBuild: row.draftBuild ?? null,
     publishedBuild: row.publishedBuild ?? null,
+    shareSettings: row.shareSettings ?? null,
+    hubAppId: prefs.teamHubAppId ?? null,
   });
 }
 
@@ -310,6 +343,9 @@ export async function createApp(ownerId: string, input: CreateAppInput): Promise
       manifest,
       draftBuild: null,
       publishedBuild: null,
+      // A just-created app has no share and can't be the designated hub.
+      shareSettings: null,
+      hubAppId: null,
     });
   });
 }
