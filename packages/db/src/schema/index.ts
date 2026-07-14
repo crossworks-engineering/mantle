@@ -26,6 +26,7 @@ export * from './doc-collections';
 export * from './shares';
 export * from './mantle-peers';
 export * from './peer-shares';
+export * from './peer-share-scopes';
 export * from './pdf-passwords';
 export * from './entity-merge-dismissals';
 export * from './content-chunks';

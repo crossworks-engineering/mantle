@@ -38,8 +38,21 @@ type Peer = {
   updatedAt: string;
 };
 type Share = { id: string; nodeId: string; nodeType: string; title: string; createdAt: string };
+type TypeShare = { id: string; nodeType: string; createdAt: string };
 type NodeHit = { id: string; title: string; type: string };
 type Selection = { mode: 'create' } | { mode: 'view'; id: string };
+
+/** The categories a peer can subscribe to — mirrors PEER_SHAREABLE_TYPES
+ *  (@mantle/content); the server enforces the allowlist. */
+const CATEGORIES = [
+  { type: 'page', label: 'Pages' },
+  { type: 'note', label: 'Notes' },
+  { type: 'file', label: 'Files' },
+  { type: 'contact', label: 'Contacts' },
+  { type: 'table', label: 'Tables' },
+  { type: 'event', label: 'Events' },
+  { type: 'task', label: 'Tasks' },
+] as const;
 
 /** Reveal-once box for a freshly-minted inbound token. */
 function TokenReveal({ token, onDone }: { token: string; onDone: () => void }) {
@@ -289,14 +302,22 @@ function PeerDetail({
   const toast = useToast();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [shares, setShares] = useState<Share[]>([]);
+  const [typeShares, setTypeShares] = useState<TypeShare[]>([]);
+  const [typeCounts, setTypeCounts] = useState<Record<string, number>>({});
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<NodeHit[]>([]);
   const [newOutbound, setNewOutbound] = useState('');
 
   const loadShares = useCallback(async () => {
     try {
-      const { shares } = await apiFetch<{ shares: Share[] }>(`/api/peers/${peer.id}/shares`);
+      const { shares, typeShares, typeCounts } = await apiFetch<{
+        shares: Share[];
+        typeShares: TypeShare[];
+        typeCounts: Record<string, number>;
+      }>(`/api/peers/${peer.id}/shares`);
       setShares(shares ?? []);
+      setTypeShares(typeShares ?? []);
+      setTypeCounts(typeCounts ?? {});
     } catch {
       /* leave the existing list on a transient read failure */
     }
@@ -368,6 +389,30 @@ function PeerDetail({
       await loadShares();
     } catch {
       toast.error('Could not grant');
+    }
+  };
+
+  const toggleCategory = async (nodeType: string, on: boolean) => {
+    // Optimistic flip so the Switch doesn't lag; reload reconciles, revert on error.
+    setTypeShares((list) =>
+      on
+        ? [...list, { id: `optimistic-${nodeType}`, nodeType, createdAt: new Date().toISOString() }]
+        : list.filter((t) => t.nodeType !== nodeType),
+    );
+    try {
+      if (on) {
+        await apiSend(`/api/peers/${peer.id}/shares`, 'POST', { nodeType });
+      } else {
+        await apiSend(`/api/peers/${peer.id}/shares?nodeType=${nodeType}`, 'DELETE');
+      }
+      await loadShares();
+    } catch {
+      setTypeShares((list) =>
+        on
+          ? list.filter((t) => t.nodeType !== nodeType)
+          : [...list, { id: `optimistic-${nodeType}`, nodeType, createdAt: new Date().toISOString() }],
+      );
+      toast.error('Could not update category share');
     }
   };
 
@@ -447,11 +492,44 @@ function PeerDetail({
         </div>
       </div>
 
+      {/* Category grants — standing per-type subscriptions */}
+      <div className="space-y-3 rounded-md border border-border p-3">
+        <p className="text-sm font-medium">Share whole categories</p>
+        <p className="text-xs text-muted-foreground">
+          A category switch shares every item of that type with {peer.displayName} —{' '}
+          <span className="font-medium text-foreground">including ones you create later</span>.
+          Turn it off to go back to cherry-picking below.
+        </p>
+        <ul className="divide-y divide-border">
+          {CATEGORIES.map((c) => {
+            const on = typeShares.some((t) => t.nodeType === c.type);
+            const count = typeCounts[c.type] ?? 0;
+            return (
+              <li key={c.type} className="flex items-center gap-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm">{c.label}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {count} {count === 1 ? c.label.toLowerCase().replace(/s$/, '') : c.label.toLowerCase()}
+                    {on && <> · includes future {c.label.toLowerCase()}</>}
+                  </p>
+                </div>
+                <Switch
+                  checked={on}
+                  onCheckedChange={(v) => toggleCategory(c.type, v)}
+                  aria-label={`Share all ${c.label.toLowerCase()}`}
+                />
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+
       {/* Grants */}
       <div className="space-y-3">
         <p className="text-sm font-medium">Shared with {peer.displayName}</p>
         <p className="text-xs text-muted-foreground">
-          Only these nodes are visible to this peer. Everything else stays private.
+          Beyond any categories above, only these individually shared nodes are visible to this
+          peer. Everything else stays private.
         </p>
         <div className="relative">
           <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -474,7 +552,9 @@ function PeerDetail({
         )}
         {shares.length === 0 ? (
           <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-6 text-center text-xs text-muted-foreground">
-            Nothing shared yet — this peer can read nothing.
+            {typeShares.length > 0
+              ? 'No individually shared nodes — this peer sees the categories above.'
+              : 'Nothing shared yet — this peer can read nothing.'}
           </p>
         ) : (
           <ul className="divide-y divide-border rounded-md border border-border">

@@ -1,9 +1,10 @@
 import { db, nodes, type Node } from '@mantle/db';
 import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { withHnswPool } from './hnsw';
-import { pgArrayLiteral } from './pg';
+import { grantUnionFilter, pgArrayLiteral } from './pg';
 
 export { withHnswPool } from './hnsw';
+export { grantUnionFilter, pgArrayLiteral } from './pg';
 
 export {
   goldRank,
@@ -64,6 +65,15 @@ export interface SearchOptions {
    */
   ids?: string[];
   /**
+   * Grant-union allowlist: results must satisfy (id ∈ ids) OR (type ∈ types).
+   * The federation surface passes the peer's explicit node grants
+   * (`peer_shares`) plus its standing category grants (`peer_share_scopes`)
+   * here, so category grants stay a query-time predicate — never materialized
+   * into id lists. Both arrays empty ⇒ matches nothing (safe default). The
+   * peer-requested `types` filter above remains a separate AND.
+   */
+  idsOrTypes?: { ids: string[]; types: string[] };
+  /**
    * When provided, rank **semantically**: a weighted blend of vector similarity
    * (primary) and full-text rank (a booster for exact-term hits). Without it,
    * `searchNodes` keeps its legacy behaviour — FTS as a hard filter, or recency
@@ -108,6 +118,7 @@ export async function searchNodes(opts: SearchOptions): Promise<Node[]> {
   // One array-literal param (`= any`) rather than inArray's one-param-per-id —
   // the federation allowlist can be thousands of granted ids.
   if (opts.ids) filters.push(sql`${nodes.id} = any(${pgArrayLiteral(opts.ids)}::uuid[])`);
+  if (opts.idsOrTypes) filters.push(grantUnionFilter(nodes.id, opts.idsOrTypes));
   const limit = opts.limit ?? 50;
 
   // ── Legacy path: no query vector → FTS hard filter, or recency. ──────────
