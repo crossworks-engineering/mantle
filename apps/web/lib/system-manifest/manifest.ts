@@ -703,9 +703,12 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // union of these bundles. Page/table AUTHORING is delegated to the Pages /
     // Ledger specialists (no `pages`/`tables`/`page-admin`); the persona keeps
     // `page-share` so it can publish. NOT granted: the `*-admin` deletes
-    // (deliberate-only), `recall-search`/`research`/`terminal`/`federation`
-    // (specialist). Versus the pre-P6 set this drops `contact_delete` +
-    // `journal_delete` (now deliberate-only) — the one intentional removal.
+    // (deliberate-only), `recall-search`/`research`/`terminal` (specialist).
+    // `federation` IS granted: peer reads are scoped by the answering side's
+    // grants, and without the group the persona can't reach paired brains at
+    // all (it invents workarounds instead). Versus the pre-P6 set this drops
+    // `contact_delete` + `journal_delete` (now deliberate-only) — the one
+    // intentional removal.
     toolGroupSlugs: [
       'memory-core',
       'files',
@@ -730,6 +733,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'tables-import',
       'app-data',
       'team-admin',
+      'federation',
     ],
     skillSlugs: ['tool_grounding', 'voice_reply', 'chat_writing', 'location_awareness', 'navigation', 'integrations'],
     params: { temperature: 0.7, max_tokens: 16000 },
