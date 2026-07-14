@@ -54,6 +54,9 @@ type HubData = BridgeHubData & {
    *  build + active team-mode share all intact) — the shell renders it
    *  full-bleed instead of the built-in hub body below. */
   hubApp?: { appId: string; shareToken: string } | null;
+  /** The OWNER's colour theme — members see the hub (and hub app) in the
+   *  brain's brand theme, not the visitor-browser default. */
+  colorTheme?: string | null;
 };
 
 /** The "What's new" strip — the latest platform improvements, in simple terms.
@@ -219,6 +222,19 @@ export function TeamHubShell() {
   useEffect(() => {
     void refetch();
   }, [refetch]);
+
+  // Brand the member surface: stamp the OWNER's colour theme on <html>. The
+  // sandboxed hub app mirrors the host <html> attributes live, so this
+  // restyles a designated hub app too. Never clears — an unset owner theme
+  // just leaves the default in place.
+  useEffect(() => {
+    const t = data?.colorTheme;
+    if (!t) return;
+    document.documentElement.dataset.colorTheme = t;
+    // Same lock OwnerColorTheme sets: the ColorThemeProvider must not re-apply
+    // the visitor's localStorage over the brain's brand theme.
+    document.documentElement.dataset.colorThemeOwner = '1';
+  }, [data?.colorTheme]);
 
   if (authed === null) {
     return (

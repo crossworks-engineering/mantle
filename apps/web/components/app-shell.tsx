@@ -1,9 +1,11 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api-fetch';
+import { useColorTheme } from '@/components/color-theme-provider';
+import { COLOR_THEMES } from '@/lib/themes';
 import { setAssetToken } from '@/lib/asset-url';
 import { Header } from '@/components/layout/header';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
@@ -51,6 +53,9 @@ type ShellData = {
   pendingApprovals: number;
   /** Custom header wordmark (Settings → Profile → Site name); null ⇒ "mantle". */
   siteName: string | null;
+  /** The DB-stored colour theme (the cross-browser source of truth); null ⇒
+   *  never saved. Adopted once per shell load. */
+  colorTheme: string | null;
   /** Short-lived asset-access token for browser-native srcs in detached mode
    *  (see lib/asset-url). Absent/ignored same-origin. */
   assetToken?: string;
@@ -120,6 +125,23 @@ function ShellFrame({
   useEffect(() => {
     if (shellQuery.data && !shellQuery.data.onboarded) router.replace('/onboarding');
   }, [shellQuery.data, router]);
+
+  // Colour-theme sync: the DB copy is the cross-browser source of truth; the
+  // localStorage the pre-paint script read is only this browser's cache. Adopt
+  // the server value once per shell load (a later local change wins the session
+  // and writes itself back through the provider). Unknown ids — a theme removed
+  // from the list — are ignored rather than applied.
+  const { colorTheme: activeColorTheme, adoptServerTheme } = useColorTheme();
+  const adoptedTheme = useRef(false);
+  useEffect(() => {
+    if (adoptedTheme.current) return;
+    const stored = shellQuery.data?.colorTheme;
+    if (shellQuery.data === undefined) return;
+    adoptedTheme.current = true;
+    if (!stored || stored === activeColorTheme) return;
+    if (!COLOR_THEMES.some((t) => t.id === stored)) return;
+    adoptServerTheme(stored);
+  }, [shellQuery.data, activeColorTheme, adoptServerTheme]);
 
   // Publish the asset-access token so `assetUrl()` can sign browser-native srcs
   // (<img>/<iframe>/download) for a detached client. No-op same-origin.

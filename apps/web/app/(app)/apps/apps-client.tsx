@@ -38,6 +38,24 @@ import type { AppRow } from '@mantle/content';
 
 type AppsPage = { apps: AppRow[]; total: number; page: number; pageSize: number };
 
+/**
+ * One badge for the app's exposure, most-specific wins: Hub (the designated
+ * /team hub) ⊃ Team (active team-mode share) ⊃ Public (active public share).
+ * Owner-only apps get no badge — unlabelled = private, the quiet default.
+ */
+function ExposureBadge({ app }: { app: Pick<AppRow, 'shareMode' | 'isHub'> }) {
+  if (app.isHub) {
+    return <Badge title="Designated Team Hub — renders full-screen at /team for members">hub</Badge>;
+  }
+  if (app.shareMode === 'team') {
+    return <Badge variant="secondary" title="Team-shared — members reach it with their team token; listed on the /team hub">team</Badge>;
+  }
+  if (app.shareMode === 'public') {
+    return <Badge variant="outline" title="Publicly shared — anyone with the link can open it (read-only tools)">public</Badge>;
+  }
+  return null;
+}
+
 /** Outer query-gate so the page stays data-free. The URL params (driven by
  *  `useListNav` in the list) key the query, so navigating refetches. */
 export function AppsClient({
@@ -167,11 +185,10 @@ function AppsView({ data, query }: { data: AppsPage; query: string }) {
                     <span className="flex items-center gap-2 font-medium">
                       <span aria-hidden>{app.icon ?? '🧩'}</span>
                       <span className="truncate">{app.title}</span>
-                      {app.hasDraft && (
-                        <Badge variant="secondary" className="ml-auto shrink-0">
-                          draft
-                        </Badge>
-                      )}
+                      <span className="ml-auto flex shrink-0 items-center gap-1">
+                        {app.hasDraft && <Badge variant="secondary">draft</Badge>}
+                        <ExposureBadge app={app} />
+                      </span>
                     </span>
                     {app.description && (
                       <span className="line-clamp-1 text-xs text-muted-foreground">
@@ -208,10 +225,13 @@ function AppsView({ data, query }: { data: AppsPage; query: string }) {
                 {selected.description && (
                   <p className="text-sm text-muted-foreground">{selected.description}</p>
                 )}
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {selected.toolCount} tool{selected.toolCount === 1 ? '' : 's'} ·{' '}
-                  {selected.hasBuild ? 'published build' : 'no published build'}
-                  {selected.hasDraft ? ' · unpublished draft' : ''}
+                <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>
+                    {selected.toolCount} tool{selected.toolCount === 1 ? '' : 's'} ·{' '}
+                    {selected.hasBuild ? 'published build' : 'no published build'}
+                    {selected.hasDraft ? ' · unpublished draft' : ''}
+                  </span>
+                  <ExposureBadge app={selected} />
                 </p>
               </div>
               <div className="flex items-center gap-2">

@@ -35,5 +35,6 @@ export async function GET() {
     pendingApprovals,
     assetToken,
     siteName: prefs.siteName ?? null,
+    colorTheme: prefs.colorTheme ?? null,
   });
 }
