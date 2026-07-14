@@ -26,7 +26,12 @@ Each peer relationship has **two tokens, one per direction**:
 - **Outbound** (`mantle_peers.outbound_token_enc`) — the token *they* issued
   *us*, sealed AES-256-GCM (AAD = row id). We replay it as
   `Authorization: Bearer` when we call their API. Reversible because we must
-  resend it.
+  resend it. Optional at create: without it the peer sits in
+  `status='pending'` — inbound requests still verify (so the other side can
+  start querying as soon as they paste our token), outbound calls are disabled
+  until the token is added. This is what makes first-time pairing possible:
+  each side adds the other with just a URL, sends the token it minted, and
+  pastes the one it receives — neither has to go first.
 - **Inbound** (`mantle_peers.inbound_token_hash`) — SHA-256 of the token *we*
   minted for *them*. We show its plaintext to the operator exactly once (to hand
   over), then keep only the hash. An inbound request is verified by hashing the
@@ -97,8 +102,11 @@ Her Mantle (asking)                         Your Mantle (answering)
   the `tools` table on the next `apps/agent` boot; grant `peer_query` /
   `peer_node_get` / `peer_list` to a responder at `/settings/agents` for Saskia
   to use them.
-- **Phase 5 — UI (DONE, 2026-05-29).** `/settings/peers` master-detail (sidebar
-  nav entry added): add a peer (paste their token → mint + reveal-once yours),
+- **Phase 5 — UI (DONE, 2026-05-29; pairing flow fixed 2026-07-14).**
+  `/settings/peers` master-detail (sidebar nav entry added): add a peer with
+  just a name + URL (mints + reveal-once YOUR token immediately; their token is
+  optional and can be pasted later — before the fix both sides needed the
+  other's token first, a deadlock for two fresh Mantles),
   enable/disable, rotate inbound token, update outbound token, delete; and a
   search-and-grant picker over your nodes (excludes branches/secrets/peer
   records) with revoke. Backed by `/api/peers` (+ `/[id]`, `/[id]/rotate`,

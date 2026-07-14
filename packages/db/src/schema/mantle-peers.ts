@@ -25,7 +25,9 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
  * Each peer has two tokens, one per direction:
  *  - `outbound_token_enc` — the token THEY issued US, sealed AES-256-GCM
  *    (AAD = row id). We send it as `Authorization: Bearer` when we call their
- *    federation API. Reversible because we have to replay it.
+ *    federation API. Reversible because we have to replay it. NULL while the
+ *    pairing is half-done (status='pending'): the peer exists so our inbound
+ *    token could be minted + handed over, but they haven't given us theirs yet.
  *  - `inbound_token_hash` — SHA-256 of the token WE minted for THEM. We show
  *    that token's plaintext to the operator exactly once (to hand to the peer)
  *    and keep only the hash; an inbound request is verified by hashing the
@@ -46,10 +48,13 @@ export const mantlePeers = pgTable(
     displayName: text('display_name').notNull(),
     /** Root of the peer's federation API, e.g. https://her-mantle.example.com */
     baseUrl: text('base_url').notNull(),
-    outboundTokenEnc: bytea('outbound_token_enc').notNull(),
+    outboundTokenEnc: bytea('outbound_token_enc'),
     outboundTokenVersion: integer('outbound_token_version').notNull().default(1),
     inboundTokenHash: text('inbound_token_hash').notNull(),
-    /** 'pending' | 'active' | 'revoked' */
+    /**
+     * 'pending' | 'active' | 'revoked'. 'pending' = awaiting the peer's
+     * outbound token: inbound requests verify, outbound calls are disabled.
+     */
     status: text('status').notNull().default('active'),
     enabled: boolean('enabled').notNull().default(true),
     /** When we last successfully called the peer. */
