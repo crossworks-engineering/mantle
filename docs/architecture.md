@@ -12,7 +12,8 @@ Companion docs:
   (entity-resolution integrity + near-dup consolidation), and why it's all
   Postgres, not a graph DB.
 - [`federation.md`](./federation.md) — Mantle-to-Mantle federation: sealed
-  per-peer tokens, scoped per-node grants, the traced `/api/federation` surface.
+  per-peer tokens, scoped grants (per node, or per category with automatic
+  inclusion of new nodes), the traced `/api/federation` surface.
 - [`observability.md`](./observability.md) — the tracing layer: how every
   agent run becomes a `traces` row + `trace_steps` tree, the reactflow
   visual, the dashboard widgets, and how to add a new trace kind.

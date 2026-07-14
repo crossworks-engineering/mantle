@@ -33,10 +33,15 @@ The model (managed under **Settings → Peers**):
 
 - You register a **peer** and exchange tokens — each side mints a credential for the
   other, sealed/encrypted at rest. Revoking a peer instantly closes both directions.
-- Sharing is **per-node and explicit**: you grant exactly which nodes a peer may see
-  (revoke-don't-delete, so the grant history stays auditable). A peer's query only
-  ever returns the intersection of their request and your active grants — anything
-  ungranted simply isn't there.
+- Sharing is **explicit, per node or per whole category**: cherry-pick exactly which
+  nodes a peer may see, or flip a category switch (Pages, Notes, Files, Contacts,
+  Tables, Events, Tasks) to share every item of that type — **including items you
+  create later**; a category grant is a standing subscription resolved at query
+  time. Secrets are never shareable this way, and email + journal are deliberately
+  excluded from category sharing (individual items can still be cherry-picked).
+  Both kinds are revoke-don't-delete, so the grant history stays auditable. A
+  peer's query only ever returns the intersection of their request and your active
+  grants — anything ungranted simply isn't there.
 - Every cross-Mantle request is traced like everything else.
 
 So your assistant can, with permission, ask "does Jane's Mantle have her passport
