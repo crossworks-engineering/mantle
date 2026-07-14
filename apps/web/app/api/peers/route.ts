@@ -12,7 +12,9 @@ export async function GET() {
 const CreateBody = z.object({
   displayName: z.string().min(1).max(200),
   baseUrl: z.string().min(1).max(500),
-  outboundToken: z.string().min(1).max(8192),
+  // Optional: without it the peer is created 'pending' (inbound token minted
+  // + revealed so the pairing can start; outbound disabled until provided).
+  outboundToken: z.string().max(8192).optional(),
   description: z.string().max(2000).optional(),
 });
 

@@ -25,6 +25,11 @@ async function resolvePeer(ownerId: string, ref: string): Promise<PeerRow | { er
   if (cand.length === 0) return { error: `No peer matches "${ref}". Use peer_list to see configured peers.` };
   if (cand.length > 1) return { error: `Multiple peers named "${ref}". Use the peer id (see peer_list).` };
   const p = cand[0]!;
+  if (p.enabled && p.status === 'pending') {
+    return {
+      error: `Pairing with "${p.displayName}" is half-done — they haven't given you their token yet. Paste it under Tokens at /settings/peers to enable queries.`,
+    };
+  }
   if (!p.enabled || p.status !== 'active') {
     return { error: `Peer "${p.displayName}" is ${p.enabled ? p.status : 'disabled'}.` };
   }

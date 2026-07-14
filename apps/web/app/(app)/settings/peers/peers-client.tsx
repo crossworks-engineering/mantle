@@ -31,6 +31,7 @@ type Peer = {
   baseUrl: string;
   status: string;
   enabled: boolean;
+  hasOutboundToken: boolean;
   lastContactedAt: string | null;
   lastSeenAt: string | null;
   createdAt: string;
@@ -51,10 +52,10 @@ function TokenReveal({ token, onDone }: { token: string; onDone: () => void }) {
   };
   return (
     <div className="space-y-2 rounded-md border border-primary/40 bg-primary/5 p-3">
-      <p className="text-sm font-medium">Inbound token — shown once</p>
+      <p className="text-sm font-medium">Your token for them — shown once</p>
       <p className="text-xs text-muted-foreground">
-        Give this to the peer so their Mantle can authenticate to yours. We store only its hash —
-        you can&apos;t see it again (rotate to mint a new one).
+        Send this to the peer: they paste it on their side so their Mantle can authenticate to
+        yours. We store only its hash — you can&apos;t see it again (rotate to mint a new one).
       </p>
       <div className="flex items-center gap-2">
         <code className="min-w-0 flex-1 truncate rounded bg-muted px-2 py-1.5 font-mono text-xs">
@@ -146,9 +147,13 @@ function PeersView({ initialPeers }: { initialPeers: Peer[] }) {
                     <span
                       className={cn(
                         'ml-auto size-2 shrink-0 rounded-full',
-                        p.enabled && p.status === 'active' ? 'bg-primary' : 'bg-muted-foreground/40',
+                        p.enabled && p.status === 'active'
+                          ? 'bg-primary'
+                          : p.enabled && p.status === 'pending'
+                            ? 'bg-chart-4'
+                            : 'bg-muted-foreground/40',
                       )}
-                      aria-label={p.enabled ? p.status : 'disabled'}
+                      aria-label={p.enabled ? (p.status === 'pending' ? 'awaiting their token' : p.status) : 'disabled'}
                     />
                   </div>
                   <div className="truncate text-xs text-muted-foreground">{p.baseUrl}</div>
@@ -205,8 +210,8 @@ function CreatePeer({ onCreated }: { onCreated: (peer: Peer, inboundToken: strin
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!displayName.trim() || !baseUrl.trim() || !outboundToken.trim()) {
-      toast.error('Name, base URL, and the peer&apos;s token are all required');
+    if (!displayName.trim() || !baseUrl.trim()) {
+      toast.error('Name and base URL are required');
       return;
     }
     setPending(true);
@@ -214,7 +219,11 @@ function CreatePeer({ onCreated }: { onCreated: (peer: Peer, inboundToken: strin
       const { peer, inboundToken } = await apiSend<{ peer: Peer; inboundToken: string }>(
         '/api/peers',
         'POST',
-        { displayName, baseUrl, outboundToken },
+        {
+          displayName,
+          baseUrl,
+          ...(outboundToken.trim() ? { outboundToken: outboundToken.trim() } : {}),
+        },
       );
       toast.success(`Added ${peer.displayName}`);
       onCreated(peer, inboundToken);
@@ -232,8 +241,10 @@ function CreatePeer({ onCreated }: { onCreated: (peer: Peer, inboundToken: strin
         <h2 className="text-lg font-semibold">Connect a Mantle</h2>
       </div>
       <p className="text-xs text-muted-foreground">
-        Add another person&apos;s Mantle as a peer. Paste the token <em>they</em> gave you (used to
-        call them); we&apos;ll mint a token for <em>you</em> to give them back.
+        Pairing uses <strong>two tokens, one per direction</strong>. Step 1 — add the peer with
+        just a name and URL: we mint <em>your</em> token to send them (shown once). Step 2 — paste
+        the token <em>they</em> send you, here or later on the peer&apos;s page. Neither side needs
+        the other to go first.
       </p>
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-1.5">
@@ -245,9 +256,12 @@ function CreatePeer({ onCreated }: { onCreated: (peer: Peer, inboundToken: strin
           <Input id="peer-url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://her-mantle.example.com" />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="peer-token">Their token (outbound)</Label>
-          <Input id="peer-token" value={outboundToken} onChange={(e) => setOutbound(e.target.value)} placeholder="mtlpeer_…" />
-          <p className="text-xs text-muted-foreground">Sealed at rest. Sent as the bearer when you query them.</p>
+          <Label htmlFor="peer-token">Their token — optional for now</Label>
+          <Input id="peer-token" value={outboundToken} onChange={(e) => setOutbound(e.target.value)} placeholder="mtlpeer_… (leave empty if they haven't sent it yet)" />
+          <p className="text-xs text-muted-foreground">
+            Used to query them; sealed at rest. Without it the peer is added as “awaiting their
+            token” — they can already query you, and you paste theirs when it arrives.
+          </p>
         </div>
         <div className="flex justify-end border-t border-border pt-3">
           <SubmitButton pending={pending}>Add peer</SubmitButton>
@@ -309,7 +323,10 @@ function PeerDetail({
   const toggleEnabled = async (enabled: boolean) => {
     try {
       await apiSend(`/api/peers/${peer.id}`, 'PATCH', { enabled });
-      onChanged({ enabled, status: enabled ? 'active' : 'revoked' });
+      onChanged({
+        enabled,
+        status: enabled ? (peer.hasOutboundToken ? 'active' : 'pending') : 'revoked',
+      });
     } catch {
       toast.error('Could not update');
     }
@@ -333,7 +350,11 @@ function PeerDetail({
     try {
       await apiSend(`/api/peers/${peer.id}`, 'PATCH', { outboundToken: newOutbound.trim() });
       setNewOutbound('');
-      toast.success('Outbound token updated');
+      onChanged({
+        hasOutboundToken: true,
+        ...(peer.status === 'pending' ? { status: 'active' } : {}),
+      });
+      toast.success(peer.status === 'pending' ? 'Pairing complete — peer is active' : 'Outbound token updated');
     } catch {
       toast.error('Could not update token');
     }
@@ -391,7 +412,7 @@ function PeerDetail({
       </div>
 
       <div className="grid grid-cols-2 gap-3 rounded-md border border-border bg-card p-3 text-xs text-muted-foreground">
-        <div>Status: <span className="font-medium text-foreground">{peer.enabled ? peer.status : 'disabled'}</span></div>
+        <div>Status: <span className="font-medium text-foreground">{peer.enabled ? (peer.status === 'pending' ? 'awaiting their token' : peer.status) : 'disabled'}</span></div>
         <div>Added: {formatDateTime(peer.createdAt)}</div>
         <div>Last called them: {peer.lastContactedAt ? formatDateTime(peer.lastContactedAt) : '—'}</div>
         <div>Last seen from them: {peer.lastSeenAt ? formatDateTime(peer.lastSeenAt) : '—'}</div>
@@ -407,8 +428,19 @@ function PeerDetail({
             <RefreshCw /> Rotate inbound
           </Button>
         </div>
+        {!peer.hasOutboundToken && (
+          <p className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">Finish pairing:</span> paste the token{' '}
+            {peer.displayName} sends you below. Until then they can query you, but you can&apos;t
+            query them.
+          </p>
+        )}
         <div className="flex items-center gap-2">
-          <Input value={newOutbound} onChange={(e) => setNewOutbound(e.target.value)} placeholder="Update their token (outbound)…" />
+          <Input
+            value={newOutbound}
+            onChange={(e) => setNewOutbound(e.target.value)}
+            placeholder={peer.hasOutboundToken ? 'Update their token (outbound)…' : 'Paste their token (outbound)…'}
+          />
           <Button type="button" size="sm" variant="outline" onClick={saveOutbound} disabled={!newOutbound.trim()}>
             Save
           </Button>

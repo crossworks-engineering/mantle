@@ -33,6 +33,8 @@ export type PeerRow = {
   baseUrl: string;
   status: string;
   enabled: boolean;
+  /** Whether we hold a token to call THEM with (false = pairing half-done). */
+  hasOutboundToken: boolean;
   lastContactedAt: string | null;
   lastSeenAt: string | null;
   createdAt: string;
@@ -47,6 +49,7 @@ function rowOf(p: MantlePeer): PeerRow {
     baseUrl: p.baseUrl,
     status: p.status,
     enabled: p.enabled,
+    hasOutboundToken: !!p.outboundTokenEnc,
     lastContactedAt: p.lastContactedAt ? p.lastContactedAt.toISOString() : null,
     lastSeenAt: p.lastSeenAt ? p.lastSeenAt.toISOString() : null,
     createdAt: p.createdAt.toISOString(),
@@ -80,8 +83,13 @@ function normaliseBaseUrl(raw: string): string {
 export type CreatePeerInput = {
   displayName: string;
   baseUrl: string;
-  /** The token THEY issued US (we seal + replay it when calling them). */
-  outboundToken: string;
+  /**
+   * The token THEY issued US (we seal + replay it when calling them).
+   * Optional: first-time pairing is a two-token dance and ours has to be
+   * mintable first — without theirs the peer is created status='pending'
+   * (inbound works, outbound disabled) until `setOutboundToken` supplies it.
+   */
+  outboundToken?: string;
   description?: string;
 };
 
@@ -96,8 +104,7 @@ export async function createPeer(
 ): Promise<{ peer: PeerRow; inboundToken: string }> {
   const displayName = input.displayName.trim().slice(0, 200) || 'Untitled peer';
   const baseUrl = normaliseBaseUrl(input.baseUrl);
-  const outbound = input.outboundToken.trim();
-  if (!outbound) throw new Error('outboundToken required');
+  const outbound = input.outboundToken?.trim() || null;
 
   await ensureRoot(ownerId);
   const [node] = await db
@@ -115,7 +122,7 @@ export async function createPeer(
   // Allocate the peer id up-front so the seal AAD (= row id) is known before
   // we encrypt — same discipline as createApiKey.
   const peerId = crypto.randomUUID();
-  const { ciphertext, keyVersion } = seal(outbound, peerId);
+  const sealed = outbound ? seal(outbound, peerId) : null;
   const inboundToken = mintInboundToken();
 
   const [row] = await db
@@ -126,10 +133,10 @@ export async function createPeer(
       nodeId: node.id,
       displayName,
       baseUrl,
-      outboundTokenEnc: ciphertext,
-      outboundTokenVersion: keyVersion,
+      outboundTokenEnc: sealed?.ciphertext ?? null,
+      outboundTokenVersion: sealed?.keyVersion ?? 1,
       inboundTokenHash: hashToken(inboundToken),
-      status: 'active',
+      status: outbound ? 'active' : 'pending',
       enabled: true,
     })
     .returning();
@@ -155,14 +162,18 @@ export async function getPeer(ownerId: string, id: string): Promise<PeerRow | nu
   return row ? rowOf(row) : null;
 }
 
-/** Decrypt the peer's outbound token so we can call their API. Owner-scoped. */
+/**
+ * Decrypt the peer's outbound token so we can call their API. Owner-scoped.
+ * Null when the peer doesn't exist OR the pairing is still pending (no token
+ * stored yet) — callers surface the friendly "awaiting their token" error.
+ */
 export async function getOutboundToken(ownerId: string, id: string): Promise<string | null> {
   const [row] = await db
     .select()
     .from(mantlePeers)
     .where(and(eq(mantlePeers.id, id), eq(mantlePeers.ownerId, ownerId)))
     .limit(1);
-  if (!row) return null;
+  if (!row?.outboundTokenEnc) return null;
   return open(row.outboundTokenEnc, row.id);
 }
 
@@ -177,7 +188,10 @@ export async function rotateInboundToken(ownerId: string, id: string): Promise<s
   return row ? token : null;
 }
 
-/** Replace the stored outbound token (e.g. the peer rotated theirs). */
+/**
+ * Store the peer's outbound token (completing a pending pairing, or the peer
+ * rotated theirs). A 'pending' peer flips to 'active'; revoked stays revoked.
+ */
 export async function setOutboundToken(
   ownerId: string,
   id: string,
@@ -188,7 +202,12 @@ export async function setOutboundToken(
   const { ciphertext, keyVersion } = seal(token, id);
   const [row] = await db
     .update(mantlePeers)
-    .set({ outboundTokenEnc: ciphertext, outboundTokenVersion: keyVersion, updatedAt: new Date() })
+    .set({
+      outboundTokenEnc: ciphertext,
+      outboundTokenVersion: keyVersion,
+      status: sql`case when ${mantlePeers.status} = 'pending' then 'active' else ${mantlePeers.status} end`,
+      updatedAt: new Date(),
+    })
     .where(and(eq(mantlePeers.id, id), eq(mantlePeers.ownerId, ownerId)))
     .returning({ id: mantlePeers.id });
   return !!row;
@@ -201,7 +220,15 @@ export async function setPeerEnabled(
 ): Promise<boolean> {
   const [row] = await db
     .update(mantlePeers)
-    .set({ enabled, status: enabled ? 'active' : 'revoked', updatedAt: new Date() })
+    .set({
+      enabled,
+      // Re-enabling restores 'pending' (not 'active') while the outbound token
+      // is still missing, so the "paste their token" affordance comes back.
+      status: enabled
+        ? sql`case when ${mantlePeers.outboundTokenEnc} is null then 'pending' else 'active' end`
+        : 'revoked',
+      updatedAt: new Date(),
+    })
     .where(and(eq(mantlePeers.id, id), eq(mantlePeers.ownerId, ownerId)))
     .returning({ id: mantlePeers.id });
   return !!row;
@@ -222,9 +249,12 @@ export async function deletePeer(ownerId: string, id: string): Promise<boolean> 
 
 /**
  * Verify an inbound bearer token. Hashes the presented token, finds the
- * matching enabled+active peer, constant-time confirms, bumps last_seen_at,
- * and returns the peer. Null = no match / disabled / revoked. The returned
- * `ownerId` is the answering owner whose data the peer may (scoped) read.
+ * matching enabled peer, constant-time confirms, bumps last_seen_at, and
+ * returns the peer. Null = no match / disabled / revoked. 'pending' peers DO
+ * verify — during first-time pairing the other side gets our inbound token
+ * before we have theirs, and their calls must work while we wait (what they
+ * can read is still governed entirely by peer_shares). The returned `ownerId`
+ * is the answering owner whose data the peer may (scoped) read.
  */
 export async function verifyInboundToken(token: string): Promise<MantlePeer | null> {
   if (!token) return null;
@@ -235,7 +265,7 @@ export async function verifyInboundToken(token: string): Promise<MantlePeer | nu
       and(
         eq(mantlePeers.inboundTokenHash, hashToken(token)),
         eq(mantlePeers.enabled, true),
-        eq(mantlePeers.status, 'active'),
+        inArray(mantlePeers.status, ['active', 'pending']),
       ),
     )
     .limit(1);
