@@ -827,6 +827,13 @@
       "when": 1784937600000,
       "tag": "0117_peer_optional_outbound",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1785024000000,
+      "tag": "0118_peer_share_scopes",
+      "breakpoints": true
     }
   ]
 }

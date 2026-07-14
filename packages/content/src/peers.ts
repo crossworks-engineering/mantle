@@ -4,9 +4,13 @@
  *
  * Two rows per peer: a browsable `nodes` row (type='mantle_peer') and a
  * `mantle_peers` sidecar holding the sealed credentials — the same split as
- * telegram_accounts. Access a peer gets is governed entirely by `peer_shares`;
+ * telegram_accounts. Access a peer gets is governed entirely by grants:
+ * per-node rows in `peer_shares` plus standing per-category rows in
+ * `peer_share_scopes` (a category grant covers every node of that type,
+ * including nodes created later — resolved at query time, never materialized).
  * `queryForPeer` returns the intersection of (what the peer asked) ∩ (active
- * grants), so a peer can never read a node that wasn't explicitly shared.
+ * grants), so a peer can never read a node that wasn't explicitly shared
+ * per node or per category.
  */
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
@@ -14,11 +18,12 @@ import {
   mantlePeers,
   nodes,
   peerShares,
+  peerShareScopes,
   type MantlePeer,
   type Node,
 } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
-import { searchChunks, searchNodes } from '@mantle/search';
+import { grantUnionFilter, searchChunks, searchNodes } from '@mantle/search';
 import { hashToken, mintInboundToken, tokenMatchesHash } from './peers-crypto';
 
 export const PEERS_ROOT_LABEL = 'peers';
@@ -399,6 +404,164 @@ export async function listPeerShares(ownerId: string, peerId: string): Promise<P
   }));
 }
 
+// ── Category grants (peer_share_scopes) ─────────────────────────────────────
+
+/**
+ * The node types a peer may be granted BY CATEGORY. Server-enforced allowlist:
+ * never secrets or mantle_peer, and — deliberately — never email or journal
+ * (the owner's private corpus; even the team responder gates those behind
+ * teamPrivateReads). Cherry-picking an individual email/journal node via
+ * peer_shares stays possible; subscribing a peer to all of them does not.
+ */
+export const PEER_SHAREABLE_TYPES = [
+  'page',
+  'note',
+  'file',
+  'contact',
+  'table',
+  'event',
+  'task',
+] as const;
+
+export type PeerShareableType = (typeof PEER_SHAREABLE_TYPES)[number];
+
+export function isPeerShareableType(t: string): t is PeerShareableType {
+  return (PEER_SHAREABLE_TYPES as readonly string[]).includes(t);
+}
+
+export type PeerTypeShareRow = {
+  id: string;
+  peerId: string;
+  nodeType: string;
+  createdAt: string;
+};
+
+const toTypeShareRow = (r: {
+  id: string;
+  peerId: string;
+  nodeType: string;
+  createdAt: Date;
+}): PeerTypeShareRow => ({
+  id: r.id,
+  peerId: r.peerId,
+  nodeType: r.nodeType,
+  createdAt: r.createdAt.toISOString(),
+});
+
+/**
+ * Grant a peer read access to a whole category — a STANDING subscription: every
+ * node of this type, including nodes created later, becomes readable by the
+ * peer. Idempotent on the active grant. Rejects types outside
+ * PEER_SHAREABLE_TYPES (throws — the API maps it to a 400).
+ */
+export async function grantPeerTypeShare(
+  ownerId: string,
+  peerId: string,
+  nodeType: string,
+): Promise<PeerTypeShareRow | null> {
+  if (!isPeerShareableType(nodeType)) {
+    throw new Error(`type "${nodeType}" cannot be category-shared`);
+  }
+  const [peer] = await db
+    .select({ id: mantlePeers.id })
+    .from(mantlePeers)
+    .where(and(eq(mantlePeers.id, peerId), eq(mantlePeers.ownerId, ownerId)))
+    .limit(1);
+  if (!peer) return null;
+
+  const [row] = await db
+    .insert(peerShareScopes)
+    .values({ ownerId, peerId, nodeType })
+    .onConflictDoNothing({
+      target: [peerShareScopes.peerId, peerShareScopes.nodeType],
+      where: isNull(peerShareScopes.revokedAt),
+    })
+    .returning();
+  const existing =
+    row ??
+    (
+      await db
+        .select()
+        .from(peerShareScopes)
+        .where(
+          and(
+            eq(peerShareScopes.peerId, peerId),
+            eq(peerShareScopes.nodeType, nodeType),
+            isNull(peerShareScopes.revokedAt),
+          ),
+        )
+        .limit(1)
+    )[0];
+  return existing ? toTypeShareRow(existing) : null;
+}
+
+/** Revoke a peer's category grant (revoke-don't-delete). */
+export async function revokePeerTypeShare(
+  ownerId: string,
+  peerId: string,
+  nodeType: string,
+): Promise<boolean> {
+  const res = await db
+    .update(peerShareScopes)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(peerShareScopes.ownerId, ownerId),
+        eq(peerShareScopes.peerId, peerId),
+        eq(peerShareScopes.nodeType, nodeType as PeerShareableType),
+        isNull(peerShareScopes.revokedAt),
+      ),
+    )
+    .returning({ id: peerShareScopes.id });
+  return res.length > 0;
+}
+
+/** All active category grants for a peer. */
+export async function listPeerTypeShares(
+  ownerId: string,
+  peerId: string,
+): Promise<PeerTypeShareRow[]> {
+  const rows = await db
+    .select()
+    .from(peerShareScopes)
+    .where(
+      and(
+        eq(peerShareScopes.ownerId, ownerId),
+        eq(peerShareScopes.peerId, peerId),
+        isNull(peerShareScopes.revokedAt),
+      ),
+    )
+    .orderBy(desc(peerShareScopes.createdAt));
+  return rows.map(toTypeShareRow);
+}
+
+/**
+ * How many nodes each shareable category currently holds for this owner — the
+ * counts shown beside the category toggles ("Pages · 12"). One grouped query.
+ */
+export async function peerShareableTypeCounts(
+  ownerId: string,
+): Promise<Record<PeerShareableType, number>> {
+  const rows = await db
+    .select({ type: nodes.type, count: sql<number>`count(*)::int` })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        inArray(sql`${nodes.type}::text`, [...PEER_SHAREABLE_TYPES]),
+      ),
+    )
+    .groupBy(nodes.type);
+  const counts = Object.fromEntries(PEER_SHAREABLE_TYPES.map((t) => [t, 0])) as Record<
+    PeerShareableType,
+    number
+  >;
+  for (const r of rows) {
+    if (isPeerShareableType(r.type)) counts[r.type] = r.count;
+  }
+  return counts;
+}
+
 // ── Scoped query (what a peer can actually read) ─────────────────────────────
 
 export type PeerQueryOpts = {
@@ -427,18 +590,32 @@ export type PeerQueryHit = {
 };
 
 /**
- * The peer's active grant set — the node ids it is allowed to see, plus the
- * granting owner. The scoping source for every federation read; searches
- * filter to a strict subset of it.
+ * The peer's active grant set — the explicit node ids plus the standing
+ * category grants it is allowed to see, and the granting owner. The single
+ * scoping source for every federation read; searches filter to a strict
+ * subset of it. A node is readable iff (id ∈ nodeIds) OR (type ∈ nodeTypes).
+ * No grants of either kind ⇒ ownerId null ⇒ every read path returns nothing.
  */
 export async function activePeerGrantNodeIds(
   peerId: string,
-): Promise<{ ownerId: string | null; nodeIds: string[] }> {
-  const rows = await db
-    .select({ ownerId: peerShares.ownerId, nodeId: peerShares.nodeId })
-    .from(peerShares)
-    .where(and(eq(peerShares.peerId, peerId), isNull(peerShares.revokedAt)));
-  return { ownerId: rows[0]?.ownerId ?? null, nodeIds: rows.map((r) => r.nodeId) };
+): Promise<{ ownerId: string | null; nodeIds: string[]; nodeTypes: string[] }> {
+  const [shareRows, scopeRows] = await Promise.all([
+    db
+      .select({ ownerId: peerShares.ownerId, nodeId: peerShares.nodeId })
+      .from(peerShares)
+      .where(and(eq(peerShares.peerId, peerId), isNull(peerShares.revokedAt))),
+    db
+      .select({ ownerId: peerShareScopes.ownerId, nodeType: peerShareScopes.nodeType })
+      .from(peerShareScopes)
+      .where(and(eq(peerShareScopes.peerId, peerId), isNull(peerShareScopes.revokedAt))),
+  ]);
+  return {
+    ownerId: shareRows[0]?.ownerId ?? scopeRows[0]?.ownerId ?? null,
+    nodeIds: shareRows.map((r) => r.nodeId),
+    // Defence-in-depth: filter through the allowlist even on read, so a stray
+    // row for a never-shareable type could still not open a category.
+    nodeTypes: scopeRows.map((r) => r.nodeType).filter(isPeerShareableType),
+  };
 }
 
 const toPeerHit = (r: {
@@ -467,16 +644,17 @@ const toPeerHit = (r: {
  */
 export async function queryForPeer(peerId: string, opts: PeerQueryOpts = {}): Promise<PeerQueryHit[]> {
   const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
+  const { ownerId, nodeIds, nodeTypes } = await activePeerGrantNodeIds(peerId);
+  if (!ownerId || (nodeIds.length === 0 && nodeTypes.length === 0)) return [];
+  const grants = { ids: nodeIds, types: nodeTypes };
 
   // ── Ranked path: search WITHIN the grant set (hybrid when embedded, FTS else).
   if (opts.query?.trim()) {
-    const { ownerId, nodeIds } = await activePeerGrantNodeIds(peerId);
-    if (!ownerId || nodeIds.length === 0) return [];
     const found = await searchNodes({
       ownerId,
       q: opts.query.trim(),
       queryEmbedding: opts.queryEmbedding,
-      ids: nodeIds,
+      idsOrTypes: grants,
       types: opts.types?.length ? opts.types : undefined,
       limit,
     });
@@ -494,8 +672,10 @@ export async function queryForPeer(peerId: string, opts: PeerQueryOpts = {}): Pr
     );
   }
 
-  // ── List path (no query): everything granted, recency-first. Unchanged.
-  const conds = [eq(peerShares.peerId, peerId), isNull(peerShares.revokedAt)];
+  // ── List path (no query): everything granted, recency-first. The grant union
+  // is the same query-time predicate the ranked path uses — a category grant is
+  // never materialized into an id list.
+  const conds = [eq(nodes.ownerId, ownerId), grantUnionFilter(nodes.id, grants)];
   if (opts.types && opts.types.length > 0) {
     conds.push(inArray(sql`${nodes.type}::text`, opts.types));
   }
@@ -508,8 +688,7 @@ export async function queryForPeer(peerId: string, opts: PeerQueryOpts = {}): Pr
       tags: nodes.tags,
       createdAt: nodes.createdAt,
     })
-    .from(peerShares)
-    .innerJoin(nodes, eq(nodes.id, peerShares.nodeId))
+    .from(nodes)
     .where(and(...conds))
     .orderBy(desc(nodes.createdAt))
     .limit(limit);
@@ -540,9 +719,14 @@ export async function searchChunksForPeer(
   limit = 10,
 ): Promise<PeerChunkHit[]> {
   const capped = Math.min(Math.max(limit, 1), 50);
-  const { ownerId, nodeIds } = await activePeerGrantNodeIds(peerId);
-  if (!ownerId || nodeIds.length === 0) return [];
-  return searchChunks({ ownerId, embedding, nodeIds, limit: capped });
+  const { ownerId, nodeIds, nodeTypes } = await activePeerGrantNodeIds(peerId);
+  if (!ownerId || (nodeIds.length === 0 && nodeTypes.length === 0)) return [];
+  return searchChunks({
+    ownerId,
+    embedding,
+    nodeIdsOrTypes: { ids: nodeIds, types: nodeTypes },
+    limit: capped,
+  });
 }
 
 export type PeerNodeDetail = {
@@ -557,9 +741,10 @@ export type PeerNodeDetail = {
 };
 
 /**
- * Fetch one node's full content for a peer — **only** if it has an active
- * grant. Returns null when ungranted (indistinguishable from not-found, so a
- * peer can't probe for the existence of nodes it wasn't given). The data bag is
+ * Fetch one node's full content for a peer — **only** if it is covered by an
+ * active grant, per node (`peer_shares`) or per category (`peer_share_scopes`).
+ * Returns null when ungranted (indistinguishable from not-found, so a peer
+ * can't probe for the existence of nodes it wasn't given). The data bag is
  * returned verbatim so the peer gets the body/content it was granted; secrets
  * are never node-data anyway, and ungranted nodes never reach here.
  */
@@ -567,6 +752,8 @@ export async function getNodeForPeer(
   peerId: string,
   nodeId: string,
 ): Promise<PeerNodeDetail | null> {
+  const { ownerId, nodeIds, nodeTypes } = await activePeerGrantNodeIds(peerId);
+  if (!ownerId || (nodeIds.length === 0 && nodeTypes.length === 0)) return null;
   const [row] = await db
     .select({
       id: nodes.id,
@@ -577,17 +764,12 @@ export async function getNodeForPeer(
       createdAt: nodes.createdAt,
       updatedAt: nodes.updatedAt,
     })
-    .from(peerShares)
-    .innerJoin(nodes, eq(nodes.id, peerShares.nodeId))
-    .where(
-      and(
-        eq(peerShares.peerId, peerId),
-        eq(peerShares.nodeId, nodeId),
-        isNull(peerShares.revokedAt),
-      ),
-    )
+    .from(nodes)
+    .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
     .limit(1);
   if (!row) return null;
+  // Effective grant = explicit node grant OR standing category grant.
+  if (!nodeIds.includes(row.id) && !nodeTypes.includes(row.type)) return null;
   const data = (row.data ?? {}) as Record<string, unknown>;
   const summary = typeof data.summary === 'string' ? data.summary : null;
   return {

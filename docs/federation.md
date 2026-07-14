@@ -15,7 +15,7 @@ and [`observability.md`](./observability.md) (every cross-Mantle read is traced)
 | Concern | Decision |
 |---|---|
 | **Peer auth** | Sealed per-peer bearer token. Reuses `@mantle/crypto` (AES-256-GCM) + the `api_keys` vault pattern. |
-| **Access scope** | Explicit per-node grants only (`peer_shares`). A peer sees nothing it wasn't granted — passports invisible unless shared. |
+| **Access scope** | Explicit grants only, per node (`peer_shares`) or per category (`peer_share_scopes`, added 2026-07-14). A peer sees nothing it wasn't granted — passports invisible unless shared. A category grant is a **standing subscription** resolved at query time: enable "Pages" for a peer and every page — including pages created later — is readable by it. |
 | **Consent** | Auto-answer within the granted scope; every cross-Mantle access is a trace row. |
 | **Channel** | Both — an HTTP federation API for scoped data exchange, plus MCP tool access. |
 
@@ -51,6 +51,20 @@ directions; rotating regenerates one side without disturbing the other.
   intersection of *(what the peer asked for)* ∩ *(nodes with an active grant for
   that peer)*. Revoke-don't-delete (partial unique on `(peer_id, node_id) WHERE
   revoked_at IS NULL`), so grant history stays auditable.
+- **`peer_share_scopes`** (migration 0118) — standing per-category grants: one
+  active row per `(peer_id, node_type)` means *every* node of that type is
+  readable by the peer, **including nodes created after the grant** — the grant
+  is a predicate resolved at query time, never materialized into an id list.
+  Same revoke-don't-delete shape. The effective grant set everywhere is
+  `(id ∈ peer_shares) OR (type ∈ peer_share_scopes)`, resolved in ONE place
+  (`activePeerGrantNodeIds`) and applied by all three read paths
+  (`queryForPeer`, `searchChunksForPeer`, `getNodeForPeer`). Which types may be
+  category-shared is a server-enforced allowlist (`PEER_SHAREABLE_TYPES`):
+  pages, notes, files, contacts, tables, events, tasks — never `secret` or
+  `mantle_peer`, and deliberately never `email` or `journal` (the owner's
+  private corpus; even the team responder gates those behind
+  `teamPrivateReads`). Individual email/journal nodes can still be
+  cherry-picked via `peer_shares`.
 
 ## Request flow (target)
 
@@ -128,9 +142,24 @@ Her Mantle (asking)                         Your Mantle (answering)
   can now read the relevant *sections* of a granted page. Older peers without
   the endpoint 404; the tool surfaces that as "use peer_query instead".
 
+- **Phase 7 — category peer-shares (DONE, 2026-07-14).** Grants gained a second
+  kind: per-category (`peer_share_scopes`, see Schema above). "Share whole
+  categories" Switch rows in the peer detail pane at `/settings/peers` — one
+  per shareable type with its node count and an "includes future X" hint (the
+  dynamic nature must be unmissable); the per-node picker stays for
+  cherry-picking and both coexist. `/api/peers/[id]/shares` GET now returns
+  `{ shares, typeShares, typeCounts }`; POST accepts `{ nodeType }`; DELETE
+  accepts `?nodeType=`. Resolution-side: `activePeerGrantNodeIds` returns
+  granted types alongside explicit ids, and the grant union travels into
+  `@mantle/search` as a composable predicate (`SearchOptions.idsOrTypes` /
+  `ChunkSearchOptions.nodeIdsOrTypes`, built by `grantUnionFilter`) — no
+  materialized id lists, no wire-protocol change; entirely answering-side.
+  Caveat: category-sharing Pages amplifies the page-body gap (bodies still
+  aren't federated; passages + summaries are — Phase 3 note).
+
 **Status: feature complete.** Two sovereign Mantles can now register each other,
-exchange tokens via the UI, grant specific nodes, and query across the border
-semantically — Saskia (or Claude) on one side, the scoped HTTP API on the
-other, every read traced. Remaining nice-to-haves: full page-body federation
-(Phase 3 note; passage search now covers the common case), a handshake/pairing
-flow to auto-exchange tokens, and per-peer rate limiting.
+exchange tokens via the UI, grant specific nodes or whole categories, and query
+across the border semantically — Saskia (or Claude) on one side, the scoped
+HTTP API on the other, every read traced. Remaining nice-to-haves: full
+page-body federation (Phase 3 note; passage search now covers the common case),
+a handshake/pairing flow to auto-exchange tokens, and per-peer rate limiting.

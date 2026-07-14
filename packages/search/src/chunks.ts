@@ -8,7 +8,7 @@
 import { and, asc, eq, isNotNull, sql } from 'drizzle-orm';
 import { contentChunks, db, nodes } from '@mantle/db';
 import { withHnswPool } from './hnsw';
-import { pgArrayLiteral } from './pg';
+import { grantUnionFilter, pgArrayLiteral } from './pg';
 
 /** Salience down-weight strength (see @mantle/search index). Tunable via env. */
 const SALIENCE_LAMBDA = Number(process.env.MANTLE_SALIENCE_LAMBDA ?? 0.15);
@@ -40,6 +40,13 @@ export type ChunkSearchOptions = {
    * (`peer_shares`). An empty array matches nothing (safe default).
    */
   nodeIds?: string[];
+  /**
+   * Grant-union allowlist: passages whose parent node satisfies (id ∈ ids) OR
+   * (type ∈ types). Carries the peer's explicit node grants plus its standing
+   * category grants (`peer_share_scopes`) as one query-time predicate. Both
+   * arrays empty ⇒ matches nothing (safe default).
+   */
+  nodeIdsOrTypes?: { ids: string[]; types: string[] };
 };
 
 export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]> {
@@ -52,6 +59,7 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
   if (opts.excludeSystemOrigin) conds.push(sql`(${nodes.data}->>'origin') is distinct from 'system'`);
   if (opts.nodeIds)
     conds.push(sql`${contentChunks.nodeId} = any(${pgArrayLiteral(opts.nodeIds)}::uuid[])`);
+  if (opts.nodeIdsOrTypes) conds.push(grantUnionFilter(contentChunks.nodeId, opts.nodeIdsOrTypes));
 
   // Rank by salience-adjusted distance so a bulk/marketing email's passages
   // can't outrank real content; the returned `distance` stays raw cosine. The
