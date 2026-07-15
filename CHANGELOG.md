@@ -4,6 +4,23 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.136.0 — 2026-07-15
+
+**Tables: reference columns from the grid + Excel-style cell expand.** Two UI
+follow-ups to v2.1's reference columns, both grid-only (no engine/schema
+change). (1) A **"Link to another tab…"** item in the column-header menu opens
+a dialog to pick a source tab + column and turn the column into a cross-tab
+reference — the shipped validation / draft-op / `ReferenceCell` pipeline does
+the rest, so references are now creatable without the assistant. Retyping away
+from reference clears the link. (2) Long **text/url cells** get an expander (⌘↵
+save, Esc cancel): because the grid virtualizes on a fixed row height, the full
+value opens in a portal popover instead of growing the row — no reflow, no
+virtualization fight. Shipped after a 2-reviewer adversarial audit; fixes in
+the same release (Esc-cancel now truly cancels; re-pointing a reference
+refreshes its dropdown; a rejected op no longer wedges autosave).
+
+**Deploy: tag-only bump — no migration, no compose change.**
+
 ## v0.135.0 — 2026-07-15
 
 **Tables v2.1: multi-tab workbooks + cross-tab reference columns.** One Table
