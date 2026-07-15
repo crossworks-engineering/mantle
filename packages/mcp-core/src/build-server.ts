@@ -259,7 +259,7 @@ server.tool(
 
 server.tool(
   'search_chunks',
-  "Semantic (vector) search over document passages — finds the most relevant *sections* inside pages, files, emails, notes (not just whole-node keyword hits). Reach for this FIRST on a content question: it returns the exact passages, so you answer without loading whole documents into context. Fall back to `search` (whole-node) or reading the full file only when the passages are insufficient or the user wants an exhaustive read. `branch` scopes by ltree path (e.g. 'files' or 'pages').",
+  "Hybrid (semantic + keyword) search over document passages — finds the most relevant *sections* inside pages, files, emails, notes (not just whole-node keyword hits). Reach for this FIRST on a content question: it returns the exact passages, so you answer without loading whole documents into context. Fall back to `search` (whole-node) or reading the full file only when the passages are insufficient or the user wants an exhaustive read. `branch` scopes by ltree path (e.g. 'files' or 'pages').",
   {
     q: z.string(),
     branch: z.string().optional(),
@@ -267,7 +267,7 @@ server.tool(
   },
   async ({ q, branch, limit }) => {
     const embedding = await embed(ownerId, q);
-    const hits = await searchChunks({ ownerId: ownerId, embedding, branch, limit: limit ?? 10 });
+    const hits = await searchChunks({ ownerId: ownerId, embedding, q, branch, limit: limit ?? 10 });
     return jsonReply(hits);
   },
 );

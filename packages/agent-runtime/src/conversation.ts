@@ -565,6 +565,9 @@ export async function loadConversationContext(args: {
     const hits = await searchChunks({
       ownerId,
       embedding: queryVec,
+      // Hybrid arm: the same text the embedding was computed from, so an
+      // exact-term question is rescued by keyword when it embeds poorly.
+      q: enrichedQuery ?? inboundText,
       limit: chunkLimit + 4, // small pool so the cutoff can trim without starving
       excludeSystemOrigin: true,
     });

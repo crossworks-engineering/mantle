@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { index, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
-import { vector } from './_shared';
+import { tsvector, vector } from './_shared';
 import { nodes } from './nodes';
 
 /**
@@ -25,6 +25,9 @@ export const contentChunks = pgTable(
     headingPath: text('heading_path'),
     text: text('text').notNull(),
     embedding: vector(768)('embedding'),
+    // Declared so SELECTs can reference it; the GENERATED clause + GIN index
+    // live in the SQL migration (0119), same split as nodes.search_tsv.
+    searchTsv: tsvector('search_tsv'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
