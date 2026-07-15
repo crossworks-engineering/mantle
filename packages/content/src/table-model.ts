@@ -667,3 +667,109 @@ export function setView(doc: TableDoc, view: View): TableDoc {
   else views.push({ ...view, id: view.id || randomUUID() });
   return { ...doc, views };
 }
+
+// ---------------------------------------------------------------------------
+// Doc diff → draft ops (v2.1 P5)
+// ---------------------------------------------------------------------------
+
+/** The subset of tabledb's TableOp the differ emits (structurally identical —
+ *  same one-way-dep tripwire as TableDoc/TableDocLike). */
+export type TableDocOp =
+  | { op: 'row_add'; rowId: string; cells?: Record<string, CellValue>; afterRowId?: string | null }
+  | { op: 'row_update'; rowId: string; cells: Record<string, CellValue> }
+  | { op: 'row_delete'; rowId: string }
+  | { op: 'column_add'; column: Column; afterColumnId?: string | null }
+  | { op: 'column_update'; columnId: string; patch: Partial<Omit<Column, 'id'>> }
+  | { op: 'column_delete'; columnId: string }
+  | { op: 'aggregate_set'; columnId: string; kind: AggregateKind }
+  | { op: 'view_set'; view: View };
+
+const cellEq = (a: CellValue | undefined, b: CellValue | undefined): boolean =>
+  JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/**
+ * Diff two docs into the draft ops that transform `prev` into `next` — the
+ * grid's whole-doc onChange becomes an op batch (tab-targetable, scales past
+ * the window). Returns NULL when the change isn't expressible as ops (row or
+ * column reordering, view deletion) — the caller falls back to a whole-doc
+ * save (single-tab tables) or surfaces the limitation.
+ */
+export function diffTableDocs(prev: TableDoc, next: TableDoc): TableDocOp[] | null {
+  const ops: TableDocOp[] = [];
+
+  // ── Columns ──
+  const prevCols = new Map(prev.columns.map((c) => [c.id, c]));
+  const nextCols = new Map(next.columns.map((c) => [c.id, c]));
+  for (const c of prev.columns) if (!nextCols.has(c.id)) ops.push({ op: 'column_delete', columnId: c.id });
+  // Reorder detection: surviving columns must keep their relative order.
+  const survivingPrev = prev.columns.filter((c) => nextCols.has(c.id)).map((c) => c.id);
+  const survivingNext = next.columns.filter((c) => prevCols.has(c.id)).map((c) => c.id);
+  if (survivingPrev.join(' ') !== survivingNext.join(' ')) return null;
+  next.columns.forEach((c, i) => {
+    const old = prevCols.get(c.id);
+    if (!old) {
+      const afterColumnId = i > 0 ? next.columns[i - 1]!.id : null;
+      ops.push({ op: 'column_add', column: c, afterColumnId });
+      return;
+    }
+    const patch: Partial<Omit<Column, 'id'>> = {};
+    if (old.name !== c.name) patch.name = c.name;
+    if (old.type !== c.type) patch.type = c.type;
+    if (JSON.stringify(old.format ?? null) !== JSON.stringify(c.format ?? null)) patch.format = c.format;
+    if (JSON.stringify(old.options ?? null) !== JSON.stringify(c.options ?? null)) patch.options = c.options;
+    if ((old.formula ?? '') !== (c.formula ?? '')) patch.formula = c.formula;
+    if ((old.width ?? null) !== (c.width ?? null)) patch.width = c.width;
+    if (JSON.stringify(old.ref ?? null) !== JSON.stringify(c.ref ?? null)) patch.ref = c.ref;
+    if (Object.keys(patch).length > 0) ops.push({ op: 'column_update', columnId: c.id, patch });
+  });
+
+  // ── Rows ──
+  const prevRows = new Map(prev.rows.map((r) => [r.id, r]));
+  const nextRows = new Map(next.rows.map((r) => [r.id, r]));
+  for (const r of prev.rows) if (!nextRows.has(r.id)) ops.push({ op: 'row_delete', rowId: r.id });
+  const rowSurvivingPrev = prev.rows.filter((r) => nextRows.has(r.id)).map((r) => r.id);
+  const rowSurvivingNext = next.rows.filter((r) => prevRows.has(r.id)).map((r) => r.id);
+  if (rowSurvivingPrev.join(' ') !== rowSurvivingNext.join(' ')) return null;
+  const colIds = next.columns.filter((c) => c.type !== 'formula').map((c) => c.id);
+  next.rows.forEach((r, i) => {
+    const old = prevRows.get(r.id);
+    if (!old) {
+      // Insert after the nearest PRE-EXISTING predecessor (a run of new rows
+      // anchors to the same row; batch order preserves their sequence).
+      let afterRowId: string | null = null;
+      for (let j = i - 1; j >= 0; j--) {
+        if (prevRows.has(next.rows[j]!.id)) {
+          afterRowId = next.rows[j]!.id;
+          break;
+        }
+      }
+      ops.push({ op: 'row_add', rowId: r.id, cells: r.cells, afterRowId });
+      return;
+    }
+    const changed: Record<string, CellValue> = {};
+    for (const colId of colIds) {
+      if (!cellEq(old.cells[colId], r.cells[colId])) changed[colId] = r.cells[colId] ?? null;
+    }
+    if (Object.keys(changed).length > 0) ops.push({ op: 'row_update', rowId: r.id, cells: changed });
+  });
+
+  // ── Aggregates ──
+  const prevAgg = prev.aggregates ?? {};
+  const nextAgg = next.aggregates ?? {};
+  for (const colId of new Set([...Object.keys(prevAgg), ...Object.keys(nextAgg)])) {
+    if (!nextCols.has(colId)) continue; // column_delete already cleans up
+    const a = prevAgg[colId] ?? 'none';
+    const b = nextAgg[colId] ?? 'none';
+    if (a !== b) ops.push({ op: 'aggregate_set', columnId: colId, kind: b });
+  }
+
+  // ── Views (upsert only — deletion has no op) ──
+  const prevViews = new Map((prev.views ?? []).map((v) => [v.id, v]));
+  for (const v of next.views ?? []) {
+    const old = prevViews.get(v.id);
+    if (!old || JSON.stringify(old) !== JSON.stringify(v)) ops.push({ op: 'view_set', view: v });
+  }
+  if ((prev.views ?? []).some((v) => !(next.views ?? []).some((n) => n.id === v.id))) return null;
+
+  return ops;
+}

@@ -245,6 +245,7 @@ export {
 } from './tables';
 
 export {
+  diffTableDocs,
   emptyTableDoc,
   ensureTableDoc,
   ensureWorkbookDoc,
@@ -278,6 +279,7 @@ export {
   AGGREGATE_KINDS,
   FILTER_OPS,
   type TableDoc,
+  type TableDocOp,
   type WorkbookDoc,
   type WorkbookTab,
   type Column,
