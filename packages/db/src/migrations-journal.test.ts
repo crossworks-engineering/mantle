@@ -38,4 +38,17 @@ describe('migrations journal', () => {
     expect(new Set(idxs).size).toBe(idxs.length);
     expect(idxs).toEqual([...idxs].sort((a, b) => a - b));
   });
+
+  it('journal when values are strictly increasing (the migrator GATES on them)', () => {
+    // migrate.ts applies only entries whose `when` exceeds the max recorded
+    // created_at — an entry stamped with a when ≤ its predecessor is silently
+    // skipped on every box that already ran the predecessor. This happened
+    // for real too (v0.133.1 stamped 0119 below 0118; fixed in v0.133.2).
+    const whens = (journal.entries as Array<{ when: number }>).map((e) => e.when);
+    for (let i = 1; i < whens.length; i++) {
+      expect(whens[i]!, `entry ${i} when must exceed entry ${i - 1}`).toBeGreaterThan(
+        whens[i - 1]!,
+      );
+    }
+  });
 });

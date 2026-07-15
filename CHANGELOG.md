@@ -4,6 +4,14 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.133.2 — 2026-07-15
+
+**Hotfix 2: migration 0119's journal `when` predated 0118's**, and the
+migrator gates on `when` > max recorded `created_at` — so boxes that already
+ran 0118 skipped 0119 even with the journal entry present. Restamped to the
++1-day ledger convention; the journal guard test now also enforces strictly
+increasing `when` values.
+
 ## v0.133.1 — 2026-07-15
 
 **Hotfix: migration 0119 was missing its journal entry**, so the migrate gate
