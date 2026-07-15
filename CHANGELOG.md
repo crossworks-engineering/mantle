@@ -4,6 +4,34 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.135.0 — 2026-07-15
+
+**Tables v2.1: multi-tab workbooks + cross-tab reference columns.** One Table
+is now one SQLite workbook of N tabs (the Excel model): a tab bar switches
+sheets, spreadsheet imports land every sheet as a tab of one node (the
+sheet→tab flip — no more sibling tables), and a bare single-tab doc stays
+byte-compatible with v2. New **reference columns** (`type: 'reference'`) offer
+values from another tab's column, Excel data-validation style — soft integrity
+(free text allowed, dangling values flagged in the profile, degrade-to-text
+with values intact when a source is removed). An embedded **schema layer**
+(data dictionary + join edges) backs `table_sql` and rides the corpus map as a
+`schemaDigest`. The grid autosaves as **op batches** (`diffTableDocs` → the
+`draft_rev` etag), scaling edits past the 10k window; reference cells get a
+lazy typeahead editor (`?distinct=` on the rows route).
+
+Shipped after a 3-reviewer adversarial audit; every confirmed finding fixed in
+the same release. Notable fixes: formula↔stored column retypes are now DDL (a
+retype used to leave the file unreadable); new-row runs and top-of-grid inserts
+persist in the right order (op round-trip is now `applyOps(X, diff(X,Y)) === Y`);
+autosave no longer drops edits typed during an in-flight save; the whole-doc
+guards and truncation caps are draft-aware; `PUT /draft` carries the `if_rev`
+etag; and file-replacing renames sweep stale `-wal` sidecars first. The
+`draft-ops` route is now validated with a strict per-op schema.
+
+**Deploy: tag-only bump — no migration, no compose change.** The `table-dbs`
+mount and migration 0120 shipped with v0.134.0; v2.1 is code-only. Skill
+bodies (`table_authoring`, `tool_grounding`) force-sync on the version bump.
+
 ## v0.134.0 — 2026-07-15
 
 **Tables v2: sqlite-native table storage.** Each Table node now lives in its
