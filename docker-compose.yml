@@ -120,6 +120,13 @@ x-app-env: &app-env
   # container's ephemeral cwd and every app loses its data on each redeploy. The
   # web AND api services mount ${MANTLE_DATA_DIR}/app-dbs here.
   APP_DB_DIR: /data/app-dbs
+  # Per-table SQLite files for sqlite-native Tables (Tables v2). One workbook
+  # file per table node (<root>/<owner>/<node>.sqlite + .draft.sqlite, see
+  # packages/tabledb). Tool handlers run in BOTH web and api, so BOTH services
+  # mount ${MANTLE_DATA_DIR}/table-dbs here — a table file missing from one
+  # process is a data-loss-shaped bug the /debug sanity check screams about.
+  # Same-host bind mount only (NFS unsupported for cross-process sqlite).
+  TABLE_DB_DIR: /data/table-dbs
   # Scheduled local backups (/settings/backups) write pg_dump archives here;
   # bind-mounted to ${MANTLE_DATA_DIR}/backups on the host so the operator's
   # own offsite sync (rsync/rclone/restic) can pick them up. The web service
@@ -397,6 +404,9 @@ services:
       # Per-app SQLite (APP_DB_DIR=/data/app-dbs) — persistent so /apps data
       # survives redeploys.
       - ${MANTLE_DATA_DIR:-./data}/app-dbs:/data/app-dbs
+      # Per-table SQLite (TABLE_DB_DIR=/data/table-dbs) — sqlite-native Tables.
+      # Mounted into web AND api (handlers run in both processes).
+      - ${MANTLE_DATA_DIR:-./data}/table-dbs:/data/table-dbs
       # READ-WRITE view of the tailscaled LocalAPI socket. Read drives the
       # /settings/network status tile + peer dropdown; write lets the app log
       # tailscaled in/out from the UI (Activate/Deactivate). RW is the one
@@ -493,6 +503,9 @@ services:
       # Per-app SQLite (APP_DB_DIR=/data/app-dbs) — the api also serves /apps
       # (agent app_build + runtime), so it shares the same persistent mount.
       - ${MANTLE_DATA_DIR:-./data}/app-dbs:/data/app-dbs
+      # Per-table SQLite (TABLE_DB_DIR=/data/table-dbs) — same dual-mount
+      # contract as app-dbs: agent table tools execute here too.
+      - ${MANTLE_DATA_DIR:-./data}/table-dbs:/data/table-dbs
 
   worker_email:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
