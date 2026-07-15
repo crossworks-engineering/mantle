@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# Back up the running Mantle stack under ./backups — BOTH halves of its state:
-#   1. Postgres   → backups/mantle-<ts>.dump         (pg_dump -Fc; restore: db-restore.sh)
-#   2. App SQLite → backups/mantle-app-dbs-<ts>.tgz  (per-app /apps databases;
+# Back up the running Mantle stack under ./backups — ALL THREE halves of its state:
+#   1. Postgres     → backups/mantle-<ts>.dump           (pg_dump -Fc; restore: db-restore.sh)
+#   2. App SQLite   → backups/mantle-app-dbs-<ts>.tgz    (per-app /apps databases;
 #      restore: app-dbs-restore.sh). These live on a SEPARATE volume from
 #      Postgres, so pg_dump alone would silently miss them.
+#   3. Table SQLite → backups/mantle-table-dbs-<ts>.tgz  (sqlite-native table
+#      workbooks under TABLE_DB_DIR; restore: untar into ${MANTLE_DATA_DIR}/table-dbs —
+#      the archive mirrors the live <owner>/<node>.sqlite layout).
 #
 # Usage:   scripts/db-dump.sh
 #          MANTLE_PG_CONTAINER=other  MANTLE_APP_CONTAINER=other  scripts/db-dump.sh
@@ -69,6 +72,33 @@ else
     rm -f "$APPDB_OUT"
     echo "⚠ app-db snapshot FAILED — per-app SQLite NOT backed up (Postgres dump is intact)." >&2
     echo "  See the output above; re-run once the app container is healthy." >&2
+  fi
+fi
+
+# --- Sqlite-native table workbooks -------------------------------------------
+# Same contract as the app-dbs half: VACUUM INTO snapshots inside the app
+# container (consistent under concurrent writes), tarred to the host. Loud but
+# non-fatal; a box with no table-dbs dir yet (no compose refresh, or no
+# file-backed tables) is "nothing to back up", not a failure.
+TABLEDB_OUT="backups/mantle-table-dbs-${TS}.tgz"
+if ! running "$APP_CONTAINER"; then
+  echo "⚠ app container '$APP_CONTAINER' not running — table workbooks NOT backed up." >&2
+elif ! docker exec "$APP_CONTAINER" sh -c 'test -d "${TABLE_DB_DIR:-/data/table-dbs}"'; then
+  echo "▷ no table workbooks yet in '$APP_CONTAINER' — skipping table SQLite."
+else
+  echo "▶ Snapshotting table workbooks via '$APP_CONTAINER' → $TABLEDB_OUT"
+  if docker exec "$APP_CONTAINER" sh -c '
+        set -e
+        rm -rf /tmp/tabledbsnap && mkdir -p /tmp/tabledbsnap
+        pnpm -C apps/web exec tsx scripts/backup-table-dbs.ts /tmp/tabledbsnap 1>&2
+        tar -C /tmp/tabledbsnap -czf - .
+      ' > "$TABLEDB_OUT"; then
+    docker exec "$APP_CONTAINER" rm -rf /tmp/tabledbsnap >/dev/null 2>&1 || true
+    echo "✔ Wrote $(du -h "$TABLEDB_OUT" | cut -f1) → $TABLEDB_OUT"
+    echo "  Restore table data by untarring into \${MANTLE_DATA_DIR}/table-dbs"
+  else
+    rm -f "$TABLEDB_OUT"
+    echo "⚠ table-db snapshot FAILED — table workbooks NOT backed up (Postgres dump is intact)." >&2
   fi
 fi
 

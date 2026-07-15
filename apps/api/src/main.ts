@@ -13,6 +13,7 @@
  */
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
+import { runTableStorageProbes } from '@mantle/tabledb';
 import { configureDBOS, RUNNER_QUEUE, runnerConcurrency } from './config';
 import { startAgentRuntime, stopAgentRuntime } from './agent/runtime';
 import { installTurnStreamObserver } from './turn-stream-observer';
@@ -25,6 +26,35 @@ import './workflows/team-turn';
 import { enqueueTelegramTurn } from './workflows/telegram-turn';
 
 async function main(): Promise<void> {
+  // Boot sanity for sqlite-native table storage: node:sqlite is experimental
+  // upstream, so the engine behaviors Tables v2 relies on are re-proven on
+  // every boot (this is the same suite CI runs on the prod image). Loud but
+  // non-fatal — the box still serves everything else; /debug sanity mirrors
+  // the failure with remediation.
+  void runTableStorageProbes().then((report) => {
+    if (report.ok) return;
+    const failed = report.results.filter((r) => !r.ok && r.required);
+    console.error(
+      `[api] TABLE-STORAGE PROBES FAILED on node ${process.version} — sqlite table storage must not be used on this image:\n` +
+        failed.map((r) => `  ✗ ${r.key}: ${r.detail}`).join('\n'),
+    );
+  });
+  // Dual-mount tripwire: tool handlers run in THIS process too, so the
+  // table-dbs volume must be writable here, not just in web (a tag-only
+  // update that missed the compose refresh fails exactly this way).
+  if (process.env.TABLE_DB_DIR) {
+    void import('node:fs/promises').then(async (fsp) => {
+      try {
+        await fsp.mkdir(process.env.TABLE_DB_DIR!, { recursive: true });
+        await fsp.access(process.env.TABLE_DB_DIR!, 2 /* W_OK */);
+      } catch {
+        console.error(
+          `[api] TABLE_DB_DIR (${process.env.TABLE_DB_DIR}) is not writable in the api container — ` +
+            `agent table edits will fail. Refresh docker-compose.yml (table-dbs must be mounted into web AND api).`,
+        );
+      }
+    });
+  }
   configureDBOS();
   // Bridge trace steps → live turn-status events for streamed turns. Pure
   // registration (no I/O); harmless when MANTLE_TURN_STREAMING is off, since

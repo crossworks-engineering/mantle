@@ -56,6 +56,9 @@ importers:
       '@mantle/storage':
         specifier: workspace:*
         version: link:../../packages/storage
+      '@mantle/tabledb':
+        specifier: workspace:*
+        version: link:../../packages/tabledb
       '@mantle/telegram':
         specifier: workspace:*
         version: link:../../packages/telegram
@@ -190,6 +193,9 @@ importers:
       '@mantle/storage':
         specifier: workspace:*
         version: link:../../packages/storage
+      '@mantle/tabledb':
+        specifier: workspace:*
+        version: link:../../packages/tabledb
       '@mantle/telegram':
         specifier: workspace:*
         version: link:../../packages/telegram
@@ -655,6 +661,9 @@ importers:
       '@mantle/search':
         specifier: workspace:*
         version: link:../search
+      '@mantle/tabledb':
+        specifier: workspace:*
+        version: link:../tabledb
       docx:
         specifier: ^9.5.1
         version: 9.7.1
@@ -982,6 +991,15 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
+  packages/tabledb:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.19
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
   packages/telegram:
     dependencies:
       '@mantle/crypto':
@@ -1039,6 +1057,9 @@ importers:
       '@mantle/storage':
         specifier: workspace:*
         version: link:../storage
+      '@mantle/tabledb':
+        specifier: workspace:*
+        version: link:../tabledb
       '@mantle/telegram':
         specifier: workspace:*
         version: link:../telegram

@@ -22,6 +22,7 @@
     "@mantle/files": "workspace:*",
     "@mantle/heartbeats": "workspace:*",
     "@mantle/storage": "workspace:*",
+    "@mantle/tabledb": "workspace:*",
     "@mantle/telegram": "workspace:*",
     "@mantle/tools": "workspace:*",
     "@mantle/tracing": "workspace:*",

@@ -12,6 +12,8 @@ export {
   discardTableDraft,
   commitTable,
   deleteTable,
+  applyTableOps,
+  type ApplyTableOpsResult,
   type TableRow,
   type TableDetail,
   type TableVisibility,

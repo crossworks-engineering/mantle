@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { bigint, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { nodes } from './nodes';
 
 /**
@@ -26,6 +26,23 @@ export const tables = pgTable('tables', {
   draftData: jsonb('draft_data').$type<Record<string, unknown>>(),
   draftUpdatedAt: timestamp('draft_updated_at', { withTimezone: true }),
   version: integer('version').default(1).notNull(),
+  // ── Tables v2 registry (sqlite-native storage) ────────────────────────────
+  // When `storagePath` is set, the per-node sqlite workbook file is the source
+  // of truth and this row is the registry + writer-coordination point (draft/
+  // commit/migration serialize via SELECT … FOR UPDATE on it). NULL = legacy
+  // JSONB path (`data`/`draftData` stay authoritative through the transition).
+  storagePath: text('storage_path'),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }),
+  // Structure fingerprint (tabs/columns/types + bucketed rowcount) gating the
+  // LLM re-summarize pass — cell edits alone never re-summarize.
+  shapeHash: text('shape_hash'),
+  engineVersion: integer('engine_version'),
+  // Per-tab row/column counts so list surfaces never open files or parse the
+  // JSONB blob just for counts.
+  stats: jsonb('stats').$type<Record<string, unknown>>(),
+  // Draft etag: bumped on every draft write batch; the UI autosave presents it
+  // so a stale debounced doc can't overwrite newer agent ops.
+  draftRev: integer('draft_rev').default(0).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

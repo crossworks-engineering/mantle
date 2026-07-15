@@ -54,6 +54,7 @@ COPY packages/microsoft/package.json packages/microsoft/package.json
 COPY packages/rules/package.json packages/rules/package.json
 COPY packages/search/package.json packages/search/package.json
 COPY packages/storage/package.json packages/storage/package.json
+COPY packages/tabledb/package.json packages/tabledb/package.json
 COPY packages/telegram/package.json packages/telegram/package.json
 COPY packages/tools/package.json packages/tools/package.json
 COPY packages/tracing/package.json packages/tracing/package.json

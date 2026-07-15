@@ -89,3 +89,4 @@ apps/web/public/app-runtime/
 
 # Embedded agent-os repo (not part of this project)
 /agent-os/
+.table-dbs

@@ -51,32 +51,64 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
   const iconSavedRef = useRef(initial.icon ?? '');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const dirty = JSON.stringify(doc) !== committedRef.current;
+  // Past the materialize window the grid shows a leading window of the rows
+  // (read-only — a whole-doc edit of a window would truncate the table; the
+  // assistant's row tools edit at any size) and pages the rest in on demand.
+  const clipped = initial.docClipped === true;
+  const [loadedTotal, setLoadedTotal] = useState(initial.rowCount);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadMore = useCallback(async () => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const draftParam = initial.draft != null ? '&draft=1' : '';
+      const page = await apiFetch<{ rows: TableDoc['rows']; total: number }>(
+        `/api/tables/${initial.id}/rows?offset=${docRef.current.rows.length}&limit=1000${draftParam}`,
+      );
+      setLoadedTotal(page.total);
+      if (page.rows.length > 0) {
+        setDoc((d) => ({ ...d, rows: [...d.rows, ...page.rows] }));
+        // Appending display rows must not trip the autosave differ.
+        draftSavedRef.current = '';
+      }
+    } catch (e) {
+      if (!(e instanceof ApiError && e.status === 401)) toast.error('Could not load more rows');
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [initial.draft, initial.id, loadingMore, toast]);
+
+  const dirty = !clipped && JSON.stringify(doc) !== committedRef.current;
 
   // ── Autosave the working grid to draft_data (no publish, no index). ──
-  const saveDraft = useCallback(async () => {
+  // Returns false when the save failed — commit MUST abort then, or it would
+  // promote the PREVIOUS autosave and mark the newest edits committed while
+  // silently dropping them from the published table (audit finding).
+  const saveDraft = useCallback(async (): Promise<boolean> => {
+    if (clipped) return true; // read-only window — nothing autosaves
     const s = JSON.stringify(docRef.current);
-    if (s === draftSavedRef.current) return;
+    if (s === draftSavedRef.current) return true;
     setDraftSaving(true);
     try {
       await apiSend(`/api/tables/${initial.id}/draft`, 'PUT', { data: docRef.current });
       draftSavedRef.current = s;
+      return true;
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return;
-      toast.error('Could not save draft');
-      return;
+      if (!(e instanceof ApiError && e.status === 401)) toast.error('Could not save draft');
+      return false;
     } finally {
       setDraftSaving(false);
     }
-  }, [initial.id, toast]);
+  }, [clipped, initial.id, toast]);
 
   // Debounced draft autosave whenever the grid changes.
   useEffect(() => {
+    if (clipped) return;
     const s = JSON.stringify(doc);
     if (s === draftSavedRef.current) return;
     const h = setTimeout(() => void saveDraft(), DRAFT_DEBOUNCE_MS);
     return () => clearTimeout(h);
-  }, [doc, saveDraft]);
+  }, [clipped, doc, saveDraft]);
 
   // Title saves live (cheap metadata; never indexes).
   useEffect(() => {
@@ -107,13 +139,21 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
   }, [icon, initial.id]);
 
   // ── Commit: publish + index. The only path that touches the brain. ──
+  // Flush the draft, then promote the SERVER draft (empty body) — the client
+  // never posts the doc at commit time, so a windowed doc can never truncate
+  // the published table (plan §4).
   const commit = useCallback(async () => {
     if (committing) return;
     const s = JSON.stringify(docRef.current);
-    if (s === committedRef.current) return;
+    if (!clipped && s === committedRef.current) return;
     setCommitting(true);
     try {
-      await apiSend(`/api/tables/${initial.id}/commit`, 'POST', { data: docRef.current });
+      const flushed = await saveDraft();
+      if (!flushed) {
+        toast.error('Draft not saved — commit aborted (nothing was published)');
+        return;
+      }
+      await apiSend(`/api/tables/${initial.id}/commit`, 'POST', {});
       committedRef.current = s;
       draftSavedRef.current = s;
       toast.success('Committed');
@@ -126,7 +166,7 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
     } finally {
       setCommitting(false);
     }
-  }, [committing, initial.id, router, toast]);
+  }, [clipped, committing, initial.id, router, saveDraft, toast]);
 
   // ── Discard: throw away the draft, revert to the published grid. ──
   const discard = useCallback(async () => {
@@ -268,7 +308,11 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
               <Undo2 /> Discard
             </Button>
           )}
-          <Button size="sm" onClick={() => void commit()} disabled={!dirty || committing}>
+          <Button
+            size="sm"
+            onClick={() => void commit()}
+            disabled={(clipped ? initial.draft == null : !dirty) || committing}
+          >
             <GitCommitHorizontal /> Commit
           </Button>
           <Button size="icon" variant="ghost" className="size-8 text-muted-foreground hover:text-destructive" onClick={() => setConfirmDelete(true)} aria-label="Delete table">
@@ -282,11 +326,27 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
             race the specialist's server-side write (it lands in draft_data). */}
         <div
           className={
-            'min-h-0 flex-1 overflow-hidden' +
+            'flex min-h-0 flex-1 flex-col overflow-hidden' +
             (assistBusy ? ' pointer-events-none opacity-60' : '')
           }
         >
-          <TableGrid doc={doc} onChange={setDoc} />
+          {clipped && (
+            <div className="flex items-center justify-between gap-3 border-b border-border bg-accent px-3 py-1.5 text-xs text-accent-foreground">
+              <span>
+                Large table — showing {doc.rows.length.toLocaleString()} of {loadedTotal.toLocaleString()} rows,
+                read-only in the grid. Edit rows via the assistant, or query with SQL.
+              </span>
+              {doc.rows.length < loadedTotal && (
+                <Button size="sm" variant="outline" onClick={() => void loadMore()} disabled={loadingMore}>
+                  {loadingMore ? <Loader2 className="animate-spin" aria-hidden /> : null}
+                  Load more rows
+                </Button>
+              )}
+            </div>
+          )}
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <TableGrid doc={doc} onChange={clipped ? () => {} : setDoc} />
+          </div>
         </div>
         {assistBusy && (
           <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm shadow-sm">

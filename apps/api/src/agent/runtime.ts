@@ -49,6 +49,7 @@ import {
   resolveThinkingBudget,
   noteInboundChannel,
 } from '@mantle/content';
+import { sweepLegacyTables } from '@mantle/content/table-storage';
 import { ensureDatedUploadFolder, upsertFile } from '@mantle/files';
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
 import {
@@ -1684,6 +1685,20 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
     );
   }, SWEEP_INTERVAL_MS);
   console.log(`[agent] extract sweep every ${SWEEP_INTERVAL_MS / 1000}s (missed-event safety net)`);
+
+  // Tables v2 migration sweep (plan §9): convert the long tail of legacy
+  // JSONB tables to sqlite files, a few per tick, each under the same
+  // registry lock every writer takes (so a sweep step can never fork against
+  // a concurrent edit). Lazy migration (first op/commit) handles hot tables;
+  // this catches the rest. No-op once storage_path is set everywhere.
+  const TABLE_MIGRATE_SWEEP_MS = Number(process.env.MANTLE_TABLE_MIGRATE_SWEEP_MS) || 5 * 60 * 1000;
+  const TABLE_MIGRATE_BATCH = 5;
+  setInterval(() => {
+    sweepLegacyTables(TABLE_MIGRATE_BATCH).catch((err) =>
+      console.error('[agent] table migration sweep error (will retry next tick):', err instanceof Error ? err.message : err),
+    );
+  }, TABLE_MIGRATE_SWEEP_MS);
+  console.log(`[agent] table migration sweep every ${TABLE_MIGRATE_SWEEP_MS / 1000}s (${TABLE_MIGRATE_BATCH}/tick)`);
 
   await assertEmbeddingModelConsistency();
   await drainPending(opts.enqueueTelegramTurn);

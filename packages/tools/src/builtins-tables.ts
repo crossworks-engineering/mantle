@@ -30,6 +30,7 @@ import {
   listTables,
   queryRows,
   resolveCell,
+  applyTableOps,
   saveTableDraft,
   setAggregate,
   setCell,
@@ -51,8 +52,20 @@ import {
   type TableDoc,
   type TableDetail,
 } from '@mantle/content';
+import { existsSync } from 'node:fs';
+import { tableSqlSurface } from '@mantle/content/table-storage';
 import { fileById, readFileById } from '@mantle/files';
 import { parseSheetToGrid, parseTextToGrid } from '@mantle/files/sheet-to-grid';
+import {
+  SQL_ROW_CAP_DEFAULT,
+  SQL_ROW_CAP_MAX,
+  aggregateWindow,
+  draftPathFor,
+  queryRowsWindow,
+  readRowById,
+  runTableSql,
+  type TableOp,
+} from '@mantle/tabledb';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { notFound } from './errors';
@@ -126,9 +139,36 @@ const DRAFT_REVIEW_HINT = (tableId: string) =>
   `open /tables/${tableId} to review; the editor shows the draft. Commit ` +
   `publishes (and re-indexes), Discard reverts.`;
 
+/** Draft-first workbook file for windowed reads/writes; null = legacy JSONB
+ *  table (still served by the doc path). */
+async function windowFile(ownerId: string, tableId: string): Promise<string | null> {
+  const surface = await tableSqlSurface(ownerId, tableId).catch(() => null);
+  if (!surface) return null;
+  const draftAbs = draftPathFor(surface.abs);
+  return existsSync(draftAbs) ? draftAbs : surface.abs;
+}
+
+/** Row-existence check that works past the materialize window: the clipped
+ *  doc first (free), then the workbook file by id. Legacy tables only have
+ *  the doc. */
+async function rowExists(ownerId: string, tableId: string, doc: TableDoc, rowId: string): Promise<boolean> {
+  if (findRow(doc, rowId)) return true;
+  const file = await windowFile(ownerId, tableId);
+  if (!file) return false;
+  return readRowById(file, rowId) !== null;
+}
+
+const CLIPPED_EDIT_ERROR =
+  'this table exceeds the in-memory window, so whole-document edits are disabled (they would drop the rows ' +
+  'beyond the window). Row edits (table_row_add/table_row_update/table_row_delete/table_cell_set) and reads ' +
+  '(table_query, table_sql) work at any size.';
+
 /** Load a table or return a tool error; then run `fn` against its baseline doc
  *  and persist the result to draft. Centralises the load → edit → saveDraft
- *  shape every mutating tool shares. */
+ *  shape the STRUCTURAL (column/view/aggregate) tools share. Row-level tools
+ *  use the op path (applyTableOps) instead — it scales past the materialize
+ *  window; this path refuses clipped tables outright (a whole-doc save of a
+ *  clipped doc would silently truncate the table). */
 async function editDraft(
   ownerId: string,
   tableId: string,
@@ -136,6 +176,7 @@ async function editDraft(
 ): Promise<ToolHandlerResult> {
   const table = await getTable(ownerId, tableId);
   if (!table) return notFound('table', tableId, 'table_list');
+  if (table.docClipped) return { ok: false, error: CLIPPED_EDIT_ERROR };
   const res = fn(baseline(table));
   if (res.error) return { ok: false, error: res.error };
   const ok = await saveTableDraft(ownerId, tableId, res.doc);
@@ -219,7 +260,7 @@ const table_from_file: BuiltinToolDef = {
   preconditions: FILE_ID_PRE,
   name: 'Create table(s) from a spreadsheet',
   description:
-    "Import a `.xlsx` / `.xls` / `.csv` file into typed grids — bytes go server-side from `files` → SheetJS → typed columns + rows, never round-tripping through your output (scales to large sheets). Column types are inferred (numbers, dates, checkboxes, text). **One table per non-empty sheet:** a multi-sheet workbook yields several tables (the first uses your `title` if given; others are named after their sheet). A very large sheet (beyond ~10k rows) is split into contiguous parts ('… (part 1/N)') so no rows are lost — `part`/`partsTotal` are returned. The grids are committed + indexed immediately. Returns the created table ids. Use this whenever the user hands you a spreadsheet.",
+    "Import a `.xlsx` / `.xls` / `.csv` file into typed grids — bytes go server-side from `files` → SheetJS → typed columns + rows, never round-tripping through your output (scales to large sheets). Column types are inferred (numbers, dates, checkboxes, text). **One table per non-empty sheet:** a multi-sheet workbook yields several tables (the first uses your `title` if given; others are named after their sheet). Very large sheets import whole (sqlite-native storage) up to the box's import ceiling — beyond it the import errors with guidance and nothing partial is created. The grids are committed + indexed immediately. Returns the created table ids. Use this whenever the user hands you a spreadsheet.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -263,20 +304,13 @@ const table_from_file: BuiltinToolDef = {
       sheet: string;
       columns: number;
       rows: number;
-      part?: number;
-      partsTotal?: number;
+
     }[] = [];
     try {
       for (let i = 0; i < sheets.length; i++) {
         const sheet = sheets[i]!;
-        // A sheet over MAX_GRID_ROWS arrives as several parts (same columns);
-        // suffix the title so the parts are distinguishable.
-        const parted = (sheet.partsTotal ?? 1) > 1;
         const core = (i === 0 && baseTitle) || sheet.name || `Sheet ${i + 1}`;
-        const title = (parted ? `${core} (part ${sheet.part}/${sheet.partsTotal})` : core).slice(
-          0,
-          200,
-        );
+        const title = core.slice(0, 200);
         const data = tableDocFromGrid(sheet);
         const table = await createTable(ctx.ownerId, {
           title,
@@ -291,17 +325,13 @@ const table_from_file: BuiltinToolDef = {
           sheet: sheet.name,
           columns: data.columns.length,
           rows: data.rows.length,
-          // Surface pagination so the model can tell the user a big sheet was
-          // split across several tables.
-          ...(parted ? { part: sheet.part, partsTotal: sheet.partsTotal } : {}),
         });
-        const partNote = parted ? ` part ${sheet.part}/${sheet.partsTotal}` : '';
         void recordIngest({
           source: 'agent_tool',
           ownerId: ctx.ownerId,
           nodeId: table.id,
-          summary: `Table imported from ${meta.filename} (${sheet.name}${partNote}): ${table.title}`,
-          payload: { via: 'table_from_file_tool', sourceFileId: fileId, sheet: sheet.name, ...(parted ? { part: sheet.part, partsTotal: sheet.partsTotal } : {}), ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}) },
+          summary: `Table imported from ${meta.filename} (${sheet.name}): ${table.title}`,
+          payload: { via: 'table_from_file_tool', sourceFileId: fileId, sheet: sheet.name, ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}) },
         });
       }
     } catch (err) {
@@ -458,14 +488,13 @@ const table_commit: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
-    const table = await getTable(ctx.ownerId, id);
-    if (!table) return notFound('table', id, 'table_list');
-    if (!table.draft) return { ok: false, error: 'no draft to commit — the table is already published' };
     try {
-      const published = await commitTable(ctx.ownerId, id, table.draft);
-      if (!published) return { ok: false, error: `table ${id} not found (race?)` };
+      // Promote the SERVER draft (no doc round-trip): works at any size and
+      // can never truncate — the §4 commit semantics.
+      const published = await commitTable(ctx.ownerId, id);
+      if (!published) return notFound('table', id, 'table_list');
       ctx.step?.setOutput({ id, committed: true });
-      return { ok: true, output: { id, committed: true, rows: published.data.rows.length, columns: published.data.columns.length } };
+      return { ok: true, output: { id, committed: true, rows: published.rowCount, columns: published.columnCount } };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -473,6 +502,67 @@ const table_commit: BuiltinToolDef = {
 };
 
 // ───────────────────────── reads ─────────────────────────
+
+const table_sql: BuiltinToolDef = {
+  slug: 'table_sql',
+  preconditions: TABLE_ID_PRE,
+  name: 'Query a table with SQL',
+  description:
+    "Run one read-only SELECT against a table's SQLite workbook and return columns + rows. This is the row-level lookup path: brain search only carries a table's profile, so when a search or profile points at a table, query the actual rows here. Query the tab's SQL view with double-quoted display names (`table_get`'s `sql` block lists views, columns, and the FTS shadow table). Fuzzy/identifier search: `WHERE <fts_table> MATCH '\"K-101\"'` — **always double-quote MATCH terms** (bare hyphens/dots are FTS syntax errors) — or `LIKE '%term%'`. Reads COMMITTED data only (drafts are invisible). For filter-object reads or edits use `table_query` / the row tools instead.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      table_id: { type: 'string', format: 'uuid', description: "The table's id — from `table_list` / `search_nodes`." },
+      sql: { type: 'string', description: `One SELECT/WITH statement, e.g. SELECT "Status", count(*) FROM "Circuits" GROUP BY "Status".` },
+      max_rows: {
+        type: 'number',
+        description: 'Row cap for the result.',
+        default: SQL_ROW_CAP_DEFAULT,
+        minimum: 1,
+        maximum: SQL_ROW_CAP_MAX,
+      },
+    },
+    required: ['table_id', 'sql'],
+  },
+  handler: async (input, ctx) => {
+    const tableId = str(input.table_id).trim();
+    const sqlText = str(input.sql);
+    if (!tableId || !sqlText.trim()) return { ok: false, error: 'table_id and sql are required' };
+    const surface = await tableSqlSurface(ctx.ownerId, tableId);
+    if (!surface) {
+      return {
+        ok: false,
+        error:
+          `table ${tableId} has no SQL storage yet (it predates sqlite-native tables — any commit converts it). ` +
+          `Use table_query / table_rows_list for it, or commit a draft to upgrade it.`,
+      };
+    }
+    try {
+      const r = await runTableSql(surface.abs, sqlText, {
+        cap: typeof input.max_rows === 'number' ? input.max_rows : undefined,
+      });
+      ctx.step?.setOutput({ table_id: tableId, rows: r.rowCount, truncated: r.truncated });
+      return {
+        ok: true,
+        output: {
+          table_id: tableId,
+          columns: r.columns,
+          rows: r.rows,
+          row_count: r.rowCount,
+          duration_ms: r.durationMs,
+          ...(r.truncated
+            ? {
+                truncated: true,
+                hint: `Result cut at ${r.rowCount} rows — narrow with WHERE, or aggregate (count/GROUP BY) instead of listing.`,
+              }
+            : {}),
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
 
 const table_list: BuiltinToolDef = {
   slug: 'table_list',
@@ -527,13 +617,43 @@ const table_get: BuiltinToolDef = {
     const doc = baseline(table);
     const offset = typeof input.offset === 'number' ? Math.max(0, input.offset) : 0;
     const limit = typeof input.limit === 'number' ? input.limit : 50;
-    const listed = listRows(doc, { offset, limit });
-    const aggregates = Object.entries(doc.aggregates ?? {}).map(([colId, kind]) => ({
-      column_id: colId,
-      column: findColumn(doc, colId)?.name ?? colId,
-      kind,
-      value: computeAggregate(doc, colId, kind as AggregateKind),
-    }));
+    let listed = listRows(doc, { offset, limit });
+    // Past the materialize window the doc is a leading slice — totals and
+    // pages beyond it come from the file, not the slice (audit finding 4:
+    // table_get reported 10k totals and empty pages for a 50k table).
+    if (table.docClipped) {
+      const file = await windowFile(ctx.ownerId, id);
+      const win = file ? queryRowsWindow(file, { offset, limit: Math.max(1, Math.min(limit, 500)) }) : null;
+      if (win) {
+        listed = {
+          columns: doc.columns.map((c) => ({ id: c.id, name: c.name, type: c.type })),
+          rows: win.rows.map((r, i) => {
+            const cells: Record<string, string> = {};
+            for (const col of doc.columns) {
+              const v = r.cells[col.id];
+              if (v === null || v === undefined) continue;
+              const text = Array.isArray(v) ? v.join(', ') : String(v);
+              if (text) cells[col.id] = text;
+            }
+            return { id: r.id, index: offset + i, cells };
+          }),
+          total: win.total,
+          offset,
+          limit,
+        };
+      }
+    }
+    // File-backed tables advertise their SQL surface so table_sql callers
+    // know the view/column/FTS names without guessing.
+    const surface = await tableSqlSurface(ctx.ownerId, id).catch(() => null);
+    const aggregates = table.docClipped
+      ? [] // window-only totals would lie — table_query/table_sql aggregate the full set
+      : Object.entries(doc.aggregates ?? {}).map(([colId, kind]) => ({
+          column_id: colId,
+          column: findColumn(doc, colId)?.name ?? colId,
+          kind,
+          value: computeAggregate(doc, colId, kind as AggregateKind),
+        }));
     ctx.step?.setOutput({ id, rows: listed.total });
     return {
       ok: true,
@@ -549,6 +669,19 @@ const table_get: BuiltinToolDef = {
         limit: listed.limit,
         ...pageMeta(listed.total, listed.offset, listed.rows.length),
         ...(aggregates.length ? { aggregates } : {}),
+        ...(surface
+          ? {
+              sql: {
+                hint: 'Query committed rows with table_sql against these views (double-quote identifiers; MATCH terms in double quotes).',
+                tabs: surface.tabs.map((t) => ({
+                  view: t.viewName,
+                  fts_table: t.ftsTable,
+                  row_count: t.rowCount,
+                  columns: t.columns.map((c) => ({ name: c.name, type: c.type })),
+                })),
+              },
+            }
+          : {}),
       },
     };
   },
@@ -577,9 +710,41 @@ const table_rows_list: BuiltinToolDef = {
     const table = await getTable(ctx.ownerId, tableId);
     if (!table) return notFound('table', tableId, 'table_list');
     const doc = baseline(table);
+    const offset = typeof input.offset === 'number' ? Math.max(0, input.offset) : 0;
+    const limit = Math.max(1, Math.min(typeof input.limit === 'number' ? input.limit : 50, 500));
+    if (table.docClipped) {
+      // Past the materialize window rows page straight from SQL (document
+      // order). Saved views don't apply at this size — use table_query/
+      // table_sql for filtered reads.
+      if (str(input.view_id).trim()) {
+        return { ok: false, error: 'saved views are not applied on tables this large — use table_query (filters) or table_sql instead' };
+      }
+      const file = await windowFile(ctx.ownerId, tableId);
+      const win = file ? queryRowsWindow(file, { offset, limit }) : null;
+      if (!win) return { ok: false, error: 'windowed read failed — the workbook file is unavailable' };
+      const want = strArr(input.column_ids);
+      const wantSet = want.length ? new Set(want) : null;
+      const rows = win.rows.map((r, i) => {
+        const cells: Record<string, string> = {};
+        for (const col of doc.columns) {
+          if (wantSet && !wantSet.has(col.id)) continue;
+          const v = r.cells[col.id];
+          if (v === null || v === undefined) continue;
+          const text = Array.isArray(v) ? v.join(', ') : String(v);
+          if (text) cells[col.id] = text.length > 60 ? `${text.slice(0, 59)}…` : text;
+        }
+        return { id: r.id, index: offset + i, cells };
+      });
+      const columns = doc.columns.map((c) => ({ id: c.id, name: c.name, type: c.type }));
+      ctx.step?.setOutput({ table_id: tableId, total: win.total, pushed: true });
+      return {
+        ok: true,
+        output: { table_id: tableId, columns, rows, total: win.total, offset, limit, ...pageMeta(win.total, offset, rows.length) },
+      };
+    }
     const listed = listRows(doc, {
-      offset: typeof input.offset === 'number' ? input.offset : 0,
-      limit: typeof input.limit === 'number' ? input.limit : 50,
+      offset,
+      limit,
       columnIds: strArr(input.column_ids),
       viewId: str(input.view_id).trim() || null,
     });
@@ -608,7 +773,11 @@ const table_row_get: BuiltinToolDef = {
     const table = await getTable(ctx.ownerId, tableId);
     if (!table) return notFound('table', tableId, 'table_list');
     const doc = baseline(table);
-    const row = findRow(doc, rowId);
+    let row = findRow(doc, rowId);
+    if (!row && table.docClipped) {
+      const file = await windowFile(ctx.ownerId, tableId);
+      row = file ? readRowById(file, rowId) : null;
+    }
     if (!row) return { ok: false, error: `row ${rowId} not found (re-run table_rows_list)` };
     const byName: Record<string, CellValue> = {};
     for (const col of doc.columns) byName[col.name] = row.cells[col.id] ?? null;
@@ -706,8 +875,6 @@ const table_query: BuiltinToolDef = {
       })
       .filter((s): s is SortSpec => s !== null);
     const match = str(input.match) === 'any' ? 'any' : 'all';
-
-    const matched = queryRows(doc, { filters, sort, match });
     const offset = typeof input.offset === 'number' ? Math.max(0, input.offset) : 0;
     const limit = Math.max(1, Math.min(typeof input.limit === 'number' ? input.limit : 50, 500));
 
@@ -715,40 +882,81 @@ const table_query: BuiltinToolDef = {
       .map((c) => resolveColumn(doc, c))
       .filter((c): c is Column => c !== null);
     const projCols = wantCols.length ? wantCols : doc.columns;
-    const rows = matched.slice(offset, offset + limit).map((r) => {
-      const cells: Record<string, CellValue> = {};
-      for (const col of projCols) cells[col.name] = resolveCell(doc, r, col);
-      return { id: r.id, cells };
-    });
 
-    // Aggregates over the FULL matched set (not the returned page) — so
-    // "max design pressure among CS circuits" is one call, cap-immune.
-    const ignoredAggregates: string[] = [];
-    const aggregates = (Array.isArray(input.aggregate) ? input.aggregate : [])
-      .map((a): { column: string; kind: AggregateKind; value: number | null } | null => {
+    // SQL pushdown (P3): file-backed + no formula columns + parity-safe
+    // filters/sort → the query runs in SQLite (draft-first) and never
+    // materializes the doc. Falls back to the doc path otherwise; a clipped
+    // table whose filters can't push down errors with the recovery move.
+    const hasFormula = doc.columns.some((c) => c.type === 'formula');
+    const file = hasFormula ? null : await windowFile(ctx.ownerId, tableId);
+    const aggSpecs = (Array.isArray(input.aggregate) ? input.aggregate : [])
+      .map((a): { col: Column; kind: AggregateKind; raw: string } | null => {
         const rec = a as Record<string, unknown>;
         const col = resolveColumn(doc, str(rec.column));
         const kind = str(rec.kind) as AggregateKind;
-        if (!col || !AGGREGATE_KINDS.includes(kind) || kind === 'none') {
-          ignoredAggregates.push(str(rec.column));
-          return null;
-        }
-        return { column: col.name, kind, value: computeAggregate(doc, col.id, kind, matched) };
-      })
-      .filter((a): a is { column: string; kind: AggregateKind; value: number | null } => a !== null);
+        if (!col || !AGGREGATE_KINDS.includes(kind) || kind === 'none') return null;
+        return { col, kind, raw: str(rec.column) };
+      });
+    const ignoredAggregates = (Array.isArray(input.aggregate) ? input.aggregate : [])
+      .map((a, i) => (aggSpecs[i] ? null : str((a as Record<string, unknown>).column)))
+      .filter((x): x is string => x !== null);
+    const validAggs = aggSpecs.filter((a): a is NonNullable<typeof a> => a !== null);
 
-    ctx.step?.setOutput({ table_id: tableId, matches: matched.length });
+    let totalMatches: number;
+    let pageRows: { id: string; cells: Record<string, CellValue> }[];
+    let aggregates: { column: string; kind: AggregateKind; value: number | null }[] = [];
+    const pushed = file ? queryRowsWindow(file, { filters, match, sort, offset, limit }) : null;
+    if (pushed) {
+      totalMatches = pushed.total;
+      pageRows = pushed.rows.map((r) => {
+        const cells: Record<string, CellValue> = {};
+        for (const col of projCols) cells[col.name] = r.cells[col.id] ?? null;
+        return { id: r.id, cells };
+      });
+      aggregates = validAggs.map((a) => ({
+        column: a.col.name,
+        kind: a.kind,
+        value: aggregateWindow(file!, { columnId: a.col.id, kind: a.kind, filters, match }),
+      }));
+    } else {
+      if (table.docClipped) {
+        return {
+          ok: false,
+          error:
+            'these filters cannot run in SQL and the table is too large to load whole — simplify the filters ' +
+            '(eq/neq/contains on text columns, ranges on number/date columns), or use table_sql for the lookup.',
+        };
+      }
+      const matched = queryRows(doc, { filters, sort, match });
+      totalMatches = matched.length;
+      pageRows = matched.slice(offset, offset + limit).map((r) => {
+        const cells: Record<string, CellValue> = {};
+        for (const col of projCols) cells[col.name] = resolveCell(doc, r, col);
+        return { id: r.id, cells };
+      });
+      // Aggregates over the FULL matched set (not the returned page) — so
+      // "max design pressure among CS circuits" is one call, cap-immune.
+      aggregates = validAggs.map((a) => ({
+        column: a.col.name,
+        kind: a.kind,
+        value: computeAggregate(doc, a.col.id, a.kind, matched),
+      }));
+    }
+    const rows = pageRows;
+    const matchedCount = totalMatches;
+
+    ctx.step?.setOutput({ table_id: tableId, matches: matchedCount, pushed: !!pushed });
     return {
       ok: true,
       output: {
         table_id: tableId,
-        total_matches: matched.length,
+        total_matches: matchedCount,
         offset,
         limit,
         columns: projCols.map((c) => c.name),
         rows,
         ...(aggregates.length ? { aggregates } : {}),
-        ...pageMeta(matched.length, offset, rows.length),
+        ...pageMeta(matchedCount, offset, rows.length),
         ...(ignoredFilters.length ? { ignored_filters: ignoredFilters } : {}),
         ...(ignoredAggregates.length ? { ignored_aggregates: ignoredAggregates } : {}),
       },
@@ -821,6 +1029,14 @@ const table_aggregate: BuiltinToolDef = {
     if (!tableId) return { ok: false, error: 'table_id is required' };
     const table = await getTable(ctx.ownerId, tableId);
     if (!table) return notFound('table', tableId, 'table_list');
+    if (table.docClipped) {
+      return {
+        ok: false,
+        error:
+          'this table is too large to group in memory — use table_sql, e.g. ' +
+          'SELECT "Column", count(*) FROM "<view>" GROUP BY 1 ORDER BY 2 DESC (table_get\'s sql block lists the views/columns).',
+      };
+    }
     const doc = baseline(table);
 
     const groupCols = strArr(input.group_by)
@@ -930,17 +1146,31 @@ const table_row_add: BuiltinToolDef = {
     const tableId = str(input.table_id).trim();
     if (!tableId) return { ok: false, error: 'table_id is required' };
     const cellsIn = (input.cells && typeof input.cells === 'object' ? input.cells : {}) as Record<string, unknown>;
-    let newRowId = '';
-    let unknownRefs: string[] = [];
-    const res = await editDraft(ctx.ownerId, tableId, (doc) => {
-      const { cells, unknown } = resolveCells(doc, cellsIn);
-      unknownRefs = unknown;
-      const out = addRow(doc, cells, str(input.after_row_id).trim() || null);
-      newRowId = out.row.id;
-      return { doc: out.doc, output: { row_id: out.row.id, ...(unknown.length ? { ignored_columns: unknown } : {}) } };
-    });
-    ctx.step?.setOutput({ table_id: tableId, row_id: newRowId, ...(unknownRefs.length ? { ignored: unknownRefs.length } : {}) });
-    return res;
+    const table = await getTable(ctx.ownerId, tableId);
+    if (!table) return notFound('table', tableId, 'table_list');
+    const doc = baseline(table);
+    const { cells, unknown } = resolveCells(doc, cellsIn);
+    try {
+      const applied = await applyTableOps(ctx.ownerId, tableId, [
+        { op: 'row_add', cells, afterRowId: str(input.after_row_id).trim() || null },
+      ]);
+      if (!applied) return notFound('table', tableId, 'table_list');
+      if (!applied.ok) return { ok: false, error: 'draft changed concurrently — retry' };
+      const rowId = applied.createdIds[0] ?? '';
+      ctx.step?.setOutput({ table_id: tableId, row_id: rowId });
+      return {
+        ok: true,
+        output: {
+          table_id: tableId,
+          row_id: rowId,
+          ...(unknown.length ? { ignored_columns: unknown } : {}),
+          draft_saved: true,
+          hint: DRAFT_REVIEW_HINT(tableId),
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   },
 };
 
@@ -964,13 +1194,31 @@ const table_row_update: BuiltinToolDef = {
     if (!tableId || !rowId) return { ok: false, error: 'table_id and row_id are required' };
     const cellsIn = (input.cells && typeof input.cells === 'object' ? input.cells : {}) as Record<string, unknown>;
     if (Object.keys(cellsIn).length === 0) return { ok: false, error: 'cells is required (nothing to update)' };
-    const res = await editDraft(ctx.ownerId, tableId, (doc) => {
-      if (!findRow(doc, rowId)) return { doc, error: `row ${rowId} not found (re-run table_rows_list)` };
-      const { cells, unknown } = resolveCells(doc, cellsIn);
-      return { doc: updateRow(doc, rowId, cells), output: { row_id: rowId, ...(unknown.length ? { ignored_columns: unknown } : {}) } };
-    });
-    ctx.step?.setOutput({ table_id: tableId, row_id: rowId });
-    return res;
+    const table = await getTable(ctx.ownerId, tableId);
+    if (!table) return notFound('table', tableId, 'table_list');
+    const doc = baseline(table);
+    if (!(await rowExists(ctx.ownerId, tableId, doc, rowId))) {
+      return { ok: false, error: `row ${rowId} not found (re-run table_rows_list)` };
+    }
+    const { cells, unknown } = resolveCells(doc, cellsIn);
+    try {
+      const applied = await applyTableOps(ctx.ownerId, tableId, [{ op: 'row_update', rowId, cells }]);
+      if (!applied) return notFound('table', tableId, 'table_list');
+      if (!applied.ok) return { ok: false, error: 'draft changed concurrently — retry' };
+      ctx.step?.setOutput({ table_id: tableId, row_id: rowId });
+      return {
+        ok: true,
+        output: {
+          table_id: tableId,
+          row_id: rowId,
+          ...(unknown.length ? { ignored_columns: unknown } : {}),
+          draft_saved: true,
+          hint: DRAFT_REVIEW_HINT(tableId),
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   },
 };
 
@@ -991,12 +1239,23 @@ const table_row_delete: BuiltinToolDef = {
     const tableId = str(input.table_id).trim();
     const rowId = str(input.row_id).trim();
     if (!tableId || !rowId) return { ok: false, error: 'table_id and row_id are required' };
-    const res = await editDraft(ctx.ownerId, tableId, (doc) => {
-      if (!findRow(doc, rowId)) return { doc, error: `row ${rowId} not found` };
-      return { doc: deleteRow(doc, rowId), output: { row_id: rowId, deleted: true } };
-    });
-    ctx.step?.setOutput({ table_id: tableId, row_id: rowId });
-    return res;
+    const table = await getTable(ctx.ownerId, tableId);
+    if (!table) return notFound('table', tableId, 'table_list');
+    if (!(await rowExists(ctx.ownerId, tableId, baseline(table), rowId))) {
+      return { ok: false, error: `row ${rowId} not found` };
+    }
+    try {
+      const applied = await applyTableOps(ctx.ownerId, tableId, [{ op: 'row_delete', rowId }]);
+      if (!applied) return notFound('table', tableId, 'table_list');
+      if (!applied.ok) return { ok: false, error: 'draft changed concurrently — retry' };
+      ctx.step?.setOutput({ table_id: tableId, row_id: rowId });
+      return {
+        ok: true,
+        output: { table_id: tableId, row_id: rowId, deleted: true, draft_saved: true, hint: DRAFT_REVIEW_HINT(tableId) },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   },
 };
 
@@ -1020,14 +1279,28 @@ const table_cell_set: BuiltinToolDef = {
     const rowId = str(input.row_id).trim();
     const columnRef = str(input.column).trim();
     if (!tableId || !rowId || !columnRef) return { ok: false, error: 'table_id, row_id and column are required' };
-    const res = await editDraft(ctx.ownerId, tableId, (doc) => {
-      if (!findRow(doc, rowId)) return { doc, error: `row ${rowId} not found` };
-      const col = resolveColumn(doc, columnRef);
-      if (!col) return { doc, error: `column '${columnRef}' not found` };
-      return { doc: setCell(doc, rowId, col.id, (input.value ?? null) as CellValue), output: { row_id: rowId, column_id: col.id } };
-    });
-    ctx.step?.setOutput({ table_id: tableId, row_id: rowId });
-    return res;
+    const table = await getTable(ctx.ownerId, tableId);
+    if (!table) return notFound('table', tableId, 'table_list');
+    const doc = baseline(table);
+    if (!(await rowExists(ctx.ownerId, tableId, doc, rowId))) {
+      return { ok: false, error: `row ${rowId} not found` };
+    }
+    const col = resolveColumn(doc, columnRef);
+    if (!col) return { ok: false, error: `column '${columnRef}' not found` };
+    try {
+      const applied = await applyTableOps(ctx.ownerId, tableId, [
+        { op: 'cell_set', rowId, columnId: col.id, value: (input.value ?? null) as CellValue },
+      ]);
+      if (!applied) return notFound('table', tableId, 'table_list');
+      if (!applied.ok) return { ok: false, error: 'draft changed concurrently — retry' };
+      ctx.step?.setOutput({ table_id: tableId, row_id: rowId });
+      return {
+        ok: true,
+        output: { table_id: tableId, row_id: rowId, column_id: col.id, draft_saved: true, hint: DRAFT_REVIEW_HINT(tableId) },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   },
 };
 
@@ -1281,6 +1554,7 @@ export const TABLE_TOOLS: BuiltinToolDef[] = [
   table_commit,
   table_list,
   table_get,
+  table_sql,
   table_rows_list,
   table_row_get,
   table_query,

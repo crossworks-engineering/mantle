@@ -5,6 +5,7 @@ import { db, sql } from '@mantle/db';
 import { bucketStatus } from '@mantle/storage';
 import { filesRoot } from '@mantle/files';
 import { resolveEmbeddingConfig } from '@mantle/embeddings';
+import { runTableStorageProbes } from '@mantle/tabledb';
 
 import { readUpdaterStatus, updaterAvailable } from '../updates';
 import type { SanityCheck, SanityReport } from './types';
@@ -272,6 +273,94 @@ async function checkPgBoss(): Promise<SanityCheck> {
   return { ...base, status: 'pass', detail: `Background-job schema “pgboss” is present.`, fix: null };
 }
 
+// ── Table storage ────────────────────────────────────────────────────────────
+
+async function checkTableStorageDir(): Promise<SanityCheck> {
+  const base = { key: 'tables.storage', label: 'Table-storage volume', category: 'Storage' as const };
+  const { tableDbRoot, resolveStoragePath } = await import('@mantle/tabledb');
+  const { db: dbc, sql: sqlc } = await import('@mantle/db');
+  const root = tableDbRoot();
+
+  if (!process.env.TABLE_DB_DIR) {
+    return {
+      ...base,
+      status: 'warn',
+      detail: `TABLE_DB_DIR is unset, so table workbooks resolve to a cwd-relative path (“${root}”). Fine in dev; on a deployed box each process could see a different root.`,
+      fix: {
+        summary: `Set TABLE_DB_DIR to the shared bind mount in the compose env (web AND api).`,
+        command: `TABLE_DB_DIR=/data/table-dbs`,
+      },
+    };
+  }
+  try {
+    await fs.mkdir(root, { recursive: true });
+    await fs.access(root, fs.constants.W_OK);
+  } catch {
+    return {
+      ...base,
+      status: 'fail',
+      detail: `Table-storage root “${root}” is not writable by this process — every table create/edit fails. Check the ${'${MANTLE_DATA_DIR}'}/table-dbs bind mount (a tag-only update misses compose changes — refresh the deploy bundle).`,
+      fix: { summary: `Ensure the table-dbs mount exists in docker-compose.yml for BOTH web and api and is writable by the container user.` },
+    };
+  }
+
+  // Registry ↔ file consistency, newest rows first: a row with storage_path
+  // whose file is gone is data loss the moment someone opens that table —
+  // say so BEFORE they do.
+  type Row = { node_id: string; storage_path: string };
+  const result = await dbc.execute<Row>(sqlc`
+    SELECT node_id, storage_path FROM tables
+    WHERE storage_path IS NOT NULL ORDER BY updated_at DESC LIMIT 50
+  `);
+  const rows = (Array.isArray(result) ? result : (result as { rows?: Row[] }).rows ?? []) as Row[];
+  const missing: string[] = [];
+  for (const r of rows) {
+    try {
+      await fs.access(resolveStoragePath(r.storage_path));
+    } catch {
+      missing.push(r.node_id);
+    }
+  }
+  if (missing.length > 0) {
+    return {
+      ...base,
+      status: 'fail',
+      detail: `${missing.length} of ${rows.length} sampled file-backed tables have NO workbook file on disk (${missing.slice(0, 5).join(', ')}${missing.length > 5 ? ', …' : ''}). Those tables will error on open — restore the files from a backup (mantle-table-dbs-*).`,
+      fix: { summary: `Untar the latest mantle-table-dbs-*.tgz back into ${'${MANTLE_DATA_DIR}'}/table-dbs, or restore the per-table snapshot from the in-app backup directory.` },
+    };
+  }
+  return {
+    ...base,
+    status: 'pass',
+    detail: `Root “${root}” mounted + writable; ${rows.length} sampled file-backed table(s) all have their workbook on disk.`,
+    fix: null,
+  };
+}
+
+async function checkTableStorageProbes(): Promise<SanityCheck> {
+  const base = { key: 'tables.sqlite_probes', label: 'Table-storage engine', category: 'Database' as const };
+  const report = await runTableStorageProbes();
+  if (!report.ok) {
+    const failed = report.results.filter((r) => !r.ok && r.required);
+    return {
+      ...base,
+      status: 'fail',
+      detail: `node:sqlite drifted on this image (node ${process.version}) — ${failed
+        .map((r) => `${r.key}: ${r.detail}`)
+        .join('; ')}. Sqlite-native table storage must not be used until the image is fixed.`,
+      fix: {
+        summary: `Pin the deployment to the previous image and report the Node/node:sqlite drift — the probes name the exact behavior that broke.`,
+      },
+    };
+  }
+  return {
+    ...base,
+    status: 'pass',
+    detail: `node:sqlite engine behaviors verified (readOnly enforcement, WAL, FTS5 trigram, MATCH quoting, VACUUM INTO).`,
+    fix: null,
+  };
+}
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 
 /**
@@ -288,6 +377,8 @@ export async function runSanityChecks(userId: string): Promise<SanityReport> {
     { key: 'env.public_url', label: 'Public URL', category: 'Environment', run: async () => checkPublicUrl() },
     { key: 'embedding.model', label: 'Embedding model', category: 'Embedding', run: () => checkEmbedder(userId) },
     { key: 'db.pgboss', label: 'Background-job schema', category: 'Database', run: checkPgBoss },
+    { key: 'tables.sqlite_probes', label: 'Table-storage engine', category: 'Database', run: checkTableStorageProbes },
+    { key: 'tables.storage', label: 'Table-storage volume', category: 'Storage', run: checkTableStorageDir },
   ];
 
   const checks = await Promise.all(
