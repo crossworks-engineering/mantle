@@ -44,7 +44,7 @@ describe('migrations journal', () => {
     // created_at — an entry stamped with a when ≤ its predecessor is silently
     // skipped on every box that already ran the predecessor. This happened
     // for real too (v0.133.1 stamped 0119 below 0118; fixed in v0.133.2).
-    const whens = (journal.entries as Array<{ when: number }>).map((e) => e.when);
+    const whens = (journal.entries as unknown as Array<{ when: number }>).map((e) => e.when);
     for (let i = 1; i < whens.length; i++) {
       expect(whens[i]!, `entry ${i} when must exceed entry ${i - 1}`).toBeGreaterThan(
         whens[i - 1]!,
