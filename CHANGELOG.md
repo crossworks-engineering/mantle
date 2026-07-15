@@ -4,6 +4,21 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.133.0 — 2026-07-15
+
+**Retrieval: hybrid passage search, spreadsheet profiles, corpus map.** Born
+from a production recall audit. (1) `search_chunks` gains a keyword arm —
+weighted RRF over the new `content_chunks` tsvector (migration 0119) with a
+rescue floor, so exact rare tokens (error codes, field names, coined terms)
+are findable even when they embed poorly; the responder's auto-context uses
+it too. (2) Spreadsheets index as one profile chunk per sheet (headers +
+sampled rows + honest coverage note) instead of thousands of embedded grid
+rows — they were 74% of one brain's chunk table; full text still persists for
+`file_read`. Versioned exports (date/`_version_NN` families) get their older
+copies salience-down-ranked, newest self-heals. (3) Every responder turn now
+carries a cached corpus map — branch-grouped titles (+ page/table one-liners)
+on its own prompt-cache breakpoint, `memory_config.corpus_map_limit` to tune.
+
 ## v0.120.1 — 2026-07-07
 
 **Duplicate block ids fixed + self-healing.** The page editor could mint two
