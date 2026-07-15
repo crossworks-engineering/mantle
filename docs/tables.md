@@ -7,91 +7,151 @@ totals, formulas, sort/filter views, and spreadsheet import. It exists because
 coercing a real data table out of the Pages editor is a fight — Pages tables have
 no column types, no totals, no formatting, no clean way to say "update row 3".
 
-Tables is built as a deliberate mirror of Pages, one layer per concern, so the
-two share the same tree, search, draft/commit, delegation, and brain-indexing
-machinery.
+Since v2.1 a Table is a **workbook**: one node = one SQLite file = N **tabs**
+(worksheets, like Excel). A multi-sheet spreadsheet imports as one Table with a
+tab per sheet; `table_sql` joins across tabs; a **reference column** in one tab
+offers values from another tab's column.
+
+Tables mirrors Pages, one layer per concern, so the two share the same tree,
+search, draft/commit, delegation, and brain-indexing machinery.
 
 | Concern | Pages | Tables |
 |---|---|---|
 | Node type | `nodes.type='page'` | `nodes.type='table'` |
-| Sidecar | `pages` (`doc`/`doc_text`/`draft_doc`/`version`) | `tables` (`data`/`data_text`/`draft_data`/`version`) |
-| Source of truth | ProseMirror `doc` | `TableDoc` (`{columns, rows, aggregates, views}`) |
-| Addressing | `block-ids.ts` (UUID per block) | native stable `column.id` / `row.id` |
-| Pure ops | `block-edit.ts` / `block-list.ts` | `table-model.ts` / `table-list.ts` |
-| Derived text | `doc-to-text.ts` | `table-to-text.ts` (markdown pipe table + totals row) |
-| CRUD + draft/commit | `packages/content/src/pages.ts` | `packages/content/src/tables.ts` |
+| Sidecar | `pages` (`doc`/`doc_text`/`draft_doc`/`version`) | `tables` (registry: `storage_path`/`stats`/`shape_hash`/`draft_rev` + legacy JSONB mirror) |
+| Source of truth | ProseMirror `doc` | the **workbook file** (`TABLE_DB_DIR/<owner>/<node>.sqlite`) |
+| Addressing | `block-ids.ts` (UUID per block) | native stable `tab.id` / `column.id` / `row.id` |
+| Pure ops | `block-edit.ts` / `block-list.ts` | `table-model.ts` (doc) + `packages/tabledb` ops (file) |
+| Derived text | `doc-to-text.ts` | L1 profile + schema chunks (`packages/tabledb/profile.ts`, `schema.ts`) |
+| CRUD + draft/commit | `packages/content/src/pages.ts` | `packages/content/src/tables.ts` + `table-storage.ts` |
 | Builtin tools | `builtins-pages.ts` (`page_*`) | `builtins-tables.ts` (`table_*`) |
-| Specialist agent | `Pages` + `rich_writing` | `Tables` + `table_authoring` |
-| UI | `/pages` + TipTap | `/tables` + TanStack grid |
+| Specialist agent | `Pages` + `rich_writing` | `Ledger` + `table_authoring` |
+| UI | `/pages` + TipTap | `/tables` + TanStack grid + workbook tab bar |
 
 ---
 
-## 1. The data model — `TableDoc`
+## 1. The data model
 
-`packages/content/src/table-model.ts` is the heart: a pure, DB-free, **browser-safe
-leaf** (Web Crypto, no `node:crypto`) so the API, the agent tools, and the client
-grid all share one implementation.
+`packages/content/src/table-model.ts` is the doc-shaped heart: a pure, DB-free,
+**browser-safe leaf** (Web Crypto, no `node:crypto`) so the API, the agent
+tools, and the client grid all share one implementation.
 
 ```ts
-type TableDoc = {
+type TableDoc = {              // ONE tab's grid
   columns: Column[];
   rows: Row[];
   aggregates?: Record<columnId, AggregateKind>;  // footer totals
   views?: View[];                                // saved sort + filter
 };
+type WorkbookDoc = { tabs: (TableDoc & { id?; name })[] };  // multi-tab write shape
 type Column = {
   id; name;
   type: 'text'|'number'|'currency'|'percent'|'date'|'datetime'
-       |'checkbox'|'select'|'multiselect'|'url'|'formula';
+       |'checkbox'|'select'|'multiselect'|'url'|'formula'|'reference';
   format?: { currency?; decimals? };
   options?: { id; label; color? }[];   // select / multiselect
   formula?: string;                    // formula columns
+  ref?: { tabId; columnId };           // reference columns (cross-tab source)
   width?: number;
 };
 type Row = { id; cells: Record<columnId, CellValue> };   // ← the addressing unit
 ```
 
-Every column and row carries a **stable id** — that's the native addressing
-primitive. "Update row X" / "total column Y" map straight onto `row.id` /
-`column.id`; no tree walking (the equivalent of Pages' block-ids, but free).
+Every tab, column, and row carries a **stable id** — the native addressing
+primitive. "Update row X on tab Y" maps straight onto ids; no tree walking.
 
 Pure ops (all return a new doc): `addRow`/`updateRow`/`deleteRow`/`setCell`,
 `addColumn`/`updateColumn`/`deleteColumn` (re-coerces cells on a type change),
-`setAggregate`, `computeAggregate`, `applyView` (filter+sort), `setView`,
-`ensureTableDoc` (tolerant normaliser, same-ref-when-unchanged like
-`ensureBlockIds`), `tableDocFromGrid` (the import assembler).
+`setAggregate`, `computeAggregate`, `applyView`, `setView`, `ensureTableDoc` /
+`ensureWorkbookDoc` (tolerant normalisers), `tableDocFromGrid` (the import
+assembler), and `diffTableDocs` (doc diff → draft-op batch; the grid's save
+path — see §5).
+
+### Reference columns (v2.1)
+
+`type: 'reference'` + `ref: {tabId, columnId}`: the column offers/stores
+**values** from another tab's column, Excel data-validation style. Soft
+integrity by design — free text is allowed, values missing from the source are
+flagged in the profile as `DANGLING REFS`, deleting the source degrades the
+column to plain text with its values intact. Same workbook only (`table_sql`
+can't `ATTACH` other files). The edge is advertised everywhere schema is:
+`describeWorkbook().columns[].refersTo`, the profile, and the schema chunk
+("Join edge: …") — so the model gets the join key for free.
 
 ### Formulas — `table-formula.ts`
+
 Same-row scalar expressions, referencing columns by name in braces:
 `{Qty} * {Price}`, `ROUND({Total} * 0.15, 2)`, `IF({Paid}, 0, {Due})`. A small
 hand-written tokenizer + recursive-descent parser — **never `eval`** — over a
-fixed grammar (`+ - * / %`, comparisons, and `IF/ROUND/ABS/MIN/MAX/SUM/FLOOR/
-CEIL/CONCAT`). Broken/hostile input returns `null` (renders blank, never throws).
-Formula columns are read-only and recomputed on read via `resolveCell`. They do
-**not** reference other formula columns (cycle guard) and do **not** do
-cross-row math — that's the aggregates footer.
+fixed grammar. Broken/hostile input returns `null` (renders blank, never
+throws). Formula columns are read-only, recomputed on read via `resolveCell`,
+never stored in the file, and omitted from the SQL views. No cross-formula
+references (cycle guard), no cross-row math (that's aggregates), no cross-tab
+formulas.
 
 ---
 
-## 2. Storage, draft/commit, brain
+## 2. Storage — the workbook file + the registry (v2)
 
-`tables` sidecar (migration `0068`; `0067` adds the `table` enum value):
-`data` (the committed `TableDoc`) · `data_text` (derived markdown) · `draft_data`
-(working copy) · `version`. FK cascade off the node.
+Each table lives in its own SQLite file: `TABLE_DB_DIR/<ownerId>/<nodeId>.sqlite`
+(+ `.draft.sqlite` while uncommitted edits exist). `TABLE_DB_DIR` defaults to
+`/data/table-dbs` in compose — **both** `web` and `api` mount it (tool handlers
+run in both processes; the `/debug` sanity check screams if a file is visible
+from one side only). Engine: `packages/tabledb`.
 
-`packages/content/src/tables.ts` mirrors `pages.ts`: `createTable`, `getTable`,
-`listTables`/`countTables`/`listTableTags`, `updateTable` (metadata only),
-`saveTableDraft`, `discardTableDraft`, `commitTable`, `deleteTable`.
+In-file layout (engine-managed; agents/users never run DDL): `_meta`, `_tabs`,
+`_columns` (incl. `ref_json`), `_views`, `_aggregates`, one physical table
+`t_<tabid>` per tab (`_rid` PK + `_pos` row order + `c_<colid>` columns), a
+display-named SQL **view** per tab (what `table_sql` queries), and an FTS5
+trigram shadow `t_<tabid>_fts` per tab on published files (drafts never carry
+shadows; promote rebuilds them).
 
-**Draft/commit (parity with Pages, by design):** every structural edit autosaves
-to `draft_data`. `commitTable` promotes it to `data`, recomputes
-`data_text = tableToText(doc)`, bumps `version`, and fires
-`notifyNodeIngested(id)` — the **only** path that re-indexes, so a long editing
-session costs exactly one extraction per commit (cost-safe). `table` is in the
-extractor's `DEFAULT_EXTRACT_TYPES`; `readNodeBodyRaw` reads `tables.data_text`,
-so summary + 768-dim embedding + facts + `content_chunks` land like any node.
-The rendered markdown includes a **Totals** row when a column has an aggregate,
-so "what did the budget add up to?" is answerable from the index.
+The Postgres `tables` row is the **registry + lock spine** (migration `0120`):
+`storage_path` (NULL = legacy JSONB), `size_bytes`, `stats` (per-tab counts),
+`shape_hash`, `engine_version`, `draft_rev` (the draft-op etag). Every writer —
+UI autosave, agent op batch, migration — serializes on
+`withTableRegistryLock` (`SELECT … FOR UPDATE`).
+
+**Draft/commit:** edits land on the draft file as **op batches**
+(`applyTableOps` → `applyOpsToFile`, atomic per batch, `draft_rev` etag; a
+stale `if_rev` gets 409). Commit **promotes the server draft**: VACUUM-INTO
+snapshot → atomic rename over the published file → FTS rebuild → stats/shape
+re-derived from the file. The client never posts the doc at commit time, so a
+windowed doc can never truncate the table. Commit is the **only** path that
+re-indexes (one extraction per commit, cost-safe).
+
+**Limits:** the doc materializer loads ≤ `MATERIALIZE_MAX` (10k) rows per tab —
+beyond it reads go windowed (keyset/offset over the file) and whole-doc writes
+are refused. Imports go up to `TABLE_IMPORT_MAX_ROWS` (default 2M) and error
+explicitly past it — part-splitting is dead.
+
+**Legacy JSONB:** pre-v2 tables migrate lazily (first write) and via a
+background sweep (5/tick, 5-min interval). The JSONB `data`/`draft_data`
+columns stay dual-written as a rollback mirror **only** for single-tab,
+in-window docs — a multi-tab workbook's file is its sole carrier.
+`retire-table-blobs.ts` retires the blobs one release after v2.
+
+**Durability:** the scheduled backup and `db-dump.sh` snapshot every workbook
+(VACUUM INTO) alongside `pg_dump`; boot/CI/prod-image probes verify
+`node:sqlite`; a missing published file throws (`mustExist` — never silently
+recreated).
+
+### Indexing — profile + schema chunks, never rows
+
+Rows are **never embedded** (§12.1 amendment: row dumps were the dominant chunk
+pollution on a production brain). A table indexes as:
+- one **profile** chunk (title + tab summary + LLM overview),
+- one **schema** chunk (v2.1 P3): the data dictionary — tabs, columns, types,
+  row counts, view + FTS names, reference join edges — so retrieval lands on
+  schema and grounds a `table_sql` call directly,
+- one **profile > _tab_** chunk per tab (columns, distinct counts, top values,
+  identifier-like/prose/`MIXED DATE FORMATS`/`DANGLING REFS` flags).
+
+The extractor also writes a one-line `schemaDigest` into `nodes.data`, which
+the **corpus map** renders inline for every table entry. The first 200 rows
+(spent across tabs) live only in `tables.data_text` for list ILIKE. The
+`shape_hash` gate keeps the LLM summary when a commit didn't change the shape —
+cell edits refresh only the cheap deterministic layers.
 
 ---
 
@@ -99,147 +159,119 @@ so "what did the budget add up to?" is answerable from the index.
 
 `parseSheetToGrid(buf)` (SheetJS) → one `ParsedSheet` per non-empty sheet, each
 with typed columns (value-sampled inference: number/checkbox/date/datetime/text,
-UTC-safe date detection) + aligned rows. `tableDocFromGrid` (in `table-model`)
-assembles a `TableDoc`. `@mantle/files` stays free of the model — it emits plain
-shapes; the caller (tool / API) builds the doc. **One table per sheet:** a
-multi-sheet workbook yields several tables. (CSV has no real types, so its
-`true`/`false` infer as text — retype in the UI; xlsx booleans infer as checkbox.)
-A sheet larger than `MAX_GRID_ROWS` (10 000; env `MANTLE_MAX_GRID_ROWS`) is
-**paginated** into contiguous parts — same columns, `part`/`partsTotal` set,
-titled "… (part 1/N)" — so no rows are lost and no single grid balloons its
-JSONB blob.
+UTC-safe date detection) + aligned rows. `tableDocFromGrid` assembles a
+`TableDoc` per sheet. **One workbook per file: every sheet becomes a TAB** of
+the same table (v2.1) — no more sibling-table splitting. (CSV has no real
+types, so its `true`/`false` infer as text — retype in the UI; xlsx booleans
+infer as checkbox.)
 
-`parseTextToGrid(text)` is the same path for **pasted tabular text** (no file):
-it detects a markdown pipe table, TSV, or CSV (quote-aware) and returns a
-`ParsedSheet`. This powers the `table_from_text` tool — "build a table from these
-results" in one call, instead of the agent adding rows one at a time.
+`parseTextToGrid(text)` is the same path for **pasted tabular text** (markdown
+pipe table, TSV, or quote-aware CSV) → the `table_from_text` tool.
 
-**Auto-import on ingest.** A spreadsheet uploaded *anywhere* (Files screen, chat
-attachment, email, Telegram) is turned into Table(s) automatically by the
-extractor (`maybeAutoTableSpreadsheet` in `apps/api`), using this same core —
-published, indexed, and deduped by `data.sourceFileId` so a re-ingest never
-doubles. The auto path caps total tables per upload (`MAX_AUTO_TABLE_TABLES`, 20)
-to bound fan-out; the explicit `table_from_file` tool is user-initiated and
-uncapped (but stamps `sourceFileId`, so a later auto-import won't double it).
+**Auto-import on ingest.** A spreadsheet uploaded *anywhere* (Files screen,
+chat attachment, email, Telegram) becomes ONE table with a tab per sheet
+(`maybeAutoTableSpreadsheet` in `apps/api`) — published, indexed, deduped by
+`data.sourceFileId` so a re-ingest never doubles. Sheets are capped at
+`MAX_AUTO_TABLE_TABLES` (20) tabs per upload; the explicit `table_from_file`
+tool is user-initiated and uncapped (but stamps `sourceFileId` too).
 
 ---
 
-## 4. Tools + the Tables agent
+## 4. Tools + the Ledger agent
 
-`packages/tools/src/builtins-tables.ts` — the `table_*` builtins. Reads:
-`table_list`, `table_get`, `table_rows_list` (windowed id+preview snapshot —
-read this *before* editing, so you target rows by id), `table_row_get`,
-`table_query` (filter rows by value — `{column, op, value}` predicates, AND-ed
-or `match:"any"`, optional `sort`/`columns`; returns only matching rows + a
-total count. The structured-lookup path — "design pressure for circuit X" —
-instead of paging the whole grid. Read-only, persists nothing. Also takes
-`aggregate: [{column, kind}]`, computed over the **full matched set** — "max
-design pressure among CS circuits" is one cap-immune call, no rows read back).
-`table_aggregate` (the **GROUP BY** tool: `group_by` columns + optional
-`metrics`, `filters`, `match`, `sort` over count / a group column / a metric,
-and limit/offset paging — "count by metallurgy", "max design pressure by
-service", "distinct damage types" in one call. Built on a pure `groupRows` in
-`table-model.ts`. Read-only).
-Edits (→ `draft_data`, return a review hint): `table_row_add`/`update`/`delete`,
-`table_cell_set`, `table_column_add`/`update`/`delete`, `table_set_aggregate`
-("add totals"), `table_set_view`. Plus `export_node` (the table → `.xlsx` path —
-see §6). Plus `table_create`, `table_from_file`
-(spreadsheet import), `table_from_text` (build a grid from a pasted CSV/TSV/
-markdown block in one call — the "results → table" path), `table_update`
-(metadata), `table_commit`, `table_delete` (`requiresConfirm`). Cells accept column **name or id**. Oversized
-`table_get`/`table_rows_list` spill to the `read_result` store automatically.
-MCP exposes read-only `table_list`/`table_get`/`table_rows_list`.
+`packages/tools/src/builtins-tables.ts` — the `table_*` builtins. Every
+row/column/query/view tool takes an optional **`tab`** (name or id; default:
+first tab).
 
-**Windowed reads announce incompleteness.** Every windowed read caps `rows` at
-500. `table_query`/`table_get`/`table_rows_list` emit `truncated` + `next_offset`
-+ a `hint` whenever the returned slice is smaller than the true total (the exact
-unbounded count is in `total_matches`/`total_rows`), so an agent counting/maxing
-over the returned rows can't mistake a 500-row page for the whole set. For a
-count or extremum over a >500-match set, reach for the aggregate path instead of
-paging. **Ordered filters respect blanks:** `gt/lt/gte/lte` never match an empty
-cell (SQL NULL semantics — a blank has no order), so `Design Pressure < 1000`
-returns only real sub-1000 rows; `empty`/`notEmpty` are the way to ask about
-blanks.
+Reads: `table_list`, `table_get` (advertises `tabs` + the SQL surface),
+**`table_schema`** (the data dictionary for up to 20 tables in ONE call —
+survey before fetching any rows), **`table_sql`** (read-only SELECT over the
+per-tab views, worker-thread watchdog, row caps, FTS `MATCH` with
+double-quoted terms; cross-tab JOINs are just SQL — the schema chunk names the
+join edges), `table_rows_list`, `table_row_get`, `table_query` (filter-object
+lookups with parity-gated SQL pushdown; aggregates over the full matched set),
+`table_aggregate` (GROUP BY).
 
-**"Ledger" — the Tables agent** (`seed:tables`, slug stays `tables`) +
-**`table_authoring` skill** (`seed:tables-skill`): the typed-grid analog of Pages
-+ rich_writing. Granted the safe authoring subset (no `table_delete`) plus
-file/search tools; wired into every entry agent's `delegate_to`. The skill's
-"powerful moves" section teaches formulas, totals, views, re-typing,
-categorising, cleanup, and column splits. Discipline: always `table_rows_list`
-before editing; edits write to draft; report the table id + `/tables/<id>` review
-URL; only `table_commit` when the user says save/publish.
+Edits (→ the draft, atomic op batches, review hint): `table_row_add`/`update`/
+`delete`, `table_cell_set`, `table_column_add`/`update`/`delete` (both take
+`reference: {tab, column}` for reference columns), `table_set_aggregate`,
+`table_set_view`, and the tab CRUD — **`table_tab_add` / `table_tab_rename` /
+`table_tab_delete`** (refuses the last tab). Plus `table_create`,
+`table_from_file`, `table_from_text`, `table_update` (metadata),
+`table_commit`, `table_delete` (`requiresConfirm`), `export_node` (§6). Cells
+accept column **name or id**. Oversized reads spill to the `read_result`
+store. Windowed reads self-announce truncation (`truncated`/`next_offset`).
 
-**In-editor Assist panel.** The `/tables/<id>` editor has an **Assist** toggle
-that opens a side panel talking to Ledger directly about the open grid
-(`POST /api/tables/[id]/ai-assist` → `invokeAgent('tables', …)` with the grid's
-structure preloaded). Ledger edits the draft via the table tools; the panel
-reloads the draft so changes appear live, and the header Commit/Discard publish
-or revert — exactly the Pages editor's AI-assist pattern.
+**The retrieval ladder** (taught by the `tool_grounding` skill): corpus-map
+schema digest → `table_schema` → `table_sql`. Identifier-shaped terms with no
+chunk hit sweep the tables' FTS shadows (`WHERE <fts> MATCH '"THE-TERM"'`).
+Search only ever indexes a table's profile/schema — rows live behind
+`table_sql`.
 
-```bash
-ALLOWED_USER_ID=<uuid> pnpm -C apps/web seed:tables-skill
-ALLOWED_USER_ID=<uuid> pnpm -C apps/web seed:tables
-# then restart apps/agent so the new agent + grants register
-```
+**"Ledger" — the Tables agent** + **`table_authoring` skill** (system
+manifest): granted the safe authoring subset (no `table_delete`) plus
+file/search tools; wired into every entry agent's `delegate_to`. The skill
+teaches the workbook model (tabs, reference columns), formulas, totals, views,
+and the draft discipline: `table_rows_list` before editing, edits write to
+draft, report `/tables/<id>`, only `table_commit` when the user says publish.
+
+The `/tables/<id>` editor wires the global assistant overlay to the open grid
+(`useSurfaceAssist`): Ledger edits the draft server-side and the grid reloads
+it live; the header Commit/Discard publish or revert.
 
 ---
 
 ## 5. UI — `/tables`
 
-**Master-detail shell** (`tables/page.tsx` + `tables-shell.tsx`): a **resizable +
-collapsible** left list (width + collapse persisted to localStorage; a hand-rolled
-drag-edge, not react-resizable-panels) and the selected table's editor on the
-right. Selection is URL-driven (`?selected=<id>`, auto-selecting the first table
-so the grid is never blank); the list has URL-driven search/tag/pager,
-`useRealtime(['table'])`, a create dialog, accent-only selection, and per-row
-hover delete. `/tables/[id]` is a permanent **redirect** into `?selected=<id>`
-(deep links + the editor's own delete nav). The editor (`[id]/table-detail-client.tsx`
-rendered with `embedded`, drops the back-link) + `components/table-grid/` is a
-**TanStack-backed** typed grid: editable cells per type — number, currency-/
-percent-formatted, **date/datetime via the shadcn Calendar/`DateTimePicker`**,
-`Checkbox`, **select/multi-select as a `Command` combobox with inline "Create
-'<value>'"** (appends the option to the column via `addSelectOption` + selects
-it), and read-only formula — a column
-header menu (rename · retype · set total · sort · insert · delete) whose trigger
-shows the column's type icon, add/delete rows, a totals footer, the Pages-style
-draft autosave → **Commit**/Discard status machine, **Import** (xlsx/csv → draft;
-extra sheets become sibling tables), an editable per-table emoji, and the **Assist**
-panel (§4). `table-model` is a browser-safe leaf so the client reuses the shared
-ops. API routes under `app/api/tables/` mirror `/pages`
-(`route` · `[id]` · `[id]/draft` · `[id]/commit` · `[id]/discard-draft` · `[id]/import` · `[id]/ai-assist`).
+**Master-detail shell** (`tables/page.tsx` + `tables-shell.tsx`): resizable +
+collapsible left list (persisted), URL-driven selection/search/tags/pager,
+`useRealtime(['table'])`. `/tables/[id]` redirects into `?selected=<id>`.
 
-**Large grids are virtualized** (`@tanstack/react-virtual`): the grid root is the
-scroll container and only the rows in/near the viewport are mounted — a 3,000-row
-× 18-col table keeps ~30 `<tr>`s (~120 cell inputs) in the DOM instead of ~54k
-stateful cells, which is what froze the tab for seconds on open. Two spacer `<tr>`s
-carry the off-screen height so the scrollbar, client sort, and totals footer still
-see every row. Because selecting a table is a **server round-trip** (the grid loads
-SSR), the clicked list item shows a spinner and the detail pane a "Loading table…"
-overlay (`pendingId`, cleared when the new selection lands) so the click never
-feels dead.
+The editor (`[id]/table-detail-client.tsx` + `components/table-grid/`):
 
----
+- **Workbook tab bar** (v2.1): switch (flushes pending edits), add
+  (auto-switches), rename (double-click or menu), delete (falls back to the
+  first tab; refuses the last). Tab changes are draft ops — Discard reverts.
+- **Op-based saves**: the grid's whole-doc `onChange` is diffed
+  (`diffTableDocs`) into an op batch scoped to the active tab and POSTed to
+  `/draft-ops` with the `if_rev` etag (409 → reload). Legacy JSONB tables keep
+  the whole-doc PUT. Reordering rows/columns isn't expressible as ops yet —
+  single-tab tables fall back to a whole-doc save; multi-tab surfaces the
+  limitation.
+- **TanStack-backed typed grid**, virtualized (`@tanstack/react-virtual`):
+  editable cells per type — number/currency/percent, date/datetime pickers,
+  checkbox, select/multiselect combobox with inline create, **reference cells
+  as a combobox that fetches the source column's distinct values**
+  (`?distinct=` on the rows route, draft-first, typeahead, free text allowed),
+  read-only formula. Column header menu (rename · retype · total · sort ·
+  insert · delete); the retype menu excludes `reference` (create via the
+  assistant / `table_column_add`, which takes the source).
+- Past the materialize window the grid is a read-only leading window with
+  "Load more" (per tab); edits go through the assistant's row tools.
+- Import (xlsx/csv → tabs on this table's draft), export, emoji, the
+  draft → **Commit**/Discard status machine.
 
-## 6. Export — `.xlsx`
-
-A table renders to a real Excel workbook via `renderXlsx` (in `@mantle/content`,
-`exceljs`-backed): it maps the typed `TableDoc` to formatted cells —
-currency / percent / checkbox — and appends a **totals** row where a column has
-an aggregate. `resolveExport()` dispatches by node type (`table` → `.xlsx`,
-`page`/`note` → `.docx`; see [`pages.md`](./pages.md)). Two doorways:
-
-- **Web** — a **Download** button in the `/tables/<id>` detail header hits
-  `GET /api/export/[id]`.
-- **Agent** — the `export_node` tool saves the workbook under `/files/exports`;
-  it lives in a dedicated `export` tool group granted to the persona + Pages /
-  Ledger.
-
-OOXML opens cleanly in Excel / Google Sheets / LibreOffice — no separate ODF
-path.
+API routes under `app/api/tables/`: `route` · `[id]` (`?tab=`) · `[id]/draft`
+(whole-doc PUT) · `[id]/draft-ops` (op batches + `if_rev`) · `[id]/commit` ·
+`[id]/discard-draft` · `[id]/rows` (windowed reads, `?tab=`, `?distinct=`) ·
+`[id]/import` · `[id]/export`.
 
 ---
 
-## 7. Deliberately deferred (not v1)
-Public sharing of tables (`/s/[token]` + a `renderTableDoc`), row drag-reorder,
-cross-table relations/rollups, and real-time multi-cell collab.
+## 6. Export
+
+- **`.xlsx`** — `renderXlsx` (`exceljs`-backed) maps the typed doc to formatted
+  cells + a totals row. Web: the detail-header Download → `GET /api/export/[id]`.
+  Agent: `export_node` saves under `/files/exports`.
+- **`.sqlite`** (v2) — the workbook file itself via `[id]/export?format=sqlite`:
+  a consistent VACUUM-INTO snapshot, openable in any SQLite client.
+
+---
+
+## 7. Deliberately deferred
+
+Public sharing of tables (`/s/[token]` + a `renderTableDoc`), row/column
+drag-reorder ops (the differ falls back today), cross-**workbook** references
+(same-file only by design), reference row-id/FK mode with lookup columns,
+cross-tab formulas, in-grid editing past the 10k window, real-time multi-cell
+collab.
