@@ -144,14 +144,19 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
   // legacy JSONB tables keep the whole-doc PUT. Returns false on failure —
   // commit MUST abort then, or it would promote the PREVIOUS autosave and
   // mark the newest edits committed while silently dropping them (audit). ──
-  const saveDraft = useCallback(async (): Promise<boolean> => {
+  const runSaveDraft = useCallback(async (): Promise<boolean> => {
     if (clipped) return true; // read-only window — nothing autosaves
-    const s = JSON.stringify(docRef.current);
+    // ONE snapshot for the whole save: the user can keep editing during the
+    // network await, and marking the LIVE doc as saved would silently drop
+    // those in-flight edits from every future diff (audit: they were then
+    // "committed" without ever reaching the server).
+    const snapshot = docRef.current;
+    const s = JSON.stringify(snapshot);
     if (s === savedKeyRef.current) return true;
     setDraftSaving(true);
     try {
       if (fileBacked) {
-        const ops = diffTableDocs(savedDocRef.current, docRef.current);
+        const ops = diffTableDocs(savedDocRef.current, snapshot);
         if (ops === null) {
           // Not expressible as ops (reorder / view deletion). Single-tab
           // workbooks can still save whole; multi-tab cannot (it would drop
@@ -160,7 +165,12 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
             toast.error('That change (reordering) isn’t supported on multi-tab tables yet');
             return false;
           }
-          await apiSend(`/api/tables/${initial.id}/draft`, 'PUT', { data: docRef.current });
+          const j = await apiSend<{ draft_rev: number }>(`/api/tables/${initial.id}/draft`, 'PUT', {
+            data: snapshot,
+            if_rev: draftRevRef.current,
+          });
+          draftRevRef.current = j.draft_rev;
+          setHasDraft(true);
         } else if (ops.length > 0) {
           const tabId = activeTabRef.current;
           const j = await apiSend<{ draft_rev: number }>(`/api/tables/${initial.id}/draft-ops`, 'POST', {
@@ -171,9 +181,9 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
           setHasDraft(true);
         }
       } else {
-        await apiSend(`/api/tables/${initial.id}/draft`, 'PUT', { data: docRef.current });
+        await apiSend(`/api/tables/${initial.id}/draft`, 'PUT', { data: snapshot });
       }
-      savedDocRef.current = docRef.current;
+      savedDocRef.current = snapshot;
       savedKeyRef.current = s;
       return true;
     } catch (e) {
@@ -188,6 +198,16 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
       setDraftSaving(false);
     }
   }, [clipped, fileBacked, initial.id, reloadTab, tabs?.length, toast]);
+
+  // Saves are SERIALIZED: a debounce tick and a commit flush can otherwise
+  // overlap, and the second diff would run from a base the first hasn't
+  // updated yet — a guaranteed spurious 409 (reload = discarded edits).
+  const saveChainRef = useRef<Promise<boolean>>(Promise.resolve(true));
+  const saveDraft = useCallback((): Promise<boolean> => {
+    const p = saveChainRef.current.then(runSaveDraft, runSaveDraft);
+    saveChainRef.current = p;
+    return p;
+  }, [runSaveDraft]);
 
   // Debounced draft autosave whenever the grid changes.
   useEffect(() => {

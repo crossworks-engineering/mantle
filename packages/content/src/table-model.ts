@@ -674,12 +674,24 @@ export function setView(doc: TableDoc, view: View): TableDoc {
 
 /** The subset of tabledb's TableOp the differ emits (structurally identical —
  *  same one-way-dep tripwire as TableDoc/TableDocLike). */
+/** column_update patch: absent key = keep, explicit `null` = CLEAR. JSON
+ *  transport drops undefined keys, so removals MUST travel as null. */
+export type TableColumnPatch = {
+  name?: string;
+  type?: ColumnType;
+  format?: ColumnFormat | null;
+  options?: Column['options'] | null;
+  formula?: string | null;
+  width?: number | null;
+  ref?: ColumnRef | null;
+};
+
 export type TableDocOp =
-  | { op: 'row_add'; rowId: string; cells?: Record<string, CellValue>; afterRowId?: string | null }
+  | { op: 'row_add'; rowId: string; cells?: Record<string, CellValue>; afterRowId?: string | null; atStart?: boolean }
   | { op: 'row_update'; rowId: string; cells: Record<string, CellValue> }
   | { op: 'row_delete'; rowId: string }
   | { op: 'column_add'; column: Column; afterColumnId?: string | null }
-  | { op: 'column_update'; columnId: string; patch: Partial<Omit<Column, 'id'>> }
+  | { op: 'column_update'; columnId: string; patch: TableColumnPatch }
   | { op: 'column_delete'; columnId: string }
   | { op: 'aggregate_set'; columnId: string; kind: AggregateKind }
   | { op: 'view_set'; view: View };
@@ -712,14 +724,17 @@ export function diffTableDocs(prev: TableDoc, next: TableDoc): TableDocOp[] | nu
       ops.push({ op: 'column_add', column: c, afterColumnId });
       return;
     }
-    const patch: Partial<Omit<Column, 'id'>> = {};
+    // Removals travel as explicit null — `undefined` disappears in JSON and
+    // the server would keep the old value (audit: width/format/ref clears
+    // were silently lost).
+    const patch: TableColumnPatch = {};
     if (old.name !== c.name) patch.name = c.name;
     if (old.type !== c.type) patch.type = c.type;
-    if (JSON.stringify(old.format ?? null) !== JSON.stringify(c.format ?? null)) patch.format = c.format;
-    if (JSON.stringify(old.options ?? null) !== JSON.stringify(c.options ?? null)) patch.options = c.options;
-    if ((old.formula ?? '') !== (c.formula ?? '')) patch.formula = c.formula;
-    if ((old.width ?? null) !== (c.width ?? null)) patch.width = c.width;
-    if (JSON.stringify(old.ref ?? null) !== JSON.stringify(c.ref ?? null)) patch.ref = c.ref;
+    if (JSON.stringify(old.format ?? null) !== JSON.stringify(c.format ?? null)) patch.format = c.format ?? null;
+    if (JSON.stringify(old.options ?? null) !== JSON.stringify(c.options ?? null)) patch.options = c.options ?? null;
+    if ((old.formula ?? '') !== (c.formula ?? '')) patch.formula = c.formula ?? null;
+    if ((old.width ?? null) !== (c.width ?? null)) patch.width = c.width ?? null;
+    if (JSON.stringify(old.ref ?? null) !== JSON.stringify(c.ref ?? null)) patch.ref = c.ref ?? null;
     if (Object.keys(patch).length > 0) ops.push({ op: 'column_update', columnId: c.id, patch });
   });
 
@@ -734,16 +749,14 @@ export function diffTableDocs(prev: TableDoc, next: TableDoc): TableDocOp[] | nu
   next.rows.forEach((r, i) => {
     const old = prevRows.get(r.id);
     if (!old) {
-      // Insert after the nearest PRE-EXISTING predecessor (a run of new rows
-      // anchors to the same row; batch order preserves their sequence).
-      let afterRowId: string | null = null;
-      for (let j = i - 1; j >= 0; j--) {
-        if (prevRows.has(next.rows[j]!.id)) {
-          afterRowId = next.rows[j]!.id;
-          break;
-        }
-      }
-      ops.push({ op: 'row_add', rowId: r.id, cells: r.cells, afterRowId });
+      // Anchor to the IMMEDIATE predecessor in `next` — including another
+      // new row: ops apply in batch order, so the predecessor already exists
+      // when this op runs. (Anchoring a run to one shared pre-existing row
+      // reversed it: the engine midpoint-inserts directly after the anchor,
+      // so each op landed BEFORE the previous — audit.) A new FIRST row is an
+      // explicit front insert; `afterRowId: null` means append to the engine.
+      if (i === 0) ops.push({ op: 'row_add', rowId: r.id, cells: r.cells, atStart: true });
+      else ops.push({ op: 'row_add', rowId: r.id, cells: r.cells, afterRowId: next.rows[i - 1]!.id });
       return;
     }
     const changed: Record<string, CellValue> = {};
@@ -763,13 +776,17 @@ export function diffTableDocs(prev: TableDoc, next: TableDoc): TableDocOp[] | nu
     if (a !== b) ops.push({ op: 'aggregate_set', columnId: colId, kind: b });
   }
 
-  // ── Views (upsert only — deletion has no op) ──
+  // ── Views (upsert only — deletion and reordering have no op) ──
   const prevViews = new Map((prev.views ?? []).map((v) => [v.id, v]));
+  const nextViewIds = new Set((next.views ?? []).map((v) => v.id));
   for (const v of next.views ?? []) {
     const old = prevViews.get(v.id);
     if (!old || JSON.stringify(old) !== JSON.stringify(v)) ops.push({ op: 'view_set', view: v });
   }
-  if ((prev.views ?? []).some((v) => !(next.views ?? []).some((n) => n.id === v.id))) return null;
+  if ((prev.views ?? []).some((v) => !nextViewIds.has(v.id))) return null;
+  const viewOrderPrev = (prev.views ?? []).filter((v) => nextViewIds.has(v.id)).map((v) => v.id);
+  const viewOrderNext = (next.views ?? []).filter((v) => prevViews.has(v.id)).map((v) => v.id);
+  if (viewOrderPrev.join(' ') !== viewOrderNext.join(' ')) return null;
 
   return ops;
 }

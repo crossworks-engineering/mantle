@@ -22,12 +22,12 @@ import { openTableFile, type SqliteDb } from './sqlite';
  */
 
 export type TableOp =
-  | { op: 'row_add'; tabId?: string; rowId?: string; cells?: Record<string, CellValue>; afterRowId?: string | null }
+  | { op: 'row_add'; tabId?: string; rowId?: string; cells?: Record<string, CellValue>; afterRowId?: string | null; atStart?: boolean }
   | { op: 'row_update'; tabId?: string; rowId: string; cells: Record<string, CellValue> }
   | { op: 'row_delete'; tabId?: string; rowId: string }
   | { op: 'cell_set'; tabId?: string; rowId: string; columnId: string; value: CellValue }
   | { op: 'column_add'; tabId?: string; column: Omit<Column, 'id'> & { id?: string }; afterColumnId?: string | null }
-  | { op: 'column_update'; tabId?: string; columnId: string; patch: Partial<Omit<Column, 'id'>> }
+  | { op: 'column_update'; tabId?: string; columnId: string; patch: ColumnPatch }
   | { op: 'column_delete'; tabId?: string; columnId: string }
   | { op: 'aggregate_set'; tabId?: string; columnId: string; kind: AggregateKind }
   | { op: 'view_set'; tabId?: string; view: View }
@@ -37,6 +37,21 @@ export type TableOp =
   | { op: 'tab_rename'; tabId: string; name: string }
   | { op: 'tab_reorder'; tabId: string; afterTabId?: string | null }
   | { op: 'tab_delete'; tabId: string };
+
+/** column_update patch: `undefined` (key absent) = keep, explicit `null` =
+ *  CLEAR. JSON transport drops undefined keys, so a differ signalling "this
+ *  property was removed" must send null — `Partial<Column>` couldn't say it
+ *  (audit: width/format/options/formula/ref clears from the grid were
+ *  silently lost). name/type are never clearable. */
+export type ColumnPatch = {
+  name?: string;
+  type?: ColumnType;
+  format?: Column['format'] | null;
+  options?: Column['options'] | null;
+  formula?: string | null;
+  width?: number | null;
+  ref?: Column['ref'] | null;
+};
 
 export type CoerceFn = (value: unknown, type: ColumnType) => CellValue;
 
@@ -79,14 +94,28 @@ function resolveTab(db: SqliteDb, tabId?: string): TabRow {
   return tab;
 }
 
-/** A view name unique across the file (case-insensitive vs other tabs'
- *  views — they share sqlite's namespace). */
+/** A view name unique across the file (case-insensitive vs other tabs' views
+ *  AND everything else in sqlite_master — views share the namespace with the
+ *  physical `t_*` tables and FTS shadows, so a tab literally named like one
+ *  must suffix instead of failing the whole batch). */
 function uniqueViewName(db: SqliteDb, wanted: string, excludeTabId?: string): string {
+  const tabRows = db.prepare(`SELECT tab_id, view_name FROM _tabs`).all() as unknown as {
+    tab_id: string;
+    view_name: string;
+  }[];
+  const allViewNames = new Set(tabRows.map((t) => t.view_name.toLowerCase()));
   const taken = new Set(
-    (db.prepare(`SELECT tab_id, view_name FROM _tabs`).all() as unknown as { tab_id: string; view_name: string }[])
-      .filter((t) => t.tab_id !== excludeTabId)
-      .map((t) => t.view_name.toLowerCase()),
+    tabRows.filter((t) => t.tab_id !== excludeTabId).map((t) => t.view_name.toLowerCase()),
   );
+  const master = db.prepare(`SELECT name FROM sqlite_master WHERE type IN ('table', 'view')`).all() as unknown as {
+    name: string;
+  }[];
+  for (const m of master) {
+    const n = m.name.toLowerCase();
+    // Tab view names are handled above (the excluded tab's own view must stay
+    // claimable on rename-to-self); everything else in master is reserved.
+    if (!allViewNames.has(n)) taken.add(n);
+  }
   let name = wanted;
   let n = 2;
   while (taken.has(name.toLowerCase())) name = `${wanted}_${n++}`;
@@ -195,7 +224,20 @@ function renumberPositions(db: SqliteDb, physicalTable: string): void {
   `);
 }
 
-function posForInsert(db: SqliteDb, physicalTable: string, afterRowId?: string | null): number {
+function posForInsert(db: SqliteDb, physicalTable: string, afterRowId?: string | null, atStart?: boolean): number {
+  if (atStart) {
+    // Explicit front insert (the differ's "new first row"). `afterRowId:
+    // null/undefined` must stay append — the tool path depends on it.
+    const row = db.prepare(`SELECT min(_pos) AS m FROM ${physicalTable}`).get();
+    const min = row?.m == null ? null : Number(row.m);
+    if (min == null) return 1;
+    const mid = min / 2;
+    if (min < POS_EPSILON || mid <= 0 || mid >= min) {
+      renumberPositions(db, physicalTable);
+      return posForInsert(db, physicalTable, afterRowId, true);
+    }
+    return mid;
+  }
   if (!afterRowId) {
     const row = db.prepare(`SELECT max(_pos) AS m FROM ${physicalTable}`).get();
     return Number(row?.m ?? 0) + 1;
@@ -243,7 +285,7 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
   switch (op.op) {
     case 'row_add': {
       const rowId = op.rowId ?? randomUUID();
-      const pos = posForInsert(db, table, op.afterRowId);
+      const pos = posForInsert(db, table, op.afterRowId, op.atStart === true);
       db.prepare(`INSERT INTO ${table} (_rid, _pos) VALUES (?, ?)`).run(rowId, pos);
       if (op.cells && Object.keys(op.cells).length > 0) setCells(rowId, op.cells, true);
       return rowId;
@@ -316,16 +358,18 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
       } else if (patch.type && patch.type !== 'reference' && col.type === 'reference') {
         db.prepare(`UPDATE _columns SET ref_json = NULL WHERE tab_id = ? AND col_id = ?`).run(tab.tab_id, op.columnId);
       }
+      // `null` = explicit CLEAR (JSON drops undefined keys, so the differ
+      // signals property removal with null); absent key = keep current.
       db.prepare(
         `UPDATE _columns SET name = ?, type = ?, format_json = ?, options_json = ?, formula_src = ?, width = ?
          WHERE tab_id = ? AND col_id = ?`,
       ).run(
         patch.name ?? col.name,
         nextType,
-        patch.format !== undefined ? JSON.stringify(patch.format) : (db
+        patch.format !== undefined ? (patch.format ? JSON.stringify(patch.format) : null) : (db
           .prepare(`SELECT format_json FROM _columns WHERE tab_id = ? AND col_id = ?`)
           .get(tab.tab_id, op.columnId)?.format_json as string | null) ?? null,
-        patch.options !== undefined ? JSON.stringify(patch.options) : col.options_json,
+        patch.options !== undefined ? (patch.options ? JSON.stringify(patch.options) : null) : col.options_json,
         patch.formula !== undefined ? patch.formula : (db
           .prepare(`SELECT formula_src FROM _columns WHERE tab_id = ? AND col_id = ?`)
           .get(tab.tab_id, op.columnId)?.formula_src as string | null) ?? null,
@@ -335,13 +379,28 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
         tab.tab_id,
         op.columnId,
       );
+      const typeChanged = patch.type !== undefined && patch.type !== col.type;
+      // Formula columns have NO physical column, so a retype across the
+      // formula boundary is DDL, not a value rewrite — without it _columns
+      // points at a column that doesn't exist and every subsequent read of
+      // the file throws (audit: formula→text bricked the workbook).
+      if (typeChanged && col.type === 'formula' && nextType !== 'formula') {
+        dropFtsShadow(db, tab);
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${col.physical} ${sqlTypeFor(nextType)}`);
+      } else if (typeChanged && col.type !== 'formula' && nextType === 'formula') {
+        // Doc semantics: formula cells are never stored — drop the values
+        // with the column (the view depends on it; drop that first).
+        dropFtsShadow(db, tab);
+        db.exec(`DROP VIEW IF EXISTS ${quoteIdent(tab.view_name)}`);
+        db.exec(`ALTER TABLE ${table} DROP COLUMN ${col.physical}`);
+      }
       // Type change: re-coerce through the SAME coerce fn the doc path uses,
       // FROM THE DOC-SHAPED VALUE (loadCell first) — coercing the raw SQL
       // storage form diverged (checkbox stored 0/1 retyped to text became
       // '1' instead of 'true'; multiselect JSON became '["a","b"]' instead
-      // of 'a,b' — audit finding 3). SQLite is dynamically typed, so no DDL;
-      // values rewrite in place.
-      if (patch.type && patch.type !== col.type && col.type !== 'formula' && patch.type !== 'formula') {
+      // of 'a,b' — audit finding 3). Stored↔stored needs no DDL (SQLite is
+      // dynamically typed); values rewrite in place.
+      if (typeChanged && col.type !== 'formula' && nextType !== 'formula') {
         const rows = db.prepare(`SELECT _rid, ${col.physical} AS v FROM ${table} WHERE ${col.physical} IS NOT NULL`).all();
         const upd = db.prepare(`UPDATE ${table} SET ${col.physical} = ? WHERE _rid = ?`);
         for (const r of rows) {
@@ -349,7 +408,9 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
           upd.run(storeCell(coerce(docValue, nextType), nextType), String(r._rid));
         }
       }
-      if (patch.name && patch.name !== col.name) rebuildView(db, tab);
+      // Rename relabels the view; a type change across the formula boundary
+      // changes which columns it projects.
+      if ((patch.name && patch.name !== col.name) || typeChanged) rebuildView(db, tab);
       return null;
     }
     case 'column_delete': {

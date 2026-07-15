@@ -5,10 +5,9 @@ import { parseSheetToGrid } from '@mantle/files/sheet-to-grid';
 import { tableDocFromGrid } from '@mantle/content/table-model';
 
 /**
- * Import a spreadsheet into this table. The FIRST sheet replaces the current
- * grid as a DRAFT (the user reviews + commits); any additional sheets are
- * created as sibling tables (committed) and their ids returned. Accepts a
- * multipart `file` (.xlsx / .xls / .csv).
+ * Import a spreadsheet into this table (v2.1 P2): the workbook replaces the
+ * current DRAFT whole — every sheet becomes a tab, and the user reviews +
+ * commits once. Accepts a multipart `file` (.xlsx / .xls / .csv).
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
@@ -48,8 +47,20 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     ...tableDocFromGrid(sheet),
     name: (sheet.name || `Sheet${i + 1}`).slice(0, 100),
   }));
-  const ok = await saveTableDraft(user.id, id, { tabs });
-  if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  // `replace`: a parsed-file workbook is a deliberate whole-table
+  // replacement — the clipped-grid truncation guard doesn't apply and the
+  // ceiling is the import cap, not the 10k grid window (audit: re-importing
+  // into a >10k table 500'd with windowed-read advice).
+  let result;
+  try {
+    result = await saveTableDraft(user.id, id, { tabs }, { replace: true });
+  } catch (err) {
+    return NextResponse.json(
+      { error: `import failed: ${err instanceof Error ? err.message : String(err)}` },
+      { status: 400 },
+    );
+  }
+  if (!result) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
   return NextResponse.json({
     ok: true,

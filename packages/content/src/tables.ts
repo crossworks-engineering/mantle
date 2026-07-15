@@ -322,7 +322,11 @@ export async function getTable(
     }
   }
   const tabId = opts.tabId ?? tabs?.[0]?.id;
-  const { data, draft, totalRows, docClipped } = docsOf(row, opts.tabId);
+  // Materialize the RESOLVED tab, not the caller's (possibly undefined) one:
+  // when a draft tab_delete/tab_reorder changed the first tab, "default tab"
+  // must mean the same tab on both the published and draft side (audit: the
+  // payload mixed published tab A with draft tab B).
+  const { data, draft, totalRows, docClipped } = docsOf(row, tabId);
   return detailOf(row.node, data, draft, {
     totalRows,
     docClipped,
@@ -521,42 +525,91 @@ function isWorkbook(data: TableDoc | WorkbookDoc): data is WorkbookDoc {
 /** Refuse a bare single-tab doc against a multi-tab workbook: writing it
  *  whole would silently DROP every other tab. Tab-aware callers pass a
  *  WorkbookDoc; per-tab editors use draft ops with a tabId. */
-function guardSingleTabWrite(locked: { tabCount: number | null } | null): void {
-  if ((locked?.tabCount ?? 1) > 1) {
+function guardSingleTabWrite(tabCount: number): void {
+  if (tabCount > 1) {
     throw new Error(
       'this table is a multi-tab workbook — a whole-grid save would drop the other tabs; edit via draft ops (tabId) or send the full workbook',
     );
   }
 }
 
-/** Autosave the working grid to `tables.draft_data` only — published `data`,
+/** Stats of a workbook file, or null when it is unreadable/absent. */
+function statsOrNull(absPath: string): WorkbookStats | null {
+  try {
+    return existsSync(absPath) ? fileStats(absPath) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The tab count a whole-doc write would actually clobber: the DRAFT's when
+ *  one exists (registry stats only see the published file — a tab added by
+ *  an import/draft op is invisible there; audit: a bare PUT could silently
+ *  destroy draft-only tabs), else the published count from the locked row. */
+function effectiveTabCount(locked: { tabCount: number | null } | null, storagePath: string | null): number {
+  if (storagePath) {
+    const draftStats = statsOrNull(draftAbsFor(storagePath));
+    if (draftStats) return draftStats.tabs.length;
+  }
+  return locked?.tabCount ?? 1;
+}
+
+/** First tab's display name in draft-then-published order — bare-doc rebuilds
+ *  must keep it (audit: the whole-doc fallback renamed "Inventory" back to
+ *  'Sheet1', flipping the shape hash and forcing a re-summarize). */
+function effectiveTabName(storagePath: string | null): string {
+  if (storagePath) {
+    const name =
+      statsOrNull(draftAbsFor(storagePath))?.tabs[0]?.name ??
+      statsOrNull(resolveStoragePath(storagePath))?.tabs[0]?.name;
+    if (name) return name;
+  }
+  return TAB_NAME;
+}
+
+export type SaveTableDraftResult =
+  | { ok: true; draftRev: number }
+  | { ok: false; conflict: true; currentRev: number };
+
+/** Autosave the working grid to the DRAFT only — published `data`,
  *  `data_text`, summary, embedding, and the extractor are all untouched. Cheap
- *  and frequent. Returns false if the table doesn't exist. Accepts a bare doc
- *  (single-tab tables) or a full WorkbookDoc (tab-aware callers / import). */
+ *  and frequent. Returns null if the table doesn't exist. Accepts a bare doc
+ *  (single-tab tables) or a full WorkbookDoc (tab-aware callers / import).
+ *  `ifRev` is the same etag the op route uses — a stale value conflicts
+ *  instead of clobbering newer edits. `replace` marks a deliberate
+ *  whole-workbook replacement (import): the payload is a complete new table
+ *  parsed from a file, so the clipped-grid truncation guard doesn't apply and
+ *  the payload cap is the import ceiling, not the grid window. */
 export async function saveTableDraft(
   ownerId: string,
   id: string,
   data: TableDoc | WorkbookDoc,
-): Promise<boolean> {
+  opts: { ifRev?: number; replace?: boolean } = {},
+): Promise<SaveTableDraftResult | null> {
   const [row] = await db
     .select({ id: nodes.id, title: nodes.title })
     .from(nodes)
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
-  if (!row) return false;
+  if (!row) return null;
   const workbook = isWorkbook(data) ? ensureWorkbookDoc(data) : null;
   const doc = workbook ? null : ensureTableDoc(data as TableDoc);
   const totalRows = workbook
     ? workbook.tabs.reduce((a, t) => a + t.rows.length, 0)
     : doc!.rows.length;
-  if (totalRows > MATERIALIZE_MAX) throw new TableTooLargeError(totalRows, MATERIALIZE_MAX);
+  const payloadCap = opts.replace ? importMaxRows() : MATERIALIZE_MAX;
+  if (totalRows > payloadCap) throw new TableTooLargeError(totalRows, payloadCap);
   // Registry lock spine: the draft-file rebuild and the registry update are
   // one locked step, so a concurrent agent op / second process can't
   // interleave mid-write. Storage is decided from the LOCKED row, not a
   // pre-lock read — racing the migration sweep with a stale null path wrote
   // the draft to JSONB only, invisible to every file-backed read surface
   // (audit finding 4). draft_rev bumps on every batch (the op route's etag).
-  await withTableRegistryLock(id, async (tx, locked) => {
+  return await withTableRegistryLock(id, async (tx, locked) => {
+    const currentRev = locked?.draftRev ?? 0;
+    if (opts.ifRev !== undefined && currentRev !== opts.ifRev) {
+      return { ok: false as const, conflict: true as const, currentRev };
+    }
     let storagePath = locked?.storagePath ?? null;
     if (!storagePath && workbook) {
       // A workbook draft has no JSONB mirror — the file is its ONLY carrier,
@@ -564,14 +617,24 @@ export async function saveTableDraft(
       storagePath = (await ensureFileBacked(tx, { id, ownerId, title: row.title }, locked)).storagePath;
     }
     if (storagePath) {
-      // Whole-doc writes are only legal while the table itself fits the
-      // window — a windowed doc saved whole would truncate the table (audit
-      // finding 5: an exactly-10k clipped doc slipped the row-count guard).
-      if ((locked?.totalRows ?? 0) > MATERIALIZE_MAX) {
-        throw new TableTooLargeError(locked?.totalRows ?? 0, MATERIALIZE_MAX);
+      if (!opts.replace) {
+        // Whole-doc writes are only legal while the table itself fits the
+        // window — a windowed doc saved whole would truncate the table (audit
+        // finding 5: an exactly-10k clipped doc slipped the row-count guard).
+        // Guard against the LARGEST doc this write would clobber: the draft
+        // can have grown past the published stats via op batches.
+        const effRows = Math.max(
+          locked?.totalRows ?? 0,
+          statsOrNull(draftAbsFor(storagePath))?.totalRows ?? 0,
+        );
+        if (effRows > MATERIALIZE_MAX) throw new TableTooLargeError(effRows, MATERIALIZE_MAX);
       }
-      if (!workbook) guardSingleTabWrite(locked);
-      writeDocFile(draftAbsFor(storagePath), workbook ?? doc!, { nodeId: id, ownerId, tabName: TAB_NAME });
+      if (!workbook) guardSingleTabWrite(effectiveTabCount(locked, storagePath));
+      writeDocFile(draftAbsFor(storagePath), workbook ?? doc!, {
+        nodeId: id,
+        ownerId,
+        tabName: workbook ? TAB_NAME : effectiveTabName(storagePath),
+      });
     }
     await tx
       .update(tables)
@@ -583,8 +646,8 @@ export async function saveTableDraft(
         draftRev: sql`${tables.draftRev} + 1`,
       })
       .where(eq(tables.nodeId, id));
+    return { ok: true as const, draftRev: currentRev + 1 };
   });
-  return true;
 }
 
 /** Throw away the working draft. Published grid + index untouched. */
@@ -656,14 +719,17 @@ export async function commitTable(
       const promoteTmp = `${publishedAbs}.promote-${randomUUID().slice(0, 8)}`;
       try {
         snapshotFile(draftAbs, promoteTmp);
+        // Sweep the OLD published file's sidecars BEFORE the swap: SQLite
+        // does NOT salt-match a WAL to its database file, so a leftover -wal
+        // (checkpoint blocked by a concurrent reader) would be recovered
+        // into the NEW file on the next write open — silent corruption of
+        // committed data. We hold the registry lock; no writer races this.
+        rmSync(`${publishedAbs}-wal`, { force: true });
+        rmSync(`${publishedAbs}-shm`, { force: true });
         renameSync(promoteTmp, publishedAbs);
       } finally {
         removeTableFile(promoteTmp);
       }
-      // Stale sidecars of the OLD published file (salt-mismatched, sqlite
-      // ignores them — swept for hygiene), then the consumed draft.
-      rmSync(`${publishedAbs}-wal`, { force: true });
-      rmSync(`${publishedAbs}-shm`, { force: true });
       removeTableFile(draftAbs);
       finalizePublishedFile(publishedAbs);
 
@@ -729,7 +795,6 @@ export async function commitTable(
     ? workbook.tabs.reduce((a, t) => a + t.rows.length, 0)
     : doc!.rows.length;
   if (commitTotalRows > MATERIALIZE_MAX) throw new TableTooLargeError(commitTotalRows, MATERIALIZE_MAX);
-  const newShapeHash = shapeHashOf(commitDoc, TAB_NAME);
 
   // Commit under the registry lock (plan §3.3): write the new published file
   // (build + FTS shadows + checkpoint + atomic rename inside writeDocFile),
@@ -744,6 +809,10 @@ export async function commitTable(
     // only the cheap deterministic layers (profile chunks, embedding).
     // Schema changes (or a first commit) clear them → full re-summarize.
     // extract_completed_at is always cleared: SOME re-index always runs.
+    // Bare docs keep the file's existing tab name (a whole-doc commit is not
+    // a rename — 'Sheet1' here flipped the shape hash and re-summarized).
+    const tabName = workbook ? TAB_NAME : effectiveTabName(locked?.storagePath ?? null);
+    const newShapeHash = shapeHashOf(commitDoc, tabName);
     const newData = { ...((node.data ?? {}) as Record<string, unknown>) };
     const shapeUnchanged =
       locked?.shapeHash != null && locked.shapeHash === newShapeHash && typeof newData.summary === 'string';
@@ -758,14 +827,14 @@ export async function commitTable(
     // A bare single-tab doc must not clobber a multi-tab workbook (the
     // whole-grid UI path pre-P5); workbook payloads replace everything by
     // design (import).
-    if (!workbook) guardSingleTabWrite(locked);
+    if (!workbook) guardSingleTabWrite(effectiveTabCount(locked, locked?.storagePath ?? null));
     const [row] = await tx
       .update(nodes)
       .set({ data: newData, embedding: null, updatedAt: new Date() })
       .where(eq(nodes.id, id))
       .returning();
     if (!row) throw new Error('commitTable: update returned no row');
-    const res = writeDocFile(publishedAbs, commitDoc, { nodeId: id, ownerId, tabName: TAB_NAME, fts: true });
+    const res = writeDocFile(publishedAbs, commitDoc, { nodeId: id, ownerId, tabName, fts: true });
     removeTableFile(draftAbsFor(relativeStoragePath(ownerId, id)));
     await tx
       .update(tables)

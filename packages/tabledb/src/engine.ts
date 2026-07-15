@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { storeCell, loadCell, sqlTypeFor } from './cells';
 import type { AggregateKind, Column, ColumnType, Row, TableDocLike, View, WorkbookDocLike, WorkbookTabDoc } from './doc-types';
-import { createFtsShadow, ftsColumns } from './fts';
+import { createFtsShadow, ftsColumns, ftsTableName } from './fts';
 import { dedupe, physicalName, quoteIdent, viewLabel, viewNameForTab } from './names';
 import { openTableFile, sqlQuote, type SqliteDb } from './sqlite';
 
@@ -275,9 +275,23 @@ function writeViewsAndAggregates(db: SqliteDb, tabId: string, doc: TableDocLike)
 export function writeDocFile(destAbs: string, doc: TableDocLike | WorkbookDocLike, meta: WriteDocMeta): WriteResult {
   mkdirSync(path.dirname(destAbs), { recursive: true });
   const tabs = asWorkbookTabs(doc, meta.tabName ?? 'Sheet1');
-  // View names are display-derived and must be unique across the whole file
-  // (they share sqlite's namespace with the physical tables).
-  const viewNames = dedupe(tabs.map((t) => viewNameForTab(t.name)));
+  // View names are display-derived and must be unique across the whole file —
+  // they share sqlite's namespace with the physical `t_*` tables and FTS
+  // shadows, so a tab literally named like one suffixes instead of failing
+  // the CREATE VIEW (audit: a tab named "t_t1" aborted the whole write).
+  const reserved = new Set<string>();
+  for (const t of tabs) {
+    const physical = physicalName('t', t.id);
+    reserved.add(physical.toLowerCase());
+    reserved.add(ftsTableName(physical).toLowerCase());
+  }
+  const viewNames = dedupe(tabs.map((t) => viewNameForTab(t.name))).map((name) => {
+    let out = name;
+    let n = 2;
+    while (reserved.has(out.toLowerCase())) out = `${name}_${n++}`;
+    reserved.add(out.toLowerCase());
+    return out;
+  });
   const build = `${destAbs}.build-${process.pid}-${randomUUID().slice(0, 8)}`;
   try {
     const db = openTableFile(build, { mustExist: false });
@@ -302,6 +316,14 @@ export function writeDocFile(destAbs: string, doc: TableDocLike | WorkbookDocLik
     } finally {
       db.close();
     }
+    // Sweep the DESTINATION's sidecars BEFORE the rename: a stale -wal left
+    // beside the old file (checkpoint is advisory — a concurrent reader can
+    // block it) would otherwise be replayed into the NEW file on the next
+    // write open, silently corrupting it. SQLite does not salt-match a WAL
+    // to its database file. Callers hold the registry lock, so no writer
+    // races this window.
+    rmSync(`${destAbs}-wal`, { force: true });
+    rmSync(`${destAbs}-shm`, { force: true });
     renameSync(build, destAbs);
   } finally {
     rmSync(build, { force: true });
