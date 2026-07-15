@@ -143,7 +143,12 @@ export function MicrosoftClient() {
                     </div>
                     <DisconnectButton accountId={r.id} upn={r.upn} />
                   </div>
-                  {!needsReconnect && <MailToggle msAccountId={r.id} />}
+                  {!needsReconnect && (
+                    // 'Mail.Send' as a literal: MAIL_SEND_SCOPE lives in the
+                    // server-only package root (pulls in the DB), so a client
+                    // bundle can't import it.
+                    <MailToggle msAccountId={r.id} canSend={r.scopes.includes('Mail.Send')} />
+                  )}
                   {!needsReconnect && <DrivesList accountId={r.id} />}
                 </div>
               );

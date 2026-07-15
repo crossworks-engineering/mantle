@@ -1,14 +1,16 @@
 /**
- * Sender discovery — a live IMAP look at who recently emailed the owner but
- * isn't yet a contact (so their mail is NOT being ingested). Reads IMAP on
- * demand across every enabled account; persists nothing. Lifted from the
- * `apps/web` settings/discover action so it's reachable over HTTP.
+ * Sender discovery — a live look at who recently emailed the owner but
+ * isn't yet a contact (so their mail is NOT being ingested). Reads the
+ * provider on demand across every enabled account; persists nothing. Lifted
+ * from the `apps/web` settings/discover action so it's reachable over HTTP.
  */
+import type { EmailAccount } from '@mantle/db';
 import { createContact, loadContactGate } from '@mantle/content';
-import { listImapAccounts } from './accounts';
+import { listAccounts } from './accounts';
 import { enqueueBackfills } from './backfill-queue';
 import { peekRecentSenders, type RecentSender } from './peek';
 import { imap } from './providers/imap';
+import type { EmailProvider } from './types';
 
 export type UnknownSender = {
   fromAddr: string;
@@ -22,18 +24,31 @@ export type RecentUnknownResult =
   | { ok: true; senders: UnknownSender[] }
   | { ok: false; error: string };
 
+/** Maps an account to the provider that can peek it, or null to skip it.
+ *  Injectable so callers that know about non-IMAP providers (the web app,
+ *  which has @mantle/microsoft) can widen the scan — this package only knows
+ *  IMAP, and a package-level import the other way would be circular. */
+export type PeekProviderResolver = (account: EmailAccount) => EmailProvider | null;
+
+const imapOnly: PeekProviderResolver = (a) => (a.provider === 'imap' ? imap : null);
+
 /**
  * Live-discover senders who recently emailed the owner but aren't yet in their
  * contacts. The result is the cheap header scan (`peekRecentSenders`) across
- * every enabled account, merged and minus anyone the contact gate already
- * allows.
+ * every enabled account `resolveProvider` covers, merged and minus anyone the
+ * contact gate already allows.
  */
 export async function recentUnknownSenders(
   userId: string,
   opts?: { sinceDays?: number; limit?: number },
+  resolveProvider: PeekProviderResolver = imapOnly,
 ): Promise<RecentUnknownResult> {
-  const accounts = await listImapAccounts(userId, { enabledOnly: true });
-  if (accounts.length === 0) return { ok: false, error: 'No IMAP accounts connected.' };
+  const all = await listAccounts(userId);
+  const accounts = all
+    .filter((a) => a.enabled)
+    .map((a) => ({ account: a, provider: resolveProvider(a) }))
+    .filter((x): x is { account: EmailAccount; provider: EmailProvider } => x.provider !== null);
+  if (accounts.length === 0) return { ok: false, error: 'No email accounts connected.' };
 
   const gate = await loadContactGate(userId);
   const sinceDays = opts?.sinceDays ?? 30;
@@ -42,9 +57,9 @@ export async function recentUnknownSenders(
   // Merge distinct senders across accounts, keeping the highest count + latest.
   const merged = new Map<string, RecentSender>();
   let lastErr: string | undefined;
-  for (const account of accounts) {
+  for (const { account, provider } of accounts) {
     try {
-      const senders = await peekRecentSenders(account, imap, { sinceDays, limit: 200 });
+      const senders = await peekRecentSenders(account, provider, { sinceDays, limit: 200 });
       for (const s of senders) {
         const prev = merged.get(s.fromAddr);
         if (prev) {

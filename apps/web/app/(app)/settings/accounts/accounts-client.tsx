@@ -153,18 +153,21 @@ export function AccountsClient() {
             <div>
               <h2 className="text-lg font-semibold">Add IMAP account</h2>
               <p className="text-xs text-muted-foreground">
-                Mantle uses IMAP for every provider — Gmail and Outlook included.
+                Gmail and most providers connect over IMAP with an app password.
               </p>
+            </div>
+            <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+              Microsoft 365 / Outlook.com mailbox? Connect it with OAuth on the{' '}
+              <Link href="/settings/microsoft" className="text-primary underline-offset-2 hover:underline">
+                Microsoft page
+              </Link>{' '}
+              instead — Microsoft has retired app-password IMAP for most accounts.
             </div>
             <ImapForm />
             <p className="text-xs text-muted-foreground">
               Generate an app password (
               <a className="underline" href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer">
                 Google
-              </a>{' '}
-              /{' '}
-              <a className="underline" href="https://account.live.com" target="_blank" rel="noreferrer">
-                Microsoft
               </a>
               ), enable 2FA, then paste it above with the provider&apos;s host (e.g.{' '}
               <code className="font-mono">imap.gmail.com</code>).
@@ -176,20 +179,31 @@ export function AccountsClient() {
               <BackLink href={`/settings/accounts?selected=${selected.id}`}>Back</BackLink>
               <h2 className="text-lg font-semibold">Edit {selected.address}</h2>
             </div>
-            <ImapForm
-              account={{
-                id: selected.id,
-                address: selected.address,
-                displayName: selected.displayName,
-                imapHost: selected.imapHost,
-                imapPort: selected.imapPort,
-                imapSecure: selected.imapSecure,
-                smtpHost: selected.smtpHost,
-                smtpPort: selected.smtpPort,
-                smtpSecure: selected.smtpSecure,
-                firstScanDays: selected.firstScanDays,
-              }}
-            />
+            {selected.provider === 'microsoft' ? (
+              <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                This mailbox is a connected Microsoft account — there&apos;s no IMAP config to edit.
+                Manage it (including the Outlook mail toggle) on the{' '}
+                <Link href="/settings/microsoft" className="text-primary underline-offset-2 hover:underline">
+                  Microsoft page
+                </Link>
+                .
+              </p>
+            ) : (
+              <ImapForm
+                account={{
+                  id: selected.id,
+                  address: selected.address,
+                  displayName: selected.displayName,
+                  imapHost: selected.imapHost,
+                  imapPort: selected.imapPort,
+                  imapSecure: selected.imapSecure,
+                  smtpHost: selected.smtpHost,
+                  smtpPort: selected.smtpPort,
+                  smtpSecure: selected.smtpSecure,
+                  firstScanDays: selected.firstScanDays,
+                }}
+              />
+            )}
           </div>
         ) : mode === 'folders' && selected ? (
           <div className="max-w-2xl space-y-4 p-6">
@@ -337,11 +351,19 @@ function AccountDetail({ account: r, latest }: { account: AccountRow; latest: Sy
       )}
 
       <div className="flex flex-wrap gap-2 border-t border-border pt-3">
-        <Button asChild variant="outline" size="sm">
-          <Link href={`/settings/accounts?selected=${r.id}&mode=edit`}>
-            <Pencil /> Edit account
-          </Link>
-        </Button>
+        {r.provider === 'microsoft' ? (
+          <Button asChild variant="outline" size="sm">
+            <Link href="/settings/microsoft">
+              <SlidersHorizontal /> Manage Microsoft account
+            </Link>
+          </Button>
+        ) : (
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/settings/accounts?selected=${r.id}&mode=edit`}>
+              <Pencil /> Edit account
+            </Link>
+          </Button>
+        )}
         {r.provider === 'imap' && (
           <Button asChild variant="outline" size="sm">
             <Link href={`/settings/accounts?selected=${r.id}&mode=folders`}>

@@ -1033,6 +1033,9 @@ importers:
       '@mantle/files':
         specifier: workspace:*
         version: link:../files
+      '@mantle/microsoft':
+        specifier: workspace:*
+        version: link:../microsoft
       '@mantle/search':
         specifier: workspace:*
         version: link:../search

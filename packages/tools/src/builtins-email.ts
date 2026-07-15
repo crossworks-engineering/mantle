@@ -1,16 +1,19 @@
 /**
- * Email builtin — lets an agent SEND mail from the user's own mailbox via SMTP
- * submission (the provider relays it; we never run our own MTA). The send-enable
- * config lives on `email_accounts` (smtp_host/port/secure); the password is the
- * same app-password already sealed for IMAP. See docs/email-send.md.
+ * Email builtin — lets an agent SEND mail from the user's own mailbox. IMAP
+ * accounts submit over SMTP (the provider relays it; we never run our own
+ * MTA) using smtp_host/port/secure on `email_accounts` + the app-password
+ * already sealed for IMAP. Microsoft companion accounts (`provider=
+ * 'microsoft'`) send via Graph `sendMail` instead, gated on the granted
+ * `Mail.Send` scope. See docs/email-send.md.
  *
  * Gate: requiresConfirm is FALSE (operator choice) — flip it per-row at
  * /settings/tools if injected-send ever becomes a concern.
  */
 
 import { and, desc, eq, gte, or } from 'drizzle-orm';
-import { db, emailAccounts, emails, type EmailAccount } from '@mantle/db';
-import { accountCanSend, sendEmail, type EmailAttachment } from '@mantle/email';
+import { db, emailAccounts, emails, msAccounts, type EmailAccount } from '@mantle/db';
+import { accountCanSend, sendEmail, type SendEmailInput, type SendEmailResult, type EmailAttachment } from '@mantle/email';
+import { msAccountCanSend, sendViaGraph } from '@mantle/microsoft';
 import {
   getPage,
   docToText,
@@ -112,8 +115,35 @@ async function noteContactActivity(
   }
 }
 
+/** True when the account can send: SMTP configured (IMAP accounts), or — for
+ *  a Microsoft companion — the linked ms_account granted `Mail.Send` (accounts
+ *  connected before that scope existed must reconnect to grant it). */
+async function canSendFrom(account: EmailAccount): Promise<boolean> {
+  if (account.provider === 'microsoft') {
+    if (!account.msAccountId) return false;
+    const [ms] = await db
+      .select({ scopes: msAccounts.scopes })
+      .from(msAccounts)
+      .where(eq(msAccounts.id, account.msAccountId))
+      .limit(1);
+    return !!ms && msAccountCanSend(ms.scopes);
+  }
+  return accountCanSend(account);
+}
+
+/** Route a send through the account's transport: Graph `sendMail` for
+ *  Microsoft companions, SMTP submission for everything else. */
+function sendFromAccount(account: EmailAccount, input: SendEmailInput): Promise<SendEmailResult> {
+  return account.provider === 'microsoft' ? sendViaGraph(account, input) : sendEmail(account, input);
+}
+
+const NO_SEND_ACCOUNT_ERROR =
+  'no send-enabled email account found — configure SMTP host/port on an account at ' +
+  '/settings/accounts, or connect a Microsoft account at /settings/microsoft ' +
+  '(if one is already connected, reconnect it to grant the Mail.Send permission)';
+
 /** Pick the account to send from: an explicit `from` address if it matches one
- *  of the user's accounts, else the first enabled account with SMTP configured. */
+ *  of the user's accounts, else the first enabled account that can send. */
 async function resolveSendAccount(
   ownerId: string,
   fromAddr?: string,
@@ -124,16 +154,19 @@ async function resolveSendAccount(
     .where(and(eq(emailAccounts.userId, ownerId), eq(emailAccounts.enabled, true)));
   if (fromAddr) {
     const match = rows.find((r) => r.address.toLowerCase() === fromAddr.toLowerCase());
-    if (match) return accountCanSend(match) ? match : null;
+    if (match) return (await canSendFrom(match)) ? match : null;
   }
-  return rows.find(accountCanSend) ?? null;
+  for (const row of rows) {
+    if (await canSendFrom(row)) return row;
+  }
+  return null;
 }
 
 const email_send: BuiltinToolDef = {
   slug: 'email_send',
   name: 'Send an email',
   description:
-    "Send an email FROM the user's own mailbox via their provider's SMTP. Provide `to`, `subject`, and a plain-text `body`. Optional `cc`/`bcc`, and `from` to choose which of the user's accounts sends it (defaults to the first send-enabled account). Use only when the user explicitly asks to send or email something. The message goes out under the user's real address, so write it accurately and professionally; when relaying research, include the source links in the body. If no account has SMTP configured the call fails with a clear message.",
+    "Send an email FROM the user's own mailbox via their provider (SMTP, or Microsoft Graph for connected Microsoft accounts). Provide `to`, `subject`, and a plain-text `body`. Optional `cc`/`bcc`, and `from` to choose which of the user's accounts sends it (defaults to the first send-enabled account). Use only when the user explicitly asks to send or email something. The message goes out under the user's real address, so write it accurately and professionally; when relaying research, include the source links in the body. If no account can send the call fails with a clear message.",
   // Outward-facing under the user's real address — gated like telegram_send.
   // Operators who trust the flow clear it per-tool in Settings → Tools (the
   // seed never re-asserts the flag on existing rows).
@@ -165,8 +198,7 @@ const email_send: BuiltinToolDef = {
     if (!account) {
       return {
         ok: false,
-        error:
-          'no send-enabled email account found — configure SMTP host/port on an account at /settings/accounts',
+        error: NO_SEND_ACCOUNT_ERROR,
       };
     }
 
@@ -175,7 +207,7 @@ const email_send: BuiltinToolDef = {
     const gate = await allowlistError(ctx.ownerId, to, cc, bcc);
     if (gate) return gate;
     try {
-      const res = await sendEmail(account, {
+      const res = await sendFromAccount(account, {
         to: recipients(to),
         subject,
         text: body,
@@ -212,7 +244,7 @@ const email_page: BuiltinToolDef = {
   slug: 'email_page',
   name: 'Email a page',
   description:
-    "Send one of the user's pages as a richly-formatted HTML email — the page's headings, callouts, columns, tables, lists, highlights, and embedded images all render inline in the recipient's mail client (images are attached inline; a plain-text version is included as a fallback). Provide the page's `pageId` (from page_list) and the recipient `to`. `subject` defaults to the page title. Optional `cc`/`bcc`, `from` (which account sends), and `includeLink` to also mint a public read-only link and add a 'View online' footer. The mail goes out under the user's real address, so only use it when they ask to email or send a page. If no account has SMTP configured the call fails with a clear message.",
+    "Send one of the user's pages as a richly-formatted HTML email — the page's headings, callouts, columns, tables, lists, highlights, and embedded images all render inline in the recipient's mail client (images are attached inline; a plain-text version is included as a fallback). Provide the page's `pageId` (from page_list) and the recipient `to`. `subject` defaults to the page title. Optional `cc`/`bcc`, `from` (which account sends), and `includeLink` to also mint a public read-only link and add a 'View online' footer. The mail goes out under the user's real address, so only use it when they ask to email or send a page. If no account can send the call fails with a clear message.",
   // Outward-facing under the user's real address — same gate as email_send.
   requiresConfirm: true,
   preconditions: [
@@ -251,8 +283,7 @@ const email_page: BuiltinToolDef = {
     if (!account) {
       return {
         ok: false,
-        error:
-          'no send-enabled email account found — configure SMTP host/port on an account at /settings/accounts',
+        error: NO_SEND_ACCOUNT_ERROR,
       };
     }
 
@@ -295,7 +326,7 @@ const email_page: BuiltinToolDef = {
     const cc = strOpt(input.cc);
     const bcc = strOpt(input.bcc);
     try {
-      const res = await sendEmail(account, {
+      const res = await sendFromAccount(account, {
         to: recipients(to),
         subject,
         html,

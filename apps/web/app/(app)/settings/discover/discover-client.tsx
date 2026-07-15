@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Discover unknown senders — a live IMAP scan (nothing persisted) of who's
+ * Discover unknown senders — a live mailbox scan (nothing persisted) of who's
  * recently emailed you but isn't yet a contact, so their mail isn't being
  * ingested. One click promotes a sender to a contact (and backfills 90 days).
  *
@@ -31,8 +31,8 @@ export function DiscoverClient() {
   const toast = useToast();
   const queryClient = useQueryClient();
 
-  // Gate: only enabled IMAP accounts can be scanned (matches the old
-  // listImapAccounts({ enabledOnly: true }) server load).
+  // Gate: any enabled account can be scanned — IMAP directly, Microsoft
+  // companions over Graph (the discover API resolves the provider per row).
   const accountsQuery = useQuery({
     queryKey: ['email', 'accounts'],
     queryFn: () =>
@@ -40,14 +40,14 @@ export function DiscoverClient() {
         (r) => r.accounts,
       ),
   });
-  const hasAccounts = (accountsQuery.data ?? []).some((a) => a.provider === 'imap' && a.enabled);
+  const hasAccounts = (accountsQuery.data ?? []).some((a) => a.enabled);
 
   const scanQuery = useQuery({
     queryKey: ['email', 'discover'],
     queryFn: () =>
       apiFetch<{ ok: true; senders: UnknownSender[] }>('/api/email/discover').then((r) => r.senders),
     enabled: hasAccounts,
-    // A live IMAP read — don't auto-refetch on focus/remount.
+    // A live mailbox read — don't auto-refetch on focus/remount.
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   });
@@ -60,7 +60,7 @@ export function DiscoverClient() {
       }),
     onSuccess: (_res, s) => {
       toast.success(`Added ${s.fromName || s.fromAddr} — backfilling their mail`);
-      // Optimistically drop the row rather than re-running the slow IMAP scan.
+      // Optimistically drop the row rather than re-running the slow mailbox scan.
       queryClient.setQueryData<UnknownSender[]>(['email', 'discover'], (old) =>
         (old ?? []).filter((x) => x.fromAddr !== s.fromAddr),
       );

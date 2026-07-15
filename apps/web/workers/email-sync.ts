@@ -114,9 +114,9 @@ async function main() {
         .where(eq(emailAccounts.id, job.data.accountId))
         .limit(1);
       if (!account) continue;
-      // IMAP-only path; microsoft companion accounts ingest via the microsoft
-      // worker (sender-approval backfill for them is not wired yet — new mail
-      // still flows through the watermark sync).
+      // IMAP-only path; microsoft companion accounts backfill in the microsoft
+      // worker (enqueueBackfill routes their jobs to MS_BACKFILL_QUEUE — this
+      // guard is just a safety net against a mis-routed job).
       if (account.provider !== 'imap') continue;
       const provider = pickProvider(account.provider);
       try {
