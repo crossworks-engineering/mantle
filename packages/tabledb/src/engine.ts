@@ -3,7 +3,7 @@ import { mkdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { storeCell, loadCell, sqlTypeFor } from './cells';
-import type { AggregateKind, Column, ColumnType, Row, TableDocLike, View } from './doc-types';
+import type { AggregateKind, Column, ColumnType, Row, TableDocLike, View, WorkbookDocLike, WorkbookTabDoc } from './doc-types';
 import { createFtsShadow, ftsColumns } from './fts';
 import { dedupe, physicalName, quoteIdent, viewLabel, viewNameForTab } from './names';
 import { openTableFile, sqlQuote, type SqliteDb } from './sqlite';
@@ -70,7 +70,8 @@ export type WriteResult = {
 export type WriteDocMeta = {
   nodeId: string;
   ownerId: string;
-  /** Display name for the single P1 tab (defaults to 'Sheet1'). */
+  /** Display name for the tab when writing a bare TableDocLike (defaults to
+   *  'Sheet1'). Ignored for WorkbookDocLike input — tabs carry their names. */
   tabName?: string;
   /** Build FTS5 trigram shadows (published writes: create/import/commit).
    *  NEVER set for draft rebuilds — ~0.5s at 10k rows vs 23ms without. */
@@ -91,11 +92,28 @@ function hashShape(parts: { tabs: string[]; columns: [string, string][]; rows: s
 /** Structure fingerprint gating the LLM re-summarize pass (plan §6): tab names
  *  + column (name, type) sequence + BUCKETED rowcount — cell edits never
  *  change it; schema edits and order-of-magnitude growth do. */
-export function shapeHashOf(doc: TableDocLike, tabName = 'Sheet1'): string {
+export function shapeHashOf(doc: TableDocLike | WorkbookDocLike, tabName = 'Sheet1'): string {
+  const tabs = asWorkbookTabs(doc, tabName);
   return hashShape({
-    tabs: [tabName],
-    columns: doc.columns.map((c) => [c.name, c.type]),
-    rows: rowBucket(doc.rows.length),
+    tabs: tabs.map((t) => t.name),
+    columns: tabs.flatMap((t) => t.columns.map((c): [string, string] => [c.name, c.type])),
+    rows: rowBucket(tabs.reduce((a, t) => a + t.rows.length, 0)),
+  });
+}
+
+/** Normalize the write shape: a bare TableDocLike becomes a one-tab workbook
+ *  (name from the caller's tabName, id 't1' — byte-identical files to pre-v2.1
+ *  writes). Multi-tab docs get positional ids where absent. */
+export function asWorkbookTabs(doc: TableDocLike | WorkbookDocLike, fallbackTabName = 'Sheet1'): (WorkbookTabDoc & { id: string })[] {
+  const tabs: WorkbookTabDoc[] =
+    'tabs' in doc ? doc.tabs : [{ ...doc, id: 't1', name: fallbackTabName }];
+  if (tabs.length === 0) throw new Error('tabledb: a workbook needs at least one tab');
+  const seen = new Set<string>();
+  return tabs.map((t, i) => {
+    let id = t.id ?? `t${i + 1}`;
+    while (seen.has(id)) id = `${id}_`;
+    seen.add(id);
+    return { ...t, id };
   });
 }
 
@@ -163,12 +181,14 @@ function createTab(
   tabId: string,
   tabName: string,
   plans: ColumnPlan[],
+  opts: { position?: number; viewName?: string } = {},
 ): { physicalTable: string; viewName: string } {
   const physicalTable = physicalName('t', tabId);
-  const viewName = viewNameForTab(tabName);
-  db.prepare(`INSERT INTO _tabs (tab_id, name, position, physical_table, view_name) VALUES (?, ?, 0, ?, ?)`).run(
+  const viewName = opts.viewName ?? viewNameForTab(tabName);
+  db.prepare(`INSERT INTO _tabs (tab_id, name, position, physical_table, view_name) VALUES (?, ?, ?, ?, ?)`).run(
     tabId,
     tabName,
+    opts.position ?? 0,
     physicalTable,
     viewName,
   );
@@ -250,25 +270,32 @@ function writeViewsAndAggregates(db: SqliteDb, tabId: string, doc: TableDocLike)
  * checkpoint, close, atomic rename over `destAbs`. Used by create, import,
  * draft rebuild (P1 autosave), commit promotion, and lazy migration.
  */
-export function writeDocFile(destAbs: string, doc: TableDocLike, meta: WriteDocMeta): WriteResult {
+export function writeDocFile(destAbs: string, doc: TableDocLike | WorkbookDocLike, meta: WriteDocMeta): WriteResult {
   mkdirSync(path.dirname(destAbs), { recursive: true });
+  const tabs = asWorkbookTabs(doc, meta.tabName ?? 'Sheet1');
+  // View names are display-derived and must be unique across the whole file
+  // (they share sqlite's namespace with the physical tables).
+  const viewNames = dedupe(tabs.map((t) => viewNameForTab(t.name)));
   const build = `${destAbs}.build-${process.pid}-${randomUUID().slice(0, 8)}`;
   try {
     const db = openTableFile(build, { mustExist: false });
     try {
-      const tabId = 't1';
-      const tabName = meta.tabName ?? 'Sheet1';
       createSchema(db, meta);
-      const plans = planColumns(doc.columns);
-      const { physicalTable } = createTab(db, tabId, tabName, plans);
-      if (meta.fts) {
-        // Before the bulk insert: the insert trigger populates the index in
-        // the same pass.
-        const wanted = new Set(ftsColumns(doc.columns).map((c) => c.id));
-        createFtsShadow(db, physicalTable, plans.filter((p) => wanted.has(p.col.id)).map((p) => p.physical));
-      }
-      insertRows(db, physicalTable, plans, doc.rows);
-      writeViewsAndAggregates(db, tabId, doc);
+      tabs.forEach((tab, i) => {
+        const plans = planColumns(tab.columns);
+        const { physicalTable } = createTab(db, tab.id, tab.name, plans, {
+          position: i,
+          viewName: viewNames[i]!,
+        });
+        if (meta.fts) {
+          // Before the bulk insert: the insert trigger populates the index in
+          // the same pass.
+          const wanted = new Set(ftsColumns(tab.columns).map((c) => c.id));
+          createFtsShadow(db, physicalTable, plans.filter((p) => wanted.has(p.col.id)).map((p) => p.physical));
+        }
+        insertRows(db, physicalTable, plans, tab.rows);
+        writeViewsAndAggregates(db, tab.id, tab);
+      });
       db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
     } finally {
       db.close();
@@ -279,16 +306,16 @@ export function writeDocFile(destAbs: string, doc: TableDocLike, meta: WriteDocM
     rmSync(`${build}-wal`, { force: true });
     rmSync(`${build}-shm`, { force: true });
   }
-  const tabStats: TabStats = {
-    tabId: 't1',
-    name: meta.tabName ?? 'Sheet1',
-    rows: doc.rows.length,
-    columns: doc.columns.length,
-  };
+  const tabStats: TabStats[] = tabs.map((t) => ({
+    tabId: t.id,
+    name: t.name,
+    rows: t.rows.length,
+    columns: t.columns.length,
+  }));
   return {
     sizeBytes: statSync(destAbs).size,
-    stats: { tabs: [tabStats], totalRows: doc.rows.length },
-    shapeHash: shapeHashOf(doc, tabStats.name),
+    stats: { tabs: tabStats, totalRows: tabStats.reduce((a, t) => a + t.rows, 0) },
+    shapeHash: shapeHashOf(doc, meta.tabName ?? 'Sheet1'),
   };
 }
 
@@ -327,16 +354,52 @@ export type ClippedDoc = {
 /** Like readDocFile but CLIPS instead of throwing: doc.rows carries the first
  *  `maxRows` rows (0 = schema only) and `total`/`clipped` say what was left
  *  behind. The read path for tables past the materialize window. */
-export function readDocClipped(absPath: string, maxRows = MATERIALIZE_MAX): ClippedDoc {
+export function readDocClipped(absPath: string, maxRows = MATERIALIZE_MAX, tabId?: string): ClippedDoc {
   const db = openTableFile(absPath, { readOnly: true });
   try {
-    const tab = db.prepare(`SELECT tab_id, name, physical_table FROM _tabs ORDER BY position LIMIT 1`).get() as
-      | TabRow
-      | undefined;
+    const tab = resolveTabRow(db, tabId);
     if (!tab) return { doc: { columns: [], rows: [], aggregates: {}, views: [] }, total: 0, clipped: false };
     const total = Number(db.prepare(`SELECT count(*) AS n FROM ${tab.physical_table}`).get()?.n ?? 0);
     const doc = readTabDoc(db, tab, Math.min(maxRows, total));
     return { doc, total, clipped: total > maxRows };
+  } finally {
+    db.close();
+  }
+}
+
+/** Resolve a tab by id (or the first tab by position when no id is given).
+ *  Unknown ids throw — a caller naming a tab that isn't there is a bug, not
+ *  a fall-back-to-first situation. */
+function resolveTabRow(db: SqliteDb, tabId?: string): TabRow | undefined {
+  if (tabId === undefined) {
+    return db.prepare(`SELECT tab_id, name, physical_table FROM _tabs ORDER BY position LIMIT 1`).get() as
+      | TabRow
+      | undefined;
+  }
+  const tab = db.prepare(`SELECT tab_id, name, physical_table FROM _tabs WHERE tab_id = ?`).get(tabId) as
+    | TabRow
+    | undefined;
+  if (!tab) throw new Error(`tabledb: no tab '${tabId}' in this workbook`);
+  return tab;
+}
+
+/** Materialize EVERY tab back into docs (whole-workbook read — export, the
+ *  multi-tab commit path). Throws TableTooLargeError when the workbook's
+ *  total row count exceeds `maxRows`. */
+export function readWorkbookDoc(absPath: string, opts: { maxRows?: number } = {}): WorkbookDocLike {
+  const maxRows = opts.maxRows ?? MATERIALIZE_MAX;
+  const db = openTableFile(absPath, { readOnly: true });
+  try {
+    const tabRows = db.prepare(`SELECT tab_id, name, physical_table FROM _tabs ORDER BY position`).all() as unknown as TabRow[];
+    const counts = tabRows.map((t) => Number(db.prepare(`SELECT count(*) AS n FROM ${t.physical_table}`).get()?.n ?? 0));
+    const total = counts.reduce((a, n) => a + n, 0);
+    if (total > maxRows) throw new TableTooLargeError(total, maxRows);
+    const tabs: WorkbookTabDoc[] = tabRows.map((t, i) => ({
+      id: t.tab_id,
+      name: t.name,
+      ...readTabDoc(db, t, counts[i]!),
+    }));
+    return { tabs };
   } finally {
     db.close();
   }
@@ -378,18 +441,16 @@ function readTabDoc(db: SqliteDb, tab: TabRow, limit: number): TableDocLike {
 }
 
 /**
- * Materialize the first (P1: only) tab back into a doc — the UI/back-compat
- * bridge keeping every existing surface working on file-backed tables.
- * Draft-first callers decide WHICH file to read; this reads one file.
+ * Materialize one tab back into a doc (default: the first by position) — the
+ * UI/back-compat bridge keeping every existing surface working on file-backed
+ * tables. Draft-first callers decide WHICH file to read; this reads one file.
  * Throws TableTooLargeError past `maxRows` (default MATERIALIZE_MAX).
  */
-export function readDocFile(absPath: string, opts: { maxRows?: number } = {}): TableDocLike {
+export function readDocFile(absPath: string, opts: { maxRows?: number; tabId?: string } = {}): TableDocLike {
   const maxRows = opts.maxRows ?? MATERIALIZE_MAX;
   const db = openTableFile(absPath, { readOnly: true });
   try {
-    const tab = db.prepare(`SELECT tab_id, name, physical_table FROM _tabs ORDER BY position LIMIT 1`).get() as
-      | TabRow
-      | undefined;
+    const tab = resolveTabRow(db, opts.tabId);
     if (!tab) return { columns: [], rows: [], aggregates: {}, views: [] };
 
     const countRow = db.prepare(`SELECT count(*) AS n FROM ${tab.physical_table}`).get();

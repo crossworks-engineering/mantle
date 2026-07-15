@@ -63,3 +63,13 @@ export type TableDocLike = {
   aggregates?: Record<string, AggregateKind>;
   views?: View[];
 };
+
+/** One tab of a multi-tab workbook doc (v2.1 P1): a TableDocLike plus its tab
+ *  identity. `id` is stable across writes when provided; the writer assigns
+ *  positional ids ('t1', 't2', …) when absent. */
+export type WorkbookTabDoc = TableDocLike & { id?: string; name: string };
+
+/** Multi-tab workbook doc — the generalized write shape. A bare TableDocLike
+ *  is accepted everywhere a WorkbookDocLike is (it normalizes to one tab), so
+ *  every pre-v2.1 caller keeps working unchanged. */
+export type WorkbookDocLike = { tabs: WorkbookTabDoc[] };
