@@ -54,6 +54,12 @@ export type AgentMemoryConfig = {
   /** Responder-only: how many section-level passages (content_chunks) to inject.
    *  Default 3. These carry real passage text, so they're the priciest slice. */
   chunk_limit?: number;
+  /** Responder-only: how many corpus-map entries (titles of the user's pages /
+   *  tables / files / notes / tasks) to inject as a cached "what exists" index.
+   *  Default 300; 0 disables the map. Titles-only lines are cheap (~15-25
+   *  tokens each) and the block rides its own prompt-cache breakpoint, so it
+   *  re-bills only when corpus content actually changes. */
+  corpus_map_limit?: number;
   /** Responder/assistant-only: inject the always-on "who you are" identity
    *  block distilled from the user's Journal (see
    *  @mantle/content buildIdentityContext) into the cached system prompt.

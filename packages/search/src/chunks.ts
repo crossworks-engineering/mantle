@@ -1,14 +1,22 @@
 /**
- * Chunk-level vector retrieval (Phase 4). Where `searchNodes` ranks whole
- * nodes, this finds the most relevant *passage* inside a long page / file /
- * email by cosine distance over `content_chunks.embedding`, joined back to its
- * node for title/type/scope. Caller supplies a precomputed query embedding so
- * this package stays dependency-light (no embeddings dep).
+ * Chunk-level retrieval (Phase 4). Where `searchNodes` ranks whole nodes,
+ * this finds the most relevant *passage* inside a long page / file / email,
+ * joined back to its node for title/type/scope. Caller supplies a precomputed
+ * query embedding so this package stays dependency-light (no embeddings dep).
+ *
+ * Two modes, mirroring `searchNodes`:
+ *  - **hybrid** (when `q` is set): weighted RRF of the salience-adjusted
+ *    vector pool and an FTS pool over `content_chunks.search_tsv`. Vector is
+ *    the spine; FTS is a down-weighted booster that rescues exact-term
+ *    queries — the recall audit caught a coined term present verbatim in 6
+ *    chunks that pure vector search twice declared absent.
+ *  - **vector-only** (no `q`): the original behaviour, unchanged.
  */
-import { and, asc, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, sql, type SQL } from 'drizzle-orm';
 import { contentChunks, db, nodes } from '@mantle/db';
 import { withHnswPool } from './hnsw';
 import { grantUnionFilter, pgArrayLiteral } from './pg';
+import { applyRescueFloor, fuseRrf } from './rrf';
 
 /** Salience down-weight strength (see @mantle/search index). Tunable via env. */
 const SALIENCE_LAMBDA = Number(process.env.MANTLE_SALIENCE_LAMBDA ?? 0.15);
@@ -27,6 +35,18 @@ export type ChunkHit = {
 export type ChunkSearchOptions = {
   ownerId: string;
   embedding: number[];
+  /**
+   * The query TEXT. When set, ranking goes hybrid: weighted RRF of the vector
+   * pool and a full-text pool, so an exact rare token (error code, field name,
+   * coined term) is findable even when it embeds poorly. Without it the
+   * original pure-vector ranking runs — callers that have no query string
+   * (federation's embedding-only wire format) keep their behaviour.
+   */
+  q?: string;
+  /** Vector vs FTS weight in the hybrid blend, 0..1. Default 0.7 — vector-led,
+   *  same rationale as searchNodes (equal-weight fusion regresses; FTS only
+   *  breaks ties / rescues exact-term queries). */
+  semanticWeight?: number;
   /** Restrict to an ltree branch prefix (e.g. "pages"). */
   branch?: string;
   limit?: number;
@@ -54,56 +74,133 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
   const limit = opts.limit ?? 10;
   // Candidate pool for the salience re-rank, same sizing as searchNodes.
   const pool = Math.min(Math.max(limit * 5, 50), 200);
-  const conds = [eq(contentChunks.ownerId, opts.ownerId), isNotNull(contentChunks.embedding)];
-  if (opts.branch) conds.push(sql`${nodes.path} <@ ${opts.branch}::ltree`);
-  if (opts.excludeSystemOrigin) conds.push(sql`(${nodes.data}->>'origin') is distinct from 'system'`);
+  // Node-side scope filters shared by both ranking arms. Embedding presence is
+  // NOT part of the shared scope: the vector arm requires it, but the FTS arm
+  // must still find a chunk whose embed failed (keyword is its only signal).
+  const scope: SQL[] = [eq(contentChunks.ownerId, opts.ownerId)];
+  if (opts.branch) scope.push(sql`${nodes.path} <@ ${opts.branch}::ltree`);
+  if (opts.excludeSystemOrigin) scope.push(sql`(${nodes.data}->>'origin') is distinct from 'system'`);
   if (opts.nodeIds)
-    conds.push(sql`${contentChunks.nodeId} = any(${pgArrayLiteral(opts.nodeIds)}::uuid[])`);
-  if (opts.nodeIdsOrTypes) conds.push(grantUnionFilter(contentChunks.nodeId, opts.nodeIdsOrTypes));
+    scope.push(sql`${contentChunks.nodeId} = any(${pgArrayLiteral(opts.nodeIds)}::uuid[])`);
+  if (opts.nodeIdsOrTypes) scope.push(grantUnionFilter(contentChunks.nodeId, opts.nodeIdsOrTypes));
 
+  const q = opts.q?.trim();
+
+  // ── Vector-only path (no query text): original behaviour, unchanged. ──────
   // Rank by salience-adjusted distance so a bulk/marketing email's passages
   // can't outrank real content; the returned `distance` stays raw cosine. The
   // adjustment is applied by re-ranking an index-eligible bare-distance pool —
   // adjusting the scan's ORDER BY itself would disqualify the HNSW index and
   // full-scan the chunk table at scale (see hnsw.ts). Join filters stay inside
   // the inner query so iterative scan keeps walking until the pool is full.
-  const rows = (await withHnswPool(pool, (tx) =>
+  if (!q) {
+    const conds = [...scope, isNotNull(contentChunks.embedding)];
+    const rows = (await withHnswPool(pool, (tx) =>
+      tx.execute(sql`
+        select node_id, node_title, node_type, ordinal, heading_path, text, dist from (
+          select ${contentChunks.nodeId} as node_id, ${nodes.title} as node_title,
+                 ${nodes.type} as node_type, ${contentChunks.ordinal} as ordinal,
+                 ${contentChunks.headingPath} as heading_path, ${contentChunks.text} as text,
+                 ${nodes.salience} as salience,
+                 ${contentChunks.embedding} <=> ${vec}::vector as dist
+          from ${contentChunks}
+          inner join ${nodes} on ${nodes.id} = ${contentChunks.nodeId}
+          where ${and(...conds)}
+          order by ${contentChunks.embedding} <=> ${vec}::vector
+          limit ${pool}
+        ) c
+        order by dist + ${SALIENCE_LAMBDA} * (1 - salience)
+        limit ${limit}
+      `),
+    )) as unknown as RawChunkRow[];
+    return rows.map(toChunkHit);
+  }
+
+  // ── Hybrid path: fuse the vector pool with an FTS pool via weighted RRF. ──
+  // Same recipe/constants as searchNodes (vector spine, FTS booster). Both
+  // arms return chunk IDs only; the winners are hydrated once, in fused order.
+  const wVec = opts.semanticWeight ?? 0.7;
+  const wFts = 1 - wVec;
+
+  const vectorRows = (await withHnswPool(pool, (tx) =>
     tx.execute(sql`
-      select node_id, node_title, node_type, ordinal, heading_path, text, dist from (
-        select ${contentChunks.nodeId} as node_id, ${nodes.title} as node_title,
-               ${nodes.type} as node_type, ${contentChunks.ordinal} as ordinal,
-               ${contentChunks.headingPath} as heading_path, ${contentChunks.text} as text,
-               ${nodes.salience} as salience,
+      select id from (
+        select ${contentChunks.id} as id, ${nodes.salience} as salience,
                ${contentChunks.embedding} <=> ${vec}::vector as dist
         from ${contentChunks}
         inner join ${nodes} on ${nodes.id} = ${contentChunks.nodeId}
-        where ${and(...conds)}
+        where ${and(...scope, isNotNull(contentChunks.embedding))}
         order by ${contentChunks.embedding} <=> ${vec}::vector
         limit ${pool}
       ) c
       order by dist + ${SALIENCE_LAMBDA} * (1 - salience)
-      limit ${limit}
+      limit ${pool}
     `),
-  )) as unknown as Array<{
-    node_id: string;
-    node_title: string;
-    node_type: string;
-    ordinal: number;
-    heading_path: string | null;
-    text: string;
-    dist: number;
-  }>;
+  )) as unknown as Array<{ id: string }>;
 
-  return rows.map((r) => ({
-    nodeId: r.node_id,
-    nodeTitle: r.node_title,
-    nodeType: r.node_type,
-    ordinal: r.ordinal,
-    headingPath: r.heading_path,
-    text: r.text,
-    distance: r.dist,
-  }));
+  const ftsRows = await db
+    .select({ id: contentChunks.id })
+    .from(contentChunks)
+    .innerJoin(nodes, eq(nodes.id, contentChunks.nodeId))
+    .where(and(...scope, sql`${contentChunks.searchTsv} @@ plainto_tsquery('english', ${q})`))
+    .orderBy(sql`ts_rank(${contentChunks.searchTsv}, plainto_tsquery('english', ${q})) desc`)
+    .limit(pool);
+
+  const ftsIds = ftsRows.map((r) => r.id);
+  const fused = fuseRrf(
+    [
+      { ids: vectorRows.map((r) => r.id), weight: wVec },
+      { ids: ftsIds, weight: wFts },
+    ],
+    limit,
+  );
+  // Down-weighted RRF can't lift an FTS-only hit into a small cut when the
+  // vector pool is full (see applyRescueFloor) — guarantee the top keyword
+  // matches a tail slot so the exact-term rescue actually happens.
+  const topIds = applyRescueFloor(fused, ftsIds, limit);
+  if (topIds.length === 0) return [];
+
+  // Hydrate the winners. `distance` stays raw cosine; an FTS-only rescue whose
+  // embedding is missing reports 1.0 (the "no vector signal" ceiling) so
+  // downstream cutoffs treat it conservatively rather than crashing on null.
+  const hydrated = (await db.execute(sql`
+    select ${contentChunks.id} as id, ${contentChunks.nodeId} as node_id,
+           ${nodes.title} as node_title, ${nodes.type} as node_type,
+           ${contentChunks.ordinal} as ordinal,
+           ${contentChunks.headingPath} as heading_path, ${contentChunks.text} as text,
+           coalesce(${contentChunks.embedding} <=> ${vec}::vector, 1) as dist
+    from ${contentChunks}
+    inner join ${nodes} on ${nodes.id} = ${contentChunks.nodeId}
+    where ${contentChunks.id} = any(${pgArrayLiteral(topIds)}::uuid[])
+  `)) as unknown as Array<RawChunkRow & { id: string }>;
+  const byId = new Map(hydrated.map((r) => [r.id, r]));
+  return topIds
+    .map((id) => byId.get(id))
+    .filter((r): r is RawChunkRow & { id: string } => Boolean(r))
+    .map(toChunkHit);
 }
+
+type RawChunkRow = {
+  node_id: string;
+  node_title: string;
+  node_type: string;
+  ordinal: number;
+  heading_path: string | null;
+  text: string;
+  dist: number;
+};
+
+const toChunkHit = (r: RawChunkRow): ChunkHit => ({
+  nodeId: r.node_id,
+  nodeTitle: r.node_title,
+  nodeType: r.node_type,
+  ordinal: r.ordinal,
+  headingPath: r.heading_path,
+  text: r.text,
+  // postgres-js returns numerics as numbers here, but coalesce(...) can come
+  // back as a string on some driver paths — normalize defensively.
+  distance: typeof r.dist === 'number' ? r.dist : Number(r.dist),
+});
 
 // ─── Section reading (the rung between a passage and the whole file) ──────────
 //

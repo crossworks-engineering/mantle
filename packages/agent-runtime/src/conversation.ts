@@ -40,10 +40,11 @@ import {
   type PersonaNote,
 } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
-import { searchChunks, entityRelationsFor, withHnswPool } from '@mantle/search';
+import { searchChunks, entityRelationsFor, pgArrayLiteral, withHnswPool } from '@mantle/search';
 import type {
   ChunkContextHit,
   ContentHit,
+  CorpusMapEntry,
   Digest,
   FactSnippet,
   HistoryTurn,
@@ -60,6 +61,7 @@ type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type ConversationContext = {
   personaNotes: PersonaNote[];
   facts: FactSnippet[];
+  corpusMap: { entries: CorpusMapEntry[]; truncated: boolean };
   contentHits: ContentHit[];
   chunkHits: ChunkContextHit[];
   relations: RelationLine[];
@@ -107,6 +109,7 @@ export type ContextSnapshot = {
   digests: { count: number; topics: string[] };
   history: { count: number };
   personaNotes: { count: number };
+  corpusMap: { count: number; truncated: boolean };
 };
 
 const SNAP_SNIP = 240;
@@ -152,6 +155,16 @@ export function looksAnaphoricFollowup(text: string): boolean {
  *  lowering this would silently ~double the budget.) A per-agent
  *  memory_config.chunk_limit still overrides this. */
 const CHUNK_LIMIT_DEFAULT = 8;
+
+/** Corpus-map entries injected by default (memory_config.corpus_map_limit
+ *  overrides; 0 disables). Selection is most-recently-updated first, so on a
+ *  brain past the cap it's the ACTIVE corpus that stays mapped. ~300 title
+ *  lines ≈ 4-7k tokens, riding a dedicated prompt-cache breakpoint. */
+const CORPUS_MAP_LIMIT_DEFAULT = 300;
+/** Node types worth mapping — the authored/ingested corpus. Emails and raw
+ *  telegram messages are excluded (huge, conversational); branches are
+ *  structure, not content. */
+const CORPUS_MAP_TYPES = ['page', 'table', 'file', 'note', 'task', 'app'];
 /** Cosine cutoff for a chunk to be worth injecting. Looser than the node cutoff
  *  (0.6): a passage can match tightly on a sub-topic the node summary misses. */
 const CHUNK_CUTOFF = 0.65;
@@ -310,6 +323,7 @@ export async function loadConversationContext(args: {
   // little and recover that whole cluster.
   const contentHitLimit = memoryConfig.content_hit_limit ?? 5;
   const chunkLimit = memoryConfig.chunk_limit ?? CHUNK_LIMIT_DEFAULT;
+  const corpusMapLimit = memoryConfig.corpus_map_limit ?? CORPUS_MAP_LIMIT_DEFAULT;
 
   const personaNotes: PersonaNote[] = (agent.personaNotes ?? []) as PersonaNote[];
 
@@ -565,6 +579,9 @@ export async function loadConversationContext(args: {
     const hits = await searchChunks({
       ownerId,
       embedding: queryVec,
+      // Hybrid arm: the same text the embedding was computed from, so an
+      // exact-term question is rescued by keyword when it embeds poorly.
+      q: enrichedQuery ?? inboundText,
       limit: chunkLimit + 4, // small pool so the cutoff can trim without starving
       excludeSystemOrigin: true,
     });
@@ -591,6 +608,50 @@ export async function loadConversationContext(args: {
       .filter((h) => !selected.includes(h))
       .slice(0, SNAP_DROPPED_CAP)
       .map(toSnapItem);
+  }
+
+  // ─── Corpus map: the cached "what exists" index ─────────────────────────
+  // Not a retrieval — a map. The responder otherwise sees only the ~11 nodes
+  // vector search surfaces per turn and has no idea what else the brain
+  // holds; an audit measured the cost of that blindness (search flailing,
+  // the user hand-attaching context on 43% of turns). One indexed select,
+  // no embedding involved. Ordering here is updated_at DESC purely for cap
+  // SELECTION; presentation sorts by branch/title in the renderer so the
+  // block's bytes stay cache-stable.
+  let corpusMap: { entries: CorpusMapEntry[]; truncated: boolean } = {
+    entries: [],
+    truncated: false,
+  };
+  if (corpusMapLimit > 0) {
+    const rows = await db
+      .select({ id: nodes.id, type: nodes.type, title: nodes.title, path: nodes.path, data: nodes.data })
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.ownerId, ownerId),
+          sql`${nodes.type}::text = any(${pgArrayLiteral(CORPUS_MAP_TYPES)}::text[])`,
+          sql`(${nodes.data}->>'origin') is distinct from 'system'`,
+          sql`not (${nodes.tags} @> ARRAY['conversation-digest']::text[])`,
+        ),
+      )
+      .orderBy(desc(nodes.updatedAt))
+      .limit(corpusMapLimit + 1);
+    const truncated = rows.length > corpusMapLimit;
+    corpusMap = {
+      entries: rows.slice(0, corpusMapLimit).map((r) => {
+        const data = (r.data ?? {}) as Record<string, unknown>;
+        const wantSummary = r.type === 'page' || r.type === 'table';
+        return {
+          nodeId: r.id,
+          type: r.type as string,
+          title: r.title,
+          branch: String(r.path ?? '').split('.')[0] || 'content',
+          summary:
+            wantSummary && typeof data.summary === 'string' ? (data.summary as string) : null,
+        };
+      }),
+      truncated,
+    };
   }
 
   // ─── Entity-anchored expansion: the graph axis ──────────────────────────
@@ -686,7 +747,8 @@ export async function loadConversationContext(args: {
     },
     history: { count: history.length },
     personaNotes: { count: personaNotes.length },
+    corpusMap: { count: corpusMap.entries.length, truncated: corpusMap.truncated },
   };
 
-  return { personaNotes, facts: factRows, contentHits, chunkHits, relations, digests, history, snapshot };
+  return { personaNotes, facts: factRows, corpusMap, contentHits, chunkHits, relations, digests, history, snapshot };
 }

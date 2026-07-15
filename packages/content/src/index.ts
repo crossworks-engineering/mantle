@@ -405,6 +405,12 @@ export {
 } from './export-node';
 
 export { chunkDocText, type DocChunk } from './chunk';
+export {
+  chunkSpreadsheetProfile,
+  hasSheetMarkers,
+  isSpreadsheetTitle,
+} from './chunk-spreadsheet';
+export { fileFamilyKey } from './file-family';
 
 export {
   mentionRefs,

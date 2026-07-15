@@ -225,6 +225,9 @@ const search_chunks: BuiltinToolDef = {
       const hits = await searchChunks({
         ownerId: ctx.ownerId,
         embedding,
+        // Hybrid: the query text feeds the FTS booster arm, so exact rare
+        // tokens (error codes, field names) are findable alongside vector.
+        q,
         branch: strOpt(input.branch),
         limit: num(input.limit, 10),
       });

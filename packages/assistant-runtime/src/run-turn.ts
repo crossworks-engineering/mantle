@@ -512,6 +512,7 @@ export async function runAssistantTurn(
       personaNotes: ctx.personaNotes,
       facts: ctx.facts,
       digests: ctx.digests,
+      corpusMap: ctx.corpusMap,
       contentHits: ctx.contentHits,
       chunkHits: ctx.chunkHits,
       relations: ctx.relations,
