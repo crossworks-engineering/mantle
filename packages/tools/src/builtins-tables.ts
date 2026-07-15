@@ -51,8 +51,10 @@ import {
   type TableDoc,
   type TableDetail,
 } from '@mantle/content';
+import { tableSqlSurface } from '@mantle/content/table-storage';
 import { fileById, readFileById } from '@mantle/files';
 import { parseSheetToGrid, parseTextToGrid } from '@mantle/files/sheet-to-grid';
+import { SQL_ROW_CAP_DEFAULT, SQL_ROW_CAP_MAX, runTableSql } from '@mantle/tabledb';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { notFound } from './errors';
@@ -474,6 +476,67 @@ const table_commit: BuiltinToolDef = {
 
 // ───────────────────────── reads ─────────────────────────
 
+const table_sql: BuiltinToolDef = {
+  slug: 'table_sql',
+  preconditions: TABLE_ID_PRE,
+  name: 'Query a table with SQL',
+  description:
+    "Run one read-only SELECT against a table's SQLite workbook and return columns + rows. This is the row-level lookup path: brain search only carries a table's profile, so when a search or profile points at a table, query the actual rows here. Query the tab's SQL view with double-quoted display names (`table_get`'s `sql` block lists views, columns, and the FTS shadow table). Fuzzy/identifier search: `WHERE <fts_table> MATCH '\"K-101\"'` — **always double-quote MATCH terms** (bare hyphens/dots are FTS syntax errors) — or `LIKE '%term%'`. Reads COMMITTED data only (drafts are invisible). For filter-object reads or edits use `table_query` / the row tools instead.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      table_id: { type: 'string', format: 'uuid', description: "The table's id — from `table_list` / `search_nodes`." },
+      sql: { type: 'string', description: `One SELECT/WITH statement, e.g. SELECT "Status", count(*) FROM "Circuits" GROUP BY "Status".` },
+      max_rows: {
+        type: 'number',
+        description: 'Row cap for the result.',
+        default: SQL_ROW_CAP_DEFAULT,
+        minimum: 1,
+        maximum: SQL_ROW_CAP_MAX,
+      },
+    },
+    required: ['table_id', 'sql'],
+  },
+  handler: async (input, ctx) => {
+    const tableId = str(input.table_id).trim();
+    const sqlText = str(input.sql);
+    if (!tableId || !sqlText.trim()) return { ok: false, error: 'table_id and sql are required' };
+    const surface = await tableSqlSurface(ctx.ownerId, tableId);
+    if (!surface) {
+      return {
+        ok: false,
+        error:
+          `table ${tableId} has no SQL storage yet (it predates sqlite-native tables — any commit converts it). ` +
+          `Use table_query / table_rows_list for it, or commit a draft to upgrade it.`,
+      };
+    }
+    try {
+      const r = await runTableSql(surface.abs, sqlText, {
+        cap: typeof input.max_rows === 'number' ? input.max_rows : undefined,
+      });
+      ctx.step?.setOutput({ table_id: tableId, rows: r.rowCount, truncated: r.truncated });
+      return {
+        ok: true,
+        output: {
+          table_id: tableId,
+          columns: r.columns,
+          rows: r.rows,
+          row_count: r.rowCount,
+          duration_ms: r.durationMs,
+          ...(r.truncated
+            ? {
+                truncated: true,
+                hint: `Result cut at ${r.rowCount} rows — narrow with WHERE, or aggregate (count/GROUP BY) instead of listing.`,
+              }
+            : {}),
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
 const table_list: BuiltinToolDef = {
   slug: 'table_list',
   name: 'List tables',
@@ -528,6 +591,9 @@ const table_get: BuiltinToolDef = {
     const offset = typeof input.offset === 'number' ? Math.max(0, input.offset) : 0;
     const limit = typeof input.limit === 'number' ? input.limit : 50;
     const listed = listRows(doc, { offset, limit });
+    // File-backed tables advertise their SQL surface so table_sql callers
+    // know the view/column/FTS names without guessing.
+    const surface = await tableSqlSurface(ctx.ownerId, id).catch(() => null);
     const aggregates = Object.entries(doc.aggregates ?? {}).map(([colId, kind]) => ({
       column_id: colId,
       column: findColumn(doc, colId)?.name ?? colId,
@@ -549,6 +615,19 @@ const table_get: BuiltinToolDef = {
         limit: listed.limit,
         ...pageMeta(listed.total, listed.offset, listed.rows.length),
         ...(aggregates.length ? { aggregates } : {}),
+        ...(surface
+          ? {
+              sql: {
+                hint: 'Query committed rows with table_sql against these views (double-quote identifiers; MATCH terms in double quotes).',
+                tabs: surface.tabs.map((t) => ({
+                  view: t.viewName,
+                  fts_table: t.ftsTable,
+                  row_count: t.rowCount,
+                  columns: t.columns.map((c) => ({ name: c.name, type: c.type })),
+                })),
+              },
+            }
+          : {}),
       },
     };
   },
@@ -1281,6 +1360,7 @@ export const TABLE_TOOLS: BuiltinToolDef[] = [
   table_commit,
   table_list,
   table_get,
+  table_sql,
   table_rows_list,
   table_row_get,
   table_query,

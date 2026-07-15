@@ -657,6 +657,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'table_list',
       'table_get',
       'table_query',
+      'table_sql',
       'table_rows_list',
       'table_row_get',
       'table_aggregate',

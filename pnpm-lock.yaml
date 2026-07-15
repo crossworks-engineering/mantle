@@ -1057,6 +1057,9 @@ importers:
       '@mantle/storage':
         specifier: workspace:*
         version: link:../storage
+      '@mantle/tabledb':
+        specifier: workspace:*
+        version: link:../tabledb
       '@mantle/telegram':
         specifier: workspace:*
         version: link:../telegram

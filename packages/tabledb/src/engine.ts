@@ -4,6 +4,7 @@ import path from 'node:path';
 
 import { storeCell, loadCell, sqlTypeFor } from './cells';
 import type { AggregateKind, Column, ColumnType, Row, TableDocLike, View } from './doc-types';
+import { createFtsShadow, ftsColumns } from './fts';
 import { dedupe, physicalName, quoteIdent, viewLabel, viewNameForTab } from './names';
 import { openTableFile, sqlQuote, type SqliteDb } from './sqlite';
 
@@ -71,6 +72,9 @@ export type WriteDocMeta = {
   ownerId: string;
   /** Display name for the single P1 tab (defaults to 'Sheet1'). */
   tabName?: string;
+  /** Build FTS5 trigram shadows (published writes: create/import/commit).
+   *  NEVER set for draft rebuilds — ~0.5s at 10k rows vs 23ms without. */
+  fts?: boolean;
 };
 
 /** Structure fingerprint gating the LLM re-summarize pass (plan §6): tab names
@@ -232,6 +236,12 @@ export function writeDocFile(destAbs: string, doc: TableDocLike, meta: WriteDocM
       createSchema(db, meta);
       const plans = planColumns(doc.columns);
       const { physicalTable } = createTab(db, tabId, tabName, plans);
+      if (meta.fts) {
+        // Before the bulk insert: the insert trigger populates the index in
+        // the same pass.
+        const wanted = new Set(ftsColumns(doc.columns).map((c) => c.id));
+        createFtsShadow(db, physicalTable, plans.filter((p) => wanted.has(p.col.id)).map((p) => p.physical));
+      }
       insertRows(db, physicalTable, plans, doc.rows);
       writeViewsAndAggregates(db, tabId, doc);
       db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
@@ -331,6 +341,50 @@ export function readDocFile(absPath: string, opts: { maxRows?: number } = {}): T
       });
 
     return { columns, rows, aggregates, views };
+  } finally {
+    db.close();
+  }
+}
+
+export type WorkbookColumnRef = { name: string; physical: string; type: ColumnType };
+export type WorkbookTabRef = {
+  name: string;
+  viewName: string;
+  physicalTable: string;
+  /** FTS5 trigram shadow over the tab's text columns, or null when absent
+   *  (pre-P2 file or no text columns). MATCH terms need double quotes. */
+  ftsTable: string | null;
+  rowCount: number;
+  columns: WorkbookColumnRef[];
+};
+
+/** The SQL surface of a workbook, for table_sql callers: display-named views,
+ *  physical tables/columns, FTS shadows. */
+export function describeWorkbook(absPath: string): WorkbookTabRef[] {
+  const db = openTableFile(absPath, { readOnly: true });
+  try {
+    const tabs = db.prepare(`SELECT tab_id, name, physical_table, view_name FROM _tabs ORDER BY position`).all();
+    return tabs.map((t) => {
+      const physicalTable = String(t.physical_table);
+      const cols = db
+        .prepare(`SELECT physical, name, type FROM _columns WHERE tab_id = ? AND type != 'formula' ORDER BY position`)
+        .all(String(t.tab_id));
+      const fts = db
+        .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`)
+        .get(`${physicalTable}_fts`);
+      return {
+        name: String(t.name),
+        viewName: String(t.view_name),
+        physicalTable,
+        ftsTable: fts ? `${physicalTable}_fts` : null,
+        rowCount: Number(db.prepare(`SELECT count(*) AS n FROM ${physicalTable}`).get()?.n ?? 0),
+        columns: cols.map((c) => ({
+          name: String(c.name),
+          physical: String(c.physical),
+          type: String(c.type) as ColumnType,
+        })),
+      };
+    });
   } finally {
     db.close();
   }

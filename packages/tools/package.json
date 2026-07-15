@@ -20,6 +20,7 @@
     "@mantle/db": "workspace:*",
     "@mantle/email": "workspace:*",
     "@mantle/embeddings": "workspace:*",
+    "@mantle/tabledb": "workspace:*",
     "@mantle/files": "workspace:*",
     "@mantle/search": "workspace:*",
     "@mantle/storage": "workspace:*",

@@ -56,6 +56,7 @@ import { embed } from '@mantle/embeddings';
 import { diskPathForFile, extOf, mimeForExt, parseDocumentBytes, INGESTABLE_EXTS, parserRouteForExt, extractPdfTextWithPassword, effectiveBrainDepth } from '@mantle/files';
 import { contentKey, getContent } from '@mantle/storage';
 import { parseSheetToGrid } from '@mantle/files/sheet-to-grid';
+import { profileFile, profileToText, resolveStoragePath } from '@mantle/tabledb';
 import { currentTrace, recordIngest, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import {
   chatWithFailover,
@@ -1660,9 +1661,48 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
     },
     async () => {
       const systemPrompt = worker.systemPrompt || DEFAULT_EXTRACTOR_PROMPT;
-      const userPayload = `Title: ${node.title}\nType: ${node.type}\n\nBody:\n${body.slice(0, 8000)}`;
+      // Tables get a targeted L2 brief: the body is already profile + leading
+      // rows (built at commit), so steer the summary toward what the table
+      // contains, per-column meaning, and the questions it can answer.
+      const tableHint =
+        node.type === 'table'
+          ? 'This is a structured data table (its column profile and leading rows follow). Describe what the table contains, what each column means, and what questions it can answer.\n\n'
+          : '';
+      const userPayload = `Title: ${node.title}\nType: ${node.type}\n\n${tableHint}Body:\n${body.slice(0, 8000)}`;
 
-      const parsed = await step(
+      // Shape-hash gate (Tables v2 §6): commitTable KEEPS data.summary when
+      // only cell values changed (schema fingerprint unchanged) and clears it
+      // when the shape changed. A table arriving here WITH a summary is
+      // therefore a cell-edit re-index: reuse the summary, skip the LLM, and
+      // refresh only the deterministic layers (profile chunks + embedding).
+      const reusedTableSummary =
+        node.type === 'table' &&
+        typeof existingData.summary === 'string' &&
+        existingData.summary.trim().length > 0
+          ? existingData.summary
+          : null;
+
+      const parsed = reusedTableSummary
+        ? await step(
+            {
+              name: 'reuse_summary',
+              kind: 'compute',
+              input: { reason: 'table shape unchanged — commit kept the summary; LLM pass skipped' },
+            },
+            async (h) => {
+              const entities = (Array.isArray(existingData.entities) ? existingData.entities : [])
+                .filter((n): n is string => typeof n === 'string')
+                .map((name) => ({ name, kind: 'unknown' }));
+              h.setOutput({ summary_chars: reusedTableSummary.length, entities: entities.length });
+              return {
+                summary: reusedTableSummary,
+                facts: [],
+                entities,
+                relations: [],
+              } as ReturnType<typeof parseExtractorOutput>;
+            },
+          )
+        : await step(
         {
           name: 'llm_extract',
           kind: 'llm_call',
@@ -1815,6 +1855,40 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       // stays readable via file_read (data.text persists above).
       const gridProfile =
         node.type === 'file' && (isSpreadsheetTitle(node.title) || hasSheetMarkers(rawBody));
+      // Tables v2 (§12.1 amendment, 2026-07-15): file-backed tables index
+      // PROFILE-ONLY chunks — the L1 profile per tab plus the L2 overview.
+      // Rows are NEVER embedded (row dumps were 531 passages/16 nodes of the
+      // NATREF chunk pollution); row-level lookup is table_sql's job, and the
+      // first-200-rows text lives only in tables.data_text for list ILIKE.
+      // Legacy JSONB tables keep the old dataText chunking until a commit
+      // converts them to file storage.
+      let tableProfilePieces: { text: string; headingPath?: string }[] | null = null;
+      if (node.type === 'table') {
+        const [reg] = await db
+          .select({ storagePath: tables.storagePath })
+          .from(tables)
+          .where(eq(tables.nodeId, node.id))
+          .limit(1);
+        if (reg?.storagePath) {
+          try {
+            const abs = resolveStoragePath(reg.storagePath);
+            const profileText = profileToText(profileFile(abs), { title: node.title });
+            const sections = profileText.split(/\n(?=## )/);
+            tableProfilePieces = [
+              { text: `${sections[0] ?? ''}\n\nOverview: ${summary}`.trim(), headingPath: 'profile' },
+              ...sections.slice(1).map((s) => ({
+                text: s.trim(),
+                headingPath: `profile > ${(/^## ([^\n—]+)/.exec(s)?.[1] ?? 'tab').trim()}`,
+              })),
+            ].filter((p) => p.text.length > 0);
+          } catch (err) {
+            console.error(
+              `[extractor] table profile failed for ${node.id} — falling back to dataText chunks:`,
+              err,
+            );
+          }
+        }
+      }
       await step(
         {
           name: 'write_chunks',
@@ -1829,9 +1903,11 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
           // returned "success", and the skip guard kept every retry away.
           // Now an embed failure throws (queue retries, old chunks intact)
           // and a crash mid-step can never destroy the previous rebuild.
-          const pieces = gridProfile
-            ? chunkSpreadsheetProfile(rawBody, { fileTitle: node.title })
-            : chunkDocText(rawBody);
+          const pieces =
+            tableProfilePieces ??
+            (gridProfile
+              ? chunkSpreadsheetProfile(rawBody, { fileTitle: node.title })
+              : chunkDocText(rawBody));
           if (pieces.length === 0) {
             await db.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
             h.setOutput({ chunks: 0 });

@@ -5,14 +5,19 @@ import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { db, nodes, tables } from '@mantle/db';
 import {
   ENGINE_VERSION,
+  describeWorkbook,
   draftPathFor,
+  profileFile,
+  profileToText,
   readDocFile,
   resolveStoragePath,
   snapshotFile,
   type WorkbookStats,
+  type WorkbookTabRef,
 } from '@mantle/tabledb';
 
 import { ensureTableDoc, type TableDoc } from './table-model';
+import { tableToText } from './table-to-text';
 
 /**
  * File-side plumbing for sqlite-native tables (Tables v2 P1) — the pieces
@@ -32,15 +37,36 @@ import { ensureTableDoc, type TableDoc } from './table-model';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+export type LockedRegistryRow = {
+  shapeHash: string | null;
+  storagePath: string | null;
+  draftRev: number;
+} | null;
+
 /**
  * Run `fn` while holding SELECT … FOR UPDATE on the table's registry row.
  * Serializes cross-process writers (UI autosave vs agent tool vs migration);
- * the lock releases when the transaction commits/rolls back.
+ * the lock releases when the transaction commits/rolls back. The locked row's
+ * coordination fields are passed to `fn` (null when the sidecar is missing) —
+ * commit uses shapeHash to decide whether the LLM re-summarize is due.
  */
-export async function withTableRegistryLock<T>(nodeId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
+export async function withTableRegistryLock<T>(
+  nodeId: string,
+  fn: (tx: Tx, locked: LockedRegistryRow) => Promise<T>,
+): Promise<T> {
   return db.transaction(async (tx) => {
-    await tx.execute(sql`SELECT node_id FROM tables WHERE node_id = ${nodeId} FOR UPDATE`);
-    return fn(tx);
+    const result = await tx.execute<{ shape_hash: string | null; storage_path: string | null; draft_rev: number }>(
+      sql`SELECT shape_hash, storage_path, draft_rev FROM tables WHERE node_id = ${nodeId} FOR UPDATE`,
+    );
+    const rows = (Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows ?? [])) as {
+      shape_hash: string | null;
+      storage_path: string | null;
+      draft_rev: number;
+    }[];
+    const locked: LockedRegistryRow = rows[0]
+      ? { shapeHash: rows[0].shape_hash, storagePath: rows[0].storage_path, draftRev: Number(rows[0].draft_rev) }
+      : null;
+    return fn(tx, locked);
   });
 }
 
@@ -76,6 +102,47 @@ export function registryFileColumns(res: { sizeBytes: number; stats: WorkbookSta
     shapeHash: res.shapeHash,
     engineVersion: ENGINE_VERSION,
   };
+}
+
+/** The SQL surface of an owned, file-backed table — what table_sql runs
+ *  against and what table_get advertises. Null for legacy JSONB tables
+ *  (any commit converts them). */
+export async function tableSqlSurface(
+  ownerId: string,
+  nodeId: string,
+): Promise<{ abs: string; tabs: WorkbookTabRef[] } | null> {
+  const [row] = await db
+    .select({ storagePath: tables.storagePath })
+    .from(tables)
+    .innerJoin(nodes, eq(nodes.id, tables.nodeId))
+    .where(and(eq(tables.nodeId, nodeId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
+    .limit(1);
+  if (!row?.storagePath) return null;
+  const abs = resolveStoragePath(row.storagePath);
+  return { abs, tabs: describeWorkbook(abs) };
+}
+
+/** How many leading rows land in dataText — list-ILIKE routing for
+ *  identifier-shaped strings ONLY (§12.1 amendment: rows never reach
+ *  content_chunks or embeddings; deep row lookup is table_sql's job). */
+export const DATA_TEXT_ROW_WINDOW = 200;
+
+/**
+ * dataText for a file-backed table (plan §6 L3, as amended): the L1 profile
+ * text + the first 200 rows as markdown with an honest truncation note.
+ * Serves the tables-list ILIKE and the extractor's LLM input; the profile
+ * part is also what write_chunks re-derives per tab.
+ */
+export function buildTableDataText(publishedAbs: string, doc: TableDoc, title: string): string {
+  const profiles = profileFile(publishedAbs);
+  const head = profileToText(profiles, { title });
+  const windowed = doc.rows.length > DATA_TEXT_ROW_WINDOW;
+  const slice = windowed ? { ...doc, rows: doc.rows.slice(0, DATA_TEXT_ROW_WINDOW) } : doc;
+  const rowsMd = tableToText(slice, { title });
+  const note = windowed
+    ? `\n\n(First ${DATA_TEXT_ROW_WINDOW} of ${doc.rows.length} rows shown — query the full data with table_sql.)`
+    : '';
+  return `${head}\n\n${rowsMd}${note}`;
 }
 
 // ── Backup (durability gate 2) ───────────────────────────────────────────────

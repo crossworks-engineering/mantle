@@ -25,18 +25,19 @@ import {
   publishedPath,
   relativeStoragePath,
   resolveStoragePath,
+  shapeHashOf,
   writeDocFile,
   type WorkbookStats,
 } from '@mantle/tabledb';
 import { ensureTableDoc, emptyTableDoc, type TableDoc } from './table-model';
 import {
+  buildTableDataText,
   draftAbsFor,
   loadDocsFromFile,
   registryFileColumns,
   removeTableFile,
   withTableRegistryLock,
 } from './table-storage';
-import { tableToText } from './table-to-text';
 
 export const TABLES_ROOT_LABEL = 'tables';
 
@@ -286,11 +287,11 @@ export async function createTable(
         })
         .returning();
       if (!node) throw new Error('createTable: insert returned no row');
-      const res = writeDocFile(publishedAbs, data, { nodeId: id, ownerId, tabName: TAB_NAME });
+      const res = writeDocFile(publishedAbs, data, { nodeId: id, ownerId, tabName: TAB_NAME, fts: true });
       await tx.insert(tables).values({
         nodeId: node.id,
         data,
-        dataText: tableToText(data, { title: node.title }),
+        dataText: buildTableDataText(publishedAbs, data, node.title),
         ...registryFileColumns(res, relativeStoragePath(ownerId, id)),
       });
       return detailOf(node, data);
@@ -427,33 +428,45 @@ export async function commitTable(
 
   const doc = ensureTableDoc(data);
   guardWholeDoc(doc);
-  const newData = { ...((node.data ?? {}) as Record<string, unknown>) };
-  delete newData.summary;
-  delete newData.summary_model;
-  delete newData.summary_at;
-  delete newData.entities;
-  const dataText = tableToText(doc, { title: node.title });
+  const newShapeHash = shapeHashOf(doc, TAB_NAME);
 
   // Commit under the registry lock (plan §3.3): write the new published file
-  // (build + checkpoint + atomic rename inside writeDocFile), drop the draft
-  // file, then bump version/stats — one serialized step. A legacy JSONB table
-  // converts to file-backed here (commit has the full doc in hand, and the
-  // lock is the same one migration takes, so the two can never fork).
+  // (build + FTS shadows + checkpoint + atomic rename inside writeDocFile),
+  // drop the draft file, then bump version/stats — one serialized step. A
+  // legacy JSONB table converts to file-backed here (commit has the full doc
+  // in hand, and the lock is the same one migration takes, so the two can
+  // never fork).
   const publishedAbs = publishedPath(ownerId, id);
-  const result = await withTableRegistryLock(id, async (tx) => {
+  const result = await withTableRegistryLock(id, async (tx, locked) => {
+    // Shape-hash gate (plan §6): cell-only edits keep the existing summary/
+    // entities — the extractor sees them and skips its LLM pass, refreshing
+    // only the cheap deterministic layers (profile chunks, embedding).
+    // Schema changes (or a first commit) clear them → full re-summarize.
+    // extract_completed_at is always cleared: SOME re-index always runs.
+    const newData = { ...((node.data ?? {}) as Record<string, unknown>) };
+    const shapeUnchanged =
+      locked?.shapeHash != null && locked.shapeHash === newShapeHash && typeof newData.summary === 'string';
+    if (!shapeUnchanged) {
+      delete newData.summary;
+      delete newData.summary_model;
+      delete newData.summary_at;
+      delete newData.entities;
+    }
+    delete newData.extract_completed_at;
+
     const [row] = await tx
       .update(nodes)
       .set({ data: newData, embedding: null, updatedAt: new Date() })
       .where(eq(nodes.id, id))
       .returning();
     if (!row) throw new Error('commitTable: update returned no row');
-    const res = writeDocFile(publishedAbs, doc, { nodeId: id, ownerId, tabName: TAB_NAME });
+    const res = writeDocFile(publishedAbs, doc, { nodeId: id, ownerId, tabName: TAB_NAME, fts: true });
     removeTableFile(draftAbsFor(relativeStoragePath(ownerId, id)));
     await tx
       .update(tables)
       .set({
         data: doc,
-        dataText,
+        dataText: buildTableDataText(publishedAbs, doc, node.title),
         draftData: null,
         draftUpdatedAt: null,
         draftRev: sql`${tables.draftRev} + 1`,
