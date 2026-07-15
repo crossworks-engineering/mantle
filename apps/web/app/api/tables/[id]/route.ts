@@ -10,11 +10,15 @@ const PatchBody = z.object({
   visibility: z.enum(['private', 'public']).optional(),
 });
 
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await ctx.params;
-  const row = await getTable(user.id, id);
+  const tabId = new URL(req.url).searchParams.get('tab') ?? undefined;
+  const row = await getTable(user.id, id, tabId ? { tabId } : {}).catch((err) => {
+    if (err instanceof Error && /no tab/.test(err.message)) return null;
+    throw err;
+  });
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ table: row });
 }

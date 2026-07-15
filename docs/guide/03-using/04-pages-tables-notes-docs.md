@@ -64,14 +64,22 @@ polished page" — and the result renders identically to one you wrote by hand.
 
 **Tables** are a lightweight Airtable/Notion-database: typed columns (text, number,
 currency, date, checkbox, select, formula…), per-row data, **totals**, and
-**formulas** (same-row expressions like `{Qty} * {Price}`). You can **import**
-spreadsheets (`.xlsx`/`.csv`) — each sheet becomes a table.
+**formulas** (same-row expressions like `{Qty} * {Price}`). A table is a
+**workbook** — like Excel, it can hold several **tabs** (worksheets), managed
+from the tab bar above the grid. **Importing** a spreadsheet (`.xlsx`/`.csv`)
+brings every sheet in as a tab of one table.
+
+A **reference column** offers values from another tab's column — set up a
+"Car models" tab once and pick model names from a dropdown everywhere else
+(free text still allowed, like Excel's data validation).
 
 Like Pages, Tables use draft/commit (edits autosave, committing re-indexes), and
-there's an **Assist** panel backed by a tables specialist ("Ledger") that can add
-columns, write formulas, set totals, categorise rows, and tidy data — editing a
-draft you commit when happy. The committed table (including its totals) is indexed,
-so the assistant can answer questions about the data.
+the assistant's tables specialist ("Ledger") can add columns and tabs, write
+formulas, set totals, categorise rows, and tidy data — editing a draft you
+commit when happy. Committed tables are indexed by their *structure* (columns,
+tabs, value profiles), and the assistant queries the actual rows with SQL — so
+it can filter, count, and even join across tabs to answer questions about the
+data at any size.
 
 ## Docs — read-only documentation
 

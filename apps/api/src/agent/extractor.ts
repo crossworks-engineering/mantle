@@ -56,7 +56,7 @@ import { embed } from '@mantle/embeddings';
 import { diskPathForFile, extOf, mimeForExt, parseDocumentBytes, INGESTABLE_EXTS, parserRouteForExt, extractPdfTextWithPassword, effectiveBrainDepth } from '@mantle/files';
 import { contentKey, getContent } from '@mantle/storage';
 import { parseSheetToGrid } from '@mantle/files/sheet-to-grid';
-import { profileFile, profileToText, resolveStoragePath } from '@mantle/tabledb';
+import { describeWorkbook, profileFile, profileToText, resolveStoragePath, schemaDigest, schemaToText } from '@mantle/tabledb';
 import { currentTrace, recordIngest, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import {
   chatWithFailover,
@@ -348,12 +348,13 @@ async function maybeAutoTableSpreadsheet(
   }
   if (sheets.length === 0) return;
 
-  // `sheets` is the flat list of grids — one per sheet, plus extra parts for any
-  // sheet paginated over MAX_GRID_ROWS. Cap total tables created from one upload;
-  // leading grids win, the rest are logged as skipped.
-  const toTable = sheets.slice(0, MAX_AUTO_TABLE_TABLES);
-  const skipped = sheets.length - toTable.length;
-  const multiSheet = new Set(sheets.map((s) => s.name)).size > 1;
+  // One workbook per spreadsheet (v2.1 P2): every usable sheet becomes a TAB
+  // of a single table node — no more sibling-table splitting (the NATREF
+  // sweep's "129 auto-tables" class shrinks by the sheet multiplier). The cap
+  // now bounds TABS per workbook; the vestigial part logic is gone (parts
+  // were never set post-v2).
+  const toTab = sheets.slice(0, MAX_AUTO_TABLE_TABLES);
+  const skipped = sheets.length - toTab.length;
   const base = loaded.filename.replace(/\.(xlsx|xls|csv)$/i, '').trim() || 'Imported table';
   await step(
     {
@@ -362,47 +363,42 @@ async function maybeAutoTableSpreadsheet(
       input: {
         filename: loaded.filename,
         grids: sheets.length,
-        creating: toTable.length,
+        creating: toTab.length,
         skipped,
         sourceFileId: node.id,
       },
     },
     async (h) => {
-      const createdIds: string[] = [];
-      let partedTables = 0;
-      for (const sheet of toTable) {
-        const grid = tableDocFromGrid(sheet);
-        // Skip a grid with no usable tabular data (empty / header-only).
-        if (grid.columns.length === 0 || grid.rows.length === 0) continue;
-        const parted = (sheet.partsTotal ?? 1) > 1;
-        const core = multiSheet ? `${base} — ${sheet.name}` : base;
-        const title = (
-          parted ? `${core} (part ${sheet.part}/${sheet.partsTotal})` : core
-        ).slice(0, 200);
-        const table = await createTable(ownerId, {
-          title,
-          data: grid,
-          tags: ['auto-import'],
-          sourceFileId: node.id,
-        });
-        createdIds.push(table.id);
-        if (parted) partedTables += 1;
-        const partNote = parted ? ` part ${sheet.part}/${sheet.partsTotal}` : '';
-        void recordIngest({
-          source: 'extractor',
-          ownerId,
-          nodeId: table.id,
-          summary: `Auto-imported table from ${loaded.filename} (${sheet.name}${partNote}): ${table.title}`,
-          payload: {
-            via: 'auto_table_on_ingest',
-            sourceFileId: node.id,
-            sheet: sheet.name,
-            ...(parted ? { part: sheet.part, partsTotal: sheet.partsTotal } : {}),
-          },
-        });
+      const tabs = toTab
+        .map((sheet, i) => ({
+          ...tableDocFromGrid(sheet),
+          name: (sheet.name || `Sheet${i + 1}`).slice(0, 100),
+        }))
+        // Skip grids with no usable tabular data (empty / header-only).
+        .filter((t) => t.columns.length > 0 && t.rows.length > 0);
+      if (tabs.length === 0) {
+        h.setMeta({ created: 0, skipped });
+        return [];
       }
-      h.setMeta({ created: createdIds.length, tableIds: createdIds, skipped, partedTables });
-      return createdIds;
+      const table = await createTable(ownerId, {
+        title: base.slice(0, 200),
+        tabs,
+        tags: ['auto-import'],
+        sourceFileId: node.id,
+      });
+      void recordIngest({
+        source: 'extractor',
+        ownerId,
+        nodeId: table.id,
+        summary: `Auto-imported table from ${loaded.filename} (${tabs.length} tab${tabs.length === 1 ? '' : 's'}): ${table.title}`,
+        payload: {
+          via: 'auto_table_on_ingest',
+          sourceFileId: node.id,
+          tabs: tabs.map((t) => t.name),
+        },
+      });
+      h.setMeta({ created: 1, tableIds: [table.id], tabs: tabs.length, skipped });
+      return [table.id];
     },
   );
 }
@@ -1744,6 +1740,55 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
 
       // ─── content_index pass ───────────────────────────────────────────
       const summary = parsed.summary;
+
+      // Tables v2 (§12.1 amendment, 2026-07-15): file-backed tables index
+      // PROFILE-ONLY chunks — the L1 profile per tab plus the L2 overview.
+      // Rows are NEVER embedded (row dumps were 531 passages/16 nodes of the
+      // NATREF chunk pollution); row-level lookup is table_sql's job, and the
+      // first-200-rows text lives only in tables.data_text for list ILIKE.
+      // Legacy JSONB tables keep the old dataText chunking until a commit
+      // converts them to file storage.
+      //
+      // v2.1 P3 adds the SCHEMA layer on top: a data-dictionary chunk (query
+      // surface — tabs, columns, view/FTS names) so retrieval lands on schema
+      // and grounds a table_sql call directly, plus a one-line digest merged
+      // into nodes.data for the corpus map. Computed here, before update_index,
+      // so the digest rides the same jsonb merge as the summary.
+      let tableProfilePieces: { text: string; headingPath?: string }[] | null = null;
+      let tableSchemaDigest: string | null = null;
+      if (node.type === 'table') {
+        const [reg] = await db
+          .select({ storagePath: tables.storagePath })
+          .from(tables)
+          .where(eq(tables.nodeId, node.id))
+          .limit(1);
+        if (reg?.storagePath) {
+          try {
+            const abs = resolveStoragePath(reg.storagePath);
+            const profileText = profileToText(profileFile(abs), { title: node.title });
+            const surface = describeWorkbook(abs);
+            tableSchemaDigest = schemaDigest(surface);
+            const sections = profileText.split(/\n(?=## )/);
+            tableProfilePieces = [
+              { text: `${sections[0] ?? ''}\n\nOverview: ${summary}`.trim(), headingPath: 'profile' },
+              {
+                text: schemaToText(surface, { title: node.title, nodeId: node.id }),
+                headingPath: 'schema',
+              },
+              ...sections.slice(1).map((s) => ({
+                text: s.trim(),
+                headingPath: `profile > ${(/^## ([^\n—]+)/.exec(s)?.[1] ?? 'tab').trim()}`,
+              })),
+            ].filter((p) => p.text.length > 0);
+          } catch (err) {
+            console.error(
+              `[extractor] table profile failed for ${node.id} — falling back to dataText chunks:`,
+              err,
+            );
+          }
+        }
+      }
+
       const allEntityMentions = [
         ...parsed.entities,
         ...parsed.facts.flatMap((f) => f.entities ?? []),
@@ -1797,6 +1842,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
             summary_at: new Date().toISOString(),
             entities: uniqueMentions.map((m) => m.name),
             ...(persistedText ? { text: persistedText } : {}),
+            ...(tableSchemaDigest ? { schemaDigest: tableSchemaDigest } : {}),
           };
           // Conditional on the xmin captured before the LLM call: if anything
           // wrote to this node mid-extract (a user edit being the case that
@@ -1855,40 +1901,6 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       // stays readable via file_read (data.text persists above).
       const gridProfile =
         node.type === 'file' && (isSpreadsheetTitle(node.title) || hasSheetMarkers(rawBody));
-      // Tables v2 (§12.1 amendment, 2026-07-15): file-backed tables index
-      // PROFILE-ONLY chunks — the L1 profile per tab plus the L2 overview.
-      // Rows are NEVER embedded (row dumps were 531 passages/16 nodes of the
-      // NATREF chunk pollution); row-level lookup is table_sql's job, and the
-      // first-200-rows text lives only in tables.data_text for list ILIKE.
-      // Legacy JSONB tables keep the old dataText chunking until a commit
-      // converts them to file storage.
-      let tableProfilePieces: { text: string; headingPath?: string }[] | null = null;
-      if (node.type === 'table') {
-        const [reg] = await db
-          .select({ storagePath: tables.storagePath })
-          .from(tables)
-          .where(eq(tables.nodeId, node.id))
-          .limit(1);
-        if (reg?.storagePath) {
-          try {
-            const abs = resolveStoragePath(reg.storagePath);
-            const profileText = profileToText(profileFile(abs), { title: node.title });
-            const sections = profileText.split(/\n(?=## )/);
-            tableProfilePieces = [
-              { text: `${sections[0] ?? ''}\n\nOverview: ${summary}`.trim(), headingPath: 'profile' },
-              ...sections.slice(1).map((s) => ({
-                text: s.trim(),
-                headingPath: `profile > ${(/^## ([^\n—]+)/.exec(s)?.[1] ?? 'tab').trim()}`,
-              })),
-            ].filter((p) => p.text.length > 0);
-          } catch (err) {
-            console.error(
-              `[extractor] table profile failed for ${node.id} — falling back to dataText chunks:`,
-              err,
-            );
-          }
-        }
-      }
       await step(
         {
           name: 'write_chunks',

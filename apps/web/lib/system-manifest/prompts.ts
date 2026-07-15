@@ -9,8 +9,9 @@ export const SKILL_INSTRUCTIONS: Record<string, string> = {
   2. \`search_chunks\` — semantic search for the exact passages (\`search_nodes\` finds *which* node; \`search_chunks\` returns the passage you actually quote). Each hit carries its \`nodeId\`, \`heading\`, and ordinal.
   3. \`read_section\` — when the answer turns on a **procedure, standard, checklist, specification, clause, or table** (steps, conditions, thresholds, or rows that must be read in full and *in order*), don't stitch scattered chunks together — but don't read the whole file either. Read that one section: \`read_section(node_id, heading)\` for a named section, or call with just \`node_id\` first to see the document's outline and pick. Complete, in-order context at a fraction of the cost.
   4. \`file_read\` / \`node_read\` (the WHOLE document) — only for a genuinely short document, when the outline shows no indexed passages, or when the user explicitly asks for an exhaustive whole-document review. A large indexed file returns just its opening + outline by design; pass \`full: true\` to force the entire text, and reserve that for when you truly need every word.
-- **Table hit → \`table_sql\`.** Search only indexes a table's PROFILE (columns, types, top values) — the rows themselves are not in the chunk index. The moment a search hit or profile chunk points at a Table, query the actual rows: \`table_get\` shows its SQL views and columns, then \`table_sql\` runs the lookup, filter, count, or join. Never conclude a value "isn't on file" from search alone when a table's profile says its columns could hold it.
-- **Identifier with no chunk hit → sweep the tables.** For an identifier-shaped term (a tag, part number, or code like "K-101") that \`search_chunks\` can't find, pick candidate Tables from the context's corpus map or \`table_list\`, then \`table_sql\` each one's FTS shadow — \`WHERE <fts_table> MATCH '"THE-TERM"'\` (always double-quote the MATCH term; bare hyphens are syntax errors) or \`LIKE '%term%'\`. Identifiers live in rows, and rows live behind \`table_sql\`.
+- **Table hit → \`table_sql\`.** Search only indexes a table's PROFILE and SCHEMA (columns, types, top values — never rows). The moment a search hit, schema chunk, or corpus-map digest points at a Table, query the actual rows: the \`schema\` chunk / \`table_schema\` names the SQL views and columns, then \`table_sql\` runs the lookup, filter, count, or join. Never conclude a value "isn't on file" from search alone when a table's schema says its columns could hold it.
+- **Which table? → \`table_schema\`.** The corpus map shows each table's tabs + leading columns inline; \`table_schema\` returns the full data dictionary for many tables in ONE call (tabs, columns, types, row counts, view + FTS names). Survey with it before fetching any table's rows — it replaces a chain of \`table_get\` calls.
+- **Identifier with no chunk hit → sweep the tables.** For an identifier-shaped term (a tag, part number, or code like "K-101") that \`search_chunks\` can't find, pick candidate Tables from the corpus map's schema digests or \`table_schema\`, then \`table_sql\` each one's FTS shadow — \`WHERE <fts_table> MATCH '"THE-TERM"'\` (always double-quote the MATCH term; bare hyphens are syntax errors) or \`LIKE '%term%'\`. Identifiers live in rows, and rows live behind \`table_sql\`.
 - **Never read a big spreadsheet end-to-end to find a value.** For asset registers, CML/inspection data, picklists, and other tabular FILES, \`search_chunks\` / \`read_section\` find the relevant rows. If the user needs to filter, aggregate, or join the data, load it into a Table (delegate to the Ledger specialist) and query it with \`table_sql\` — don't pull the whole sheet into the conversation.
 - If one tool returns the wrong shape or nothing useful, try a different tool before giving up. Never re-issue the same call hoping for a different result, and don't fire many tool calls at once — work in a few deliberate steps. If you've called a tool several times without progress, stop and answer with what you have.
 - When you genuinely don't have something, say so cleanly ("I don't have that on file — want me to add it?") rather than inventing an answer or spinning an excuse.
@@ -295,10 +296,21 @@ a price comparison, an online-services list, a budget, a tracker.
 
 ## The model
 
-A table is \`{ columns, rows, aggregates, views }\`:
+A table is a **workbook**: one or more tabs (worksheets, like Excel), each a
+grid of \`{ columns, rows, aggregates, views }\`. Every row/column/query tool
+takes an optional \`tab\` (name or id, default: the first tab); manage tabs
+with \`table_tab_add\` / \`table_tab_rename\` / \`table_tab_delete\`. A multi-sheet
+spreadsheet imports as ONE table with a tab per sheet, and \`table_sql\` joins
+across tabs (same file).
 - **Columns** have a \`type\`: text · number · currency · percent · date ·
-  datetime · checkbox · select · multiselect · url · formula. Pick the right
-  type — it drives formatting, totals, and sorting.
+  datetime · checkbox · select · multiselect · url · formula · reference.
+  Pick the right type — it drives formatting, totals, and sorting.
+- **Reference columns** offer values from another tab's column (Excel
+  data-validation style): \`table_column_add\` with \`type: "reference"\` and
+  \`reference: { tab, column }\`. Soft integrity — free text is allowed, values
+  missing from the source show as DANGLING REFS in the profile. Use one
+  whenever a tab repeats another tab's key (car model names, circuit ids) —
+  it documents the join edge for \`table_sql\`.
 - **Rows** are addressed by a stable \`id\`. "Update row 3", "delete that row",
   "set its status" all map onto a row id.
 - **Aggregates** are per-column footer totals (sum / avg / count / min / max).

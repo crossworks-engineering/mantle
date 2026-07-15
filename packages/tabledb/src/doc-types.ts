@@ -18,13 +18,20 @@ export type ColumnType =
   | 'select'
   | 'multiselect'
   | 'url'
-  | 'formula';
+  | 'formula'
+  | 'reference';
 
 export type CellValue = string | number | boolean | string[] | null;
 
 export type SelectOption = { id: string; label: string; color?: string };
 
 export type ColumnFormat = { currency?: string; decimals?: number };
+
+/** Cross-tab reference target (type='reference', v2.1 P4): the cell offers /
+ *  stores VALUES from another tab's column, Excel data-validation style —
+ *  soft integrity (free text allowed, dangling values flagged in the
+ *  profile), same workbook only. */
+export type ColumnRef = { tabId: string; columnId: string };
 
 export type Column = {
   id: string;
@@ -34,6 +41,7 @@ export type Column = {
   options?: SelectOption[];
   formula?: string;
   width?: number;
+  ref?: ColumnRef;
 };
 
 export type Row = { id: string; cells: Record<string, CellValue> };
@@ -63,3 +71,13 @@ export type TableDocLike = {
   aggregates?: Record<string, AggregateKind>;
   views?: View[];
 };
+
+/** One tab of a multi-tab workbook doc (v2.1 P1): a TableDocLike plus its tab
+ *  identity. `id` is stable across writes when provided; the writer assigns
+ *  positional ids ('t1', 't2', …) when absent. */
+export type WorkbookTabDoc = TableDocLike & { id?: string; name: string };
+
+/** Multi-tab workbook doc — the generalized write shape. A bare TableDocLike
+ *  is accepted everywhere a WorkbookDocLike is (it normalizes to one tab), so
+ *  every pre-v2.1 caller keeps working unchanged. */
+export type WorkbookDocLike = { tabs: WorkbookTabDoc[] };

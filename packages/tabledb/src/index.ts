@@ -6,11 +6,13 @@ export {
   MATERIALIZE_MAX,
   SCHEMA_VERSION,
   TableTooLargeError,
+  asWorkbookTabs,
   describeWorkbook,
   fileStats,
   importMaxRows,
   readDocClipped,
   readDocFile,
+  readWorkbookDoc,
   shapeHashOf,
   shapeHashOfFile,
   snapshotFile,
@@ -29,6 +31,7 @@ export type {
 export { ftsTableName, quoteFtsTerm } from './fts';
 export { profileFile, profileToText, sampleRows } from './profile';
 export type { ColumnProfile, TabProfile } from './profile';
+export { schemaDigest, schemaToText } from './schema';
 export {
   SQL_ROW_CAP_DEFAULT,
   SQL_ROW_CAP_MAX,
@@ -44,6 +47,7 @@ export {
   aggregateWindow,
   compileFilters,
   compileSort,
+  distinctColumnValues,
   listRowsWindow,
   queryRowsWindow,
   readRowById,
@@ -71,4 +75,6 @@ export type {
   Row,
   TableDocLike,
   View,
+  WorkbookDocLike,
+  WorkbookTabDoc,
 } from './doc-types';

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { loadCell, storeCell, sqlTypeFor } from './cells';
 import type { AggregateKind, CellValue, Column, ColumnType, View } from './doc-types';
 import { createFtsShadow, ftsColumns, ftsTableName } from './fts';
-import { dedupe, physicalName, quoteIdent, viewLabel } from './names';
+import { dedupe, physicalName, quoteIdent, viewLabel, viewNameForTab } from './names';
 import { openTableFile, type SqliteDb } from './sqlite';
 
 /**
@@ -22,16 +22,36 @@ import { openTableFile, type SqliteDb } from './sqlite';
  */
 
 export type TableOp =
-  | { op: 'row_add'; rowId?: string; cells?: Record<string, CellValue>; afterRowId?: string | null }
-  | { op: 'row_update'; rowId: string; cells: Record<string, CellValue> }
-  | { op: 'row_delete'; rowId: string }
-  | { op: 'cell_set'; rowId: string; columnId: string; value: CellValue }
-  | { op: 'column_add'; column: Omit<Column, 'id'> & { id?: string }; afterColumnId?: string | null }
-  | { op: 'column_update'; columnId: string; patch: Partial<Omit<Column, 'id'>> }
-  | { op: 'column_delete'; columnId: string }
-  | { op: 'aggregate_set'; columnId: string; kind: AggregateKind }
-  | { op: 'view_set'; view: View }
-  | { op: 'select_option_add'; columnId: string; label: string };
+  | { op: 'row_add'; tabId?: string; rowId?: string; cells?: Record<string, CellValue>; afterRowId?: string | null; atStart?: boolean }
+  | { op: 'row_update'; tabId?: string; rowId: string; cells: Record<string, CellValue> }
+  | { op: 'row_delete'; tabId?: string; rowId: string }
+  | { op: 'cell_set'; tabId?: string; rowId: string; columnId: string; value: CellValue }
+  | { op: 'column_add'; tabId?: string; column: Omit<Column, 'id'> & { id?: string }; afterColumnId?: string | null }
+  | { op: 'column_update'; tabId?: string; columnId: string; patch: ColumnPatch }
+  | { op: 'column_delete'; tabId?: string; columnId: string }
+  | { op: 'aggregate_set'; tabId?: string; columnId: string; kind: AggregateKind }
+  | { op: 'view_set'; tabId?: string; view: View }
+  | { op: 'select_option_add'; tabId?: string; columnId: string; label: string }
+  // Tab CRUD (v2.1 P1). For these, tabId IS the target (required except add).
+  | { op: 'tab_add'; tabId?: string; name: string; afterTabId?: string | null }
+  | { op: 'tab_rename'; tabId: string; name: string }
+  | { op: 'tab_reorder'; tabId: string; afterTabId?: string | null }
+  | { op: 'tab_delete'; tabId: string };
+
+/** column_update patch: `undefined` (key absent) = keep, explicit `null` =
+ *  CLEAR. JSON transport drops undefined keys, so a differ signalling "this
+ *  property was removed" must send null — `Partial<Column>` couldn't say it
+ *  (audit: width/format/options/formula/ref clears from the grid were
+ *  silently lost). name/type are never clearable. */
+export type ColumnPatch = {
+  name?: string;
+  type?: ColumnType;
+  format?: Column['format'] | null;
+  options?: Column['options'] | null;
+  formula?: string | null;
+  width?: number | null;
+  ref?: Column['ref'] | null;
+};
 
 export type CoerceFn = (value: unknown, type: ColumnType) => CellValue;
 
@@ -63,12 +83,88 @@ function firstTab(db: SqliteDb): TabRow {
   return tab;
 }
 
+/** Resolve an op's target tab: explicit tabId, else the first tab (the
+ *  pre-v2.1 contract every existing caller relies on). Unknown ids throw. */
+function resolveTab(db: SqliteDb, tabId?: string): TabRow {
+  if (tabId === undefined) return firstTab(db);
+  const tab = db.prepare(`SELECT tab_id, name, physical_table, view_name FROM _tabs WHERE tab_id = ?`).get(tabId) as
+    | TabRow
+    | undefined;
+  if (!tab) throw new Error(`tabledb ops: no tab '${tabId}' in this workbook`);
+  return tab;
+}
+
+/** A view name unique across the file (case-insensitive vs other tabs' views
+ *  AND everything else in sqlite_master — views share the namespace with the
+ *  physical `t_*` tables and FTS shadows, so a tab literally named like one
+ *  must suffix instead of failing the whole batch). */
+function uniqueViewName(db: SqliteDb, wanted: string, excludeTabId?: string): string {
+  const tabRows = db.prepare(`SELECT tab_id, view_name FROM _tabs`).all() as unknown as {
+    tab_id: string;
+    view_name: string;
+  }[];
+  const allViewNames = new Set(tabRows.map((t) => t.view_name.toLowerCase()));
+  const taken = new Set(
+    tabRows.filter((t) => t.tab_id !== excludeTabId).map((t) => t.view_name.toLowerCase()),
+  );
+  const master = db.prepare(`SELECT name FROM sqlite_master WHERE type IN ('table', 'view')`).all() as unknown as {
+    name: string;
+  }[];
+  for (const m of master) {
+    const n = m.name.toLowerCase();
+    // Tab view names are handled above (the excluded tab's own view must stay
+    // claimable on rename-to-self); everything else in master is reserved.
+    if (!allViewNames.has(n)) taken.add(n);
+  }
+  let name = wanted;
+  let n = 2;
+  while (taken.has(name.toLowerCase())) name = `${wanted}_${n++}`;
+  return name;
+}
+
 function columnsOf(db: SqliteDb, tabId: string): ColRow[] {
+  // SELECT * — pre-v2.1 files have no ref_json column; missing fields read as
+  // undefined instead of erroring.
   return db
-    .prepare(
-      `SELECT tab_id, col_id, physical, name, type, options_json, position FROM _columns WHERE tab_id = ? ORDER BY position`,
-    )
+    .prepare(`SELECT * FROM _columns WHERE tab_id = ? ORDER BY position`)
     .all(tabId) as unknown as ColRow[];
+}
+
+/** Lazy in-file upgrade: drafts copied from pre-v2.1 published files lack the
+ *  ref_json column — add it before ops run (idempotent, cheap PRAGMA check). */
+function ensureRefColumn(db: SqliteDb): void {
+  const cols = db.prepare(`PRAGMA table_info(_columns)`).all() as unknown as { name: string }[];
+  if (!cols.some((c) => c.name === 'ref_json')) {
+    db.exec(`ALTER TABLE _columns ADD COLUMN ref_json TEXT`);
+  }
+}
+
+/** type='reference' columns must point at an EXISTING (tab, column) in this
+ *  workbook — never cross-file (ATTACH is denied in table_sql by design) and
+ *  never at themselves. */
+function validateRef(db: SqliteDb, ref: unknown, selfColId?: string): { tabId: string; columnId: string } {
+  const r = (ref ?? {}) as { tabId?: unknown; columnId?: unknown };
+  const tabId = String(r.tabId ?? '');
+  const columnId = String(r.columnId ?? '');
+  if (!tabId || !columnId) throw new Error('tabledb ops: a reference column needs ref {tabId, columnId}');
+  if (columnId === selfColId) throw new Error('tabledb ops: a reference column cannot reference itself');
+  const hit = db
+    .prepare(`SELECT type FROM _columns WHERE tab_id = ? AND col_id = ?`)
+    .get(tabId, columnId) as { type?: string } | undefined;
+  if (!hit) throw new Error(`tabledb ops: reference target ${tabId}/${columnId} does not exist in this workbook`);
+  if (hit.type === 'formula') throw new Error('tabledb ops: a reference column cannot target a formula column');
+  return { tabId, columnId };
+}
+
+/** Drop a tab's FTS shadow + triggers when present. Ops normally run on
+ *  DRAFT files (shadows already stripped by ensureDraftFile), but column DDL
+ *  against a shadow-carrying file breaks inside the triggers — drop first,
+ *  defensively; finalizePublishedFile rebuilds shadows on promote. */
+function dropFtsShadow(db: SqliteDb, tab: TabRow): void {
+  db.exec(`DROP TRIGGER IF EXISTS ${tab.physical_table}_fts_ai`);
+  db.exec(`DROP TRIGGER IF EXISTS ${tab.physical_table}_fts_ad`);
+  db.exec(`DROP TRIGGER IF EXISTS ${tab.physical_table}_fts_au`);
+  db.exec(`DROP TABLE IF EXISTS ${ftsTableName(tab.physical_table)}`);
 }
 
 /** Recreate the display-named SQL view from the current _columns (after any
@@ -128,7 +224,20 @@ function renumberPositions(db: SqliteDb, physicalTable: string): void {
   `);
 }
 
-function posForInsert(db: SqliteDb, physicalTable: string, afterRowId?: string | null): number {
+function posForInsert(db: SqliteDb, physicalTable: string, afterRowId?: string | null, atStart?: boolean): number {
+  if (atStart) {
+    // Explicit front insert (the differ's "new first row"). `afterRowId:
+    // null/undefined` must stay append — the tool path depends on it.
+    const row = db.prepare(`SELECT min(_pos) AS m FROM ${physicalTable}`).get();
+    const min = row?.m == null ? null : Number(row.m);
+    if (min == null) return 1;
+    const mid = min / 2;
+    if (min < POS_EPSILON || mid <= 0 || mid >= min) {
+      renumberPositions(db, physicalTable);
+      return posForInsert(db, physicalTable, afterRowId, true);
+    }
+    return mid;
+  }
   if (!afterRowId) {
     const row = db.prepare(`SELECT max(_pos) AS m FROM ${physicalTable}`).get();
     return Number(row?.m ?? 0) + 1;
@@ -152,7 +261,9 @@ function posForInsert(db: SqliteDb, physicalTable: string, afterRowId?: string |
   return mid;
 }
 
-function applyOne(db: SqliteDb, tab: TabRow, op: TableOp, coerce: CoerceFn): string | null {
+type NonTabOp = Exclude<TableOp, { op: `tab_${string}` }>;
+
+function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): string | null {
   const cols = columnsOf(db, tab.tab_id);
   const byId = new Map(cols.map((c) => [c.col_id, c]));
   const table = tab.physical_table;
@@ -174,7 +285,7 @@ function applyOne(db: SqliteDb, tab: TabRow, op: TableOp, coerce: CoerceFn): str
   switch (op.op) {
     case 'row_add': {
       const rowId = op.rowId ?? randomUUID();
-      const pos = posForInsert(db, table, op.afterRowId);
+      const pos = posForInsert(db, table, op.afterRowId, op.atStart === true);
       db.prepare(`INSERT INTO ${table} (_rid, _pos) VALUES (?, ?)`).run(rowId, pos);
       if (op.cells && Object.keys(op.cells).length > 0) setCells(rowId, op.cells, true);
       return rowId;
@@ -206,9 +317,10 @@ function applyOne(db: SqliteDb, tab: TabRow, op: TableOp, coerce: CoerceFn): str
           anchor.position,
         );
       }
+      const ref = op.column.type === 'reference' ? validateRef(db, op.column.ref, colId) : null;
       db.prepare(
-        `INSERT INTO _columns (tab_id, col_id, physical, name, type, format_json, options_json, formula_src, width, position)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO _columns (tab_id, col_id, physical, name, type, format_json, options_json, formula_src, width, position, ref_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         tab.tab_id,
         colId,
@@ -220,8 +332,10 @@ function applyOne(db: SqliteDb, tab: TabRow, op: TableOp, coerce: CoerceFn): str
         op.column.formula ?? null,
         op.column.width ?? null,
         position,
+        ref ? JSON.stringify(ref) : null,
       );
       if (op.column.type !== 'formula') {
+        dropFtsShadow(db, tab);
         db.exec(`ALTER TABLE ${table} ADD COLUMN ${physical} ${sqlTypeFor(op.column.type)}`);
       }
       rebuildView(db, tab);
@@ -232,16 +346,30 @@ function applyOne(db: SqliteDb, tab: TabRow, op: TableOp, coerce: CoerceFn): str
       if (!col) return null; // mirror updateColumn's silent no-op on unknown id
       const patch = op.patch;
       const nextType = (patch.type ?? col.type) as ColumnType;
+      if (patch.ref !== undefined || (patch.type === 'reference' && col.type !== 'reference')) {
+        // Becoming (or re-pointing) a reference needs a valid same-workbook
+        // target; retyping AWAY from reference clears the edge below.
+        const ref = nextType === 'reference' ? validateRef(db, patch.ref, op.columnId) : null;
+        db.prepare(`UPDATE _columns SET ref_json = ? WHERE tab_id = ? AND col_id = ?`).run(
+          ref ? JSON.stringify(ref) : null,
+          tab.tab_id,
+          op.columnId,
+        );
+      } else if (patch.type && patch.type !== 'reference' && col.type === 'reference') {
+        db.prepare(`UPDATE _columns SET ref_json = NULL WHERE tab_id = ? AND col_id = ?`).run(tab.tab_id, op.columnId);
+      }
+      // `null` = explicit CLEAR (JSON drops undefined keys, so the differ
+      // signals property removal with null); absent key = keep current.
       db.prepare(
         `UPDATE _columns SET name = ?, type = ?, format_json = ?, options_json = ?, formula_src = ?, width = ?
          WHERE tab_id = ? AND col_id = ?`,
       ).run(
         patch.name ?? col.name,
         nextType,
-        patch.format !== undefined ? JSON.stringify(patch.format) : (db
+        patch.format !== undefined ? (patch.format ? JSON.stringify(patch.format) : null) : (db
           .prepare(`SELECT format_json FROM _columns WHERE tab_id = ? AND col_id = ?`)
           .get(tab.tab_id, op.columnId)?.format_json as string | null) ?? null,
-        patch.options !== undefined ? JSON.stringify(patch.options) : col.options_json,
+        patch.options !== undefined ? (patch.options ? JSON.stringify(patch.options) : null) : col.options_json,
         patch.formula !== undefined ? patch.formula : (db
           .prepare(`SELECT formula_src FROM _columns WHERE tab_id = ? AND col_id = ?`)
           .get(tab.tab_id, op.columnId)?.formula_src as string | null) ?? null,
@@ -251,13 +379,28 @@ function applyOne(db: SqliteDb, tab: TabRow, op: TableOp, coerce: CoerceFn): str
         tab.tab_id,
         op.columnId,
       );
+      const typeChanged = patch.type !== undefined && patch.type !== col.type;
+      // Formula columns have NO physical column, so a retype across the
+      // formula boundary is DDL, not a value rewrite — without it _columns
+      // points at a column that doesn't exist and every subsequent read of
+      // the file throws (audit: formula→text bricked the workbook).
+      if (typeChanged && col.type === 'formula' && nextType !== 'formula') {
+        dropFtsShadow(db, tab);
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${col.physical} ${sqlTypeFor(nextType)}`);
+      } else if (typeChanged && col.type !== 'formula' && nextType === 'formula') {
+        // Doc semantics: formula cells are never stored — drop the values
+        // with the column (the view depends on it; drop that first).
+        dropFtsShadow(db, tab);
+        db.exec(`DROP VIEW IF EXISTS ${quoteIdent(tab.view_name)}`);
+        db.exec(`ALTER TABLE ${table} DROP COLUMN ${col.physical}`);
+      }
       // Type change: re-coerce through the SAME coerce fn the doc path uses,
       // FROM THE DOC-SHAPED VALUE (loadCell first) — coercing the raw SQL
       // storage form diverged (checkbox stored 0/1 retyped to text became
       // '1' instead of 'true'; multiselect JSON became '["a","b"]' instead
-      // of 'a,b' — audit finding 3). SQLite is dynamically typed, so no DDL;
-      // values rewrite in place.
-      if (patch.type && patch.type !== col.type && col.type !== 'formula' && patch.type !== 'formula') {
+      // of 'a,b' — audit finding 3). Stored↔stored needs no DDL (SQLite is
+      // dynamically typed); values rewrite in place.
+      if (typeChanged && col.type !== 'formula' && nextType !== 'formula') {
         const rows = db.prepare(`SELECT _rid, ${col.physical} AS v FROM ${table} WHERE ${col.physical} IS NOT NULL`).all();
         const upd = db.prepare(`UPDATE ${table} SET ${col.physical} = ? WHERE _rid = ?`);
         for (const r of rows) {
@@ -265,7 +408,9 @@ function applyOne(db: SqliteDb, tab: TabRow, op: TableOp, coerce: CoerceFn): str
           upd.run(storeCell(coerce(docValue, nextType), nextType), String(r._rid));
         }
       }
-      if (patch.name && patch.name !== col.name) rebuildView(db, tab);
+      // Rename relabels the view; a type change across the formula boundary
+      // changes which columns it projects.
+      if ((patch.name && patch.name !== col.name) || typeChanged) rebuildView(db, tab);
       return null;
     }
     case 'column_delete': {
@@ -276,6 +421,8 @@ function applyOne(db: SqliteDb, tab: TabRow, op: TableOp, coerce: CoerceFn): str
       if (col.type !== 'formula') {
         // The display view references the column — drop it BEFORE the column
         // (SQLite refuses to drop a column a view depends on), then rebuild.
+        // FTS triggers reference it too (draft files carry none; defensive).
+        dropFtsShadow(db, tab);
         db.exec(`DROP VIEW IF EXISTS ${quoteIdent(tab.view_name)}`);
         db.exec(`ALTER TABLE ${table} DROP COLUMN ${col.physical}`);
       }
@@ -330,17 +477,104 @@ function applyOne(db: SqliteDb, tab: TabRow, op: TableOp, coerce: CoerceFn): str
   }
 }
 
+/** Renumber _tabs positions to the given tab_id order. */
+function writeTabOrder(db: SqliteDb, order: string[]): void {
+  const upd = db.prepare(`UPDATE _tabs SET position = ? WHERE tab_id = ?`);
+  order.forEach((id, i) => upd.run(i, id));
+}
+
+function tabOrder(db: SqliteDb): string[] {
+  return (db.prepare(`SELECT tab_id FROM _tabs ORDER BY position`).all() as unknown as { tab_id: string }[]).map(
+    (t) => t.tab_id,
+  );
+}
+
+/** Tab CRUD ops (v2.1 P1). Runs inside the batch transaction like applyOne. */
+function applyTabOp(db: SqliteDb, op: Extract<TableOp, { op: `tab_${string}` }>): string | null {
+  switch (op.op) {
+    case 'tab_add': {
+      const tabId = op.tabId ?? randomUUID();
+      if (db.prepare(`SELECT 1 FROM _tabs WHERE tab_id = ?`).get(tabId)) {
+        throw new Error(`tabledb ops: tab ${tabId} already exists`);
+      }
+      const physicalTable = physicalName('t', tabId);
+      const viewName = uniqueViewName(db, viewNameForTab(op.name));
+      db.prepare(`INSERT INTO _tabs (tab_id, name, position, physical_table, view_name) VALUES (?, ?, ?, ?, ?)`).run(
+        tabId,
+        op.name,
+        tabOrder(db).length,
+        physicalTable,
+        viewName,
+      );
+      db.exec(`CREATE TABLE ${physicalTable} (_rid TEXT PRIMARY KEY, _pos REAL NOT NULL)`);
+      db.exec(`CREATE INDEX ${physicalTable}_pos ON ${physicalTable}(_pos)`);
+      db.exec(`CREATE VIEW ${quoteIdent(viewName)} AS SELECT _rid, _pos FROM ${physicalTable}`);
+      if (op.afterTabId !== undefined) {
+        const order = tabOrder(db).filter((id) => id !== tabId);
+        // null = front; unknown anchor appends (mirrors posForInsert's row rule).
+        const anchor = op.afterTabId === null ? -1 : order.indexOf(op.afterTabId);
+        const at = op.afterTabId === null ? 0 : anchor >= 0 ? anchor + 1 : order.length;
+        order.splice(at, 0, tabId);
+        writeTabOrder(db, order);
+      }
+      return tabId;
+    }
+    case 'tab_rename': {
+      const tab = resolveTab(db, op.tabId);
+      const viewName = uniqueViewName(db, viewNameForTab(op.name), tab.tab_id);
+      db.exec(`DROP VIEW IF EXISTS ${quoteIdent(tab.view_name)}`);
+      db.prepare(`UPDATE _tabs SET name = ?, view_name = ? WHERE tab_id = ?`).run(op.name, viewName, tab.tab_id);
+      rebuildView(db, { ...tab, name: op.name, view_name: viewName });
+      return null;
+    }
+    case 'tab_reorder': {
+      const tab = resolveTab(db, op.tabId);
+      const order = tabOrder(db).filter((id) => id !== tab.tab_id);
+      const at = op.afterTabId == null ? 0 : order.indexOf(op.afterTabId) + 1;
+      if (op.afterTabId != null && at === 0) throw new Error(`tabledb ops: no tab '${op.afterTabId}' to reorder after`);
+      order.splice(at, 0, tab.tab_id);
+      writeTabOrder(db, order);
+      return null;
+    }
+    case 'tab_delete': {
+      const tab = resolveTab(db, op.tabId);
+      if (tabOrder(db).length <= 1) throw new Error('tabledb ops: a workbook needs at least one tab');
+      // FTS shadow (published files only) + triggers, then view, then data.
+      dropFtsShadow(db, tab);
+      db.exec(`DROP VIEW IF EXISTS ${quoteIdent(tab.view_name)}`);
+      db.exec(`DROP TABLE IF EXISTS ${tab.physical_table}`);
+      db.prepare(`DELETE FROM _columns WHERE tab_id = ?`).run(tab.tab_id);
+      db.prepare(`DELETE FROM _views WHERE tab_id = ?`).run(tab.tab_id);
+      db.prepare(`DELETE FROM _aggregates WHERE tab_id = ?`).run(tab.tab_id);
+      db.prepare(`DELETE FROM _tabs WHERE tab_id = ?`).run(tab.tab_id);
+      writeTabOrder(db, tabOrder(db));
+      return null;
+    }
+  }
+}
+
+const TAB_OPS = new Set(['tab_add', 'tab_rename', 'tab_reorder', 'tab_delete']);
+
 /** Apply an op batch atomically to a workbook file. The caller holds the
- *  registry lock; this owns the sqlite transaction. */
+ *  registry lock; this owns the sqlite transaction. Each op targets its
+ *  `tabId` (default: first tab); tab CRUD ops manage the tabs themselves. */
 export function applyOpsToFile(absPath: string, ops: TableOp[], coerce: CoerceFn): ApplyResult {
   if (ops.length === 0) return { applied: 0, createdIds: [] };
   const db = openTableFile(absPath);
   try {
-    const tab = firstTab(db);
+    ensureRefColumn(db);
     const createdIds: (string | null)[] = [];
     db.exec('BEGIN');
     try {
-      for (const op of ops) createdIds.push(applyOne(db, tab, op, coerce));
+      for (const op of ops) {
+        // Resolve per op — a tab_add/tab_delete earlier in the batch changes
+        // what later ops may target.
+        createdIds.push(
+          TAB_OPS.has(op.op)
+            ? applyTabOp(db, op as Extract<TableOp, { op: `tab_${string}` }>)
+            : applyOne(db, resolveTab(db, op.tabId), op as NonTabOp, coerce),
+        );
+      }
       db.exec('COMMIT');
     } catch (err) {
       db.exec('ROLLBACK');

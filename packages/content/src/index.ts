@@ -237,6 +237,7 @@ export {
   type ApplyTableOpsResult,
   type TableRow,
   type TableDetail,
+  type TableTabInfo,
   type TableVisibility,
   type TableSort,
   type CreateTableInput,
@@ -244,8 +245,10 @@ export {
 } from './tables';
 
 export {
+  diffTableDocs,
   emptyTableDoc,
   ensureTableDoc,
+  ensureWorkbookDoc,
   tableDocFromGrid,
   type GridInput,
   findColumn,
@@ -276,7 +279,11 @@ export {
   AGGREGATE_KINDS,
   FILTER_OPS,
   type TableDoc,
+  type TableDocOp,
+  type WorkbookDoc,
+  type WorkbookTab,
   type Column,
+  type ColumnRef,
   type ColumnType,
   type ColumnFormat,
   type SelectOption,

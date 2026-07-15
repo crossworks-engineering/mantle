@@ -1,127 +1,93 @@
-# Session handover — Tables v2: sqlite-native storage, P0→P4 + audit (2026-07-15)
+# Session handover — Tables v2.1 (2026-07-15)
 
-> **TL;DR.** The whole Tables v2 plan (`~/.claude/plans/tables-v2-sqlite-native.md`,
-> dev-brain file `935d25f7`) is BUILT on branch **`feat/tables-v2`** (worktree
-> `.claude/worktrees/tables-v2`): P0 foundations, P1 storage + durability gates,
-> P2 intelligence (`table_sql`, profile-only indexing), P3 (draft ops + etag,
-> promote-commit, windowed reads, un-split imports), P4 migration machinery —
-> then a three-auditor review whose top-3 finding clusters are fixed. 8 commits,
-> **NOT merged, NOT released**. Suite 2081 green; everything live-verified on
-> the workstation's dev-clone stack, including a real-browser UI smoke.
-> Jason decides merge + ship. Full running log: dev-brain task `c381fe96`.
+**Branch `feat/tables-v2-1`** (worktree `.claude/worktrees/tables-v2-1`), 8
+commits on top of `fbf0c1f9` (v0.134.0). **AUDITED 2026-07-15** (3 adversarial
+reviewers; all confirmed findings fixed in `ab217903`, suite 2142 green,
+typecheck clean). **NOT merged, NOT released** — Jason decides. Dev-brain
+running log: task `659f24dd` (full audit report logged there; plan: page
+`3db078ab`).
 
 ## What this branch delivers
 
-One sqlite file per Table node (`${TABLE_DB_DIR}/<owner>/<node>.sqlite` +
-`.draft.sqlite`; compose dual-mounts `table-dbs` into web AND api). The
-Postgres `tables` row is the registry + writer-coordination point
-(`SELECT … FOR UPDATE` spine). Highlights, in plan order:
+One Mantle **Table = one SQLite workbook = N tabs** (Excel model), with an
+embedded **schema layer** and **cross-tab reference columns**.
 
-- **P0**: node:sqlite capability probes behavior-pinned into vitest, the prod
-  image (release.yml runs them INSIDE the built image), api boot, and /debug
-  sanity. Migration `0120` (registry columns), from-scratch 0000→0120 replay
-  verified. dev:fe needs no proxy (tables surface is fully client-fetched).
-  Benchmark: 10k-row draft rebuild = 23ms (no FTS) / 515ms (trigram).
-- **P1**: sqlite-first create/import; materializer bridge keeps the UI, all
-  21 table tools, and the 3 MCP readers unchanged; JSONB dual-written for
-  rollback (`storage_path` NULL = legacy path resumes). Durability gates:
-  `mustExist` (missing file = surfaced error, NEVER silently recreated),
-  VACUUM INTO snapshots in the scheduled backup + `db-dump.sh`
-  (`mantle-table-dbs-*.tgz`), `/debug` sanity `tables.storage` + api-boot
-  dual-mount tripwire.
-- **P2** (per Jason's signed §12 amendments): **profile-only chunks — no rows
-  embedded, ever** (L1 profile + L2 overview; first-200-rows go to `data_text`
-  only); `table_sql` builtin (read-only, statement-gated, worker thread + 5s
-  watchdog kill, row caps 200/1000); FTS5 trigram shadows on published files
-  only; shape-hash gate (cell-only commits reuse the summary — no LLM);
-  `tool_grounding` gained "table hit → table_sql" + the identifier-sweep rung.
-- **P3**: draft edits are atomic op batches under the lock with a `draft_rev`
-  etag (409 on stale); **commit promotes the server draft** (client posts no
-  doc — truncation-by-commit structurally impossible); keyset/offset rows
-  route; `.sqlite` export; parity-gated SQL pushdown for the read tools;
-  **part-splitting is dead** (sheets import whole; explicit-error ceiling
-  `TABLE_IMPORT_MAX_ROWS`, default 2M). Big tables render read-only in the
-  grid with load-more paging; agent row tools edit at any size.
-- **P4**: legacy tables convert lazily (first op/commit) + background sweep in
-  the api runtime (5/tick / 5min, `MANTLE_TABLE_MIGRATE_SWEEP_MS`); operator
-  scripts `retire-table-blobs.ts` (release N+1, dry-run default) and
-  `merge-part-tables.ts` (dry-run default).
+| Commit | Phase | Summary |
+|---|---|---|
+| `f2ba59d2` | P3 | Schema layer: `schema` chunk (data dictionary + `table_sql` surface + join edges, `packages/tabledb/src/schema.ts` + extractor), `table_schema` builtin, corpus-map `schemaDigest` (extractor writes `nodes.data.schemaDigest`; renderer in `messages.ts`), grounding-ladder skill update. |
+| `b20f0d35` | P1 | Multi-tab engine: `WorkbookDocLike {tabs:[...]}` writes (bare `TableDocLike` = byte-compatible one-tab), multi-tab `shapeHashOf` (tested equal to `shapeHashOfFile`), per-tab reads (`tabId` optional, default first, unknown throws), `readWorkbookDoc`, op `tabId` targeting + `tab_add/rename/reorder/delete`. |
+| `5bb1ab40` | P2 | Tab-aware content/tools/routes + **sheet→tab import flip** (×3 sites: `table_from_file`, `maybeAutoTableSpreadsheet`, UI import route — one node per file now). `getTable(tab)` + draft-aware tabs list; `saveTableDraft`/`commitTable` accept `WorkbookDoc`; **`guardSingleTabWrite`** refuses a bare doc against a multi-tab workbook; JSONB mirrors single-tab-only; structural tools moved whole-doc→op path (`editViaOps`); `table_tab_*` tools; `?tab=` on GET/rows routes. |
+| `f5870460` | P4 | Reference columns: `ColumnType 'reference'` + `Column.ref {tabId, columnId}`, persisted in `_columns.ref_json` (additive — pre-v2.1 files lazy-`ALTER` on first ops write via `ensureRefColumn`; every `_columns` read went `SELECT *`). Ops validate (same workbook / exists / not formula / not self); Excel semantics (free text, `DANGLING REFS` profile flag, degrade-to-text with values intact); text family for FTS/pushdown/auto-index; `distinctColumnValues` + rows `?distinct=&prefix=`; tools take `reference {tab, column}`; **defensive FTS-shadow drop before column DDL** (pre-existing footgun the new tests exposed). |
+| `0a4f3b1e` | P5 | Grid UI: `TabBar` (switch flushes edits; add auto-switches; rename dbl-click/menu; delete falls back to first tab, refuses last), **op-based saves** — `diffTableDocs` (new, `table-model.ts`) turns the grid's whole-doc `onChange` into an op batch with the `if_rev` etag (409 → reload); `hasDraft` tracks server drafts beyond the active tab so Commit lights up after tab ops/imports; `ReferenceCell` combobox (lazy `?distinct=` fetch, typeahead, free text); retype menu excludes `reference`. Legacy JSONB tables keep whole-doc PUT. |
+| `d4901190` | P6 | `docs/tables.md` fully rewritten (was pre-v2); user-guide section updated. (`table_authoring` + `tool_grounding` skill bodies updated in P4/P3 — force-sync on version bump.) |
 
-## The audit (and what it changed)
+## Verification status
 
-Three parallel reviewers (concurrency/data-loss, security, correctness/parity)
-→ 19 findings. **Security: no exploitable path** through any route/tool. The
-top-3 clusters are fixed in `d741bc5d`:
+- Suite green at every phase (2118 tests at last full run) + typecheck clean
+  across the monorepo. New unit coverage: `multi-tab.test.ts` (17),
+  `reference.test.ts` (8), `schema.test.ts` (4), `table-diff.test.ts` (8),
+  corpus-map + workbook-normalizer additions.
+- **Live browser smoke** on the local clone stack (minted session, port 3400):
+  built a 2-tab workbook with a cross-tab reference via the API (one atomic
+  9-op batch incl. `tab_add` + reference `column_add`), committed, opened in
+  the UI — tab bar renders, switch reloads the grid, reference dropdown
+  fetched the source values and a selection landed in the server draft as an
+  op (`draft_rev` advanced), add-tab auto-switched, **delete-active-tab bug
+  found and fixed** (now falls back to the first tab), zero console errors.
+  Smoke table deleted after.
+- NOT yet verified live: the extractor path for the schema chunk/digest (needs
+  a live worker — same rehearsal-on-dev gate as v2, at release time).
 
-1. **Commit-promote integrity** — promote now snapshots the draft via
-   `VACUUM INTO` (reads through the WAL; a concurrent reader can no longer
-   cause silent op loss) and atomically renames over the published file
-   (never deleted first — the crash-brick window is gone). Autosave/discard
-   dispatch from the LOCKED registry row (racing the migration sweep lost
-   drafts); whole-doc writes refused when the table's true rowcount exceeds
-   the 10k window (the exactly-10k clipped round-trip could truncate); UI
-   commit aborts if the draft flush fails.
-2. **Pushdown parity** — numeric `eq/neq` are numeric-compared with
-   JS-canonical target gating (SQLite text-casts 9 to `'9.0'`, so integer eq
-   matched nothing); `contains`-on-number and free-text sorts fall back to
-   the doc path; checkbox eq mirrors JS; ops-path column retype re-coerces
-   from doc-shaped values; `table_get` reports true totals for big tables.
-3. **Verbatim date storage** — normalize-on-write removed: migration must
-   never mutate stored cell text (it was rewriting dates en masse,
-   timezone-dependently). Imports arrive ISO anyway; the profile flags
-   MIXED DATE FORMATS instead.
+## Audit — DONE (2026-07-15, fixes in `ab217903`)
 
-**Open follow-ups from the audit** (logged on dev-brain task `c381fe96`, none
-ship-blocking): quoteIdent the ~20 read-back interpolations of in-file
-physical names (defense-in-depth for restored/imported files) + per-op zod on
-draft-ops; PG-tx-fails-after-file-mutation divergence (plan-accepted crash
-window; versioned filenames + pointer swap would close it); batch-nonce
-idempotency for the op etag; `table_rows_list` clipped-path cell formatting;
-`updateTable` response drops `totalRows`/`docClipped`.
+Three parallel adversarial reviewers over `git diff fbf0c1f9..HEAD`
+(concurrency/data-loss, correctness/parity, security); every finding verified
+with a concrete trace or engine-level repro before it counted. Full report on
+dev-brain task `659f24dd`. Headlines:
 
-## Before ship (in order)
+- **Security: zero exploitable findings.** All 15 candidates refuted with
+  disproving traces (`?distinct=` resolves columnId against the real column
+  list + correct LIKE-escape; quoteIdent/physicalName/bind-params cover every
+  SQL sink; path segments regex-guarded; owner scoping uniform). The
+  draft-ops route's `{op:string}.passthrough()` was replaced with a typed
+  per-op zod schema as hardening.
+- **Fixed (all verified, all regression-tested):** formula↔stored retype is
+  now DDL (was: bricked the workbook file — CRITICAL); diffTableDocs row
+  runs applied reversed + top inserts appended (round-trip suite added);
+  autosave dropped edits made during the network await, then committed
+  without them (snapshot + serialized saves); guardSingleTabWrite/truncation
+  guard read published stats and missed draft-only tabs / draft growth;
+  `PUT /draft` had no etag (now if_rev + returns draft_rev); whole-doc
+  rebuilds renamed the tab to 'Sheet1' (shape-hash flip → spurious
+  re-summarize); import into a >10k table 500'd (replace semantics + 400);
+  stale `-wal` sidecars swept BEFORE file-replacing renames (corruption
+  vector); getTable default-tab payload could span two tabs; tab names
+  colliding with engine `t_*`/FTS names aborted writes; property clears
+  (width/format/options/formula/ref) never reached the file (null = clear);
+  view reordering silently ignored (now falls back).
+- **Non-blocking follow-ups** (logged on the task, not fixed): crash window
+  between promote's file swap and the PG commit (divergence, no data loss);
+  legacy JSONB promote re-takes the lock; per-tab `draft_rev` (two windows on
+  different tabs 409 each other); agent tools never pass `ifRev`; retry after
+  a PG-commit failure can wedge autosave on a `_rid` PK violation until
+  reload; multi-tab reorder leaves the session unsaveable until reload (UX);
+  `distinct=` offers `9.0` for numeric sources (cosmetic).
 
-1. **Extractor rehearsal on dev** — the table profile-chunk + reuse-summary
-   pass needs the new image + a live worker. This is also the **NATREF gate**:
-   re-validate Rea's reference-table lookups (the GRADESEQNO case) against the
-   `table_sql` grounding before that box upgrades.
-2. **Merge from the integrator** — main is 2 ahead (v0.133.1/2 landed the 0119
-   journal fix independently, same `when` values → clean merge; our duplicate
-   journal commit is a no-op).
-3. **Release + COMPOSE REFRESH on every box** — the `table-dbs` mount is a
-   compose change; tag-only registry pulls will miss it (known drift trap).
-   The changelog entry must say so.
-4. After one clean release: run `retire-table-blobs.ts --apply` (release N+1
-   blob retirement, dry-run first).
+## After the audit (before ship)
 
-## Jason's next idea (logged as a dev-brain roadmap task)
+1. Merge from the integrator (`/home/jasons/Projects/mantle`, on `main`).
+2. Release: **no migration, no compose change** (0120 + `table-dbs` mount
+   shipped with v0.134.0); skill bodies force-sync on the version bump.
+3. Extractor rehearsal on dev (schema chunk + digest — index-shape change,
+   same NATREF/Rea gate discipline as v2).
+4. Still pending from v2: roll v0.134.0 to prod/test/DFM (compose refresh —
+   NOT tag-only); NATREF holds for the Rea re-validation gate; next release
+   runs `retire-table-blobs.ts` (dry-run first).
 
-Three-parter, post-ship direction for Tables:
-1. **Database schema surface for the AI** — a brain-wide data dictionary
-   (every table's tabs/columns/types/FTS names) the responder can load,
-   beyond today's per-table `table_get.sql` block + corpus map.
-2. **Ledger skills for querying tables** — a manifest skill teaching the
-   Ledger specialist the `table_sql`/`table_query` ladder (when to SQL, how
-   to join, MATCH quoting), instead of relying on tool descriptions alone.
-3. **Tabs in tables — each tab is a table** — multi-tab workbook nodes + the
-   grid tab bar (the engine's file layout already supports N tabs; import
-   maps sheet→tab instead of sheet→table). Deferred from P3, now explicit.
+## Known limitations (deliberate, plan §8)
 
-## Deferred / not built (by design)
-
-In-grid cell editing past the 10k window (agent row tools + table_sql cover
-it); multi-tab workbooks + tab bar (see idea above); P5 items (prose-column
-row-embeddings, query-builder UI, /apps read access to tables, cross-node
-scratch joins, MinIO write-back, peer file transfer).
-
-## Where things are
-
-- Branch: `feat/tables-v2` in `.claude/worktrees/tables-v2` (integrator stays
-  on main). Commits: `f8bf4072`, `7fa11662`, `4cb107b3`, `8785a429`,
-  `ddfe4444`, `e9fc3664`, `f3dec4bb`, `d741bc5d`.
-- Dev brain: running log task `c381fe96` (P0–P4 + audit detail), plan file
-  `935d25f7`, summary page `81d4a74e`, L3-lite decision task `e2e5ffff`
-  (folded into P2 per the §12.1 amendment).
-- Local dev note: `TABLE_DB_DIR` unset → cwd-relative `.table-dbs`
-  (gitignored); the 0119+0120 migrations are applied on the workstation
-  clone DB via the real migrator.
+Row/column drag-reorder isn't expressible as ops (single-tab falls back to a
+whole-doc save; multi-tab surfaces the limitation); reference columns aren't
+creatable from the grid's retype menu (assistant / `table_column_add` only);
+cross-workbook references, FK/row-id mode + lookup columns, and cross-tab
+formulas are out of scope.

@@ -45,7 +45,8 @@ export type ColumnType =
   | 'select'
   | 'multiselect'
   | 'url'
-  | 'formula';
+  | 'formula'
+  | 'reference';
 
 export const COLUMN_TYPES: readonly ColumnType[] = [
   'text',
@@ -59,6 +60,7 @@ export const COLUMN_TYPES: readonly ColumnType[] = [
   'multiselect',
   'url',
   'formula',
+  'reference',
 ];
 
 /** Aggregations available for a column's footer total. */
@@ -84,6 +86,12 @@ export type ColumnFormat = {
   decimals?: number;
 };
 
+/** Cross-tab reference target for type='reference' (v2.1 P4): the column
+ *  offers/stores VALUES from another tab's column, Excel data-validation
+ *  style — free text allowed, dangling values flagged in the profile, same
+ *  workbook only. */
+export type ColumnRef = { tabId: string; columnId: string };
+
 export type Column = {
   id: string;
   name: string;
@@ -95,6 +103,8 @@ export type Column = {
   formula?: string;
   /** Persisted pixel width (UI only). */
   width?: number;
+  /** Source column for reference columns. */
+  ref?: ColumnRef;
 };
 
 /** A single cell's stored value. Formula cells are never stored — they're
@@ -146,6 +156,25 @@ export type TableDoc = {
   aggregates?: Record<string, AggregateKind>;
   views?: View[];
 };
+
+/** One tab of a multi-tab workbook (v2.1): a TableDoc plus its tab identity.
+ *  Mirrors tabledb's WorkbookTabDoc structurally (one-way dep, same tripwire
+ *  as TableDoc/TableDocLike). */
+export type WorkbookTab = TableDoc & { id?: string; name: string };
+
+/** Multi-tab write shape for import + tab-aware whole-doc writes. */
+export type WorkbookDoc = { tabs: WorkbookTab[] };
+
+/** Normalize a workbook input: each tab's doc through ensureTableDoc, names
+ *  trimmed and defaulted ('Sheet1', 'Sheet2', …). Never returns zero tabs. */
+export function ensureWorkbookDoc(input: WorkbookDoc): WorkbookDoc {
+  const tabs = (Array.isArray(input.tabs) ? input.tabs : []).map((t, i) => ({
+    ...ensureTableDoc(t),
+    ...(t.id ? { id: t.id } : {}),
+    name: (typeof t.name === 'string' && t.name.trim()) || `Sheet${i + 1}`,
+  }));
+  return { tabs: tabs.length > 0 ? tabs : [{ ...emptyTableDoc(), name: 'Sheet1' }] };
+}
 
 // ---------------------------------------------------------------------------
 // Construction + id stability
@@ -212,6 +241,9 @@ export function ensureTableDoc(input: unknown): TableDoc {
     if (Array.isArray(col.options)) out.options = col.options;
     if (typeof col.formula === 'string') out.formula = col.formula;
     if (typeof col.width === 'number') out.width = col.width;
+    if (col.ref && typeof col.ref === 'object' && typeof col.ref.tabId === 'string' && typeof col.ref.columnId === 'string') {
+      out.ref = { tabId: col.ref.tabId, columnId: col.ref.columnId };
+    }
     return out;
   });
 
@@ -287,6 +319,7 @@ export function coerceCell(value: unknown, type: ColumnType): CellValue {
     case 'text':
     case 'url':
     case 'select':
+    case 'reference':
     case 'formula':
     default:
       return String(value);
@@ -633,4 +666,127 @@ export function setView(doc: TableDoc, view: View): TableDoc {
   if (at >= 0) views[at] = view;
   else views.push({ ...view, id: view.id || randomUUID() });
   return { ...doc, views };
+}
+
+// ---------------------------------------------------------------------------
+// Doc diff → draft ops (v2.1 P5)
+// ---------------------------------------------------------------------------
+
+/** The subset of tabledb's TableOp the differ emits (structurally identical —
+ *  same one-way-dep tripwire as TableDoc/TableDocLike). */
+/** column_update patch: absent key = keep, explicit `null` = CLEAR. JSON
+ *  transport drops undefined keys, so removals MUST travel as null. */
+export type TableColumnPatch = {
+  name?: string;
+  type?: ColumnType;
+  format?: ColumnFormat | null;
+  options?: Column['options'] | null;
+  formula?: string | null;
+  width?: number | null;
+  ref?: ColumnRef | null;
+};
+
+export type TableDocOp =
+  | { op: 'row_add'; rowId: string; cells?: Record<string, CellValue>; afterRowId?: string | null; atStart?: boolean }
+  | { op: 'row_update'; rowId: string; cells: Record<string, CellValue> }
+  | { op: 'row_delete'; rowId: string }
+  | { op: 'column_add'; column: Column; afterColumnId?: string | null }
+  | { op: 'column_update'; columnId: string; patch: TableColumnPatch }
+  | { op: 'column_delete'; columnId: string }
+  | { op: 'aggregate_set'; columnId: string; kind: AggregateKind }
+  | { op: 'view_set'; view: View };
+
+const cellEq = (a: CellValue | undefined, b: CellValue | undefined): boolean =>
+  JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/**
+ * Diff two docs into the draft ops that transform `prev` into `next` — the
+ * grid's whole-doc onChange becomes an op batch (tab-targetable, scales past
+ * the window). Returns NULL when the change isn't expressible as ops (row or
+ * column reordering, view deletion) — the caller falls back to a whole-doc
+ * save (single-tab tables) or surfaces the limitation.
+ */
+export function diffTableDocs(prev: TableDoc, next: TableDoc): TableDocOp[] | null {
+  const ops: TableDocOp[] = [];
+
+  // ── Columns ──
+  const prevCols = new Map(prev.columns.map((c) => [c.id, c]));
+  const nextCols = new Map(next.columns.map((c) => [c.id, c]));
+  for (const c of prev.columns) if (!nextCols.has(c.id)) ops.push({ op: 'column_delete', columnId: c.id });
+  // Reorder detection: surviving columns must keep their relative order.
+  const survivingPrev = prev.columns.filter((c) => nextCols.has(c.id)).map((c) => c.id);
+  const survivingNext = next.columns.filter((c) => prevCols.has(c.id)).map((c) => c.id);
+  if (survivingPrev.join(' ') !== survivingNext.join(' ')) return null;
+  next.columns.forEach((c, i) => {
+    const old = prevCols.get(c.id);
+    if (!old) {
+      const afterColumnId = i > 0 ? next.columns[i - 1]!.id : null;
+      ops.push({ op: 'column_add', column: c, afterColumnId });
+      return;
+    }
+    // Removals travel as explicit null — `undefined` disappears in JSON and
+    // the server would keep the old value (audit: width/format/ref clears
+    // were silently lost).
+    const patch: TableColumnPatch = {};
+    if (old.name !== c.name) patch.name = c.name;
+    if (old.type !== c.type) patch.type = c.type;
+    if (JSON.stringify(old.format ?? null) !== JSON.stringify(c.format ?? null)) patch.format = c.format ?? null;
+    if (JSON.stringify(old.options ?? null) !== JSON.stringify(c.options ?? null)) patch.options = c.options ?? null;
+    if ((old.formula ?? '') !== (c.formula ?? '')) patch.formula = c.formula ?? null;
+    if ((old.width ?? null) !== (c.width ?? null)) patch.width = c.width ?? null;
+    if (JSON.stringify(old.ref ?? null) !== JSON.stringify(c.ref ?? null)) patch.ref = c.ref ?? null;
+    if (Object.keys(patch).length > 0) ops.push({ op: 'column_update', columnId: c.id, patch });
+  });
+
+  // ── Rows ──
+  const prevRows = new Map(prev.rows.map((r) => [r.id, r]));
+  const nextRows = new Map(next.rows.map((r) => [r.id, r]));
+  for (const r of prev.rows) if (!nextRows.has(r.id)) ops.push({ op: 'row_delete', rowId: r.id });
+  const rowSurvivingPrev = prev.rows.filter((r) => nextRows.has(r.id)).map((r) => r.id);
+  const rowSurvivingNext = next.rows.filter((r) => prevRows.has(r.id)).map((r) => r.id);
+  if (rowSurvivingPrev.join(' ') !== rowSurvivingNext.join(' ')) return null;
+  const colIds = next.columns.filter((c) => c.type !== 'formula').map((c) => c.id);
+  next.rows.forEach((r, i) => {
+    const old = prevRows.get(r.id);
+    if (!old) {
+      // Anchor to the IMMEDIATE predecessor in `next` — including another
+      // new row: ops apply in batch order, so the predecessor already exists
+      // when this op runs. (Anchoring a run to one shared pre-existing row
+      // reversed it: the engine midpoint-inserts directly after the anchor,
+      // so each op landed BEFORE the previous — audit.) A new FIRST row is an
+      // explicit front insert; `afterRowId: null` means append to the engine.
+      if (i === 0) ops.push({ op: 'row_add', rowId: r.id, cells: r.cells, atStart: true });
+      else ops.push({ op: 'row_add', rowId: r.id, cells: r.cells, afterRowId: next.rows[i - 1]!.id });
+      return;
+    }
+    const changed: Record<string, CellValue> = {};
+    for (const colId of colIds) {
+      if (!cellEq(old.cells[colId], r.cells[colId])) changed[colId] = r.cells[colId] ?? null;
+    }
+    if (Object.keys(changed).length > 0) ops.push({ op: 'row_update', rowId: r.id, cells: changed });
+  });
+
+  // ── Aggregates ──
+  const prevAgg = prev.aggregates ?? {};
+  const nextAgg = next.aggregates ?? {};
+  for (const colId of new Set([...Object.keys(prevAgg), ...Object.keys(nextAgg)])) {
+    if (!nextCols.has(colId)) continue; // column_delete already cleans up
+    const a = prevAgg[colId] ?? 'none';
+    const b = nextAgg[colId] ?? 'none';
+    if (a !== b) ops.push({ op: 'aggregate_set', columnId: colId, kind: b });
+  }
+
+  // ── Views (upsert only — deletion and reordering have no op) ──
+  const prevViews = new Map((prev.views ?? []).map((v) => [v.id, v]));
+  const nextViewIds = new Set((next.views ?? []).map((v) => v.id));
+  for (const v of next.views ?? []) {
+    const old = prevViews.get(v.id);
+    if (!old || JSON.stringify(old) !== JSON.stringify(v)) ops.push({ op: 'view_set', view: v });
+  }
+  if ((prev.views ?? []).some((v) => !nextViewIds.has(v.id))) return null;
+  const viewOrderPrev = (prev.views ?? []).filter((v) => nextViewIds.has(v.id)).map((v) => v.id);
+  const viewOrderNext = (next.views ?? []).filter((v) => prevViews.has(v.id)).map((v) => v.id);
+  if (viewOrderPrev.join(' ') !== viewOrderNext.join(' ')) return null;
+
+  return ops;
 }

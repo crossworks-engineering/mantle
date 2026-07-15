@@ -50,6 +50,9 @@ export type LockedRegistryRow = {
   draftRev: number;
   /** True row count from registry stats (null when never computed). */
   totalRows: number | null;
+  /** Tab count from registry stats (null when never computed). Whole-doc
+   *  writers use it to refuse single-tab payloads that would drop tabs. */
+  tabCount: number | null;
 } | null;
 
 /**
@@ -69,8 +72,10 @@ export async function withTableRegistryLock<T>(
       storage_path: string | null;
       draft_rev: number;
       total_rows: string | null;
+      tab_count: number | null;
     }>(
-      sql`SELECT shape_hash, storage_path, draft_rev, stats->>'totalRows' AS total_rows
+      sql`SELECT shape_hash, storage_path, draft_rev, stats->>'totalRows' AS total_rows,
+                 jsonb_array_length(stats->'tabs') AS tab_count
           FROM tables WHERE node_id = ${nodeId} FOR UPDATE`,
     );
     const rows = (Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows ?? [])) as {
@@ -78,6 +83,7 @@ export async function withTableRegistryLock<T>(
       storage_path: string | null;
       draft_rev: number;
       total_rows: string | null;
+      tab_count: number | null;
     }[];
     const locked: LockedRegistryRow = rows[0]
       ? {
@@ -85,6 +91,7 @@ export async function withTableRegistryLock<T>(
           storagePath: rows[0].storage_path,
           draftRev: Number(rows[0].draft_rev),
           totalRows: rows[0].total_rows == null ? null : Number(rows[0].total_rows),
+          tabCount: rows[0].tab_count == null ? null : Number(rows[0].tab_count),
         }
       : null;
     return fn(tx, locked);
@@ -106,18 +113,30 @@ export type LoadedDocs = {
  *  window (un-split imports can exceed it). Missing published file throws
  *  TableFileMissingError (never self-healed — durability gate 1); a missing
  *  draft file just means "no uncommitted edits". */
-export function loadDocsFromFile(storagePath: string): LoadedDocs {
+export function loadDocsFromFile(storagePath: string, opts: { tabId?: string } = {}): LoadedDocs {
   const abs = resolveStoragePath(storagePath);
-  const published = readDocClipped(abs, MATERIALIZE_MAX);
+  // A tab created in the DRAFT doesn't exist published yet — an empty doc is
+  // the honest published view of it (and vice versa below for the draft).
+  let published: ReturnType<typeof readDocClipped>;
+  try {
+    published = readDocClipped(abs, MATERIALIZE_MAX, opts.tabId);
+  } catch (err) {
+    if (opts.tabId && err instanceof Error && /no tab/.test(err.message)) {
+      published = { doc: { columns: [], rows: [], aggregates: {}, views: [] }, total: 0, clipped: false };
+    } else {
+      throw err;
+    }
+  }
   const draftAbs = draftPathFor(abs);
   // A commit in the other process can consume the draft between the exists
   // check and the open — that's "no draft now", not an error (audit finding 7).
   let draftClipped: ReturnType<typeof readDocClipped> | null = null;
   if (existsSync(draftAbs)) {
     try {
-      draftClipped = readDocClipped(draftAbs, MATERIALIZE_MAX);
+      draftClipped = readDocClipped(draftAbs, MATERIALIZE_MAX, opts.tabId);
     } catch (err) {
-      if (!(err instanceof TableFileMissingError)) throw err;
+      const draftLacksTab = opts.tabId && err instanceof Error && /no tab/.test(err.message);
+      if (!draftLacksTab && !(err instanceof TableFileMissingError)) throw err;
     }
   }
   return {
@@ -270,12 +289,26 @@ export function buildTableDataText(publishedAbs: string, _doc: TableDoc | null, 
   const profiles = profileFile(publishedAbs);
   const head = profileToText(profiles, { title });
   const total = profiles.reduce((a, t) => a + t.rowCount, 0);
-  const window = readDocClipped(publishedAbs, DATA_TEXT_ROW_WINDOW);
-  const rowsMd = tableToText(ensureTableDoc(window.doc), { title });
-  const note = window.clipped
-    ? `\n\n(First ${DATA_TEXT_ROW_WINDOW} of ${total} rows shown — query the full data with table_sql.)`
+  // The 200-row window spends across tabs in position order — a small tab
+  // never starves the next one, and the truncation note stays honest.
+  const parts: string[] = [];
+  let budget = DATA_TEXT_ROW_WINDOW;
+  let shown = 0;
+  for (const tab of profiles) {
+    if (budget <= 0) break;
+    const window = readDocClipped(publishedAbs, budget, tab.tabId);
+    if (window.doc.rows.length === 0 && profiles.length > 1) continue;
+    const md = tableToText(ensureTableDoc(window.doc), {
+      title: profiles.length > 1 ? `${title} — ${tab.name}` : title,
+    });
+    parts.push(md);
+    budget -= window.doc.rows.length;
+    shown += window.doc.rows.length;
+  }
+  const note = shown < total
+    ? `\n\n(First ${shown} of ${total} rows shown — query the full data with table_sql.)`
     : '';
-  return `${head}\n\n${rowsMd}${note}`;
+  return `${head}\n\n${parts.join('\n\n')}${note}`;
 }
 
 /**

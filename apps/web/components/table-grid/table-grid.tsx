@@ -47,10 +47,12 @@ import {
   Variable,
   X,
   type LucideIcon,
+  ArrowUpRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { apiFetch } from '@/lib/api-fetch';
 import { Badge } from '@/components/ui/badge';
 import { Calendar as CalendarPicker } from '@/components/ui/calendar';
 import { DateTimePicker } from '@/components/ui/date-time-picker';
@@ -110,6 +112,7 @@ const TYPE_LABEL: Record<ColumnType, string> = {
   multiselect: 'Multi-select',
   url: 'URL',
   formula: 'Formula',
+  reference: 'Reference',
 };
 
 const TYPE_ICON: Record<ColumnType, LucideIcon> = {
@@ -124,6 +127,7 @@ const TYPE_ICON: Record<ColumnType, LucideIcon> = {
   multiselect: Tags,
   url: Link,
   formula: Variable,
+  reference: ArrowUpRight,
 };
 
 const AGG_ICON: Record<AggregateKind, LucideIcon> = {
@@ -162,7 +166,17 @@ function displayValue(value: CellValue, col: Column): string {
   return String(value);
 }
 
-export function TableGrid({ doc, onChange }: { doc: TableDoc; onChange: (next: TableDoc) => void }) {
+export function TableGrid({
+  doc,
+  onChange,
+  tableId,
+}: {
+  doc: TableDoc;
+  onChange: (next: TableDoc) => void;
+  /** Enables server-backed cells (reference dropdowns fetch their option
+   *  list from the workbook). Optional — cells degrade to text without it. */
+  tableId?: string;
+}) {
   const [sorting, setSorting] = useState<SortingState>([]);
 
   // Live doc + onChange via refs so the column defs can stay referentially
@@ -201,6 +215,7 @@ export function TableGrid({ doc, onChange }: { doc: TableDoc; onChange: (next: T
       cell: (info) => (
         <EditableCell
           col={col}
+          tableId={tableId}
           value={info.getValue() as CellValue}
           rawValue={(info.row.original.cells[col.id] ?? null) as CellValue}
           onSet={(v) => onChangeRef.current(setCell(docRef.current, info.row.original.id, col.id, v))}
@@ -213,7 +228,7 @@ export function TableGrid({ doc, onChange }: { doc: TableDoc; onChange: (next: T
       ),
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [structureKey]);
+  }, [structureKey, tableId]);
 
   const table = useReactTable({
     data: doc.rows,
@@ -418,7 +433,7 @@ function HeaderCell({
             <DropdownMenuSubTrigger className={MENU_SUBTRIGGER}><Type className="mr-2 size-3.5" /> Type</DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
               <DropdownMenuRadioGroup value={col.type} onValueChange={(v) => onType(v as ColumnType)}>
-                {COLUMN_TYPES.map((t) => {
+                {COLUMN_TYPES.filter((t) => t !== 'reference').map((t) => {
                   const Icon = TYPE_ICON[t];
                   return (
                     <DropdownMenuRadioItem key={t} value={t} className={MENU_RADIO_ITEM}>
@@ -480,6 +495,7 @@ function EditableCell({
   rawValue,
   onSet,
   onApplyOption,
+  tableId,
 }: {
   col: Column;
   value: CellValue; // resolved (formula columns computed)
@@ -487,6 +503,7 @@ function EditableCell({
   onSet: (v: CellValue) => void;
   /** Set the cell, optionally creating a new select/multiselect option first. */
   onApplyOption: (p: { value: CellValue; newOption?: string }) => void;
+  tableId?: string;
 }) {
   if (col.type === 'formula') {
     return <span className="block px-2 py-1.5 text-sm text-muted-foreground">{displayValue(value, col)}</span>;
@@ -500,6 +517,9 @@ function EditableCell({
   }
   if (col.type === 'select' || col.type === 'multiselect') {
     return <OptionCell col={col} rawValue={rawValue} multi={col.type === 'multiselect'} apply={onApplyOption} />;
+  }
+  if (col.type === 'reference' && col.ref && tableId) {
+    return <ReferenceCell col={col} rawValue={rawValue} onSet={onSet} tableId={tableId} />;
   }
   if (col.type === 'date') {
     return <DateCell col={col} rawValue={rawValue} onSet={onSet} />;
@@ -666,6 +686,116 @@ function OptionCell({
  * when you leave it. Syncs from the doc only while unfocused (so an external
  * edit — the agent, a type change — still reflects).
  */
+/** Reference cell (v2.1 P4): a combobox whose options are the DISTINCT values
+ *  of the source tab's column, fetched lazily on open (draft-first). Free text
+ *  is allowed — Excel's "warn, don't block" model; the profile flags dangling
+ *  values. */
+function ReferenceCell({
+  col,
+  rawValue,
+  onSet,
+  tableId,
+}: {
+  col: Column;
+  rawValue: CellValue;
+  onSet: (v: CellValue) => void;
+  tableId: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [options, setOptions] = useState<string[] | null>(null);
+  const current = typeof rawValue === 'string' ? rawValue : rawValue == null ? '' : String(rawValue);
+
+  useEffect(() => {
+    if (!open || options !== null || !col.ref) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const j = await apiFetch<{ values: string[] }>(
+          `/api/tables/${tableId}/rows?distinct=${encodeURIComponent(col.ref!.columnId)}&tab=${encodeURIComponent(col.ref!.tabId)}&draft=1&limit=200`,
+        );
+        if (!cancelled) setOptions(j.values);
+      } catch {
+        if (!cancelled) setOptions([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, options, col.ref, tableId]);
+
+  const q = query.trim();
+  const ql = q.toLowerCase();
+  const filtered = (options ?? []).filter((v) => !ql || v.toLowerCase().includes(ql));
+  const canFreeText = q.length > 0 && !(options ?? []).some((v) => v.toLowerCase() === ql);
+
+  const choose = (v: string) => {
+    onSet(v);
+    setQuery('');
+    setOpen(false);
+  };
+
+  return (
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setQuery(''); }}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex min-h-[2.1rem] w-full items-center gap-1 px-2 py-1 text-left text-sm outline-none hover:bg-muted/40"
+          aria-label={col.name}
+        >
+          {current ? <span className="truncate">{current}</span> : <span className="text-muted-foreground">—</span>}
+          <ChevronsUpDown className="ml-auto size-3 shrink-0 text-muted-foreground" aria-hidden />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-56 p-1">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && q) choose(q);
+          }}
+          placeholder="Search values…"
+          className="mb-1 w-full rounded-sm border border-border bg-transparent px-2 py-1 text-sm outline-none focus:ring-0"
+          aria-label={`Search ${col.name} values`}
+        />
+        <div className="max-h-56 overflow-y-auto">
+          {options === null ? (
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading…</div>
+          ) : (
+            <>
+              {current && (
+                <button type="button" className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted" onClick={() => choose('')}>
+                  <X className="mr-2 size-3.5" aria-hidden /> Clear
+                </button>
+              )}
+              {filtered.map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-sm hover:bg-muted"
+                  onClick={() => choose(v)}
+                >
+                  <span className="truncate">{v}</span>
+                  {v === current && <Check className="ml-auto size-3.5 shrink-0 text-primary" aria-hidden />}
+                </button>
+              ))}
+              {filtered.length === 0 && !canFreeText && (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">No values</div>
+              )}
+              {canFreeText && (
+                <button type="button" className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-sm hover:bg-muted" onClick={() => choose(q)}>
+                  <ListPlus className="mr-2 size-3.5 shrink-0" aria-hidden />
+                  Use “{q}”
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function TextCell({ col, rawValue, onSet }: { col: Column; rawValue: CellValue; onSet: (v: CellValue) => void }) {
   const isNumeric = col.type === 'number' || col.type === 'currency' || col.type === 'percent';
   const external = rawValue == null ? '' : Array.isArray(rawValue) ? rawValue.join(', ') : String(rawValue);

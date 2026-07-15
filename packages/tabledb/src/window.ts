@@ -17,9 +17,16 @@ import { openTableFile, type SqliteDb } from './sqlite';
 
 type ColMeta = { colId: string; physical: string; type: ColumnType };
 
-function tabMeta(db: SqliteDb): { physicalTable: string; cols: ColMeta[] } {
-  const tab = db.prepare(`SELECT tab_id, physical_table FROM _tabs ORDER BY position LIMIT 1`).get();
-  if (!tab) throw new Error('tabledb window: workbook has no tabs');
+function tabMeta(db: SqliteDb, tabId?: string): { physicalTable: string; cols: ColMeta[] } {
+  const tab =
+    tabId === undefined
+      ? db.prepare(`SELECT tab_id, physical_table FROM _tabs ORDER BY position LIMIT 1`).get()
+      : db.prepare(`SELECT tab_id, physical_table FROM _tabs WHERE tab_id = ?`).get(tabId);
+  if (!tab) {
+    throw new Error(
+      tabId === undefined ? 'tabledb window: workbook has no tabs' : `tabledb window: no tab '${tabId}' in this workbook`,
+    );
+  }
   const cols = db
     .prepare(`SELECT col_id, physical, type FROM _columns WHERE tab_id = ? ORDER BY position`)
     .all(String(tab.tab_id))
@@ -49,12 +56,12 @@ export type RowWindow = {
 /** Keyset page in _pos order. `after` is the last row of the previous page. */
 export function listRowsWindow(
   absPath: string,
-  opts: { limit?: number; after?: { pos: number; rid: string } } = {},
+  opts: { limit?: number; after?: { pos: number; rid: string }; tabId?: string } = {},
 ): RowWindow {
   const limit = Math.max(1, Math.min(opts.limit ?? 200, 1000));
   const db = openTableFile(absPath, { readOnly: true });
   try {
-    const { physicalTable, cols } = tabMeta(db);
+    const { physicalTable, cols } = tabMeta(db, opts.tabId);
     const stored = cols.filter((c) => c.type !== 'formula');
     const select = ['_rid', '_pos', ...stored.map((c) => c.physical)].join(', ');
     const raw = opts.after
@@ -77,10 +84,10 @@ export function listRowsWindow(
 }
 
 /** Fetch one row by its stable id (the beyond-the-window row_get path). */
-export function readRowById(absPath: string, rid: string): Row | null {
+export function readRowById(absPath: string, rid: string, opts: { tabId?: string } = {}): Row | null {
   const db = openTableFile(absPath, { readOnly: true });
   try {
-    const { physicalTable, cols } = tabMeta(db);
+    const { physicalTable, cols } = tabMeta(db, opts.tabId);
     const stored = cols.filter((c) => c.type !== 'formula');
     const select = ['_rid', ...stored.map((c) => c.physical)].join(', ');
     const raw = db.prepare(`SELECT ${select} FROM ${physicalTable} WHERE _rid = ?`).get(rid);
@@ -91,9 +98,37 @@ export function readRowById(absPath: string, rid: string): Row | null {
   }
 }
 
+/** Distinct non-empty values of one column, alphabetical — the option list a
+ *  reference column's editor offers (typeahead via `prefix`). */
+export function distinctColumnValues(
+  absPath: string,
+  opts: { columnId: string; tabId?: string; limit?: number; prefix?: string },
+): string[] {
+  const limit = Math.max(1, Math.min(opts.limit ?? 200, 1000));
+  const db = openTableFile(absPath, { readOnly: true });
+  try {
+    const { physicalTable, cols } = tabMeta(db, opts.tabId);
+    const col = cols.find((c) => c.colId === opts.columnId);
+    if (!col || col.type === 'formula') return [];
+    const p = col.physical;
+    const where = [`${p} IS NOT NULL`, `CAST(${p} AS TEXT) != ''`];
+    const params: (string | number)[] = [];
+    if (opts.prefix) {
+      where.push(`CAST(${p} AS TEXT) LIKE ? ESCAPE '\\'`);
+      params.push(`${opts.prefix.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`);
+    }
+    const raw = db
+      .prepare(`SELECT DISTINCT CAST(${p} AS TEXT) AS v FROM ${physicalTable} WHERE ${where.join(' AND ')} ORDER BY 1 LIMIT ?`)
+      .all(...params, limit);
+    return raw.map((r) => String(r.v));
+  } finally {
+    db.close();
+  }
+}
+
 // ── Parity-gated filter compiler ─────────────────────────────────────────────
 
-const TEXT_FAMILY = new Set<ColumnType>(['text', 'select', 'url', 'date', 'datetime']);
+const TEXT_FAMILY = new Set<ColumnType>(['text', 'select', 'url', 'date', 'datetime', 'reference']);
 const NUM_FAMILY = new Set<ColumnType>(['number', 'currency', 'percent']);
 
 type Compiled = { where: string; params: (string | number)[] };
@@ -251,11 +286,12 @@ export function queryRowsWindow(
     sort?: SortSpec[];
     offset?: number;
     limit?: number;
+    tabId?: string;
   },
 ): QueryWindowResult {
   const db = openTableFile(absPath, { readOnly: true });
   try {
-    const { physicalTable, cols } = tabMeta(db);
+    const { physicalTable, cols } = tabMeta(db, opts.tabId);
     const compiled = compileFilters(opts.filters ?? [], opts.match === 'any' ? 'any' : 'all', cols);
     if (!compiled) return null;
     const orderBy = compileSort(opts.sort ?? [], cols);
@@ -281,12 +317,12 @@ export function queryRowsWindow(
  *  = not parity-safe (formula target, or filters didn't compile). */
 export function aggregateWindow(
   absPath: string,
-  opts: { columnId: string; kind: AggregateKind; filters?: Filter[]; match?: 'all' | 'any' },
+  opts: { columnId: string; kind: AggregateKind; filters?: Filter[]; match?: 'all' | 'any'; tabId?: string },
 ): number | null {
   if (opts.kind === 'none') return null;
   const db = openTableFile(absPath, { readOnly: true });
   try {
-    const { physicalTable, cols } = tabMeta(db);
+    const { physicalTable, cols } = tabMeta(db, opts.tabId);
     const col = cols.find((c) => c.colId === opts.columnId);
     if (!col || col.type === 'formula') return null;
     const compiled = compileFilters(opts.filters ?? [], opts.match === 'any' ? 'any' : 'all', cols);

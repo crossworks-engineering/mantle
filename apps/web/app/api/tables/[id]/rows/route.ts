@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes, tables } from '@mantle/db';
-import { draftPathFor, listRowsWindow, queryRowsWindow, resolveStoragePath } from '@mantle/tabledb';
+import { distinctColumnValues, draftPathFor, listRowsWindow, queryRowsWindow, resolveStoragePath } from '@mantle/tabledb';
 import { existsSync } from 'node:fs';
 import { getOwnerOr401 } from '@/lib/auth';
 
@@ -34,16 +34,29 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(limitRaw, 1000)) : 500;
 
   const offsetParam = url.searchParams.get('offset');
+  const tabId = url.searchParams.get('tab') ?? undefined;
 
   const publishedAbs = resolveStoragePath(row.storagePath);
   const draftAbs = draftPathFor(publishedAbs);
   const file = wantDraft && existsSync(draftAbs) ? draftAbs : publishedAbs;
   try {
+    // Distinct values of one column — the option list a reference column's
+    // editor offers (?distinct=<columnId>, optional ?prefix= typeahead).
+    const distinct = url.searchParams.get('distinct');
+    if (distinct) {
+      const values = distinctColumnValues(file, {
+        columnId: distinct,
+        ...(tabId ? { tabId } : {}),
+        ...(url.searchParams.get('prefix') ? { prefix: url.searchParams.get('prefix')! } : {}),
+        limit,
+      });
+      return NextResponse.json({ values, source: file === draftAbs ? 'draft' : 'published' });
+    }
     // Offset paging (the grid's "load more" appends from a known position);
     // keyset (`after_pos`/`after_rid`) stays the cheaper cursor for crawls.
     if (offsetParam !== null) {
       const offset = Math.max(0, Number(offsetParam) || 0);
-      const page = queryRowsWindow(file, { offset, limit });
+      const page = queryRowsWindow(file, { offset, limit, ...(tabId ? { tabId } : {}) });
       if (!page) return NextResponse.json({ error: 'window read failed' }, { status: 500 });
       return NextResponse.json({
         rows: page.rows,
@@ -54,6 +67,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     }
     const page = listRowsWindow(file, {
       limit,
+      ...(tabId ? { tabId } : {}),
       ...(afterPos !== null && afterRid !== null ? { after: { pos: Number(afterPos), rid: afterRid } } : {}),
     });
     return NextResponse.json({

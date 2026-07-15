@@ -19,7 +19,7 @@ import type { SqliteDb } from './sqlite';
  */
 
 /** Column types whose values are text-shaped enough to be worth indexing. */
-const FTS_TYPES = new Set(['text', 'select', 'url', 'multiselect', 'date', 'datetime']);
+const FTS_TYPES = new Set(['text', 'select', 'url', 'multiselect', 'date', 'datetime', 'reference']);
 
 export function ftsColumns(columns: Column[]): Column[] {
   return columns.filter((c) => FTS_TYPES.has(c.type));

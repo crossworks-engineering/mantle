@@ -37,6 +37,21 @@ describe('renderCorpusMapBlock', () => {
     expect(out).toContain('…'); // snipped
   });
 
+  it('appends a table schema digest in brackets after the summary', () => {
+    const out = renderCorpusMapBlock([
+      entry({
+        title: 'Cars',
+        type: 'table',
+        branch: 'tables',
+        summary: 'Fleet register.',
+        schema: 'Fleet(2r): Model, Make, Year, EV',
+      }),
+      entry({ title: 'Plain', schema: null }),
+    ])!;
+    expect(out).toContain('— Fleet register. [Fleet(2r): Model, Make, Year, EV]');
+    expect(out).not.toContain('Plain" (page#00000000) ['); // no empty brackets
+  });
+
   it('is byte-stable regardless of input order (prompt-cache friendliness)', () => {
     const a = entry({ title: 'A' });
     const b = entry({ title: 'B', branch: 'files', type: 'file' });

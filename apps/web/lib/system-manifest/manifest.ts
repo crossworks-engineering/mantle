@@ -656,6 +656,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'page_block_get',
       'table_list',
       'table_get',
+      'table_schema',
       'table_query',
       'table_sql',
       'table_rows_list',

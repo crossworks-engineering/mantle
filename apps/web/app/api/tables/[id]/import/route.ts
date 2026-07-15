@@ -1,14 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getOwnerOr401 } from '@/lib/auth';
-import { createTable, getTable, saveTableDraft } from '@/lib/tables';
+import { getTable, saveTableDraft } from '@/lib/tables';
 import { parseSheetToGrid } from '@mantle/files/sheet-to-grid';
 import { tableDocFromGrid } from '@mantle/content/table-model';
 
 /**
- * Import a spreadsheet into this table. The FIRST sheet replaces the current
- * grid as a DRAFT (the user reviews + commits); any additional sheets are
- * created as sibling tables (committed) and their ids returned. Accepts a
- * multipart `file` (.xlsx / .xls / .csv).
+ * Import a spreadsheet into this table (v2.1 P2): the workbook replaces the
+ * current DRAFT whole — every sheet becomes a tab, and the user reviews +
+ * commits once. Accepts a multipart `file` (.xlsx / .xls / .csv).
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
@@ -41,29 +40,31 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: 'no tabular data found' }, { status: 400 });
   }
 
-  // First sheet → this table's draft.
-  const first = sheets[0]!;
-  const draftDoc = tableDocFromGrid(first);
-  const ok = await saveTableDraft(user.id, id, draftDoc);
-  if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
-
-  // Extra sheets → sibling tables (committed).
-  const extra: { id: string; title: string; sheet: string }[] = [];
-  for (let i = 1; i < sheets.length; i++) {
-    const sheet = sheets[i]!;
-    const sib = await createTable(user.id, {
-      title: (sheet.name || `Sheet ${i + 1}`).slice(0, 200),
-      data: tableDocFromGrid(sheet) as never,
-      tags: table.tags,
-    });
-    extra.push({ id: sib.id, title: sib.title, sheet: sheet.name });
+  // One workbook per spreadsheet (v2.1 P2): every sheet becomes a TAB of this
+  // table's draft — the user reviews the whole workbook and commits once. No
+  // more sibling-table splitting.
+  const tabs = sheets.map((sheet, i) => ({
+    ...tableDocFromGrid(sheet),
+    name: (sheet.name || `Sheet${i + 1}`).slice(0, 100),
+  }));
+  // `replace`: a parsed-file workbook is a deliberate whole-table
+  // replacement — the clipped-grid truncation guard doesn't apply and the
+  // ceiling is the import cap, not the 10k grid window (audit: re-importing
+  // into a >10k table 500'd with windowed-read advice).
+  let result;
+  try {
+    result = await saveTableDraft(user.id, id, { tabs }, { replace: true });
+  } catch (err) {
+    return NextResponse.json(
+      { error: `import failed: ${err instanceof Error ? err.message : String(err)}` },
+      { status: 400 },
+    );
   }
+  if (!result) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
   return NextResponse.json({
     ok: true,
     sheets: sheets.length,
-    columns: draftDoc.columns.length,
-    rows: draftDoc.rows.length,
-    extra_tables: extra,
+    tabs: tabs.map((t) => ({ name: t.name, columns: t.columns.length, rows: t.rows.length })),
   });
 }
