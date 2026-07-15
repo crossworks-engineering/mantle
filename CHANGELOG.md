@@ -4,6 +4,15 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.133.1 — 2026-07-15
+
+**Hotfix: migration 0119 was missing its journal entry**, so the migrate gate
+skipped it ("Already up to date") while v0.133.0's code queried the new
+`content_chunks.search_tsv` column. Journal entry added; a new guard test
+fails the suite whenever a migration .sql lacks a journal entry (or vice
+versa). Boxes that rolled v0.133.0 self-heal on this release — the migration
+SQL is idempotent.
+
 ## v0.133.0 — 2026-07-15
 
 **Retrieval: hybrid passage search, spreadsheet profiles, corpus map.** Born
