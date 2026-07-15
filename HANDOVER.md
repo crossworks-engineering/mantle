@@ -1,9 +1,11 @@
 # Session handover — Tables v2.1 (2026-07-15)
 
-**Branch `feat/tables-v2-1`** (worktree `.claude/worktrees/tables-v2-1`), 6
-commits on top of `fbf0c1f9` (v0.134.0). **NOT merged, NOT released** — an
-audit runs first (new session), then Jason decides. Dev-brain running log:
-task `659f24dd` (plan: page `3db078ab`).
+**Branch `feat/tables-v2-1`** (worktree `.claude/worktrees/tables-v2-1`), 8
+commits on top of `fbf0c1f9` (v0.134.0). **AUDITED 2026-07-15** (3 adversarial
+reviewers; all confirmed findings fixed in `ab217903`, suite 2142 green,
+typecheck clean). **NOT merged, NOT released** — Jason decides. Dev-brain
+running log: task `659f24dd` (full audit report logged there; plan: page
+`3db078ab`).
 
 ## What this branch delivers
 
@@ -36,36 +38,40 @@ embedded **schema layer** and **cross-tab reference columns**.
 - NOT yet verified live: the extractor path for the schema chunk/digest (needs
   a live worker — same rehearsal-on-dev gate as v2, at release time).
 
-## Audit next (the reason this is unmerged)
+## Audit — DONE (2026-07-15, fixes in `ab217903`)
 
-v2 got a 3-reviewer audit; v2.1 touches the same concurrency-sensitive
-surfaces. Suggested lenses + hot spots:
+Three parallel adversarial reviewers over `git diff fbf0c1f9..HEAD`
+(concurrency/data-loss, correctness/parity, security); every finding verified
+with a concrete trace or engine-level repro before it counted. Full report on
+dev-brain task `659f24dd`. Headlines:
 
-1. **Concurrency / data loss** — the client differ path vs the registry
-   lock/`draft_rev` etag (client diffs against `savedDocRef`, server applies
-   under lock; is every 409/reload path sound?); `guardSingleTabWrite`
-   bypasses (any route/tool that can still whole-doc-write a multi-tab file?);
-   `saveTableDraft`'s window guard uses `locked.totalRows` (published stats) —
-   correct for a workbook whose DRAFT grew?; JSONB mirror rules (single-tab
-   only) in all writers; `tab_delete`/`tab_rename` racing row ops in the same
-   batch and across batches; `ensureRefColumn`'s lazy `ALTER` vs concurrent
-   read-only opens; promote path with multi-tab drafts + draft-added tabs.
-2. **Correctness / parity** — `diffTableDocs` op semantics vs the old
-   whole-doc save (esp. cell null/clear vs delete, new-row runs anchored to
-   one `afterRowId`, aggregate/view upserts); per-tab reads/windows/pushdown
-   parity; `shapeHashOf`/`shapeHashOfFile` agreement for every shape (anon tab
-   ids, dedup'd view names); reference degrade paths; import mapping (types,
-   empty sheets, name collisions, caps); `buildTableDataText` cross-tab
-   budget.
-3. **Security** — `?distinct=` endpoint (ownership, injection via columnId/
-   prefix, LIKE-escape); draft-ops zod passthrough now carrying tab ops +
-   `ref` objects from the network; `ref_json` parsed from file-sourced bytes
-   (crafted/restored `.sqlite`); view-name dedupe vs `quoteIdent`; the P4
-   `dropFtsShadow` on published files (shadow silently absent until promote —
-   acceptable?).
-
-Fix protocol (v2 convention): fix the top clusters on this branch, keep the
-suite green, log everything on dev-brain task `659f24dd`.
+- **Security: zero exploitable findings.** All 15 candidates refuted with
+  disproving traces (`?distinct=` resolves columnId against the real column
+  list + correct LIKE-escape; quoteIdent/physicalName/bind-params cover every
+  SQL sink; path segments regex-guarded; owner scoping uniform). The
+  draft-ops route's `{op:string}.passthrough()` was replaced with a typed
+  per-op zod schema as hardening.
+- **Fixed (all verified, all regression-tested):** formula↔stored retype is
+  now DDL (was: bricked the workbook file — CRITICAL); diffTableDocs row
+  runs applied reversed + top inserts appended (round-trip suite added);
+  autosave dropped edits made during the network await, then committed
+  without them (snapshot + serialized saves); guardSingleTabWrite/truncation
+  guard read published stats and missed draft-only tabs / draft growth;
+  `PUT /draft` had no etag (now if_rev + returns draft_rev); whole-doc
+  rebuilds renamed the tab to 'Sheet1' (shape-hash flip → spurious
+  re-summarize); import into a >10k table 500'd (replace semantics + 400);
+  stale `-wal` sidecars swept BEFORE file-replacing renames (corruption
+  vector); getTable default-tab payload could span two tabs; tab names
+  colliding with engine `t_*`/FTS names aborted writes; property clears
+  (width/format/options/formula/ref) never reached the file (null = clear);
+  view reordering silently ignored (now falls back).
+- **Non-blocking follow-ups** (logged on the task, not fixed): crash window
+  between promote's file swap and the PG commit (divergence, no data loss);
+  legacy JSONB promote re-takes the lock; per-tab `draft_rev` (two windows on
+  different tabs 409 each other); agent tools never pass `ifRev`; retry after
+  a PG-commit failure can wedge autosave on a `_rid` PK violation until
+  reload; multi-tab reorder leaves the session unsaveable until reload (UX);
+  `distinct=` offers `9.0` for numeric sources (cosmetic).
 
 ## After the audit (before ship)
 
