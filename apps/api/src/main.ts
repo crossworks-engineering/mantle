@@ -13,6 +13,7 @@
  */
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
+import { runTableStorageProbes } from '@mantle/tabledb';
 import { configureDBOS, RUNNER_QUEUE, runnerConcurrency } from './config';
 import { startAgentRuntime, stopAgentRuntime } from './agent/runtime';
 import { installTurnStreamObserver } from './turn-stream-observer';
@@ -25,6 +26,19 @@ import './workflows/team-turn';
 import { enqueueTelegramTurn } from './workflows/telegram-turn';
 
 async function main(): Promise<void> {
+  // Boot sanity for sqlite-native table storage: node:sqlite is experimental
+  // upstream, so the engine behaviors Tables v2 relies on are re-proven on
+  // every boot (this is the same suite CI runs on the prod image). Loud but
+  // non-fatal — the box still serves everything else; /debug sanity mirrors
+  // the failure with remediation.
+  void runTableStorageProbes().then((report) => {
+    if (report.ok) return;
+    const failed = report.results.filter((r) => !r.ok && r.required);
+    console.error(
+      `[api] TABLE-STORAGE PROBES FAILED on node ${process.version} — sqlite table storage must not be used on this image:\n` +
+        failed.map((r) => `  ✗ ${r.key}: ${r.detail}`).join('\n'),
+    );
+  });
   configureDBOS();
   // Bridge trace steps → live turn-status events for streamed turns. Pure
   // registration (no I/O); harmless when MANTLE_TURN_STREAMING is off, since

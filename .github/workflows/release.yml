@@ -122,6 +122,16 @@ jobs:
       - name: Inspect
         run: docker buildx imagetools inspect "${IMAGE}:${{ github.ref_name }}"
 
+      # Tables v2 foundation gate: node:sqlite is experimental upstream, so the
+      # engine behaviors table storage leans on (readOnly enforcement, FTS5
+      # trigram, VACUUM INTO under WAL, …) are re-proven on the ACTUAL image —
+      # the exact Node binary boxes will run — before the release is cut. A
+      # drifted image fails here instead of on a customer box.
+      - name: Probe node:sqlite on the prod image
+        run: |
+          docker run --rm "${IMAGE}:${{ github.ref_name }}" \
+            pnpm -C apps/web exec tsx ../../packages/tabledb/src/probes-cli.ts
+
   release:
     needs: merge
     runs-on: ubuntu-24.04

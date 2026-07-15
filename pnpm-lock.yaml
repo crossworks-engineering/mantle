@@ -56,6 +56,9 @@ importers:
       '@mantle/storage':
         specifier: workspace:*
         version: link:../../packages/storage
+      '@mantle/tabledb':
+        specifier: workspace:*
+        version: link:../../packages/tabledb
       '@mantle/telegram':
         specifier: workspace:*
         version: link:../../packages/telegram
@@ -190,6 +193,9 @@ importers:
       '@mantle/storage':
         specifier: workspace:*
         version: link:../../packages/storage
+      '@mantle/tabledb':
+        specifier: workspace:*
+        version: link:../../packages/tabledb
       '@mantle/telegram':
         specifier: workspace:*
         version: link:../../packages/telegram
@@ -974,6 +980,15 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.726.0
         version: 3.1047.0
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.19
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
+  packages/tabledb:
     devDependencies:
       '@types/node':
         specifier: ^22.10.5

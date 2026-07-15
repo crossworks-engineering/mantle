@@ -5,6 +5,7 @@ import { db, sql } from '@mantle/db';
 import { bucketStatus } from '@mantle/storage';
 import { filesRoot } from '@mantle/files';
 import { resolveEmbeddingConfig } from '@mantle/embeddings';
+import { runTableStorageProbes } from '@mantle/tabledb';
 
 import { readUpdaterStatus, updaterAvailable } from '../updates';
 import type { SanityCheck, SanityReport } from './types';
@@ -272,6 +273,32 @@ async function checkPgBoss(): Promise<SanityCheck> {
   return { ...base, status: 'pass', detail: `Background-job schema “pgboss” is present.`, fix: null };
 }
 
+// ── Table storage ────────────────────────────────────────────────────────────
+
+async function checkTableStorageProbes(): Promise<SanityCheck> {
+  const base = { key: 'tables.sqlite_probes', label: 'Table-storage engine', category: 'Database' as const };
+  const report = await runTableStorageProbes();
+  if (!report.ok) {
+    const failed = report.results.filter((r) => !r.ok && r.required);
+    return {
+      ...base,
+      status: 'fail',
+      detail: `node:sqlite drifted on this image (node ${process.version}) — ${failed
+        .map((r) => `${r.key}: ${r.detail}`)
+        .join('; ')}. Sqlite-native table storage must not be used until the image is fixed.`,
+      fix: {
+        summary: `Pin the deployment to the previous image and report the Node/node:sqlite drift — the probes name the exact behavior that broke.`,
+      },
+    };
+  }
+  return {
+    ...base,
+    status: 'pass',
+    detail: `node:sqlite engine behaviors verified (readOnly enforcement, WAL, FTS5 trigram, MATCH quoting, VACUUM INTO).`,
+    fix: null,
+  };
+}
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 
 /**
@@ -288,6 +315,7 @@ export async function runSanityChecks(userId: string): Promise<SanityReport> {
     { key: 'env.public_url', label: 'Public URL', category: 'Environment', run: async () => checkPublicUrl() },
     { key: 'embedding.model', label: 'Embedding model', category: 'Embedding', run: () => checkEmbedder(userId) },
     { key: 'db.pgboss', label: 'Background-job schema', category: 'Database', run: checkPgBoss },
+    { key: 'tables.sqlite_probes', label: 'Table-storage engine', category: 'Database', run: checkTableStorageProbes },
   ];
 
   const checks = await Promise.all(
