@@ -30,7 +30,7 @@
  * pg_notify channel to extractNode().
  */
 
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   db,
   agents,
@@ -70,6 +70,10 @@ import {
 import { getChatAdapter, type ChatResult } from '@mantle/voice';
 import {
   chunkDocText,
+  chunkSpreadsheetProfile,
+  fileFamilyKey,
+  hasSheetMarkers,
+  isSpreadsheetTitle,
   mentionRefs,
   getPdfPasswordCandidates,
   markPdfPasswordUsed,
@@ -109,6 +113,14 @@ const BODY_MAX_CHARS = 24_000;
  *  above. Single-user/family scale, so the cap is generous; it only
  *  exists to bound a pathologically huge OCR'd file, not real documents. */
 const TEXT_STORE_MAX_CHARS = 1_000_000;
+
+/** Salience for superseded file versions (older same-family exports). A
+ *  re-ranking nudge — λ·(1−0.5)=+0.075 effective distance — not a hide.
+ *  Set to 1 to disable version demotion entirely. */
+const SUPERSEDED_FILE_SALIENCE = Math.min(
+  1,
+  Math.max(0, Number(process.env.MANTLE_SUPERSEDED_FILE_SALIENCE ?? 0.5)),
+);
 
 /** Top-K near-neighbours considered when classifying a candidate fact. */
 const CLASSIFIER_NEIGHBOURS = 3;
@@ -1794,8 +1806,21 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       // so re-extracts REPLACE rather than accumulate. Long docs become
       // section-sized, individually-embedded chunks; short ones a single
       // whole-body chunk — uniform chunk-level search across all content.
+      //
+      // Spreadsheets are the exception: embedding a flattened grid row-by-row
+      // poisons passage retrieval (a corpus audit found grid chunks at 74% of
+      // one brain's chunk table, riding into the responder's auto-context as
+      // numeric noise). A grid file gets one PROFILE chunk per sheet — name,
+      // header row, sampled rows, honest coverage note — while the full text
+      // stays readable via file_read (data.text persists above).
+      const gridProfile =
+        node.type === 'file' && (isSpreadsheetTitle(node.title) || hasSheetMarkers(rawBody));
       await step(
-        { name: 'write_chunks', kind: 'compute', input: { bodyChars: rawBody.length } },
+        {
+          name: 'write_chunks',
+          kind: 'compute',
+          input: { bodyChars: rawBody.length, gridProfile },
+        },
         async (h) => {
           // Embed BEFORE touching the table, and swap delete+insert in one
           // transaction. The old order (delete → embed → insert, embed
@@ -1804,7 +1829,9 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
           // returned "success", and the skip guard kept every retry away.
           // Now an embed failure throws (queue retries, old chunks intact)
           // and a crash mid-step can never destroy the previous rebuild.
-          const pieces = chunkDocText(rawBody);
+          const pieces = gridProfile
+            ? chunkSpreadsheetProfile(rawBody, { fileTitle: node.title })
+            : chunkDocText(rawBody);
           if (pieces.length === 0) {
             await db.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
             h.setOutput({ chunks: 0 });
@@ -1831,6 +1858,67 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
           h.setOutput({ chunks: pieces.length });
         },
       );
+
+      // ─── versioned-export supersede (file nodes) ─────────────────────
+      // Weekly dumps and "_version_NN" workbooks arrive as siblings whose
+      // titles differ only by a date/version token; retrieval then hits
+      // whichever version is cosine-closest — often stale. Group siblings by
+      // fileFamilyKey and down-weight every version but the newest (salience
+      // is a re-ranking nudge, λ·(1−salience), not a hide). Idempotent and
+      // self-healing: the newest is restored to 1.0 if a prior pass demoted
+      // it. Best-effort — a failure here must not fail the extraction.
+      if (node.type === 'file') {
+        await step(
+          { name: 'supersede_file_versions', kind: 'compute', input: { title: node.title } },
+          async (h) => {
+            const familyKey = fileFamilyKey(node.title);
+            if (!familyKey) {
+              h.setOutput({ family: null });
+              return;
+            }
+            const siblings = await db
+              .select({
+                id: nodes.id,
+                title: nodes.title,
+                createdAt: nodes.createdAt,
+                salience: nodes.salience,
+              })
+              .from(nodes)
+              .where(
+                and(
+                  eq(nodes.ownerId, ownerId),
+                  eq(nodes.type, 'file'),
+                  node.parentId ? eq(nodes.parentId, node.parentId) : isNull(nodes.parentId),
+                ),
+              );
+            const family = siblings
+              .filter((s) => fileFamilyKey(s.title) === familyKey)
+              .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+            const [newest, ...older] = family;
+            const demote = older.filter((s) => s.salience > SUPERSEDED_FILE_SALIENCE);
+            if (demote.length > 0) {
+              await db
+                .update(nodes)
+                .set({ salience: SUPERSEDED_FILE_SALIENCE })
+                .where(
+                  inArray(
+                    nodes.id,
+                    demote.map((s) => s.id),
+                  ),
+                );
+            }
+            if (newest && newest.salience < 1) {
+              await db.update(nodes).set({ salience: 1 }).where(eq(nodes.id, newest.id));
+            }
+            h.setOutput({
+              family: familyKey,
+              versions: family.length,
+              demoted: demote.length,
+              newest: newest?.title ?? null,
+            });
+          },
+        );
+      }
 
       // ─── entity reconciliation ───────────────────────────────────────
       // Retrieval-only docs skip this entirely: no entity rows, no
