@@ -45,7 +45,8 @@ export type ColumnType =
   | 'select'
   | 'multiselect'
   | 'url'
-  | 'formula';
+  | 'formula'
+  | 'reference';
 
 export const COLUMN_TYPES: readonly ColumnType[] = [
   'text',
@@ -59,6 +60,7 @@ export const COLUMN_TYPES: readonly ColumnType[] = [
   'multiselect',
   'url',
   'formula',
+  'reference',
 ];
 
 /** Aggregations available for a column's footer total. */
@@ -84,6 +86,12 @@ export type ColumnFormat = {
   decimals?: number;
 };
 
+/** Cross-tab reference target for type='reference' (v2.1 P4): the column
+ *  offers/stores VALUES from another tab's column, Excel data-validation
+ *  style — free text allowed, dangling values flagged in the profile, same
+ *  workbook only. */
+export type ColumnRef = { tabId: string; columnId: string };
+
 export type Column = {
   id: string;
   name: string;
@@ -95,6 +103,8 @@ export type Column = {
   formula?: string;
   /** Persisted pixel width (UI only). */
   width?: number;
+  /** Source column for reference columns. */
+  ref?: ColumnRef;
 };
 
 /** A single cell's stored value. Formula cells are never stored — they're
@@ -231,6 +241,9 @@ export function ensureTableDoc(input: unknown): TableDoc {
     if (Array.isArray(col.options)) out.options = col.options;
     if (typeof col.formula === 'string') out.formula = col.formula;
     if (typeof col.width === 'number') out.width = col.width;
+    if (col.ref && typeof col.ref === 'object' && typeof col.ref.tabId === 'string' && typeof col.ref.columnId === 'string') {
+      out.ref = { tabId: col.ref.tabId, columnId: col.ref.columnId };
+    }
     return out;
   });
 
@@ -306,6 +319,7 @@ export function coerceCell(value: unknown, type: ColumnType): CellValue {
     case 'text':
     case 'url':
     case 'select':
+    case 'reference':
     case 'formula':
     default:
       return String(value);

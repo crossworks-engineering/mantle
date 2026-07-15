@@ -296,10 +296,21 @@ a price comparison, an online-services list, a budget, a tracker.
 
 ## The model
 
-A table is \`{ columns, rows, aggregates, views }\`:
+A table is a **workbook**: one or more tabs (worksheets, like Excel), each a
+grid of \`{ columns, rows, aggregates, views }\`. Every row/column/query tool
+takes an optional \`tab\` (name or id, default: the first tab); manage tabs
+with \`table_tab_add\` / \`table_tab_rename\` / \`table_tab_delete\`. A multi-sheet
+spreadsheet imports as ONE table with a tab per sheet, and \`table_sql\` joins
+across tabs (same file).
 - **Columns** have a \`type\`: text · number · currency · percent · date ·
-  datetime · checkbox · select · multiselect · url · formula. Pick the right
-  type — it drives formatting, totals, and sorting.
+  datetime · checkbox · select · multiselect · url · formula · reference.
+  Pick the right type — it drives formatting, totals, and sorting.
+- **Reference columns** offer values from another tab's column (Excel
+  data-validation style): \`table_column_add\` with \`type: "reference"\` and
+  \`reference: { tab, column }\`. Soft integrity — free text is allowed, values
+  missing from the source show as DANGLING REFS in the profile. Use one
+  whenever a tab repeats another tab's key (car model names, circuit ids) —
+  it documents the join edge for \`table_sql\`.
 - **Rows** are addressed by a stable \`id\`. "Update row 3", "delete that row",
   "set its status" all map onto a row id.
 - **Aggregates** are per-column footer totals (sum / avg / count / min / max).

@@ -32,6 +32,11 @@ export type ColumnProfile = {
   prose?: boolean;
   /** date/datetime column carrying values that didn't normalize to ISO. */
   mixedDates?: boolean;
+  /** type='reference': the cross-tab source, resolved to display names. */
+  refersTo?: { tab: string; column: string };
+  /** type='reference': distinct non-empty values ABSENT from the source
+   *  column (Excel-style soft integrity — flagged, never blocked). */
+  danglingRefs?: number;
 };
 
 export type TabProfile = {
@@ -43,7 +48,7 @@ export type TabProfile = {
 
 const TOP_N = 8;
 const RANGED = new Set<ColumnType>(['number', 'currency', 'percent', 'date', 'datetime']);
-const TEXTY = new Set<ColumnType>(['text', 'url']);
+const TEXTY = new Set<ColumnType>(['text', 'url', 'reference']);
 
 type ColRow = { col_id: string; physical: string; name: string; type: string };
 
@@ -113,16 +118,45 @@ export function profileFile(absPath: string): TabProfile[] {
       name: string;
       physical_table: string;
     }[];
+    const tabNameById = new Map(tabs.map((t) => [t.tab_id, t.name]));
+    const tableByTabId = new Map(tabs.map((t) => [t.tab_id, t.physical_table]));
+    const allCols = db.prepare(`SELECT * FROM _columns`).all() as unknown as (ColRow & { ref_json?: string | null })[];
+    const colById = new Map(allCols.map((c) => [c.col_id, c]));
     return tabs.map((tab) => {
       const rowCount = Number(db.prepare(`SELECT count(*) AS n FROM ${tab.physical_table}`).get()?.n ?? 0);
+      // SELECT * — pre-v2.1 files have no ref_json column.
       const cols = db
-        .prepare(`SELECT col_id, physical, name, type FROM _columns WHERE tab_id = ? ORDER BY position`)
-        .all(tab.tab_id) as unknown as ColRow[];
+        .prepare(`SELECT * FROM _columns WHERE tab_id = ? ORDER BY position`)
+        .all(tab.tab_id) as unknown as (ColRow & { ref_json?: string | null })[];
       return {
         tabId: tab.tab_id,
         name: tab.name,
         rowCount,
-        columns: cols.map((c) => profileColumn(db, tab.physical_table, rowCount, c)),
+        columns: cols.map((c) => {
+          const out = profileColumn(db, tab.physical_table, rowCount, c);
+          if (c.type === 'reference' && c.ref_json != null) {
+            const ref = JSON.parse(String(c.ref_json)) as { tabId: string; columnId: string };
+            const srcCol = colById.get(ref.columnId);
+            const srcTable = tableByTabId.get(ref.tabId);
+            const srcTabName = tabNameById.get(ref.tabId);
+            if (srcCol && srcTable && srcTabName) {
+              out.refersTo = { tab: srcTabName, column: srcCol.name };
+              const dangling = Number(
+                db
+                  .prepare(
+                    `SELECT count(DISTINCT ${c.physical}) AS n FROM ${tab.physical_table}
+                     WHERE ${c.physical} IS NOT NULL AND CAST(${c.physical} AS TEXT) != ''
+                       AND ${c.physical} NOT IN (
+                         SELECT ${srcCol.physical} FROM ${srcTable} WHERE ${srcCol.physical} IS NOT NULL
+                       )`,
+                  )
+                  .get()?.n ?? 0,
+              );
+              if (dangling > 0) out.danglingRefs = dangling;
+            }
+          }
+          return out;
+        }),
       };
     });
   } finally {
@@ -200,6 +234,8 @@ export function profileToText(profiles: TabProfile[], opts: { title: string; col
       if (c.prose) bits.push(`long text (avg ${c.avgTextLen} chars)`);
       if (c.identifierLike) bits.push('mostly unique values (identifier-like — look up specific values with table_sql)');
       if (c.mixedDates) bits.push('MIXED DATE FORMATS (some values not ISO)');
+      if (c.refersTo) bits.push(`references ${c.refersTo.tab}.${c.refersTo.column} (cross-tab join key)`);
+      if (c.danglingRefs) bits.push(`DANGLING REFS (${c.danglingRefs} value(s) missing from the source column)`);
       let line = `- ${c.name} (${c.type}): ${bits.join(', ')}`;
       if (c.topValues.length > 0) {
         line += `. Top values: ${c.topValues.map((t) => `${t.value} (${t.count})`).join(', ')}`;

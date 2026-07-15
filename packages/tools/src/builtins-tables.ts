@@ -192,6 +192,29 @@ async function loadTab(
   return { table: scoped, doc: baseline(scoped), tabId: hit.id };
 }
 
+/** Resolve a `reference: {tab, column}` input (names or ids) to the engine's
+ *  {tabId, columnId}. Same-workbook only. */
+async function resolveRefTarget(
+  ownerId: string,
+  tableId: string,
+  refInput: unknown,
+): Promise<{ ref: { tabId: string; columnId: string } } | { error: string }> {
+  const rec = (refInput ?? {}) as Record<string, unknown>;
+  const tabRef = str(rec.tab).trim();
+  const colRef = str(rec.column).trim();
+  if (!tabRef || !colRef) {
+    return { error: "a reference column needs `reference: { tab, column }` — the source tab and column it offers values from (see table_get's tabs)" };
+  }
+  const loaded = await loadTab(ownerId, tableId, tabRef);
+  if ('error' in loaded) return { error: loaded.error };
+  const srcTabId = loaded.tabId ?? loaded.table.tabId;
+  if (!srcTabId) return { error: `cannot resolve tab '${tabRef}' — this table has no tab metadata (commit it once, then retry)` };
+  const col = resolveColumn(loaded.doc, colRef);
+  if (!col) return { error: `column '${colRef}' not found on tab '${tabRef}'` };
+  if (col.type === 'formula') return { error: 'a reference column cannot target a formula column' };
+  return { ref: { tabId: srcTabId, columnId: col.id } };
+}
+
 /** Validate against the target tab's baseline doc, then dispatch draft OPS —
  *  the structural (column/view/aggregate) tools' shape since v2.1: the op
  *  path targets any tab and scales past the materialize window (the old
@@ -1557,6 +1580,16 @@ const table_column_add: BuiltinToolDef = {
       formula: { type: 'string', description: 'for type=formula, e.g. "{Qty} * {Price}"' },
       after_column: { type: 'string', description: 'optional column id/name to insert after' },
       tab: { type: 'string', description: TAB_HINT },
+      reference: {
+        type: 'object',
+        description:
+          'For type=reference: the source this column offers values from (Excel data-validation style), e.g. { "tab": "Car models", "column": "Model" }. Same workbook only.',
+        properties: {
+          tab: { type: 'string', description: 'source tab, by name or id' },
+          column: { type: 'string', description: 'source column, by name or id' },
+        },
+        required: ['tab', 'column'],
+      },
     },
     required: ['table_id', 'name', 'type'],
   },
@@ -1566,12 +1599,19 @@ const table_column_add: BuiltinToolDef = {
     const type = str(input.type).trim();
     if (!tableId || !name) return { ok: false, error: 'table_id and name are required' };
     if (!COLUMN_TYPES.includes(type as ColumnType)) return { ok: false, error: `invalid type '${type}'` };
+    let ref: { tabId: string; columnId: string } | undefined;
+    if (type === 'reference') {
+      const resolved = await resolveRefTarget(ctx.ownerId, tableId, input.reference);
+      if ('error' in resolved) return { ok: false, error: resolved.error };
+      ref = resolved.ref;
+    }
     const newColId = crypto.randomUUID();
     const res = await editViaOps(ctx.ownerId, tableId, input.tab, (doc) => {
       const spec: Omit<Column, 'id'> & { id: string } = { id: newColId, name, type: type as ColumnType };
       if (input.format && typeof input.format === 'object') spec.format = input.format as Column['format'];
       if (Array.isArray(input.options)) spec.options = strArr(input.options).map((label) => ({ id: label.toLowerCase().replace(/\s+/g, '_'), label }));
       if (str(input.formula).trim()) spec.formula = str(input.formula).trim();
+      if (ref) spec.ref = ref;
       const after = str(input.after_column).trim();
       const afterColumnId = after ? resolveColumn(doc, after)?.id ?? null : null;
       return {
@@ -1615,6 +1655,16 @@ const table_column_update: BuiltinToolDef = {
         description: 'Formula expression, e.g. "{Qty} * {Price}" — references other columns by name.',
       },
       tab: { type: 'string', description: TAB_HINT },
+      reference: {
+        type: 'object',
+        description:
+          'For type=reference: the source this column offers values from, e.g. { "tab": "Car models", "column": "Model" }. Required when retyping to reference; pass alone to re-point an existing reference.',
+        properties: {
+          tab: { type: 'string', description: 'source tab, by name or id' },
+          column: { type: 'string', description: 'source column, by name or id' },
+        },
+        required: ['tab', 'column'],
+      },
     },
     required: ['table_id', 'column'],
   },
@@ -1622,6 +1672,12 @@ const table_column_update: BuiltinToolDef = {
     const tableId = str(input.table_id).trim();
     const columnRef = str(input.column).trim();
     if (!tableId || !columnRef) return { ok: false, error: 'table_id and column are required' };
+    let ref: { tabId: string; columnId: string } | undefined;
+    if (input.reference !== undefined) {
+      const resolved = await resolveRefTarget(ctx.ownerId, tableId, input.reference);
+      if ('error' in resolved) return { ok: false, error: resolved.error };
+      ref = resolved.ref;
+    }
     const res = await editViaOps(ctx.ownerId, tableId, input.tab, (doc) => {
       const col = resolveColumn(doc, columnRef);
       if (!col) return { ops: [], error: `column '${columnRef}' not found` };
@@ -1634,6 +1690,10 @@ const table_column_update: BuiltinToolDef = {
       if (input.format && typeof input.format === 'object') patch.format = input.format as Column['format'];
       if (Array.isArray(input.options)) patch.options = strArr(input.options).map((label) => ({ id: label.toLowerCase().replace(/\s+/g, '_'), label }));
       if (typeof input.formula === 'string') patch.formula = input.formula.trim();
+      if (ref) patch.ref = ref;
+      if ((patch.type === 'reference' || (ref && col.type !== 'reference' && !patch.type)) && !ref && !col.ref) {
+        return { ops: [], error: 'retyping to reference needs `reference: { tab, column }` — the source it offers values from' };
+      }
       if (Object.keys(patch).length === 0) return { ops: [], error: 'nothing to update' };
       return { ops: [{ op: 'column_update', columnId: col.id, patch }], output: { column_id: col.id } };
     });

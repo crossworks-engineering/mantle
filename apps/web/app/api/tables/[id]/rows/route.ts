@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes, tables } from '@mantle/db';
-import { draftPathFor, listRowsWindow, queryRowsWindow, resolveStoragePath } from '@mantle/tabledb';
+import { distinctColumnValues, draftPathFor, listRowsWindow, queryRowsWindow, resolveStoragePath } from '@mantle/tabledb';
 import { existsSync } from 'node:fs';
 import { getOwnerOr401 } from '@/lib/auth';
 
@@ -40,6 +40,18 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const draftAbs = draftPathFor(publishedAbs);
   const file = wantDraft && existsSync(draftAbs) ? draftAbs : publishedAbs;
   try {
+    // Distinct values of one column — the option list a reference column's
+    // editor offers (?distinct=<columnId>, optional ?prefix= typeahead).
+    const distinct = url.searchParams.get('distinct');
+    if (distinct) {
+      const values = distinctColumnValues(file, {
+        columnId: distinct,
+        ...(tabId ? { tabId } : {}),
+        ...(url.searchParams.get('prefix') ? { prefix: url.searchParams.get('prefix')! } : {}),
+        limit,
+      });
+      return NextResponse.json({ values, source: file === draftAbs ? 'draft' : 'published' });
+    }
     // Offset paging (the grid's "load more" appends from a known position);
     // keyset (`after_pos`/`after_rid`) stays the cheaper cursor for crawls.
     if (offsetParam !== null) {

@@ -29,7 +29,7 @@ import { openTableFile, sqlQuote, type SqliteDb } from './sqlite';
  */
 
 export const ENGINE_VERSION = 1;
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /** Largest tab the doc materializer will load whole (UI/back-compat bridge). */
 export const MATERIALIZE_MAX = 10_000;
@@ -159,6 +159,7 @@ function createSchema(db: SqliteDb, meta: WriteDocMeta): void {
     name TEXT NOT NULL, type TEXT NOT NULL,
     format_json TEXT, options_json TEXT, formula_src TEXT, width INTEGER,
     position INTEGER NOT NULL,
+    ref_json TEXT,
     PRIMARY KEY (tab_id, col_id)
   )`);
   db.exec(`CREATE TABLE _views (
@@ -193,8 +194,8 @@ function createTab(
     viewName,
   );
   const insCol = db.prepare(
-    `INSERT INTO _columns (tab_id, col_id, physical, name, type, format_json, options_json, formula_src, width, position)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO _columns (tab_id, col_id, physical, name, type, format_json, options_json, formula_src, width, position, ref_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   plans.forEach(({ col, physical }, i) => {
     insCol.run(
@@ -208,6 +209,7 @@ function createTab(
       col.formula ?? null,
       col.width ?? null,
       i,
+      col.ref ? JSON.stringify(col.ref) : null,
     );
   });
 
@@ -220,7 +222,7 @@ function createTab(
   db.exec(`CREATE INDEX ${physicalTable}_pos ON ${physicalTable}(_pos)`);
   // Auto-indexes for range-y types (plan §3.2).
   for (const p of stored) {
-    if (['date', 'datetime', 'number', 'currency', 'percent', 'select'].includes(p.col.type)) {
+    if (['date', 'datetime', 'number', 'currency', 'percent', 'select', 'reference'].includes(p.col.type)) {
       db.exec(`CREATE INDEX ${physicalTable}_${p.physical} ON ${physicalTable}(${p.physical})`);
     }
   }
@@ -322,8 +324,10 @@ export function writeDocFile(destAbs: string, doc: TableDocLike | WorkbookDocLik
 type TabRow = { tab_id: string; name: string; physical_table: string };
 
 function readColumns(db: SqliteDb, tabId: string): { columns: Column[]; physicals: Map<string, string> } {
+  // SELECT * — pre-v2.1 files have no ref_json column; a missing field reads
+  // as undefined instead of erroring the whole open.
   const rows = db
-    .prepare(`SELECT col_id, physical, name, type, format_json, options_json, formula_src, width FROM _columns WHERE tab_id = ? ORDER BY position`)
+    .prepare(`SELECT * FROM _columns WHERE tab_id = ? ORDER BY position`)
     .all(tabId);
   const physicals = new Map<string, string>();
   const columns = rows.map((r) => {
@@ -336,6 +340,7 @@ function readColumns(db: SqliteDb, tabId: string): { columns: Column[]; physical
     if (r.options_json != null) col.options = JSON.parse(String(r.options_json));
     if (r.formula_src != null) col.formula = String(r.formula_src);
     if (r.width != null) col.width = Number(r.width);
+    if (r.ref_json != null) col.ref = JSON.parse(String(r.ref_json));
     physicals.set(col.id, String(r.physical));
     return col;
   });
@@ -463,7 +468,14 @@ export function readDocFile(absPath: string, opts: { maxRows?: number; tabId?: s
   }
 }
 
-export type WorkbookColumnRef = { name: string; physical: string; type: ColumnType };
+export type WorkbookColumnRef = {
+  name: string;
+  physical: string;
+  type: ColumnType;
+  /** type='reference': the cross-tab source, resolved to display names
+   *  ("CarModels"."Model") so schema surfaces can state the join edge. */
+  refersTo?: { tab: string; column: string };
+};
 export type WorkbookTabRef = {
   name: string;
   viewName: string;
@@ -481,10 +493,18 @@ export function describeWorkbook(absPath: string): WorkbookTabRef[] {
   const db = openTableFile(absPath, { readOnly: true });
   try {
     const tabs = db.prepare(`SELECT tab_id, name, physical_table, view_name FROM _tabs ORDER BY position`).all();
+    const tabNameById = new Map(tabs.map((t) => [String(t.tab_id), String(t.name)]));
+    // col_id → display name across the whole file, for resolving ref edges.
+    const colNameById = new Map(
+      (db.prepare(`SELECT col_id, name FROM _columns`).all() as unknown as { col_id: string; name: string }[]).map(
+        (c) => [c.col_id, c.name],
+      ),
+    );
     return tabs.map((t) => {
       const physicalTable = String(t.physical_table);
+      // SELECT * — pre-v2.1 files have no ref_json column.
       const cols = db
-        .prepare(`SELECT physical, name, type FROM _columns WHERE tab_id = ? AND type != 'formula' ORDER BY position`)
+        .prepare(`SELECT * FROM _columns WHERE tab_id = ? AND type != 'formula' ORDER BY position`)
         .all(String(t.tab_id));
       const fts = db
         .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`)
@@ -495,11 +515,22 @@ export function describeWorkbook(absPath: string): WorkbookTabRef[] {
         physicalTable,
         ftsTable: fts ? `${physicalTable}_fts` : null,
         rowCount: Number(db.prepare(`SELECT count(*) AS n FROM ${physicalTable}`).get()?.n ?? 0),
-        columns: cols.map((c) => ({
-          name: String(c.name),
-          physical: String(c.physical),
-          type: String(c.type) as ColumnType,
-        })),
+        columns: cols.map((c) => {
+          const out: WorkbookColumnRef = {
+            name: String(c.name),
+            physical: String(c.physical),
+            type: String(c.type) as ColumnType,
+          };
+          if (c.ref_json != null) {
+            const ref = JSON.parse(String(c.ref_json)) as { tabId: string; columnId: string };
+            const tab = tabNameById.get(ref.tabId);
+            const column = colNameById.get(ref.columnId);
+            // A deleted source degrades the column to plain text semantics —
+            // the edge simply stops being advertised (Excel-style).
+            if (tab && column) out.refersTo = { tab, column };
+          }
+          return out;
+        }),
       };
     });
   } finally {

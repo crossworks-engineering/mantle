@@ -47,6 +47,7 @@ import {
   Variable,
   X,
   type LucideIcon,
+  ArrowUpRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -110,6 +111,7 @@ const TYPE_LABEL: Record<ColumnType, string> = {
   multiselect: 'Multi-select',
   url: 'URL',
   formula: 'Formula',
+  reference: 'Reference',
 };
 
 const TYPE_ICON: Record<ColumnType, LucideIcon> = {
@@ -124,6 +126,7 @@ const TYPE_ICON: Record<ColumnType, LucideIcon> = {
   multiselect: Tags,
   url: Link,
   formula: Variable,
+  reference: ArrowUpRight,
 };
 
 const AGG_ICON: Record<AggregateKind, LucideIcon> = {

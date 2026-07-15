@@ -18,13 +18,20 @@ export type ColumnType =
   | 'select'
   | 'multiselect'
   | 'url'
-  | 'formula';
+  | 'formula'
+  | 'reference';
 
 export type CellValue = string | number | boolean | string[] | null;
 
 export type SelectOption = { id: string; label: string; color?: string };
 
 export type ColumnFormat = { currency?: string; decimals?: number };
+
+/** Cross-tab reference target (type='reference', v2.1 P4): the cell offers /
+ *  stores VALUES from another tab's column, Excel data-validation style —
+ *  soft integrity (free text allowed, dangling values flagged in the
+ *  profile), same workbook only. */
+export type ColumnRef = { tabId: string; columnId: string };
 
 export type Column = {
   id: string;
@@ -34,6 +41,7 @@ export type Column = {
   options?: SelectOption[];
   formula?: string;
   width?: number;
+  ref?: ColumnRef;
 };
 
 export type Row = { id: string; cells: Record<string, CellValue> };

@@ -98,9 +98,37 @@ export function readRowById(absPath: string, rid: string, opts: { tabId?: string
   }
 }
 
+/** Distinct non-empty values of one column, alphabetical — the option list a
+ *  reference column's editor offers (typeahead via `prefix`). */
+export function distinctColumnValues(
+  absPath: string,
+  opts: { columnId: string; tabId?: string; limit?: number; prefix?: string },
+): string[] {
+  const limit = Math.max(1, Math.min(opts.limit ?? 200, 1000));
+  const db = openTableFile(absPath, { readOnly: true });
+  try {
+    const { physicalTable, cols } = tabMeta(db, opts.tabId);
+    const col = cols.find((c) => c.colId === opts.columnId);
+    if (!col || col.type === 'formula') return [];
+    const p = col.physical;
+    const where = [`${p} IS NOT NULL`, `CAST(${p} AS TEXT) != ''`];
+    const params: (string | number)[] = [];
+    if (opts.prefix) {
+      where.push(`CAST(${p} AS TEXT) LIKE ? ESCAPE '\\'`);
+      params.push(`${opts.prefix.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`);
+    }
+    const raw = db
+      .prepare(`SELECT DISTINCT CAST(${p} AS TEXT) AS v FROM ${physicalTable} WHERE ${where.join(' AND ')} ORDER BY 1 LIMIT ?`)
+      .all(...params, limit);
+    return raw.map((r) => String(r.v));
+  } finally {
+    db.close();
+  }
+}
+
 // ── Parity-gated filter compiler ─────────────────────────────────────────────
 
-const TEXT_FAMILY = new Set<ColumnType>(['text', 'select', 'url', 'date', 'datetime']);
+const TEXT_FAMILY = new Set<ColumnType>(['text', 'select', 'url', 'date', 'datetime', 'reference']);
 const NUM_FAMILY = new Set<ColumnType>(['number', 'currency', 'percent']);
 
 type Compiled = { where: string; params: (string | number)[] };

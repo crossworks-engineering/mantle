@@ -19,6 +19,12 @@ export function schemaToText(tabs: WorkbookTabRef[], opts: { title: string; node
     lines.push(`## ${t.name}`);
     lines.push(`View "${t.viewName}"${t.ftsTable ? ` · FTS shadow ${t.ftsTable}` : ''} · ${t.rowCount} rows.`);
     lines.push(`Columns: ${t.columns.map((c) => `${c.name} (${c.type})`).join(', ') || 'none'}.`);
+    const edges = t.columns.filter((c) => c.refersTo);
+    for (const c of edges) {
+      lines.push(
+        `Join edge: "${t.name}"."${c.name}" references "${c.refersTo!.tab}"."${c.refersTo!.column}" — join the views on these columns.`,
+      );
+    }
   }
   return lines.join('\n');
 }

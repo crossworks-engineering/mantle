@@ -94,11 +94,48 @@ function uniqueViewName(db: SqliteDb, wanted: string, excludeTabId?: string): st
 }
 
 function columnsOf(db: SqliteDb, tabId: string): ColRow[] {
+  // SELECT * — pre-v2.1 files have no ref_json column; missing fields read as
+  // undefined instead of erroring.
   return db
-    .prepare(
-      `SELECT tab_id, col_id, physical, name, type, options_json, position FROM _columns WHERE tab_id = ? ORDER BY position`,
-    )
+    .prepare(`SELECT * FROM _columns WHERE tab_id = ? ORDER BY position`)
     .all(tabId) as unknown as ColRow[];
+}
+
+/** Lazy in-file upgrade: drafts copied from pre-v2.1 published files lack the
+ *  ref_json column — add it before ops run (idempotent, cheap PRAGMA check). */
+function ensureRefColumn(db: SqliteDb): void {
+  const cols = db.prepare(`PRAGMA table_info(_columns)`).all() as unknown as { name: string }[];
+  if (!cols.some((c) => c.name === 'ref_json')) {
+    db.exec(`ALTER TABLE _columns ADD COLUMN ref_json TEXT`);
+  }
+}
+
+/** type='reference' columns must point at an EXISTING (tab, column) in this
+ *  workbook — never cross-file (ATTACH is denied in table_sql by design) and
+ *  never at themselves. */
+function validateRef(db: SqliteDb, ref: unknown, selfColId?: string): { tabId: string; columnId: string } {
+  const r = (ref ?? {}) as { tabId?: unknown; columnId?: unknown };
+  const tabId = String(r.tabId ?? '');
+  const columnId = String(r.columnId ?? '');
+  if (!tabId || !columnId) throw new Error('tabledb ops: a reference column needs ref {tabId, columnId}');
+  if (columnId === selfColId) throw new Error('tabledb ops: a reference column cannot reference itself');
+  const hit = db
+    .prepare(`SELECT type FROM _columns WHERE tab_id = ? AND col_id = ?`)
+    .get(tabId, columnId) as { type?: string } | undefined;
+  if (!hit) throw new Error(`tabledb ops: reference target ${tabId}/${columnId} does not exist in this workbook`);
+  if (hit.type === 'formula') throw new Error('tabledb ops: a reference column cannot target a formula column');
+  return { tabId, columnId };
+}
+
+/** Drop a tab's FTS shadow + triggers when present. Ops normally run on
+ *  DRAFT files (shadows already stripped by ensureDraftFile), but column DDL
+ *  against a shadow-carrying file breaks inside the triggers — drop first,
+ *  defensively; finalizePublishedFile rebuilds shadows on promote. */
+function dropFtsShadow(db: SqliteDb, tab: TabRow): void {
+  db.exec(`DROP TRIGGER IF EXISTS ${tab.physical_table}_fts_ai`);
+  db.exec(`DROP TRIGGER IF EXISTS ${tab.physical_table}_fts_ad`);
+  db.exec(`DROP TRIGGER IF EXISTS ${tab.physical_table}_fts_au`);
+  db.exec(`DROP TABLE IF EXISTS ${ftsTableName(tab.physical_table)}`);
 }
 
 /** Recreate the display-named SQL view from the current _columns (after any
@@ -238,9 +275,10 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
           anchor.position,
         );
       }
+      const ref = op.column.type === 'reference' ? validateRef(db, op.column.ref, colId) : null;
       db.prepare(
-        `INSERT INTO _columns (tab_id, col_id, physical, name, type, format_json, options_json, formula_src, width, position)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO _columns (tab_id, col_id, physical, name, type, format_json, options_json, formula_src, width, position, ref_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         tab.tab_id,
         colId,
@@ -252,8 +290,10 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
         op.column.formula ?? null,
         op.column.width ?? null,
         position,
+        ref ? JSON.stringify(ref) : null,
       );
       if (op.column.type !== 'formula') {
+        dropFtsShadow(db, tab);
         db.exec(`ALTER TABLE ${table} ADD COLUMN ${physical} ${sqlTypeFor(op.column.type)}`);
       }
       rebuildView(db, tab);
@@ -264,6 +304,18 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
       if (!col) return null; // mirror updateColumn's silent no-op on unknown id
       const patch = op.patch;
       const nextType = (patch.type ?? col.type) as ColumnType;
+      if (patch.ref !== undefined || (patch.type === 'reference' && col.type !== 'reference')) {
+        // Becoming (or re-pointing) a reference needs a valid same-workbook
+        // target; retyping AWAY from reference clears the edge below.
+        const ref = nextType === 'reference' ? validateRef(db, patch.ref, op.columnId) : null;
+        db.prepare(`UPDATE _columns SET ref_json = ? WHERE tab_id = ? AND col_id = ?`).run(
+          ref ? JSON.stringify(ref) : null,
+          tab.tab_id,
+          op.columnId,
+        );
+      } else if (patch.type && patch.type !== 'reference' && col.type === 'reference') {
+        db.prepare(`UPDATE _columns SET ref_json = NULL WHERE tab_id = ? AND col_id = ?`).run(tab.tab_id, op.columnId);
+      }
       db.prepare(
         `UPDATE _columns SET name = ?, type = ?, format_json = ?, options_json = ?, formula_src = ?, width = ?
          WHERE tab_id = ? AND col_id = ?`,
@@ -308,6 +360,8 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
       if (col.type !== 'formula') {
         // The display view references the column — drop it BEFORE the column
         // (SQLite refuses to drop a column a view depends on), then rebuild.
+        // FTS triggers reference it too (draft files carry none; defensive).
+        dropFtsShadow(db, tab);
         db.exec(`DROP VIEW IF EXISTS ${quoteIdent(tab.view_name)}`);
         db.exec(`ALTER TABLE ${table} DROP COLUMN ${col.physical}`);
       }
@@ -425,10 +479,7 @@ function applyTabOp(db: SqliteDb, op: Extract<TableOp, { op: `tab_${string}` }>)
       const tab = resolveTab(db, op.tabId);
       if (tabOrder(db).length <= 1) throw new Error('tabledb ops: a workbook needs at least one tab');
       // FTS shadow (published files only) + triggers, then view, then data.
-      db.exec(`DROP TRIGGER IF EXISTS ${tab.physical_table}_fts_ai`);
-      db.exec(`DROP TRIGGER IF EXISTS ${tab.physical_table}_fts_ad`);
-      db.exec(`DROP TRIGGER IF EXISTS ${tab.physical_table}_fts_au`);
-      db.exec(`DROP TABLE IF EXISTS ${ftsTableName(tab.physical_table)}`);
+      dropFtsShadow(db, tab);
       db.exec(`DROP VIEW IF EXISTS ${quoteIdent(tab.view_name)}`);
       db.exec(`DROP TABLE IF EXISTS ${tab.physical_table}`);
       db.prepare(`DELETE FROM _columns WHERE tab_id = ?`).run(tab.tab_id);
@@ -450,6 +501,7 @@ export function applyOpsToFile(absPath: string, ops: TableOp[], coerce: CoerceFn
   if (ops.length === 0) return { applied: 0, createdIds: [] };
   const db = openTableFile(absPath);
   try {
+    ensureRefColumn(db);
     const createdIds: (string | null)[] = [];
     db.exec('BEGIN');
     try {

@@ -281,6 +281,7 @@ export {
   type WorkbookDoc,
   type WorkbookTab,
   type Column,
+  type ColumnRef,
   type ColumnType,
   type ColumnFormat,
   type SelectOption,

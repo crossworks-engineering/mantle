@@ -47,6 +47,7 @@ export {
   aggregateWindow,
   compileFilters,
   compileSort,
+  distinctColumnValues,
   listRowsWindow,
   queryRowsWindow,
   readRowById,
