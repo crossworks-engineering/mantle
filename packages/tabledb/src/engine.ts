@@ -77,24 +77,49 @@ export type WriteDocMeta = {
   fts?: boolean;
 };
 
+function rowBucket(n: number): string {
+  if (n === 0) return '0';
+  return String(10 ** Math.floor(Math.log10(n)));
+}
+
+function hashShape(parts: { tabs: string[]; columns: [string, string][]; rows: string }): string {
+  const h = createHash('sha256');
+  h.update(JSON.stringify(parts));
+  return h.digest('hex').slice(0, 32);
+}
+
 /** Structure fingerprint gating the LLM re-summarize pass (plan §6): tab names
  *  + column (name, type) sequence + BUCKETED rowcount — cell edits never
  *  change it; schema edits and order-of-magnitude growth do. */
 export function shapeHashOf(doc: TableDocLike, tabName = 'Sheet1'): string {
-  const bucket = (n: number): string => {
-    if (n === 0) return '0';
-    const mag = 10 ** Math.floor(Math.log10(n));
-    return String(mag);
-  };
-  const h = createHash('sha256');
-  h.update(
-    JSON.stringify({
-      tabs: [tabName],
-      columns: doc.columns.map((c) => [c.name, c.type]),
-      rows: bucket(doc.rows.length),
-    }),
-  );
-  return h.digest('hex').slice(0, 32);
+  return hashShape({
+    tabs: [tabName],
+    columns: doc.columns.map((c) => [c.name, c.type]),
+    rows: rowBucket(doc.rows.length),
+  });
+}
+
+/** Same fingerprint computed FROM a workbook file (draft-promote path, where
+ *  no doc is materialized). Must agree with shapeHashOf for the same state. */
+export function shapeHashOfFile(absPath: string): string {
+  const db = openTableFile(absPath, { readOnly: true });
+  try {
+    const tabs = db.prepare(`SELECT tab_id, name, physical_table FROM _tabs ORDER BY position`).all();
+    const names = tabs.map((t) => String(t.name));
+    const columns: [string, string][] = [];
+    let rows = 0;
+    for (const t of tabs) {
+      for (const c of db
+        .prepare(`SELECT name, type FROM _columns WHERE tab_id = ? ORDER BY position`)
+        .all(String(t.tab_id))) {
+        columns.push([String(c.name), String(c.type)]);
+      }
+      rows += Number(db.prepare(`SELECT count(*) AS n FROM ${String(t.physical_table)}`).get()?.n ?? 0);
+    }
+    return hashShape({ tabs: names, columns, rows: rowBucket(rows) });
+  } finally {
+    db.close();
+  }
 }
 
 type ColumnPlan = { col: Column; physical: string; label: string };
@@ -290,6 +315,68 @@ function readColumns(db: SqliteDb, tabId: string): { columns: Column[]; physical
   return { columns, physicals };
 }
 
+export type ClippedDoc = {
+  doc: TableDocLike;
+  /** True row count in the file (doc.rows may be a leading window). */
+  total: number;
+  /** doc.rows was clipped at the window — callers page the rest via
+   *  listRowsWindow / the rows route. */
+  clipped: boolean;
+};
+
+/** Like readDocFile but CLIPS instead of throwing: doc.rows carries the first
+ *  `maxRows` rows (0 = schema only) and `total`/`clipped` say what was left
+ *  behind. The read path for tables past the materialize window. */
+export function readDocClipped(absPath: string, maxRows = MATERIALIZE_MAX): ClippedDoc {
+  const db = openTableFile(absPath, { readOnly: true });
+  try {
+    const tab = db.prepare(`SELECT tab_id, name, physical_table FROM _tabs ORDER BY position LIMIT 1`).get() as
+      | TabRow
+      | undefined;
+    if (!tab) return { doc: { columns: [], rows: [], aggregates: {}, views: [] }, total: 0, clipped: false };
+    const total = Number(db.prepare(`SELECT count(*) AS n FROM ${tab.physical_table}`).get()?.n ?? 0);
+    const doc = readTabDoc(db, tab, Math.min(maxRows, total));
+    return { doc, total, clipped: total > maxRows };
+  } finally {
+    db.close();
+  }
+}
+
+function readTabDoc(db: SqliteDb, tab: TabRow, limit: number): TableDocLike {
+  const { columns, physicals } = readColumns(db, tab.tab_id);
+  const stored = columns.filter((c) => c.type !== 'formula');
+  const select = stored.map((c) => physicals.get(c.id)!).join(', ');
+  const raw =
+    limit > 0
+      ? db
+          .prepare(`SELECT _rid${select ? ', ' + select : ''} FROM ${tab.physical_table} ORDER BY _pos, _rid LIMIT ?`)
+          .all(limit)
+      : [];
+  const rows: Row[] = raw.map((r) => {
+    const cells: Record<string, import('./doc-types').CellValue> = {};
+    for (const c of stored) {
+      const v = loadCell(r[physicals.get(c.id)!], c.type);
+      if (v !== null) cells[c.id] = v;
+    }
+    return { id: String(r._rid), cells };
+  });
+  const aggregates: Record<string, AggregateKind> = {};
+  for (const a of db.prepare(`SELECT col_id, kind FROM _aggregates WHERE tab_id = ?`).all(tab.tab_id)) {
+    aggregates[String(a.col_id)] = String(a.kind) as AggregateKind;
+  }
+  const views: View[] = db
+    .prepare(`SELECT view_id, name, spec_json FROM _views WHERE tab_id = ? ORDER BY position`)
+    .all(tab.tab_id)
+    .map((v) => {
+      const spec = JSON.parse(String(v.spec_json)) as { sort?: View['sort']; filters?: View['filters'] };
+      const view: View = { id: String(v.view_id), name: String(v.name) };
+      if (spec.sort?.length) view.sort = spec.sort;
+      if (spec.filters?.length) view.filters = spec.filters;
+      return view;
+    });
+  return { columns, rows, aggregates, views };
+}
+
 /**
  * Materialize the first (P1: only) tab back into a doc — the UI/back-compat
  * bridge keeping every existing surface working on file-backed tables.
@@ -305,42 +392,11 @@ export function readDocFile(absPath: string, opts: { maxRows?: number } = {}): T
       | undefined;
     if (!tab) return { columns: [], rows: [], aggregates: {}, views: [] };
 
-    const { columns, physicals } = readColumns(db, tab.tab_id);
-
     const countRow = db.prepare(`SELECT count(*) AS n FROM ${tab.physical_table}`).get();
     const rowCount = Number(countRow?.n ?? 0);
     if (rowCount > maxRows) throw new TableTooLargeError(rowCount, maxRows);
 
-    const stored = columns.filter((c) => c.type !== 'formula');
-    const select = stored.map((c) => physicals.get(c.id)!).join(', ');
-    const raw = db
-      .prepare(`SELECT _rid${select ? ', ' + select : ''} FROM ${tab.physical_table} ORDER BY _pos, _rid`)
-      .all();
-    const rows: Row[] = raw.map((r) => {
-      const cells: Record<string, import('./doc-types').CellValue> = {};
-      for (const c of stored) {
-        const v = loadCell(r[physicals.get(c.id)!], c.type);
-        if (v !== null) cells[c.id] = v;
-      }
-      return { id: String(r._rid), cells };
-    });
-
-    const aggregates: Record<string, AggregateKind> = {};
-    for (const a of db.prepare(`SELECT col_id, kind FROM _aggregates WHERE tab_id = ?`).all(tab.tab_id)) {
-      aggregates[String(a.col_id)] = String(a.kind) as AggregateKind;
-    }
-    const views: View[] = db
-      .prepare(`SELECT view_id, name, spec_json FROM _views WHERE tab_id = ? ORDER BY position`)
-      .all(tab.tab_id)
-      .map((v) => {
-        const spec = JSON.parse(String(v.spec_json)) as { sort?: View['sort']; filters?: View['filters'] };
-        const view: View = { id: String(v.view_id), name: String(v.name) };
-        if (spec.sort?.length) view.sort = spec.sort;
-        if (spec.filters?.length) view.filters = spec.filters;
-        return view;
-      });
-
-    return { columns, rows, aggregates, views };
+    return readTabDoc(db, tab, rowCount);
   } finally {
     db.close();
   }

@@ -9,12 +9,15 @@ export {
   describeWorkbook,
   fileStats,
   importMaxRows,
+  readDocClipped,
   readDocFile,
   shapeHashOf,
+  shapeHashOfFile,
   snapshotFile,
   writeDocFile,
 } from './engine';
 export type {
+  ClippedDoc,
   TabStats,
   WorkbookColumnRef,
   WorkbookStats,
@@ -33,6 +36,19 @@ export {
   runTableSql,
 } from './sql-runner';
 export type { SqlRunResult } from './sql-runner';
+
+export { applyOpsToFile, finalizePublishedFile } from './ops';
+export type { ApplyResult, CoerceFn, TableOp } from './ops';
+
+export {
+  aggregateWindow,
+  compileFilters,
+  compileSort,
+  listRowsWindow,
+  queryRowsWindow,
+  readRowById,
+} from './window';
+export type { QueryWindowResult, RowWindow } from './window';
 
 export { TableFileMissingError, openTableFile } from './sqlite';
 export type { OpenOptions, SqliteDb } from './sqlite';

@@ -19,7 +19,13 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid input' }, { status: 400 });
   }
-  const ok = await saveTableDraft(user.id, id, parsed.data.data as TableDoc);
-  if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  try {
+    const ok = await saveTableDraft(user.id, id, parsed.data.data as TableDoc);
+    if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  } catch (err) {
+    // Truncation guard (plan §4): a whole-doc autosave past the materialize
+    // window is refused loudly — the op route is the write path at that size.
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'draft save failed' }, { status: 400 });
+  }
   return NextResponse.json({ ok: true });
 }
