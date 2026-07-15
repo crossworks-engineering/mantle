@@ -81,6 +81,9 @@ export type CorpusMapEntry = {
   /** Top-level branch ('pages', 'files', …) the entry is grouped under. */
   branch: string;
   summary: string | null;
+  /** Tables only: one-line schema digest (tabs × columns) so the model knows
+   *  what's queryable via table_schema/table_sql without a tool call. */
+  schema?: string | null;
 };
 
 /** A knowledge-graph relationship as a readable triple — the graph axis in the
@@ -293,7 +296,8 @@ export function renderCorpusMapBlock(
     used += header.length + 1;
     for (const e of group) {
       const summary = e.summary ? ` — ${snipLine(e.summary, 100)}` : '';
-      const line = `• "${e.title}" (${e.type}#${e.nodeId.slice(0, 8)})${summary}`;
+      const schema = e.schema ? ` [${snipLine(e.schema, 120)}]` : '';
+      const line = `• "${e.title}" (${e.type}#${e.nodeId.slice(0, 8)})${summary}${schema}`;
       if (used + line.length > maxChars) {
         clipped = true;
         break outer;

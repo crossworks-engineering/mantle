@@ -648,6 +648,13 @@ export async function loadConversationContext(args: {
           branch: String(r.path ?? '').split('.')[0] || 'content',
           summary:
             wantSummary && typeof data.summary === 'string' ? (data.summary as string) : null,
+          // Tables carry a one-line schema digest (tab names + shape + leading
+          // columns, written by the extractor) so the model knows what's
+          // queryable via table_schema/table_sql without a tool call.
+          schema:
+            r.type === 'table' && typeof data.schemaDigest === 'string'
+              ? (data.schemaDigest as string)
+              : null,
         };
       }),
       truncated,

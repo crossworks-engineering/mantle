@@ -29,6 +29,7 @@ export type {
 export { ftsTableName, quoteFtsTerm } from './fts';
 export { profileFile, profileToText, sampleRows } from './profile';
 export type { ColumnProfile, TabProfile } from './profile';
+export { schemaDigest, schemaToText } from './schema';
 export {
   SQL_ROW_CAP_DEFAULT,
   SQL_ROW_CAP_MAX,

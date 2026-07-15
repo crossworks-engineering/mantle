@@ -64,6 +64,7 @@ import {
   queryRowsWindow,
   readRowById,
   runTableSql,
+  schemaToText,
   type TableOp,
 } from '@mantle/tabledb';
 import { recordIngest } from '@mantle/tracing';
@@ -682,6 +683,62 @@ const table_get: BuiltinToolDef = {
               },
             }
           : {}),
+      },
+    };
+  },
+};
+
+const SCHEMA_TABLES_MAX = 20;
+
+const table_schema: BuiltinToolDef = {
+  slug: 'table_schema',
+  name: 'Table schemas (data dictionary)',
+  description:
+    'Data dictionary across tables in one call: every tab with its columns, types, row counts, and the table_sql surface (view + FTS shadow names). Pass `table_ids` for specific tables, or omit to survey the most recently updated (up to 20). Use this to pick the right table and write a table_sql query without fetching each table\'s rows via `table_get`. Legacy tables not yet file-backed are listed without a schema.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      table_ids: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Table ids (UUIDs) to describe. Omit to survey the most recently updated tables.',
+      },
+    },
+  },
+  handler: async (input, ctx) => {
+    const ids = Array.isArray(input.table_ids)
+      ? input.table_ids.map((v: unknown) => str(v).trim()).filter(Boolean)
+      : null;
+    let targets: { id: string; title: string }[];
+    if (ids && ids.length > 0) {
+      const found = await Promise.all(
+        ids.slice(0, SCHEMA_TABLES_MAX).map(async (id) => {
+          const t = await getTable(ctx.ownerId, id);
+          return t ? { id: t.id, title: t.title } : null;
+        }),
+      );
+      targets = found.filter((t): t is { id: string; title: string } => t !== null);
+      if (targets.length === 0) return notFound('table', ids[0] ?? '', 'table_list');
+    } else {
+      const rows = await listTables(ctx.ownerId, { limit: SCHEMA_TABLES_MAX });
+      targets = rows.map((r) => ({ id: r.id, title: r.title }));
+    }
+    const described = await Promise.all(
+      targets.map(async (t) => {
+        const surface = await tableSqlSurface(ctx.ownerId, t.id).catch(() => null);
+        return surface
+          ? { id: t.id, title: t.title, schema: schemaToText(surface.tabs, { title: t.title, nodeId: t.id }) }
+          : { id: t.id, title: t.title, schema: null, note: 'legacy storage — no SQL surface until next commit' };
+      }),
+    );
+    ctx.step?.setOutput({ tables: described.length });
+    return {
+      ok: true,
+      output: {
+        tables: described,
+        count: described.length,
+        ...(ids && ids.length > SCHEMA_TABLES_MAX ? { truncated: true, max: SCHEMA_TABLES_MAX } : {}),
+        hint: 'Query any listed view with table_sql (double-quote identifiers; FTS MATCH terms in double quotes).',
       },
     };
   },
@@ -1554,6 +1611,7 @@ export const TABLE_TOOLS: BuiltinToolDef[] = [
   table_commit,
   table_list,
   table_get,
+  table_schema,
   table_sql,
   table_rows_list,
   table_row_get,

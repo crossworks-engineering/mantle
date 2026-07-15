@@ -56,7 +56,7 @@ import { embed } from '@mantle/embeddings';
 import { diskPathForFile, extOf, mimeForExt, parseDocumentBytes, INGESTABLE_EXTS, parserRouteForExt, extractPdfTextWithPassword, effectiveBrainDepth } from '@mantle/files';
 import { contentKey, getContent } from '@mantle/storage';
 import { parseSheetToGrid } from '@mantle/files/sheet-to-grid';
-import { profileFile, profileToText, resolveStoragePath } from '@mantle/tabledb';
+import { describeWorkbook, profileFile, profileToText, resolveStoragePath, schemaDigest, schemaToText } from '@mantle/tabledb';
 import { currentTrace, recordIngest, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import {
   chatWithFailover,
@@ -1744,6 +1744,55 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
 
       // ─── content_index pass ───────────────────────────────────────────
       const summary = parsed.summary;
+
+      // Tables v2 (§12.1 amendment, 2026-07-15): file-backed tables index
+      // PROFILE-ONLY chunks — the L1 profile per tab plus the L2 overview.
+      // Rows are NEVER embedded (row dumps were 531 passages/16 nodes of the
+      // NATREF chunk pollution); row-level lookup is table_sql's job, and the
+      // first-200-rows text lives only in tables.data_text for list ILIKE.
+      // Legacy JSONB tables keep the old dataText chunking until a commit
+      // converts them to file storage.
+      //
+      // v2.1 P3 adds the SCHEMA layer on top: a data-dictionary chunk (query
+      // surface — tabs, columns, view/FTS names) so retrieval lands on schema
+      // and grounds a table_sql call directly, plus a one-line digest merged
+      // into nodes.data for the corpus map. Computed here, before update_index,
+      // so the digest rides the same jsonb merge as the summary.
+      let tableProfilePieces: { text: string; headingPath?: string }[] | null = null;
+      let tableSchemaDigest: string | null = null;
+      if (node.type === 'table') {
+        const [reg] = await db
+          .select({ storagePath: tables.storagePath })
+          .from(tables)
+          .where(eq(tables.nodeId, node.id))
+          .limit(1);
+        if (reg?.storagePath) {
+          try {
+            const abs = resolveStoragePath(reg.storagePath);
+            const profileText = profileToText(profileFile(abs), { title: node.title });
+            const surface = describeWorkbook(abs);
+            tableSchemaDigest = schemaDigest(surface);
+            const sections = profileText.split(/\n(?=## )/);
+            tableProfilePieces = [
+              { text: `${sections[0] ?? ''}\n\nOverview: ${summary}`.trim(), headingPath: 'profile' },
+              {
+                text: schemaToText(surface, { title: node.title, nodeId: node.id }),
+                headingPath: 'schema',
+              },
+              ...sections.slice(1).map((s) => ({
+                text: s.trim(),
+                headingPath: `profile > ${(/^## ([^\n—]+)/.exec(s)?.[1] ?? 'tab').trim()}`,
+              })),
+            ].filter((p) => p.text.length > 0);
+          } catch (err) {
+            console.error(
+              `[extractor] table profile failed for ${node.id} — falling back to dataText chunks:`,
+              err,
+            );
+          }
+        }
+      }
+
       const allEntityMentions = [
         ...parsed.entities,
         ...parsed.facts.flatMap((f) => f.entities ?? []),
@@ -1797,6 +1846,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
             summary_at: new Date().toISOString(),
             entities: uniqueMentions.map((m) => m.name),
             ...(persistedText ? { text: persistedText } : {}),
+            ...(tableSchemaDigest ? { schemaDigest: tableSchemaDigest } : {}),
           };
           // Conditional on the xmin captured before the LLM call: if anything
           // wrote to this node mid-extract (a user edit being the case that
@@ -1855,40 +1905,6 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       // stays readable via file_read (data.text persists above).
       const gridProfile =
         node.type === 'file' && (isSpreadsheetTitle(node.title) || hasSheetMarkers(rawBody));
-      // Tables v2 (§12.1 amendment, 2026-07-15): file-backed tables index
-      // PROFILE-ONLY chunks — the L1 profile per tab plus the L2 overview.
-      // Rows are NEVER embedded (row dumps were 531 passages/16 nodes of the
-      // NATREF chunk pollution); row-level lookup is table_sql's job, and the
-      // first-200-rows text lives only in tables.data_text for list ILIKE.
-      // Legacy JSONB tables keep the old dataText chunking until a commit
-      // converts them to file storage.
-      let tableProfilePieces: { text: string; headingPath?: string }[] | null = null;
-      if (node.type === 'table') {
-        const [reg] = await db
-          .select({ storagePath: tables.storagePath })
-          .from(tables)
-          .where(eq(tables.nodeId, node.id))
-          .limit(1);
-        if (reg?.storagePath) {
-          try {
-            const abs = resolveStoragePath(reg.storagePath);
-            const profileText = profileToText(profileFile(abs), { title: node.title });
-            const sections = profileText.split(/\n(?=## )/);
-            tableProfilePieces = [
-              { text: `${sections[0] ?? ''}\n\nOverview: ${summary}`.trim(), headingPath: 'profile' },
-              ...sections.slice(1).map((s) => ({
-                text: s.trim(),
-                headingPath: `profile > ${(/^## ([^\n—]+)/.exec(s)?.[1] ?? 'tab').trim()}`,
-              })),
-            ].filter((p) => p.text.length > 0);
-          } catch (err) {
-            console.error(
-              `[extractor] table profile failed for ${node.id} — falling back to dataText chunks:`,
-              err,
-            );
-          }
-        }
-      }
       await step(
         {
           name: 'write_chunks',
