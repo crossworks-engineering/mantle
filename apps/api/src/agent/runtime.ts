@@ -697,7 +697,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
         // Best-effort — must never break the inbound. See reminder-delivery-routing.md.
         void noteInboundChannel(USER_ID!, 'telegram');
 
-        const { personaNotes, facts: relevantFacts, digests, contentHits, chunkHits, relations, history } =
+        const { personaNotes, facts: relevantFacts, digests, corpusMap, contentHits, chunkHits, relations, history } =
           await step(
             { name: 'load_context', kind: 'compute', input: { agentId: agent.id } },
             async (h) => {
@@ -717,6 +717,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
                 factCount: ctx.facts.length,
                 contentHitCount: ctx.contentHits.length,
                 chunkHitCount: ctx.chunkHits.length,
+                corpusMapCount: ctx.corpusMap.entries.length,
                 relationCount: ctx.relations.length,
                 personaNoteCount: ctx.personaNotes.length,
                 // Full retrieval audit record (items + distances + near-misses)
@@ -898,6 +899,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
               personaNotes,
               facts: relevantFacts,
               digests,
+              corpusMap,
               contentHits,
               chunkHits,
               relations,

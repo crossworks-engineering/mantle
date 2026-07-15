@@ -68,6 +68,21 @@ export type ChunkContextHit = {
   text: string;
 };
 
+/** One entry of the corpus map — the cached "what exists" index injected so
+ *  the responder KNOWS the brain's contents instead of discovering them one
+ *  search at a time. An audit measured the blind spot this fixes: ~11 node
+ *  references visible per turn out of ~380 content nodes, with the user
+ *  attaching context on 43% of turns to compensate. Titles + short ids only
+ *  (summaries for pages/tables); passages stay the job of chunk hits. */
+export type CorpusMapEntry = {
+  nodeId: string;
+  type: string;
+  title: string;
+  /** Top-level branch ('pages', 'files', …) the entry is grouped under. */
+  branch: string;
+  summary: string | null;
+};
+
 /** A knowledge-graph relationship as a readable triple — the graph axis in the
  *  prompt. Vector search finds relevant facts; this surfaces how their entities
  *  relate ("Cross Works Engineering banks_with Nedbank"), which vectors can't. */
@@ -243,6 +258,68 @@ export function fenceRetrieved(body: string): string {
   return `${FENCE_OPEN}\n${defanged}\n${FENCE_CLOSE}`;
 }
 
+/** Character budget for the rendered corpus map — ~6k tokens. Beyond it the
+ *  map truncates with an honest marker; entry SELECTION happens upstream
+ *  (most-recently-updated first), this is only the final belt. */
+const CORPUS_MAP_MAX_CHARS = 24_000;
+
+/**
+ * Render the corpus map as one system block. Grouping is by branch and lines
+ * sort by title — byte-stable across turns (and thus prompt-cache-friendly):
+ * the bytes change only when a title/summary/cap-membership actually changes,
+ * never because retrieval reordered.
+ */
+export function renderCorpusMapBlock(
+  entries: CorpusMapEntry[],
+  opts: { truncated?: boolean; maxChars?: number } = {},
+): string | null {
+  if (entries.length === 0) return null;
+  const maxChars = opts.maxChars ?? CORPUS_MAP_MAX_CHARS;
+  const byBranch = new Map<string, CorpusMapEntry[]>();
+  for (const e of entries) {
+    const list = byBranch.get(e.branch) ?? [];
+    list.push(e);
+    byBranch.set(e.branch, list);
+  }
+  const branches = [...byBranch.keys()].sort();
+  const parts: string[] = [];
+  let used = 0;
+  let clipped = false;
+  outer: for (const branch of branches) {
+    const group = byBranch.get(branch)!;
+    group.sort((a, b) => a.title.localeCompare(b.title));
+    const header = `${branch} (${group.length}):`;
+    parts.push(header);
+    used += header.length + 1;
+    for (const e of group) {
+      const summary = e.summary ? ` — ${snipLine(e.summary, 100)}` : '';
+      const line = `• "${e.title}" (${e.type}#${e.nodeId.slice(0, 8)})${summary}`;
+      if (used + line.length > maxChars) {
+        clipped = true;
+        break outer;
+      }
+      parts.push(line);
+      used += line.length + 1;
+    }
+  }
+  const note =
+    opts.truncated || clipped
+      ? '\n[map truncated — more content exists; use search/search_chunks to find anything not listed]'
+      : '';
+  return (
+    'Map of the user\'s content corpus — what exists, by branch. Read one with ' +
+    'read_section/node_read (the #id), find passages with search_chunks; anything ' +
+    'not listed here does not exist as a page/table/file/note/task:\n' +
+    parts.join('\n') +
+    note
+  );
+}
+
+const snipLine = (s: string, n: number): string => {
+  const t = s.replace(/\s+/g, ' ').trim();
+  return t.length > n ? `${t.slice(0, n)}…` : t;
+};
+
 export function buildChatMessages(args: {
   model: string;
   /** Resolved provider id (agent.provider). Direct 'anthropic' uses bare model
@@ -259,6 +336,10 @@ export function buildChatMessages(args: {
   personaNotes: PersonaNote[];
   facts: FactSnippet[];
   digests: Digest[];
+  /** The cached "what exists" index (see CorpusMapEntry). Optional so older
+   *  callers still compile; rendered as its own cache-breakpointed system
+   *  block AFTER digests — map churn busts only itself, not persona/digests. */
+  corpusMap?: { entries: CorpusMapEntry[]; truncated: boolean };
   contentHits: ContentHit[];
   /** Section-level passages (auto-retrieved from content_chunks). The fine
    *  complement to contentHits. Optional so older callers still compile. */
@@ -278,6 +359,7 @@ export function buildChatMessages(args: {
     personaNotes,
     facts,
     digests,
+    corpusMap,
     contentHits,
     chunkHits = [],
     relations = [],
@@ -326,6 +408,23 @@ export function buildChatMessages(args: {
           }
         : { role: 'system', content: digestText },
     );
+  }
+
+  // ─── Block 2c: corpus map (own breakpoint; changes only with content) ──
+  // Ordered LAST of the cached blocks: the map churns more often than persona
+  // or digests (any content write), so its misses must not bust theirs.
+  if (corpusMap && corpusMap.entries.length > 0) {
+    const mapText = renderCorpusMapBlock(corpusMap.entries, { truncated: corpusMap.truncated });
+    if (mapText) {
+      messages.push(
+        supportsExplicitCache
+          ? {
+              role: 'system',
+              content: [{ type: 'text', text: mapText, cacheControl: ephemeral }],
+            }
+          : { role: 'system', content: mapText },
+      );
+    }
   }
 
   // ─── Block 2a: volatile per-turn context (no cache — by design) ───────
