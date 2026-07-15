@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getOwnerOr401 } from '@/lib/auth';
-import { createTable, getTable, saveTableDraft } from '@/lib/tables';
+import { getTable, saveTableDraft } from '@/lib/tables';
 import { parseSheetToGrid } from '@mantle/files/sheet-to-grid';
 import { tableDocFromGrid } from '@mantle/content/table-model';
 
@@ -41,29 +41,19 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: 'no tabular data found' }, { status: 400 });
   }
 
-  // First sheet → this table's draft.
-  const first = sheets[0]!;
-  const draftDoc = tableDocFromGrid(first);
-  const ok = await saveTableDraft(user.id, id, draftDoc);
+  // One workbook per spreadsheet (v2.1 P2): every sheet becomes a TAB of this
+  // table's draft — the user reviews the whole workbook and commits once. No
+  // more sibling-table splitting.
+  const tabs = sheets.map((sheet, i) => ({
+    ...tableDocFromGrid(sheet),
+    name: (sheet.name || `Sheet${i + 1}`).slice(0, 100),
+  }));
+  const ok = await saveTableDraft(user.id, id, { tabs });
   if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
-
-  // Extra sheets → sibling tables (committed).
-  const extra: { id: string; title: string; sheet: string }[] = [];
-  for (let i = 1; i < sheets.length; i++) {
-    const sheet = sheets[i]!;
-    const sib = await createTable(user.id, {
-      title: (sheet.name || `Sheet ${i + 1}`).slice(0, 200),
-      data: tableDocFromGrid(sheet) as never,
-      tags: table.tags,
-    });
-    extra.push({ id: sib.id, title: sib.title, sheet: sheet.name });
-  }
 
   return NextResponse.json({
     ok: true,
     sheets: sheets.length,
-    columns: draftDoc.columns.length,
-    rows: draftDoc.rows.length,
-    extra_tables: extra,
+    tabs: tabs.map((t) => ({ name: t.name, columns: t.columns.length, rows: t.rows.length })),
   });
 }

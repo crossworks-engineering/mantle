@@ -12,6 +12,7 @@ import {
   deleteRow,
   emptyTableDoc,
   ensureTableDoc,
+  ensureWorkbookDoc,
   findColumnByName,
   groupRows,
   queryRows,
@@ -64,6 +65,32 @@ describe('ensureTableDoc', () => {
   it('coerces an unknown column type to text', () => {
     const doc = ensureTableDoc({ columns: [{ id: 'c1', name: 'A', type: 'wat' }], rows: [] });
     expect(doc.columns[0]!.type).toBe('text');
+  });
+});
+
+describe('ensureWorkbookDoc', () => {
+  it('normalizes each tab through ensureTableDoc and defaults names', () => {
+    const wb = ensureWorkbookDoc({
+      tabs: [
+        { ...grid(), name: '  Models  ' },
+        { columns: [{ name: 'A', type: 'text' }], rows: [], name: '' } as never,
+      ],
+    });
+    expect(wb.tabs).toHaveLength(2);
+    expect(wb.tabs[0]!.name).toBe('Models');
+    expect(wb.tabs[1]!.name).toBe('Sheet2');
+    expect(wb.tabs[1]!.columns[0]!.id).toBeTruthy(); // ids assigned
+  });
+
+  it('never returns zero tabs', () => {
+    const wb = ensureWorkbookDoc({ tabs: [] });
+    expect(wb.tabs).toHaveLength(1);
+    expect(wb.tabs[0]!.name).toBe('Sheet1');
+  });
+
+  it('preserves explicit tab ids', () => {
+    const wb = ensureWorkbookDoc({ tabs: [{ ...grid(), id: 'models', name: 'Models' }] });
+    expect(wb.tabs[0]!.id).toBe('models');
   });
 });
 

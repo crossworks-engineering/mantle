@@ -152,37 +152,83 @@ async function windowFile(ownerId: string, tableId: string): Promise<string | nu
 /** Row-existence check that works past the materialize window: the clipped
  *  doc first (free), then the workbook file by id. Legacy tables only have
  *  the doc. */
-async function rowExists(ownerId: string, tableId: string, doc: TableDoc, rowId: string): Promise<boolean> {
+async function rowExists(
+  ownerId: string,
+  tableId: string,
+  doc: TableDoc,
+  rowId: string,
+  tabId?: string,
+): Promise<boolean> {
   if (findRow(doc, rowId)) return true;
   const file = await windowFile(ownerId, tableId);
   if (!file) return false;
-  return readRowById(file, rowId) !== null;
+  return readRowById(file, rowId, tabId ? { tabId } : {}) !== null;
 }
 
-const CLIPPED_EDIT_ERROR =
-  'this table exceeds the in-memory window, so whole-document edits are disabled (they would drop the rows ' +
-  'beyond the window). Row edits (table_row_add/table_row_update/table_row_delete/table_cell_set) and reads ' +
-  '(table_query, table_sql) work at any size.';
+const TAB_HINT = "Tab to target, by name or id — from `table_get`'s tabs. Omit for the first tab.";
 
-/** Load a table or return a tool error; then run `fn` against its baseline doc
- *  and persist the result to draft. Centralises the load → edit → saveDraft
- *  shape the STRUCTURAL (column/view/aggregate) tools share. Row-level tools
- *  use the op path (applyTableOps) instead — it scales past the materialize
- *  window; this path refuses clipped tables outright (a whole-doc save of a
- *  clipped doc would silently truncate the table). */
-async function editDraft(
+/** Load a table plus the TARGET TAB's baseline doc. `tabRef` is a tab id or
+ *  name (case-insensitive); absent = first tab (single-tab tables never need
+ *  it). Returns `tabId` only when explicitly targeted — ops then carry it. */
+async function loadTab(
   ownerId: string,
   tableId: string,
-  fn: (doc: TableDoc) => { doc: TableDoc; output?: Record<string, unknown>; error?: string },
-): Promise<ToolHandlerResult> {
+  tabRef: unknown,
+): Promise<{ table: TableDetail; doc: TableDoc; tabId?: string } | { error: string }> {
   const table = await getTable(ownerId, tableId);
-  if (!table) return notFound('table', tableId, 'table_list');
-  if (table.docClipped) return { ok: false, error: CLIPPED_EDIT_ERROR };
-  const res = fn(baseline(table));
+  if (!table) return { error: `table ${tableId} not found — check the id with table_list` };
+  const want = str(tabRef).trim();
+  if (!want) return { table, doc: baseline(table) };
+  const tabs = table.tabs ?? [];
+  const hit = tabs.find((t) => t.id === want) ?? tabs.find((t) => t.name.toLowerCase() === want.toLowerCase());
+  if (!hit) {
+    return {
+      error: `no tab '${want}' on this table — tabs: ${tabs.map((t) => t.name).join(', ') || '(single tab)'}`,
+    };
+  }
+  if (hit.id === table.tabId) return { table, doc: baseline(table), tabId: hit.id };
+  const scoped = await getTable(ownerId, tableId, { tabId: hit.id });
+  if (!scoped) return { error: `table ${tableId} not found (race?)` };
+  return { table: scoped, doc: baseline(scoped), tabId: hit.id };
+}
+
+/** Validate against the target tab's baseline doc, then dispatch draft OPS —
+ *  the structural (column/view/aggregate) tools' shape since v2.1: the op
+ *  path targets any tab and scales past the materialize window (the old
+ *  whole-doc save refused clipped tables and would have dropped sibling
+ *  tabs). */
+async function editViaOps(
+  ownerId: string,
+  tableId: string,
+  tabRef: unknown,
+  build: (doc: TableDoc) => { ops: TableOp[]; output?: Record<string, unknown>; error?: string },
+): Promise<ToolHandlerResult> {
+  const loaded = await loadTab(ownerId, tableId, tabRef);
+  if ('error' in loaded) return { ok: false, error: loaded.error };
+  const res = build(loaded.doc);
   if (res.error) return { ok: false, error: res.error };
-  const ok = await saveTableDraft(ownerId, tableId, res.doc);
-  if (!ok) return { ok: false, error: `table ${tableId} not found (race?)` };
-  return { ok: true, output: { table_id: tableId, ...res.output, draft_saved: true, hint: DRAFT_REVIEW_HINT(tableId) } };
+  const targetTabId = loaded.tabId;
+  try {
+    const applied = await applyTableOps(
+      ownerId,
+      tableId,
+      targetTabId ? res.ops.map((o) => ({ ...o, tabId: targetTabId })) : res.ops,
+    );
+    if (!applied) return notFound('table', tableId, 'table_list');
+    if (!applied.ok) return { ok: false, error: 'draft changed concurrently — retry' };
+    return {
+      ok: true,
+      output: {
+        table_id: tableId,
+        ...(loaded.tabId ? { tab_id: loaded.tabId } : {}),
+        ...res.output,
+        draft_saved: true,
+        hint: DRAFT_REVIEW_HINT(tableId),
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 // ───────────────────────── CRUD / metadata ─────────────────────────
@@ -259,20 +305,20 @@ const table_create: BuiltinToolDef = {
 const table_from_file: BuiltinToolDef = {
   slug: 'table_from_file',
   preconditions: FILE_ID_PRE,
-  name: 'Create table(s) from a spreadsheet',
+  name: 'Create a table from a spreadsheet',
   description:
-    "Import a `.xlsx` / `.xls` / `.csv` file into typed grids — bytes go server-side from `files` → SheetJS → typed columns + rows, never round-tripping through your output (scales to large sheets). Column types are inferred (numbers, dates, checkboxes, text). **One table per non-empty sheet:** a multi-sheet workbook yields several tables (the first uses your `title` if given; others are named after their sheet). Very large sheets import whole (sqlite-native storage) up to the box's import ceiling — beyond it the import errors with guidance and nothing partial is created. The grids are committed + indexed immediately. Returns the created table ids. Use this whenever the user hands you a spreadsheet.",
+    "Import a `.xlsx` / `.xls` / `.csv` file into ONE typed table — bytes go server-side from `files` → SheetJS → typed columns + rows, never round-tripping through your output (scales to large sheets). Column types are inferred (numbers, dates, checkboxes, text). **One workbook per file: every non-empty sheet becomes a TAB** of the same table (like Excel), addressable by name in the row/query tools and joinable across tabs with `table_sql`. Very large sheets import whole (sqlite-native storage) up to the box's import ceiling — beyond it the import errors with guidance and nothing partial is created. The table is committed + indexed immediately. Returns the table id and its tabs. Use this whenever the user hands you a spreadsheet.",
   inputSchema: {
     type: 'object',
     properties: {
       file_id: { type: 'string', format: 'uuid', description: "The spreadsheet file's id — from `file_list` / `search_nodes`." },
-      title: { type: 'string', description: 'title for the first sheet; others use their sheet name' },
+      title: { type: 'string', description: 'table title (defaults to the filename)' },
       tags: {
         type: 'array',
         items: { type: 'string' },
-        description: "Labels for organisation and filtering, e.g. ['work']. Applied to every created table.",
+        description: "Labels for organisation and filtering, e.g. ['work'].",
       },
-      icon: { type: 'string', description: 'Optional emoji icon, e.g. "📊". Applied to every created table.' },
+      icon: { type: 'string', description: 'Optional emoji icon, e.g. "📊".' },
     },
     required: ['file_id'],
   },
@@ -299,47 +345,40 @@ const table_from_file: BuiltinToolDef = {
     const tags = strArr(input.tags);
     const icon = str(input.icon).trim();
     const baseTitle = str(input.title).trim();
-    const created: {
-      id: string;
-      title: string;
-      sheet: string;
-      columns: number;
-      rows: number;
-
-    }[] = [];
+    const title = (baseTitle || meta.filename.replace(/\.(xlsx|xls|csv)$/i, '') || 'Imported table').slice(0, 200);
+    // One workbook per file (v2.1 P2): sheets become tabs, not sibling tables.
+    const tabs = sheets.map((sheet, i) => ({
+      ...tableDocFromGrid(sheet),
+      name: (sheet.name || `Sheet${i + 1}`).slice(0, 100),
+    }));
     try {
-      for (let i = 0; i < sheets.length; i++) {
-        const sheet = sheets[i]!;
-        const core = (i === 0 && baseTitle) || sheet.name || `Sheet ${i + 1}`;
-        const title = core.slice(0, 200);
-        const data = tableDocFromGrid(sheet);
-        const table = await createTable(ctx.ownerId, {
-          title,
-          data,
-          tags,
-          sourceFileId: fileId,
-          ...(icon ? { icon } : {}),
-        });
-        created.push({
+      const table = await createTable(ctx.ownerId, {
+        title,
+        tabs,
+        tags,
+        sourceFileId: fileId,
+        ...(icon ? { icon } : {}),
+      });
+      void recordIngest({
+        source: 'agent_tool',
+        ownerId: ctx.ownerId,
+        nodeId: table.id,
+        summary: `Table imported from ${meta.filename} (${sheets.length} sheet${sheets.length === 1 ? '' : 's'}): ${table.title}`,
+        payload: { via: 'table_from_file_tool', sourceFileId: fileId, sheets: sheets.length, ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}) },
+      });
+      ctx.step?.setOutput({ id: table.id, tabs: tabs.length });
+      return {
+        ok: true,
+        output: {
           id: table.id,
           title: table.title,
-          sheet: sheet.name,
-          columns: data.columns.length,
-          rows: data.rows.length,
-        });
-        void recordIngest({
-          source: 'agent_tool',
-          ownerId: ctx.ownerId,
-          nodeId: table.id,
-          summary: `Table imported from ${meta.filename} (${sheet.name}): ${table.title}`,
-          payload: { via: 'table_from_file_tool', sourceFileId: fileId, sheet: sheet.name, ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}) },
-        });
-      }
+          url: nodeUrl(table.id),
+          tabs: tabs.map((t) => ({ name: t.name, columns: t.columns.length, rows: t.rows.length })),
+        },
+      };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
-    ctx.step?.setOutput({ tables: created.length, primary: created[0]?.id });
-    return { ok: true, output: { tables: created, primary_id: created[0]?.id } };
   },
 };
 
@@ -607,15 +646,16 @@ const table_get: BuiltinToolDef = {
       id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
       offset: { type: 'number', description: "Rows to skip for paging — pass the previous call's `next_offset`." },
       limit: { type: 'number', description: 'rows per page (default 50, max 500)' },
+      tab: { type: 'string', description: TAB_HINT },
     },
     required: ['id'],
   },
   handler: async (input, ctx) => {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
-    const table = await getTable(ctx.ownerId, id);
-    if (!table) return notFound('table', id, 'table_list');
-    const doc = baseline(table);
+    const loaded = await loadTab(ctx.ownerId, id, input.tab);
+    if ('error' in loaded) return { ok: false, error: loaded.error };
+    const { table, doc, tabId } = loaded;
     const offset = typeof input.offset === 'number' ? Math.max(0, input.offset) : 0;
     const limit = typeof input.limit === 'number' ? input.limit : 50;
     let listed = listRows(doc, { offset, limit });
@@ -624,7 +664,9 @@ const table_get: BuiltinToolDef = {
     // table_get reported 10k totals and empty pages for a 50k table).
     if (table.docClipped) {
       const file = await windowFile(ctx.ownerId, id);
-      const win = file ? queryRowsWindow(file, { offset, limit: Math.max(1, Math.min(limit, 500)) }) : null;
+      const win = file
+        ? queryRowsWindow(file, { offset, limit: Math.max(1, Math.min(limit, 500)), ...(tabId ? { tabId } : {}) })
+        : null;
       if (win) {
         listed = {
           columns: doc.columns.map((c) => ({ id: c.id, name: c.name, type: c.type })),
@@ -663,6 +705,9 @@ const table_get: BuiltinToolDef = {
         title: table.title,
         url: nodeUrl(table.id),
         has_draft: table.draft != null,
+        ...(table.tabs && table.tabs.length > 1
+          ? { tabs: table.tabs, tab_id: table.tabId, tab_hint: 'columns/rows below are ONE tab — pass `tab` to read another' }
+          : {}),
         columns: doc.columns.map((c) => ({ id: c.id, name: c.name, type: c.type, ...(c.formula ? { formula: c.formula } : {}) })),
         rows: listed.rows,
         total_rows: listed.total,
@@ -744,6 +789,122 @@ const table_schema: BuiltinToolDef = {
   },
 };
 
+// ───────────────────────── tab CRUD (→ draft) ─────────────────────────
+
+const table_tab_add: BuiltinToolDef = {
+  slug: 'table_tab_add',
+  preconditions: TABLE_ID_PRE,
+  name: 'Add a tab',
+  description:
+    'Add an empty tab (worksheet) to a table — one table is one workbook; tabs are its sheets, queryable together with `table_sql` joins. Build it out with `table_column_add`/`table_row_add` passing `tab`. Writes to DRAFT.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
+      name: { type: 'string', description: 'Tab name shown on the tab bar, e.g. "Car models".' },
+      after_tab: { type: 'string', description: 'optional tab (name or id) to insert after; omit to append' },
+    },
+    required: ['table_id', 'name'],
+  },
+  handler: async (input, ctx) => {
+    const tableId = str(input.table_id).trim();
+    const name = str(input.name).trim();
+    if (!tableId || !name) return { ok: false, error: 'table_id and name are required' };
+    const loaded = await loadTab(ctx.ownerId, tableId, input.after_tab);
+    if ('error' in loaded) return { ok: false, error: loaded.error };
+    const afterTabId = str(input.after_tab).trim() ? loaded.tabId : undefined;
+    try {
+      const applied = await applyTableOps(ctx.ownerId, tableId, [
+        { op: 'tab_add', name, ...(afterTabId !== undefined ? { afterTabId } : {}) },
+      ]);
+      if (!applied) return notFound('table', tableId, 'table_list');
+      if (!applied.ok) return { ok: false, error: 'draft changed concurrently — retry' };
+      const tabId = applied.createdIds[0] ?? '';
+      ctx.step?.setOutput({ table_id: tableId, tab_id: tabId });
+      return {
+        ok: true,
+        output: { table_id: tableId, tab_id: tabId, name, draft_saved: true, hint: DRAFT_REVIEW_HINT(tableId) },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+const table_tab_rename: BuiltinToolDef = {
+  slug: 'table_tab_rename',
+  preconditions: TABLE_ID_PRE,
+  name: 'Rename a tab',
+  description:
+    "Rename a tab (worksheet). Its `table_sql` view name re-derives from the new name; data and row/column ids are untouched. Writes to DRAFT.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
+      tab: { type: 'string', description: 'the tab to rename, by name or id' },
+      name: { type: 'string', description: 'new tab name' },
+    },
+    required: ['table_id', 'tab', 'name'],
+  },
+  handler: async (input, ctx) => {
+    const tableId = str(input.table_id).trim();
+    const name = str(input.name).trim();
+    if (!tableId || !name) return { ok: false, error: 'table_id, tab and name are required' };
+    const loaded = await loadTab(ctx.ownerId, tableId, input.tab);
+    if ('error' in loaded) return { ok: false, error: loaded.error };
+    const tabId = loaded.tabId ?? loaded.table.tabId;
+    if (!tabId) return { ok: false, error: 'tab is required — name or id from table_get' };
+    try {
+      const applied = await applyTableOps(ctx.ownerId, tableId, [{ op: 'tab_rename', tabId, name }]);
+      if (!applied) return notFound('table', tableId, 'table_list');
+      if (!applied.ok) return { ok: false, error: 'draft changed concurrently — retry' };
+      ctx.step?.setOutput({ table_id: tableId, tab_id: tabId });
+      return {
+        ok: true,
+        output: { table_id: tableId, tab_id: tabId, name, draft_saved: true, hint: DRAFT_REVIEW_HINT(tableId) },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+const table_tab_delete: BuiltinToolDef = {
+  slug: 'table_tab_delete',
+  preconditions: TABLE_ID_PRE,
+  name: 'Delete a tab',
+  description:
+    'Remove a tab (worksheet) and all its rows/columns from the DRAFT — Discard reverts, Commit makes it permanent. Refuses to delete the last remaining tab; to remove the whole table use `table_delete`.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
+      tab: { type: 'string', description: 'the tab to delete, by name or id' },
+    },
+    required: ['table_id', 'tab'],
+  },
+  handler: async (input, ctx) => {
+    const tableId = str(input.table_id).trim();
+    if (!tableId || !str(input.tab).trim()) return { ok: false, error: 'table_id and tab are required' };
+    const loaded = await loadTab(ctx.ownerId, tableId, input.tab);
+    if ('error' in loaded) return { ok: false, error: loaded.error };
+    const tabId = loaded.tabId;
+    if (!tabId) return { ok: false, error: `no tab '${str(input.tab)}' on this table` };
+    try {
+      const applied = await applyTableOps(ctx.ownerId, tableId, [{ op: 'tab_delete', tabId }]);
+      if (!applied) return notFound('table', tableId, 'table_list');
+      if (!applied.ok) return { ok: false, error: 'draft changed concurrently — retry' };
+      ctx.step?.setOutput({ table_id: tableId, tab_id: tabId });
+      return {
+        ok: true,
+        output: { table_id: tableId, tab_id: tabId, deleted: true, draft_saved: true, hint: DRAFT_REVIEW_HINT(tableId) },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
 const table_rows_list: BuiltinToolDef = {
   slug: 'table_rows_list',
   preconditions: TABLE_ID_PRE,
@@ -758,15 +919,16 @@ const table_rows_list: BuiltinToolDef = {
       limit: { type: 'number', description: 'default 50, max 500' },
       column_ids: { type: 'array', items: { type: 'string' }, description: 'restrict the cell snapshot to these column ids' },
       view_id: { type: 'string', description: 'optional saved view (filter+sort) to apply first' },
+      tab: { type: 'string', description: TAB_HINT },
     },
     required: ['table_id'],
   },
   handler: async (input, ctx) => {
     const tableId = str(input.table_id).trim();
     if (!tableId) return { ok: false, error: 'table_id is required' };
-    const table = await getTable(ctx.ownerId, tableId);
-    if (!table) return notFound('table', tableId, 'table_list');
-    const doc = baseline(table);
+    const loaded = await loadTab(ctx.ownerId, tableId, input.tab);
+    if ('error' in loaded) return { ok: false, error: loaded.error };
+    const { table, doc, tabId } = loaded;
     const offset = typeof input.offset === 'number' ? Math.max(0, input.offset) : 0;
     const limit = Math.max(1, Math.min(typeof input.limit === 'number' ? input.limit : 50, 500));
     if (table.docClipped) {
@@ -777,7 +939,7 @@ const table_rows_list: BuiltinToolDef = {
         return { ok: false, error: 'saved views are not applied on tables this large — use table_query (filters) or table_sql instead' };
       }
       const file = await windowFile(ctx.ownerId, tableId);
-      const win = file ? queryRowsWindow(file, { offset, limit }) : null;
+      const win = file ? queryRowsWindow(file, { offset, limit, ...(tabId ? { tabId } : {}) }) : null;
       if (!win) return { ok: false, error: 'windowed read failed — the workbook file is unavailable' };
       const want = strArr(input.column_ids);
       const wantSet = want.length ? new Set(want) : null;
@@ -820,6 +982,7 @@ const table_row_get: BuiltinToolDef = {
     properties: {
       table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
       row_id: { type: 'string', description: "The row's stable id — from `table_rows_list` / `table_query`." },
+      tab: { type: 'string', description: TAB_HINT },
     },
     required: ['table_id', 'row_id'],
   },
@@ -827,13 +990,13 @@ const table_row_get: BuiltinToolDef = {
     const tableId = str(input.table_id).trim();
     const rowId = str(input.row_id).trim();
     if (!tableId || !rowId) return { ok: false, error: 'table_id and row_id are required' };
-    const table = await getTable(ctx.ownerId, tableId);
-    if (!table) return notFound('table', tableId, 'table_list');
-    const doc = baseline(table);
+    const loaded = await loadTab(ctx.ownerId, tableId, input.tab);
+    if ('error' in loaded) return { ok: false, error: loaded.error };
+    const { table, doc, tabId } = loaded;
     let row = findRow(doc, rowId);
     if (!row && table.docClipped) {
       const file = await windowFile(ctx.ownerId, tableId);
-      row = file ? readRowById(file, rowId) : null;
+      row = file ? readRowById(file, rowId, tabId ? { tabId } : {}) : null;
     }
     if (!row) return { ok: false, error: `row ${rowId} not found (re-run table_rows_list)` };
     const byName: Record<string, CellValue> = {};
@@ -903,15 +1066,16 @@ const table_query: BuiltinToolDef = {
       },
       offset: { type: 'number', description: "Matching rows to skip for paging — pass the previous call's `next_offset`." },
       limit: { type: 'number', description: 'max matching rows to return (default 50, max 500)' },
+      tab: { type: 'string', description: TAB_HINT },
     },
     required: ['table_id'],
   },
   handler: async (input, ctx) => {
     const tableId = str(input.table_id).trim();
     if (!tableId) return { ok: false, error: 'table_id is required' };
-    const table = await getTable(ctx.ownerId, tableId);
-    if (!table) return notFound('table', tableId, 'table_list');
-    const doc = baseline(table);
+    const loaded = await loadTab(ctx.ownerId, tableId, input.tab);
+    if ('error' in loaded) return { ok: false, error: loaded.error };
+    const { table, doc, tabId } = loaded;
 
     const ignoredFilters: string[] = [];
     const filters: Filter[] = (Array.isArray(input.filters) ? input.filters : [])
@@ -962,7 +1126,7 @@ const table_query: BuiltinToolDef = {
     let totalMatches: number;
     let pageRows: { id: string; cells: Record<string, CellValue> }[];
     let aggregates: { column: string; kind: AggregateKind; value: number | null }[] = [];
-    const pushed = file ? queryRowsWindow(file, { filters, match, sort, offset, limit }) : null;
+    const pushed = file ? queryRowsWindow(file, { filters, match, sort, offset, limit, ...(tabId ? { tabId } : {}) }) : null;
     if (pushed) {
       totalMatches = pushed.total;
       pageRows = pushed.rows.map((r) => {
@@ -973,7 +1137,7 @@ const table_query: BuiltinToolDef = {
       aggregates = validAggs.map((a) => ({
         column: a.col.name,
         kind: a.kind,
-        value: aggregateWindow(file!, { columnId: a.col.id, kind: a.kind, filters, match }),
+        value: aggregateWindow(file!, { columnId: a.col.id, kind: a.kind, filters, match, ...(tabId ? { tabId } : {}) }),
       }));
     } else {
       if (table.docClipped) {
@@ -1032,6 +1196,7 @@ const table_aggregate: BuiltinToolDef = {
     properties: {
       table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
       group_by: { type: 'array', items: { type: 'string' }, description: 'column(s) to group by (id or name)' },
+      tab: { type: 'string', description: TAB_HINT },
       metrics: {
         type: 'array',
         description: 'per-group aggregates to compute',
@@ -1084,8 +1249,9 @@ const table_aggregate: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const tableId = str(input.table_id).trim();
     if (!tableId) return { ok: false, error: 'table_id is required' };
-    const table = await getTable(ctx.ownerId, tableId);
-    if (!table) return notFound('table', tableId, 'table_list');
+    const loaded = await loadTab(ctx.ownerId, tableId, input.tab);
+    if ('error' in loaded) return { ok: false, error: loaded.error };
+    const { table, doc } = loaded;
     if (table.docClipped) {
       return {
         ok: false,
@@ -1094,7 +1260,6 @@ const table_aggregate: BuiltinToolDef = {
           'SELECT "Column", count(*) FROM "<view>" GROUP BY 1 ORDER BY 2 DESC (table_get\'s sql block lists the views/columns).',
       };
     }
-    const doc = baseline(table);
 
     const groupCols = strArr(input.group_by)
       .map((r) => resolveColumn(doc, r))
@@ -1196,6 +1361,7 @@ const table_row_add: BuiltinToolDef = {
       table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
       cells: { type: 'object', description: CELLS_HINT, additionalProperties: true },
       after_row_id: { type: 'string', description: 'optional — insert after this row instead of appending' },
+      tab: { type: 'string', description: TAB_HINT },
     },
     required: ['table_id'],
   },
@@ -1203,13 +1369,13 @@ const table_row_add: BuiltinToolDef = {
     const tableId = str(input.table_id).trim();
     if (!tableId) return { ok: false, error: 'table_id is required' };
     const cellsIn = (input.cells && typeof input.cells === 'object' ? input.cells : {}) as Record<string, unknown>;
-    const table = await getTable(ctx.ownerId, tableId);
-    if (!table) return notFound('table', tableId, 'table_list');
-    const doc = baseline(table);
+    const loaded = await loadTab(ctx.ownerId, tableId, input.tab);
+    if ('error' in loaded) return { ok: false, error: loaded.error };
+    const { doc, tabId } = loaded;
     const { cells, unknown } = resolveCells(doc, cellsIn);
     try {
       const applied = await applyTableOps(ctx.ownerId, tableId, [
-        { op: 'row_add', cells, afterRowId: str(input.after_row_id).trim() || null },
+        { op: 'row_add', cells, afterRowId: str(input.after_row_id).trim() || null, ...(tabId ? { tabId } : {}) },
       ]);
       if (!applied) return notFound('table', tableId, 'table_list');
       if (!applied.ok) return { ok: false, error: 'draft changed concurrently — retry' };
@@ -1242,6 +1408,7 @@ const table_row_update: BuiltinToolDef = {
       table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
       row_id: { type: 'string', description: "The row's stable id — from `table_rows_list` / `table_query`." },
       cells: { type: 'object', description: CELLS_HINT, additionalProperties: true },
+      tab: { type: 'string', description: TAB_HINT },
     },
     required: ['table_id', 'row_id', 'cells'],
   },
@@ -1251,15 +1418,17 @@ const table_row_update: BuiltinToolDef = {
     if (!tableId || !rowId) return { ok: false, error: 'table_id and row_id are required' };
     const cellsIn = (input.cells && typeof input.cells === 'object' ? input.cells : {}) as Record<string, unknown>;
     if (Object.keys(cellsIn).length === 0) return { ok: false, error: 'cells is required (nothing to update)' };
-    const table = await getTable(ctx.ownerId, tableId);
-    if (!table) return notFound('table', tableId, 'table_list');
-    const doc = baseline(table);
-    if (!(await rowExists(ctx.ownerId, tableId, doc, rowId))) {
+    const loaded = await loadTab(ctx.ownerId, tableId, input.tab);
+    if ('error' in loaded) return { ok: false, error: loaded.error };
+    const { doc, tabId } = loaded;
+    if (!(await rowExists(ctx.ownerId, tableId, doc, rowId, tabId))) {
       return { ok: false, error: `row ${rowId} not found (re-run table_rows_list)` };
     }
     const { cells, unknown } = resolveCells(doc, cellsIn);
     try {
-      const applied = await applyTableOps(ctx.ownerId, tableId, [{ op: 'row_update', rowId, cells }]);
+      const applied = await applyTableOps(ctx.ownerId, tableId, [
+        { op: 'row_update', rowId, cells, ...(tabId ? { tabId } : {}) },
+      ]);
       if (!applied) return notFound('table', tableId, 'table_list');
       if (!applied.ok) return { ok: false, error: 'draft changed concurrently — retry' };
       ctx.step?.setOutput({ table_id: tableId, row_id: rowId });
@@ -1289,6 +1458,7 @@ const table_row_delete: BuiltinToolDef = {
     properties: {
       table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
       row_id: { type: 'string', description: "The row's stable id — from `table_rows_list` / `table_query`." },
+      tab: { type: 'string', description: TAB_HINT },
     },
     required: ['table_id', 'row_id'],
   },
@@ -1296,13 +1466,15 @@ const table_row_delete: BuiltinToolDef = {
     const tableId = str(input.table_id).trim();
     const rowId = str(input.row_id).trim();
     if (!tableId || !rowId) return { ok: false, error: 'table_id and row_id are required' };
-    const table = await getTable(ctx.ownerId, tableId);
-    if (!table) return notFound('table', tableId, 'table_list');
-    if (!(await rowExists(ctx.ownerId, tableId, baseline(table), rowId))) {
+    const loaded = await loadTab(ctx.ownerId, tableId, input.tab);
+    if ('error' in loaded) return { ok: false, error: loaded.error };
+    if (!(await rowExists(ctx.ownerId, tableId, loaded.doc, rowId, loaded.tabId))) {
       return { ok: false, error: `row ${rowId} not found` };
     }
     try {
-      const applied = await applyTableOps(ctx.ownerId, tableId, [{ op: 'row_delete', rowId }]);
+      const applied = await applyTableOps(ctx.ownerId, tableId, [
+        { op: 'row_delete', rowId, ...(loaded.tabId ? { tabId: loaded.tabId } : {}) },
+      ]);
       if (!applied) return notFound('table', tableId, 'table_list');
       if (!applied.ok) return { ok: false, error: 'draft changed concurrently — retry' };
       ctx.step?.setOutput({ table_id: tableId, row_id: rowId });
@@ -1328,6 +1500,7 @@ const table_cell_set: BuiltinToolDef = {
       row_id: { type: 'string', description: "The row's stable id — from `table_rows_list` / `table_query`." },
       column: { type: 'string', description: 'column id or name' },
       value: { description: 'new value (coerced to the column type); null/"" clears' },
+      tab: { type: 'string', description: TAB_HINT },
     },
     required: ['table_id', 'row_id', 'column'],
   },
@@ -1336,17 +1509,17 @@ const table_cell_set: BuiltinToolDef = {
     const rowId = str(input.row_id).trim();
     const columnRef = str(input.column).trim();
     if (!tableId || !rowId || !columnRef) return { ok: false, error: 'table_id, row_id and column are required' };
-    const table = await getTable(ctx.ownerId, tableId);
-    if (!table) return notFound('table', tableId, 'table_list');
-    const doc = baseline(table);
-    if (!(await rowExists(ctx.ownerId, tableId, doc, rowId))) {
+    const loaded = await loadTab(ctx.ownerId, tableId, input.tab);
+    if ('error' in loaded) return { ok: false, error: loaded.error };
+    const { doc, tabId } = loaded;
+    if (!(await rowExists(ctx.ownerId, tableId, doc, rowId, tabId))) {
       return { ok: false, error: `row ${rowId} not found` };
     }
     const col = resolveColumn(doc, columnRef);
     if (!col) return { ok: false, error: `column '${columnRef}' not found` };
     try {
       const applied = await applyTableOps(ctx.ownerId, tableId, [
-        { op: 'cell_set', rowId, columnId: col.id, value: (input.value ?? null) as CellValue },
+        { op: 'cell_set', rowId, columnId: col.id, value: (input.value ?? null) as CellValue, ...(tabId ? { tabId } : {}) },
       ]);
       if (!applied) return notFound('table', tableId, 'table_list');
       if (!applied.ok) return { ok: false, error: 'draft changed concurrently — retry' };
@@ -1383,6 +1556,7 @@ const table_column_add: BuiltinToolDef = {
       options: { type: 'array', items: { type: 'string' }, description: 'select/multiselect choices' },
       formula: { type: 'string', description: 'for type=formula, e.g. "{Qty} * {Price}"' },
       after_column: { type: 'string', description: 'optional column id/name to insert after' },
+      tab: { type: 'string', description: TAB_HINT },
     },
     required: ['table_id', 'name', 'type'],
   },
@@ -1392,16 +1566,18 @@ const table_column_add: BuiltinToolDef = {
     const type = str(input.type).trim();
     if (!tableId || !name) return { ok: false, error: 'table_id and name are required' };
     if (!COLUMN_TYPES.includes(type as ColumnType)) return { ok: false, error: `invalid type '${type}'` };
-    let newColId = '';
-    const res = await editDraft(ctx.ownerId, tableId, (doc) => {
-      const spec: Omit<Column, 'id'> = { name, type: type as ColumnType };
+    const newColId = crypto.randomUUID();
+    const res = await editViaOps(ctx.ownerId, tableId, input.tab, (doc) => {
+      const spec: Omit<Column, 'id'> & { id: string } = { id: newColId, name, type: type as ColumnType };
       if (input.format && typeof input.format === 'object') spec.format = input.format as Column['format'];
       if (Array.isArray(input.options)) spec.options = strArr(input.options).map((label) => ({ id: label.toLowerCase().replace(/\s+/g, '_'), label }));
       if (str(input.formula).trim()) spec.formula = str(input.formula).trim();
       const after = str(input.after_column).trim();
-      const out = addColumn(doc, spec, after ? resolveColumn(doc, after)?.id ?? null : null);
-      newColId = out.column.id;
-      return { doc: out.doc, output: { column_id: out.column.id, name } };
+      const afterColumnId = after ? resolveColumn(doc, after)?.id ?? null : null;
+      return {
+        ops: [{ op: 'column_add', column: spec, afterColumnId }],
+        output: { column_id: newColId, name },
+      };
     });
     ctx.step?.setOutput({ table_id: tableId, column_id: newColId });
     return res;
@@ -1438,6 +1614,7 @@ const table_column_update: BuiltinToolDef = {
         type: 'string',
         description: 'Formula expression, e.g. "{Qty} * {Price}" — references other columns by name.',
       },
+      tab: { type: 'string', description: TAB_HINT },
     },
     required: ['table_id', 'column'],
   },
@@ -1445,20 +1622,20 @@ const table_column_update: BuiltinToolDef = {
     const tableId = str(input.table_id).trim();
     const columnRef = str(input.column).trim();
     if (!tableId || !columnRef) return { ok: false, error: 'table_id and column are required' };
-    const res = await editDraft(ctx.ownerId, tableId, (doc) => {
+    const res = await editViaOps(ctx.ownerId, tableId, input.tab, (doc) => {
       const col = resolveColumn(doc, columnRef);
-      if (!col) return { doc, error: `column '${columnRef}' not found` };
+      if (!col) return { ops: [], error: `column '${columnRef}' not found` };
       const patch: Partial<Omit<Column, 'id'>> = {};
       if (str(input.name).trim()) patch.name = str(input.name).trim();
       if (str(input.type).trim()) {
-        if (!COLUMN_TYPES.includes(str(input.type).trim() as ColumnType)) return { doc, error: `invalid type '${str(input.type)}'` };
+        if (!COLUMN_TYPES.includes(str(input.type).trim() as ColumnType)) return { ops: [], error: `invalid type '${str(input.type)}'` };
         patch.type = str(input.type).trim() as ColumnType;
       }
       if (input.format && typeof input.format === 'object') patch.format = input.format as Column['format'];
       if (Array.isArray(input.options)) patch.options = strArr(input.options).map((label) => ({ id: label.toLowerCase().replace(/\s+/g, '_'), label }));
       if (typeof input.formula === 'string') patch.formula = input.formula.trim();
-      if (Object.keys(patch).length === 0) return { doc, error: 'nothing to update' };
-      return { doc: updateColumn(doc, col.id, patch), output: { column_id: col.id } };
+      if (Object.keys(patch).length === 0) return { ops: [], error: 'nothing to update' };
+      return { ops: [{ op: 'column_update', columnId: col.id, patch }], output: { column_id: col.id } };
     });
     ctx.step?.setOutput({ table_id: tableId });
     return res;
@@ -1475,6 +1652,7 @@ const table_column_delete: BuiltinToolDef = {
     properties: {
       table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
       column: { type: 'string', description: 'column id or name' },
+      tab: { type: 'string', description: TAB_HINT },
     },
     required: ['table_id', 'column'],
   },
@@ -1482,10 +1660,10 @@ const table_column_delete: BuiltinToolDef = {
     const tableId = str(input.table_id).trim();
     const columnRef = str(input.column).trim();
     if (!tableId || !columnRef) return { ok: false, error: 'table_id and column are required' };
-    const res = await editDraft(ctx.ownerId, tableId, (doc) => {
+    const res = await editViaOps(ctx.ownerId, tableId, input.tab, (doc) => {
       const col = resolveColumn(doc, columnRef);
-      if (!col) return { doc, error: `column '${columnRef}' not found` };
-      return { doc: deleteColumn(doc, col.id), output: { column_id: col.id, deleted: true } };
+      if (!col) return { ops: [], error: `column '${columnRef}' not found` };
+      return { ops: [{ op: 'column_delete', columnId: col.id }], output: { column_id: col.id, deleted: true } };
     });
     ctx.step?.setOutput({ table_id: tableId });
     return res;
@@ -1508,6 +1686,7 @@ const table_set_aggregate: BuiltinToolDef = {
         enum: [...AGGREGATE_KINDS],
         description: "The total to show ('none' clears it). Numeric kinds skip non-numeric cells.",
       },
+      tab: { type: 'string', description: TAB_HINT },
     },
     required: ['table_id', 'column', 'kind'],
   },
@@ -1517,12 +1696,17 @@ const table_set_aggregate: BuiltinToolDef = {
     const kind = str(input.kind).trim();
     if (!tableId || !columnRef) return { ok: false, error: 'table_id and column are required' };
     if (!AGGREGATE_KINDS.includes(kind as AggregateKind)) return { ok: false, error: `invalid kind '${kind}'` };
-    const res = await editDraft(ctx.ownerId, tableId, (doc) => {
+    const res = await editViaOps(ctx.ownerId, tableId, input.tab, (doc) => {
       const col = resolveColumn(doc, columnRef);
-      if (!col) return { doc, error: `column '${columnRef}' not found` };
-      const next = setAggregate(doc, col.id, kind as AggregateKind);
-      const value = kind === 'none' ? null : computeAggregate(next, col.id, kind as AggregateKind);
-      return { doc: next, output: { column_id: col.id, kind, value } };
+      if (!col) return { ops: [], error: `column '${columnRef}' not found` };
+      const value =
+        kind === 'none'
+          ? null
+          : computeAggregate(setAggregate(doc, col.id, kind as AggregateKind), col.id, kind as AggregateKind);
+      return {
+        ops: [{ op: 'aggregate_set', columnId: col.id, kind: kind as AggregateKind }],
+        output: { column_id: col.id, kind, value },
+      };
     });
     ctx.step?.setOutput({ table_id: tableId });
     return res;
@@ -1570,6 +1754,7 @@ const table_set_view: BuiltinToolDef = {
           required: ['column', 'op'],
         },
       },
+      tab: { type: 'string', description: TAB_HINT },
     },
     required: ['table_id', 'name'],
   },
@@ -1578,7 +1763,7 @@ const table_set_view: BuiltinToolDef = {
     const name = str(input.name).trim();
     if (!tableId || !name) return { ok: false, error: 'table_id and name are required' };
     let viewId = '';
-    const res = await editDraft(ctx.ownerId, tableId, (doc) => {
+    const res = await editViaOps(ctx.ownerId, tableId, input.tab, (doc) => {
       const sort: SortSpec[] = (Array.isArray(input.sort) ? input.sort : [])
         .map((s): SortSpec | null => {
           const col = resolveColumn(doc, str((s as Record<string, unknown>).column));
@@ -1594,8 +1779,7 @@ const table_set_view: BuiltinToolDef = {
         .filter((f): f is Filter => f !== null);
       const existing = str(input.view_id).trim();
       viewId = existing || `v_${Math.random().toString(36).slice(2, 10)}`;
-      const next = setView(doc, { id: viewId, name, sort, filters });
-      return { doc: next, output: { view_id: viewId, name } };
+      return { ops: [{ op: 'view_set', view: { id: viewId, name, sort, filters } }], output: { view_id: viewId, name } };
     });
     ctx.step?.setOutput({ table_id: tableId, view_id: viewId });
     return res;
@@ -1624,6 +1808,9 @@ export const TABLE_TOOLS: BuiltinToolDef[] = [
   table_column_add,
   table_column_update,
   table_column_delete,
+  table_tab_add,
+  table_tab_rename,
+  table_tab_delete,
   table_set_aggregate,
   table_set_view,
 ];

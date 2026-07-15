@@ -40,7 +40,14 @@ import {
   type TableOp,
   type WorkbookStats,
 } from '@mantle/tabledb';
-import { coerceCell, ensureTableDoc, emptyTableDoc, type TableDoc } from './table-model';
+import {
+  coerceCell,
+  ensureTableDoc,
+  ensureWorkbookDoc,
+  emptyTableDoc,
+  type TableDoc,
+  type WorkbookDoc,
+} from './table-model';
 import {
   buildTableDataText,
   draftAbsFor,
@@ -70,11 +77,14 @@ export type TableRow = {
   updatedAt: string;
 };
 
+export type TableTabInfo = { id: string; name: string; rows: number; columns: number };
+
 export type TableDetail = TableRow & {
   /** Published grid — what's rendered everywhere and what the extractor
    *  indexes. Only changes on commit. For tables past the materialize window
    *  this is a LEADING WINDOW (`docClipped`) — page the rest via the rows
-   *  route / windowed readers; `rowCount` stays the true total. */
+   *  route / windowed readers; `rowCount` stays the true total. For multi-tab
+   *  workbooks this is ONE tab (the requested one, default first). */
   data: TableDoc;
   /** Autosaved working copy if uncommitted edits exist, else null. */
   draft: TableDoc | null;
@@ -82,6 +92,11 @@ export type TableDetail = TableRow & {
   docClipped?: boolean;
   /** Draft-op etag: send back as if_rev so a stale client loses loudly. */
   draftRev?: number;
+  /** Workbook tabs in position order (from registry stats; absent for legacy
+   *  JSONB tables). `data`/`draft` carry the tab identified by `tabId`. */
+  tabs?: TableTabInfo[];
+  /** Which tab `data`/`draft` materialize (multi-tab workbooks). */
+  tabId?: string;
 };
 
 function rowOf(n: Node, counts: { columnCount: number; rowCount: number }): TableRow {
@@ -122,7 +137,7 @@ function detailOf(
   n: Node,
   data: TableDoc,
   draft: TableDoc | null = null,
-  extra: { totalRows?: number; docClipped?: boolean; draftRev?: number } = {},
+  extra: { totalRows?: number; docClipped?: boolean; draftRev?: number; tabs?: TableTabInfo[]; tabId?: string } = {},
 ): TableDetail {
   const counts = countsOf(data);
   if (extra.totalRows !== undefined) counts.rowCount = extra.totalRows;
@@ -132,21 +147,31 @@ function detailOf(
     draft,
     ...(extra.docClipped ? { docClipped: true } : {}),
     ...(extra.draftRev !== undefined ? { draftRev: extra.draftRev } : {}),
+    ...(extra.tabs ? { tabs: extra.tabs } : {}),
+    ...(extra.tabId ? { tabId: extra.tabId } : {}),
   };
+}
+
+/** Tab list for the detail payload, straight from registry stats. */
+function tabsFromStats(stats: unknown): TableTabInfo[] | undefined {
+  const s = stats as WorkbookStats | null;
+  if (!s || !Array.isArray(s.tabs) || s.tabs.length === 0) return undefined;
+  return s.tabs.map((t) => ({ id: t.tabId, name: t.name, rows: t.rows, columns: t.columns }));
 }
 
 type DocsRow = { storagePath: string | null; data: unknown; draft: unknown };
 
 /** Published + draft docs for a registry row: workbook file when file-backed
- *  (draft-first callers get both), JSONB otherwise. */
-function docsOf(row: DocsRow): {
+ *  (draft-first callers get both), JSONB otherwise. `tabId` picks the tab to
+ *  materialize (file-backed only; default first). */
+function docsOf(row: DocsRow, tabId?: string): {
   data: TableDoc;
   draft: TableDoc | null;
   totalRows: number;
   docClipped: boolean;
 } {
   if (row.storagePath) {
-    const loaded = loadDocsFromFile(row.storagePath);
+    const loaded = loadDocsFromFile(row.storagePath, { tabId });
     return { data: loaded.data, draft: loaded.draft, totalRows: loaded.totalRows, docClipped: loaded.docClipped };
   }
   const data = ensureTableDoc(row.data ?? emptyTableDoc());
@@ -264,7 +289,11 @@ export async function listTableTags(
     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
 }
 
-export async function getTable(ownerId: string, id: string): Promise<TableDetail | null> {
+export async function getTable(
+  ownerId: string,
+  id: string,
+  opts: { tabId?: string } = {},
+): Promise<TableDetail | null> {
   const [row] = await db
     .select({
       node: nodes,
@@ -272,14 +301,35 @@ export async function getTable(ownerId: string, id: string): Promise<TableDetail
       draft: tables.draftData,
       storagePath: tables.storagePath,
       draftRev: tables.draftRev,
+      stats: tables.stats,
     })
     .from(nodes)
     .leftJoin(tables, eq(tables.nodeId, nodes.id))
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
   if (!row) return null;
-  const { data, draft, totalRows, docClipped } = docsOf(row);
-  return detailOf(row.node, data, draft, { totalRows, docClipped, draftRev: row.draftRev ?? 0 });
+  // Tab list: the DRAFT file's when one exists (a tab added/renamed in the
+  // draft must show), else registry stats (published, no file open needed).
+  let tabs = row.storagePath ? tabsFromStats(row.stats) : undefined;
+  if (row.storagePath) {
+    const draftAbs = draftAbsFor(row.storagePath);
+    if (existsSync(draftAbs)) {
+      try {
+        tabs = tabsFromStats(fileStats(draftAbs)) ?? tabs;
+      } catch {
+        // draft consumed by a concurrent commit — published stats stand
+      }
+    }
+  }
+  const tabId = opts.tabId ?? tabs?.[0]?.id;
+  const { data, draft, totalRows, docClipped } = docsOf(row, opts.tabId);
+  return detailOf(row.node, data, draft, {
+    totalRows,
+    docClipped,
+    draftRev: row.draftRev ?? 0,
+    ...(tabs ? { tabs } : {}),
+    ...(tabs && tabId ? { tabId } : {}),
+  });
 }
 
 export type ApplyTableOpsResult =
@@ -315,13 +365,15 @@ export async function applyTableOps(
     const publishedAbs = resolveStoragePath(storagePath);
     const draftAbs = ensureDraftFile(publishedAbs);
     const res = applyOpsToFile(draftAbs, ops, coerceCell);
-    // JSONB draft mirror (rollback safety) — only while it fits the window;
-    // past it the mirror is null and the file is the sole draft carrier.
+    // JSONB draft mirror (rollback safety) — only while it fits the window
+    // AND stays single-tab (the mirror can't represent tabs); otherwise null
+    // and the file is the sole draft carrier.
     const clipped = readDocClipped(draftAbs, MATERIALIZE_MAX);
+    const multiTab = fileStats(draftAbs).tabs.length > 1;
     await tx
       .update(tables)
       .set({
-        draftData: clipped.clipped ? null : ensureTableDoc(clipped.doc),
+        draftData: clipped.clipped || multiTab ? null : ensureTableDoc(clipped.doc),
         draftUpdatedAt: new Date(),
         draftRev: sql`${tables.draftRev} + 1`,
       })
@@ -333,6 +385,9 @@ export async function applyTableOps(
 export type CreateTableInput = {
   title: string;
   data?: TableDoc;
+  /** Multi-tab creation (import: one workbook per spreadsheet, sheet→tab).
+   *  Mutually exclusive with `data`; wins when both are set. */
+  tabs?: WorkbookDoc['tabs'];
   tags?: string[];
   icon?: string;
   /** Provenance: the `file` node this grid was imported from. Stamped on the
@@ -348,12 +403,16 @@ export async function createTable(
   input: CreateTableInput,
 ): Promise<TableDetail> {
   await ensureRoot(ownerId);
-  const data = ensureTableDoc(input.data ?? emptyTableDoc());
+  const workbook = input.tabs?.length ? ensureWorkbookDoc({ tabs: input.tabs }) : null;
+  const data = workbook ? ensureTableDoc(workbook.tabs[0]) : ensureTableDoc(input.data ?? emptyTableDoc());
+  const totalRows = workbook
+    ? workbook.tabs.reduce((a, t) => a + t.rows.length, 0)
+    : data.rows.length;
   // Imports are the one whole-doc entry point allowed past the materialize
   // window (part-splitting is dead) — bounded by the explicit-error ceiling
   // (signed off: error with guidance, never auto-raise or silent partial).
-  if (data.rows.length > importMaxRows()) {
-    throw new TableTooLargeError(data.rows.length, importMaxRows(), 'import');
+  if (totalRows > importMaxRows()) {
+    throw new TableTooLargeError(totalRows, importMaxRows(), 'import');
   }
   const id = randomUUID();
 
@@ -383,16 +442,21 @@ export async function createTable(
         })
         .returning();
       if (!node) throw new Error('createTable: insert returned no row');
-      const res = writeDocFile(publishedAbs, data, { nodeId: id, ownerId, tabName: TAB_NAME, fts: true });
+      const res = writeDocFile(publishedAbs, workbook ?? data, { nodeId: id, ownerId, tabName: TAB_NAME, fts: true });
       await tx.insert(tables).values({
         nodeId: node.id,
-        // JSONB mirror only while it fits the window; beyond it the file is
-        // the sole carrier (a multi-hundred-MB blob mirrors nothing useful).
-        data: data.rows.length <= MATERIALIZE_MAX ? data : {},
-        dataText: buildTableDataText(publishedAbs, data, node.title),
+        // JSONB mirror only while it fits the window AND stays single-tab;
+        // beyond either, the file is the sole carrier (a multi-hundred-MB
+        // blob mirrors nothing useful, and the mirror can't represent tabs).
+        data: !workbook && data.rows.length <= MATERIALIZE_MAX ? data : {},
+        dataText: buildTableDataText(publishedAbs, workbook ? null : data, node.title),
         ...registryFileColumns(res, relativeStoragePath(ownerId, id)),
       });
-      return detailOf(node, data);
+      return detailOf(node, data, null, {
+        totalRows,
+        tabs: tabsFromStats(res.stats),
+        tabId: res.stats.tabs[0]?.tabId,
+      });
     });
   } catch (err) {
     removeTableFile(publishedAbs);
@@ -449,22 +513,43 @@ export async function updateTable(
   return detailOf(row, data, draft);
 }
 
+/** A workbook (multi-tab) write shape, vs a bare single-tab doc. */
+function isWorkbook(data: TableDoc | WorkbookDoc): data is WorkbookDoc {
+  return 'tabs' in data && Array.isArray((data as WorkbookDoc).tabs);
+}
+
+/** Refuse a bare single-tab doc against a multi-tab workbook: writing it
+ *  whole would silently DROP every other tab. Tab-aware callers pass a
+ *  WorkbookDoc; per-tab editors use draft ops with a tabId. */
+function guardSingleTabWrite(locked: { tabCount: number | null } | null): void {
+  if ((locked?.tabCount ?? 1) > 1) {
+    throw new Error(
+      'this table is a multi-tab workbook — a whole-grid save would drop the other tabs; edit via draft ops (tabId) or send the full workbook',
+    );
+  }
+}
+
 /** Autosave the working grid to `tables.draft_data` only — published `data`,
  *  `data_text`, summary, embedding, and the extractor are all untouched. Cheap
- *  and frequent. Returns false if the table doesn't exist. */
+ *  and frequent. Returns false if the table doesn't exist. Accepts a bare doc
+ *  (single-tab tables) or a full WorkbookDoc (tab-aware callers / import). */
 export async function saveTableDraft(
   ownerId: string,
   id: string,
-  data: TableDoc,
+  data: TableDoc | WorkbookDoc,
 ): Promise<boolean> {
   const [row] = await db
-    .select({ id: nodes.id })
+    .select({ id: nodes.id, title: nodes.title })
     .from(nodes)
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
   if (!row) return false;
-  const doc = ensureTableDoc(data);
-  guardWholeDoc(doc);
+  const workbook = isWorkbook(data) ? ensureWorkbookDoc(data) : null;
+  const doc = workbook ? null : ensureTableDoc(data as TableDoc);
+  const totalRows = workbook
+    ? workbook.tabs.reduce((a, t) => a + t.rows.length, 0)
+    : doc!.rows.length;
+  if (totalRows > MATERIALIZE_MAX) throw new TableTooLargeError(totalRows, MATERIALIZE_MAX);
   // Registry lock spine: the draft-file rebuild and the registry update are
   // one locked step, so a concurrent agent op / second process can't
   // interleave mid-write. Storage is decided from the LOCKED row, not a
@@ -472,19 +557,28 @@ export async function saveTableDraft(
   // the draft to JSONB only, invisible to every file-backed read surface
   // (audit finding 4). draft_rev bumps on every batch (the op route's etag).
   await withTableRegistryLock(id, async (tx, locked) => {
-    if (locked?.storagePath) {
+    let storagePath = locked?.storagePath ?? null;
+    if (!storagePath && workbook) {
+      // A workbook draft has no JSONB mirror — the file is its ONLY carrier,
+      // so a legacy table converts to file-backed before the draft lands.
+      storagePath = (await ensureFileBacked(tx, { id, ownerId, title: row.title }, locked)).storagePath;
+    }
+    if (storagePath) {
       // Whole-doc writes are only legal while the table itself fits the
       // window — a windowed doc saved whole would truncate the table (audit
       // finding 5: an exactly-10k clipped doc slipped the row-count guard).
-      if ((locked.totalRows ?? 0) > MATERIALIZE_MAX) {
-        throw new TableTooLargeError(locked.totalRows ?? 0, MATERIALIZE_MAX);
+      if ((locked?.totalRows ?? 0) > MATERIALIZE_MAX) {
+        throw new TableTooLargeError(locked?.totalRows ?? 0, MATERIALIZE_MAX);
       }
-      writeDocFile(draftAbsFor(locked.storagePath), doc, { nodeId: id, ownerId, tabName: TAB_NAME });
+      if (!workbook) guardSingleTabWrite(locked);
+      writeDocFile(draftAbsFor(storagePath), workbook ?? doc!, { nodeId: id, ownerId, tabName: TAB_NAME });
     }
     await tx
       .update(tables)
       .set({
-        draftData: doc,
+        // JSONB draft mirror carries single-tab docs only (the legacy
+        // rollback lever can't represent tabs — v2.1 plan decision 2).
+        draftData: workbook ? null : doc,
         draftUpdatedAt: new Date(),
         draftRev: sql`${tables.draftRev} + 1`,
       })
@@ -521,7 +615,7 @@ export async function discardTableDraft(ownerId: string, id: string): Promise<bo
 export async function commitTable(
   ownerId: string,
   id: string,
-  data?: TableDoc,
+  data?: TableDoc | WorkbookDoc,
 ): Promise<TableDetail | null> {
   const [node] = await db
     .select()
@@ -594,10 +688,13 @@ export async function commitTable(
 
       const clipped = readDocClipped(publishedAbs, MATERIALIZE_MAX);
       const stats = fileStats(publishedAbs);
+      // JSONB mirror: single-tab, in-window docs only (the rollback lever
+      // can't represent tabs — v2.1 plan decision 2).
+      const mirror = clipped.clipped || stats.tabs.length > 1 ? {} : ensureTableDoc(clipped.doc);
       await tx
         .update(tables)
         .set({
-          data: clipped.clipped ? {} : ensureTableDoc(clipped.doc),
+          data: mirror,
           dataText: buildTableDataText(publishedAbs, null, node.title),
           draftData: null,
           draftUpdatedAt: null,
@@ -625,9 +722,14 @@ export async function commitTable(
     return result ?? null;
   }
 
-  const doc = ensureTableDoc(data);
-  guardWholeDoc(doc);
-  const newShapeHash = shapeHashOf(doc, TAB_NAME);
+  const workbook = isWorkbook(data) ? ensureWorkbookDoc(data) : null;
+  const doc = workbook ? null : ensureTableDoc(data as TableDoc);
+  const commitDoc: TableDoc | WorkbookDoc = workbook ?? doc!;
+  const commitTotalRows = workbook
+    ? workbook.tabs.reduce((a, t) => a + t.rows.length, 0)
+    : doc!.rows.length;
+  if (commitTotalRows > MATERIALIZE_MAX) throw new TableTooLargeError(commitTotalRows, MATERIALIZE_MAX);
+  const newShapeHash = shapeHashOf(commitDoc, TAB_NAME);
 
   // Commit under the registry lock (plan §3.3): write the new published file
   // (build + FTS shadows + checkpoint + atomic rename inside writeDocFile),
@@ -653,18 +755,23 @@ export async function commitTable(
     }
     delete newData.extract_completed_at;
 
+    // A bare single-tab doc must not clobber a multi-tab workbook (the
+    // whole-grid UI path pre-P5); workbook payloads replace everything by
+    // design (import).
+    if (!workbook) guardSingleTabWrite(locked);
     const [row] = await tx
       .update(nodes)
       .set({ data: newData, embedding: null, updatedAt: new Date() })
       .where(eq(nodes.id, id))
       .returning();
     if (!row) throw new Error('commitTable: update returned no row');
-    const res = writeDocFile(publishedAbs, doc, { nodeId: id, ownerId, tabName: TAB_NAME, fts: true });
+    const res = writeDocFile(publishedAbs, commitDoc, { nodeId: id, ownerId, tabName: TAB_NAME, fts: true });
     removeTableFile(draftAbsFor(relativeStoragePath(ownerId, id)));
     await tx
       .update(tables)
       .set({
-        data: doc,
+        // JSONB mirror: single-tab docs only (v2.1 plan decision 2).
+        data: workbook ? {} : doc!,
         dataText: buildTableDataText(publishedAbs, doc, node.title),
         draftData: null,
         draftUpdatedAt: null,
@@ -674,7 +781,9 @@ export async function commitTable(
         ...registryFileColumns(res, relativeStoragePath(ownerId, id)),
       })
       .where(eq(tables.nodeId, id));
-    return detailOf(row, doc, null);
+    return detailOf(row, workbook ? ensureTableDoc(workbook.tabs[0]) : doc!, null, {
+      totalRows: commitTotalRows,
+    });
   });
 
   await notifyNodeIngested(id);

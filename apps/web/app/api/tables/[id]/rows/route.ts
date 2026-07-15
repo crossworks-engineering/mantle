@@ -34,6 +34,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(limitRaw, 1000)) : 500;
 
   const offsetParam = url.searchParams.get('offset');
+  const tabId = url.searchParams.get('tab') ?? undefined;
 
   const publishedAbs = resolveStoragePath(row.storagePath);
   const draftAbs = draftPathFor(publishedAbs);
@@ -43,7 +44,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     // keyset (`after_pos`/`after_rid`) stays the cheaper cursor for crawls.
     if (offsetParam !== null) {
       const offset = Math.max(0, Number(offsetParam) || 0);
-      const page = queryRowsWindow(file, { offset, limit });
+      const page = queryRowsWindow(file, { offset, limit, ...(tabId ? { tabId } : {}) });
       if (!page) return NextResponse.json({ error: 'window read failed' }, { status: 500 });
       return NextResponse.json({
         rows: page.rows,
@@ -54,6 +55,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     }
     const page = listRowsWindow(file, {
       limit,
+      ...(tabId ? { tabId } : {}),
       ...(afterPos !== null && afterRid !== null ? { after: { pos: Number(afterPos), rid: afterRid } } : {}),
     });
     return NextResponse.json({

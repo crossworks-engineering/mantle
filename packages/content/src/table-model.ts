@@ -147,6 +147,25 @@ export type TableDoc = {
   views?: View[];
 };
 
+/** One tab of a multi-tab workbook (v2.1): a TableDoc plus its tab identity.
+ *  Mirrors tabledb's WorkbookTabDoc structurally (one-way dep, same tripwire
+ *  as TableDoc/TableDocLike). */
+export type WorkbookTab = TableDoc & { id?: string; name: string };
+
+/** Multi-tab write shape for import + tab-aware whole-doc writes. */
+export type WorkbookDoc = { tabs: WorkbookTab[] };
+
+/** Normalize a workbook input: each tab's doc through ensureTableDoc, names
+ *  trimmed and defaulted ('Sheet1', 'Sheet2', …). Never returns zero tabs. */
+export function ensureWorkbookDoc(input: WorkbookDoc): WorkbookDoc {
+  const tabs = (Array.isArray(input.tabs) ? input.tabs : []).map((t, i) => ({
+    ...ensureTableDoc(t),
+    ...(t.id ? { id: t.id } : {}),
+    name: (typeof t.name === 'string' && t.name.trim()) || `Sheet${i + 1}`,
+  }));
+  return { tabs: tabs.length > 0 ? tabs : [{ ...emptyTableDoc(), name: 'Sheet1' }] };
+}
+
 // ---------------------------------------------------------------------------
 // Construction + id stability
 // ---------------------------------------------------------------------------
