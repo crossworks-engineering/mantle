@@ -617,16 +617,43 @@ const table_get: BuiltinToolDef = {
     const doc = baseline(table);
     const offset = typeof input.offset === 'number' ? Math.max(0, input.offset) : 0;
     const limit = typeof input.limit === 'number' ? input.limit : 50;
-    const listed = listRows(doc, { offset, limit });
+    let listed = listRows(doc, { offset, limit });
+    // Past the materialize window the doc is a leading slice — totals and
+    // pages beyond it come from the file, not the slice (audit finding 4:
+    // table_get reported 10k totals and empty pages for a 50k table).
+    if (table.docClipped) {
+      const file = await windowFile(ctx.ownerId, id);
+      const win = file ? queryRowsWindow(file, { offset, limit: Math.max(1, Math.min(limit, 500)) }) : null;
+      if (win) {
+        listed = {
+          columns: doc.columns.map((c) => ({ id: c.id, name: c.name, type: c.type })),
+          rows: win.rows.map((r, i) => {
+            const cells: Record<string, string> = {};
+            for (const col of doc.columns) {
+              const v = r.cells[col.id];
+              if (v === null || v === undefined) continue;
+              const text = Array.isArray(v) ? v.join(', ') : String(v);
+              if (text) cells[col.id] = text;
+            }
+            return { id: r.id, index: offset + i, cells };
+          }),
+          total: win.total,
+          offset,
+          limit,
+        };
+      }
+    }
     // File-backed tables advertise their SQL surface so table_sql callers
     // know the view/column/FTS names without guessing.
     const surface = await tableSqlSurface(ctx.ownerId, id).catch(() => null);
-    const aggregates = Object.entries(doc.aggregates ?? {}).map(([colId, kind]) => ({
-      column_id: colId,
-      column: findColumn(doc, colId)?.name ?? colId,
-      kind,
-      value: computeAggregate(doc, colId, kind as AggregateKind),
-    }));
+    const aggregates = table.docClipped
+      ? [] // window-only totals would lie — table_query/table_sql aggregate the full set
+      : Object.entries(doc.aggregates ?? {}).map(([colId, kind]) => ({
+          column_id: colId,
+          column: findColumn(doc, colId)?.name ?? colId,
+          kind,
+          value: computeAggregate(doc, colId, kind as AggregateKind),
+        }));
     ctx.step?.setOutput({ id, rows: listed.total });
     return {
       ok: true,

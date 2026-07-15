@@ -80,7 +80,7 @@ describe('writeDocFile / readDocFile round-trip', () => {
     expect(doc.rows).toHaveLength(0);
   });
 
-  it('normalizes date text on write, keeps unparseable text verbatim', () => {
+  it('stores date text VERBATIM — migration must never mutate cells', () => {
     const file = path.join(dir, 'dates.sqlite');
     const doc: TableDocLike = {
       columns: [{ id: 'd', name: 'When', type: 'date' }],
@@ -92,8 +92,8 @@ describe('writeDocFile / readDocFile round-trip', () => {
     };
     writeDocFile(file, doc, META);
     const back = readDocFile(file);
-    expect(back.rows[0]!.cells.d).toBe('2026-07-03');
-    expect(back.rows[1]!.cells.d).toBe('2026-07-15');
+    expect(back.rows[0]!.cells.d).toBe('07/03/2026');
+    expect(back.rows[1]!.cells.d).toBe('2026-07-15T10:30:00');
     expect(back.rows[2]!.cells.d).toBe('not a date');
   });
 

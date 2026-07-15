@@ -135,22 +135,52 @@ export function compileFilters(
         break;
       case 'eq':
       case 'neq': {
-        // JS: String(value ?? '') === String(target ?? '')
+        // JS: String(cell ?? '') === String(target ?? ''). The SQL must NOT
+        // compare via CAST(REAL AS TEXT) — SQLite renders 9 as '9.0' where JS
+        // renders '9' (audit finding: integer eq matched nothing pushed).
+        const t = String(f.value ?? '');
         if (col.type === 'checkbox') {
-          const want = f.value === true || f.value === 'true' || f.value === 1 ? 'true' : 'false';
-          clauses.push(
-            `(CASE WHEN ${p} IS NULL THEN '' WHEN ${p} != 0 THEN 'true' ELSE 'false' END) ${f.op === 'eq' ? '=' : '!='} ?`,
-          );
-          params.push(want);
+          // Cells stringify to 'true'/'false' ('' when empty). Any other
+          // target can never equal a cell — mirror that exactly.
+          const cellText = `(CASE WHEN ${p} IS NULL THEN '' WHEN ${p} != 0 THEN 'true' ELSE 'false' END)`;
+          if (t === 'true' || t === 'false' || t === '') {
+            clauses.push(`${cellText} ${f.op === 'eq' ? '=' : '!='} ?`);
+            params.push(t);
+          } else {
+            clauses.push(f.op === 'eq' ? '1 = 0' : '1 = 1');
+          }
           break;
         }
-        if (!TEXT_FAMILY.has(col.type) && !NUM_FAMILY.has(col.type)) return null;
+        if (NUM_FAMILY.has(col.type)) {
+          // A stored number matches iff its JS canonical string equals the
+          // target — i.e. the target IS canonical and the values are equal.
+          // Non-canonical targets ('9.0', 'abc') match no cell; '' matches
+          // empty cells (String(null ?? '') === '').
+          if (t === '') {
+            clauses.push(f.op === 'eq' ? isEmpty : `NOT ${isEmpty}`);
+          } else {
+            const n = Number(t);
+            const canonical = Number.isFinite(n) && String(n) === t.trim() && t.trim() === t;
+            if (canonical) {
+              clauses.push(
+                f.op === 'eq' ? `(${p} IS NOT NULL AND ${p} = ?)` : `(${p} IS NULL OR ${p} != ?)`,
+              );
+              params.push(n);
+            } else {
+              clauses.push(f.op === 'eq' ? '1 = 0' : '1 = 1');
+            }
+          }
+          break;
+        }
+        if (!TEXT_FAMILY.has(col.type)) return null;
         clauses.push(`COALESCE(CAST(${p} AS TEXT), '') ${f.op === 'eq' ? '=' : '!='} ?`);
-        params.push(String(f.value ?? ''));
+        params.push(t);
         break;
       }
       case 'contains': {
-        if (!TEXT_FAMILY.has(col.type) && !NUM_FAMILY.has(col.type)) return null;
+        // Substring over JS-rendered text; SQLite can't reproduce JS number
+        // formatting (9 → '9.0'), so number columns don't push down.
+        if (!TEXT_FAMILY.has(col.type)) return null;
         clauses.push(`instr(lower(COALESCE(CAST(${p} AS TEXT), '')), lower(?)) > 0`);
         params.push(String(f.value ?? ''));
         break;
@@ -185,21 +215,24 @@ export function compileFilters(
   return { where: clauses.join(match === 'any' ? ' OR ' : ' AND '), params };
 }
 
-/** Compile sort specs, or null when any references a formula column (JS
- *  resolveCell semantics) or mixes numeric/string comparison ambiguously. */
+/** Compile sort specs, or null when parity can't hold. Number/checkbox/date
+ *  columns push down; free-text columns DON'T (JS uses localeCompare — case-
+ *  insensitive, locale-aware — and numeric-string pairwise compares, neither
+ *  of which SQLite's BINARY collation reproduces; audit finding 6). Date
+ *  columns are ISO text where string ordering agrees on both sides. */
 export function compileSort(sort: SortSpec[], cols: ColMeta[]): string | null {
   const byId = new Map(cols.map((c) => [c.colId, c]));
   const terms: string[] = [];
   for (const s of sort) {
     const col = byId.get(s.colId);
     if (!col) continue; // compareRows skips unknown columns
-    if (col.type === 'formula' || col.type === 'multiselect') return null;
     const dir = s.dir === 'desc' ? 'DESC' : 'ASC';
     if (NUM_FAMILY.has(col.type) || col.type === 'checkbox') {
       terms.push(`${col.physical} ${dir}`);
-    } else {
-      // JS localeCompare on strings ≈ text ordering; NULLs sort as '' first.
+    } else if (col.type === 'date' || col.type === 'datetime') {
       terms.push(`COALESCE(CAST(${col.physical} AS TEXT), '') ${dir}`);
+    } else {
+      return null;
     }
   }
   terms.push('_pos ASC', '_rid ASC'); // stable tie-break = document order

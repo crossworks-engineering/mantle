@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { storeCell, sqlTypeFor } from './cells';
+import { loadCell, storeCell, sqlTypeFor } from './cells';
 import type { AggregateKind, CellValue, Column, ColumnType, View } from './doc-types';
 import { createFtsShadow, ftsColumns, ftsTableName } from './fts';
 import { dedupe, physicalName, quoteIdent, viewLabel } from './names';
@@ -251,14 +251,18 @@ function applyOne(db: SqliteDb, tab: TabRow, op: TableOp, coerce: CoerceFn): str
         tab.tab_id,
         op.columnId,
       );
-      // Type change: re-coerce stored values through the SAME coerce fn the
-      // doc path used, so the retype is bit-identical (SQLite is dynamically
-      // typed — no DDL needed, values are rewritten in place).
+      // Type change: re-coerce through the SAME coerce fn the doc path uses,
+      // FROM THE DOC-SHAPED VALUE (loadCell first) — coercing the raw SQL
+      // storage form diverged (checkbox stored 0/1 retyped to text became
+      // '1' instead of 'true'; multiselect JSON became '["a","b"]' instead
+      // of 'a,b' — audit finding 3). SQLite is dynamically typed, so no DDL;
+      // values rewrite in place.
       if (patch.type && patch.type !== col.type && col.type !== 'formula' && patch.type !== 'formula') {
         const rows = db.prepare(`SELECT _rid, ${col.physical} AS v FROM ${table} WHERE ${col.physical} IS NOT NULL`).all();
         const upd = db.prepare(`UPDATE ${table} SET ${col.physical} = ? WHERE _rid = ?`);
         for (const r of rows) {
-          upd.run(storeCell(coerce(r.v, nextType), nextType), String(r._rid));
+          const docValue = loadCell(r.v, col.type);
+          upd.run(storeCell(coerce(docValue, nextType), nextType), String(r._rid));
         }
       }
       if (patch.name && patch.name !== col.name) rebuildView(db, tab);

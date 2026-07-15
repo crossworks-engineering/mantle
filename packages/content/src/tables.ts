@@ -19,7 +19,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { db, nodes, tables, notifyNodeIngested, type Node } from '@mantle/db';
-import { existsSync, renameSync, statSync } from 'node:fs';
+import { existsSync, renameSync, rmSync, statSync } from 'node:fs';
 import {
   MATERIALIZE_MAX,
   TableTooLargeError,
@@ -35,6 +35,7 @@ import {
   resolveStoragePath,
   shapeHashOf,
   shapeHashOfFile,
+  snapshotFile,
   writeDocFile,
   type TableOp,
   type WorkbookStats,
@@ -457,9 +458,8 @@ export async function saveTableDraft(
   data: TableDoc,
 ): Promise<boolean> {
   const [row] = await db
-    .select({ id: nodes.id, storagePath: tables.storagePath })
+    .select({ id: nodes.id })
     .from(nodes)
-    .leftJoin(tables, eq(tables.nodeId, nodes.id))
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
   if (!row) return false;
@@ -467,11 +467,19 @@ export async function saveTableDraft(
   guardWholeDoc(doc);
   // Registry lock spine: the draft-file rebuild and the registry update are
   // one locked step, so a concurrent agent op / second process can't
-  // interleave mid-write. draft_rev bumps on every batch (the P3 op route's
-  // etag; bumped from day one so it's trustworthy by then).
-  await withTableRegistryLock(id, async (tx) => {
-    if (row.storagePath) {
-      writeDocFile(draftAbsFor(row.storagePath), doc, { nodeId: id, ownerId, tabName: TAB_NAME });
+  // interleave mid-write. Storage is decided from the LOCKED row, not a
+  // pre-lock read — racing the migration sweep with a stale null path wrote
+  // the draft to JSONB only, invisible to every file-backed read surface
+  // (audit finding 4). draft_rev bumps on every batch (the op route's etag).
+  await withTableRegistryLock(id, async (tx, locked) => {
+    if (locked?.storagePath) {
+      // Whole-doc writes are only legal while the table itself fits the
+      // window — a windowed doc saved whole would truncate the table (audit
+      // finding 5: an exactly-10k clipped doc slipped the row-count guard).
+      if ((locked.totalRows ?? 0) > MATERIALIZE_MAX) {
+        throw new TableTooLargeError(locked.totalRows ?? 0, MATERIALIZE_MAX);
+      }
+      writeDocFile(draftAbsFor(locked.storagePath), doc, { nodeId: id, ownerId, tabName: TAB_NAME });
     }
     await tx
       .update(tables)
@@ -488,14 +496,13 @@ export async function saveTableDraft(
 /** Throw away the working draft. Published grid + index untouched. */
 export async function discardTableDraft(ownerId: string, id: string): Promise<boolean> {
   const [row] = await db
-    .select({ id: nodes.id, storagePath: tables.storagePath })
+    .select({ id: nodes.id })
     .from(nodes)
-    .leftJoin(tables, eq(tables.nodeId, nodes.id))
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
   if (!row) return false;
-  await withTableRegistryLock(id, async (tx) => {
-    if (row.storagePath) removeTableFile(draftAbsFor(row.storagePath));
+  await withTableRegistryLock(id, async (tx, locked) => {
+    if (locked?.storagePath) removeTableFile(draftAbsFor(locked.storagePath));
     await tx
       .update(tables)
       .set({ draftData: null, draftUpdatedAt: null, draftRev: sql`${tables.draftRev} + 1` })
@@ -545,16 +552,25 @@ export async function commitTable(
       const draftAbs = draftPathFor(publishedAbs);
       if (!existsSync(draftAbs)) return 'no_draft' as const;
 
-      // Checkpoint the draft so the rename moves a complete single file.
-      const d = openTableFile(draftAbs);
+      // Promote via VACUUM INTO, not a bare rename (audit findings 1+2):
+      // the snapshot reads THROUGH the draft's WAL, so frames a concurrent
+      // reader kept un-checkpointed are captured (a checkpoint's status is
+      // advisory and a rename moves only the main file — the old path could
+      // silently drop the newest ops). And the published file is REPLACED
+      // atomically, never deleted first — a crash at any step leaves either
+      // the old published file or the new one, both complete.
+      const promoteTmp = `${publishedAbs}.promote-${randomUUID().slice(0, 8)}`;
       try {
-        d.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+        snapshotFile(draftAbs, promoteTmp);
+        renameSync(promoteTmp, publishedAbs);
       } finally {
-        d.close();
+        removeTableFile(promoteTmp);
       }
-      removeTableFile(publishedAbs); // clear -wal/-shm siblings with the old file
-      renameSync(draftAbs, publishedAbs);
-      removeTableFile(draftAbs); // sweep draft -wal/-shm leftovers
+      // Stale sidecars of the OLD published file (salt-mismatched, sqlite
+      // ignores them — swept for hygiene), then the consumed draft.
+      rmSync(`${publishedAbs}-wal`, { force: true });
+      rmSync(`${publishedAbs}-shm`, { force: true });
+      removeTableFile(draftAbs);
       finalizePublishedFile(publishedAbs);
 
       const newShapeHash = shapeHashOfFile(publishedAbs);

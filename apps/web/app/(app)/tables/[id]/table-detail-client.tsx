@@ -81,22 +81,25 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
   const dirty = !clipped && JSON.stringify(doc) !== committedRef.current;
 
   // ── Autosave the working grid to draft_data (no publish, no index). ──
-  const saveDraft = useCallback(async () => {
-    if (clipped) return; // read-only window — nothing autosaves
+  // Returns false when the save failed — commit MUST abort then, or it would
+  // promote the PREVIOUS autosave and mark the newest edits committed while
+  // silently dropping them from the published table (audit finding).
+  const saveDraft = useCallback(async (): Promise<boolean> => {
+    if (clipped) return true; // read-only window — nothing autosaves
     const s = JSON.stringify(docRef.current);
-    if (s === draftSavedRef.current) return;
+    if (s === draftSavedRef.current) return true;
     setDraftSaving(true);
     try {
       await apiSend(`/api/tables/${initial.id}/draft`, 'PUT', { data: docRef.current });
       draftSavedRef.current = s;
+      return true;
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return;
-      toast.error('Could not save draft');
-      return;
+      if (!(e instanceof ApiError && e.status === 401)) toast.error('Could not save draft');
+      return false;
     } finally {
       setDraftSaving(false);
     }
-  }, [initial.id, toast]);
+  }, [clipped, initial.id, toast]);
 
   // Debounced draft autosave whenever the grid changes.
   useEffect(() => {
@@ -145,7 +148,11 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
     if (!clipped && s === committedRef.current) return;
     setCommitting(true);
     try {
-      await saveDraft();
+      const flushed = await saveDraft();
+      if (!flushed) {
+        toast.error('Draft not saved — commit aborted (nothing was published)');
+        return;
+      }
       await apiSend(`/api/tables/${initial.id}/commit`, 'POST', {});
       committedRef.current = s;
       draftSavedRef.current = s;

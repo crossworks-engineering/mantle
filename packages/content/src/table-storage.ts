@@ -6,6 +6,7 @@ import { db, nodes, tables } from '@mantle/db';
 import {
   ENGINE_VERSION,
   MATERIALIZE_MAX,
+  TableFileMissingError,
   describeWorkbook,
   draftPathFor,
   openTableFile,
@@ -47,6 +48,8 @@ export type LockedRegistryRow = {
   shapeHash: string | null;
   storagePath: string | null;
   draftRev: number;
+  /** True row count from registry stats (null when never computed). */
+  totalRows: number | null;
 } | null;
 
 /**
@@ -61,16 +64,28 @@ export async function withTableRegistryLock<T>(
   fn: (tx: Tx, locked: LockedRegistryRow) => Promise<T>,
 ): Promise<T> {
   return db.transaction(async (tx) => {
-    const result = await tx.execute<{ shape_hash: string | null; storage_path: string | null; draft_rev: number }>(
-      sql`SELECT shape_hash, storage_path, draft_rev FROM tables WHERE node_id = ${nodeId} FOR UPDATE`,
+    const result = await tx.execute<{
+      shape_hash: string | null;
+      storage_path: string | null;
+      draft_rev: number;
+      total_rows: string | null;
+    }>(
+      sql`SELECT shape_hash, storage_path, draft_rev, stats->>'totalRows' AS total_rows
+          FROM tables WHERE node_id = ${nodeId} FOR UPDATE`,
     );
     const rows = (Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows ?? [])) as {
       shape_hash: string | null;
       storage_path: string | null;
       draft_rev: number;
+      total_rows: string | null;
     }[];
     const locked: LockedRegistryRow = rows[0]
-      ? { shapeHash: rows[0].shape_hash, storagePath: rows[0].storage_path, draftRev: Number(rows[0].draft_rev) }
+      ? {
+          shapeHash: rows[0].shape_hash,
+          storagePath: rows[0].storage_path,
+          draftRev: Number(rows[0].draft_rev),
+          totalRows: rows[0].total_rows == null ? null : Number(rows[0].total_rows),
+        }
       : null;
     return fn(tx, locked);
   });
@@ -95,7 +110,16 @@ export function loadDocsFromFile(storagePath: string): LoadedDocs {
   const abs = resolveStoragePath(storagePath);
   const published = readDocClipped(abs, MATERIALIZE_MAX);
   const draftAbs = draftPathFor(abs);
-  const draftClipped = existsSync(draftAbs) ? readDocClipped(draftAbs, MATERIALIZE_MAX) : null;
+  // A commit in the other process can consume the draft between the exists
+  // check and the open — that's "no draft now", not an error (audit finding 7).
+  let draftClipped: ReturnType<typeof readDocClipped> | null = null;
+  if (existsSync(draftAbs)) {
+    try {
+      draftClipped = readDocClipped(draftAbs, MATERIALIZE_MAX);
+    } catch (err) {
+      if (!(err instanceof TableFileMissingError)) throw err;
+    }
+  }
   return {
     data: ensureTableDoc(published.doc),
     draft: draftClipped ? ensureTableDoc(draftClipped.doc) : null,

@@ -4,16 +4,18 @@ import type { CellValue, ColumnType } from './doc-types';
  * Cell ⇄ SQL storage mapping (plan §3.2):
  *   number/currency/percent → REAL
  *   checkbox                → INTEGER 0/1
- *   date/datetime           → TEXT ISO-8601, normalized on write
+ *   date/datetime           → TEXT, stored VERBATIM
  *   multiselect             → TEXT JSON array (json_each-able)
  *   text/select/url         → TEXT
  *   formula                 → never stored
  *
  * Values arrive already coerced by table-model's coerceCell (the doc is the
- * contract), so this layer only maps shapes — EXCEPT dates, which coerceCell
- * historically stored as String(value): normalization to ISO is new here and
- * required for sane ORDER BY / range queries. Unparseable date text is kept
- * verbatim (the P2 profile flags "mixed dates").
+ * contract), so this layer only maps shapes. Dates store VERBATIM — same as
+ * the JSONB path always did — so migration never mutates cell text (the
+ * audit caught normalize-on-write rewriting cells, timezone-dependently);
+ * the profile's MIXED DATE FORMATS flag nudges cleanup instead, and
+ * normalizeDate stays exported for that tooling. Imports already arrive ISO
+ * from sheet-to-grid's type inference.
  */
 
 export function sqlTypeFor(type: ColumnType): 'REAL' | 'INTEGER' | 'TEXT' {
@@ -67,10 +69,14 @@ export function storeCell(value: CellValue, type: ColumnType): string | number |
       return arr.length ? JSON.stringify(arr) : null;
     }
     case 'date':
-    case 'datetime': {
-      const raw = String(value);
-      return normalizeDate(raw, type === 'datetime') ?? raw;
-    }
+    case 'datetime':
+      // VERBATIM (audit finding: normalize-on-write silently rewrote existing
+      // cells on migration, and Date.parse fallbacks are timezone-dependent).
+      // Imports already arrive ISO from sheet-to-grid's type inference; messy
+      // legacy text stays exactly as the user stored it, the profile flags
+      // MIXED DATE FORMATS, and range filters/sorts compare the same stored
+      // text on both the doc and SQL paths — parity over prettiness.
+      return String(value);
     case 'formula':
       return null;
     default: {
