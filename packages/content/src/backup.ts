@@ -30,12 +30,13 @@
 
 import { spawn } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
-import { mkdir, open, readdir, rename, stat, unlink } from 'node:fs/promises';
+import { mkdir, open, readdir, rename, rm, stat, unlink } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { eq, sql } from 'drizzle-orm';
 import { db, profiles } from '@mantle/db';
 import { loadProfilePreferences } from './profile-preferences';
+import { snapshotAllTableDatabases } from './table-storage';
 
 export type BackupFrequency = 'daily' | 'weekly';
 
@@ -64,6 +65,10 @@ export type BackupStatus = {
    *  so the /debug/integrity staleness check can tell "failing for a week"
    *  from "failed once after last night's good dump". */
   lastSuccessAt?: string;
+  /** Sqlite-native table workbooks snapshotted beside the dump (durability
+   *  gate 2). failed>0 is surfaced in the settings card — a backup that
+   *  silently skips a workbook is the gap this closes. */
+  tableDbs?: { snapshotted: number; missing: number; failed: number };
 };
 
 export const DEFAULT_BACKUP_CONFIG: BackupConfig = {
@@ -302,11 +307,33 @@ async function runBackupInner(
   await rename(partPath, finalPath);
   const { size } = await stat(finalPath);
 
-  // Rotate: newest `keep` survive. Only our own mantle-*.dump names are
-  // candidates, so manual files in the same directory are never touched.
+  // Sqlite-native table workbooks (durability gate 2): VACUUM INTO snapshots
+  // into a sibling directory, same timestamp, same rotation. Loud but
+  // non-fatal — a workbook hiccup must not invalidate the Postgres dump, and
+  // the counts land in the status so it can't be silent either.
+  let tableDbs: BackupStatus['tableDbs'];
+  try {
+    const r = await snapshotAllTableDatabases(path.join(dir, `mantle-table-dbs-${ts}`));
+    tableDbs = { snapshotted: r.snapshotted.length, missing: r.missing.length, failed: r.failed.length };
+    if (r.failed.length > 0 || r.missing.length > 0) {
+      console.error(
+        `[backup] ⚠ table workbooks: ${r.failed.map((f) => `${f.nodeId}: ${f.error}`).join('; ')}` +
+          `${r.missing.length ? ` · missing files: ${r.missing.map((m) => m.nodeId).join(', ')}` : ''}`,
+      );
+    }
+  } catch (err) {
+    tableDbs = { snapshotted: 0, missing: 0, failed: -1 };
+    console.error(`[backup] ⚠ table-workbook snapshot pass crashed: ${msg(err)}`);
+  }
+
+  // Rotate: newest `keep` survive — dumps AND their table-db sibling dirs.
+  // Only our own mantle-* names are candidates, so manual files in the same
+  // directory are never touched.
   const existing = await listBackups(cfg);
   for (const old of existing.slice(Math.max(1, cfg.keep))) {
     await unlink(path.join(dir, old.name)).catch(() => {});
+    const sibling = path.join(dir, `mantle-table-dbs-${old.name.replace(/^mantle-/, '').replace(/\.dump$/, '')}`);
+    await rm(sibling, { recursive: true, force: true }).catch(() => {});
   }
 
   const finishedAt = new Date().toISOString();
@@ -318,6 +345,7 @@ async function runBackupInner(
     durationMs: Date.now() - started,
     trigger,
     lastSuccessAt: finishedAt,
+    ...(tableDbs ? { tableDbs } : {}),
   };
   console.log(
     `[backup] ✔ ${path.basename(finalPath)} (${Math.round(size / 1024 / 1024)}MB, ${status.durationMs}ms, ${trigger})`,

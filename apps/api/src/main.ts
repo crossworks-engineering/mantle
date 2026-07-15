@@ -39,6 +39,22 @@ async function main(): Promise<void> {
         failed.map((r) => `  ✗ ${r.key}: ${r.detail}`).join('\n'),
     );
   });
+  // Dual-mount tripwire: tool handlers run in THIS process too, so the
+  // table-dbs volume must be writable here, not just in web (a tag-only
+  // update that missed the compose refresh fails exactly this way).
+  if (process.env.TABLE_DB_DIR) {
+    void import('node:fs/promises').then(async (fsp) => {
+      try {
+        await fsp.mkdir(process.env.TABLE_DB_DIR!, { recursive: true });
+        await fsp.access(process.env.TABLE_DB_DIR!, 2 /* W_OK */);
+      } catch {
+        console.error(
+          `[api] TABLE_DB_DIR (${process.env.TABLE_DB_DIR}) is not writable in the api container — ` +
+            `agent table edits will fail. Refresh docker-compose.yml (table-dbs must be mounted into web AND api).`,
+        );
+      }
+    });
+  }
   configureDBOS();
   // Bridge trace steps → live turn-status events for streamed turns. Pure
   // registration (no I/O); harmless when MANTLE_TURN_STREAMING is off, since

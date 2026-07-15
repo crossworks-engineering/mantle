@@ -28,7 +28,8 @@
     "./block-diff": "./src/block-diff.ts",
     "./page-toc": "./src/page-toc.ts",
     "./page-split": "./src/page-split.ts",
-    "./page-diff": "./src/page-diff.ts"
+    "./page-diff": "./src/page-diff.ts",
+    "./table-storage": "./src/table-storage.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -37,6 +38,7 @@
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/search": "workspace:*",
+    "@mantle/tabledb": "workspace:*",
     "docx": "^9.5.1",
     "drizzle-orm": "^0.38.3",
     "exceljs": "^4.4.0",

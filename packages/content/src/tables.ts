@@ -19,7 +19,23 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { db, nodes, tables, notifyNodeIngested, type Node } from '@mantle/db';
+import {
+  MATERIALIZE_MAX,
+  TableTooLargeError,
+  publishedPath,
+  relativeStoragePath,
+  resolveStoragePath,
+  writeDocFile,
+  type WorkbookStats,
+} from '@mantle/tabledb';
 import { ensureTableDoc, emptyTableDoc, type TableDoc } from './table-model';
+import {
+  draftAbsFor,
+  loadDocsFromFile,
+  registryFileColumns,
+  removeTableFile,
+  withTableRegistryLock,
+} from './table-storage';
 import { tableToText } from './table-to-text';
 
 export const TABLES_ROOT_LABEL = 'tables';
@@ -48,7 +64,7 @@ export type TableDetail = TableRow & {
   draft: TableDoc | null;
 };
 
-function rowOf(n: Node, data: TableDoc): TableRow {
+function rowOf(n: Node, counts: { columnCount: number; rowCount: number }): TableRow {
   const d = (n.data ?? {}) as Record<string, unknown>;
   return {
     id: n.id,
@@ -57,16 +73,61 @@ function rowOf(n: Node, data: TableDoc): TableRow {
     tags: n.tags ?? [],
     summary: typeof d.summary === 'string' ? d.summary : null,
     visibility: d.visibility === 'public' ? 'public' : 'private',
-    columnCount: data.columns.length,
-    rowCount: data.rows.length,
+    columnCount: counts.columnCount,
+    rowCount: counts.rowCount,
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
 }
 
-function detailOf(n: Node, data: TableDoc, draft: TableDoc | null = null): TableDetail {
-  return { ...rowOf(n, data), data, draft };
+function countsOf(data: TableDoc): { columnCount: number; rowCount: number } {
+  return { columnCount: data.columns.length, rowCount: data.rows.length };
 }
+
+/** Counts for the list WITHOUT materializing: registry `stats` when the table
+ *  is file-backed (or backfilled), else a JSONB parse (legacy rows only —
+ *  the pre-v2 behavior). */
+function countsFromRegistry(stats: unknown, data: unknown): { columnCount: number; rowCount: number } {
+  const s = stats as WorkbookStats | null;
+  if (s && Array.isArray(s.tabs)) {
+    return {
+      columnCount: s.tabs.reduce((a, t) => Math.max(a, t.columns), 0),
+      rowCount: s.tabs.reduce((a, t) => a + t.rows, 0),
+    };
+  }
+  return countsOf(ensureTableDoc(data));
+}
+
+function detailOf(n: Node, data: TableDoc, draft: TableDoc | null = null): TableDetail {
+  return { ...rowOf(n, countsOf(data)), data, draft };
+}
+
+/** Published + draft docs for a registry row: workbook file when file-backed
+ *  (draft-first callers get both), JSONB otherwise. */
+function docsOf(row: { storagePath: string | null; data: unknown; draft: unknown }): {
+  data: TableDoc;
+  draft: TableDoc | null;
+} {
+  if (row.storagePath) return loadDocsFromFile(row.storagePath);
+  return {
+    data: ensureTableDoc(row.data ?? emptyTableDoc()),
+    draft: row.draft != null ? ensureTableDoc(row.draft) : null,
+  };
+}
+
+/** Truncation guard (plan §4): whole-doc writes past the materialize window
+ *  are refused on BOTH the draft and commit routes — a windowed doc committed
+ *  whole would BE published truncation. Imports split at 10k today, so this
+ *  cannot fire for legitimate docs; it exists to make the failure loud. */
+function guardWholeDoc(doc: TableDoc): void {
+  if (doc.rows.length > MATERIALIZE_MAX) {
+    throw new TableTooLargeError(doc.rows.length, MATERIALIZE_MAX);
+  }
+}
+
+/** P1 workbooks carry the single engine-default tab; real tab names arrive
+ *  with multi-tab (un-split) imports in P3. */
+const TAB_NAME = 'Sheet1';
 
 async function ensureRoot(ownerId: string): Promise<void> {
   await db
@@ -121,15 +182,18 @@ export async function listTables(
   ownerId: string,
   opts: ListTablesOpts & { limit?: number; offset?: number } = {},
 ): Promise<TableRow[]> {
+  // Counts come from the registry `stats` column — the list NEVER opens
+  // workbook files and only falls back to a JSONB parse for legacy rows that
+  // haven't committed since v2 (thundering-herd guard, plan §9).
   const rows = await db
-    .select({ node: nodes, data: tables.data })
+    .select({ node: nodes, data: tables.data, stats: tables.stats })
     .from(nodes)
     .leftJoin(tables, eq(tables.nodeId, nodes.id))
     .where(and(...tableConds(ownerId, opts)))
     .orderBy(tableOrderBy(opts.sort))
     .limit(opts.limit ?? 500)
     .offset(opts.offset ?? 0);
-  return rows.map((r) => rowOf(r.node, ensureTableDoc(r.data)));
+  return rows.map((r) => rowOf(r.node, countsFromRegistry(r.stats, r.data)));
 }
 
 export async function countTables(ownerId: string, opts: ListTablesOpts = {}): Promise<number> {
@@ -159,14 +223,18 @@ export async function listTableTags(
 
 export async function getTable(ownerId: string, id: string): Promise<TableDetail | null> {
   const [row] = await db
-    .select({ node: nodes, data: tables.data, draft: tables.draftData })
+    .select({
+      node: nodes,
+      data: tables.data,
+      draft: tables.draftData,
+      storagePath: tables.storagePath,
+    })
     .from(nodes)
     .leftJoin(tables, eq(tables.nodeId, nodes.id))
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
   if (!row) return null;
-  const data = ensureTableDoc(row.data ?? emptyTableDoc());
-  const draft = row.draft != null ? ensureTableDoc(row.draft) : null;
+  const { data, draft } = docsOf(row);
   return detailOf(row.node, data, draft);
 }
 
@@ -189,33 +257,48 @@ export async function createTable(
 ): Promise<TableDetail> {
   await ensureRoot(ownerId);
   const data = ensureTableDoc(input.data ?? emptyTableDoc());
+  guardWholeDoc(data);
   const id = randomUUID();
 
-  return db.transaction(async (tx) => {
-    const [node] = await tx
-      .insert(nodes)
-      .values({
-        id,
-        ownerId,
-        type: 'table',
-        title: input.title.trim().slice(0, 200) || 'Untitled table',
-        path: TABLES_ROOT_LABEL,
-        data: {
-          visibility: 'private',
-          ...(input.icon ? { icon: input.icon } : {}),
-          ...(input.sourceFileId ? { sourceFileId: input.sourceFileId } : {}),
-        },
-        tags: dedupeTags(input.tags ?? []),
-      })
-      .returning();
-    if (!node) throw new Error('createTable: insert returned no row');
-    await tx.insert(tables).values({
-      nodeId: node.id,
-      data,
-      dataText: tableToText(data, { title: node.title }),
+  // Sqlite-first (signed off 2026-07-15): the workbook file is written inside
+  // the transaction, BEFORE the registry row that references it becomes
+  // visible — a registry row pointing at a missing file can never be
+  // committed. On any failure the transaction rolls back and the orphan file
+  // is swept. JSONB `data`/`data_text` are dual-written through the
+  // transition (rollback = clear storage_path, plan §9).
+  const publishedAbs = publishedPath(ownerId, id);
+  try {
+    return await db.transaction(async (tx) => {
+      const [node] = await tx
+        .insert(nodes)
+        .values({
+          id,
+          ownerId,
+          type: 'table',
+          title: input.title.trim().slice(0, 200) || 'Untitled table',
+          path: TABLES_ROOT_LABEL,
+          data: {
+            visibility: 'private',
+            ...(input.icon ? { icon: input.icon } : {}),
+            ...(input.sourceFileId ? { sourceFileId: input.sourceFileId } : {}),
+          },
+          tags: dedupeTags(input.tags ?? []),
+        })
+        .returning();
+      if (!node) throw new Error('createTable: insert returned no row');
+      const res = writeDocFile(publishedAbs, data, { nodeId: id, ownerId, tabName: TAB_NAME });
+      await tx.insert(tables).values({
+        nodeId: node.id,
+        data,
+        dataText: tableToText(data, { title: node.title }),
+        ...registryFileColumns(res, relativeStoragePath(ownerId, id)),
+      });
+      return detailOf(node, data);
     });
-    return detailOf(node, data);
-  });
+  } catch (err) {
+    removeTableFile(publishedAbs);
+    throw err;
+  }
 }
 
 export type UpdateTableInput = Partial<{
@@ -259,12 +342,11 @@ export async function updateTable(
   if (!row) return null;
 
   const [p] = await db
-    .select({ data: tables.data, draft: tables.draftData })
+    .select({ data: tables.data, draft: tables.draftData, storagePath: tables.storagePath })
     .from(tables)
     .where(eq(tables.nodeId, id))
     .limit(1);
-  const data = ensureTableDoc(p?.data ?? emptyTableDoc());
-  const draft = p?.draft != null ? ensureTableDoc(p.draft) : null;
+  const { data, draft } = docsOf(p ?? { storagePath: null, data: null, draft: null });
   return detailOf(row, data, draft);
 }
 
@@ -276,31 +358,51 @@ export async function saveTableDraft(
   id: string,
   data: TableDoc,
 ): Promise<boolean> {
-  const [node] = await db
-    .select({ id: nodes.id })
+  const [row] = await db
+    .select({ id: nodes.id, storagePath: tables.storagePath })
     .from(nodes)
+    .leftJoin(tables, eq(tables.nodeId, nodes.id))
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
-  if (!node) return false;
-  await db
-    .update(tables)
-    .set({ draftData: ensureTableDoc(data), draftUpdatedAt: new Date() })
-    .where(eq(tables.nodeId, id));
+  if (!row) return false;
+  const doc = ensureTableDoc(data);
+  guardWholeDoc(doc);
+  // Registry lock spine: the draft-file rebuild and the registry update are
+  // one locked step, so a concurrent agent op / second process can't
+  // interleave mid-write. draft_rev bumps on every batch (the P3 op route's
+  // etag; bumped from day one so it's trustworthy by then).
+  await withTableRegistryLock(id, async (tx) => {
+    if (row.storagePath) {
+      writeDocFile(draftAbsFor(row.storagePath), doc, { nodeId: id, ownerId, tabName: TAB_NAME });
+    }
+    await tx
+      .update(tables)
+      .set({
+        draftData: doc,
+        draftUpdatedAt: new Date(),
+        draftRev: sql`${tables.draftRev} + 1`,
+      })
+      .where(eq(tables.nodeId, id));
+  });
   return true;
 }
 
 /** Throw away the working draft. Published grid + index untouched. */
 export async function discardTableDraft(ownerId: string, id: string): Promise<boolean> {
-  const [node] = await db
-    .select({ id: nodes.id })
+  const [row] = await db
+    .select({ id: nodes.id, storagePath: tables.storagePath })
     .from(nodes)
+    .leftJoin(tables, eq(tables.nodeId, nodes.id))
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
-  if (!node) return false;
-  await db
-    .update(tables)
-    .set({ draftData: null, draftUpdatedAt: null })
-    .where(eq(tables.nodeId, id));
+  if (!row) return false;
+  await withTableRegistryLock(id, async (tx) => {
+    if (row.storagePath) removeTableFile(draftAbsFor(row.storagePath));
+    await tx
+      .update(tables)
+      .set({ draftData: null, draftUpdatedAt: null, draftRev: sql`${tables.draftRev} + 1` })
+      .where(eq(tables.nodeId, id));
+  });
   return true;
 }
 
@@ -324,6 +426,7 @@ export async function commitTable(
   if (!node) return null;
 
   const doc = ensureTableDoc(data);
+  guardWholeDoc(doc);
   const newData = { ...((node.data ?? {}) as Record<string, unknown>) };
   delete newData.summary;
   delete newData.summary_model;
@@ -331,13 +434,21 @@ export async function commitTable(
   delete newData.entities;
   const dataText = tableToText(doc, { title: node.title });
 
-  const result = await db.transaction(async (tx) => {
+  // Commit under the registry lock (plan §3.3): write the new published file
+  // (build + checkpoint + atomic rename inside writeDocFile), drop the draft
+  // file, then bump version/stats — one serialized step. A legacy JSONB table
+  // converts to file-backed here (commit has the full doc in hand, and the
+  // lock is the same one migration takes, so the two can never fork).
+  const publishedAbs = publishedPath(ownerId, id);
+  const result = await withTableRegistryLock(id, async (tx) => {
     const [row] = await tx
       .update(nodes)
       .set({ data: newData, embedding: null, updatedAt: new Date() })
       .where(eq(nodes.id, id))
       .returning();
     if (!row) throw new Error('commitTable: update returned no row');
+    const res = writeDocFile(publishedAbs, doc, { nodeId: id, ownerId, tabName: TAB_NAME });
+    removeTableFile(draftAbsFor(relativeStoragePath(ownerId, id)));
     await tx
       .update(tables)
       .set({
@@ -345,8 +456,10 @@ export async function commitTable(
         dataText,
         draftData: null,
         draftUpdatedAt: null,
+        draftRev: sql`${tables.draftRev} + 1`,
         version: sql`${tables.version} + 1`,
         updatedAt: new Date(),
+        ...registryFileColumns(res, relativeStoragePath(ownerId, id)),
       })
       .where(eq(tables.nodeId, id));
     return detailOf(row, doc, null);
@@ -358,12 +471,21 @@ export async function commitTable(
 
 export async function deleteTable(ownerId: string, id: string): Promise<boolean> {
   const [row] = await db
-    .select({ id: nodes.id })
+    .select({ id: nodes.id, storagePath: tables.storagePath })
     .from(nodes)
+    .leftJoin(tables, eq(tables.nodeId, nodes.id))
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
   if (!row) return false;
   await db.delete(nodes).where(eq(nodes.id, id)); // `tables` row cascades.
+  // Workbook files go AFTER the registry delete commits (a failed delete must
+  // never leave a registry row pointing at removed files). Best-effort; the
+  // sanity check reports orphaned files.
+  if (row.storagePath) {
+    const abs = resolveStoragePath(row.storagePath);
+    removeTableFile(abs);
+    removeTableFile(draftAbsFor(row.storagePath));
+  }
   return true;
 }
 

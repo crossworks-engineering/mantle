@@ -661,6 +661,9 @@ importers:
       '@mantle/search':
         specifier: workspace:*
         version: link:../search
+      '@mantle/tabledb':
+        specifier: workspace:*
+        version: link:../tabledb
       docx:
         specifier: ^9.5.1
         version: 9.7.1
