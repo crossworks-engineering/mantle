@@ -46,7 +46,15 @@ echo "✔ Wrote $(du -h "$OUT" | cut -f1) → $OUT"
 # writes) inside the app container, then tar the snapshots to the host. Loud on
 # failure but NON-fatal: a hiccup here must not invalidate the Postgres dump —
 # but it must never be silent (that silence is the durability gap we're closing).
-if running "$APP_CONTAINER"; then
+# A box that has never built a mini-app has no app-db dir inside the container
+# (fresh install, or a compose predating the app-dbs mount) — that's "nothing
+# to back up yet", not a failure, so probe before snapshotting.
+if ! running "$APP_CONTAINER"; then
+  echo "⚠ app container '$APP_CONTAINER' not running — per-app SQLite NOT backed up." >&2
+  echo "  Set MANTLE_APP_CONTAINER if it has a different name." >&2
+elif ! docker exec "$APP_CONTAINER" sh -c 'test -d "${APP_DB_DIR:-/data/app-dbs}"'; then
+  echo "▷ no app databases yet in '$APP_CONTAINER' — skipping per-app SQLite."
+else
   echo "▶ Snapshotting per-app SQLite via '$APP_CONTAINER' → $APPDB_OUT"
   if docker exec "$APP_CONTAINER" sh -c '
         set -e
@@ -62,9 +70,6 @@ if running "$APP_CONTAINER"; then
     echo "⚠ app-db snapshot FAILED — per-app SQLite NOT backed up (Postgres dump is intact)." >&2
     echo "  See the output above; re-run once the app container is healthy." >&2
   fi
-else
-  echo "⚠ app container '$APP_CONTAINER' not running — per-app SQLite NOT backed up." >&2
-  echo "  Set MANTLE_APP_CONTAINER if it has a different name." >&2
 fi
 
 echo "  Restore Postgres with:  scripts/db-restore.sh $OUT"
