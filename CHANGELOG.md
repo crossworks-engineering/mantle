@@ -4,6 +4,26 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.134.0 — 2026-07-15
+
+**Tables v2: sqlite-native table storage.** Each Table node now lives in its
+own SQLite workbook file (`TABLE_DB_DIR`), with the Postgres registry row as
+the lock spine (migration 0120, additive). Highlights: read-only `table_sql`
+with a worker-thread watchdog; profile-only indexing (rows are never embedded
+— schema/profile chunks + FTS trigram shadows replace row dumps); draft-op
+batches with a `draft_rev` etag and WAL-safe commit-promote (VACUUM INTO +
+atomic rename); windowed reads past the 10k materialize cap; `.sqlite` export;
+part-splitting retired (2M-row explicit ceiling); lazy migration of legacy
+JSONB tables plus a background sweep. JSONB dual-write is kept as the rollback
+lever; blob retirement (`retire-table-blobs.ts`) lands next release.
+
+**⚠️ Deploy note — compose refresh REQUIRED, a tag-only bump is not enough.**
+This release adds the `table-dbs` volume mount (`TABLE_DB_DIR=/data/table-dbs`)
+to the web and worker services. Refresh `docker-compose.yml` on every box
+before `compose pull`, or table storage lands inside the container filesystem
+and is lost on recreate. `db-dump.sh` and the scheduled backup now snapshot
+the workbook files (VACUUM INTO) alongside pg_dump.
+
 ## v0.133.2 — 2026-07-15
 
 **Hotfix 2: migration 0119's journal `when` predated 0118's**, and the
