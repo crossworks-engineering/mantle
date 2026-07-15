@@ -1371,8 +1371,8 @@ const page_blocks_apply: BuiltinToolDef = {
     let doc = pickEditingBaseline(page);
     const counts = { updated: 0, inserted: 0, deleted: 0 };
     // Chaining record: multi-batch jobs died on stale anchors in the wild (a
-    // 2026-07-08 NATREF turn burned 4 batches re-listing after its own earlier
-    // chunks consumed the anchors). markdownToDoc parse-mints ids, so the ids
+    // 2026-07-08 pilot-deployment turn burned 4 batches re-listing after its own
+    // earlier chunks consumed the anchors). markdownToDoc parse-mints ids, so the ids
     // of every block this batch creates are known BEFORE save — returning
     // them lets the next batch anchor on this one's output with no re-list.
     const createdIds: Array<{ op: number; ids: string[] }> = [];

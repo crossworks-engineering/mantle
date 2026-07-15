@@ -7,10 +7,10 @@ describe('parseEvalCases', () => {
   it('accepts both expectTitleIncludes and the eval-recall.ts field name', () => {
     const cases = parseEvalCases([
       { id: 'a', query: 'q1', expectNodeIds: ['x'] },
-      { query: 'q2', expectNodeTitleIncludes: ['Pinnacle'] },
+      { query: 'q2', expectNodeTitleIncludes: ['Acme'] },
     ]);
     expect(cases[0]).toMatchObject({ id: 'a', expectNodeIds: ['x'] });
-    expect(cases[1]).toMatchObject({ id: 'case-2', expectTitleIncludes: ['Pinnacle'] });
+    expect(cases[1]).toMatchObject({ id: 'case-2', expectTitleIncludes: ['Acme'] });
   });
   it('rejects a case with no query or no gold', () => {
     expect(() => parseEvalCases([{ query: '', expectNodeIds: ['x'] }])).toThrow(/query/);
