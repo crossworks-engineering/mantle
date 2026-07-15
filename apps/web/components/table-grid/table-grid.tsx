@@ -37,6 +37,7 @@ import {
   List,
   ListOrdered,
   ListPlus,
+  Maximize2,
   Percent,
   Plus,
   Sigma,
@@ -65,6 +66,13 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -170,12 +178,20 @@ export function TableGrid({
   doc,
   onChange,
   tableId,
+  tabs,
+  activeTabId,
 }: {
   doc: TableDoc;
   onChange: (next: TableDoc) => void;
   /** Enables server-backed cells (reference dropdowns fetch their option
    *  list from the workbook). Optional — cells degrade to text without it. */
   tableId?: string;
+  /** Workbook tabs, for the header's "Reference…" source picker. Absent on
+   *  legacy JSONB tables (single-grid, no reference columns). */
+  tabs?: { id: string; name: string }[];
+  /** The tab this grid is showing — so the picker can exclude the column
+   *  itself when the source tab is this one (self-reference guard). */
+  activeTabId?: string;
 }) {
   const [sorting, setSorting] = useState<SortingState>([]);
 
@@ -190,7 +206,7 @@ export function TableGrid({
   onChangeRef.current = onChange;
 
   const structureKey = doc.columns
-    .map((c) => `${c.id}:${c.type}:${c.name}:${c.formula ?? ''}:${(c.options ?? []).map((o) => o.label).join(',')}:${JSON.stringify(c.format ?? {})}`)
+    .map((c) => `${c.id}:${c.type}:${c.name}:${c.formula ?? ''}:${(c.options ?? []).map((o) => o.label).join(',')}:${JSON.stringify(c.format ?? {})}:${c.ref ? `${c.ref.tabId}/${c.ref.columnId}` : ''}`)
     .join('|') + `#${JSON.stringify(doc.aggregates ?? {})}`;
 
   const columns = useMemo<ColumnDef<Row>[]>(() => {
@@ -206,10 +222,17 @@ export function TableGrid({
           onSort={(dir) => column.toggleSorting(dir === 'desc')}
           onClearSort={() => column.clearSorting()}
           onRename={(name) => onChangeRef.current(updateColumn(docRef.current, col.id, { name }))}
-          onType={(type) => onChangeRef.current(updateColumn(docRef.current, col.id, { type }))}
+          // Retype through the menu is never 'reference' (that goes via the
+          // dialog + onReference) — clear any stale ref so a former reference
+          // column becomes a clean plain column client-side too.
+          onType={(type) => onChangeRef.current(updateColumn(docRef.current, col.id, { type, ref: undefined }))}
+          onReference={(ref) => onChangeRef.current(updateColumn(docRef.current, col.id, { type: 'reference', ref }))}
           onAggregate={(kind) => onChangeRef.current(setAggregate(docRef.current, col.id, kind))}
           onInsertRight={() => onChangeRef.current(addColumn(docRef.current, { name: 'New column', type: 'text' }, col.id).doc)}
           onDelete={() => onChangeRef.current(deleteColumn(docRef.current, col.id))}
+          tableId={tableId}
+          tabs={tabs}
+          activeTabId={activeTabId}
         />
       ),
       cell: (info) => (
@@ -378,9 +401,13 @@ function HeaderCell({
   onClearSort,
   onRename,
   onType,
+  onReference,
   onAggregate,
   onInsertRight,
   onDelete,
+  tableId,
+  tabs,
+  activeTabId,
 }: {
   col: Column;
   aggregate: AggregateKind;
@@ -389,11 +416,19 @@ function HeaderCell({
   onClearSort: () => void;
   onRename: (name: string) => void;
   onType: (type: ColumnType) => void;
+  onReference: (ref: { tabId: string; columnId: string }) => void;
   onAggregate: (kind: AggregateKind) => void;
   onInsertRight: () => void;
   onDelete: () => void;
+  tableId?: string;
+  tabs?: { id: string; name: string }[];
+  activeTabId?: string;
 }) {
   const [name, setName] = useState(col.name);
+  const [refDlgOpen, setRefDlgOpen] = useState(false);
+  // Reference columns need a workbook to point into — offered only when we
+  // have the tab list + a server-backed table (legacy JSONB tables don't).
+  const canReference = !!tableId && !!tabs && tabs.length > 0;
   const TypeIcon = TYPE_ICON[col.type];
   const AggIcon = aggregate !== 'none' ? AGG_ICON[aggregate] : null;
   return (
@@ -445,6 +480,12 @@ function HeaderCell({
               </DropdownMenuRadioGroup>
             </DropdownMenuSubContent>
           </DropdownMenuSub>
+          {canReference && (
+            <DropdownMenuItem className={MENU_RADIO_ITEM} onSelect={() => setRefDlgOpen(true)}>
+              <ArrowUpRight className="mr-2 size-3.5" aria-hidden />
+              {col.type === 'reference' ? 'Reference source…' : 'Link to another tab…'}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSub>
             <DropdownMenuSubTrigger className={MENU_SUBTRIGGER}><Sigma className="mr-2 size-3.5" /> Total</DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
@@ -472,7 +513,165 @@ function HeaderCell({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      {canReference && (
+        <ReferenceColumnDialog
+          open={refDlgOpen}
+          onOpenChange={setRefDlgOpen}
+          tableId={tableId!}
+          tabs={tabs!}
+          activeTabId={activeTabId}
+          currentColumnId={col.id}
+          currentRef={col.ref}
+          onConfirm={(ref) => {
+            onReference(ref);
+            setRefDlgOpen(false);
+          }}
+        />
+      )}
     </span>
+  );
+}
+
+/** Pick a source (tab, column) to turn this column into a cross-tab reference
+ *  (Tables v2.1). The engine validates the choice again on save; this just
+ *  spares the assistant/tool round-trip. Source columns are fetched per tab
+ *  (draft-aware) and exclude formula columns + this column itself. */
+function ReferenceColumnDialog({
+  open,
+  onOpenChange,
+  tableId,
+  tabs,
+  activeTabId,
+  currentColumnId,
+  currentRef,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  tableId: string;
+  tabs: { id: string; name: string }[];
+  activeTabId?: string;
+  currentColumnId: string;
+  currentRef?: { tabId: string; columnId: string };
+  onConfirm: (ref: { tabId: string; columnId: string }) => void;
+}) {
+  const [tabId, setTabId] = useState<string | undefined>(currentRef?.tabId);
+  const [cols, setCols] = useState<{ id: string; name: string; type: string }[] | null>(null);
+  const [colId, setColId] = useState<string | undefined>(currentRef?.columnId);
+  const [loading, setLoading] = useState(false);
+
+  // Reset to the current ref each time the dialog opens.
+  useEffect(() => {
+    if (open) {
+      setTabId(currentRef?.tabId);
+      setColId(currentRef?.columnId);
+      setCols(null);
+    }
+  }, [open, currentRef?.tabId, currentRef?.columnId]);
+
+  // Load the chosen tab's columns (draft-aware); exclude formula columns and
+  // this column itself (self-reference is rejected by the engine anyway).
+  useEffect(() => {
+    if (!open || !tabId) return;
+    let cancelled = false;
+    setLoading(true);
+    setCols(null);
+    void (async () => {
+      try {
+        const j = await apiFetch<{ table: { data?: { columns?: { id: string; name: string; type: string }[] }; draft?: { columns?: { id: string; name: string; type: string }[] } } }>(
+          `/api/tables/${tableId}?tab=${encodeURIComponent(tabId)}`,
+        );
+        const source = j.table.draft?.columns ?? j.table.data?.columns ?? [];
+        const usable = source.filter(
+          (c) => c.type !== 'formula' && !(tabId === activeTabId && c.id === currentColumnId),
+        );
+        if (!cancelled) setCols(usable);
+      } catch {
+        if (!cancelled) setCols([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, tabId, tableId, activeTabId, currentColumnId]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Link to another tab</DialogTitle>
+          <DialogDescription>
+            This column will offer values from another tab’s column (Excel data-validation style — free text stays
+            allowed).
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <div className="grid gap-1">
+            <span className="text-xs font-medium text-muted-foreground">Source tab</span>
+            <Command className="rounded border border-border">
+              <CommandList className="max-h-40">
+                <CommandEmpty>No tabs</CommandEmpty>
+                <CommandGroup>
+                  {tabs.map((t) => (
+                    <CommandItem
+                      key={t.id}
+                      value={t.name}
+                      onSelect={() => {
+                        setTabId(t.id);
+                        setColId(undefined);
+                      }}
+                    >
+                      <Check className={cn('mr-2 size-3.5', tabId === t.id ? 'opacity-100' : 'opacity-0')} />
+                      {t.name}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </div>
+          <div className="grid gap-1">
+            <span className="text-xs font-medium text-muted-foreground">Source column</span>
+            {!tabId ? (
+              <p className="px-1 py-2 text-sm text-muted-foreground">Pick a tab first.</p>
+            ) : loading ? (
+              <p className="px-1 py-2 text-sm text-muted-foreground">Loading columns…</p>
+            ) : (cols ?? []).length === 0 ? (
+              <p className="px-1 py-2 text-sm text-muted-foreground">No linkable columns on this tab.</p>
+            ) : (
+              <Command className="rounded border border-border">
+                <CommandInput placeholder="Search columns…" />
+                <CommandList className="max-h-40">
+                  <CommandEmpty>No match</CommandEmpty>
+                  <CommandGroup>
+                    {(cols ?? []).map((c) => (
+                      <CommandItem key={c.id} value={c.name} onSelect={() => setColId(c.id)}>
+                        <Check className={cn('mr-2 size-3.5', colId === c.id ? 'opacity-100' : 'opacity-0')} />
+                        {c.name}
+                        <span className="ml-auto text-xs text-muted-foreground">{c.type}</span>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            )}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={!tabId || !colId}
+              onClick={() => tabId && colId && onConfirm({ tabId, columnId: colId })}
+            >
+              Link column
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -706,6 +905,14 @@ function ReferenceCell({
   const [options, setOptions] = useState<string[] | null>(null);
   const current = typeof rawValue === 'string' ? rawValue : rawValue == null ? '' : String(rawValue);
 
+  // Re-pointing the reference source (via the header dialog) changes col.ref
+  // while this cell instance stays mounted — drop the cached option list so
+  // the next open refetches from the new source (audit).
+  const refKey = col.ref ? `${col.ref.tabId}/${col.ref.columnId}` : '';
+  useEffect(() => {
+    setOptions(null);
+  }, [refKey]);
+
   useEffect(() => {
     if (!open || options !== null || !col.ref) return;
     let cancelled = false;
@@ -798,36 +1005,106 @@ function ReferenceCell({
 
 function TextCell({ col, rawValue, onSet }: { col: Column; rawValue: CellValue; onSet: (v: CellValue) => void }) {
   const isNumeric = col.type === 'number' || col.type === 'currency' || col.type === 'percent';
+  // Long free text (text/url) gets an Excel-style expander: the row height is
+  // fixed (the grid virtualizes on it), so the whole value can't grow the cell
+  // in place — instead a portal popover shows/edits the full string without
+  // touching layout. Numeric/short types keep the plain inline input.
+  const expandable = col.type === 'text' || col.type === 'url';
   const external = rawValue == null ? '' : Array.isArray(rawValue) ? rawValue.join(', ') : String(rawValue);
   const [local, setLocal] = useState(external);
-  const focused = useRef(false);
+  const [expanded, setExpanded] = useState(false);
+  const editing = useRef(false);
+  // commit() reads the value from a ref, never from `local` state: setLocal is
+  // async, so a cancel that did `setLocal(external)` and then blurred would
+  // still see the EDITED value in the closure and save it — Esc "cancel" would
+  // silently persist (audit). The ref is the single source of truth for commit.
+  const valueRef = useRef(local);
+  valueRef.current = local;
 
   // Adopt external changes only when the user isn't editing this cell.
   useEffect(() => {
-    if (!focused.current) setLocal(external);
+    if (!editing.current) setLocal(external);
   }, [external]);
 
   const commit = () => {
-    focused.current = false;
-    const next = coerceCell(local, col.type);
+    editing.current = false;
+    const next = coerceCell(valueRef.current, col.type);
     const nextStr = next == null ? '' : Array.isArray(next) ? next.join(', ') : String(next);
     if (nextStr !== external) onSet(next);
   };
+  // Revert to the stored value — point the ref at `external` FIRST so any
+  // commit that races the state update (blur/close) is a no-op.
+  const cancel = () => {
+    editing.current = false;
+    valueRef.current = external;
+    setLocal(external);
+  };
 
-  return (
+  const input = (
     <input
       value={local}
       inputMode={isNumeric ? 'decimal' : undefined}
-      onFocus={() => { focused.current = true; }}
+      onFocus={() => { editing.current = true; }}
       onChange={(e) => setLocal(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-        if (e.key === 'Escape') { setLocal(external); focused.current = false; (e.target as HTMLInputElement).blur(); }
+        if (e.key === 'Escape') { cancel(); (e.target as HTMLInputElement).blur(); }
       }}
       placeholder={isNumeric ? '0' : ''}
-      className={cn(CELL_INPUT, isNumeric && 'text-right tabular-nums')}
+      className={cn(CELL_INPUT, isNumeric && 'text-right tabular-nums', expandable && 'pr-7')}
       aria-label={col.name}
     />
+  );
+
+  if (!expandable) return input;
+
+  return (
+    <div className="group/cell relative flex items-center">
+      {input}
+      <Popover
+        open={expanded}
+        onOpenChange={(o) => {
+          setExpanded(o);
+          // Closing the popover (outside-click, Enter, or after Esc's cancel)
+          // is the single commit point for the expanded editor — cancel() has
+          // already pointed valueRef at `external`, so a cancelled close saves
+          // nothing.
+          if (!o) commit();
+        }}
+      >
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={() => { editing.current = true; setExpanded(true); }}
+            title="Expand cell"
+            aria-label="Expand cell"
+            className="absolute right-1 rounded bg-background/80 p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/cell:opacity-100 group-focus-within/cell:opacity-100 data-[state=open]:opacity-100"
+          >
+            <Maximize2 className="size-3.5" aria-hidden />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-[22rem] p-2" onOpenAutoFocus={(e) => e.preventDefault()}>
+          <div className="mb-1 text-xs font-medium text-muted-foreground">{col.name}</div>
+          <textarea
+            autoFocus
+            value={local}
+            onFocus={() => { editing.current = true; }}
+            onChange={(e) => setLocal(e.target.value)}
+            // No onBlur commit: the popover close (onOpenChange) is the one
+            // commit point, so there's no blur-vs-close double-save race.
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') { cancel(); setExpanded(false); }
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) setExpanded(false);
+            }}
+            rows={Math.min(14, Math.max(3, local.split('\n').length + 1))}
+            className="max-h-[60vh] w-full resize-y rounded border border-border bg-background p-2 text-sm outline-none focus:ring-0"
+            aria-label={`${col.name} (expanded)`}
+          />
+          <div className="mt-1 text-right text-[11px] text-muted-foreground">⌘↵ save · Esc cancel</div>
+        </PopoverContent>
+      </Popover>
+    </div>
   );
 }
