@@ -206,7 +206,7 @@ export function TableGrid({
   onChangeRef.current = onChange;
 
   const structureKey = doc.columns
-    .map((c) => `${c.id}:${c.type}:${c.name}:${c.formula ?? ''}:${(c.options ?? []).map((o) => o.label).join(',')}:${JSON.stringify(c.format ?? {})}`)
+    .map((c) => `${c.id}:${c.type}:${c.name}:${c.formula ?? ''}:${(c.options ?? []).map((o) => o.label).join(',')}:${JSON.stringify(c.format ?? {})}:${c.ref ? `${c.ref.tabId}/${c.ref.columnId}` : ''}`)
     .join('|') + `#${JSON.stringify(doc.aggregates ?? {})}`;
 
   const columns = useMemo<ColumnDef<Row>[]>(() => {
@@ -905,6 +905,14 @@ function ReferenceCell({
   const [options, setOptions] = useState<string[] | null>(null);
   const current = typeof rawValue === 'string' ? rawValue : rawValue == null ? '' : String(rawValue);
 
+  // Re-pointing the reference source (via the header dialog) changes col.ref
+  // while this cell instance stays mounted — drop the cached option list so
+  // the next open refetches from the new source (audit).
+  const refKey = col.ref ? `${col.ref.tabId}/${col.ref.columnId}` : '';
+  useEffect(() => {
+    setOptions(null);
+  }, [refKey]);
+
   useEffect(() => {
     if (!open || options !== null || !col.ref) return;
     let cancelled = false;
@@ -1006,6 +1014,12 @@ function TextCell({ col, rawValue, onSet }: { col: Column; rawValue: CellValue; 
   const [local, setLocal] = useState(external);
   const [expanded, setExpanded] = useState(false);
   const editing = useRef(false);
+  // commit() reads the value from a ref, never from `local` state: setLocal is
+  // async, so a cancel that did `setLocal(external)` and then blurred would
+  // still see the EDITED value in the closure and save it — Esc "cancel" would
+  // silently persist (audit). The ref is the single source of truth for commit.
+  const valueRef = useRef(local);
+  valueRef.current = local;
 
   // Adopt external changes only when the user isn't editing this cell.
   useEffect(() => {
@@ -1014,9 +1028,16 @@ function TextCell({ col, rawValue, onSet }: { col: Column; rawValue: CellValue; 
 
   const commit = () => {
     editing.current = false;
-    const next = coerceCell(local, col.type);
+    const next = coerceCell(valueRef.current, col.type);
     const nextStr = next == null ? '' : Array.isArray(next) ? next.join(', ') : String(next);
     if (nextStr !== external) onSet(next);
+  };
+  // Revert to the stored value — point the ref at `external` FIRST so any
+  // commit that races the state update (blur/close) is a no-op.
+  const cancel = () => {
+    editing.current = false;
+    valueRef.current = external;
+    setLocal(external);
   };
 
   const input = (
@@ -1028,7 +1049,7 @@ function TextCell({ col, rawValue, onSet }: { col: Column; rawValue: CellValue; 
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-        if (e.key === 'Escape') { setLocal(external); editing.current = false; (e.target as HTMLInputElement).blur(); }
+        if (e.key === 'Escape') { cancel(); (e.target as HTMLInputElement).blur(); }
       }}
       placeholder={isNumeric ? '0' : ''}
       className={cn(CELL_INPUT, isNumeric && 'text-right tabular-nums', expandable && 'pr-7')}
@@ -1045,6 +1066,10 @@ function TextCell({ col, rawValue, onSet }: { col: Column; rawValue: CellValue; 
         open={expanded}
         onOpenChange={(o) => {
           setExpanded(o);
+          // Closing the popover (outside-click, Enter, or after Esc's cancel)
+          // is the single commit point for the expanded editor — cancel() has
+          // already pointed valueRef at `external`, so a cancelled close saves
+          // nothing.
           if (!o) commit();
         }}
       >
@@ -1067,10 +1092,11 @@ function TextCell({ col, rawValue, onSet }: { col: Column; rawValue: CellValue; 
             value={local}
             onFocus={() => { editing.current = true; }}
             onChange={(e) => setLocal(e.target.value)}
-            onBlur={commit}
+            // No onBlur commit: the popover close (onOpenChange) is the one
+            // commit point, so there's no blur-vs-close double-save race.
             onKeyDown={(e) => {
-              if (e.key === 'Escape') { setLocal(external); editing.current = false; setExpanded(false); }
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { commit(); setExpanded(false); }
+              if (e.key === 'Escape') { cancel(); setExpanded(false); }
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) setExpanded(false);
             }}
             rows={Math.min(14, Math.max(3, local.split('\n').length + 1))}
             className="max-h-[60vh] w-full resize-y rounded border border-border bg-background p-2 text-sm outline-none focus:ring-0"

@@ -192,6 +192,16 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
         void reloadTab();
         return false;
       }
+      if (e instanceof ApiError && e.status === 400) {
+        // The server rejected an op in the batch — e.g. a reference column
+        // whose source column was deleted in another surface between the pick
+        // and the save. That op would otherwise stay in every future diff and
+        // wedge ALL saves; reload the base so it leaves the delta, and name the
+        // cause instead of a generic failure (audit C1).
+        toast.error(`Change couldn’t be saved: ${e.message} — reloaded the latest draft`);
+        void reloadTab();
+        return false;
+      }
       if (!(e instanceof ApiError && e.status === 401)) toast.error('Could not save draft');
       return false;
     } finally {
