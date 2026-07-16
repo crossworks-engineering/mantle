@@ -65,18 +65,46 @@ type LandedRow = {
   run_steps: string[] | null;
 };
 
-export type ListLandedOpts = { limit?: number; types?: readonly string[] };
+export type LandedOrder = 'newest' | 'oldest';
+export type ListLandedOpts = {
+  limit?: number;
+  offset?: number;
+  types?: readonly string[];
+  order?: LandedOrder;
+};
+
+/** The row filter shared by `listLanded` and `countLanded` so the page and its
+ *  total can never drift apart. Conversation digests are Saskia-authored notes,
+ *  not content the user added. */
+function landedWhere(ownerId: string, types: readonly string[]) {
+  const typeArr = sql`ARRAY[${sql.join(types.map((t) => sql`${t}`), sql`, `)}]::text[]`;
+  return sql`
+    n.owner_id = ${ownerId}
+    AND n.type::text = ANY(${typeArr})
+    AND NOT (n.type = 'note' AND 'conversation-digest' = ANY(n.tags))`;
+}
+
+/** Total nodes matching the (optional) type filter, ignoring limit/offset — the
+ *  pager's denominator. */
+export async function countLanded(ownerId: string, types?: readonly string[]): Promise<number> {
+  const t = (types?.length ? types : LANDED_TYPES) as readonly string[];
+  const res = await db.execute<{ n: number | string }>(
+    sql`SELECT count(*) AS n FROM nodes n WHERE ${landedWhere(ownerId, t)}`,
+  );
+  return Number(rowsOf<{ n: number | string }>(res)[0]?.n ?? 0);
+}
 
 /**
- * The N most-recent real content nodes + their brain footprint, newest first.
- * One round-trip: the footprint columns read straight from the brain tables, the
- * latest extractor_run is a LATERAL join, and step names come from a correlated
- * array.
+ * One page of real content nodes + their brain footprint, newest first by
+ * default. One round-trip: the footprint columns read straight from the brain
+ * tables, the latest extractor_run is a LATERAL join, and step names come from a
+ * correlated array. Pair with `countLanded` for the pager total.
  */
 export async function listLanded(ownerId: string, opts: ListLandedOpts = {}): Promise<LandedItem[]> {
   const limit = Math.min(Math.max(1, opts.limit ?? DEFAULT_LIMIT), MAX_LIMIT);
+  const offset = Math.max(0, Math.trunc(opts.offset ?? 0));
   const types = (opts.types?.length ? opts.types : LANDED_TYPES) as readonly string[];
-  const typeArr = sql`ARRAY[${sql.join(types.map((t) => sql`${t}`), sql`, `)}]::text[]`;
+  const orderDir = opts.order === 'oldest' ? sql`ASC` : sql`DESC`;
 
   const res = await db.execute<LandedRow>(sql`
     SELECT
@@ -117,12 +145,9 @@ export async function listLanded(ownerId: string, opts: ListLandedOpts = {}): Pr
       ORDER BY t.started_at DESC
       LIMIT 1
     ) run ON true
-    WHERE n.owner_id = ${ownerId}
-      AND n.type::text = ANY(${typeArr})
-      -- Conversation digests are Saskia-authored notes, not content the user added.
-      AND NOT (n.type = 'note' AND 'conversation-digest' = ANY(n.tags))
-    ORDER BY GREATEST(n.created_at, n.updated_at) DESC
-    LIMIT ${limit}
+    WHERE ${landedWhere(ownerId, types)}
+    ORDER BY GREATEST(n.created_at, n.updated_at) ${orderDir}
+    LIMIT ${limit} OFFSET ${offset}
   `);
 
   const now = Date.now();

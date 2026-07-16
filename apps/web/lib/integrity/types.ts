@@ -95,6 +95,9 @@ export type LandedReport = {
   generatedAt: string;
   items: LandedItem[];
   capabilities: Capabilities;
+  /** Total nodes matching the current type filter (ignores limit/offset) — the
+   *  denominator the pager needs, since `items` is one page. */
+  total: number;
 };
 
 // ─── passive corpus audit ───────────────────────────────────────────────────
