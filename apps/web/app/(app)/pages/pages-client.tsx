@@ -78,6 +78,7 @@ import { useToast } from '@/components/ui/toast';
 import { TagPill } from '@/components/tag-pill';
 import { TagInput } from '@/components/tag-input';
 import { PageView } from '@/components/page-editor/page-view';
+import { ExportMenu } from '@/components/export/export-menu';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
 import { buildChildrenIndex } from './page-tree';
@@ -1037,6 +1038,7 @@ function PagePreview({ row, onDelete }: { row: PageRow; onDelete: () => void }) 
           )}
         </h2>
         <div className="flex shrink-0 gap-2">
+          <ExportMenu nodeId={row.id} />
           <Button asChild variant="outline" size="sm">
             <Link href={`/pages/${row.id}`}>
               <Pencil /> Edit
