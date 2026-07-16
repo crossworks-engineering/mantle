@@ -4,6 +4,28 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.137.0 — 2026-07-16
+
+**Tables v2.2: export formats + linked reference columns.** Export any table
+straight from the grid via a format dropdown — **Excel (`.xlsx`)**, **Markdown**,
+or **CSV** (a multi-tab workbook exports every tab). Linked **reference
+columns** (`type: 'reference'`, from v2.1) gain a first-class grid affordance: a
+🔗 menu on a linked column header to **Change source…** or **Delete link**
+(unlink keeps the cell values as plain text). A reference is a convenience
+picker — the chosen value is copied as plain text, Excel data-validation style,
+so `table_sql` sees an ordinary column; soft integrity flags values missing
+from the source as `DANGLING REFS` in the profile, and removing a source
+degrades the column to plain text with values intact.
+
+A reference column **always stores as text** — the engine maps `reference →
+select` at every storage / read / filter boundary via `storageType()`. (An
+earlier cut of v2.2 explored per-column reference *modes* — a checkbox variant
+and a deferred multi — but they were removed before release: the checkbox mode
+was flaky and the mode machinery widened the type surface for no user-visible
+gain. A linked column now has exactly one behavior.)
+
+**Deploy: tag-only bump — no migration, no compose change.**
+
 ## v0.136.0 — 2026-07-15
 
 **Tables: reference columns from the grid + Excel-style cell expand.** Two UI
