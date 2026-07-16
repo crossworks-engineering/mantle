@@ -676,10 +676,10 @@ function ReferenceColumnDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Link to another tab</DialogTitle>
+          <DialogTitle>{currentRef ? 'Change linked source' : 'Link column'}</DialogTitle>
           <DialogDescription>
-            This column will offer values from another tab’s column (Excel data-validation style — free text stays
-            allowed).
+            This column offers values from another tab’s column — picked values are copied as plain text (a convenience
+            picker, not a live link).
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
@@ -741,7 +741,7 @@ function ReferenceColumnDialog({
               disabled={!tabId || !colId}
               onClick={() => tabId && colId && onConfirm({ tabId, columnId: colId })}
             >
-              Link column
+              {currentRef ? 'Change source' : 'Link column'}
             </Button>
           </div>
         </div>

@@ -47,6 +47,7 @@ import {
   type CellValue,
   type Column,
   type ColumnType,
+  type RefMode,
   type Filter,
   type SortSpec,
   type TableDoc,
@@ -99,6 +100,27 @@ function baseline(table: TableDetail): TableDoc {
 /** Resolve a column reference (id OR name) to its Column. */
 function resolveColumn(doc: TableDoc, ref: string): Column | null {
   return findColumn(doc, ref) ?? findColumnByName(doc, ref);
+}
+
+/** Column summary for tool outputs. A linked (reference) column also reports
+ *  its `link_mode` (select/checkbox) and `linked_to` source ids so the
+ *  assistant knows the mode + where the values come from (v2.2). */
+function colSummary(c: Column): {
+  id: string;
+  name: string;
+  type: ColumnType;
+  formula?: string;
+  link_mode?: RefMode;
+  linked_to?: { tab_id: string; column_id: string };
+} {
+  return {
+    id: c.id,
+    name: c.name,
+    type: c.type,
+    ...(c.formula ? { formula: c.formula } : {}),
+    ...(c.type === 'reference' ? { link_mode: c.refMode ?? 'select' } : {}),
+    ...(c.type === 'reference' && c.ref ? { linked_to: { tab_id: c.ref.tabId, column_id: c.ref.columnId } } : {}),
+  };
 }
 
 /** Map a cells object keyed by column name-or-id to one keyed by column id.
@@ -318,7 +340,7 @@ const table_create: BuiltinToolDef = {
         summary: `Table created by tool: ${table.title}`,
         payload: { via: 'table_create_tool', ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}) },
       });
-      return { ok: true, output: { id: table.id, title: table.title, columns: table.data.columns.map((c) => ({ id: c.id, name: c.name, type: c.type })) } };
+      return { ok: true, output: { id: table.id, title: table.title, columns: table.data.columns.map(colSummary) } };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -463,7 +485,7 @@ const table_from_text: BuiltinToolDef = {
         output: {
           id: table.id,
           title: table.title,
-          columns: doc.columns.map((c) => ({ id: c.id, name: c.name, type: c.type })),
+          columns: doc.columns.map(colSummary),
           rows: doc.rows.length,
         },
       };
@@ -692,7 +714,7 @@ const table_get: BuiltinToolDef = {
         : null;
       if (win) {
         listed = {
-          columns: doc.columns.map((c) => ({ id: c.id, name: c.name, type: c.type })),
+          columns: doc.columns.map(colSummary),
           rows: win.rows.map((r, i) => {
             const cells: Record<string, string> = {};
             for (const col of doc.columns) {
@@ -731,7 +753,7 @@ const table_get: BuiltinToolDef = {
         ...(table.tabs && table.tabs.length > 1
           ? { tabs: table.tabs, tab_id: table.tabId, tab_hint: 'columns/rows below are ONE tab — pass `tab` to read another' }
           : {}),
-        columns: doc.columns.map((c) => ({ id: c.id, name: c.name, type: c.type, ...(c.formula ? { formula: c.formula } : {}) })),
+        columns: doc.columns.map(colSummary),
         rows: listed.rows,
         total_rows: listed.total,
         offset: listed.offset,
@@ -746,7 +768,7 @@ const table_get: BuiltinToolDef = {
                   view: t.viewName,
                   fts_table: t.ftsTable,
                   row_count: t.rowCount,
-                  columns: t.columns.map((c) => ({ name: c.name, type: c.type })),
+                  columns: t.columns.map((c) => ({ name: c.name, type: c.type, ...(c.refersTo ? { linked: true } : {}) })),
                 })),
               },
             }
@@ -977,7 +999,7 @@ const table_rows_list: BuiltinToolDef = {
         }
         return { id: r.id, index: offset + i, cells };
       });
-      const columns = doc.columns.map((c) => ({ id: c.id, name: c.name, type: c.type }));
+      const columns = doc.columns.map(colSummary);
       ctx.step?.setOutput({ table_id: tableId, total: win.total, pushed: true });
       return {
         ok: true,
@@ -1583,12 +1605,18 @@ const table_column_add: BuiltinToolDef = {
       reference: {
         type: 'object',
         description:
-          'For type=reference: the source this column offers values from (Excel data-validation style), e.g. { "tab": "Car models", "column": "Model" }. Same workbook only.',
+          'For type=reference: the source column this column offers values from (a convenience picker — values are copied as plain text, no live link), e.g. { "tab": "Car models", "column": "Model" }. Same workbook only.',
         properties: {
           tab: { type: 'string', description: 'source tab, by name or id' },
           column: { type: 'string', description: 'source column, by name or id' },
         },
         required: ['tab', 'column'],
+      },
+      link_mode: {
+        type: 'string',
+        enum: ['select', 'checkbox'],
+        description:
+          'For type=reference: `select` (default) offers the source values in a dropdown; `checkbox` makes it a true/false box that borrows the source column’s label.',
       },
     },
     required: ['table_id', 'name', 'type'],
@@ -1600,10 +1628,16 @@ const table_column_add: BuiltinToolDef = {
     if (!tableId || !name) return { ok: false, error: 'table_id and name are required' };
     if (!COLUMN_TYPES.includes(type as ColumnType)) return { ok: false, error: `invalid type '${type}'` };
     let ref: { tabId: string; columnId: string } | undefined;
+    let refMode: RefMode | undefined;
     if (type === 'reference') {
       const resolved = await resolveRefTarget(ctx.ownerId, tableId, input.reference);
       if ('error' in resolved) return { ok: false, error: resolved.error };
       ref = resolved.ref;
+      const lm = str(input.link_mode).trim();
+      if (lm && lm !== 'select' && lm !== 'checkbox') {
+        return { ok: false, error: `invalid link_mode '${lm}' — use 'select' (dropdown) or 'checkbox'` };
+      }
+      refMode = (lm as RefMode) || 'select';
     }
     const newColId = crypto.randomUUID();
     const res = await editViaOps(ctx.ownerId, tableId, input.tab, (doc) => {
@@ -1612,6 +1646,7 @@ const table_column_add: BuiltinToolDef = {
       if (Array.isArray(input.options)) spec.options = strArr(input.options).map((label) => ({ id: label.toLowerCase().replace(/\s+/g, '_'), label }));
       if (str(input.formula).trim()) spec.formula = str(input.formula).trim();
       if (ref) spec.ref = ref;
+      if (refMode) spec.refMode = refMode;
       const after = str(input.after_column).trim();
       const afterColumnId = after ? resolveColumn(doc, after)?.id ?? null : null;
       return {
@@ -1658,12 +1693,18 @@ const table_column_update: BuiltinToolDef = {
       reference: {
         type: 'object',
         description:
-          'For type=reference: the source this column offers values from, e.g. { "tab": "Car models", "column": "Model" }. Required when retyping to reference; pass alone to re-point an existing reference.',
+          'For type=reference: the source column this column offers values from, e.g. { "tab": "Car models", "column": "Model" }. Required when retyping to reference; pass alone to re-point an existing reference (keeps its mode).',
         properties: {
           tab: { type: 'string', description: 'source tab, by name or id' },
           column: { type: 'string', description: 'source column, by name or id' },
         },
         required: ['tab', 'column'],
+      },
+      link_mode: {
+        type: 'string',
+        enum: ['select', 'checkbox'],
+        description:
+          'Switch a linked column’s mode: `select` (dropdown of source values) or `checkbox` (true/false). Pass alone on an existing reference to flip modes; existing cells re-coerce.',
       },
     },
     required: ['table_id', 'column'],
@@ -1678,6 +1719,10 @@ const table_column_update: BuiltinToolDef = {
       if ('error' in resolved) return { ok: false, error: resolved.error };
       ref = resolved.ref;
     }
+    const linkMode = str(input.link_mode).trim();
+    if (linkMode && linkMode !== 'select' && linkMode !== 'checkbox') {
+      return { ok: false, error: `invalid link_mode '${linkMode}' — use 'select' (dropdown) or 'checkbox'` };
+    }
     const res = await editViaOps(ctx.ownerId, tableId, input.tab, (doc) => {
       const col = resolveColumn(doc, columnRef);
       if (!col) return { ops: [], error: `column '${columnRef}' not found` };
@@ -1691,6 +1736,15 @@ const table_column_update: BuiltinToolDef = {
       if (Array.isArray(input.options)) patch.options = strArr(input.options).map((label) => ({ id: label.toLowerCase().replace(/\s+/g, '_'), label }));
       if (typeof input.formula === 'string') patch.formula = input.formula.trim();
       if (ref) patch.ref = ref;
+      // link_mode alone switches an existing reference's mode; with a type/ref
+      // change it sets the new link's mode.
+      if (linkMode) {
+        const willBeRef = patch.type === 'reference' || (!patch.type && col.type === 'reference') || (ref && !patch.type);
+        if (!willBeRef) {
+          return { ops: [], error: 'link_mode only applies to a reference (linked) column — set type=reference or pass reference too' };
+        }
+        patch.refMode = linkMode as RefMode;
+      }
       if ((patch.type === 'reference' || (ref && col.type !== 'reference' && !patch.type)) && !ref && !col.ref) {
         return { ops: [], error: 'retyping to reference needs `reference: { tab, column }` — the source it offers values from' };
       }
