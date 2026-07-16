@@ -1,6 +1,12 @@
 import { loadCell } from './cells';
-import type { AggregateKind, CellValue, ColumnType, Filter, Row, SortSpec } from './doc-types';
+import type { AggregateKind, CellValue, ColumnType, Filter, RefMode, Row, SortSpec } from './doc-types';
+import { storageType } from './doc-types';
 import { openTableFile, type SqliteDb } from './sqlite';
+
+/** The type a ColMeta stores/compares as — a linked column follows its
+ *  refMode's base type (v2.2). Pushdown/sort/aggregate branch on THIS so a
+ *  linked-checkbox filters as a checkbox, not as text. */
+const metaType = (c: { type: ColumnType; refMode?: RefMode }): ColumnType => storageType(c);
 
 /**
  * Windowed reads over a workbook file (P3): keyset pagination on (_pos, _rid)
@@ -15,7 +21,7 @@ import { openTableFile, type SqliteDb } from './sqlite';
  * tables are new in v2, so the SQL semantics ARE their contract).
  */
 
-type ColMeta = { colId: string; physical: string; type: ColumnType };
+type ColMeta = { colId: string; physical: string; type: ColumnType; refMode?: RefMode };
 
 function tabMeta(db: SqliteDb, tabId?: string): { physicalTable: string; cols: ColMeta[] } {
   const tab =
@@ -28,9 +34,14 @@ function tabMeta(db: SqliteDb, tabId?: string): { physicalTable: string; cols: C
     );
   }
   const cols = db
-    .prepare(`SELECT col_id, physical, type FROM _columns WHERE tab_id = ? ORDER BY position`)
+    .prepare(`SELECT col_id, physical, type, ref_mode FROM _columns WHERE tab_id = ? ORDER BY position`)
     .all(String(tab.tab_id))
-    .map((c) => ({ colId: String(c.col_id), physical: String(c.physical), type: String(c.type) as ColumnType }));
+    .map((c) => ({
+      colId: String(c.col_id),
+      physical: String(c.physical),
+      type: String(c.type) as ColumnType,
+      ...(c.ref_mode != null ? { refMode: String(c.ref_mode) as RefMode } : {}),
+    }));
   return { physicalTable: String(tab.physical_table), cols };
 }
 
@@ -39,7 +50,7 @@ function rowsFrom(raw: Record<string, unknown>[], cols: ColMeta[]): Row[] {
   return raw.map((r) => {
     const cells: Record<string, CellValue> = {};
     for (const c of stored) {
-      const v = loadCell(r[c.physical], c.type);
+      const v = loadCell(r[c.physical], metaType(c));
       if (v !== null) cells[c.colId] = v;
     }
     return { id: String(r._rid), cells };
@@ -158,7 +169,8 @@ export function compileFilters(
       clauses.push('1 = 1');
       continue;
     }
-    if (col.type === 'formula' || col.type === 'multiselect') return null;
+    const st = metaType(col); // storage type — a linked column compares as its base
+    if (st === 'formula' || st === 'multiselect') return null;
     const p = col.physical;
     const isEmpty = `(${p} IS NULL OR CAST(${p} AS TEXT) = '')`;
     switch (f.op) {
@@ -174,7 +186,7 @@ export function compileFilters(
         // compare via CAST(REAL AS TEXT) — SQLite renders 9 as '9.0' where JS
         // renders '9' (audit finding: integer eq matched nothing pushed).
         const t = String(f.value ?? '');
-        if (col.type === 'checkbox') {
+        if (st === 'checkbox') {
           // Cells stringify to 'true'/'false' ('' when empty). Any other
           // target can never equal a cell — mirror that exactly.
           const cellText = `(CASE WHEN ${p} IS NULL THEN '' WHEN ${p} != 0 THEN 'true' ELSE 'false' END)`;
@@ -186,7 +198,7 @@ export function compileFilters(
           }
           break;
         }
-        if (NUM_FAMILY.has(col.type)) {
+        if (NUM_FAMILY.has(st)) {
           // A stored number matches iff its JS canonical string equals the
           // target — i.e. the target IS canonical and the values are equal.
           // Non-canonical targets ('9.0', 'abc') match no cell; '' matches
@@ -207,7 +219,7 @@ export function compileFilters(
           }
           break;
         }
-        if (!TEXT_FAMILY.has(col.type)) return null;
+        if (!TEXT_FAMILY.has(st)) return null;
         clauses.push(`COALESCE(CAST(${p} AS TEXT), '') ${f.op === 'eq' ? '=' : '!='} ?`);
         params.push(t);
         break;
@@ -215,7 +227,7 @@ export function compileFilters(
       case 'contains': {
         // Substring over JS-rendered text; SQLite can't reproduce JS number
         // formatting (9 → '9.0'), so number columns don't push down.
-        if (!TEXT_FAMILY.has(col.type)) return null;
+        if (!TEXT_FAMILY.has(st)) return null;
         clauses.push(`instr(lower(COALESCE(CAST(${p} AS TEXT), '')), lower(?)) > 0`);
         params.push(String(f.value ?? ''));
         break;
@@ -228,13 +240,13 @@ export function compileFilters(
         const numericTarget =
           typeof f.value === 'number' ||
           (typeof f.value === 'string' && f.value.trim() !== '' && Number.isFinite(Number(f.value.replace(/[, ]/g, ''))));
-        if (NUM_FAMILY.has(col.type) && numericTarget) {
+        if (NUM_FAMILY.has(st) && numericTarget) {
           // JS: empty never matches ordered compares; both numeric → numeric.
           clauses.push(`(${p} IS NOT NULL AND ${p} ${sqlOp} ?)`);
           params.push(typeof f.value === 'number' ? f.value : Number(String(f.value).replace(/[, ]/g, '')));
           break;
         }
-        if ((col.type === 'date' || col.type === 'datetime') && typeof f.value === 'string' && !numericTarget) {
+        if ((st === 'date' || st === 'datetime') && typeof f.value === 'string' && !numericTarget) {
           // ISO text ordering — matches the JS string compare for non-numeric.
           clauses.push(`(${p} IS NOT NULL AND CAST(${p} AS TEXT) != '' AND CAST(${p} AS TEXT) ${sqlOp} ?)`);
           params.push(f.value);
@@ -262,9 +274,10 @@ export function compileSort(sort: SortSpec[], cols: ColMeta[]): string | null {
     const col = byId.get(s.colId);
     if (!col) continue; // compareRows skips unknown columns
     const dir = s.dir === 'desc' ? 'DESC' : 'ASC';
-    if (NUM_FAMILY.has(col.type) || col.type === 'checkbox') {
+    const st = metaType(col);
+    if (NUM_FAMILY.has(st) || st === 'checkbox') {
       terms.push(`${col.physical} ${dir}`);
-    } else if (col.type === 'date' || col.type === 'datetime') {
+    } else if (st === 'date' || st === 'datetime') {
       terms.push(`COALESCE(CAST(${col.physical} AS TEXT), '') ${dir}`);
     } else {
       return null;
@@ -341,7 +354,8 @@ export function aggregateWindow(
         expr = `sum(CASE WHEN ${isEmpty} THEN 1 ELSE 0 END)`;
         break;
       default: {
-        if (!NUM_FAMILY.has(col.type) && col.type !== 'checkbox') return null;
+        const st = metaType(col);
+        if (!NUM_FAMILY.has(st) && st !== 'checkbox') return null;
         const fn = { sum: 'sum', avg: 'avg', min: 'min', max: 'max' }[opts.kind];
         expr = `${fn}(${p})`;
         break;

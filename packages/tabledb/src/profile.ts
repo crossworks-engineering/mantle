@@ -1,5 +1,6 @@
 import { loadCell } from './cells';
-import type { CellValue, Column, ColumnType, Row } from './doc-types';
+import type { CellValue, Column, ColumnType, RefMode, Row } from './doc-types';
+import { storageType } from './doc-types';
 import { openTableFile, type SqliteDb } from './sqlite';
 
 /**
@@ -50,15 +51,18 @@ const TOP_N = 8;
 const RANGED = new Set<ColumnType>(['number', 'currency', 'percent', 'date', 'datetime']);
 const TEXTY = new Set<ColumnType>(['text', 'url', 'reference']);
 
-type ColRow = { col_id: string; physical: string; name: string; type: string };
+type ColRow = { col_id: string; physical: string; name: string; type: string; ref_mode?: string | null };
 
 function profileColumn(db: SqliteDb, table: string, rowCount: number, col: ColRow): ColumnProfile {
-  const type = col.type as ColumnType;
+  const docType = col.type as ColumnType;
+  // Report the doc type ('reference' stays visible in the schema), but analyze
+  // value shape by the STORAGE type — a linked-checkbox is booleans, not text.
+  const type = storageType({ type: docType, refMode: (col.ref_mode ?? undefined) as RefMode | undefined });
   const p = col.physical;
   const out: ColumnProfile = {
     colId: col.col_id,
     name: col.name,
-    type,
+    type: docType,
     distinctCount: 0,
     nullRate: rowCount === 0 ? 0 : 1,
     topValues: [],
@@ -127,14 +131,17 @@ export function profileFile(absPath: string): TabProfile[] {
       // SELECT * — pre-v2.1 files have no ref_json column.
       const cols = db
         .prepare(`SELECT * FROM _columns WHERE tab_id = ? ORDER BY position`)
-        .all(tab.tab_id) as unknown as (ColRow & { ref_json?: string | null })[];
+        .all(tab.tab_id) as unknown as (ColRow & { ref_json?: string | null; ref_mode?: string | null })[];
       return {
         tabId: tab.tab_id,
         name: tab.name,
         rowCount,
         columns: cols.map((c) => {
           const out = profileColumn(db, tab.physical_table, rowCount, c);
-          if (c.type === 'reference' && c.ref_json != null) {
+          // Only a linked-SELECT pulls values from a source (dangling makes
+          // sense there). A linked-checkbox only borrows the source's label —
+          // its cells are booleans, so no join edge / dangling (v2.2).
+          if (c.type === 'reference' && c.ref_json != null && (c.ref_mode ?? 'select') === 'select') {
             const ref = JSON.parse(String(c.ref_json)) as { tabId: string; columnId: string };
             const srcCol = colById.get(ref.columnId);
             const srcTable = tableByTabId.get(ref.tabId);
@@ -176,8 +183,8 @@ export function sampleRows(absPath: string, n = 20): { tabId: string; rows: Row[
     return tabs.map((tab) => {
       const total = Number(db.prepare(`SELECT count(*) AS c FROM ${tab.physical_table}`).get()?.c ?? 0);
       const cols = db
-        .prepare(`SELECT col_id, physical, type FROM _columns WHERE tab_id = ? AND type != 'formula' ORDER BY position`)
-        .all(tab.tab_id) as unknown as { col_id: string; physical: string; type: string }[];
+        .prepare(`SELECT col_id, physical, type, ref_mode FROM _columns WHERE tab_id = ? AND type != 'formula' ORDER BY position`)
+        .all(tab.tab_id) as unknown as { col_id: string; physical: string; type: string; ref_mode: string | null }[];
       if (total === 0 || cols.length === 0) return { tabId: tab.tab_id, rows: [] };
       const k = Math.max(1, Math.ceil(total / n));
       const select = cols.map((c) => c.physical).join(', ');
@@ -191,7 +198,8 @@ export function sampleRows(absPath: string, n = 20): { tabId: string; rows: Row[
       const rows: Row[] = raw.map((r) => {
         const cells: Record<string, CellValue> = {};
         for (const c of cols) {
-          const v = loadCell(r[c.physical], c.type as ColumnType);
+          const st = storageType({ type: c.type as ColumnType, refMode: (c.ref_mode ?? undefined) as RefMode | undefined });
+          const v = loadCell(r[c.physical], st);
           if (v !== null) cells[c.col_id] = v;
         }
         return { id: String(r._rid), cells };
