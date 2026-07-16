@@ -17,6 +17,14 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { useRealtime } from '@/components/realtime/use-realtime';
+import { ListPager } from '@/components/layout/list-pager';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import type {
   AuditCheck,
@@ -34,6 +42,17 @@ import type {
 /** The node types the live view tracks — mirrors `LANDED_TYPES` in landed.ts
  *  (kept as a literal here so the server module never enters the browser bundle). */
 const LIVE_TYPES = ['note', 'page', 'task', 'event', 'contact', 'secret', 'file', 'email'];
+const LIVE_PAGE_SIZE = 25;
+const TYPE_LABELS: Record<string, string> = {
+  note: 'Notes',
+  page: 'Pages',
+  task: 'Tasks',
+  event: 'Events',
+  contact: 'Contacts',
+  secret: 'Secrets',
+  file: 'Files',
+  email: 'Email',
+};
 
 function CheckPill({ check }: { check: CheckResult }) {
   const cls =
@@ -199,13 +218,22 @@ function LiveView() {
   const [report, setReport] = useState<LandedReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [order, setOrder] = useState<'newest' | 'oldest'>('newest');
+  const [page, setPage] = useState(1);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(
     async (quiet = false) => {
       if (!quiet) setLoading(true);
       try {
-        const data = await apiFetch<LandedReport>('/api/debug/integrity/landed');
+        const params = new URLSearchParams({
+          limit: String(LIVE_PAGE_SIZE),
+          offset: String((page - 1) * LIVE_PAGE_SIZE),
+          order,
+        });
+        if (typeFilter !== 'all') params.set('types', typeFilter);
+        const data = await apiFetch<LandedReport>(`/api/debug/integrity/landed?${params.toString()}`);
         setReport(data);
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) return;
@@ -214,12 +242,20 @@ function LiveView() {
         setLoading(false);
       }
     },
-    [toast],
+    [toast, page, order, typeFilter],
   );
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // If deletions/filtering shrink the set below the current page, step back so
+  // we never sit on an empty page past the end.
+  useEffect(() => {
+    if (!report) return;
+    const totalPages = Math.max(1, Math.ceil(report.total / LIVE_PAGE_SIZE));
+    if (page > totalPages) setPage(totalPages);
+  }, [report, page]);
 
   // Live updates: any insert (node_ingested) or re-index (node_indexed) of a
   // tracked type schedules a quiet refetch — debounced so a burst coalesces.
@@ -234,7 +270,9 @@ function LiveView() {
     setDeleting(nodeId);
     try {
       await apiSend('/api/debug/integrity/landed/delete', 'POST', { nodeId });
-      setReport((r) => (r ? { ...r, items: r.items.filter((i) => i.nodeId !== nodeId) } : r));
+      setReport((r) =>
+        r ? { ...r, items: r.items.filter((i) => i.nodeId !== nodeId), total: Math.max(0, r.total - 1) } : r,
+      );
       toast.success('Deleted node + footprint');
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) return;
@@ -244,19 +282,56 @@ function LiveView() {
     }
   }
 
+  const filtered = typeFilter !== 'all';
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Live brain activity</h2>
-          <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
-            The real content you add — notes, pages, tasks, events, contacts, secrets, files, email — as it lands in
-            the brain, newest first. Each row shows whether the extractor indexed it (L5 summary · 768-dim embedding ·
-            tsv · L4 facts · graph). <strong>Green</strong> = fully indexed; <strong>skipped</strong> shows a correct
-            non-index with its reason; <strong>fail</strong> flags a real gap (success but no summary, dimension drift,
-            duplicate edges). Updates appear automatically — no fixtures, nothing to clean up.
-          </p>
-        </div>
+      <div>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Live brain activity</h2>
+        <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
+          The real content you add — notes, pages, tasks, events, contacts, secrets, files, email — as it lands in
+          the brain. Each row shows whether the extractor indexed it (L5 summary · 768-dim embedding · tsv · L4 facts ·
+          graph). <strong>Green</strong> = fully indexed; <strong>skipped</strong> shows a correct non-index with its
+          reason; <strong>fail</strong> flags a real gap (success but no summary, dimension drift, duplicate edges).
+          Filter by type and page through the whole corpus; new content still appears automatically.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          value={typeFilter}
+          onValueChange={(v) => {
+            setTypeFilter(v);
+            setPage(1);
+          }}
+        >
+          <SelectTrigger className="h-9 w-[160px]" aria-label="Filter by type">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All types</SelectItem>
+            {LIVE_TYPES.map((t) => (
+              <SelectItem key={t} value={t}>
+                {TYPE_LABELS[t] ?? t}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={order}
+          onValueChange={(v) => {
+            setOrder(v as 'newest' | 'oldest');
+            setPage(1);
+          }}
+        >
+          <SelectTrigger className="h-9 w-[160px]" aria-label="Sort order">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="newest">Newest first</SelectItem>
+            <SelectItem value="oldest">Oldest first</SelectItem>
+          </SelectContent>
+        </Select>
         <Button variant="ghost" size="sm" onClick={() => void load()} disabled={loading}>
           {loading ? 'Loading…' : 'Refresh'}
         </Button>
@@ -265,16 +340,27 @@ function LiveView() {
       {report && <CapabilitiesPanel caps={report.capabilities} />}
 
       {report && report.items.length > 0 && (
-        <ul className="divide-y divide-border rounded-md border border-border">
-          {report.items.map((item) => (
-            <LandedRow key={item.nodeId} item={item} onDelete={remove} deleting={deleting === item.nodeId} />
-          ))}
-        </ul>
+        <div className="overflow-hidden rounded-md border border-border">
+          <ul className="divide-y divide-border">
+            {report.items.map((item) => (
+              <LandedRow key={item.nodeId} item={item} onDelete={remove} deleting={deleting === item.nodeId} />
+            ))}
+          </ul>
+          <ListPager
+            page={page}
+            total={report.total}
+            pageSize={LIVE_PAGE_SIZE}
+            pending={loading}
+            onGo={(p) => setPage(p)}
+          />
+        </div>
       )}
 
       {report && report.items.length === 0 && (
         <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-6 text-center text-xs text-muted-foreground">
-          No content yet. Add a note, upload a file, or create an event and watch it land in the brain here.
+          {filtered
+            ? `No ${TYPE_LABELS[typeFilter] ?? typeFilter} yet.`
+            : 'No content yet. Add a note, upload a file, or create an event and watch it land in the brain here.'}
         </p>
       )}
 
