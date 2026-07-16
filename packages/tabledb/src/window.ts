@@ -34,7 +34,11 @@ function tabMeta(db: SqliteDb, tabId?: string): { physicalTable: string; cols: C
     );
   }
   const cols = db
-    .prepare(`SELECT col_id, physical, type, ref_mode FROM _columns WHERE tab_id = ? ORDER BY position`)
+    // SELECT * — pre-v2.2 files have no ref_mode column; a named SELECT would
+    // throw `no such column` on every read of an un-recommitted old table
+    // (the lazy ALTER only runs on the write path). storageType treats a
+    // missing refMode as 'select', so undefined round-trips.
+    .prepare(`SELECT * FROM _columns WHERE tab_id = ? ORDER BY position`)
     .all(String(tab.tab_id))
     .map((c) => ({
       colId: String(c.col_id),

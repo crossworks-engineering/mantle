@@ -226,7 +226,7 @@ export function tableDocFromGrid(input: GridInput): TableDoc {
   const rows: Row[] = input.rows.map((values) => {
     const cells: Record<string, CellValue> = {};
     columns.forEach((col, i) => {
-      const v = coerceCell(values[i] ?? null, col.type);
+      const v = coerceCell(values[i] ?? null, storageType(col));
       if (v !== null) cells[col.id] = v;
     });
     return { id: randomUUID(), cells };
@@ -386,7 +386,7 @@ export function addRow(
   const coerced: Record<string, CellValue> = {};
   for (const col of doc.columns) {
     if (col.type === 'formula') continue;
-    if (col.id in cells) coerced[col.id] = coerceCell(cells[col.id], col.type);
+    if (col.id in cells) coerced[col.id] = coerceCell(cells[col.id], storageType(col));
   }
   const row: Row = { id: randomUUID(), cells: coerced };
   const rows = [...doc.rows];
@@ -408,7 +408,7 @@ export function updateRow(
     for (const [colId, value] of Object.entries(cells)) {
       const col = findColumn(doc, colId);
       if (!col || col.type === 'formula') continue;
-      const v = coerceCell(value, col.type);
+      const v = coerceCell(value, storageType(col));
       if (v === null) delete next[colId];
       else next[colId] = v;
     }

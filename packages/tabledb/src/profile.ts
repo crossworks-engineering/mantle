@@ -183,8 +183,10 @@ export function sampleRows(absPath: string, n = 20): { tabId: string; rows: Row[
     return tabs.map((tab) => {
       const total = Number(db.prepare(`SELECT count(*) AS c FROM ${tab.physical_table}`).get()?.c ?? 0);
       const cols = db
-        .prepare(`SELECT col_id, physical, type, ref_mode FROM _columns WHERE tab_id = ? AND type != 'formula' ORDER BY position`)
-        .all(tab.tab_id) as unknown as { col_id: string; physical: string; type: string; ref_mode: string | null }[];
+        // SELECT * — pre-v2.2 files lack ref_mode; a named SELECT would throw
+        // on old published files (see window.tabMeta). Missing → 'select'.
+        .prepare(`SELECT * FROM _columns WHERE tab_id = ? AND type != 'formula' ORDER BY position`)
+        .all(tab.tab_id) as unknown as { col_id: string; physical: string; type: string; ref_mode?: string | null }[];
       if (total === 0 || cols.length === 0) return { tabId: tab.tab_id, rows: [] };
       const k = Math.max(1, Math.ceil(total / n));
       const select = cols.map((c) => c.physical).join(', ');

@@ -216,7 +216,19 @@ export function rebuildFtsShadow(db: SqliteDb, tab: TabRow): void {
   db.exec(`DROP TRIGGER IF EXISTS ${tab.physical_table}_fts_au`);
   db.exec(`DROP TABLE IF EXISTS ${fts}`);
   const cols = columnsOf(db, tab.tab_id);
-  const wanted = new Set(ftsColumns(cols.map((c) => ({ id: c.col_id, name: c.name, type: c.type }))).map((c) => c.id));
+  // Carry ref_mode so ftsColumns' storageType sees it — else a linked-checkbox
+  // (boolean) is wrongly text-indexed here, diverging from writeDocFile's
+  // fresh-write path (audit). name is unused by ftsColumns but kept for shape.
+  const wanted = new Set(
+    ftsColumns(
+      cols.map((c) => ({
+        id: c.col_id,
+        name: c.name,
+        type: c.type,
+        ...(c.ref_mode != null ? { refMode: c.ref_mode as RefMode } : {}),
+      })),
+    ).map((c) => c.id),
+  );
   const physicals = cols.filter((c) => wanted.has(c.col_id)).map((c) => c.physical);
   if (physicals.length === 0) return;
   createFtsShadow(db, tab.physical_table, physicals);

@@ -547,12 +547,15 @@ export function describeWorkbook(absPath: string): WorkbookTabRef[] {
             physical: String(c.physical),
             type: String(c.type) as ColumnType,
           };
-          if (c.ref_json != null) {
+          // Only a linked-SELECT is a value edge worth advertising to the
+          // schema/table_sql surface. A linked-checkbox only borrows the
+          // source's label (a boolean, not its values) — no edge, matching
+          // profile.ts (v2.2). A deleted source degrades to plain text: the
+          // edge simply stops being advertised (Excel-style).
+          if (c.ref_json != null && (c.ref_mode ?? 'select') === 'select') {
             const ref = JSON.parse(String(c.ref_json)) as { tabId: string; columnId: string };
             const tab = tabNameById.get(ref.tabId);
             const column = colNameById.get(ref.columnId);
-            // A deleted source degrades the column to plain text semantics —
-            // the edge simply stops being advertised (Excel-style).
             if (tab && column) out.refersTo = { tab, column };
           }
           return out;

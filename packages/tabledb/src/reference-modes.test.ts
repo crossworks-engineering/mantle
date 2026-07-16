@@ -11,10 +11,10 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 import { readDocFile, writeDocFile } from './engine';
 import { storageType } from './doc-types';
-import { applyOpsToFile } from './ops';
+import { applyOpsToFile, finalizePublishedFile } from './ops';
 import { ftsColumns } from './fts';
-import { profileFile } from './profile';
-import { queryRowsWindow } from './window';
+import { profileFile, sampleRows } from './profile';
+import { queryRowsWindow, listRowsWindow } from './window';
 import { openTableFile } from './sqlite';
 import type { CellValue, Column, WorkbookDocLike } from './doc-types';
 
@@ -164,6 +164,66 @@ describe('mode switches re-coerce values', () => {
     expect(linkCol(doc).ref).toBeUndefined();
     expect(linkCol(doc).refMode).toBeUndefined();
     expect(doc.rows[0]!.cells['c-link']).toBe('yes');
+  });
+});
+
+describe('forward-compat: a pre-v2.2 file (no ref_mode column) still reads', () => {
+  it('window + sample reads do not throw on a file missing ref_mode (audit HIGH)', () => {
+    const abs = fileWith({ type: 'reference', ref: { tabId: 'src', columnId: 'c-opt' } });
+    applyOpsToFile(abs, [{ op: 'row_add', tabId: 'main', rowId: 'r1', cells: { 'c-k': 'a', 'c-link': 'yes' } }], coerce);
+    // Simulate a file published before v2.2 — drop the ref_mode column on disk.
+    const w = openTableFile(abs, {});
+    try {
+      w.exec(`ALTER TABLE _columns DROP COLUMN ref_mode`);
+    } finally {
+      w.close();
+    }
+    expect(() => queryRowsWindow(abs, { tabId: 'main', limit: 10 })).not.toThrow();
+    expect(() => listRowsWindow(abs, { tabId: 'main', limit: 10 })).not.toThrow();
+    expect(() => sampleRows(abs, 5)).not.toThrow();
+    // And the reference column still behaves as select (missing → 'select').
+    const doc = readDocFile(abs, { tabId: 'main' });
+    expect(storageType(doc.columns.find((c) => c.id === 'c-link')!)).toBe('select');
+    expect(doc.rows[0]!.cells['c-link']).toBe('yes');
+  });
+});
+
+describe('promote (finalizePublishedFile) rebuilds FTS by mode', () => {
+  it('excludes a linked-checkbox from the rebuilt shadow, keeps a linked-select', () => {
+    const abs = path.join(dir, `rm-promote-${n++}.sqlite`);
+    writeDocFile(
+      abs,
+      {
+        tabs: [
+          { id: 'src', name: 'Source', columns: [{ id: 'c-opt', name: 'Opt', type: 'text' }], rows: [] },
+          {
+            id: 'main',
+            name: 'Main',
+            columns: [
+              { id: 'c-sel', name: 'Sel', type: 'reference', refMode: 'select', ref: { tabId: 'src', columnId: 'c-opt' } },
+              { id: 'c-cb', name: 'CB', type: 'reference', refMode: 'checkbox', ref: { tabId: 'src', columnId: 'c-opt' } },
+            ],
+            rows: [],
+          },
+        ],
+      },
+      META,
+    );
+    finalizePublishedFile(abs); // the promote path — rebuilds FTS shadows
+    const db = openTableFile(abs, { readOnly: true });
+    try {
+      const physicals = (db.prepare(`SELECT col_id, physical FROM _columns WHERE tab_id='main'`).all() as unknown as {
+        col_id: string;
+        physical: string;
+      }[]).reduce<Record<string, string>>((m, c) => ((m[c.col_id] = c.physical), m), {});
+      const ftsCols = new Set(
+        (db.prepare(`PRAGMA table_info(t_main_fts)`).all() as unknown as { name: string }[]).map((c) => c.name),
+      );
+      expect(ftsCols.has(physicals['c-sel']!)).toBe(true); // linked-select → text → indexed
+      expect(ftsCols.has(physicals['c-cb']!)).toBe(false); // linked-checkbox → boolean → excluded
+    } finally {
+      db.close();
+    }
   });
 });
 

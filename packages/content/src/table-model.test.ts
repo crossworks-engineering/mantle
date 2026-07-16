@@ -375,3 +375,32 @@ describe('emptyTableDoc', () => {
     expect(cellIsEmpty(doc.rows[0]!.cells.whatever ?? null)).toBe(true);
   });
 });
+
+describe('linked-column cells coerce by storage mode (v2.2)', () => {
+  // A linked-checkbox is a real boolean; updateRow/addRow must coerce via
+  // storageType, not the raw 'reference' type — else the cell becomes the
+  // string 'false' and the grid checkbox can never be unchecked (audit).
+  const linkedCheckbox = () =>
+    ensureTableDoc({
+      columns: [
+        { id: 'c1', name: 'K', type: 'text' },
+        { id: 'c2', name: 'Done', type: 'reference', refMode: 'checkbox', ref: { tabId: 't', columnId: 's' } },
+      ],
+      rows: [{ id: 'r1', cells: { c1: 'a', c2: true } }],
+    });
+
+  it('updateRow stores a boolean, not the string "false"', () => {
+    const doc = updateRow(linkedCheckbox(), 'r1', { c2: false });
+    // The fix: boolean false (Boolean(false)=false → unchecks), NOT 'false'
+    // (a truthy string that would keep the box checked).
+    expect(doc.rows[0]!.cells.c2).toBe(false);
+    const doc2 = updateRow(linkedCheckbox(), 'r1', { c2: true });
+    expect(doc2.rows[0]!.cells.c2).toBe(true);
+  });
+
+  it('addRow coerces a linked-checkbox cell to boolean', () => {
+    const doc = addRow(linkedCheckbox(), { c1: 'b', c2: 'x' }).doc; // 'x' is truthy per checkbox coerce
+    const added = doc.rows[doc.rows.length - 1]!;
+    expect(added.cells.c2).toBe(true);
+  });
+});
