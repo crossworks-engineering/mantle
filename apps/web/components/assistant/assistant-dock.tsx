@@ -125,6 +125,10 @@ type AssistantDockApi = {
   pinnedContext: ContextRef[];
   /** Replace the pinned set (the surface hook owns this; cleared on leave). */
   setPinnedContext: (refs: ContextRef[]) => void;
+  /** Dismiss the screen-pinned reference for the current node (the composer "×")
+   *  so it drops from the chips, the preamble, and the sent turn — for a general
+   *  question. Navigating to another item re-pins that one. */
+  dismissPinnedContext: (id: string) => void;
   /** An extra directive (e.g. Pages focus marks, the Apps inspect region) folded
    *  into the sent text after the context preamble. Null when nothing's focused. */
   extraDirective: string | null;
@@ -191,7 +195,21 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   const [pendingContext, setPendingContext] = useState<ContextRef[]>([]);
   const [picking, setPicking] = useState(false);
   // ── Surface-pinned context + focus directive (owned by the surface hook) ──
-  const [pinnedContext, setPinnedContextState] = useState<ContextRef[]>([]);
+  const [pinnedContextRaw, setPinnedContextState] = useState<ContextRef[]>([]);
+  // Pinned refs the user dismissed via the composer "×" — they want a general
+  // question, not one scoped to the open item. Keyed by node id; pruned when the
+  // surface pins a different node so a fresh selection is never pre-dismissed.
+  const [pinnedDismissedIds, setPinnedDismissedIds] = useState<string[]>([]);
+  // What every consumer sees (chips, preamble, the sent turn): the surface's pin
+  // minus anything the user dismissed. Dismissing thus drops the reference
+  // everywhere at once, and re-pinning a node (below) makes it reappear.
+  const pinnedContext = useMemo(
+    () =>
+      pinnedDismissedIds.length === 0
+        ? pinnedContextRaw
+        : pinnedContextRaw.filter((r) => !pinnedDismissedIds.includes(r.id)),
+    [pinnedContextRaw, pinnedDismissedIds],
+  );
   const [extraDirective, setExtraDirectiveState] = useState<string | null>(null);
   const [surfaceSelection, setSurfaceSelectionState] = useState<SurfaceSelection | null>(null);
   const [surfaceChanges, setSurfaceChangesState] = useState<number | null>(null);
@@ -244,7 +262,22 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
     }
   }, []);
 
-  const setPinnedContext = useCallback((refs: ContextRef[]) => setPinnedContextState(refs), []);
+  const setPinnedContext = useCallback((refs: ContextRef[]) => {
+    setPinnedContextState(refs);
+    // A newly pinned node must never inherit a stale dismissal — drop any
+    // dismissed id that's no longer in the pinned set. (Leaving a screen pins
+    // [] and so clears dismissals too.)
+    setPinnedDismissedIds((prev) => {
+      if (prev.length === 0) return prev;
+      const ids = new Set(refs.map((r) => r.id));
+      const next = prev.filter((id) => ids.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, []);
+  const dismissPinnedContext = useCallback(
+    (id: string) => setPinnedDismissedIds((prev) => (prev.includes(id) ? prev : [...prev, id])),
+    [],
+  );
   const setExtraDirective = useCallback((d: string | null) => setExtraDirectiveState(d), []);
   const setSurfaceSelection = useCallback(
     (sel: SurfaceSelection | null) => setSurfaceSelectionState(sel),
@@ -500,6 +533,7 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       clearContext,
       pinnedContext,
       setPinnedContext,
+      dismissPinnedContext,
       extraDirective,
       setExtraDirective,
       surfaceSelection,
@@ -535,6 +569,7 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
       clearContext,
       pinnedContext,
       setPinnedContext,
+      dismissPinnedContext,
       extraDirective,
       setExtraDirective,
       surfaceSelection,

@@ -212,6 +212,7 @@ export function AssistantClient({
     extraDirective,
     surfaceSelection,
     removeContext,
+    dismissPinnedContext,
     clearContext,
     startPicking,
   } = useAssistantDock();
@@ -1321,12 +1322,16 @@ export function AssistantClient({
                     <span
                       key={c.id}
                       className={
-                        'inline-flex max-w-[16rem] items-center gap-1.5 rounded-md border py-1 pl-2 text-xs ' +
+                        'inline-flex max-w-[16rem] items-center gap-1.5 rounded-md border py-1 pl-2 pr-1 text-xs ' +
                         (pinned
-                          ? 'border-primary/40 bg-primary/10 pr-2 text-foreground'
-                          : 'border-border bg-muted/40 pr-1')
+                          ? 'border-primary/40 bg-primary/10 text-foreground'
+                          : 'border-border bg-muted/40')
                       }
-                      title={pinned ? 'On this screen — sent with every message' : undefined}
+                      title={
+                        pinned
+                          ? 'On this screen — sent with every message. Remove to ask a general question.'
+                          : undefined
+                      }
                     >
                       {pinned ? (
                         <MapPin className="size-3.5 shrink-0 text-primary" aria-hidden />
@@ -1334,17 +1339,15 @@ export function AssistantClient({
                         <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
                       )}
                       <span className="truncate font-medium">{c.label}</span>
-                      {!pinned && (
-                        <button
-                          type="button"
-                          onClick={() => removeContext(c.id)}
-                          className="rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground"
-                          title="Remove"
-                          aria-label={`Remove ${c.label}`}
-                        >
-                          <X className="size-3" aria-hidden />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => (pinned ? dismissPinnedContext(c.id) : removeContext(c.id))}
+                        className="rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                        title={pinned ? 'Remove from this chat' : 'Remove'}
+                        aria-label={`Remove ${c.label}`}
+                      >
+                        <X className="size-3" aria-hidden />
+                      </button>
                     </span>
                   );
                 })}
